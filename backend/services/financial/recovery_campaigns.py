@@ -84,6 +84,10 @@ READER_RECOVERY_FLAG = 'LOUPE_FINANCIAL_READER_RECOVERY'
 # readings lost every printed line page OCR skipped (an addressee's name line, summary lines), kept
 # dates whose two 1s stand a space-wide bearing apart as OCR misread them ('41/05/2021'), and did not
 # record which printed lines stayed unread, so no addressless name block could be checked.
+# r9-engine-santander (revision v21) added r8-mt-engine's file ed905742 (v20): on vector-text pages it read a
+# printed line's label without its amount whenever the amount printed a thousands comma (the comma was
+# grouped as a line of its own), so a closing line read as 'SALDO FINAL DEL PERIODO:' with no amount and
+# the Santander closing reread no longer ran.
 # If a later change edits pdf_extraction.py, add the
 # digest of the current file here.
 AFFECTED_EXTRACTION_SHA256 = (
@@ -110,6 +114,7 @@ AFFECTED_EXTRACTION_SHA256 = (
     'b9248b807d535565e21969c81fcc59adb148cf1d6f185232958afb181bc129a1',  # r4-cards (v16)
     '015bd1d2a28867ae8771cb7a69b67fca4e30302468e394b93d572fcef6e8800a',  # r5-andrews-cards (v17)
     '8f3539f3afca7d9e4d613967aff51000e1c0fd93688f2e35a6534cb1628f0b37',  # 7b877d0b r7-alex-queue (v19)
+    'ed905742085b39bead123c80c47af29dd08f3c73790a8769e964b4e39c266815',  # 7c215ef1 r8-mt-engine (v20)
 )
 READER_RECOVERY = RecoveryCampaign(READER_RECOVERY_RELEASE, {'pdf_extraction.py': AFFECTED_EXTRACTION_SHA256},
     batch_reread=True)

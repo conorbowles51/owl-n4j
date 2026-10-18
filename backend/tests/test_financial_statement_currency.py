@@ -33,6 +33,14 @@ class CurrencyDetectionTests(TestCase):
                          layout_id='capital-one-card'), 'USD')
         self.assertEqual(detect_statement_currency([source([['CA$21.19'], ['$28.78']])]), 'CAD')
 
+    def test_a_symbol_beside_a_short_whole_number_is_not_currency_evidence(self):
+        # On a scan '$' can be read as '£'; '£12' beside a label is a count, not an amount.
+        self.assertEqual(detect_statement_currency([source([['Dias del periodo :', '£31'], ['1,250.00']])]), '')
+        self.assertEqual(detect_statement_currency([source([['Dias del periodo :', '£31'], ['USD 21.19']])]), 'USD')
+        for cells, expected in [(['£1,250'], 'GBP'), (['€ 12 500'], 'EUR'), (['¥1,000'], ''), (['EUR 7'], '')]:
+            with self.subTest(cells=cells):
+                self.assertEqual(detect_statement_currency([source([cells])]), expected)
+
     def test_conflicting_markers_and_account_labels_are_not_guessed(self):
         for rows in ([['USD 21.19'], ['EUR 28.78']], [['€21.19'], ['$28.78']],
                      [['Currency: USD'], ['Currency: CAD']]):

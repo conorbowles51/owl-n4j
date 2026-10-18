@@ -53,7 +53,9 @@ MAX_OSD_TIMEOUT_SECONDS = 30.0
 # own crop (vector_glyph_reading.unread_lines), the printed lines still unread are recorded, and a
 # figure token whose narrow characters stand a space-wide bearing apart is re-read from its outlines;
 # a page drawing its characters as outlines over an image covering most of it is vector text.
-PDF_READING_REVISION = 'bank-payment-rows-v20'
+# v21 (r9-engine-santander): a mark shorter than half a character (a thousands comma, a period) joins the
+# printed line it sits on, so a skipped line's amount is read whole instead of leaving its label alone.
+PDF_READING_REVISION = 'bank-payment-rows-v21'
 OSD_INSUFFICIENT_TEXT_MARKERS = ("too few characters", "skipping this page")
 
 

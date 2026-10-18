@@ -489,6 +489,47 @@ MIN_UNREAD_LINE_CHARACTERS = 3
 UNREAD_LINE_COLUMN_GAP = 1.5
 # Characters of one printed line have centres within this share of the line's height.
 LINE_CENTRE_SHARE = 0.35
+# A mark (comma, period, quote) is shorter than this share of the page's median character height. Its
+# centre sits near the line's baseline or cap height, outside the centre band, so it joins the nearest
+# line whose centre lies within ``MARK_LINE_SHARE`` of that line's height.
+MARK_HEIGHT_SHARE = 0.5
+MARK_LINE_SHARE = 0.75
+
+
+def _printed_lines(glyphs):
+    """Characters grouped into printed lines: ``[{'centre', 'height', 'glyphs'}]``.
+
+    Characters of ordinary height are grouped by their centres (``LINE_CENTRE_SHARE``).
+    A mark's centre lies outside that band (measured: the thousands comma of
+    '$12,345.67' sits 3.5 pt below the centre of a 9.5 pt line), so marks join the
+    nearest such line afterwards; a mark near no line is grouped with other marks.
+    """
+    heights = sorted(g.y1 - g.y0 for g in glyphs)
+    median = heights[len(heights) // 2] if heights else 0.0
+    marks = [g for g in glyphs if g.y1 - g.y0 < MARK_HEIGHT_SHARE * median]
+    mark_ids = {id(g) for g in marks}
+
+    def group(members, lines):
+        for glyph in sorted(members, key=lambda g: (g.centre[1], g.x0)):
+            height = glyph.y1 - glyph.y0
+            for line in lines:
+                if abs(line['centre'] - glyph.centre[1]) <= LINE_CENTRE_SHARE * max(line['height'], height):
+                    line['glyphs'].append(glyph)
+                    line['height'] = max(line['height'], height)
+                    break
+            else:
+                lines.append(dict(centre=glyph.centre[1], height=height, glyphs=[glyph]))
+        return lines
+
+    lines = group([g for g in glyphs if id(g) not in mark_ids], [])
+    loose = []
+    for mark in marks:
+        near = [line for line in lines if abs(line['centre'] - mark.centre[1]) <= MARK_LINE_SHARE * line['height']]
+        if near:
+            min(near, key=lambda line: abs(line['centre'] - mark.centre[1]))['glyphs'].append(mark)
+        else:
+            loose.append(mark)
+    return lines + group(loose, [])
 
 
 def unread_lines(glyphs, words):
@@ -496,28 +537,19 @@ def unread_lines(glyphs, words):
 
     Page OCR can skip a whole printed line (measured: an addressee's first name
     line and two summary lines between a shaded box and a mailing block). The
-    outlines show where it is printed. Characters are grouped into lines by
-    their centres (``LINE_CENTRE_SHARE``) and split into column runs at gaps
-    wider than ``UNREAD_LINE_COLUMN_GAP`` line heights; a run is returned when
-    it has at least ``MIN_UNREAD_LINE_CHARACTERS`` characters and no character
-    of it lies under an OCR word, so a line OCR read even in part is never
-    returned. Nothing is read here: the caller reads each run's own image.
+    outlines show where it is printed. Characters are grouped into lines
+    (``_printed_lines``) and split into column runs at gaps wider than
+    ``UNREAD_LINE_COLUMN_GAP`` line heights; a run is returned when it has at
+    least ``MIN_UNREAD_LINE_CHARACTERS`` characters and no character of it lies
+    under an OCR word, so a line OCR read even in part is never returned.
+    Nothing is read here: the caller reads each run's own image.
     """
     covered = set()
     index = _Index(glyphs)
     for text, box in words:
         if (text or '').strip():
             covered.update(id(g) for g in index.within(*box))
-    lines = []
-    for glyph in sorted(glyphs, key=lambda g: (g.centre[1], g.x0)):
-        height = glyph.y1 - glyph.y0
-        for line in lines:
-            if abs(line['centre'] - glyph.centre[1]) <= LINE_CENTRE_SHARE * max(line['height'], height):
-                line['glyphs'].append(glyph)
-                line['height'] = max(line['height'], height)
-                break
-        else:
-            lines.append(dict(centre=glyph.centre[1], height=height, glyphs=[glyph]))
+    lines = _printed_lines(glyphs)
     found = []
     for line in lines:
         ordered = sorted(line['glyphs'], key=lambda g: g.x0)

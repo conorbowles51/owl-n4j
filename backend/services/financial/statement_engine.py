@@ -81,7 +81,9 @@ HOLD_MESSAGES = {
                                   'follow the previous statement for this card in the same file.'),
     'route_library_first': 'This layout is routed to the bank-specific reader library first.',
     'library_disagrees': 'The general reader and the bank-specific reader both reconcile this period but read it differently.',
-    'line_without_content': 'A dated line in the movement table prints nothing else, so its amount is missing (it may have been blacked out).',
+    'second_date_unnamed': ('Movement lines print a second date, but the heading of that date column could not be '
+                            'read, so it is not known whether it is the posting date or the value date.'),
+    'line_without_content':'A dated line in the movement table prints nothing else, so its amount is missing (it may have been blacked out).',
     'account_shared': 'This credit line prints the same account number as a deposit account in the same statement, so its records could be mixed with that account. Check it against the PDF before importing it.',
     'principal_only_balance': ('This credit line prints only its principal balance: the amount owed at the opening (principal '
                                'with interest and fees) is not printed, so the movement lines cannot be checked against it.'),
@@ -445,6 +447,10 @@ def _split_row(row, under_heading, payment_boxes):
                 and all(_dated_money_line(line) for line in dated)):
             count = len(cells[0]['expected_text'].split('\n'))
             return [_line_row(row, cells[0], line, index, count) for index, line in lines]
+    if under_heading and not rotation and len(cells) >= 3:
+        parts = _merged_total_line(row, cells, by_cell)
+        if parts:
+            return parts
     if len(cells) >= 2 and any(sum(_label_amount_line(line) for _, line in _cell_lines(by_cell.get(id(cell), []))) >= 2
                                for cell in cells):
         parts = []
@@ -460,6 +466,86 @@ def _split_row(row, under_heading, payment_boxes):
             parts.append(part)
         return parts
     return None
+
+
+def _merged_total_line(row, cells, by_cell):
+    """(E10) A drawn table row holding the table's last movement line and its printed total line, or None.
+
+    A ruled table with no rule between its last movement and its ``TOTAL`` line stores both printed lines
+    in one row of boxes: the description box reads '<description>' over 'TOTAL', the amount boxes the
+    movement's amount over the column totals, and a box printing one figure belongs to one of the two
+    lines. Read as one movement it has two amounts and no proof can place them. Split only when:
+
+    * the row's first box is one line opening with a date (a movement), and one other box prints two or
+      more lines of which only the last is a column-total label;
+    * every box of figures prints one line, or as many lines as that box (one per printed line);
+    * every other box prints one line.
+
+    A box of figures with one line per printed line is split line by line; a box with one figure belongs
+    to the movement line when it is the row's rightmost box of figures (the balance column, which the
+    total line does not print) and to the total line otherwise. The proof checks the result twice: the
+    movement against the running balance, the total line against the sums of the column.
+    Returns ``[movement row, total row]``.
+    """
+    ordered = sorted(cells, key=lambda c: (_rect(c)[0] or [0])[0])
+    first = by_cell.get(id(ordered[0]), [])
+    if not first or len(_cell_lines(first)) != 1 or not _leading_date(merged_dates(_cell_lines(first)[0][1])[0]['t'].rstrip('.,')):
+        return None
+    texts = {id(c): c['expected_text'].strip('\n').split('\n') for c in cells}
+    if any(not line.strip() for lines in texts.values() for line in lines) or any(
+            c['expected_text'].strip('\n') != c['expected_text'] for c in cells):
+        return None
+    total_cells = [c for c in cells if len(texts[id(c)]) >= 2 and label(texts[id(c)][-1]) in INDEX['column_total']
+                   and not any(label(line) in INDEX['column_total'] for line in texts[id(c)][:-1])]
+    if len(total_cells) != 1:
+        return None
+    total_cell = total_cells[0]
+    count = len(texts[id(total_cell)])
+    figures = [c for c in cells if c is not total_cell and all(
+        all(_money_like(word) for word in line.split()) for line in texts[id(c)])]
+    if not figures:
+        return None
+    rightmost = max(figures, key=lambda c: (_rect(c)[0] or [0])[0])
+    movement, total = [], []
+    for cell in cells:
+        tokens = by_cell.get(id(cell), [])
+        lines = texts[id(cell)]
+        if cell is total_cell or (cell in figures and len(lines) == count and count > 1):
+            split = _cell_lines(tokens)
+            if len(split) != count:
+                return None
+            movement.append((cell, [t for _, line in split[:-1] for t in line], 0, count - 1, count))
+            total.append((cell, split[-1][1], count - 1, count, count))
+        elif len(lines) == 1:
+            (movement if cell not in figures or cell is rightmost else total).append((cell, tokens, None, None, None))
+        else:
+            return None
+    band = next(t for t in by_cell[id(total_cell)] if t['line'] == count - 1)
+
+    def part(pieces, index, at_total):
+        own_cells, own = [], []
+        for cell, tokens, start, stop, of in pieces:
+            if start is None:
+                part_cell = cell
+            else:
+                locator = dict(cell['locator'])
+                x0, y0, x1, y1 = locator['rect']
+                locator['rect'] = [x0, y0 + (y1 - y0) * start // of, x1, max(y0 + (y1 - y0) * stop // of, y0 + 1)]
+                part_cell = dict(cell, expected_text='\n'.join(cell['expected_text'].split('\n')[start:stop]),
+                                 locator=locator, cell_line=dict(line=start, lines=of))
+            own_cells.append(part_cell)
+            for t in tokens:
+                moved = dict(t, cell=part_cell, line=t['line'] - (start or 0))
+                if at_total and start is None:
+                    moved.update(y0=band['y0'], y1=band['y1'])
+                own.append(moved)
+        raw = dict(row['raw'], cells=own_cells, line=index)
+        return dict(row, raw=raw, tokens=sorted(own, key=lambda t: (t['line'], t['x0'])),
+                    y0=min(t['y0'] for t in own), x0=min(t['x0'] for t in own), split=(id(row['raw']), index))
+
+    if not any(t for _, tokens, *_ in total for t in tokens):
+        return None
+    return [part(movement, 0, False), part(total, count - 1, True)]
 
 
 def _line_row(row, cell, tokens, index, count):
@@ -1329,7 +1415,8 @@ def _section_holder(section_pages, pages, facts, style=None):
             return ''
         return name
     return (addressed or _receipt_holder(section_pages, pages, heading) or _stub_holder(heading, pages, style)
-            or _addressless_holder(section_pages, pages, heading, style))
+            or _addressless_holder(section_pages, pages, heading, style)
+            or _unanchored_holder(section_pages, pages, heading, style))
 
 
 # (A8) An addressee block printed without its address (the production redacted it) gives the holder
@@ -1417,6 +1504,92 @@ def _addressless_holder(section_pages, pages, heading, style):
         reprinted = sum(1 for p in section_pages for other in pages[p] if other['tokens'] and other is not row
                         and fold(' '.join(other['text'].split())) == fold(' '.join(top.split())))
         if mailing or reprinted:
+            found.add(' '.join(top.split()))
+    names = {fold(name) for name in found}
+    return next(iter(found)) if len(names) == 1 else ''
+
+
+# (A8) An addressee block whose postal-code line was not read (a barcode printed over it) gives the holder
+# only when the statement reprints its top line on another page; see _unanchored_holder. False: such
+# statements wait for a person.
+UNANCHORED_HOLDER = True
+
+
+def _above_movements(rows, style):
+    """A page's lines above its first movement-table heading or movement line."""
+    cut = next((row['y0'] for row in rows if row['tokens'] and row['y0'] is not None
+                and (_is_header(row) or _row_is_movement(row, style or 'dot', 2))), None)
+    return [row for row in rows if row['tokens'] and row['y0'] is not None and (cut is None or row['y0'] < cut)]
+
+
+def _unanchored_holder(section_pages, pages, heading, style):
+    """(A8) The top line of an addressee block whose postal-code line was not read, or ''.
+
+    The postal line can be printed over the mailing barcode, where the page's reading loses it, so
+    ``address_holder`` finds no block ending in one. The block is accepted only when all of these hold:
+
+    * on the statement's first heading page, in its left half: a name line (letters only, no label, bank
+      or heading word) with no line at its edge directly above it, followed at the same edge and line
+      pitch by two to four address lines, at least one printing a figure (the street number), none a
+      name of a bank, an amount or a date (an address, not a list of names or the bank's own lines);
+    * the page's reading, where it checked its printed lines, left none unread at the block's edge
+      directly above its top line or among its lines (a lost first name line would make the next line
+      look like the top);
+    * a second printed fact: the top line printed again, as the whole of a line's left cells, above the
+      movements of another page of the same statement (the page headings that reprint the addressee);
+    * every block found this way names the same holder.
+    """
+    if not UNANCHORED_HOLDER or not heading:
+        return ''
+    page, rows = heading[0]
+    source = next((row['source'] for row in pages[page] if row['tokens']), None)
+    if source is None or source.get('reading_rotation'):
+        return ''
+    checked = source.get('printed_lines') or {}
+    unread = [rect for rect in checked.get('unread') or [] if isinstance(rect, list) and len(rect) == 4]
+    lines = []
+    for row in rows:
+        if row['tokens'] and row['width']:
+            x = min(t['x0'] for t in row['tokens'])
+            aligned = _aligned_tokens(row, x)
+            if aligned:
+                lines.append(dict(row=row, x=x, y=min(t['y0'] for t in aligned),
+                                  height=max(t['y1'] - t['y0'] for t in aligned), text=_aligned_text(row, x)))
+    reprints = set()
+    for other in section_pages:
+        if other == page:
+            continue
+        for row in _above_movements(pages[other], style):
+            if row['width'] and min(t['x0'] for t in row['tokens']) <= row['width'] * 0.5:
+                reprints.add(' '.join(_aligned_text(row, min(t['x0'] for t in row['tokens'])).split()))
+    found = set()
+    for line in lines:
+        row, x, y, height = line['row'], line['x'], line['y'], line['height']
+        if x > row['width'] * 0.5 or not _name_line(line['text']):
+            continue
+        tolerance = row['width'] * 0.015
+        same_edge = sorted((other for other in lines if abs(other['x'] - x) <= tolerance and other is not line),
+                           key=lambda other: other['y'])
+        if any(y - height * 2.6 <= other['y'] < y for other in same_edge):
+            continue  # not the block's top line
+        block = [line]
+        for other in same_edge:
+            if other['y'] > block[-1]['y'] and other['y'] - block[-1]['y'] <= height * 2.6 and len(block) < 5:
+                block.append(other)
+        address = block[1:]
+        if (len(address) < 2 or not any(re.search(r'\d', other['text']) for other in address)
+                or any(_not_address(other['row'], x, style) or any(w in other['text'] for w in INSTITUTION_WORDS)
+                       for other in address)):
+            continue
+        bottom = block[-1]['y'] + height
+        right = max(t['x1'] for member in block for t in _aligned_tokens(member['row'], x))
+        # A printed text line is one line high; a taller unread mark (the mailing barcode under the block) is
+        # not a lost line of text.
+        if any(r[0] < right + tolerance and r[2] > x - tolerance and r[1] < bottom and r[3] > y - height * 3
+               and r[3] - r[1] <= height * 2 for r in unread):
+            continue
+        top = ' '.join(t['t'] for t in _aligned_tokens(row, x) if t['line'] == 0)
+        if ' '.join(fold(top).split()) in reprints:
             found.add(' '.join(top.split()))
     names = {fold(name) for name in found}
     return next(iter(found)) if len(names) == 1 else ''
@@ -3278,13 +3451,14 @@ def _reading(rows, statement, style, exponent, liability, period):
         if chosen is not None and not chosen.get('closing_ok'):
             chosen = dict(chosen, values=None)
     proof['assignment'] = chosen['assignment'] if chosen else None
-    # Two dates on a movement line (B5): the second is the posting (booking) date when the movement headings
-    # name one ("Trans date / Post date" on card statements); otherwise a value date.
-    # A heading can print on two lines ("Trans. Post" above "date date Description Amount").
-    heading_lines = headers + [rows[h['_index'] - 1] for h in headers
-                               if h['_index'] > 0 and rows[h['_index'] - 1]['page'] == h['page']]
-    second_date = ('booking_date' if any(label(t['t']) in _POSTING_WORDS for h in heading_lines for t in h['tokens'])
-                   else 'value_date')
+    second_date = _second_date_field(rows, headers, dated, width or 1)
+    if second_date is None and any(len(m['date_tokens']) > 1 for m in dated):
+        # (B5) A second printed date whose heading names neither a posting nor a value date: carrying it under
+        # either name, or dropping it, would save a printed fact wrongly, so the period is not proved. The
+        # reconciling reading stays as the prefill.
+        if proof['proved']:
+            proof.update(proved=False, reason='second_date_unnamed')
+        second_date = 'value_date'
     result['rows'] = _rows(rows, all_moves, resolved if not date_problem else None, chosen, controls,
                            column_totals, statement, style or 'dot', exponent, liability, proof, unplaced,
                            second_date=second_date)
@@ -3690,6 +3864,73 @@ def _item(row, suffix=''):
 
 
 _POSTING_WORDS = {'POST', 'POSTED', 'POSTING'}
+# A second date column's heading naming a settlement or value date (measured: 'OPER LIQ' on BBVA).
+_VALUE_DATE_WORDS = {'LIQ', 'LIQUIDACION', 'VALOR', 'VALUE', 'SETTLEMENT'}
+# Lines searched above a page's first two-date movement for the heading of its date columns, and lines a
+# heading of the date columns may span (a two-line heading with a side column's line between them).
+_DATE_HEADING_SEARCH = 20
+_DATE_HEADING_SPAN = 3
+
+
+def _date_column_headings(rows, moves, width):
+    """The words printed over the date columns of the movement lines carrying two dates, page by page.
+
+    From each page's first such movement, the lines above it on the page are read through their
+    words that lie over either date column (a side column's text beside the table counts for
+    nothing). A line whose words there are all date-column words ('Trans.', 'Post', 'date',
+    'FECHA', 'OPER') is the date columns' heading; up to ``_DATE_HEADING_SPAN`` lines above the
+    nearest one count with it (a heading printed on two lines). Other words over the columns (a
+    section heading 'Standard Purchases') are passed over. Returns ``{folded word}`` printed over
+    the second date column.
+    """
+    def span(token):
+        w = token.get('_width') or width
+        return token['x0'] / w, token['x1'] / w
+
+    def over(token, columns):
+        x0, x1 = span(token)
+        return any(x0 < right and x1 > left for left, right in columns)
+
+    firsts = {}
+    for move in moves:
+        if len(move['date_tokens']) > 1:
+            firsts.setdefault(move['row']['page'], move)
+    words = set()
+    for page, move in firsts.items():
+        first, second = (span(t) for t in move['date_tokens'][:2])
+        found = None
+        for index in range(move['row']['_index'] - 1, max(-1, move['row']['_index'] - 1 - _DATE_HEADING_SEARCH), -1):
+            row = rows[index]
+            if row['page'] != page or (found is not None and found - index > _DATE_HEADING_SPAN):
+                break
+            above = [t for t in row['tokens'] if over(t, (first, second))]
+            if above and all(column_role(label(t['t'])) == 'date' for t in above):
+                found = index if found is None else found
+                words.update(label(t['t']) for t in above if over(t, (second,)))
+    return words
+
+
+def _second_date_field(rows, headers, moves, width):
+    """(B5) The field a movement line's second printed date fills: 'booking_date' when the movement
+    headings name a posting date ("Trans date / Post date" on card statements), 'value_date' when they
+    name a settlement or value date ("FECHA OPER LIQ"), and None when no movement line prints a second
+    date or when the headings name neither (the second date's meaning is not printed where it was read).
+
+    The movement heading's own line and the line directly above it count with every word (a heading can
+    print on two lines: "Trans. Post" above "date date Description Amount"). A heading line that is not
+    read as the movement heading (a side column's text printed on the same line) counts through the words
+    over the date columns (``_date_column_headings``).
+    """
+    if not any(len(m['date_tokens']) > 1 for m in moves):
+        return None
+    heading_lines = headers + [rows[h['_index'] - 1] for h in headers
+                               if h['_index'] > 0 and rows[h['_index'] - 1]['page'] == h['page']]
+    words = {label(t['t']) for h in heading_lines for t in h['tokens']} | _date_column_headings(rows, moves, width)
+    if words & _POSTING_WORDS:
+        return 'booking_date'
+    if words & _VALUE_DATE_WORDS:
+        return 'value_date'
+    return None
 
 
 def _rows(rows, moves, resolved, chosen, controls, column_totals, statement, style, exponent, liability, proof, unplaced,

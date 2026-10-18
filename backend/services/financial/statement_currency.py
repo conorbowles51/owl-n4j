@@ -12,6 +12,10 @@ _PREFIXES = {'US$': 'USD', 'CA$': 'CAD', 'C$': 'CAD', 'AU$': 'AUD', 'A$': 'AUD',
 _MARKER = r'(?:[A-Z]{3}|US\$|CA\$|C\$|AU\$|A\$|NZ\$|HK\$|S\$|[€£$¥])'
 _AMOUNT = re.compile(r'^[=(+\-−\s]*(?P<marker>' + _MARKER + r')\s*[+\-−]?\s*\d[\d.,\s]*\)?$')
 _SUFFIX = re.compile(r'^[+\-−(\s]*\d[\d.,\s]*\)?\s*(?P<marker>' + _MARKER + r')$')
+# A marker is evidence of the currency only beside a figure printed as money: with its minor units
+# (two or three decimals) or with thousands groups. A short whole number with a symbol read before it ('£12' beside a label) is not an
+# amount, and on a scan the symbol itself may be a misread '$'.
+_MONEY_FIGURE = re.compile(r'\d[.,]\d{2,3}(?!\d)|\d(?:[.,\s]\d{3})+(?!\d)')
 _LABEL = re.compile(r'^(?:(?:(?:statement|account)\s+)?currency|moneda)\s*:?\s*(.*)$', re.I)
 _CURRENCY_NAMES = {'EURO': 'EUR', 'EUROS': 'EUR', 'PESOS MEXICANOS': 'MXN',
     'DOLARES AMERICANOS': 'USD', 'DOLARES ESTADOUNIDENSES': 'USD', 'US DOLLARS': 'USD',
@@ -71,7 +75,7 @@ def detect_statement_currency(sources, *, layout_id=None, header_text=''):
     for cells in rows:
         for value in cells:
             match = _AMOUNT.fullmatch(value) or _SUFFIX.fullmatch(value)
-            if not match:
+            if not match or not _MONEY_FIGURE.search(value):
                 continue
             marker = match['marker']
             if marker in _SYMBOLS:

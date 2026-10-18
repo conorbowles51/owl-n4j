@@ -1017,12 +1017,20 @@ class QualifiedDollarTests(unittest.TestCase):
         self.assertEqual([E._heading_currencies([row], 'dot') for row in rows], [set(), set(), {'CAD'}, {'MXN'}])
 
 
+def settlement_heading(sources):
+    """The movement heading names its two date columns: 'FECHA OPER LIQ' (operation, settlement)."""
+    for row in sources[0]['rows']:
+        if row['cells'][0]['expected_text'] == 'FECHA':
+            row['cells'][0]['expected_text'] = 'FECHA OPER LIQ'
+    return sources
+
+
 class SettlementDateTests(unittest.TestCase):
     def test_a_settlement_date_after_the_period_keeps_the_row_dated_inside_it(self):
         moves = [('05/MAR 05/MAR', 'TRANSFERENCIA RECIBIDA', '500.00', None, '1,500.00'),
                  ('10/MAR 10/MAR', 'PAGO DE SERVICIO', None, '200.00', '1,300.00'),
                  ('31/MAR 02/ABR', 'PAGO DE NOMINA', None, '50.00', '1,250.00')]
-        st = read_statements(mx_statement(moves, closing='1,250.00'))[0]
+        st = read_statements(settlement_heading(mx_statement(moves, closing='1,250.00')))[0]
         self.assertTrue(st['engine']['proved'], st['engine'])
         last = [r for r in st['_rows'] if r['kind'] == 'transaction'][-1]['fields']
         self.assertEqual((last['date'], last['value_date']), ('2024-03-31', '2024-04-02'))
@@ -1032,6 +1040,70 @@ class SettlementDateTests(unittest.TestCase):
         st = read_statements(mx_statement(moves, closing='950.00'))[0]
         self.assertFalse(st['engine']['proved'])
         self.assertEqual(st['engine']['reason'], 'date_unresolved')
+
+
+class SecondDateHeadingTests(unittest.TestCase):
+    """r9 (B5): a second printed date is saved only under the name its column heading prints."""
+
+    MOVES = [('05/MAR 05/MAR', 'TRANSFERENCIA RECIBIDA', '500.00', None, '1,500.00'),
+             ('10/MAR 11/MAR', 'PAGO DE SERVICIO', None, '200.00', '1,300.00'),
+             ('31/MAR 31/MAR', 'PAGO DE NOMINA', None, '50.00', '1,250.00')]
+
+    @staticmethod
+    def card(qualifier='Post'):
+        """A card table whose date heading prints on two lines with a side column's line between them, and whose
+        'date date Description Amount' line also carries the side column's text (so it is not read as the
+        movement heading); a section heading spans the date columns above the first movement."""
+        lines = [
+            [('Example Card Services Bank, N.A.', 20000, 300000)],
+            [('JANE Q SAMPLE', 20000, 150000), ('Statement Period 02/16/24 - 03/15/24', 330000, 590000)],
+            [('100 MAIN ST APT 1', 20000, 150000), ('Account number ending in 4321', 330000, 590000)],
+            [('SPRINGFIELD, IL 62701', 20000, 170000)],
+            [('Previous Balance', 330000, 430000), ('$100.00', 520000, 560000)],
+            [('Payments', 330000, 430000), ('-$50.00', 520000, 560000)],
+            [('Purchases', 330000, 430000), ('+$90.00', 520000, 560000)],
+            [('New Balance', 330000, 430000), ('$140.00', 520000, 560000)],
+            [('Trans.', 20000, 45000), (qualifier, 60000, 85000), ('Rewards are posted to your account', 330000, 590000)],
+            [('every month for each eligible purchase', 330000, 590000)],
+            [('date', 20000, 45000), ('date', 60000, 85000), ('Description', 100000, 160000),
+             ('see the program terms for other participating companies', 200000, 480000), ('Amount', 500000, 560000)],
+            [('Standard Purchases', 20000, 120000)],
+            [('02/20', 20000, 45000), ('02/21', 60000, 85000), ('ONLINE PAYMENT THANK YOU', 100000, 300000),
+             ('-$50.00', 510000, 560000)],
+            [('03/02', 20000, 45000), ('03/04', 60000, 85000), ('GROCERY STORE 12', 100000, 300000), ('$60.00', 516000, 560000)],
+            [('03/09', 20000, 45000), ('03/10', 60000, 85000), ('HARDWARE SHOP', 100000, 300000), ('$30.00', 516000, 560000)],
+        ]
+        return [page(1, lines)]
+
+    @staticmethod
+    def dates(statement):
+        return [(r['fields'].get('date'), r['fields'].get('booking_date'), r['fields'].get('value_date'))
+                for r in statement['_rows'] if r['kind'] == 'transaction']
+
+    def test_a_posting_heading_two_lines_above_a_side_column_line_names_the_posting_date(self):
+        st = read_statements(self.card())[0]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual(self.dates(st), [('2024-02-20', '2024-02-21', None), ('2024-03-02', '2024-03-04', None),
+                                          ('2024-03-09', '2024-03-10', None)])
+
+    def test_a_second_date_column_whose_heading_names_no_date_kind_does_not_prove(self):
+        st = read_statements(self.card(qualifier='Ref'))[0]
+        self.assertFalse(st['engine']['proved'])
+        self.assertEqual(st['engine']['reason'], 'second_date_unnamed')
+        hold = next(r for r in st['_rows'] if r.get('engine_hold'))
+        self.assertIn('posting date or the value date', hold['issues'][0])
+        # The reconciling reading stays as the prefill, every printed date kept.
+        self.assertEqual([d[2] for d in self.dates(st)], ['2024-02-21', '2024-03-04', '2024-03-10'])
+        plain = read_statements(mx_statement(self.MOVES, closing='1,250.00'))[0]
+        self.assertEqual((plain['engine']['proved'], plain['engine']['reason']), (False, 'second_date_unnamed'))
+
+    def test_a_settlement_heading_names_the_value_date_and_one_date_needs_no_heading(self):
+        st = read_statements(settlement_heading(mx_statement(self.MOVES, closing='1,250.00')))[0]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual(self.dates(st)[1], ('2024-03-10', None, '2024-03-11'))
+        single = [(d.split()[0], t, c, dbt, b) for d, t, c, dbt, b in self.MOVES]
+        st = read_statements(mx_statement(single, closing='1,250.00'))[0]
+        self.assertTrue(st['engine']['proved'], st['engine'])
 
 
 class PriorPeriodBlockTests(unittest.TestCase):
@@ -2247,6 +2319,68 @@ class AddresslessHolderTests(unittest.TestCase):
             self.assertEqual(self.holder(redacted_statement()), '')
 
 
+def barcoded_statement(*, reprint='EMPRESA DE PRUEBA SA DE CV', street='CALLE FALSA 123 PISO 4', unread=(),
+                       reprint_below_movements=False):
+    """r9: an invented Spanish layout whose addressee block (name, street, neighbourhood, city) has lost its
+    postal-code line (printed over the mailing barcode), with an optional continuation page reprinting
+    ``reprint`` as the left cell of its heading line, as some statements reprint the addressee."""
+    sources = mx_statement(MOVES, closing='1,250.00')
+    rows = sources[0]['rows']
+    for row in rows:
+        for c in row['cells']:
+            if c['expected_text'] == 'CIUDAD DE MEXICO C.P. 06000':
+                c['expected_text'] = 'CIUDAD DE MEXICO, CIUDAD DE MEXICO'
+            elif c['expected_text'] == 'CALLE FALSA 123':
+                c['expected_text'] = street
+            elif c['expected_text'] == 'COL CENTRO':
+                c['expected_text'] = 'COL CENTRO, CUAUHTEMOC'
+    # The bank's heading prints well above the addressee block, as on the measured layout.
+    for row in rows[1:]:
+        for c in row['cells']:
+            c['locator']['rect'][1] += 30000
+            c['locator']['rect'][3] += 30000
+    sources[0]['printed_lines'] = dict(checked=True, unread=[list(rect) for rect in unread])
+    if reprint:
+        heading = [(reprint, 20000, 200000), ('CODIGO DE CLIENTE NO. 12345', 330000, 500000)]
+        lines = [[('FECHA', 20000, 60000), ('CONCEPTO', 80000, 160000), ('ABONOS', 330000, 380000),
+                  ('CARGOS', 410000, 460000), ('SALDO', 520000, 560000)],
+                 [('PAGINA 2 DE 2', 500000, 590000)]]
+        lines = lines + [heading] if reprint_below_movements else [heading] + lines
+        sources.append(page(2, lines))
+        sources[1]['printed_lines'] = dict(checked=True, unread=[])
+    return sources
+
+
+class UnanchoredHolderTests(unittest.TestCase):
+    """r9: an addressee block whose postal-code line was not read gives the holder only when the statement
+    reprints its top line above another page's movements."""
+
+    def holder(self, sources):
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+        return read_statements(sources)[0]['holder']
+
+    def test_the_top_line_reprinted_on_another_page_confirms_the_block(self):
+        self.assertEqual(self.holder(barcoded_statement()), 'EMPRESA DE PRUEBA SA DE CV')
+        self.assertEqual(self.holder(barcoded_statement(reprint=None)), '')
+        self.assertEqual(self.holder(barcoded_statement(reprint='OTRA EMPRESA SA DE CV')), '')
+        # A name printed among another page's movements is not the page heading's reprint.
+        self.assertEqual(self.holder(barcoded_statement(reprint_below_movements=True)), '')
+
+    def test_an_unread_text_line_at_the_block_gives_no_holder_and_a_barcode_does_not_count(self):
+        lost = (20000, 70000, 200000, 79000)  # a line just above the name: the name may not be the block's top
+        self.assertEqual(self.holder(barcoded_statement(unread=[lost])), '')
+        barcode = (20000, 125000, 200000, 175000)  # five lines high, under the block
+        self.assertEqual(self.holder(barcoded_statement(unread=[barcode])), 'EMPRESA DE PRUEBA SA DE CV')
+
+    def test_a_block_printing_no_street_number_is_not_an_address(self):
+        self.assertEqual(self.holder(barcoded_statement(street='CALLE FALSA SIN NUMERO')), '')
+
+    def test_the_switch_turns_the_rule_off(self):
+        with mock.patch.object(E, 'UNANCHORED_HOLDER', False):
+            self.assertEqual(self.holder(barcoded_statement()), '')
+
+
 class IssuerAddressTests(unittest.TestCase):
     """r8-mt-engine: a postal-anchored block whose first line is the bank's bare name is the bank's own
     (remittance or return) address, never the holder's."""
@@ -2442,3 +2576,44 @@ class ScanDamageR8Tests(unittest.TestCase):
                  4: dict(numbering=set())}
         self.assertFalse(E._numbering_complete([3, 4], facts))
         self.assertTrue(E._numbering_complete([1, 2, 3, 4], facts))
+
+
+def merged_total_statement(debit_total='250.00', description='COMISION\nTOTAL'):
+    """The invented Spanish layout as a ruled table with no rule between its last movement and its TOTAL
+    line: one stored row of boxes holds both printed lines (E10)."""
+    sources = mx_statement(MOVES, closing='1,250.00')
+    row = sources[0]['rows'][-1]
+    y = row['cells'][0]['locator']['rect'][1]
+
+    def box(text, x0, x1, column):
+        made = cell(text, x0, x1, y, column)
+        made['locator']['rect'][3] = y + 9000 * (text.count('\n') + 1)
+        return made
+    row['cells'] = [box('20/MAR', 20000, 60000, 0), box(description, 80000, 300000, 1), box('500.00', 340000, 380000, 2),
+                    box('50.00\n' + debit_total, 420000, 460000, 3), box('1,250.00', 512000, 560000, 4)]
+    return sources
+
+
+class MergedTotalLineTests(unittest.TestCase):
+    def read(self, sources):
+        statements = read_statements(sources)
+        self.assertEqual(len(statements), 1)
+        st = statements[0]
+        return st, [(r['fields'].get('date'), r['fields'].get('direction'), r['fields'].get('amount_minor'))
+                    for r in st['_rows'] if not r['excluded'] and r['kind'] == 'transaction']
+
+    def test_the_last_movement_and_the_total_line_in_one_row_are_read_apart_and_prove(self):
+        st, moves = self.read(merged_total_statement())
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual(moves, [('2024-03-05', 'credit', '50000'), ('2024-03-10', 'debit', '20000'),
+                                 ('2024-03-20', 'debit', '5000')])
+
+    def test_a_split_total_line_that_differs_from_the_column_holds(self):
+        st, _ = self.read(merged_total_statement(debit_total='260.00'))
+        self.assertFalse(st['engine']['proved'])
+        self.assertEqual(st['engine']['reason'], 'printed_total_differs')
+
+    def test_a_row_whose_last_description_line_is_not_a_total_is_not_split(self):
+        st, moves = self.read(merged_total_statement(description='COMISION\nIVA'))
+        self.assertFalse(st['engine']['proved'])
+        self.assertEqual(moves, [])

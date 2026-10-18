@@ -458,3 +458,44 @@ def test_a_line_page_ocr_skipped_is_read_from_its_own_crop_and_recorded():
     # Without the image (no crop to read) the line stays unread and is recorded so.
     plain, outlines = pdf._read_vector_outlines(page, data, dpi)
     assert outlines['lines_read'] == [] and len(outlines['lines_unread']) == 1
+
+
+def test_a_comma_in_an_amount_belongs_to_its_line_and_the_amount_is_read_whole():
+    # The thousands comma's centre lies below the line's centre band. Grouped as a line of its own, it stood
+    # under the amount's word box but outside the amount's run, so the amount was refused and only its label
+    # (a run of its own, far to the left) was added: a closing line read without its amount.
+    import time
+    from PIL import Image
+    lines = LINES + [(200, 330, 'SALDO FINAL DEL PERIODO:'), (480, 330, '$12,345.67')]
+    doc, page, _ = _page(lines)
+    glyphs = G.page_glyphs(page)
+    words = [(t, b) for t, b in _word_boxes(page, lines) if b[1] < 320]
+    found = G.unread_lines(glyphs, words)
+    assert [len(run) for _, run in sorted(found, key=lambda item: item[0][0])] == [
+        len('SALDOFINALDELPERIODO') + 2, len('$12,345.67')]  # the colon is drawn as two outlines
+    dpi = 300
+    pixmap = page.get_pixmap(dpi=dpi, colorspace=fitz.csRGB, alpha=False)
+    image = Image.frombytes('RGB', (pixmap.width, pixmap.height), pixmap.samples)
+    scale = 72.0 / dpi
+    data = dict(text=[t for t, _ in words], conf=[95] * len(words), block_num=[1] * len(words),
+                par_num=[1] * len(words), line_num=list(range(len(words))), word_num=[1] * len(words),
+                level=[5] * len(words), page_num=[1] * len(words),
+                left=[round(b[0] / scale) for _, b in words], top=[round(b[1] / scale) for _, b in words],
+                width=[round((b[2] - b[0]) / scale) for _, b in words],
+                height=[round((b[3] - b[1]) / scale) for _, b in words])
+    full, outlines = pdf._read_vector_outlines(page, data, dpi, image=image, deadline=time.monotonic() + 60)
+    assert sorted(r['text'] for r in outlines['lines_read']) == ['$12,345.67', 'SALDO FINAL DEL PERIODO:']
+    assert outlines['lines_unread'] == []
+    assert '$12,345.67' in full['text']
+
+
+def test_marks_join_the_nearest_line_and_a_mark_near_no_line_stays_apart():
+    lines = [(40, 100, 'ABC 1,234.56'), (40, 112, 'DEF 7,890.12')]
+    doc, page, _ = _page(lines)
+    glyphs = G.page_glyphs(page)
+    printed = G._printed_lines(glyphs)
+    assert sorted(len(line['glyphs']) for line in printed) == [len('ABC1,234.56'), len('DEF7,890.12')]
+    lone = [(300, 400, ',')]
+    draw_outlined(page, lone)
+    printed = G._printed_lines(G.page_glyphs(page))
+    assert sorted(len(line['glyphs']) for line in printed) == [1, len('ABC1,234.56'), len('DEF7,890.12')]
