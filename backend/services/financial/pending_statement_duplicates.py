@@ -474,6 +474,11 @@ def apply_duplicate_disposition(session, *, case_id, file, proposal, request=Non
     printed_counts = Counter((entry['file_id'], _printed_key(entry.get('scope'))) for entries in sources.values()
                              for entry in entries if entry['file_id'] in documents or entry['file_id'] == str(file.id))
     own_key = _printed_key(own)
+    proved_cache = []
+    def own_proved():
+        if not proved_cache:
+            proved_cache.append(_proved(proposal, request))
+        return proved_cache[0]
     for entry in candidates:
         key = (entry['file_id'], entry.get('statement_id') or '')
         loaded = _candidate(session, case_id, entry, cache)
@@ -500,11 +505,17 @@ def apply_duplicate_disposition(session, *, case_id, file, proposal, request=Non
             if (conflicting_saved_review or (own_edited and other_edited)) and own_shape != _review_shape(other_proposal, other_request):
                 conflicts.append(entry)
                 continue
+            other_proved = _proved(other_proposal, other_request)
+            if other_proved and own_proved() and statement_content(other_proposal)[0] != own_content:
+                # Both readings reconcile, yet their money differs: one reader
+                # misread while still reconciling. A person compares them.
+                conflicts.append(entry)
+                continue
             basis = documents[entry['file_id']]
             peers.append((entry, other_file, reviewed, basis, other_proposal['revision'],
                 ['page_images' if basis == 'identical_pages' else 'source_sha256',
                  *(['source_pages'] if by_pages else ['account_reference', 'period_start', 'period_end', 'currency'])],
-                other_edited, _proved(other_proposal, other_request)))
+                other_edited, other_proved))
             continue
         if key in page_only:
             continue  # Nominated by its document only, and not on the same pages.
@@ -558,7 +569,7 @@ def apply_duplicate_disposition(session, *, case_id, file, proposal, request=Non
     if not peers:
         return _persist(file, proposal, request, dict(status='retained', label='Retained statement', basis=None,
             retained=_own_link(file, proposal), reason='No confirmed duplicate remained after comparing the current identities.'), actor)
-    own_rank = (1, not bool(proposal.get('saved_review')), not own_edited, not _proved(proposal, request),
+    own_rank = (1, not bool(proposal.get('saved_review')), not own_edited, not own_proved(),
         not bool(previous and previous.get('status') == 'retained'),
         str(file.created_at), str(file.id), proposal.get('statement_id') or '')
     ranked = sorted(peers, key=peer_rank)

@@ -296,6 +296,28 @@ class PageCopyTests(TestCase):
         # Equal account and dates, different money: held for comparison, nothing saved.
         self.assertEqual(self.saved(self.primary, other), ([], 0))
 
+    def test_two_reconciling_readings_of_one_page_with_different_money_go_to_a_person(self):
+        # Compensating misreads: both readings reconcile, their payments differ.
+        copy = self.copy()
+        with self.f.SessionLocal() as db:
+            geometry = db.get(EvidenceTableGeometry, (copy.id, 1))
+            changed = {(2, 2): '\u20ac126,000', (2, 4): '\u20ac138,450', (3, 3): '\u20ac121,000'}
+            payload = [dict(entry) for entry in geometry.payload]
+            table = dict(payload[0]['table'])
+            table['values'] = [dict(value, text=changed[(value['row'], value['column'])])
+                               if (value['row'], value['column']) in changed else value for value in table['values']]
+            payload[0] = dict(payload[0], table=table)
+            geometry.payload = payload
+            db.commit()
+        with patch.object(queue_save, 'AUTO_SAVE_READY', False):
+            batch = self.batch(self.primary, copy)
+            for _ in range(10):
+                self.fixture.b.advance(batch)
+        items = self.items()
+        self.assertNotIn('duplicate_ignored', {items[self.primary.id][0], items[copy.id][0]})
+        statuses = {(summary.get('duplicate_disposition') or {}).get('status') for _, summary in items.values()}
+        self.assertIn('needs_comparison', statuses)
+
     def _edit(self, batch, file, description):
         from services.financial.statement_import import StatementReviewDraft
         item = next(i for i in self.fixture.b.status(batch)['items'] if i['file_id'] == str(file.id))
