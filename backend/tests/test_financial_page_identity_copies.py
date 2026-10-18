@@ -318,6 +318,16 @@ class PageCopyTests(TestCase):
         statuses = {(summary.get('duplicate_disposition') or {}).get('status') for _, summary in items.values()}
         self.assertIn('needs_comparison', statuses)
 
+    def test_a_reading_with_an_extra_printed_balance_is_not_a_money_conflict(self):
+        from services.financial.pending_statement_duplicates import _money_conflicts
+        def reading(balances, amount='100'):
+            rows = [dict(kind='transaction', excluded=False, fields=dict(amount_minor=amount, direction='debit', date='2023-01-02'))]
+            rows += [dict(kind='balance', fields=dict(balance=value)) for value in balances]
+            return dict(rows=rows, metadata=dict(balance_convention='asset_balance'))
+        self.assertFalse(_money_conflicts(reading(['500']), reading(['500', '400'])))
+        self.assertTrue(_money_conflicts(reading(['500']), reading(['501', '400'])))
+        self.assertTrue(_money_conflicts(reading(['500']), reading(['500'], amount='101')))
+
     def _edit(self, batch, file, description):
         from services.financial.statement_import import StatementReviewDraft
         item = next(i for i in self.fixture.b.status(batch)['items'] if i['file_id'] == str(file.id))

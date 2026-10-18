@@ -4,6 +4,7 @@ No evidence, review, source or payment is removed. A case lock serializes the
 choice of retained source with imports. Metadata equality nominates candidates;
 matching actual financial readings (or source bytes) establishes a copy.
 """
+from collections import Counter
 from copy import deepcopy
 from datetime import datetime, timezone
 from uuid import UUID
@@ -286,6 +287,25 @@ def _page_copy(left, right):
     return True
 
 
+def _money_conflicts(left, right):
+    """Two readings whose money cannot both be right: different payments, or a printed
+    balance read in both with different values. One reading capturing more printed
+    balance rows than the other is not a conflict."""
+    def payments(proposal):
+        return sorted((str(row['fields'].get('amount_minor') or ''), row['fields'].get('direction') or '',
+            row['fields'].get('date') or row['fields'].get('booking_date') or '')
+            for row in proposal.get('rows', []) if row.get('kind') == 'transaction' and not row.get('excluded'))
+    def balances(proposal):
+        return Counter(str(row['fields']['balance']) for row in proposal.get('rows', [])
+                       if row.get('kind') == 'balance' and row['fields'].get('balance') is not None)
+    if payments(left) != payments(right):
+        return True
+    if (left.get('metadata') or {}).get('balance_convention') != (right.get('metadata') or {}).get('balance_convention'):
+        return True
+    a, b = balances(left), balances(right)
+    return not (a <= b or b <= a)
+
+
 def _printed_key(descriptor):
     """The printed account reference, currency and dates of a statement scope, without the
     reader's bank wording or product type; None when no reference with digits was read."""
@@ -470,7 +490,6 @@ def apply_duplicate_disposition(session, *, case_id, file, proposal, request=Non
     cache = {}
     # Within one document, how many statements of each reading print each
     # account reference and period (the same printed statement must be unique).
-    from collections import Counter
     printed_counts = Counter((entry['file_id'], _printed_key(entry.get('scope'))) for entries in sources.values()
                              for entry in entries if entry['file_id'] in documents or entry['file_id'] == str(file.id))
     own_key = _printed_key(own)
@@ -506,7 +525,7 @@ def apply_duplicate_disposition(session, *, case_id, file, proposal, request=Non
                 conflicts.append(entry)
                 continue
             other_proved = _proved(other_proposal, other_request)
-            if other_proved and own_proved() and statement_content(other_proposal)[0] != own_content:
+            if other_proved and own_proved() and _money_conflicts(proposal, other_proposal):
                 # Both readings reconcile, yet their money differs: one reader
                 # misread while still reconciling. A person compares them.
                 conflicts.append(entry)
