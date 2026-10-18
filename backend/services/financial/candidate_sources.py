@@ -49,8 +49,9 @@ def original_layer_holder(locations, page_number):
 def printed_lines(locations, page_number):
     """``{'checked': True, 'unread': [rect, ...]}`` when the engine checked a page's printed lines against
     its reading (vector-text pages: ``vector_glyph_reading`` with ``lines_checked``), each rect a printed
-    line still under no read word (page points x1000, displayed page space); ``{}`` otherwise, and for
-    every reading made before the check existed."""
+    line still under no read word (page points x1000, displayed page space), plus ``'layer'``: the rects of
+    the lines the skipped-line layer read, when it read any; ``{}`` otherwise, and for every reading made
+    before the check existed."""
     for location in locations if isinstance(locations, list) else []:
         if isinstance(location, dict) and location.get('kind') == 'page' and location.get('page_number') == page_number:
             for refinement in location.get('ocr_refinements') or []:
@@ -58,7 +59,12 @@ def printed_lines(locations, page_number):
                         and refinement.get('lines_checked') is True):
                     unread = [rect for rect in refinement.get('lines_unread') or []
                               if isinstance(rect, list) and len(rect) == 4 and all(type(v) is int for v in rect)]
-                    return dict(checked=True, unread=unread)
+                    # Lines the skipped-line layer read (reading revision v20 on): the statement engine also
+                    # reads the page without them and keeps whichever reading proves (the layer guard).
+                    layer = [line['rect'] for line in refinement.get('lines_read') or []
+                             if isinstance(line, dict) and isinstance(line.get('rect'), list) and len(line['rect']) == 4
+                             and all(type(v) is int for v in line['rect'])]
+                    return dict(checked=True, unread=unread, **(dict(layer=layer) if layer else {}))
     return {}
 
 

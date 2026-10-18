@@ -88,6 +88,9 @@ READER_RECOVERY_FLAG = 'LOUPE_FINANCIAL_READER_RECOVERY'
 # printed line's label without its amount whenever the amount printed a thousands comma (the comma was
 # grouped as a line of its own), so a closing line read as 'SALDO FINAL DEL PERIODO:' with no amount and
 # the Santander closing reread no longer ran.
+# The layer guard (revision v22) added r9-engine-santander's file 3d3b9d2b (v21): its targeted re-reads
+# could be outvoted by skipped-line layer rows overlapping them, so a period the page proved without the
+# layer was held.
 # If a later change edits pdf_extraction.py, add the
 # digest of the current file here.
 AFFECTED_EXTRACTION_SHA256 = (
@@ -115,6 +118,7 @@ AFFECTED_EXTRACTION_SHA256 = (
     '015bd1d2a28867ae8771cb7a69b67fca4e30302468e394b93d572fcef6e8800a',  # r5-andrews-cards (v17)
     '8f3539f3afca7d9e4d613967aff51000e1c0fd93688f2e35a6534cb1628f0b37',  # 7b877d0b r7-alex-queue (v19)
     'ed905742085b39bead123c80c47af29dd08f3c73790a8769e964b4e39c266815',  # 7c215ef1 r8-mt-engine (v20)
+    '3d3b9d2b0ab124c1722573dbde774c5030c8eddf2feb3daaacf284873a837e13',  # 3a97716c r9-engine-santander (v21)
 )
 READER_RECOVERY = RecoveryCampaign(READER_RECOVERY_RELEASE, {'pdf_extraction.py': AFFECTED_EXTRACTION_SHA256},
     batch_reread=True)

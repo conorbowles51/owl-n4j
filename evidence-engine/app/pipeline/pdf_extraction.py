@@ -55,7 +55,10 @@ MAX_OSD_TIMEOUT_SECONDS = 30.0
 # a page drawing its characters as outlines over an image covering most of it is vector text.
 # v21 (r9-engine-santander): a mark shorter than half a character (a thousands comma, a period) joins the
 # printed line it sits on, so a skipped line's amount is read whole instead of leaving its label alone.
-PDF_READING_REVISION = 'bank-payment-rows-v21'
+# v22 (layer guard): the skipped-line layer is held aside while the targeted re-reads run and put
+# back only where none of them added a word (_withhold_layer, _restore_layer). v21 is
+# r9-engine-santander's revision; either order of merging keeps this one distinct.
+PDF_READING_REVISION = 'bank-payment-rows-v22'
 OSD_INSUFFICIENT_TEXT_MARKERS = ("too few characters", "skipping this page")
 
 
@@ -886,6 +889,67 @@ def _read_unread_lines(image: Image.Image, data: dict, words: list, glyphs: list
     return data, record
 
 
+# The layer guard. A reading step added after the targeted re-reads existed (the skipped-line layer,
+# reading revision v20) only adds to a page. The targeted re-reads below (BBVA fields, dates, amounts,
+# Santander closing strip) decide whether to run from what the page reading lacks, so a partial line
+# the layer added could switch one off (v20: a closing label read without its amount stopped the
+# Santander closing-strip re-read, and 18 periods that read before were held). The layer's rows are
+# therefore held aside while those re-reads run, and put back after them only where no re-read added
+# a word: a line overlapping a re-read's word is left out whole (part of a line is not its reading).
+LAYER_ROWS = '_layer_rows'
+
+
+def _withhold_layer(data: dict, rows: list[int]) -> tuple[dict, list[dict]]:
+    """``data`` without the given rows, and those rows (one dict of field values each)."""
+    texts = data.get("text") or []
+    held = set(rows)
+    if not held:
+        return data, []
+    columns = [name for name, values in data.items() if isinstance(values, list) and len(values) == len(texts)]
+    layer = [{name: data[name][i] for name in columns} for i in sorted(held) if i < len(texts)]
+    base = {name: ([v for i, v in enumerate(values) if i not in held] if name in columns else values)
+            for name, values in data.items()}
+    return base, layer
+
+
+def _restore_layer(data: dict, layer: list[dict], before: dict) -> tuple[dict, list[dict]]:
+    """``data`` with the layer's lines put back, except a line overlapping a word the targeted re-reads
+    added or changed (any word of ``data`` that is not a word of ``before``, the page as they found it).
+    Returns the data and the lines left out ({text, rect} in image pixels, words joined as read)."""
+    if not layer:
+        return data, []
+    def box(row):
+        return (row.get('left', 0), row.get('top', 0), row.get('left', 0) + row.get('width', 0),
+                row.get('top', 0) + row.get('height', 0))
+    def rows_of(values):
+        texts = values.get("text") or []
+        return [dict(text=str(texts[i] or '').strip(), left=values['left'][i], top=values['top'][i],
+                     width=values['width'][i], height=values['height'][i]) for i in range(len(texts))]
+    found = {(r['text'], box(r)) for r in rows_of(before) if r['text']}
+    reread = [box(r) for r in rows_of(data) if r['text'] and (r['text'], box(r)) not in found]
+    def overlaps(a, b):
+        return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
+    lines = {}
+    for row in layer:
+        lines.setdefault(row.get('block_num'), []).append(row)
+    texts = data.get("text") or []
+    columns = [name for name, values in data.items() if isinstance(values, list) and len(values) == len(texts)]
+    data = {name: (list(values) if name in columns else values) for name, values in data.items()}
+    block = max((b for b in data.get('block_num') or [0] if isinstance(b, int)), default=0)
+    left_out = []
+    for number, (_, line) in enumerate(sorted(lines.items(), key=lambda item: str(item[0])), start=1):
+        if any(overlaps(box(row), other) for row in line for other in reread):
+            boxes = [box(row) for row in line]
+            left_out.append(dict(text=' '.join(str(row.get('text') or '') for row in line).strip(),
+                                 rect=[min(b[0] for b in boxes), min(b[1] for b in boxes),
+                                       max(b[2] for b in boxes), max(b[3] for b in boxes)]))
+            continue
+        for row in line:
+            for name in columns:
+                data[name].append(block + number if name == 'block_num' else row.get(name, 0))
+    return data, left_out
+
+
 def _read_vector_outlines(page: fitz.Page, data: dict, dpi: int, *, image: Image.Image | None = None,
                           deadline: float | None = None) -> tuple[dict, dict | None]:
     """``data`` with each recognised word re-read from the page's character outlines (``vector_glyph_reading``).
@@ -908,8 +972,11 @@ def _read_vector_outlines(page: fitz.Page, data: dict, dpi: int, *, image: Image
     drawings = page.get_drawings()
     glyphs = page_glyphs(page, drawings)
     lines_read = []
+    layer_start = len(texts)
     if image is not None and glyphs:
         data, lines_read = _read_unread_lines(image, data, words, glyphs, dpi, deadline)
+    layer_rows = list(range(layer_start, len(data.get("text") or [])))
+    if lines_read:
         texts = data["text"]
         words = [(str(texts[i] or ''), (data["left"][i] * scale, data["top"][i] * scale,
                   (data["left"][i] + data["width"][i]) * scale, (data["top"][i] + data["height"][i]) * scale))
@@ -961,6 +1028,8 @@ def _read_vector_outlines(page: fitz.Page, data: dict, dpi: int, *, image: Image
                   words_added=[dict(text=t, rect=[round(v * 1000) for v in box]) for t, box, _ in added],
                   lines_read=lines_read, lines_checked=True, lines_unread=lines_unread,
                   labels=[[shape, label, votes, total] for shape, (label, votes, total) in sorted(labels.items())])
+    # Not stored: which rows of the returned data are the skipped-line layer (see _withhold_layer).
+    record[LAYER_ROWS] = layer_rows
     return (dict(data, text=new_texts) if changed or dropped or added or lines_read else data), record
 
 
@@ -1102,8 +1171,11 @@ def _ocr_page(page: fitz.Page, *, drop_inkless_words: bool = False,
     if inkless:
         refinements.append(dict(field='ocr_inkless_words', decision='dropped', threshold=INKLESS_WORD_THRESHOLD,
                                 words=inkless))
+    layer = []
     if outlines:
+        best_data, layer = _withhold_layer(best_data, outlines.pop(LAYER_ROWS, []))
         refinements.append(outlines)
+    before_rereads = best_data
     try:
         from app.pipeline.financial_bbva_ocr import reread_bbva_fields
         refined_data, comparisons = reread_bbva_fields(page, best_data,
@@ -1161,6 +1233,23 @@ def _ocr_page(page: fitz.Page, *, drop_inkless_words: bool = False,
             refinements.extend(comparisons)
     except Exception:
         logger.warning('Optional Santander closing OCR unavailable; retaining the page reading', exc_info=True)
+    if layer:
+        best_data, left_out = _restore_layer(best_data, layer, before_rereads)
+        if left_out:
+            # Recorded in page points x1000 like every other rect of the record; a line left out is
+            # not part of the reading, so it leaves lines_read.
+            to_page = 72.0 / dpi * 1000
+            outlines['lines_left_to_rereads'] = [dict(line, rect=[round(v * to_page) for v in line['rect']])
+                                                 for line in left_out]
+            left_texts = [line['text'] for line in left_out]
+            kept = []
+            for line in outlines['lines_read']:
+                if line['text'] in left_texts:
+                    left_texts.remove(line['text'])
+                else:
+                    kept.append(line)
+            outlines['lines_read'] = kept
+        text, confidence = _text_and_confidence_from_tesseract(best_data)
     if best_rotation:
         # Later crops of this page's cells must be turned the same way.
         refinements.append(dict(field='page_orientation', rotation=best_rotation))

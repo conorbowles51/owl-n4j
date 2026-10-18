@@ -2617,3 +2617,70 @@ class MergedTotalLineTests(unittest.TestCase):
         st, moves = self.read(merged_total_statement(description='COMISION\nIVA'))
         self.assertFalse(st['engine']['proved'])
         self.assertEqual(moves, [])
+
+
+class LayerGuardTests(unittest.TestCase):
+    """The layer guard: lines the skipped-line layer read never cost a period the page proved without them."""
+
+    def setUp(self):
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+
+    def with_layer_line(self, line, sources=None):
+        sources = sources or mx_statement(MOVES, closing='1,250.00')
+        rows = sources[0]['rows']
+        y = max(c['locator']['rect'][1] for r in rows for c in r['cells']) + 12000
+        cells = [cell(t, x0, x1, y, c) for c, (t, x0, x1) in enumerate(line)]
+        rows.append(dict(row_index=len(rows), cells=cells))
+        rect = [min(c['locator']['rect'][0] for c in cells) - 500, y - 500,
+                max(c['locator']['rect'][2] for c in cells) + 500, y + 9500]
+        sources[0]['printed_lines'] = dict(checked=True, unread=[], layer=[rect])
+        return sources, rect
+
+    def test_a_layer_line_that_breaks_a_proved_period_is_read_without(self):
+        plain = read_statements(mx_statement(MOVES, closing='1,250.00'))
+        self.assertTrue(plain[0]['engine']['proved'])
+        sources, rect = self.with_layer_line([('25/MAR', 20000, 60000), ('CARGO', 80000, 300000),
+                                              ('77.00', 460000 - 6000 * 5, 460000)])
+        self.assertFalse(E._read_statements(sources)[0]['engine']['proved'])  # the layered reading alone
+        statements = read_statements(sources)
+        self.assertEqual(len(statements), 1)
+        self.assertTrue(statements[0]['engine']['proved'], statements[0]['engine'])
+        self.assertEqual(statements[0]['reading_layer'], 'without_skipped_lines')
+        self.assertEqual(statements[0]['id'], plain[0]['id'])
+        # The period is found again by its id in a fresh reading of the same sources.
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+        self.assertEqual(read_statements(sources)[0]['id'], plain[0]['id'])
+
+    def test_a_layer_line_that_costs_nothing_keeps_the_layered_reading(self):
+        sources, _ = self.with_layer_line([('GRACIAS POR SU PREFERENCIA', 20000, 300000)])
+        statements = read_statements(sources)
+        self.assertTrue(statements[0]['engine']['proved'])
+        self.assertNotIn('reading_layer', statements[0])
+        self.assertEqual(statements, E._read_statements(sources))
+
+    def test_without_the_layer_its_lines_are_unread_again(self):
+        sources, rect = self.with_layer_line([('GRACIAS POR SU PREFERENCIA', 20000, 300000)])
+        stripped = E._without_layer(sources)
+        texts = [c['expected_text'] for r in stripped[0]['rows'] for c in r['cells']]
+        self.assertNotIn('GRACIAS POR SU PREFERENCIA', texts)
+        self.assertEqual(stripped[0]['printed_lines'], dict(checked=True, unread=[rect]))
+        self.assertIsNone(E._without_layer(mx_statement(MOVES, closing='1,250.00')))
+
+    def test_a_group_keeps_the_reading_that_proves_more(self):
+        proved = lambda pages, ok, name: dict(page_numbers=pages, engine=dict(proved=ok), id=name)
+        layered = [proved([1], True, 'a'), proved([2, 3], False, 'b')]
+        base = [proved([1], True, 'a'), proved([2], True, 'c'), proved([3], True, 'd')]
+        kept = E._keep_proved(layered, base)
+        self.assertEqual([st['id'] for st in kept], ['a', 'c', 'd'])
+        self.assertNotIn('reading_layer', kept[0])
+        self.assertEqual(kept[1]['reading_layer'], 'without_skipped_lines')
+        # Equal proof: the layered reading stays, in its own order.
+        self.assertIs(E._keep_proved(layered[:1], base[:1])[0], layered[0])
+
+    def test_the_layer_is_part_of_the_reading_cache_key(self):
+        sources, rect = self.with_layer_line([('GRACIAS POR SU PREFERENCIA', 20000, 300000)])
+        without = [dict(s) for s in sources]
+        without[0]['printed_lines'] = dict(checked=True, unread=[])
+        self.assertNotEqual(E._source_signature(sources), E._source_signature(without))
