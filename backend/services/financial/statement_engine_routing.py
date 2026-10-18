@@ -219,6 +219,30 @@ def _rows_apart(engine_statement, library_period, by_address):
     return all(key in rows and _furniture(rows[key]) for key in ours & theirs)
 
 
+# When both readers read a period alike, the engine serves it (under the library period's id, as a replacement)
+# where it alone establishes a fact the period needs from its own printed lines: the currency printed in the
+# section or under the statement's single currency label where the library read none, or, for a period without movements, the printed zero deposit and
+# withdrawal totals beside equal balances (the general no-activity proof). Off: the library keeps every agreed
+# period, as before.
+AGREEMENT_PREFERS_ENGINE = True
+
+
+def _engine_completes(statement, engine_rows, group, sources, currency):
+    from services.financial.statement_currency import currencies_by_statement
+    if not statement.get('currency') or statement['currency'] != currency:
+        return False
+    library_currency = group.get('currency') or (currencies_by_statement([group], sources)[0].get('currency') or '')
+    if not library_currency:
+        return statement.get('currency_source') in ('printed_account_section', 'printed_statement_currency')
+    if library_currency != statement['currency']:
+        return False
+    if any(r['kind'] == 'transaction' and not r['excluded'] for r in engine_rows):
+        return False
+    from services.financial.statement_printed_no_activity import zero_totals_evidence
+    public = {k: v for k, v in statement.items() if k != '_rows'}
+    return bool((zero_totals_evidence(engine_rows, public, currency, family='generic') or {}).get('verified'))
+
+
 def disagreement_row(rows, choice):
     anchor = next((r for r in rows if r['kind'] == 'balance'), rows[0] if rows else None)
     base = dict(anchor) if anchor else dict(id='engine', page_number=None, table_index=None, row_index=None,
@@ -338,7 +362,8 @@ def route_catalog(sources, library_catalog):
             # balance means a different section, not a different reading of this one.
             routing['scoped_unpaired'] = routing.get('scoped_unpaired', 0) + 1
             continue
-        if library_proved:
+        if library_proved and not (reading_key(library_rows) == reading_key(engine_rows) and AGREEMENT_PREFERS_ENGINE
+                                   and _engine_completes(statement, engine_rows, group, sources, currency)):
             if reading_key(library_rows) == reading_key(engine_rows):
                 group['engine_agrees'] = True
                 routing['agreements'] += 1

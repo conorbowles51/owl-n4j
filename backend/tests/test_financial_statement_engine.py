@@ -2802,3 +2802,41 @@ class FurnitureCoverTests(unittest.TestCase):
         self.assertTrue(_covers(engine, scoped([(1, [0, 1, 3])]), by_address))
         self.assertFalse(_covers(scoped([(1, [0])]), scoped([(1, [0, 2])]), by_address))
         self.assertFalse(_covers(engine, scoped([(1, [0, 1])])))  # without the stored rows: every row, as before
+
+
+class AgreementPrefersEngineTests(unittest.TestCase):
+    """r10: when both readers read a period alike, the engine serves it only where it alone establishes a fact
+    from the period's own printed lines: a printed currency the library did not read, or a quiet period's
+    printed zero totals."""
+
+    @staticmethod
+    def statement(currency='MXN', source='printed_statement_currency'):
+        return dict(currency=currency, currency_source=source, _rows=[])
+
+    @staticmethod
+    def row(kind, excluded=False):
+        return dict(kind=kind, excluded=excluded, fields={})
+
+    def test_a_printed_currency_the_library_did_not_read(self):
+        from services.financial.statement_engine_routing import _engine_completes
+        group = dict(currency='USD')
+        with mock.patch('services.financial.statement_currency.currencies_by_statement', return_value=[{}]):
+            self.assertTrue(_engine_completes(self.statement(), [], dict(), [], 'MXN'))
+            self.assertTrue(_engine_completes(self.statement(source='printed_account_section'), [], dict(), [], 'MXN'))
+            self.assertFalse(_engine_completes(self.statement(source=''), [], dict(), [], 'MXN'))
+            self.assertFalse(_engine_completes(self.statement(currency=''), [], dict(), [], ''))
+        self.assertFalse(_engine_completes(self.statement(), [], group, [], 'MXN'))  # the readers differ
+
+    def test_a_quiet_period_needs_its_printed_zero_totals(self):
+        from services.financial.statement_engine_routing import _engine_completes
+        group = dict(currency='MXN')
+        moving = [self.row('balance', True), self.row('transaction'), self.row('balance', True)]
+        quiet = [self.row('balance', True), self.row('statement_total', True), self.row('balance', True)]
+        target = 'services.financial.statement_printed_no_activity.zero_totals_evidence'
+        with mock.patch(target, return_value=dict(verified=True)) as evidence:
+            self.assertFalse(_engine_completes(self.statement(), moving, group, [], 'MXN'))
+            evidence.assert_not_called()
+            self.assertTrue(_engine_completes(self.statement(), quiet, group, [], 'MXN'))
+            self.assertEqual(evidence.call_args.kwargs['family'], 'generic')
+        with mock.patch(target, return_value=None):
+            self.assertFalse(_engine_completes(self.statement(), quiet, group, [], 'MXN'))
