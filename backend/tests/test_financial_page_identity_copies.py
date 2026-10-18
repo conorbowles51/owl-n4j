@@ -236,8 +236,9 @@ class PageCopyTests(TestCase):
         self.drain(self.batch(copy))
         self.assert_one_statement(self.primary, copy)
 
-    def _other_reader(self, file):
-        """The file read by another reader: other bank wording and another product type."""
+    def _other_reader(self, file, pages=None):
+        """The file read by another reader: other bank wording and another product type
+        (and, with ``pages``, the statement's pages grouped differently)."""
         real_read = statement_import.read_statement_import
 
         def read(session, **kwargs):
@@ -245,6 +246,10 @@ class PageCopyTests(TestCase):
             if str(kwargs.get('evidence_file_id')) == str(file.id) and proposal.get('metadata'):
                 proposal = {**proposal, 'metadata': {**proposal['metadata'], 'account_type': 'savings',
                                                      'institution': 'SYNTHETIC BANK SA INSTITUCION DE BANCA'}}
+                if pages:
+                    proposal['statement_page_numbers'] = pages
+                    proposal['statement_choices'] = [dict(choice, page_numbers=pages)
+                                                     for choice in proposal.get('statement_choices') or []]
             return proposal
         return patch.multiple(statement_import, read_statement_import=read), \
             patch.object(batches, 'read_statement_import', read)
@@ -255,6 +260,16 @@ class PageCopyTests(TestCase):
         with first, second:
             self.drain(self.batch(self.primary, copy))
         self.assert_one_statement(self.primary, copy)
+
+    def test_a_statement_whose_pages_another_reader_grouped_differently_is_one_statement(self):
+        # Same document, same printed account reference and dates, the only such
+        # statement in each reading, sharing a page: one printed statement.
+        copy = self.copy()
+        first, second = self._other_reader(copy, pages=[1, 2])
+        with first, second:
+            self.drain(self.batch(self.primary, copy))
+        disposition = self.assert_one_statement(self.primary, copy)
+        self.assertIn('account_reference', disposition['matched_fields'])
 
     def test_without_page_identity_the_differently_read_copy_was_saved_twice(self):
         # The defect this fixes (r9-engine-santander finding 2), kept as a check

@@ -286,6 +286,16 @@ def _page_copy(left, right):
     return True
 
 
+def _printed_key(descriptor):
+    """The printed account reference, currency and dates of a statement scope, without the
+    reader's bank wording or product type; None when no reference with digits was read."""
+    from services.financial.statement_import_overlap import _printed_reference
+    reference = _printed_reference(descriptor)
+    if not descriptor or not reference or not any(ch.isdigit() for ch in reference):
+        return None
+    return (reference, descriptor.get('currency'), descriptor.get('start'), descriptor.get('end'))
+
+
 def _edited(proposal, request):
     """An investigator's work on this reading: a saved review or values changed from the reading."""
     return bool((proposal.get('saved_review') or {}).get('request')) or \
@@ -458,6 +468,12 @@ def apply_duplicate_disposition(session, *, case_id, file, proposal, request=Non
         _review_shape(proposal, draft) != own_shape for draft in own_drafts if draft)
     peers, conflicts = [], []
     cache = {}
+    # Within one document, how many statements of each reading print each
+    # account reference and period (the same printed statement must be unique).
+    from collections import Counter
+    printed_counts = Counter((entry['file_id'], _printed_key(entry.get('scope'))) for entries in sources.values()
+                             for entry in entries if entry['file_id'] in documents or entry['file_id'] == str(file.id))
+    own_key = _printed_key(own)
     for entry in candidates:
         key = (entry['file_id'], entry.get('statement_id') or '')
         loaded = _candidate(session, case_id, entry, cache)
@@ -467,9 +483,17 @@ def apply_duplicate_disposition(session, *, case_id, file, proposal, request=Non
             continue
         other_file, other_proposal, other_request = loaded
         reviewed = bool((other_proposal.get('saved_review') or {}).get('request')) or bool(other_request.get('coverage_review_reason'))
-        if entry['file_id'] in documents and _page_copy(proposal, other_proposal):
-            # The same pages of the same document: one printed statement. The
-            # better proved reading is kept and the other set aside, whatever
+        same_pages = by_pages = entry['file_id'] in documents and _page_copy(proposal, other_proposal)
+        if entry['file_id'] in documents and not same_pages and own_key:
+            # Two readers can group one printed statement's pages differently.
+            # In the same document, the one statement each reading prints for
+            # this account reference and period, on shared pages, is that statement.
+            other_key = _printed_key(scope({**other_request, 'account_type': ''}))
+            same_pages = bool(other_key == own_key and printed_counts[(entry['file_id'], own_key)] == 1
+                and printed_counts[(str(file.id), own_key)] <= 1
+                and _section_pages(proposal) & _section_pages(other_proposal))
+        if same_pages:
+            # One printed statement of one document. The better proved reading is kept and the other set aside, whatever
             # their readings say; only two different investigator edits of it
             # need a person to compare them.
             other_edited = _edited(other_proposal, other_request)
@@ -478,7 +502,8 @@ def apply_duplicate_disposition(session, *, case_id, file, proposal, request=Non
                 continue
             basis = documents[entry['file_id']]
             peers.append((entry, other_file, reviewed, basis, other_proposal['revision'],
-                ['page_images' if basis == 'identical_pages' else 'source_sha256', 'source_pages'],
+                ['page_images' if basis == 'identical_pages' else 'source_sha256',
+                 *(['source_pages'] if by_pages else ['account_reference', 'period_start', 'period_end', 'currency'])],
                 other_edited, _proved(other_proposal, other_request)))
             continue
         if key in page_only:
