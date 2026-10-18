@@ -16,6 +16,8 @@ from types import SimpleNamespace
 
 from sqlalchemy import literal_column, select
 
+from services.financial.request_timing import count
+
 
 class RowValues:
     """Per process: primary key -> (row version, {name: value}) for one table and one set of keys."""
@@ -35,6 +37,7 @@ class RowValues:
         transform = transform or (lambda values: values)
         if session.get_bind().dialect.name != 'postgresql':
             query = select(*columns, *keys).where(*conditions)
+            count('row_reads_unversioned')
             return [SimpleNamespace(**dict(zip(column_names, row[:len(columns)])),
                                     **transform(dict(zip(names, row[len(columns):]))))
                     for row in session.execute(query.order_by(order_by) if order_by is not None else query)]
@@ -44,6 +47,9 @@ class RowValues:
         with self._lock:
             known = {row[0]: self._values.get(row[0]) for row in current}
         stale = [row[0] for row in current if (known[row[0]] or (None,))[0] != row.row_version]
+        # For the import timing line: rows whose values were reused, and read again.
+        count('rows_reused', len(current) - len(stale))
+        count('rows_reread', len(stale))
         for start in range(0, len(stale), 500):
             for row in session.execute(select(identifier, version, *keys).where(identifier.in_(stale[start:start + 500]))):
                 # Stored under the version read with the values: a row changed between the two reads is

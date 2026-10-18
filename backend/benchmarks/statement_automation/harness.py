@@ -203,6 +203,19 @@ def drain_readiness(refresh, backlog, *, clock=time.monotonic):
     return dict(before=before, after=pending, rounds=rounds, seconds=clock() - started)
 
 
+def drain_sweep_save(sweep, *, max_rounds=10, clock=time.monotonic):
+    """Rounds of the worker's sweep save until a round claims nothing; the claimed statement ids."""
+    started = clock()
+    claimed, rounds = [], 0
+    while rounds < max_rounds:
+        outcome = sweep()
+        rounds += 1
+        claimed += outcome.get('item_ids', [])
+        if not outcome.get('queued'):
+            break
+    return dict(queued=len(claimed), item_ids=claimed, rounds=rounds, seconds=clock() - started)
+
+
 def saved_by_system(db, batch_id, Item, actor):
     """Ids of the batch's statements claimed by the automatic save (actor System), saved or saving."""
     from sqlalchemy import select
@@ -594,6 +607,13 @@ def run(out, python, concurrency, corpus=CORPUS, readings=None, compare=None):
 
     # The same sweep the batch worker runs every minute in the service.
     readiness = drain_readiness(lambda: batches.refresh_stale_readiness(factory), readiness_backlog)
+    # The same worker round then saves, as System, statements that became
+    # ready after their file's preparation or whose automatic save failed
+    # (queue_save.sweep_save); its claims are imported before scoring.
+    sweep = drain_sweep_save(lambda: queue_save.sweep_save(factory, budget_seconds=None))
+    if sweep['queued']:
+        sweep['drain'] = drain('sweep-save')
+    readiness['sweep_save'] = sweep
     started = time.monotonic()
     with factory() as db:
         status = batches.batch_status(db, case_id=case_id, batch_id=batch_id, limit=10_000)
@@ -609,6 +629,7 @@ def run(out, python, concurrency, corpus=CORPUS, readings=None, compare=None):
     views = {}  # item id -> what its proposal offers, for the per-statement comparison
     with factory() as db:
         system_saved = saved_by_system(db, batch_id, Item, queue_save.SYSTEM_ACTOR)
+        swept = set(sweep['item_ids'])
         read = []
         for item in status['items']:
             filename = file_names.get(uuid.UUID(item['file_id'])) or item.get('filename')
@@ -639,6 +660,7 @@ def run(out, python, concurrency, corpus=CORPUS, readings=None, compare=None):
             auto_saved = item['id'] in system_saved
             entry = dict(item_id=item['id'], filename=filename, statement_id=item.get('statement_id'),
                          scored=_scored(truth), auto_saved=auto_saved,
+                         saved_by_sweep=item['id'] in swept,
                          status=item['status'], can_import=bool(item.get('can_import')) or auto_saved,
                          truth_id=truth['id'] if truth else None, family=truth['family'] if truth else 'unmatched',
                          expected=truth['expected'] if truth else None, defects=truth['defects'] if truth else [],
@@ -1121,6 +1143,7 @@ def metrics(result):
         return dict(periods=total, ready_without_edits=len(ready),
                     ready_without_edits_pct=round(100 * len(ready) / total, 1) if total else None,
                     saved_automatically=sum(bool(p.get('auto_saved')) for p in unique),
+                    saved_by_sweep=sum(bool(p.get('saved_by_sweep')) for p in unique),
                     clean_ready=sum(p['status'] == 'ready' and p['can_import'] for p in unique),
                     recoverable_periods=len(auto), recoverable_ready=len(auto_ready),
                     recoverable_ready_pct=round(100 * len(auto_ready) / len(auto), 1) if auto else None,
@@ -1189,7 +1212,8 @@ def render_summary(result):
              f"{o['recoverable_ready']} of {o['recoverable_periods']} ({o['recoverable_ready_pct']}%). "
              f"The other {o['decision_periods']} need a genuine decision and {o['hold_periods']} must stay held.", '',
              *([f"Saved automatically by the system (no click; counted as ready): {o['saved_automatically']} of "
-                f"{o['ready_without_edits']} ready periods.", '']
+                f"{o['ready_without_edits']} ready periods ({o.get('saved_by_sweep', 0)} of them after their "
+                f"file's preparation, by the worker's sweep save).", '']
                if result.get('environment', {}).get('auto_save_ready') else
                ['Automatic save of ready statements was off (FINANCIAL_AUTO_SAVE_READY=0).', '']),
              *([f"**SAFETY FAILURE (exit 1): {'; '.join(safety_failures(result))}.**", '']

@@ -1021,16 +1021,20 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
     Stale readiness never admits anything (the writer re-checks under its
     locks); until the sweep reaches them those periods show as rechecking.
     """
+    from services.financial.request_timing import lap
     receipt = _write_statement_import(session_factory=session_factory, case_id=case_id,
         evidence_file_id=evidence_file_id, request=request, actor=actor, resolve_path=resolve_path)
+    lap('run_record')
     if not (isinstance(receipt, dict) and receipt.get('outcome') == 'duplicate_ignored'):
         from services.financial.graph_followup import request_follow_up
         request_follow_up(case_id)
+    lap('graph_request')
     from services.financial.import_batches import refresh_file_readiness
     with session_factory() as session:
         statement_id = request.get('statement_id') if isinstance(request, dict) else request.statement_id
         refresh_file_readiness(session, case_id=case_id, file_id=UUID(str(evidence_file_id)),
                                statement_key=statement_id or '')
+    lap('own_readiness')
     return receipt
 
 
@@ -1095,6 +1099,8 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
     from services.financial.references import RowReading
     from services.financial.locators import Locator, SourceRectangle
     from postgres.models.enums import ExtractionLayer, LocatorKind, TransactionDirection
+    # Steps of one write for the import timing line (no-ops outside a recorder).
+    from services.financial.request_timing import lap, stage
 
     request = StatementImportRequest.model_validate(request)
     request_hash = _digest(request.model_dump(mode='json'))
@@ -1112,8 +1118,10 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                     raise PdfMappingError('Statement not found in this case.', 404)
                 session.execute(select(EvidenceDocumentText).where(EvidenceDocumentText.evidence_file_id == evidence_file_id).with_for_update()).all()
                 session.execute(select(EvidenceTableGeometry).where(EvidenceTableGeometry.evidence_file_id == evidence_file_id).order_by(EvidenceTableGeometry.page_number).with_for_update()).all()
+                lap('writer_locks')
                 proposal = read_statement_import(session, case_id=case_id, evidence_file_id=evidence_file_id,
                                                  currency=request.currency, statement_id=request.statement_id)
+                lap('writer_read')
                 if proposal.get('recovered_saved_section'):
                     raise PdfMappingError('This section is already saved after account/currency recovery. Edit its saved details or payments instead of importing its earlier reading again.', 409)
                 if proposal.get('document_review') is not None:
@@ -1130,6 +1138,7 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                     ).with_for_update().execution_options(populate_existing=True))
                     if existing is None:
                         raise PdfMappingError('The current statement changed. Reload the review.', 409)
+                lap('existing_check')
                 replacing = None
                 from services.financial.pending_statement_duplicates import apply_duplicate_disposition, ignored_receipt
                 # One snapshot of the case's statements for this write (it costs
@@ -1141,7 +1150,8 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                 def case_comparison():
                     if 'sources' not in comparison:
                         from services.financial.statement_import_overlap import comparison_sources
-                        comparison['sources'] = comparison_sources(session, case_id)[0]
+                        with stage('case_comparison'):
+                            comparison['sources'] = comparison_sources(session, case_id)[0]
                     return comparison['sources']
                 if existing is not None and existing.evidence_file_id != file.id and not request.replaces_source_document_id:
                     if request.expected_revision != proposal['revision'] or request.statement_id != proposal.get('statement_id'):
@@ -1194,6 +1204,7 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                     if disposition['status'] == 'ignored':
                         _commit_statement(session)
                         return ignored_receipt(case_id, file, disposition)
+                lap('duplicate_decision')
                 printed_copies = proposal.get('printed_copies')
                 if printed_copies and not printed_copies['identical'] and not request.coverage_review_reason.strip():
                     raise PdfMappingError('This statement period is printed more than once in this PDF and the printed copies read differently. Compare the copies, then record why this printing should be imported.', 409)
@@ -1241,7 +1252,9 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                 except AccountIdentityError:
                     account_draft = AccountDraft.unidentified(distinguisher='statement:' + str(evidence_file_id) + ':' + request.currency
                         + (':' + request.statement_id if request.statement_id else ''), **account_fields)
+                lap('checks')
                 account = record_account(session, run, account_draft)
+                lap('write_account')
                 from services.financial.statement_catalogue import stored_reading
                 shares_source_references = session.scalar(select(FinancialSourceDocument.id).where(
                     FinancialSourceDocument.case_id == case_id, FinancialSourceDocument.sha256_at_ingestion == file.sha256).limit(1)) is not None
@@ -1257,6 +1270,7 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                         statement_account_id=str(account.id), statement_import_issues=issues,
                         statement_incomplete_records=incomplete, statement_import_checks=arithmetic, statement_admission=admission,
                         whole_document_extraction_verified=False)))
+                lap('write_source_document')
                 from services.financial.periods import StatementPeriodDraft, PeriodBounds, BalanceObservation, record_statement_period
                 from services.financial.money import Money
                 balance_sign = -1 if proposal['metadata'].get('balance_convention') == 'liability_owed' else 1
@@ -1286,10 +1300,7 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                 closing = BalanceObservation.printed(Money(balance_sign * int(closings[0].balance_minor), currency)) if len(closings) == 1 and currency else BalanceObservation.absent()
                 period = record_statement_period(session, run, StatementPeriodDraft(account_id=account.id,
                     source_document_id=document.id, currency=currency, bounds=bounds, opening=opening, closing=closing)) if currency else None
-                if period and (proposal['metadata'].get('balance_convention') in ('liability_owed', 'asset_balance') or any(r.get('manual_balance') for r in originals.values())):
-                    from services.financial.statement_import_controls import retain_import_controls
-                    retain_import_controls(document, period, request, originals, openings, closings,
-                                           balance_convention=proposal['metadata'].get('balance_convention', 'asset_balance'))
+                lap('write_period')
                 drafts = []
                 incomplete_ids = {r['id'] for r in incomplete}
                 for position, row in enumerate(r for r in request.rows if not r.excluded):
@@ -1301,11 +1312,19 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                         period_id=period.id if period else None, currency=request.currency, position=position,
                         actor=actor, balance_sign=balance_sign, period_end=request.period_end))
                 transactions = record_transactions(session, run, document, drafts, retain_prior_versions=shares_source_references)
+                lap('write_transactions')
                 from services.financial.reconcile import reconcile_period
                 if period:
                     reconcile_period(session, period)
                     from services.financial.account_history import record_admission_snapshot
                     record_admission_snapshot(session, document, period)
+                # After the snapshot's flush, so the document's metadata (its
+                # stored reading, and the file's catalogue on its first period)
+                # is written once more at commit, not once per added key.
+                if period and (proposal['metadata'].get('balance_convention') in ('liability_owed', 'asset_balance') or any(r.get('manual_balance') for r in originals.values())):
+                    from services.financial.statement_import_controls import retain_import_controls
+                    retain_import_controls(document, period, request, originals, openings, closings,
+                                           balance_convention=proposal['metadata'].get('balance_convention', 'asset_balance'))
                 if replacing is not None:
                     from services.financial.duplicates import _supersede, store_fingerprint
                     from postgres.models.enums import DuplicateMatchRung
@@ -1313,7 +1332,9 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                     store_fingerprint(session, document)
                     _supersede(session, replacing, document.id, case_id=case_id, rung=DuplicateMatchRung.identical_bytes, actor=actor, ingestion_run_id=run.run_id,
                         reason="Statement reread replaces the prior import: " + request.details_reason)
+                lap('reconcile')
                 _commit_statement(session)
+                lap('commit')
                 run.document_seen()
                 run.transaction_admitted(len(transactions))
                 return dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id),

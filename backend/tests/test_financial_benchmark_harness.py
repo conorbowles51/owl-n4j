@@ -195,6 +195,17 @@ class ReadinessDrainTests(TestCase):
         self.assertEqual(self.drain([0]), (dict(before=0, after=0, rounds=0, seconds=0.0), 0))
 
 
+class DrainSweepSaveTests(TestCase):
+    def test_rounds_run_until_one_claims_nothing(self):
+        rounds = iter([dict(queued=2, item_ids=['a', 'b']), dict(queued=1, item_ids=['c']), dict(queued=0, item_ids=[])])
+        self.assertEqual(harness.drain_sweep_save(lambda: next(rounds), clock=lambda: 0.0),
+                         dict(queued=3, item_ids=['a', 'b', 'c'], rounds=3, seconds=0.0))
+
+    def test_bounded_by_rounds(self):
+        result = harness.drain_sweep_save(lambda: dict(queued=1, item_ids=['x']), max_rounds=4, clock=lambda: 0.0)
+        self.assertEqual((result['queued'], result['rounds']), (4, 4))
+
+
 class SavedBySystemTests(TestCase):
     def test_only_items_claimed_by_the_system_actor(self):
         from postgres.models.financial_import_batches import FinancialImportBatchItem as Item
