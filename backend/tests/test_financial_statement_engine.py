@@ -2909,3 +2909,21 @@ class AgreedPeriodServedByEngineTests(unittest.TestCase):
         catalog, engine, group = self.route(prefers=False)
         self.assertEqual(catalog['statements'], [group])
         self.assertTrue(group.get('engine_agrees'))
+
+
+class UnreadOpeningPairingTests(unittest.TestCase):
+    """r10: a library period whose opening balance is an unreadable mark pairs with the engine section of the
+    same printed account and period by their equal printed closing balance; a different read opening, or a
+    different closing, still means a different section."""
+
+    def test_pairing_keys(self):
+        from services.financial import statement_engine_routing as R
+        engine = (('0',), ('0',), ())
+        self.assertTrue(R._same_section((('0',), ('0',), ()), engine))
+        self.assertTrue(R._same_section(((None,), ('0',), ()), engine))
+        self.assertFalse(R._same_section((('5',), ('0',), ()), engine))
+        self.assertFalse(R._same_section(((None,), ('7',), ()), engine))
+        self.assertFalse(R._same_section(((None,), (None,), ()), (('0',), (None,), ())))  # no closing read either
+        self.assertFalse(R._same_section(((), ('0',), ()), engine))
+        with mock.patch.object(R, 'UNREAD_OPENING_PAIRS_BY_CLOSING', False):
+            self.assertFalse(R._same_section(((None,), ('0',), ()), engine))

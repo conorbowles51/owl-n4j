@@ -244,6 +244,22 @@ def _engine_completes(statement, engine_rows, group, sources, currency):
     return bool((zero_totals_evidence(engine_rows, public, currency, family='generic') or {}).get('verified'))
 
 
+# A library period whose opening balance it could not read (the printed figure is a mark it cannot read as an
+# amount) has no printed opening to tell sections apart by: it is the engine section of the same printed account
+# and period when both read the same closing balance. Off: an unread opening never pairs, as before.
+UNREAD_OPENING_PAIRS_BY_CLOSING = True
+
+
+def _same_section(library_key, engine_key):
+    """Whether a library period on shared pages is the engine section's (same printed account and period
+    already checked): the same printed opening balance, or, where the library read no opening amount, the
+    same printed closing balance."""
+    if library_key[0] == engine_key[0]:
+        return True
+    return (UNREAD_OPENING_PAIRS_BY_CLOSING and len(library_key[0]) == 1 and library_key[0][0] is None
+            and len(library_key[1]) == 1 and library_key[1][0] is not None and library_key[1] == engine_key[1])
+
+
 def disagreement_row(rows, choice):
     anchor = next((r for r in rows if r['kind'] == 'balance'), rows[0] if rows else None)
     base = dict(anchor) if anchor else dict(id='engine', page_number=None, table_index=None, row_index=None,
@@ -358,7 +374,7 @@ def route_catalog(sources, library_catalog):
             continue
         library_proved = proved_rows(library_rows, is_liability(group))
         engine_rows = statement['_rows']
-        if not exact and reading_key(library_rows)[0] != reading_key(engine_rows)[0]:
+        if not exact and not _same_section(reading_key(library_rows), reading_key(engine_rows)):
             # Shared pages can hold several sections of one period; a different printed opening
             # balance means a different section, not a different reading of this one.
             routing['scoped_unpaired'] = routing.get('scoped_unpaired', 0) + 1
