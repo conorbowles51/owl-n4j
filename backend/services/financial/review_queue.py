@@ -592,8 +592,8 @@ def _failed_files(session, case_id, file_filter, set_aside=None):
 
     Failures that are not reading problems (the file was removed from
     Financial or is no longer in the case) are moved to ``set_aside`` with
-    their reason instead. A failed upload whose identical bytes were read from
-    another upload is linked to it by _set_aside_read_copies.
+    their reason instead. A failed upload whose identical bytes or pages were
+    read from another upload is linked to it by _set_aside_read_copies.
     """
     prepared = set(session.scalars(select(Item.file_id).join(Batch, Batch.id == Item.batch_id).where(
         Batch.case_id == case_id, Batch.status != 'removed', Item.status != 'removed')))
@@ -627,45 +627,55 @@ def _failed_files(session, case_id, file_filter, set_aside=None):
 
 
 def _set_aside_read_copies(session, case_id, entries, failed):
-    """Move failed readings of a file that another upload of the same bytes read into copies.
+    """Move failed readings of a file that another upload of the same document read into copies.
 
-    A second upload of the same bytes reaches the copy review only through its
-    own statements. When its reading failed (an older reader, a removed import's
-    lost source) it would stay under "Couldn't read" for good although the same
-    PDF was read through another upload. Such entries are set aside, linked to
-    the upload that was read. Nothing is written; if that upload also could not
-    read a statement, its own entry still says so.
+    A second upload of the same bytes, or of a file whose every page renders
+    identically (``page_identity``: the same statement saved again by another
+    program), reaches the copy review only through its own statements. When its
+    reading failed (an older reader, a removed import's lost source) it would
+    stay under "Couldn't read" for good although the same pages were read
+    through another upload. Such entries are set aside, linked to the upload
+    that was read. Nothing is written; if that upload also could not read a
+    statement, its own entry still says so.
     """
+    from services.financial import page_identity
     read = {e['file_id'] for e in entries if e['bucket'] not in ('unreadable', 'unexplained')}
     failed_ids = {f.get('file_id') or f.get('source_id') for f in failed}
     wanted = {e['file_id'] for e in entries if e['bucket'] == 'unreadable'} | failed_ids
     if not read or not wanted:
         return entries, failed, []
     ids = {UUID(i) for i in read | wanted if i and _uuid(i)}
-    files = {str(row[0]): (row[1], row[2]) for row in session.execute(select(
-        EvidenceFile.id, EvidenceFile.sha256, EvidenceFile.original_filename).where(
-        EvidenceFile.case_id == case_id, EvidenceFile.id.in_(ids)))}
-    read_by_sha = {}
+    files = {}
+    for file in session.scalars(select(EvidenceFile).where(EvidenceFile.case_id == case_id, EvidenceFile.id.in_(ids))):
+        pages = page_identity.stored(file)
+        files[str(file.id)] = (file.sha256, file.original_filename,
+                               (pages['identity'], pages['renderer'], pages['page_count']) if pages else None)
+    read_by_sha, read_by_pages = {}, {}
     for file_id in sorted(read):
-        sha, name = files.get(file_id, (None, None))
+        sha, name, pages = files.get(file_id, (None, None, None))
         if sha:
             read_by_sha.setdefault(sha, (file_id, name))
+        if pages:
+            read_by_pages.setdefault(pages, (file_id, name))
 
     def copy_of(file_id):
-        sha = files.get(file_id, (None, None))[0]
-        match = read_by_sha.get(sha) if sha else None
-        return match if match and match[0] != file_id else None
+        sha, _, pages = files.get(file_id, (None, None, None))
+        for match, reason in ((read_by_sha.get(sha) if sha else None, 'same_file_read'),
+                              (read_by_pages.get(pages) if pages else None, 'same_pages_read')):
+            if match and match[0] != file_id:
+                return match, reason
+        return None, None
 
     for entry in entries:
-        match = copy_of(entry['file_id']) if entry['bucket'] == 'unreadable' else None
+        match, reason = copy_of(entry['file_id']) if entry['bucket'] == 'unreadable' else (None, None)
         if match:
             entry.update(bucket='copies', set_aside=True, copy_of=match[1] or None,
-                         copy_reason='same_file_read', copy_file_id=match[0])
+                         copy_reason=reason, copy_file_id=match[0])
     kept, copies = [], []
     for file in failed:
-        match = copy_of(file.get('file_id') or file.get('source_id'))
+        match, reason = copy_of(file.get('file_id') or file.get('source_id'))
         if match:
-            copies.append(dict(file, copy_of=match[1] or None, copy_file_id=match[0]))
+            copies.append(dict(file, copy_of=match[1] or None, copy_file_id=match[0], copy_reason=reason))
         else:
             kept.append(file)
     return entries, kept, copies

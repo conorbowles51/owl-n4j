@@ -633,6 +633,8 @@ export function ReviewQueuePanel({
                       <p className="mt-1">
                         {entry.copy_reason === "same_file_read"
                           ? `Same file as ${entry.copy_of ?? "another upload"}, which was read. This upload's own reading is not used. It counts nothing.`
+                          : entry.copy_reason === "same_pages_read"
+                          ? `Every page is the same as ${entry.copy_of ?? "another upload"}, which was read. This upload's own reading is not used. It counts nothing.`
                           : entry.set_aside
                           ? `Set aside as a copy${entry.copy_of ? ` of ${entry.copy_of}` : ""}. It counts nothing.`
                           : "Possible copy of another statement: compare it with the original."}
@@ -680,8 +682,10 @@ export function ReviewQueuePanel({
                     className="flex flex-wrap items-center justify-between gap-2 p-3 text-sm"
                   >
                     <span>
-                      {file.filename}: same file as {file.copy_of ?? "another upload"}, which was read. This
-                      upload could not be prepared and counts nothing.
+                      {file.filename}:{" "}
+                      {file.copy_reason === "same_pages_read" ? "every page is the same as" : "same file as"}{" "}
+                      {file.copy_of ?? "another upload"}, which was read. This upload could not be prepared and
+                      counts nothing.
                     </span>
                     <Button size="sm" variant="outline" onClick={() => onOpenBatch(file.batch_id)}>
                       Open its batch

@@ -350,11 +350,19 @@ class ReadCopyTests(TestCase):
     """A failed reading of a file whose bytes another upload read is a copy set aside, not "Couldn't read"."""
 
     class Session:
+        """``files``: {id: (sha256, name[, page identity])}."""
         def __init__(self, files):
             self.files = files
 
-        def execute(self, query):
-            return [(UUID(i), sha, name) for i, (sha, name) in self.files.items()]
+        def scalars(self, query):
+            from types import SimpleNamespace
+            from services.financial import page_identity
+            rows = []
+            for i, (sha, name, *pages) in self.files.items():
+                metadata = {page_identity.METADATA_KEY: dict(version=page_identity.VERSION, renderer='pymupdf-test',
+                    dpi=page_identity.DPI, page_count=2, identity=pages[0], source_sha256=sha)} if pages else {}
+                rows.append(SimpleNamespace(id=UUID(i), sha256=sha, original_filename=name, metadata_=metadata))
+            return rows
 
     def run_rule(self, files, entries, failed):
         from services.financial.review_queue import _set_aside_read_copies
@@ -389,6 +397,34 @@ class ReadCopyTests(TestCase):
         entries, kept, copies = self.run_rule(files, [dict(file_id=one, bucket='waiting'),
             dict(file_id=one, bucket='unreadable')], [])
         self.assertEqual([e['bucket'] for e in entries], ['waiting', 'unreadable'])
+
+
+    def test_a_failed_reading_of_the_same_pages_follows_the_upload_that_was_read(self):
+        """r11-copy-audit: the same statement saved again by another program (other bytes, same pages)."""
+        read, resaved, failed_file, other = (str(uuid4()) for _ in range(4))
+        files = {read: ('a' * 64, 'MONTH.pdf', 'p' * 64), resaved: ('b' * 64, 'MONTH resaved.pdf', 'p' * 64),
+                 failed_file: ('c' * 64, 'MONTH printed.pdf', 'p' * 64), other: ('d' * 64, 'NEXT.pdf', 'q' * 64)}
+        entries = [dict(file_id=read, bucket='waiting'), dict(file_id=resaved, bucket='unreadable'),
+                   dict(file_id=other, bucket='unreadable')]
+        failed = [dict(batch_id='b1', source_id=failed_file, file_id=failed_file, filename='MONTH printed.pdf', message='x')]
+        entries, kept, copies = self.run_rule(files, entries, failed)
+        by_file = {e['file_id']: e for e in entries}
+        self.assertEqual((by_file[resaved]['bucket'], by_file[resaved]['copy_reason'], by_file[resaved]['copy_file_id']),
+                         ('copies', 'same_pages_read', read))
+        self.assertEqual(by_file[other]['bucket'], 'unreadable', 'other pages are another document')
+        self.assertEqual([(c['file_id'], c['copy_reason'], c['copy_of']) for c in copies],
+                         [(failed_file, 'same_pages_read', 'MONTH.pdf')])
+        self.assertEqual(kept, [])
+        # Without stored page identities only the bytes decide, as before.
+        bare = {key: value[:2] for key, value in files.items()}
+        entries, kept, copies = self.run_rule(bare, [dict(file_id=read, bucket='waiting'),
+            dict(file_id=resaved, bucket='unreadable')], failed)
+        self.assertEqual(([e['bucket'] for e in entries], len(kept), copies), (['waiting', 'unreadable'], 1, []))
+        from services.financial import page_identity
+        with patch.object(page_identity, 'ENABLED', False):
+            entries, _, _ = self.run_rule(files, [dict(file_id=read, bucket='waiting'),
+                dict(file_id=resaved, bucket='unreadable')], [])
+        self.assertEqual(entries[1]['bucket'], 'unreadable', 'switch off: bytes only')
 
 
 class SupersededFileReadingTests(QueueReadTests):
