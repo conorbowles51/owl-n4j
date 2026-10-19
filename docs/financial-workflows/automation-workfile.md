@@ -13,31 +13,31 @@ sets it itself only when it is genuinely blocked on Neil; see "Halt rules".)
 
 ## ▶ NEXT
 
-**(2026-10-18 16:40) REAL-DOCUMENT wave 9 integrated into fin/release-1 (headless integrate-9). Regular merge
-r9-import-ops 992c3cde, squash of r9-engine-santander 581ee837 (one code comment quoted a real amount; replaced by an
-invented figure), regular merge t-visual-v06 0883184a (notes only); WIP-NOTES.md dropped; no merge breakage. NOT pushed
-or deployed by this session. The real-document driver owns the next waves; running state, counts and history in
-/mnt/owl-data/fin-wt/headless/real/STATE.md (counts only).**
-Real headline (bench/wave9, frozen copy of 0883184a, fresh engine read of all 728 truth documents at reading revision
-v21, product default: automatic save ON): **1,315/1,436 ready without edits (91.6%)**, all saved by the system with no
-click; on wave 8's 703 documents **1,290/1,397 (92.3%, was 1,252)**; **0 wrong admissions, 0 critical-field errors
-(20,306 rows), 0 duplicate ledger contributions**, must-hold 5/5, 0 lost, 63 gained (Santander +59, Monex +4). Engine-
-served 226, library-served 1,089. **REAL_EXIT=1 on one copy saved** (dcfc8ce1f2afc#1, a page-identical copy whose
-original reads too badly to pair; every value equals truth, the period is counted once, unlinked): wave 10 r10-copies.
-Generic-only 896/1,436, **0 wrong** (was 2), same copy. Actions per 100 statements 219 / 209 (183 / 173 on wave 8's 703,
-was 205 / 191). Truth final 748/832, compared 728/827. Live (read-only audit-wave9): the same 5 periods disagree; 0
-printed periods admitted twice. Synthetic 108/125 (was 105), 0 wrong, all saved by the system. Suites: financial Ran
-6,466, only the 2 known unassigned_statement failures; tsc 0; vitest unit 2,130/2,130.
-**Wave 10 (headless/real/wave10.units, prompts headless/real/units/):** `r10-copies` (page identity establishes a copy
-whatever the reading; reader-independent duplicate scope; exact copies held 164/171 -> 171/171; REAL_EXIT 1 -> 0),
-`r10-engine-residue` (Santander vector-text rows/balances, printed currency not read in 5 families, zero-activity
-sections, Scotiabank; santander 111/146 -> >= 125; also the step-removal unit), `t-visual-v01` (BBVA v01, 37 documents
-to settle; 748/832 -> up to 785/832). Acceptance for every unit: 0 wrong admissions real (product and generic-only) and
-synthetic, 0 copies saved (beyond the one r10-copies owns), synthetic >= 108/125, no ready period lost against
-bench/wave9. No r10-import-ops: the remaining item needs the first live import after a deploy (STATE decision 4).
-**Live:** the reunion ca059a42 (deployed 2026-10-17, engine v19). fin/layer-guard (Neil's, not merged) conflicts with
-the v21 reading revision: keep both, v22. 15 root-owned cache entries in the live frontend node_modules (2026-10-17, not
-this session) need a chown before the next frontend build.
+**(2026-10-19 21:10) REAL-DOCUMENT wave 10 integrated into fin/release-1 (headless integrate-10). Regular merges of
+r10-copies 335820ab, r10-engine-residue a9938dc9 (one test-file conflict, both sides kept) and t-visual-v01 a9e6c1ab
+(notes only) onto 060d7470 (layer-guard reading v22 + subscriber-retry); WIP-NOTES.md dropped. NOT pushed or deployed
+by this session. Running state, counts and history in /mnt/owl-data/fin-wt/headless/real/STATE.md (counts only).**
+Real headline (bench/wave10, frozen copy of a9e6c1ab, whole truth set of 754 documents, readings of bench/rel1-060d7470
+reused because no evidence-engine file changed, product default: automatic save ON): **1,351/1,462 ready without edits
+(92.4%; 060d7470: 1,333)**, all saved by the system with no click; on wave 9's 728 documents **1,332/1,436 (was 1,315)**;
+**0 wrong admissions, 0 critical-field errors (21,356 rows), 0 duplicate ledger contributions**, must-hold 5/5, 0 lost,
+18 gained (Santander +17, BBVA +1). Engine-served 425 (wave 9: 226), library-served 926. Copies held automatically
+168/171; **REAL_EXIT=1 still for the one saved copy** dcfc8ce1f2afc#1 (two scans of one sheet, not page copies; a Neil
+rule). **Generic-only 984/1,462 with 1 wrong admission** (d1398a6f10ccc#1, a BBVA v01 row dated by another column;
+identical on 060d7470 in an A/B, so old engine behaviour exposed by new truth; product holds it): wave 11 r11-bbva-vector
+item 1. Actions per 100 statements 178 / 168 (171 / 162 on wave 9's 728, was 219 / 209). Truth final 785/832 (+37),
+compared 754/816. Live (read-only audit-wave10): 6 periods disagree (the 5 known + d6d2d26fac5f4#1); a live double
+admission across two ledger accounts (r10-copies finding) is missed by the detector and the audit: r11-copy-audit.
+Synthetic 108/125, 0 wrong. Suites: financial Ran 6,503, the 2 known unassigned_statement failures + 1 load-sensitive
+error (checkpoint_b_gate, `None` batch item in import_batches._checked_batch_items; 12/12 alone; r11-copy-audit item 5);
+tsc 0; vitest unit 2,130/2,130.
+**Wave 11 (headless/real/wave11.units, prompts headless/real/units/):** `r11-bbva-vector` (engine date path fails
+closed, generic-only wrong 1 -> 0; v01 BBVA 19/26 -> >= 24; wrong values proposed 15 -> <= 2; step-removal unit),
+`r11-copy-audit` (detector and audit find copies across ledger accounts; failed-reading copies by page identity; live
+dry run + guarded page-identity backfill for Neil; harness drain; the suite race), `t-visual-v04` (Kapital, 24
+documents; 785/832 -> up to 809/832). Acceptance for every unit: 0 wrong admissions real (product; generic-only must not
+add any) and synthetic, no new copy saved, synthetic >= 108/125, no ready period lost against bench/wave10.
+**Live:** the reunion ca059a42 (deployed 2026-10-17, engine v19). Deploy recommended after r11-bbva-vector.
 **Everything below in this section is the synthetic track (wave 5 state), parked behind the real waves.**
 Release-1 now (corpus v4, 124 distinct periods, bench-runs/release-1-w5, exit 0): **102/124 ready without edits (82.3%)**,
 102/107 recoverable (95.3%), 0 wrong admissions, 0 critical-field errors (347 saved), 0 valid-looking wrong values
@@ -818,3 +818,32 @@ brief (briefs = Queue entries above + the 2026-10-02 log lines). Automation is t
   A chown of 15 root-owned cache entries in the live node_modules (from 2026-10-17, not this session) was refused by
   the sandbox: left for Neil.
 - Wave 10 planned: r10-copies, r10-engine-residue, t-visual-v01. STATE.md and STATUS-FOR-NEIL.md rewritten.
+
+### 2026-10-19 21:10 — REAL-DOCUMENT wave 10 merged into fin/release-1 (headless integrate-10)
+- All three notes say complete; none admits a wrong period on real or synthetic data in its own runs; none commits real
+  data. Private scan of each branch's net diff and every message, and of the merged head against 060d7470: 0 hits (test
+  fixtures use invented names). Regular merges onto 060d7470: `fin/r10-copies` (335820ab), `fin/r10-engine-residue`
+  (a9938dc9; conflict in test_financial_statement_engine.py where fin/layer-guard's LayerGuardTests and the unit's tests
+  were both appended at the end; both kept; 230 engine/page-identity/exports tests OK), `fin/t-visual-v01` (a9e6c1ab,
+  notes only). WIP-NOTES.md dropped; notes archived /mnt/owl-data/fin-wt/notes/{r10-copies,r10-engine-residue,
+  t-visual-v01}.md. No separate breakage fix.
+- **Real benchmark** (bench/wave10, frozen a9e6c1ab, readings of bench/rel1-060d7470 reused: no evidence-engine file
+  changed, reading v22 in both, truth unchanged since that read; product default; 8 h 06 min niced): **1,351/1,462**
+  (1,332/1,436 on wave 9's documents), recoverable 1,351/1,457, all saved by the system, 0 wrong, 0 critical (21,356
+  rows), 0 duplicate contributions, holds 5/5, copies held 168/171, 0 lost against 060d7470, 18 gained; REAL_EXIT=1 for
+  the same saved copy dcfc8ce1f2afc#1. Compare 754/816 (1,500 of 1,669 without disagreement; in ready periods BBVA holder
+  spelling 34, 6 holders from the detail proposal, the 1 copy).
+- Generic-only (bench/wave10-generic-only, same readings, in parallel): 984/1,462, **1 wrong** (d1398a6f10ccc#1: one
+  row dated three days after its printed operation date). A/B on truth-mini-v01 (bench/int10-ab-v01-gen-{base,merged}):
+  060d7470 and a9e6c1ab both admit it, so it predates this wave; the product holds it. Owned by wave 11 r11-bbva-vector.
+- Live ledger audit (read-only, audit-wave10): 885 admitted periods on truth documents, 6 disagree (the 5 of waves 5-9 +
+  d6d2d26fac5f4#1 found by t-visual-v01), audit's own double-admission count 0; r10-copies' read-only census found one
+  printed period admitted twice across two ledger accounts (case d5b330d1) that the detector and audit both miss:
+  wave 11 r11-copy-audit; the live fix is Neil's.
+- Census not re-run (census-r5: 1,165 ready of 3,154 raw periods).
+- Synthetic (bench-runs/real-wave10, product default): 108/125, 105/108, 0 wrong, copies 1/1, no safety failure.
+- Suites (live .venv, CHROMADB_PORT=1 CHROMA_PORT=1): financial Ran 6,503, failures=2 (known unassigned_statement),
+  errors=1 (checkpoint_b_gate under load, AttributeError on a None batch item; 12/12 alone x3; also seen on
+  r10-engine-residue's branch), skipped 20; tsc -b 0; vitest unit 304 files 2,130/2,130 (as the app user). Live
+  node_modules: 0 root-owned entries now. Logs bench-runs/real-wave10{,-suite,-tsc,-vitest}.log.
+- Wave 11 planned: r11-bbva-vector, r11-copy-audit, t-visual-v04. STATE.md and STATUS-FOR-NEIL.md rewritten.
