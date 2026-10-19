@@ -2875,3 +2875,37 @@ class OwnScopeEntryTests(unittest.TestCase):
             scope = R._own_scope(engine, [other], [])
         self.assertEqual(scope, [dict(page_number=1, table_index=0, row_indices=[2, 3]),
                                  dict(page_number=1, table_index=0, row_indices=[12, 13, 14])])
+
+
+class AgreedPeriodServedByEngineTests(unittest.TestCase):
+    """r10: an agreed period the engine serves because only it reads the printed currency keeps the library's
+    printing of the facts both read alike (holder, account, institution)."""
+
+    def route(self, prefers=True):
+        from services.financial import statement_engine_routing as R
+        sources = mx_statement(MOVES, closing='1,250.00')
+        engine = read_statements(sources)[0]
+        group = dict(id='LIB', layout_id='fake-library', institution='BANCO EJEMPLO DEL NORTE S.A.',
+                     account_reference='0012345678', holder='EMPRESA DE PRUEBA S.A. DE C.V.', currency='',
+                     period_start='2024-03-01', period_end='2024-03-31',
+                     sources=[dict(page_number=1, table_index=0, source_revision='r1')], page_numbers=[1])
+        library = lambda s: dict(statements=[group], unclassified_sources=[], information_sources=[], complete_coverage=True)
+        with mock.patch.dict(os.environ, {'LOUPE_FINANCIAL_GENERIC_READER': '1'}), \
+                mock.patch.object(R, 'AGREEMENT_PREFERS_ENGINE', prefers), \
+                mock.patch('services.financial.statement_currency.currencies_by_statement', return_value=[{}]), \
+                mock.patch('services.financial.statement_review_checks.statement_rows', return_value=engine['_rows']):
+            return R.route_catalog(sources, library), engine, group
+
+    def test_the_engine_serves_with_its_printed_currency_and_the_librarys_names(self):
+        catalog, engine, group = self.route()
+        served = catalog['statements'][0]
+        self.assertEqual((served['id'], served['layout_id'], served['currency']), ('LIB', 'generic', 'MXN'))
+        self.assertEqual(engine['holder'], 'EMPRESA DE PRUEBA SA DE CV')
+        self.assertEqual((served['holder'], served['institution'], served['account_reference']),
+                         (group['holder'], group['institution'], group['account_reference']))
+        self.assertEqual(catalog['engine_routing']['replaced'], ['LIB'])
+
+    def test_off_the_library_keeps_the_period(self):
+        catalog, engine, group = self.route(prefers=False)
+        self.assertEqual(catalog['statements'], [group])
+        self.assertTrue(group.get('engine_agrees'))

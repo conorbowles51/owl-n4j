@@ -225,6 +225,7 @@ def _rows_apart(engine_statement, library_period, by_address):
 # withdrawal totals beside equal balances (the general no-activity proof). Off: the library keeps every agreed
 # period, as before.
 AGREEMENT_PREFERS_ENGINE = True
+AGREED_KEEPS_LIBRARY = ('institution', 'account_reference', 'holder')
 
 
 def _engine_completes(statement, engine_rows, group, sources, currency):
@@ -422,6 +423,14 @@ def route_catalog(sources, library_catalog):
                 replaced[field] = group[field]
                 if field == 'currency':
                     replaced['currency_source'] = 'printed_account_section'
+        if library_proved:
+            # (Reached only through AGREEMENT_PREFERS_ENGINE.) An agreed period served by the engine only for the fact it alone establishes (AGREEMENT_PREFERS_
+            # ENGINE): the facts both read alike keep the library's printing of them (the same name or account
+            # written with or without its punctuation), so the period's account and holder read as they do on
+            # the account's other saved statements.
+            for field in AGREED_KEEPS_LIBRARY:
+                if group.get(field):
+                    replaced[field] = group[field]
         replacements[group['id']] = replaced
         routing['replaced'].append(group['id'])
         routing['engine_served'] += 1
