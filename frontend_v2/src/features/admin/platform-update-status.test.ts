@@ -23,7 +23,8 @@ describe("getPlatformUpdatePresentation", () => {
       enabled: false,
     })
 
-    expect(presentation.label).toBe("Disabled")
+    expect(presentation.label).toBe("Manual updates off")
+    expect(presentation.description).toContain("Automatic releases")
     expect(presentation.canDeploy).toBe(false)
   })
 
@@ -34,8 +35,11 @@ describe("getPlatformUpdatePresentation", () => {
       config_error: "Service owl-self-update.service is not loaded",
     })
 
-    expect(presentation.label).toBe("Not configured")
-    expect(presentation.description).toContain("not loaded")
+    expect(presentation.label).toBe("Manual update unavailable")
+    expect(presentation.description).not.toContain("owl-self-update.service")
+    expect(presentation.description).toContain(
+      "does not mean an automatic release has failed"
+    )
   })
 
   it("enables deployment only when an update is available and the backend allows it", () => {
@@ -45,7 +49,7 @@ describe("getPlatformUpdatePresentation", () => {
       can_deploy: true,
     })
 
-    expect(presentation.label).toBe("Update available")
+    expect(presentation.label).toBe("Manual update available")
     expect(presentation.canDeploy).toBe(true)
   })
 
@@ -58,7 +62,52 @@ describe("getPlatformUpdatePresentation", () => {
       deployment_status: "running",
     })
 
-    expect(presentation.label).toBe("Updating")
+    expect(presentation.label).toBe("Manual update running")
     expect(presentation.canDeploy).toBe(false)
+  })
+
+  it("does not claim Loupe is up to date without a completed version comparison", () => {
+    expect(getPlatformUpdatePresentation(baseStatus).label).toBe(
+      "Version comparison unavailable"
+    )
+    expect(
+      getPlatformUpdatePresentation({
+        ...baseStatus,
+        last_checked_at: "2026-09-25T12:00:00Z",
+        local_sha: "a",
+        remote_sha: "b",
+      }).label
+    ).toBe("Version comparison unavailable")
+    const matched = getPlatformUpdatePresentation({
+      ...baseStatus,
+      last_checked_at: "2026-09-25T12:00:00Z",
+      local_sha: "a",
+      remote_sha: "a",
+    })
+    expect(matched.label).toBe("No manual update available")
+    expect(matched.description).toContain("does not confirm")
+  })
+
+  it("describes a failed manual attempt without declaring automatic deployment failed", () => {
+    const result = getPlatformUpdatePresentation({
+      ...baseStatus,
+      deployment_status: "failed",
+      deployment_error: "sudo: not allowed",
+      update_available: true,
+      can_deploy: true,
+    })
+    expect(result.label).toBe("Manual update needs attention")
+    expect(result.description).not.toContain("sudo")
+    expect(result.canDeploy).toBe(true)
+  })
+
+  it("keeps raw check errors out of the primary description", () => {
+    const result = getPlatformUpdatePresentation({
+      ...baseStatus,
+      last_check_error: "fatal: unknown git remote",
+    })
+    expect(result.label).toBe("Manual check unavailable")
+    expect(result.description).not.toContain("fatal")
+    expect(result.canDeploy).toBe(false)
   })
 })

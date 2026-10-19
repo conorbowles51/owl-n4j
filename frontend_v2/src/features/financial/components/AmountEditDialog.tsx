@@ -1,8 +1,9 @@
-import { useState } from "react"
+import { useRef, useState } from "react"
+import { useFinancialDraft } from "../stores/financial-drafts"
 import { AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { CostBadge } from "@/components/ui/cost-badge"
+import { formatEvidenceAmount } from "../lib/evidence-amounts"
 import {
   Dialog,
   DialogContent,
@@ -14,46 +15,81 @@ import {
 import type { Transaction } from "../api"
 
 interface AmountEditDialogProps {
+  caseId: string
   open: boolean
   onOpenChange: (open: boolean) => void
   transaction: Transaction | null
-  onSave: (newAmount: number, correctionReason: string) => void
+  onSave: (newAmount: number, correctionReason: string) => Promise<unknown>
   isPending?: boolean
 }
 
-export function AmountEditDialog({
+function AmountEditForm({
+  caseId,
   open,
   onOpenChange,
   transaction,
   onSave,
   isPending,
-}: AmountEditDialogProps) {
-  const [amount, setAmount] = useState("")
-  const [reason, setReason] = useState("")
-
-  const handleOpen = (isOpen: boolean) => {
-    if (isOpen && transaction) {
-      setAmount(String(transaction.amount))
-      setReason("")
+}: AmountEditDialogProps & { transaction: Transaction }) {
+  const [draft, setDraft, clearDraft] = useFinancialDraft(
+    caseId,
+    `evidence-amount:${JSON.stringify([transaction.key, transaction.amount, transaction.raw_amount, transaction.currency, transaction.correction_reason])}`,
+    {
+      amount: transaction.amount === null ? "" : String(transaction.amount),
+      reason: "",
     }
-    onOpenChange(isOpen)
+  )
+  const { amount, reason } = draft
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState("")
+  const lock = useRef(false)
+  const busy = saving || isPending
+  const parsed = Number(amount)
+  const valid =
+    amount.trim() !== "" &&
+    Number.isFinite(parsed) &&
+    Number.isSafeInteger(Math.round(parsed * 100)) &&
+    parsed !== 0 &&
+    /^[-+]?(?:\d+(?:\.\d{0,2}0*)?|\.\d{1,2}0*)$/.test(amount) &&
+    parsed !== transaction.amount &&
+    reason.trim() !== ""
+  const handleSave = async () => {
+    if (lock.current || busy || !valid) return
+    lock.current = true
+    setSaving(true)
+    setError("")
+    try {
+      await onSave(parsed, reason.trim())
+      clearDraft()
+      onOpenChange(false)
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "The correction could not be saved. Your draft is retained."
+      )
+    } finally {
+      lock.current = false
+      setSaving(false)
+    }
   }
-
-  const handleSave = () => {
-    const parsed = parseFloat(amount)
-    if (isNaN(parsed) || !reason.trim()) return
-    onSave(parsed, reason.trim())
-  }
-
-  if (!transaction) return null
+  const money = (value: number | null) => (
+    <span>{formatEvidenceAmount(value, transaction.currency)}</span>
+  )
 
   return (
-    <Dialog open={open} onOpenChange={handleOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!lock.current && !busy) onOpenChange(next)
+      }}
+    >
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle className="text-sm">Correct Amount</DialogTitle>
           <DialogDescription className="text-xs">
-            Update the transaction amount with an audit trail.
+            Change the amount read from this evidence. The original value and
+            the latest explanation are retained with this record.
           </DialogDescription>
         </DialogHeader>
 
@@ -65,7 +101,9 @@ export function AmountEditDialog({
                 <p>Previously corrected</p>
                 <p className="text-muted-foreground">
                   Original:{" "}
-                  <CostBadge amount={transaction.original_amount ?? 0} />
+                  {transaction.original_amount == null
+                    ? transaction.original_amount_raw || "Not recorded"
+                    : money(transaction.original_amount)}
                 </p>
                 {transaction.correction_reason && (
                   <p className="text-muted-foreground italic">
@@ -80,18 +118,35 @@ export function AmountEditDialog({
             <label className="mb-1 block text-xs font-medium">
               Current Amount
             </label>
-            <CostBadge amount={transaction.amount} />
+            {money(transaction.amount)}
+            {transaction.amount === null && transaction.raw_amount != null && (
+              <p className="mt-1 text-sm break-words">
+                Saved amount text: {transaction.raw_amount || "(blank)"}
+              </p>
+            )}
           </div>
 
           <div>
             <label className="mb-1 block text-xs font-medium">New Amount</label>
             <Input
               type="number"
-              step="0.01"
+              aria-label="New amount"
+              step="any"
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              disabled={busy}
+              onChange={(e) =>
+                setDraft((current) => ({ ...current, amount: e.target.value }))
+              }
+              aria-describedby="amount-correction-help"
               className="font-mono"
             />
+            <p
+              id="amount-correction-help"
+              className="mt-1 text-xs text-muted-foreground"
+            >
+              Use up to two decimal places. Zero cannot be saved as a financial
+              amount here.
+            </p>
           </div>
 
           <div>
@@ -99,33 +154,70 @@ export function AmountEditDialog({
               Correction Reason
             </label>
             <Input
+              aria-label="Correction reason"
               value={reason}
-              onChange={(e) => setReason(e.target.value)}
+              disabled={busy}
+              maxLength={4000}
+              onChange={(e) =>
+                setDraft((current) => ({ ...current, reason: e.target.value }))
+              }
               placeholder="Why is this amount being corrected?"
-              onKeyDown={(e) => e.key === "Enter" && handleSave()}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault()
+                  void handleSave()
+                }
+              }}
             />
           </div>
         </div>
+        <p className="text-xs text-muted-foreground">
+          Your unfinished correction is kept in this browser tab. Reopen this
+          record to continue, or save it to update the case.
+        </p>
+        {error && (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        )}
 
         <DialogFooter>
-          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
-            Cancel
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={busy}
+            onClick={() => onOpenChange(false)}
+          >
+            Close
           </Button>
           <Button
             variant="primary"
             size="sm"
             onClick={handleSave}
-            disabled={
-              !amount ||
-              !reason.trim() ||
-              parseFloat(amount) === transaction.amount ||
-              isPending
-            }
+            disabled={!valid || busy}
           >
-            {isPending ? "Saving..." : "Save Correction"}
+            {busy ? "Saving..." : "Save Correction"}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+export function AmountEditDialog(props: AmountEditDialogProps) {
+  if (!props.transaction || !props.open) return null
+  return (
+    <AmountEditForm
+      key={JSON.stringify([
+        props.caseId,
+        props.transaction.key,
+        props.transaction.amount,
+        props.transaction.raw_amount,
+        props.transaction.currency,
+        props.transaction.correction_reason,
+      ])}
+      {...props}
+      transaction={props.transaction}
+    />
   )
 }

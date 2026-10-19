@@ -1,0 +1,12 @@
+// Read-only check that recorded review progress survives closing and reopening a case.
+const fs=require('fs'),path=require('path'),root=path.resolve(__dirname,'..');const {chromium}=require(path.join(root,'frontend_v2/node_modules/playwright'));
+(async()=>{const sample=JSON.parse(fs.readFileSync(path.join(root,'data/local-runtime/statement-controls-review-check.json')));const browser=await chromium.launch({headless:true});try{
+ const page=await browser.newPage({viewport:{width:1440,height:1100}});let writes=0;await page.route('**/api/financial/**',async route=>{if(!['GET','HEAD'].includes(route.request().method())){writes++;await route.abort()}else await route.continue()});
+ await page.goto('http://127.0.0.1:55174/login');await page.getByPlaceholder('Enter your username').fill('loupe-local@example.com');await page.getByPlaceholder('Enter your password').fill('Loupe-local-test-2026');await page.getByRole('button',{name:'Sign in',exact:true}).click();await page.waitForURL(u=>!u.pathname.includes('login'));
+ for(let visit=0;visit<2;visit++){
+ await page.goto(`http://127.0.0.1:55174/cases/${sample.case_id}/financial`);await page.getByRole('button',{name:'Open PDF readings',exact:true}).click();await page.getByRole('button',{name:'Open readings',exact:true}).click();
+ const progress=page.getByRole('region',{name:'Saved review progress',exact:true});await progress.getByText('0 awaiting review · 2 resolved · 0 rejected',{exact:true}).waitFor();if(!await progress.getByRole('button',{name:'Review next pending row',exact:true}).isDisabled())throw Error('Completed batch offers a pending row');
+ await page.getByLabel('Show only rows awaiting review',{exact:true}).check();await page.getByText('No rows awaiting review in this batch.',{exact:true}).waitFor();await page.getByLabel('Show only rows awaiting review',{exact:true}).uncheck();await page.getByRole('button',{name:'Review source row 10',exact:true}).waitFor();await progress.scrollIntoViewIfNeeded();if(visit)await page.screenshot({path:'/tmp/loupe-alex-saved-review-progress.png'});
+ }
+ if(writes)throw Error('Unexpected financial write');const result={case_id:sample.case_id,reopened:true,resolved:2,pending:0,financial_writes:writes};fs.writeFileSync(path.join(root,'data/local-runtime/review-progress-check.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result));
+ }finally{await browser.close()}})().catch(e=>{console.error(e);process.exitCode=1});

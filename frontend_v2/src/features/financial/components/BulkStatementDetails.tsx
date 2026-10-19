@@ -1,0 +1,1011 @@
+import { useState } from "react"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { z } from "zod"
+import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { fetchAPI } from "@/lib/api-client"
+import { CurrencyOptions } from "./CurrencyOptions"
+import { useFinancialDraft } from "../stores/financial-drafts"
+import { useInvestigationScope } from "../stores/investigation-scope"
+import { newReviewId } from "../lib/statement-review-id"
+import { useAuthStore } from "@/features/auth/hooks/use-auth"
+import { statementMonth } from "../lib/statement-month"
+import { AccountTypeEditor } from "./AccountTypeEditor"
+import { requestFailure, useElapsedSeconds } from "../lib/request-wait"
+
+const fields = [
+  ["holder", "Account holder"],
+  ["account_number", "Account number"],
+  ["institution", "Bank"],
+  ["currency", "Currency"],
+  ["period_start", "Statement start date"],
+  ["period_end", "Statement end date"],
+] as const
+type Field = (typeof fields)[number][0]
+const statement = z.object({
+  key: z.string(),
+  file_id: z.string(),
+  source_id: z.string().nullable(),
+  // The saved account of an imported statement (its type can be set here).
+  account_id: z.string().nullish(),
+  statement_id: z.string().nullable(),
+  revision: z.string(),
+  filename: z.string(),
+  status: z.string(),
+  values: z.record(z.string(), z.string()),
+  // Values the case establishes for this statement's missing details, with their source.
+  proposals: z
+    .record(
+      z.string(),
+      z.object({
+        value: z.string(),
+        basis: z.string(),
+        label: z.string(),
+        confirmed: z.boolean(),
+      })
+    )
+    .optional(),
+})
+type Statement = z.infer<typeof statement>
+
+/** The one value proposed for a field to every listed statement that lacks it, or null. */
+export function commonProposal(items: Statement[], field: string) {
+  const lacking = items.filter((item) => !item.values[field]?.trim())
+  if (!lacking.length) return null
+  const proposals = lacking.map((item) => item.proposals?.[field])
+  if (proposals.some((proposal) => !proposal)) return null
+  const values = new Set(proposals.map((proposal) => proposal!.value))
+  if (values.size !== 1) return null
+  const labels = new Set(proposals.map((proposal) => proposal!.label))
+  return {
+    value: proposals[0]!.value,
+    label: labels.size === 1 ? proposals[0]!.label : "the case's saved statements",
+    statements: lacking.length,
+  }
+}
+const listing = z.object({
+  case_id: z.string(),
+  items: z.array(statement),
+  notices: z.array(z.object({ filename: z.string(), message: z.string() })),
+})
+const changes = z.record(
+  z.string(),
+  z.object({ before: z.string(), after: z.string(), confirmed: z.boolean().optional() })
+)
+const previewSchema = z.object({
+  case_id: z.string(),
+  preview_revision: z.string(),
+  updated: z.number(),
+  items: z.array(
+    statement.extend({
+      after: z.record(z.string(), z.string()),
+      changes,
+      excluded_reason: z.string().nullable().optional(),
+      source_check: z.string().nullable().optional(),
+      // Read again since it was listed: each detail that moved, as listed and as it reads now.
+      refreshed: z
+        .record(z.string(), z.object({ listed: z.string(), current: z.string() }))
+        .nullish(),
+      // Edited fields the reading now fills with another value: the edit is not applied until chosen.
+      conflicts: z.array(z.string()).nullish(),
+    })
+  ),
+})
+const receiptSchema = z.object({
+  case_id: z.string(),
+  updated: z.number(),
+  unchanged: z.number(),
+  imported: z.number(),
+  drafts: z.number(),
+  items: z.array(
+    z.object({
+      key: z.string(),
+      filename: z.string(),
+      status: z.string(),
+      changes,
+    })
+  ),
+  account_changes: z.array(z.object({ before: z.string(), after: z.string() })),
+})
+type Draft = {
+  selected: Record<string, Statement>
+  values: Partial<Record<Field, string>>
+  mode: "fill_missing" | "replace"
+  requestId: string
+  open: boolean
+  confirmUnprintedStart?: boolean
+  confirmNoActivity?: boolean
+}
+type Props = {
+  caseId: string
+  fileIds?: string[]
+  batchId?: string
+  onSaved: () => void
+  datesOnly?: boolean
+  statementId?: string | null
+  reviewGroup?: string
+  buttonLabel?: string
+  /** Only these statements of the files (the review queue's selection across batches). */
+  statements?: { file_id: string; statement_id?: string | null }[]
+}
+
+export function BulkStatementDetails(props: Props) {
+  const owner = useAuthStore(
+    (state) => state.user?.id || state.user?.username || "anonymous"
+  )
+  const key = [
+    props.batchId || [...(props.fileIds || [])].sort().join(","),
+    props.datesOnly ? "dates" : "details",
+    props.statementId === undefined ? "all" : props.statementId || "single",
+    props.reviewGroup || "all-reasons",
+    props.statements
+      ? props.statements.map((s) => `${s.file_id}/${s.statement_id || ""}`).sort().join(",")
+      : "",
+  ].join(":")
+  return (
+    <Editor
+      key={`${owner}:${props.caseId}:${key}`}
+      {...props}
+      scopeKey={`${owner}:${key}`}
+    />
+  )
+}
+
+function Editor({
+  caseId,
+  fileIds,
+  batchId,
+  onSaved,
+  scopeKey,
+  datesOnly = false,
+  statementId,
+  reviewGroup,
+  buttonLabel,
+  statements,
+}: Props & { scopeKey: string }) {
+  const client = useQueryClient()
+  const [scope, applyScope] = useInvestigationScope(caseId)
+  const [draft, setDraft, clearDraft] = useFinancialDraft<Draft>(
+    caseId,
+    `bulk-account-details:${scopeKey}`,
+    {
+      selected: {},
+      values: reviewGroup && ["holder", "institution", "currency", "account"].includes(reviewGroup)
+        ? { [reviewGroup === "account" ? "account_number" : reviewGroup]: "" }
+        : datesOnly ? { period_start: "", period_end: "" } : {},
+      mode: "fill_missing",
+      requestId: "",
+      open: false,
+    }
+  )
+  const [search, setSearch] = useState("")
+  const [accountScope, setAccountScope] = useState("")
+  const [page, setPage] = useState(0)
+  const [preview, setPreview] = useState<z.infer<typeof previewSchema> | null>(
+    null
+  )
+  const [receipt, setReceipt] = useState<z.infer<typeof receiptSchema> | null>(
+    null
+  )
+  const [refreshNotice, setRefreshNotice] = useState("")
+  // After a save found a statement read again since it was listed, preview
+  // from each statement's current reading, as the save does.
+  const [readCurrent, setReadCurrent] = useState(false)
+  const endpoint = `/api/financial/statement-import/account-details`
+  const query = useQuery({
+    queryKey: ["bulk-statement-details", caseId, scopeKey],
+    enabled: draft.open,
+    retry: false,
+    refetchOnWindowFocus: false,
+    queryFn: async () => {
+      const result = listing.parse(
+        await fetchAPI(`${endpoint}/statements?case_id=${caseId}`, {
+          method: "POST",
+          body: batchId ? { batch_id: batchId, review_group: reviewGroup } : { file_ids: fileIds },
+        })
+      )
+      if (result.case_id !== caseId)
+        throw Error("These statements belong to another case.")
+      if (statements) {
+        const wanted = new Set(statements.map((s) => `${s.file_id}/${s.statement_id || ""}`))
+        return {
+          ...result,
+          items: result.items.filter((item) => wanted.has(`${item.file_id}/${item.statement_id || ""}`)),
+        }
+      }
+      return statementId === undefined
+        ? result
+        : {
+            ...result,
+            items: result.items.filter(
+              (item) => (item.statement_id || null) === statementId
+            ),
+          }
+    },
+  })
+  const body = () => ({
+    targets: Object.values(draft.selected).map(
+      ({ file_id, source_id, statement_id, revision }) => ({
+        file_id,
+        source_id,
+        statement_id,
+        revision,
+      })
+    ),
+    changes: draft.confirmNoActivity
+      ? { no_activity_confirmed: true }
+      : draft.confirmUnprintedStart
+        ? { period_start_unprinted: true }
+        : draft.values,
+    mode: draft.mode,
+    request_id: draft.requestId,
+    ...(readCurrent ? { read_current: true } : {}),
+  })
+  const review = useMutation({
+    retry: false,
+    mutationFn: async () => {
+      const result = previewSchema.parse(
+        await fetchAPI(`${endpoint}/preview?case_id=${caseId}`, {
+          method: "POST",
+          body: body(),
+        })
+      )
+      if (result.case_id !== caseId)
+        throw Error("The preview belongs to another case.")
+      return result
+    },
+    onSuccess: setPreview,
+    onError: (error) => {
+      // A selected statement was read again since it was listed: list it
+      // again (edits kept) and prepare the preview on its current reading.
+      if (statusOf(error) !== 409 || readCurrent) return
+      setReadCurrent(true)
+      void refreshSelection().then(() => setTimeout(() => review.mutate(), 0))
+    },
+  })
+  const statusOf = (error: unknown) =>
+    error && typeof (error as { status?: unknown }).status === "number"
+      ? (error as { status: number }).status
+      : 0
+  const save = useMutation({
+    retry: false,
+    mutationFn: async () => {
+      const result = receiptSchema.parse(
+        await fetchAPI(`${endpoint}/save?case_id=${caseId}`, {
+          method: "POST",
+          body: { ...body(), preview_revision: preview?.preview_revision },
+        })
+      )
+      if (result.case_id !== caseId)
+        throw Error("The save response belongs to another case.")
+      return result
+    },
+    onError: (error) => {
+      // A statement was read again since this preview: show it as it reads
+      // now, with her edits applied, instead of a refusal.
+      if (statusOf(error) !== 409) return
+      setReadCurrent(true)
+      setPreview(null)
+      save.reset()
+      setRefreshNotice(
+        "A statement was read again while you were editing. The preview below shows it as it reads now, with your changes applied. Check it, then save."
+      )
+      setTimeout(() => review.mutate(), 0)
+    },
+    onSuccess: (result) => {
+      setReceipt(result)
+      setPreview(null)
+      clearDraft()
+      const currentIds = new Set([
+        ...(scope.accountIds || []),
+        ...(scope.accountId ? [scope.accountId] : []),
+      ])
+      const additions = result.account_changes
+        .filter(
+          (change) =>
+            currentIds.has(change.before) && !currentIds.has(change.after)
+        )
+        .map((change) => change.after)
+      if (additions.length)
+        applyScope({
+          ...scope,
+          accountId: "",
+          accountIds: [...new Set([...currentIds, ...additions])],
+        })
+      void client.invalidateQueries()
+      onSaved()
+    },
+  })
+  const busy = review.isPending || save.isPending
+  // Show how long a request has been running; a stopped one says why.
+  const loadingFor = useElapsedSeconds(query.isFetching)
+  const workingFor = useElapsedSeconds(busy)
+  const actionError = save.error
+    ? requestFailure(save.error, "Saving the account details", { writes: true })
+    : review.error
+      ? requestFailure(review.error, "Preparing the preview")
+      : null
+  const changeDraft = (value: Partial<Draft>) => {
+    setDraft({ ...draft, ...value, requestId: newReviewId() })
+    setPreview(null)
+    review.reset()
+    save.reset()
+  }
+  // One choice for a field the reading now fills differently; the preview is
+  // then prepared again on the current reading.
+  const resolveConflict = (field: string, keep: "mine" | "reading") => {
+    const values = { ...draft.values }
+    if (keep === "reading") delete values[field as Field]
+    setDraft({
+      ...draft,
+      values,
+      mode: keep === "mine" ? "replace" : draft.mode,
+      requestId: newReviewId(),
+    })
+    setPreview(null)
+    setTimeout(() => review.mutate(), 0)
+  }
+  const unresolved = (preview?.items || []).some((item) => item.conflicts?.length)
+  const refreshSelection = async () => {
+    const result = await query.refetch()
+    if (!result.data || result.isError) return
+    const latest = new Map(result.data.items.map((item) => [item.key, item]))
+    const retained = Object.keys(draft.selected).filter((key) =>
+      latest.has(key)
+    )
+    const unavailable = selected.length - retained.length
+    changeDraft({
+      selected: Object.fromEntries(
+        retained.map((key) => [key, latest.get(key)!])
+      ),
+    })
+    setRefreshNotice(
+      `Loaded the latest saved details for ${retained.length} selected statements. Your proposed values are kept; review the new before-and-after preview.${unavailable ? ` ${unavailable} statements are no longer editable here and were removed from this selection.` : ""}`
+    )
+  }
+  const accountKey = (item: Statement) => JSON.stringify([
+    item.values.institution || "Bank unknown", item.values.account_number || `Source: ${item.filename} (${item.file_id})`, item.values.currency || "Currency unknown",
+  ])
+  const accountOptions = [...new Map((query.data?.items || []).map(item => [accountKey(item),
+    [item.values.institution || "Bank unknown", item.values.account_number || item.filename, item.values.currency || "Currency unknown"].join(" · ")])).entries()]
+  const matching = (query.data?.items || []).filter((item) =>
+    (!accountScope || accountKey(item) === accountScope) && [item.filename, item.status, ...Object.values(item.values)]
+      .join(" ")
+      .toLowerCase()
+      .includes(search.toLowerCase())
+  )
+  const selected = Object.values(draft.selected)
+  const hidden = selected.filter(
+    (item) => !matching.some((candidate) => candidate.key === item.key)
+  ).length
+  const valid =
+    selected.length > 0 &&
+    (draft.confirmNoActivity || draft.confirmUnprintedStart || (Object.keys(draft.values).length > 0 &&
+    (draft.values.currency === undefined || !!draft.values.currency)))
+  const summary = (item: Statement) =>
+    [
+      item.values.holder || "Holder missing",
+      item.values.institution || "Bank missing",
+      item.values.account_number || "Account number missing",
+      item.values.currency || "Currency missing",
+      `${item.values.period_start || "Start missing"} – ${item.values.period_end || "End missing"}`,
+      item.status,
+    ].join(" · ")
+  // A proposal is offered for the selected statements (or every listed one
+  // before a selection) only when they all lack the field and share it.
+  const proposalFor = (field: Field) =>
+    datesOnly || field.startsWith("period_")
+      ? null
+      : commonProposal(selected.length ? selected : matching, field)
+  const labels = {
+    ...Object.fromEntries(fields),
+    period_start_unprinted: "Statement start",
+    no_activity_confirmed: "Activity",
+  } as Record<string, string>
+  return (
+    <>
+      <Button
+        variant="outline"
+        disabled={!batchId && !fileIds?.length}
+        onClick={() => {
+          setReceipt(null)
+          setDraft({
+            ...draft,
+            open: true,
+            requestId: draft.requestId || newReviewId(),
+          })
+        }}
+      >
+        {buttonLabel || (datesOnly
+          ? statementId === undefined
+            ? "Set dates for selected statements"
+            : "Set statement dates"
+          : "Edit account details")}
+      </Button>
+      {receipt && (
+        <p role="status" className="text-sm w-full">
+          Account details saved for {receipt.updated} statements:{" "}
+          {receipt.imported} imported statements updated; {receipt.drafts} saved
+          for later import. {receipt.unchanged} unchanged.
+          <Button
+            variant="link"
+            onClick={() =>
+              setDraft({
+                ...draft,
+                selected: {},
+                open: true,
+                requestId: newReviewId(),
+              })
+            }
+          >
+            Review saved details
+          </Button>
+        </p>
+      )}
+      <Dialog
+        open={draft.open}
+        onOpenChange={(open) => {
+          if (!busy) setDraft({ ...draft, open })
+        }}
+      >
+        <DialogContent
+          className="sm:max-w-4xl max-h-[90dvh] flex flex-col overflow-hidden"
+          showCloseButton={!busy}
+        >
+          <DialogHeader>
+            <DialogTitle>
+              {datesOnly
+                ? "Set statement dates"
+                : "Edit account details for statements"}
+            </DialogTitle>
+            <DialogDescription>
+              Select one or several statement periods, choose the fields to
+              change, then review before saving. Imported statements update
+              immediately; other statements keep these details for import.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 overflow-y-auto space-y-4 pr-1">
+            {reviewGroup && !preview && <p className="text-sm">Only statements currently blocked for this reason are listed. Choose the matching account, select its periods and resolve the shared detail once. Saving updates group readiness without importing payments.</p>}
+            {preview ? (
+              <>
+                <h3 className="font-semibold">
+                  Review changes to {preview.updated} of {preview.items.length}{" "}
+                  selected statements
+                </h3>
+                <p className="text-sm">
+                  Only the fields below will change. Original readings and
+                  correction history are retained. Saving does not import
+                  additional transactions.
+                </p>
+                {draft.mode === "fill_missing" && !preview.updated && !draft.confirmUnprintedStart && !draft.confirmNoActivity && (
+                  <div
+                    className="rounded border p-3 space-y-2 text-sm"
+                    role="status"
+                  >
+                    <p>
+                      These fields already contain values. Fill missing details
+                      only keeps them. To correct previously entered
+                      information, choose Replace selected fields and review the
+                      changes.
+                    </p>
+                    <Button
+                      variant="outline"
+                      onClick={() => changeDraft({ mode: "replace" })}
+                    >
+                      Correct existing details instead
+                    </Button>
+                  </div>
+                )}
+                {preview.items.map((item) => (
+                  <article
+                    key={item.key}
+                    className="rounded border p-3 text-sm space-y-1"
+                  >
+                    <strong>{item.filename}</strong>
+                    <p>{summary(item)}</p>
+                    {item.source_check && (
+                      <p>Why its pages did not settle this automatically: {item.source_check}</p>
+                    )}
+                    {item.refreshed && (
+                      <p>
+                        Updated to the latest reading:{" "}
+                        {Object.entries(item.refreshed)
+                          .map(([field, value]) => `${labels[field]} ${value.listed || "missing"} is now ${value.current || "missing"}`)
+                          .join("; ")}
+                        .
+                      </p>
+                    )}
+                    {item.conflicts?.map((field) => (
+                      <div key={field} role="group" aria-label={`Choose ${labels[field]}`}
+                        className="rounded border border-amber-500/60 p-2 space-y-2">
+                        <p>
+                          {labels[field]}: the statement now reads{" "}
+                          <strong>{item.refreshed?.[field]?.current}</strong>. You entered{" "}
+                          <strong>{draft.values[field as Field]}</strong>. Choose which is right.
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          <Button size="sm" variant="outline" disabled={busy}
+                            onClick={() => resolveConflict(field, "reading")}>
+                            Keep {item.refreshed?.[field]?.current}
+                          </Button>
+                          <Button size="sm" variant="outline" disabled={busy}
+                            onClick={() => resolveConflict(field, "mine")}>
+                            Use {draft.values[field as Field]}
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                    {!Object.keys(item.changes).length ? (
+                      !item.conflicts?.length && (
+                        <p>{item.excluded_reason || "No changes. Existing details kept."}</p>
+                      )
+                    ) : (
+                      <ul className="list-disc pl-5">
+                        {Object.entries(item.changes).map(([field, value]) => (
+                          <li key={field}>
+                            {value.confirmed ? (
+                              <>
+                                {labels[field]}: <strong>{value.after}</strong> confirmed
+                              </>
+                            ) : (
+                              <>
+                                {labels[field]}: {value.before || "Missing"} →{" "}
+                                <strong>{value.after || "Clear value"}</strong>
+                              </>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </article>
+                ))}
+              </>
+            ) : (
+              <>
+                <h3 className="font-semibold">1. Choose statement periods</h3>
+                {query.isError && !query.isFetching ? (
+                  <div className="space-y-2" role="alert">
+                    <p>
+                      {requestFailure(query.error, "Loading the statement periods").message}
+                    </p>
+                    <Button variant="outline" onClick={() => void query.refetch()}>
+                      Try again
+                    </Button>
+                  </div>
+                ) : query.isPending || (query.isError && query.isFetching) ? (
+                  <p role="status">
+                    Loading statement periods… {loadingFor} s
+                    {loadingFor >= 15 &&
+                      ". Large PDFs take longer; if this stops, it will say so and offer to try again."}
+                  </p>
+                ) : (
+                  <>
+                    {accountOptions.length > 1 && <label className="block text-sm">
+                      Limit to bank, account and currency
+                      <select className="block border rounded bg-background p-2 w-full" value={accountScope}
+                        onChange={event => { setAccountScope(event.target.value); setPage(0); changeDraft({ selected: {} }) }}>
+                        <option value="">All accounts — choose a group before sharing details</option>
+                        {accountOptions.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                      </select>
+                    </label>}
+                    <label className="block text-sm">
+                      Find statements
+                      <input
+                        aria-label="Find statements for account details"
+                        className="block border rounded bg-background p-2 w-full"
+                        value={search}
+                        onChange={(event) => {
+                          setSearch(event.target.value)
+                          setPage(0)
+                        }}
+                      />
+                    </label>
+                    <div className="flex flex-wrap gap-2 items-center">
+                      <Button
+                        variant="outline"
+                        disabled={busy || !matching.length}
+                        onClick={() =>
+                          changeDraft({
+                            selected: {
+                              ...draft.selected,
+                              ...Object.fromEntries(
+                                matching.map((item) => [item.key, item])
+                              ),
+                            },
+                          })
+                        }
+                      >
+                        Select all {matching.length} matching statements
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        disabled={busy || !selected.length}
+                        onClick={() => changeDraft({ selected: {} })}
+                      >
+                        Clear statement selection
+                      </Button>
+                      <span className="text-sm">
+                        {selected.length} selected
+                        {hidden ? ` · ${hidden} hidden by search` : ""}
+                      </span>
+                    </div>
+                    <fieldset
+                      disabled={busy}
+                      className="divide-y max-h-56 overflow-y-auto"
+                    >
+                      {matching
+                        .slice(page * 25, (page + 1) * 25)
+                        .map((item) => (
+                          <label
+                            key={item.key}
+                            className="flex gap-3 py-2 text-sm items-start"
+                          >
+                            <input
+                              type="checkbox"
+                              aria-label={`Select ${item.filename} ${item.values.period_start || item.key}`}
+                              checked={!!draft.selected[item.key]}
+                              onChange={(event) => {
+                                const next = { ...draft.selected }
+                                if (event.target.checked) next[item.key] = item
+                                else delete next[item.key]
+                                changeDraft({ selected: next })
+                              }}
+                            />
+                            <span>
+                              <strong>{item.filename}</strong>
+                              <span className="block text-muted-foreground">
+                                {summary(item)}
+                              </span>
+                            </span>
+                          </label>
+                        ))}
+                    </fieldset>
+                    {!matching.length && (
+                      <p>
+                        No editable statement periods found. Files must finish
+                        reading before their account details can be set.
+                      </p>
+                    )}
+                    {matching.length > 25 && (
+                      <div className="flex gap-2 items-center">
+                        <Button
+                          variant="outline"
+                          disabled={!page}
+                          onClick={() => setPage(page - 1)}
+                        >
+                          Previous statements
+                        </Button>
+                        <span>
+                          {page * 25 + 1}–
+                          {Math.min((page + 1) * 25, matching.length)} of{" "}
+                          {matching.length}
+                        </span>
+                        <Button
+                          variant="outline"
+                          disabled={(page + 1) * 25 >= matching.length}
+                          onClick={() => setPage(page + 1)}
+                        >
+                          Next statements
+                        </Button>
+                      </div>
+                    )}
+                    {!!query.data?.notices.length && (
+                      <details>
+                        <summary>
+                          {query.data.notices.length} statements or files need
+                          individual review
+                        </summary>
+                        <ul className="text-sm list-disc pl-5">
+                          {query.data.notices.map((notice, i) => (
+                            <li key={i}>
+                              {notice.filename}: {notice.message}
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
+                  </>
+                )}
+                <h3 className="font-semibold">2. Choose fields to change</h3>
+                <label className="block rounded border p-3 text-sm space-y-2">
+                  <span className="flex items-start gap-2">
+                    <input type="checkbox" checked={!!draft.confirmNoActivity} disabled={busy}
+                      onChange={(event) => changeDraft({ confirmNoActivity: event.target.checked, confirmUnprintedStart: false })} />
+                    I checked every page of these statements and confirm they contain no transactions
+                  </span>
+                  <span className="block text-muted-foreground">
+                    Apply one confirmation to the selected unimported statements that have no payments.
+                    Each keeps its own dates and printed balances. Statements with payments, with printed
+                    opening and ending balances that differ, or that are already imported are excluded in
+                    the preview. A missing or unreadable page is not a period without activity: only confirm
+                    after checking the original pages.
+                  </span>
+                </label>
+                <label className="block rounded border p-3 text-sm space-y-2">
+                  <span className="flex items-start gap-2">
+                    <input type="checkbox" checked={!!draft.confirmUnprintedStart} disabled={busy}
+                      onChange={(event) => changeDraft({ confirmUnprintedStart: event.target.checked, confirmNoActivity: false })} />
+                    I confirm these statements do not print a start date
+                  </span>
+                  <span className="block text-muted-foreground">
+                    Apply one confirmation to the selected unimported statements. Each keeps its own closing date;
+                    recognized printed closing dates fill missing values. Starts remain unknown. Statements with
+                    a start date, no valid closing date, or an existing import are excluded in the preview.
+                    Only confirm after checking that the source layout omits the start date, rather than an unreadable date.
+                  </span>
+                </label>
+                {!draft.confirmUnprintedStart && !draft.confirmNoActivity && (
+                <fieldset disabled={busy} className="space-y-3">
+                  <label className="block text-sm">
+                    Whole-month shortcut (optional)
+                    <input
+                      type="month"
+                      aria-label="Statement month and year"
+                      className="block border rounded bg-background p-2"
+                      onChange={(event) => {
+                        const dates = statementMonth(event.target.value)
+                        if (dates)
+                          changeDraft({ values: { ...draft.values, ...dates } })
+                      }}
+                    />
+                    <span className="block text-muted-foreground mt-1">
+                      Sets the first and last calendar day for the selected
+                      statements. Check the preview; use custom dates below for
+                      other periods. Transaction dates stay unchanged.
+                    </span>
+                  </label>
+                  <label className="block text-sm">
+                    How to apply changes
+                    <select
+                      aria-label="How to apply account details"
+                      className="block border rounded bg-background p-2 w-full"
+                      value={draft.mode}
+                      onChange={(event) =>
+                        changeDraft({
+                          mode: event.target.value as Draft["mode"],
+                        })
+                      }
+                    >
+                      <option value="fill_missing">
+                        Fill missing details only
+                      </option>
+                      <option value="replace">
+                        Replace selected fields, including existing values
+                      </option>
+                    </select>
+                  </label>
+                  <p className="text-sm">
+                    Tick each field you want to change. Unticked fields keep
+                    their existing values. To fix an earlier entry, choose
+                    Replace selected fields above.
+                  </p>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {fields
+                      .filter(
+                        ([field]) => !datesOnly || field.startsWith("period_")
+                      )
+                      .map(([field, label]) => (
+                        <div key={field} className="space-y-1">
+                          <label className="flex items-center gap-2 text-sm">
+                            <input
+                              type="checkbox"
+                              aria-label={`Change ${label.toLowerCase()}`}
+                              checked={draft.values[field] !== undefined}
+                              onChange={(event) => {
+                                const values = { ...draft.values }
+                                if (event.target.checked)
+                                  values[field] = proposalFor(field)?.value ?? ""
+                                else delete values[field]
+                                changeDraft({ values })
+                              }}
+                            />
+                            {label}
+                          </label>
+                          {draft.values[field] !== undefined &&
+                            proposalFor(field) && (
+                              <p className="text-sm">
+                                {draft.values[field] ===
+                                proposalFor(field)!.value ? (
+                                  <>
+                                    {proposalFor(field)!.value} —{" "}
+                                    {proposalFor(field)!.label}
+                                  </>
+                                ) : (
+                                  <>
+                                    Proposed: {proposalFor(field)!.value} —{" "}
+                                    {proposalFor(field)!.label}{" "}
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() =>
+                                        changeDraft({
+                                          values: {
+                                            ...draft.values,
+                                            [field]: proposalFor(field)!.value,
+                                          },
+                                        })
+                                      }
+                                    >
+                                      Use {proposalFor(field)!.value}
+                                    </Button>
+                                  </>
+                                )}
+                              </p>
+                            )}
+                          {draft.values[field] !== undefined &&
+                            (field === "currency" ? (
+                              <select
+                                aria-label="New currency"
+                                className="border rounded bg-background p-2 w-full"
+                                value={draft.values[field]}
+                                onChange={(event) =>
+                                  changeDraft({
+                                    values: {
+                                      ...draft.values,
+                                      [field]: event.target.value,
+                                    },
+                                  })
+                                }
+                              >
+                                <option value="">Choose currency</option>
+                                <CurrencyOptions />
+                              </select>
+                            ) : (
+                              <input
+                                type={
+                                  field.startsWith("period_") ? "date" : "text"
+                                }
+                                maxLength={128}
+                                aria-label={`New ${label.toLowerCase()}`}
+                                className="border rounded bg-background p-2 w-full"
+                                value={draft.values[field]}
+                                onChange={(event) =>
+                                  changeDraft({
+                                    values: {
+                                      ...draft.values,
+                                      [field]: event.target.value,
+                                    },
+                                  })
+                                }
+                              />
+                            ))}
+                        </div>
+                      ))}
+                  </div>
+                  {draft.mode === "replace" && (
+                    <p className="text-sm">
+                      A ticked field left blank clears that value. Only apply an
+                      account number to statements for that account.
+                    </p>
+                  )}
+                  {draft.values.currency !== undefined && (
+                    <p className="text-sm">
+                      Currency correction keeps printed amounts unchanged. No
+                      exchange-rate conversion is applied.
+                    </p>
+                  )}
+                  {(draft.values.period_start !== undefined ||
+                    draft.values.period_end !== undefined) && (
+                    <p className="text-sm">
+                      Statement dates describe coverage; transaction dates stay
+                      unchanged. Check the dates for each selected period in the
+                      preview.
+                    </p>
+                  )}
+                </fieldset>
+                )}
+                {!datesOnly && (
+                  <div className="space-y-1">
+                    <AccountTypeEditor
+                      caseId={caseId}
+                      accountIds={selected.flatMap((item) =>
+                        item.account_id ? [item.account_id] : []
+                      )}
+                    />
+                    {selected.some((item) => !item.account_id) && (
+                      <p className="text-xs text-muted-foreground">
+                        Account type is set on imported statements. Statements
+                        not imported yet take their type from the reading; set
+                        it after import if it is wrong.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+            {actionError && (
+              <div className="space-y-2">
+                <p role="alert">
+                  {actionError.message} Your selection and edits are kept.
+                </p>
+                {actionError.retry && (
+                  <Button
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => (save.error ? save.mutate() : review.mutate())}
+                  >
+                    Try again
+                  </Button>
+                )}
+                {statusOf(save.error || review.error) !== 409 && (
+                  <Button
+                    variant="outline"
+                    disabled={busy || query.isFetching}
+                    onClick={() => void refreshSelection()}
+                  >
+                    Load latest details and keep my changes
+                  </Button>
+                )}
+              </div>
+            )}
+            {refreshNotice && (
+              <p role="status" className="text-sm">
+                {refreshNotice}
+              </p>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2 border-t pt-3 shrink-0">
+            {preview ? (
+              <>
+                <Button
+                  disabled={busy || !preview.updated || unresolved}
+                  onClick={() => save.mutate()}
+                >
+                  {save.isPending
+                    ? `Saving account details… ${workingFor} s`
+                    : unresolved
+                      ? "Choose a value above to save"
+                      : `Save changes to ${preview.updated} statements`}
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => {
+                    setPreview(null)
+                    save.reset()
+                  }}
+                >
+                  Back to selection and fields
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button
+                  disabled={busy || !valid || !query.data}
+                  onClick={() => review.mutate()}
+                >
+                  {review.isPending
+                    ? `Preparing preview… ${workingFor} s`
+                    : `Review changes for ${selected.length} statements`}
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => {
+                    setPage(0)
+                    void refreshSelection()
+                  }}
+                >
+                  Refresh statements
+                </Button>
+              </>
+            )}
+            <Button
+              variant="ghost"
+              disabled={busy}
+              onClick={() => setDraft({ ...draft, open: false })}
+            >
+              Close — keep draft
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}

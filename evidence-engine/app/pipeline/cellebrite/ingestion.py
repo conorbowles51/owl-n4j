@@ -131,6 +131,8 @@ def ingest_cellebrite_report(
     evidence_db=None,
     created_by_id=None,
     evidence_root_folder_id=None,
+    pause_check=None,
+    recovery=None,
 ) -> dict:
     """
     Ingest a complete Cellebrite UFED report into the Neo4j graph.
@@ -149,8 +151,10 @@ def ingest_cellebrite_report(
         Dict with ingestion statistics and status
     """
     start_time = time.time()
+    boundary = pause_check or (lambda: None)
 
     def _log(msg: str):
+        boundary()
         if log_callback:
             log_callback(msg)
 
@@ -175,7 +179,7 @@ def ingest_cellebrite_report(
     # ------------------------------------------------------------------
     _log("Step 2/9: Parsing report header...")
 
-    parser = CellebriteXMLParser(xml_path, log_callback=log_callback)
+    parser = CellebriteXMLParser(xml_path, log_callback=log_callback, pause_check=boundary)
     report = parser.parse_header()
 
     # Generate unique report key
@@ -202,6 +206,7 @@ def ingest_cellebrite_report(
         case_id=case_id,
         report_key=report_key,
         log_callback=log_callback,
+        pause_check=boundary,
     )
 
     # ------------------------------------------------------------------
@@ -212,164 +217,187 @@ def ingest_cellebrite_report(
     from .neo4j_client import Neo4jClient
 
     db = Neo4jClient()
-    writer = CellebriteNeo4jWriter(
-        neo4j_client=db,
-        case_id=case_id,
-        report_key=report_key,
-        report=report,
-        log_callback=log_callback,
-    )
-
-    writer.create_phone_report_node()
-
-    # ------------------------------------------------------------------
-    # Step 6: First pass — collect phone owner identity
-    # ------------------------------------------------------------------
-    _log("Step 6/9: Identifying phone owner (first pass)...")
-
-    # We need a first pass through models to find the phone owner
-    # before writing anything, so we can link entities correctly.
-    # Collect all models first, then write.
-    all_models: List[ParsedModel] = []
-
-    for batch in parser.stream_models(batch_size=500):
-        for model in batch:
-            writer.collect_phone_owner_info([model])
-            all_models.append(model)
-
-    phone_owner_key = writer.create_phone_owner()
-    if phone_owner_key:
-        writer.link_phone_owner_to_report()
-
-    _log(f"Collected {len(all_models)} models for processing")
-
-    # ------------------------------------------------------------------
-    # Step 7: Build model-to-file mapping from jump targets
-    # ------------------------------------------------------------------
-    _log("Step 7/9: Mapping file references...")
-
-    model_file_map = file_linker.build_model_file_map(all_models)
-    _log(f"Found {sum(len(v) for v in model_file_map.values())} file references across {len(model_file_map)} models")
-
-    # Make the attachment mapping available to the writer so that message/email/call
-    # nodes are persisted with `attachment_file_ids` for downstream retrieval.
-    writer.attachment_map = model_file_map
-
-    # ------------------------------------------------------------------
-    # Step 8: Write all models to Neo4j
-    # ------------------------------------------------------------------
-    _log("Step 8/9: Writing models to Neo4j...")
-
-    batch_size = 200
-    for i in range(0, len(all_models), batch_size):
-        batch = all_models[i:i + batch_size]
-        writer.write_batch(batch)
-
-        processed = min(i + batch_size, len(all_models))
-        if processed % 1000 == 0 or processed == len(all_models):
-            pct = 100 * processed / max(len(all_models), 1)
-            _log(f"Written {processed}/{len(all_models)} models ({pct:.1f}%)")
-
-    # ------------------------------------------------------------------
-    # Step 8.5: Geotag backfill for comms events
-    # ------------------------------------------------------------------
-    _log("Step 8.5: Backfilling nearest-location tags on comms events...")
     try:
-        backfill_stats = _backfill_nearest_location(db, case_id, report_key, log_callback=log_callback)
-        _log(
-            f"Backfill: "
-            f"{backfill_stats['calls_tagged']} calls, "
-            f"{backfill_stats['messages_tagged']} messages, "
-            f"{backfill_stats['emails_tagged']} emails tagged "
-            f"(within {backfill_stats['window_minutes']} min window)"
+        if recovery:
+            saved = db.run_query('MATCH (r:PhoneReport {case_id: $case_id, key: $key}) RETURN r.ingestion_run_id AS run_id',
+                case_id=case_id, key=report_key)
+            if ((saved and saved[0].get('run_id') != recovery.state['run_id'])
+                    or (not saved and recovery.state.get('next_model'))):
+                raise ValueError('This phone report was replaced or removed after processing paused. Review the current report before starting a new import.')
+        writer = CellebriteNeo4jWriter(
+            neo4j_client=db,
+            case_id=case_id,
+            report_key=report_key,
+            report=report,
+            log_callback=log_callback,
+            pause_check=boundary,
+            strict=True,
+            ingestion_run_id=recovery.state['run_id'] if recovery else None,
         )
-    except Exception as e:
-        _log(f"WARNING: Geotag backfill failed: {e}")
 
-    # ------------------------------------------------------------------
-    # Step 9: Register media files as evidence records
-    # ------------------------------------------------------------------
-    media_registered = 0
-    if evidence_db:
-        _log("Step 9/9: Registering media files as evidence records...")
-        media_registered = file_linker.register_media_files(
-            db_session=evidence_db,
-            owner=owner,
-            model_file_map=model_file_map,
-            created_by_id=created_by_id,
-            evidence_root_folder_id=evidence_root_folder_id,
-        )
-    else:
-        _log("Step 9/9: Skipping media registration (no Postgres session)")
+        writer.create_phone_report_node()
 
-    # ------------------------------------------------------------------
-    # Done — compile statistics + reconciliation report
-    # ------------------------------------------------------------------
-    elapsed = time.time() - start_time
-    stats = writer.get_stats()
+        # ------------------------------------------------------------------
+        # Step 6: First pass — collect phone owner identity
+        # ------------------------------------------------------------------
+        _log("Step 6/9: Identifying phone owner (first pass)...")
 
-    # Build XML-vs-persisted reconciliation. This answers the user-facing
-    # question "did we process everything Cellebrite reported?" — surfaced
-    # as a banner on the Cellebrite Overview tab.
-    reconciliation = _build_reconciliation(parser.xml_counts_by_type, stats)
+        # We need a first pass through models to find the phone owner
+        # before writing anything, so we can link entities correctly.
+        # Collect all models first, then write.
+        all_models: List[ParsedModel] = []
 
-    # Persist a compact form on the PhoneReport node so the UI can fetch
-    # it via the existing /reports endpoint. The integration branch keeps
-    # Cellebrite runtime metadata out of JSON files.
-    try:
-        with db._driver.session() as session:
-            session.run(
-                """
-                MATCH (r:PhoneReport {case_id: $cid, key: $rk})
-                SET r.ingest_reconciliation = $payload
-                """,
-                cid=case_id,
-                rk=report_key,
-                payload=json.dumps(reconciliation),
+        for batch in parser.stream_models(batch_size=500):
+            for model in batch:
+                writer.collect_phone_owner_info([model])
+                all_models.append(model)
+
+        phone_owner_key = writer.create_phone_owner()
+        if phone_owner_key:
+            writer.link_phone_owner_to_report()
+
+        _log(f"Collected {len(all_models)} models for processing")
+
+        # ------------------------------------------------------------------
+        # Step 7: Build model-to-file mapping from jump targets
+        # ------------------------------------------------------------------
+        _log("Step 7/9: Mapping file references...")
+
+        model_file_map = file_linker.build_model_file_map(all_models)
+        _log(f"Found {sum(len(v) for v in model_file_map.values())} file references across {len(model_file_map)} models")
+
+        # Make the attachment mapping available to the writer so that message/email/call
+        # nodes are persisted with `attachment_file_ids` for downstream retrieval.
+        writer.attachment_map = model_file_map
+
+        from .recovery import writer_state, restore_writer
+        saved_index = (recovery.state.get('next_model', 0) if recovery else 0)
+        if not isinstance(saved_index, int) or not 0 <= saved_index <= len(all_models):
+            raise ValueError('Saved model checkpoint does not match this report')
+        if recovery and saved_index:
+            restore_writer(writer, recovery.state.get('writer', {}))
+
+        # ------------------------------------------------------------------
+        # Step 8: Write all models to Neo4j
+        # ------------------------------------------------------------------
+        _log("Step 8/9: Writing models to Neo4j...")
+
+        batch_size = 200
+        for i in range(saved_index, len(all_models), batch_size):
+            boundary()
+            batch = all_models[i:i + batch_size]
+            writer.write_batch(batch)
+
+            processed = min(i + batch_size, len(all_models))
+            if recovery:
+                recovery.save(next_model=processed, writer=writer_state(writer), phase='writing')
+            if processed % 1000 == 0 or processed == len(all_models):
+                pct = 100 * processed / max(len(all_models), 1)
+                _log(f"Written {processed}/{len(all_models)} models ({pct:.1f}%)")
+
+        # ------------------------------------------------------------------
+        # Step 8.5: Geotag backfill for comms events
+        # ------------------------------------------------------------------
+        _log("Step 8.5: Backfilling nearest-location tags on comms events...")
+        try:
+            backfill_stats = _backfill_nearest_location(db, case_id, report_key, log_callback=log_callback, pause_check=boundary)
+            _log(
+                f"Backfill: "
+                f"{backfill_stats['calls_tagged']} calls, "
+                f"{backfill_stats['messages_tagged']} messages, "
+                f"{backfill_stats['emails_tagged']} emails tagged "
+                f"(within {backfill_stats['window_minutes']} min window)"
             )
-    except Exception as e:
-        _log(f"WARNING: could not persist reconciliation on PhoneReport: {e}")
+        except Exception as e:
+            _log(f"WARNING: Geotag backfill failed: {e}")
 
-    stats.update({
-        "status": "success",
-        "report_key": report_key,
-        "report_name": report.report_name,
-        "case_number": report.case_info.case_number,
-        "evidence_number": report.case_info.evidence_number,
-        "xml_model_count": report.model_count,
-        "xml_node_count": report.node_count,
-        "tagged_files_total": file_linker.total_count,
-        "tagged_files_resolved": file_linker.resolved_count,
-        "media_files_registered": media_registered,
-        "model_file_references": sum(len(v) for v in model_file_map.values()),
-        "duration_seconds": round(elapsed, 1),
-        "reconciliation": reconciliation,
-    })
+        # ------------------------------------------------------------------
+        # Step 9: Register media files as evidence records
+        # ------------------------------------------------------------------
+        media_registered = 0
+        if evidence_db:
+            _log("Step 9/9: Registering media files as evidence records...")
+            media_registered = file_linker.register_media_files(
+                db_session=evidence_db,
+                owner=owner,
+                model_file_map=model_file_map,
+                created_by_id=created_by_id,
+                evidence_root_folder_id=evidence_root_folder_id,
+                pause_check=boundary,
+            )
+        else:
+            _log("Step 9/9: Skipping media registration (no Postgres session)")
 
-    _log(
-        f"\nIngestion complete in {elapsed:.1f}s:\n"
-        f"  Contacts: {stats['contacts_created']}\n"
-        f"  Calls: {stats['calls_created']}\n"
-        f"  Chats: {stats['chats_created']}\n"
-        f"  Messages: {stats['messages_created']}\n"
-        f"  Emails: {stats['emails_created']}\n"
-        f"  Locations: {stats['locations_created']}\n"
-        f"  Accounts: {stats['accounts_created']}\n"
-        f"  Searches: {stats['searches_created']}\n"
-        f"  Pages: {stats['visited_pages_created']}\n"
-        f"  Meetings: {stats['meetings_created']}\n"
-        f"  Devices: {stats['devices_created']}\n"
-        f"  WiFi: {stats['wifi_networks_created']}\n"
-        f"  Credentials: {stats['credentials_created']}\n"
-        f"  Bookmarks: {stats['bookmarks_created']}\n"
-        f"  Total nodes: {stats['total_nodes']}\n"
-        f"  Total relationships: {stats['total_relationships']}\n"
-        f"  Media files registered: {media_registered}\n"
-        f"  Phone owner: {stats['phone_owner']}"
-    )
+        # ------------------------------------------------------------------
+        # Done — compile statistics + reconciliation report
+        # ------------------------------------------------------------------
+        elapsed = time.time() - start_time
+        stats = writer.get_stats()
 
-    db.close()
-    return stats
+        # Build XML-vs-persisted reconciliation. This answers the user-facing
+        # question "did we process everything Cellebrite reported?" — surfaced
+        # as a banner on the Cellebrite Overview tab.
+        reconciliation = _build_reconciliation(parser.xml_counts_by_type, stats)
+
+        # Persist a compact form on the PhoneReport node so the UI can fetch
+        # it via the existing /reports endpoint. The integration branch keeps
+        # Cellebrite runtime metadata out of JSON files.
+        try:
+            with db._driver.session() as session:
+                session.run(
+                    """
+                    MATCH (r:PhoneReport {case_id: $cid, key: $rk})
+                    SET r.ingest_reconciliation = $payload
+                    """,
+                    cid=case_id,
+                    rk=report_key,
+                    payload=json.dumps(reconciliation),
+                )
+        except Exception as e:
+            _log(f"WARNING: could not persist reconciliation on PhoneReport: {e}")
+
+        stats.update({
+            "status": "success",
+            "report_key": report_key,
+            "report_name": report.report_name,
+            "case_number": report.case_info.case_number,
+            "evidence_number": report.case_info.evidence_number,
+            "xml_model_count": report.model_count,
+            "xml_node_count": report.node_count,
+            "tagged_files_total": file_linker.total_count,
+            "tagged_files_resolved": file_linker.resolved_count,
+            "media_files_registered": media_registered,
+            "model_file_references": sum(len(v) for v in model_file_map.values()),
+            "duration_seconds": round(elapsed, 1),
+            "reconciliation": reconciliation,
+        })
+
+        _log(
+            f"\nIngestion complete in {elapsed:.1f}s:\n"
+            f"  Contacts: {stats['contacts_created']}\n"
+            f"  Calls: {stats['calls_created']}\n"
+            f"  Chats: {stats['chats_created']}\n"
+            f"  Messages: {stats['messages_created']}\n"
+            f"  Emails: {stats['emails_created']}\n"
+            f"  Locations: {stats['locations_created']}\n"
+            f"  Accounts: {stats['accounts_created']}\n"
+            f"  Searches: {stats['searches_created']}\n"
+            f"  Pages: {stats['visited_pages_created']}\n"
+            f"  Meetings: {stats['meetings_created']}\n"
+            f"  Devices: {stats['devices_created']}\n"
+            f"  WiFi: {stats['wifi_networks_created']}\n"
+            f"  Credentials: {stats['credentials_created']}\n"
+            f"  Bookmarks: {stats['bookmarks_created']}\n"
+            f"  Total nodes: {stats['total_nodes']}\n"
+            f"  Total relationships: {stats['total_relationships']}\n"
+            f"  Media files registered: {media_registered}\n"
+            f"  Phone owner: {stats['phone_owner']}"
+        )
+
+        return stats
+
+    finally:
+        db.close()
 
 
 # ---------------------------------------------------------------------------
@@ -383,6 +411,7 @@ def _backfill_nearest_location(
     report_key: str,
     window_minutes: int = 15,
     log_callback: Optional[Callable[[str], None]] = None,
+    pause_check=None,
 ) -> dict:
     """
     For each PhoneCall / Communication(message) / Email in the given report,
@@ -394,6 +423,7 @@ def _backfill_nearest_location(
     """
     import bisect
     from datetime import datetime, timedelta
+    boundary = pause_check or (lambda: None)
 
     def _log(msg: str):
         if log_callback:
@@ -436,6 +466,7 @@ def _backfill_nearest_location(
             rk=report_key,
         )
         for r in rs:
+            boundary()
             dt = _parse_ts(r["ts"])
             if dt:
                 anchors.append((dt, r["k"], r["lat"], r["lon"], r["src"]))
@@ -497,6 +528,7 @@ def _backfill_nearest_location(
             )
             updates = []
             for r in rs:
+                boundary()
                 ts = _parse_ts(r["ts"])
                 if not ts:
                     continue
@@ -539,6 +571,7 @@ def _backfill_nearest_location(
             if updates:
                 batch_size = 500
                 for i in range(0, len(updates), batch_size):
+                    boundary()
                     chunk = updates[i:i + batch_size]
                     session.run(
                         f"""

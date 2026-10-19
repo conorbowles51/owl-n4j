@@ -8,16 +8,25 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, HTTPException
 from fastapi.responses import Response
-from pydantic import BaseModel
+from decimal import Decimal
+from pydantic import BaseModel, Field, FiniteFloat, StrictStr, field_validator, model_validator
 from sqlalchemy.orm import Session
 
 from postgres.models.user import User
 from postgres.session import get_db
 from routers.case_access import case_access_dependency
 from routers.users import get_current_db_user
+from services.financial import attach_transaction_locators
 from services.neo4j_service import neo4j_service
 from services.case_service import CaseAccessDenied, CaseNotFound, check_case_access
 from services.financial_export_service import render_financial_export
+from services.financial_record_amounts import recorded_amount
+from services.financial_record_dates import financial_record_day as _financial_record_day, validate_financial_date_range
+
+import re
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def _financial_case_permission(request, payload: dict) -> tuple[str, str] | None:
@@ -104,7 +113,7 @@ def _build_entity_flow_rows(
     side: str,
     counterpart_selections: set[str],
 ) -> list[dict]:
-    grouped: dict[str, dict] = {}
+    grouped: dict[tuple[str, str | None], dict] = {}
     counter_side = "to_entity" if side == "from_entity" else "from_entity"
 
     for transaction in transactions:
@@ -118,13 +127,16 @@ def _build_entity_flow_rows(
         if not entity_value or not entity_name:
             continue
 
-        current = grouped.get(entity_value)
+        currency = str(transaction.get('currency') or '').strip().upper() or None
+        group_key = (entity_value, currency)
+        current = grouped.get(group_key)
         if current:
             current["count"] += 1
             current["totalAmount"] += abs(float(transaction.get("amount") or 0))
             continue
 
-        grouped[entity_value] = {
+        grouped[group_key] = {
+            "currency": currency,
             "key": entity_value,
             "name": entity_name,
             "count": 1,
@@ -173,8 +185,15 @@ def _collect_entity_notes(case_id: str, transactions: list[dict]) -> list[dict]:
 
 
 class CategorizeRequest(BaseModel):
-    category: str
+    category: str = Field(min_length=1, max_length=120)
     case_id: str
+
+    @field_validator('category')
+    @classmethod
+    def nonblank_category(cls, value):
+        if not value.strip():
+            raise ValueError('Choose a category name.')
+        return value.strip()
 
 
 class FromToRequest(BaseModel):
@@ -208,8 +227,8 @@ class BatchFromToRequest(BaseModel):
 
 
 class CreateCategoryRequest(BaseModel):
-    name: str
-    color: str
+    name: str = Field(min_length=1, max_length=120)
+    color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
     case_id: str
 
 
@@ -226,10 +245,15 @@ async def get_financial_transactions(
     start_date: Optional[str] = Query(None, description="Filter on or after this date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="Filter on or before this date (YYYY-MM-DD)"),
     categories: Optional[str] = Query(None, description="Comma-separated financial categories to include"),
+    db: Session = Depends(get_db),
 ):
     """
     Get financial transactions with from/to entity resolution for a specific case.
     """
+    try:
+        validate_financial_date_range(start_date, end_date)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     try:
         parsed_types = [t.strip() for t in types.split(",") if t.strip()] if types else None
         parsed_categories = [c.strip() for c in categories.split(",") if c.strip()] if categories else None
@@ -242,6 +266,18 @@ async def get_financial_transactions(
             end_date=end_date,
             categories=parsed_categories,
         )
+        rows = (
+            transactions.get("transactions")
+            if isinstance(transactions, dict)
+            else transactions
+        )
+        if isinstance(rows, list):
+            # A locator is auxiliary to the row it decorates: a failure here
+            # costs the click-through highlight, never the transaction list.
+            try:
+                attach_transaction_locators(db, rows)
+            except Exception:
+                logger.exception("Attaching transaction locators failed for case %s", case_id)
         return transactions
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -477,20 +513,61 @@ async def auto_extract_from_to(
 
 
 class BulkCorrectionItem(BaseModel):
-    name: str
-    new_amount: float
-    correction_reason: str
+    node_key: Optional[str] = Field(default=None, min_length=1, max_length=512)
+    name: Optional[str] = Field(default=None, min_length=1, max_length=512)
+    new_amount: FiniteFloat
+    expected_amount: Optional[FiniteFloat] = None
+    expected_raw_amount: Optional[StrictStr] = Field(default=None, max_length=10000)
+    correction_reason: str = Field(min_length=1, max_length=4000)
+
+    @model_validator(mode='after')
+    def validate_correction(self):
+        if bool(self.node_key) == bool(self.name):
+            raise ValueError('Supply one record key or one transaction name.')
+        if Decimal(str(self.new_amount)).normalize().as_tuple().exponent < -2:
+            raise ValueError('Use no more than two decimal places for a correction.')
+        if self.expected_amount is not None and "expected_raw_amount" in self.model_fields_set:
+            raise ValueError('Supply either the current numeric amount or its unreadable text, not both.')
+        if recorded_amount(self.new_amount) is None:
+            raise ValueError('The correction must be stored exactly to cents.')
+        if self.new_amount == 0:
+            raise ValueError('Correction amount cannot be zero.')
+        if not self.correction_reason.strip():
+            raise ValueError('Explain why the amount is being corrected.')
+        return self
 
 
 class BulkCorrectRequest(BaseModel):
     case_id: str
-    corrections: List[BulkCorrectionItem]
+    corrections: List[BulkCorrectionItem] = Field(min_length=1, max_length=1000)
 
 
 class UpdateAmountRequest(BaseModel):
     case_id: str
-    new_amount: float
-    correction_reason: str
+    new_amount: FiniteFloat
+    expected_amount: Optional[FiniteFloat] = None
+    expected_raw_amount: Optional[StrictStr] = Field(default=None, max_length=10000)
+    correction_reason: str = Field(min_length=1, max_length=4000)
+
+    @field_validator('new_amount')
+    @classmethod
+    def amount_precision(cls, value):
+        if recorded_amount(value) is None:
+            raise ValueError('Use an amount that can be stored exactly with no more than two decimal places.')
+        return value
+
+    @model_validator(mode='after')
+    def one_expected_value(self):
+        if self.expected_amount is not None and "expected_raw_amount" in self.model_fields_set:
+            raise ValueError('Supply either the current numeric amount or its unreadable text, not both.')
+        return self
+
+    @field_validator('correction_reason')
+    @classmethod
+    def reason_is_not_blank(cls, value):
+        if not value.strip():
+            raise ValueError('Explain why the amount is being corrected.')
+        return value
 
 
 @router.put("/transactions/{node_key}/amount")
@@ -504,87 +581,74 @@ async def update_transaction_amount(node_key: str, body: UpdateAmountRequest):
             case_id=body.case_id,
             new_amount=body.new_amount,
             correction_reason=body.correction_reason,
+            expected_amount=body.expected_amount,
+            **({"expected_raw_amount": body.expected_raw_amount} if "expected_raw_amount" in body.model_fields_set else {}),
         )
         return result
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=409 if body.expected_amount is not None or "expected_raw_amount" in body.model_fields_set else 404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/transactions/bulk-correct")
 async def bulk_correct_transactions(body: BulkCorrectRequest):
-    """Apply amount corrections in bulk, matching by transaction name."""
-    if not body.corrections:
-        raise HTTPException(status_code=400, detail="No corrections provided")
+    """Correct exact record keys; older name-based requests must identify one record."""
     try:
-        # Fetch all transactions for this case to match by name
-        all_txns_result = neo4j_service.get_financial_transactions(case_id=body.case_id)
-        all_txns = (
-            all_txns_result.get("transactions", [])
-            if isinstance(all_txns_result, dict)
-            else all_txns_result
-        )
-
-        # Build a lookup: lowercase name -> list of transaction dicts
-        name_lookup: dict = {}
-        for t in all_txns:
-            name = (t.get("name") or "").strip().lower()
+        by_key = {}
+        for mode in ('transactions', 'intelligence'):
+            response = neo4j_service.get_financial_transactions(case_id=body.case_id, mode=mode)
+            rows = response.get('transactions', []) if isinstance(response, dict) else response
+            by_key.update((row['key'], row) for row in rows)
+        names = {}
+        for row in by_key.values():
+            name = (row.get('name') or '').strip().lower()
             if name:
-                name_lookup.setdefault(name, []).append(t)
+                names.setdefault(name, []).append(row)
+
+        selected = []
+        seen = set()
+        for correction in body.corrections:
+            if correction.node_key:
+                match = by_key.get(correction.node_key)
+                if match is None:
+                    raise HTTPException(status_code=404, detail=f'Record {correction.node_key} is not in this case. No corrections were applied.')
+            else:
+                matches = names.get(correction.name.strip().lower(), [])
+                if len(matches) != 1:
+                    raise HTTPException(status_code=409, detail=f'Name {correction.name!r} must identify exactly one record. Use record keys instead. No corrections were applied.')
+                match = matches[0]
+            if match['key'] in seen:
+                raise HTTPException(status_code=400, detail=f'Record {match["key"]} is repeated. No corrections were applied.')
+            seen.add(match['key'])
+            if (correction.expected_amount is not None and match.get('amount') != correction.expected_amount) or ("expected_raw_amount" in correction.model_fields_set and (match.get('amount') is not None or match.get('raw_amount') != correction.expected_raw_amount)):
+                raise HTTPException(status_code=409, detail=f'Record {match["key"]} changed after the preview. Reload its amount. No corrections were applied.')
+            selected.append((correction, match))
 
         results = []
-        for correction in body.corrections:
-            search_name = correction.name.strip().lower()
-            if not search_name:
-                results.append({"name": correction.name, "status": "skipped", "reason": "Empty name"})
-                continue
-
-            matches = name_lookup.get(search_name)
-            if not matches:
-                results.append({"name": correction.name, "status": "not_found", "reason": "No matching transaction"})
-                continue
-
-            if correction.new_amount == 0:
-                results.append({"name": correction.name, "status": "skipped", "reason": "Amount cannot be zero"})
-                continue
-
-            for match in matches:
-                try:
-                    neo4j_service.update_transaction_amount(
-                        node_key=match["key"],
-                        case_id=body.case_id,
-                        new_amount=correction.new_amount,
-                        correction_reason=correction.correction_reason,
-                    )
-                    results.append({
-                        "name": correction.name,
-                        "key": match["key"],
-                        "status": "corrected",
-                        "old_amount": match.get("amount"),
-                        "new_amount": correction.new_amount,
-                    })
-                except Exception as exc:
-                    results.append({
-                        "name": correction.name,
-                        "key": match["key"],
-                        "status": "error",
-                        "reason": str(exc),
-                    })
-
-        corrected = sum(1 for r in results if r["status"] == "corrected")
-        not_found = sum(1 for r in results if r["status"] == "not_found")
-        errors = sum(1 for r in results if r["status"] == "error")
-        return {
-            "success": True,
-            "corrected": corrected,
-            "not_found": not_found,
-            "errors": errors,
-            "total": len(body.corrections),
-            "results": results,
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        for correction, match in selected:
+            try:
+                answer = neo4j_service.update_transaction_amount(
+                    node_key=match['key'], case_id=body.case_id,
+                    new_amount=correction.new_amount,
+                    correction_reason=correction.correction_reason,
+                    expected_amount=correction.expected_amount,
+                    **({"expected_raw_amount": correction.expected_raw_amount} if "expected_raw_amount" in correction.model_fields_set else {}),
+                )
+                if not answer.get('success') or answer.get('key') != match['key'] or answer.get('amount') != correction.new_amount:
+                    raise ValueError('The response did not confirm this correction.')
+                results.append(dict(key=match['key'], name=correction.name, status='corrected',
+                                    old_amount=match.get('amount'), old_raw_amount=match.get('raw_amount'), new_amount=correction.new_amount))
+            except Exception as exc:
+                results.append(dict(key=match['key'], name=correction.name, status='error', reason=str(exc)))
+        corrected = sum(row['status'] == 'corrected' for row in results)
+        return dict(success=corrected == len(results), corrected=corrected, not_found=0,
+                    errors=len(results) - corrected, total=len(results), results=results)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception('Bulk financial correction failed for case %s', body.case_id)
+        raise HTTPException(status_code=500, detail='Corrections could not be confirmed. Reload the records before retrying.')
 
 
 class LinkSubTransactionRequest(BaseModel):
@@ -650,6 +714,11 @@ async def export_financial_pdf(
     from_entities: Optional[str] = Query(None, description="Comma-separated sender entity keys"),
     to_entities: Optional[str] = Query(None, description="Comma-separated beneficiary entity keys"),
     include_entity_notes: bool = Query(True, description="Include entity notes appendix"),
+    category_names: Optional[List[str]] = Query(None),
+    sender_values: Optional[List[str]] = Query(None),
+    beneficiary_values: Optional[List[str]] = Query(None),
+    min_amount: Optional[float] = Query(None, ge=0, allow_inf_nan=False),
+    max_amount: Optional[float] = Query(None, ge=0, allow_inf_nan=False),
 ):
     """Export filtered financial transactions as a PDF report.
 
@@ -658,12 +727,16 @@ async def export_financial_pdf(
     Includes transaction names, AI summaries, and entity notes appendix.
     """
     try:
+        try:
+            validate_financial_date_range(start_date, end_date)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         result = neo4j_service.get_financial_transactions(case_id=case_id, mode=mode)
         transactions = result.get("transactions", []) if isinstance(result, dict) else result
         filters = []
-        category_list = _parse_csv_param(categories)
-        from_entity_values = set(_parse_csv_param(from_entities))
-        to_entity_values = set(_parse_csv_param(to_entities))
+        category_list = category_names if category_names is not None else _parse_csv_param(categories)
+        from_entity_values = set(sender_values if sender_values is not None else _parse_csv_param(from_entities))
+        to_entity_values = set(beneficiary_values if beneficiary_values is not None else _parse_csv_param(to_entities))
 
         if category_list:
             transactions = [
@@ -673,10 +746,10 @@ async def export_financial_pdf(
             ]
             filters.append(f"Categories: {', '.join(category_list)}")
         if start_date:
-            transactions = [t for t in transactions if t.get("date") and t["date"] >= start_date]
+            transactions = [t for t in transactions if (day := _financial_record_day(t.get("date"))) is not None and day >= start_date]
             filters.append(f"From: {start_date}")
         if end_date:
-            transactions = [t for t in transactions if t.get("date") and t["date"] <= end_date]
+            transactions = [t for t in transactions if (day := _financial_record_day(t.get("date"))) is not None and day <= end_date]
             filters.append(f"To: {end_date}")
         if entity_key:
             display_name = entity_name or entity_key
@@ -703,6 +776,14 @@ async def export_financial_pdf(
             transactions = [t for t in transactions if _matches_text_search(t, search)]
             filters.append(f'Search: "{search}"')
 
+        if min_amount is not None and max_amount is not None and min_amount > max_amount:
+            raise HTTPException(status_code=422, detail='Minimum amount must not exceed maximum amount.')
+        if min_amount is not None:
+            transactions = [t for t in transactions if (value := recorded_amount(t.get('amount'))) is not None and abs(value) >= min_amount]
+            filters.append(f'Minimum amount (absolute value): {min_amount}')
+        if max_amount is not None:
+            transactions = [t for t in transactions if (value := recorded_amount(t.get('amount'))) is not None and abs(value) <= max_amount]
+            filters.append(f'Maximum amount (absolute value): {max_amount}')
         base_filtered_transactions = transactions
 
         entity_flow = None
@@ -741,9 +822,10 @@ async def export_financial_pdf(
             filters_description,
             entity_notes=entity_notes,
             entity_flow=entity_flow,
+            dataset_mode=mode,
         )
 
-        safe_name = case_name.replace(" ", "_").replace("/", "-")[:50]
+        safe_name = re.sub(r"[^A-Za-z0-9_-]", "_", case_name)[:50] or "Case"
         mode_label = "Transactions" if mode != "intelligence" else "Financial_Intelligence"
         filename = (
             f"Financial_Report_{mode_label}_{safe_name}_{datetime.now().strftime('%Y%m%d')}."
@@ -755,5 +837,7 @@ async def export_financial_pdf(
             media_type=rendered["media_type"],
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

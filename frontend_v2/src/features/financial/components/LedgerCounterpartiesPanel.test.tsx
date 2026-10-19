@@ -1,0 +1,209 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { render, screen, fireEvent } from "@testing-library/react"
+import { it, expect, vi, afterEach } from "vitest"
+import { LedgerCounterpartiesPanel } from "./LedgerCounterpartiesPanel"
+vi.mock("./LinkedPayments", () => ({
+  LinkedPayments: ({ caseId, ids }: { caseId: string; ids: string[] }) => (
+    <p data-testid="linked-payments">
+      {caseId}/{ids.join(",")}
+    </p>
+  ),
+}))
+afterEach(() => vi.restoreAllMocks())
+const totals = {
+  currency: "GBP",
+  rows: 1,
+  credits_minor: "9007199254740993",
+  debits_minor: "0",
+  net_minor: "9007199254740993",
+}
+const answer = {
+  case_id: "case-a",
+  account_id: null,
+  start_date: null,
+  end_date: null,
+  label_basis: "counterparty_raw_exact",
+  counterparty_limitation: "No identity or transfer matching.",
+  available: true,
+  reason: null,
+  applied: false,
+  limitation: "Not complete evidence.",
+  included_rows: 1,
+  excluded_rows: 0,
+  currencies: [totals],
+  counterparties: [
+    {
+      ...totals,
+      label: "Source label",
+      transaction_ids: ["tx-a"],
+      source_document_ids: ["doc-a"],
+    },
+  ],
+}
+function mount(
+  data: unknown = answer,
+  population: "working" | "verified" = "verified"
+) {
+  const fetch = vi
+    .spyOn(globalThis, "fetch")
+    .mockImplementation(async () => new Response(JSON.stringify(data)))
+  const client = new QueryClient()
+  const element = (caseId = "case-a") => (
+    <QueryClientProvider client={client}>
+      <LedgerCounterpartiesPanel
+        caseId={caseId}
+        params={{}}
+        population={population}
+      />
+    </QueryClientProvider>
+  )
+  const view = render(element())
+  return { fetch, client, change: () => view.rerender(element("case-b")) }
+}
+it("loads exact counterparty totals on request and passes only contributing payments to the payment browser", async () => {
+  const { fetch, change } = mount()
+  expect(fetch).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole("button", { name: "Show totals" }))
+  expect(
+    await screen.findByText(/Credits: 90,071,992,547,409.93 GBP/)
+  ).toBeInTheDocument()
+  expect(screen.getByTestId("linked-payments")).toHaveTextContent("case-a/tx-a")
+  change()
+  expect(screen.queryByTestId("linked-payments")).not.toBeInTheDocument()
+  expect(screen.queryByText(/Credits:/)).not.toBeInTheDocument()
+})
+it.each([
+  { case_id: "other" },
+  { start_date: "2026-01-01" },
+  { account_id: "other" },
+  { label_basis: "inferred" },
+  { counterparties: [{ ...answer.counterparties[0], credits_minor: "1" }] },
+  {
+    counterparties: [
+      { ...answer.counterparties[0], transaction_ids: ["tx-a", "tx-a"] },
+    ],
+  },
+  { currencies: [{ ...totals, credits_minor: "4" }] },
+])("refuses mismatched counterparty totals %j", async (change) => {
+  mount({ ...answer, ...change })
+  fireEvent.click(screen.getByRole("button", { name: "Show totals" }))
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Counterparty totals unavailable"
+  )
+  expect(screen.queryByText(/Credits:/)).not.toBeInTheDocument()
+})
+it("keeps unknown separate from empty activity", async () => {
+  mount({
+    ...answer,
+    available: false,
+    reason: "Too many rows.",
+    included_rows: null,
+    excluded_rows: null,
+    currencies: [],
+    counterparties: [],
+  })
+  fireEvent.click(screen.getByRole("button", { name: "Show totals" }))
+  expect(
+    await screen.findByText("Counterparty totals unavailable. Too many rows.")
+  ).toBeInTheDocument()
+  expect(screen.queryByText(/No eligible payments/)).not.toBeInTheDocument()
+})
+
+it.each([
+  [null, "Name not recorded"],
+  ["", "Name left blank"],
+  ["Acme ", '"Acme "'],
+])("preserves label meaning %s", async (label, expected) => {
+  mount({ ...answer, counterparties: [{ ...answer.counterparties[0], label }] })
+  fireEvent.click(screen.getByRole("button", { name: "Show totals" }))
+  expect(
+    await screen.findAllByText(new RegExp(String(expected)))
+  ).not.toHaveLength(0)
+})
+
+it("pages label groups without changing their reconciled total", async () => {
+  const group = {
+    ...totals,
+    credits_minor: "1",
+    debits_minor: "0",
+    net_minor: "1",
+  }
+  mount({
+    ...answer,
+    included_rows: 26,
+    currencies: [{ ...group, rows: 26, credits_minor: "26", net_minor: "26" }],
+    counterparties: Array.from({ length: 26 }, (_, index) => ({
+      ...group,
+      label: `Label ${index}`,
+      transaction_ids: [`tx-${index}`],
+      source_document_ids: [`doc-${index}`],
+    })),
+  })
+  fireEvent.click(screen.getByRole("button", { name: "Show totals" }))
+  expect(await screen.findByText(/Label 0 · GBP/)).toBeInTheDocument()
+  expect(screen.queryByText(/Label 25 · GBP/)).not.toBeInTheDocument()
+  fireEvent.click(
+    screen.getByRole("button", { name: "Next counterparty totals" })
+  )
+  expect(screen.getByText(/Label 25 · GBP/)).toBeInTheDocument()
+  expect(screen.queryByText(/Label 0 · GBP/)).not.toBeInTheDocument()
+})
+it("keeps a large group's printed names behind paged details without dropping its payments", async () => {
+  mount({
+    ...answer,
+    counterparties: [
+      {
+        ...answer.counterparties[0],
+        raw_labels: Array.from(
+          { length: 26 },
+          (_, index) => `Printed name ${index + 1}`
+        ),
+      },
+    ],
+  })
+  fireEvent.click(screen.getByRole("button", { name: "Show totals" }))
+  const summary = await screen.findByText("Names printed on statements (26)")
+  expect(summary.closest("details")).not.toHaveAttribute("open")
+  fireEvent.click(summary)
+  expect(screen.getByText('"Printed name 1"')).toBeInTheDocument()
+  expect(screen.queryByText('"Printed name 26"')).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole("button", { name: "Next printed names" }))
+  expect(screen.getByText('"Printed name 26"')).toBeInTheDocument()
+  expect(screen.getByTestId("linked-payments")).toHaveTextContent("case-a/tx-a")
+})
+it("refreshes after a ledger decision invalidates the shared cache", async () => {
+  const { fetch, client } = mount()
+  fireEvent.click(screen.getByRole("button", { name: "Show totals" }))
+  await screen.findByText(/Credits:/)
+  fetch.mockImplementation(
+    async () =>
+      new Response(
+        JSON.stringify({
+          ...answer,
+          included_rows: 0,
+          excluded_rows: 1,
+          currencies: [],
+          counterparties: [],
+        })
+      )
+  )
+  await client.invalidateQueries({ queryKey: ["financial-ledger", "case-a"] })
+  expect(await screen.findByText(/No eligible payments/)).toBeInTheDocument()
+  expect(screen.queryByText(/Credits:/)).not.toBeInTheDocument()
+})
+
+it("uses the explicit working population and preserves exact amounts", async () => {
+  const { fetch } = mount({ ...answer, population: "working" }, "working")
+  fireEvent.click(screen.getByRole("button", { name: "Show totals" }))
+  expect(
+    await screen.findByText(/Credits: 90,071,992,547,409.93 GBP/)
+  ).toBeInTheDocument()
+  expect(String(fetch.mock.calls[0][0])).toContain("ledger-working-analysis")
+})
+it("refuses verified data returned to a working analysis", async () => {
+  mount(answer, "working")
+  fireEvent.click(screen.getByRole("button", { name: "Show totals" }))
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "different population"
+  )
+})

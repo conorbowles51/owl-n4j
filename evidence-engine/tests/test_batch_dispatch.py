@@ -55,7 +55,7 @@ async def test_dispatch_uses_stable_queue_id_and_marks_outbox_dispatched() -> No
     assert pool.calls == [
         (
             ("process_batch", "batch-1", "case-1"),
-            {"_job_id": "evidence-batch:batch-1"},
+            {"_job_id": "evidence-batch:batch-1", "_queue_name": "arq:queue"},
         )
     ]
 
@@ -81,3 +81,21 @@ async def test_dispatch_failure_is_durable_and_can_be_retried() -> None:
     assert dispatched is True
     assert pool.calls[-1][1]["_job_id"] == "evidence-batch:batch-1"
     assert job.pipeline_state["batch_dispatch"]["state"] == "dispatched"
+
+
+@pytest.mark.asyncio
+async def test_pdf_preparation_uses_reserved_queue_with_same_durable_job_id():
+    from app.services.processing_queues import PDF_REVIEW_QUEUE, batch_queue
+    job = dispatch_job()
+    job.job_type = 'pdf_review'
+    job.pipeline_state['processing_queue'] = batch_queue([job])
+    pool = FakePool()
+    await batch_dispatch.dispatch_ingestion_batch(job, FakeDb(job), pool)
+    assert pool.calls[0][1] == {'_job_id': 'evidence-batch:batch-1', '_queue_name': PDF_REVIEW_QUEUE}
+    assert batch_queue([job, SimpleNamespace(job_type='ingestion')]) == 'arq:queue'
+    # Recovery running in the PDF worker must still send general work to its
+    # explicit general queue, never inherit that worker's Redis default.
+    general = dispatch_job()
+    pool = FakePool()
+    await batch_dispatch.dispatch_ingestion_batch(general, FakeDb(general), pool)
+    assert pool.calls[0][1]['_queue_name'] == 'arq:queue'

@@ -1,0 +1,39 @@
+# Isolated synthetic-data services for native Python/Node development.
+# Never shares the production compose file's containers or bind-mounted data.
+name: loupe-local
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: loupe_local
+      POSTGRES_USER: loupe_local
+      POSTGRES_PASSWORD: loupe_local_dev
+    ports: ["127.0.0.1:55434:5432"]
+    volumes: ["postgres:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U loupe_local -d loupe_local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  neo4j:
+    image: neo4j:5
+    environment:
+      NEO4J_AUTH: neo4j/loupe_local_dev
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_security_procedures_unrestricted: apoc.*
+      NEO4J_server_memory_heap_initial__size: 256m
+      NEO4J_server_memory_heap_max__size: 512m
+      NEO4J_server_memory_pagecache_size: 256m
+    ports: ["127.0.0.1:57474:7474", "127.0.0.1:57687:7687"]
+    volumes: ["neo4j:/data"]
+  redis:
+    image: redis:7-alpine
+    ports: ["127.0.0.1:56379:6379"]
+  chromadb:
+    image: chromadb/chroma:1.4.0
+    ports: ["127.0.0.1:58101:8000"]
+    volumes: ["chroma:/data"]
+volumes:
+  postgres:
+  neo4j:
+  chroma:

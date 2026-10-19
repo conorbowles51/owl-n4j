@@ -130,12 +130,18 @@ class CellebriteNeo4jWriter:
         report: CellebriteReport,
         log_callback: Optional[Callable[[str], None]] = None,
         attachment_map: Optional[Dict[str, List[str]]] = None,
+        pause_check: Optional[Callable[[], None]] = None,
+        strict: bool = False,
+        ingestion_run_id: Optional[str] = None,
     ):
         self.db = neo4j_client
         self.case_id = case_id
         self.report_key = report_key
         self.report = report
         self.log_callback = log_callback
+        self.pause_check = pause_check or (lambda: None)
+        self.strict = strict
+        self.ingestion_run_id = ingestion_run_id
 
         # Mapping of model_id -> [file_id, ...] for attachment persistence.
         # Populated from file_linker.build_model_file_map() and set before write_batch().
@@ -220,6 +226,8 @@ class CellebriteNeo4jWriter:
         if key in self._created_person_keys:
             return key
 
+        self.pause_check()
+
         display_name = name or identifier or key
         props = {
             "id": str(uuid.uuid4()),
@@ -252,6 +260,8 @@ class CellebriteNeo4jWriter:
         if key in self._created_node_keys:
             return key
 
+        self.pause_check()
+
         # Sanitize label
         sanitized = re.sub(r"[^a-zA-Z0-9_]", "_", label.strip())
         sanitized = re.sub(r"_+", "_", sanitized).strip("_")
@@ -262,7 +272,8 @@ class CellebriteNeo4jWriter:
         props = {k: v for k, v in props.items() if v is not None}
 
         self.db.run_query(
-            f"CREATE (n:`{sanitized}` $props)",
+            f"MERGE (n:`{sanitized}` {{key: $key, case_id: $case_id, cellebrite_report_key: $report_key}}) ON CREATE SET n = $props",
+            key=key, case_id=self.case_id, report_key=self.report_key,
             props=props,
         )
 
@@ -272,6 +283,7 @@ class CellebriteNeo4jWriter:
 
     def _create_relationship(self, from_key: str, to_key: str, rel_type: str, extra_props: Optional[Dict] = None):
         """Create a relationship between two nodes."""
+        self.pause_check()
         sanitized = re.sub(r"[^a-zA-Z0-9_]", "_", rel_type.strip())
         sanitized = re.sub(r"_+", "_", sanitized).strip("_")
         if not sanitized:
@@ -284,6 +296,7 @@ class CellebriteNeo4jWriter:
             "from_key": from_key,
             "to_key": to_key,
             "case_id": self.case_id,
+            "report_key": self.report_key,
             **(extra_props or {}),
         }
 
@@ -291,6 +304,8 @@ class CellebriteNeo4jWriter:
             f"""
             MATCH (a {{key: $from_key, case_id: $case_id}})
             MATCH (b {{key: $to_key, case_id: $case_id}})
+            WHERE (a:Person OR a:PhoneReport OR a.cellebrite_report_key = $report_key)
+              AND (b:Person OR b:PhoneReport OR b.cellebrite_report_key = $report_key)
             MERGE (a)-[r:`{sanitized}` {{case_id: $case_id}}]->(b)
             """,
             **params,
@@ -438,6 +453,7 @@ class CellebriteNeo4jWriter:
             "case_id": self.case_id,
             "source_type": "cellebrite_ufed",
             "report_version": self.report.report_version,
+            "ingestion_run_id": self.ingestion_run_id,
             "extraction_type": self.report.extraction_type,
             "node_count": self.report.node_count,
             "model_count": self.report.model_count,
@@ -468,7 +484,7 @@ class CellebriteNeo4jWriter:
         # the existing node instead of creating a duplicate. Preserve the
         # investigator-supplied device_name_override across re-ingest by
         # excluding it from the ON MATCH update.
-        match_props = {k: v for k, v in props.items() if k != "device_name_override"}
+        match_props = {k: v for k, v in props.items() if k not in {"device_name_override", "id"}}
         self.db.run_query(
             """
             MERGE (r:PhoneReport {case_id: $case_id, key: $key})
@@ -502,12 +518,15 @@ class CellebriteNeo4jWriter:
     def write_batch(self, models: List[ParsedModel]):
         """Write a batch of parsed models to Neo4j."""
         for model in models:
+            self.pause_check()
             try:
                 handler = self._get_handler(model.model_type)
                 if handler:
                     handler(model)
             except Exception as e:
                 self._log(f"WARNING: Error writing {model.model_type} ({model.model_id[:8]}): {e}")
+                if self.strict:
+                    raise RuntimeError(f'Unable to save {model.model_type} {model.model_id}; completed work is retained for resume.') from e
 
     def _get_handler(self, model_type: str):
         """Get the handler function for a model type."""

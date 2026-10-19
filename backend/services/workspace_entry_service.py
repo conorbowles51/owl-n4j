@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import String, asc, cast, desc, or_, select
+from sqlalchemy import String, asc, cast, desc, or_, select, func, exists
 from sqlalchemy.orm import Session, selectinload
 
 from postgres.models.case_deadline import CaseDeadline
@@ -801,6 +801,7 @@ def list_entries(
     confidence_max: int | None = None,
     author_user_id: UUID | None = None,
     query_text: str | None = None,
+    tag: str | None = None,
     updated_since: datetime | None = None,
     include_deleted: bool = False,
     sort_by: str = "updated_at",
@@ -815,6 +816,13 @@ def list_entries(
     )
     if not include_deleted:
         query = query.filter(WorkspaceEntry.deleted_at.is_(None))
+    if tag:
+        if db.get_bind().dialect.name == "postgresql":
+            from sqlalchemy.dialects.postgresql import JSONB
+            query = query.filter(cast(WorkspaceEntry.tags, JSONB).contains([tag]))
+        else:
+            values = func.json_each(WorkspaceEntry.tags).table_valued("value")
+            query = query.filter(exists(select(1).select_from(values).where(values.c.value == tag)))
     if entry_type:
         query = query.filter(WorkspaceEntry.entry_type == entry_type.lower())
     if lifecycle_state:
@@ -872,6 +880,46 @@ def get_entry(
         ),
         include_history=True,
     )
+
+
+def list_financial_payment_links(
+    db: Session, *, case_id: UUID, limit: int = 200, offset: int = 0
+) -> dict[str, Any]:
+    """Small navigation index; do not load saved report bodies or payment snapshots."""
+    query = db.query(WorkspaceEntry.id, WorkspaceEntry.title, WorkspaceEntry.tags).filter(
+        WorkspaceEntry.case_id == case_id, WorkspaceEntry.deleted_at.is_(None)
+    )
+    if db.get_bind().dialect.name == "postgresql":
+        from sqlalchemy.dialects.postgresql import JSONB
+        query = query.filter(cast(WorkspaceEntry.tags, JSONB).contains(["financial"]))
+    else:
+        values = func.json_each(WorkspaceEntry.tags).table_valued("value")
+        query = query.filter(exists(select(1).select_from(values).where(values.c.value == "financial")))
+    total = query.count()
+    entries = query.order_by(WorkspaceEntry.id).offset(offset).limit(limit).all()
+    by_entry: dict[UUID, set[str]] = {entry.id: set() for entry in entries}
+    if by_entry:
+        links = db.query(WorkspaceEntryLink.entry_id, WorkspaceEntryLink.source_anchor).filter(
+            WorkspaceEntryLink.case_id == case_id,
+            WorkspaceEntryLink.entry_id.in_(list(by_entry)),
+        ).all()
+        for entry_id, anchor in links:
+            if not isinstance(anchor, dict):
+                continue
+            ids = anchor.get("financial_transaction_ids", [])
+            if isinstance(ids, list):
+                by_entry[entry_id].update(value for value in ids if isinstance(value, str))
+            single = anchor.get("financial_transaction_id")
+            if isinstance(single, str):
+                by_entry[entry_id].add(single)
+    return {
+        "case_id": str(case_id), "total": total,
+        "entries": [
+            {"id": str(entry.id), "title": entry.title, "tags": entry.tags,
+             "payment_ids": sorted(by_entry[entry.id])}
+            for entry in entries
+        ],
+    }
 
 
 def list_entry_authors(db: Session, *, case_id: UUID) -> list[dict[str, Any]]:

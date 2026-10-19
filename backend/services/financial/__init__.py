@@ -1,0 +1,2231 @@
+"""Financial forensics: exact money handling, ledger, reconciliation and tracing.
+
+This package is the system of record for financial evidence. Its governing
+principle is that arithmetic, not model confidence, decides what is admitted:
+a dropped row produces no low-confidence signal, so only a balance identity
+that fails to close can detect an absence.
+
+Nothing in this package may represent a monetary value as a float.
+"""
+
+from services.financial.candidate_reviews import CandidateResolvedReading, CandidateReviewRequest, read_candidate_review, review_candidate
+from services.financial.source_dates import assess_date_text
+from services.financial.candidate_assessment import assess_candidate_amounts, assess_candidate_dates, current_candidate_original
+from services.financial.candidate_source_bytes import verify_candidate_source_bytes
+from services.financial.candidate_store import CandidateStoreError, store_pdf_candidates, read_candidate_mapping, list_candidate_mappings, list_candidate_accounts
+from services.financial.correction_preview import CorrectionPreviewError, preview_amount_correction
+from services.financial.correction_fields import correction_fields, json_fields
+from services.financial.corrections import correct_transaction
+from services.financial.correction_verification import correction_verification
+from services.financial.correction_balances import correction_running_balances
+from services.financial.coverage_query import CoverageQueryError, list_statement_coverage, requested_statement_coverage
+from services.financial.ledger_snapshot import LedgerSnapshot, capture_ledger_snapshot, LedgerExport, capture_ledger_export
+from services.financial.ledger_summary import LedgerSummaryError, ledger_summary, ledger_counterparties
+from services.financial.amount_assessment import AmountAssessmentError, assess_source_amount, read_amount_source_text
+from services.financial.pdf_geometry_candidates import (
+    PdfGridMapping, PdfGridBoundMapping, bind_pdf_grid_mapping, pdf_grid_source_revision,
+)
+from services.financial.pdf_candidates import (
+    PdfMappingError, PdfTextSpan, PdfColumnProposal, PdfCellProposal,
+    PdfRowProposal, PdfContextProposal, PdfMappingProposal, PdfBoundCell,
+    PdfPendingCandidate, PdfBoundMapping, pdf_mapping_source_revision, bind_pdf_mapping,
+)
+from services.financial.ledger_source import LedgerSourceError, ledger_source
+from services.financial.accounts import (
+    IDENTITY_TIERS,
+    NON_VALUES,
+    TIER_IBAN,
+    TIER_INSTITUTION_ACCOUNT,
+    TIER_INSTITUTION_MASKED,
+    TIER_ROUTING_ACCOUNT,
+    TIER_UNIDENTIFIED,
+    AccountCurrencyError,
+    AccountDraft,
+    AccountError,
+    AccountFieldError,
+    AccountIdentity,
+    AccountIdentityError,
+    PlaceholderIdentifierError,
+    digits_only,
+    is_masked,
+    is_non_value,
+    read_identity_tier,
+    record_account,
+)
+from services.financial.admission import (
+    ROUTED_DOCUMENT_PIPELINE,
+    ROUTED_HELD,
+    AdmissionError,
+    NothingToOverrideError,
+    WrongFileError,
+    record_admission,
+)
+from services.financial.admission_gate import (
+    HeldFile,
+    UnadmittedFileError,
+    admitted_file_ids,
+    gate_document_processing,
+    held_without_admission,
+)
+from services.financial.admit_file import (
+    FileAdmission,
+    FileAdmissionOutcome,
+    admit_case_file,
+    find_case_file,
+)
+from services.financial.adjudication import (
+    Adjudication,
+    AdjudicationError,
+    BalanceFailure,
+    Corroboration,
+    MalformedVerdictError,
+    UnpaidObligationError,
+    restatement_delta,
+)
+from services.financial.bai2 import (
+    BAI2_ACCOUNT_HEADER,
+    BAI2_ACCOUNT_TRAILER,
+    BAI2_CLOSING_LEDGER,
+    BAI2_CONTINUATION,
+    BAI2_CURRENCY_FROM_ACCOUNT,
+    BAI2_CURRENCY_FROM_CALLER,
+    BAI2_CURRENCY_FROM_GROUP,
+    BAI2_FILE_HEADER,
+    BAI2_FILE_TRAILER,
+    BAI2_GROUP_HEADER,
+    BAI2_GROUP_STATUS_CORRECTION,
+    BAI2_GROUP_STATUS_DELETION,
+    BAI2_GROUP_STATUS_TEST,
+    BAI2_GROUP_STATUS_UPDATE,
+    BAI2_GROUP_TRAILER,
+    BAI2_LOCATOR,
+    BAI2_MAX_FILE_BYTES,
+    BAI2_OPENING_LEDGER,
+    BAI2_TOTAL_CREDITS,
+    BAI2_TOTAL_DEBITS,
+    BAI2_TRANSACTION_DETAIL,
+    BAI2_VERSION,
+    Bai2Account,
+    Bai2AmountError,
+    Bai2BalanceIdentity,
+    Bai2ControlTotal,
+    Bai2CurrencyError,
+    Bai2Error,
+    Bai2File,
+    Bai2Group,
+    Bai2LogicalRecord,
+    Bai2MalformedFileError,
+    Bai2MissingFieldError,
+    Bai2Summary,
+    Bai2SummaryIdentity,
+    Bai2Transaction,
+    NotABai2Error,
+    parse_bai2,
+)
+from services.financial.camt053 import (
+    CAMT053_BALANCE_CLOSING_BOOKED,
+    CAMT053_BALANCE_OPENING_BOOKED,
+    CAMT053_BALANCE_PREVIOUSLY_CLOSED_BOOKED,
+    CAMT053_LOCATOR,
+    CAMT053_MAX_DOCUMENT_BYTES,
+    Camt053Account,
+    Camt053AmountError,
+    Camt053Balance,
+    Camt053BalanceIdentity,
+    Camt053BatchIdentity,
+    Camt053BatchTotals,
+    Camt053Document,
+    Camt053Entry,
+    Camt053Error,
+    Camt053MalformedDocumentError,
+    Camt053MissingElementError,
+    Camt053Statement,
+    Camt053StatementCurrencyError,
+    Camt053SummaryIdentity,
+    Camt053TransactionDetail,
+    Camt053TransactionsSummary,
+    NotACamt053Error,
+    parse_camt053,
+)
+from services.financial.check_digits import (
+    ABA_WEIGHTS,
+    CARD_MAX_DIGITS,
+    CARD_MIN_DIGITS,
+    CHECK_ABA_WEIGHTED_MOD10,
+    CHECK_IBAN_COUNTRY_LENGTH,
+    CHECK_ISO7064_MOD97_10,
+    CHECK_LUHN_MOD10,
+    CHECK_SSN_ISSUED_RANGES,
+    CHECK_STRUCTURE,
+    IBAN_COUNTRY_LENGTHS,
+    IBAN_MAX_LENGTH,
+    IBAN_MIN_LENGTH,
+    CheckDigitError,
+    CheckDigitResult,
+    aba_check_digit,
+    iso7064_mod97_10_residue,
+    luhn_residue,
+)
+
+# Both of these are aliased, and for different reasons.
+#
+# ``normalise`` would collide outright: ``references`` exports a function of
+# that name which folds Crockford's decodable confusions (I and L to 1, O to
+# 0), and this one strips spaces and hyphens and upper-cases.  Imported under
+# one name the later import would win silently and callers would get reference
+# folding applied to an IBAN, or the reverse.
+#
+# ``verify`` collides with nothing today, but this package's namespace is flat
+# and several hundred names wide, and a bare ``verify`` in it says nothing
+# about what is being verified.  Both keep their short names inside
+# :mod:`services.financial.check_digits`, where the module name supplies the
+# context the package cannot.
+from services.financial.check_digits import normalise as normalise_identifier
+from services.financial.check_digits import verify as verify_check_digit
+from services.financial.corpus import (
+    HEADER_TOTALS_FIELD,
+    INSTITUTION_FIELD,
+    PRIVATE_PREFIX,
+    TESTED_OUTCOMES,
+    CorpusError,
+    CorpusOutcome,
+    CorpusReport,
+    CorpusUnavailableError,
+    Disagreement,
+    DocumentReading,
+    ExtractionFile,
+    MalformedExtractionError,
+    iter_extraction_files,
+    load_corpus,
+    read_extraction,
+    survey,
+)
+from services.financial.continuity import (
+    AccountContinuity,
+    ContinuityError,
+    ContinuityScopeError,
+    ExcludedPeriod,
+    ExclusionReason,
+    PeriodLink,
+    Seam,
+    SeamAgreement,
+    SeamKind,
+    assess_seam,
+    build_run,
+    order_links,
+    read_account_continuity,
+)
+from services.financial.dates import (
+    CoverageFinding,
+    DateCoherenceError,
+    DateError,
+    DateFinding,
+    DatePlausibility,
+    DateSurvey,
+    RowDate,
+    UngroundedDateQuarantineError,
+    check_row_date,
+    read_row_date,
+    survey_row_dates,
+)
+from services.financial.decision_log import (
+    DEFAULT_DECISION_LIMIT,
+    MAX_DECISION_LIMIT,
+    DecisionLogError,
+    DecisionPage,
+    DecisionRecord,
+    list_case_decisions,
+)
+from services.financial.decisions import (
+    Actor,
+    DecisionError,
+    MalformedSnapshotError,
+    SubjectMismatchError,
+    history,
+    record,
+)
+from services.financial.documents import (
+    RECONCILIATION_ACTOR_EMAIL,
+    RECONCILIATION_ACTOR_NAME,
+    SHAPE_METADATA_KEY,
+    DocumentFieldError,
+    ExtractionLayerMismatchError,
+    SourceDocumentDraft,
+    SourceDocumentError,
+    UnknownSourceShapeError,
+    combine_period_outcomes,
+    document_reconciliation,
+    read_source_shape,
+    reclassify_after_reconciliation,
+    reconciliation_actor,
+    record_source_document,
+)
+from services.financial.transactions import (
+    LOCATOR_PROVENANCE_KEY,
+    NonLedgerClassError,
+    OrderingDateError,
+    ORDERING_PRECEDENCE,
+    SignConvention,
+    SignConventionError,
+    TransactionDraft,
+    TransactionFieldError,
+    TransactionWriteError,
+    choose_ordering_date,
+    normalise_sign,
+    record_transactions,
+)
+from services.financial.duplicate_decisions import (
+    DuplicateDecisionError, decide_duplicate, duplicate_revision,
+)
+from services.financial.duplicate_query import (
+    MAX_COMPARISON_DOCUMENTS,
+    DuplicateQueryLimitError,
+    list_duplicate_candidates,
+)
+from services.financial.duplicates import (
+    CrossCaseError,
+    CrossMatterSighting,
+    DocumentFingerprint,
+    DuplicateError,
+    DuplicateGroup,
+    GroupMember,
+    cross_matter_sightings,
+    find_groups,
+    fingerprint_document,
+    nominate_primary,
+    purge_document,
+    resolve_duplicates,
+    restore_document,
+    store_fingerprint,
+)
+from services.financial.exhibit import (
+    CAVEAT_ADJUDICATION_RELIED_ON,
+    CAVEAT_ASSERTIONS_PRESENT,
+    CAVEAT_MIXED_COMPOSITION,
+    CAVEAT_NOT_OBVIOUSLY_VOLUMINOUS,
+    CAVEAT_SINGLE_DOCUMENT,
+    CAVEAT_UNADJUDICATED_P3,
+    CAVEAT_UNDISCLOSED_SOURCES,
+    CONDITION_MAKE_AVAILABLE,
+    CONVENIENTLY_EXAMINABLE_ROWS,
+    REASON_CONTENT_IS_AN_AID,
+    REASON_SUBSTRATE_BELOW_SUMMARY,
+    REASON_SUMMARISES_ADMISSIBLE_RECORDS,
+    SUMMARISING_CONTENT,
+    SUMMARY_SUBSTRATE_CLASSES,
+    ContentKind,
+    Disclosure,
+    DisclosureError,
+    DuplicateReferenceError,
+    ExhibitContentError,
+    ExhibitCurrencyError,
+    ExhibitError,
+    ExhibitInvariantError,
+    ExhibitRow,
+    ExhibitTag,
+    SourceDocument,
+    SummaryRule,
+    may_bear_summary,
+    tag_exhibit,
+    weakest_content,
+)
+from services.financial.export_manifest import (
+    DIGEST_COVERS_HTML,
+    MANIFEST_SCHEMA,
+    ExportManifest,
+    ExportManifestError,
+    describes,
+    document_digest,
+    manifest_for,
+)
+from services.financial.flow import (
+    DEFAULT_CHART_LIMIT,
+    DEFAULT_SETTLEMENT_DAYS,
+    NOTE_MIRRORS_AMBIGUOUS,
+    NOTE_MIRRORS_COLLAPSED,
+    NOTE_MIRRORS_NOT_COLLAPSED,
+    NOTE_MIXED_COMPOSITION,
+    NOTE_NAMES_COLLIDE,
+    NOTE_NOT_BILATERAL,
+    NOTE_SET_ASIDE_ON_CLASS,
+    NOTE_SETTLEMENT_LAG,
+    NOTE_UNATTRIBUTED_INFLOW,
+    NOTE_UNATTRIBUTED_OUTFLOW,
+    NOTE_UNPLACEABLE,
+    NOTE_UNRECONCILED,
+    ChartBar,
+    ClassComposition,
+    CounterpartyFlow,
+    DivergentChart,
+    DuplicateRowError,
+    EntityOption,
+    Figure,
+    FlowCurrencyError,
+    FlowError,
+    FlowInvariantError,
+    FlowRow,
+    MirrorPair,
+    MoneyFlow,
+    Party,
+    PartyAttributionError,
+    Payment,
+    Perspective,
+    PerspectiveError,
+    Placement,
+    SetAsideReason,
+    analyse,
+    attribute,
+    collapse_mirrors,
+    entity_options,
+    place,
+)
+from services.financial.linkage import (
+    DEFAULT_TOLERANCE_DAYS,
+    MATCH_ACCOUNT,
+    MATCH_ACCOUNTS_DIFFER,
+    MATCH_AMOUNT,
+    MATCH_COUNTERPARTY_NAME,
+    MATCH_CURRENCY,
+    MATCH_DATE,
+    MATCH_DIRECTION,
+    MATCH_IDENTIFIER,
+    NAME_SIMILARITY_THRESHOLD,
+    PROBABILISTIC_TOLERANCE_DAYS,
+    RAIL_ACH,
+    RAIL_CARD,
+    RAIL_CHEQUE,
+    RAIL_TOLERANCE_DAYS,
+    RAIL_UNKNOWN,
+    RAIL_WIRE,
+    REFERENCE_BANK_REFERENCE,
+    REFERENCE_CHEQUE_NUMBER,
+    REFERENCE_NACHA_TRACE,
+    REFERENCE_UUID,
+    DateAgreement,
+    Link,
+    LinkConflict,
+    LinkObservation,
+    LinkageError,
+    LinkageResult,
+    ScopedReference,
+    link_composite,
+    link_exact_identifiers,
+    link_probabilistic,
+    link_transactions,
+    references_from_bank_reference,
+    tolerance_for_rail,
+)
+from services.financial.localisation import (
+    current_identity,
+    localise_period,
+    observe_period_rows,
+    observe_transaction,
+    rescue_if_removed,
+)
+from services.financial.locators import (
+    MILLIPOINTS_PER_POINT,
+    Locator,
+    LocatorCoherenceError,
+    LocatorError,
+    RectangleError,
+    SourceRectangle,
+    capture,
+)
+from services.financial.money import (
+    AmbiguousAmountError,
+    Currency,
+    CurrencyMismatchError,
+    Money,
+    MoneyError,
+    MoneyParseError,
+    ParsedAmount,
+    PrecisionError,
+    UnknownCurrencyError,
+    get_currency,
+    parse_amount,
+    parse_money,
+    sum_money,
+)
+from services.financial.mt940 import (
+    MT940_ACCOUNT_IDENTIFICATION,
+    MT940_BALANCE_CREDIT,
+    MT940_BALANCE_DEBIT,
+    MT940_BALANCE_FINAL,
+    MT940_BALANCE_INTERMEDIATE,
+    MT940_CLOSING_AVAILABLE_BALANCE,
+    MT940_CLOSING_BALANCE,
+    MT940_FORWARD_AVAILABLE_BALANCE,
+    MT940_INFORMATION,
+    MT940_LINE_MARKS,
+    MT940_LOCATOR,
+    MT940_MAX_FILE_BYTES,
+    MT940_NO_REFERENCE,
+    MT940_OPENING_BALANCE,
+    MT940_RELATED_REFERENCE,
+    MT940_REVERSAL_MARKS,
+    MT940_STATEMENT_LINE,
+    MT940_STATEMENT_NUMBER,
+    MT940_TRANSACTION_REFERENCE,
+    Mt940AmountError,
+    Mt940Balance,
+    Mt940BalanceIdentity,
+    Mt940CurrencyError,
+    Mt940Error,
+    Mt940File,
+    Mt940MalformedFileError,
+    Mt940MissingFieldError,
+    Mt940Statement,
+    Mt940StatementLine,
+    Mt940Tag,
+    NotAnMt940Error,
+    parse_mt940,
+)
+from services.financial.nacha import (
+    NACHA_ADDENDA,
+    NACHA_ADDENDA_NOTIFICATION_OF_CHANGE,
+    NACHA_ADDENDA_PAYMENT_INFORMATION,
+    NACHA_ADDENDA_RETURN,
+    NACHA_BATCH_CONTROL,
+    NACHA_BATCH_HEADER,
+    NACHA_BLOCKING_FACTOR,
+    NACHA_CURRENCY,
+    NACHA_ENTRY_DETAIL,
+    NACHA_ENTRY_HASH_DIGITS,
+    NACHA_FILE_CONTROL,
+    NACHA_FILE_HEADER,
+    NACHA_FORMAT_CODE,
+    NACHA_LOCATOR,
+    NACHA_MAX_FILE_BYTES,
+    NACHA_PRENOTIFICATION_CODES,
+    NACHA_RECORD_LENGTH,
+    NACHA_RECORD_SIZE,
+    NACHA_RETURN_OR_NOC_CODES,
+    NACHA_SEC_CORPORATE_TRADE_EXCHANGE,
+    NACHA_SEC_INTERNATIONAL,
+    NACHA_SERVICE_CLASS_ADVICES,
+    NACHA_SERVICE_CLASS_CODES,
+    NACHA_SERVICE_CLASS_CREDITS_ONLY,
+    NACHA_SERVICE_CLASS_DEBITS_ONLY,
+    NACHA_SERVICE_CLASS_MIXED,
+    NACHA_TRANSACTION_CODE_DIRECTIONS,
+    NachaAddenda,
+    NachaAmountError,
+    NachaBatch,
+    NachaControlTotal,
+    NachaEntry,
+    NachaError,
+    NachaFile,
+    NachaMalformedFileError,
+    NachaMissingFieldError,
+    NachaRecord,
+    NotANachaError,
+    parse_nacha,
+)
+from services.financial.native import (
+    CENTURY_WINDOW_MAX_SPAN_YEARS,
+    NATIVE_LOCATORS,
+    PARSER_FINGERPRINT_CHARS,
+    SNIFF_BYTES,
+    AmbiguousFormatError,
+    CenturyWindow,
+    CenturyWindowError,
+    DateResolutionError,
+    NativeError,
+    NativeFormat,
+    NativeReading,
+    NativeRow,
+    UnmappedRow,
+    UnrecognisedFormatError,
+    detect_format,
+    parser_name,
+    parser_version,
+    read_native,
+    resolve_mmdd_near,
+    sniff,
+)
+from services.financial.native_ingest import (
+    AMBIGUOUS_PERIOD_METADATA_KEY,
+    RESERVATIONS_METADATA_KEY,
+    REVERSAL_METADATA_KEY,
+    ContradictoryPeriodError,
+    IngestionError,
+    NativeIngestion,
+    UnattributableRowError,
+    ingest_native_reading,
+)
+from services.financial.native_ingest_file import (
+    READING_OUTCOMES,
+    FileIngestion,
+    IngestOutcome,
+    existing_document_for,
+    ingest_case_file,
+)
+from services.financial.native_precheck import (
+    MAX_PRECHECK_BYTES,
+    FilePrecheck,
+    NativeParse,
+    PrecheckAccount,
+    PrecheckBalance,
+    PrecheckOutcome,
+    PrecheckPeriod,
+    SkippedRow,
+    parse_bytes,
+    parse_path,
+    precheck_bytes,
+    precheck_case_file,
+    precheck_path,
+    precheck_reading,
+    read_case_file,
+)
+from services.financial.native_subjects import (
+    AccountSubject,
+    PeriodFacts,
+    SubjectError,
+    describe_subjects,
+)
+from services.financial.page_render import (
+    PageRenderError,
+    render_page_png,
+)
+from services.financial.periods import (
+    BalanceCoherenceError,
+    BalanceObservation,
+    PeriodBounds,
+    PeriodBoundsError,
+    PeriodCurrencyError,
+    PeriodError,
+    StatementPeriodDraft,
+    read_bounds,
+    read_closing,
+    read_opening,
+    record_statement_period,
+)
+from services.financial.pdf_tables import (
+    TABLE_COORDINATE_SPACE,
+    TEXT_COORDINATE_SPACE,
+    ExtractedTable,
+    GeometrySource,
+    TableSource,
+    chunks_of,
+    geometry_summary,
+    read_tables,
+    read_positioned_ocr_words,
+)
+from services.financial.proof_class import (
+    AUTO_ADMITTED_CLASSES,
+    DEFAULT_TOTAL_CLASSES,
+    LEDGER_CLASSES,
+    ProofClassError,
+    SourceShape,
+    UnclassifiableSourceError,
+    admits_automatically,
+    assign_proof_class,
+    counts_toward_totals,
+    from_legacy_strength,
+    may_produce_ledger_rows,
+    requires_adjudication,
+)
+from services.financial.proof_standing import (
+    ClassStanding,
+    ProofStanding,
+    ProofStandingError,
+    case_proof_standing,
+)
+from services.financial.projection import (
+    DEFAULT_BATCH_SIZE,
+    DIGEST_PROPERTY,
+    EVIDENCE_SOURCE_TYPES,
+    FINANCIAL_MODEL_VERSION,
+    LABEL_ACCOUNT,
+    LABEL_DOCUMENT,
+    LABEL_PERIOD,
+    LABEL_TRANSACTION,
+    PREFLIGHT_CYPHER,
+    PROJECTED_FLAG,
+    PROJECTED_LABELS,
+    PROJECTED_RELATIONSHIPS,
+    PROJECTION_VERSION,
+    RECOMMENDED_CONSTRAINTS,
+    RECOMMENDED_INDEXES,
+    REL_APPEARS_IN,
+    REL_COVERS,
+    REL_READ_FROM,
+    REL_TRANSFERRED_TO,
+    USER_OWNED_PROPERTIES,
+    CypherStatement,
+    GraphEdge,
+    GraphNode,
+    PreflightFinding,
+    ProjectedAccount,
+    ProjectedDocument,
+    ProjectedPeriod,
+    ProjectedTransaction,
+    ProjectionError,
+    ProjectionPlan,
+    Refusal,
+    account_from_row,
+    account_key,
+    document_from_row,
+    document_key,
+    evidence_source_type_for,
+    interpret_preflight,
+    period_from_row,
+    period_key,
+    project_case,
+    transaction_from_row,
+    transaction_key,
+)
+from services.financial.quarantine import (
+    BalanceBreak,
+    Candidate,
+    CandidateKind,
+    Localisation,
+    LocalisationError,
+    LocalisationStrength,
+    QuarantineBasis,
+    QuarantineError,
+    RescueWarning,
+    RowObservation,
+    Signature,
+    UngroundedQuarantineError,
+    localise,
+    quarantine_transaction,
+    quarantined_row_ids,
+    release_transaction,
+    would_rescue,
+)
+from services.financial.quarantine_row import (
+    ActorError,
+    RowAdjudication,
+    RowAdjudicationOutcome,
+    actor_from_user,
+    find_case_transaction,
+    quarantine_case_row,
+    release_case_row,
+)
+from services.financial.reconcile import (
+    IdentityOutcome,
+    LedgerOverflowError,
+    MixedCurrencyError,
+    ReconciliationError,
+    TransactionTotals,
+    empty_totals,
+    evaluate_identity,
+    reconcile_period,
+    total_transactions,
+)
+from services.financial.reconcile_case import (
+    CaseOutcome,
+    CaseReconciliation,
+    PeriodOutcome,
+    PeriodReconciliation,
+    PeriodReconciliationView,
+    ReconciliationQueryError,
+    list_period_reconciliations,
+    reconcile_case,
+    to_reconciliation_view,
+)
+from services.financial.references import (
+    REFERENCE_LENGTH,
+    REFERENCE_PREFIX,
+    MalformedReadingError,
+    MalformedReferenceError,
+    RowReading,
+    RowReferenceError,
+    canonical_form,
+    content_hash,
+    document_content_hashes,
+    document_ref_ids,
+    is_reference,
+    normalise,
+    ref_id,
+)
+from services.financial.route_check import (
+    BLOCKING_OUTCOMES,
+    FileRouteCheck,
+    check_case_files,
+    check_head,
+    check_path,
+)
+
+# Aliased for the same reason as ``normalise_identifier`` above: at package
+# scope a bare ``summarise`` says nothing about what is being summarised, and
+# this namespace is flat and already large.
+from services.financial.route_check import summarise as summarise_route_checks
+from services.financial.run_query import (
+    RunQueryError,
+    RunView,
+    list_runs,
+    to_run_view,
+)
+from services.financial.runs import (
+    IngestionRunHandle,
+    RunAborted,
+    RunCounts,
+    RunError,
+    RunScopeError,
+    ingestion_run,
+    open_ingestion_run,
+    reap_stale_runs,
+)
+from services.financial.run_reaper import (
+    reap_stale_runs_forever,
+)
+from services.financial.statement_totals import (
+    CANDIDATE_CONVENTIONS,
+    FIELD_ALIASES,
+    INFLOW_ROLES,
+    OUTFLOW_ROLES,
+    ConventionError,
+    ConventionInference,
+    FigureReading,
+    HeaderIdentityOutcome,
+    HeaderTotals,
+    StatementTotalsError,
+    TotalsRole,
+    UnreadableFigureError,
+    check_header_identity,
+    figure_to_money,
+    infer_convention,
+    is_figure,
+    read_header_totals,
+)
+from services.financial.correlation import (
+    COMPONENT_AMOUNT,
+    COMPONENT_COUNTERPARTY,
+    COMPONENT_CURRENCY,
+    COMPONENT_DATE,
+    COMPONENT_DIRECTION,
+    COMPONENT_HOLDER,
+    COMPONENT_ORDER,
+    DEFAULT_MATERIALITY,
+    DEFAULT_MATERIALITY_BASIS_POINTS,
+    DEFAULT_MATERIALITY_FLOOR_MAJOR_UNITS,
+    NAME_AGREEMENT_THRESHOLD,
+    NAME_COMPONENTS,
+    NAME_DISAGREEMENT_THRESHOLD,
+    NOTE_AMOUNT_OUTSIDE_STATED_RANGE,
+    NOTE_COUNTERPARTY_UNTESTED,
+    NOTE_COVERAGE_BREAK,
+    NOTE_COVERAGE_GAP,
+    NOTE_COVERAGE_OVERLAP,
+    NOTE_COVERAGE_UNVERIFIED,
+    NOTE_DIRECTION_UNANCHORED,
+    NOTE_MATCHED_ONLY_UNVERIFIED,
+    NOTE_NO_ACCOUNTS,
+    NOTE_SCOPE_IS_PARTIAL,
+    NOTE_SET_ASIDE_ON_NAME,
+    NOTE_SEVERAL_MATCHES,
+    AccountCoverage,
+    AdjudicatedCorrelation,
+    Agreement,
+    AmountRange,
+    CandidateVerdict,
+    Claim,
+    ClaimError,
+    Component,
+    ContradictionKind,
+    Correlation,
+    CorrelationDecision,
+    CorrelationError,
+    Coverage,
+    CoverageError,
+    DateRange,
+    DecisionKind,
+    HolderRole,
+    LedgerClassError,
+    LedgerEntry,
+    MatchCandidate,
+    Materiality,
+    Outcome,
+    UnresolvedReason,
+    apply_decisions,
+    correlate,
+    correlate_all,
+    coverage_from_continuity,
+)
+from services.financial.table_geometry import (
+    CELL_OVERFLOW_TOLERANCE_MILLIPOINTS,
+    LocatedCell,
+    LocatedTable,
+    TableGeometryError,
+    cell_value,
+    locate_table,
+)
+from services.financial.suspect_amounts import (
+    FALLIBLE_ORIGINS,
+    FULL_PAGE_IMAGE_COVERAGE,
+    AmountReading,
+    Proposal,
+    Suspicion,
+    SuspectAmountError,
+    TextOrigin,
+    page_text_origin,
+    read_amount,
+    require_certain,
+)
+from services.financial.text_rows import (
+    TextRowTable,
+    read_text_rows,
+)
+from services.financial.tracing import (
+    DOCTRINE_AUTHORITY,
+    DOCTRINE_ORDER,
+    NOTE_AMBIGUOUS_MATCH,
+    NOTE_DREW_ON_OPENING,
+    NOTE_ORDER_UNEVIDENCED,
+    NOTE_OVERDRAWN,
+    NOTE_SHORTFALL_SHARED,
+    NOTE_UNIDENTIFIED_WITHDRAWAL,
+    Attribution,
+    AttributionError,
+    ClaimOutcome,
+    Doctrine,
+    DoctrineComparison,
+    DoctrineError,
+    Draw,
+    Movement,
+    TraceResult,
+    TracingError,
+    compare_doctrines,
+    trace,
+)
+from services.financial.transaction_locators import (
+    TRANSACTION_MATCH_MINIMUM_CELLS,
+    attach_transaction_locators,
+    locate_transaction,
+)
+from services.financial.transaction_query import (
+    LedgerQueryError,
+    TransactionView,
+    list_transactions,
+    to_view,
+)
+from services.financial.version import (
+    PIPELINE_VERSION,
+    code_fingerprint_detail,
+    code_version,
+    ruleset_version,
+)
+
+__all__ = [
+    "LedgerTraceInput", "TraceAttributionInput", "ledger_trace_inputs", "evaluate_ledger_trace",
+    "LedgerSnapshot", "capture_ledger_snapshot", "LedgerExport", "capture_ledger_export",
+    "LedgerSummaryError", "ledger_summary", "ledger_counterparties", "requested_statement_coverage",
+    "CandidateFinalizationRequest", "preview_candidate_finalization", "finalize_candidates",
+    "check_candidate_source_reuse",
+    "CandidateAccountRequest", "create_candidate_account",
+    "list_candidate_sources", "read_candidate_source", "suggest_candidate_rows",
+    "CandidateResolvedReading", "CandidateReviewRequest", "read_candidate_review", "review_candidate",
+    "assess_candidate_amounts", "assess_candidate_dates", "assess_date_text", "current_candidate_original", "verify_candidate_source_bytes",
+    "CandidateStoreError", "store_pdf_candidates", "read_candidate_mapping", "list_candidate_mappings", "list_candidate_accounts",
+    "PdfGridMapping", "PdfGridBoundMapping", "bind_pdf_grid_mapping", "pdf_grid_source_revision",
+    "PdfMappingError", "PdfTextSpan", "PdfColumnProposal", "PdfCellProposal",
+    "PdfRowProposal", "PdfContextProposal", "PdfMappingProposal", "PdfBoundCell",
+    "PdfPendingCandidate", "PdfBoundMapping", "pdf_mapping_source_revision", "bind_pdf_mapping",
+    "AmountAssessmentError",
+    "assess_source_amount",
+    "LedgerSourceError",
+    "ledger_source",
+    "read_amount_source_text",
+    "correction_verification", "correction_running_balances", "CoverageQueryError", "list_statement_coverage",
+    "correct_transaction",
+    "CorrectionPreviewError",
+    "preview_amount_correction",
+    # Account identity.  The one writer whose failures are silent: merging two
+    # accounts that are not one account still closes every balance identity
+    # downstream, so the module refuses far more than it accepts.
+    "IDENTITY_TIERS",
+    "NON_VALUES",
+    "TIER_IBAN",
+    "TIER_INSTITUTION_ACCOUNT",
+    "TIER_INSTITUTION_MASKED",
+    "TIER_ROUTING_ACCOUNT",
+    "TIER_UNIDENTIFIED",
+    "AccountCurrencyError",
+    "AccountDraft",
+    "AccountError",
+    "AccountFieldError",
+    "AccountIdentity",
+    "AccountIdentityError",
+    "PlaceholderIdentifierError",
+    "digits_only",
+    "is_masked",
+    "is_non_value",
+    "read_identity_tier",
+    "record_account",
+    # Adjudication of failing balance identities
+    "Adjudication",
+    "AdjudicationError",
+    "BalanceFailure",
+    "Corroboration",
+    "MalformedVerdictError",
+    "UnpaidObligationError",
+    "restatement_delta",
+    # BAI2, read natively.  The second shape that can reach P0 unaided, and the
+    # reason the camt.053 names were prefixed: these are its account, its
+    # balance and its transaction, and neither parser gets the bare words.
+    "BAI2_ACCOUNT_HEADER",
+    "BAI2_ACCOUNT_TRAILER",
+    "BAI2_CLOSING_LEDGER",
+    "BAI2_CONTINUATION",
+    "BAI2_CURRENCY_FROM_ACCOUNT",
+    "BAI2_CURRENCY_FROM_CALLER",
+    "BAI2_CURRENCY_FROM_GROUP",
+    "BAI2_FILE_HEADER",
+    "BAI2_FILE_TRAILER",
+    "BAI2_GROUP_HEADER",
+    "BAI2_GROUP_STATUS_CORRECTION",
+    "BAI2_GROUP_STATUS_DELETION",
+    "BAI2_GROUP_STATUS_TEST",
+    "BAI2_GROUP_STATUS_UPDATE",
+    "BAI2_GROUP_TRAILER",
+    "BAI2_LOCATOR",
+    "BAI2_MAX_FILE_BYTES",
+    "BAI2_OPENING_LEDGER",
+    "BAI2_TOTAL_CREDITS",
+    "BAI2_TOTAL_DEBITS",
+    "BAI2_TRANSACTION_DETAIL",
+    "BAI2_VERSION",
+    "Bai2Account",
+    "Bai2AmountError",
+    "Bai2BalanceIdentity",
+    "Bai2ControlTotal",
+    "Bai2CurrencyError",
+    "Bai2Error",
+    "Bai2File",
+    "Bai2Group",
+    "Bai2LogicalRecord",
+    "Bai2MalformedFileError",
+    "Bai2MissingFieldError",
+    "Bai2Summary",
+    "Bai2SummaryIdentity",
+    "Bai2Transaction",
+    "NotABai2Error",
+    "parse_bai2",
+    # camt.053, read natively: the first shape that can reach P0 unaided.
+    # Every name is prefixed because BAI2, MT940 and NACHA each have their own
+    # account, balance, entry and statement, and the package would otherwise
+    # have to award those four words to whichever parser was written first.
+    "CAMT053_BALANCE_CLOSING_BOOKED",
+    "CAMT053_BALANCE_OPENING_BOOKED",
+    "CAMT053_BALANCE_PREVIOUSLY_CLOSED_BOOKED",
+    "CAMT053_LOCATOR",
+    "CAMT053_MAX_DOCUMENT_BYTES",
+    "Camt053Account",
+    "Camt053AmountError",
+    "Camt053Balance",
+    "Camt053BalanceIdentity",
+    "Camt053BatchIdentity",
+    "Camt053BatchTotals",
+    "Camt053Document",
+    "Camt053Entry",
+    "Camt053Error",
+    "Camt053MalformedDocumentError",
+    "Camt053MissingElementError",
+    "Camt053Statement",
+    "Camt053StatementCurrencyError",
+    "Camt053SummaryIdentity",
+    "Camt053TransactionDetail",
+    "Camt053TransactionsSummary",
+    "NotACamt053Error",
+    "parse_camt053",
+    # Field-level check digits: does a number agree with itself
+    "ABA_WEIGHTS",
+    "CARD_MAX_DIGITS",
+    "CARD_MIN_DIGITS",
+    "CHECK_ABA_WEIGHTED_MOD10",
+    "CHECK_IBAN_COUNTRY_LENGTH",
+    "CHECK_ISO7064_MOD97_10",
+    "CHECK_LUHN_MOD10",
+    "CHECK_SSN_ISSUED_RANGES",
+    "CHECK_STRUCTURE",
+    "IBAN_COUNTRY_LENGTHS",
+    "IBAN_MAX_LENGTH",
+    "IBAN_MIN_LENGTH",
+    "CheckDigitError",
+    "CheckDigitResult",
+    "aba_check_digit",
+    "iso7064_mod97_10_residue",
+    "luhn_residue",
+    "normalise_identifier",
+    "verify_check_digit",
+    # Measuring the reader against the corpus it is supposed to read
+    "HEADER_TOTALS_FIELD",
+    "INSTITUTION_FIELD",
+    "PRIVATE_PREFIX",
+    "TESTED_OUTCOMES",
+    "CorpusError",
+    "CorpusOutcome",
+    "CorpusReport",
+    "CorpusUnavailableError",
+    "Disagreement",
+    "DocumentReading",
+    "ExtractionFile",
+    "MalformedExtractionError",
+    "iter_extraction_files",
+    "load_corpus",
+    "read_extraction",
+    "survey",
+    # Continuity across statement periods
+    "AccountContinuity",
+    "ContinuityError",
+    "ContinuityScopeError",
+    "ExcludedPeriod",
+    "ExclusionReason",
+    "PeriodLink",
+    "Seam",
+    "SeamAgreement",
+    "SeamKind",
+    "assess_seam",
+    "build_run",
+    "order_links",
+    "read_account_continuity",
+    # Whether a row's date can be believed, and what a disagreement proves
+    "CoverageFinding",
+    "DateCoherenceError",
+    "DateError",
+    "DateFinding",
+    "DatePlausibility",
+    "DateSurvey",
+    "RowDate",
+    "UngroundedDateQuarantineError",
+    "check_row_date",
+    "read_row_date",
+    "survey_row_dates",
+    # Reading the log back out, scoped to one matter.  The writer below has
+    # existed since the log stopped recording only dispositions; until this
+    # there was no reader at all, and `history` cannot be one because it
+    # filters on a subject and never on a case.
+    "DEFAULT_DECISION_LIMIT",
+    "MAX_DECISION_LIMIT",
+    "DecisionLogError",
+    "DecisionPage",
+    "DecisionRecord",
+    "list_case_decisions",
+    # Decisions, appended before the state they describe changes
+    "Actor",
+    "DecisionError",
+    "MalformedSnapshotError",
+    "SubjectMismatchError",
+    "history",
+    "record",
+    # Source documents: admission, and the regrade once the arithmetic reports.
+    # The proof class is derived from the source shape at both ends and is
+    # never a caller's to supply, because a class a caller chooses is an
+    # opinion and the taxonomy is what decides which rows enter a total.
+    "RECONCILIATION_ACTOR_EMAIL",
+    "RECONCILIATION_ACTOR_NAME",
+    "SHAPE_METADATA_KEY",
+    "DocumentFieldError",
+    "ExtractionLayerMismatchError",
+    "SourceDocumentDraft",
+    "SourceDocumentError",
+    "UnknownSourceShapeError",
+    "combine_period_outcomes",
+    "document_reconciliation",
+    "read_source_shape",
+    "reclassify_after_reconciliation",
+    "reconciliation_actor",
+    "record_source_document",
+    # Ledger rows: written a document at a time, because occurrence indices are
+    # counted across the document and a row-at-a-time writer would collide two
+    # genuinely distinct identical rows on the content constraint.  Sign is
+    # declared by the caller and never inferred from a column of numbers.
+    "LOCATOR_PROVENANCE_KEY",
+    "NonLedgerClassError",
+    "ORDERING_PRECEDENCE",
+    "OrderingDateError",
+    "SignConvention",
+    "SignConventionError",
+    "TransactionDraft",
+    "TransactionFieldError",
+    "TransactionWriteError",
+    "choose_ordering_date",
+    "normalise_sign",
+    "record_transactions",
+    # Duplicate documents
+    "CrossCaseError",
+    "CrossMatterSighting",
+    "DocumentFingerprint",
+    "DuplicateError",
+    "DuplicateGroup",
+    "DuplicateDecisionError",
+    "decide_duplicate",
+    "duplicate_revision",
+    "MAX_COMPARISON_DOCUMENTS",
+    "DuplicateQueryLimitError",
+    "list_duplicate_candidates",
+    "GroupMember",
+    "cross_matter_sightings",
+    "find_groups",
+    "fingerprint_document",
+    "nominate_primary",
+    "purge_document",
+    "resolve_duplicates",
+    "restore_document",
+    "store_fingerprint",
+    # Whether an artefact is Rule 1006 evidence or a Rule 107 illustrative
+    # aid.  Both amendments took effect on 1 December 2024: a Rule 1006
+    # summary of voluminous records is substantive evidence, goes to the jury
+    # room, and the court may not instruct that it is not evidence; a Rule 107
+    # aid is not evidence and does not go back absent consent or an order.
+    # Two independent grounds send an artefact to 107, and both are recorded
+    # when both hold — the artefact asserts more than the records contain, or
+    # some underlying row is not P0-P2.  Adjudication does not move a row into
+    # substrate: `adjudication` admits a failing document to the ledger and
+    # explains why its arithmetic does not close, which is not the same as
+    # closing it, so an adjudicated P3 row still forces 107.  Disclosure is
+    # kept out of the category question entirely: making records available is
+    # an act of the proponent's, curable by an email, so it is a `condition`
+    # on the tag rather than a downgrade of it.
+    "CAVEAT_ADJUDICATION_RELIED_ON",
+    "CAVEAT_ASSERTIONS_PRESENT",
+    "CAVEAT_MIXED_COMPOSITION",
+    "CAVEAT_NOT_OBVIOUSLY_VOLUMINOUS",
+    "CAVEAT_SINGLE_DOCUMENT",
+    "CAVEAT_UNADJUDICATED_P3",
+    "CAVEAT_UNDISCLOSED_SOURCES",
+    "CONDITION_MAKE_AVAILABLE",
+    "CONVENIENTLY_EXAMINABLE_ROWS",
+    "REASON_CONTENT_IS_AN_AID",
+    "REASON_SUBSTRATE_BELOW_SUMMARY",
+    "REASON_SUMMARISES_ADMISSIBLE_RECORDS",
+    "SUMMARISING_CONTENT",
+    "SUMMARY_SUBSTRATE_CLASSES",
+    "ContentKind",
+    "Disclosure",
+    "DisclosureError",
+    "DuplicateReferenceError",
+    "ExhibitContentError",
+    "ExhibitCurrencyError",
+    "ExhibitError",
+    "ExhibitInvariantError",
+    "ExhibitRow",
+    "ExhibitTag",
+    "SourceDocument",
+    "SummaryRule",
+    "may_bear_summary",
+    "tag_exhibit",
+    "weakest_content",
+    # What was exported, and the separate record of when it was exported
+    "DIGEST_COVERS_HTML",
+    "MANIFEST_SCHEMA",
+    "ExportManifest",
+    "ExportManifestError",
+    "describes",
+    "document_digest",
+    "manifest_for",
+    # The money flow view: pick a set of entities, and ask what crossed the
+    # boundary of that set.  Scope is an OR across both sides of a row, which
+    # is what makes it a different question from the From/To cross-filter, an
+    # AND across two columns.  The one thing this module exists to prevent is
+    # the reconciled-ledger double count: where both sides of a relationship
+    # are in evidence, one payment appears as a debit in the payer's account
+    # and a credit in the payee's, and a view that reads rows rather than
+    # payments reports exactly twice the money, more wrongly the better the
+    # collection.  `collapse_mirrors` pairs those rows into one `Payment`,
+    # which is why the type is not called `Movement` — `tracing.Movement` is
+    # this package's name for a single admitted row, the thing called
+    # `FlowRow` here.  `PartyAttributionError` is likewise distinct from
+    # `tracing.AttributionError`: this one is raised when a ledger entry
+    # cannot be read as a payment between two parties at all.
+    "DEFAULT_CHART_LIMIT",
+    "DEFAULT_SETTLEMENT_DAYS",
+    "NOTE_MIRRORS_AMBIGUOUS",
+    "NOTE_MIRRORS_COLLAPSED",
+    "NOTE_MIRRORS_NOT_COLLAPSED",
+    "NOTE_MIXED_COMPOSITION",
+    "NOTE_NAMES_COLLIDE",
+    "NOTE_NOT_BILATERAL",
+    "NOTE_SETTLEMENT_LAG",
+    "NOTE_SET_ASIDE_ON_CLASS",
+    "NOTE_UNATTRIBUTED_INFLOW",
+    "NOTE_UNATTRIBUTED_OUTFLOW",
+    "NOTE_UNPLACEABLE",
+    "NOTE_UNRECONCILED",
+    "ChartBar",
+    "ClassComposition",
+    "CounterpartyFlow",
+    "DivergentChart",
+    "DuplicateRowError",
+    "EntityOption",
+    "Figure",
+    "FlowCurrencyError",
+    "FlowError",
+    "FlowInvariantError",
+    "FlowRow",
+    "MirrorPair",
+    "MoneyFlow",
+    "Party",
+    "PartyAttributionError",
+    "Payment",
+    "Perspective",
+    "PerspectiveError",
+    "Placement",
+    "SetAsideReason",
+    "analyse",
+    "attribute",
+    "collapse_mirrors",
+    "entity_options",
+    "place",
+    # Joining the rows that describe one payment, and how strongly.  The
+    # horizontal counterpart to the balance identity below: `reconcile` asks
+    # whether one account's arithmetic closes, this asks whether two rows are
+    # one movement seen twice or the two ends of one transfer.  Nothing here
+    # collapses a row — a reconciled transaction keeps all its sources.
+    "DEFAULT_TOLERANCE_DAYS",
+    "MATCH_ACCOUNT",
+    "MATCH_ACCOUNTS_DIFFER",
+    "MATCH_AMOUNT",
+    "MATCH_COUNTERPARTY_NAME",
+    "MATCH_CURRENCY",
+    "MATCH_DATE",
+    "MATCH_DIRECTION",
+    "MATCH_IDENTIFIER",
+    "NAME_SIMILARITY_THRESHOLD",
+    "PROBABILISTIC_TOLERANCE_DAYS",
+    "RAIL_ACH",
+    "RAIL_CARD",
+    "RAIL_CHEQUE",
+    "RAIL_TOLERANCE_DAYS",
+    "RAIL_UNKNOWN",
+    "RAIL_WIRE",
+    "REFERENCE_BANK_REFERENCE",
+    "REFERENCE_CHEQUE_NUMBER",
+    "REFERENCE_NACHA_TRACE",
+    "REFERENCE_UUID",
+    "DateAgreement",
+    "Link",
+    "LinkConflict",
+    "LinkObservation",
+    "LinkageError",
+    "LinkageResult",
+    "ScopedReference",
+    "link_composite",
+    "link_exact_identifiers",
+    "link_probabilistic",
+    "link_transactions",
+    "references_from_bank_reference",
+    "tolerance_for_rail",
+    # Reading a stored period into the form the localisation arithmetic needs
+    "current_identity",
+    "localise_period",
+    "observe_period_rows",
+    "observe_transaction",
+    "rescue_if_removed",
+    # Where on a page a value was read from, in one declared coordinate space
+    "MILLIPOINTS_PER_POINT",
+    "Locator",
+    "LocatorCoherenceError",
+    "LocatorError",
+    "RectangleError",
+    "SourceRectangle",
+    "capture",
+    # Money
+    "AmbiguousAmountError",
+    "Currency",
+    "CurrencyMismatchError",
+    "Money",
+    "MoneyError",
+    "MoneyParseError",
+    "ParsedAmount",
+    "PrecisionError",
+    "UnknownCurrencyError",
+    "get_currency",
+    "parse_amount",
+    "parse_money",
+    "sum_money",
+    # MT940, read natively.  Structured and bank-originated like the two
+    # above, but carrying no control total of any kind — no record count, no
+    # entry count, no declared credit or debit total — so a clean message
+    # earns P1 rather than P0.  See the module docstring for why that costs
+    # nothing operationally and why claiming P0 here would cost a great deal.
+    "MT940_ACCOUNT_IDENTIFICATION",
+    "MT940_BALANCE_CREDIT",
+    "MT940_BALANCE_DEBIT",
+    "MT940_BALANCE_FINAL",
+    "MT940_BALANCE_INTERMEDIATE",
+    "MT940_CLOSING_AVAILABLE_BALANCE",
+    "MT940_CLOSING_BALANCE",
+    "MT940_FORWARD_AVAILABLE_BALANCE",
+    "MT940_INFORMATION",
+    "MT940_LINE_MARKS",
+    "MT940_LOCATOR",
+    "MT940_MAX_FILE_BYTES",
+    "MT940_NO_REFERENCE",
+    "MT940_OPENING_BALANCE",
+    "MT940_RELATED_REFERENCE",
+    "MT940_REVERSAL_MARKS",
+    "MT940_STATEMENT_LINE",
+    "MT940_STATEMENT_NUMBER",
+    "MT940_TRANSACTION_REFERENCE",
+    "Mt940AmountError",
+    "Mt940Balance",
+    "Mt940BalanceIdentity",
+    "Mt940CurrencyError",
+    "Mt940Error",
+    "Mt940File",
+    "Mt940MalformedFileError",
+    "Mt940MissingFieldError",
+    "Mt940Statement",
+    "Mt940StatementLine",
+    "Mt940Tag",
+    "NotAnMt940Error",
+    "parse_mt940",
+    # NACHA, read natively: the only one of the four that states debits and
+    # credits separately, so a direction error cannot cancel itself out.
+    "NACHA_ADDENDA",
+    "NACHA_ADDENDA_NOTIFICATION_OF_CHANGE",
+    "NACHA_ADDENDA_PAYMENT_INFORMATION",
+    "NACHA_ADDENDA_RETURN",
+    "NACHA_BATCH_CONTROL",
+    "NACHA_BATCH_HEADER",
+    "NACHA_BLOCKING_FACTOR",
+    "NACHA_CURRENCY",
+    "NACHA_ENTRY_DETAIL",
+    "NACHA_ENTRY_HASH_DIGITS",
+    "NACHA_FILE_CONTROL",
+    "NACHA_FILE_HEADER",
+    "NACHA_FORMAT_CODE",
+    "NACHA_LOCATOR",
+    "NACHA_MAX_FILE_BYTES",
+    "NACHA_PRENOTIFICATION_CODES",
+    "NACHA_RECORD_LENGTH",
+    "NACHA_RECORD_SIZE",
+    "NACHA_RETURN_OR_NOC_CODES",
+    "NACHA_SEC_CORPORATE_TRADE_EXCHANGE",
+    "NACHA_SEC_INTERNATIONAL",
+    "NACHA_SERVICE_CLASS_ADVICES",
+    "NACHA_SERVICE_CLASS_CODES",
+    "NACHA_SERVICE_CLASS_CREDITS_ONLY",
+    "NACHA_SERVICE_CLASS_DEBITS_ONLY",
+    "NACHA_SERVICE_CLASS_MIXED",
+    "NACHA_TRANSACTION_CODE_DIRECTIONS",
+    "NachaAddenda",
+    "NachaAmountError",
+    "NachaBatch",
+    "NachaControlTotal",
+    "NachaEntry",
+    "NachaError",
+    "NachaFile",
+    "NachaMalformedFileError",
+    "NachaMissingFieldError",
+    "NachaRecord",
+    "NotANachaError",
+    "parse_nacha",
+    # Layer 0: the four native parsers above read behind one door, and the
+    # ledger-shaped rows they yield.  A row that reaches the ledger this way
+    # records that it was read from the format's own structure rather than
+    # recovered from a rendering of it, which is the whole of the difference
+    # between a value a court can trace to the bank and one it can trace to an
+    # extractor's guess.
+    "CENTURY_WINDOW_MAX_SPAN_YEARS",
+    "NATIVE_LOCATORS",
+    "PARSER_FINGERPRINT_CHARS",
+    "SNIFF_BYTES",
+    "AmbiguousFormatError",
+    "CenturyWindow",
+    "CenturyWindowError",
+    "DateResolutionError",
+    "NativeError",
+    "NativeFormat",
+    "NativeReading",
+    "NativeRow",
+    "UnmappedRow",
+    "UnrecognisedFormatError",
+    "detect_format",
+    "parser_name",
+    "parser_version",
+    "read_native",
+    "resolve_mmdd_near",
+    "sniff",
+    # Who a native document is about.  A reading yields rows keyed by an account
+    # the file printed but never resolved; these turn that key into an account
+    # draft and, where the format states one, the period the rows sit inside.
+    # Nothing here writes: a subject is what the document said, not what the
+    # matter holds, and the two are reconciled by the writers.
+    "AccountSubject",
+    "PeriodFacts",
+    "SubjectError",
+    "describe_subjects",
+    # Storing a native reading: the one order the writers may be called in, and
+    # the two things the driver will not guess.  A row whose account key matches
+    # no subject is refused rather than attributed; a row whose account has two
+    # periods in one file is stored unlinked, because which statement it belongs
+    # to is not in the reading.  The metadata keys are named here because a
+    # reader of a stored row needs them to find the reversal flag and the reason
+    # a period link is missing.
+    "AMBIGUOUS_PERIOD_METADATA_KEY",
+    "RESERVATIONS_METADATA_KEY",
+    "REVERSAL_METADATA_KEY",
+    "ContradictoryPeriodError",
+    "IngestionError",
+    "NativeIngestion",
+    "UnattributableRowError",
+    "ingest_native_reading",
+    # Reading a native file without storing it, so a reviewer can be shown what
+    # would land before anything does.  The two ingestion failures decidable
+    # from the file alone -- accounts that cannot be described, rows naming an
+    # account no subject covers -- are reported here from the same functions
+    # ingestion calls.  A ``readable`` verdict is therefore not a promise that
+    # the write succeeds, because a contradictory period is decided against
+    # rows already stored.
+    "MAX_PRECHECK_BYTES",
+    "FilePrecheck",
+    "NativeParse",
+    "PrecheckAccount",
+    "PrecheckBalance",
+    "PrecheckOutcome",
+    "PrecheckPeriod",
+    "SkippedRow",
+    "parse_bytes",
+    "parse_path",
+    "precheck_bytes",
+    "precheck_case_file",
+    "precheck_path",
+    "precheck_reading",
+    # Locating and parsing an evidence file without saying what is in it.  The
+    # step ingestion shares with the precheck above, so that a file which
+    # precheck could not open cannot be opened by the write path either.
+    "read_case_file",
+    # Storing one evidence file: the half ``native_ingest`` deliberately leaves
+    # out.  That module takes an already-open run so one run can cover many
+    # documents, and imports ``runs`` only for type checking; this one owns the
+    # run's lifetime, the commit, and the translation of every documented
+    # failure into a named outcome rather than an exception the caller has to
+    # recognise.  A file the case already holds is refused before a run opens:
+    # ``uq_financial_transactions_case_ref`` would refuse the second set of
+    # rows anyway, and refusing early turns a constraint name into an answer.
+    "READING_OUTCOMES",
+    "FileIngestion",
+    "IngestOutcome",
+    "existing_document_for",
+    "ingest_case_file",
+    # Rendering an evidence page as the image a stored rectangle refers to
+    "PageRenderError",
+    "render_page_png",
+    # Statement periods and the provenance of their four values
+    "BalanceCoherenceError",
+    "BalanceObservation",
+    "PeriodBounds",
+    "PeriodBoundsError",
+    "PeriodCurrencyError",
+    "PeriodError",
+    "StatementPeriodDraft",
+    "read_bounds",
+    "read_closing",
+    "read_opening",
+    "record_statement_period",
+    # Reading a page's tables once, so text and geometry cannot disagree
+    "TABLE_COORDINATE_SPACE",
+    "TEXT_COORDINATE_SPACE",
+    "ExtractedTable",
+    "GeometrySource",
+    "TableSource",
+    "chunks_of",
+    "geometry_summary",
+    "read_tables",
+    "read_positioned_ocr_words",
+    # Rows recovered from where the words sit, when nothing was ruled
+    "TextRowTable",
+    "read_text_rows",
+    # Amounts a machine read but no one should sum yet
+    "FALLIBLE_ORIGINS",
+    "FULL_PAGE_IMAGE_COVERAGE",
+    "AmountReading",
+    "Proposal",
+    "Suspicion",
+    "SuspectAmountError",
+    "TextOrigin",
+    "page_text_origin",
+    "read_amount",
+    "require_certain",
+    # The proof class a source earns, and what each class licenses
+    "AUTO_ADMITTED_CLASSES",
+    "DEFAULT_TOTAL_CLASSES",
+    "LEDGER_CLASSES",
+    "ProofClassError",
+    "SourceShape",
+    "UnclassifiableSourceError",
+    "admits_automatically",
+    "assign_proof_class",
+    "counts_toward_totals",
+    "from_legacy_strength",
+    "may_produce_ledger_rows",
+    "requires_adjudication",
+    # Where a case's evidence stands by class, and what each class licenses.
+    # The counts and the licences are returned together because a count of p3
+    # documents means nothing to a reader who cannot tell that p3 is the class
+    # no run admits on its own.
+    "ClassStanding",
+    "ProofStanding",
+    "ProofStandingError",
+    "case_proof_standing",
+    # Drawing the ledger as a graph.  The projection is a derived view and not a
+    # system of record: Postgres holds the ledger, Neo4j renders it, and the same
+    # ledger state must produce byte-identical Cypher every time or the graph
+    # cannot be cited.  Nothing here touches a driver, so a plan can be built,
+    # digested and tested without a database.  Retraction works by digest rather
+    # than by a list of surviving keys, which is what keeps the parameter count
+    # constant as a matter grows.
+    "CypherStatement",
+    "DEFAULT_BATCH_SIZE",
+    "DIGEST_PROPERTY",
+    "EVIDENCE_SOURCE_TYPES",
+    "FINANCIAL_MODEL_VERSION",
+    "GraphEdge",
+    "GraphNode",
+    "LABEL_ACCOUNT",
+    "LABEL_DOCUMENT",
+    "LABEL_PERIOD",
+    "LABEL_TRANSACTION",
+    "PREFLIGHT_CYPHER",
+    "PROJECTED_FLAG",
+    "PROJECTED_LABELS",
+    "PROJECTED_RELATIONSHIPS",
+    "PROJECTION_VERSION",
+    "PreflightFinding",
+    "ProjectedAccount",
+    "ProjectedDocument",
+    "ProjectedPeriod",
+    "ProjectedTransaction",
+    "ProjectionError",
+    "ProjectionPlan",
+    "RECOMMENDED_CONSTRAINTS",
+    "RECOMMENDED_INDEXES",
+    "REL_APPEARS_IN",
+    "REL_COVERS",
+    "REL_READ_FROM",
+    "REL_TRANSFERRED_TO",
+    "Refusal",
+    "USER_OWNED_PROPERTIES",
+    "account_from_row",
+    "account_key",
+    "document_from_row",
+    "document_key",
+    "evidence_source_type_for",
+    "interpret_preflight",
+    "period_from_row",
+    "period_key",
+    "project_case",
+    "transaction_from_row",
+    "transaction_key",
+    # Where a failing identity broke, and on what grounds a row is set aside
+    "BalanceBreak",
+    "Candidate",
+    "CandidateKind",
+    "Localisation",
+    "LocalisationError",
+    "LocalisationStrength",
+    "QuarantineBasis",
+    "QuarantineError",
+    "RescueWarning",
+    "RowObservation",
+    "Signature",
+    "UngroundedQuarantineError",
+    "localise",
+    "quarantine_transaction",
+    "quarantined_row_ids",
+    "release_transaction",
+    "would_rescue",
+    # Setting one stored row aside, and letting it back in
+    "ActorError",
+    "RowAdjudication",
+    "RowAdjudicationOutcome",
+    "actor_from_user",
+    "find_case_transaction",
+    "quarantine_case_row",
+    "release_case_row",
+    # The balance identity
+    "IdentityOutcome",
+    "LedgerOverflowError",
+    "MixedCurrencyError",
+    "ReconciliationError",
+    "TransactionTotals",
+    "empty_totals",
+    "evaluate_identity",
+    "reconcile_period",
+    "total_transactions",
+    # Running the identity across a case, and reading the recorded result
+    "CaseOutcome",
+    "CaseReconciliation",
+    "PeriodOutcome",
+    "PeriodReconciliation",
+    "PeriodReconciliationView",
+    "ReconciliationQueryError",
+    "list_period_reconciliations",
+    "reconcile_case",
+    "to_reconciliation_view",
+    # What a row's reading is, and the reference a reader cites it by
+    "MalformedReadingError",
+    "MalformedReferenceError",
+    "REFERENCE_LENGTH",
+    "REFERENCE_PREFIX",
+    "RowReading",
+    "RowReferenceError",
+    "canonical_form",
+    "content_hash",
+    "document_content_hashes",
+    "document_ref_ids",
+    "is_reference",
+    "normalise",
+    "ref_id",
+    # What an uploaded file is, before the document pipeline is paid to read it
+    "AdmissionError",
+    "BLOCKING_OUTCOMES",
+    "FileRouteCheck",
+    "NothingToOverrideError",
+    "WrongFileError",
+    "check_case_files",
+    "check_head",
+    "check_path",
+    "summarise_route_checks",
+    "ROUTED_DOCUMENT_PIPELINE",
+    "ROUTED_HELD",
+    "record_admission",
+    # Overruling that hold: reading the file again, then writing the decision
+    # and committing it, so the log's account of what the router found is the
+    # file's own rather than whatever the caller said it was.
+    "FileAdmission",
+    "FileAdmissionOutcome",
+    "admit_case_file",
+    "find_case_file",
+    # And the other half of it: the processing route refusing a held file that
+    # no decision stands behind, which is what makes "written before sent" a
+    # property rather than a habit of the one path that records.
+    "HeldFile",
+    "UnadmittedFileError",
+    "admitted_file_ids",
+    "gate_document_processing",
+    "held_without_admission",
+    # Run identity
+    "IngestionRunHandle",
+    "RunAborted",
+    "RunCounts",
+    "RunError",
+    "RunScopeError",
+    "ingestion_run",
+    "open_ingestion_run",
+    "reap_stale_runs",
+    # The schedule that safety net runs on. Separate from `reap_stale_runs`
+    # because the judgement of what is abandoned and the decision of how often
+    # to look are different things, and because keeping the loop out of `runs`
+    # keeps that module synchronous. Neither the threshold nor the interval is
+    # defaulted here; both come from `config` by way of the caller, so this
+    # package goes on importing no configuration at all.
+    "reap_stale_runs_forever",
+    # Reading those runs back out.  Unlike the ledger read below, this one
+    # defaults to every status rather than to the population that counts: a
+    # failed or aborted run is the thing a reader most needs to see, so it
+    # cannot sit behind an opt-in.  Nothing here decides a run is stale; that
+    # judgement belongs to `reap_stale_runs`, which writes it down.
+    "RunQueryError",
+    "RunView",
+    "list_runs",
+    "to_run_view",
+    # The statement's own printed control totals, and which dialect they are in
+    "CANDIDATE_CONVENTIONS",
+    "FIELD_ALIASES",
+    "INFLOW_ROLES",
+    "OUTFLOW_ROLES",
+    "ConventionError",
+    "ConventionInference",
+    "FigureReading",
+    "HeaderIdentityOutcome",
+    "HeaderTotals",
+    "StatementTotalsError",
+    "TotalsRole",
+    "UnreadableFigureError",
+    "check_header_identity",
+    "figure_to_money",
+    "infer_convention",
+    "is_figure",
+    "read_header_totals",
+    # Pairing each value in an extracted table with the rectangle it came from
+    "CELL_OVERFLOW_TOLERANCE_MILLIPOINTS",
+    "LocatedCell",
+    "LocatedTable",
+    "TableGeometryError",
+    "cell_value",
+    "locate_table",
+    # Doctrinal tracing.  A trace is a fact plus a rule and never a fact, so
+    # `trace` will not run without being told which rule, and `compare_doctrines`
+    # is what lets a report show the answer under each and name the spread.
+    # `AttributionError` is one letter from the builtin `AttributeError` and is
+    # a different thing entirely: it is raised when an analyst's assertion about
+    # a deposit does not survive checking against the ledger.
+    "DOCTRINE_AUTHORITY",
+    "DOCTRINE_ORDER",
+    "NOTE_AMBIGUOUS_MATCH",
+    "NOTE_DREW_ON_OPENING",
+    "NOTE_ORDER_UNEVIDENCED",
+    "NOTE_OVERDRAWN",
+    "NOTE_SHORTFALL_SHARED",
+    "NOTE_UNIDENTIFIED_WITHDRAWAL",
+    "Attribution",
+    "AttributionError",
+    "ClaimOutcome",
+    "Doctrine",
+    "DoctrineComparison",
+    "DoctrineError",
+    "Draw",
+    "Movement",
+    "TraceResult",
+    "TracingError",
+    "compare_doctrines",
+    "trace",
+    # Joining a graph transaction back to the rectangle it was read from.
+    # The join is textual because no key from a transaction to a cell was
+    # ever stored, and it refuses ties for the same reason `locate_table`
+    # refuses overlapping cells: a guess wearing the interface's authority
+    # is worse than an honest page_only.
+    "TRANSACTION_MATCH_MINIMUM_CELLS",
+    "attach_transaction_locators",
+    "locate_transaction",
+    # Reading the ledger back out.  Defaults to the admitted population because
+    # that is the population every other total in this ledger is filtered to;
+    # a caller that wants quarantined or superseded rows says so explicitly.
+    "LedgerQueryError",
+    "TransactionView",
+    "list_transactions",
+    "to_view",
+    # Cross-class correlation: what people said about money, against what the
+    # records show.  Correlation never promotes -- a corroborated P4 claim is
+    # still P4 -- so nothing here assigns a proof class, and the constructors
+    # refuse in both directions: `Claim` will not take a class other than p4,
+    # and `LedgerEntry` will not take p4, because an assertion cannot
+    # corroborate an assertion.
+    #
+    # The three outcomes are not symmetric.  `corroborated` needs only a match.
+    # `contradicted` is a finding about the records and has to earn it: the
+    # claim's whole window covered without gap, break or unreconciled period,
+    # a testable claim, and no candidate row left inconclusive, because a maybe
+    # is not an absence.  Everything else is `unresolved`, and telling that
+    # apart from `contradicted` is the entire point of the feature.
+    #
+    # `MatchCandidate` carries the qualifier because `Candidate` above is
+    # quarantine's, and they are different things.
+    "COMPONENT_AMOUNT",
+    "COMPONENT_COUNTERPARTY",
+    "COMPONENT_CURRENCY",
+    "COMPONENT_DATE",
+    "COMPONENT_DIRECTION",
+    "COMPONENT_HOLDER",
+    "COMPONENT_ORDER",
+    "DEFAULT_MATERIALITY",
+    "DEFAULT_MATERIALITY_BASIS_POINTS",
+    "DEFAULT_MATERIALITY_FLOOR_MAJOR_UNITS",
+    "NAME_AGREEMENT_THRESHOLD",
+    "NAME_COMPONENTS",
+    "NAME_DISAGREEMENT_THRESHOLD",
+    "NOTE_AMOUNT_OUTSIDE_STATED_RANGE",
+    "NOTE_COUNTERPARTY_UNTESTED",
+    "NOTE_COVERAGE_BREAK",
+    "NOTE_COVERAGE_GAP",
+    "NOTE_COVERAGE_OVERLAP",
+    "NOTE_COVERAGE_UNVERIFIED",
+    "NOTE_DIRECTION_UNANCHORED",
+    "NOTE_MATCHED_ONLY_UNVERIFIED",
+    "NOTE_NO_ACCOUNTS",
+    "NOTE_SCOPE_IS_PARTIAL",
+    "NOTE_SET_ASIDE_ON_NAME",
+    "NOTE_SEVERAL_MATCHES",
+    "AccountCoverage",
+    "AdjudicatedCorrelation",
+    "Agreement",
+    "AmountRange",
+    "CandidateVerdict",
+    "Claim",
+    "ClaimError",
+    "Component",
+    "ContradictionKind",
+    "Correlation",
+    "CorrelationDecision",
+    "CorrelationError",
+    "Coverage",
+    "CoverageError",
+    "DateRange",
+    "DecisionKind",
+    "HolderRole",
+    "LedgerClassError",
+    "LedgerEntry",
+    "MatchCandidate",
+    "Materiality",
+    "Outcome",
+    "UnresolvedReason",
+    "apply_decisions",
+    "correlate",
+    "correlate_all",
+    "coverage_from_continuity",
+    # Code and ruleset identity
+    "PIPELINE_VERSION",
+    "code_fingerprint_detail",
+    "code_version",
+    "ruleset_version",
+]
+
+from services.financial.candidate_sources import list_candidate_sources, read_candidate_source, suggest_candidate_rows
+
+from services.financial.candidate_accounts import CandidateAccountRequest, create_candidate_account
+
+from services.financial.candidate_overlap import check_candidate_source_reuse
+
+from services.financial.candidate_materialization import CandidateFinalizationRequest, preview_candidate_finalization, finalize_candidates
+
+from services.financial.ledger_tracing import LedgerTraceInput, TraceAttributionInput, ledger_trace_inputs, evaluate_ledger_trace
+
+from services.financial.candidate_statement_scopes import ReviewedStatementScope
+from services.financial.export_sources import capture_export_sources
+from services.financial.ledger_review_history import capture_pdf_review_history
+from services.financial.statement_balances import capture_statement_running_balances
+from services.financial.statement_checks import capture_statement_checks
+
+__all__ += ["ReviewedStatementScope", "capture_export_sources", "capture_pdf_review_history", "capture_statement_running_balances", "capture_statement_checks"]
+
+from services.financial.working_totals import working_ledger_summary
+__all__ += ["working_ledger_summary"]
+
+from services.financial.candidate_progress import candidate_document_progress
+__all__ += ["candidate_document_progress"]
+
+from services.financial.working_totals import working_ledger_analysis
+__all__ += ["working_ledger_analysis"]
+
+from services.financial.statement_review_drafts import read_statement_draft, save_statement_draft
+__all__ += ["read_statement_draft", "save_statement_draft"]
+
+from services.financial.ledger_transfers import ledger_transfer_candidates, evaluate_transfer_scenario
+__all__ += ['ledger_transfer_candidates', 'evaluate_transfer_scenario']
+
+from services.financial.ledger_graph import ledger_posting_graph
+__all__ += ["ledger_posting_graph"]
+
+from services.financial.cross_case_duplicates import compare_case_documents
+from services.financial.ledger_pdf import render_ledger_pdf
+__all__ += ['compare_case_documents', 'render_ledger_pdf']
+
+from services.financial.candidate_page_scan import scan_candidate_pages
+__all__ += ['scan_candidate_pages']
+
+from services.financial.network_tracing import network_trace_inputs, evaluate_network_trace
+__all__ += ['network_trace_inputs', 'evaluate_network_trace']
+
+from services.financial.ledger_timeline import ledger_timeline
+__all__ += ['ledger_timeline']
+
+from services.financial.pattern_review import screen_ledger_patterns
+__all__ += ['screen_ledger_patterns']
+
+from services.financial.claim_comparison import ClaimComparisonInput, compare_ledger_claim
+__all__ += ['ClaimComparisonInput', 'compare_ledger_claim']
+
+from services.financial.printed_totals import compare_printed_totals
+__all__ += ['compare_printed_totals']
+
+from services.financial.ledger_table_view import capture_table_view
+__all__ += ['capture_table_view']
+
+from services.financial.native_recheck import recheck_native_controls
+__all__ += ["recheck_native_controls"]
+
+from services.financial.correction_native import correction_native_controls
+__all__ += ["correction_native_controls"]
+
+from services.financial.account_parties import account_parties, set_account_party
+__all__ += ["account_parties", "set_account_party"]
+
+from services.financial.ledger_exhibits import capture_ledger_exhibits
+__all__ += ["capture_ledger_exhibits"]
+
+from services.financial.statement_delta_hints import statement_delta_hints
+__all__ += ["statement_delta_hints"]
+
+from services.financial.trace_assets import trace_asset_uses
+__all__.append("trace_asset_uses")
+
+from .counterparty_parties import counterparty_parties, set_counterparty_party
+__all__.extend(["counterparty_parties", "set_counterparty_party"])
+
+from services.financial.summary_contributions import summary_contributions
+__all__ += ["summary_contributions"]
+
+from services.financial.indirect_review import IndirectReviewInput, indirect_methods, evaluate_indirect_review
+__all__ += ['IndirectReviewInput', 'indirect_methods', 'evaluate_indirect_review']
+
+from services.financial.statement_layout_context import statement_layout_context
+__all__ += ["statement_layout_context"]
+
+from services.financial.model_pdf_nomination import PdfModelNominationRequest, run_pdf_model_nomination, read_pdf_model_nomination, list_pdf_model_nominations
+__all__ += ["PdfModelNominationRequest", "run_pdf_model_nomination", "read_pdf_model_nomination", "list_pdf_model_nominations"]
+
+from services.financial.review_methods import pdf_review_methods
+__all__ += ["pdf_review_methods"]
+
+from services.financial.extraction_evaluation import ExtractionEvaluation, evaluate_extraction
+__all__ += ["ExtractionEvaluation", "evaluate_extraction"]
+
+from services.financial.extraction_evaluation import compare_extraction_evaluations
+__all__ += ["compare_extraction_evaluations"]
+
+from services.financial.expert_support import build_expert_support
+__all__ += ["build_expert_support"]
+
+from services.financial.processing_provenance import capture_processing_provenance
+__all__ += ["capture_processing_provenance"]
+
+from services.financial.trace_replay import replay_trace
+__all__ += ["replay_trace"]
+
+from services.financial.trace_support_archive import build_trace_support_archive
+__all__ += ["build_trace_support_archive"]
+
+from services.financial.case_financial_history import capture_case_financial_history
+__all__ += ["capture_case_financial_history"]
+
+from services.financial.export_comparison import compare_ledger_exports, read_verified_ledger_archive
+__all__ += ["compare_ledger_exports", "read_verified_ledger_archive"]
+
+from services.financial.reference_reviews import reconcile_reference_reviews, evaluation_from_reference_reviews, parse_review_json
+__all__ += ["reconcile_reference_reviews", "evaluation_from_reference_reviews", "parse_review_json"]
+
+from services.financial.audit_chain import capture_financial_audit_chain, verify_financial_audit_chain
+__all__ += ["capture_financial_audit_chain", "verify_financial_audit_chain"]
+
+from services.financial.pdf_processing_manifest import validate_pdf_processing_manifest
+__all__ += ["validate_pdf_processing_manifest"]
+
+from services.financial.export_audit import record_prepared_export
+__all__ += ["record_prepared_export"]
+
+from services.financial.audit_timestamp import prepare_financial_audit_timestamp_request
+from services.financial.audit_timestamp import verify_financial_audit_timestamp_response
+__all__ += ['prepare_financial_audit_timestamp_request', 'verify_financial_audit_timestamp_response']
+
+from services.financial.trace_support_archive import verify_trace_support_archive
+__all__ += ['verify_trace_support_archive']
+
+from services.financial.audit_timestamp import submit_financial_audit_timestamp
+__all__ += ['submit_financial_audit_timestamp']
+
+from services.financial.custody import CustodyRequest, record_custody, source_custody, capture_case_custody
+__all__ += ["CustodyRequest", "record_custody", "source_custody", "capture_case_custody"]
+
+from services.financial.review_package_report import render_review_package_report
+__all__ += ["render_review_package_report"]
+
+from services.financial.periodic_audit_anchor import anchor_financial_case_once
+__all__ += ["anchor_financial_case_once"]
+
+from services.financial.statement_import import StatementImportRequest, read_statement_import, confirm_statement_import
+from services.financial.statement_import_proposal import propose_table, exact_amount
+from services.financial.statement_reprocessing import create_statement_version
+__all__ += ["StatementImportRequest", "read_statement_import", "confirm_statement_import", "propose_table", "exact_amount", "create_statement_version"]
+
+from services.financial.statement_import_catalog import statement_catalog
+__all__ += ["statement_catalog"]
+
+from services.financial.statement_import_card import propose_card_table
+__all__ += ["propose_card_table"]
+
+from services.financial.statement_import_merrick import merrick_statement, propose_merrick_table
+__all__ += ["merrick_statement", "propose_merrick_table"]
+
+from services.financial.closing_only_period import closing_only_period_dates
+__all__ += ["closing_only_period_dates"]
+
+from services.financial.transaction_notes import capture_transaction_notes
+__all__ += ["capture_transaction_notes"]
+
+__all__ += ["correction_fields", "json_fields"]
+
+from services.financial.deposit_receipt_proposal import propose_deposit_receipt, deposit_receipt_choices
+from services.financial.payment_document_proposal import propose_payment_document
+from services.financial.payment_document_review import (
+    PaymentMatchRequest, PaymentDocumentReviewRequest, read_payment_document,
+    matching_payments, save_payment_document,
+)
+from services.financial.statement_file_status import statement_file_status
+from services.financial.statement_import_andrews import andrews_catalog, propose_andrews_statement
+from services.financial.statement_import_card_balances import summary_balances, merrick_summary_balances
+from services.financial.statement_import_controls import retain_import_controls, read_import_controls
+from services.financial.trace_scenario_report import render_scenario_report
+__all__ += [
+    "propose_deposit_receipt", "deposit_receipt_choices", "propose_payment_document",
+    "PaymentMatchRequest", "PaymentDocumentReviewRequest", "read_payment_document",
+    "matching_payments", "save_payment_document", "statement_file_status",
+    "andrews_catalog", "propose_andrews_statement", "summary_balances",
+    "merrick_summary_balances", "retain_import_controls", "read_import_controls",
+    "render_scenario_report",
+]
+
+from services.financial.batch_transaction_scope import imported_batch_scope
+from services.financial.card_table_columns import card_row_columns
+from services.financial.evidence_intake import resolve_financial_selection
+from services.financial.file_visibility import financial_file_visibility, set_financial_file_visibility
+from services.financial.import_batches import create_batch, batch_status
+from services.financial.review_arithmetic import check_proposed_rows
+from services.financial.review_recovery import saved_ancestor_reviews, acknowledge_recovery
+from services.financial.statement_check_request import StatementCheckRequest, check_statement_request
+from services.financial.statement_import_overlap import coverage_review
+from services.financial.statement_information_pages import (
+    andrews_information_kind, capital_information_kind, merrick_information_kind,
+)
+from services.financial.statement_progress import review_progress, save_progress
+from services.financial.statement_review_checks import check_statement_rows
+from services.financial.statement_row_assignment import RowAssignmentRequest, reassign_rows
+from services.financial.account_ownership import ownership_suggestions
+from services.financial.account_relationships import AccountRelationshipInput
+from services.financial.money_trails import TrailRequest, preview_trail, save_trail, list_trails
+from services.financial.import_operations import operation_view
+from services.financial.source_lineage import lineage_groups
+from services.financial.spei_description import kapital_spei
+from services.financial.statement_import_kapital import kapital_catalog
+from services.financial.statement_import_monex import monex_catalog
+from services.financial.statement_import_citi import citi_catalog
+from services.financial.account_selection import apply_account_selection
+from services.financial.batch_import_history import current_imports
+from services.financial.category_library import category_library
+from services.financial.currency_correction import rescale_minor
+from services.financial.import_issues import retained_issues
+from services.financial.import_removal import preview_removal, remove_imports
+from services.financial.imported_records import complete_record
+from services.financial.legacy_statement_refresh import refresh_legacy_import
+from services.financial.manual_balances import manual_balance
+from services.financial.payment_edits import preview_payment_edits, save_payment_edits
+from services.financial.payment_inference import infer_payment_labels
+from services.financial.payment_labels import update_payment_labels
+from services.financial.review_upgrade import upgrade_request
+from services.financial.statement_currency import detect_statement_currency
+from services.financial.statement_currency_edit import change_currency
+from services.financial.statement_details import update_statement_details
+from services.financial.statement_import_bbva import bbva_catalog
+from services.financial.statement_import_scotiabank import scotiabank_catalog
+from services.financial.transaction_search import transaction_search
+
+__all__ += [
+    "apply_account_selection", "current_imports", "category_library", "rescale_minor", "retained_issues",
+    "preview_removal", "remove_imports", "complete_record", "refresh_legacy_import", "manual_balance",
+    "preview_payment_edits", "save_payment_edits", "infer_payment_labels", "update_payment_labels",
+    "upgrade_request", "detect_statement_currency", "change_currency", "update_statement_details",
+    "bbva_catalog", "scotiabank_catalog", "transaction_search",
+    "ownership_suggestions", "AccountRelationshipInput", "TrailRequest", "preview_trail", "save_trail", "list_trails",
+    "operation_view", "lineage_groups", "kapital_spei", "kapital_catalog", "monex_catalog", "citi_catalog",
+    "imported_batch_scope", "card_row_columns", "resolve_financial_selection",
+    "financial_file_visibility", "set_financial_file_visibility", "create_batch",
+    "batch_status", "check_proposed_rows", "saved_ancestor_reviews", "acknowledge_recovery",
+    "StatementCheckRequest", "check_statement_request", "coverage_review",
+    "andrews_information_kind", "capital_information_kind", "merrick_information_kind",
+    "review_progress", "save_progress", "check_statement_rows",
+    "RowAssignmentRequest", "reassign_rows",
+]
+
+from services.financial.account_identity import IdentityRequest, identity_state, save_identity
+from services.financial.identity_graph import identity_graph_plan, apply_identity_graph
+from services.financial.saved_statement_recovery import StatementRecoveryRequest, preview_recovery, save_recovery
+from services.financial.transfer_parts import assess_transfer_parts
+__all__ += ["IdentityRequest", "identity_state", "save_identity", "identity_graph_plan", "apply_identity_graph",
+    "StatementRecoveryRequest", "preview_recovery", "save_recovery", "assess_transfer_parts"]
+
+from services.financial.account_consolidation import ConsolidationRequest, preview_consolidation, save_consolidation, undo_consolidation
+from services.financial.bulk_statement_details import BulkEdit
+from services.financial.manual_statement_payment import ManualStatementPayment
+from services.financial.payment_counterparty_link import PaymentCounterpartyLink
+from services.financial.statement_import_santander import santander_catalog
+__all__ += ["ConsolidationRequest", "preview_consolidation", "save_consolidation", "undo_consolidation",
+    "BulkEdit", "ManualStatementPayment", "PaymentCounterpartyLink", "santander_catalog"]
+
+from services.financial.account_history import record_admission_snapshot
+from services.financial.active_recovery import active_recovery_file_ids
+from services.financial.batch_review_summary import review_summary
+from services.financial.deployment_recovery import next_recovery_items
+from services.financial.effective_statement_review import resolve_review
+from services.financial.file_scope import financial_file_ids
+from services.financial.manual_row_placement import place_manual_rows
+from services.financial.pending_duplicate_projection import load_projection_context
+from services.financial.pending_statement_duplicates import prepare_batch_dispositions
+from services.financial.reading_job_retry import retry_file_checked
+from services.financial.reading_recovery import reader_inventory
+from services.financial.recovery_additions import plan_additions
+from services.financial.recovery_campaigns import RecoveryCampaign
+from services.financial.recovery_followup import retry_failed_batches
+from services.financial.recovery_preparation import prepare_readings
+from services.financial.saved_statement_admission import assess_saved_additions
+from services.financial.source_audit import list_source_audit, source_audit_detail
+from services.financial.standalone_import_jobs import queue_statement
+from services.financial.statement_admission import assess_admission
+from services.financial.statement_import_credit_one import credit_one_catalog
+from services.financial.statement_import_receipt import saved_receipt
+from services.financial.statement_reading_quality import assess_statement_reading
+__all__ += ["record_admission_snapshot", "active_recovery_file_ids", "review_summary", "next_recovery_items",
+    "resolve_review", "financial_file_ids", "place_manual_rows", "load_projection_context",
+    "prepare_batch_dispositions", "retry_file_checked", "reader_inventory", "plan_additions",
+    "RecoveryCampaign", "retry_failed_batches", "prepare_readings", "assess_saved_additions",
+    "list_source_audit", "source_audit_detail", "queue_statement", "assess_admission",
+    "credit_one_catalog", "saved_receipt", "assess_statement_reading"]
+from services.financial.request_timing import FinancialTimingMiddleware
+__all__ += ["FinancialTimingMiddleware"]
+from services.financial.graph_followup import project_case_graph, request_follow_up, follow_up_status
+__all__ += ["project_case_graph", "request_follow_up", "follow_up_status"]
+from services.financial.recovery_readers import reading_fingerprint
+__all__ += ["reading_fingerprint"]
+from services.financial.statement_printed_no_activity import zero_totals_evidence
+__all__ += ["zero_totals_evidence"]
+from services.financial.statement_movement_scaffold import movement_scaffold_enabled
+__all__ += ["movement_scaffold_enabled"]
+from services.financial.admitted_statement_duplicates import (
+    find_admitted_duplicates, set_aside_admitted_duplicates, set_aside_copy, restore_copy, keep_copy,
+)
+__all__ += ["find_admitted_duplicates", "set_aside_admitted_duplicates", "set_aside_copy", "restore_copy", "keep_copy"]
+from services.financial.statement_engine import read_statements, propose_engine_statement
+from services.financial.statement_engine_vocabulary import COLUMN_WORDS
+from services.financial.statement_engine_routing import route_catalog
+from services.financial.statement_engine_profiles import matching_profile
+__all__ += ["read_statements", "propose_engine_statement", "COLUMN_WORDS", "route_catalog", "matching_profile"]
+from services.financial.layout_memory import memory_groups, confirm as confirm_layout_memory, withdraw as withdraw_layout_memory
+__all__ += ["memory_groups", "confirm_layout_memory", "withdraw_layout_memory"]
+from services.financial.card_summary import check_card_period, summary_components
+__all__ += ["check_card_period", "summary_components"]
+
+from services.financial.account_type_change import (
+    AccountTypeRequest, FlipRowsRequest, account_type_review, account_type_state,
+    preview_account_type, save_account_type, flip_flagged_rows,
+)
+__all__ += [
+    "AccountTypeRequest", "FlipRowsRequest", "account_type_review", "account_type_state",
+    "preview_account_type", "save_account_type", "flip_flagged_rows",
+]
+from services.financial.held_record_admission import plan as plan_held_record_admission, held_blockers
+__all__ += ["plan_held_record_admission", "held_blockers"]
+from services.financial.record_withdrawal import RecordWithdrawal, change as change_statement_record
+__all__ += ["RecordWithdrawal", "change_statement_record"]
+from services.financial.late_posted_card_dates import LATE_POSTED_CARD_DATES, proposed_date as late_posted_card_date
+__all__ += ["LATE_POSTED_CARD_DATES", "late_posted_card_date"]
+from services.financial.andrews_period_pinning import PERIOD_PINNING, pin_period as pin_andrews_period
+__all__ += ["PERIOD_PINNING", "pin_andrews_period"]
+from services.financial.auto_read import intake_pdf_review, unread_statement_files
+from services.financial.batch_file_overview import file_overview, copy_files
+from services.financial.batch_selection_preview import selection_preview
+from services.financial.batch_supersession import superseded_batches
+from services.financial.field_proposals import apply_confirmed_proposals, case_knowledge
+from services.financial.queue_save import (
+    save_statements as save_queue_statements, save_result as queue_save_result, auto_save_prepared,
+)
+from services.financial.review_queue import case_review_queue
+from services.financial.statement_detection import classify_text, detect as detect_statement_file
+__all__ += [
+    "intake_pdf_review", "unread_statement_files", "file_overview", "copy_files", "selection_preview",
+    "superseded_batches", "apply_confirmed_proposals", "case_knowledge", "save_queue_statements",
+    "queue_save_result", "auto_save_prepared", "case_review_queue", "classify_text",
+    "detect_statement_file",
+]
+from services.financial.reader_release import (
+    RECHECK_AFTER_RELEASE, reader_stamp, reading_changed, sweep as recheck_after_release,
+)
+__all__ += ["RECHECK_AFTER_RELEASE", "reader_stamp", "reading_changed", "recheck_after_release"]
+from services.financial.statement_catalogue import compact_original, full_original, saved_catalogue
+__all__ += ["compact_original", "full_original", "saved_catalogue"]
+from services.financial.unread_pages import unread_pages, unread_pages_message, unread_pages_of_statement
+__all__ += ["unread_pages", "unread_pages_message", "unread_pages_of_statement"]
+from services.financial.review_carry import carry_file_level_review, conflict_problems, same_value
+__all__ += ["carry_file_level_review", "conflict_problems", "same_value"]

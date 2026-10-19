@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import {
   AlertCircle,
   CheckCircle2,
@@ -20,10 +20,20 @@ import { toast } from "sonner"
 import { useJobs } from "../hooks/use-jobs"
 import { useBackgroundTasks } from "../hooks/use-background-tasks"
 import { useJobProgress } from "../hooks/use-job-progress"
-import { evidenceAPI } from "../api"
+import { useGuardedProcess } from "../hooks/use-guarded-process"
 import { useEvidenceStore, type UploadActivity } from "../evidence.store"
 import { JobCard } from "./JobCard"
-import type { BackgroundTask, EvidenceJob, PipelineStage } from "@/types/evidence.types"
+import { ResumableUploadsPanel } from "./ResumableUploadsPanel"
+import {
+  useResumableUploads,
+  useResumableUploadGroups,
+} from "../use-resumable-uploads"
+import { ProcessHoldDialog } from "./ProcessHoldDialog"
+import type {
+  BackgroundTask,
+  EvidenceJob,
+  PipelineStage,
+} from "@/types/evidence.types"
 
 interface JobsPanelProps {
   caseId: string
@@ -43,7 +53,10 @@ const ACTIVE_STATUSES: Set<PipelineStage> = new Set([
 const ACTIVE_TASK_STATUSES = new Set(["pending", "running"])
 const TERMINAL_TASK_STATUSES = new Set(["completed", "failed", "cancelled"])
 
-function formatDuration(startStr?: string | null, endStr?: string | null): string {
+function formatDuration(
+  startStr?: string | null,
+  endStr?: string | null
+): string {
   if (!startStr) return "0s"
   const start = new Date(startStr).getTime()
   const end = endStr ? new Date(endStr).getTime() : Date.now()
@@ -112,7 +125,10 @@ function UploadActivityCard({ activity }: { activity: UploadActivity }) {
       </div>
 
       <p className="mt-1 truncate text-[10px] text-muted-foreground">
-        {activity.error || activity.message || activity.detail || "Upload in progress"}
+        {activity.error ||
+          activity.message ||
+          activity.detail ||
+          "Upload in progress"}
       </p>
 
       <div className="mt-2 flex items-center gap-3 text-[10px] text-muted-foreground">
@@ -120,8 +136,12 @@ function UploadActivityCard({ activity }: { activity: UploadActivity }) {
           <Clock className="size-2.5" />
           {duration}
         </span>
-        {isCompleted ? <CheckCircle2 className="ml-auto size-3 text-green-500" /> : null}
-        {isFailed ? <AlertCircle className="ml-auto size-3 text-red-500" /> : null}
+        {isCompleted ? (
+          <CheckCircle2 className="ml-auto size-3 text-green-500" />
+        ) : null}
+        {isFailed ? (
+          <AlertCircle className="ml-auto size-3 text-red-500" />
+        ) : null}
       </div>
     </div>
   )
@@ -146,7 +166,9 @@ function BackgroundTaskCard({
     isActive ? undefined : task.completed_at || task.updated_at
   )
   const folderPath =
-    typeof task.metadata?.folder_path === "string" ? task.metadata.folder_path : null
+    typeof task.metadata?.folder_path === "string"
+      ? task.metadata.folder_path
+      : null
 
   return (
     <div
@@ -195,8 +217,12 @@ function BackgroundTaskCard({
           <Clock className="size-2.5" />
           {duration}
         </span>
-        {isCompleted ? <CheckCircle2 className="ml-auto size-3 text-green-500" /> : null}
-        {isFailed ? <AlertCircle className="ml-auto size-3 text-red-500" /> : null}
+        {isCompleted ? (
+          <CheckCircle2 className="ml-auto size-3 text-green-500" />
+        ) : null}
+        {isFailed ? (
+          <AlertCircle className="ml-auto size-3 text-red-500" />
+        ) : null}
       </div>
 
       {canClear ? (
@@ -228,40 +254,74 @@ export function JobsPanel({ caseId }: JobsPanelProps) {
   }, [])
 
   const { data: jobs, isLoading: jobsLoading } = useJobs(caseId, hasActiveJobs)
-  const { data: backgroundTasks, isLoading: tasksLoading } = useBackgroundTasks(caseId, true)
+  const { data: backgroundTasks, isLoading: tasksLoading } = useBackgroundTasks(
+    caseId,
+    true
+  )
   const uploadActivities = useEvidenceStore((s) => s.uploadActivities)
-  const clearTerminalUploadActivities = useEvidenceStore((s) => s.clearTerminalUploadActivities)
+  const clearTerminalUploadActivities = useEvidenceStore(
+    (s) => s.clearTerminalUploadActivities
+  )
   const visibleUploadActivities = useMemo(
     () => uploadActivities.filter((activity) => activity.caseId === caseId),
     [caseId, uploadActivities]
   )
 
-  const retryMutation = useMutation({
-    mutationFn: async (fileId: string) => {
-      return evidenceAPI.processBackground(caseId, [fileId])
-    },
-    onSuccess: async () => {
+  // A retry is a process request like any other, so it goes through the gate:
+  // a file that failed for being a bank statement must not come back through
+  // the retry button. `retryingFileId` keeps the spinner on the one card that
+  // was clicked, which the gate's single busy flag cannot say.
+  //
+  // Kept whole as well as destructured, because the dialog takes the gate
+  // rather than its pieces. See `ProcessGate`.
+  const gate = useGuardedProcess(caseId)
+  const { start: startProcess } = gate
+  const [retryingFileId, setRetryingFileId] = useState<string | null>(null)
+  const controlMutation = useMutation({
+    mutationFn: ({
+      job,
+      action,
+    }: {
+      job: EvidenceJob
+      action: "pause" | "resume"
+    }) =>
+      fetchAPI<{ state: string; affected_jobs: number }>(
+        `/api/evidence/engine/jobs/${job.id}/${action}?case_id=${caseId}`,
+        { method: "POST" }
+      ),
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["evidence-jobs", caseId] })
-      queryClient.invalidateQueries({ queryKey: ["evidence-folder-contents", caseId] })
-      queryClient.invalidateQueries({ queryKey: ["evidence-folder-tree", caseId] })
-      queryClient.invalidateQueries({ queryKey: ["evidence", caseId] })
-      await queryClient.refetchQueries({ queryKey: ["evidence-jobs", caseId], type: "active" })
-      toast.success("Retry started")
+      toast.success(`${result.affected_jobs} file(s): ${result.state}`)
     },
-    onError: (error) => {
-      toast.error(error.message || "Failed to retry job")
-    },
+    onError: (error) => toast.error(error.message),
   })
+
+  const retryFile = async (fileId: string) => {
+    setRetryingFileId(fileId)
+    try {
+      if ((await startProcess({ fileIds: [fileId] })) === "started") {
+        toast.success("Retry started")
+      }
+    } finally {
+      setRetryingFileId(null)
+    }
+  }
 
   const clearJobMutation = useMutation({
     mutationFn: async (jobId: string) => {
-      return fetchAPI<{ deleted: number }>(`/api/evidence/engine/jobs/${jobId}?case_id=${caseId}`, {
-        method: "DELETE",
-      })
+      return fetchAPI<{ deleted: number }>(
+        `/api/evidence/engine/jobs/${jobId}?case_id=${caseId}`,
+        {
+          method: "DELETE",
+        }
+      )
     },
     onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ["evidence-jobs", caseId] })
-      await queryClient.refetchQueries({ queryKey: ["evidence-jobs", caseId], type: "active" })
+      await queryClient.refetchQueries({
+        queryKey: ["evidence-jobs", caseId],
+        type: "active",
+      })
     },
     onError: (error) => {
       toast.error(error.message || "Failed to clear job")
@@ -275,13 +335,19 @@ export function JobsPanel({ caseId }: JobsPanelProps) {
           ?.filter((task) => TERMINAL_TASK_STATUSES.has(task.status))
           .map((task) => task.id) ?? []
       const [engineResult] = await Promise.all([
-        fetchAPI<{ deleted: number }>(`/api/evidence/engine/jobs?case_id=${caseId}`, {
-          method: "DELETE",
-        }),
-        ...terminalTaskIds.map((taskId) =>
-          fetchAPI<{ message: string; task_id: string }>(`/api/background-tasks/${taskId}`, {
+        fetchAPI<{ deleted: number }>(
+          `/api/evidence/engine/jobs?case_id=${caseId}`,
+          {
             method: "DELETE",
-          })
+          }
+        ),
+        ...terminalTaskIds.map((taskId) =>
+          fetchAPI<{ message: string; task_id: string }>(
+            `/api/background-tasks/${taskId}`,
+            {
+              method: "DELETE",
+            }
+          )
         ),
       ])
       return { deleted: engineResult.deleted + terminalTaskIds.length }
@@ -290,10 +356,18 @@ export function JobsPanel({ caseId }: JobsPanelProps) {
       clearTerminalUploadActivities(caseId)
       queryClient.invalidateQueries({ queryKey: ["evidence-jobs", caseId] })
       queryClient.invalidateQueries({ queryKey: ["background-tasks", caseId] })
-      await queryClient.refetchQueries({ queryKey: ["evidence-jobs", caseId], type: "active" })
-      await queryClient.refetchQueries({ queryKey: ["background-tasks", caseId], type: "active" })
+      await queryClient.refetchQueries({
+        queryKey: ["evidence-jobs", caseId],
+        type: "active",
+      })
+      await queryClient.refetchQueries({
+        queryKey: ["background-tasks", caseId],
+        type: "active",
+      })
       toast.success(
-        result.deleted > 0 ? `Cleared ${result.deleted} terminal job${result.deleted !== 1 ? "s" : ""}` : "No terminal jobs to clear"
+        result.deleted > 0
+          ? `Cleared ${result.deleted} terminal job${result.deleted !== 1 ? "s" : ""}`
+          : "No terminal jobs to clear"
       )
     },
     onError: (error) => {
@@ -303,13 +377,19 @@ export function JobsPanel({ caseId }: JobsPanelProps) {
 
   const clearBackgroundTaskMutation = useMutation({
     mutationFn: async (taskId: string) => {
-      return fetchAPI<{ message: string; task_id: string }>(`/api/background-tasks/${taskId}`, {
-        method: "DELETE",
-      })
+      return fetchAPI<{ message: string; task_id: string }>(
+        `/api/background-tasks/${taskId}`,
+        {
+          method: "DELETE",
+        }
+      )
     },
     onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ["background-tasks", caseId] })
-      await queryClient.refetchQueries({ queryKey: ["background-tasks", caseId], type: "active" })
+      await queryClient.refetchQueries({
+        queryKey: ["background-tasks", caseId],
+        type: "active",
+      })
     },
     onError: (error) => {
       toast.error(error.message || "Failed to clear task")
@@ -318,7 +398,8 @@ export function JobsPanel({ caseId }: JobsPanelProps) {
 
   // Extract active job IDs for WebSocket real-time updates
   const activeJobIds = useMemo(
-    () => jobs?.filter((j) => ACTIVE_STATUSES.has(j.status)).map((j) => j.id) ?? [],
+    () =>
+      jobs?.filter((j) => ACTIVE_STATUSES.has(j.status)).map((j) => j.id) ?? [],
     [jobs]
   )
 
@@ -330,29 +411,39 @@ export function JobsPanel({ caseId }: JobsPanelProps) {
 
   const activeCount = useMemo(
     () =>
-      (jobs?.filter((j) => ACTIVE_STATUSES.has(j.status)).length ?? 0) +
-      (backgroundTasks?.filter((task) => ACTIVE_TASK_STATUSES.has(task.status)).length ?? 0) +
-      visibleUploadActivities.filter((activity) => activity.status === "running").length,
+      (jobs?.filter((j) => ACTIVE_STATUSES.has(j.status) && !j.paused).length ??
+        0) +
+      (backgroundTasks?.filter((task) => ACTIVE_TASK_STATUSES.has(task.status))
+        .length ?? 0) +
+      visibleUploadActivities.filter(
+        (activity) => activity.status === "running"
+      ).length,
     [backgroundTasks, jobs, visibleUploadActivities]
   )
+  const queuedCount =
+    (jobs?.filter((job) => job.status === "pending" && !job.paused).length ?? 0) +
+    (backgroundTasks?.filter((task) => task.status === "pending").length ?? 0)
 
   const completedJobs = useMemo(
     () =>
-      jobs?.filter(
-        (j) => j.status === "completed" || j.status === "failed"
-      ) ?? [],
+      jobs?.filter((j) => j.status === "completed" || j.status === "failed") ??
+      [],
     [jobs]
   )
 
   const terminalBackgroundTasks = useMemo(
     () =>
-      backgroundTasks?.filter((task) => TERMINAL_TASK_STATUSES.has(task.status)) ?? [],
+      backgroundTasks?.filter((task) =>
+        TERMINAL_TASK_STATUSES.has(task.status)
+      ) ?? [],
     [backgroundTasks]
   )
 
   const terminalUploadActivities = useMemo(
     () =>
-      visibleUploadActivities.filter((activity) => activity.status !== "running"),
+      visibleUploadActivities.filter(
+        (activity) => activity.status !== "running"
+      ),
     [visibleUploadActivities]
   )
 
@@ -377,23 +468,30 @@ export function JobsPanel({ caseId }: JobsPanelProps) {
     })
   }, [backgroundTasks])
 
+  const { data: resumableUploads = [] } = useResumableUploads(caseId)
+  const { data: resumableGroups = [] } = useResumableUploadGroups(caseId)
   const isLoading = jobsLoading || tasksLoading
   const hasActivity =
+    resumableGroups.length > 0 ||
+    resumableUploads.length > 0 ||
     visibleUploadActivities.length > 0 ||
     sortedBackgroundTasks.length > 0 ||
     sortedJobs.length > 0
 
   return (
     <div className="flex h-full flex-col bg-muted/20">
+      {/* A retry can be held just as a first attempt can, and this panel is
+          where the person is looking when it is. */}
+      <ProcessHoldDialog gate={gate} />
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border px-4 py-2">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Processing Jobs
           </h3>
           {activeCount > 0 && (
             <Badge variant="info" className="px-1.5 py-0 text-[9px] h-4">
-              {activeCount} active
+              {activeCount - queuedCount} running · {queuedCount} queued
             </Badge>
           )}
         </div>
@@ -414,6 +512,9 @@ export function JobsPanel({ caseId }: JobsPanelProps) {
 
       {/* Content */}
       <ScrollArea className="flex-1">
+        <div className="space-y-2 p-2">
+          <ResumableUploadsPanel caseId={caseId} />
+        </div>
         {isLoading ? (
           <div className="flex justify-center py-8">
             <LoadingSpinner size="sm" />
@@ -450,18 +551,33 @@ export function JobsPanel({ caseId }: JobsPanelProps) {
               <JobCard
                 key={job.id}
                 job={job}
+                onPause={(selectedJob) =>
+                  controlMutation.mutate({ job: selectedJob, action: "pause" })
+                }
+                onResume={(selectedJob) =>
+                  controlMutation.mutate({ job: selectedJob, action: "resume" })
+                }
+                controlling={controlMutation.isPending}
                 onRetry={(selectedJob: EvidenceJob) => {
                   if (!selectedJob.evidence_file_id) {
-                    toast.error("This failed job is not linked to a retryable evidence file")
+                    toast.error(
+                      "This failed job is not linked to a retryable evidence file"
+                    )
                     return
                   }
-                  retryMutation.mutate(selectedJob.evidence_file_id)
+                  void retryFile(selectedJob.evidence_file_id)
                 }}
                 onClear={(selectedJob: EvidenceJob) => {
                   clearJobMutation.mutate(selectedJob.id)
                 }}
-                retrying={retryMutation.isPending && retryMutation.variables === job.evidence_file_id}
-                clearing={clearJobMutation.isPending && clearJobMutation.variables === job.id}
+                retrying={
+                  retryingFileId !== null &&
+                  retryingFileId === job.evidence_file_id
+                }
+                clearing={
+                  clearJobMutation.isPending &&
+                  clearJobMutation.variables === job.id
+                }
               />
             ))}
           </div>

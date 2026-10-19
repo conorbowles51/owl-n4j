@@ -115,6 +115,25 @@ class CellebriteEvidenceDBStorageTests(unittest.TestCase):
             self.assertEqual(deleted, 2)
             self.assertEqual(EvidenceDBStorage.list_cellebrite_files(db, self.case_id), [])
 
+    def test_retry_reuses_saved_media_and_keeps_investigator_work(self):
+        item = dict(original_filename='example.txt', stored_path='/synthetic/example.txt', size=5,
+            sha256='a' * 64, cellebrite_report_key='synthetic-report', cellebrite_file_id='file-one')
+        with self.SessionLocal() as db:
+            original = EvidenceDBStorage.add_cellebrite_files(db, self.case_id, [item])[0]
+            original.tags = ['Investigator review']
+            original.is_relevant = True
+            original_id = original.id
+            db.commit()
+        with self.SessionLocal() as db:
+            resumed = EvidenceDBStorage.add_cellebrite_files(db, self.case_id, [item])[0]
+            self.assertEqual(resumed.id, original_id)
+            self.assertEqual(resumed.tags, ['Investigator review'])
+            self.assertTrue(resumed.is_relevant)
+            db.commit()
+            self.assertEqual(len(EvidenceDBStorage.list_cellebrite_files(db, self.case_id)), 1)
+            with self.assertRaisesRegex(ValueError, 'different content'):
+                EvidenceDBStorage.add_cellebrite_files(db, self.case_id, [{**item, 'sha256': 'b' * 64}])
+
     def test_tags_and_relevance_are_postgres_backed(self):
         with self.SessionLocal() as db:
             file_row = EvidenceDBStorage.add_cellebrite_files(

@@ -100,6 +100,21 @@ CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "1600"))
 # Parallel Processing Configuration
 MAX_INGESTION_WORKERS = int(os.getenv("MAX_INGESTION_WORKERS", "4"))
 
+# Financial ingestion run reaper.
+# A run marked "running" forever reads as ingestion still in progress when the
+# process that started it died hours ago, so a background pass closes the
+# abandoned ones as failed.  The threshold is deliberately generous: a run that
+# is still alive when it is reaped has its row say "failed" while it is working,
+# and the only run shape that exists today is one file handled inline in one
+# request, where the longest single call anywhere waits EVIDENCE_ENGINE_TIMEOUT
+# (300s).  Six hours is far above that and still closes an abandoned run inside
+# a working day.  The sweep is every five minutes rather than every minute,
+# because it touches the database and the threshold it applies is in hours.
+FINANCIAL_RUN_STALE_AFTER_HOURS = int(os.getenv("FINANCIAL_RUN_STALE_AFTER_HOURS", "6"))
+FINANCIAL_RUN_REAP_INTERVAL_SECONDS = int(
+    os.getenv("FINANCIAL_RUN_REAP_INTERVAL_SECONDS", "300")
+)
+
 # Triage Configuration
 TRIAGE_SCAN_BATCH_SIZE = int(os.getenv("TRIAGE_SCAN_BATCH_SIZE", "500"))
 TRIAGE_SCAN_WORKERS = int(os.getenv("TRIAGE_SCAN_WORKERS", "4"))

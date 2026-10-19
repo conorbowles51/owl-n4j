@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import uuid
+import logging
+from contextlib import contextmanager
+from datetime import date
 from dataclasses import dataclass, field
 from itertools import combinations
-from typing import Any, Literal
+from typing import Any, Callable, ContextManager, Literal
 
 from neo4j import READ_ACCESS
 from langchain_core.tools import StructuredTool
@@ -27,6 +30,21 @@ MAX_CHART_ROWS = 250
 MAX_CHART_SERIES = 8
 MAX_CHART_CELL_CHARS = 600
 ChartType = Literal["bar", "stacked_bar", "line", "area", "pie", "donut", "scatter"]
+logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def _financial_session():
+    from postgres.session import _get_session_local
+    from sqlalchemy import text
+    with _get_session_local()() as session:
+        if session.get_bind().dialect.name == "postgresql":
+            # All reads within one tool call describe one committed state.
+            # Per-transaction settings are released on close and never change
+            # the isolation or permissions of an ingestion/edit connection.
+            session.connection(execution_options={"isolation_level": "REPEATABLE READ"})
+            session.execute(text("SET TRANSACTION READ ONLY"))
+        yield session
 
 
 @dataclass
@@ -36,6 +54,9 @@ class AgentToolContext:
     allowed_entity_keys: set[str] | None = None
     result_store: dict[str, Any] = field(default_factory=dict)
     artifact_store: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # A fresh read session per call sees committed investigator corrections.
+    # The runner's case access check supplies case_id; models cannot override it.
+    ledger_session_factory: Callable[[], ContextManager] | None = None
 
     @property
     def significant_scope(self) -> bool:
@@ -136,13 +157,46 @@ class TimelineArgs(BaseModel):
     limit: int = Field(25, ge=1, le=100)
 
 
-class FinancialArgs(BaseModel):
-    entity_keys: list[str] | None = None
-    start_date: str | None = None
-    end_date: str | None = None
-    categories: list[str] | None = None
+class FinancialScopeArgs(BaseModel):
+    account_ids: list[uuid.UUID] | None = Field(None, max_length=200)
+    account_holders: list[str] | None = Field(None, max_length=200)
+    start_date: date | None = None
+    end_date: date | None = None
+    currency: str | None = Field(None, pattern=r"^[A-Z]{3}$")
+    source_document_id: uuid.UUID | None = None
+    population: Literal["working", "verified"] = Field(
+        "working", description="Working includes usable imported payments; verified applies the narrower proof-class policy. Neither includes rejected, superseded or quarantined payments."
+    )
+
+
+class FinancialPageArgs(FinancialScopeArgs):
+    offset: int = Field(0, ge=0)
+    limit: int = Field(50, ge=1, le=100)
+    expected_revision: str | None = Field(
+        None, description="Use the previous response revision for subsequent pages of the same query. A changed ledger requires restarting the analysis."
+    )
+    expected_ledger_revision: str | None = Field(
+        None, description="Use ledger_revision to require the same saved dataset across related groupings with the same account/date scope."
+    )
+
+
+class FinancialQueryArgs(FinancialPageArgs):
+    categories: list[str] | None = Field(None, max_length=100)
+    direction: Literal["credit", "debit"] | None = None
+    search: str = Field("", max_length=256)
+    minimum_minor: str | None = Field(None, pattern=r"^(0|[1-9][0-9]{0,18})$")
+    maximum_minor: str | None = Field(None, pattern=r"^(0|[1-9][0-9]{0,18})$")
+
+
+class FinancialArgs(FinancialQueryArgs):
+    records: Literal["transactions", "excluded", "incomplete"] = "transactions"
+    entity_keys: list[str] | None = Field(None, max_length=200,
+        description="Graph keys apply only to intelligence mode. For imported payments use ledger account_ids from coverage.")
     mode: Literal["transactions", "intelligence"] = "transactions"
-    limit: int = Field(25, ge=1, le=100)
+
+
+class FinancialAnalysisArgs(FinancialQueryArgs):
+    group_by: Literal["account", "month", "counterparty", "category"] = "account"
 
 
 class MapArgs(BaseModel):
@@ -1737,34 +1791,80 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             summary=f"Loaded {page.get('count', 0)} timeline event(s).",
         )
 
-    def get_financial_transactions(
-        entity_keys: list[str] | None = None,
-        start_date: str | None = None,
-        end_date: str | None = None,
-        categories: list[str] | None = None,
-        mode: Literal["transactions", "intelligence"] = "transactions",
-        limit: int = 25,
-    ) -> dict[str, Any]:
+    def read_ledger(tool_name: str, *, view: str, **kwargs) -> dict[str, Any]:
+        if context.significant_scope:
+            return scope_error(tool_name, "Financial analysis")
+        from services.agent.financial_ledger_tools import read_financial_ledger
+        try:
+            filters = {}
+            for key in ("currency", "source_document_id", "direction", "search", "minimum_minor", "maximum_minor"):
+                value = kwargs.pop(key, None)
+                if value is not None and value != "":
+                    filters[key] = str(value)
+            categories = kwargs.pop("categories", None)
+            if categories:
+                filters["analysis_categories"] = categories
+            # These are sessions opened for reading, never the caller's write
+            # transaction. Closing them rolls back; no import/edit is performed.
+            with (context.ledger_session_factory or _financial_session)() as db:
+                data = read_financial_ledger(db, case_id=uuid.UUID(context.case_id),
+                    view=view, filters=filters or None, **kwargs)
+        except ValueError as exc:
+            return context.result(tool_name,
+                {"available": False, "applied": False, "reason": str(exc)},
+                summary="The financial scope could not be read. No partial analysis was returned.",
+                status="error", error=str(exc))
+        except Exception:
+            logger.exception("Agent ledger read failed for case %s", context.case_id)
+            return context.result(tool_name,
+                {"available": False, "applied": False, "reason": "Imported transactions are temporarily unavailable. Retry this analysis; graph records are not a substitute."},
+                summary="Imported transaction analysis is unavailable; no partial result was returned.",
+                status="error", error="The imported transaction ledger could not be read.")
+        available = data.get("available") is True
+        summary = (
+            f"Read {data.get('returned', 0)} of {data.get('total_matching', 0)} matching {view}; "
+            "totals cover the complete matching payment population, separated by currency and account type."
+            if available else str(data.get("reason") or "The complete financial scope is unavailable.")
+        )
+        return context.result(tool_name, data, summary=summary,
+            status="success" if available else "error",
+            error=None if available else str(data.get("reason") or "Financial analysis unavailable."))
+
+    def get_financial_transactions(mode="transactions", entity_keys=None, records="transactions", **kwargs) -> dict[str, Any]:
         if context.significant_scope:
             return scope_error("get_financial_transactions", "Financial analysis")
-        data = financial_service.get_financial_transactions(
-            case_id=context.case_id,
-            start_date=start_date,
-            end_date=end_date,
-            categories=categories,
-            mode=mode,
-        )
-        transactions = _filter_transactions(
-            data.get("transactions") or [],
-            entity_keys=entity_keys,
-            limit=limit,
-        )
-        result = {**data, "transactions": transactions, "returned": len(transactions)}
-        return context.result(
-            "get_financial_transactions",
-            result,
-            summary=f"Loaded {len(transactions)} financial record(s).",
-        )
+        if mode == "intelligence":
+            # Preserve the separate contextual graph reader without claiming it
+            # is the imported ledger or silently ignoring ledger-specific filters.
+            unsupported = {k: v for k, v in kwargs.items() if v not in (None, "", [], 0)
+                and k not in ("start_date", "end_date", "categories", "limit", "population")}
+            if unsupported or records != "transactions":
+                return context.result("get_financial_transactions", {"available": False},
+                    summary="Graph intelligence does not support those ledger filters.", status="error",
+                    error="Use transactions mode for imported payment filters and complete analysis.")
+            def iso(value):
+                return value.isoformat() if isinstance(value, date) else value
+            data = financial_service.get_financial_transactions(case_id=context.case_id,
+                start_date=iso(kwargs.get("start_date")), end_date=iso(kwargs.get("end_date")),
+                categories=kwargs.get("categories"), mode="intelligence")
+            transactions = _filter_transactions(data.get("transactions") or [],
+                entity_keys=entity_keys, limit=kwargs.get("limit", 50))
+            return context.result("get_financial_transactions",
+                {**data, "transactions": transactions, "returned": len(transactions),
+                 "dataset_source": "graph_intelligence", "complete_imported_ledger": False,
+                 "limitation": "Contextual graph records only; not a complete imported transaction analysis."},
+                summary=f"Loaded {len(transactions)} contextual financial intelligence records, separately from imported payments.")
+        if entity_keys:
+            return context.result("get_financial_transactions", {"available": False},
+                summary="Choose ledger accounts to filter imported payments.", status="error",
+                error="Graph entity keys cannot filter the imported ledger. Get account_ids from get_financial_coverage, then retry.")
+        return read_ledger("get_financial_transactions", view=records, **kwargs)
+
+    def analyze_financial_transactions(group_by="account", **kwargs) -> dict[str, Any]:
+        return read_ledger("analyze_financial_transactions", view="groups", group_by=group_by, **kwargs)
+
+    def get_financial_coverage(**kwargs) -> dict[str, Any]:
+        return read_ledger("get_financial_coverage", view="coverage", **kwargs)
 
     def get_map_locations(
         entity_types: list[str] | None = None,
@@ -2275,8 +2375,10 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             run_cypher,
             name="run_readonly_cypher",
             description=(
-                "Run a strictly read-only, case-scoped Neo4j Cypher query. Scope real nodes or relationships "
-                "with .case_id = $case_id, put ORDER BY after RETURN, avoid NULLS FIRST/LAST, and use numeric LIMITs."
+                "Run a strictly read-only Neo4j query. Every matched node and relationship must have explicit case scope, "
+                "preferably (n:Label {case_id: $case_id}) and [r:TYPE {case_id: $case_id}]. Use simple MATCH/OPTIONAL MATCH and RETURN; "
+                "UNION, subqueries, rebinding and variable-length paths are not supported. "
+                "Put ORDER BY after RETURN, avoid NULLS FIRST/LAST, and use numeric LIMITs."
             ),
             args_schema=ReadonlyCypherArgs,
         ),
@@ -2289,8 +2391,28 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         wrap(
             get_financial_transactions,
             name="get_financial_transactions",
-            description="Retrieve financial transaction or intelligence records, optionally focused on entity keys.",
+            description=("Read saved imported payments directly from the current case ledger, with corrected values, source references, "
+                "complete-scope totals and explicit pagination. Use next_offset and revision for every subsequent page. "
+                "A page is not the full dataset. records=excluded or incomplete inspects records outside totals. "
+                "Intelligence mode is a separate contextual graph reader and cannot establish complete imported coverage."),
             args_schema=FinancialArgs,
+        ),
+        wrap(
+            analyze_financial_transactions,
+            name="analyze_financial_transactions",
+            description=("Calculate exact totals across ALL matching imported payments, grouped by account, month, counterparty or category. "
+                "Groups are paged; calculations are not limited to the returned page. Currencies and account types stay separate. "
+                "Start here for a full financial analysis, use get_financial_coverage for known sources/accounts, and inspect payments for evidence. "
+                "Net postings are not an account balance; internal transfers are not automatically eliminated."),
+            args_schema=FinancialAnalysisArgs,
+        ),
+        wrap(
+            get_financial_coverage,
+            name="get_financial_coverage",
+            description=("Read the current case's registered financial accounts and statement periods, including source-backed accounts with no payments, "
+                "plus payment, source, period and excluded/incomplete-record counts. Page through items with next_offset and revision. "
+                "Coverage describes recorded evidence; it does not prove every statement or payment has been supplied or extracted."),
+            args_schema=FinancialPageArgs,
         ),
         wrap(
             get_map_locations,

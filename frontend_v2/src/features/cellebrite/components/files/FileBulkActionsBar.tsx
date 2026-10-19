@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input"
 import { DossierPicker } from "@/features/dossiers/components/DossierPicker"
 import { dossiersAPI } from "@/features/dossiers/api"
 import { evidenceAPI } from "@/features/evidence/api"
+import { ProcessHoldDialog } from "@/features/evidence/components/ProcessHoldDialog"
+import { useGuardedProcess } from "@/features/evidence/hooks/use-guarded-process"
 import { workspaceAPI } from "@/features/workspace/api"
 
 import { evidenceTagsAPI } from "../../api"
@@ -29,6 +31,13 @@ export function FileBulkActionsBar({
   const [dossierOpen, setDossierOpen] = useState(false)
   const [tagInput, setTagInput] = useState("")
   const tagRef = useRef<HTMLDivElement | null>(null)
+  // Called before the early return below, because the count reaching zero must
+  // not change how many hooks this component runs.
+  //
+  // Kept whole as well as destructured, because the dialog takes the gate
+  // rather than its pieces. See `ProcessGate`.
+  const gate = useGuardedProcess(caseId)
+  const { start: startProcess, isChecking, isProcessing } = gate
   const count = selectedIds.size
   const ids = [...selectedIds]
 
@@ -44,6 +53,21 @@ export function FileBulkActionsBar({
     }
   }
 
+  /**
+   * Deliberately not routed through `run`.
+   *
+   * The gate already says what it held and why, and already reports a failed
+   * send.  Wrapping it in `run` would put a second toast on top of the first,
+   * and `run`'s success line would fire for a request that was held rather than
+   * started.  The refresh `run` performs is kept, but only when something was
+   * actually sent.
+   */
+  async function processSelected() {
+    if ((await startProcess({ fileIds: ids })) !== "started") return
+    toast.success("Started AI processing")
+    onChanged()
+  }
+
   async function addTag(tag: string) {
     const clean = tag.trim()
     if (!clean) return
@@ -54,6 +78,13 @@ export function FileBulkActionsBar({
 
   return (
     <div className="flex shrink-0 items-center gap-1 border-b border-border bg-amber-500/10 px-3 py-1.5 text-xs">
+      {/* Below the early return, so a selection emptied while a hold is open
+          takes the dialog with it. That is the honest outcome rather than a
+          leak: the gate's state lives in this component too, so the held
+          request is gone either way, and a dialog offering to send files that
+          are no longer selected would be worse than no dialog. In practice the
+          modal covers the clear button, so it cannot happen by a click. */}
+      <ProcessHoldDialog gate={gate} />
       <span className="mr-1 font-semibold text-amber-700 dark:text-amber-300">{count} selected</span>
       <div ref={tagRef} className="relative">
         <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setTagOpen((current) => !current)}>
@@ -137,7 +168,8 @@ export function FileBulkActionsBar({
         variant="ghost"
         size="sm"
         className="h-7 px-2 text-xs"
-        onClick={() => void run(() => evidenceAPI.processBackground(caseId, ids), "Started AI processing")}
+        disabled={isChecking || isProcessing}
+        onClick={() => void processSelected()}
       >
         <Sparkles className="size-3" />
         Process

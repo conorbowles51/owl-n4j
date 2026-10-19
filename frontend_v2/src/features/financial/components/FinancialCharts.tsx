@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import {
   BarChart,
   Bar,
@@ -13,19 +13,31 @@ import {
   Legend,
 } from "recharts"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
+import { evidenceAmountCents, evidenceCurrency } from "../lib/evidence-amounts"
 import type { Transaction, FinancialCategory } from "../api"
 import {
   getFinancialDateTimestamp,
   isValidFinancialDate,
-  parseFinancialDate,
 } from "../lib/date-utils"
 
 const CHART_COLORS = [
-  "#b41624", "#5571c8", "#2c8197", "#c25778", "#8060a9",
-  "#bc4e78", "#26869e", "#6f8b45", "#c4653f", "#655fc0",
+  "#b41624",
+  "#5571c8",
+  "#2c8197",
+  "#c25778",
+  "#8060a9",
+  "#bc4e78",
+  "#26869e",
+  "#6f8b45",
+  "#c4653f",
+  "#655fc0",
 ]
 
-export type FinancialChartGrouping = "daily" | "weekly" | "monthly"
+import {
+  buildEvidenceVolumeData,
+  type FinancialChartGrouping,
+} from "../lib/evidence-chart-data"
+export type { FinancialChartGrouping } from "../lib/evidence-chart-data"
 
 interface FinancialChartsProps {
   transactions: Transaction[]
@@ -33,10 +45,8 @@ interface FinancialChartsProps {
   groupingOverride?: "auto" | FinancialChartGrouping
 }
 
-function formatCurrency(value: number): string {
-  if (Math.abs(value) >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`
-  if (Math.abs(value) >= 1_000) return `$${(value / 1_000).toFixed(1)}K`
-  return `$${value.toFixed(0)}`
+function formatCurrency(value: number, currency: string): string {
+  return `${value.toLocaleString("en-IE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`
 }
 
 function detectGrouping(transactions: Transaction[]): FinancialChartGrouping {
@@ -51,23 +61,12 @@ function detectGrouping(transactions: Transaction[]): FinancialChartGrouping {
   return "daily"
 }
 
-function getGroupKey(date: Date, grouping: FinancialChartGrouping): string {
-  if (grouping === "monthly") {
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
-  }
-  if (grouping === "weekly") {
-    const d = new Date(date)
-    d.setDate(d.getDate() - d.getDay())
-    return d.toISOString().slice(0, 10)
-  }
-  return date.toISOString().slice(0, 10)
-}
-
-export function FinancialCharts({
+function CurrencyFinancialCharts({
+  currency,
   transactions,
   categories,
   groupingOverride = "auto",
-}: FinancialChartsProps) {
+}: FinancialChartsProps & { currency: string }) {
   const datedTransactions = useMemo(
     () => transactions.filter((tx) => isValidFinancialDate(tx.date)),
     [transactions]
@@ -85,31 +84,10 @@ export function FinancialCharts({
     return detectGrouping(datedTransactions)
   }, [datedTransactions, groupingOverride])
 
-  // Stacked bar chart data: volume by period by category
-  const volumeData = useMemo(() => {
-    const groups = new Map<string, Record<string, number>>()
-    const allCats = new Set<string>()
-
-    for (const tx of datedTransactions) {
-      const parsedDate = parseFinancialDate(tx.date)
-      if (!parsedDate) continue
-      const key = getGroupKey(parsedDate, grouping)
-      if (!groups.has(key)) groups.set(key, {})
-      const group = groups.get(key)!
-      const cat = tx.category || "Uncategorized"
-      allCats.add(cat)
-      group[cat] = (group[cat] || 0) + Math.abs(tx.amount)
-    }
-
-    const sorted = Array.from(groups.entries()).sort(([a], [b]) =>
-      a.localeCompare(b)
-    )
-
-    return {
-      data: sorted.map(([period, vals]) => ({ period, ...vals })),
-      categories: Array.from(allCats),
-    }
-  }, [datedTransactions, grouping])
+  const volumeData = useMemo(
+    () => buildEvidenceVolumeData(datedTransactions, grouping),
+    [datedTransactions, grouping]
+  )
 
   // Donut chart data: count by category
   const categoryData = useMemo(() => {
@@ -135,23 +113,38 @@ export function FinancialCharts({
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-xs">
-            Volume Over Time ({grouping})
+            Recorded amount sizes by date ({currency}, {grouping})
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {volumeData.data.length > 0 ? (
+          {volumeData.tooLarge ? (
+            <p className="text-sm">
+              These totals are too large to plot accurately. Use the record list
+              or download the report.
+            </p>
+          ) : volumeData.data.length > 0 ? (
             <div className="overflow-x-auto pb-2">
               <BarChart width={chartWidth} height={340} data={volumeData.data}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke="hsl(var(--border))"
+                />
                 <XAxis
                   dataKey="period"
                   tick={{ fontSize: 10 }}
                   stroke="hsl(var(--muted-foreground))"
                 />
                 <YAxis
+                  width={75}
                   tick={{ fontSize: 10 }}
                   stroke="hsl(var(--muted-foreground))"
-                  tickFormatter={formatCurrency}
+                  tickFormatter={(value: number) =>
+                    value.toLocaleString("en-IE", {
+                      notation:
+                        Math.abs(value) >= 1000000 ? "compact" : "standard",
+                      maximumFractionDigits: 2,
+                    })
+                  }
                 />
                 <Tooltip
                   contentStyle={{
@@ -162,7 +155,8 @@ export function FinancialCharts({
                   }}
                   formatter={(value) =>
                     formatCurrency(
-                      typeof value === "number" ? value : Number(value) || 0
+                      typeof value === "number" ? value : Number(value) || 0,
+                      currency
                     )
                   }
                 />
@@ -170,7 +164,8 @@ export function FinancialCharts({
                 {volumeData.categories.map((cat, i) => (
                   <Bar
                     key={cat}
-                    dataKey={cat}
+                    dataKey={`category_${i}`}
+                    name={cat}
                     stackId="volume"
                     fill={
                       categoryColorMap.get(cat) ||
@@ -182,7 +177,7 @@ export function FinancialCharts({
             </div>
           ) : (
             <div className="flex h-[340px] items-center justify-center text-center text-xs text-muted-foreground">
-              No valid dated transactions available for the time chart.
+              No records with valid dates are available for this chart.
             </div>
           )}
         </CardContent>
@@ -190,7 +185,9 @@ export function FinancialCharts({
 
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-xs">Category Distribution</CardTitle>
+          <CardTitle className="text-xs">
+            Records by category ({currency})
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={260}>
@@ -244,6 +241,69 @@ export function FinancialCharts({
           </div>
         </CardContent>
       </Card>
+    </div>
+  )
+}
+
+export function FinancialCharts(props: FinancialChartsProps) {
+  const [choice, setChoice] = useState("")
+  const currencies = [
+    ...new Set(
+      props.transactions
+        .map((row) => evidenceCurrency(row.currency))
+        .filter((currency): currency is string => currency !== null)
+    ),
+  ].sort()
+  const active = currencies.includes(choice) ? choice : currencies[0]
+  const available = props.transactions.filter(
+    (row) =>
+      evidenceCurrency(row.currency) === active &&
+      evidenceAmountCents(row.amount) !== null
+  )
+  const excluded = props.transactions.filter(
+    (row) =>
+      evidenceCurrency(row.currency) === null ||
+      evidenceAmountCents(row.amount) === null
+  ).length
+  return (
+    <div className="space-y-3">
+      <label className="flex items-center gap-2 text-sm">
+        Chart currency
+        <select
+          aria-label="Chart currency"
+          value={active || ""}
+          disabled={!currencies.length}
+          onChange={(event) => setChoice(event.target.value)}
+          className="rounded border p-2"
+        >
+          {!currencies.length && <option value="">No recorded currency</option>}
+          {currencies.map((currency) => (
+            <option key={currency}>{currency}</option>
+          ))}
+        </select>
+      </label>
+      <p className="text-sm">
+        {available.length} {available.length === 1 ? "record" : "records"} in{" "}
+        {active || "a recorded currency"}. The date chart adds amount sizes, so
+        -150 contributes 150. It does not show an account balance or establish
+        money paid in or out.
+      </p>
+      {excluded > 0 && (
+        <p className="text-sm">
+          {excluded}{" "}
+          {excluded === 1
+            ? "record has a missing currency or an amount"
+            : "records have missing currencies or amounts"}{" "}
+          that cannot be plotted exactly. They remain in Transactions.
+        </p>
+      )}
+      {active && (
+        <CurrencyFinancialCharts
+          {...props}
+          transactions={available}
+          currency={active}
+        />
+      )}
     </div>
   )
 }

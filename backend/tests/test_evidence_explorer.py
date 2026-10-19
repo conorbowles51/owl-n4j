@@ -88,7 +88,7 @@ def test_search_unopened_subtree_literal_characters_filters_paths_and_batched_qu
     result = Storage.search_files(f.db, f.case, "REPORT_100%", status="processed", type_category="Document")
     event.remove(f.engine, "before_cursor_execute", record)
     assert result["file_total"] == 1
-    assert len(statements) == 3
+    assert len(statements) == 4  # One batched reading-history query, not a query per file.
     assert result["files"][0]["id"] == str(target.id)
     assert result["files"][0]["processing_stale"] is False
     assert result["files"][0]["folder_path"] == [{"id": str(parent.id), "name": "Parent"}, {"id": str(child.id), "name": "Child"}]

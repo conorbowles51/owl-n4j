@@ -1,3 +1,4 @@
+from app.services.ingestion_checkpoints import checkpointed
 """Generate evidence-grounded narrative summaries for resolved entities."""
 
 import asyncio
@@ -473,6 +474,7 @@ async def _summarize_batch(
     return results
 
 
+@checkpointed("pipeline/generate_summaries.py:generate_summaries:v1")
 async def generate_summaries(
     entities: list[ResolvedEntity],
     relationships: list[ResolvedRelationship],

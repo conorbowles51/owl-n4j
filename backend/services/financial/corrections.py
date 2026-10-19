@@ -1,0 +1,139 @@
+"""Append an amount correction and audit event in one transaction.
+
+Original reading fields and source locators are retained. Repeated edits form a
+supersession chain; reverting a value is another correction, never an overwrite.
+Native controls are separately recalculated when source bytes and original rows
+can be rebound. Human interpretation retains a durable proof reservation.
+"""
+import copy
+import uuid
+from dataclasses import fields as dataclass_fields
+from sqlalchemy import select
+
+from postgres.models.enums import AdjudicationDecision, AdjudicationSubject, TransactionDirection
+from postgres.models.financial import FinancialTransaction, FinancialSourceDocument, FinancialStatementPeriod
+from services.financial.correction_preview import CorrectionPreviewError, preview_amount_correction
+from services.financial.decisions import Actor, record
+from services.financial.documents import reclassify_after_reconciliation, document_reconciliation
+from services.financial.reconcile import reconcile_period
+from services.financial.references import RowReading, content_hash, ref_id
+from services.financial.correction_fields import correction_fields, DATE_FIELDS
+from services.financial.transactions import choose_ordering_date, ORDERING_PRECEDENCE
+
+
+def correct_transaction(session, *, case_id, transaction_id, amount_minor, direction,
+                        expected_revision, actor, reason, resolve_path=None, fields=None, commit=True):
+    """Commit an exact replacement or roll back every effect, including grading."""
+    try:
+        if not isinstance(actor, Actor) or not isinstance(reason, str):
+            raise CorrectionPreviewError("A named actor is required to save a correction.")
+        reason = reason.strip() or 'Transaction values corrected by the investigator.'
+        preview = preview_amount_correction(session, case_id=case_id, transaction_id=transaction_id,
+                                            amount_minor=amount_minor, direction=direction, resolve_path=resolve_path, fields=fields)
+        if preview["document_revision"] != expected_revision:
+            raise CorrectionPreviewError("The document changed. Review the correction again.", 409)
+        original = session.get(FinancialTransaction, transaction_id)
+        document = session.get(FinancialSourceDocument, original.source_document_id)
+        if not preview["verification"]["can_record"]:
+            raise CorrectionPreviewError(preview["verification"]["reason"], 409)
+        rows = list(session.scalars(select(FinancialTransaction).where(
+            FinancialTransaction.source_document_id == document.id)))
+        if any(r.proof_class != document.proof_class for r in rows):
+            raise CorrectionPreviewError("Document and row proof classes disagree; correction refused.", 409)
+        reading_fields = {f.name: getattr(original, f.name) for f in dataclass_fields(RowReading)}
+        changes = correction_fields(preview.get("field_changes"))
+        reading_fields.update(changes)
+        reading_fields.update(amount_minor=amount_minor, direction=TransactionDirection(direction))
+        reading = RowReading(**reading_fields)
+        hashes = {r.content_hash for r in rows}
+        # Occurrences include historical versions. This supports correcting back
+        # to a previous value without deleting its original citation.
+        occurrence = 0
+        while True:
+            digest = content_hash(reading, occurrence)
+            reference = ref_id(document.sha256_at_ingestion, digest)
+            if digest not in hashes and session.scalar(select(FinancialTransaction.id).where(
+                    FinancialTransaction.case_id == case_id, FinancialTransaction.ref_id == reference)) is None:
+                break
+            occurrence += 1
+        values = {prop.key: copy.deepcopy(getattr(original, prop.key))
+                  for prop in FinancialTransaction.__mapper__.column_attrs
+                  if prop.key not in {"id", "created_at", "updated_at"}}
+        replacement_id = uuid.uuid4()
+        values.update(id=replacement_id, amount_minor=amount_minor, direction=direction,
+                      ref_id=reference, content_hash=digest, superseded_by_id=None)
+        values.update(changes)
+        replaces_ordering_fallback = ((original.provenance or {}).get('date_basis') == 'statement_end_ordering_only'
+                                     and bool(DATE_FIELDS.intersection(changes)))
+        if DATE_FIELDS.intersection(changes):
+            original_date_field = next((attribute for source, attribute in ORDERING_PRECEDENCE
+                                        if source.value == original.ordering_date_source), None)
+            if not replaces_ordering_fallback and original_date_field and getattr(reading, original_date_field) is not None:
+                values['ordering_date'] = getattr(reading, original_date_field)
+            else:
+                ordering_date, ordering_source = choose_ordering_date(reading)
+                values.update(ordering_date=ordering_date, ordering_date_source=ordering_source.value)
+        values["provenance"] = {**values["provenance"], "correction": {
+            "previous_transaction_id": str(original.id), "previous_ref_id": original.ref_id,
+            "occurrence": occurrence, "version": 1}}
+        if replaces_ordering_fallback:
+            values['provenance'].pop('date_basis', None)
+            values['provenance'].pop('statement_end_date', None)
+        replacement = FinancialTransaction(**values)
+        event = record(session, case_id=case_id, subject=original,
+                       subject_type=AdjudicationSubject.transaction,
+                       decision=AdjudicationDecision.correct_transaction, reason=reason, actor=actor,
+                       before={"row": preview["original"], "replacement_id": None,
+                               "original_status": original.ledger_status,
+                               "original_quarantine_reason": original.quarantine_reason,
+                               "reviewed_revision": expected_revision,
+                               "running_balance_comparison": None,
+                               "printed_total_comparison": None, "printed_total_error": None,
+                               "native_control_comparison": None},
+                       after={"row": {**preview["original"], **preview["proposed"],
+                                       "key": str(replacement_id), "ref_id": reference},
+                              "replacement_id": str(replacement_id),
+                              "original_status": "superseded", "original_quarantine_reason": None,
+                              "reviewed_revision": expected_revision,
+                              "running_balance_comparison": preview["running_balances"],
+                              "printed_total_comparison": preview["printed_totals"],
+                              "printed_total_error": preview["printed_totals_error"],
+                              "native_control_comparison": preview.get("native_controls")})
+        session.add(replacement)
+        session.flush()
+        from services.financial.payment_counterparty_link import effective_link, record_link
+        link = effective_link(original)
+        if link and (original.account_id, original.currency, original.counterparty_raw) != (replacement.account_id, replacement.currency, replacement.counterparty_raw):
+            record_link(session, row=replacement, link=link, actor=actor, reason='Identity retained while correcting this payment: ' + reason)
+        original.ledger_status = "superseded"
+        original.quarantine_reason = None
+        original.superseded_by_id = replacement_id
+        session.flush()
+        periods = list(session.scalars(select(FinancialStatementPeriod).where(
+            FinancialStatementPeriod.source_document_id == document.id)))
+        for period in periods:
+            linked = session.scalars(select(FinancialTransaction).where(FinancialTransaction.statement_period_id == period.id)).all()
+            if any(r.case_id != case_id or r.source_document_id != document.id or r.account_id != period.account_id for r in linked):
+                raise CorrectionPreviewError("Statement row ownership is inconsistent.", 409)
+            reconcile_period(session, period)
+        reservations = preview["verification"]["reservations"]
+        document.metadata_ = {**(document.metadata_ or {}), "admissibility_reservations": reservations}
+        reclassify_after_reconciliation(session, document, document_reconciliation(session, document), reservations=reservations)
+        session.flush()
+        if document.proof_class != preview["verification"]["proposed_proof_class"]:
+            raise CorrectionPreviewError("Verification changed during recording; nothing was committed.", 409)
+        if (document.metadata_ or {}).get('statement_import_original') and (document.metadata_ or {}).get('statement_import_request'):
+            from services.financial.saved_statement_admission import refresh_saved_assessment
+            for period in periods:
+                refresh_saved_assessment(session, document, period)
+        result = {"case_id": str(case_id), "transaction_id": str(transaction_id),
+                  "replacement_id": str(replacement_id), "replacement_ref_id": reference,
+                  "adjudication_id": str(event.id), "applied": True,
+                  "proof_class": document.proof_class, "ledger_status": replacement.ledger_status,
+                  "native_controls_rechecked": preview["native_controls_rechecked"]}
+        if commit:
+            session.commit()
+        return result
+    except Exception:
+        session.rollback()
+        raise

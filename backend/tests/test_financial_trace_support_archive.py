@@ -1,0 +1,429 @@
+import hashlib
+import io
+import json
+import unittest
+import zipfile
+from unittest.mock import patch
+
+from tests import test_financial_trace_replay as scenario_fixture
+from tests import test_financial_extraction_evaluation as corpus_fixture
+from services.financial.trace_support_archive import build_trace_support_archive, verify_trace_support_archive
+from services.financial.ledger_summary import LedgerSummaryError
+
+
+class TraceSupportArchiveTests(unittest.TestCase):
+    def setUp(self):
+        self.f = scenario_fixture.TraceReplayTests()
+        self.f.setUp()
+
+    def tearDown(self):
+        self.f.tearDown()
+
+    def test_original_bytes_hashes_and_conditional_support_preserved(self):
+        content = build_trace_support_archive([self.f.content])
+        self.assertEqual(content, build_trace_support_archive([self.f.content]))
+        self.assertEqual(verify_trace_support_archive(content)['status'], 'verified_bytes_matching_rebuild')
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            manifest = json.loads(archive.read('manifest.json'))
+            self.assertEqual(archive.read('scenarios/01/scenario.json'), self.f.content)
+            self.assertEqual(manifest['completeness'], 'incomplete_expert_packet')
+            self.assertEqual(manifest['validation']['status'], 'unavailable')
+            for entry in manifest['files']:
+                data = archive.read(entry['filename'])
+                self.assertEqual(entry['byte_count'], len(data))
+                self.assertEqual(entry['sha256'], hashlib.sha256(data).hexdigest())
+            support = json.loads(archive.read('scenarios/01/expert-support.json'))
+            self.assertEqual(support['tracing']['status'], 'selected_conditional_scenario')
+            self.assertEqual(support['tracing']['scenario_sha256'], hashlib.sha256(self.f.content).hexdigest())
+
+    def test_readable_scenario_includes_reasons_order_and_linked_payments(self):
+        from html import escape
+        original = json.loads(self.f.content)
+        content = build_trace_support_archive([self.f.content])
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            manifest = json.loads(archive.read('manifest.json'))
+            self.assertEqual(manifest['scenario_reports_version'], 1)
+            reference = manifest['scenarios'][0]['report_reference']
+            report = archive.read(reference).decode()
+            self.assertIn(reference, archive.read('review-index.html').decode())
+            self.assertIn(escape(original['inputs']['opening_basis'], quote=True), report)
+            self.assertIn(escape(original['inputs']['order_basis'], quote=True), report)
+            self.assertIn(escape(original['inputs']['attributions'][0]['basis'], quote=True), report)
+            self.assertIn('Lowest intermediate balance', report)
+            self.assertIn('First in, first out (FIFO)', report)
+            self.assertIn('Direct tracing', report)
+            self.assertIn('No asset purchases or resales were selected', report)
+            self.assertIn('href="#payment-', report)
+            self.assertIn('id="payment-', report)
+            self.assertIn(hashlib.sha256(self.f.content).hexdigest(), report)
+            self.assertEqual(archive.read('scenarios/01/scenario.json'), self.f.content)
+
+    def test_old_packages_without_scenario_reports_keep_their_rebuild_contract(self):
+        content = build_trace_support_archive([self.f.content], include_scenario_reports=False)
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            self.assertNotIn('scenarios/01/report.html', archive.namelist())
+            self.assertNotIn('scenario_reports_version', json.loads(archive.read('manifest.json')))
+        self.assertEqual(verify_trace_support_archive(content)['status'], 'verified_bytes_matching_rebuild')
+
+    def test_rehashed_scenario_report_change_is_identified(self):
+        content = build_trace_support_archive([self.f.content])
+        def change(files):
+            name = 'scenarios/01/report.html'
+            files[name] = files[name].replace(b'Opening money', b'Altered opening money')
+            manifest = json.loads(files['manifest.json'])
+            for item in manifest['files']:
+                if item['filename'] == name:
+                    item.update(byte_count=len(files[name]), sha256=hashlib.sha256(files[name]).hexdigest())
+            files['manifest.json'] = json.dumps(manifest).encode()
+        result = verify_trace_support_archive(self.rewrite_archive(content, change))
+        self.assertEqual(result['status'], 'verified_bytes_different_rebuild')
+        self.assertEqual(result['changed_members'], ['scenarios/01/report.html'])
+
+    def test_unknown_or_boolean_scenario_report_version_is_refused(self):
+        content = build_trace_support_archive([self.f.content])
+        for version in (2, True, '1'):
+            def change(files):
+                manifest = json.loads(files['manifest.json'])
+                manifest['scenario_reports_version'] = version
+                files['manifest.json'] = json.dumps(manifest).encode()
+            with self.assertRaises(LedgerSummaryError):
+                verify_trace_support_archive(self.rewrite_archive(content, change))
+
+    def test_supplied_synthetic_measurements_stay_synthetic(self):
+        corpus = corpus_fixture.ExtractionEvaluationTests().corpus()
+        archive_bytes = build_trace_support_archive([self.f.content], validation_corpus=corpus)
+        with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
+            manifest = json.loads(archive.read('manifest.json'))
+            self.assertEqual(manifest['validation']['label_status'], 'synthetic_test')
+            self.assertEqual(json.loads(archive.read('validation/corpus.json')), corpus)
+            report = json.loads(archive.read('validation/measurements.json'))
+            self.assertEqual(report['layers'][0]['errors_surviving_gate']['numerator'], 2)
+
+    def test_duplicates_and_modified_calculations_refused(self):
+        with self.assertRaises(LedgerSummaryError): build_trace_support_archive([self.f.content] * 2)
+        scenario = json.loads(self.f.content)
+        scenario['limitations'].append('Altered interpretation')
+        with self.assertRaises(LedgerSummaryError): build_trace_support_archive([json.dumps(scenario).encode()])
+        with self.assertRaises(LedgerSummaryError): build_trace_support_archive([])
+        with self.assertRaises(LedgerSummaryError): build_trace_support_archive([self.f.content] * 9)
+
+    def test_different_case_is_not_combined(self):
+        from services.financial.trace_replay import replay_trace
+        original = replay_trace(self.f.content)
+        other = {**original, 'case_id':'other', 'original_sha256':'b' * 64}
+        with patch('services.financial.trace_support_archive.replay_trace', side_effect=[original, other]):
+            with self.assertRaisesRegex(LedgerSummaryError, 'same case'):
+                build_trace_support_archive([self.f.content, self.f.content + b' '])
+
+    def review_inputs(self):
+        from services.financial.reference_reviews import reconcile_reference_reviews
+        corpus = corpus_fixture.ExtractionEvaluationTests().corpus()
+        first = dict(schema_version='loupe.extraction_reader_review/1', corpus_id=corpus['corpus_id'],
+            corpus_version=corpus['corpus_version'], review_id='first', reviewer_id='reader-a',
+            label_status='synthetic_test', documents=[dict(source_sha256=d['source_sha256'],
+                complete_source_reviewed=True, rows=d['truth']) for d in corpus['documents']])
+        second = {**first, 'review_id':'second', 'reviewer_id':'reader-b'}
+        record = reconcile_reference_reviews(first, second)
+        predictions = dict(schema_version='loupe.extraction_predictions/1', corpus_id=corpus['corpus_id'],
+            corpus_version=corpus['corpus_version'], documents=[{k:v for k,v in d.items() if k != 'truth'} for d in corpus['documents']])
+        return record, predictions
+
+    def test_reference_evidence_retained_and_linked_from_each_expert_index(self):
+        record, predictions = self.review_inputs()
+        content = build_trace_support_archive([self.f.content], reference_review=record, validation_predictions=predictions)
+        self.assertEqual(verify_trace_support_archive(content)['status'], 'verified_bytes_matching_rebuild')
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            manifest = json.loads(archive.read('manifest.json'))
+            self.assertEqual(json.loads(archive.read('validation/reference-review.json')), record)
+            self.assertEqual(json.loads(archive.read('validation/predictions.json')), predictions)
+            support = json.loads(archive.read('scenarios/01/expert-support.json'))
+            self.assertEqual({key:value for key,value in support['validation'].items() if key != 'source_overlap'}, manifest['validation'])
+            self.assertEqual(support['validation']['label_status'], 'synthetic_test')
+            self.assertEqual(support['validation']['reference_review_sha256'], record['review_record_sha256'])
+            for entry in manifest['files']:
+                self.assertEqual(hashlib.sha256(archive.read(entry['filename'])).hexdigest(), entry['sha256'])
+
+    def test_reference_tampering_and_ambiguous_inputs_refused(self):
+        record, predictions = self.review_inputs()
+        with self.assertRaises(ValueError):
+            build_trace_support_archive([self.f.content], reference_review=record)
+        with self.assertRaises(ValueError):
+            build_trace_support_archive([self.f.content], reference_review=record,
+                validation_predictions=predictions, validation_corpus={})
+        record['documents'][0]['truth'][0]['fields']['direction'] = 'debit'
+        with self.assertRaisesRegex(ValueError, 'changed'):
+            build_trace_support_archive([self.f.content], reference_review=record, validation_predictions=predictions)
+
+    def test_source_overlap_does_not_infer_version_equivalence(self):
+        from services.financial.trace_support_archive import validation_source_overlap
+        corpus = corpus_fixture.ExtractionEvaluationTests().corpus()
+        result = validation_source_overlap({'sources': [dict(sha256_at_ingestion='a'*64),
+            dict(sha256_at_ingestion='b'*64), dict(sha256_at_ingestion=None)]}, corpus)
+        self.assertEqual(result['matching_source_sha256'], ['a'*64])
+        self.assertEqual(result['unmeasured_source_sha256'], ['b'*64])
+        self.assertEqual(result['sources_without_digest'], 1)
+        self.assertEqual(result['extraction_version_equivalence'], 'not_established')
+
+    def test_saved_ledger_bytes_retained_with_separate_scope(self):
+        from tests import test_financial_export_comparison as ledger_fixture
+        fixture = ledger_fixture.ExportComparisonTests()
+        document = fixture.document()
+        document['ledger']['case_id'] = json.loads(self.f.content)['ledger_snapshot']['ledger']['case_id']
+        original = fixture.archive(document)
+        content = build_trace_support_archive([self.f.content], ledger_archive=original)
+        self.assertEqual(verify_trace_support_archive(content)['status'], 'verified_bytes_matching_rebuild')
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            self.assertEqual(archive.read('ledger/original-export.zip'), original)
+            manifest = json.loads(archive.read('manifest.json'))
+            self.assertEqual(manifest['captured_ledger']['archive_sha256'], hashlib.sha256(original).hexdigest())
+            self.assertEqual(manifest['captured_ledger']['wider_case_history'], 'not_selected')
+            self.assertIsNone(manifest['captured_ledger']['audit_verification'])
+        document['ledger']['case_id'] = 'different-case'
+        with self.assertRaisesRegex(ValueError, 'different case'):
+            build_trace_support_archive([self.f.content], ledger_archive=fixture.archive(document))
+        with self.assertRaises(ValueError):
+            build_trace_support_archive([self.f.content], ledger_archive=fixture.archive(document, manifest_changes={'document_sha256':'b'*64}))
+
+    def test_ledger_only_package_retains_original_support_and_rebuilds(self):
+        from tests import test_financial_export_comparison as ledger_fixture
+        fixture = ledger_fixture.ExportComparisonTests()
+        original, support = fixture.support_archive()
+        content = build_trace_support_archive([], ledger_archive=original, expected_case_id='case')
+        self.assertEqual(verify_trace_support_archive(content, expected_case_id='case')['status'],
+                         'verified_bytes_matching_rebuild')
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            manifest = json.loads(archive.read('manifest.json'))
+            self.assertEqual(manifest['case_id'], 'case')
+            self.assertEqual(manifest['scenarios'], [])
+            self.assertEqual(archive.read('ledger/original-export.zip'), original)
+            self.assertEqual(archive.read('ledger/captured-expert-support.json'), support)
+            self.assertNotIn('scenarios/01/scenario.json', archive.namelist())
+            self.assertIn(b'Original ledger export', archive.read('review-index.html'))
+        with self.assertRaisesRegex(LedgerSummaryError, 'different case'):
+            build_trace_support_archive([], ledger_archive=original, expected_case_id='another-case')
+
+    def test_ledger_only_package_accepts_old_exports_without_inventing_support(self):
+        from tests import test_financial_export_comparison as ledger_fixture
+        original = ledger_fixture.ExportComparisonTests().archive()
+        content = build_trace_support_archive([], ledger_archive=original)
+        self.assertEqual(verify_trace_support_archive(content)['status'], 'verified_bytes_matching_rebuild')
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            self.assertNotIn('ledger/captured-expert-support.json', archive.namelist())
+            self.assertIn(b'Not captured', archive.read('review-index.html'))
+
+    def test_ledger_only_package_retains_supplied_measurements_without_claiming_case_accuracy(self):
+        from tests import test_financial_export_comparison as ledger_fixture
+        record, predictions = self.review_inputs()
+        content = build_trace_support_archive([], ledger_archive=ledger_fixture.ExportComparisonTests().archive(),
+            reference_review=record, validation_predictions=predictions)
+        self.assertEqual(verify_trace_support_archive(content)['status'], 'verified_bytes_matching_rebuild')
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            manifest = json.loads(archive.read('manifest.json'))
+            self.assertEqual(manifest['validation']['label_status'], 'synthetic_test')
+            self.assertEqual(json.loads(archive.read('validation/reference-review.json')), record)
+
+    def test_saved_ledger_summary_shows_recorded_versions_and_custody_without_rewriting(self):
+        from tests import test_financial_export_comparison as ledger_fixture
+        fixture = ledger_fixture.ExportComparisonTests()
+        event = dict(id='custody-1', evidence_file_id='source-file', recorded_at='2026-09-13T12:00:00+00:00',
+            actor={'name': 'Example investigator'}, report=dict(event_kind='receipt',
+            occurred_at='2026-09-12T10:00:00+00:00', received_by='Example team',
+            reason='<script>not markup</script>', acquisition_method='production'))
+        original, support = fixture.support_archive(support_changes=dict(
+            versions=dict(export_code_version='saved-revision', source_parsers=[dict(source_document_id='source', parser_name='statement-review', parser_version='saved-reader')]),
+            human_decisions=dict(statement_import_confirmations=1),
+            source_records=dict(case_custody_reports={'events': [event]}, source_custody_reports=[{'events': [event]}],
+                sources=[dict(id='source', evidence_file_id='source-file')],
+                processing_records=dict(evidence_registrations=[dict(id='source-file', original_filename='example-statement.pdf')]))))
+        content = build_trace_support_archive([], ledger_archive=original)
+        self.assertEqual(verify_trace_support_archive(content)['status'], 'verified_bytes_matching_rebuild')
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            report = archive.read('review-index.html').decode()
+            self.assertIn('saved-reader', report)
+            self.assertIn('saved-revision', report)
+            self.assertIn('example-statement.pdf', report)
+            self.assertIn('2026-09-12T10:00:00+00:00', report)
+            self.assertIn('2026-09-13T12:00:00+00:00', report)
+            self.assertIn('&lt;script&gt;not markup&lt;/script&gt;', report)
+            self.assertNotIn('<script>', report)
+            self.assertEqual(report.count('custody-1'), 1)
+            self.assertEqual(archive.read('ledger/captured-expert-support.json'), support)
+
+    def test_older_package_without_readable_ledger_support_keeps_its_rebuild_contract(self):
+        from tests import test_financial_export_comparison as ledger_fixture
+        original, _ = ledger_fixture.ExportComparisonTests().support_archive()
+        content = build_trace_support_archive([], ledger_archive=original, include_ledger_support_summary=False)
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            self.assertNotIn('ledger_support_summary', json.loads(archive.read('manifest.json')))
+            self.assertNotIn(b'Saved ledger processing and review', archive.read('review-index.html'))
+        self.assertEqual(verify_trace_support_archive(content)['status'], 'verified_bytes_matching_rebuild')
+
+    def test_readable_investigation_totals_do_not_hide_imports_outside_verified_totals(self):
+        from services.financial.review_package_report import render_review_package_report
+        ledger = dict(ledger=dict(included_rows=0, excluded_rows=2),
+            working_totals=dict(included_rows=2, excluded_rows=0, has_credit_card_readings=True,
+                currencies=[dict(currency='USD', rows=2, credits_minor='0',
+                                 debits_minor='9007199254740993', net_minor='-9007199254740993')]))
+        report = render_review_package_report(case_id='case', scenarios=[], supports=[],
+            ledger=ledger, ledger_support={}).decode()
+        self.assertIn('Transactions in investigation totals</td><td data-label="Count or scope">2', report)
+        self.assertIn('Transactions in separately verified totals</td><td data-label="Count or scope">0', report)
+        self.assertIn('90,071,992,547,409.93 USD', report)
+        self.assertIn('debits increase the amount owed', report)
+        self.assertNotIn('Included ledger readings', report)
+
+    def test_saved_ledger_chain_recomputed_before_attachment(self):
+        from tests import test_financial_export_comparison as ledger_fixture
+        from services.financial.audit_chain import verify_financial_audit_chain
+        fixture = ledger_fixture.ExportComparisonTests()
+        document = fixture.document()
+        case_id = json.loads(self.f.content)['ledger_snapshot']['ledger']['case_id']
+        document['ledger']['case_id'] = case_id
+        document['case_financial_history'] = {'audit_chain': {'entries': [],
+            'verification': verify_financial_audit_chain([], case_id=case_id)}}
+        content = build_trace_support_archive([self.f.content], ledger_archive=fixture.archive(document))
+        self.assertEqual(verify_trace_support_archive(content)['status'], 'verified_bytes_matching_rebuild')
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            captured = json.loads(archive.read('manifest.json'))['captured_ledger']
+            self.assertEqual(captured['wider_case_history'], 'included')
+            self.assertEqual(captured['audit_verification']['event_count'], 0)
+        document['case_financial_history']['audit_chain']['verification']['event_count'] = 1
+        with self.assertRaisesRegex(ValueError, 'summary differs'):
+            build_trace_support_archive([self.f.content], ledger_archive=fixture.archive(document))
+
+    def test_attached_ledger_support_is_copied_without_rewriting(self):
+        from tests import test_financial_export_comparison as ledger_fixture
+        fixture = ledger_fixture.ExportComparisonTests()
+        document = fixture.document()
+        document['ledger']['case_id'] = json.loads(self.f.content)['ledger_snapshot']['ledger']['case_id']
+        digest = hashlib.sha256(json.dumps(document).encode()).hexdigest()
+        support = json.dumps(dict(schema_version='loupe.financial.expert_support/1',
+            case_id=document['ledger']['case_id'], derived_from_sha256=digest,
+            validation={'status': 'unavailable'}), indent=4).encode()
+        entry = dict(filename='expert-support.json', sha256=hashlib.sha256(support).hexdigest(),
+            byte_count=len(support), derived_from_sha256=digest)
+        original = fixture.archive(document, manifest_changes={'expert_support': entry}, extra=('expert-support.json', support))
+        content = build_trace_support_archive([self.f.content], ledger_archive=original)
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            manifest = json.loads(archive.read('manifest.json'))
+            reference = manifest['captured_ledger']['support_reference']
+            self.assertEqual(archive.read(reference), support)
+            self.assertEqual(archive.read('ledger/original-export.zip'), original)
+            self.assertIn(reference.encode(), archive.read('review-index.html'))
+        self.assertEqual(verify_trace_support_archive(content)['status'], 'verified_bytes_matching_rebuild')
+
+    def rewrite_archive(self, content, change):
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            files = {name: archive.read(name) for name in archive.namelist()}
+        change(files)
+        target = io.BytesIO()
+        with zipfile.ZipFile(target, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+            for name, data in files.items():
+                archive.writestr(name, data)
+        return target.getvalue()
+
+    def test_verifier_refuses_missing_extra_changed_and_unsafe_members(self):
+        content = build_trace_support_archive([self.f.content])
+        for change in (lambda files: files.pop('scenarios/01/replay.json'),
+                       lambda files: files.update({'extra.txt': b'unlisted'}),
+                       lambda files: files.update({'../escape': b'unsafe'}),
+                       lambda files: files.update({'scenarios/01/replay.json': b'{}'})):
+            with self.assertRaises(ValueError):
+                verify_trace_support_archive(self.rewrite_archive(content, change))
+        with self.assertRaises(ValueError):
+            verify_trace_support_archive(content, expected_sha256='0'*64)
+        result = verify_trace_support_archive(content, expected_sha256=hashlib.sha256(content).hexdigest())
+        self.assertEqual(result['checkpoint_status'], 'matches_supplied_digest')
+
+    def test_rehashed_derived_content_is_reported_as_rebuild_difference(self):
+        content = build_trace_support_archive([self.f.content])
+        def change(files):
+            name = 'scenarios/01/expert-support.json'
+            support = json.loads(files[name]); support['completeness'] = 'invented-completeness-claim'
+            files[name] = json.dumps(support).encode()
+            manifest = json.loads(files['manifest.json'])
+            for item in manifest['files']:
+                if item['filename'] == name:
+                    item.update(byte_count=len(files[name]), sha256=hashlib.sha256(files[name]).hexdigest())
+            files['manifest.json'] = json.dumps(manifest).encode()
+        result = verify_trace_support_archive(self.rewrite_archive(content, change))
+        self.assertEqual(result['status'], 'verified_bytes_different_rebuild')
+        self.assertEqual(result['changed_members'], ['scenarios/01/expert-support.json'])
+
+    def test_verifier_refuses_duplicate_members_and_manifest_keys(self):
+        content = build_trace_support_archive([self.f.content])
+        target = io.BytesIO(content)
+        with zipfile.ZipFile(target, 'a') as archive:
+            archive.writestr('scenarios/01/replay.json', '{}')
+        with self.assertRaises(ValueError):
+            verify_trace_support_archive(target.getvalue())
+        def change(files):
+            files['manifest.json'] = b'{"case_id":"one","case_id":"two"}'
+        with self.assertRaises(ValueError):
+            verify_trace_support_archive(self.rewrite_archive(content, change))
+
+    def test_changed_replay_code_version_is_explicit_without_false_calculation_failure(self):
+        with patch('services.financial.version.code_version', return_value='captured-code'):
+            content = build_trace_support_archive([self.f.content])
+        with patch('services.financial.version.code_version', return_value='current-code'):
+            result = verify_trace_support_archive(content)
+        self.assertEqual(result['status'], 'verified_bytes_matching_calculations')
+        self.assertEqual(result['changed_members'], [])
+        self.assertEqual(result['replay_version_changes'], [dict(member='scenarios/01/replay.json',
+            captured_replay_code_version='captured-code', current_replay_code_version='current-code')])
+
+    def test_combined_archive_size_limit_is_enforced_on_build(self):
+        with patch('services.financial.trace_support_archive.MAX_SUPPORT_ARCHIVE_BYTES', 10):
+            with self.assertRaisesRegex(ValueError, 'Combined support'):
+                build_trace_support_archive([self.f.content])
+
+    def test_case_binding_is_checked_before_rebuild(self):
+        content = build_trace_support_archive([self.f.content])
+        with patch('services.financial.trace_support_archive.build_trace_support_archive') as rebuild:
+            with self.assertRaises(ValueError):
+                verify_trace_support_archive(content, expected_case_id='another-case')
+        rebuild.assert_not_called()
+
+    def test_readable_index_has_conditional_results_and_explicit_missing_material(self):
+        content=build_trace_support_archive([self.f.content],preparation=dict(privilege_marking='confidential',
+            generated_by=dict(name='<script>untrusted</script>',email='test@example.invalid'),generated_at='2026-09-10T12:00:00Z'))
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            manifest=json.loads(archive.read('manifest.json'));report=archive.read(manifest['readable_index']).decode()
+            self.assertIn('Confidential',report)
+            self.assertIn('&lt;script&gt;untrusted&lt;/script&gt;',report)
+            self.assertNotIn('<script>untrusted',report)
+            self.assertIn('No extraction measurements were attached',report)
+            self.assertIn('No separate ledger export was attached',report)
+            self.assertIn('first in first out',report)
+            self.assertIn('500000 minor units',report)
+            self.assertIn('scenarios/01/scenario.json',report)
+        self.assertEqual(verify_trace_support_archive(content)['status'],'verified_bytes_matching_rebuild')
+
+    def test_pre_index_packages_still_rebuild_without_rewriting(self):
+        content=build_trace_support_archive([self.f.content],include_readable_index=False)
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            self.assertNotIn('review-index.html',archive.namelist())
+        self.assertEqual(verify_trace_support_archive(content)['status'],'verified_bytes_matching_rebuild')
+
+    def test_rehashed_readable_report_changes_are_detected(self):
+        content=build_trace_support_archive([self.f.content])
+        def change(files):
+            files['review-index.html']=files['review-index.html'].replace(b'500000 minor units',b'900000 minor units')
+            manifest=json.loads(files['manifest.json'])
+            for item in manifest['files']:
+                if item['filename']=='review-index.html':
+                    item.update(byte_count=len(files['review-index.html']),sha256=hashlib.sha256(files['review-index.html']).hexdigest())
+            files['manifest.json']=json.dumps(manifest).encode()
+        result=verify_trace_support_archive(self.rewrite_archive(content,change))
+        self.assertEqual(result['status'],'verified_bytes_different_rebuild')
+        self.assertEqual(result['changed_members'],['review-index.html'])
+
+    def test_readable_measurement_report_keeps_synthetic_status_and_exact_denominators(self):
+        corpus=corpus_fixture.ExtractionEvaluationTests().corpus()
+        content=build_trace_support_archive([self.f.content],validation_corpus=corpus)
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            report=archive.read('review-index.html').decode()
+            self.assertIn('synthetic_test',report)
+            self.assertIn('ocr_model',report)
+            self.assertIn('1 / 2',report)
+            self.assertIn('test-1',report)

@@ -1,4 +1,5 @@
-import { useCallback } from "react"
+import { useFinancialAccess } from "../hooks/use-financial-access"
+import { useCallback, useRef, useState } from "react"
 import {
   ChevronDown,
   ChevronRight,
@@ -42,17 +43,23 @@ import {
 } from "@/components/ui/tooltip"
 import { useFinancialStore } from "../stores/financial.store"
 import { TransactionDetailPanel } from "./TransactionDetailPanel"
-import type { Transaction, FinancialCategory, FinancialDatasetMode } from "../api"
+import type {
+  Transaction,
+  FinancialCategory,
+  FinancialDatasetMode,
+} from "../api"
 import type { SortColumn } from "../stores/financial.store"
 import { formatFinancialDate } from "../lib/date-utils"
+import { formatEvidenceAmount } from "../lib/evidence-amounts"
 
 interface TransactionTableProps {
+  caseId?: string
   mode: FinancialDatasetMode
   transactions: Transaction[]
   allTransactions: Transaction[]
   categories: FinancialCategory[]
   sortColumns: SortColumn[]
-  onCategorize: (nodeKey: string, category: string) => void
+  onCategorize: (nodeKey: string, category: string) => Promise<unknown>
   onAmountClick: (transaction: Transaction) => void
   onEntityEdit: (transaction: Transaction, field: "from" | "to") => void
   onGroupSubTransactions: (transaction: Transaction) => void
@@ -64,6 +71,7 @@ interface TransactionTableProps {
 }
 
 export function TransactionTable({
+  caseId,
   mode,
   transactions,
   allTransactions,
@@ -88,7 +96,8 @@ export function TransactionTable({
     toggleExpandedRow,
     toggleSort,
   } = useFinancialStore()
-  const editable = mode === "transactions"
+  const { canEdit } = useFinancialAccess()
+  const editable = canEdit && mode === "transactions"
 
   const handleRowCheckbox = useCallback(
     (key: string, e: React.MouseEvent) => {
@@ -125,12 +134,16 @@ export function TransactionTable({
   const getSortInfo = (key: string) => {
     const idx = sortColumns.findIndex((c) => c.key === key)
     if (idx < 0) return null
-    return { asc: sortColumns[idx].asc, index: sortColumns.length > 1 ? idx + 1 : null }
+    return {
+      asc: sortColumns[idx].asc,
+      index: sortColumns.length > 1 ? idx + 1 : null,
+    }
   }
 
   const renderSortIcon = (key: string) => {
     const info = getSortInfo(key)
-    if (!info) return <ChevronsUpDown className="size-3 text-muted-foreground" />
+    if (!info)
+      return <ChevronsUpDown className="size-3 text-muted-foreground" />
     return (
       <span className="inline-flex items-center gap-0.5">
         {info.asc ? (
@@ -169,12 +182,15 @@ export function TransactionTable({
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            <TableHead className="w-8">
-              <Checkbox
-                checked={allChecked}
-                onCheckedChange={handleSelectAll}
-              />
-            </TableHead>
+            {editable && (
+              <TableHead className="w-8">
+                <Checkbox
+                  aria-label="Select displayed records"
+                  checked={allChecked}
+                  onCheckedChange={handleSelectAll}
+                />
+              </TableHead>
+            )}
             <TableHead className="w-8" />
             <TableHead className="w-24">
               <button
@@ -189,7 +205,7 @@ export function TransactionTable({
                 className="flex items-center gap-1 text-xs"
                 onClick={(e) => handleSort("name", e)}
               >
-                Name {renderSortIcon("name")}
+                Record {renderSortIcon("name")}
               </button>
             </TableHead>
             <TableHead>
@@ -233,18 +249,22 @@ export function TransactionTable({
                 Category {renderSortIcon("category")}
               </button>
             </TableHead>
-            <TableHead className="w-32 text-xs">Provenance</TableHead>
-            <TableHead className="w-8" />
+            <TableHead className="w-32 text-xs">Source</TableHead>
+            {editable && <TableHead className="w-8" />}
           </TableRow>
         </TableHeader>
         <TableBody>
           {displayRows.length === 0 ? (
             <TableRow>
               <TableCell
-                colSpan={12}
+                colSpan={editable ? 12 : 10}
                 className="h-24 text-center text-sm text-muted-foreground"
               >
-                No {mode === "transactions" ? "transactions" : "financial intelligence records"} found
+                No{" "}
+                {mode === "transactions"
+                  ? "transactions"
+                  : "other financial records"}{" "}
+                found
               </TableCell>
             </TableRow>
           ) : (
@@ -258,8 +278,10 @@ export function TransactionTable({
               return (
                 <TransactionRow
                   key={tx.key}
+                  caseId={caseId}
                   tx={tx}
                   editable={editable}
+                  canEditRecord={canEdit}
                   indent={indent}
                   isChecked={isChecked}
                   isExpanded={isExpanded}
@@ -284,8 +306,10 @@ export function TransactionTable({
 }
 
 interface TransactionRowProps {
+  caseId?: string
   tx: Transaction
   editable: boolean
+  canEditRecord: boolean
   indent: boolean
   isChecked: boolean
   isExpanded: boolean
@@ -293,7 +317,7 @@ interface TransactionRowProps {
   categories: FinancialCategory[]
   onCheckbox: (key: string, e: React.MouseEvent) => void
   onToggleExpand: () => void
-  onCategorize: (nodeKey: string, category: string) => void
+  onCategorize: (nodeKey: string, category: string) => Promise<unknown>
   onAmountClick: (tx: Transaction) => void
   onEntityEdit: (tx: Transaction, field: "from" | "to") => void
   onGroupSubTransactions: (tx: Transaction) => void
@@ -305,8 +329,10 @@ interface TransactionRowProps {
 }
 
 function TransactionRow({
+  caseId,
   tx,
   editable,
+  canEditRecord,
   indent,
   isChecked,
   isExpanded,
@@ -321,9 +347,28 @@ function TransactionRow({
   onRemoveFromGroup,
   onSaveDetails,
 }: TransactionRowProps) {
+  const [categorySaving, setCategorySaving] = useState(false)
+  const [categoryError, setCategoryError] = useState("")
+  const categoryLock = useRef(false)
+  const changeCategory = async (category: string) => {
+    if (!canEditRecord || categoryLock.current) return
+    categoryLock.current = true
+    setCategorySaving(true)
+    setCategoryError("")
+    try {
+      await onCategorize(tx.key, category)
+    } catch (cause) {
+      setCategoryError(
+        `Category "${category}" could not be confirmed: ${cause instanceof Error ? cause.message : "Try again."}`
+      )
+    } finally {
+      categoryLock.current = false
+      setCategorySaving(false)
+    }
+  }
   const provenanceLabel = tx.evidence_source_type
     ? `${tx.evidence_source_type.replaceAll("_", " ")}${tx.source_page ? ` p.${tx.source_page}` : ""}`
-    : tx.source_filename || "Legacy"
+    : tx.source_filename || "Not recorded"
   return (
     <>
       <TableRow
@@ -332,19 +377,27 @@ function TransactionRow({
         } ${indent ? "bg-muted/20" : ""}`}
       >
         {/* Checkbox */}
-        <TableCell className="py-1.5">
-          <Checkbox
-            checked={isChecked}
-            onClick={(e) => {
-              e.stopPropagation()
-              onCheckbox(tx.key, e as unknown as React.MouseEvent)
-            }}
-          />
-        </TableCell>
+        {editable && (
+          <TableCell className="py-1.5">
+            <Checkbox
+              aria-label={`Select record ${tx.name || tx.key}`}
+              checked={isChecked}
+              onClick={(e) => {
+                e.stopPropagation()
+                onCheckbox(tx.key, e as unknown as React.MouseEvent)
+              }}
+            />
+          </TableCell>
+        )}
 
         {/* Expand */}
         <TableCell className="py-1.5">
-          <button onClick={onToggleExpand} className="text-muted-foreground hover:text-foreground">
+          <button
+            aria-label={`${isExpanded ? "Close" : "Open"} record ${tx.name || tx.key}`}
+            aria-expanded={isExpanded}
+            onClick={onToggleExpand}
+            className="text-muted-foreground hover:text-foreground"
+          >
             {isExpanded ? (
               <ChevronDown className="size-3.5" />
             ) : (
@@ -370,9 +423,13 @@ function TransactionRow({
         <TableCell className="py-1.5">
           <Tooltip>
             <TooltipTrigger asChild>
-              <span className="max-w-[120px] truncate text-xs block">
-                {tx.name || "—"}
-              </span>
+              <button
+                onClick={onToggleExpand}
+                aria-expanded={isExpanded}
+                className="max-w-[200px] text-left text-xs block hover:underline"
+              >
+                {tx.name || "Unnamed record"}
+              </button>
             </TooltipTrigger>
             {tx.name && <TooltipContent>{tx.name}</TooltipContent>}
           </Tooltip>
@@ -396,15 +453,17 @@ function TransactionRow({
                 M
               </span>
             )}
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="size-5 opacity-0 group-hover/from:opacity-100"
-              disabled={!editable}
-              onClick={() => onEntityEdit(tx, "from")}
-            >
-              <Edit2 className="size-2.5" />
-            </Button>
+            {editable && (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="size-5 opacity-0 group-hover/from:opacity-100"
+                disabled={!editable}
+                onClick={() => onEntityEdit(tx, "from")}
+              >
+                <Edit2 className="size-2.5" />
+              </Button>
+            )}
           </div>
         </TableCell>
 
@@ -431,15 +490,17 @@ function TransactionRow({
                 M
               </span>
             )}
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="size-5 opacity-0 group-hover/to:opacity-100"
-              disabled={!editable}
-              onClick={() => onEntityEdit(tx, "to")}
-            >
-              <Edit2 className="size-2.5" />
-            </Button>
+            {editable && (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="size-5 opacity-0 group-hover/to:opacity-100"
+                disabled={!editable}
+                onClick={() => onEntityEdit(tx, "to")}
+              >
+                <Edit2 className="size-2.5" />
+              </Button>
+            )}
           </div>
         </TableCell>
 
@@ -447,22 +508,40 @@ function TransactionRow({
         <TableCell className="py-1.5 text-right">
           <button
             className="inline-flex items-center gap-1 hover:underline"
-            disabled={!editable}
+            disabled={!canEditRecord}
+            aria-label={`Correct amount for ${tx.name || tx.key}`}
             onClick={() => onAmountClick(tx)}
           >
-            <CostBadge amount={tx.amount} />
+            {tx.currency &&
+            /^[A-Z]{3}$/.test(tx.currency) &&
+            tx.amount !== null &&
+            Number.isFinite(tx.amount) ? (
+              <CostBadge amount={tx.amount} currency={tx.currency} />
+            ) : (
+              <span>
+                {tx.amount === null && tx.raw_amount
+                  ? "Amount needs review"
+                  : formatEvidenceAmount(tx.amount, tx.currency)}
+              </span>
+            )}
             {tx.amount_corrected && (
               <Tooltip>
-                <TooltipTrigger>
-                  <AlertCircle className="size-3 text-yellow-600 dark:text-yellow-300" />
+                <TooltipTrigger asChild>
+                  <span>
+                    <AlertCircle className="size-3 text-yellow-600 dark:text-yellow-300" />
+                  </span>
                 </TooltipTrigger>
                 <TooltipContent>
                   <p className="text-xs">
                     Corrected from{" "}
-                    {tx.original_amount?.toLocaleString("en-US", {
-                      style: "currency",
-                      currency: tx.currency || "USD",
-                    })}
+                    {tx.original_amount == null
+                      ? tx.original_amount_raw || "not recorded"
+                      : tx.currency && /^[A-Z]{3}$/.test(tx.currency)
+                        ? tx.original_amount.toLocaleString("en-IE", {
+                            style: "currency",
+                            currency: tx.currency,
+                          })
+                        : `${tx.original_amount.toLocaleString("en-IE")} ${tx.currency || "(currency not recorded)"}`}
                   </p>
                   {tx.correction_reason && (
                     <p className="text-[10px] text-muted-foreground">
@@ -479,7 +558,7 @@ function TransactionRow({
         <TableCell className="py-1.5">
           {tx.type && (
             <Badge variant="outline" className="text-[10px]">
-              {tx.type}
+              {tx.type.replace(/([a-z])([A-Z])/g, "$1 $2").replaceAll("_", " ")}
             </Badge>
           )}
         </TableCell>
@@ -488,9 +567,13 @@ function TransactionRow({
         <TableCell className="py-1.5">
           <Select
             value={tx.category || ""}
-            onValueChange={(val) => onCategorize(tx.key, val)}
+            disabled={!canEditRecord || categorySaving}
+            onValueChange={(val) => void changeCategory(val)}
           >
-            <SelectTrigger className="h-6 w-28 text-[10px] border-none bg-transparent hover:bg-muted">
+            <SelectTrigger
+              aria-label={`Category for ${tx.name || tx.key}`}
+              className="h-6 w-28 text-[10px] border-none bg-transparent hover:bg-muted"
+            >
               <div className="flex items-center gap-1.5">
                 {categoryColor && (
                   <div
@@ -515,6 +598,16 @@ function TransactionRow({
               ))}
             </SelectContent>
           </Select>
+          {categorySaving && (
+            <p role="status" className="text-xs">
+              Saving category...
+            </p>
+          )}
+          {categoryError && (
+            <p role="alert" className="text-xs text-destructive">
+              {categoryError}
+            </p>
+          )}
         </TableCell>
 
         <TableCell className="py-1.5">
@@ -531,39 +624,42 @@ function TransactionRow({
         </TableCell>
 
         {/* Actions */}
-        <TableCell className="py-1.5">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="size-6 opacity-0 group-hover:opacity-100"
-                disabled={!editable}
-              >
-                <MoreHorizontal className="size-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => onGroupSubTransactions(tx)}>
-                <Link className="size-3.5 mr-2" />
-                Group Sub-Transactions
-              </DropdownMenuItem>
-              {tx.parent_transaction_key && (
-                <DropdownMenuItem onClick={() => onRemoveFromGroup(tx)}>
-                  <Unlink className="size-3.5 mr-2" />
-                  Remove from Group
+        {editable && (
+          <TableCell className="py-1.5">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="size-6 opacity-0 group-hover:opacity-100"
+                  disabled={!editable}
+                >
+                  <MoreHorizontal className="size-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => onGroupSubTransactions(tx)}>
+                  <Link className="size-3.5 mr-2" />
+                  Group Sub-Transactions
                 </DropdownMenuItem>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </TableCell>
+                {tx.parent_transaction_key && (
+                  <DropdownMenuItem onClick={() => onRemoveFromGroup(tx)}>
+                    <Unlink className="size-3.5 mr-2" />
+                    Remove from Group
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </TableCell>
+        )}
       </TableRow>
 
       {/* Expanded detail panel */}
       {isExpanded && (
         <TableRow>
-          <TableCell colSpan={12} className="p-0">
+          <TableCell colSpan={editable ? 12 : 10} className="p-0">
             <TransactionDetailPanel
+              caseId={caseId}
               transaction={tx}
               editable={editable}
               onSave={(fields) => onSaveDetails(tx.key, fields)}

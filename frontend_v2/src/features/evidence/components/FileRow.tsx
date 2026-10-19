@@ -29,16 +29,26 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/cn"
 import { useEvidenceStore } from "../evidence.store"
-import { useProcessBackground } from "../hooks/use-evidence-detail"
+import { useGuardedProcess } from "../hooks/use-guarded-process"
 import { getFileTypeCategory } from "../utils/file-types"
 import { getDisplayStatus } from "../utils/display-status"
+import { RouteBadge } from "./RouteBadge"
+import { ProcessHoldDialog } from "./ProcessHoldDialog"
 import { toast } from "sonner"
+import type { FileRoute } from "../hooks/use-route-checks"
 import type { EvidenceFileRecord, EvidenceFile } from "@/types/evidence.types"
 
 interface FileRowProps {
   dragSource?: MoveSource
   file: EvidenceFileRecord
   caseId: string
+  /**
+   * This file's route, passed in rather than fetched here.
+   *
+   * The check is a batch call with a fifty-id limit, so it belongs to whatever
+   * renders the list. A row that asked for itself would be one request per row.
+   */
+  route?: FileRoute
   onDelete?: (file: EvidenceFile) => void
   onAddToDossier?: (file: EvidenceFile) => void
   isPinned?: boolean
@@ -83,6 +93,7 @@ const STATUS_STYLES: Record<string, string> = {
 
 export function FileRow({
   dragSource,
+  route,
   file,
   caseId,
   onDelete,
@@ -101,21 +112,20 @@ export function FileRow({
   } = useEvidenceStore()
   const moves = useEvidenceMoves()
   const singleSource: MoveSource = { kind: "files", files: [file] }
-  const processMutation = useProcessBackground(caseId)
+  const gate = useGuardedProcess(caseId)
+  const { start, isChecking, isProcessing } = gate
 
   const isSelected = selectedFileIds.has(file.id)
   const typeCategory = getFileTypeCategory(file.original_filename)
   const displayStatus = getDisplayStatus(file)
   const statusClass = STATUS_STYLES[displayStatus] ?? STATUS_STYLES.unprocessed
 
-  const handleProcess = () => {
-    processMutation.mutate(
-      { fileIds: [file.id] },
-      {
-        onSuccess: () => toast.success(`Processing ${file.original_filename}`),
-        onError: (err) => toast.error(err.message),
-      }
-    )
+  // Only the success is announced here. A hold and a failure are both reported
+  // by the gate, which knows what it held and why.
+  const handleProcess = async () => {
+    if ((await start({ fileIds: [file.id] })) === "started") {
+      toast.success(`Processing ${file.original_filename}`)
+    }
   }
 
   // Cast EvidenceFileRecord to EvidenceFile shape for compatibility with legacy handlers
@@ -161,6 +171,8 @@ export function FileRow({
           </TooltipTrigger>
           <TooltipContent>{file.original_filename}</TooltipContent>
         </Tooltip>
+        {!!file.reading_versions?.length && <button className="block mt-1 text-xs text-muted-foreground underline"
+          onClick={() => openDetail(file.id)}>One PDF · {file.reading_versions.length} additional reading {file.reading_versions.length === 1 ? "version" : "versions"}</button>}
         {file.folder_path && (
           <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
             <span
@@ -184,11 +196,14 @@ export function FileRow({
         )}
       </TableCell>
 
-      {/* Type badge */}
+      {/* Type badge, and the route badge when the file is not an ordinary document */}
       <TableCell>
-        <Badge variant="secondary" className="text-[10px]">
-          {typeCategory}
-        </Badge>
+        <div className="flex flex-wrap items-center gap-1">
+          <Badge variant="secondary" className="text-[10px]">
+            {typeCategory}
+          </Badge>
+          <RouteBadge route={route} />
+        </div>
       </TableCell>
 
       {/* Size */}
@@ -222,6 +237,9 @@ export function FileRow({
 
       {/* Actions */}
       <TableCell>
+        {/* Renders nothing until this row's own Process is held, and portals
+            out of the table when it does, so the row markup stays a row. */}
+        <ProcessHoldDialog gate={gate} />
         <div className="flex justify-end">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -241,7 +259,7 @@ export function FileRow({
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={handleProcess}
-                disabled={file.status === "processing"}
+                disabled={file.status === "processing" || isChecking || isProcessing}
               >
                 <Play className="size-4" />
                 Process

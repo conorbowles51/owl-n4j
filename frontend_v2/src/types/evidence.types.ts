@@ -11,7 +11,15 @@ export interface TranscriptSpeakerSettings {
   merges: Record<string, string>
 }
 
+export interface EvidenceReadingVersion {
+  id: string
+  status: string
+  created_at: string | null
+  reading_mode: string
+}
+
 export interface EvidenceFile {
+  reading_versions?: EvidenceReadingVersion[]
   id: string
   original_filename: string
   stored_path: string
@@ -125,6 +133,35 @@ export interface WiretapCheckResult {
   folder_path: string
   subfolders?: string[]
   file_count?: number
+}
+
+// Financial route check -- what uploaded files are, before processing is paid for.
+// `outcome` is typed as `string` rather than as the union in
+// `features/evidence/utils/financial-route.ts` on purpose: this is the wire, and
+// a service deployed ahead of this bundle can send a word this build has never
+// heard of. `coerceOutcome` narrows it at the edge, where the unknown case can
+// be handled, instead of the type claiming a guarantee the network cannot make.
+export interface FileRouteCheck {
+  file_id: string
+  file_name: string | null
+  claimants: string[]
+  detected_format: string | null
+  outcome: string
+  blocks_document_processing: boolean
+  reason: string | null
+}
+
+export interface RouteCheckSummary {
+  checked: number
+  native: number
+  blocking: number
+  outcomes: Record<string, number>
+}
+
+export interface RouteCheckResponse {
+  case_id: string
+  files: FileRouteCheck[]
+  summary: RouteCheckSummary
 }
 
 // LLM Config
@@ -245,6 +282,7 @@ export interface FolderContentsResponse {
 }
 
 export interface EvidenceFileRecord {
+  reading_versions?: EvidenceReadingVersion[]
   folder_path?: { id: string; name: string }[]
   id: string
   case_id: string
@@ -326,6 +364,10 @@ export type PipelineStage =
   | "failed"
 
 export interface EvidenceJob {
+  pause_requested?: boolean
+  paused?: boolean
+  resumable?: boolean
+  resume_generation?: number
   id: string
   case_id: string
   batch_id: string | null

@@ -10,6 +10,23 @@
 
   Current incorporation checklist, Alex/founder structure options, advisor brief, and Irish grants/state-support roadmap for forming the company in Ireland.
 
+## Financial User Guide
+
+- [Step-by-step financial user guide](user-guide/financial-user-guide.md)
+- [Portable browser version with embedded screenshots](user-guide/financial-user-guide.html)
+
+The application opens the guide from the always-visible **Financial guide** button above its financial tabs.
+
+## Financial Forensics
+
+- [Re-extraction Is Not Improvement](financial-forensics/re-extraction-regression-2026-04.md)
+
+  Measured finding from the ET-Fraud corpus: nineteen documents were extracted twice, six lost a balance identity that had closed to the cent, and one gained 375 rows. Why a duplicate's primary copy is chosen by evidence rather than by recency, and why superseding a document is not deleting it.
+
+- [The Twelve Documents Whose Balance Identity Does Not Close](financial-forensics/unexplained-identities-2026-04.md)
+
+  Every ET-Fraud document whose printed control block fails under both dialects, adjudicated individually: seven statements lost a minus sign on the opening balance, two lost transactions at a page boundary. Why each verdict has to owe an arithmetic debt the document either pays or does not, why an explanation never raises a proof class, and why every one of the rows that swallowed a transaction was recorded at high confidence.
+
 ## Technical And Product Notes
 
 - [Workspace Redesign](workspace-redesign.md)

@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { useNavigate } from "react-router-dom"
+import { useLocation, useNavigate } from "react-router-dom"
 import { Eye, EyeOff, ShieldCheck } from "lucide-react"
 import { LoupeLogo } from "@/components/brand/LoupeLogo"
 import { Button } from "@/components/ui/button"
@@ -32,6 +32,7 @@ export function LoginPage() {
   const [loading, setLoading] = useState(false)
   const login = useAuthStore((state) => state.login)
   const navigate = useNavigate()
+  const location = useLocation()
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -45,7 +46,23 @@ export function LoginPage() {
         name: response.name,
         role: response.role,
       })
-      navigate("/cases")
+      const from = location.state?.from
+      const path = from?.pathname
+      const returnTo =
+        typeof path === "string" &&
+        path.startsWith("/") &&
+        !path.startsWith("//") &&
+        !path.includes("\\") &&
+        !/^\/login(?:\/|$)/.test(path)
+          ? path +
+            (typeof from.search === "string" && from.search.startsWith("?")
+              ? from.search
+              : "") +
+            (typeof from.hash === "string" && from.hash.startsWith("#")
+              ? from.hash
+              : "")
+          : "/cases"
+      navigate(returnTo, { replace: true })
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Login failed. Please try again."
@@ -59,10 +76,7 @@ export function LoginPage() {
     <div className="relative flex min-h-dvh items-center justify-center overflow-hidden bg-background px-6 py-10 text-foreground sm:px-8">
       <LoginBackdrop />
 
-      <main
-        id="login-content"
-        className="relative z-10 w-full max-w-[25rem]"
-      >
+      <main id="login-content" className="relative z-10 w-full max-w-[25rem]">
         <div className="flex justify-center">
           <LoupeLogo size="login" />
         </div>

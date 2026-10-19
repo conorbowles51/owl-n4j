@@ -7,6 +7,7 @@ File storage and AI processing are delegated to the evidence engine when enabled
 
 import asyncio
 import hashlib
+import httpx
 import os
 import logging
 import mimetypes
@@ -34,6 +35,7 @@ from services.cypher_generator import generate_cypher_from_graph
 from services.evidence_db_storage import EvidenceDBStorage
 from services.evidence_text_search_service import search_case_text, search_document_text
 from services import evidence_engine_client
+from services.financial import PageRenderError, UnadmittedFileError, render_page_png
 from .auth import get_current_user
 from routers.case_access import (
     authorize_case,
@@ -41,7 +43,7 @@ from routers.case_access import (
     request_json_payload,
 )
 from routers.users import get_current_db_user
-from fastapi import Query, status
+from fastapi import Path as PathParam, Query, status
 from postgres.session import get_db
 from postgres.models.evidence import EvidenceFile, EvidenceFolder
 from postgres.models.user import User
@@ -61,6 +63,11 @@ _STAGE_CHUNK_SIZE = 1024 * 1024
 # Cellebrite Reader exports commonly include these platform sidecars.
 _ARCHIVE_SKIP_NAMES = {".DS_Store", "Thumbs.db", "desktop.ini"}
 _CELLEBRITE_NS_MARKER = b"http://pa.cellebrite.com/report/2.0"
+
+# Most file ids one ``/route-check`` request may ask about. Only that read
+# endpoint is limited; processing requests are uncapped since 7d04cb24. The
+# frontend splits its pages to ROUTE_CHECK_BATCH_LIMIT, which must match.
+MAX_BATCH_SIZE = 50
 
 
 def _evidence_case_permission(request: Request, payload: dict) -> tuple[str, str]:
@@ -156,7 +163,12 @@ def _resolve_stored_path(stored_path: str | None) -> Optional[Path]:
 
 
 def _evidence_record_from_db(record) -> dict:
+    from services.financial.file_visibility import financial_file_visibility
+    from services.financial.source_lineage import lineage_id
     return {
+        **financial_file_visibility(record),
+        "statement_root_evidence_id": lineage_id(record),
+        "statement_parent_evidence_id": (record.metadata_ or {}).get('statement_parent_evidence_id'),
         "id": str(record.id),
         "case_id": str(record.case_id),
         "original_filename": record.original_filename,
@@ -642,6 +654,13 @@ class EvidenceRecord(BaseModel):
     size: int
     sha256: str
     status: str
+    financial_removed: bool = False
+    statement_root_evidence_id: Optional[str] = None
+    statement_parent_evidence_id: Optional[str] = None
+    reading_versions: list[dict] = Field(default_factory=list)
+    financial_visibility_revision: str = "initial"
+    financial_visibility_changed_at: Optional[str] = None
+    financial_imports_removed: bool = False
     processing_stale: bool = False
     is_duplicate: bool = False
     duplicate_of: Optional[str] = None
@@ -675,12 +694,28 @@ class UploadResponse(BaseModel):
     message: Optional[str] = None  # Status message
 
 
+from typing import Literal
+
 class ProcessRequest(BaseModel):
+    preparation_mode: Literal["full", "pdf_review"] = "full"
     case_id: Optional[str] = None
     file_ids: List[str]
     profile: Optional[str] = None  # LLM profile name (e.g., "fraud", "generic")
     max_workers: Optional[int] = None  # Maximum parallel files to process
     image_provider: Optional[str] = None  # "tesseract" (local OCR) or "openai" (GPT-4 Vision)
+
+
+class RouteCheckRequest(BaseModel):
+    """The same two identifiers ``ProcessRequest`` takes, and nothing else.
+
+    Deliberately the same shape, because the point of the check is to answer a
+    question about the exact request that is about to be made.  A check taking
+    different identifiers could be answered for a different set of files than
+    the one processed, and the interface would have no way to notice.
+    """
+
+    case_id: str
+    file_ids: List[str]
 
 
 class ProcessResponse(BaseModel):
@@ -774,6 +809,8 @@ async def list_evidence(
     case_id: str = Query(..., description="Case ID"),
     status_filter: Optional[str] = Query(None, alias="status"),
     include_cellebrite_artifacts: bool = False,
+    include_reading_versions: bool = False,
+    financial_only: bool = False,
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -786,10 +823,20 @@ async def list_evidence(
             ('unprocessed', 'processing', 'processed', 'duplicate', 'failed').
     """
     try:
-        db_files = EvidenceDBStorage.list_files(db, case_id=UUID(case_id), status=status_filter)
+        db_files = EvidenceDBStorage.list_files(db, case_id=UUID(case_id), status=status_filter, include_reading_versions=include_reading_versions)
+        if financial_only:
+            from services.financial.file_scope import financial_file_ids
+            financial_ids = financial_file_ids(db, case_id=UUID(case_id))
+            db_files = [row for row in db_files if row.id in financial_ids]
         if not include_cellebrite_artifacts:
             db_files = [row for row in db_files if row.source_type != "cellebrite"]
-        return {"files": [_evidence_record_from_db(f) for f in db_files]}
+        from services.financial.source_lineage import reading_history, case_lineage
+        history = reading_history(db, db_files)
+        # Financial's full version list may group only validated source families.
+        roots = {str(file.id): root for root, versions in case_lineage(db, UUID(case_id)).items() for file in versions} if include_reading_versions else {}
+        return {"files": [{**_evidence_record_from_db(f),
+            'statement_root_evidence_id': roots.get(str(f.id), str(f.id)),
+            'reading_versions': history.get(str(f.id), [])} for f in db_files]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -825,7 +872,8 @@ async def get_evidence_record(
     record = _evidence_record_for_id(db, evidence_id)
     if record is None:
         raise HTTPException(status_code=404, detail="Evidence not found")
-    return _evidence_record_from_db(record)
+    from services.financial.source_lineage import reading_history
+    return {**_evidence_record_from_db(record), 'reading_versions': reading_history(db, [record]).get(str(record.id), [])}
 
 
 @router.get("/{evidence_id}/text-matches", response_model=DocumentTextMatchesResponse)
@@ -1291,6 +1339,15 @@ async def process_evidence_background(
 
         messages = []
         job_ids = []
+        copies = []
+
+        if db_backed_ids and request.preparation_mode == "pdf_review" and request.case_id:
+            # Financial reading: exact copies of a file already in Financial are
+            # not read again; the rest join the case's automatic statement batch.
+            from services.financial.auto_read import intake_pdf_review
+            db_backed_ids, copies = intake_pdf_review(db, case_id=UUID(request.case_id), file_ids=db_backed_ids)
+            if copies:
+                messages.append(f"{len(copies)} file(s) already in Financial; not read again")
 
         if db_backed_ids:
             if not request.case_id:
@@ -1300,6 +1357,7 @@ async def process_evidence_background(
                 case_id=UUID(request.case_id),
                 file_ids=db_backed_ids,
                 force_reprocess=False,
+                preparation_mode=request.preparation_mode,
                 requested_by_user_id=current_user.id,
             )
             job_ids = engine_result.get("job_ids", [])
@@ -1310,7 +1368,114 @@ async def process_evidence_background(
             "task_id": None,
             "job_ids": job_ids or None,
             "message": "; ".join(messages) if messages else "No files to process",
+            **({"copies": copies} if copies else {}),
         }
+    except UnadmittedFileError as e:
+        # 409 and not 403.  The caller has the permission this route asks for
+        # -- they passed ``evidence:upload`` above.  What is missing is not
+        # rights but a decision: one or more of these files is bank data the
+        # router holds back, and nobody has said on the record that it should
+        # go to the document pipeline anyway.  A 403 would tell them to ask an
+        # administrator, which would not help.
+        #
+        # The body names every held file and what was found in it, so the
+        # interface can offer the admission without a second round trip to
+        # ``/route-check`` -- whose answer, taken later, may not be the one
+        # this refusal was based on.
+        #
+        # Placed before the catch-all below, which is the only reason this
+        # survives at all.  That catch-all has no ``except HTTPException:
+        # raise`` in front of it, so this handler's own 404 for unknown file
+        # ids is currently reported as a 500; see ``/route-check``, which says
+        # so.  That defect is not fixed here and this branch does not depend on
+        # it being fixed.
+        raise HTTPException(status_code=409, detail=e.as_dict())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/route-check")
+async def check_evidence_financial_route(
+    request: RouteCheckRequest,
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    """Say which of these uploaded files are bank files, before processing them.
+
+    Called in the gap between ``POST /upload``, which stages a file and returns
+    no job, and ``POST /process/background``, which is what actually enqueues
+    work.  Four formats -- camt.053, BAI2, MT940 and NACHA -- are parsed exactly
+    by the financial ledger, and sending one of them through the document
+    pipeline instead would have a model infer its figures from extracted text.
+    The result is indistinguishable downstream from a parsed reading, so the
+    only place to tell them apart is before the choice is made.
+
+    Mirrors the role of ``/cellebrite/check`` -- a cheap "what is this?" ahead
+    of an expensive process -- but takes ``file_ids`` rather than a folder path,
+    because that is what this pipeline processes and what the caller is about to
+    pass to ``/process/background``.  For the same reason there is no path
+    traversal guard: the paths come from evidence rows scoped to a case the
+    caller can already see, not from the caller, which is a stronger guarantee
+    than checking a string for "..".
+
+    ``POST`` rather than ``GET`` because selections may contain many file IDs,
+    which do not belong in a query string.
+    """
+    try:
+        from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
+        from services.financial.route_check import check_case_files, summarise
+
+        try:
+            case_uuid = UUID(request.case_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="case_id is not a valid UUID")
+
+        # A read, so viewing the case is the right bar -- the same one
+        # ``/cellebrite/check`` sets, and lower than the ``evidence:upload``
+        # that ``/process/background`` requires.  Someone who may look at a case
+        # may ask what its files are without being able to spend money on them.
+        try:
+            check_case_access(db, case_uuid, current_user, required_permission=("case", "view"))
+        except (CaseNotFound, CaseAccessDenied) as e:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+
+        if not request.file_ids:
+            raise HTTPException(status_code=400, detail="No file_ids provided")
+
+        # An id that is not a UUID is a fault in the caller, not a fact about a
+        # file, so it is rejected rather than given a per-file outcome.  Giving
+        # it one would put a made-up file in a list the interface reads as a
+        # description of real ones.
+        malformed = []
+        file_uuids = []
+        for raw in request.file_ids:
+            try:
+                file_uuids.append(UUID(raw))
+            except (ValueError, AttributeError, TypeError):
+                malformed.append(str(raw))
+        if malformed:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{len(malformed)} file id(s) are not valid UUIDs: {', '.join(malformed[:5])}",
+            )
+
+        checks = await run_in_threadpool(
+            check_case_files,
+            db,
+            case_id=case_uuid,
+            file_ids=file_uuids,
+            resolve_path=_resolve_stored_path,
+        )
+        return {
+            "case_id": str(case_uuid),
+            "files": [check.as_dict() for check in checks],
+            "summary": summarise(checks),
+        }
+    except HTTPException:
+        # Re-raised before the catch-all so that a 400 or a 403 stays what it
+        # is.  ``/process/background`` above omits this and turns its own
+        # permission denials into 500s; that is not copied here.
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1359,12 +1524,18 @@ async def process_evidence(
                 case_id=UUID(request.case_id),
                 file_ids=db_backed_ids,
                 force_reprocess=False,
+                preparation_mode=request.preparation_mode,
                 requested_by_user_id=current_user.id,
             )
             processed += engine_result.get("file_count", 0)
             skipped += engine_result.get("skipped_count", 0)
 
         return ProcessResponse(processed=processed, skipped=skipped, errors=errors)
+    except UnadmittedFileError as e:
+        # Same refusal as ``/process/background``, for the same reason and in
+        # the same shape.  Both routes reach ``process_db_files``, so a gate on
+        # only one of them would be a door with a lock beside it.
+        raise HTTPException(status_code=409, detail=e.as_dict())
     except ImportError as e:
         raise HTTPException(
             status_code=500,
@@ -1518,6 +1689,22 @@ async def delete_engine_job(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/engine/jobs/{job_id}/{action}")
+async def control_engine_job(job_id: str, action: str,
+    current_user: User = Depends(get_current_db_user), db: Session = Depends(get_db)):
+    if action not in {"pause", "resume"}:
+        raise HTTPException(status_code=404, detail="Unknown job action")
+    record = EvidenceDBStorage.find_by_engine_job_id(db, job_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Evidence job not found")
+    authorize_case(db, record.case_id, current_user, ("evidence", "upload"))
+    try:
+        return await evidence_engine_client.control_job(job_id, str(record.case_id), action)
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=exc.response.status_code,
+            detail=exc.response.json().get("detail", "Could not change processing state")) from exc
 
 
 @router.delete("/engine/jobs")
@@ -2115,6 +2302,86 @@ async def get_evidence_file(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def _load_pymupdf():
+    """The PDF rendering library, or None where it is not installed.
+
+    PyMuPDF is declared in requirements.txt. If an incomplete installation
+    cannot load it, the page-image endpoint answers 503 while the rest of
+    this router keeps working. ``pymupdf`` is the
+    current import name; ``fitz`` is the same library's older name, kept as
+    a fallback for environments that predate the rename.
+    """
+    try:
+        import pymupdf
+        return pymupdf
+    except Exception:
+        try:
+            import fitz
+            return fitz
+        except Exception:
+            return None
+
+
+@router.get("/{evidence_id}/page/{page_number}/image")
+def get_evidence_page_image(
+    evidence_id: str,
+    page_number: int = PathParam(ge=1),
+    width: int = Query(1200, ge=100, le=3000),
+    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Render one page of a PDF evidence file as a PNG.
+
+    This is the image a stored source rectangle refers to: the page as
+    displayed, with any page rotation already applied by the library, so a
+    viewer drawing a locator's rectangle as fractions of this image places
+    it where the value was actually read.  The caller chooses only the
+    width; height follows from the page's own aspect ratio.
+
+    Deliberately synchronous: rendering is CPU-bound, and a sync route runs
+    in FastAPI's threadpool instead of blocking the event loop.
+    """
+    # Look up by UUID or legacy ID, as get_evidence_file does.
+    record = _evidence_record_for_id(db, evidence_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Evidence not found")
+
+    file_path = _resolve_stored_path(record.stored_path)
+    if not file_path or not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found on disk")
+
+    if file_path.suffix.lower() != ".pdf":
+        raise HTTPException(status_code=400, detail="File is not a PDF")
+
+    pdf_library = _load_pymupdf()
+    if pdf_library is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Page rendering is unavailable: PyMuPDF is not installed on this server",
+        )
+
+    try:
+        document = pdf_library.open(file_path)
+    except Exception:
+        raise HTTPException(status_code=422, detail="The file could not be opened as a PDF")
+
+    try:
+        page_count = document.page_count
+        png = render_page_png(document, page_number=page_number, width=width)
+    except PageRenderError as error:
+        # The service's messages are written to be shown to the person who
+        # asked, unedited; a page that does not exist is a 404 like any
+        # other missing resource.
+        raise HTTPException(status_code=404, detail=str(error))
+    finally:
+        document.close()
+
+    return Response(content=png, media_type="image/png", headers={
+        "X-PDF-Page-Count": str(page_count),
+        "Cache-Control": "private, no-store",
+    })
 
 
 FRAMES_CACHE_DIR = BASE_DIR / "data" / "video_frames"

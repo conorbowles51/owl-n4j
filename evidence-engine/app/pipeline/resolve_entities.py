@@ -1,3 +1,4 @@
+from app.services.ingestion_checkpoints import checkpointed
 import asyncio
 import json
 import logging
@@ -27,6 +28,7 @@ from app.services.chroma_client import (
 )
 from app.ontology.schema_builder import get_resolution_schema
 from app.services import neo4j_client
+from app.services.graph_identity import ENTITY_LABEL_EXPRESSION
 from app.services.openai_client import chat_completion, embed_texts
 
 logger = logging.getLogger(__name__)
@@ -825,12 +827,12 @@ async def _cross_job_dedup(
     if existing_ids:
         try:
             neo4j_data = await neo4j_client.execute_query(
-                "UNWIND $ids AS eid MATCH (n {id: eid}) "
+                f"UNWIND $ids AS eid MATCH (n:{ENTITY_LABEL_EXPRESSION} {{id: eid, case_id: $case_id}}) "
                 "RETURN n.id AS id, labels(n) AS labels, n.name AS name, "
                 "n.specific_type AS specific_type, n.description AS description, "
                 "n.role AS role, n.aliases AS aliases, "
                 "n.confidence AS confidence, n.verified_facts AS verified_facts",
-                {"ids": existing_ids},
+                {"ids": existing_ids, "case_id": case_id},
             )
             for record in neo4j_data or []:
                 eid = record["id"]
@@ -958,6 +960,7 @@ async def _cross_job_dedup(
 # Public API
 # ---------------------------------------------------------------------------
 
+@checkpointed("pipeline/resolve_entities.py:resolve_entities:v1")
 async def resolve_entities(
     raw_entities: list[RawEntity],
     raw_relationships: list[RawRelationship],
@@ -1020,8 +1023,8 @@ async def resolve_entities(
 
             # Merge properties from the existing Neo4j node
             existing_props = await neo4j_client.execute_query(
-                "MATCH (n {id: $id}) RETURN properties(n) AS props",
-                {"id": entity.id},
+                f"MATCH (n:{ENTITY_LABEL_EXPRESSION} {{id: $id, case_id: $case_id}}) RETURN properties(n) AS props",
+                {"id": entity.id, "case_id": case_id},
             )
             if existing_props:
                 props = existing_props[0]["props"]

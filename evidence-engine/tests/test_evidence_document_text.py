@@ -91,5 +91,7 @@ async def test_reextraction_upserts_the_same_evidence_row_with_new_content() -> 
     compiled = statement.compile(dialect=postgresql.dialect())
     assert "ON CONFLICT (evidence_file_id) DO UPDATE" in str(compiled)
     assert compiled.params["content"] == "replacement text"
+    assert compiled.params["processing_manifest"] is None
+    assert "processing_manifest = excluded.processing_manifest" in str(compiled)
     assert compiled.params["evidence_file_id"] == evidence_id
     assert db.commit.await_count == 2

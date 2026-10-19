@@ -1,4 +1,6 @@
 import { fetchAPI } from "@/lib/api-client"
+import { uploadOrdinaryFiles } from "./resumable-upload"
+import { uploadFolderOrArchive } from "./resumable-upload-groups"
 import type {
   EvidenceFile,
   EvidenceFileRecord,
@@ -10,18 +12,18 @@ import type {
   AIModelPolicy,
   EvidenceDocumentMatchesResponse,
   EvidenceTextSearchResponse,
+  RouteCheckResponse,
   TranscriptSpeakerSettings,
 } from "@/types/evidence.types"
 
 export interface UploadResponse {
   files?: EvidenceFile[]
+  file_ids?: string[]
   task_id?: string
   task_ids?: string[]
   job_ids?: string[]
   message?: string
 }
-
-const EVIDENCE_UPLOAD_TIMEOUT_MS = 60 * 60 * 1000
 
 export interface EvidenceUploadOptions {
   isFolder?: boolean
@@ -54,9 +56,12 @@ export const evidenceAPI = {
       document_limit: String(documentLimit),
       document_offset: String(documentOffset),
     })
-    return fetchAPI<EvidenceTextSearchResponse>(`/api/evidence/text-search?${qs}`, {
-      signal,
-    })
+    return fetchAPI<EvidenceTextSearchResponse>(
+      `/api/evidence/text-search?${qs}`,
+      {
+        signal,
+      }
+    )
   },
 
   getTextMatches: (
@@ -82,36 +87,48 @@ export const evidenceAPI = {
     files: File[],
     optionsOrIsFolder: EvidenceUploadOptions | boolean = {},
     folderId?: string
-  ) => {
+  ): Promise<UploadResponse> => {
     const options =
       typeof optionsOrIsFolder === "boolean"
         ? { isFolder: optionsOrIsFolder, folderId }
         : optionsOrIsFolder
     const isFolderUpload = options.isFolder || options.isArchive
-    const formData = new FormData()
-    formData.append("case_id", caseId)
-    if (isFolderUpload) formData.append("is_folder", "true")
-    if (options.isArchive) formData.append("is_archive", "true")
-    if (options.replaceExisting) formData.append("replace_existing", "true")
-    if (options.folderId) formData.append("folder_id", options.folderId)
-    files.forEach((file) => {
-      const multipartFilename =
-        isFolderUpload && !options.isArchive
-          ? file.webkitRelativePath || file.name
-          : file.name
-      formData.append("files", file, multipartFilename)
-    })
-    return fetchAPI<UploadResponse>("/api/evidence/upload", {
-      method: "POST",
-      body: formData,
-      timeout: EVIDENCE_UPLOAD_TIMEOUT_MS,
-    })
+    if (!isFolderUpload)
+      return uploadOrdinaryFiles(caseId, files, options.folderId)
+    return uploadFolderOrArchive(caseId, files, options)
   },
 
   process: (caseId: string, fileIds: string[], profile?: string) =>
     fetchAPI<void>("/api/evidence/process", {
       method: "POST",
       body: { case_id: caseId, file_ids: fileIds, profile },
+    }),
+
+  /**
+   * Ask what these files are before asking for them to be processed.
+   *
+   * Takes the same two identifiers `processBackground` takes, so the answer
+   * describes exactly the request that is about to be made. A check keyed on
+   * anything else -- a folder, a selection, a page of results -- could be
+   * answered for a different set of files than the ones eventually processed,
+   * and this screen would have no way to notice the difference.
+   */
+  routeCheck: (caseId: string, fileIds: string[]) =>
+    fetchAPI<RouteCheckResponse>("/api/evidence/route-check", {
+      method: "POST",
+      body: { case_id: caseId, file_ids: fileIds },
+    }),
+
+  // Offline source preparation only: this cannot request general document/AI processing.
+  preparePdfReview: (caseId: string, fileId: string) =>
+    fetchAPI("/api/evidence/process/background", {
+      method: "POST",
+      body: {
+        case_id: caseId,
+        file_ids: [fileId],
+        preparation_mode: "pdf_review",
+      },
+      timeout: 120000,
     }),
 
   processBackground: (
@@ -121,9 +138,11 @@ export const evidenceAPI = {
     maxWorkers = 4,
     imageProvider?: string
   ) =>
-    fetchAPI<{ task_id?: string | null; job_ids?: string[] | null; message?: string }>(
-      "/api/evidence/process/background",
-      {
+    fetchAPI<{
+      task_id?: string | null
+      job_ids?: string[] | null
+      message?: string
+    }>("/api/evidence/process/background", {
       method: "POST",
       body: {
         case_id: caseId,
@@ -153,6 +172,15 @@ export const evidenceAPI = {
 
   getFileUrl: (evidenceId: string) => `/api/evidence/${evidenceId}/file`,
 
+  /**
+   * One page of a PDF evidence file, rendered as a PNG at the given width
+   * (backend default 1200; 100-3000 accepted). This is the image a stored
+   * `page_rectangle` or `page_only` locator refers to — the page as
+   * displayed, full page, so a fraction-of-page rectangle lands correctly.
+   */
+  getPageImageUrl: (evidenceId: string, page: number, width?: number) =>
+    `/api/evidence/${evidenceId}/page/${page}/image${width ? `?width=${width}` : ""}`,
+
   updateTranscriptSpeakerSettings: (
     evidenceId: string,
     settings: TranscriptSpeakerSettings
@@ -179,11 +207,7 @@ export const evidenceAPI = {
     )
   },
 
-  getVideoFrames: (
-    evidenceId: string,
-    interval = 30,
-    maxFrames = 50
-  ) =>
+  getVideoFrames: (evidenceId: string, interval = 30, maxFrames = 50) =>
     fetchAPI<{ frames: VideoFrame[] }>(
       `/api/evidence/${evidenceId}/frames?interval=${interval}&max_frames=${maxFrames}`
     ),
@@ -192,9 +216,12 @@ export const evidenceAPI = {
     `/api/evidence/${evidenceId}/frames/${encodeURIComponent(filename)}`,
 
   syncFilesystem: (caseId: string) =>
-    fetchAPI<{ synced: number }>(`/api/evidence/sync-filesystem?case_id=${caseId}`, {
-      method: "POST",
-    }),
+    fetchAPI<{ synced: number }>(
+      `/api/evidence/sync-filesystem?case_id=${caseId}`,
+      {
+        method: "POST",
+      }
+    ),
 
   setRelevance: (evidenceIds: string[], isRelevant: boolean) =>
     fetchAPI<void>("/api/evidence/relevance", {
@@ -214,7 +241,11 @@ export const evidenceAPI = {
   ) =>
     fetchAPI<{ task_id: string }>("/api/evidence/wiretap/process", {
       method: "POST",
-      body: { case_id: caseId, folder_paths: folderPaths, whisper_model: whisperModel },
+      body: {
+        case_id: caseId,
+        folder_paths: folderPaths,
+        whisper_model: whisperModel,
+      },
     }),
 
   listFolderFiles: (caseId: string, folderPath: string) => {
@@ -250,7 +281,10 @@ export const llmConfigAPI = {
     return fetchAPI<{ models: LLMModel[] }>(`/api/llm-config/models${qs}`)
   },
   getPolicy: () => fetchAPI<AIModelPolicy>("/api/llm-config/policy"),
-  updatePolicy: (revision: number, configuration: AIModelPolicy["configuration"]) =>
+  updatePolicy: (
+    revision: number,
+    configuration: AIModelPolicy["configuration"]
+  ) =>
     fetchAPI<AIModelPolicy>("/api/llm-config/policy", {
       method: "PUT",
       body: { revision, configuration },

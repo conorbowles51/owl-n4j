@@ -52,6 +52,18 @@ is_compiled_frontend() {
         ! echo "${html}" | grep -Eq '/@vite/client|/src/main\.(js|jsx|ts|tsx)'
 }
 
+# The release health check: backend ok with its graph and engine reachable, the
+# compiled frontend served, both units active. Sets RESPONSE/FRONTEND_RESPONSE.
+release_is_healthy() {
+    RESPONSE="$(curl -fsS --max-time 5 "${HEALTH_URL}" 2>/dev/null || true)"
+    FRONTEND_RESPONSE="$(curl -fsS --max-time 5 "${FRONTEND_URL}" 2>/dev/null || true)"
+    echo "${RESPONSE}" | grep -q '"status":"ok"' &&
+        ! echo "${RESPONSE}" | grep -Eq '"neo4j":"error:|"evidence_engine":"(error:|unavailable)"' &&
+        is_compiled_frontend "${FRONTEND_RESPONSE}" &&
+        $SYSTEMCTL is-active --quiet owl-backend-v2 &&
+        $SYSTEMCTL is-active --quiet owl-frontend-v2
+}
+
 mkdir -p "${LOG_DIR}"
 
 # Single-instance guard: an auto-deploy racing a manual build in the same tree
@@ -67,7 +79,12 @@ if ! flock -n 9; then
     fi
 fi
 
+# fd 8 keeps the terminal/runner output so the exit summary can be written
+# even when the tee below has been killed with the deploy's process group.
+exec 8>&1
 exec > >(tee -a "${LOG_FILE}") 2>&1
+TEE_PID=$!
+DEPLOY_OUTCOME="failed before completion (see the last [FAIL] above)"
 
 echo ""
 echo -e "${BOLD}============================================${NC}"
@@ -89,6 +106,11 @@ else
     success "Running as user ${DEPLOY_USER}"
 fi
 
+# shellcheck source=deploy/ingestion-safety.sh
+source "${PROJECT_DIR}/deploy/ingestion-safety.sh"
+# shellcheck source=deploy/backend-stop.sh
+source "${PROJECT_DIR}/deploy/backend-stop.sh"
+
 FRONTEND_STOPPED=false
 restore_frontend_on_exit() {
     if [ "${FRONTEND_STOPPED}" = true ]; then
@@ -96,13 +118,45 @@ restore_frontend_on_exit() {
         $SYSTEMCTL start owl-frontend-v2 || true
         sleep 3
         if $SYSTEMCTL is-active --quiet owl-frontend-v2; then
-            warn "owl-frontend-v2 restarted (serving the previous build)"
+            warn "owl-frontend-v2 restarted (serving the bundle currently on disk; the release is not confirmed complete)"
         else
             fail "owl-frontend-v2 DID NOT COME BACK - start it manually: systemctl start owl-frontend-v2"
         fi
     fi
 }
-trap restore_frontend_on_exit EXIT
+
+# Every exit, including an interrupted one, ends the log with the outcome, the
+# commit, how the backend stop went and the last-good marker.
+write_deploy_summary() {
+    local rc="$1"
+    local waited=0
+    exec 1>&8 2>&8
+    while kill -0 "${TEE_PID}" 2>/dev/null && [ "${waited}" -lt 20 ]; do
+        sleep 0.1
+        waited=$(( waited + 1 ))
+    done
+    {
+        echo ""
+        echo "==== Deploy summary - $(date) ===="
+        echo "  Outcome:      ${DEPLOY_OUTCOME}"
+        echo "  Exit status:  ${rc}"
+        echo "  Commit:       ${NEW_COMMIT_SHORT:-not updated}"
+        echo "  Backend stop: ${BACKEND_STOP_ESCALATED:-not attempted}"
+        echo "  Last good:    $(cat "${LAST_GOOD_FILE:-/nonexistent}" 2>/dev/null || echo none)"
+        echo "  Log:          ${LOG_FILE}"
+    } | tee -a "${LOG_FILE}"
+}
+on_deploy_exit() {
+    local rc=$?
+    trap - EXIT TERM INT HUP
+    restore_frontend_on_exit
+    write_deploy_summary "${rc}"
+    exit "${rc}"
+}
+trap on_deploy_exit EXIT
+trap 'DEPLOY_OUTCOME="interrupted by SIGTERM"; exit 143' TERM
+trap 'DEPLOY_OUTCOME="interrupted by SIGINT"; exit 130' INT
+trap 'DEPLOY_OUTCOME="interrupted by SIGHUP"; exit 129' HUP
 
 step "Pre-flight checks"
 
@@ -142,6 +196,20 @@ fi
 # on success below). PREV_COMMIT is NOT safe: the docket agent pulls the tree
 # before running this script, so on auto-deploys PREV == the commit under test.
 LAST_GOOD_FILE="${LOG_DIR}/.last-good-commit"
+# A backend restarted outside this script (systemctl, or a pull and restart by
+# hand) never passed a deploy's health check, so it was never recorded and a
+# failed deploy rolled back past it. When the running release passes the same
+# health check now and reports the commit its backend was started from, with
+# no local changes to tracked files, that commit is recorded as known good.
+if release_is_healthy; then
+    RUNNING_COMMIT="$(echo "${RESPONSE}" | sed -n 's/.*"commit":"\([0-9a-f]\{40\}\)".*/\1/p')"
+    if [ -n "${RUNNING_COMMIT}" ] && echo "${RESPONSE}" | grep -q '"commit_clean":true' &&
+        git cat-file -e "${RUNNING_COMMIT}^{commit}" 2>/dev/null &&
+        [ "$(cat "${LAST_GOOD_FILE}" 2>/dev/null || true)" != "${RUNNING_COMMIT}" ]; then
+        echo "${RUNNING_COMMIT}" > "${LAST_GOOD_FILE}"
+        success "Running release ${RUNNING_COMMIT:0:12} is healthy (started outside a deploy): recorded as last known-good"
+    fi
+fi
 ROLLBACK_TARGET=""
 if [ -f "${LAST_GOOD_FILE}" ]; then
     CANDIDATE="$(cat "${LAST_GOOD_FILE}")"
@@ -154,6 +222,9 @@ if [ -z "${ROLLBACK_TARGET}" ]; then
 fi
 success "Rollback target: $(git rev-parse --short "${ROLLBACK_TARGET}") (last known-good) on branch ${CURRENT_BRANCH}"
 
+step "Checking active ingestion before changing the checkout or dependencies"
+check_ingestion_idle
+
 step "Checking for local changes"
 
 if ! $RUN_AS git diff --quiet 2>/dev/null || ! $RUN_AS git diff --cached --quiet 2>/dev/null; then
@@ -164,10 +235,11 @@ else
     success "Working directory clean"
 fi
 
-step "Pulling latest from ${CURRENT_BRANCH}"
+step "Fetching and fast-forwarding ${CURRENT_BRANCH}"
 
-if ! git pull origin "${CURRENT_BRANCH}" --ff-only; then
-    fail "git pull failed"
+source "${PROJECT_DIR}/deploy/git-update.sh"
+if ! update_deploy_checkout "${CURRENT_BRANCH}"; then
+    fail "Git update failed; checkout and local commits were not reset. Review the diagnostic above."
     exit 1
 fi
 
@@ -180,8 +252,12 @@ else
 fi
 
 step "Installing backend dependencies"
+check_ingestion_idle
 $RUN_AS "${VENV_DIR}/bin/pip" install -r "${BACKEND_DIR}/requirements.txt" --quiet
 success "Backend dependencies installed"
+
+step "Checking active ingestion before service changes"
+check_ingestion_idle
 
 step "Stopping frontend for dependency installation"
 $SYSTEMCTL stop owl-frontend-v2
@@ -213,9 +289,8 @@ else
 fi
 success "Frontend service configured to serve the compiled bundle"
 
-step "Refreshing Docker stack"
-docker compose up -d --build --remove-orphans
-success "Docker stack refreshed"
+step "Checking ingestion before migrations and service replacement"
+check_ingestion_idle
 
 step "Running database migrations"
 cd "${BACKEND_DIR}"
@@ -223,8 +298,22 @@ $RUN_AS "${VENV_DIR}/bin/alembic" upgrade head
 success "Database migrations complete"
 cd "${PROJECT_DIR}"
 
+step "Building Docker images without replacing running containers"
+docker compose build
+
+step "Refreshing Docker stack"
+check_ingestion_idle
+docker compose up -d --no-build --remove-orphans
+success "Docker stack refreshed"
+
 step "Restarting services"
-$SYSTEMCTL restart owl-backend-v2
+configure_ingestion_shutdown
+check_ingestion_idle
+# Bounded: a backend that will not stop is escalated (SIGINT, then SIGKILL)
+# and the release always reaches its health check, last-good marker and summary.
+if ! restart_backend_bounded; then
+    fail "owl-backend-v2 did not restart; the health check will fail and roll back"
+fi
 $SYSTEMCTL restart owl-frontend-v2
 FRONTEND_STOPPED=false
 success "V2 services restarted"
@@ -236,13 +325,7 @@ sleep 10
 HEALTHY=false
 for i in $(seq 1 ${HEALTH_RETRIES}); do
     sleep "${HEALTH_DELAY}"
-    RESPONSE="$(curl -fsS --max-time 5 "${HEALTH_URL}" 2>/dev/null || true)"
-    FRONTEND_RESPONSE="$(curl -fsS --max-time 5 "${FRONTEND_URL}" 2>/dev/null || true)"
-    if echo "${RESPONSE}" | grep -q '"status":"ok"' &&
-        ! echo "${RESPONSE}" | grep -Eq '"neo4j":"error:|"evidence_engine":"(error:|unavailable)"' &&
-        is_compiled_frontend "${FRONTEND_RESPONSE}" &&
-        $SYSTEMCTL is-active --quiet owl-backend-v2 &&
-        $SYSTEMCTL is-active --quiet owl-frontend-v2; then
+    if release_is_healthy; then
         success "Health check passed (owl-backend-v2 + owl-frontend-v2 units active)"
         echo "  Backend: ${RESPONSE}"
         echo "  Frontend: compiled assets served on port ${FRONTEND_PORT}"
@@ -254,6 +337,7 @@ done
 
 if [ "${HEALTHY}" = true ]; then
     echo "${NEW_COMMIT}" > "${LAST_GOOD_FILE}"
+    DEPLOY_OUTCOME="deployed and healthy"
     DEPLOY_END=$(date +%s)
     DEPLOY_DURATION=$(( DEPLOY_END - DEPLOY_START ))
     echo ""
@@ -276,9 +360,11 @@ else
 fi
 
 cd "${PROJECT_DIR}"
+check_ingestion_idle
 $RUN_AS git reset --hard "${ROLLBACK_TARGET}"
 
 step "Rollback: reinstalling dependencies"
+check_ingestion_idle
 $SYSTEMCTL stop owl-frontend-v2 || true
 FRONTEND_STOPPED=true
 $RUN_AS "${VENV_DIR}/bin/pip" install -r "${BACKEND_DIR}/requirements.txt" --quiet || true
@@ -289,10 +375,14 @@ $RUN_AS npm run build || true
 cd "${PROJECT_DIR}"
 
 step "Rollback: rebuilding Docker stack"
-docker compose up -d --build --remove-orphans || true
+docker compose build || true
+check_ingestion_idle
+docker compose up -d --no-build --remove-orphans || true
 
 step "Rollback: restarting services"
-$SYSTEMCTL restart owl-backend-v2 || true
+configure_ingestion_shutdown
+check_ingestion_idle
+restart_backend_bounded || true
 $SYSTEMCTL restart owl-frontend-v2 || true
 FRONTEND_STOPPED=false
 
@@ -303,9 +393,11 @@ if echo "${RESPONSE}" | grep -q '"status":"ok"' &&
     ! echo "${RESPONSE}" | grep -Eq '"neo4j":"error:|"evidence_engine":"(error:|unavailable)"' &&
     is_compiled_frontend "${FRONTEND_RESPONSE}"; then
     warn "Rollback successful - running ${ROLLBACK_SHORT}"
+    DEPLOY_OUTCOME="health check failed; rolled back to ${ROLLBACK_SHORT} (healthy)"
     warn "See log: ${LOG_FILE}"
 else
     fail "Rollback also failed"
+    DEPLOY_OUTCOME="health check failed; rollback to ${ROLLBACK_SHORT} also failed"
     fail "Log: ${LOG_FILE}"
 fi
 

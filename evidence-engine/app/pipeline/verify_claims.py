@@ -1,3 +1,4 @@
+from app.services.ingestion_checkpoints import checkpointed
 import asyncio
 import json
 from dataclasses import dataclass, replace
@@ -148,6 +149,7 @@ def _candidates(
     )
 
 
+@checkpointed("pipeline/verify_claims.py:verify_grounded_claims:v1")
 async def verify_grounded_claims(
     entities: list[RawEntity],
     relationships: list[RawRelationship],

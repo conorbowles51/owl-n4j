@@ -71,6 +71,115 @@ The deployed frontend serves `frontend_v2/dist`; it does not expose Vite's
 development `/src` module graph. The production server retains the `/api`
 and WebSocket proxy used by the application.
 
+Deployment and rollback check for queued/running engine work, accepted financial
+imports, active statement review leases, unfinished running recovery campaigns,
+and unfinished uploads/registration. The check is read-only and exits with code
+75 when work exists or its state cannot be verified. Explicitly paused uploads
+and campaigns, finished work, and results awaiting investigator review do not
+block deployment. An abandoned upload still marked active must be completed or
+explicitly paused; the gate does not silently expire it.
+
+When work blocks a release, the deployment log includes a read-only diagnostic
+breakdown: `engine_jobs`, `pending_financial_imports`, `financial_batch_leases`,
+`recovery_items`, `upload_groups` and `upload_sessions`. Each nonempty category
+shows its full blocking count and at most 10 record references, ordered by the
+oldest available update timestamp, with the number of omitted references.
+References include case/record UUIDs, applicable batch/run/group UUIDs, recognized
+statuses, creation/update timestamps and active lease deadlines. Filenames,
+document contents, worker tokens and credentials are never included. Missing
+legacy diagnostic fields appear as `null`; unrecognized identifiers, statuses
+or timestamps are redacted as `unrecognized`. Redaction never removes their
+records from the blocking count.
+
+These are counts of blocking records, not unique investigations or tasks: one
+operation can be represented in multiple categories. Grouped upload members
+count only through their group when that schema is available. Counts and samples
+can change while work runs, and an old timestamp alone does not establish that
+work is abandoned. The diagnostic does not pause, expire, retry or change any
+record. A diagnostic query failure still defers the release with code 75 and
+prints only the exception type, without connection details or query parameters.
+
+An already-deferred release also samples PostgreSQL lock waits in the current
+database. It shows at most 10 waiting backend PIDs, their state, wait event/type
+and transaction age in seconds, with at most 10 blocking PIDs per waiter and
+10 distinct blocker activity summaries. Omitted blocker references are counted;
+reaching the waiter limit means the sample may be incomplete. A blocker whose
+activity is unavailable remains identified only by PID and `activity_visible:
+false`; PID 0 can refer to a prepared transaction. This is a transient sample,
+not proof of why an ingestion stopped or permission to terminate a backend.
+It never reads or logs SQL text, database usernames, client addresses, connection
+strings or evidence. Local two-second statement and half-second lock timeouts
+apply only to the diagnostic connection. SQLite skips this PostgreSQL-only
+sample. Permission, timeout or diagnostic errors retain the original blocking
+counts and exit code 75; they print only the exception type. The sample does not
+alter the release predicates, pause work, cancel statements or release locks.
+
+Docker images are built before a fresh idle check permits container replacement.
+Another check runs before the backend restarts. The check is retained in memory
+across checkout changes, including automatic and standalone rollback. Rollback
+uses the same deployment lock as deployment.
+
+These checks are snapshots, not an intake lock: new work can arrive after the
+last check. Engine workers finish their current jobs during graceful shutdown
+(14,430-second worker wait and 14,500-second Docker grace). The backend stop is
+bounded instead: Uvicorn cancels request tasks still running 20 seconds after
+SIGTERM, the lifespan abandons background financial units 10 seconds later,
+and the application's watchdog ends the process 45 seconds after the first
+stop signal. Abandoned units are durable (leased import batches, pending
+recovery items, revisioned identity-graph sweeps): their open transactions roll
+back and the next start resumes them. The service drop-in sets
+`TimeoutStopSec=90` and `UVICORN_TIMEOUT_GRACEFUL_SHUTDOWN=20`; systemd's
+SIGKILL at 90 seconds is the backstop. The installer reloads this service
+configuration without restarting a running job.
+
+Deploy and rollback never block on `systemctl restart`. The backend is stopped
+without blocking; if it is still running after 60 seconds the deploy records
+the last 80 lines of its journal (which name the requests and tasks still
+pending), sends SIGINT to every process in the unit (Uvicorn's force-quit),
+then SIGKILL after 20 more seconds. The deploy then always reaches its health
+check, writes the last-good marker when healthy, and ends its log with a
+summary block (outcome, commit, how the backend stop went, last-good) on every
+exit, including an interrupted one. `bash deploy/tests/test-backend-stop.sh`
+exercises the escalation with a simulated unit.
+
+The shutdown drop-in is installed from a regular temporary file and atomically
+renamed before `daemon-reload`. It does not depend on `/dev/stdin`, which may be
+absent in a service runner. A failed installation stops the release before the
+backend restart; it never downgrades the ingestion gates or continues without
+the configured grace. `bash deploy/tests/test-ingestion-shutdown.sh` exercises
+real `install`/`mv` commands in a temporary directory with closed stdin,
+permissions, repeated installation and destination failure. The same test was
+validated on Linux with GNU coreutils and no `/dev/stdin` symlink.
+
+If a release fails after building the frontend, its recovery trap restarts the
+frontend using the bundle currently on disk. That bundle may already be new;
+the restart does not prove that the backend or the whole release was updated.
+
+## Choosing the correct server checkout
+
+Before running a deployment, identify the checkout used by the live services:
+
+```bash
+systemctl show owl-backend-v2 owl-frontend-v2 -p Id -p WorkingDirectory
+```
+
+On the current investigation-platform host, both services use the repository at
+`/home/conorbowles51/app-v3/owl-n4j`, on `integration/evidence-main-reunion`.
+The older `/home/conorbowles51/app_v2` checkout uses `main` and is not the current
+Loupe deployment. Do not reset or merge that older checkout to deploy this release.
+
+From the confirmed live repository root, run `bash deploy/deploy.sh`. Preserve
+the ingestion checks. A reported ingestion deferral is different from a Git
+conflict; inspect that checkout's `deploy/logs` for the actual release result.
+
+The Git update fetches one explicit branch without writing shared `FETCH_HEAD`,
+then fast-forwards to its resolved commit. This avoids ambiguous multi-head
+`git pull` results and ignores extra pull merge targets in branch configuration.
+It rejects a mismatched checked-out branch and preserves server-only commits
+when the history is ahead or divergent. It never resets the checkout to make a
+deployment pass. Run `bash deploy/tests/test-git-update.sh` for the isolated Git
+regression checks, including ambiguous fetch metadata and divergent history.
+
 ## Admin-Triggered Updates
 
 To allow admins to update the platform from the OWL admin UI:

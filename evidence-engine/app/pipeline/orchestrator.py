@@ -18,6 +18,10 @@ from app.pipeline.extract_text import (
     get_transcription,
     get_transcription_segments,
 )
+from app.pipeline.financial_route import (
+    detect_financial_route,
+    refusal_message,
+)
 from app.pipeline.pdf_extraction import PdfExtractionProgress
 from app.pipeline.generate_document_summary import generate_document_summary
 from app.pipeline.generate_summaries import generate_summaries
@@ -28,6 +32,7 @@ from app.pipeline.write_graph import write_graph
 from app.services.cost_tracking import ingestion_cost_context
 from app.services.ai_model_policy import get_ai_runtime_snapshot, load_ai_model_policy
 from app.services.evidence_document_text import upsert_evidence_document_text
+from app.services.evidence_table_geometry import replace_evidence_table_geometry
 from app.services.redis_client import publish_progress
 from app.services.pipeline_run_state import (
     add_verification_quality,
@@ -85,6 +90,36 @@ async def run_pipeline(job_id: str, db: AsyncSession) -> None:
     await db.commit()
 
     try:
+        from app.services.graph_identity import ensure_identity_indexes
+        await ensure_identity_indexes()
+        # Pre-stage: is this a bank file the ledger reads directly?  Before the
+        # cost context opens, so a job about to be turned away does not leave an
+        # ingestion cost record behind for work nobody did, and before any text
+        # is extracted, because extracting it is the thing being prevented.
+        route = await asyncio.to_thread(detect_financial_route, job.file_path)
+        routed_state = dict(getattr(job, "pipeline_state", None) or {})
+        routed_state["financial_route"] = route.as_state()
+        job.pipeline_state = routed_state
+        await db.commit()
+
+        if route.is_native:
+            logger.warning(
+                "Job %s is a %s bank file; refusing the document pipeline",
+                job_id,
+                route.detected_format,
+            )
+            await _update_job(
+                job,
+                JobStatus.FAILED,
+                0.0,
+                db,
+                "Belongs to the financial ledger",
+                error_message=refusal_message(route, job.file_name),
+            )
+            # Returned, not raised: arq retries what is raised to it, and a
+            # file's format is the same on the second attempt as the first.
+            return
+
         async with ingestion_cost_context(
             case_id=job.case_id,
             requested_by_user_id=str(job.requested_by_user_id) if job.requested_by_user_id else None,
@@ -128,6 +163,32 @@ async def run_pipeline(job_id: str, db: AsyncSession) -> None:
                     engine_job_id=job.id,
                     doc=doc,
                 )
+                # Geometry is auxiliary to the job: a failure here costs the
+                # click-through highlight, not the text or the transactions,
+                # so it is logged rather than allowed to fail the ingestion.
+                try:
+                    geometry = await replace_evidence_table_geometry(
+                        db,
+                        evidence_file_id=job.source_evidence_file_id,
+                        engine_job_id=job.id,
+                        metadata=doc.metadata,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Table geometry persistence failed for job %s", job.id
+                    )
+                    # The session is shared with the rest of the pipeline; a
+                    # half-done geometry transaction must not poison the next
+                    # commit.  The document text above already committed, so
+                    # nothing else is lost by rolling back.
+                    await db.rollback()
+                else:
+                    if geometry.entries_invalid:
+                        logger.warning(
+                            "Table geometry for job %s: %d malformed entries not stored",
+                            job.id,
+                            geometry.entries_invalid,
+                        )
             job.transcription = get_transcription(doc)
             job.transcription_segments = get_transcription_segments(doc)
             await _update_job(job, JobStatus.EXTRACTING_TEXT, 0.15, db, "Text extracted")

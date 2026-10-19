@@ -4,7 +4,6 @@ import asyncio
 import hashlib
 import shutil
 import threading
-import time
 import uuid
 
 import fitz
@@ -21,6 +20,8 @@ from app.pipeline.pdf_extraction import PdfExtractionProgress
 from app.pipeline.pdf_extraction import PdfExtractionResult
 from app.pipeline.pdf_extraction import PdfOcrError
 from app.services.evidence_document_text import build_canonical_document_text
+
+pytestmark = pytest.mark.usefixtures('inline_pdf_worker')
 
 
 def _add_text_to_page(page: fitz.Page, content: str) -> None:
@@ -178,12 +179,21 @@ async def test_image_only_pdf_is_ocrd_and_replaces_missing_native_text(
         "start_char": 0,
         "end_char": len(result.text),
         "extraction_method": "tesseract_ocr",
+        "text_origin": "recognised_glyphs",
         "detection_reason": "no_native_text",
         "ocr_status": "success",
         "ocr_confidence": 94.0,
         "ocr_low_confidence": False,
         "ocr_dpi": 300,
         "ocr_language": "eng",
+        "ocr_geometry_status": "unavailable",
+        # The fixture is a 150 dpi scan: it is resampled before it is read,
+        # and the span says so (see scan_preprocessing).
+        "ocr_refinements": [{
+            "field": "scan_preprocessing", "native_dpi": 150.1, "work_dpi": 300,
+            "paper_level": 255.0, "ink_level": 13.0, "measured_skew_degrees": 0.0,
+            "skew_gain": 1.0, "steps": ["resampled"],
+        }],
     }
 
 
@@ -440,16 +450,45 @@ async def test_tesseract_error_names_the_pdf_page(
     monkeypatch,
     mock_osd,
 ) -> None:
-    pdf_path = tmp_path / "timeout.pdf"
+    pdf_path = tmp_path / "failure.pdf"
     _write_scanned_pdf(pdf_path, ["Raster page one", "Raster page two"])
 
     def fail_ocr(*_args, **_kwargs):
-        raise RuntimeError("Tesseract process timeout")
+        raise pytesseract.TesseractError(1, "Tesseract crashed")
 
     monkeypatch.setattr(pytesseract, "image_to_data", fail_ocr)
 
-    with pytest.raises(PdfOcrError, match="PDF page 1: Tesseract process timeout"):
+    with pytest.raises(PdfOcrError, match="PDF page 1: "):
         await extract_text(str(pdf_path), pdf_path.name)
+
+
+async def test_a_page_that_times_out_is_kept_unread_and_the_other_pages_are_read(
+    tmp_path,
+    monkeypatch,
+    mock_osd,
+) -> None:
+    """Live: one slow page failed the whole file and discarded every page read before it."""
+    pdf_path = tmp_path / "timeout.pdf"
+    _write_scanned_pdf(pdf_path, ["Raster page one", "Raster page two"])
+    calls = []
+
+    def first_page_times_out(*_args, **_kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("Tesseract process timeout")
+        return {"text": ["Second"], "conf": ["95"], "block_num": [1], "par_num": [1], "line_num": [1],
+                "word_num": [1], "left": [10], "top": [10], "width": [50], "height": [12]}
+
+    monkeypatch.setattr(pytesseract, "image_to_data", first_page_times_out)
+
+    result = await extract_text(str(pdf_path), pdf_path.name)
+
+    spans = result.metadata["page_spans"]
+    assert spans[0]["ocr_status"] == "timeout"
+    assert spans[0]["text_origin"] == "unread"
+    assert spans[1]["ocr_status"] == "success"
+    assert "Second" in result.text
+    assert result.metadata["ocr_timed_out_pages"] == [1]
 
 
 async def test_optional_orientation_timeout_keeps_successful_primary_ocr(
@@ -715,20 +754,52 @@ async def test_pdf_extraction_concurrency_is_bounded_to_configured_limit(
     maximum_active = 0
     lock = threading.Lock()
 
-    def fake_extract(_file_path, _report_progress=None):
+    async def fake_extract(_file_path, _report_progress=None, *, reading_mode="automatic"):
         nonlocal active, maximum_active
         with lock:
             active += 1
             maximum_active = max(maximum_active, active)
-        time.sleep(0.05)
+        await asyncio.sleep(0.05)
         with lock:
             active -= 1
         return PdfExtractionResult(text="ok", metadata={})
 
-    monkeypatch.setattr(pdf_extraction, "_extract_pdf_sync", fake_extract)
+    monkeypatch.setattr(pdf_extraction, "_extract_pdf_in_process", fake_extract)
     await asyncio.gather(*(pdf_extraction.extract_pdf(str(index)) for index in range(6)))
 
     assert maximum_active == 2
+
+
+async def test_requested_image_reading_bypasses_embedded_text_and_records_method(tmp_path, monkeypatch):
+    pdf_path = tmp_path / 'damaged-layer.pdf'
+    _write_native_pdf(pdf_path, ['Wrong embedded number 999.00', 'Wrong embedded date 01/01121'])
+    before = hashlib.sha256(pdf_path.read_bytes()).hexdigest()
+    read_pages = []
+    def fresh_read(page, **_kwargs):
+        read_pages.append(page.number)
+        return ['New Balance $114.00', 'Statement Date: 04/25/21'][page.number], 95.0, 300, None, []
+    monkeypatch.setattr(pdf_extraction, '_ocr_page', fresh_read)
+    def no_native_tables(*args):
+        raise AssertionError('Image reading must not retain damaged native tables')
+    monkeypatch.setattr(pdf_extraction, '_extract_native_tables', no_native_tables)
+    progress = []
+    async def on_progress(update):
+        progress.append(update)
+    result = await extract_text(str(pdf_path), pdf_path.name, progress_callback=on_progress,
+        pdf_reading_mode='page_images')
+    assert read_pages == [0, 1]
+    assert '114.00' in result.text and '04/25/21' in result.text and 'Wrong' not in result.text
+    assert result.metadata['ocr_page_count'] == 2 and result.metadata['native_page_count'] == 0
+    assert all(p['detection_reason'] == 'requested_page_images' and p['text_origin'] == 'recognised_glyphs' for p in result.metadata['page_spans'])
+    assert result.metadata['processing_manifest']['content']['settings']['pdf_reading_mode'] == 'page_images'
+    assert progress[-1].completed == 2
+    assert hashlib.sha256(pdf_path.read_bytes()).hexdigest() == before
+
+
+@pytest.mark.parametrize('mode,filename', [('guess','bank.pdf'), ('page_images','bank.txt')])
+async def test_invalid_image_reading_request_fails_before_opening_source(mode, filename):
+    with pytest.raises(ValueError):
+        await extract_text('/does-not-exist', filename, pdf_reading_mode=mode)
 
 
 def test_large_pdf_progress_is_limited_to_twenty_even_updates() -> None:
@@ -764,3 +835,120 @@ async def test_real_tesseract_recovers_rotated_scanned_pdf(tmp_path, rotation) -
     assert "INVESTIGATION REPORT" in normalized
     assert "ACME" in normalized
     assert "4821" in normalized
+
+
+@pytest.mark.parametrize("bad_glyph", ["\x01", "\ufffd"])
+def test_dense_corrupt_text_layer_uses_ocr_despite_many_words(bad_glyph) -> None:
+    document = fitz.open()
+    try:
+        page = document.new_page()
+        text = ("Account transaction details " + bad_glyph * 4 + " ") * 30
+        alnum, tokens = pdf_extraction._native_text_stats(text)
+        assert alnum > pdf_extraction.MIN_MEANINGFUL_ALNUM
+        assert len(tokens) > pdf_extraction.MIN_MEANINGFUL_WORDS
+        assert pdf_extraction._ocr_detection_reason(page, text) == "suspicious_text_layer"
+    finally:
+        document.close()
+
+
+def test_dense_legible_text_and_single_character_tables_do_not_force_ocr() -> None:
+    document = fitz.open()
+    try:
+        page = document.new_page()
+        for text in ["Readable account description and transaction date " * 30,
+                     "A B C D E F G H I J " * 30]:
+            assert pdf_extraction._ocr_detection_reason(page, text) is None
+    finally:
+        document.close()
+
+
+async def test_ocr_word_boxes_produce_source_cells_with_ocr_provenance(tmp_path, monkeypatch, mock_osd):
+    pdf_path = tmp_path / "located-scan.pdf"
+    _write_scanned_pdf(pdf_path, ["Synthetic source cell coordinates"])
+    monkeypatch.setattr(pytesseract, "image_to_data", lambda *_args, **_kwargs: {
+        "text": ["2026-01-01", "12.34", "2026-01-02", "56.78"],
+        "conf": ["95"] * 4, "block_num": [1] * 4, "par_num": [1] * 4,
+        "line_num": [1,1,2,2], "left": [100,800,100,800], "top": [100,100,200,200],
+        "width": [200,100,200,100], "height": [30] * 4,
+    })
+    # The stubbed recogniser returns this page's words for every image, so the
+    # money-cell crop check (covered in test_statement_money_verification)
+    # cannot confirm anything here; this test is about cell provenance only.
+    from app.pipeline import statement_money_verification
+    monkeypatch.setattr(statement_money_verification, "verify_money_cells",
+        lambda page, tables, **_kwargs: (tables, []))
+    # The stubbed words sit where the fixture printed nothing, and a prepared
+    # (here: resampled 150 dpi) scan drops words over blank paper; that is
+    # covered in test_scan_preprocessing.
+    monkeypatch.setattr(settings, "pdf_scan_preprocessing", False)
+    result = await extract_text(str(pdf_path), pdf_path.name)
+    assert result.metadata["page_spans"][0]["text_origin"] == "recognised_glyphs"
+    assert result.metadata["page_spans"][0]["ocr_geometry_status"] == "available"
+    tables = result.metadata["table_geometry"]["per_table"]
+    assert len(tables) == 1
+    assert tables[0]["table_source"] == "text_alignment"
+    assert {v["text"] for v in tables[0]["table"]["values"]} == {"2026-01-01", "12.34", "2026-01-02", "56.78"}
+    assert all(v["locator"]["space"] == "pdf_displayed" for v in tables[0]["table"]["values"])
+
+
+@pytest.mark.skipif(
+    shutil.which("tesseract") is None,
+    reason="real OCR integration requires the Tesseract executable",
+)
+@pytest.mark.parametrize("rotation", [90, 270])
+async def test_sideways_table_rows_are_grouped_upright_and_stored_in_displayed_space(tmp_path, monkeypatch, rotation) -> None:
+    pdf_path = tmp_path / f"sideways-{rotation}.pdf"
+    lines = [f"2026-01-{day:02d} TRANSFER RECEIVED {day * 111}.{day:02d}" for day in range(1, 9)]
+    _write_scanned_pdf(pdf_path, ["\n".join(["ACCOUNT STATEMENT EXAMPLE", *lines])], rotation=rotation)
+    from app.pipeline import statement_money_verification
+    monkeypatch.setattr(statement_money_verification, "verify_money_cells",
+        lambda page, tables, **_kwargs: (tables, []))
+    result = await extract_text(str(pdf_path), pdf_path.name)
+    span = result.metadata["page_spans"][0]
+    frames = [r for r in span.get("ocr_refinements", []) if r.get("field") == "table_frame"]
+    assert frames and frames[0]["frame"] == "upright" and frames[0]["rotation"] in (90, 270)
+    values = [v for table in result.metadata["table_geometry"]["per_table"] for v in table["table"]["values"]]
+    rows = {}
+    for value in values:
+        rows.setdefault(value["row"], []).append(value["text"])
+        assert value["locator"]["space"] == "pdf_displayed"
+        x0, y0, x1, y1 = value["locator"]["rect"]
+        width, height = value["locator"]["page_size"]
+        assert 0 <= x0 < x1 <= width and 0 <= y0 < y1 <= height
+    joined = [" ".join(texts) for texts in rows.values()]
+    # Every printed line keeps its date and its amount together in one row.
+    for day in range(1, 9):
+        assert any(f"2026-01-{day:02d}" in row and f"{day * 111}.{day:02d}" in row for row in joined), joined
+
+
+def test_words_run_vertically_counts_only_real_words():
+    on_end = [(10, 10, 20, 80, "2026-01-01"), (30, 10, 40, 60, "12.34"), (50, 10, 60, 30, "a")]
+    flat = [(10, 10, 80, 20, "2026-01-01"), (10, 30, 60, 40, "12.34")]
+    assert pdf_extraction._words_run_vertically(on_end) is True
+    assert pdf_extraction._words_run_vertically(flat) is False
+    assert pdf_extraction._words_run_vertically([]) is False
+
+
+@pytest.mark.parametrize("stands_on_end", [True, False])
+async def test_a_recorded_turn_groups_rows_upright_only_when_the_words_stand_on_end(tmp_path, monkeypatch, stands_on_end):
+    """OSD reports a 90 degree turn. Words that lie flat on the displayed page (Tesseract turned the
+    image back itself) keep the displayed-frame grouping; words on end are grouped upright."""
+    pdf_path = tmp_path / "turned.pdf"
+    _write_scanned_pdf(pdf_path, ["Synthetic turned page"])
+    monkeypatch.setattr(pytesseract, "image_to_osd", lambda *_a, **_k: {"rotate": 90, "orientation_conf": 20.0})
+    # Boxes are in the turned image (3300 x 2550 at 300 dpi): wide there = on end on the displayed page.
+    width, height = (220, 40) if stands_on_end else (40, 220)
+    monkeypatch.setattr(pytesseract, "image_to_data", lambda *_a, **_k: {
+        "text": ["2026-01-01", "12.34", "2026-01-02", "56.78"], "conf": ["95"] * 4,
+        "block_num": [1] * 4, "par_num": [1] * 4, "line_num": [1, 1, 2, 2],
+        "left": [100, 800, 100, 800] if stands_on_end else [100, 100, 400, 400],
+        "top": [100, 100, 300, 300] if stands_on_end else [100, 800, 100, 800],
+        "width": [width] * 4, "height": [height] * 4,
+    })
+    from app.pipeline import statement_money_verification
+    monkeypatch.setattr(statement_money_verification, "verify_money_cells", lambda page, tables, **_k: (tables, []))
+    monkeypatch.setattr(settings, "pdf_scan_preprocessing", False)
+    result = await extract_text(str(pdf_path), pdf_path.name)
+    refinements = result.metadata["page_spans"][0].get("ocr_refinements", [])
+    assert any(r.get("field") == "page_orientation" and r.get("rotation") == 90 for r in refinements)
+    assert any(r.get("field") == "table_frame" for r in refinements) is stands_on_end

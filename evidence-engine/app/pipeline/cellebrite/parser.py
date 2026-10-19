@@ -98,9 +98,11 @@ class CellebriteXMLParser:
         self,
         xml_path: Path,
         log_callback: Optional[Callable[[str], None]] = None,
+        pause_check: Optional[Callable[[], None]] = None,
     ):
         self.xml_path = xml_path
         self.log_callback = log_callback
+        self.pause_check = pause_check or (lambda: None)
         self._total_models = 0
         self._parsed_models = 0
         # XML-side counts per modelType, captured BEFORE the SUPPORTED filter
@@ -113,6 +115,13 @@ class CellebriteXMLParser:
     def _log(self, msg: str):
         if self.log_callback:
             self.log_callback(msg)
+
+    def _events(self):
+        # Keep the source handle bounded and close it when pause unwinds parsing.
+        with self.xml_path.open('rb') as source:
+            for index, item in enumerate(ET.iterparse(source, events=['start', 'end'])):
+                if index % 500 == 0: self.pause_check()
+                yield item
 
     # ------------------------------------------------------------------
     # Phase 1: Parse header, case info, device info, extractions
@@ -141,7 +150,7 @@ class CellebriteXMLParser:
         manufacturer_candidates: List[tuple] = []
         device_model_candidates: List[tuple] = []
 
-        for event, elem in ET.iterparse(str(self.xml_path), events=["start", "end"]):
+        for event, elem in self._events():
             tag = _strip_ns(elem.tag)
 
             # --- Project root attributes ---
@@ -372,7 +381,7 @@ class CellebriteXMLParser:
         tagged_files: List[TaggedFile] = []
         in_tagged_files = False
 
-        for event, elem in ET.iterparse(str(self.xml_path), events=["start", "end"]):
+        for event, elem in self._events():
             tag = _strip_ns(elem.tag)
 
             if event == "start" and tag == "taggedFiles":
@@ -468,7 +477,7 @@ class CellebriteXMLParser:
         models_parsed = 0
         model_depth = 0  # Track nesting depth of <model> elements
 
-        for event, elem in ET.iterparse(str(self.xml_path), events=["start", "end"]):
+        for event, elem in self._events():
             tag = _strip_ns(elem.tag)
 
             # Track when we enter decodedData

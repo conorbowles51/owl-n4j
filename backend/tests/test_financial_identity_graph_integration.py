@@ -1,0 +1,159 @@
+"""Opt-in local Neo4j: shared identity projection is idempotent and retractable."""
+import os
+from uuid import UUID
+import unittest
+from neo4j import GraphDatabase
+from services.financial.account_parties import AccountPartyRequest, account_parties, set_account_party
+from services.financial.identity_graph import apply_identity_graph, identity_graph_plan, validate_graph_targets
+from tests.test_financial_duplicates import DuplicateTestCase
+
+
+@unittest.skipUnless(os.getenv('LOUPE_TEST_LOCAL_GRAPH') == '1', 'Requires isolated local graph')
+class IdentityGraphTests(DuplicateTestCase):
+    def test_target_validation_sees_cross_label_duplicates_but_not_other_cases(self):
+        uri = os.environ['NEO4J_URI']
+        assert uri == 'bolt://127.0.0.1:57687'
+        driver = GraphDatabase.driver(uri, auth=(os.environ['NEO4J_USER'], os.environ['NEO4J_PASSWORD']))
+        case, other = str(self.case.id), str(self.case.id) + '-other'
+        plan = dict(case_id=case, accounts=[{'key': 'account'}], parties=[], entity_links=[{'target': 'entity'}])
+        try:
+            with driver.session() as graph:
+                graph.run('CREATE (:Person {case_id:$case,key:"entity"}), (:Person {case_id:$other,key:"account"})', case=case, other=other).consume()
+                validate_graph_targets(graph, plan)
+                graph.run('CREATE (:FinancialAccount {case_id:$case,key:"account"})', case=case).consume()
+                validate_graph_targets(graph, plan)
+                graph.run('CREATE (:Person {case_id:$case,key:"account"})', case=case).consume()
+                with self.assertRaisesRegex(ValueError, 'conflicts'):
+                    validate_graph_targets(graph, plan)
+                graph.run('CREATE (:Organisation {case_id:$case,key:"entity"})', case=case).consume()
+                with self.assertRaisesRegex(ValueError, 'missing or ambiguous'):
+                    validate_graph_targets(graph, plan)
+        finally:
+            with driver.session() as graph:
+                graph.run('MATCH (n) WHERE n.case_id IN $cases DETACH DELETE n', cases=[case, other]).consume()
+            driver.close()
+
+    def test_stale_first_snapshot_does_not_create_a_completion_or_lock_marker(self):
+        uri = os.environ['NEO4J_URI']
+        assert uri == 'bolt://127.0.0.1:57687'
+        driver = GraphDatabase.driver(uri, auth=(os.environ['NEO4J_USER'], os.environ['NEO4J_PASSWORD']))
+        case = str(self.case.id)
+        try:
+            with driver.session() as graph:
+                self.assertFalse(apply_identity_graph(graph, identity_graph_plan(self.db, self.case.id), is_current=lambda: False))
+                self.assertEqual(graph.run('MATCH (n:FinancialIdentitySync {case_id:$case}) RETURN count(n) AS n', case=case).single()['n'], 0)
+        finally:
+            with driver.session() as graph:
+                graph.run('MATCH (n {case_id:$case}) DETACH DELETE n', case=case).consume()
+            driver.close()
+
+    def test_older_snapshot_cannot_overwrite_newer_graph_projection(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Event
+        uri = os.environ['NEO4J_URI']
+        assert uri == 'bolt://127.0.0.1:57687'
+        driver = GraphDatabase.driver(uri, auth=(os.environ['NEO4J_USER'], os.environ['NEO4J_PASSWORD']))
+        old = identity_graph_plan(self.db, self.case.id)
+        new = {**old, 'revision': 'synthetic-newer-revision'}
+        entered, release, old_started, old_checked = Event(), Event(), Event(), Event()
+        def newer_current():
+            entered.set()
+            assert release.wait(10)
+            return True
+        def older_current():
+            old_checked.set()
+            return False  # SQL source changed after this older snapshot.
+        def write(plan, check, started=None):
+            with driver.session(connection_acquisition_timeout=20) as graph:
+                if started:
+                    started.set()
+                return apply_identity_graph(graph, plan, is_current=check)
+        try:
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                newer = pool.submit(write, new, newer_current)
+                try:
+                    self.assertTrue(entered.wait(10))
+                    older = pool.submit(write, old, older_current, old_started)
+                    self.assertTrue(old_started.wait(10))
+                    self.assertFalse(old_checked.wait(.1))
+                finally:
+                    release.set()
+                self.assertTrue(newer.result(timeout=20))
+                self.assertFalse(older.result(timeout=20))
+            with driver.session() as graph:
+                row = graph.run('MATCH (n:FinancialIdentitySync {case_id:$case}) RETURN n.revision AS revision,n.projection_lock AS locks', case=str(self.case.id)).single()
+                self.assertEqual(row['revision'], new['revision'])
+                self.assertEqual(row['locks'], 1)
+        finally:
+            release.set()
+            with driver.session() as graph:
+                graph.run('MATCH (n {case_id:$case}) DETACH DELETE n', case=str(self.case.id)).consume()
+            driver.close()
+
+    def test_retry_preserves_graph_notes_and_unlink_retracts_only_reviewed_relationship(self):
+        uri = os.environ['NEO4J_URI']
+        assert uri == 'bolt://127.0.0.1:57687'
+        driver = GraphDatabase.driver(uri, auth=(os.environ['NEO4J_USER'], os.environ['NEO4J_PASSWORD']))
+        case = str(self.case.id)
+        try:
+            directory = account_parties(self.db, case_id=self.case.id)
+            linked = set_account_party(self.db, case_id=self.case.id, request=AccountPartyRequest(
+                expected_revision=directory['revision'], account_ids=[self.account.id], new_party_name='Synthetic business',
+                relationship={'role':'holder'}, reason='Synthetic ownership source reviewed'), actor=self.actor)
+            plan = identity_graph_plan(self.db, self.case.id)
+            with driver.session() as graph:
+                self.assertTrue(apply_identity_graph(graph, plan))
+                self.assertFalse(apply_identity_graph(graph, plan))
+                self.assertEqual(graph.run('MATCH (n {case_id:$case}) WHERE n.key IS NOT NULL RETURN count(n) AS n', case=case).single()['n'], len(plan['accounts'])+1)
+                account = plan['accounts'][0]['key']
+                graph.run("MATCH (n {case_id:$case,key:$key}) SET n.notes='Investigator retained note', n.name='Investigator name'", case=case, key=account).consume()
+                party = plan['parties'][0]['key']
+                graph.run('MATCH (p {case_id:$case,key:$p}), (a {case_id:$case,key:$a}) CREATE (p)-[:MANUAL_CONNECTION {case_id:$case}]->(a)', case=case, p=party, a=account).consume()
+                link = linked['accounts'][0]['relationships'][0]
+                set_account_party(self.db, case_id=self.case.id, request=AccountPartyRequest(expected_revision=linked['revision'], account_ids=[self.account.id], clear=True, relationship={'id':link['id']}, reason='Reviewed removal'), actor=self.actor)
+                self.assertTrue(apply_identity_graph(graph, identity_graph_plan(self.db, self.case.id)))
+                self.assertEqual(graph.run('MATCH ({case_id:$case})-[r:HOLDS_ACCOUNT]->() RETURN count(r) AS n', case=case).single()['n'], 0)
+                self.assertEqual(graph.run('MATCH ({case_id:$case})-[r:MANUAL_CONNECTION]->() RETURN count(r) AS n', case=case).single()['n'], 1)
+                row = graph.run('MATCH (n {case_id:$case,key:$key}) RETURN n.name AS name,n.notes AS notes', case=case,key=account).single()
+                self.assertEqual(dict(row), {'name':'Investigator name','notes':'Investigator retained note'})
+                # An ordinary case entity must never be duplicated into a new
+                # financial node merely because its key collides.
+                graph.run('MATCH (n {case_id:$case,key:$key}) REMOVE n:FinancialAccount SET n:Person', case=case, key=account).consume()
+                with self.assertRaisesRegex(ValueError, 'conflicts'):
+                    apply_identity_graph(graph, identity_graph_plan(self.db, self.case.id))
+
+        finally:
+            with driver.session() as graph:
+                graph.run('MATCH (n {case_id:$case}) DETACH DELETE n', case=case).consume()
+            driver.close()
+
+    def test_counterparty_projection_waits_for_payment_and_retracts_only_its_own_link(self):
+        from services.financial.payment_labels import PaymentLabelsRequest, update_payment_labels
+        uri = os.environ['NEO4J_URI']
+        assert uri == 'bolt://127.0.0.1:57687'
+        driver = GraphDatabase.driver(uri, auth=(os.environ['NEO4J_USER'], os.environ['NEO4J_PASSWORD']))
+        case = str(self.case.id)
+        document = self.make_document(); period = self.make_period(document)
+        row = self.add_row(period, document, amount=12345)
+        update_payment_labels(self.db, case_id=self.case.id, actor=self.actor, request=PaymentLabelsRequest(
+            transactions=[{'id':row.id,'version':0}], counterparty_link={'kind':'account','id':self.account.id}))
+        plan = identity_graph_plan(self.db, self.case.id)
+        try:
+            with driver.session() as graph:
+                self.assertTrue(apply_identity_graph(graph, plan))
+                # The graph-side mutex exists, but missing payment nodes must
+                # never be represented as a completed source revision.
+                self.assertIsNone(graph.run('MATCH (n:FinancialIdentitySync {case_id:$case}) RETURN n.revision AS revision', case=case).single()['revision'])
+                graph.run('CREATE (:FinancialTransaction {case_id:$case,key:$key,notes:"Retained investigator note"})', case=case,key=row.ref_id).consume()
+                self.assertTrue(apply_identity_graph(graph, plan))
+                self.assertFalse(apply_identity_graph(graph, plan))
+                self.assertEqual(graph.run('MATCH ({case_id:$case})-[r:REVIEWED_PAID_BY]->(:FinancialAccount {case_id:$case}) RETURN count(r) AS n',case=case).single()['n'],1)
+                update_payment_labels(self.db, case_id=self.case.id, actor=self.actor, request=PaymentLabelsRequest(
+                    transactions=[{'id':row.id,'version':1}], counterparty_link=None))
+                self.assertTrue(apply_identity_graph(graph, identity_graph_plan(self.db,self.case.id)))
+                self.assertEqual(graph.run('MATCH ({case_id:$case})-[r:REVIEWED_PAID_BY]->() RETURN count(r) AS n',case=case).single()['n'],0)
+                self.assertEqual(graph.run('MATCH (n:FinancialTransaction {case_id:$case,key:$key}) RETURN n.notes AS notes',case=case,key=row.ref_id).single()['notes'],'Retained investigator note')
+        finally:
+            with driver.session() as graph:
+                graph.run('MATCH (n {case_id:$case}) DETACH DELETE n',case=case).consume()
+            driver.close()

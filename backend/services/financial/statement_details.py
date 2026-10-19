@@ -1,0 +1,323 @@
+"""Edit imported statement details without rereading or replacing its payments."""
+from copy import deepcopy
+from datetime import date, datetime, timezone
+from types import SimpleNamespace
+from uuid import UUID
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import select
+from sqlalchemy.orm import object_session
+from postgres.models.financial import FinancialAccount, FinancialSourceDocument, FinancialStatementPeriod, FinancialTransaction
+from services.financial.pdf_candidates import PdfMappingError, _digest
+
+from services.financial.currency_correction import CurrencyCode, rescale_minor
+
+DETAIL_KEYS = ('holder', 'account_number', 'institution')
+# An investigator's later decision on how this statement's printed balances
+# read (account type changed after import). The sealed reading is untouched;
+# this reviewed value, when present, is the one every saved-statement path uses.
+CONVENTION_REVIEW = 'statement_convention_review'
+
+
+def effective_convention(metadata, account_type=None):
+    """How a saved statement's printed balances read: 'liability_owed' (a card
+    prints the amount owed) or 'asset_balance'. A reviewed account type wins
+    over the sealed reading; an account recorded as a card is the fallback."""
+    metadata = metadata or {}
+    review = metadata.get(CONVENTION_REVIEW)
+    if review:
+        if _digest(review) != metadata.get(CONVENTION_REVIEW + '_sha256'):
+            raise PdfMappingError('The saved account type decision cannot be verified. Open the statement history.', 409)
+        return review['balance_convention']
+    convention = ((metadata.get('statement_import_original') or {}).get('metadata') or {}).get('balance_convention')
+    return convention or ('liability_owed' if account_type == 'credit_card' else 'asset_balance' if account_type else None)
+
+
+class BalanceEdit(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    amount_minor: str | None = Field(pattern=r'^-?(0|[1-9][0-9]{0,18})$')
+    page: int | None = Field(default=None, ge=1)
+
+
+class StatementDetailsRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    expected_revision: str = Field(pattern=r'^[a-f0-9]{64}$')
+    holder: str = Field(max_length=255)
+    account_number: str = Field(max_length=128)
+    institution: str = Field(max_length=128)
+    currency: CurrencyCode | None = None
+    period_start: str | None = Field(default=None, pattern=r'^(\d{4}-\d{2}-\d{2})?$')
+    period_end: str | None = Field(default=None, pattern=r'^(\d{4}-\d{2}-\d{2})?$')
+    opening: BalanceEdit | None = None
+    closing: BalanceEdit | None = None
+    no_activity_confirmed: bool = False
+
+
+def saved_details(document):
+    metadata = document.metadata_ or {}
+    raw = metadata.get('statement_import_request', {})
+    review = metadata.get('statement_details_review', {})
+    return {**{key: raw.get(key, '') for key in (*DETAIL_KEYS, 'period_start', 'period_end')},
+            **review.get('details', {})}
+
+
+def saved_currency(document):
+    metadata = document.metadata_ or {}
+    return metadata.get('statement_details_review', {}).get('currency') or metadata.get('statement_import_request', {}).get('currency') or None
+
+
+def _load(session, case_id, source_id, lock=False):
+    query = select(FinancialSourceDocument).where(
+        FinancialSourceDocument.id == source_id, FinancialSourceDocument.case_id == case_id)
+    document = session.scalar(query.with_for_update().execution_options(populate_existing=True) if lock else query)
+    if document is None:
+        raise PdfMappingError('Statement not found in this case.', 404)
+    if document.document_type != 'statement_review' or document.status != 'admitted':
+        raise PdfMappingError('Only a current imported statement can be edited here.', 409)
+    metadata = document.metadata_ or {}
+    if (_digest(metadata.get('statement_import_original')) != metadata.get('statement_import_original_sha256') or
+            _digest(metadata.get('statement_import_request')) != metadata.get('statement_import_request_sha256')):
+        raise PdfMappingError('The saved import cannot be verified. Open its source history before changing it.', 409)
+    query = select(FinancialStatementPeriod).where(
+        FinancialStatementPeriod.source_document_id == source_id, FinancialStatementPeriod.case_id == case_id)
+    periods = list(session.scalars(query.order_by(FinancialStatementPeriod.id).with_for_update() if lock else query))
+    if len(periods) > 1:
+        raise PdfMappingError('Choose an individual statement period before editing.', 409)
+    period = periods[0] if periods else None
+    account_id = period.account_id if period else UUID(document.metadata_['statement_account_id'])
+    query = select(FinancialAccount).where(FinancialAccount.id == account_id, FinancialAccount.case_id == case_id)
+    account = session.scalar(query.with_for_update() if lock else query)
+    if account is None:
+        raise PdfMappingError('The statement account is unavailable.', 409)
+    if metadata.get('statement_details_review'):
+        if _digest(metadata['statement_details_review']) != metadata.get('statement_details_review_sha256'):
+            raise PdfMappingError('The saved corrections cannot be verified. Open the statement history.', 409)
+    return document, period, account
+
+
+def _view(document, period, account):
+    metadata = document.metadata_ or {}
+    original = metadata['statement_import_original']
+    convention = effective_convention(metadata, account.account_type) or 'asset_balance'
+    sign = -1 if convention == 'liability_owed' else 1
+    pages = list(original.get('statement_page_numbers') or
+                 sorted({s['page_number'] for s in original.get('sources', [])}) or original.get('page_numbers', []))
+    controls = metadata.get('statement_details_review', {}).get('balances', {})
+    result = dict(case_id=str(document.case_id), source_document_id=str(document.id),
+        evidence_file_id=str(document.evidence_file_id), account_id=str(account.id),
+        period_id=str(period.id) if period else None,
+        details=saved_details(document), currency=period.currency if period else saved_currency(document),
+        balance_convention=convention, pages=pages, balances={},
+        has_payment_readings=bool(any(not row['excluded'] for row in metadata['statement_import_request']['rows'])
+            or metadata.get('statement_incomplete_records') or metadata.get('statement_manual_additions')))
+    if period:
+        for key in ('period_start', 'period_end'):
+            value = getattr(period, key)
+            result['details'][key] = value.isoformat() if value else ''
+    for role in ('opening', 'closing'):
+        value = getattr(period, role + '_balance_minor') if period else None
+        result['balances'][role] = dict(amount_minor=str(value * sign) if value is not None else None,
+            page=controls.get(role, {}).get('page'))
+    session = object_session(document)
+    if session is not None:
+        from services.financial.saved_statement_admission import current_saved_assessment
+        result['admission'] = current_saved_assessment(session, document, period)
+    result['revision'] = _digest(dict(view=result, account=[account.identity_key, account.holder_name,
+        account.identifier_as_printed, account.institution_name], history=metadata.get('statement_details_history', [])))
+    return result
+
+
+def read_statement_details(session, *, case_id, source_id, include_positions=False):
+    document, period, account = _load(session, case_id, source_id)
+    result = _view(document, period, account)
+    if include_positions:
+        # This opt-in source index is for the missed-payment editors. Keep it
+        # out of ordinary details receipts and their repeatedly appended history.
+        original = document.metadata_['statement_import_original']
+        result['source_position_rows'] = [dict(id=row['id'], page_number=row['page_number'], kind=row['kind'],
+            fields={key: row.get('fields', {}).get(key, '') for key in ('date', 'description')})
+            for row in original.get('rows', []) if row.get('kind') in ('transaction', 'unresolved')]
+        result['requires_manual_position'] = any(not row.get('excluded') and
+            row.get('fields', {}).get('balance') not in (None, '') for row in original.get('rows', []))
+    return result
+
+
+def update_statement_details(session, *, case_id, source_id, request, actor, commit=True):
+    try:
+        document, period, account = _load(session, case_id, source_id, lock=True)
+        before = _view(document, period, account)
+        if before['revision'] != request.expected_revision:
+            # Retrying an already saved request is harmless; a different stale
+            # edit must never overwrite another reviewer's changes.
+            prior = (document.metadata_ or {}).get('statement_details_last_request')
+            if prior == request.model_dump(mode='json'):
+                return before
+            raise PdfMappingError('These details changed since you opened them. Reload before saving; your edits have not overwritten them.', 409)
+        details = {key: getattr(request, key).strip() for key in DETAIL_KEYS}
+        if any(any(ord(c) < 32 for c in value) for value in details.values()):
+            raise PdfMappingError('Account details must be on a single line.', 422)
+        # Omitted fields preserve legacy clients' dates; an explicit blank means
+        # unknown. Statement coverage never substitutes dates on payments.
+        dates = {}
+        for key in ('period_start', 'period_end'):
+            value = getattr(request, key)
+            value = before['details'].get(key, '') if value is None else value
+            try:
+                dates[key] = date.fromisoformat(value) if value else None
+            except ValueError as exc:
+                raise PdfMappingError('Enter a real statement date, or leave it blank if unknown.', 422) from exc
+            details[key] = value
+        if dates['period_start'] and dates['period_end'] and dates['period_start'] > dates['period_end']:
+            raise PdfMappingError('Statement start must be on or before statement end.', 422)
+        balances = deepcopy((document.metadata_ or {}).get('statement_details_review', {}).get('balances', {}))
+        if request.currency and before['currency'] and request.currency != before['currency']:
+            for role, balance in balances.items():
+                if getattr(request, role) is None:
+                    balance['amount_minor'] = rescale_minor(balance['amount_minor'], before['currency'], request.currency)
+        for role in ('opening', 'closing'):
+            edit = getattr(request, role)
+            if edit is None:
+                continue
+            if period is None and not request.currency:
+                raise PdfMappingError('Choose the statement currency before adding balances.', 422)
+            amount = int(edit.amount_minor) if edit.amount_minor is not None else None
+            if amount is not None and (abs(amount) > 9223372036854775807 or edit.page not in before['pages']):
+                raise PdfMappingError('Enter a balance within range and choose its page in this statement.', 422)
+            balances[role] = edit.model_dump()
+        metadata = deepcopy(document.metadata_ or {})
+        old_account_id = account.id
+        reference_kind = (account.metadata_ or {}).get('account_reference_kind')
+        compartment_currency_changed = reference_kind == 'multi_currency_contract' and request.currency and request.currency != before['currency']
+        if any(details[key] != before['details'][key] for key in DETAIL_KEYS) or compartment_currency_changed:
+            from services.financial.accounts import AccountDraft, AccountIdentityError, record_account
+            fields = dict(holder_name=details['holder'] or None, identifier_as_printed=details['account_number'] or None,
+                institution_name=details['institution'] or None, currency=(request.currency or before['currency']) if reference_kind == 'multi_currency_contract' else account.currency,
+                account_type=account.account_type, metadata=dict(display_label=' · '.join(filter(None,
+                    [details['holder'], details['account_number']])) or 'Account details not recorded',
+                    account_reference_kind=reference_kind))
+            try:
+                draft = AccountDraft.observed(**fields)
+            except AccountIdentityError:
+                draft = AccountDraft.unidentified(distinguisher='statement-details:' + str(document.id) + ':' + _digest(fields), **fields)
+            existing = session.scalar(select(FinancialAccount).where(
+                FinancialAccount.case_id == case_id, FinancialAccount.identity_key == draft.identity().key))
+            if existing is not None and any(getattr(existing, key) != getattr(draft, key)
+                    for key in ('holder_name', 'identifier_as_printed', 'institution_name', 'currency', 'account_type')):
+                # The ingestion writer deliberately retains conflicting values.
+                # A reviewed correction must instead resolve to its exact saved
+                # details without overwriting other statements sharing an account.
+                draft = AccountDraft.unidentified(distinguisher='statement-details:' + str(document.id) + ':' + _digest(fields), **fields)
+            target = record_account(session, SimpleNamespace(case_id=case_id, run_id=document.ingestion_run_id), draft)
+            # Keep other statements' identities untouched. Corrections belong
+            # to this source; a matching identified account can be reused.
+            account = target
+            metadata['statement_account_id'] = str(account.id)
+            if period:
+                period.account_id = account.id
+            rows = list(session.scalars(select(FinancialTransaction).where(
+                FinancialTransaction.case_id == case_id, FinancialTransaction.source_document_id == source_id)
+                .order_by(FinancialTransaction.id).with_for_update()))
+            for row in rows:
+                if row.account_id != old_account_id:
+                    raise PdfMappingError('This import contains multiple accounts. Review its assignment before changing details.', 409)
+                row.account_id = account.id
+        sign = -1 if before['balance_convention'] == 'liability_owed' else 1
+        if request.currency and (request.currency != before['currency'] or period is None):
+            from services.financial.statement_currency_edit import change_currency, complete_currency_records
+            period, replacements = change_currency(session, document=document, period=period, account=account,
+                currency=request.currency, actor=actor, revision=before['revision'],
+                balance_edits={role for role in ('opening', 'closing') if getattr(request, role) is not None})
+            for record in metadata.get('statement_incomplete_records', []):
+                previous = record.get('resolved_transaction_id')
+                if previous in replacements:
+                    record['resolved_transaction_id'] = replacements[previous]
+                if not record.get('resolved_transaction_id'):
+                    record['missing_fields'] = [field for field in record['missing_fields'] if field != 'currency']
+            metadata['statement_import_issues'] = [issue for issue in metadata.get('statement_import_issues', [])
+                if issue.get('field') != 'currency']
+            if before['period_id'] is None:
+                from services.financial.import_issues import usable_balance
+                originals = {row['id']: row for row in metadata['statement_import_original']['rows']}
+                for role in ('opening', 'closing'):
+                    candidates = [(row, originals.get(row['id'], {})) for row in metadata['statement_import_request']['rows']
+                        if row['excluded'] and originals.get(row['id'], {}).get('kind') == 'balance'
+                        and originals[row['id']]['fields'].get('description', '').lower() == role + ' balance'
+                        and usable_balance(row.get('balance_minor'), before['balance_convention'])]
+                    if getattr(request, role) is None and len(candidates) == 1:
+                        row, original = candidates[0]
+                        if original.get('page_number') in before['pages']:
+                            balances[role] = dict(amount_minor=rescale_minor(row['balance_minor'],
+                                metadata['statement_import_request']['currency'], request.currency) if metadata['statement_import_request']['currency'] else row['balance_minor'], page=original['page_number'])
+        if period:
+            for key in ('period_start', 'period_end'):
+                if getattr(request, key) is not None:
+                    setattr(period, key, dates[key])
+                    setattr(period, key + '_source', 'printed' if dates[key] else 'absent')
+        for role in ('opening', 'closing'):
+            edit = getattr(request, role)
+            if edit is None and before['period_id'] is None and role in balances:
+                edit = BalanceEdit.model_validate(balances[role])
+            if edit is not None:
+                setattr(period, role + '_balance_minor', int(edit.amount_minor) * sign if edit.amount_minor is not None else None)
+                setattr(period, role + '_balance_source', 'printed' if edit.amount_minor is not None else 'absent')
+                setattr(period, role + '_carried_from_period_id', None)
+        review = dict(details=details, balances=balances, account_id=str(account.id),
+            period_id=str(period.id) if period else None, source_document_id=str(source_id),
+            currency=period.currency if period else saved_currency(document), balance_convention=before['balance_convention'])
+        metadata['statement_details_review'] = review
+        metadata['statement_details_review_sha256'] = _digest(review)
+        metadata.setdefault('statement_details_history', []).append(dict(
+            at=datetime.now(timezone.utc).isoformat(), actor_id=str(actor.user_id), actor_name=actor.name,
+            before=before, after=review))
+        metadata['statement_details_last_request'] = request.model_dump(mode='json')
+        document.metadata_ = metadata
+        session.flush()
+        if period:
+            metadata = deepcopy(document.metadata_)
+            from services.financial.statement_currency_edit import complete_currency_records
+            admission = complete_currency_records(session, document=document, period=period, metadata=metadata,
+                currency=period.currency, actor=actor)
+            document.metadata_ = deepcopy(metadata)
+            session.flush()
+            from services.financial.reconcile import reconcile_period
+            reconcile_period(session, period)
+            from services.financial.saved_statement_admission import refresh_saved_assessment
+            refresh_saved_assessment(session, document, period, no_activity_confirmed=request.no_activity_confirmed)
+        result = _view(document, period, account)
+        if commit:
+            session.commit()
+        return result
+    except Exception:
+        session.rollback()
+        raise
+
+
+def reviewed_controls(period, document, original):
+    """Overlay later readings while leaving the sealed import controls intact."""
+    metadata = document.metadata_ or {}
+    review = metadata.get('statement_details_review')
+    if not review:
+        return original
+    if (_digest(review) != metadata.get('statement_details_review_sha256') or
+            review['period_id'] != str(period.id) or review['account_id'] != str(period.account_id) or
+            review['source_document_id'] != str(document.id) or
+            review.get('currency', period.currency) != period.currency):
+        raise ValueError('The later statement review no longer matches its period.')
+    result = deepcopy(original) if original else dict(import_source_document_id=str(document.id), finalization_id=None,
+        currency=period.currency, balance_convention=review['balance_convention'], controls=[], account_closure=None)
+    if result['currency'] != period.currency:
+        for control in result['controls']:
+            if control['role'] not in review['balances']:
+                control['reviewed_value'] = rescale_minor(control['reviewed_value'], result['currency'], period.currency)
+    controls = {item['role']: item for item in result['controls']}
+    for role, balance in review['balances'].items():
+        if balance['amount_minor'] is None:
+            controls.pop(role, None)
+        else:
+            sign = -1 if review['balance_convention'] == 'liability_owed' else 1
+            if getattr(period, role + '_balance_minor') != int(balance['amount_minor']) * sign:
+                raise ValueError('The saved balance differs from its review.')
+            controls[role] = dict(role=role, original_text='', reviewed_value=balance['amount_minor'],
+                locator=dict(kind='page_only', page=balance['page']))
+    result.update(currency=period.currency, controls=list(controls.values()), reason='Statement details corrected after import.',
+        scope='Manually entered balances cite their PDF page. Earlier values and the original import remain in history.')
+    return result

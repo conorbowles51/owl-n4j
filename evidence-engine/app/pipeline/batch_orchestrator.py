@@ -36,6 +36,7 @@ from app.pipeline.write_graph import write_graph
 from app.services.cost_tracking import ingestion_cost_context
 from app.services.ai_model_policy import get_ai_runtime_snapshot, load_ai_model_policy
 from app.services.evidence_document_text import upsert_evidence_document_text
+from app.services.evidence_table_geometry import replace_evidence_table_geometry
 from app.services.redis_client import publish_progress
 from app.services.pipeline_run_state import (
     add_verification_quality,
@@ -50,6 +51,8 @@ from app.services.claim_ledger import (
     persist_grounded_claims,
 )
 from app.pipeline.verify_claims import verify_grounded_claims
+from app.services.ingestion_checkpoints import checkpointed, pause_boundary, IngestionPaused
+from app.services.db_retry import retry_transient
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +92,22 @@ async def _update_job_status(
     quality_report: dict | None = None,
     staged_revision: StagedChunkRevision | None = None,
 ) -> None:
+    await retry_transient(lambda: _write_job_status(
+        job_id, status, progress, message, error_message, entity_count, relationship_count, document_summary,
+        transcription, transcription_segments, quality_report, staged_revision))
+    await _publish_job_status(
+        job_id,
+        status,
+        progress,
+        message,
+        document_summary=document_summary,
+        error_message=error_message,
+    )
+
+
+async def _write_job_status(job_id, status, progress, message, error_message, entity_count, relationship_count,
+                            document_summary, transcription, transcription_segments, quality_report,
+                            staged_revision) -> None:
     async with async_session() as db:
         result = await db.execute(select(Job).where(Job.id == job_id))
         job = result.scalar_one()
@@ -123,16 +142,9 @@ async def _update_job_status(
             error=error_message,
         )
         await db.commit()
-    await _publish_job_status(
-        job_id,
-        status,
-        progress,
-        message,
-        document_summary=document_summary,
-        error_message=error_message,
-    )
 
 
+@checkpointed("file-extraction-v2")
 async def _extract_file(
     job_id: uuid.UUID,
     file_path: str,
@@ -165,6 +177,7 @@ async def _extract_file(
         await _update_job_status(job_id, JobStatus.EXTRACTING_TEXT, 0.0, "Extracting text...")
 
         async def report_pdf_progress(update: PdfExtractionProgress) -> None:
+            await pause_boundary()
             if update.total > 0:
                 fraction = min(1.0, max(0.0, update.completed / update.total))
                 progress = 0.02 + (0.12 * fraction)
@@ -190,6 +203,29 @@ async def _extract_file(
                     engine_job_id=job_id,
                     doc=doc,
                 )
+            # Geometry is auxiliary: a failure here costs the click-through
+            # highlight, not the text or the transactions, so it is logged
+            # rather than allowed to fail the ingestion.  Its own session, so
+            # a failed transaction dies with it.
+            try:
+                async with async_session() as geometry_db:
+                    geometry = await replace_evidence_table_geometry(
+                        geometry_db,
+                        evidence_file_id=source_evidence_file_id,
+                        engine_job_id=job_id,
+                        metadata=doc.metadata,
+                    )
+            except Exception:
+                logger.exception(
+                    "Table geometry persistence failed for job %s", job_id
+                )
+            else:
+                if geometry.entries_invalid:
+                    logger.warning(
+                        "Table geometry for job %s: %d malformed entries not stored",
+                        job_id,
+                        geometry.entries_invalid,
+                    )
         transcription = get_transcription(doc)
         transcription_segments = get_transcription_segments(doc)
         await _update_job_status(
@@ -386,14 +422,36 @@ async def run_batch_pipeline(
     case_id: str,
     db: AsyncSession,
 ) -> None:
-    await load_ai_model_policy(db)
     result = await db.execute(select(Job).where(Job.batch_id == batch_id).order_by(Job.created_at))
-    jobs = list(result.scalars().all())
+    jobs = [job for job in result.scalars().all() if job.status != JobStatus.COMPLETED]
 
     if not jobs:
         logger.warning("No jobs found for batch %s", batch_id)
         return
 
+    review_jobs = [job for job in jobs if getattr(job, "job_type", "ingestion") == "pdf_review"]
+    if review_jobs:
+        # A review batch must never fall through to model, embedding or graph work.
+        if len(review_jobs) != len(jobs):
+            await _force_fail_unfinished_batch_rows(batch_id, "Mixed preparation modes are not supported")
+            return
+        from app.pipeline.prepare_pdf_review import prepare_pdf_review
+        try:
+            for job in review_jobs:
+                if job.status == JobStatus.COMPLETED:
+                    continue
+                try:
+                    await prepare_pdf_review(job, _update_job_status)
+                except Exception:
+                    logger.exception("PDF source preparation failed for job %s", job.id)
+                    await _update_job_status(job.id, JobStatus.FAILED, 0.0,
+                        "PDF source preparation failed", error_message="PDF source preparation failed; inspect the document and retry.")
+        except asyncio.CancelledError:
+            await _force_fail_unfinished_batch_rows(batch_id, "PDF preparation was interrupted before completion")
+            raise
+        return
+
+    await load_ai_model_policy(db)
     runtime_snapshot = get_ai_runtime_snapshot()
     for job in jobs:
         job.pipeline_state = dict(getattr(job, "pipeline_state", None) or {})
@@ -420,6 +478,8 @@ async def run_batch_pipeline(
     logger.info("Starting batch pipeline for %d files in case %s", len(jobs), case_id)
 
     try:
+        from app.services.graph_identity import ensure_identity_indexes
+        await ensure_identity_indexes()
         file_semaphore = asyncio.Semaphore(max(1, settings.batch_file_max_concurrency))
 
         async def bounded_extract(ji: dict) -> tuple[
@@ -449,6 +509,8 @@ async def run_batch_pipeline(
             *(bounded_extract(ji) for ji in job_info),
             return_exceptions=True,
         )
+        if any(isinstance(result, IngestionPaused) for result in results):
+            raise IngestionPaused()
 
         all_raw_entities: list[RawEntity] = []
         all_raw_rels: list[RawRelationship] = []

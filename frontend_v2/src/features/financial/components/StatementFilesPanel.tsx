@@ -1,0 +1,1487 @@
+import { StatementRecoveryPanel } from "./StatementRecoveryPanel"
+import { FinancialSourceAudit } from "./FinancialSourceAudit"
+import { ReadyStatementPeriods } from "./ReadyStatementPeriods"
+import { ResumableUploadsPanel } from "@/features/evidence/components/ResumableUploadsPanel"
+import { BulkStatementDetails } from "./BulkStatementDetails"
+import { FinancialRemovalAction } from "./FinancialRemovalAction"
+import { ImportedRecordsPanel } from "./ImportedRecordsPanel"
+import {
+  useStatementRegister,
+  groupStatementReadings,
+  usesPdfStatementReader,
+} from "../hooks/use-statement-register"
+import { FinancialSourceFile } from "./FinancialSourceFile"
+import {
+  incompleteSummary,
+  statementFileCard,
+} from "../lib/statement-file-state"
+import { FinancialFileAction } from "./FinancialFileAction"
+import { EvidenceFinancialPicker } from "./EvidenceFinancialPicker"
+import { BatchStartChoice } from "./BatchStartChoice"
+import { fillAndSaveReady, queueFileWork, queueHref, useReviewQueue } from "../lib/review-queue"
+import {
+  needsBatchStartChoice,
+  previewBatchStart,
+  startStatementBatch,
+  type BatchStartChoiceValue,
+  type BatchStartPreview,
+} from "../lib/batch-start"
+import { useFinancialAccess } from "../hooks/use-financial-access"
+import { useEffect, useRef, useState } from "react"
+import { useNavigate } from "react-router-dom"
+import { useQueryClient } from "@tanstack/react-query"
+import { z } from "zod"
+import { Button } from "@/components/ui/button"
+import { evidenceAPI } from "@/features/evidence/api"
+import { newReviewId } from "../lib/statement-review-id"
+import { useAuthStore } from "@/features/auth/hooks/use-auth"
+import { useFinancialStore } from "../stores/financial.store"
+import { useStatementWorkspace } from "../stores/statement-workspace"
+import {
+  uploadStatementFiles,
+  useStatementUploads,
+} from "../stores/statement-upload-queue"
+
+const count = (n: number, one: string, many: string) =>
+  `${n} ${n === 1 ? one : many}`
+
+export function StatementFilesPanel({
+  caseId,
+  register = false,
+  onOpen,
+  removalMode = false,
+  onFinishRemoval,
+  active = true,
+}: {
+  caseId: string
+  register?: boolean
+  onOpen?: () => void
+  removalMode?: boolean
+  onFinishRemoval?: () => void
+  active?: boolean
+}) {
+  const { canUpload, canEdit } = useFinancialAccess()
+  const navigate = useNavigate()
+  const owner = useAuthStore(
+    (state) => state.user?.id || state.user?.username || "anonymous"
+  )
+  const scope = `${owner}:${caseId}`
+  const client = useQueryClient()
+  const input = useRef<HTMLInputElement>(null)
+  const [search, setSearch] = useState("")
+  // The register opens on the files that need something from the
+  // investigator. The statement viewer's side list has no filter control, so
+  // it keeps listing every statement file.
+  const [status, setStatus] = useState(register ? "action" : "work")
+  const resultsHeading = useRef<HTMLHeadingElement>(null)
+  const [filterAction, setFilterAction] = useState(0)
+  const [removed, setRemoved] = useState(false)
+  const sourceReview = useRef<HTMLDivElement>(null)
+  const [auditFilter, setAuditFilter] = useState<{
+    caseId: string
+    fileId: string
+    filename: string
+  } | null>(null)
+  const [visibilityResult, setVisibilityResult] = useState<{
+    caseId: string
+    filename: string
+    removed: boolean
+  } | null>(null)
+  const visibilityNotice = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (visibilityResult?.caseId !== caseId) return
+    visibilityNotice.current?.focus()
+    visibilityNotice.current?.scrollIntoView({ block: "nearest" })
+  }, [visibilityResult, caseId])
+  const [error, setError] = useState("")
+  const [recordsFile, setRecordsFile] = useState<string | null>(null)
+  const [reading, setReading] = useState<Record<string, boolean>>({})
+  const [selection, setSelection] = useState<{ scope: string; ids: string[] }>({
+    scope,
+    ids: [],
+  })
+  const [preparing, setPreparing] = useState(false)
+  const batchRequest = useRef<{ selection: string; id: string } | null>(null)
+  // Shown before a batch starts when the files are already in an unfinished
+  // batch or hold copies; continuing that batch is the default choice.
+  const [startChoice, setStartChoice] = useState<{
+    scope: string
+    snapshot: string
+    ids: string[]
+    preview: BatchStartPreview
+  } | null>(null)
+  const startChoiceRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (startChoice)
+      startChoiceRef.current?.scrollIntoView({
+        block: "center",
+        behavior: "smooth",
+      })
+  }, [startChoice])
+  const queue = useStatementUploads((state) => state.queues[scope])
+  const queuedReadings = new Set(
+    queue?.items.flatMap((item) =>
+      item.status === "Reading queued" && item.fileId ? [item.fileId] : []
+    ) ?? []
+  )
+  const selected = useStatementWorkspace(
+    (state) => state.selections[scope]?.fileId
+  )
+  const reviewOpen = useStatementWorkspace(
+    (state) => state.selections[scope]?.open ?? false
+  )
+  const showResults = (value: string, clearSearch = false) => {
+    setStatus(value)
+    if (clearSearch) setSearch("")
+    setFilterAction((previous) => previous + 1)
+  }
+  useEffect(() => {
+    if (!filterAction || reviewOpen || !register || removalMode) return
+    const frame = requestAnimationFrame(() => {
+      resultsHeading.current?.focus({ preventScroll: true })
+      resultsHeading.current?.scrollIntoView({ block: "start" })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [filterAction, reviewOpen, register, removed, removalMode])
+  const openStatement = (fileId: string, statementId?: string) => {
+    if (statementId !== undefined)
+      useStatementWorkspace
+        .getState()
+        .setReviewChoice(`${scope}:${fileId}`, { statementId, currency: "" })
+    useStatementWorkspace.getState().select(scope, fileId)
+    useFinancialStore.getState().setMainView("statements")
+    useFinancialStore.getState().setMode("transactions")
+    onOpen?.()
+  }
+  const { files, imports } = useStatementRegister(
+    caseId,
+    !!queue?.running,
+    queue?.items.flatMap((item) =>
+      item.status === "Reading queued" && item.fileId ? [item.fileId] : []
+    ) ?? [],
+    true,
+    active
+  )
+  const refresh = () => {
+    void client.invalidateQueries({
+      queryKey: ["statement-import-files", caseId],
+    })
+  }
+  const findAuditFile = async (fileId: string) => {
+    const refreshed = await files.refetch()
+    if (refreshed.isError)
+      throw Error(
+        "The file list could not be refreshed. Try again before changing this source."
+      )
+    const match = groupStatementReadings(refreshed.data || []).find(
+      (file) =>
+        file.id === fileId ||
+        file.readingVersions.some((version) => version.id === fileId)
+    )
+    if (!match)
+      throw Error(
+        "This source is no longer in the Financial file list. Refresh source review to check its current location."
+      )
+    setAuditFilter({
+      caseId,
+      fileId: match.id,
+      filename: match.original_filename,
+    })
+    setRemoved(match.financial_removed)
+    setSearch("")
+    setStatus("all")
+    setFilterAction((value) => value + 1)
+  }
+  const readStatement = async (fileId: string) => {
+    if (!canUpload) return
+    setReading((current) => ({ ...current, [fileId]: true }))
+    setError("")
+    try {
+      const result = z
+        .object({ job_ids: z.array(z.string()) })
+        .parse(await evidenceAPI.preparePdfReview(caseId, fileId))
+      if (result.job_ids.length !== 1)
+        throw Error("No reading job was returned.")
+    } catch (failure) {
+      setError(
+        `${failure instanceof Error ? failure.message : "Reading could not start."} Refresh files to check its status before trying again. Your uploaded PDF is retained.`
+      )
+    } finally {
+      await files.refetch()
+      setReading((current) => ({ ...current, [fileId]: false }))
+    }
+  }
+  const statusLoaded = !!imports.data && !imports.data.truncated
+  // The case review queue (stored readings only) is the one source of
+  // statement work: which files hold statements to fix, couldn't read or
+  // ready to save. Needs action, the ready count and the per-file links all
+  // count from it, so a file is never sent to work the queue does not list.
+  const reviewQueue = useReviewQueue(caseId, [], register && active && !removalMode)
+  const fileWork = queueFileWork(reviewQueue.data)
+  const queueKnown = !!reviewQueue.data && !reviewQueue.data.file_ids.length
+  const workFor = (id: string) =>
+    fileWork.get(id) ?? { waiting: 0, unreadable: 0, ready: 0 }
+  const queueByFile = new Map(
+    [...fileWork].map(([id, work]) => [id, work.waiting] as const)
+  )
+  const [queueSaving, setQueueSaving] = useState("")
+  const [queueSaveLine, setQueueSaveLine] = useState("")
+  // Ready statements are saved from the queue (statement by statement, the
+  // batch save's checks), never by starting another batch over their files.
+  const saveReadyFromQueue = async () => {
+    const data = reviewQueue.data
+    if (!data || !(data.ready.length || data.filled.length) || queueSaving) return
+    setQueueSaveLine("")
+    setQueueSaving("Checking the ready statements…")
+    try {
+      const result = await fillAndSaveReady(caseId, data, {
+        onProgress: setQueueSaving,
+      })
+      setQueueSaveLine(result.message)
+    } catch (failure) {
+      setQueueSaveLine(
+        `${failure instanceof Error ? failure.message : "Saving could not start."} Statements already accepted keep saving; refresh to see where each one stands.`
+      )
+    } finally {
+      setQueueSaving("")
+      void reviewQueue.refetch()
+      void imports.refetch()
+    }
+  }
+  // Non-PDF sources open their own review; they are listed under Needs action
+  // until something has been saved from them, but never counted as a PDF
+  // statement that is not imported.
+  const cardFor = (file: NonNullable<typeof files.data>[number]) => {
+    const saved = imports.data?.files.find(
+      (item) => item.evidence_file_id === file.id
+    )
+    if (!usesPdfStatementReader(file)) {
+      const pending =
+        !file.financial_removed &&
+        !saved?.current_transactions &&
+        !saved?.wire_review_count &&
+        !saved?.receipt_review_count
+      return {
+        label: "",
+        tone: "review",
+        notImported: false,
+        needsAction: pending,
+      }
+    }
+    return statementFileCard(file, saved, {
+      removed: file.financial_removed,
+      statusLoaded,
+      queued: queuedReadings.has(file.id),
+      queue: queueKnown ? workFor(file.id) : undefined,
+    })
+  }
+  const activeFiles =
+    files.data?.filter((file) => !file.financial_removed) ?? []
+  const notImportedCount = activeFiles.filter(
+    (file) => cardFor(file).notImported
+  ).length
+  const needsActionCount = activeFiles.filter(
+    (file) => cardFor(file).needsAction
+  ).length
+  const visibleFiles =
+    files.data
+      ?.filter(
+        (file) => file.financial_removed === (removalMode ? false : removed)
+      )
+      ?.filter((file) =>
+        file.original_filename.toLowerCase().includes(search.toLowerCase())
+      )
+      .filter(
+        (file) =>
+          auditFilter?.caseId !== caseId ||
+          file.id === auditFilter.fileId ||
+          file.readingVersions.some(
+            (version) => version.id === auditFilter.fileId
+          )
+      )
+      .filter((file) => !removalMode || usesPdfStatementReader(file))
+      .filter((file) => {
+        const saved = imports.data?.files.find(
+          (item) => item.evidence_file_id === file.id
+        )
+        const card = cardFor(file)
+        const duplicatePeriods =
+          saved?.duplicate_dispositions.filter(
+            ({ decision }) =>
+              decision.current &&
+              (decision.status === "ignored" ||
+                (decision.status === "needs_comparison" && !!decision.retained))
+          ).length ?? 0
+        const onlyDuplicates =
+          duplicatePeriods > 0 &&
+          !!saved?.prepared_periods &&
+          duplicatePeriods >= saved.prepared_periods &&
+          !saved.available_periods &&
+          !saved.current_transactions &&
+          file.status === "processed"
+        return (
+          removalMode ||
+          removed ||
+          status === "all" ||
+          (status === "action" && card.needsAction) ||
+          (status === "not_imported" && card.notImported) ||
+          (status === "work" && !onlyDuplicates) ||
+          (status === "ready" &&
+            (queueKnown ? !!workFor(file.id).ready : !!saved?.available_periods)) ||
+          (status === "duplicates" &&
+            (!!saved?.ignored_periods || duplicatePeriods > 0)) ||
+          (status === "checks" &&
+            (queueKnown
+              ? !!(workFor(file.id).waiting || workFor(file.id).unreadable)
+              : !!saved?.periods_with_checks || !!saved?.incomplete_count)) ||
+          (status === "pending" &&
+            (!!saved?.pending_periods ||
+              ["processing", "queued"].includes(file.status))) ||
+          (status === "imported" &&
+            (!!saved?.current_transactions || !!saved?.periods.length)) ||
+          (status === "review" &&
+            imports.data &&
+            !imports.data.truncated &&
+            !saved?.current_transactions &&
+            !saved?.periods.length) ||
+          (status === "attention" &&
+            ["failed", "unprocessed"].includes(file.status))
+        )
+      }) ?? []
+  const readyFiles = (imports.data?.files ?? []).filter(
+    (item) =>
+      item.available_periods > 0 &&
+      files.data?.some(
+        (file) => file.id === item.evidence_file_id && !file.financial_removed
+      )
+  )
+  const readyCount = queueKnown
+    ? reviewQueue.data!.counts.ready
+    : (imports.data?.files ?? [])
+        .filter((item) =>
+          files.data?.some(
+            (file) => file.id === item.evidence_file_id && !file.financial_removed
+          )
+        )
+        .reduce((total, file) => total + (file.available_periods || 0), 0)
+  const visibleReadyCount = visibleFiles.reduce(
+    (total, file) =>
+      total +
+      (queueKnown
+        ? workFor(file.id).ready
+        : imports.data?.files.find((item) => item.evidence_file_id === file.id)
+            ?.available_periods || 0),
+    0
+  )
+  const selectedIds = (selection.scope === scope ? selection.ids : []).filter(
+    (id) =>
+      files.data?.some(
+        (file) =>
+          file.id === id &&
+          !file.financial_removed &&
+          usesPdfStatementReader(file)
+      )
+  )
+  const selectableFiles = visibleFiles.filter(usesPdfStatementReader)
+  // Edit account details works on ticked files, or, with nothing ticked, on
+  // the PDFs the current filter shows when that is a manageable set.
+  const BULK_SHOWN_LIMIT = 50
+  const bulkDetailIds = selectedIds.length
+    ? selectedIds
+    : selectableFiles.length <= BULK_SHOWN_LIMIT
+      ? selectableFiles.map((file) => file.id)
+      : []
+  const hiddenSelected = selectedIds.filter(
+    (id) => !visibleFiles.some((file) => file.id === id)
+  ).length
+  const selectFiles = (ids: string[]) => setSelection({ scope, ids })
+  const unpreparedFiles = visibleFiles.filter(
+    (file) =>
+      usesPdfStatementReader(file) &&
+      file.status === "processed" &&
+      !file.financial_removed &&
+      !imports.data?.files.some(
+        (item) =>
+          item.evidence_file_id === file.id &&
+          (item.prepared_periods ||
+            item.periods.length ||
+            item.incomplete_count)
+      )
+  )
+  const openQueue = (ids: string[]) => navigate(queueHref(caseId, ids))
+  const isPrepared = (id: string) =>
+    !!imports.data?.files.some(
+      (item) =>
+        item.evidence_file_id === id &&
+        (item.prepared_periods || item.periods.length)
+    )
+  // Selecting files to review never reads or prepares them again: files that
+  // already have prepared statements open in the review queue, filtered to
+  // them; only files never prepared start a batch.
+  const reviewSelected = (ids = selectedIds) => {
+    const unprepared = ids.filter((id) => !isPrepared(id))
+    if (!unprepared.length) return openQueue(ids)
+    return prepareSelected(unprepared)
+  }
+  const selectedAllPrepared =
+    selectedIds.length > 0 && selectedIds.every(isPrepared)
+  const prepareSelected = async (
+    ids = selectedIds,
+    choice?: BatchStartChoiceValue
+  ) => {
+    if (!canEdit || !canUpload || preparing || !ids.length) return
+    const snapshot = JSON.stringify([scope, [...ids].sort()])
+    if (batchRequest.current?.selection !== snapshot)
+      batchRequest.current = { selection: snapshot, id: newReviewId() }
+    setPreparing(true)
+    setError("")
+    try {
+      let preview =
+        startChoice?.snapshot === snapshot ? startChoice.preview : null
+      if (!choice) {
+        // The check is advisory. If it cannot run, the server still continues
+        // an unfinished batch that holds every selected file.
+        preview = await previewBatchStart(caseId, ids).catch(() => null)
+        if (preview && needsBatchStartChoice(preview)) {
+          setStartChoice({ scope, snapshot, ids, preview })
+          return
+        }
+      }
+      const batchId = await startStatementBatch({
+        caseId,
+        fileIds: ids,
+        requestId: batchRequest.current.id,
+        preview,
+        choice,
+      })
+      setStartChoice(null)
+      void client.invalidateQueries({ queryKey: ["financial-batches", caseId] })
+      navigate(
+        `/cases/${caseId}/financial?view=statements&batch=${encodeURIComponent(batchId)}`
+      )
+    } catch (failure) {
+      setError(
+        `${failure instanceof Error ? failure.message : "Preparation could not start."} Your selection is kept. Retry to check the same request.`
+      )
+    } finally {
+      setPreparing(false)
+    }
+  }
+  return (
+    <section
+      aria-label="Statement files"
+      className={register ? "space-y-4" : "h-full overflow-auto p-3 space-y-3"}
+    >
+      {!removalMode && register && (
+        <StatementRecoveryPanel
+          onCurrentWork={() => showResults("work", true)}
+          key={caseId}
+          caseId={caseId}
+          active={active}
+          onReview={(fileId) => {
+            useStatementWorkspace.getState().select(scope, fileId)
+            useFinancialStore.getState().setMainView("statements")
+            useFinancialStore.getState().setMode("transactions")
+            onOpen?.()
+          }}
+        />
+      )}
+      <h2 className="font-semibold">
+        {removalMode
+          ? "Remove imports or start again"
+          : register
+            ? "Files in Financial"
+            : "Statement files"}
+      </h2>
+      <p className="text-sm text-muted-foreground">
+        {removalMode
+          ? "Select the PDFs you want to remove. The next screen shows exactly which statements and transactions will be affected. You can remove the imports, or remove them and process the same PDFs afresh."
+          : canUpload
+            ? "Upload PDFs together, then select a ready file to open it in the statement viewer."
+            : "Select a ready file to open its original PDF and extracted statement."}{" "}
+        {!removalMode &&
+          "Supported wire reports and deposit receipts open their own review."}
+        {!removalMode &&
+          " Financial sources can also be CSV, spreadsheets, Word documents, images or other formats. Use Choose from Evidence to select relevant content; each source opens with its available reader."}
+      </p>
+      {register && !removalMode && (
+        <div
+          ref={sourceReview}
+          tabIndex={-1}
+          className="scroll-mt-24 focus:outline-none"
+        >
+          <FinancialSourceAudit
+            key={caseId}
+            caseId={caseId}
+            onFindFile={findAuditFile}
+          />
+        </div>
+      )}
+      {removalMode && (
+        <p className="text-sm">
+          Original PDFs, case notes, findings and import history are retained.
+          No new case is needed.
+        </p>
+      )}
+      {canUpload && (
+        <input
+          ref={input}
+          type="file"
+          multiple
+          accept="application/pdf,.pdf"
+          aria-label="Statement PDFs"
+          className="hidden"
+          onChange={(event) => {
+            if (!canUpload) return
+            const selectedFiles = Array.from(event.target.files ?? [])
+            event.target.value = ""
+            setError("")
+            void uploadStatementFiles(
+              selectedFiles,
+              caseId,
+              owner,
+              refresh
+            ).catch((error) => setError(error.message))
+          }}
+        />
+      )}
+      <div className={removalMode ? "hidden" : "flex flex-wrap gap-2"}>
+        <EvidenceFinancialPicker caseId={caseId} />
+        {canUpload && (
+          <Button
+            disabled={queue?.running}
+            onClick={() => input.current?.click()}
+          >
+            Upload PDFs
+          </Button>
+        )}
+        <Button
+          variant="outline"
+          onClick={() => {
+            void files.refetch()
+            void imports.refetch()
+          }}
+        >
+          Refresh files
+        </Button>
+        <Button
+          variant="outline"
+          aria-pressed={removed}
+          onClick={() => {
+            setRemoved(!removed)
+            setStatus("all")
+            setSearch("")
+          }}
+        >
+          {removed
+            ? "Back to financial files"
+            : `Removed files (${files.data?.filter((file) => file.financial_removed).length ?? 0})`}
+        </Button>
+      </div>
+      {visibilityResult?.caseId === caseId && (
+        <div
+          ref={visibilityNotice}
+          tabIndex={-1}
+          role="status"
+          className="rounded border bg-card p-3 text-sm space-y-2"
+        >
+          <p>
+            {visibilityResult.filename}{" "}
+            {visibilityResult.removed
+              ? "removed from Financial. The original and saved reviews are retained."
+              : "restored to Financial with its saved reviews."}
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setRemoved(visibilityResult.removed)
+              setStatus("all")
+              setSearch("")
+            }}
+          >
+            {visibilityResult.removed
+              ? "View removed files"
+              : "View financial files"}
+          </Button>
+        </div>
+      )}
+      {removed && !removalMode && (
+        <p className="text-sm">
+          These files were removed from Financial. Their originals remain in
+          Evidence. Restore a file to review it here again.
+        </p>
+      )}
+      {!removed && !removalMode && canEdit && (
+        <p className="text-xs text-muted-foreground">
+          Remove from Financial hides a file and keeps its Evidence, corrections
+          and batch reviews. To withdraw saved transactions, use Remove imports…
+          and review the affected records first.
+        </p>
+      )}
+      {canUpload && !removalMode && (
+        <p className="text-xs text-muted-foreground">
+          Up to 20 PDFs per selection. Pause or resume uploads here. If the
+          browser closes, reselect the same files to send only missing parts.
+          Uploaded PDFs are retained in Evidence. If reading has not started,
+          use Choose from Evidence to send the retained PDF for review.
+        </p>
+      )}
+      {canUpload && (
+        <ResumableUploadsPanel
+          caseId={caseId}
+          financialContext
+          active={active}
+        />
+      )}
+      {error && <p role="alert">{error}</p>}
+      {startChoice?.scope === scope && (
+        <div ref={startChoiceRef} className="scroll-mt-24">
+          <BatchStartChoice
+            preview={startChoice.preview}
+            selectedCount={startChoice.ids.length}
+            busy={preparing}
+            onChoose={(choice) => void prepareSelected(startChoice.ids, choice)}
+            onLeaveOut={(fileIds) => {
+              const kept = startChoice.ids.filter((id) => !fileIds.includes(id))
+              setStartChoice(null)
+              if (selection.scope === scope)
+                selectFiles(selectedIds.filter((id) => !fileIds.includes(id)))
+              void prepareSelected(kept)
+            }}
+            onCancel={() => setStartChoice(null)}
+          />
+        </div>
+      )}
+      {queue && (
+        <div aria-live="polite" className="space-y-2">
+          {queue.items
+            .filter(
+              (item) =>
+                !item.fileId ||
+                !files.data?.some(
+                  (file) =>
+                    file.id === item.fileId && file.status === "processed"
+                )
+            )
+            .map((item, index) => (
+              <div
+                key={index}
+                className="rounded border p-2 text-sm break-words"
+              >
+                <strong>{item.name}</strong>
+                <p>{item.status}</p>
+                {item.error && <p className="text-destructive">{item.error}</p>}
+              </div>
+            ))}
+        </div>
+      )}
+      <input
+        aria-label="Search statement files"
+        placeholder="Search filenames"
+        className="w-full rounded border bg-background p-2"
+        value={search}
+        onChange={(event) => setSearch(event.target.value)}
+      />
+      {register && !removed && !removalMode && (
+        <div className="flex flex-wrap items-center gap-3 text-sm">
+          <label>
+            Show files{" "}
+            <select
+              className="rounded border bg-background p-2"
+              value={status}
+              onChange={(e) => showResults(e.target.value)}
+            >
+              <option value="action">Needs action</option>
+              <option value="not_imported">Not imported</option>
+              <option value="work">
+                Statements to process and saved statements
+              </option>
+              <option value="all">All files including duplicates</option>
+              <option value="ready">Ready to import</option>
+              <option value="checks">Checks to review</option>
+              <option value="duplicates">
+                Duplicates to compare or left unimported
+              </option>
+              <option value="pending">Reading or imports in progress</option>
+              <option value="imported">With imported statements</option>
+              <option value="review">Without imported statements</option>
+              <option value="attention">Reading failed or not started</option>
+            </select>
+          </label>
+          {files.data && (
+            <span>
+              {files.data.filter((file) => !file.financial_removed).length}{" "}
+              files in Financial ·{" "}
+              {imports.data?.files.filter(
+                (file) =>
+                  file.current_transactions > 0 || file.periods.length > 0
+              ).length ?? "…"}{" "}
+              files have saved statements
+            </span>
+          )}
+          {files.data && statusLoaded && (
+            <span>Not imported: {notImportedCount}</span>
+          )}
+        </div>
+      )}
+      {files.isPending && <p role="status">Loading statement files…</p>}
+      {register && !removed && !removalMode && imports.data && (
+        <section
+          aria-label="Statement work remaining"
+          className="rounded border p-3 space-y-2"
+        >
+          <div className="grid gap-3 sm:grid-cols-2 rounded bg-muted/40 p-4">
+            <div>
+              <h3 className="font-semibold">
+                {readyCount} statements ready to save
+              </h3>
+              <p className="text-sm">
+                Loupe has read these statements and they passed the current
+                checks. Their payments are not saved yet. You can save them
+                together.
+              </p>
+            </div>
+            <div className="space-y-2">
+              {canEdit && queueKnown ? (
+                <Button
+                  className="h-auto max-w-full whitespace-normal py-2 text-left"
+                  disabled={!!queueSaving || !readyCount}
+                  onClick={() => void saveReadyFromQueue()}
+                >
+                  {queueSaving ||
+                    `Save ${readyCount} ready ${readyCount === 1 ? "statement" : "statements"}`}
+                </Button>
+              ) : (
+                canEdit &&
+                canUpload && (
+                  <Button
+                    className="h-auto max-w-full whitespace-normal py-2 text-left"
+                    disabled={preparing || !readyCount || imports.data.truncated}
+                    onClick={() =>
+                      void prepareSelected(
+                        readyFiles.map((file) => file.evidence_file_id)
+                      )
+                    }
+                  >
+                    {preparing
+                      ? "Opening group review…"
+                      : `Review and save ${readyCount} ready statements together`}
+                  </Button>
+                )
+              )}
+              {queueSaveLine && (
+                <p role="status" className="text-sm font-medium">
+                  {queueSaveLine}
+                </p>
+              )}
+              <p className="text-sm text-muted-foreground">
+                {queueKnown
+                  ? "Each statement is checked again with the batch save's rules and saved from the review queue; nothing is read again. Statements needing corrections and copies stay out."
+                  : "Opens a group summary for one confirmation. Statements needing corrections and duplicate copies stay out of the ready selection."}
+              </p>
+            </div>
+          </div>
+          <div
+            role="group"
+            aria-labelledby="statement-file-filters"
+            className="space-y-2 rounded border p-3"
+          >
+            <h3 id="statement-file-filters" className="text-sm font-semibold">
+              Filter the list
+            </h3>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                aria-pressed={status === "action"}
+                onClick={() => showResults("action", true)}
+              >
+                Needs action ({needsActionCount})
+              </Button>
+              {queueKnown && reviewQueue.data!.counts.waiting > 0 && (
+                <Button onClick={() => openQueue([])}>
+                  Review {reviewQueue.data!.counts.waiting} waiting in the queue
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                aria-pressed={status === "not_imported"}
+                onClick={() => showResults("not_imported", true)}
+              >
+                Not imported ({notImportedCount})
+              </Button>
+              <Button
+                variant="outline"
+                aria-pressed={status === "ready"}
+                onClick={() => showResults("ready", true)}
+              >
+                Show {readyCount}{" "}
+                {readyCount === 1 ? "statement" : "statements"} ready to save
+              </Button>
+              <Button
+                variant="outline"
+                aria-pressed={status === "checks"}
+                onClick={() => showResults("checks", true)}
+              >
+                Show{" "}
+                {queueKnown
+                  ? activeFiles.filter(
+                      (f) => workFor(f.id).waiting || workFor(f.id).unreadable
+                    ).length
+                  : imports.data.files.filter(
+                      (f) => f.periods_with_checks || f.incomplete_count
+                    ).length}{" "}
+                files with checks to review
+              </Button>
+              <Button
+                variant="outline"
+                aria-pressed={status === "pending"}
+                onClick={() => showResults("pending", true)}
+              >
+                Show{" "}
+                {count(
+                  imports.data.files.reduce(
+                    (n, f) => n + (f.pending_periods || 0),
+                    0
+                  ),
+                  "import",
+                  "imports"
+                )}{" "}
+                in progress
+              </Button>
+              <Button
+                variant="outline"
+                aria-pressed={status === "duplicates"}
+                onClick={() => showResults("duplicates", true)}
+              >
+                Review duplicates
+              </Button>
+              <Button
+                variant="ghost"
+                aria-pressed={status === "all"}
+                onClick={() => showResults("all", true)}
+              >
+                Show all files
+              </Button>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              These buttons only filter the list. They do not read, check or
+              save anything. Needs action lists the files that hold statements
+              in the review queue (to fix, couldn't read or ready to save), and
+              files whose reading failed or has not been checked yet. The
+              review queue is where each statement is opened and saved.
+            </p>
+          </div>
+          {!!unpreparedFiles.length && canEdit && canUpload && (
+            <section
+              aria-label="Batch check"
+              className="space-y-2 rounded border border-dashed p-3"
+            >
+              <h3 className="text-sm font-semibold">Start a batch check</h3>
+              <p>
+                {unpreparedFiles.length} read{" "}
+                {unpreparedFiles.length === 1 ? "file has" : "files have"} not
+                been checked for import in a batch. These readings are not
+                included in the ready counts above.
+              </p>
+              <Button
+                variant="secondary"
+                disabled={preparing}
+                onClick={() =>
+                  void prepareSelected(unpreparedFiles.map((file) => file.id))
+                }
+              >
+                Start batch check of {unpreparedFiles.length} read{" "}
+                {unpreparedFiles.length === 1 ? "file" : "files"}
+              </Button>
+              <p className="text-sm text-muted-foreground">
+                This starts work: it uses the retained readings to show ready
+                statements, saved copies and checks. Payments are saved only
+                when you confirm import.
+              </p>
+            </section>
+          )}
+          <p className="text-sm">
+            Use the group action to save ready statements together, or open a
+            file to correct a specific problem.
+          </p>
+          {imports.data.truncated && (
+            <p role="status">
+              This case has more records than the current summary can display.
+              Counts are partial; use the file search to review the remaining
+              files.
+            </p>
+          )}
+        </section>
+      )}
+      {files.isError && <p role="alert">{files.error.message}</p>}
+      {imports.isError && (
+        <div role="alert">
+          Statement import status could not be loaded.{" "}
+          <Button variant="outline" onClick={() => void imports.refetch()}>
+            Retry import status
+          </Button>
+        </div>
+      )}
+      {register && (!removed || removalMode) && canEdit && (
+        <section
+          aria-label="Selected statement files"
+          className="rounded border bg-card p-3 space-y-2"
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <span>
+              {selectedIds.length} {selectedIds.length === 1 ? "file" : "files"}{" "}
+              selected
+              {hiddenSelected ? ` · ${hiddenSelected} hidden by filters` : ""}
+            </span>
+            <Button
+              variant="outline"
+              disabled={preparing || !selectableFiles.length}
+              onClick={() =>
+                selectFiles([
+                  ...new Set([
+                    ...selectedIds,
+                    ...selectableFiles.map((file) => file.id),
+                  ]),
+                ])
+              }
+            >
+              Select all {selectableFiles.length} shown{" "}
+              {selectableFiles.length === 1 ? "file" : "files"}
+            </Button>
+            <Button
+              variant="ghost"
+              disabled={preparing || !selectedIds.length}
+              onClick={() => selectFiles([])}
+            >
+              Clear selection
+            </Button>
+            {!removalMode && (
+              <Button
+                disabled={
+                  !canUpload ||
+                  preparing ||
+                  !selectedIds.length ||
+                  files.isError
+                }
+                onClick={() => void reviewSelected()}
+              >
+                {preparing
+                  ? "Preparing statements…"
+                  : selectedAllPrepared
+                    ? `Review the selected files (${selectedIds.length})`
+                    : `Review and save selected files together (${selectedIds.length})`}
+              </Button>
+            )}
+            {!removalMode && (
+              <BulkStatementDetails
+                caseId={caseId}
+                fileIds={bulkDetailIds}
+                onSaved={refresh}
+                buttonLabel={
+                  !selectedIds.length && bulkDetailIds.length
+                    ? `Edit account details of ${count(bulkDetailIds.length, "shown file", "shown files")}`
+                    : undefined
+                }
+              />
+            )}
+            <FinancialRemovalAction
+              caseId={caseId}
+              fileIds={selectedIds}
+              label={
+                selectedIds.length
+                  ? `Review removal of ${selectedIds.length} selected ${selectedIds.length === 1 ? "file" : "files"}`
+                  : "Select files to remove"
+              }
+              onRemoved={() => selectFiles([])}
+            />
+            {removalMode && (
+              <Button variant="outline" onClick={onFinishRemoval}>
+                Back to files
+              </Button>
+            )}
+          </div>
+          <p className="text-sm text-muted-foreground">
+            {removalMode
+              ? "Tick individual files below or select all shown files, then review the removal. Nothing is removed until you confirm."
+              : `Select PDFs to edit account details across their statements, prepare them together or remove their imports. Other sources have their own review and removal actions. Edit account details lets you choose the individual periods before saving.${
+                  !selectedIds.length && !bulkDetailIds.length
+                    ? ` Tick files, or filter the list to ${BULK_SHOWN_LIMIT} or fewer, to edit their holder, account number, bank, currency or dates together.`
+                    : !selectedIds.length
+                      ? " With nothing ticked, Edit account details covers the files shown below, including readings that found nothing."
+                      : ""
+                }`}
+          </p>
+        </section>
+      )}
+      {register && !removalMode && auditFilter?.caseId === caseId && (
+        <div className="rounded border p-3 text-sm space-y-2">
+          <p>Showing source selected for review: {auditFilter.filename}</p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setAuditFilter(null)
+                setFilterAction((value) => value + 1)
+              }}
+            >
+              Clear source filter
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setAuditFilter(null)
+                sourceReview.current?.focus()
+                sourceReview.current?.scrollIntoView({ block: "start" })
+              }}
+            >
+              Back to source review
+            </Button>
+          </div>
+        </div>
+      )}
+      {register && !removalMode && (
+        <div className="space-y-1">
+          <h3
+            ref={resultsHeading}
+            tabIndex={-1}
+            className="font-semibold scroll-mt-24 focus:outline-none"
+            aria-live="polite"
+          >
+            {removed
+              ? `Removed files · ${visibleFiles.length} matching files`
+              : status === "ready"
+                ? `Ready to import · ${visibleReadyCount} statement ${visibleReadyCount === 1 ? "period" : "periods"} in ${visibleFiles.length} ${visibleFiles.length === 1 ? "file" : "files"}`
+                : `${visibleFiles.length} matching files`}
+          </h3>
+          {status === "ready" && (
+            <p className="text-sm">
+              Choose Review and import beside a statement to check its source
+              and confirm the import. Your list stays here when you return. Use
+              the file selection controls above to review several PDFs together.
+            </p>
+          )}
+        </div>
+      )}
+      {visibleFiles.map((file) => {
+        const saved = imports.data?.files.find(
+          (item) => item.evidence_file_id === file.id
+        )
+        if (!usesPdfStatementReader(file))
+          return (
+            <FinancialSourceFile
+              key={file.id}
+              caseId={caseId}
+              file={file}
+              importedPayments={saved?.current_transactions}
+              onVisibilityChanged={(removed) =>
+                setVisibilityResult({
+                  caseId,
+                  filename: file.original_filename,
+                  removed,
+                })
+              }
+            />
+          )
+        const card = cardFor(file)
+        return (
+          <div
+            key={file.id}
+            className="rounded-lg border bg-card p-3 space-y-2"
+          >
+            {register && (!removed || removalMode) && canEdit && (
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  aria-label={`Select ${file.original_filename}`}
+                  checked={selectedIds.includes(file.id)}
+                  disabled={preparing}
+                  onChange={(event) =>
+                    selectFiles(
+                      event.target.checked
+                        ? [...selectedIds, file.id]
+                        : selectedIds.filter((id) => id !== file.id)
+                    )
+                  }
+                />
+                {removalMode
+                  ? `Select ${file.original_filename}`
+                  : "Select file"}
+              </label>
+            )}
+            <button
+              type="button"
+              aria-pressed={selected === file.id}
+              aria-label={
+                register
+                  ? `${removalMode ? "Imported file" : "Review"} ${file.original_filename}`
+                  : undefined
+              }
+              disabled={removalMode || removed || file.status !== "processed"}
+              className={
+                register
+                  ? `grid w-full gap-2 rounded p-2 text-left text-sm md:grid-cols-[minmax(220px,1fr)_minmax(220px,1fr)] ${removalMode ? "" : "hover:bg-accent disabled:opacity-60"}`
+                  : "block w-full rounded border p-3 text-left text-sm hover:bg-accent aria-pressed:border-primary aria-pressed:bg-accent disabled:opacity-60"
+              }
+              onClick={() => openStatement(file.id)}
+            >
+              <span className="block break-words font-medium">
+                {file.original_filename}
+                {file.readingVersions.length > 1 && (
+                  <span className="block text-xs text-muted-foreground">
+                    One PDF · {file.readingVersions.length} retained reading
+                    versions
+                  </span>
+                )}
+              </span>
+              <span
+                className="finance-badge"
+                data-finance-tone={card.tone}
+                data-not-imported={card.notImported ? "true" : undefined}
+              >
+                {card.label}
+              </span>
+              {saved?.prepared_periods !== undefined && (
+                <span className="block text-sm">
+                  {saved.periods.length} of{" "}
+                  {count(
+                    Math.max(
+                      saved.prepared_periods - saved.repeat_periods,
+                      saved.periods.length
+                    ),
+                    "statement period",
+                    "statement periods"
+                  )}{" "}
+                  saved
+                  {saved.repeat_periods
+                    ? ` · ${count(saved.repeat_periods, "repeat reading", "repeat readings")} of an already saved period, not imported again`
+                    : ""}
+                  {saved.available_periods
+                    ? ` · ${saved.available_periods} available to import`
+                    : ""}
+                  {saved.pending_periods
+                    ? ` · ${count(saved.pending_periods, "import", "imports")} in progress`
+                    : ""}
+                  {(() => {
+                    // Statements to fix are the queue's own count for this file.
+                    const work = queueKnown ? workFor(file.id) : null
+                    const checks = work
+                      ? work.waiting + work.unreadable
+                      : saved.periods_with_checks
+                    return checks
+                      ? ` · ${count(checks, "statement has", "statements have")} something to fix in the review queue`
+                      : ""
+                  })()}
+                  {saved.overlapping_periods
+                    ? ` · ${count(saved.overlapping_periods, "period overlaps", "periods overlap")} another supplied statement (compare if needed)`
+                    : ""}
+                  {saved.ignored_periods
+                    ? ` · ${saved.ignored_periods} duplicate ${saved.ignored_periods === 1 ? "period" : "periods"} ignored`
+                    : ""}
+                </span>
+              )}
+              {saved?.periods.slice(0, 2).map((period) => (
+                <span key={period.id} className="block text-xs mt-1">
+                  {period.account_label} ·{" "}
+                  {period.start || "Start not recorded"} to{" "}
+                  {period.end || "End not recorded"}
+                  {period.source_status !== "admitted"
+                    ? " · source excluded"
+                    : ""}
+                </span>
+              ))}
+              {(saved?.periods.length ?? 0) > 2 && (
+                <span className="text-xs">
+                  {removalMode
+                    ? `All ${saved!.periods.length} periods will be included in the removal preview.`
+                    : `${count(saved!.periods.length - 2, "more period", "more periods")} in this PDF. Open the file to choose a period.`}
+                </span>
+              )}
+              {!!saved?.receipt_review_count && (
+                <p>
+                  {saved.receipt_review_count} saved receipt{" "}
+                  {saved.receipt_review_count === 1 ? "review" : "reviews"}
+                </p>
+              )}
+              {saved && !saved.wire_review_count && !removalMode && (
+                <span className="block text-xs mt-1">Review statement →</span>
+              )}
+              {file.created_at && (
+                <span className="block text-xs text-muted-foreground">
+                  Added {new Date(file.created_at).toLocaleString()} ·{" "}
+                  {file.id.slice(-6)}
+                </span>
+              )}
+            </button>
+            {!!saved?.incomplete_sources.length && !removalMode && !removed && (
+              <div className="space-y-2 text-sm">
+                <ul className="space-y-1">
+                  {saved.incomplete_sources.map((source) => (
+                    <li key={source.source_document_id}>
+                      Period {source.period_start || "start not recorded"} to{" "}
+                      {source.period_end || "end not recorded"}:{" "}
+                      {incompleteSummary(
+                        source.missing_count,
+                        source.awaiting_reconciliation_count
+                      )}
+                      .
+                      {source.blockers.length > 0 &&
+                        ` Still needed before they enter Transactions: ${source.blockers.join(" ")}`}
+                    </li>
+                  ))}
+                </ul>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  aria-expanded={recordsFile === file.id}
+                  aria-controls={`incomplete-records-${file.id}`}
+                  onClick={() =>
+                    setRecordsFile(recordsFile === file.id ? null : file.id)
+                  }
+                >
+                  {recordsFile === file.id
+                    ? "Hide records to check"
+                    : `Show ${count(saved.incomplete_count, "record", "records")} to check in ${file.original_filename}`}
+                </Button>
+                {recordsFile === file.id && (
+                  <div id={`incomplete-records-${file.id}`}>
+                    <ImportedRecordsPanel
+                      caseId={caseId}
+                      params={{}}
+                      evidenceFileIds={file.readingVersions.map(
+                        (version) => version.id
+                      )}
+                      expanded
+                      onOpen={() => openStatement(file.id)}
+                      onReviewFile={() => openStatement(file.id)}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+            {!!saved?.duplicate_dispositions.length &&
+              !removalMode &&
+              !removed && (
+                <details className="rounded border p-2 text-sm">
+                  <summary className="cursor-pointer font-medium">
+                    Duplicate decisions · evidence retained
+                  </summary>
+                  <ul className="mt-2 space-y-2">
+                    {saved.duplicate_dispositions.map(
+                      ({ statement_id, decision }) => (
+                        <li
+                          key={statement_id || "file"}
+                          className="space-y-1 rounded border p-2"
+                        >
+                          <p className="font-medium">
+                            {decision.current && decision.status === "ignored"
+                              ? decision.basis === "investigator_decision"
+                                ? "Duplicate — left unimported"
+                                : "Duplicate - Ignored by system"
+                              : decision.label}
+                          </p>
+                          <p>{decision.reason}</p>
+                          {decision.retained && (
+                            <p className="break-words">
+                              Retained source: {decision.retained.filename}
+                            </p>
+                          )}
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={file.status !== "processed"}
+                            onClick={() =>
+                              openStatement(file.id, statement_id || "")
+                            }
+                          >
+                            Review duplicate decision
+                          </Button>
+                        </li>
+                      )
+                    )}
+                  </ul>
+                </details>
+              )}
+            {!removed &&
+              !removalMode &&
+              (() => {
+                const waiting = Math.max(
+                  0,
+                  ...file.readingVersions.map(
+                    (version) => queueByFile.get(version.id) ?? 0
+                  ),
+                  queueByFile.get(file.id) ?? 0
+                )
+                return waiting > 0 ? (
+                  <Button
+                    size="sm"
+                    onClick={() =>
+                      openQueue([
+                        file.id,
+                        ...file.readingVersions.map((version) => version.id),
+                      ])
+                    }
+                  >
+                    Review {count(waiting, "statement", "statements")} with
+                    issues in this file
+                  </Button>
+                ) : null
+              })()}
+            {(status === "ready" || !saved?.periods.length) &&
+              !removed &&
+              !removalMode &&
+              file.status === "processed" &&
+              (status === "ready" && saved?.ready_periods.length ? (
+                <ReadyStatementPeriods
+                  periods={saved.ready_periods}
+                  canEdit={canEdit}
+                  onReview={(statementId) =>
+                    openStatement(file.id, statementId)
+                  }
+                />
+              ) : (
+                <Button
+                  variant="outline"
+                  onClick={() => openStatement(file.id)}
+                >
+                  {saved?.same_pdf_saved_file_ids.length ||
+                  saved?.periods.length
+                    ? "Review reading and saved records"
+                    : canEdit
+                      ? "Review and import"
+                      : "Review statement"}
+                </Button>
+              ))}
+            {!removalMode && (
+              <FinancialFileAction
+                caseId={caseId}
+                file={file}
+                onVisibilityChanged={(removed) =>
+                  setVisibilityResult({
+                    caseId,
+                    filename: file.original_filename,
+                    removed,
+                  })
+                }
+                imported={
+                  !!saved?.periods.length || !!saved?.current_transactions
+                }
+              />
+            )}
+            {!!saved?.wire_review_count && (
+              <a
+                className="inline-block underline text-sm"
+                href={`/cases/${caseId}/financial?view=findings`}
+              >
+                Open saved wire reviews in Findings
+              </a>
+            )}
+            {!!saved?.receipt_review_count && (
+              <a
+                className="inline-block underline text-sm"
+                href={`/cases/${caseId}/financial?view=findings`}
+              >
+                Open saved receipt reviews in Findings
+              </a>
+            )}
+            {!removed &&
+              canUpload &&
+              ["unprocessed", "failed"].includes(file.status) && (
+                <Button
+                  variant="outline"
+                  disabled={
+                    reading[file.id] ||
+                    queue?.running ||
+                    (file.status === "unprocessed" &&
+                      queuedReadings.has(file.id))
+                  }
+                  aria-label={`${file.status === "failed" ? "Retry reading" : "Read statement"}: ${file.original_filename}`}
+                  onClick={() => void readStatement(file.id)}
+                >
+                  {reading[file.id]
+                    ? "Starting reading…"
+                    : file.status === "failed"
+                      ? "Retry reading"
+                      : "Read statement"}
+                </Button>
+              )}
+            {file.readingVersions.length > 1 && (
+              <details className="text-sm">
+                <summary className="cursor-pointer">
+                  Reading history ({file.readingVersions.length} versions of
+                  this PDF)
+                </summary>
+                <p className="text-xs text-muted-foreground">
+                  These are retained readings of one source, not additional
+                  uploaded statements. Opening a reading does not import it.
+                </p>
+                <ul className="mt-2 max-h-48 overflow-auto">
+                  {file.readingVersions.map((version) => (
+                    <li key={version.id}>
+                      <Button
+                        size="sm"
+                        variant="link"
+                        disabled={
+                          version.status !== "processed" ||
+                          version.financial_removed
+                        }
+                        onClick={() => {
+                          useStatementWorkspace
+                            .getState()
+                            .select(scope, version.id)
+                          useFinancialStore.getState().setMainView("statements")
+                          onOpen?.()
+                        }}
+                      >
+                        {version.id === file.id
+                          ? "Current reading"
+                          : "Earlier reading"}{" "}
+                        ·{" "}
+                        {version.created_at
+                          ? new Date(version.created_at).toLocaleString()
+                          : version.id.slice(0, 8)}{" "}
+                        ·{" "}
+                        {version.financial_removed
+                          ? "Removed from Financial"
+                          : version.status}
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
+          </div>
+        )
+      })}
+      {register && imports.data?.truncated && (
+        <p role="alert">
+          Import status is incomplete. Open individual files to check every
+          recorded period.
+        </p>
+      )}
+      {imports.isError && (
+        <p className="text-xs">
+          Import status could not be loaded. Open a file to check its saved
+          import.
+        </p>
+      )}
+      {!files.isError && !!files.data?.length && visibleFiles.length === 0 && (
+        <p>
+          {removed
+            ? "No removed files match this search."
+            : "No files match these filters. Clear the filename search or check Removed files."}
+        </p>
+      )}
+      {files.data?.length === 0 && (
+        <p>
+          No files have been added to Financial. Upload statements or choose
+          financial sources from Evidence.
+        </p>
+      )}
+    </section>
+  )
+}

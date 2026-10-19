@@ -79,13 +79,29 @@ if [[ ! "${REPLY}" =~ ^[Yy]$ ]]; then
     exit 0
 fi
 
+# Serialize with automatic deployment without holding the lock while asking
+# the operator for confirmation.
+mkdir -p "${LOG_DIR}"
+exec 9>"${LOG_DIR}/.deploy.lock"
+if ! flock -w 600 9; then
+    fail "Could not acquire the deployment lock after 10 minutes"
+    exit 1
+fi
+
+# shellcheck source=deploy/ingestion-safety.sh
+source "${PROJECT_DIR}/deploy/ingestion-safety.sh"
+# shellcheck source=deploy/backend-stop.sh
+source "${PROJECT_DIR}/deploy/backend-stop.sh"
+
 cd "${PROJECT_DIR}"
 
 step "Checking out target commit"
+check_ingestion_idle
 $RUN_AS git checkout "${TARGET_COMMIT}" -- .
 success "Code reverted to ${TARGET_SHORT}"
 
 step "Reinstalling dependencies"
+check_ingestion_idle
 $RUN_AS "${VENV_DIR}/bin/pip" install -r "${BACKEND_DIR}/requirements.txt" --quiet
 cd "${FRONTEND_DIR}"
 $RUN_AS npm ci --silent
@@ -94,11 +110,17 @@ cd "${PROJECT_DIR}"
 success "Dependencies installed and frontend production bundle rebuilt"
 
 step "Rebuilding Docker stack"
-docker compose up -d --build
+docker compose build
+check_ingestion_idle
+docker compose up -d --no-build
 success "Docker stack refreshed"
 
 step "Restarting services"
-$SYSTEMCTL restart owl-backend-v2
+configure_ingestion_shutdown
+check_ingestion_idle
+if ! restart_backend_bounded; then
+    fail "owl-backend-v2 did not restart; the health check below will report it"
+fi
 $SYSTEMCTL restart owl-frontend-v2
 success "V2 services restarted"
 

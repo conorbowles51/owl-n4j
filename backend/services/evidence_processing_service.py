@@ -5,20 +5,49 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from postgres.models.evidence import EvidenceFile
 from services import evidence_engine_client
 from services.evidence_db_storage import EvidenceDBStorage
 from services.evidence_job_sync import reconcile_case_jobs
+from services.financial.admission_gate import gate_document_processing
 from services.folder_context_service import build_processing_snapshot
 from services.job_status_subscriber import get_subscriber
 
 logger = logging.getLogger(__name__)
 
 
+def _stored_path(stored_path: str | None) -> Path | None:
+    """The path this module opens for a file, and the only one it opens.
+
+    Given as a function so that :func:`gate_document_processing` can be handed
+    the same one.  The gate decides whether a file is bank data the router
+    holds back, and it has to decide that about the bytes this module is about
+    to send; a gate resolving a path differently from its caller would clear
+    one file and send another.
+
+    ``routers.evidence._resolve_stored_path`` does more than this, falling back
+    to a container layout when the stored path is not present on this host.  It
+    returns the direct path unchanged whenever that path exists, and that is
+    the only case reaching the gate -- everything else has already been counted
+    as missing on disk and dropped -- so on the files a decision is actually
+    taken about, the two agree exactly.
+
+    The ``None`` branch is unreachable while ``evidence_files.stored_path`` is
+    NOT NULL.  It is written anyway so that a schema which stopped being would
+    skip the file rather than raise while building a path.
+    """
+    return Path(stored_path) if stored_path else None
+
+
 def _serialize_profile_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
     return {
+        # Persist before uploading to the engine. Case refreshes may arrive
+        # before the new engine job exists and must not resurrect an old run.
+        "ingestion_request_id": snapshot.get("ingestion_request_id"),
+        "preparation_mode": snapshot.get("preparation_mode", "full"),
         "source_folder_id": snapshot.get("source_folder_id"),
         "effective_context": snapshot.get("effective_context"),
         "effective_mandatory_instructions": snapshot.get("effective_mandatory_instructions") or [],
@@ -27,18 +56,45 @@ def _serialize_profile_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _financial_processing_files(db: Session, case_id: uuid.UUID, file_ids: list[uuid.UUID]):
+    """Recheck the source choice atomically with the later processing handoff."""
+    from postgres.models.case import Case
+    from services.financial.file_visibility import require_financial_file
+    db.execute(select(Case.id).where(Case.id == case_id).with_for_update()).all()
+    files = list(db.scalars(select(EvidenceFile).where(
+        EvidenceFile.id.in_(file_ids)).order_by(EvidenceFile.id).with_for_update()
+        .execution_options(populate_existing=True)))
+    for file in files:
+        if file.case_id != case_id:
+            raise ValueError("Evidence file does not belong to this case")
+        require_financial_file(file)
+    return files
+
+
 async def process_db_files(
     db: Session,
     *,
     case_id: uuid.UUID,
     file_ids: list[uuid.UUID],
     force_reprocess: bool = False,
+    preparation_mode: str = "full",
     requested_by_user_id: uuid.UUID | None = None,
 ) -> dict[str, Any]:
+    if preparation_mode not in ("full", "pdf_review"):
+        raise ValueError("Unknown document preparation mode")
+    if preparation_mode == "pdf_review":
+        # Financial callers may retain the Case/Evidence locks from selecting
+        # or restoring a reading, including an idempotent reprocessing request.
+        # Persist that choice before the network wait. Visibility is checked
+        # again under lock below before a processing request can be committed.
+        db.commit()
     await reconcile_case_jobs(db, str(case_id))
     ingestion_request_id = str(uuid.uuid4())
 
-    files = EvidenceDBStorage.get_files_by_ids(db, file_ids)
+    if preparation_mode == "pdf_review":
+        files = _financial_processing_files(db, case_id, file_ids)
+    else:
+        files = EvidenceDBStorage.get_files_by_ids(db, file_ids)
     files_by_id = {f.id: f for f in files}
 
     candidates: list[EvidenceFile] = []
@@ -49,12 +105,16 @@ async def process_db_files(
         ef = files_by_id.get(file_id)
         if ef is None:
             continue
+        if str(ef.case_id) != str(case_id):
+            raise ValueError("Evidence file does not belong to this case")
         if ef.status == "processing":
             skipped_processing += 1
             continue
         if ef.status == "processed" and not force_reprocess:
             skipped_processing += 1
             continue
+        if preparation_mode == "pdf_review" and Path(ef.original_filename).suffix.lower() != ".pdf":
+            raise ValueError("PDF review preparation accepts PDF files only")
         candidates.append(ef)
 
     if not candidates:
@@ -70,8 +130,8 @@ async def process_db_files(
     valid_files: list[EvidenceFile] = []
 
     for ef in candidates:
-        path = Path(ef.stored_path)
-        if not path.exists():
+        path = _stored_path(ef.stored_path)
+        if path is None or not path.exists():
             missing_on_disk += 1
             continue
 
@@ -83,10 +143,16 @@ async def process_db_files(
         )
         snapshot = {
             **snapshot,
+            "preparation_mode": preparation_mode,
             "ingestion_request_id": ingestion_request_id,
             "requested_by_user_id": str(requested_by_user_id) if requested_by_user_id else None,
             "source_evidence_file_id": str(ef.id),
         }
+        if preparation_mode == "pdf_review":
+            reading_mode = (ef.metadata_ or {}).get("statement_pdf_reading_mode", "automatic")
+            if reading_mode not in ("automatic", "page_images"):
+                raise ValueError("Unknown PDF reading method")
+            snapshot["pdf_reading_mode"] = reading_mode
 
         file_tuples.append(
             (
@@ -106,6 +172,27 @@ async def process_db_files(
             "missing_on_disk": missing_on_disk,
             "message": "No files found on disk",
         }
+
+    # Nothing above this line has changed anything.  The gate is the last thing
+    # asked before the first thing is written, so a refusal leaves the files
+    # exactly as it found them: not marked processing, no snapshot, no job.
+    #
+    # It is applied to `valid_files` and not to `file_ids`, because a file that
+    # is not going to be sent needs no decision behind it.  Gating the request
+    # instead of the send would turn today's "that one is missing from disk, we
+    # skipped it" into a refusal of the whole batch over a file nobody was
+    # about to process.
+    #
+    # Raises `UnadmittedFileError`, which the three routes that reach here turn
+    # into a 409 naming each held file and what the router found in it.  It is
+    # deliberately not caught: a gate whose failure can be swallowed by the
+    # caller it constrains is not a gate.
+    gate_document_processing(
+        db,
+        case_id=case_id,
+        files=valid_files,
+        resolve_path=_stored_path,
+    )
 
     EvidenceDBStorage.mark_processing(
         db,

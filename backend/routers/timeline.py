@@ -14,6 +14,7 @@ from routers.users import get_current_db_user
 from services.case_service import CaseAccessDenied, CaseNotFound, check_case_access, get_case_if_allowed
 from services.neo4j_service import neo4j_service
 from services.significant_service import get_significant_entity_keys
+from services.timeline_entries import TimelineAddition, preview_addition, save_addition, list_entries
 from services.timeline_view_service import (
     TimelineViewNotFound,
     batch_update_view_events,
@@ -332,3 +333,42 @@ async def get_event_types():
             "Meeting",
         ]
     }
+
+
+
+
+@router.post("/entries/preview")
+def preview_timeline_addition(request: TimelineAddition, case_id: UUID = Query(...),
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_db_user)):
+    try:
+        check_case_access(db=db, case_id=case_id, user=current_user, required_permission=("case", "edit"))
+        return preview_addition(db, case_id=case_id, request=request)
+    except Exception as exc:
+        _handle_error(exc)
+
+
+@router.post("/entries")
+def add_timeline_entries(request: TimelineAddition, case_id: UUID = Query(...),
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_db_user)):
+    try:
+        check_case_access(db=db, case_id=case_id, user=current_user, required_permission=("case", "edit"))
+        return save_addition(db, case_id=case_id, request=request, actor=current_user.email)
+    except Exception as exc:
+        _handle_error(exc)
+
+
+@router.get("/entries")
+def get_timeline_entries(case_id: UUID = Query(...), offset: int = Query(0, ge=0),
+    limit: int = Query(2000, ge=1, le=2000), scope: Literal["all", "significant"] = "all",
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_db_user)):
+    try:
+        get_case_if_allowed(db=db, case_id=case_id, user=current_user)
+        events = list_entries(db, case_id=case_id, offset=offset, limit=limit + 1)
+        more = len(events) > limit
+        events = events[:limit]
+        if scope == "significant":
+            keys = set(get_significant_entity_keys(db, case_id=case_id))
+            events = [event for event in events if event["key"] in keys]
+        return dict(case_id=str(case_id), events=events, next_offset=offset + limit if more else None)
+    except Exception as exc:
+        _handle_error(exc)

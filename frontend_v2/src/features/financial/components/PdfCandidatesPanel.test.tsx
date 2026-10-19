@@ -1,0 +1,533 @@
+// This workflow fixture has case editing and upload access.
+vi.mock("../hooks/use-financial-access", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../hooks/use-financial-access")>()),
+  useFinancialAccess: () => ({
+    canEdit: true,
+    canUpload: true,
+    ready: true,
+    error: false,
+  }),
+}))
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { afterEach, beforeEach, expect, it, vi } from "vitest"
+import { useFinancialDraftStore } from "../stores/financial-drafts"
+import { CandidateReviewForm } from "./CandidateReviewForm"
+import { PdfCandidatesPanel } from "./PdfCandidatesPanel"
+
+vi.mock("./TransactionSourceHighlight", () => ({
+  TransactionSourceHighlight: ({
+    sourceDocumentId,
+  }: {
+    sourceDocumentId: string
+  }) => <p>Source file: {sourceDocumentId}</p>,
+}))
+afterEach(() => vi.restoreAllMocks())
+beforeEach(() => useFinancialDraftStore.setState({ drafts: {} }))
+const original = {
+  cells: [{ column_index: 0, proposed_meaning: "amount", text: "1234" }],
+}
+const base = {
+  candidate_id: "row-a",
+  case_id: "case-a",
+  original,
+  status: "pending",
+  reading: null,
+  review_revision: "a".repeat(64),
+  finalization_id: null,
+  history: [],
+  applied: false,
+}
+const accounts = {
+  case_id: "case-a",
+  has_more: false,
+  items: [
+    {
+      id: "account-a",
+      identifier: "1234",
+      holder: "Test account",
+      institution: null,
+      currency: "GBP",
+    },
+  ],
+}
+function json(value: unknown, status = 200) {
+  return new Response(JSON.stringify(value), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  })
+}
+function mockServer(
+  overrides: {
+    rows?: Array<{
+      id: string
+      row_index: number
+      status: string
+      original: typeof original
+    }>
+    review?: unknown
+    writeStatus?: number
+    accountCase?: string
+    sourceCase?: string
+  } = {}
+) {
+  return vi
+    .spyOn(globalThis, "fetch")
+    .mockImplementation(async (url, options) => {
+      const path = String(url)
+      if (path.includes("/source-readings"))
+        return json({
+          case_id: overrides.sourceCase ?? "case-a",
+          candidate_id: "row-a",
+          mapping_id: "mapping-a",
+          evidence_file_id: "file-a",
+          review_revision: base.review_revision,
+          applied: false,
+          cells: original.cells.map((c) => ({
+            ...c,
+            locator: { kind: "unlocated" },
+          })),
+        })
+      if (path.includes("ledger-accounts"))
+        return json({ ...accounts, case_id: overrides.accountCase ?? "case-a" })
+      if (path.includes("/review") && options?.method === "POST") {
+        if (overrides.writeStatus)
+          return json({ detail: "Changed; reload" }, overrides.writeStatus)
+        const body = JSON.parse(String(options.body))
+        return json({
+          ...base,
+          status: body.status,
+          reading: body.reading,
+          review_revision: "b".repeat(64),
+        })
+      }
+      if (path.includes("/review")) return json(overrides.review ?? base)
+      if (path.includes("candidate-mappings/mapping-a"))
+        return json({
+          id: "mapping-a",
+          case_id: "case-a",
+          evidence_file_id: "file-a",
+          mapping_revision: "a".repeat(64),
+          applied: false,
+          original: {
+            proposal: { case_id: "case-a", evidence_file_id: "file-a" },
+          },
+          candidates: overrides.rows ?? [
+            { id: "row-a", row_index: 0, status: "pending", original },
+          ],
+        })
+      if (path.includes("candidate-mappings"))
+        return json({
+          case_id: "case-a",
+          offset: 0,
+          has_more: false,
+          items: [
+            {
+              id: "mapping-a",
+              evidence_file_id: "file-a",
+              filename: "Synthetic.pdf",
+              candidate_count: 1,
+              created_at: "2026-09-07T03:00:00Z",
+            },
+          ],
+        })
+      throw new Error(`Unexpected request ${path}`)
+    })
+}
+function mountForm() {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  const invalidate = vi.spyOn(client, "invalidateQueries")
+  const rendered = render(
+    <QueryClientProvider client={client}>
+      <CandidateReviewForm
+        caseId="case-a"
+        candidateId="row-a"
+        mappingId="mapping-a"
+        fileId="file-a"
+        onClose={vi.fn()}
+      />
+    </QueryClientProvider>
+  )
+  return { ...rendered, invalidate }
+}
+async function fill() {
+  await screen.findByRole("option", { name: /Test account/ })
+  for (const [label, value] of [
+    ["Currency", "GBP"],
+    ["Reviewed amount", "2.00"],
+    ["Account", "account-a"],
+    ["Direction", "debit"],
+    ["Booking date", "2026-02-01"],
+    ["Reason for decision", "Checked original"],
+  ])
+    fireEvent.change(screen.getByLabelText(label), { target: { value } })
+}
+
+it("retains unfinished reading fields and the explanation only for the same review version", async () => {
+  const options = { review: { ...base } }
+  mockServer(options)
+  const first = mountForm()
+  await fill()
+  fireEvent.change(
+    screen.getByLabelText("Counterparty as printed (optional)"),
+    {
+      target: { value: "Printed Company" },
+    }
+  )
+  first.unmount()
+  const reopened = mountForm()
+  expect(await screen.findByLabelText("Reviewed amount")).toHaveValue("2.00")
+  expect(screen.getByLabelText("Booking date")).toHaveValue("2026-02-01")
+  expect(screen.getByLabelText("Reason for decision")).toHaveValue(
+    "Checked original"
+  )
+  expect(
+    screen.getByLabelText("Counterparty as printed (optional)")
+  ).toHaveValue("Printed Company")
+  reopened.unmount()
+  options.review = { ...base, review_revision: "b".repeat(64) }
+  mountForm()
+  expect(await screen.findByLabelText("Reviewed amount")).toHaveValue("")
+  expect(screen.getByLabelText("Reason for decision")).toHaveValue("")
+})
+
+it("does not query until PDF readings are opened and shows a saved batch", async () => {
+  const fetch = mockServer()
+  const client = new QueryClient()
+  render(
+    <QueryClientProvider client={client}>
+      <PdfCandidatesPanel caseId="case-a" />
+    </QueryClientProvider>
+  )
+  expect(fetch).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole("button", { name: "Open PDF readings" }))
+  expect(await screen.findByText("Synthetic.pdf")).toBeInTheDocument()
+  fireEvent.click(screen.getByRole("button", { name: "Open readings" }))
+  expect(
+    await screen.findByRole("button", { name: "Review source row 1" })
+  ).toBeInTheDocument()
+})
+
+it("requires a case before loading saved readings", () => {
+  const fetch = mockServer()
+  render(<PdfCandidatesPanel caseId={undefined} />)
+  expect(
+    screen.getByText("Choose a case to review PDF readings.")
+  ).toBeInTheDocument()
+  expect(fetch).not.toHaveBeenCalled()
+})
+
+it("records an exact resolved reading with its reviewed revision", async () => {
+  const fetch = mockServer()
+  mountForm()
+  await fill()
+  fireEvent.change(
+    screen.getByLabelText("Counterparty as printed (optional)"),
+    { target: { value: "  Printed & Co.  " } }
+  )
+  fireEvent.click(
+    screen.getByRole("button", { name: "Record resolved reading" })
+  )
+  expect(await screen.findByText(/Review recorded/)).toBeInTheDocument()
+  const call = fetch.mock.calls.find(([, o]) => o?.method === "POST")!
+  const body = JSON.parse(String(call[1]?.body))
+  expect(body.reading.counterparty_raw).toBe("  Printed & Co.  ")
+  expect(body.reading.amount_minor).toBe("200")
+  expect(body.reading.booking_date).toBe("2026-02-01")
+  expect(body.reading.value_date).toBeNull()
+  expect(body.expected_revision).toBe("a".repeat(64))
+  expect(body).not.toHaveProperty("proof_class")
+})
+
+it("rejects without requiring guessed account date or amount", async () => {
+  const fetch = mockServer()
+  mountForm()
+  fireEvent.change(await screen.findByLabelText("Reason for decision"), {
+    target: { value: "Not a transaction" },
+  })
+  fireEvent.click(screen.getByRole("button", { name: "Reject reading" }))
+  await screen.findByText(/Review recorded/)
+  const call = fetch.mock.calls.find(([, o]) => o?.method === "POST")!
+  expect(JSON.parse(String(call[1]?.body)).reading).toBeNull()
+})
+
+it("will not resolve incomplete fields or a mismatched account currency", async () => {
+  mockServer()
+  mountForm()
+  await fill()
+  fireEvent.change(screen.getByLabelText("Currency"), {
+    target: { value: "USD" },
+  })
+  expect(
+    screen.getByRole("button", { name: "Record resolved reading" })
+  ).toBeDisabled()
+  fireEvent.change(screen.getByLabelText("Currency"), {
+    target: { value: "GBP" },
+  })
+  fireEvent.change(screen.getByLabelText("Booking date"), {
+    target: { value: "" },
+  })
+  expect(
+    screen.getByRole("button", { name: "Record resolved reading" })
+  ).toBeDisabled()
+})
+
+it("blocks stale or uncertain retries until an explicit reload", async () => {
+  const fetch = mockServer({ writeStatus: 409 })
+  mountForm()
+  await fill()
+  fireEvent.click(
+    screen.getByRole("button", { name: "Record resolved reading" })
+  )
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Reload to check its outcome"
+  )
+  fireEvent.click(
+    screen.getByRole("button", { name: "Record resolved reading" })
+  )
+  expect(fetch.mock.calls.filter(([, o]) => o?.method === "POST")).toHaveLength(
+    1
+  )
+  expect(
+    screen.getByRole("button", { name: "Record resolved reading" })
+  ).toBeDisabled()
+  fireEvent.click(screen.getByRole("button", { name: "Reload review" }))
+  await waitFor(() =>
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+  )
+  expect(await screen.findByLabelText("Reviewed amount")).toHaveValue("2.00")
+  expect(screen.getByLabelText("Reason for decision")).toHaveValue(
+    "Checked original"
+  )
+})
+
+it("rejects a different case's review", async () => {
+  mockServer({ review: { ...base, case_id: "other" } })
+  mountForm()
+  expect(await screen.findByRole("alert")).toHaveTextContent("different case")
+  expect(
+    screen.queryByRole("button", { name: "Reject reading" })
+  ).not.toBeInTheDocument()
+})
+
+it("does not offer accounts from a different case", async () => {
+  mockServer({ accountCase: "other" })
+  mountForm()
+  expect(await screen.findByRole("alert")).toHaveTextContent("different case")
+  expect(
+    screen.queryByRole("option", { name: /Test account/ })
+  ).not.toBeInTheDocument()
+})
+
+it("preserves all existing date roles while editing a resolved reading", async () => {
+  const reading = {
+    account_id: "account-a",
+    currency: "GBP",
+    amount_minor: "900719925474099301",
+    direction: "credit",
+    booking_date: "2026-02-01",
+    value_date: "2026-02-02",
+    transaction_date: "2026-01-31",
+    description: "Original description",
+  }
+  mockServer({ review: { ...base, status: "resolved", reading } })
+  mountForm()
+  expect(await screen.findByLabelText("Reviewed amount")).toHaveValue(
+    "9007199254740993.01"
+  )
+  expect(screen.getByLabelText("Booking date")).toHaveValue("2026-02-01")
+  expect(screen.getByLabelText("Value date")).toHaveValue("2026-02-02")
+  expect(screen.getByLabelText("Transaction date")).toHaveValue("2026-01-31")
+})
+
+it("invalidates the original case after the form closes during a write", async () => {
+  let finish!: (value: Response) => void
+  const fetch = mockServer()
+  const implementation = fetch.getMockImplementation()!
+  fetch.mockImplementation((url, options) =>
+    options?.method === "POST"
+      ? new Promise<Response>((resolve) => {
+          finish = resolve
+        })
+      : implementation(url, options)
+  )
+  const { unmount, invalidate } = mountForm()
+  await fill()
+  fireEvent.click(
+    screen.getByRole("button", { name: "Record resolved reading" })
+  )
+  fireEvent.click(
+    screen.getByRole("button", { name: "Record resolved reading" })
+  )
+  await waitFor(() => expect(finish).toBeDefined())
+  unmount()
+  finish(json({ detail: "Uncertain response" }, 500))
+  await waitFor(() =>
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ["financial-candidates", "case-a", "mapping"],
+    })
+  )
+  expect(fetch.mock.calls.filter(([, o]) => o?.method === "POST")).toHaveLength(
+    1
+  )
+})
+
+it.each(["resolved", "rejected"])(
+  "keeps finalized %s readings read-only with source assessment and history",
+  async (status) => {
+    const reading = {
+      account_id: "account-a",
+      currency: "GBP",
+      amount_minor: "1234",
+      direction: "debit",
+      booking_date: "2026-02-01",
+      value_date: null,
+      transaction_date: null,
+      description: "Synthetic",
+    }
+    const fetch = mockServer({
+      review: {
+        ...base,
+        status,
+        finalization_id: "seal-a",
+        reading: status === "resolved" ? reading : null,
+        history: [
+          {
+            id: "event-a",
+            sequence: 1,
+            status,
+            reason: "Original review reason",
+            reading: status === "resolved" ? reading : null,
+            actor: { name: "Reviewer", email: "reviewer@example.test" },
+            created_at: "2026-09-07T03:00:00Z",
+          },
+        ],
+      },
+    })
+    mountForm()
+    expect(await screen.findByText(/Finalized reading/)).toBeInTheDocument()
+    expect(screen.getByLabelText("Reviewed amount")).toBeDisabled()
+    expect(screen.getByLabelText("Reason for decision")).toBeDisabled()
+    for (const name of [
+      "Record resolved reading",
+      "Reject reading",
+      "Reopen for review",
+      "Create provisional account",
+    ])
+      expect(screen.queryByRole("button", { name })).not.toBeInTheDocument()
+    expect(screen.getByText("Original review reason")).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText("Currency for source assessment"), {
+      target: { value: "GBP" },
+    })
+    expect(
+      screen.getByRole("button", { name: "Assess original amounts" })
+    ).toBeEnabled()
+    expect(
+      fetch.mock.calls.filter(([, options]) => options?.method === "POST")
+    ).toHaveLength(0)
+  }
+)
+
+it("refuses a review response that omits its finalization state", async () => {
+  mockServer({ review: { ...base, finalization_id: undefined } })
+  mountForm()
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Review could not be loaded"
+  )
+  expect(
+    screen.queryByRole("button", { name: "Record resolved reading" })
+  ).not.toBeInTheDocument()
+})
+
+it("opens the original beside the form without requesting an assessment", async () => {
+  const fetch = mockServer()
+  mountForm()
+  await screen.findByRole("region", { name: "Original document beside review" })
+  await screen.findByRole("button", { name: "Source column 1: amount" })
+  expect(
+    fetch.mock.calls.some(([url]) => String(url).includes("assessment"))
+  ).toBe(false)
+})
+it("refuses a source panel from another case", async () => {
+  mockServer({ sourceCase: "other" })
+  mountForm()
+  expect(await screen.findByRole("alert")).toHaveTextContent("do not match")
+  expect(
+    screen.queryByRole("button", { name: "Source column 1: amount" })
+  ).not.toBeInTheDocument()
+})
+
+it("shows saved progress, filters pending rows and keeps reviewed rows available", async () => {
+  const rows = [
+    { id: "row-a", row_index: 0, status: "pending", original },
+    { id: "row-b", row_index: 1, status: "resolved", original },
+    { id: "row-c", row_index: 2, status: "rejected", original },
+  ]
+  mockServer({ rows })
+  const client = new QueryClient()
+  render(
+    <QueryClientProvider client={client}>
+      <PdfCandidatesPanel caseId="case-a" />
+    </QueryClientProvider>
+  )
+  fireEvent.click(screen.getByRole("button", { name: "Open PDF readings" }))
+  fireEvent.click(await screen.findByRole("button", { name: "Open readings" }))
+  expect(
+    await screen.findByText("1 awaiting review · 1 resolved · 1 rejected")
+  ).toBeVisible()
+  fireEvent.click(screen.getByLabelText("Show only rows awaiting review"))
+  expect(
+    screen.queryByRole("button", { name: "Review source row 2" })
+  ).not.toBeInTheDocument()
+  fireEvent.click(
+    screen.getByRole("button", { name: "Review next pending row" })
+  )
+  expect(await screen.findByLabelText("Reason for decision")).toBeVisible()
+  rows[0].status = "resolved"
+  await client.invalidateQueries({
+    queryKey: ["financial-candidates", "case-a", "mapping"],
+  })
+  expect(
+    await screen.findByText("0 awaiting review · 2 resolved · 1 rejected")
+  ).toBeVisible()
+  expect(
+    screen.getByRole("button", { name: "Review next pending row" })
+  ).toBeDisabled()
+  expect(
+    screen.getByText("No rows awaiting review in this batch.")
+  ).toBeVisible()
+  fireEvent.click(screen.getByLabelText("Show only rows awaiting review"))
+  expect(
+    screen.getByRole("button", { name: "Review source row 2" })
+  ).toBeVisible()
+})
+
+it("records explicit statement-end ordering while leaving transaction dates unknown", async () => {
+  const fetch = mockServer()
+  mountForm()
+  await fill()
+  fireEvent.change(screen.getByLabelText("Booking date"), {
+    target: { value: "" },
+  })
+  fireEvent.change(
+    screen.getByLabelText("Statement end date (ordering only)"),
+    { target: { value: "2026-02-28" } }
+  )
+  fireEvent.click(
+    screen.getByRole("button", { name: "Record resolved reading" })
+  )
+  await waitFor(() =>
+    expect(
+      fetch.mock.calls.some(([, options]) => options?.method === "POST")
+    ).toBe(true)
+  )
+  const call = fetch.mock.calls.find(
+    ([, options]) => options?.method === "POST"
+  )!
+  const reading = JSON.parse(String(call[1]?.body)).reading
+  expect(reading.statement_end_date).toBe("2026-02-28")
+  expect(reading.booking_date).toBeNull()
+  expect(reading.transaction_date).toBeNull()
+})

@@ -4,6 +4,7 @@ from pathlib import Path, PurePosixPath
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 
 from app.config import settings
 from app.dependencies import get_db
@@ -15,6 +16,7 @@ router = APIRouter()
 
 
 class CellebriteJobRequest(BaseModel):
+    request_id: uuid.UUID | None = None
     folder_path: str
     evidence_folder_id: uuid.UUID | None = None
     report_name: str | None = None
@@ -66,30 +68,45 @@ async def create_cellebrite_job(
     if not full_path.exists() or not full_path.is_dir():
         raise HTTPException(status_code=404, detail="Cellebrite report folder not found")
 
-    job = Job(
-        id=uuid.uuid4(),
+    payload = {
+        "folder_path": relative_path,
+        "evidence_folder_id": str(body.evidence_folder_id) if body.evidence_folder_id else None,
+        "report_name": body.report_name,
+        "report_key": body.report_key,
+        "owner": body.owner,
+        "force": body.force,
+        "requested_by_user_id": str(body.requested_by_user_id) if body.requested_by_user_id else None,
+    }
+    identity = body.request_id or uuid.uuid4()
+    job = await db.get(Job, identity)
+    if job is None:
+        from app.services.pipeline_run_state import transition_batch_dispatch
+        pipeline_state = transition_batch_dispatch({}, dispatch_state="ready", batch_id=str(identity), case_id=case_id)
+        pipeline_state['batch_dispatch'].update(function='process_cellebrite', queue_job_id=f'cellebrite:{identity}')
+        job = Job(
+        id=identity,
         case_id=case_id,
         job_type="cellebrite_ingestion",
         file_name=body.report_name or Path(relative_path).name,
         file_path=str(full_path),
         source_folder_id=str(body.evidence_folder_id) if body.evidence_folder_id else None,
         requested_by_user_id=body.requested_by_user_id,
-        merge_payload={
-            "folder_path": relative_path,
-            "evidence_folder_id": str(body.evidence_folder_id) if body.evidence_folder_id else None,
-            "report_name": body.report_name,
-            "report_key": body.report_key,
-            "owner": body.owner,
-            "force": body.force,
-            "requested_by_user_id": str(body.requested_by_user_id) if body.requested_by_user_id else None,
-        },
-    )
-    db.add(job)
-    await db.commit()
-    await db.refresh(job)
-
-    pool = request.app.state.arq_pool
-    await pool.enqueue_job("process_cellebrite", str(job.id), case_id)
+        merge_payload=payload,
+        pipeline_state=pipeline_state,
+        )
+        db.add(job)
+        try:
+            await db.commit()
+            await db.refresh(job)
+        except IntegrityError:
+            await db.rollback()
+            job = await db.get(Job, identity)
+            if job is None: raise
+    if job.case_id != case_id or job.job_type != 'cellebrite_ingestion' or job.merge_payload != payload:
+        raise HTTPException(409, 'This processing request belongs to another selection')
+    from app.services.batch_dispatch import dispatch_ingestion_batch
+    if (job.pipeline_state or {}).get('batch_dispatch', {}).get('state') != 'dispatched':
+        await dispatch_ingestion_batch(job, db, request.app.state.arq_pool)
     return job
 
 

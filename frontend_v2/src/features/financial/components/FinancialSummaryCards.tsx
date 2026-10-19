@@ -1,8 +1,9 @@
 import { useMemo } from "react"
-import { ArrowDownLeft, ArrowUpRight, Hash, User } from "lucide-react"
-import { Card, CardContent } from "@/components/ui/card"
-import { CostBadge } from "@/components/ui/cost-badge"
 import type { Transaction, FinancialDatasetMode } from "../api"
+import {
+  formatEvidenceCents,
+  summarizeEvidenceAmounts,
+} from "../lib/evidence-amounts"
 
 interface FinancialSummaryCardsProps {
   transactions: Transaction[]
@@ -11,100 +12,69 @@ interface FinancialSummaryCardsProps {
 
 export function FinancialSummaryCards({
   transactions,
-  mode,
 }: FinancialSummaryCardsProps) {
-  const summary = useMemo(() => {
-    let moneyOut = 0
-    let moneyIn = 0
-    const entityKeys = new Set<string>()
-
-    for (const tx of transactions) {
-      if (tx.amount >= 0) moneyOut += Math.abs(tx.amount)
-      else moneyIn += Math.abs(tx.amount)
-
-      if (tx.from_entity?.key) entityKeys.add(tx.from_entity.key)
-      else if (tx.from_entity?.name) entityKeys.add(`n:${tx.from_entity.name}`)
-
-      if (tx.to_entity?.key) entityKeys.add(tx.to_entity.key)
-      else if (tx.to_entity?.name) entityKeys.add(`n:${tx.to_entity.name}`)
-    }
-
-    return {
-      moneyOut,
-      moneyIn,
-      count: transactions.length,
-      uniqueEntities: entityKeys.size,
-    }
-  }, [transactions])
-
-  const cards = [
-    {
-      label: "Money Out",
-      description: "Positive amounts",
-      value: summary.moneyOut,
-      icon: ArrowUpRight,
-      color: "text-red-500",
-    },
-    {
-      label: "Money In",
-      description: "Negative amounts",
-      value: summary.moneyIn,
-      icon: ArrowDownLeft,
-      color: "text-emerald-500",
-    },
-    {
-      label: mode === "transactions" ? "Transactions" : "Records",
-      description: "Filtered total",
-      value: summary.count,
-      icon: Hash,
-      isCount: true,
-    },
-    {
-      label: "Unique Entities",
-      description: "Visible counterparties",
-      value: summary.uniqueEntities,
-      icon: User,
-      isCount: true,
-    },
-  ]
-
-  return <SummaryGrid cards={cards} />
-}
-
-interface CardData {
-  label: string
-  description: string
-  value: number
-  icon: React.ComponentType<{ className?: string }>
-  color?: string
-  isCount?: boolean
-}
-
-function SummaryGrid({ cards }: { cards: CardData[] }) {
+  const groups = useMemo(
+    () => summarizeEvidenceAmounts(transactions),
+    [transactions]
+  )
+  const names = new Set(
+    transactions
+      .flatMap((record) => [record.from_entity, record.to_entity])
+      .map((entity) => entity?.key || entity?.name)
+      .filter(Boolean)
+  ).size
   return (
-    <div className="grid grid-cols-4 gap-3 px-4 py-3">
-      {cards.map((card) => (
-        <Card key={card.label} className="p-3">
-          <CardContent className="flex items-center gap-3 p-0">
-            <div className={card.color || "text-muted-foreground"}>
-              <card.icon className="size-4" />
-            </div>
-            <div>
-              <p className="text-[10px] text-muted-foreground">{card.label}</p>
-              <p className="text-[10px] text-muted-foreground">
-                {card.description}
-              </p>
-              {card.isCount ? (
-                <span className="font-mono text-sm font-semibold">
-                  {card.value.toLocaleString()}
-                </span>
-              ) : (
-                <CostBadge amount={card.value} />
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      ))}
-    </div>
+    <section
+      aria-label="Other evidence totals"
+      className="space-y-2 border-b px-4 py-3 text-sm"
+    >
+      <p>
+        <strong>{transactions.length.toLocaleString()} records</strong> in this
+        view · {names.toLocaleString()} recorded names
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr>
+              {[
+                "Currency",
+                "Records",
+                "Positive amounts",
+                "Negative amounts",
+                "Sum of amounts",
+              ].map((label) => (
+                <th key={label} className="p-2 text-left">
+                  {label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {groups.map((group) => (
+              <tr key={group.currency} className="border-t">
+                <td className="p-2">{group.currency}</td>
+                <td className="p-2">{group.count.toLocaleString()}</td>
+                {[
+                  group.positive,
+                  group.negative,
+                  group.positive + group.negative,
+                ].map((value, index) => (
+                  <td key={index} className="p-2 font-mono">
+                    {group.incomplete
+                      ? "Not totalled"
+                      : formatEvidenceCents(value)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Amounts stay in their recorded currencies. Missing currencies or amounts
+        that cannot be totalled exactly are not added together. These sums are
+        not account balances.
+      </p>
+    </section>
   )
 }

@@ -24,9 +24,11 @@ class FakeSubscriber:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('preparation_mode,reading_mode', [('full','automatic'), ('pdf_review','automatic'), ('pdf_review','page_images')])
 async def test_process_files_recovers_jobs_when_upload_response_fails_after_acceptance(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    preparation_mode, reading_mode,
 ) -> None:
     case_id = uuid4()
     evidence_id = uuid4()
@@ -35,6 +37,7 @@ async def test_process_files_recovers_jobs_when_upload_response_fails_after_acce
     stored_file.write_bytes(b"%PDF-test")
     evidence_file = SimpleNamespace(
         id=evidence_id,
+        case_id=case_id,
         status="unprocessed",
         processing_stale=False,
         stored_path=str(stored_file),
@@ -42,9 +45,11 @@ async def test_process_files_recovers_jobs_when_upload_response_fails_after_acce
         original_filename="report.pdf",
         engine_job_id=None,
         last_error=None,
+        metadata_={'statement_pdf_reading_mode':reading_mode},
     )
     subscriber = FakeSubscriber()
     captured_metadata: list[dict] = []
+    saved_snapshots: list[dict] = []
     marked_failed: list[object] = []
 
     async def no_initial_reconciliation(db, requested_case_id: str) -> int:
@@ -52,6 +57,8 @@ async def test_process_files_recovers_jobs_when_upload_response_fails_after_acce
 
     async def accepted_but_response_failed(*, processing_metadata, **kwargs):
         captured_metadata.extend(processing_metadata)
+        assert saved_snapshots[0]["ingestion_request_id"] == processing_metadata[0]["ingestion_request_id"]
+        assert saved_snapshots[0]["preparation_mode"] == preparation_mode
         raise RuntimeError("500 after accepted upload")
 
     async def list_accepted_jobs(requested_case_id: str):
@@ -79,11 +86,12 @@ async def test_process_files_recovers_jobs_when_upload_response_fails_after_acce
         "get_files_by_ids",
         lambda db, file_ids: [evidence_file],
     )
+    monkeypatch.setattr(processing, "_financial_processing_files", lambda db, case_id, file_ids: [evidence_file])
     monkeypatch.setattr(processing.EvidenceDBStorage, "mark_processing", mark_processing)
     monkeypatch.setattr(
         processing.EvidenceDBStorage,
         "set_processing_snapshot",
-        lambda *args, **kwargs: None,
+        lambda *args, **kwargs: saved_snapshots.append(kwargs["profile_snapshot"]),
     )
     monkeypatch.setattr(
         processing,
@@ -107,9 +115,15 @@ async def test_process_files_recovers_jobs_when_upload_response_fails_after_acce
         FakeDb(),
         case_id=case_id,
         file_ids=[evidence_id],
+        preparation_mode=preparation_mode,
     )
 
     assert result["job_ids"] == [str(engine_job_id)]
+    assert captured_metadata[0]['preparation_mode'] == preparation_mode
+    if preparation_mode == 'pdf_review':
+        assert captured_metadata[0]['pdf_reading_mode'] == reading_mode
+    else:
+        assert 'pdf_reading_mode' not in captured_metadata[0]
     assert result["file_count"] == 1
     assert evidence_file.engine_job_id == str(engine_job_id)
     assert evidence_file.status == "processing"

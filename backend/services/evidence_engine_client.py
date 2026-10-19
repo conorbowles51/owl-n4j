@@ -45,6 +45,14 @@ async def close():
         _client = None
 
 
+async def control_job(job_id: str, case_id: str, action: str):
+    if action not in {"pause", "resume"}:
+        raise ValueError("Invalid ingestion action")
+    response = await _get_client().post(f"/jobs/{job_id}/{action}", params={"case_id": case_id})
+    response.raise_for_status()
+    return response.json()
+
+
 async def is_available() -> bool:
     """Check if the evidence engine is reachable."""
     try:
@@ -149,6 +157,7 @@ async def create_cellebrite_job(
     owner: str | None = None,
     force: bool = False,
     requested_by_user_id: str | None = None,
+    request_id: str | None = None,
 ) -> Dict[str, Any]:
     """
     Create a real evidence-engine job for a staged Cellebrite report folder.
@@ -167,6 +176,7 @@ async def create_cellebrite_job(
             "owner": owner,
             "force": force,
             "requested_by_user_id": requested_by_user_id,
+            "request_id": request_id,
         },
     )
     response.raise_for_status()

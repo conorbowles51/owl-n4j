@@ -1,14 +1,6 @@
-import {
-  useEffect,
-  useState,
-} from "react"
-import {
-  Search,
-  Filter,
-  Upload,
-  Download,
-  Palette,
-} from "lucide-react"
+import { useFinancialAccess } from "../hooks/use-financial-access"
+import { useEffect, useState } from "react"
+import { Search, Filter, Upload, Download, Palette } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -22,7 +14,7 @@ interface FinancialToolbarProps {
   onOpenBulkImport: () => void
   onOpenCategoryManagement: () => void
   onExportPdf: () => void
-  onModeChange: (mode: FinancialDatasetMode) => void
+  isExporting?: boolean
 }
 
 export function FinancialToolbar({
@@ -32,7 +24,7 @@ export function FinancialToolbar({
   onOpenBulkImport,
   onOpenCategoryManagement,
   onExportPdf,
-  onModeChange,
+  isExporting,
 }: FinancialToolbarProps) {
   const {
     searchQuery,
@@ -46,6 +38,7 @@ export function FinancialToolbar({
     minAmount,
     maxAmount,
   } = useFinancialStore()
+  const { canEdit } = useFinancialAccess()
   const [searchInput, setSearchInput] = useState(searchQuery)
 
   useEffect(() => {
@@ -75,30 +68,15 @@ export function FinancialToolbar({
       <div className="relative">
         <Search className="absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
         <Input
-          placeholder={mode === "transactions" ? "Search transactions..." : "Search financial intelligence..."}
+          placeholder={
+            mode === "transactions"
+              ? "Search transactions..."
+              : "Search other financial records..."
+          }
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
           className="h-8 w-64 pl-8 text-xs"
         />
-      </div>
-
-      <div className="flex items-center rounded-md border border-border p-0.5">
-        <Button
-          variant={mode === "transactions" ? "secondary" : "ghost"}
-          size="sm"
-          className="h-7 px-2 text-xs"
-          onClick={() => onModeChange("transactions")}
-        >
-          Transactions
-        </Button>
-        <Button
-          variant={mode === "intelligence" ? "secondary" : "ghost"}
-          size="sm"
-          className="h-7 px-2 text-xs"
-          onClick={() => onModeChange("intelligence")}
-        >
-          Financial Intelligence
-        </Button>
       </div>
 
       <Button
@@ -123,10 +101,10 @@ export function FinancialToolbar({
 
       <div className="flex-1" />
 
-      {mode === "transactions" && (
+      {canEdit && (
         <Button variant="ghost" size="sm" onClick={onOpenBulkImport}>
           <Upload className="size-3.5" />
-          Import
+          Correct amounts from file
         </Button>
       )}
 
@@ -134,15 +112,18 @@ export function FinancialToolbar({
         variant="ghost"
         size="sm"
         onClick={onExportPdf}
+        disabled={isExporting}
       >
         <Download className="size-3.5" />
-        PDF
+        {isExporting ? "Preparing report..." : "Download report"}
       </Button>
 
-      <Button variant="ghost" size="sm" onClick={onOpenCategoryManagement}>
-        <Palette className="size-3.5" />
-        Categories
-      </Button>
+      {canEdit && (
+        <Button variant="ghost" size="sm" onClick={onOpenCategoryManagement}>
+          <Palette className="size-3.5" />
+          Categories
+        </Button>
+      )}
     </div>
   )
 }

@@ -159,6 +159,16 @@ export const EventCard = memo(function EventCard({
             </p>
           )}
 
+          {event.source && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              {event.source.date_basis} ·{" "}
+              {event.source.state === "snapshot"
+                ? "Saved copy; source changed or removed"
+                : event.source.kind === "transaction"
+                  ? "Open payment and statement"
+                  : `Open ${event.type.toLowerCase()} and supporting evidence`}
+            </p>
+          )}
           {event.connections.length > 0 && (
             <div className="mt-1.5 flex flex-wrap gap-1">
               {event.connections.map((conn) => (

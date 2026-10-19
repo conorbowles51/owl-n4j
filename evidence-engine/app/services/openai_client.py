@@ -1,3 +1,4 @@
+from app.services.ingestion_checkpoints import checkpointed
 import asyncio
 import json
 import logging
@@ -85,6 +86,7 @@ def get_openai_client() -> AsyncOpenAI:
     return _client
 
 
+@checkpointed("services/openai_client.py:chat_completion:v1")
 async def chat_completion(
     messages: list[dict[str, Any]],
     model: str | None = None,
@@ -598,6 +600,7 @@ def _is_oversized_openai_request(exc: Exception) -> bool:
     return any(marker in error_text for marker in _OVERSIZED_REQUEST_MARKERS)
 
 
+@checkpointed("services/openai_client.py:_request_embedding_batch:v1", ignore=("client",))
 async def _request_embedding_batch(
     client: AsyncOpenAI,
     *,

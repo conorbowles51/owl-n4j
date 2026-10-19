@@ -30,8 +30,10 @@ def test_upload_storage_directory_is_confined_to_configured_root(tmp_path) -> No
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("mode,reading_mode,expected_type", [("full","automatic","ingestion"),("pdf_review","automatic","pdf_review"),("pdf_review","page_images","pdf_review")])
 @pytest.mark.parametrize("file_count", [1, 51])
 async def test_upload_persists_ingestion_request_id_for_response_recovery(
+    mode, reading_mode, expected_type,
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
     file_count: int,
@@ -69,11 +71,19 @@ async def test_upload_persists_ingestion_request_id_for_response_recovery(
             UploadFile(file=BytesIO(b"%PDF-test"), filename=f"report-{i}.pdf")
             for i in range(file_count)
         ],
-        processing_metadata='[{"ingestion_request_id":"request-123"}]',
+        processing_metadata=__import__("json").dumps([
+            {"ingestion_request_id":"request-123", "preparation_mode":mode,"pdf_reading_mode":reading_mode,"source_evidence_file_id":str(uuid.uuid4())}
+            for _ in range(file_count)
+        ]),
         db=db,
     )
 
     assert jobs[0].pipeline_state["ingestion_request_id"] == "request-123"
+
+    assert jobs[0].job_type == expected_type
+    assert jobs[0].pipeline_state['processing_queue'] == ('arq:pdf-review' if mode == 'pdf_review' else 'arq:queue')
+    if mode == 'pdf_review':
+        assert jobs[0].pipeline_state['pdf_reading_mode'] == reading_mode
     assert len(jobs) == file_count
     assert len({job.batch_id for job in jobs}) == 1
     assert all(Path(job.file_path).read_bytes() == b"%PDF-test" for job in jobs)

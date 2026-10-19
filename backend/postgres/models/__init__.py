@@ -1,3 +1,6 @@
+from postgres.models.financial_category import FinancialCategory
+from postgres.models.financial_custody import FinancialCustodyEvent
+from postgres.models.financial_audit import FinancialAuditEvent
 # Postgres/models/__init__.py
 from postgres.models.user import User
 from postgres.models.case import Case
@@ -59,6 +62,15 @@ from postgres.models.dossier import (
 from postgres.models.graph_recycle_bin import GraphRecycleBinItem
 from postgres.models.significant import SignificantEntity
 from postgres.models.loupe import Loupe, LoupeLink, LoupeMember, LoupeRevision
+from postgres.models.financial_candidates import FinancialStatementReviewDraft, FinancialCandidateMapping, FinancialExtractionCandidate, FinancialCandidateReview, FinancialCandidateFinalization, FinancialCandidateTransaction
+from postgres.models.financial import (
+    AdjudicationEvent,
+    FinancialAccount,
+    FinancialIngestionRun,
+    FinancialSourceDocument,
+    FinancialStatementPeriod,
+    FinancialTransaction,
+)
 from postgres.models.runtime_state import (
     AIModelPolicy,
     AIProviderCredential,
@@ -82,6 +94,9 @@ from postgres.models.workspace import (
 )
 
 __all__ = [
+    "FinancialCategory",
+    "FinancialAuditEvent",
+    "FinancialStatementReviewDraft", "FinancialCandidateMapping", "FinancialExtractionCandidate", "FinancialCandidateReview", "FinancialCandidateFinalization", "FinancialCandidateTransaction",
     "User", "Case", "CaseMembership", "RejectedMergePair",
     "CostRecord", "CostJobType", "AIPricingRate", "CaseDeadline",
     "CaseContext", "CaseContextLegacyMapping", "CaseContextTemplate",
@@ -101,6 +116,8 @@ __all__ = [
     "LoupeMember",
     "LoupeLink",
     "LoupeRevision",
+    "AdjudicationEvent", "FinancialAccount", "FinancialIngestionRun",
+    "FinancialSourceDocument", "FinancialStatementPeriod", "FinancialTransaction",
     "CaseProfile", "CaseProfileAttribute", "CaseProfileEvidenceLink",
     "CaseProfileFindingLink", "CaseProfileGraphNodeLink", "CaseProfileNoteLink",
     "DossierAssessment", "DossierAssessmentLink", "DossierGeneratedOutput",
@@ -113,3 +130,18 @@ __all__ = [
     "WorkspaceTask", "WorkspaceNote", "WorkspaceFinding", "WorkspacePinnedItem",
     "WorkspaceDeadlineConfig",
 ]
+
+from postgres.models.financial_pdf_nominations import FinancialPdfNomination
+__all__ += ["FinancialPdfNomination"]
+
+from postgres.models.financial_import_batches import FinancialImportBatch, FinancialImportBatchItem, FinancialImportOperation
+__all__ += ['FinancialImportBatch', 'FinancialImportBatchItem', 'FinancialImportOperation']
+
+from postgres.models.timeline_entry import TimelineEntry
+__all__ += ["TimelineEntry"]
+from postgres.models.evidence_upload import EvidenceUploadSession, EvidenceUploadGroup
+__all__ += ["EvidenceUploadSession"]
+from postgres.models.financial_money_trails import FinancialMoneyTrail
+__all__ += ["FinancialMoneyTrail"]
+from postgres.models.financial_recovery import FinancialRecoveryRelease, FinancialRecoveryRun, FinancialRecoveryItem
+__all__ += ['FinancialRecoveryRelease', 'FinancialRecoveryRun', 'FinancialRecoveryItem']

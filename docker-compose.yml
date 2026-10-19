@@ -149,12 +149,13 @@ services:
       retries: 20
       start_period: 30s
 
-  evidence-engine-worker:
+  evidence-engine-worker: &evidence-worker
     build:
       context: .
       dockerfile: evidence-engine/Dockerfile
     container_name: owl-v2-evidence-worker
     restart: unless-stopped
+    stop_grace_period: 14500s
     command: arq app.worker.WorkerSettings
     environment:
       DATABASE_URL: postgresql+asyncpg://owl_us:owl_pw@postgres:5432/owl_db
@@ -195,6 +196,9 @@ services:
       PDF_OCR_MAX_PIXELS: ${PDF_OCR_MAX_PIXELS:-25000000}
       PDF_OCR_PAGE_TIMEOUT_SECONDS: ${PDF_OCR_PAGE_TIMEOUT_SECONDS:-300}
       PDF_OCR_MAX_CONCURRENCY: ${PDF_OCR_MAX_CONCURRENCY:-2}
+      # One thread per Tesseract process: its OpenMP threads oversubscribe the cores
+      # when several pages are read at once, and pages then hit the OCR timeout.
+      OMP_THREAD_LIMIT: ${OMP_THREAD_LIMIT:-1}
       MAX_UPLOAD_FILE_BYTES: ${MAX_UPLOAD_FILE_BYTES:-1073741824}
       MAX_UPLOAD_BATCH_BYTES: ${MAX_UPLOAD_BATCH_BYTES:-5368709120}
       UPLOAD_READ_CHUNK_BYTES: ${UPLOAD_READ_CHUNK_BYTES:-1048576}
@@ -218,6 +222,11 @@ services:
         condition: service_completed_successfully
       evidence-engine-api:
         condition: service_healthy
+
+  evidence-pdf-worker:
+    <<: *evidence-worker
+    container_name: owl-v2-evidence-pdf-worker
+    command: arq app.worker.PdfReviewWorkerSettings
 
 volumes:
   evidence-files:

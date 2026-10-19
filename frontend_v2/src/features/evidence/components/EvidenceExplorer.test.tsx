@@ -1,4 +1,4 @@
-import { render, waitFor } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { foldersAPI } from "../folders.api"
 import { toast } from "sonner"
 import { MemoryRouter, Route, Routes } from "react-router-dom"
@@ -157,4 +157,16 @@ describe("Evidence citation deep links", () => {
     await Promise.resolve()
     expect(mocks.revealFile).not.toHaveBeenCalled()
   })
+})
+
+
+it("opens a selected financial source and gives the investigator a direct way back", () => {
+  render(<MemoryRouter initialEntries={["/cases/case-1/evidence?file=csv-file&from=financial"]}>
+    <Routes><Route path="/cases/:id/evidence" element={<EvidenceExplorer />} />
+      <Route path="/cases/:id/financial" element={<div>Financial source list</div>} />
+    </Routes>
+  </MemoryRouter>)
+  expect(mocks.openDetail).toHaveBeenCalledWith("csv-file", expect.any(Object))
+  fireEvent.click(screen.getByRole("link", { name: "Back to Financial sources" }))
+  expect(screen.getByText("Financial source list")).toBeVisible()
 })

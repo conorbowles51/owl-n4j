@@ -94,11 +94,13 @@ class CellebriteFileLinker:
         case_id: str,
         report_key: str,
         log_callback: Optional[Callable[[str], None]] = None,
+        pause_check: Optional[Callable[[], None]] = None,
     ):
         self.report_dir = report_dir
         self.case_id = case_id
         self.report_key = report_key
         self.log_callback = log_callback
+        self.pause_check = pause_check or (lambda: None)
 
         # Build UUID -> TaggedFile index
         self._file_index: Dict[str, TaggedFile] = {}
@@ -117,6 +119,7 @@ class CellebriteFileLinker:
         missing = 0
 
         for tf in tagged_files:
+            self.pause_check()
             if not tf.file_id or not tf.local_path:
                 continue
 
@@ -130,9 +133,7 @@ class CellebriteFileLinker:
             try:
                 resolved_path = full_path.resolve()
                 report_resolved = self.report_dir.resolve()
-                if not str(resolved_path).startswith(str(report_resolved)):
-                    self._log(f"WARNING: Path traversal blocked: {rel_path}")
-                    continue
+                resolved_path.relative_to(report_resolved)
             except (OSError, ValueError):
                 continue
 
@@ -162,6 +163,7 @@ class CellebriteFileLinker:
         model_file_map: Optional[Dict[str, List[str]]] = None,
         created_by_id=None,
         evidence_root_folder_id=None,
+        pause_check=None,
     ) -> int:
         """
         Register media files as evidence records for Tier 2 LLM processing.
@@ -185,8 +187,10 @@ class CellebriteFileLinker:
 
         files_to_register: List[dict] = []
         seen_hashes: Set[str] = set()
+        boundary = pause_check or self.pause_check
 
         for file_id, resolved_path in self._resolved_paths.items():
+            boundary()
             tf = self._file_index.get(file_id)
             if not tf:
                 continue
@@ -242,6 +246,7 @@ class CellebriteFileLinker:
         folder_cache: Dict[str, Optional[uuid_mod.UUID]] = {}
 
         for i in range(0, len(files_to_register), batch_size):
+            boundary()
             batch = files_to_register[i:i + batch_size]
             records = self._register_batch(
                 batch,
@@ -252,6 +257,10 @@ class CellebriteFileLinker:
                 folder_cache,
             )
             total_created += len(records)
+            if pause_check is not None:
+                # Registration and its stable report/file identifiers commit
+                # before the next cooperative boundary. Resume reuses them.
+                db_session.commit()
 
             if (i + batch_size) % 2000 == 0 or i + batch_size >= len(files_to_register):
                 self._log(
@@ -347,6 +356,7 @@ class CellebriteFileLinker:
         model_file_map: Dict[str, List[str]] = {}
 
         for model in models:
+            self.pause_check()
             self._collect_file_refs(model, model_file_map)
 
         return model_file_map

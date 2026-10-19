@@ -30,9 +30,11 @@ import {
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
 import { useEvidenceStore } from "../evidence.store"
 import { useUploadToFolder } from "../hooks/use-upload-to-folder"
-import { evidenceAPI } from "../api"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useGuardedProcess } from "../hooks/use-guarded-process"
+import { ProcessHoldDialog } from "./ProcessHoldDialog"
 import { toast } from "sonner"
+import { EvidenceFinancialPicker } from "@/features/financial/components/EvidenceFinancialPicker"
+import { FinancialAccessProvider } from "@/features/financial/components/FinancialAccessProvider"
 
 interface FileListToolbarProps {
   caseId: string
@@ -69,17 +71,10 @@ export function FileListToolbar({
   const archiveInputRef = useRef<HTMLInputElement>(null)
   const [replaceCellebriteReport, setReplaceCellebriteReport] = useState(false)
   const uploadMutation = useUploadToFolder(caseId)
-  const queryClient = useQueryClient()
-  const processMutation = useMutation({
-    mutationFn: (data: { fileIds: string[] }) =>
-      evidenceAPI.processBackground(caseId, data.fileIds),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["evidence-jobs", caseId] })
-      queryClient.invalidateQueries({ queryKey: ["evidence-folder-contents", caseId] })
-      queryClient.invalidateQueries({ queryKey: ["evidence-folder-tree", caseId] })
-      queryClient.invalidateQueries({ queryKey: ["evidence", caseId] })
-    },
-  })
+  // Kept whole as well as destructured, because the dialog takes the gate
+  // rather than its pieces. See `ProcessGate`.
+  const gate = useGuardedProcess(caseId)
+  const { start: startProcess, isChecking, isProcessing } = gate
 
   const selectionCount = selectedFileIds.size
   const activeSearchTerm = searchMode !== "text" ? fileSearchTerm : textSearchTerm
@@ -137,23 +132,16 @@ export function FileListToolbar({
     e.currentTarget.value = ""
   }
 
-  const handleProcess = () => {
-    if (selectionCount === 0) return
-    processMutation.mutate(
-      { fileIds: Array.from(selectedFileIds) },
-      {
-        onSuccess: () => {
-          toast.success("Processing started")
-          useEvidenceStore.getState().clearSelection()
-          useEvidenceStore.getState().openSidebarTo("processing")
-        },
-        onError: (err) => toast.error(err.message),
-      }
-    )
+  const handleProcess = async () => {
+    if ((await startProcess({ fileIds: Array.from(selectedFileIds) })) !== "started") return
+    toast.success("Processing started")
+    useEvidenceStore.getState().clearSelection()
+    useEvidenceStore.getState().openSidebarTo("processing")
   }
 
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-border bg-card px-4 py-2">
+      <ProcessHoldDialog gate={gate} />
       {/* One search control, two deliberately different scopes. */}
       <div className="flex min-w-[min(100%,360px)] max-w-[560px] flex-1 basis-[400px] items-center overflow-hidden rounded-md border border-input bg-background shadow-xs transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/20">
         <Select
@@ -232,6 +220,9 @@ export function FileListToolbar({
       <div className="flex-1" />
 
       {/* Action buttons */}
+      <FinancialAccessProvider caseId={caseId} quietFailure>
+        <EvidenceFinancialPicker caseId={caseId} initialFileIds={Array.from(selectedFileIds)} initialFolderId={currentFolderId} label="Send to Financial" />
+      </FinancialAccessProvider>
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
@@ -334,7 +325,7 @@ export function FileListToolbar({
             variant="primary"
             size="sm"
             className="h-8 gap-1.5 text-xs"
-            disabled={selectionCount === 0 || processMutation.isPending}
+            disabled={selectionCount === 0 || isChecking || isProcessing}
             onClick={handleProcess}
           >
             <Play className="size-3.5" />

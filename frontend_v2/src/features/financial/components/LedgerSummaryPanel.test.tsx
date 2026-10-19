@@ -1,0 +1,240 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { render, screen, act, waitFor } from "@testing-library/react"
+import { it, expect, vi, afterEach } from "vitest"
+import { LedgerSummaryPanel } from "./LedgerSummaryPanel"
+afterEach(() => vi.restoreAllMocks())
+const answer = {
+  case_id: "case-a",
+  account_id: null,
+  start_date: null,
+  end_date: null,
+  included_classes: ["p0", "p1", "p2"],
+  max_rows: 10000,
+  available: true,
+  reason: null,
+  considered_rows: 3,
+  included_rows: 2,
+  excluded_rows: 1,
+  applied: false,
+  limitation: "Postings are not an account balance.",
+  exclusions: {
+    quarantined: 0,
+    superseded: 1,
+    rejected: 0,
+    source_not_admitted: 0,
+    proof_class_not_included: 0,
+  },
+  currencies: [
+    {
+      currency: "GBP",
+      rows: 2,
+      credits_minor: "9007199254740993",
+      debits_minor: "9007199254740995",
+      net_minor: "-2",
+    },
+  ],
+}
+function mount(
+  initial: unknown = answer,
+  population: "verified" | "working" = "verified"
+) {
+  let data = initial
+  const fetch = vi
+    .spyOn(globalThis, "fetch")
+    .mockImplementation(async () => new Response(JSON.stringify(data)))
+  const client = new QueryClient()
+  const element = (accountId?: string) => (
+    <QueryClientProvider client={client}>
+      <LedgerSummaryPanel
+        caseId="case-a"
+        params={{ accountId }}
+        population={population}
+      />
+    </QueryClientProvider>
+  )
+  const view = render(element())
+  return {
+    fetch,
+    client,
+    set: (next: unknown) => {
+      data = next
+    },
+    account: (id: string) => view.rerender(element(id)),
+  }
+}
+it("renders exact large amounts, signed net and excluded populations", async () => {
+  mount()
+  expect(
+    await screen.findByText("Credits: 90071992547409.93 GBP")
+  ).toBeInTheDocument()
+  expect(screen.getByText("Debits: 90071992547409.95 GBP")).toBeInTheDocument()
+  expect(screen.getByText("Net postings: -0.02 GBP")).toBeInTheDocument()
+  expect(
+    screen.getByText("2 included rows; 1 excluded from 3 rows in this scope.")
+  ).toBeInTheDocument()
+  expect(screen.getByText("Superseded readings: 1")).toBeInTheDocument()
+})
+it.each([
+  { case_id: "other" },
+  { account_id: "other" },
+  { start_date: "2026-01-01" },
+  { excluded_rows: 2 },
+  { applied: true },
+  { currencies: [{ ...answer.currencies[0], net_minor: "10" }] },
+])("refuses inconsistent summary %j", async (change) => {
+  mount({ ...answer, ...change })
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Summary unavailable"
+  )
+  expect(screen.queryByText(/Credits:/)).not.toBeInTheDocument()
+})
+it("keeps unavailable distinct from zero", async () => {
+  mount({
+    ...answer,
+    available: false,
+    reason: "Narrow the dates.",
+    considered_rows: null,
+    included_rows: null,
+    excluded_rows: null,
+    exclusions: null,
+    currencies: [],
+  })
+  expect(
+    await screen.findByText("Summary unavailable. Narrow the dates.")
+  ).toBeInTheDocument()
+  expect(screen.queryByText(/No eligible postings/)).not.toBeInTheDocument()
+})
+it("refreshes after the same case ledger invalidation used by corrections", async () => {
+  const { client, set, fetch } = mount()
+  await screen.findByText("Credits: 90071992547409.93 GBP")
+  set({
+    ...answer,
+    currencies: [
+      {
+        ...answer.currencies[0],
+        credits_minor: "1235",
+        debits_minor: "0",
+        net_minor: "1235",
+      },
+    ],
+  })
+  await act(async () => {
+    await client.invalidateQueries({ queryKey: ["financial-ledger", "case-a"] })
+  })
+  expect(await screen.findByText("Credits: 12.35 GBP")).toBeInTheDocument()
+  expect(
+    screen.queryByText("Credits: 90071992547409.93 GBP")
+  ).not.toBeInTheDocument()
+  expect(fetch).toHaveBeenCalledTimes(2)
+})
+it("does not retain old totals when account filters change", async () => {
+  const { account } = mount()
+  await screen.findByText("Credits: 90071992547409.93 GBP")
+  account("other")
+  expect(
+    screen.queryByText("Credits: 90071992547409.93 GBP")
+  ).not.toBeInTheDocument()
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "different filters"
+  )
+})
+
+it("shows separate working totals and uses their scoped endpoint", async () => {
+  const { fetch } = mount(
+    {
+      ...answer,
+      population: "working",
+      included_classes: ["p0", "p1", "p2", "p3"],
+      outside_verified_rows: 2,
+    },
+    "working"
+  )
+  expect(
+    await screen.findByText("Credits: 90071992547409.93 GBP")
+  ).toBeInTheDocument()
+  expect(
+    screen.getByText("2 of these rows remain outside verified totals.")
+  ).toBeInTheDocument()
+  expect(String(fetch.mock.calls[0][0])).toContain("ledger-working-summary")
+})
+it.each([{}, { population: "working", outside_verified_rows: 3 }])(
+  "refuses mismatched working population %j",
+  async (change) => {
+    mount({ ...answer, ...change }, "working")
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Summary unavailable"
+    )
+  }
+)
+it("does not show working data as verified totals", async () => {
+  mount({ ...answer, population: "working", outside_verified_rows: 2 })
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Summary unavailable"
+  )
+})
+
+const contributions = [
+  {
+    transaction_id: "10000000-0000-4000-8000-000000000001",
+    ref_id: "TX-CREDIT",
+    currency: "GBP",
+    amount_minor: "9007199254740993",
+    direction: "credit",
+    ordering_date: "2026-09-10",
+    proof_class: "p1",
+    source_proof_class: "p1",
+    source_document_id: "20000000-0000-4000-8000-000000000001",
+  },
+  {
+    transaction_id: "10000000-0000-4000-8000-000000000002",
+    ref_id: "TX-DEBIT",
+    currency: "GBP",
+    amount_minor: "9007199254740995",
+    direction: "debit",
+    ordering_date: null,
+    proof_class: "p2",
+    source_proof_class: "p1",
+    source_document_id: "20000000-0000-4000-8000-000000000001",
+  },
+]
+it("opens exactly one side of a total and clears it after refresh", async () => {
+  const { client, fetch } = mount({ ...answer, contributions })
+  const button = await screen.findByRole("button", {
+    name: /Credits: .*show contributing readings/,
+  })
+  await act(async () => button.click())
+  expect(screen.getByText("TX-CREDIT")).toBeInTheDocument()
+  expect(screen.queryByText("TX-DEBIT")).not.toBeInTheDocument()
+  expect(
+    screen.getByRole("button", { name: "Open source TX-CREDIT" })
+  ).toBeInTheDocument()
+  expect(String(fetch.mock.calls[0][0])).toContain("include_contributions=true")
+  await act(async () => {
+    await client.invalidateQueries({ queryKey: ["financial-ledger", "case-a"] })
+  })
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("region", { name: "GBP contributing readings" })
+    ).not.toBeInTheDocument()
+  )
+})
+it.each(
+  [
+    [contributions[0]],
+    [contributions[0], contributions[0]],
+    [
+      contributions[0],
+      { ...contributions[1], amount_minor: "9007199254740994" },
+    ],
+    [contributions[0], { ...contributions[1], proof_class: "p3" }],
+    [contributions[0], { ...contributions[1], currency: "USD" }],
+  ].map((rows) => [rows])
+)("refuses source membership or exact amount mismatch %j", async (rows) => {
+  mount({ ...answer, contributions: rows })
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Summary unavailable"
+  )
+  expect(
+    screen.queryByText("Credits: 90071992547409.93 GBP")
+  ).not.toBeInTheDocument()
+})

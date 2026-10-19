@@ -6,10 +6,17 @@ Main entry point for the API server.
 
 import asyncio
 from contextlib import asynccontextmanager
+from datetime import timedelta
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from config import API_HOST, API_PORT, CORS_ORIGINS
+from config import (
+    API_HOST,
+    API_PORT,
+    CORS_ORIGINS,
+    FINANCIAL_RUN_REAP_INTERVAL_SECONDS,
+    FINANCIAL_RUN_STALE_AFTER_HOURS,
+)
 from routers import (
     graph_router,
     chat_router,
@@ -42,6 +49,11 @@ from routers import (
     admin_ai_costs_router,
     admin_update_router,
     financial_router,
+    financial_ledger_router,
+    financial_statement_import_router,
+    financial_ingest_router,
+    financial_adjudication_router,
+    financial_reconciliation_router,
     maintenance_router,
     case_deadlines_router,
     notebook_router,
@@ -58,6 +70,8 @@ from routers.evidence_ws import router as evidence_ws_router, close_redis
 from services.job_status_subscriber import get_subscriber
 from services.neo4j.driver import driver
 from services.platform_update_service import platform_update_service
+from services.financial.run_reaper import reap_stale_runs_forever
+from services import process_shutdown
 
 
 @asynccontextmanager
@@ -65,6 +79,13 @@ async def lifespan(app: FastAPI):
     """Handle startup and shutdown events."""
     # Startup
     print("Starting Loupe API...")
+    # The first SIGTERM/SIGINT marks the process as stopping and arms a
+    # hard-deadline watchdog, so no task, thread or blocked loop can hold a
+    # stop open for systemd's whole stop window.
+    process_shutdown.install_signal_handlers()
+    # What this process runs, for /health (deploy records it as last good).
+    from services.runtime_version import record_started_commit
+    record_started_commit()
     try:
         # Reload snapshots from disk (non-blocking)
         snapshot_storage.reload()
@@ -75,11 +96,26 @@ async def lifespan(app: FastAPI):
     # Cases are now stored in PostgreSQL - no JSON file to reload
 
     # Background task: clean up orphaned chunk upload cache entries
-    cleanup_task = asyncio.create_task(_cleanup_stale_chunks())
+    cleanup_task = asyncio.create_task(_cleanup_stale_chunks(), name="upload-chunk-cleanup")
     platform_update_task = (
-        asyncio.create_task(platform_update_service.poll_forever())
+        asyncio.create_task(platform_update_service.poll_forever(), name="platform-update-poll")
         if platform_update_service.enabled
         else None
+    )
+
+    # Background task: close financial ingestion runs abandoned by a process
+    # that was killed before it could record a terminal status. Nothing else
+    # can close those: every in-process path already writes its own status, and
+    # the case for this one is that there was no process left to run a handler.
+    # Started here rather than exposed as an endpoint because the sweep is
+    # global, not case-scoped, so behind a case-gated route a caller would be
+    # terminating runs in cases they cannot see.
+    run_reaper_task = asyncio.create_task(
+        reap_stale_runs_forever(
+            older_than=timedelta(hours=FINANCIAL_RUN_STALE_AFTER_HOURS),
+            every=timedelta(seconds=FINANCIAL_RUN_REAP_INTERVAL_SECONDS),
+        ),
+        name="financial-run-reaper",
     )
 
     # Start Redis subscriber for evidence engine job status sync
@@ -89,11 +125,32 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"Warning: Failed to start job status subscriber: {e}")
 
+    from services.financial.import_batches import run_batches_forever
+    financial_batches_task = asyncio.create_task(run_batches_forever(), name="financial-folder-batches")
+
+    from services.financial.identity_graph import run_identity_graph_forever
+    identity_graph_task = asyncio.create_task(run_identity_graph_forever(), name="financial-reviewed-identities")
+
+    from services.financial.deployment_recovery import run_recovery_forever
+    recovery_task = asyncio.create_task(run_recovery_forever(), name="financial-deployment-recovery")
+
+    # The application loaded so far lives as long as the process: keep it out
+    # of every later garbage-collector pass (services.process_memory).
+    from services.process_memory import freeze_startup_objects
+    print(f"Startup objects excluded from garbage collection: {freeze_startup_objects()}")
+
     yield
 
-    cleanup_task.cancel()
-    if platform_update_task:
-        platform_update_task.cancel()
+    # Cancel the background loops and give in-flight atomic statement/graph
+    # units a bounded time to finish before their clients close. A unit still
+    # inside its worker thread after that is abandoned: its transaction rolls
+    # back when the process ends, and its durable record (leased batch,
+    # pending recovery item, revisioned graph sweep) resumes on the next start.
+    await process_shutdown.stop_background_tasks(
+        [recovery_task, identity_graph_task, financial_batches_task,
+         cleanup_task, run_reaper_task, platform_update_task],
+        timeout=process_shutdown.BACKGROUND_STOP_SECONDS,
+    )
 
     # Stop job status subscriber
     try:
@@ -130,7 +187,16 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition", "X-Loupe-Case-Id", "X-Loupe-Account-Id",
+        "X-Loupe-Start-Date", "X-Loupe-End-Date", "X-Loupe-PDF-Report",
+        "X-Loupe-Source-Files", "X-Loupe-Table-View", "X-Loupe-Table-View-Sha256", "X-Loupe-Privilege-Marking",
+        "X-Loupe-Case-Review-History", "X-Loupe-Archive-Sha256", "X-Loupe-Assembly-Inputs-Sha256", "X-Loupe-Scenario-Sha256",
+        "X-Loupe-Export-Id", "X-Loupe-Export-Event-Sha256", "X-Loupe-Export-Event-Sequence",
+        "X-Request-ID", "Server-Timing"],
 )
+# Correlation id and per-stage Server-Timing on financial batch endpoints.
+from services.financial.request_timing import FinancialTimingMiddleware
+app.add_middleware(FinancialTimingMiddleware)
 
 # Include routers
 app.include_router(graph_router)
@@ -144,6 +210,10 @@ app.include_router(case_members_router)
 app.include_router(dossiers_router)
 app.include_router(auth_router)
 app.include_router(evidence_router)
+from routers.evidence_uploads import router as evidence_uploads_router
+app.include_router(evidence_uploads_router)
+from routers.evidence_upload_groups import router as evidence_upload_groups_router
+app.include_router(evidence_upload_groups_router)
 app.include_router(background_tasks_router)
 app.include_router(profiles_router)
 app.include_router(filesystem_router)
@@ -164,6 +234,13 @@ app.include_router(cost_ledger_router)
 app.include_router(admin_ai_costs_router)
 app.include_router(admin_update_router)
 app.include_router(financial_router)
+app.include_router(financial_ledger_router)
+app.include_router(financial_statement_import_router)
+from routers.financial_source_audit import router as financial_source_audit_router
+app.include_router(financial_source_audit_router)
+app.include_router(financial_ingest_router)
+app.include_router(financial_adjudication_router)
+app.include_router(financial_reconciliation_router)
 app.include_router(maintenance_router)
 app.include_router(case_deadlines_router)
 app.include_router(notebook_router)
@@ -199,7 +276,7 @@ async def health():
         neo4j_status = "connected"
         node_count = summary["total_nodes"] if summary else 0
     except Exception as e:
-        neo4j_status = f"error: {str(e)}"
+        neo4j_status = "error: unavailable"
         node_count = 0
 
     # Test evidence engine connection
@@ -207,14 +284,25 @@ async def health():
         ee_health = await evidence_engine_client.health_check()
         evidence_engine_status = ee_health.get("status", "unknown")
     except Exception as e:
-        evidence_engine_status = f"error: {str(e)}"
+        evidence_engine_status = "error: unavailable"
 
+    from starlette.concurrency import run_in_threadpool
+    from services.runtime_readiness import database_readiness, overall_readiness
+    database = await run_in_threadpool(database_readiness)
     return {
-        "status": "ok",
+        "status": overall_readiness(neo4j_status, evidence_engine_status, database),
+        "postgres": database['status'],
+        "database_schema": database['schema'],
         "neo4j": neo4j_status,
         "nodes": node_count,
         "evidence_engine": evidence_engine_status,
+        **_started_commit(),
     }
+
+
+def _started_commit():
+    from services.runtime_version import started_commit
+    return started_commit()
 
 
 if __name__ == "__main__":

@@ -1,0 +1,220 @@
+// This existing workflow fixture has case editing and upload access.
+vi.mock("../hooks/use-financial-access", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../hooks/use-financial-access")>()),
+  useFinancialAccess: () => ({
+    canEdit: true,
+    canUpload: true,
+    ready: true,
+    error: false,
+  }),
+}))
+import { useFinancialDraftStore } from "../stores/financial-drafts"
+import { beforeEach } from "vitest"
+import { useInvestigationScopeStore } from "../stores/investigation-scope"
+beforeEach(() => {
+  useInvestigationScopeStore.getState().reset()
+  useFinancialDraftStore.setState({ drafts: {} })
+})
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { render, screen, fireEvent, act } from "@testing-library/react"
+import { afterEach, expect, it, vi } from "vitest"
+import { LedgerTransfersWorkbench } from "./LedgerTransfersWorkbench"
+vi.mock("./LedgerSourceDialog", () => ({
+  LedgerSourceDialog: ({ transactionId }: { transactionId: string }) => (
+    <p>Source {transactionId}</p>
+  ),
+}))
+afterEach(() => vi.restoreAllMocks())
+const rows = [
+  {
+    key: "d",
+    case_id: "case",
+    account_id: "account-debit",
+    source_document_id: "doc-d",
+    amount_minor: "9007199254740993",
+    currency: "GBP",
+    direction: "debit",
+    ordering_date: "2026-01-01",
+    description: "Transfer out",
+  },
+  {
+    key: "c",
+    case_id: "case",
+    account_id: "account-credit",
+    source_document_id: "doc-c",
+    amount_minor: "9007199254740993",
+    currency: "GBP",
+    direction: "credit",
+    ordering_date: "2026-01-01",
+    description: "Transfer in",
+  },
+  {
+    key: "alternative",
+    case_id: "case",
+    account_id: "other-credit",
+    source_document_id: "doc-alt",
+    amount_minor: "9007199254740993",
+    currency: "GBP",
+    direction: "credit",
+    ordering_date: "2026-01-01",
+    description: "Alternative credit",
+  },
+]
+const input = {
+  case_id: "case",
+  start_date: null,
+  end_date: null,
+  population: "working",
+  tolerance_days: 3,
+  snapshot_sha256: "a".repeat(64),
+  applied: false,
+  limitation: "Potential matches only",
+  excluded_rows: 0,
+  rows,
+  date_unavailable_ids: [],
+  candidates: [
+    {
+      debit_id: "d",
+      credit_id: "c",
+      currency: "GBP",
+      amount_minor: "9007199254740993",
+      outcome: "ambiguous",
+      date_gap_days: 0,
+      compared_date_field: "transaction_date",
+    },
+    {
+      debit_id: "d",
+      credit_id: "alternative",
+      currency: "GBP",
+      amount_minor: "9007199254740993",
+      outcome: "ambiguous",
+      date_gap_days: 0,
+      compared_date_field: "transaction_date",
+    },
+  ],
+}
+function mount(data: unknown = input) {
+  const fetch = vi
+    .spyOn(globalThis, "fetch")
+    .mockResolvedValue(new Response(JSON.stringify(data)))
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <LedgerTransfersWorkbench caseId="case" />
+    </QueryClientProvider>
+  )
+  return fetch
+}
+it("requires fresh transfer inputs after a case change and retains the explanation", async () => {
+  vi.spyOn(globalThis, "fetch").mockImplementation(
+    async () => new Response(JSON.stringify(input))
+  )
+  const client = new QueryClient()
+  render(
+    <QueryClientProvider client={client}>
+      <LedgerTransfersWorkbench caseId="case" />
+    </QueryClientProvider>
+  )
+  fireEvent.click(
+    screen.getByRole("button", { name: "Find possible transfers" })
+  )
+  fireEvent.click(await screen.findByLabelText("Pair transfer 1"))
+  fireEvent.change(screen.getByLabelText("Basis for transfer pairings"), {
+    target: { value: "Compared both original statements" },
+  })
+  await act(async () => {
+    await client.invalidateQueries({
+      queryKey: ["financial-ledger", "other-case"],
+    })
+  })
+  expect(screen.getByLabelText("Pair transfer 1")).toBeChecked()
+  await act(async () => {
+    await client.invalidateQueries({ queryKey: ["financial-ledger", "case"] })
+  })
+  expect(screen.getByText(/Payments may have changed/)).toBeVisible()
+  expect(
+    screen.queryByRole("button", {
+      name: "Compare totals using these transfers",
+    })
+  ).not.toBeInTheDocument()
+  fireEvent.click(
+    screen.getByRole("button", { name: "Find possible transfers" })
+  )
+  expect(await screen.findByLabelText("Pair transfer 1")).toBeChecked()
+  expect(screen.getByLabelText("Basis for transfer pairings")).toHaveValue(
+    "Compared both original statements"
+  )
+})
+it("shows exact ambiguous pairs and prevents reusing either source", async () => {
+  const fetch = mount()
+  expect(fetch).not.toHaveBeenCalled()
+  fireEvent.click(
+    screen.getByRole("button", { name: "Find possible transfers" })
+  )
+  await screen.findByLabelText("Pair transfer 1")
+  expect(screen.getAllByText("90071992547409.93 GBP")).toHaveLength(2)
+  fireEvent.click(screen.getByLabelText("Pair transfer 1"))
+  expect(screen.getByLabelText("Pair transfer 2")).toBeDisabled()
+  fireEvent.click(screen.getByRole("button", { name: "Open debit source 1" }))
+  expect(screen.getByText("Source d")).toBeInTheDocument()
+  fireEvent.click(screen.getByLabelText("Pair transfer 1"))
+  expect(screen.getByLabelText("Pair transfer 2")).toBeEnabled()
+})
+it("refuses candidates from another scope", async () => {
+  mount({ ...input, case_id: "other" })
+  fireEvent.click(
+    screen.getByRole("button", { name: "Find possible transfers" })
+  )
+  expect(await screen.findByRole("alert")).toHaveTextContent("unavailable")
+})
+it("scope changes discard selected pairs and old results", async () => {
+  mount()
+  fireEvent.click(
+    screen.getByRole("button", { name: "Find possible transfers" })
+  )
+  await screen.findByLabelText("Pair transfer 1")
+  fireEvent.click(screen.getByLabelText("Pair transfer 1"))
+  fireEvent.change(screen.getByLabelText("Transfer population"), {
+    target: { value: "verified" },
+  })
+  expect(screen.queryByLabelText("Pair transfer 1")).not.toBeInTheDocument()
+})
+
+it("restores selected transfer identities only while the loaded payments agree", async () => {
+  let source = input
+  vi.spyOn(globalThis, "fetch").mockImplementation(
+    async () => new Response(JSON.stringify(source), { status: 200 })
+  )
+  const mount = () =>
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <LedgerTransfersWorkbench caseId="case" />
+      </QueryClientProvider>
+    )
+  const first = mount()
+  fireEvent.click(
+    screen.getByRole("button", { name: "Find possible transfers" })
+  )
+  fireEvent.click(await screen.findByLabelText("Pair transfer 1"))
+  fireEvent.change(screen.getByLabelText("Basis for transfer pairings"), {
+    target: { value: "Compared both statements" },
+  })
+  first.unmount()
+  const next = mount()
+  fireEvent.click(
+    screen.getByRole("button", { name: "Find possible transfers" })
+  )
+  expect(await screen.findByLabelText("Pair transfer 1")).toBeChecked()
+  expect(screen.getByLabelText("Basis for transfer pairings")).toHaveValue(
+    "Compared both statements"
+  )
+  next.unmount()
+  source = { ...input, snapshot_sha256: "b".repeat(64) }
+  mount()
+  fireEvent.click(
+    screen.getByRole("button", { name: "Find possible transfers" })
+  )
+  expect(await screen.findByLabelText("Pair transfer 1")).not.toBeChecked()
+  expect(
+    screen.getByText(/payments or possible pairs changed/)
+  ).toBeInTheDocument()
+})

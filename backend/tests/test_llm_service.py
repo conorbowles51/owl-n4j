@@ -6,6 +6,36 @@ from services.llm_service import LLMExecutionContext
 
 
 class LLMExecutionContextTests(unittest.TestCase):
+    def test_transport_record_retains_provider_json_instruction_without_credentials(self):
+        response = Mock()
+        response.json.return_value = {'model':'reported-revision', 'id':'synthetic-response',
+            'content':[{'type':'text','text':'{}'}], 'usage':{}}
+        context = LLMExecutionContext(provider='anthropic', model_id='synthetic-model', api_key='private-test-key')
+        with patch('services.llm_service.requests.post', return_value=response) as post:
+            context.call('Original source', json_mode=True)
+        sent = post.call_args.kwargs['json']
+        self.assertEqual(context.last_request_arguments, sent)
+        self.assertIn('Return only one valid JSON object', context.last_request_arguments['messages'][0]['content'])
+        self.assertNotIn('private-test-key', str(context.last_request_arguments))
+        self.assertEqual(context.last_response_metadata, {'reported_model':'reported-revision','response_id':'synthetic-response'})
+        sent['messages'][0]['content'] = 'Changed after request'
+        self.assertNotEqual(context.last_request_arguments['messages'][0]['content'], sent['messages'][0]['content'])
+        context.provider = 'invalid'
+        with self.assertRaises(ValueError): context.call('Next call')
+        self.assertIsNone(context.last_request_arguments)
+        self.assertEqual(context.last_response_metadata, {})
+
+    def test_sdk_reported_model_is_recorded_separately_from_requested_model(self):
+        response = SimpleNamespace(model='provider-reported-revision', id='synthetic-response',
+            choices=[SimpleNamespace(message=SimpleNamespace(content='{}'))], usage=None)
+        create = Mock(return_value=response)
+        context = LLMExecutionContext(provider='openai', model_id='requested-model')
+        with patch('services.llm_service.client', SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))):
+            context.call('Synthetic prompt', json_mode=True)
+        self.assertEqual(context.last_request_arguments, create.call_args.kwargs)
+        self.assertEqual(context.last_request_arguments['model'], 'requested-model')
+        self.assertEqual(context.last_response_metadata['reported_model'], 'provider-reported-revision')
+
     def test_request_context_uses_runtime_credential_instead_of_startup_environment(self):
         fake_client = SimpleNamespace(
             responses=SimpleNamespace(

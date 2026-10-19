@@ -1,0 +1,688 @@
+"""Read a page's tables once, so its text and its geometry cannot disagree.
+
+The extraction pipeline builds a text chunk per table.  Adding rectangles to
+that is tempting to do as a second pass -- find the tables again, take their
+geometry, zip the two lists.  It must not be done that way.  The two passes
+agree only for as long as they agree about *everything*, and they already
+disagree about one thing: a table whose every cell is empty yields a rectangle
+but no chunk.  One position out, and every value on the page is paired with its
+neighbour's rectangle -- a click-through that highlights the wrong figure while
+looking entirely confident.  So the chunk and the geometry are produced here
+from one call over one grid, carried in one object, and the caller never holds
+two lists it could get out of step.
+
+This module is deliberately free of PyMuPDF.  It reads a small set of
+attributes off whatever it is handed -- ``find_tables``, ``extract``, ``bbox``,
+``rows[].cells``, ``rect``, ``rotation`` -- which is the shape a fitz ``Page``
+has and which a stub can have too.  That is not tidiness.  The pipeline that
+owns the real ``Page`` imports ``datetime.UTC`` and so cannot start on the
+Python this repository's tests run on; judgement placed there would ship
+unexercised.  Placed here it is tested, and the pipeline keeps only attribute
+reads, which are the part that cannot be got subtly wrong.
+
+A page is read for drawn geometry first. If no cells can be located, the
+word-position reading replaces it. Otherwise, words outside the drawn table
+boxes are retained separately so summaries and headings are not discarded.
+See :mod:`services.financial.text_rows` for the word-position reader.  Which pass a table came out of is recorded as
+:class:`TableSource`, kept as a separate axis from the geometry grading below
+because the two vary independently and because a row inferred from spacing is a
+weaker claim than one read out of a ruled cell.
+
+Geometry degrades in three steps and the step taken is recorded, because the
+difference between "this table has no clickable values" and "this run stopped
+producing geometry" is invisible unless it is written down:
+
+* :attr:`GeometrySource.cell_rectangles` -- every value that had a rectangle
+  kept it.
+* :attr:`GeometrySource.table_rectangle_only` -- the cell rectangles were
+  absent or could not be trusted, so the table's own rectangle is kept and
+  every value inside it is marked unlocated.  The reader still knows which
+  table on which page a figure came from.
+* :attr:`GeometrySource.unavailable` -- not even the table's rectangle
+  survived.  The text is still produced.
+
+That last point is the invariant this module is built around: **a geometry
+failure never costs text**.  Geometry is an improvement on what the pipeline
+does today, and an improvement that can lose evidence is not one.  Every read
+that exists only to serve geometry is therefore contained, and only the two
+calls that produce the text itself -- ``find_tables()`` and ``extract()`` --
+are allowed to fail the page, exactly as they can today.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from enum import Enum
+from typing import Any, Optional, Sequence
+
+from postgres.models.enums import CoordinateSpace
+
+from services.financial.table_geometry import (
+    LocatedTable,
+    TableGeometryError,
+    cell_value,
+    locate_table,
+)
+from services.financial.text_rows import read_text_rows
+
+# The chunk format below is not a choice made here.  It is the format the
+# pipeline already emits and that its consumers already parse, reproduced
+# exactly so that adding geometry changes nothing a reader downstream can see.
+COLUMN_SEPARATOR = " | "
+PAGE_MARKER = "[Page: {page_number}]"
+
+# Measured on PyMuPDF 1.28.2: at rotation 90 the page rectangle is 792x612 and
+# ``find_tables()`` reports a table box that lands inside it.  The tables come
+# back in displayed coordinates, which is not the space ``get_text("words")``
+# uses, and nothing in either tuple says which -- so it is stated here once,
+# next to the evidence for it, rather than assumed at each call.
+TABLE_COORDINATE_SPACE = CoordinateSpace.pdf_displayed
+
+# And the recovered pass is in the *other* space.  ``read_text_rows`` builds its
+# rectangles out of ``get_text("words")``, which reports unrotated coordinates
+# that do not change as the page is rotated -- the opposite convention to the
+# one above, on the same page, from the same library.  Both real statements this
+# was measured against are at rotation 0, where the two spaces coincide exactly,
+# so passing the wrong one here would have tested clean and then put every
+# highlight in the wrong quarter of the first rotated page in evidence.  Hence
+# two named constants rather than one shared default.
+TEXT_COORDINATE_SPACE = CoordinateSpace.pdf_unrotated
+
+
+class TableSource(str, Enum):
+    """Which reading of the page the table came out of.
+
+    Deliberately a separate axis from :class:`GeometrySource`.  That one says
+    how much geometry survived; this says how the table was *found*, and the
+    two vary independently -- a table recovered from word positions still
+    yields a rectangle per cell, so it is legitimately
+    ``cell_rectangles``.  Collapsing them into one enum would make a recovered
+    table indistinguishable from a drawn one at exactly the moment the
+    difference matters.
+
+    And it does matter, forensically.  A row read out of a ruled cell is a
+    claim the document itself makes about which figures belong together.  A row
+    recovered from where the words sit is a claim *this code* makes, from
+    spacing, and it can be wrong in ways the drawn reading cannot: a wide gap
+    inside a merchant name splits a cell, two lines of a wrapped address merge.
+    An analyst asked to rely on a figure is entitled to know which of those two
+    they are looking at, and a reviewer auditing a finished report doubly so.
+    """
+
+    #: Found by ``find_tables()`` from the page's own ruled geometry.
+    drawn_geometry = "drawn_geometry"
+    #: Recovered by :func:`services.financial.text_rows.read_text_rows` from
+    #: word positions, or outside the drawn table boxes.
+    text_alignment = "text_alignment"
+
+
+class GeometrySource(str, Enum):
+    """How much of a table's geometry survived, as a recorded fact.
+
+    Ordered by decreasing usefulness.  Kept distinct from
+    ``LocatedTable.unlocated_values`` because the two answer different
+    questions: that counts how many values in a table lack a rectangle, which
+    a reader can legitimately produce in the best case; this says which of the
+    three attempts the table came out of.
+    """
+
+    cell_rectangles = "cell_rectangles"
+    table_rectangle_only = "table_rectangle_only"
+    unavailable = "unavailable"
+
+
+@dataclass(frozen=True, slots=True)
+class ExtractedTable:
+    """One table's text and its geometry, from one reading of one grid.
+
+    The two are in the same object rather than in two lists precisely so that
+    nothing downstream has to keep them in step.  ``chunk`` is never empty:
+    a table that produces no text produces no ``ExtractedTable`` at all, which
+    is what keeps the chunk sequence identical to the one the pipeline emits
+    without any of this.
+    """
+
+    chunk: str
+    table_source: TableSource
+    geometry: Optional[LocatedTable]
+    geometry_source: GeometrySource
+    degraded_reason: Optional[str]
+
+    def to_json(self) -> dict[str, Any]:
+        """Fixed key order, for the same reason :meth:`Locator.to_json` has one.
+
+        ``table_source`` comes first because it qualifies everything after it:
+        it says what was read before the rest says how well it was located.
+
+        ``chunk`` is not included.  It travels in the pipeline's own ``tables``
+        list, and writing it twice would create a second copy that could drift
+        from the first.
+        """
+        payload: dict[str, Any] = {
+            "table_source": self.table_source.value,
+            "geometry_source": self.geometry_source.value,
+        }
+        if self.geometry is not None:
+            payload["table"] = self.geometry.to_json()
+        if self.degraded_reason is not None:
+            payload["degraded_reason"] = self.degraded_reason
+        return payload
+
+
+def _chunk(grid: Sequence[Any], page_number: int) -> Optional[str]:
+    """The pipeline's own text for a table, or ``None`` if it has no text.
+
+    Reproduces the existing rule exactly: a row is kept when any of its cells
+    holds a value, empty cells inside a kept row are preserved as empty
+    columns, and a table with no kept rows contributes nothing.
+
+    That last case is the one that makes a two-pass implementation unsafe, so
+    it is handled by returning ``None`` and dropping the whole table --
+    geometry included -- rather than by leaving a hole in one list only.
+    """
+    rows: list[str] = []
+    for row in grid:
+        cells = [cell_value(cell) for cell in row]
+        if any(cells):
+            rows.append(COLUMN_SEPARATOR.join(cells))
+    if not rows:
+        return None
+    return PAGE_MARKER.format(page_number=page_number) + "\n" + "\n".join(rows)
+
+
+def _cell_rects(table: Any) -> Optional[list[Any]]:
+    """The per-cell rectangles this reader offers, or ``None`` if it offers none.
+
+    A reader without a ``rows`` attribute is not broken; it simply locates
+    tables and not cells, and the caller degrades to the table rectangle.  A
+    reader that has ``rows`` but cannot produce ``cells`` from them *is*
+    broken, and that is worth a recorded reason rather than the same silent
+    degrade, because it is the shape a library change would take.
+    """
+    rows = getattr(table, "rows", None)
+    if rows is None:
+        return None
+    try:
+        return [row.cells for row in rows]
+    except (AttributeError, TypeError) as exc:
+        raise TableGeometryError(
+            f"the reader offers rows but no readable cell rectangles: {exc}"
+        ) from exc
+
+
+def _locate(
+    *,
+    table: Any,
+    grid: Sequence[Any],
+    page_number: int,
+    space: CoordinateSpace,
+    rotation: int,
+    page_width: float,
+    page_height: float,
+) -> tuple[Optional[LocatedTable], GeometrySource, Optional[str]]:
+    """Walk the three steps, returning the best geometry and why it is not better."""
+    bbox = getattr(table, "bbox", None)
+    if bbox is None:
+        return (
+            None,
+            GeometrySource.unavailable,
+            "the reader gave the table no rectangle of its own",
+        )
+
+    def attempt(cell_rects: Optional[Sequence[Any]]) -> LocatedTable:
+        return locate_table(
+            page_number=page_number,
+            table_rect=bbox,
+            cell_text=grid,
+            cell_rects=cell_rects,
+            space=space,
+            rotation=rotation,
+            page_width=page_width,
+            page_height=page_height,
+        )
+
+    reason: Optional[str] = None
+    try:
+        rects = _cell_rects(table)
+    except TableGeometryError as exc:
+        rects = None
+        reason = str(exc)
+
+    if rects is not None:
+        try:
+            return attempt(rects), GeometrySource.cell_rectangles, None
+        except TableGeometryError as exc:
+            # Untrustworthy geometry and absent geometry end in the same place,
+            # which is the whole point of retrying rather than raising: a
+            # rectangle that might be wrong is worth less than no rectangle.
+            reason = str(exc)
+
+    try:
+        located = attempt(None)
+    except TableGeometryError as exc:
+        causes = [reason, str(exc)] if reason is not None else [str(exc)]
+        return None, GeometrySource.unavailable, "; ".join(causes)
+
+    if reason is None:
+        reason = "the reader offered no cell rectangles"
+    return located, GeometrySource.table_rectangle_only, reason
+
+
+def _extent(page: Any) -> tuple[float, float, int]:
+    rect = page.rect
+    return float(rect.width), float(rect.height), int(page.rotation)
+
+
+def _build(
+    found: Sequence[Any],
+    *,
+    table_source: TableSource,
+    space: CoordinateSpace,
+    page_number: int,
+    extent_failure: Optional[str],
+    rotation: int,
+    page_width: float,
+    page_height: float,
+) -> list[ExtractedTable]:
+    """Turn one pass's tables into results, text first and geometry after."""
+    tables: list[ExtractedTable] = []
+    for table in found:
+        grid = table.extract()
+        chunk = _chunk(grid, page_number)
+        if chunk is None:
+            continue
+
+        if extent_failure is not None:
+            tables.append(
+                ExtractedTable(
+                    chunk=chunk,
+                    table_source=table_source,
+                    geometry=None,
+                    geometry_source=GeometrySource.unavailable,
+                    degraded_reason=extent_failure,
+                )
+            )
+            continue
+
+        try:
+            geometry, source, reason = _locate(
+                table=table,
+                grid=grid,
+                page_number=page_number,
+                space=space,
+                rotation=rotation,
+                page_width=page_width,
+                page_height=page_height,
+            )
+        except Exception as exc:  # noqa: BLE001 - see the module docstring
+            # A reader can misbehave in ways no signature describes.  Whatever
+            # it did, it did while being asked for geometry, and geometry is
+            # the only thing allowed to be lost for it.
+            geometry, source, reason = (
+                None,
+                GeometrySource.unavailable,
+                f"reading the geometry raised {type(exc).__name__}: {exc}",
+            )
+
+        tables.append(
+            ExtractedTable(
+                chunk=chunk,
+                table_source=table_source,
+                geometry=geometry,
+                geometry_source=source,
+                degraded_reason=reason,
+            )
+        )
+    return tables
+
+
+def _resolved_cells(tables: Sequence[ExtractedTable]) -> bool:
+    """Whether any of these tables came back with a rectangle per value.
+
+    This is the test of whether a reading of the page is worth preferring, and
+    it is deliberately not "did it produce any text at all".  A pass that
+    returns text with only a table-level rectangle has found a box and failed
+    to find the cells inside it: it has made no claim about which figures
+    belong together, and there is nothing there to defer to.  It has also
+    produced rows an analyst cannot click through to, which in this subsystem
+    is the difference between a figure that can be checked against the page and
+    one that has to be taken on trust.
+    """
+    return any(
+        table.geometry_source is GeometrySource.cell_rectangles for table in tables
+    )
+
+
+def _recover(page: Any) -> list[Any]:
+    """The page read again by word position, or nothing if that finds nothing.
+
+    Every failure is swallowed, including ones that would be worth shouting
+    about elsewhere.  This runs only after the drawn pass has already failed to
+    resolve any cells, so the alternatives here are "some rows" and "no rows"
+    -- never "rows" and "an exception".  A fallback that can turn a page the
+    pipeline merely found empty into a page the pipeline fails on would be a
+    worse bug than the one it was added to fix.
+    """
+    try:
+        recovered = read_text_rows(page)
+    except Exception:  # noqa: BLE001 - see above
+        return []
+    return [recovered] if recovered is not None else []
+
+
+def _outside_drawn_tables(page, tables, *, page_number, rotation, page_width, page_height):
+    """Retain text outside the existing table boxes without repeating their cells.
+
+    A page may put payment warnings in a ruled box and the account summary in
+    plain text beside it. Finding that box must not discard the rest of the page.
+    All comparisons use displayed coordinates, including on rotated PDFs.
+    """
+    from types import SimpleNamespace
+    from services.financial.locators import capture
+    boxes = [table.geometry.locator.rectangle if table.geometry else None for table in tables]
+    if not boxes or any(box is None for box in boxes):
+        return []
+    try:
+        words = []
+        for word in page.get_text('words'):
+            if len(word) < 5 or not isinstance(word[4], str) or not word[4].strip():
+                continue
+            rect = capture(page_number=page_number, rect=tuple(word[:4]),
+                space=TEXT_COORDINATE_SPACE, rotation=rotation, page_width=page_width, page_height=page_height)
+            if not any(min(rect.x1, box.x1) > max(rect.x0, box.x0)
+                       and min(rect.y1, box.y1) > max(rect.y0, box.y0) for box in boxes):
+                words.append(word)
+        recovered = read_text_rows(SimpleNamespace(get_text=lambda kind: words), minimum_rows=1)
+    except Exception:
+        return []
+    return [recovered] if recovered is not None else []
+
+
+def _split_merged_payment_tables(page, tables, *, page_number, rotation, page_width, page_height):
+    """Read words inside a ruled payment table whose body is one tall cell.
+
+    Splitting a multiline amount string by order loses empty debit/credit cells.
+    Instead use the printed word coordinates, replacing that table once. Other
+    ruled tables keep their geometry. A failed recovery retains the original.
+    """
+    import re
+    from types import SimpleNamespace
+    from services.financial.locators import capture
+    result = []
+    for table in tables:
+        geometry = table.geometry
+        cells = geometry.cells if geometry else ()
+        labels = {' '.join(c.text.upper().split()) for c in cells}
+        monetary = any('RETIRO' in t or 'DEBIT' in t for t in labels) and any('DEPOSITO' in t or 'DEPÓSITO' in t or 'CREDIT' in t for t in labels)
+        repeated_dates = any(len(parts := c.text.strip().splitlines()) >= 2 and all(
+            re.fullmatch(r'\d{1,2}|\d{1,2}[/-][A-Z0-9]{2,3}(?:[/-]\d{2,4})?', p.strip().upper()) for p in parts) for c in cells)
+        if not monetary or not repeated_dates or geometry.locator.rectangle is None:
+            result.append(table)
+            continue
+        try:
+            target = geometry.locator.rectangle
+            words = []
+            for word in page.get_text('words'):
+                rect = capture(page_number=page_number, rect=tuple(word[:4]), space=TEXT_COORDINATE_SPACE,
+                    rotation=rotation, page_width=page_width, page_height=page_height)
+                if target.x0 <= (rect.x0+rect.x1)/2 <= target.x1 and target.y0 <= (rect.y0+rect.y1)/2 <= target.y1:
+                    words.append(word)
+            recovered = read_text_rows(SimpleNamespace(get_text=lambda kind: words), minimum_rows=1)
+            built = _build([recovered] if recovered else [], table_source=TableSource.text_alignment,
+                space=TEXT_COORDINATE_SPACE, page_number=page_number, extent_failure=None,
+                rotation=rotation, page_width=page_width, page_height=page_height)
+            result.extend(built if _resolved_cells(built) else [table])
+        except Exception:
+            result.append(table)
+    return result
+
+
+def read_tables(page: Any, page_number: int) -> tuple[ExtractedTable, ...]:
+    """Every table on a page, each with its text and as much geometry as holds.
+
+    ``page`` is anything shaped like a fitz ``Page``.  ``page_number`` is
+    1-based, matching both the marker in the text chunk and what a locator
+    requires.
+
+    The page is read for drawn geometry first, because a ruled cell is the
+    document's own statement about which figures belong together and no
+    inference beats it.  The page is read again by where its words sit whenever
+    that first reading resolved no cells anywhere on it -- because a detector
+    finding nothing is not evidence that there is nothing there.
+
+    Note the condition: *resolved no cells*, not *produced no text*.  The
+    weaker rule was written first and measured wrong.  On a 108-page digital
+    card-statement set, 34 pages returned a table rectangle with no cells
+    inside it, which under the weaker rule counted as a successful drawn
+    reading and blocked recovery -- yielding 718 rows that no analyst could
+    click through to, where reading the same pages by word position yields
+    1,719 rows that every analyst can, including the account-holder line the
+    drawn reading dropped entirely.  A pass that finds a box and fails to find
+    the cells has made no claim about which figures belong together, so there
+    is nothing there for the drawn reading's precedence to protect.
+
+    On the other side of the measurement: a 56-page scanned subpoena response
+    has no vector geometry at all, and the drawn pass returned nothing on every
+    transaction page of it.
+
+    The recovered reading is marked :attr:`TableSource.text_alignment`.  It
+    replaces the drawn one rather than joining it, because two readings of the
+    same page in the same list is the same doubling that
+    :func:`services.financial.text_rows.deduplicate` exists to prevent -- every
+    figure counted twice, in a subsystem whose output is summed.  It is taken
+    only when it resolves cells the drawn pass could not, or when the drawn
+    pass produced nothing at all; a page where neither reading can be located
+    keeps the drawn one, since with nothing to choose between them the
+    document's own reading wins by default.
+
+    When drawn cells are available, their tables remain unchanged and a separate
+    reading preserves words wholly outside their boxes. It never repeats words
+    intersecting the drawn tables. This retains unboxed account summaries and
+    page headers beside boxed payment notices.
+
+    Exceptions from ``extract()`` propagate, because it is the call that
+    produces the text and its failure is a page-level failure the pipeline
+    already handles.  A failure of ``find_tables()`` propagates too, but only
+    once recovery has also come up empty: a reader that cannot look for drawn
+    tables is not a reason to discard rows that are legible without it.
+    Everything else is contained -- a reader that misbehaves only when asked
+    for geometry costs the geometry and nothing else.
+    """
+    extent_failure: Optional[str] = None
+    page_width = page_height = 0.0
+    rotation = 0
+    try:
+        page_width, page_height, rotation = _extent(page)
+    except Exception as exc:  # noqa: BLE001 - see the module docstring
+        extent_failure = f"the page reports no usable extent: {exc}"
+
+    drawn_failure: Optional[BaseException] = None
+    tables: list[ExtractedTable] = []
+    try:
+        found = list(page.find_tables().tables)
+    except Exception as exc:  # noqa: BLE001 - re-raised below if nothing replaces it
+        drawn_failure = exc
+    else:
+        tables = _build(
+            found,
+            table_source=TableSource.drawn_geometry,
+            space=TABLE_COORDINATE_SPACE,
+            page_number=page_number,
+            extent_failure=extent_failure,
+            rotation=rotation,
+            page_width=page_width,
+            page_height=page_height,
+        )
+
+    if not _resolved_cells(tables):
+        recovered = _build(
+            _recover(page),
+            table_source=TableSource.text_alignment,
+            space=TEXT_COORDINATE_SPACE,
+            page_number=page_number,
+            extent_failure=extent_failure,
+            rotation=rotation,
+            page_width=page_width,
+            page_height=page_height,
+        )
+        if _resolved_cells(recovered) or not tables:
+            tables = recovered or tables
+    elif extent_failure is None:
+        # These ruled product statements draw large merged cells which can
+        # omit even the date/folio and product headings. Use the whole page's
+        # positioned words once when its explicit payment headings establish
+        # that layout. Do not combine two readings of the same amounts.
+        try:
+            import unicodedata
+            tokens = {' '.join(''.join(c for c in unicodedata.normalize('NFKD', str(w[4]).upper())
+                if not unicodedata.combining(c)).split()) for w in page.get_text('words')}
+            product_grid = {'DIA','FOLIO','CONCEPTO','DEPOSITOS','RETIROS','SALDO'} <= tokens
+            product_summary = {'SERVICIO','EMPRESARIAL','FX','CLABE','MONEDA'} <= tokens
+        except Exception:
+            product_grid = product_summary = False
+        if product_grid or product_summary:
+            aligned = _build(_recover(page), table_source=TableSource.text_alignment,
+                space=TEXT_COORDINATE_SPACE, page_number=page_number, extent_failure=None,
+                rotation=rotation, page_width=page_width, page_height=page_height)
+            if _resolved_cells(aligned):
+                return tuple(aligned)
+        outside = _build(
+            _outside_drawn_tables(page, tables, page_number=page_number, rotation=rotation,
+                page_width=page_width, page_height=page_height),
+            table_source=TableSource.text_alignment, space=TEXT_COORDINATE_SPACE,
+            page_number=page_number, extent_failure=None, rotation=rotation,
+            page_width=page_width, page_height=page_height)
+        tables = _split_merged_payment_tables(page, tables, page_number=page_number,
+            rotation=rotation, page_width=page_width, page_height=page_height) + outside
+
+    if not tables and drawn_failure is not None:
+        raise drawn_failure
+
+    return tuple(tables)
+
+
+
+def read_positioned_ocr_words(words, *, page_number, page_width, page_height):
+    """Recover source cells from measured OCR words in displayed PDF points.
+
+    The engine has already undone its orientation and pixel scaling. These are
+    position-based row proposals with words grouped by their measured spacing
+    (overlapping token boxes share their full source span), never native text or
+    verified financial values. Adjacent numbers stay separate; column meanings
+    remain unknown.
+    """
+    import math
+    from types import SimpleNamespace
+    if type(page_number) is not int or page_number < 1:
+        raise ValueError('Invalid OCR page number')
+    if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v <= 0 for v in (page_width, page_height)):
+        raise ValueError('Invalid OCR page extent')
+    if len(words) > 100000:
+        raise ValueError('Too many OCR words for source geometry')
+    for word in words:
+        if len(word) != 5 or not isinstance(word[4], str) or not word[4].strip():
+            raise ValueError('Invalid positioned OCR word')
+        x0,y0,x1,y1 = word[:4]
+        if any(isinstance(v,bool) or not isinstance(v,(int,float)) or not math.isfinite(v) for v in word[:4]) or not (0 <= x0 < x1 <= page_width and 0 <= y0 < y1 <= page_height):
+            raise ValueError('Positioned OCR word falls outside its page')
+    table = read_text_rows(SimpleNamespace(get_text=lambda kind: words), word_cells=True)
+    if table is None:
+        return ()
+    return tuple(_build([table], table_source=TableSource.text_alignment,
+        space=CoordinateSpace.pdf_displayed, page_number=page_number,
+        extent_failure=None, rotation=0, page_width=page_width, page_height=page_height))
+
+def upright_ocr_words(words, *, rotation, page_width, page_height):
+    """Positioned OCR words (displayed PDF points) turned into the frame the text reads upright in.
+
+    ``rotation`` is the clockwise turn the OCR applied to make the page upright
+    (90, 180 or 270). Returns (words, upright_width, upright_height). Rows and
+    columns are grouped in this frame: on a page printed sideways, grouping in
+    the displayed frame would join words of different printed lines.
+    """
+    if rotation not in (90, 180, 270):
+        raise ValueError('Unsupported reading orientation')
+    width, height = page_width, page_height
+    turned = []
+    for x0, y0, x1, y1, text in words:
+        if rotation == 90:
+            box = (height - y1, x0, height - y0, x1)
+        elif rotation == 180:
+            box = (width - x1, height - y1, width - x0, height - y0)
+        else:
+            box = (y0, width - x1, y1, width - x0)
+        turned.append((*box, text))
+    return turned, (height, width) if rotation in (90, 270) else (width, height)
+
+
+def displayed_tables(tables, *, rotation):
+    """Tables read in the upright frame with every rectangle mapped back to displayed page space.
+
+    Exact in integer millipoints (a quarter turn maps integers to integers), so
+    stored geometry keeps the single coordinate space every consumer assumes.
+    """
+    from dataclasses import replace
+    from services.financial.locators import Locator
+
+    def back(locator):
+        payload = locator.to_json()
+        if 'rect' not in payload:
+            return locator
+        x0, y0, x1, y1 = payload['rect']
+        width, height = payload['page_size']  # upright frame
+        if rotation == 90:  # displayed (x, y) = (upright y, upright width - upright x)
+            rect, size = [y0, width - x1, y1, width - x0], [height, width]
+        elif rotation == 180:
+            rect, size = [width - x1, height - y1, width - x0, height - y0], [width, height]
+        else:  # 270: displayed (x, y) = (upright height - upright y, upright x)
+            rect, size = [height - y1, x0, height - y0, x1], [height, width]
+        return Locator.from_json(dict(payload, rect=rect, page_size=size))
+
+    if rotation not in (90, 180, 270):
+        raise ValueError('Unsupported reading orientation')
+    result = []
+    for table in tables:
+        geometry = table.geometry
+        if geometry is not None:
+            geometry = replace(geometry, locator=back(geometry.locator),
+                               cells=tuple(replace(cell, locator=back(cell.locator)) for cell in geometry.cells))
+        result.append(replace(table, geometry=geometry))
+    return tuple(result)
+
+
+def chunks_of(tables: Sequence[ExtractedTable]) -> list[str]:
+    """The text chunks, in order -- what the pipeline's ``tables`` list holds."""
+    return [table.chunk for table in tables]
+
+
+def geometry_summary(tables: Sequence[ExtractedTable]) -> dict[str, Any]:
+    """The counts that make a silent loss of geometry visible.
+
+    A run that stops producing rectangles produces no error and no missing
+    field; it produces the same documents with fewer clickable figures, which
+    nobody notices.  These counts are what turn that into a number that can be
+    compared between runs.
+
+    ``by_table_source`` makes the other silent drift visible: a corpus that
+    starts arriving as scans rather than digital statements moves from drawn
+    geometry to recovered rows without anything failing, and the reader of a
+    finished report deserves to know that the rows in it were inferred from
+    spacing rather than read out of ruled cells.
+    """
+    located = 0
+    unlocated = 0
+    by_source = {source.value: 0 for source in GeometrySource}
+    by_table_source = {source.value: 0 for source in TableSource}
+    for table in tables:
+        by_source[table.geometry_source.value] += 1
+        by_table_source[table.table_source.value] += 1
+        if table.geometry is None:
+            continue
+        located += table.geometry.located_values
+        unlocated += table.geometry.unlocated_values
+    return {
+        "tables": len(tables),
+        "located_values": located,
+        "unlocated_values": unlocated,
+        "by_source": by_source,
+        "by_table_source": by_table_source,
+    }

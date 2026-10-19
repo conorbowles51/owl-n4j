@@ -19,9 +19,10 @@ vi.mock("../evidence.store", () => ({
   }),
 }))
 
-vi.mock("../hooks/use-evidence-detail", () => ({
-  useProcessBackground: () => ({ mutate: mocks.process }),
+vi.mock("../hooks/use-guarded-process", () => ({
+  useGuardedProcess: () => ({ start: mocks.process, isChecking: false, isProcessing: false, held: null }),
 }))
+vi.mock("./ProcessHoldDialog", () => ({ ProcessHoldDialog: () => null }))
 
 const file = {
   id: "evidence-1",

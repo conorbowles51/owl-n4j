@@ -27,14 +27,15 @@ import {
   useFilenameSearch,
 } from "../hooks/use-folder-contents"
 import { useEvidenceStore } from "../evidence.store"
-import { evidenceAPI } from "../api"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useGuardedProcess } from "../hooks/use-guarded-process"
+import { useRouteChecks } from "../hooks/use-route-checks"
 import { toast } from "sonner"
 import { FolderBreadcrumbs } from "./FolderBreadcrumbs"
 import { FileListToolbar } from "./FileListToolbar"
 import { FileRow } from "./FileRow"
 import { FolderRow } from "./FolderRow"
 import { InlineDropZone } from "./InlineDropZone"
+import { ProcessHoldDialog } from "./ProcessHoldDialog"
 import type { EvidenceFile } from "@/types/evidence.types"
 import { AddEvidenceToDossierDialog } from "@/features/dossiers/components/AddEvidenceToDossierDialog"
 import { useCase } from "@/features/cases/hooks/use-cases"
@@ -144,34 +145,17 @@ export function FileListPanel({
   const caseQuery = useCase(caseId)
   const { canEdit } = useCasePermissions(caseQuery.data)
 
-  const queryClient = useQueryClient()
-  const processMutation = useMutation({
-    mutationFn: (data: { fileIds: string[] }) =>
-      evidenceAPI.processBackground(caseId, data.fileIds),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["evidence-jobs", caseId] })
-      queryClient.invalidateQueries({
-        queryKey: ["evidence-folder-contents", caseId],
-      })
-      queryClient.invalidateQueries({
-        queryKey: ["evidence-folder-tree", caseId],
-      })
-      queryClient.invalidateQueries({ queryKey: ["evidence", caseId] })
-    },
-  })
+  // Kept whole as well as destructured, because the dialog takes the gate
+  // rather than its pieces. See `ProcessGate`.
+  const gate = useGuardedProcess(caseId)
+  const { start: startProcess, isChecking, isProcessing } = gate
 
-  const handleProcessSelected = () => {
-    if (selectedFileIds.size === 0) return
-    processMutation.mutate(
-      { fileIds: Array.from(selectedFileIds) },
-      {
-        onSuccess: () => {
-          toast.success("Processing started")
-          clearSelection()
-        },
-        onError: (err) => toast.error(err.message),
-      }
-    )
+  const handleProcessSelected = async () => {
+    if ((await startProcess({ fileIds: Array.from(selectedFileIds) })) !== "started") return
+    // The selection is kept when a request is held, because the dialog that
+    // offers to release part of it is about exactly these files.
+    toast.success("Processing started")
+    clearSelection()
   }
 
   const filteredFiles = activeQuery.data?.files ?? []
@@ -207,8 +191,12 @@ export function FileListPanel({
   ])
 
   const allFileIds = filteredFiles?.map((f) => f.id) ?? []
-  const allSelected =
-    allFileIds.length > 0 && selectedFileIds.size === allFileIds.length
+
+  // One check for the page, not one per row. The hook splits it into as many
+  // requests as the fifty-id server limit needs, and answers for a page of 250.
+  const { routes } = useRouteChecks(caseId, allFileIds)
+
+  const allSelected = allFileIds.length > 0 && selectedFileIds.size === allFileIds.length
   const someSelected = selectedFileIds.size > 0 && !allSelected
 
   const handleToggleAll = () => {
@@ -269,6 +257,8 @@ export function FileListPanel({
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
+      <ProcessHoldDialog gate={gate} />
+
       {/* Breadcrumbs */}
       <div className="border-b border-border px-4 py-2">
         <FolderBreadcrumbs
@@ -417,6 +407,7 @@ export function FileListPanel({
                       : [file],
                   }}
                   caseId={caseId}
+                  route={routes.get(file.id)}
                   onDelete={onDeleteFile}
                   onAddToDossier={
                     canEdit
@@ -516,7 +507,7 @@ export function FileListPanel({
               Move to…
             </Button>
           )}
-          <Button size="sm" onClick={handleProcessSelected}>
+          <Button size="sm" onClick={handleProcessSelected} disabled={isChecking || isProcessing}>
             <Play className="mr-1.5 size-3.5" />
             Process
           </Button>

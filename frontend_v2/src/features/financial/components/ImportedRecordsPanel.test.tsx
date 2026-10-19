@@ -1,0 +1,496 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  cleanup,
+} from "@testing-library/react"
+import { afterEach, beforeEach, expect, it, vi } from "vitest"
+import { ImportedRecordsPanel } from "./ImportedRecordsPanel"
+import { fetchAPI } from "@/lib/api-client"
+import { useFinancialDraftStore } from "../stores/financial-drafts"
+vi.mock("@/lib/api-client", () => ({ fetchAPI: vi.fn() }))
+vi.mock("../hooks/use-financial-access", () => ({
+  useFinancialAccess: () => ({ canEdit: true }),
+}))
+vi.mock("./TransactionSourceHighlight", () => ({
+  TransactionSourceHighlight: () => <p>Original PDF</p>,
+}))
+const record = {
+  id: "1:0:1",
+  source_document_id: "source",
+  evidence_file_id: "file",
+  filename: "Statement.pdf",
+  currency: "EUR",
+  page_number: 1,
+  locator: null,
+  original_text: "18 March Incoming payment",
+  missing_fields: ["amount"],
+  version: 0,
+  fields: {
+    id: "1:0:1",
+    excluded: false,
+    manual_page: null,
+    date: "2023-03-18",
+    date_unprinted: false,
+    date_values: {},
+    description: "Incoming payment",
+    counterparty: "GlobalTech",
+    amount_minor: "",
+    direction: "credit",
+    balance_minor: null,
+    reason: "",
+  },
+}
+const mount = (open = vi.fn(), review = vi.fn()) =>
+  render(
+    <QueryClientProvider
+      client={
+        new QueryClient({
+          defaultOptions: {
+            queries: { retry: false },
+            mutations: { retry: false },
+          },
+        })
+      }
+    >
+      <ImportedRecordsPanel
+        caseId="case"
+        params={{}}
+        onOpen={open}
+        onReviewFile={review}
+      />
+    </QueryClientProvider>
+  )
+beforeEach(() => {
+  useFinancialDraftStore.setState({ drafts: {} })
+  vi.mocked(fetchAPI).mockReset()
+})
+afterEach(cleanup)
+it("completes a payment with an unreadable untouched balance without resending invalid money", async () => {
+  vi.mocked(fetchAPI).mockImplementation(async (_url, options) =>
+    options?.method === "POST"
+      ? ({ transaction_id: "completed" } as never)
+      : ({
+          records: [
+            {
+              ...record,
+              fields: { ...record.fields, balance_minor: "invalid" },
+            },
+          ],
+          total: 1,
+        } as never)
+  )
+  const open = vi.fn()
+  mount(open)
+  fireEvent.click(await screen.findByText(/1 imported record has/))
+  fireEvent.click(screen.getByRole("button", { name: "Open record" }))
+  fireEvent.change(screen.getByLabelText("Amount"), {
+    target: { value: "123.45" },
+  })
+  fireEvent.click(screen.getByRole("button", { name: "Save correction" }))
+  await waitFor(() => expect(open).toHaveBeenCalledWith("completed"))
+  expect(
+    vi
+      .mocked(fetchAPI)
+      .mock.calls.find(([, options]) => options?.method === "POST")?.[1]?.body
+  ).toMatchObject({ row: { amount_minor: "12345", balance_minor: null } })
+})
+it("offers every affected statement, not just the first page of incomplete records", async () => {
+  vi.mocked(fetchAPI).mockResolvedValue({
+    records: [record],
+    total: 2347,
+    statements: [
+      { evidence_file_id: "file", filename: "Statement.pdf", count: 2102 },
+      {
+        evidence_file_id: "usd-file",
+        filename: "February USD.pdf",
+        count: 245,
+      },
+    ],
+  } as never)
+  const review = vi.fn()
+  mount(vi.fn(), review)
+  fireEvent.click(await screen.findByText(/2347 imported/))
+  fireEvent.click(
+    screen.getByRole("button", { name: "Review statement: February USD.pdf" })
+  )
+  expect(review).toHaveBeenCalledWith("usd-file")
+})
+it("offers a way back to the PDF before opening hundreds of incomplete records", async () => {
+  vi.mocked(fetchAPI).mockResolvedValue({
+    records: [record],
+    total: 250,
+    statements: [
+      { evidence_file_id: "file", filename: "Statement.pdf", count: 250 },
+    ],
+  } as never)
+  const review = vi.fn()
+  mount(vi.fn(), review)
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "Review statement: Statement.pdf",
+    })
+  )
+  expect(review).toHaveBeenCalledWith("file")
+  expect(
+    screen.getByText(/payments below are available to investigate/)
+  ).toBeVisible()
+})
+it("retains missing values and an unfinished correction, then opens the saved transaction", async () => {
+  vi.mocked(fetchAPI).mockImplementation(async (_url, options) =>
+    options?.method === "POST"
+      ? ({ transaction_id: "completed" } as never)
+      : ({ records: [record], total: 1 } as never)
+  )
+  const open = vi.fn(),
+    view = mount(open)
+  await screen.findByText(/1 imported record has missing values/)
+  fireEvent.click(screen.getByText(/1 imported record has/))
+  fireEvent.click(screen.getByRole("button", { name: "Open record" }))
+  expect(screen.getByLabelText("Amount")).toHaveValue("")
+  fireEvent.change(screen.getByLabelText("Amount"), {
+    target: { value: "125000.00" },
+  })
+  fireEvent.change(
+    screen.getByLabelText("Note about this correction (optional)"),
+    {
+      target: { value: "Read against original" },
+    }
+  )
+  view.unmount()
+  mount(open)
+  await screen.findByText(/1 imported record has/)
+  fireEvent.click(screen.getByText(/1 imported record has/))
+  fireEvent.click(screen.getByRole("button", { name: "Open record" }))
+  expect(screen.getByLabelText("Amount")).toHaveValue("125000.00")
+  fireEvent.click(screen.getByRole("button", { name: "Save correction" }))
+  await waitFor(() => expect(open).toHaveBeenCalledWith("completed"))
+  const call = vi
+    .mocked(fetchAPI)
+    .mock.calls.find(([, options]) => options?.method === "POST")
+  expect(call?.[1]?.body).toMatchObject({
+    version: 0,
+    currency: "EUR",
+    row: { amount_minor: "12500000", reason: "Read against original" },
+  })
+})
+it("paginates retained records instead of silently truncating them", async () => {
+  vi.mocked(fetchAPI).mockResolvedValue({
+    records: [record],
+    total: 51,
+  } as never)
+  mount()
+  await screen.findByText(/51 imported records/)
+  fireEvent.click(screen.getByText(/51 imported records/))
+  fireEvent.click(screen.getByRole("button", { name: "Next records" }))
+  await waitFor(() =>
+    expect(
+      vi.mocked(fetchAPI).mock.calls.some(([url]) => url.includes("offset=50"))
+    ).toBe(true)
+  )
+})
+it("lists one file's completed records as waiting for reconciliation with what is still needed", async () => {
+  vi.mocked(fetchAPI).mockResolvedValue({
+    records: [
+      {
+        ...record,
+        missing_fields: [],
+        awaiting_reconciliation: true,
+        statement_blockers: [
+          "The payments do not add up to the printed closing balance.",
+        ],
+        fields: { ...record.fields, amount_minor: "12500" },
+      },
+    ],
+    total: 1,
+  } as never)
+  render(
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
+      <ImportedRecordsPanel
+        caseId="case"
+        params={{}}
+        evidenceFileIds={["file", "older-reading"]}
+        expanded
+        onOpen={vi.fn()}
+      />
+    </QueryClientProvider>
+  )
+  expect(
+    await screen.findByText(
+      /1 completed record is waiting for the statement to reconcile/
+    )
+  ).toBeVisible()
+  expect(
+    screen.getByText(/Saved but held outside totals until the statement reconciles\./)
+  ).toBeVisible()
+  expect(
+    screen.getByText(
+      "Still needed: The payments do not add up to the printed closing balance."
+    )
+  ).toBeVisible()
+  expect(vi.mocked(fetchAPI).mock.calls[0][0]).toContain(
+    "evidence_file_id=file&evidence_file_id=older-reading"
+  )
+})
+it("shows why a completed record is held and adds the ones that check out", async () => {
+  const held = {
+    ...record,
+    id: "manual:held",
+    missing_fields: [],
+    awaiting_reconciliation: true,
+    hold_reason:
+      "Looks like a repeat of an existing row (saved Incoming payment).",
+    can_enter_now: false,
+    fields: { ...record.fields, id: "manual:held", amount_minor: "12500" },
+  }
+  const ready = {
+    ...record,
+    missing_fields: [],
+    awaiting_reconciliation: true,
+    can_enter_now: true,
+    fields: { ...record.fields, amount_minor: "12500" },
+  }
+  vi.mocked(fetchAPI).mockImplementation(async (_url, options) =>
+    options?.method === "POST"
+      ? ({ admitted: 1, held: [] } as never)
+      : ({ records: [held, ready], total: 2 } as never)
+  )
+  render(
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
+      <ImportedRecordsPanel
+        caseId="case"
+        params={{}}
+        expanded
+        onOpen={vi.fn()}
+      />
+    </QueryClientProvider>
+  )
+  expect(
+    await screen.findByText(
+      "Looks like a repeat of an existing row (saved Incoming payment)."
+    )
+  ).toBeVisible()
+  expect(
+    screen.getByText(/Fixed and it checks out: not in the ledger yet\. One click: Add to ledger\./)
+  ).toBeVisible()
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "Add 1 record that checks out to Transactions",
+    })
+  )
+  expect(
+    await screen.findByText("Imported: 1 record is now in the ledger.")
+  ).toBeVisible()
+  expect(fetchAPI).toHaveBeenCalledWith(
+    "/api/financial/statement-import/sources/source/admit-ready-records?case_id=case",
+    { method: "POST" }
+  )
+})
+it("names each record's statement period, or says the period dates were not read", async () => {
+  vi.mocked(fetchAPI).mockResolvedValue({
+    records: [
+      {
+        ...record,
+        period_start: "2020-10-08",
+        period_end: "2020-11-09",
+      },
+      {
+        ...record,
+        id: "2:0:1",
+        fields: { ...record.fields, id: "2:0:1" },
+        page_number: 31,
+        period_start: null,
+        period_end: null,
+      },
+    ],
+    total: 2,
+  } as never)
+  render(
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
+      <ImportedRecordsPanel
+        caseId="case"
+        params={{}}
+        evidenceFileIds={["file"]}
+        expanded
+        onOpen={vi.fn()}
+      />
+    </QueryClientProvider>
+  )
+  expect(
+    await screen.findByText(
+      /Statement.pdf · statement 2020-10-08 to 2020-11-09 · page 1 · Not in the ledger: amount missing/
+    )
+  ).toBeVisible()
+  expect(
+    screen.getByText(
+      /Statement.pdf · statement period dates not read · page 31 · Not in the ledger: amount missing/
+    )
+  ).toBeVisible()
+})
+it("explains a likely repeat, withdraws it in one click and lists withdrawn rows to restore", async () => {
+  const repeat = {
+    ...record,
+    id: "manual:repeat",
+    kind: "added",
+    missing_fields: [],
+    awaiting_reconciliation: true,
+    hold_reason:
+      "Looks like a repeat of an existing row (corrected Card charge).",
+    can_withdraw: true,
+    repeat_of: {
+      kind: "corrected",
+      date: "2023-03-17",
+      amount_minor: "12500",
+      direction: "debit",
+      description: "Card charge",
+      page: 7,
+    },
+    without_this: {
+      reconciles: true,
+      calculated_closing_minor: 100,
+      printed_closing_minor: 100,
+      difference_minor: 0,
+    },
+    fields: { ...record.fields, id: "manual:repeat", amount_minor: "12500" },
+  }
+  const withdrawn = {
+    ...repeat,
+    id: "manual:old",
+    can_withdraw: false,
+    repeat_of: null,
+    withdrawn: { reason: "Entered twice" },
+    fields: { ...repeat.fields, id: "manual:old", description: "Old entry" },
+  }
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) =>
+    options?.method === "POST"
+      ? ({ withdrawn: !String(url).includes("restore"), admitted: 1 } as never)
+      : ({
+          records: [repeat],
+          total: 1,
+          withdrawn: [withdrawn],
+          withdrawn_total: 1,
+          addition_effects: [
+            {
+              source_document_id: "source",
+              filename: "Statement.pdf",
+              currency: "EUR",
+              period_start: "2023-03-01",
+              period_end: "2023-03-31",
+              held_only_by_additions: true,
+              with_all: {
+                reconciles: false,
+                calculated_closing_minor: -12400,
+                printed_closing_minor: 100,
+                difference_minor: -12500,
+              },
+              without_additions: {
+                reconciles: true,
+                calculated_closing_minor: 100,
+                printed_closing_minor: 100,
+                difference_minor: 0,
+              },
+            },
+          ],
+        } as never)
+  )
+  render(
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
+      <ImportedRecordsPanel
+        caseId="case"
+        params={{}}
+        expanded
+        onOpen={vi.fn()}
+      />
+    </QueryClientProvider>
+  )
+  expect(
+    await screen.findByText(
+      "This looks like a repeat of your correction of the printed row on page 7: 2023-03-17 · Card charge · 125.00 EUR out."
+    )
+  ).toBeVisible()
+  expect(
+    screen.getByText(/this statement adds up without the rows you added/)
+  ).toBeVisible()
+  expect(screen.getByText(/is still 125.00 EUR off/)).toBeVisible()
+  expect(
+    screen.getByText("Without this row the statement adds up exactly.")
+  ).toBeVisible()
+  expect(screen.getByText(/withdrawn: Entered twice/)).toBeVisible()
+  fireEvent.click(screen.getByRole("button", { name: "Withdraw this row" }))
+  await waitFor(() =>
+    expect(fetchAPI).toHaveBeenCalledWith(
+      "/api/financial/statement-import/sources/source/withdraw-record?case_id=case",
+      {
+        method: "POST",
+        body: {
+          record_id: "manual:repeat",
+          version: 0,
+          reason:
+            "Repeat of your correction of the printed row on page 7: 2023-03-17 · Card charge · 125.00 EUR out",
+        },
+      }
+    )
+  )
+  fireEvent.click(screen.getByRole("button", { name: "Restore this row" }))
+  await waitFor(() =>
+    expect(fetchAPI).toHaveBeenCalledWith(
+      "/api/financial/statement-import/sources/source/restore-record?case_id=case",
+      {
+        method: "POST",
+        body: { record_id: "manual:old", version: 0, reason: "" },
+      }
+    )
+  )
+})
+it("explains a late-posted card charge's printed date and offers to add it", async () => {
+  const late = {
+    ...record,
+    missing_fields: ["date"],
+    can_enter_now: true,
+    proposed_date: { date: "2023-02-28", printed_text: "Feb 28" },
+    fields: { ...record.fields, date: "", amount_minor: "12500" },
+  }
+  vi.mocked(fetchAPI).mockResolvedValue({ records: [late], total: 1 } as never)
+  render(
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
+      <ImportedRecordsPanel
+        caseId="case"
+        params={{}}
+        expanded
+        onOpen={vi.fn()}
+      />
+    </QueryClientProvider>
+  )
+  expect(
+    await screen.findByText(
+      /Printed date “Feb 28” is 2023-02-28, just before the billing cycle/
+    )
+  ).toBeVisible()
+  expect(
+    screen.getByRole("button", {
+      name: "Add 1 record that checks out to Transactions",
+    })
+  ).toBeVisible()
+})

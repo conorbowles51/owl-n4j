@@ -1,3 +1,4 @@
+from app.services.ingestion_checkpoints import checkpointed, IngestionPaused
 import asyncio
 import json
 import logging
@@ -157,6 +158,35 @@ DOCUMENTARY_SOURCE_TYPES = {
     "official_report",
 }
 NARRATIVE_SOURCE_TYPES = {"email", "interview"}
+
+# The classes `_infer_evidence_source_type` can return, in the order it tries
+# them: the first class with a keyword present in the source wins.
+#
+# The order is load-bearing, not incidental. "bank statement" and "account
+# statement" both contain "statement", which is also an interview keyword, so
+# the specific phrase has to be consulted before the general one or every bank
+# statement is classified as an interview. Do not sort this.
+#
+# These keywords are matched as words (see `_word_pattern`). That is stricter
+# than the admission lists in `_is_financial_candidate` and
+# `_looks_like_transaction_event`, deliberately, because a mistake here costs
+# something different: this function decides `evidence_source_type`, which
+# decides `evidence_strength`, which is one of the three conditions for
+# `is_evidence_backed_transaction`. Matching "wire" inside "wired" or "IBAN"
+# inside "CITIBANK" does not merely add noise; it labels the source documentary
+# and puts hearsay in front of a jury as an exhibit.
+_SOURCE_TYPE_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("bank_statement", ("bank statement", "account statement", "bank account statement")),
+    ("card_statement", ("card statement", "credit card", "debit card")),
+    ("wire", ("wire", "swift", "iban", "bic", "transfer confirmation")),
+    ("invoice", ("invoice", "inv-", "bill to", "purchase order")),
+    ("receipt", ("receipt", "paid receipt", "proof of payment")),
+    ("ledger", ("ledger", "general ledger", "journal entry", "trial balance")),
+    ("official_report", ("report", "warrant", "official report", "filing")),
+    ("email", ("email", "e-mail", "@")),
+    ("interview", ("interview", "statement", "witness", "transcript")),
+)
+
 FINANCIAL_CANDIDATE_KEYS = {
     "amount",
     "currency",
@@ -168,8 +198,68 @@ FINANCIAL_CANDIDATE_KEYS = {
 }
 
 
+# Names the rule that decided the provenance fields on a node, so a reader can
+# tell records written under one policy from records written under another.
+# Bump this whenever the arbitration between inference and declaration changes.
+PROVENANCE_POLICY = "deterministic_inference_v1"
+
+
 def _normalized_text(*parts: Any) -> str:
     return " ".join(str(part or "").strip().lower() for part in parts if part).strip()
+
+
+# A letter in any alphabet, for text that has already been lowercased. Written
+# out rather than using `\b` or `[a-z]`: `\b` treats a digit as a word character
+# and would keep "21PURCHASE" from matching, and `[a-z]` would let an accented
+# letter next to a keyword slip a false match through.
+_LETTER = r"[^\W\d_]"
+
+
+def _word_pattern(keyword: str) -> re.Pattern[str] | None:
+    """Compile `keyword` to match as a word, or return None to match literally.
+
+    The boundary is a letter, not a word character, because financial exports
+    run words hard against digits and punctuation and those are real matches:
+    "21PURCHASE", "wire_confirmation.pdf", "INV-4471", "ACH DEBIT/0518". A
+    trailing "s" or "es" is allowed so plurals still count, since statement
+    headers are written "Deposits", "Withdrawals", "Purchases".
+
+    A keyword that does not both begin and end with a letter is matched
+    literally instead. A symbol cannot be buried inside a longer word, so the
+    rule this exists to enforce has nothing to do; applying it anyway would
+    break the two probes that are partial on purpose — "@" is always preceded
+    by a letter in an address, and "inv-" is written as a prefix.
+    """
+    if not (keyword[:1].isalpha() and keyword[-1:].isalpha()):
+        return None
+    return re.compile(rf"(?<!{_LETTER}){re.escape(keyword)}(?:e?s)?(?!{_LETTER})")
+
+
+def _mentions(probe: str, keyword: str, pattern: re.Pattern[str] | None) -> bool:
+    """True if `probe` mentions `keyword`, as a word where that is meaningful."""
+    return keyword in probe if pattern is None else bool(pattern.search(probe))
+
+
+_SOURCE_TYPE_PATTERNS: tuple[
+    tuple[str, tuple[tuple[str, re.Pattern[str] | None], ...]], ...
+] = tuple(
+    (source_type, tuple((keyword, _word_pattern(keyword)) for keyword in keywords))
+    for source_type, keywords in _SOURCE_TYPE_KEYWORDS
+)
+
+
+def _declared_provenance_value(
+    financial_provenance: dict[str, Any] | None,
+    field: str,
+    allowed: set[str],
+) -> str:
+    """Return the model's own declaration for `field`, or "" if absent or invalid.
+
+    Declarations are recorded, never consumed. An empty string means the model
+    said nothing usable, which is distinct from it agreeing with the inference.
+    """
+    candidate = str((financial_provenance or {}).get(field, "")).strip().lower()
+    return candidate if candidate in allowed else ""
 
 
 def _parse_int_or_none(value: Any) -> int | None:
@@ -191,6 +281,14 @@ def _is_financial_candidate(
     if any(properties.get(key) not in ("", None) for key in FINANCIAL_CANDIDATE_KEYS):
         return True
     probe = _normalized_text(category, specific_type, name, source_quote)
+    # Substring matching, on purpose. This admits a candidate for later checks
+    # rather than deciding anything about it, so the two errors are not equal:
+    # a false positive costs one extra candidate that downstream checks discard,
+    # while a false negative drops a real transaction silently and forever.
+    # Bank exports run words together — "ACHDEBIT", "ASI-DEPOSITORY",
+    # "DEPOSITTRANSFER", "PurchaseR eturn" — and on the corpus the word-boundary
+    # rule used for classification would reject 912 of these correct matches.
+    # Do not tighten this to match `_infer_evidence_source_type`.
     return any(
         keyword in probe
         for keyword in (
@@ -218,34 +316,99 @@ def _is_financial_candidate(
     )
 
 
+# Runs of the characters filenames use to join words. Relaxing these lets a
+# multi-word keyword match `bank_statement.pdf`; see `_identity_probe`.
+_FILENAME_SEPARATORS = re.compile(r"[\s_\-/.]+")
+
+
+def _identity_probe(file_name: str, file_type: str | None) -> tuple[str, str]:
+    """The artifact's identity, raw and with filename separators relaxed.
+
+    Both forms are searched, because neither alone is sufficient:
+
+      * The relaxed form is what lets a multi-word keyword match a filename
+        that joins its words. `bank_statement.pdf` contains no "bank
+        statement", so it used to fall through to the interview keyword
+        "statement" and a bank statement was classified as a witness
+        interview — an affirmative mislabel, not a near miss.
+      * The raw form is what keeps the two literal probes working. "inv-" is
+        written as a prefix and relaxing the hyphen turns `INV-4471.pdf` into
+        "inv 4471", which no longer matches anything.
+    """
+    raw = _normalized_text(file_name, file_type)
+    return raw, _FILENAME_SEPARATORS.sub(" ", raw)
+
+
 def _infer_evidence_source_type(
-    financial_provenance: dict[str, Any] | None,
     *,
     file_name: str,
     file_type: str | None,
-    specific_type: str,
-    name: str,
-    source_quote: str,
     is_table: bool,
 ) -> str:
-    candidate = str((financial_provenance or {}).get("evidence_source_type", "")).strip().lower()
-    if candidate in EVIDENCE_SOURCE_TYPES:
-        return candidate
+    """Classify the kind of source this came from, from the artifact alone.
 
-    probe = _normalized_text(file_name, file_type, specific_type, name, source_quote)
-    keyword_map = (
-        ("bank_statement", ("bank statement", "account statement", "bank account statement")),
-        ("card_statement", ("card statement", "credit card", "debit card")),
-        ("wire", ("wire", "swift", "iban", "bic", "transfer confirmation")),
-        ("invoice", ("invoice", "inv-", "bill to", "purchase order")),
-        ("receipt", ("receipt", "paid receipt", "proof of payment")),
-        ("ledger", ("ledger", "general ledger", "journal entry", "trial balance")),
-        ("official_report", ("report", "warrant", "official report", "filing")),
-        ("email", ("email", "e-mail", "@")),
-        ("interview", ("interview", "statement", "witness", "transcript")),
-    )
-    for source_type, keywords in keyword_map:
-        if any(keyword in probe for keyword in keywords):
+    What a document *is* cannot be read off what it *says*. This function used
+    to search `specific_type`, `name` and `source_quote` alongside the
+    filename, which meant a witness statement quoting "he sent a wire to
+    Petrov" classified as `wire` — a documentary source — and hearsay was
+    promoted to an exhibit. Requiring the keyword to appear as a word narrowed
+    that defect but did not remove it: it only stopped the past tense, so the
+    witness had to say "wired" rather than "a wire" for the system to stay
+    honest.
+
+    Those three fields are therefore not parameters any more, rather than
+    being passed and ignored, so no later edit can reach for them without
+    changing this signature and reading this docstring.
+
+    The deeper defect was that `evidence_source_type` describes the source
+    document but was computed per extracted entity, so a document could
+    disagree with itself. Measured over 35,192 rows in 357 extraction files,
+    51 of 306 documents were assigned two or more source types by their own
+    rows and 18 were graded both documentary and narrative. Classifying from
+    the artifact makes every row of a document agree by construction and takes
+    both counts to zero. 5,025 rows (14.3%) change class.
+
+    1,457 rows move from narrative to documentary, which is the dangerous
+    direction, so each was checked. In 17 of the 18 affected documents the
+    promoted rows sit beside rows that were already documentary, so the
+    document does not change character; they were being demoted by an "@" in a
+    Cash App handle ("CASH APP*@BECKISH"), a Zelle payee's email address, or a
+    price written "620 gallons @ $2.75".
+
+    Exactly one extraction file flips in its entirety: all 391 rows of
+    `USA-ET-026407.pdf`. It is an Ameris Bank monthly statement — it carries an
+    account holder, account number, statement period and header totals, and
+    every row is a card purchase, preauthorised debit or Zelle transfer. It was
+    classified `interview` because its section header reads "Ameris monthly
+    statement" and `statement` is an interview keyword, while neither "bank
+    statement" nor "account statement" appears adjacent. A genuine bank
+    statement was labelled hearsay in full. The flip corrects that.
+
+    Note for anyone extending the keyword map: on a Bates-stamped corpus the
+    filenames carry no words at all, so almost every document reaches the
+    `pdf and is_table -> official_report` fallback below. That yields the right
+    grade but an imprecise class, and it is what the corpus now leans on.
+
+    The extracting model is asked for its own `evidence_source_type` and that
+    answer is recorded, but it is deliberately not an input here either: a
+    claim the model makes about its own output cannot be checked, so it must
+    not be able to decide the outcome. See `_build_financial_provenance`.
+    """
+    # Before the keywords, not after. A mail container is an email whatever its
+    # filename claims, and the claim is the sender's. `wire_confirmation.eml`
+    # is someone writing about a wire, so letting the "wire" keyword win would
+    # promote a narrative artifact to a documentary one on the strength of a
+    # name its own author chose. Content used to supply this via the "@" in a
+    # header; with content gone the file type has to carry it.
+    if file_type in {"eml", "msg"}:
+        return "email"
+
+    raw, relaxed = _identity_probe(file_name, file_type)
+    for source_type, keywords in _SOURCE_TYPE_PATTERNS:
+        if any(
+            _mentions(raw, keyword, pattern) or _mentions(relaxed, keyword, pattern)
+            for keyword, pattern in keywords
+        ):
             return source_type
 
     if file_type in {"xlsx", "xls", "csv"}:
@@ -256,16 +419,17 @@ def _infer_evidence_source_type(
 
 
 def _infer_evidence_strength(
-    financial_provenance: dict[str, Any] | None,
     *,
     evidence_source_type: str,
     file_type: str | None,
     is_table: bool,
 ) -> str:
-    candidate = str((financial_provenance or {}).get("evidence_strength", "")).strip().lower()
-    if candidate in EVIDENCE_STRENGTHS:
-        return candidate
+    """Grade the evidence from the classified source, not from the model's claim.
 
+    This is the most consequential of the three inferences: `documentary` is one
+    of the three conditions for `is_evidence_backed_transaction`, so a model
+    permitted to declare it here could promote hearsay to an exhibit.
+    """
     if evidence_source_type in DOCUMENTARY_SOURCE_TYPES:
         return "documentary"
     if evidence_source_type in NARRATIVE_SOURCE_TYPES:
@@ -276,7 +440,6 @@ def _infer_evidence_strength(
 
 
 def _infer_financial_record_kind(
-    financial_provenance: dict[str, Any] | None,
     *,
     category: str,
     specific_type: str,
@@ -284,10 +447,11 @@ def _infer_financial_record_kind(
     source_quote: str,
     properties: dict[str, Any],
 ) -> str:
-    candidate = str((financial_provenance or {}).get("financial_record_kind", "")).strip().lower()
-    if candidate in FINANCIAL_RECORD_KINDS:
-        return candidate
+    """Classify what kind of financial record this is, from the source alone.
 
+    The model's own claim is recorded but not consulted, for the same reason as
+    the two inferences above.
+    """
     probe = _normalized_text(category, specific_type, name, source_quote)
     if "balance" in probe:
         return "balance"
@@ -338,6 +502,8 @@ def _looks_like_transaction_event(
     ):
         return True
     probe = _normalized_text(category, specific_type, name, source_quote)
+    # Substring matching, on purpose — see `_is_financial_candidate`. This
+    # admits rather than classifies, so recall is worth more than precision.
     return any(
         keyword in probe
         for keyword in (
@@ -375,28 +541,42 @@ def _build_financial_provenance(
     if not _is_financial_candidate(category, specific_type, name, source_quote, properties):
         return None
 
+    # Deliberately not given `specific_type`, `name` or `source_quote`: what a
+    # document is cannot be read off what it says. See the docstring.
     evidence_source_type = _infer_evidence_source_type(
-        financial_provenance,
         file_name=file_name,
         file_type=file_type,
-        specific_type=specific_type,
-        name=name,
-        source_quote=source_quote,
         is_table=is_table,
     )
     evidence_strength = _infer_evidence_strength(
-        financial_provenance,
         evidence_source_type=evidence_source_type,
         file_type=file_type,
         is_table=is_table,
     )
     record_kind = _infer_financial_record_kind(
-        financial_provenance,
         category=category,
         specific_type=specific_type,
         name=name,
         source_quote=source_quote,
         properties=properties,
+    )
+    declared_source_type = _declared_provenance_value(
+        financial_provenance, "evidence_source_type", EVIDENCE_SOURCE_TYPES
+    )
+    declared_strength = _declared_provenance_value(
+        financial_provenance, "evidence_strength", EVIDENCE_STRENGTHS
+    )
+    declared_record_kind = _declared_provenance_value(
+        financial_provenance, "financial_record_kind", FINANCIAL_RECORD_KINDS
+    )
+    declaration_conflicts = sorted(
+        field
+        for field, declared, inferred in (
+            ("evidence_source_type", declared_source_type, evidence_source_type),
+            ("evidence_strength", declared_strength, evidence_strength),
+            ("financial_record_kind", declared_record_kind, record_kind),
+        )
+        if declared and declared != inferred
     )
     transaction_like = _looks_like_transaction_event(
         category,
@@ -416,6 +596,22 @@ def _build_financial_provenance(
     if source_page_value is None:
         source_page_value = source_page
 
+    if declaration_conflicts:
+        logger.info(
+            "Financial provenance declaration not adopted: fields=%s name=%r file=%r "
+            "declared=(source_type=%s strength=%s record_kind=%s) "
+            "inferred=(source_type=%s strength=%s record_kind=%s)",
+            ",".join(declaration_conflicts),
+            name,
+            file_name,
+            declared_source_type or "-",
+            declared_strength or "-",
+            declared_record_kind or "-",
+            evidence_source_type,
+            evidence_strength,
+            record_kind,
+        )
+
     if transaction_like and not is_evidence_backed_transaction:
         logger.info(
             "Financial candidate downgraded to intelligence: name=%r file=%r source_type=%s strength=%s record_kind=%s",
@@ -433,6 +629,14 @@ def _build_financial_provenance(
         "is_evidence_backed_transaction": is_evidence_backed_transaction,
         "evidence_strength": evidence_strength,
         "evidence_source_type": evidence_source_type,
+        # What the model claimed, kept next to what was inferred, so the two can
+        # be compared later. Flat scalars and a primitive list: nested values are
+        # silently dropped by the Neo4j property writer.
+        "provenance_decided_by": PROVENANCE_POLICY,
+        "evidence_source_type_declared": declared_source_type,
+        "evidence_strength_declared": declared_strength,
+        "financial_record_kind_declared": declared_record_kind,
+        "provenance_declaration_conflicts": declaration_conflicts,
         "source_document_id": source_document_id or file_name,
         "source_filename": file_name,
         "source_page": source_page_value,
@@ -442,6 +646,7 @@ def _build_financial_provenance(
     }
 
 
+@checkpointed("pipeline/extract_entities.py:_extract_entities_from_chunk:v1")
 async def _extract_entities_from_chunk(
     chunk_text: str,
     chunk_index: int,
@@ -617,6 +822,7 @@ async def _extract_entities_from_chunk(
     return entities
 
 
+@checkpointed("pipeline/extract_entities.py:_extract_relationships_from_chunk:v1")
 async def _extract_relationships_from_chunk(
     chunk_text: str,
     chunk_index: int,
@@ -1112,6 +1318,11 @@ async def _bounded_map(items: list[Any], operation, limit: int) -> list[Any]:
     ]
     try:
         await asyncio.gather(*tasks)
+    except IngestionPaused:
+        # Let already-running requests finish and save their results. No next
+        # chunk starts because every extraction unit checks the pause flag.
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
     except BaseException:
         for task in tasks:
             task.cancel()

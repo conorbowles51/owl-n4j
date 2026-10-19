@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, Enum, Float, ForeignKey, String, Text, Uuid, func
+from sqlalchemy import BigInteger, Boolean, Integer, DateTime, Enum, Float, ForeignKey, String, Text, Uuid, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -67,6 +67,10 @@ class Job(Base):
         String(64), default="evidence-v2", server_default="evidence-v2", nullable=False
     )
     pipeline_state: Mapped[dict] = mapped_column(JSONB, server_default="{}", nullable=False)
+    pause_requested: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    paused: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    resumable: Mapped[bool] = mapped_column(Boolean, default=True, server_default="false")
+    resume_generation: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     quality_report: Mapped[dict] = mapped_column(JSONB, server_default="{}", nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
@@ -88,6 +92,32 @@ class EvidenceDocumentText(Base):
     content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     character_count: Mapped[int] = mapped_column(BigInteger, nullable=False)
     source_locations: Mapped[list] = mapped_column(JSONB, server_default="[]", nullable=False)
+    processing_manifest: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
+    extracted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+
+class EvidenceTableGeometry(Base):
+    """Engine-side mirror of the backend's ``evidence_table_geometry`` table.
+
+    One row per (evidence file, page); ``payload`` holds the geometry-bearing
+    ``per_table`` entries whose table rectangle landed on that page.  The
+    backend's alembic tree owns the schema; this mirror only writes to it.
+    """
+
+    __tablename__ = "evidence_table_geometry"
+
+    evidence_file_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("evidence_files.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    page_number: Mapped[int] = mapped_column(primary_key=True)
+    engine_job_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    payload: Mapped[list] = mapped_column(JSONB, server_default="[]", nullable=False)
     extracted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

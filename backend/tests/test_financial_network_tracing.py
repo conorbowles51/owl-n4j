@@ -1,0 +1,109 @@
+import hashlib,json
+from datetime import date
+from unittest.mock import patch
+from services.financial.network_tracing import network_trace_inputs,evaluate_network_trace
+from services.financial.ledger_snapshot import LedgerExport,LedgerSnapshot,capture_ledger_snapshot,_capture_history
+from services.financial.ledger_summary import LedgerSummaryError
+from services.financial.tracing import Doctrine
+from postgres.models.enums import TransactionDirection
+from tests.test_financial_ledger_summary import LedgerSummaryTests
+
+class NetworkTracingTests(LedgerSummaryTests):
+    def network(self):
+        b=self._account(self.case.id,identity_key='network-b');c=self._account(self.case.id,identity_key='network-c');self.db.add_all([b,c]);self.db.commit()
+        def row(account,amount,direction=TransactionDirection.credit):
+            doc=self.make_document();period=self.make_period(doc,account=account)
+            result=self.add_row(period,doc,account=account,amount=amount,direction=direction);result.proof_class='p3';self.db.commit();return result
+        root=row(self.account,10000);clean=row(self.account,10000);send=row(self.account,10000,TransactionDirection.debit);receive=row(b,10000);send2=row(b,6000,TransactionDirection.debit);receive2=row(c,6000);exit=row(c,2000,TransactionDirection.debit)
+        ordered=[root,clean,send,receive,send2,receive2,exit]
+        snapshot=capture_ledger_snapshot(self.db,case_id=self.case.id,start_date=date(2026,1,1),end_date=date(2026,1,31));document=_capture_history(self.db,json.loads(snapshot.content),case_id=self.case.id);content=json.dumps(document,sort_keys=True,separators=(',',':'),ensure_ascii=False);export=LedgerExport(LedgerSnapshot(content,hashlib.sha256(content.encode()).hexdigest(),len(content.encode())),'{}')
+        request=dict(expected_snapshot_sha256=export.snapshot.sha256,population='working',tolerance_days=3,start_date='2026-01-01',end_date='2026-01-31',currency='GBP',
+            pairs=[dict(debit_id=str(send.id),credit_id=str(receive.id)),dict(debit_id=str(send2.id),credit_id=str(receive2.id))],basis='Explicit synthetic transfers',
+            openings=[dict(account_id=str(a.id),amount_minor='0',basis='Synthetic zero opening') for a in [self.account,b,c]],
+            ordered_transaction_ids=[str(r.id) for r in ordered],order_basis='Explicit synthetic order',attributions=[dict(transaction_id=str(root.id),claim_id='claim',amount_minor='10000',basis='Synthetic root attribution')],doctrines=[d.value for d in Doctrine])
+        return export,request,ordered
+    def test_resale_receipt_cannot_be_a_paired_transfer_credit(self):
+        export,request,rows=self.network()
+        use=dict(transaction_id=str(rows[-1].id),asset_label='Synthetic equipment',basis='Synthetic use',resale=dict(transaction_id=str(rows[3].id),proceeds_minor='1',basis='Synthetic disposal',allocation_basis='proportional_cost_share'))
+        with self.assertRaisesRegex(LedgerSummaryError,'not a paired transfer receipt'):
+            evaluate_network_trace(export,{**request,'asset_uses':[use]})
+
+    def test_asset_use_preserves_network_cash_and_rejects_paired_debits(self):
+        export,request,rows=self.network()
+        baseline=json.loads(evaluate_network_trace(export,request)['scenario_json'])
+        use=dict(transaction_id=str(rows[-1].id),asset_label='Synthetic equipment',basis='Explicit synthetic whole-payment use')
+        actual=json.loads(evaluate_network_trace(export,{**request,'asset_uses':[use]})['scenario_json'])
+        for method, expected in [('first_in_first_out','2000'),('pro_rata','1000'),('last_in_first_out','0')]:
+            result=actual['results'][method]
+            self.assertEqual(result['claims'],baseline['results'][method]['claims'])
+            self.assertEqual(result['accounts'],baseline['results'][method]['accounts'])
+            self.assertEqual(result['asset_uses'][0]['allocated_by_claim'].get('claim','0'),expected)
+        with self.assertRaisesRegex(LedgerSummaryError,'not paired transfers'):
+            evaluate_network_trace(export,{**request,'asset_uses':[{**use,'transaction_id':str(rows[2].id)}]})
+        self.assertFalse(self.db.new or self.db.dirty)
+
+    def test_two_hops_compare_methods_and_conserve_root_claim(self):
+        export,request,rows=self.network();result=evaluate_network_trace(export,request);report=json.loads(result['scenario_json'])
+        fifo=report['results']['first_in_first_out'];pro=report['results']['pro_rata'];lifo=report['results']['last_in_first_out']
+        self.assertEqual([h['propagated_by_claim']['claim'] for h in fifo['hops']],['10000','6000'])
+        self.assertEqual(fifo['claims']['claim']['reported_remaining_minor'],'8000')
+        self.assertEqual(fifo['claims']['claim']['withdrawn_without_selected_transfer_minor'],'2000')
+        self.assertEqual(pro['claims']['claim']['reported_remaining_minor'],'9000')
+        self.assertEqual(lifo['claims']['claim']['reported_remaining_minor'],'10000')
+        for output in report['results'].values():
+            claim=output['claims']['claim'];self.assertEqual(int(claim['reported_remaining_minor'])+int(claim['withdrawn_without_selected_transfer_minor']),10000)
+            self.assertEqual(len(output['hops']),2)
+        self.assertFalse(report['applied']);self.assertFalse(report['assumptions_verified']);self.assertEqual(report['ledger_snapshot'],json.loads(export.snapshot.content))
+        self.assertEqual(hashlib.sha256(result['scenario_json'].encode()).hexdigest(),result['scenario_sha256'])
+        self.assertTrue(all(r.proof_class=='p3' for r in rows))
+    def test_stale_scope_missing_rows_reused_pairs_and_backward_order_refused(self):
+        export,request,rows=self.network();backward=list(request['ordered_transaction_ids']);backward[2],backward[3]=backward[3],backward[2]
+        for change in [dict(expected_snapshot_sha256='0'*64),dict(ordered_transaction_ids=backward),dict(ordered_transaction_ids=request['ordered_transaction_ids'][:-1]),dict(pairs=request['pairs']*2),dict(openings=request['openings'][:-1]),dict(population='verified')]:
+            with self.subTest(change=change),self.assertRaises(LedgerSummaryError):evaluate_network_trace(export,{**request,**change})
+    def test_receiving_credit_cannot_be_double_attributed_as_a_root(self):
+        export,request,rows=self.network();wrong={**request['attributions'][0],'transaction_id':str(rows[3].id)}
+        with self.assertRaises(LedgerSummaryError):evaluate_network_trace(export,{**request,'attributions':[wrong]})
+        with patch('services.financial.network_tracing.MAX_NETWORK_ROWS',2):
+            with self.assertRaises(LedgerSummaryError):evaluate_network_trace(export,request)
+
+    def recapture(self):
+        snapshot=capture_ledger_snapshot(self.db,case_id=self.case.id,start_date=date(2026,1,1),end_date=date(2026,1,31))
+        document=_capture_history(self.db,json.loads(snapshot.content),case_id=self.case.id)
+        content=json.dumps(document,sort_keys=True,separators=(',',':'),ensure_ascii=False)
+        return LedgerExport(LedgerSnapshot(content,hashlib.sha256(content.encode()).hexdigest(),len(content.encode())),'{}')
+
+    def test_explicit_backward_timing_conserves_each_method_without_redating_rows(self):
+        export,request,rows=self.network()
+        for row,day in zip(rows,[4,4,5,1,2,2,3]):
+            row.transaction_date=row.ordering_date=date(2026,1,day)
+            row.value_date=row.posted_date=row.effective_date=None
+        self.db.commit();export=self.recapture()
+        request.update(expected_snapshot_sha256=export.snapshot.sha256,tolerance_days=7,
+            ordered_transaction_ids=[str(rows[i].id) for i in (3,4,5,6,0,1,2)])
+        with self.assertRaisesRegex(LedgerSummaryError,'Forward tracing'):evaluate_network_trace(export,request)
+        with self.assertRaisesRegex(LedgerSummaryError,'Explain the basis'):evaluate_network_trace(export,{**request,'allow_backward':True})
+        result=evaluate_network_trace(export,{**request,'allow_backward':True,'backward_basis':'Synthetic earlier receiving credit linked explicitly to a later payer debit.'})
+        captured=json.loads(result['scenario_json'])
+        self.assertTrue(captured['backward_timing_used'])
+        self.assertEqual(captured['ledger_snapshot'],json.loads(export.snapshot.content))
+        self.assertEqual(captured['results']['first_in_first_out']['claims']['claim']['reported_remaining_minor'],'8000')
+        self.assertEqual(captured['results']['pro_rata']['claims']['claim']['reported_remaining_minor'],'9000')
+        for method in captured['results'].values():
+            claim=method['claims']['claim'];self.assertEqual(int(claim['reported_remaining_minor'])+int(claim['withdrawn_without_selected_transfer_minor']),10000)
+            self.assertEqual([h['backward_timing'] for h in method['hops']],[True,False])
+        self.assertTrue(all(r.proof_class=='p3' for r in rows))
+        self.assertFalse(self.db.new or self.db.dirty)
+
+    def test_backward_account_cycle_is_refused_without_a_partial_trace(self):
+        export,request,rows=self.network()
+        rows[0].amount_minor=2000;self.db.commit();export=self.recapture()
+        request.update(expected_snapshot_sha256=export.snapshot.sha256,allow_backward=True,backward_basis='Synthetic circular dependency')
+        request['pairs'].append(dict(debit_id=str(rows[6].id),credit_id=str(rows[0].id)))
+        with self.assertRaisesRegex(LedgerSummaryError,'circular account dependency'):evaluate_network_trace(export,request)
+
+    def test_enabling_backward_option_without_using_it_keeps_forward_results(self):
+        export,request,rows=self.network()
+        forward=json.loads(evaluate_network_trace(export,request)['scenario_json'])
+        enabled=json.loads(evaluate_network_trace(export,{**request,'allow_backward':True,'backward_basis':'No backward pair is actually selected.'})['scenario_json'])
+        self.assertFalse(enabled['backward_timing_used'])
+        self.assertEqual(forward['results'],enabled['results'])

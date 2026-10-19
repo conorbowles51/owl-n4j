@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Any
 
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, text
 from sqlalchemy.orm import Session
 
 from postgres.models.evidence import EvidenceFile
@@ -160,6 +161,14 @@ def reconcile_jobs_payload(db: Session, jobs: list[dict[str, Any]]) -> int:
         if not db_rec:
             continue
 
+        request_id = (getattr(db_rec, "last_processed_profile_snapshot", None) or {}).get("ingestion_request_id")
+        if request_id and (job.get("pipeline_state") or {}).get("ingestion_request_id") != request_id:
+            # The current upload may not yet have an engine job, or this may
+            # be a delayed response from before that upload. Only its accepted
+            # request can control this file's status; historical runs remain
+            # visible in the jobs list without replacing the current attempt.
+            continue
+
         created_at = _created_at_timestamp(job)
         # Missing/unparseable timestamps retain the documented payload order,
         # where the first item is the newest.
@@ -172,21 +181,75 @@ def reconcile_jobs_payload(db: Session, jobs: list[dict[str, Any]]) -> int:
         if selected is None or order_key > selected[0]:
             latest_jobs_by_record_id[record_id] = (order_key, db_rec, job)
 
+    pending = [(db_rec, job) for _, db_rec, job in latest_jobs_by_record_id.values()
+               if _record_would_change(db_rec, job)]
+    if not pending:
+        return 0
+    claimed = _claim_without_waiting(db, [db_rec for db_rec, _ in pending])
+    if claimed is not None:
+        pending = [(db_rec, job) for db_rec, job in pending if db_rec.id in claimed]
+
     updated = 0
-    for _, db_rec, job in latest_jobs_by_record_id.values():
-        changed = False
-        job_id = str(job.get("id") or "")
-        if job_id and db_rec.engine_job_id != job_id:
-            db_rec.engine_job_id = job_id
-            changed = True
-        if _sync_db_record_from_job(db_rec, job):
-            changed = True
-        if changed:
+    for db_rec, job in pending:
+        if _apply_job(db_rec, job):
             updated += 1
 
     if updated:
         db.flush()
     return updated
+
+
+def _apply_job(db_rec: EvidenceFile, job: dict[str, Any]) -> bool:
+    changed = False
+    job_id = str(job.get("id") or "")
+    if job_id and db_rec.engine_job_id != job_id:
+        db_rec.engine_job_id = job_id
+        changed = True
+    if _sync_db_record_from_job(db_rec, job):
+        changed = True
+    return changed
+
+
+def _record_would_change(db_rec: EvidenceFile, job: dict[str, Any]) -> bool:
+    return _apply_job(_detached_copy(db_rec), job)
+
+
+_SYNCED_FIELDS = ("engine_job_id", "status", "last_error", "processing_stale", "processed_at", "summary",
+                  "transcription", "transcription_segments", "entity_count", "relationship_count")
+
+
+def _detached_copy(db_rec: EvidenceFile):
+    return SimpleNamespace(**{field: getattr(db_rec, field) for field in _SYNCED_FIELDS})
+
+
+def _claim_without_waiting(db: Session, records: list[EvidenceFile]) -> set | None:
+    """Lock the records this sync will write, without ever waiting for a lock.
+
+    Every evidence write appends to its case's audit chain under a per-case
+    advisory lock, taken by the trigger after the row lock. This sync writes
+    many rows in one transaction, so waiting here (for the chain or for a row
+    an import holds) is the shared edge of every deadlock seen live. It is a
+    catch-up of engine state that the next poll repeats, so it takes the
+    chain first and only if free, then only rows nobody holds; the rest wait
+    for the next poll. Returns None when there is nothing to lock (not Postgres).
+    """
+    bind = db.get_bind() if hasattr(db, "get_bind") else None
+    if bind is None or bind.dialect.name != "postgresql":
+        return None
+    claimed: set = set()
+    for case_id in sorted({str(r.case_id) for r in records}):
+        held = db.execute(text("SELECT pg_try_advisory_xact_lock(hashtextextended('loupe.financial.audit:' || CAST(:case_id AS text), 0))"),
+                          dict(case_id=case_id)).scalar()
+        if not held:
+            continue
+        ids = [r.id for r in records if str(r.case_id) == case_id]
+        claimed.update(db.scalars(select(EvidenceFile.id).where(EvidenceFile.id.in_(ids))
+                                  .order_by(EvidenceFile.id).with_for_update(skip_locked=True)).all())
+    if claimed:
+        # Re-read what was claimed: another writer may have changed it since the first read.
+        list(db.scalars(select(EvidenceFile).where(EvidenceFile.id.in_(claimed))
+                        .execution_options(populate_existing=True)).all())
+    return claimed
 
 
 async def reconcile_case_jobs(db: Session, case_id: str) -> int:

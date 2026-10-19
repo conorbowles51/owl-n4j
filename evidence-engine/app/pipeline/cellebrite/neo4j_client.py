@@ -13,7 +13,7 @@ import time
 import re
 from typing import Dict, List, Optional, Any
 
-from neo4j import GraphDatabase
+from neo4j import GraphDatabase, Query
 
 
 def normalize_amount(raw: str) -> str:
@@ -655,7 +655,7 @@ class Neo4jClient:
             List of result records as dicts
         """
         with self.driver.session() as session:
-            result = session.run(query, **params)
+            result = session.run(Query(query, timeout=45), **params)
             return [dict(record) for record in result]
 
     def clear_database(self):

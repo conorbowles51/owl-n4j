@@ -6,7 +6,10 @@ Neo4jService and dealt with financial transactions now lives here.
 """
 
 import logging
+import math
+from services.financial_record_amounts import recorded_amount, recorded_amount_text
 import re
+from services.financial_record_dates import financial_record_day, validate_financial_date_range
 from typing import Dict, List, Optional
 
 from services.neo4j.driver import driver, safe_float
@@ -25,13 +28,18 @@ LEGACY_FINANCIAL_EVENT_TYPES = [
 ]
 
 
+# An omitted guard keeps the older API contract. Explicit None means the
+# investigator reviewed an absent value, which must still be absent at save.
+_UNSET_EXPECTED_AMOUNT = object()
+
+
 class FinancialService:
     """Neo4j-backed service for financial transaction analysis."""
 
     @staticmethod
     def _sanitize_scalar(value):
         if isinstance(value, float):
-            return safe_float(value, default=0)
+            return value if math.isfinite(value) else None
         return value
 
     def _sanitize_transaction(self, transaction: Dict) -> Dict:
@@ -72,7 +80,7 @@ class FinancialService:
         record = session.run(
             """
             MATCH (n {case_id: $case_id})
-            WHERE n.amount IS NOT NULL
+            WHERE (n.amount IS NOT NULL OR coalesce(n.is_financial_event, false) = true)
             RETURN
                 count(n) AS total_amount_nodes,
                 sum(
@@ -98,16 +106,20 @@ class FinancialService:
 
     def _mode_filter_clause(self, alias: str, *, uses_legacy: bool, mode: str) -> str:
         normalized_mode = self._normalize_mode(mode)
-        if uses_legacy:
-            tx_clause = self._transaction_like_clause(alias)
-            return tx_clause if normalized_mode == "transactions" else f"NOT {tx_clause}"
-        if normalized_mode == "transactions":
-            return f"coalesce({alias}.is_evidence_backed_transaction, false) = true"
-        return (
+        explicit = (
+            f"coalesce({alias}.is_evidence_backed_transaction, false) = true"
+            if normalized_mode == "transactions" else
             f"coalesce({alias}.financial_view_mode, "
-            f"CASE WHEN coalesce({alias}.is_evidence_backed_transaction, false) THEN 'transaction' ELSE 'intelligence' END"
-            f") = 'intelligence'"
+            f"CASE WHEN coalesce({alias}.is_evidence_backed_transaction, false) THEN 'transaction' ELSE 'intelligence' END) = 'intelligence'"
         )
+        if not uses_legacy:
+            return explicit
+        tx_clause = self._transaction_like_clause(alias)
+        legacy = tx_clause if normalized_mode == "transactions" else f"NOT {tx_clause}"
+        # A legacy record in the case must not discard another record's explicit
+        # classification, especially an undated or amount-free financial claim.
+        tagged = f"({alias}.financial_model_version = 2 OR {alias}.financial_view_mode IS NOT NULL OR {alias}.is_evidence_backed_transaction IS NOT NULL)"
+        return f"(CASE WHEN {tagged} THEN ({explicit}) ELSE ({legacy}) END)"
 
     def _record_to_transaction(self, record, *, uses_legacy: bool, mode: str) -> Dict:
         from_key = record["from_entity_key"] or record["rel_from_key"] or record["initiator_key"]
@@ -115,22 +127,8 @@ class FinancialService:
         to_key = record["to_entity_key"] or record["rel_to_key"] or record["rf_key"]
         to_name = record["to_entity_name"] or record["rel_to_name"] or record["rf_name"] or record["prop_receiver"]
 
-        amount_val = safe_float(record["amount"])
-        if amount_val == 0:
-            raw = record.get("raw_amount")
-            if raw is not None:
-                cleaned = re.sub(r"[^\d.\-]", "", str(raw))
-                amount_val = safe_float(cleaned)
-                if amount_val != 0:
-                    logger.warning(
-                        "Amount fallback used for tx %s: raw=%r -> %s",
-                        record["key"], raw, amount_val
-                    )
-                else:
-                    logger.warning(
-                        "Amount resolved to 0 for tx %s: raw=%r",
-                        record["key"], raw
-                    )
+        raw_amount = record.get("raw_amount") if record.get("raw_amount") is not None else record.get("amount")
+        amount_val = recorded_amount(raw_amount)
 
         requested_mode = self._normalize_mode(mode)
         record_mode = record.get("financial_view_mode") or ("intelligence" if requested_mode == "intelligence" else "transaction")
@@ -144,6 +142,7 @@ class FinancialService:
             "date": record["date"],
             "time": record["time"],
             "amount": amount_val,
+            "raw_amount": recorded_amount_text(raw_amount),
             "currency": record["currency"],
             "summary": record["summary"],
             "category": record["financial_category"] or "Uncategorized",
@@ -157,11 +156,8 @@ class FinancialService:
             "is_parent": record["is_parent"] or False,
             "parent_transaction_key": record["parent_transaction_key"],
             "amount_corrected": record["amount_corrected"] or False,
-            "original_amount": (
-                safe_float(record["original_amount"])
-                if record.get("original_amount") is not None
-                else None
-            ),
+            "original_amount": recorded_amount(record.get("original_amount")),
+            "original_amount_raw": recorded_amount_text(record.get("original_amount")),
             "correction_reason": record["correction_reason"],
             "financial_record_kind": record.get("financial_record_kind") or ("transaction" if record_mode == "transaction" else "other"),
             "financial_view_mode": record_mode,
@@ -190,6 +186,7 @@ class FinancialService:
         mode: str = "transactions",
     ) -> Dict:
         """Get financial records with strict provenance mode and legacy fallback."""
+        validate_financial_date_range(start_date, end_date)
         with driver.session() as session:
             normalized_mode = self._normalize_mode(mode)
             metadata = self._get_dataset_metadata(session, case_id, normalized_mode)
@@ -201,10 +198,10 @@ class FinancialService:
                 conditions.append("labels(n)[0] IN $types")
                 params["types"] = types
             if start_date:
-                conditions.append("n.date >= $start_date")
+                conditions.append("substring(trim(toString(n.date)), 0, 10) >= $start_date")
                 params["start_date"] = start_date
             if end_date:
-                conditions.append("n.date <= $end_date")
+                conditions.append("substring(trim(toString(n.date)), 0, 10) <= $end_date")
                 params["end_date"] = end_date
             if categories:
                 conditions.append("coalesce(n.financial_category, 'Uncategorized') IN $categories")
@@ -214,7 +211,7 @@ class FinancialService:
 
             query = f"""
                 MATCH (n)
-                WHERE n.amount IS NOT NULL
+                WHERE (n.amount IS NOT NULL OR coalesce(n.is_financial_event, false) = true)
                 AND n.case_id = $case_id
                 AND {self._mode_filter_clause("n", uses_legacy=uses_legacy, mode=normalized_mode)}
                 {extra_filter}
@@ -288,6 +285,11 @@ class FinancialService:
                     continue
                 deduped_transactions[transaction_key] = self._sanitize_transaction(transaction)
             transactions = list(deduped_transactions.values())
+            if start_date or end_date:
+                transactions = [row for row in transactions
+                    if (day := financial_record_day(row.get("date"))) is not None
+                    and (not start_date or day >= start_date)
+                    and (not end_date or day <= end_date)]
             return {"transactions": transactions, "total": len(transactions), **metadata}
 
     def get_financial_entities(self, case_id: str) -> List[Dict]:
@@ -596,31 +598,42 @@ class FinancialService:
         success_count = sum(1 for r in results if r.get("success"))
         return {"success": True, "updated": success_count, "total": len(node_keys)}
 
-    def update_transaction_amount(self, node_key: str, case_id: str, new_amount: float, correction_reason: str) -> Dict:
+    def update_transaction_amount(self, node_key: str, case_id: str, new_amount: float, correction_reason: str, expected_amount: Optional[float] = None, expected_raw_amount=_UNSET_EXPECTED_AMOUNT) -> Dict:
         """Update a transaction amount, preserving the original value for audit trail."""
-        with driver.session() as session:
-            result = session.run(
+        def correct(tx):
+            locked = tx.run(
                 """
                 MATCH (n {key: $key, case_id: $case_id})
-                SET n.original_amount = CASE WHEN n.original_amount IS NULL THEN n.amount ELSE n.original_amount END,
+                WHERE (n.amount IS NOT NULL OR coalesce(n.is_financial_event, false) = true)
+                SET n.amount_correction_revision = coalesce(n.amount_correction_revision, 0) + 1
+                RETURN n.amount AS amount
+                """, key=node_key, case_id=case_id,
+            ).single()
+            # The write lock remains held until this transaction commits. Raising
+            # here rolls back its revision increment and leaves the amount intact.
+            current = recorded_amount(locked["amount"]) if locked else None
+            raw_changed = expected_raw_amount is not _UNSET_EXPECTED_AMOUNT and (
+                current is not None or recorded_amount_text(locked["amount"] if locked else None) != expected_raw_amount)
+            if locked is None or raw_changed or (expected_amount is not None and current != expected_amount):
+                raise ValueError(f"Record {node_key} is missing or its amount changed. Reload the record before correcting it.")
+            result = tx.run(
+                """
+                MATCH (n {key: $key, case_id: $case_id})
+                SET n.original_amount = CASE WHEN coalesce(n.amount_corrected, false) THEN n.original_amount ELSE n.amount END,
                     n.amount = $new_amount,
                     n.amount_corrected = true,
                     n.correction_reason = $correction_reason
                 RETURN n.key AS key, n.amount AS amount, n.original_amount AS original_amount
                 """,
-                key=node_key,
-                case_id=case_id,
-                new_amount=new_amount,
+                key=node_key, case_id=case_id, new_amount=new_amount,
                 correction_reason=correction_reason,
             ).single()
-            if not result:
-                raise ValueError(f"Node not found: {node_key} in case {case_id}")
-            return {
-                "success": True,
-                "key": result["key"],
-                "amount": result["amount"],
-                "original_amount": result["original_amount"],
-            }
+            return {"success": True, "key": result["key"], "amount": result["amount"],
+                    "original_amount": self._sanitize_scalar(result["original_amount"]),
+                    "original_amount_raw": recorded_amount_text(result["original_amount"])}
+
+        with driver.session() as session:
+            return session.execute_write(correct)
 
     def link_sub_transaction(self, parent_key: str, child_key: str, case_id: str) -> Dict:
         """Link a child transaction to a parent transaction."""

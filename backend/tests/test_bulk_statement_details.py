@@ -1,0 +1,361 @@
+from copy import deepcopy
+from datetime import datetime, timedelta, timezone
+from hashlib import sha256
+from pathlib import Path
+from unittest import TestCase
+from unittest.mock import patch
+from uuid import UUID, uuid4
+
+from sqlalchemy import select
+from postgres.models.evidence import EvidenceDocumentText, EvidenceTableGeometry, EvidenceFile
+from postgres.models.financial import FinancialSourceDocument, FinancialTransaction
+from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item
+from services.financial import bulk_statement_details as service, import_batches
+from services.financial.pdf_candidates import PdfMappingError, _digest
+from services.financial.statement_details import read_statement_details
+from services.financial.statement_import import read_statement_import, confirm_statement_import
+from tests.test_financial_statement_import import StatementImportTests as Fixture
+
+
+class BulkStatementDetailsTests(TestCase):
+    def setUp(self):
+        self.f = Fixture('test_existing_import_and_same_request_keep_the_saved_account_for_navigation')
+        self.f.setUp()
+        path = Path(self.f._directory) / 'second.pdf'
+        path.write_bytes(b'%PDF-1.4\nSecond synthetic statement')
+        self.second = self.f.evidence(sha256(path.read_bytes()).hexdigest())
+        self.second.stored_path = str(path)
+        text = self.f.db.get(EvidenceDocumentText, self.f.file.id)
+        content = text.content.replace('Test Company', 'Second Company').replace('TEST123', 'TEST456')
+        job_id = uuid4()
+        self.f.db.add(EvidenceDocumentText(evidence_file_id=self.second.id,
+            content=content, content_sha256=sha256(content.encode()).hexdigest(),
+            character_count=len(content), engine_job_id=job_id, source_locations=text.source_locations))
+        geometry = self.f.db.scalar(select(EvidenceTableGeometry).where(EvidenceTableGeometry.evidence_file_id==self.f.file.id))
+        self.f.db.add(EvidenceTableGeometry(evidence_file_id=self.second.id, page_number=1,
+            engine_job_id=job_id, payload=deepcopy(geometry.payload)))
+        self.f.db.commit()
+
+    def tearDown(self):
+        self.f.tearDown()
+
+    def listing(self, selection=None):
+        with self.f.SessionLocal() as db:
+            return service.list_statements(db, case_id=self.f.case.id,
+                selection=selection or service.Selection(file_ids=[self.f.file.id, self.second.id]))
+
+    def request(self, changes=None, mode='replace'):
+        rows = self.listing()['items']
+        self.assertEqual(len(rows), 2)
+        request = service.BulkEdit(targets=[{key: row[key] for key in ('file_id','source_id','statement_id','revision')} for row in rows],
+            changes=changes or dict(holder='Reviewed Company'), mode=mode, request_id=uuid4())
+        with self.f.SessionLocal() as db:
+            preview = service.preview(db, case_id=self.f.case.id, request=request)
+        return request.model_copy(update={'preview_revision': preview['preview_revision']})
+
+    def save(self, request, case_id=None):
+        with self.f.SessionLocal() as db:
+            return service.save(db, case_id=case_id or self.f.case.id, request=request, actor=self.f.actor)
+
+    def import_second(self):
+        with self.f.SessionLocal() as db:
+            proposal = read_statement_import(db, case_id=self.f.case.id, evidence_file_id=self.second.id)
+        return confirm_statement_import(session_factory=self.f.SessionLocal, case_id=self.f.case.id,
+            evidence_file_id=self.second.id, request=import_batches.initial_request(proposal), actor=self.f.actor, resolve_path=Path)
+
+    def test_mixed_saved_and_draft_fill_missing_then_replace_reopen_preserves_payments(self):
+        receipt = self.f.confirm()
+        with self.f.SessionLocal() as db:
+            original = deepcopy(db.get(FinancialSourceDocument, UUID(receipt['source_document_id'])).metadata_['statement_import_original'])
+            payments = {r.id: (r.amount_minor, r.transaction_date) for r in db.scalars(select(FinancialTransaction))}
+        request = self.request(dict(holder='Should not replace', institution='Reviewed Bank'), mode='fill_missing')
+        result = self.save(request)
+        self.assertEqual((result['updated'], result['imported'], result['drafts']), (0,0,0))
+        rows = self.listing()['items']
+        self.assertEqual({row['values']['holder'] for row in rows}, {'Test Company', 'Second Company'})
+        self.assertEqual({row['values']['institution'] for row in rows}, {'Synthetic Bank'})
+        self.save(self.request(dict(institution='Reviewed Bank')))
+        self.assertEqual({row['values']['institution'] for row in self.listing()['items']}, {'Reviewed Bank'})
+        self.save(self.request())
+        self.assertEqual({row['values']['holder'] for row in self.listing()['items']}, {'Reviewed Company'})
+        with self.f.SessionLocal() as db:
+            self.assertEqual({r.id: (r.amount_minor, r.transaction_date) for r in db.scalars(select(FinancialTransaction))}, payments)
+            self.assertEqual(db.get(FinancialSourceDocument, UUID(receipt['source_document_id'])).metadata_['statement_import_original'], original)
+
+    def test_saved_retry_returns_same_receipt_and_no_duplicate_history(self):
+        first = self.f.confirm(); self.import_second()
+        request = self.request()
+        result = self.save(request)
+        self.assertEqual(self.save(request), result)
+        with self.f.SessionLocal() as db:
+            history = db.get(FinancialSourceDocument, UUID(first['source_document_id'])).metadata_['statement_details_history']
+            self.assertEqual(len(history), 1)
+        with self.assertRaisesRegex(PdfMappingError, 'different changes'):
+            self.save(request.model_copy(update={'mode':'fill_missing'}))
+
+    def test_stale_preview_changes_nothing(self):
+        self.f.confirm()
+        stale = self.request()
+        self.save(self.request(dict(institution='Other reviewer bank')))
+        before = self.listing()
+        with self.assertRaisesRegex(PdfMappingError, 'read again since you selected it'):
+            self.save(stale)
+        self.assertEqual(self.listing(), before)
+
+    def test_late_failure_rolls_back_all_saved_statements(self):
+        self.f.confirm(); self.import_second()
+        request = self.request()
+        before = self.listing()
+        actual = service.update_statement_details
+        calls = []
+        def failing(*args, **kwargs):
+            calls.append(1)
+            if len(calls) == 2:
+                raise RuntimeError('injected second statement failure')
+            return actual(*args, **kwargs)
+        with patch.object(service, 'update_statement_details', side_effect=failing):
+            with self.assertRaisesRegex(RuntimeError, 'injected'):
+                self.save(request)
+        self.assertEqual(self.listing(), before)
+
+    def test_currency_keeps_printed_values_and_draft_row_corrections(self):
+        self.f.confirm()
+        with self.f.SessionLocal() as db:
+            proposal = read_statement_import(db, case_id=self.f.case.id, evidence_file_id=self.second.id)
+            raw = import_batches.initial_request(proposal)
+            payment = next(r for r in raw['rows'] if not r['excluded'])
+            payment['description'] = 'Investigator corrected description'
+            file = db.get(EvidenceFile, self.second.id)
+            file.metadata_ = dict(financial_review_progress={'': dict(request=raw, review_revision=_digest(raw), saved_at='test', saved_by={})})
+            db.commit()
+        self.save(self.request(dict(currency='KWD')))
+        rows = self.listing()['items']
+        self.assertEqual({row['values']['currency'] for row in rows}, {'KWD'})
+        with self.f.SessionLocal() as db:
+            changed = db.get(EvidenceFile, self.second.id).metadata_['financial_review_progress']['']['request']
+            new = next(r for r in changed['rows'] if r['id']==payment['id'])
+            self.assertEqual(new['description'], payment['description'])
+            self.assertEqual(int(new['amount_minor']), int(payment['amount_minor']) * 10)
+
+    def test_pending_import_and_active_worker_are_not_overwritten(self):
+        request = self.request()
+        batch_id = uuid4()
+        with self.f.SessionLocal() as db:
+            db.add(Batch(id=batch_id, case_id=self.f.case.id, created_by=self.f.user.id,
+                status='ready', actor={}, files=[]))
+            db.flush()
+            db.add(Item(id=uuid4(), batch_id=batch_id, file_id=self.second.id, statement_key='', status='pending_import', summary={}))
+            db.commit()
+        with self.assertRaisesRegex(PdfMappingError, 'importing'):
+            self.save(request)
+        with self.f.SessionLocal() as db:
+            batch = db.get(Batch, batch_id)
+            batch.worker_token = str(uuid4()); batch.lease_until = datetime.now(timezone.utc)+timedelta(minutes=1); db.commit()
+        with self.assertRaisesRegex(PdfMappingError, 'still being processed'):
+            self.save(request)
+
+    def test_batch_and_individual_draft_share_saved_fields_and_import_them(self):
+        batch_id = uuid4()
+        with self.f.SessionLocal() as db:
+            batch = Batch(id=batch_id, case_id=self.f.case.id, created_by=self.f.user.id, status='ready', actor={}, files=[])
+            db.add(batch); db.commit()
+            for file in (self.f.file, self.second):
+                import_batches.prepare_reviews(db, batch, dict(file_id=str(file.id), source_id=str(file.id), filename=file.original_filename))
+        self.assertEqual(len(self.listing(service.Selection(batch_id=batch_id))['items']), 2)
+        self.save(self.request())
+        with self.f.SessionLocal() as db:
+            items = list(db.scalars(select(Item).where(Item.batch_id==batch_id)))
+            self.assertEqual({item.review_request['holder'] for item in items}, {'Reviewed Company'})
+            raw = next(i.review_request for i in items if i.file_id==self.second.id)
+        result = confirm_statement_import(session_factory=self.f.SessionLocal, case_id=self.f.case.id,
+            evidence_file_id=self.second.id, request=raw, actor=self.f.actor, resolve_path=Path)
+        with self.f.SessionLocal() as db:
+            saved = read_statement_details(db, case_id=self.f.case.id, source_id=UUID(result['source_document_id']))
+            self.assertEqual(saved['details']['holder'], 'Reviewed Company')
+
+    def test_case_boundaries_and_preview_required(self):
+        request = self.request()
+        with self.assertRaisesRegex(PdfMappingError, 'no longer in this case'):
+            self.save(request, uuid4())
+        with self.assertRaisesRegex(PdfMappingError, 'preview'):
+            self.save(request.model_copy(update={'preview_revision': None}))
+        with self.assertRaisesRegex(PdfMappingError, 'Select each'):
+            self.save(request.model_copy(update={'targets': [request.targets[0]]*2}))
+
+    def test_invalid_dates_are_rejected_against_each_statement(self):
+        with self.assertRaisesRegex(PdfMappingError, 'start must'):
+            self.request(dict(period_start='2026-02-01', period_end='2026-01-01'))
+        with self.assertRaises(ValueError):
+            service.Changes(period_start='2026-02-30')
+
+    def test_unprepared_file_is_explained_not_silently_included(self):
+        with self.f.SessionLocal() as db:
+            db.delete(db.get(EvidenceDocumentText, self.second.id)); db.commit()
+        result = self.listing()
+        self.assertEqual(len(result['items']), 1)
+        self.assertIn('Prepare this PDF', result['notices'][0]['message'])
+
+    # The editor lists identity values; it must not rebuild duplicate verdicts.
+    def test_listing_and_preview_skip_the_duplicate_verdict_and_save_applies_it(self):
+        from services.financial import pending_statement_duplicates as duplicates
+        real = duplicates.read_duplicate_disposition
+        with patch.object(duplicates, 'read_duplicate_disposition', side_effect=real) as verdict:
+            request = self.request()
+            self.assertEqual(verdict.call_count, 0)
+            self.save(request)
+            # Called for the draft row being saved, so an ignored copy still
+            # saves as ignored.
+            self.assertGreaterEqual(verdict.call_count, 1)
+
+    def test_read_only_listing_memo_gives_the_same_reading(self):
+        from services.financial.statement_import import READ_ONLY_LISTING
+        self.import_second()
+        with self.f.SessionLocal() as db:
+            plain = read_statement_import(db, case_id=self.f.case.id, evidence_file_id=self.second.id, _cache={})
+        with self.f.SessionLocal() as db:
+            memo = {READ_ONLY_LISTING: True}
+            first = read_statement_import(db, case_id=self.f.case.id, evidence_file_id=self.second.id, _cache=memo)
+            again = read_statement_import(db, case_id=self.f.case.id, evidence_file_id=self.second.id, _cache=memo)
+        self.assertIsNotNone(plain.get('current_import'))
+        self.assertEqual(first, plain)
+        self.assertEqual(again, plain)
+        self.assertTrue(any(isinstance(key, tuple) and key[0] == 'existing_sources' for key in memo))
+
+    # Listing and previewing use saved records and stored batch readings; the
+    # PDF is read again only for a change that depends on the reading.
+    def prepare_batch(self):
+        batch_id = uuid4()
+        with self.f.SessionLocal() as db:
+            batch = Batch(id=batch_id, case_id=self.f.case.id, created_by=self.f.user.id, status='ready', actor={}, files=[])
+            db.add(batch); db.commit()
+            for file in (self.f.file, self.second):
+                import_batches.prepare_reviews(db, batch, dict(file_id=str(file.id), source_id=str(file.id), filename=file.original_filename))
+        return batch_id
+
+    def unread(self):
+        def refuse(*args, **kwargs):
+            raise AssertionError('The PDF was read again.')
+        return patch.object(service, 'read_statement_import', side_effect=refuse)
+
+    def without_revisions(self, listing):
+        return dict(listing, items=[{k: v for k, v in row.items() if k != 'revision'} for row in listing['items']])
+
+    def read_listing(self):
+        with patch.object(service, '_stored_statements', side_effect=lambda session, case_id, files, cache: {f.id: None for f in files}), \
+                patch.object(service, '_stored_draft', return_value=None):
+            return self.listing()
+
+    def test_saved_and_batch_read_statements_list_and_preview_without_reading(self):
+        self.f.confirm()
+        self.prepare_batch()
+        with self.unread():
+            stored = self.listing()
+            request = service.BulkEdit(targets=[{k: row[k] for k in ('file_id', 'source_id', 'statement_id', 'revision')}
+                for row in stored['items']], changes=dict(holder='Reviewed Company'), mode='replace', request_id=uuid4())
+            with self.f.SessionLocal() as db:
+                preview = service.preview(db, case_id=self.f.case.id, request=request)
+        self.assertEqual({row['status'] for row in stored['items']}, {'Imported', 'Not imported'})
+        self.assertEqual(self.without_revisions(stored), self.without_revisions(self.read_listing()))
+        self.assertEqual(preview['updated'], 2)
+        # Saving the draft reads its PDF once more and applies the same change.
+        self.save(request.model_copy(update={'preview_revision': preview['preview_revision']}))
+        self.assertEqual({row['values']['holder'] for row in self.listing()['items']}, {'Reviewed Company'})
+
+    def test_a_statement_read_again_since_its_batch_check_previews_as_it_now_is(self):
+        batch_id = self.prepare_batch()
+        with self.f.SessionLocal() as db:
+            for item in db.scalars(select(Item).where(Item.batch_id == batch_id, Item.file_id == self.second.id)):
+                item.summary = {**item.summary, 'holder': 'Earlier reading'}
+            db.commit()
+        rows = self.listing()['items']
+        self.assertIn('Earlier reading', {row['values']['holder'] for row in rows})
+        request = service.BulkEdit(targets=[{k: row[k] for k in ('file_id', 'source_id', 'statement_id', 'revision')} for row in rows],
+            changes=dict(institution='Reviewed Bank'), mode='replace', request_id=uuid4())
+        with self.f.SessionLocal() as db:
+            listed = service.preview(db, case_id=self.f.case.id, request=request)
+        self.assertFalse(any(row.get('refreshed') for row in listed['items']))
+        # The save reads the current version and refuses the listed preview...
+        with self.assertRaisesRegex(PdfMappingError, 'Review the updated preview'):
+            self.save(request.model_copy(update={'preview_revision': listed['preview_revision']}))
+        # ...so the editor asks for the current one, which names what moved.
+        request = request.model_copy(update={'read_current': True})
+        with self.f.SessionLocal() as db:
+            preview = service.preview(db, case_id=self.f.case.id, request=request)
+        moved = [row for row in preview['items'] if row.get('refreshed')]
+        self.assertEqual(len(moved), 1)
+        self.assertEqual(moved[0]['refreshed']['holder']['listed'], 'Earlier reading')
+        self.assertNotEqual(moved[0]['values']['holder'], 'Earlier reading')
+        self.assertEqual(moved[0]['conflicts'], [])  # the edited field did not move
+        # The preview and the save read the same version: the save goes through.
+        self.save(request.model_copy(update={'preview_revision': preview['preview_revision']}))
+        self.assertEqual({row['values']['institution'] for row in self.listing()['items']}, {'Reviewed Bank'})
+
+    def test_choosing_the_shown_value_for_a_flagged_field_confirms_it(self):
+        batch_id = self.prepare_batch()
+        with self.f.SessionLocal() as db:
+            for item in db.scalars(select(Item).where(Item.batch_id == batch_id, Item.file_id == self.second.id)):
+                item.summary = {**item.summary, 'problems': [dict(kind='statement_detail', field='holder', row_id=None,
+                    message='Account holder not found: enter it'), *item.summary.get('problems', [])]}
+            db.commit()
+        rows = [row for row in self.listing()['items'] if row['file_id'] == str(self.second.id)]
+        shown = rows[0]['values']['holder']
+        request = service.BulkEdit(targets=[{k: rows[0][k] for k in ('file_id', 'source_id', 'statement_id', 'revision')}],
+            changes=dict(holder=shown), mode='fill_missing', request_id=uuid4())
+        with self.f.SessionLocal() as db:
+            preview = service.preview(db, case_id=self.f.case.id, request=request)
+        self.assertEqual(preview['updated'], 1)
+        self.assertEqual(preview['items'][0]['changes']['holder'], dict(before=shown, after=shown, confirmed=True))
+
+    def test_a_currency_change_reads_only_the_affected_statements(self):
+        self.prepare_batch()
+        rows = self.listing()['items']
+        request = service.BulkEdit(targets=[{k: rows[0][k] for k in ('file_id', 'source_id', 'statement_id', 'revision')}],
+            changes=dict(currency='KWD'), mode='replace', request_id=uuid4())
+        real = service.read_statement_import
+        with patch.object(service, 'read_statement_import', side_effect=real) as reads:
+            with self.f.SessionLocal() as db:
+                preview = service.preview(db, case_id=self.f.case.id, request=request)
+        self.assertEqual(preview['updated'], 1)
+        self.assertTrue(reads.call_count)
+        self.assertEqual({call.kwargs['evidence_file_id'] for call in reads.call_args_list}, {UUID(rows[0]['file_id'])})
+
+
+class ConfirmedProposalSaveTests(TestCase):
+    """Field proposals are saved only through this details save: System actor, source recorded, fill-missing."""
+    setUp, tearDown = BulkStatementDetailsTests.setUp, BulkStatementDetailsTests.tearDown
+    listing, request, save = BulkStatementDetailsTests.listing, BulkStatementDetailsTests.request, BulkStatementDetailsTests.save
+
+    def test_confirmed_proposals_save_through_the_details_save_and_dry_run_writes_nothing(self):
+        from services.financial.field_proposals import apply_confirmed_proposals
+        batch_id = uuid4()
+        with self.f.SessionLocal() as db:
+            batch = Batch(id=batch_id, case_id=self.f.case.id, created_by=self.f.user.id, status='ready', actor={}, files=[])
+            db.add(batch); db.commit()
+            for file in (self.f.file, self.second):
+                import_batches.prepare_reviews(db, batch, dict(file_id=str(file.id), source_id=str(file.id), filename=file.original_filename))
+        self.save(self.request(dict(holder='')))  # both drafts lose their holder
+        row = next(r for r in self.listing()['items'] if r['file_id'] == str(self.second.id))
+        self.assertEqual(row['values']['holder'], '')
+        label = "same account's 2 saved statements (account number and bank match)"
+        entries = [dict(batch_id=str(batch_id), file_id=str(self.second.id), statement_id=row['statement_id'],
+                        proposals=dict(holder=dict(value='Second Company', confirmed=True, label=label),
+                                       currency=dict(value='EUR', confirmed=False, label='case default')))]
+        with self.f.SessionLocal() as db:
+            dry = apply_confirmed_proposals(db, case_id=self.f.case.id, entries=entries)
+        self.assertEqual((dry['statements'], dry['saved'], dry['groups'][0]['would_update']), (1, 0, 1))
+        self.assertEqual(dry['groups'][0]['changes'], dict(holder='Second Company'))  # unconfirmed currency never applied
+        self.assertEqual(next(r for r in self.listing()['items'] if r['file_id'] == str(self.second.id))['values']['holder'], '')
+        with self.f.SessionLocal() as db:
+            applied = apply_confirmed_proposals(db, case_id=self.f.case.id, entries=entries, apply=True)
+        self.assertEqual(applied['saved'], 1)
+        rows = {r['file_id']: r for r in self.listing()['items']}
+        self.assertEqual(rows[str(self.second.id)]['values']['holder'], 'Second Company')
+        self.assertEqual(rows[str(self.f.file.id)]['values']['holder'], '')
+        with self.f.SessionLocal() as db:
+            history = db.get(EvidenceFile, self.second.id).metadata_['financial_account_detail_history'][-1]
+        self.assertEqual(history['actor']['name'], 'System')
+        self.assertIn(label, history['basis'])
+        # A second run changes nothing.
+        with self.f.SessionLocal() as db:
+            again = apply_confirmed_proposals(db, case_id=self.f.case.id, entries=entries, apply=True)
+        self.assertEqual(again['saved'], 0)

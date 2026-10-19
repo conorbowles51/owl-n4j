@@ -1,0 +1,179 @@
+"""Read-only amount correction review against a coherent ledger snapshot.
+
+This does not record a correction or reuse a persisted reconciliation result.
+Both the current and proposed statement identities are computed from current
+admitted rows. Native file controls are checked separately against fresh source
+bytes when the original row population can be rebound exactly.
+"""
+import uuid
+from types import SimpleNamespace
+from services.financial.correction_fields import correction_fields, json_fields, DATE_FIELDS
+from dataclasses import replace
+
+from sqlalchemy import select
+
+from postgres.models.financial import FinancialSourceDocument, FinancialStatementPeriod, FinancialTransaction
+from services.financial.duplicate_decisions import duplicate_revision
+from services.financial.money import Money
+from services.financial.periods import read_opening, read_closing
+from services.financial.reconcile import total_transactions, evaluate_identity
+from services.financial.transaction_query import to_view
+from services.financial.correction_verification import correction_verification
+from services.financial.correction_native import correction_native_controls
+from services.financial.correction_balances import correction_running_balances
+from services.financial.printed_totals import compare_printed_totals, retained_total_controls
+from services.financial.ledger_source import LedgerSourceError
+from services.financial.documents import UnknownSourceShapeError
+from postgres.models.enums import ReconciliationStatus
+
+
+class CorrectionPreviewError(ValueError):
+    def __init__(self, message, status_code=422):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+def preview_amount_correction(session, *, case_id: uuid.UUID, transaction_id: uuid.UUID,
+                              amount_minor: int, direction: str, resolve_path=None, fields=None) -> dict:
+    """Preview one magnitude/direction change without changing rows or classes.
+
+    Document-first locks match the disposition writers and are held until the
+    caller closes its transaction. The revision must be rechecked by a future
+    correction writer; a successful preview is never permission to write stale
+    data. Existing quarantine is preserved, not silently released by an edit.
+    """
+    if type(amount_minor) is not int or not 0 <= amount_minor <= 9223372036854775807:
+        raise CorrectionPreviewError("Amount must be a nonnegative integer within the ledger's range.")
+    if direction not in {"credit", "debit"}:
+        raise CorrectionPreviewError("Direction must be credit or debit.")
+    document_id = session.scalar(select(FinancialTransaction.source_document_id).where(
+        FinancialTransaction.id == transaction_id, FinancialTransaction.case_id == case_id))
+    document = session.scalar(select(FinancialSourceDocument).where(
+        FinancialSourceDocument.id == document_id, FinancialSourceDocument.case_id == case_id
+    ).with_for_update().execution_options(populate_existing=True))
+    if document is None:
+        raise CorrectionPreviewError("Ledger row not found in this case.", 404)
+    periods = list(session.scalars(select(FinancialStatementPeriod).where(
+        FinancialStatementPeriod.source_document_id == document.id
+    ).order_by(FinancialStatementPeriod.id).with_for_update().execution_options(populate_existing=True)))
+    rows = list(session.scalars(select(FinancialTransaction).where(
+        FinancialTransaction.source_document_id == document.id
+    ).order_by(FinancialTransaction.id).with_for_update().execution_options(populate_existing=True)))
+    row = next((row for row in rows if row.id == transaction_id and row.case_id == case_id), None)
+    if row is None:
+        raise CorrectionPreviewError("Ledger row not found in this case.", 404)
+    if document.status != "admitted" or row.ledger_status not in {"admitted", "quarantined"} or row.superseded_by_id:
+        raise CorrectionPreviewError("Only a current row in an admitted document can be reviewed for correction.", 409)
+    if any(p.case_id != case_id for p in periods) or any(r.case_id != case_id for r in rows):
+        raise CorrectionPreviewError("The source document has inconsistent case ownership.", 409)
+    period_ids = {period.id for period in periods}
+    if any(r.statement_period_id is not None and r.statement_period_id not in period_ids for r in rows):
+        raise CorrectionPreviewError("A source row links to another document's statement period.", 409)
+    try:
+        changes = correction_fields(fields)
+        if not any(changes.get(key, getattr(row, key)) is not None for key in DATE_FIELDS):
+            raise ValueError('At least one printed date is required.')
+    except ValueError as exc:
+        raise CorrectionPreviewError(str(exc)) from exc
+    changes = {key: value for key, value in changes.items() if value != getattr(row, key)}
+    if ((row.provenance or {}).get('date_basis') == 'statement_end_ordering_only'
+            and any(changes.get(key) is not None for key in DATE_FIELDS - {'effective_date'})
+            and 'effective_date' not in changes):
+        # A newly supplied printed date replaces the former sorting fallback.
+        # Include this removal in the preview and the recorded correction.
+        changes['effective_date'] = None
+    if amount_minor == row.amount_minor and direction == row.direction and not changes:
+        raise CorrectionPreviewError("The proposed reading is unchanged.")
+    original = to_view(row).to_json()
+    # Decimal strings preserve all PostgreSQL BIGINT values in JavaScript.
+    original["amount_minor"] = str(row.amount_minor)
+    original["running_balance_minor"] = None if row.running_balance_minor is None else str(row.running_balance_minor)
+    result = {
+        "case_id": str(case_id), "transaction_id": str(row.id),
+        "document_revision": duplicate_revision(session, document),
+        "original": original,
+        "proposed": {"amount_minor": str(amount_minor), "direction": direction,
+                     "currency": row.currency, "ledger_status": row.ledger_status, **json_fields(changes)},
+        "field_changes": json_fields(changes),
+        "statement_identity": None,
+        "running_balances": dict(available=False, reason="No linked statement period; running-balance comparison is unavailable.", interpretations=[]),
+        "limitation": "No linked statement period; statement balance impact is unavailable.",
+        "applied": False,
+        "native_controls_rechecked": False,
+        "printed_totals": None,
+        "printed_totals_error": None,
+        "proof_class_changed": False,
+    }
+    statuses = []
+    for period in periods:
+        period_rows = list(session.scalars(select(FinancialTransaction).where(
+            FinancialTransaction.statement_period_id == period.id)))
+        if any(r.case_id != case_id or r.source_document_id != document.id or r.account_id != period.account_id
+               for r in period_rows):
+            raise CorrectionPreviewError("The statement period has inconsistent row ownership.", 409)
+        affected = period.id == row.statement_period_id
+        if affected and period.currency != row.currency:
+            raise CorrectionPreviewError("The row and period currencies disagree.", 409)
+        totals = total_transactions(session, period_id=period.id, currency=period.currency)
+        credits, debits = totals.credits.minor_units, totals.debits.minor_units
+        if affected and row.ledger_status == "admitted":
+            credits -= row.amount_minor if row.direction == "credit" else 0
+            debits -= row.amount_minor if row.direction == "debit" else 0
+            credits += amount_minor if direction == "credit" else 0
+            debits += amount_minor if direction == "debit" else 0
+        proposed = replace(totals, credits=Money(credits, period.currency), debits=Money(debits, period.currency))
+        def identity(value):
+            outcome = evaluate_identity(opening=read_opening(period), closing=read_closing(period),
+                                        totals=value, currency=period.currency)
+            return {"status": outcome.status.value,
+                    "credits_minor": str(value.credits.minor_units), "debits_minor": str(value.debits.minor_units),
+                    "delta_minor": None if outcome.delta is None else str(outcome.delta.minor_units),
+                    "counted": value.counted, "excluded": dict(value.excluded),
+                    "independent_balances": outcome.independent}
+        projected = identity(proposed)
+        statuses.append(ReconciliationStatus(projected["status"]))
+        if affected:
+            result["statement_identity"] = {"period_id": str(period.id), "current": identity(totals), "proposed": projected}
+            try:
+                controls = retained_total_controls(session, period, document)
+                result["printed_totals"] = dict(
+                    current=compare_printed_totals(controls, credits=totals.credits.minor_units, debits=totals.debits.minor_units),
+                    proposed=compare_printed_totals(controls, credits=credits, debits=debits))
+            except (LedgerSourceError, ValueError) as exc:
+                result["printed_totals_error"] = str(exc)
+            result["running_balances"] = correction_running_balances(period, period_rows,
+                transaction_id=row.id, amount_minor=amount_minor, direction=direction)
+            result["limitation"] = "Statement balance checked; running-balance comparisons are conditional on source order and balance convention. Native controls are not revalidated. Existing quarantine is preserved."
+    if 'running_balance_minor' in changes and result['running_balances']['available']:
+        from services.financial.correction_balances import correction_running_balances as compare_balances
+        affected_period = next(p for p in periods if p.id == row.statement_period_id)
+        projected_rows = []
+        for current in rows:
+            if current.statement_period_id != row.statement_period_id:
+                continue
+            values = {prop.key: getattr(current, prop.key) for prop in FinancialTransaction.__mapper__.column_attrs}
+            if current.id == row.id:
+                values['running_balance_minor'] = changes['running_balance_minor']
+            projected_rows.append(SimpleNamespace(**values))
+        projected_balances = compare_balances(affected_period, projected_rows,
+            transaction_id=row.id, amount_minor=amount_minor, direction=direction)
+        if projected_balances['available']:
+            for before, after in zip(result['running_balances']['interpretations'], projected_balances['interpretations']):
+                before['proposed'] = after['proposed']
+        else:
+            result['running_balances'] = projected_balances
+    result["native_controls"] = None if changes else correction_native_controls(session, document, rows,
+        transaction_id=row.id, amount_minor=amount_minor, direction=direction,
+        resolve_path=resolve_path)
+    result["native_controls_rechecked"] = bool(result["native_controls"] and result["native_controls"]["available"])
+    if result["native_controls_rechecked"]:
+        result["limitation"] = result["limitation"].replace("Native controls are not revalidated.", "Native controls were recalculated against verified source bytes; interpretation remains conditional.")
+    try:
+        result["verification"] = correction_verification(document, rows, statuses, native_rechecked=result["native_controls_rechecked"])
+    except (UnknownSourceShapeError, ValueError):
+        result["verification"] = {"can_record": False, "current_proof_class": document.proof_class,
+                                  "proposed_proof_class": None, "reservations": [],
+                                  "included_in_default_totals": False,
+                                  "scope": "all rows in this source document",
+                                  "reason": "Source classification or reservations are unavailable or inconsistent; recording is refused."}
+    return result

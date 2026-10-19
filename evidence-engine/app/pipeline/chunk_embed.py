@@ -1,3 +1,4 @@
+from app.services.ingestion_checkpoints import checkpointed
 import asyncio
 from dataclasses import dataclass, field
 import logging
@@ -198,6 +199,7 @@ def chunk_document(
     return chunks
 
 
+@checkpointed("pipeline/chunk_embed.py:chunk_and_embed:v1")
 async def chunk_and_embed(
     doc: ExtractedDocument,
     case_id: str,

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import {
   Dialog,
   DialogContent,
@@ -7,6 +7,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
+import { EvidencePdfDocument } from "./evidence-pdf-document"
 import {
   ChevronLeft,
   ChevronRight,
@@ -16,6 +17,7 @@ import {
   Film,
   Music,
   Loader2,
+  X,
 } from "lucide-react"
 import { openProtectedFile, useProtectedObjectUrl } from "@/lib/protected-file"
 import { cn } from "@/lib/cn"
@@ -54,6 +56,7 @@ interface DocumentViewerProps {
   evidenceId?: string
   open: boolean
   onOpenChange: (open: boolean) => void
+  onCloseAutoFocus?: (event: Event) => void
   documentUrl?: string
   documentName?: string
   initialPage?: number
@@ -73,6 +76,7 @@ export function DocumentViewer({
   evidenceId,
   open,
   onOpenChange,
+  onCloseAutoFocus,
   documentUrl,
   documentName,
   initialPage = 1,
@@ -86,7 +90,14 @@ export function DocumentViewer({
 }: DocumentViewerProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [openFileError, setOpenFileError] = useState<string | null>(null)
+  const [openingFile, setOpeningFile] = useState(false)
+  const openFileAttempt = useRef(0)
+  const openFileBusy = useRef(false)
   const [currentPage, setCurrentPage] = useState(initialPage)
+  const [pageTotal, setPageTotal] = useState<{ fileId: string; count: number } | null>(null)
+  const onPageCount = useCallback((fileId: string, count: number) => setPageTotal({ fileId, count }), [])
+  const totalPages = pageTotal && pageTotal.fileId === evidenceId ? pageTotal.count : null
   const [textContent, setTextContent] = useState<string | null>(null)
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const fetchIdRef = useRef(0)
@@ -94,7 +105,8 @@ export function DocumentViewer({
   const fileType = getFileType(documentName)
   const IconComp = FILE_ICONS[fileType] ?? FileText
   const isPdf = fileType === "pdf"
-  const shouldFetchBlob = open && Boolean(documentUrl) && fileType !== "text"
+  const usesPageImages = isPdf && Boolean(evidenceId)
+  const shouldFetchBlob = open && Boolean(documentUrl) && fileType !== "text" && !usesPageImages
   const {
     objectUrl: protectedUrl,
     loading: protectedLoading,
@@ -103,6 +115,10 @@ export function DocumentViewer({
 
   // Reset and fetch when dialog opens
   useEffect(() => {
+    ++openFileAttempt.current
+    openFileBusy.current = false
+    setOpeningFile(false)
+    setOpenFileError(null)
     if (!open) return
     setLoading(true)
     setError(null)
@@ -150,8 +166,22 @@ export function DocumentViewer({
   const pdfUrlWithPage = displayUrl && isPdf ? `${displayUrl}#page=${currentPage}` : null
 
   const handleOpenInNewTab = () => {
-    if (!documentUrl) return
-    void openProtectedFile(documentUrl).catch(() => setError("Failed to open document"))
+    if (!documentUrl || openFileBusy.current) return
+    const attempt = ++openFileAttempt.current
+    openFileBusy.current = true
+    setOpeningFile(true)
+    setOpenFileError(null)
+    void openProtectedFile(documentUrl)
+      .catch(() => {
+        if (attempt === openFileAttempt.current)
+          setOpenFileError("The original file could not be opened in a new tab. You can keep using this viewer or try again.")
+      })
+      .finally(() => {
+        if (attempt === openFileAttempt.current) {
+          openFileBusy.current = false
+          setOpeningFile(false)
+        }
+      })
   }
 
   const renderContent = () => {
@@ -227,6 +257,7 @@ export function DocumentViewer({
         )
 
       case "pdf":
+        if (evidenceId) return open ? <EvidencePdfDocument key={evidenceId} evidenceId={evidenceId} page={currentPage} onPageCount={onPageCount} onVisiblePageChange={setCurrentPage} /> : null
         return (
           <iframe
             ref={iframeRef}
@@ -255,6 +286,7 @@ export function DocumentViewer({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
+        onCloseAutoFocus={onCloseAutoFocus}
         className={cn(
           "h-[90vh] flex flex-col p-0 gap-0",
           fileType === "audio"
@@ -281,16 +313,20 @@ export function DocumentViewer({
                 <Button
                   variant="ghost"
                   size="icon-sm"
+                  aria-label="Previous PDF page"
+                  disabled={currentPage <= 1}
                   onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
                 >
                   <ChevronLeft className="size-4" />
                 </Button>
                 <span className="text-xs text-muted-foreground min-w-[60px] text-center">
-                  Page {currentPage}
+                  Page {currentPage}{totalPages ? ` of ${totalPages}` : ""}
                 </span>
                 <Button
                   variant="ghost"
                   size="icon-sm"
+                  aria-label="Next PDF page"
+                  disabled={totalPages !== null && currentPage >= totalPages}
                   onClick={() => setCurrentPage(currentPage + 1)}
                 >
                   <ChevronRight className="size-4" />
@@ -304,14 +340,26 @@ export function DocumentViewer({
                 onNavigate={() => onOpenChange(false)}
               />
             )}
-            <Button variant="ghost" size="icon-sm" onClick={handleOpenInNewTab} title="Open in new tab">
+            <Button variant="ghost" size="icon-sm" onClick={handleOpenInNewTab} disabled={openingFile} title="Open in new tab">
               <ExternalLink className="size-4" />
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)} aria-label="Close document">
+              <X className="size-4" />
+              <span className="hidden sm:inline">Close</span>
             </Button>
           </div>
         </DialogHeader>
 
-        <div className="flex-1 relative overflow-hidden">
-          {loading && (
+        {openFileError && (
+          <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2 text-sm">
+            <p role="alert">{openFileError}</p>
+            <Button variant="outline" size="sm" onClick={handleOpenInNewTab} disabled={openingFile}>
+              Try opening again
+            </Button>
+          </div>
+        )}
+        <div className="min-h-0 flex-1 relative overflow-hidden">
+          {loading && !usesPageImages && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-background">
               <div className="flex flex-col items-center gap-3">
                 <Loader2 className="size-8 text-muted-foreground animate-spin" />

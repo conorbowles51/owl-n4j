@@ -1,0 +1,87 @@
+"""Resolve exactly the source documents imported by a case-scoped batch."""
+from uuid import UUID
+from sqlalchemy import select, func, or_
+from postgres.models.evidence import EvidenceFile
+from postgres.models.financial import FinancialAccount, FinancialSourceDocument, FinancialStatementPeriod, FinancialTransaction
+from postgres.models.financial_import_batches import FinancialImportBatch, FinancialImportBatchItem
+from services.financial.pdf_candidates import PdfMappingError, _digest
+
+
+def imported_batch_scope(session, *, case_id, batch_id, operation_id=None):
+    batch = session.scalar(select(FinancialImportBatch).where(
+        FinancialImportBatch.id == batch_id, FinancialImportBatch.case_id == case_id))
+    if batch is None:
+        raise PdfMappingError('Financial processing batch not found in this case.', 404)
+    from services.financial.import_batches import checked_batch_items
+    items = [item for item in checked_batch_items(session, case_id, list(session.scalars(
+        select(FinancialImportBatchItem).where(FinancialImportBatchItem.batch_id == batch_id))))
+        if item.status == 'imported']
+    if operation_id:
+        from postgres.models.financial_import_batches import FinancialImportOperation
+        operation = session.scalar(select(FinancialImportOperation).where(FinancialImportOperation.id == operation_id,
+            FinancialImportOperation.case_id == case_id, FinancialImportOperation.batch_id == batch_id))
+        if operation is None:
+            raise PdfMappingError('Import receipt not found in this case and batch.', 404)
+        submitted = {row['item_id'] for row in operation.outcomes if row['status'] in ('imported', 'already_present')}
+        items = [item for item in items if str(item.id) in submitted]
+    file_ids = {i.file_id for i in items}
+    try:
+        receipt_ids = {UUID(i.summary['source_document_id']) for i in items if i.summary.get('source_document_id')}
+    except (ValueError, TypeError) as exc:
+        raise PdfMappingError('An imported statement reference is invalid. Open the batch to inspect its import history.', 409) from exc
+    # Also support batches completed before receipts were retained on their
+    # items. Match the exact file and period, never every source in that file.
+    sources = list(session.scalars(select(FinancialSourceDocument).where(
+        FinancialSourceDocument.case_id == case_id, or_(FinancialSourceDocument.evidence_file_id.in_(file_ids),
+            FinancialSourceDocument.id.in_(receipt_ids))))) if file_ids else []
+    by_id = {str(s.id): s for s in sources}
+    by_period = {}
+    for source in sources:
+        if 'statement_import_statement_id' in (source.metadata_ or {}):
+            key = (source.evidence_file_id, (source.metadata_ or {}).get('statement_import_statement_id') or '')
+            by_period.setdefault(key, []).append(source)
+    selected = set()
+    for item in items:
+        receipt_id = item.summary.get('source_document_id')
+        if receipt_id:
+            source = by_id.get(receipt_id)
+            if source is None:
+                raise PdfMappingError('An imported statement source is unavailable. Open the batch to inspect its import history.', 409)
+            selected.add(receipt_id)
+        else:
+            matches = by_period.get((item.file_id, item.statement_key), [])
+            if len(matches) != 1:
+                raise PdfMappingError('This earlier batch does not identify one source for each imported statement. Open its statements individually to inspect their transactions.', 409)
+            selected.add(str(matches[0].id))
+    from services.financial.batch_import_history import current_imports
+    current = current_imports(session, case_id, [UUID(identifier) for identifier in selected])
+    source_ids = sorted({current[identifier]['source_document_id'] for identifier in selected})
+    counts = session.execute(select(FinancialTransaction.account_id, func.count(),
+        func.min(FinancialTransaction.ordering_date), func.max(FinancialTransaction.ordering_date))
+        .where(FinancialTransaction.case_id == case_id,
+               FinancialTransaction.source_document_id.in_([UUID(s) for s in source_ids]),
+               FinancialTransaction.ledger_status == 'admitted')
+        .group_by(FinancialTransaction.account_id)).all() if source_ids else []
+    dates = [d for row in counts for d in row[2:] if d is not None]
+    # A saved quiet period has an account even though it has no payment rows.
+    # Resolve only registered periods of these exact current sources; a filename,
+    # missing reading or zero transaction count cannot invent an account.
+    registered = session.execute(select(FinancialStatementPeriod.account_id,
+        FinancialSourceDocument.metadata_['financial_import_removal'].as_string())
+        .select_from(FinancialStatementPeriod)
+        .join(FinancialSourceDocument, FinancialSourceDocument.id == FinancialStatementPeriod.source_document_id)
+        .join(FinancialAccount, FinancialAccount.id == FinancialStatementPeriod.account_id)
+        .outerjoin(EvidenceFile, EvidenceFile.id == FinancialSourceDocument.evidence_file_id)
+        .where(FinancialStatementPeriod.case_id == case_id, FinancialSourceDocument.case_id == case_id,
+            FinancialAccount.case_id == case_id, FinancialSourceDocument.id.in_([UUID(s) for s in source_ids]),
+            FinancialSourceDocument.status == 'admitted', FinancialSourceDocument.superseded_by_id.is_(None),
+            or_(FinancialSourceDocument.evidence_file_id.is_(None), EvidenceFile.case_id == case_id))).all() if source_ids else []
+    from services.financial.account_consolidation import canonical_map
+    canonical = canonical_map(session, case_id)
+    account_ids = {row[0] for row in counts} | {account_id for account_id, removed in registered if not removed}
+    account_ids = sorted({str(canonical[account_id]) for account_id in account_ids if account_id in canonical})
+    return dict(case_id=str(case_id), batch_id=str(batch_id),
+        revision=_digest(dict(batch_id=str(batch_id), source_document_ids=source_ids)),
+        source_document_ids=source_ids, statement_count=len(items),
+        transaction_count=sum(row[1] for row in counts), account_ids=account_ids,
+        start_date=min(dates).isoformat() if dates else None, end_date=max(dates).isoformat() if dates else None)

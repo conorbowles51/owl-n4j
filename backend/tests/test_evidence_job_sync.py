@@ -237,3 +237,107 @@ def test_reconcile_old_job_detail_uses_latest_case_attempt(monkeypatch) -> None:
     assert record.last_error is None
     assert record.summary == "new success"
     assert db.commit_count == 1
+
+
+def test_starting_another_ingestion_cannot_restore_previous_failure_during_upload():
+    """A case refresh runs while the new request is still uploading to the engine."""
+    evidence_id, current_request, old_job = uuid4(), str(uuid4()), uuid4()
+    record = _evidence_record(evidence_id)
+    record.status, record.last_error = "processing", None
+    record.last_processed_profile_snapshot = {"ingestion_request_id": current_request}
+    db = FakeDb([record])
+    historical = dict(id=str(old_job), source_evidence_file_id=str(evidence_id),
+                      status="failed", error_message="Previous attempt timed out",
+                      pipeline_state={"ingestion_request_id": str(uuid4())})
+
+    assert reconcile_jobs_payload(db, [historical]) == 0
+    assert (record.status, record.engine_job_id, record.last_error) == ("processing", None, None)
+
+    accepted = dict(id=str(uuid4()), source_evidence_file_id=str(evidence_id),
+                    status="extracting_entities", pipeline_state={"ingestion_request_id": current_request})
+    assert reconcile_jobs_payload(db, [historical, accepted]) == 1
+    assert record.status == "processing"
+    assert record.engine_job_id == accepted["id"]
+    # A delayed/stale response must not roll back the newly linked attempt.
+    assert reconcile_jobs_payload(db, [historical]) == 0
+    assert record.engine_job_id == accepted["id"]
+
+
+def test_pdf_preparation_updates_only_its_file_while_ai_keeps_running():
+    ai_file, pdf_file = uuid4(), uuid4()
+    ai_job, pdf_job = str(uuid4()), str(uuid4())
+    ai_record, pdf_record = _evidence_record(ai_file, ai_job), _evidence_record(pdf_file, pdf_job)
+    ai_record.status, ai_record.last_error = "processing", None
+    db = FakeDb([ai_record, pdf_record])
+    reconcile_jobs_payload(db, [
+        dict(id=pdf_job, source_evidence_file_id=str(pdf_file), job_type="pdf_review", status="completed"),
+        dict(id=ai_job, source_evidence_file_id=str(ai_file), job_type="ingestion", status="extracting_entities"),
+    ])
+    assert (ai_record.status, ai_record.engine_job_id, ai_record.last_error) == ("processing", ai_job, None)
+    assert (pdf_record.status, pdf_record.engine_job_id) == ("processed", pdf_job)
+
+
+class _Dialect:
+    def __init__(self, name):
+        self.dialect = SimpleNamespace(name=name)
+
+
+class LockingDb(FakeDb):
+    """A Postgres-shaped session whose audit chain or rows may be held by someone else."""
+
+    def __init__(self, records, *, chain_free=True, free_ids=None) -> None:
+        super().__init__(records)
+        self.chain_free = chain_free
+        self.free_ids = free_ids
+        self.sql = []
+
+    def get_bind(self):
+        return _Dialect("postgresql")
+
+    def execute(self, statement, params=None):
+        self.sql.append(str(statement))
+        return SimpleNamespace(scalar=lambda: self.chain_free)
+
+    def scalars(self, statement):
+        lock = getattr(statement, "_for_update_arg", None)
+        if lock is not None:
+            assert lock.skip_locked
+            ids = [r.id for r in self.records]
+            return FakeScalarResult([i for i in ids if self.free_ids is None or i in self.free_ids])
+        return FakeScalarResult(self.records)
+
+
+def _completed_job(record, count=3):
+    return {"id": record.engine_job_id, "status": "completed", "entity_count": count, "relationship_count": 0}
+
+
+def _case_record(case_id):
+    record = _evidence_record(uuid4(), uuid4())
+    record.case_id = case_id
+    return record
+
+
+def test_sync_never_waits_for_the_audit_chain() -> None:
+    record = _case_record(uuid4())
+    db = LockingDb([record], chain_free=False)
+    assert reconcile_jobs_payload(db, [_completed_job(record)]) == 0
+    assert record.entity_count is None
+    assert all("pg_advisory_xact_lock(" not in sql for sql in db.sql)
+    assert any("pg_try_advisory_xact_lock" in sql for sql in db.sql)
+
+
+def test_sync_skips_rows_another_writer_holds() -> None:
+    case_id = uuid4()
+    held, free = _case_record(case_id), _case_record(case_id)
+    db = LockingDb([held, free], free_ids={free.id})
+    assert reconcile_jobs_payload(db, [_completed_job(held), _completed_job(free)]) == 1
+    assert held.entity_count is None and free.entity_count == 3
+
+
+def test_sync_takes_no_lock_when_nothing_changes() -> None:
+    record = _case_record(uuid4())
+    record.status, record.last_error, record.processed_at = "processed", None, "set"
+    record.entity_count, record.relationship_count = 3, 0
+    db = LockingDb([record])
+    assert reconcile_jobs_payload(db, [_completed_job(record)]) == 0
+    assert db.sql == []

@@ -1,0 +1,740 @@
+# Loupe financial development checklist
+
+Current milestone: complete the practical PDF-to-export journey and saved UI design.
+See [UI and workflow acceptance](loupe-ui-acceptance.md). Broader work stays listed.
+
+Development resumed in this task on9September2026 at Neil's request. The earlier
+timed schedule stays paused; historical handoff status below is retained.
+
+Final scheduled handoff:7September2026. The authorized cutoff was
+13:00Europe/Dublin; the heartbeat was **PAUSED at12:43Dublin** for handoff before
+that cutoff, confirmed by automation_update. No further automatic segments are
+expected. Earlier ACTIVE/time-window statements below are retained history.
+
+**Current overall: seven operational workflows complete (2,3,4,5,6,7,9);
+features1,8and10retain original-specification or acceptance work.** Completion here means the stated investigator-review,
+authoritative-view and recorded-coverage workflows, with their explicit evidence
+limitations preserved. The historical handoff tables below remain unchanged. See [the review and testing guide](loupe-review-2026-09-07.md).
+Completed subitems stay visible. Neil requested mindful usage; valid passing tests
+were reused and targeted checks covered the final small change.
+
+Keep all ten features and their subitems visible. Mark verified completions [x];
+never remove completed work. A feature is complete only when its complete user
+workflow is connected and tested. Existing foundations are listed separately so
+that progress is not confused with completion of the remaining feature.
+
+Baseline: implementation 5d7279d; 3,570 financial tests passed. No entire remaining
+feature below is complete at the start of this window.
+
+1. **Import financial transactions from PDFs — partial**
+   - [x] Retain recognised Capital One account-summary opening and closing amounts owed during automatic review and import. Correct the printed amounts with source highlights, preserve the saved review, and reopen both citations from statement checks. Repeated or unreadable balances and unrecognised dated rows remain review problems. Read-only supplied-PDF and separate synthetic browser acceptance passed on 12 September 2026. See the completed entry in [the financial redesign plan](loupe-financial-redesign-plan.md).
+   - [x] Offer **Read from page images** when embedded PDF text is damaged. Record the local OCR method, preserve originals and current imports, and resume the same version request after interruption. Group OCR phrases without joining adjacent amounts; retain left-aligned printed payment values in the viewer. Synthetic browser and read-only supplied Merrick page checks passed on 12 September 2026. This does not establish general extraction accuracy or add Merrick summary-balance controls.
+   - [x] Recognize exact paired Withdrawal/Deposit and Withdrawals/Deposits headings with original header/amount citations, retaining zero readings and investigator confirmation. Summary/balance phrases are not accepted as those headings.16scanner checks and both supplied PDFs pass read-only; existing prepared-source nominations remain unchanged.
+   - [x] Capture new PDF preparation package/runtime versions, relevant OCR settings and source-code fingerprints; retain a checked digest in source revisions and immutable review mappings. Earlier sources stay unknown with unchanged revisions. Full backend/engine regression and old real-PDF review reopening pass; complete historical binary/toolchain identity remains unavailable.
+   - [x] Retain actual provider request arguments, reported model identity and adapter/runtime versions for successful model proposals, with no credentials or headers. Saved review/export preserves the record and checks its digest; older requests retain unknown provenance. Simulated PostgreSQL and browser acceptance pass without external calls.
+   - [x] Connect optional model-assisted row/column proposals to pending source review, retaining original cells, exact successful response, model/prompt provenance and investigator decisions separately. Saved request IDs prevent duplicate provider calls; interrupted requests can be checked or closed. Shifted layouts remain separate groups. Local PostgreSQL flow uses explicitly simulated model output and rolls back; browser controls and120live permission checks pass. Actual provider acceptance remains under the unchecked items.
+
+   - [x] Split queued rows by their actual nominated date/amount positions. Shifted purchase descriptions remain unidentified text instead of becoming amount columns; dated and undated layouts are separate groups. Real page4 saved/reopened two groups/four pending readings, retaining unknown date type/year.982UI tests and build pass; no ledger admission.
+   - [x] Keep generic Date columns assessable without guessing transaction/booking/value date type. Exact headers and queued date positions retain proposals; review exposes calendar alternatives and asks for the date role separately.54backend/34UI focused tests pass; existing saved mappings remain unchanged.
+   - [x] Versioned source-bound Capital One printed-layout context in both source selection and saved review: distinguish card-ending sections, transaction/posting date headings and possible dates within the exact printed cycle. All27statement-layout pages match;19dated rows retain context, while fees/unsupported rows do not borrow a card section. Original cycle/section/date/amount cells open alongside review. No field filling or identity/direction confirmation.4260backend/978UI/330engine tests and build pass;110live permission checks pass.
+   - [x] Add explicitly selected page-scan proposals to pending review across pages. Recheck every selected source revision/cell before the first save; retain confirmed earlier saves and stop on uncertain outcomes. Real PDF: seven pending readings on pages4/6/10 saved and reopened beside the original, with no ledger admission. The fixture is sealed against writer reruns.
+   - [x] Handle shifted extracted amount-column positions when all supporting cells have measured alignment under one exact printed Amount heading. The real56-page file's page4 now nominates14.00 and100.00 purchases as well as two zero-interest rows. Missing/conflicting geometry does not extend the layout;108-page nominations remain23dated/81undated.14scanner tests pass.
+   - [x] Source-bound printed account-reference proposals (including partial/masked values) with original-cell highlighting. Both supplied PDFs pass the read-only browser check; no automatic account creation, association or transaction selection.17UI tests pass.
+   - [x] Dense corrupt embedded text now triggers local OCR even with many words. Real56-page file recovers Payment History pages51–52with OCR provenance and unchanged source bytes;26engine tests pass. Exact OCR word geometry/review integration is completed in the item above.
+   - [x] Exact printed transaction-section boundaries keep summaries/year-to-date rows outside automatic nominations, with source headings and omitted scope visible. Decimal interest11.18no longer disappears as a possible date. Both PDFs scanned read-only; scanned56-page source retains111dated/17undated proposals and unresolved OCR layouts;108-page nominations unchanged. Full regression4212backend/932UI passes.
+   - [x] Full supplied108-page document reviewed/finalized through a fresh UI upload and public APIs:27balanced printed periods,104source readings (42nonzero,62explicit zeros), two separate printed-header account perspectives. Browser verifies all ledger/statement pages, exact totals and source-inclusive90-page report; originals/history/hashes preserved. Automatic extraction, wider evidence completeness and account identity remain unconfirmed.
+   - [x] Printed-control source finder nominates exact labelled balances/totals for inspection, preserves repeated alternatives and stops at intervening headings. Real opening/closing cells verified; amounts/dates are not filled automatically.
+   - [x] Source selection exposes recorded PDF-text/OCR/unknown origin with the same provenance resolution as saved cell binding. Both supplied PDFs checked in the browser; overlapping metadata remains unknown, no automatic confirmation.
+   - [x] Automatic paired debit/credit column nominations require coherent exact headers, retain each header and amount locator, and leave conflicting layouts unresolved. Synthetic stored-grid and UI tests plus unchanged real108-page scan verified; no automatic direction confirmation or ledger admission.
+   - [x] Separate source-bound undated charge suggestions across page ranges, without inferred dates/direction or automatic admission. Real108-page scan finds81labelled rows on27pages, including56.16USDinterest;62zero-amount rows remain explicit and23dated suggestions unchanged. Ambiguous amounts and unsupported labels remain for manual review.
+   - [x] Per-page automatic date/amount column proposals across the supplied108-page PDF:20pages have supported layouts and23dated suggestions;88pages retain explicit unavailable/ambiguous reasons. Manual review and undated interest remain separate; no automatic admission.
+   - [x] Read-only page-range scan across up to50pages, with exact date/amount citations and explicit unchecked-page results. Real108-page PDF first50pages:40checked,10unchecked,15suggestions; no writes. Undated rows and changing layouts still need review.
+   - [x] Save unfinished statement-editor fields and source cells separately, preserving partial amounts and revision conflict protection; five backend/eight UI tests pass.
+   - [x] Save and reopen added statement-control scopes with revision-conflict protection; live real-PDF save/reload/finalization journey passes. Unsubmitted editor fields remain.
+   - [x] Real-PDF ledger correction acceptance: intentionally misstated test purchase $61.26 corrected to printed $61.62 in a separate case; original source/history and exact export preserved, P3 unchanged. Fixed long decision-reason layout during walkthrough.
+   - [x] Second supplied PDF: prepare 108 pages, visually review a payment and purchase, finalize as an incomplete P3 sample and verify exact source/history export (f6220fa). All originals unchanged; full-statement accuracy remains.
+   - [x] Interrupted PDF preparation marks unfinished jobs failed and propagates cancellation; 13 targeted engine tests pass (f6220fa).
+   - [x] Source beside row selection with clickable cell locations, bounded source-page list and narrow stacking; 19 UI tests plus real-PDF browser check pass (5f5a2a9).
+   - [x] Upload a supplied real PDF through the application and queue local source preparation without AI, then reach source selection (213ed7e).56pages prepared; original unchanged. Financial reading accuracy and fullstatement coverage remain unverified.
+   - [x] Inspect source-bound date/amount row suggestions and explicitly add them to pending review selection (35b6ccb).25UI tests and live3-row/2-suggestion/0-write check pass. Automatic acceptance/classification remains excluded.
+   - [x] Source-bound backend date/amount row suggestions preserve uncertainty and all checked rows, with explicit columns/currency and no automatic admission (ea125fd).36tests plus route test pass; UI integration next.
+   - [x] Propose explicit English named-month dates while preserving source text and unresolved year/century/glyph uncertainty (43dbbd5).24targeted tests pass; source review remains required and automatic extraction remains incomplete.
+   - [ ] Identify transaction rows and column meanings: dates, amounts, accounts and money coming in or going out.
+   - [x] Link selected extracted values to measured original PDF cells, including native text and orientation-corrected OCR. Missing or invalid locations remain explicit; both real PDFs and saved OCR review have browser acceptance.
+   - [x] Handle digital PDFs and scanned pages with local OCR, retaining provenance and uncertainty. The dense broken text sample now recovers pages51–52; amount source selection/reopening is verified without claiming financial accuracy.
+   - [x] Foundation: bind nominated canonical-text rows to exact source spans and source/provenance revisions; keep every candidate pending. Verified in 5d7279d, including 21 new tests. Automatic extraction remains; geometry adapter completion is recorded below.
+
+   - [x] Foundation: verify stored PDF table/cell identity and rectangles without guessed text offsets (5ab6931). Includes repeated amounts, provenance drift, malformed geometry and generated-PDF extraction tests.
+
+   - [x] Deliberate source selection: inspect a stored PDF table, choose rows and assign proposed column meanings without automatic transaction classification (9ddfe63). Both real PDFs passed source-binding smoke checks; full transaction accuracy remains.
+
+   - [x] Source-byte prerequisite: compare the current case-scoped file against the saved candidate digest, refusing missing/changed sources and observed changes during reading (43b2402; 11 new tests). This is a backend prerequisite; ledger admission remains unconnected.
+
+   - [x] Column suggestion aid: propose exact supported labels from the first ten stored rows, require explicit acceptance, and preserve a separate transaction-date role (aac46b0). No automatic transaction classification or row selection is claimed.
+
+2. **Review uncertain readings before they enter the ledger — complete**
+   - [x] Saved batch review progress, pending-only filter and next-pending-row navigation; reopened real-PDF decisions verified. First Alex case-work milestone documented in docs/loupe-alex-casework-preview.md.
+   - [x] Show all saved original cells and switch source highlights beside the review form without requesting amount/date assessments. Source binding and UI scope validated; synthetic desktop/narrow browser check and 31 targeted tests pass. Real-PDF acceptance remains.
+   - [x] Save deliberately selected rows from stored PDF tables separately until they are ready for use (9ddfe63). Automatic extraction/nomination remains under feature 1.
+   - [x] Show questionable amounts, dates and account details alongside the source. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
+   - [x] Let the investigator confirm, correct or reject saved candidate readings, preserving the original and the reason for each decision (ee6edb4). Local UI verified; deliberate stored-PDF mapping is now connected. Automatic nomination and ledger materialization remain.
+   - [x] Prevent retries or simultaneous candidate reviews from creating duplicate transactions in the deliberate saved-PDF workflow (27f8328, a2f4337). PostgreSQL competing writes and authenticated UI/HTTP retries preserve the original receipt and transaction IDs.
+   - [x] Foundation: immutable in-memory pending candidate contract, with missing context representable (5d7279d). Persistent storage and review are now implemented below.
+   - [x] Existing ledger corrections retain originals, history and reasons, with stale-review protection; manual source amount assessment is connected. These do not yet provide candidate review.
+
+   - [x] Foundation: persist immutable candidate originals outside totals with atomic saves and same-mapping retry safety (826caee). Verified with PostgreSQL lock contention and overwrite-refusal triggers. UI completion is recorded below.
+
+   - [x] Foundation: assess saved original amount cells through case-scoped read-only APIs, preserving uncertainty and source citations and refusing source drift (8d6425a). Verified through authenticated local HTTP; UI completion is recorded below.
+
+   - [x] Foundation: append resolved/rejected/reopened review decisions with reasons, exact reading validation, immutable history and stale-review protection (c4ae63e). Case-scoped read/edit APIs and real PostgreSQL contention verified. Review screen completion is recorded below.
+
+   - [x] Saved-reading UI: bounded batch/row lists, account search, original amount assessment with source image, exact review form and immutable history (ee6edb4). Creation API retries preserve original IDs.
+
+   - [x] Provisional account setup: explicit document/currency-scoped label and reason, audit run, same-account retry protection and a guard against use from another PDF (dd7fc5b). Known-account identity/merge remains separate.
+
+   - [x] Cross-batch source reuse review: detect repeated stored rows/overlapping source claims, expose uncomparable pairs and coverage limits, and open the affected readings (7ee220b). This is not database-enforced materialization deduplication.
+
+   - [x] Truthful reading method: explicitly record investigator-reviewed readings without claiming native/template/model extraction or promoting their classification (08b1540). Storage, UI labels and PostgreSQL downgrade protection verified; candidate materialization remains.
+
+   - [x] Incomplete coverage stays explicit: selected documentary financial rows remain outside verified totals even when subset arithmetic balances; reconciliation and corrections cannot silently promote them (ed656da). End-to-end admission remains.
+
+   - [x] Durable finalization storage: keep permanent candidate/review/transaction links, refuse repeated sealed batches and later review/mapping changes, and protect source scope in PostgreSQL (f0ddde3). Atomic transaction creation and its concurrent retry acceptance remain.
+
+   - [x] Atomic candidate writer: fresh review/account/source checks, exact whole-batch transactions, retained originals/rejections, one finalization receipt and safe retries (27f8328). PostgreSQL rollback and two competing requests verified; authenticated API and UI remain before this workflow is complete.
+
+   - [x] Connected finalization UI: current preview, explicit coverage acceptance/reason, safe reload/retry behavior, refreshed ledger rows and source-image links (a2f4337). The larger automatic extraction and complete-statement workflows remain.
+
+   - [x] Finalized review protection: keep originals/history and source assessment accessible, block later candidate/account edits, and verify a ledger correction preserves the receipt and original PDF citation (a7c231d). The replacement remains P3 outside verified totals.
+
+   - [x] Source date assessment: display alternative numeric dates, unresolved years/centuries, invalid dates and original citations without selecting a reading (46a3417). Automatic date/context resolution and account uncertainty work remain.
+
+3. **Complete financial accuracy checks — complete**
+   - [x] Statement checks explicitly distinguish counted zero-amount source lines from nonzero payments; full supplied-file browser verifies62zeros across27periods without changing amounts or eligibility.
+   - [x] Explain arithmetic discrepancy leads with source navigation, directional checks, bounded screening and explicit unresolved cases. Synthetic native correction/restoration browser journey and captured correction audits verified; leads never assert the cause or change classification.
+   - [x] Source-bound printed total money in/out saved through PDF review and drafts, separately checked against current admitted rows, compared before/after corrections and retained in history/reports. Synthetic browser100in/30out/70closing passes; proposed30.01out shows1minor discrepancy. Older receipt identities preserved. Native format controls remain separate.
+   - [x] First complete printed statement in the supplied 108-page PDF: payment, purchase and undated interest reconcile opening $6,700.18 to closing $6,637.96 owed. Other statements remain outside this acceptance (10 September).
+   - [x] Undated fee/interest review preserves unknown row dates; explicit statement-end ordering requires a matching source-bound end control at finalization, retains provenance and remains P3.
+   - [x] Document-wide saved review overview shows pending/resolved/rejected rows per page, unselected pages, preparation gaps and direct batch resume; it does not label selections as complete extraction.
+   - [x] Statements workspace displays current balance identity and conditional running-balance checks, exact discrepancies and source navigation without overwriting prior results or changing admission (84cd821). Both possible source-row orders remain explicit.
+   - [x] Account/currency timeline shows eligible and excluded bounds, internal gaps and separate overlapping statements; select a period to inspect its registered source (84cd821). This does not prove complete transaction extraction.
+   - [x] Bind manually reviewed statement dates and opening/closing controls to selected PDF rows, preserving original cells and liability sign convention (d45fb02). Fresh real-PDF test correctly exposes omitted $56.16 interest; P3 remains excluded.
+   - [x] Reopen saved controls beside highlighted original PDF cells and include readable controls in the export report (7716d86, 79e1ee8).
+   - [x] Complete checks against supported source controls: reviewed PDF opening/closing and money-in/out totals; native camt.053, BAI2, MT940 and NACHA controls. Statements now rechecks whole native sources explicitly and downloads current results/source hashes. Source drift/missing mappings remain unavailable, and whole-source arithmetic is distinct from admitted-period totals.
+   - [x] Check running balances from one transaction to the next. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
+   - [x] Repeat affected checks after an amount/direction correction: native camt.053, BAI2, MT940 and NACHA controls now rebind fresh source bytes and original row hashes, compare current/proposed readings and retain the audit. Source gaps/drift stay unavailable; running-balance order remains conditional. Four-format database roundtrips and synthetic camt.053 browser preview pass.
+   - [x] Display discrepancies and arithmetic leads with source references, while keeping classification calculated by the system. Where the cause cannot be established, it remains explicitly unresolved; no automatic causal explanation or correction is invented.
+   - [x] Existing statement balance reconciliation and correction consequences are connected; proof class is computed. Broader checks remain.
+
+   - [x] Correction running-balance diagnostics: compare before/after under both possible source-row orders, expose unchecked intervals and retain source-linked results in the correction audit (4b70844). Proven order/coverage and native-control revalidation remain; this does not promote classification.
+
+   - [x] Historical running-balance diagnostics: show the saved comparison in correction history, preserve original source links, and distinguish historical results from current ledger state (42e42f1).
+
+4. **Finish duplicate handling — complete**
+   - [x] Compare a second explicitly authorized case for matching ingestion hashes or stored readings; bounded full scans and paged results, no cross-case exclusion. Real-PDF pair browser check passes.
+   - [x] Same-case comparison now also exposes matching ingestion hashes across different/missing recorded coverage and held documents. These source sightings never offer exclusion; identical-reading decisions retain current revision checks.
+   - [x] Show matching evidence in another explicitly selected case only after verifying view permission, without changing either case.
+   - [x] Bulk-loaded same/cross-case comparison avoids repeated per-document scans, with500documents/case,50,000readings and10,000period limits and no partial result. Paged10-group UI; synthetic24documents/48rows/12groups/source navigation verified read-only in877ms. Twenty-document test confirms at most10SQL statements and writer-identical revisions.
+   - [x] Preserve reasons for excluding or restoring a duplicate in the existing same-case workflow, including tested concurrent decisions.
+
+5. **Make every financial view use the authoritative ledger — complete**
+   - [x] Account-group perspective with exact incoming/outgoing/net figures, explicit internal transfers counted once and excluded from the external chart, currency separation, source drill-down and captured assumptions export. Synthetic3-account browser acceptance:GBP200in,20out,180net,160internal across2pairs; changing selected accounts recalculates. Party identity resolution remains separate.
+   - [x] Exact incoming/outgoing charts for date and source-label groups, selected-group totals, separate currencies and chart-to-source links; real-statement browser verified.
+   - [x] Ledger table search, direction/currency/proof display filters, exact single-currency sorting and50-row pages, explicitly separate from analysis/export scope; browser verified.
+   - [x] Working/verified Trends and Counterparties share captured current readings; real-statement date and label totals verified.
+   - [x] Authoritative Posting graph with per-posting source arrows, account/date/population scope and distinct account/currency label groups; real-statement browser rendering verified.
+   - [x] Separate working totals include current admitted P3 readings while preserving verified totals. Exact currencies, correction exclusions, account/date scope and matching JSON/HTML exports verified on two real-PDF cases (10 September).
+   - [x] Live exclusion acceptance across Transactions, Counterparties, Trends and export (5aff978): synthetic400GBP excluded, all totals2100→1700, restored with originals/history retained and export hashes verified. Broader correction/legacy graph propagation remains.
+   - [x] Main documentary Counterparties displays ledger label groups with exact reconciled totals, scoped filters, paged source links and decision refresh (0fe3c69).35page/14panel tests and live source-dialog check pass; equal labels do not prove identity or transfers.
+   - [x] Backend/API exact counterparty source-label totals share ledger eligibility, separate currencies and retain contributing transaction/source references (5cc894e).38 summary/package tests, route test and live HTTP parity pass. UI integration remains; no identity/transfer matching claimed.
+   - [x] Main documentary Transactions uses current ledger readings, filters, exact summary and source/correction/decision controls independently of graph loading (b67e365).31 page tests and live bigint/decision-dialog check pass. Counterparties migration remains.
+   - [x] Exact daily/monthly ledger totals display with paged contributing-reading source links and reconciliation to the summary (8582179). Legacy graph Trends remains separate.
+   - [x] Daily/monthly exact ledger posting totals share summary eligibility and retain contributing transaction/source IDs (d40474a). Time-series display and legacy graph migration remain.
+   - [x] Preserve full bigint money through individual ledger JSON, table and decision identity using exact strings, with safe numeric compatibility (19a8980).
+   - [x] Backend/API exact ledger posting summaries, separate currencies, explicit excluded populations and a hard no-partial-total limit (0ae8242). Display and legacy-view replacement remain.
+   - [x] Connect the graph and financial analysis screens to the reviewed ledger. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
+   - [x] Main documentary Trends uses ledger analysis independently of graph loading; intelligence remains explicitly separate (9e0ec3a). Transactions/Counterparties graph migration remains.
+   - [x] Current ledger summary display uses exact currency totals and included/excluded populations, with applied-filter scope and correction/adjudication refresh (b82d010). Legacy graph cards and other analysis views remain.
+   - [x] Ensure corrections and exclusions consistently update totals, searches and money-flow views. Synthetic30.00→30.01→30.00 correction verified across Ledger, Transactions, Counterparties, Trends, Posting graph and statement controls; original/source/history preserved. Earlier exclusion/restoration acceptance remains recorded above.
+   - [x] Prevent older extracted graph values from being counted alongside reviewed transactions. Documentary views use captured ledger populations; graph intelligence is an explicit separate mode. Corrected/superseded rows were excluded from current graph and totals in browser acceptance.
+
+6. **Show missing periods and incomplete evidence — complete**
+   - [x] Currency summary credits/debits/net open their exact captured contributing rows, with25-row pages and original PDF navigation. Working/verified scope, integer sums and source classes checked; real104-reading browser journey and refresh clearing pass without writes.
+   - [x] Identify gaps and overlaps between recorded account statements with eligible printed bounds (8b6c9ad). Enclosing exports are included; oversized accounts are explicitly unavailable.
+   - [x] Show which accounts and dates the recorded statement bounds cover, with exclusions and limits visible (8b6c9ad). This does not certify full transaction extraction or undated/unprocessed evidence.
+   - [x] Distinguish no matching transaction found from insufficient records to know. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
+   - [x] Display requested-date coverage alongside applied ledger account/date filters, explicitly distinguish unknown bounds from covered dates, retain exclusions and prevent stale scope results (982c530). Wider search and exact PDF-bound navigation remain.
+   - [x] Backend/API requested account/date coverage counts outside tails, preserves currency groups and exact intersecting source-period references, and returns unknown/unavailable explicitly (036f700). Filter-screen integration remains.
+   - [x] Explicit account/date filters on current ledger rows, draft/apply/clear behavior, bounded case-scoped account lookup and case-switch resets (a6ee80c). Requested-interval coverage remains.
+   - [x] Empty ledger answers respect account/date filters, explain that no match does not establish absence of transactions, and retain response-count discrepancy warnings even for zero rows (e13375c). Quantified search coverage and filter controls remain.
+
+7. **Connect transactions and explain money movement — complete within the recorded investigator-review scope**
+   - [x] Reuse payment-created reviewed identities in account links, with unchanged source names and case-scoped history. Tests cover stale saves/conflicting names; existing synthetic identity visible in account dropdown with no browser writes.
+   - [x] Suggest repeated-name identity links from already reviewed payment sources, retaining case/whitespace variants, competing identities and explicit clear decisions. Source inspection and capped selection remain separate from saving;11UI tests and simulated-response browser check pass.
+   - [x] Offer optional spelling/formatting identity proposals for unlinked readings and new imports, retaining ambiguous reviewed parties and explicit prior decisions. Each suggestion explains its source-based comparison; differing numeric identifiers and short-name fuzzy matches are excluded.15UI tests and zero-write simulated-name browser acceptance pass; links still require an explicit reason/save.
+   - [x] Reviewed counterparty identity links for explicitly selected payments, immutable history, correction inheritance/override, source inspection and optional identity-grouped charts. Synthetic save/reload/source/download preserves raw labels,24.68GBPworking debits and0verified rows. Original names and future imports are not merged automatically.
+   - [x] Optional source-linked equal-value transfer chains and return-flow hypotheses across accounts, bounded to two/three candidate transfers without posting reuse. Synthetic three-account/six-posting theory save/source/history verified; all pairings stay conditional, with no allocation or automatic finding.
+   - [x] Connect scoped identifier comparisons to Transfers and captured scenarios: version4UUID equality and native ACH traces with explicit effective-date scope. Conflicting amounts, same-side sightings, multiple partners and unsupported scope remain visible. Synthetic source-navigation/scenario browser acceptance passes; no automatic merge or UETR assertion.
+   - [x] Optional investigator-selected split-payment threshold screens exact same-direction/account/currency groups with all source readings and captured threshold. Synthetic browser:two GBP100 credits cross a GBP150 criterion;GBP250 removes the candidate; changing criteria clears old results. No automatic finding or ledger write.
+   - [x] Investigator-transcribed payment claims retain quote/source, amount/date ranges, holder interpretation and explicit tolerance; compare verified/working rows without promoting P4. Human agree/disagree responses persist as Workspace notes with chosen source attachments and history. Uploaded synthetic quotation/browser/source-hash/download/review-note checks pass. Automatic assertion extraction and certified-coverage contradiction remain separate.
+   - [x] Pattern review screens repeated equal amounts and nearby equal incoming/outgoing postings, retaining sources and uncertainty. Investigator reasoning can be saved as a proposed Workspace theory with grouped evidence attachments, captured readings and immutable history; synthetic browser save/reopen verified. Other typologies and claim-correlation decisions remain.
+   - [x] Case context timeline joins captured ledger chronology with wider case events for review, with explicit date bases, distinct context labels, source/event drill-down, unavailable/incomplete event states, search and captured JSON. Synthetic7-posting/1-event browser journey passes; proximity is not a corroboration decision.
+   - [x] Compare cross-account equal-amount/currency postings with compatible dates and preserve ambiguous alternatives.
+   - [x] Explicit conditional pairing scenario counts each chosen pair once, forbids reusing a posting and exports the source snapshot and reasoning. Synthetic bigint browser journey verified; this is not a verified transfer assertion.
+   - [x] Link likely transfers between accounts and investigator-reviewed parties: durable account-party assignment/removal history survives reload and selects account groups in the flow perspective. Three-account synthetic browser and exported decision history verified. Automatic counterparty identity resolution remains separate.
+   - [x] Avoid counting both sides of the same transfer as separate money movements. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
+   - [x] Show the evidence supporting a match and distinguish exact matches from uncertain ones. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
+   - [x] Connect comparisons between financial records and statements or claims about payments. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
+
+8. **Produce traceable reports and exports — operational exports complete; full expert packet partial**
+   - [x] Build a shared financial report from up to 20 selected saved findings: order and preview notes, preserve their versions and calculations, save to the case, reopen from Financial or Reports, and download HTML or a package with optional checked source PDFs. Exact totals stay separate per note/account/currency. Two-workpaper browser acceptance, 21 affected frontend checks, scoped lint, TypeScript, guide and production build passed on 11 September. Full expert-packet acceptance below remains open.
+   - [x] Include prospective processing/merge-job, recovery-state and merge-rejection changes in the case chain. Private execution inputs/recovery bodies are hashed; legacy non-case jobs and progress-only updates are explicitly outside scope. PostgreSQL and actual-engine-model rollback checks pass. These records do not prove a single atomic commit across Neo4j and PostgreSQL.
+   - [x] Record prepared text/geometry replacement and cascading deletion atomically, retaining content hashes without duplicating source bodies. Server ledger/tracing ZIP preparation records the exact archive hash and authenticated actor before returning bytes; failed audit recording withholds the archive. Two real browser receipts,128permissions,engine rollback acceptance and4336backend tests pass. Delivery confirmation, historical custody, graph merges and external anchoring remain outside this coverage.
+   - [x] Extend prospective chaining to ledger/account/period/source/draft state changes, evidence registration and Workspace entries/links/revisions/events. Retain case-authorized request actors across commits without leaking connection context. Sixteen-target PostgreSQL checks,128live permissions,10finalization guards and4333backend tests pass; older history, source preparation replacements, graph merges and export events are still not fully covered.
+   - [x] Chain new database financial decisions, PDF mappings/reviews/finalizations, model attempts and processing-run changes atomically per case. Export verifies exact bytes and sequence; offline verification accepts a separately retained head. PostgreSQL concurrency, tamper guards, rollback and real-source simulated-flow checks pass. Earlier records, wider state-change coverage and external timestamp anchoring remain incomplete.
+   - [x] Compare saved ZIP exports in the application or offline. Verify all declared file hashes; distinguish changed filters/history scope, changed stable readings/reviews and export preparation/packaging. Real104-reading case versus account-filtered capture reports61absent/0changed readings, with exact downloadable diagnostics and128permission checks passing.
+   - [x] Opt into wider case financial review history, including saved pending/rejected PDF readings outside the filtered ledger. Capture is consistent and bounded, checks original/review digests and adjudication sequence gaps, and never changes totals. Real scanned case exports12pending readings beside an empty ledger; HTML/JSON/PDF hashes and browser controls pass.
+   - [x] Replay downloaded scenarios offline from their captured inputs, retaining code fingerprints and exact changed output paths. Both saved single-account and cross-account asset scenarios reproduce; altered results/source bindings are caught.
+   - [x] Download a tracing audit ZIP from either workbench: original scenario, recalculation check, recorded processing/review support and per-file hashes. Optional offline assembly keeps multiple scopes separate and supplied validation explicitly labelled. Browser integrity/exporter checks and124live permission checks pass; full case custody/history remains under the unchecked expert-packet item.
+   - [x] Download readable single-account and cross-account tracing reports with method alternatives, assumptions, source references and asset/resale allocation tables. Original scenario bytes are reverified before rendering; both live read-only browser journeys and final layouts pass. The original JSON remains alongside the HTML report.
+   - [x] Capture recorded financial processing runs, source parser versions and evidence registration metadata in a consistent export, preserving unknown historical versions and excluding raw configuration, private error text and local paths. Case/run/source mismatches are refused.
+   - [x] Record the authenticated exporter and generation timestamp. Explicit export markings are retained in snapshot/manifest and repeated on every PDF page; the download verifies the returned marking. The marking is the user's selection, not a legal privilege determination.
+   - [x] Package expert-support.json with a separate manifest hash and captured-snapshot reference, inventorying available source/decision/version support and explicitly identifying missing material.
+   - [x] Readable PDF methods appendix identifies captured mappings and model/prompt provenance, marks simulated model output, and distinguishes absent accuracy measurements from software test counts. Snapshot digests checked; full real-document report rendered and inspected.
+   - [x] Readable review-package index: links to retained originals, separate capture scopes, exact conditional cash results, custody/history counts and measured-layer fractions with synthetic/unknown status preserved. Manifest hashing and rebuild verification cover the report; desktop/mobile and complete browser assembly pass.
+   - [x] Assemble selected scenarios, optional ledger/history export and paired reference-review/prediction files through the application. Authenticated case/input/marking binding and export receipt protect the download. Complete synthetic browser package independently rebuilds with original ledger bytes unchanged;136permission checks pass.
+   - [x] Connect saved tracing audit verification to the export panel, with current-case and selected-file checks, optional retained digest, visible rebuild differences and downloadable verification. Desktop/mobile and132permission checks pass; case-page forms/results now survive breakpoint changes.
+   - [x] Verify the complete saved tracing support ZIP offline: every member digest/size, scenario calculations, linked validation and optional ledger/audit history. Rehashed derived changes and code-revision-only differences are distinguished; original files remain unchanged.
+   - [x] Retain reconciled reader records and extraction predictions in selected tracing support, recompute measurements and show recorded source-digest overlap without claiming extractor equivalence.
+   - [x] Operator-started periodic case timestamp runner with explicit authority/trust/cases, retained captures, unchanged-head verification, continuity checks and cross-process file locking. Uncertain attempts require one-time review/retry; complete responses recover without another request. Real local capture + OpenSSL/in-memory TSA acceptance passes with no case writes or external requests. Production activation remains an operator configuration step.
+   - [x] Prepare and verify offline RFC3161 checkpoint requests/responses against explicit supplied trust; synthetic signer checks pass. A real DigiCert response for a synthetic-only checkpoint now verifies against its published root fingerprint; production trust/configuration and periodic case anchoring remain outstanding.
+   - [x] Structured source custody reports: receipts/transfers, reported time with timezone, acquisition method, receiving/source parties, native-file availability and same-case certification file selection. Signed-in authorship and server recording time are retained; corrections append without rewriting. Source and wider-case exports include recorded history, including reports for removed registrations. No earlier history is invented.
+   - [ ] Complete the original specification’s expert packet: full applicable custody/decision coverage, component versions, linked measured validation and selected tracing methods/results. Current ledger exports contain scoped history; they are not a complete expert packet.
+   - [x] Reproducible table-view export captures search, currency, direction, proof filter and deterministic row order across every matching page, alongside the full account/date/history snapshot. Real-PDF one-row61.62USD search verified against all3captured readings and JSON/HTML/PDF hashes; exact scope echoed to browser.
+   - [x] Optional paginated PDF derived from the same captured ledger, with independent manifest hash; real-statement exact text and five-page layout verified. Full raw values retained in HTML/JSON. Browser download verification passed.
+   - [x] Optional original-source bundle with fresh byte verification, source manifest, case ownership checks and whole-bundle limits; both supplied PDFs independently verified unchanged (5eeda00). Complete referenced files may extend beyond ledger filters.
+   - [x] Include source-file PDF mappings/originals, review chains and finalization receipts in schema3 snapshot and readable report; separate review/adjudication counts.50backend/9frontend tests and real-sample hash/content verification pass. Original PDF bytes remain outside bundle.
+   - [x] Primary Ledger and documentary Transactions export their applied filter scope directly, with case-switch reset and no misleading held-out-only export (51ebd77).44targeted tests and primary browser ZIP/hash checks pass.
+   - [x] Format report money exactly in currency units while preserving minor units, and verify exported totals/exclusions against the summary API across case/account/date/empty scopes (96f3a3f).92 targeted tests and live HTTP/hash/layout checks pass; non-member access matrix remains.
+   - [x] Bundle a readable HTML report derived from the exact captured snapshot, with scope, totals, included/excluded readings, source references and decision details; independently hash the report (8a1e051). Browser layout/download verified. Amounts use explicit minor units; polished exhibits and PDF pagination remain.
+   - [x] Download the applied ledger scope as a ZIP with exact rows/totals, source references, relevant decision history and a byte-verifiable manifest (49f2b83). Browser download and digest verified; formatted reports and broader export workflow remain.
+   - [x] Consistent PostgreSQL snapshot of relevant decision history plus exact JSON export manifest, with event/output bounds (001009d). Download/report UI remains; candidate-review history and fresh source-byte verification explicitly excluded.
+   - [x] Internal immutable ledger snapshot captures exact rows/totals/source metadata and exclusions from one read, with stable content hash (1efe4ad). Decision history, manifest and download remain; snapshot explicitly not export-ready.
+   - [x] Existing exhibit assessment now uses the exact verified/working/table-view populations, separate currencies, signed net postings, proof composition and source disclosure lists. Classification is section-specific; P3 remains illustrative and no disclosure/legal admissibility is asserted. Real-statement JSON/HTML/PDF capture and hashes verified.
+   - [x] Include source references, correction history and relevant limitations. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
+   - [x] Ensure exported totals agree with the application. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
+   - [x] Record which evidence and decisions supported an exported result. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
+
+9. **Complete funds tracing — completed within the explicit scenario scope below**
+   - [x] One partial-withdrawal asset purchase with explicit proportional assumption, exact per-method allocations, preserved remaining withdrawal and unchanged cash results. Both synthetic browser forms/source/downloads pass; no financial writes.
+   - [x] Multiple purchases from one withdrawal, with explicit amounts/bases and listed-order proportional allocation of remaining components. Exact residual checks prevent double counting; live12GBP+8GBP synthetic browser/source/download acceptance passes with cash results unchanged.
+   - [x] Full-disposal resale value substitution with explicit later same-currency receipt, proceeds and evidence basis. Per-method proportional cost-share allocations preserve gains/losses and rounding; receipt reuse/overspend/earlier timing/paired transfers refused. Live source/download acceptance passes with cash results unchanged. No automatic reinvestment or ownership/legal determination.
+   - [x] Connect the saved indirect-method scope (net worth, deposits, expenditure and cash-T) to case-file references and explicit investigator assumptions. Required review fields withhold incomplete results; exact calculations, source viewing, draft switching, download/restore and synthetic Workspace save/reopen verified. References and completed fields do not independently establish financial facts.
+   - [x] Optional whole-withdrawal asset interpretation in single-account and network scenarios, with per-method allocation and source/basis retained; cash figures unchanged. Both browser forms/source/download verified with zero ledger writes. Partial purchases, ownership, valuation and resale substitution remain outside this calculation.
+   - [x] Explicit backward timing, off by default and requiring a basis, with unchanged source dates and acyclic account dependency checks. Synthetic earlier-credit/later-debit browser scenario conserves each method, flags the backward hop and preserves source/download; circular backward dependencies are refused. Asset substitution remains separate.
+   - [x] Forward tracing across 2–10 accounts, selected source-bound transfer pairs, all scoped readings, explicit openings/order/root claims and per-method conservation. Three-account browser test verifies FIFO £80, pro rata £90 and LIFO £100 remaining from a synthetic £100 claim; exact download and stale-result clearing pass. Backward tracing and asset substitution remain unsupported.
+   - [x] Decimal currency entry converts exactly to minor-unit requests; readable movement amounts and source buttons. Multiple-claim browser results preserved.
+   - [x] Multiple explicit deposit/claim attributions and working/verified population selection preserve original proof classes; reject excess attribution and export all assumptions. Focused23backend/12UI and working-population multiple-claim browser checks pass. Cross-account propagation remains.
+   - [x] Conditional single-account tracing captures reviewed ledger/history, explicit opening/deposit/order assumptions and selected methods. Invalid/stale inputs fail without writes. Existing core and bridge tests pass.
+   - [x] Conditional tracing screen compares selected methods and downloads exact hash-verified scenario bytes. 45 frontend tests, TypeScript/scoped ESLint and read-only synthetic browser acceptance pass. Unidentified withdrawals remain visible; changing assumptions clears results. Current UI supports one attributed deposit; broader multi-deposit and cross-account work remain.
+   - [x] Connect existing tracing calculations to reviewed transaction history. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
+   - [x] Support comparison of the available tracing methods. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
+   - [x] Explain how assumptions, missing records and transaction ordering affect the result. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
+   - [x] Preserve the basis for each tracing result so it can be reviewed. Verified by the10September source-review, statement, analysis, comparison, export or tracing acceptance recorded above; conditional results retain their stated limits.
+
+10. **Test the complete application locally — partial**
+    - [x] Reconcile two separately supplied reference reviews before measurement: retain disagreements, require explicit row-level resolutions, bind predictions to the completed review record and reject changed labels or source inventory. Synthetic CLI and tamper checks pass; independent reviewers and a representative corpus remain required below.
+    - [x] Add offline row/field/direction and admitted-error measurements against supplied reviewed labels, with exact ratios, unavailable states and regression comparison. Synthetic coverage and CLI nonzero regression behavior are tested; no provider calls.
+    - [x] Prepare source-bound blank two-reader drafts and instructions for the two supplied PDFs, preserving exact original hashes. Identities/status/labels remain unset, and incomplete drafts are rejected by reconciliation. Actual independent review remains below.
+    - [ ] Establish the original specification’s independently reviewed representative corpus and publish versioned extraction measurements. The runner and existing control-block census do not establish independent ground truth. See loupe-extraction-validation.md.
+    - [x] Add a standalone release regression command with independently retained review/baseline pins, recomputed labels and nonzero reviewed-source coverage. Synthetic or altered review inputs fail; regression reports return a failing exit code. Actual private corpus/deployment connection remains below.
+    - [ ] Connect the approved corpus run to the release regression gate after the labels and storage location are established.
+    - [x] Fresh current-schema real PostgreSQL concurrency and injected-failure acceptance: two saves/one batch, two finalizers/one receipt, full rollback after flush, idempotent retry and sealed review. Ten database guards and14subsequent application/analysis/export checks pass on the new synthetic case.
+    - [x] Integrated4186backend/917financialUI/build gate and87live access checks across15read/scenario and9edit endpoints. Temporary local viewer can calculate conditional scenarios, cannot edit, and loses access immediately on membership removal; test user cleaned up.
+    - [x] First real-PDF bounded UI journey: upload/local preparation → select two page4 rows → visually checked review/OCR description correction → finalize → exact export verification.0included/2P3excluded, original unchanged. Fullstatement accuracy and candidate-history export remain.
+    - [x] Integrated post-migration baseline:3,827backend tests,1,032frontend unit tests,11Chromium tests, TypeScript and full ESLint pass (09c341c). Full real-PDF/AI journey and all broader features remain incomplete.
+    - [x] Verify actual export membership permissions and immediate revocation with a temporary ordinary local user (cc96526): non-member/no-view denied, view-only allowed, revoked same-token denied, test user removed.
+    - [x] Exercise the full journey from document upload through review, analysis and export. Both real PDFs and the complete first printed statement are recorded above; generated printed-controls journey adds six source controls, correction propagation and preserved audit exports.
+    - [x] Verify the complete migration chain on a disposable empty database and safe rerun at head. Runtime health now checks PostgreSQL/schema readiness, with degraded status on failure. Sealed108-page case passes all14local service/financial readiness checks.
+    - [ ] Validate external AI processing.10September: one capped synthetic-only request with the existing project.env OpenAI configuration returned401AuthenticationError. No retries or real documents sent; a working provider connection is needed for full AI acceptance.
+    - [x] Test interrupted processing, retries, permissions and larger document sets across the completed workflow.10September: atomic PDF-source preparation preserves text and locations together under cancellation/injected failure/invalid geometry, with successful retry checked on PostgreSQL and all fixture changes rolled back.330engine tests pass.106live permission checks and10finalization guards repeated; earlier current-schema competing saves/finalizers and full108-page/104-reading export acceptance remain recorded. These checks do not establish every crash/environment outcome.
+    - [x] Consolidated startup/testing guide in docs/loupe-local-testing.md, idempotent local tester setup and14repeatable service/migration/financial-read/export checks. Actual supplied-statement case passes; writer fixtures are explicitly separate and external AI remains unvalidated.
+    - [x] Foundation: separate persistent backend/engine venvs, isolated services and synthetic HTTP/PostgreSQL/UI checks. Setup and repeatable partial-workflow scripts are documented in docs/local-application.md.
+
+## Completion record for this window
+
+- Schedule and retained checklist established. No new implementation has landed in
+  this window yet. Earlier implementation details and test evidence are in
+  docs/loupe-build-state.md. Add dated completed segments here with commit and test
+  evidence, retaining all earlier entries.
+
+- 7 September, overnight: **5ab6931** completed the stored PDF grid binding
+  foundation under feature 1. All 3,596 financial tests, 895 unit tests, 11 Chromium
+  tests, TypeScript and ESLint pass. Feature 1 remains partial; storage/review and
+  automatic extraction are not claimed complete. Next: persistent candidates.
+
+- 7 September, overnight: **826caee** completed candidate original storage under
+  feature 2. 3,612 financial tests and all frontend gates pass. Live PostgreSQL
+  contention produced one mapping/two candidates/zero ledger rows; both originals
+  reject SQL updates. Next: review records and assessment, then endpoints/UI.
+
+- 7 September, overnight: **8d6425a** connected saved-candidate amount assessment
+  and read APIs under feature 2. 3,631 financial tests and all frontend gates pass;
+  authenticated local HTTP returns exact original readings and their PDF rectangle.
+  Candidate review decisions/UI remain next; no whole feature is newly complete.
+
+- 7 September, overnight: **c4ae63e** completed review history and APIs under
+  feature 2. 3,651 financial tests and all frontend gates pass. Real concurrent
+  reviews return one 200/one 409; authenticated reopen/resolve retains history.
+  Next: candidate listing/creation and review screens, then materialization.
+
+- 7 September, overnight: **ee6edb4** connected saved-candidate review screens under
+  feature 2 and mapping creation/list APIs. 3,657 financial tests, 905 unit tests,
+  11 Chromium tests, TypeScript and ESLint pass. Live browser review retained five
+  history events and displayed the original PDF image; authenticated creation retry
+  returned original IDs. Source mapping creation UI and materialization remain.
+
+- 7 September, overnight: **9ddfe63** connects deliberate PDF source selection under
+  features 1/2. All 3,666 financial, 912 unit, 11 Chromium tests and TS/lint pass.
+  Local UI save/retry preserves one pending row under the same mapping ID.
+  Read-only real-PDF checks passed 153 tables/7,529 source rows; these are not
+  transaction counts. Next: account setup and materialization/revalidation.
+
+- 7 September, overnight: **dd7fc5b** adds provisional account setup under feature2.
+  3,676 financial tests, 917 unit tests, 11 Chromium tests and TS/lint pass.
+  Two real PostgreSQL lock waiters produced one account; browser account setup
+  and candidate resolution passed without ledger admission. Next: materialization.
+
+- 7 September, overnight: **7ee220b** adds cross-mapping source reuse checks under
+  feature2. 3,685 financial tests, 922 unit tests, 11 Chromium tests and TS/lint pass.
+  Live browser found one repeated source row across three compared pairs and opened
+  its exact reading. Ledger materialization remains; fix account-audit run wording next.
+
+- 7 September, overnight: **f94e347** corrects account-setup audit display. Setup
+  failures stay visible without being mistaken for missing transaction imports.
+  927 frontend unit tests, 11 Chromium tests, TS/lint and live UI pass; backend
+  remains at the verified 3,685-test checkpoint.
+
+## Morning handoff
+
+Prepared 7 September 2026 before the 06:00 Dublin cutoff. The heartbeat
+`continue-loupe-development` was paused through the app at approximately 04:42 UTC
+(05:42 Dublin). The local application remains running. Completed work remains
+checked above; none of the ten whole features is being marked finished prematurely.
+
+| Feature | Overall status | Position at handoff |
+| --- | --- | --- |
+| 1. PDF import | Partial | Stored-table selection, exact source binding and real-PDF extraction checks work. Automatic import/nomination and complete transaction accuracy remain. |
+| 2. Uncertain-reading review | Partial | Separate immutable originals, review/history UI, source assessment, provisional accounts and source-reuse checks work. Ledger materialization and database-enforced cross-mapping transaction deduplication remain. |
+| 3. Financial accuracy checks | Partial | Earlier balance reconciliation/correction work remains connected. Broader printed controls and running-balance revalidation remain. |
+| 4. Duplicate handling | Partial | Earlier same-case exclusion/restoration works. Authorized cross-case comparisons and larger-scale coverage remain. |
+| 5. Authoritative ledger across views | Remaining | Graph and financial analysis still need the agreed ledger projection. |
+| 6. Evidence coverage and missing periods | Remaining | Statement gaps/overlaps and coverage views remain. |
+| 7. Transaction connections | Remaining | Transfer matching and explainable money movement remain. |
+| 8. Reports and exports | Remaining | Connect existing components to reviewed results with matching totals and audit references. |
+| 9. Funds tracing | Remaining | Connect calculations to reviewed history and expose assumptions/results. |
+| 10. Full local testing | Partial | Isolated runtime and repeated synthetic HTTP/PostgreSQL/UI checks work. Upload-to-analysis/export and external AI acceptance remain. |
+
+**Completed this window:** immutable stored PDF candidate originals and review
+history, source amount assessment, row/column selection UI, provisional account
+setup with recorded reasons, cross-batch source reuse checks and accurate audit
+notices. Implementation commits and evidence are retained in the completion record.
+
+**Verification:** 3,685 backend financial tests (zero skips), 927 frontend unit tests,
+11 Chromium tests, TypeScript and full ESLint pass. Live synthetic checks cover
+source images, exact amounts, case scope, stale reviews, immutable originals/history,
+concurrent saves/reviews/account creation, retry reuse and navigation to source findings.
+The last frontend-only wording change did not alter the backend test checkpoint.
+
+**Real PDFs:** both supplied files remain byte-for-byte unchanged and outside Git.
+164 pages were read locally, with 153 tables/7,529 source rows passing the source-binding
+contract check; 11 pages render blank. Those source rows are not transaction counts.
+No real-document database ingestion, external AI processing or transaction-accuracy
+acceptance is claimed by this check.
+
+**Local availability verified at 04:39–04:41 UTC:** frontend55174/backend58002,
+engine58003, PostgreSQL55434, Neo4j57474/57687, Redis56379 and Chroma58101 respond.
+Engine checks also confirm OCR/storage availability. Its OpenAI health flag only
+checks that a key string exists; the isolated launcher uses a dummy key and external
+AI processing is not verified. Local migration: 20260907_candidate_reviews.
+
+**Try the new screens:** open Financial → Ledger → PDF readings in the synthetic
+case `61272494-00de-4a97-8ba9-77fce4be2f24`. Select a saved batch to review readings or
+check source reuse; Choose PDF rows opens deliberate source selection. The displayed
+refused setup audit is an intentional stale-review test, not missing imported money.
+The real PDFs have only been tested read-only, so they do not appear as ingested cases.
+
+**Next development priority:** safely move complete reviewed candidates into the
+ledger. This needs immutable candidate-to-transaction links, whole-document occurrence
+handling, defensible source shape/extraction-layer provenance and reconciliation
+coverage. Concrete constraints are in docs/loupe-pdf-ledger-bridge.md. No uncommitted
+implementation is left. No pushes, merges or real-data changes were made.
+
+
+### Extended-window checkpoint — 7 September 2026
+
+Neil extended continuation to 09:00 Dublin, with the same five-minute schedule.
+Source-byte verification foundation completed in 43b2402; 3,696 financial tests
+pass with zero skips. The original ten-feature statuses remain unchanged: this
+prerequisite does not yet make candidate-to-ledger admission complete. Next work
+is truthful human-review provenance, followed by immutable ledger/source links
+and transaction retry/concurrency protection.
+
+Extended-window implementation08b1540 adds explicit investigator-reviewed origin.
+Verified: 3,699 backend financial tests (zero skips), 927 frontend unit/11 Chromium,
+TypeScript/full ESLint; local PostgreSQL constraints and downgrade guard checked.
+Main feature statuses remain partial/remaining until the end-to-end work is done.
+
+Extended-window implementationed656da preserves incomplete selected-row coverage
+through computed classification, stored document metadata, reconciliation and
+correction verification. 3,701 financial tests pass (zero skips); 927 frontend
+unit/11 Chromium, TypeScript/full ESLint pass. Next: immutable finalization links
+and source claims, then the atomic candidate-to-ledger writer.
+
+Extended-window implementationf0ddde3 adds immutable whole-file finalization and
+source/review/transaction linkage infrastructure. 3,707 financial tests pass with
+zero skips; ten isolated PostgreSQL guard checks passed with all fixture rows
+rolled back. End-to-end candidate admission is still incomplete: its writer,
+preview, concurrent retry test and UI remain. All original features are retained.
+
+Extended-window implementation27f8328 connects reviewed rows to the ledger at
+the service layer. 3,721 backend financial tests pass (zero skips). Live synthetic
+PostgreSQL confirms rollback, two contending requests, distinct equal-value rows,
+one durable receipt, stable retries and sealed review history. API/UI integration
+is next; incomplete-coverage P3 rows remain outside default verified totals.
+
+Extended-window implementationa2f4337 completes the deliberate stored-grid review
+to finalization UI/API connection. Verified3725 backend/934 frontend unit/11
+Chromium tests, TypeScript/full ESLint and real-browser creation/retry/source
+highlight checks. The original retry-protection subitem is now checked rather
+than removed. Whole-feature statuses remain partial/remaining as broader automatic
+extraction, uncertainty, controls/coverage and other listed capabilities still remain.
+
+- 7 September, extended window: **a7c231d** makes finalized candidate screens
+  read-only and refuses new provisional accounts before/after a racing finalization.
+  All 3,728 backend financial, 937 frontend unit and 11 Chromium tests pass, plus
+  TypeScript/ESLint. Synthetic browser correction replaces GBP12.34 with12.35,
+  keeps P3, and retains the original highlighted source through its receipt.
+  Features1/2 remain partial; no complete-application claim.
+
+- 7 September, extended window: **46a3417** connects read-only source date
+  assessment in saved candidate review. All 3,739 financial, 944 frontend unit and
+  11 Chromium tests pass, plus TypeScript/ESLint. Live browser preserves both01/02
+  interpretations and the missing year while highlighting the original PDF cell.
+  Full automatic extraction/nomination and complete date/account review remain.
+
+- 7 September, extended window: **aac46b0** adds explicit printed-label suggestions
+  and transaction-date column support. All 3,741 financial, 950 frontend unit and
+  11 Chromium tests pass, plus TypeScript/ESLint. A fresh synthetic PDF browser check
+  saved only the chosen non-header row pending and preserved its mapping on retry.
+  Full automatic row nomination/extraction remains; next focus is missing accuracy
+  checks under feature3. Completed work remains visible above.
+
+- 7 September, extended window: **4b70844** connects conditional running-balance
+  correction diagnostics and persists the reviewed results. All 3,753 financial,
+  952 frontend unit and 11 Chromium tests pass, plus TypeScript/ESLint. Synthetic
+  browser/PG correction400→410 reports the introduced mismatch and retainsP3 plus
+  original source navigation. Feature3 remains partial: complete controls and
+  source-confirmed order/coverage are not claimed verified.
+
+- 7 September, extended window: **8b6c9ad** connects case-scoped statement date
+  coverage under feature6, now partial. All 3,763 financial,957 frontend unit and
+  11 Chromium tests pass, plus TypeScript/ESLint. Synthetic browser shows the
+  February gap and its absence where an enclosing export covers the same dates.
+  Search integration and precise period-bound source navigation remain; no whole
+  remaining feature is newly completed.
+
+- 7 September, extended window: **42e42f1** exposes saved running-balance diagnostics
+  in correction history.960 frontend unit/11 Chromium/TypeScript/ESLint pass; unchanged
+  backend remains at3,763 passed financial tests. Read-only browser history/source
+  check passes. Development now transitions to final verification and the morning
+  handoff; all ten features and their completion marks remain above.
+
+
+- 7 September, 08:53 Dublin: **e13375c** corrects scoped empty ledger answers
+  and preserves incomplete-response warnings with zero returned rows.15 targeted
+  unit tests, TypeScript and scoped ESLint pass; unchanged backend gates reused.
+  Neil extended the ACTIVE five-minute heartbeat until13:00 Dublin (12:00 UTC).
+  All ten features and earlier completion entries remain visible.
+
+
+- 7 September, 09:04 Dublin: **a6ee80c** connects account/date controls to current
+  ledger rows.20 targeted frontend tests, TypeScript/scoped lint and read-only
+  authenticated synthetic Chromium pass: February gap returns0 rows, Clear
+  restores10. No real evidence edited. Requested-interval coverage remains next;
+  feature6 is still partial and every prior completed item is retained.
+
+
+- 7 September, 09:16 Dublin: **036f700** adds requested-date coverage backend/API.
+  Targeted coverage/router tests and authenticated synthetic HTTP pass (February
+  gap28 versus enclosing export0). No source/evidence writes. The result panel is
+  next; feature6 stays partial and the five-minute schedule remains ACTIVE to13:00.
+
+
+- 7 September, 09:24 Dublin: **982c530** connects filtered coverage UI.15 targeted
+  tests, TypeScript/scoped lint and read-only live browser pass. February0/28
+  covered-day comparison and Clear behavior verified. Begin authoritative ledger
+  analysis summary next; preserve source admission and computed classification.
+
+
+- 7 September, 09:35 Dublin: **0ae8242** adds authoritative summary backend/API.
+  37 targeted backend tests and read-only synthetic HTTP pass; exact GBP2100 and
+  filtered GBP840 verified. Feature5 remains overall unfinished because no
+  analysis screen is migrated yet. Next: exact summary display and invalidation.
+
+
+- 7 September, 09:44 Dublin: **b82d010** connects authoritative ledger summary UI.
+  43 targeted frontend tests, TypeScript/scoped lint and live synthetic exclusion/
+  restoration pass (GBP2100→1700→2100). Feature5 now partial; graph views remain
+  unmigrated. Status: partial1,2,3,4,5,6,10; remaining7,8,9; no whole feature complete.
+
+
+- 7 September, 09:55 Dublin: **19a8980** closes individual ledger JSON precision
+  loss.38 targeted backend and114 targeted frontend tests pass (contract test
+  adjusted/rerun); TypeScript/scoped lint and real synthetic PostgreSQL→HTTP→UI
+  bigint/negative-balance checks pass. API money fields now strings. Next: exact
+  authoritative time summaries; no whole feature newly complete.
+
+
+- 7 September, 10:03 Dublin: **d40474a** adds date-grouped ledger backend/API.
+  32 targeted backend tests and read-only synthetic HTTP pass; date totals reconcile
+  exactly with the summary and source IDs match. Next: display and contributing-row
+  navigation. Feature5 stays partial; original ten-feature checklist retained.
+
+
+- 7 September, 10:12 Dublin: **8582179** connects date totals/source navigation.
+  21 targeted frontend tests, TypeScript/lint and live synthetic source-record check
+  pass. No page-location claim for the fixture. Next scheduled unit consolidates
+  accumulated changes with one full integration gate before further migration.
+
+
+- 7 September, 10:21 Dublin: **421ad37** fixes integration-gate findings: missing
+  package export and page query-provider/default-filter test setup. Final full
+  backend3,791 pass; frontend1,001-test run had six page-test failures, all resolved
+  by the24-test page rerun.11 Chromium, TypeScript/full lint pass. Next: migrate
+  the top-level documentary Trends workflow to authoritative ledger data.
+
+
+- 7 September, 10:31 Dublin: **9e0ec3a** migrates main documentary Trends to ledger
+  analysis.36 targeted tests, TypeScript/lint and live source-linked Trends check
+  pass. Feature5 stays partial; next work begins traceable authoritative exports.
+
+
+- 7 September, 10:40 Dublin: **1efe4ad** adds internal deterministic snapshot
+  foundation.47 targeted tests and single-SELECT proof pass. No export endpoint or
+  completion claim; next is consistent decision history and accurate JSON manifest.
+
+
+- 7 September, 10:50 Dublin: **001009d** captures export history under repeatable
+  read with JSON-specific manifest.29 targeted tests covered/resolved and live
+  synthetic concurrent-write consistency/digest checks pass; row restored. Next:
+  authenticated attachment and browser download. Feature8 remains unfinished.
+
+- Scoped export download checkpoint (49f2b83): backend31/frontend33 targeted tests,
+  final six-button-test rerun, TypeScript/scoped ESLint and Chromium download pass.
+  Saved ZIP independently verified: ten synthetic rows, four decisions, GBP2,100,
+  matching digest/byte count. Feature8 now partial; no entire feature complete.
+
+- Readable report checkpoint (8a1e051):32 targeted backend tests and scoped ESLint
+  pass. Browser ZIP and both hashes verified, ten readings/four decisions rendered;
+  screenshot inspected with no horizontal overflow. Feature8 remains partial.
+
+- Exact report/scope checkpoint (96f3a3f):92 targeted tests, scoped ESLint and
+  browser layout pass; live HTTP parity/hash checks cover five scopes. Anonymous,
+  missing-case and reversed-date refusals verified. Feature8 stays partial.
+
+- Export access checkpoint (cc96526): live four-state membership matrix passed;
+  temporary user/membership removed. No ledger/evidence writes or production fix.
+  Feature10 remains partial; next main documentary Transactions migration.
+
+- Main Transactions checkpoint (b67e365):31 page tests, TypeScript/scoped ESLint,
+  exact bigint/negative-balance browser check and decision dialog open/cancel pass.
+  Feature5 remains partial; documentary Counterparties is the next migration.
+
+- Counterparty-label backend checkpoint (5cc894e):38 tests plus route scope/errors
+  and live case/account/empty summary parity pass. Main Counterparties UI remains.
+
+- Counterparties UI checkpoint (0fe3c69 plus test-only lint fix):35page/14panel
+  tests, TypeScript and scoped lint pass after correcting redundant test escapes;
+  live totals/source dialog verified. Feature5 remains partial for broader graph,
+  search and money-flow consumers. Integration suite is next.
+
+- Integrated verification checkpoint (09c341c):all3,827backend/1,032unit/11browser
+  tests passed, plus TypeScript/full ESLint. No regressions to fix. Existing probe
+  test included but untouched. No full-feature completion is implied.
+
+- Cross-view acceptance (5aff978): browser exclusion updates all three migrated
+  views; exact restored snapshot, preserved original and both audit decisions
+  verified. Synthetic fixture restored; now6decisions. No real evidence changes.
+
+- Primary export checkpoint (51ebd77):44targeted tests, TypeScript/scoped ESLint
+  and browser download/hash checks pass.10restored synthetic rows/6decisions;
+  no evidence or ledger changes. Prepare final retained feature/demo handoff next.
+
+- Review guide checkpoint (5975be9): docs/loupe-review-2026-09-07.md preserves
+  numbered complete-subitem/remaining status and three local demos. Current API
+  counts verified; generated-PDF correction-history browser demo passed read-only.
+  Final health/preservation check and scheduled pause remain at11:45UTC.
+
+- Handoff preservation checkpoint (46c4339),12:36Dublin:all three HTTP services
+  healthy, synthetic10rows/2100GBP restored, both original PDF hashes unchanged,
+  zero matching isolated ingestions. AI processing not tested. Schedule remains
+  ACTIVE pending planned11:45UTC final handoff/pause.
+
+- Final handoff: automation_update confirmed PAUSED at12:43Dublin, before13:00
+  cutoff. App remains running. Final verification and all ten feature statuses
+  recorded in running state and review guide; no whole-feature completion claim.
+
+- 9September continuation (43dbbd5): named-month date proposals connected through
+  existing saved-candidate assessment,24targeted tests passed. No live data writes;
+  old local backend not listening, runtime/browser acceptance to resume next.
+
+## Completed locally: Merrick balances and OCR date conflicts, 13 September 2026
+
+- [x] Read Previous Balance and New Balance from Merrick's Summary of Account Activity, using the adjoining Payment Information box to exclude repeated payment-coupon values. Keep zero, unreadable and negative values distinct.
+- [x] Retain the printed amount-owed convention, original balance cells and corrections through confirmation and the imported statement source view. Missing or duplicate controls require review.
+- [x] Read an account number split into OCR cells only when those digits follow the printed Account Number label. Do not repair uncertain characters or use unlabelled numbers.
+- [x] Flag disagreement between Statement Date and Billing Cycle Closing Date. Withhold inferred transaction years until the user reviews them; do not infer a billing period from the statement date.
+- [x] Check the supplied Merrick page read-only and complete a separate synthetic browser import, including a changed balance, restoration, confirmation and the imported balance check.
+
+Validation: 35 affected backend checks passed in targeted runs. The browser imported exactly two synthetic purchases, retained 0.00 USD opening and 114.00 USD closing amounts owed, and showed Balances agree with a zero difference. No browser errors. The supplied page produced the same two balances and two purchases, while flagging the OCR date disagreement. No real PDF or real import was changed. The guide was regenerated without opening a documentation panel. Local evidence is data/local-runtime/merrick-summary-acceptance.json. No full suite or public push was run.
+
+## Completed locally: report packages and full-document OCR follow-up, 13 September 2026
+
+- [x] Prepare a review package from a saved ledger ZIP without requiring a tracing scenario. Optional scenarios and paired extraction-validation inputs remain available. Empty selections, other cases, damaged archives and failed audit recording are rejected.
+- [x] Provide visible choose buttons, selected filenames and clear-selection actions for package files and verification. The verification screen accepts review packages as well as tracing audit packages.
+- [x] Show retained ledger processing versions, import/review counts and attributed custody reports in the readable package index. Preserve source and ledger bytes. Missing historical fields remain unknown; source custody reports are not duplicated when wider case custody is present.
+- [x] Show investigation transaction counts and exact per-currency totals alongside separately verified counts. Credit-card debits are explained as increasing amounts owed. Existing saved-package rebuilds retain their earlier index format through an explicit manifest option.
+- [x] Run local OCR on the entire supplied 56-page Merrick document without changing its bytes or imports. The layout check recognised 42 statements and located both summary controls in each. It flagged 22 unreadable/suspect balance controls and 10 date conflicts among 235 proposed transaction-section rows. These are layout and exception counts, not independently measured extraction accuracy.
+- [x] Treat OCR box-border brackets as decoration when locating the summary heading. Flag a missing dollar marker because OCR can read it as a leading 3. Never remove a leading digit to repair the value. Bump statement-review to v3 so an older open proposal requires reloading before confirmation.
+
+Validation: the affected archive/router checks, 10 frontend package checks, focused OCR/import checks, type checking, scoped lint, guide generation and production build passed. No full suite was run. The local browser downloaded a ledger-only package from the synthetic Merrick case, verified its saved digest and rebuilt it successfully. Original ledger/source files were retained unchanged. The readable summary was inspected at desktop and mobile widths, including exact large-amount formatting and distinct investigation/verified counts. Local records: data/local-runtime/ledger-only-package-final-acceptance.json and data/local-runtime/merrick-document-layout-summary.json.
+
+The independent reference corpus, exact Capital One 8160 source and working external provider acceptance remain unavailable. The package can carry linked measurements but cannot manufacture independent reviews or missing historical custody. These acceptance requirements remain open, and no public push has occurred.
+
+
+## Completed locally: payment signs and unresolved import values, 13 September 2026
+
+- [x] Read Merrick's trailing minus as part of the printed amount. A separately extracted minus must be beside that amount on the same measured line. Preserve all original cells and reject conflicting or misplaced signs.
+- [x] Require the two printed decimal places on Merrick transaction amounts. Missing punctuation and unreadable digits require correction; never turn an OCR reading of 275 into an assumed 275.00 or insert a guessed decimal point.
+- [x] Flag a card-payment description when its expected minus is missing. Retain the amount but leave Credit/Debit unresolved. Recognise digit-containing bank references split by OCR spaces without removing ordinary uppercase description words.
+- [x] Keep unknown amounts and credit/debit choices blank in the review form and its saved draft. Require an explicit direction in the confirmation API, mark incomplete totals, and withhold the balance comparison until included amounts and directions are available.
+- [x] Save the latest draft on page exit and when the page is hidden, so a quick refresh cannot outrun the delayed save timer. The immediate-refresh browser check exposed this defect before the fix.
+- [x] Open balance corrections without exposing every statement heading as an empty editing row. Excluded source rows remain available through the explicit Show excluded rows control. Keep horizontal scrolling inside the correction table so focusing a balance does not clip the surrounding instructions.
+- [x] Increment the proposal reader to statement-review-v4 so older open proposals require reloading. Existing imports and original PDFs are unchanged.
+
+Validation: 40 affected backend checks and 18 frontend checks passed across focused runs, along with TypeScript, scoped lint, guide generation and the final production build. No full suite was run. The retained 56-page Merrick OCR results were reinterpreted locally, without another OCR run: 42 statements, 16 resolved detached payment minus signs, four missing-payment-sign exceptions and eight amount/decimal exceptions. Direct PDF inspection confirmed the separated minus and the printed 2.75 value previously read as 275. These checks are not independent accuracy measurements. Private receipt: data/local-runtime/merrick-payment-sign-check.json.
+
+The local browser uploaded a new synthetic statement, recorded its trailing-minus 14.00 credit and 100.00 charge, confirmed once and showed 86.00 owed with agreeing balances. A separate, explicitly simulated missing-direction API response verified empty Credit/Debit fields, blocked incomplete confirmation, immediate-refresh draft recovery and corrected balance arithmetic, without altering saved extraction data or making a second import. Its receipt is data/local-runtime/unresolved-review-browser-acceptance.json. Original statement cells, PDFs and all real imports remain unchanged. User instructions were updated without opening documentation panels.
+
+The independent reference corpus, missing exact Capital One 8160 file, working external provider acceptance and associated full expert-packet acceptance remain open. No public push was performed.
+
+
+## Completed locally: readable fields and faithful printed columns, 14 September 2026
+
+- [x] Retain a Merrick row's description, bank reference and readable amount when only its date is damaged. Require exact printed headers and matching page/row positions; keep the date blank and the row flagged until a reviewed correction.
+- [x] Preserve the original damaged date and all original cells through a date-only correction and confirmed import. Increment the reader to statement-review-v5 so stale proposals require reloading.
+- [x] Preserve the printed blank reference heading, split description text and separated amount sign. Each piece keeps its own PDF link. Keep damaged numeric dates under Date and leave conflicting amount pieces available for review.
+- [x] Keep year-to-date summaries and following page text out of the transaction grid while retaining access under Other extracted page text.
+- [x] Complete a synthetic upload, correction, import and balance check in the local browser, then read back the saved original/corrected values. Verify exact date, description and sign highlights and the final table layout. Update the user guide without opening documentation panels.
+
+Validation: 36 affected backend checks and 18 frontend checks across targeted runs, TypeScript, scoped ESLint, guide generation and production build passed. No full suite. The synthetic statement deliberately printed O4/22: only the date was corrected, exactly two payments were imported and 86.00 USD owed reconciled. The original damaged reading, reference and amount remain recorded. Local receipt: data/local-runtime/merrick-date-acceptance.json.
+
+The retained 56-page Merrick OCR comparison recognised 42 statements and kept 235 proposed rows. All 94 unresolved date rows now retain their descriptions; 88 also retain readable amounts. Previously supplied dates and fields are unchanged. All 7,466 nonblank source cells remain accessible in the printed-table check; transaction cells outside reconstructed tables fell from 443 to 9. These are layout-retention counts, not independent accuracy measurements. No further OCR or external-provider call, real-source edits or real imports occurred. Private checks: data/local-runtime/merrick-date-retained-check.json and merrick-printed-layout-check.json.
+
+Independent reference labels, the missing exact Capital One 8160 document, external-provider acceptance and the remaining original expert-packet acceptance stay open. No public push was performed.
+
+
+## Completed locally: Capital One fees and separate date corrections, 14 September 2026
+
+- [x] Read Capital One fee tables with both Trans Date and Post Date, as well as the older Date layout. Keep both date sources, reject ambiguous headers, and leave undated interest flagged.
+- [x] Retain the holder named in the selected card's printed section headings even when the statement contains only fees or interest.
+- [x] Offer separate transaction, posting and value date corrections for date roles identified in the source. Preserve the main date's meaning, require reasons for changes or clearing an additional date, and retain original readings with the corrected ledger dates.
+- [x] Save separate date edits in the browser-tab draft, including a cleared additional date. Confirmed correction history retains the distinct date changes. Reader version is statement-review-v6 so stale reviews must reload.
+- [x] Verify a complete synthetic upload, posting-date edit, immediate refresh, confirmation and imported balance check. Update the guide and saved development state.
+
+Validation: 40 affected backend checks and 17 frontend checks passed, plus TypeScript, scoped ESLint, guide generation and production build. No full suite. The final browser check imported one 25.00 USD fee, preserved transaction date 8 March, saved the deliberately corrected posting date 10 March and retained the original posting date 9 March. Draft recovery, exact posting-cell highlight and a zero balance difference passed. Read-only database verification confirms both original and corrected dates. Local receipt: data/local-runtime/capital-dates-final-acceptance.json. The first synthetic fixture had misaligned summary amounts; its missing-closing-balance result was preserved, and the corrected fixture was a new file and case.
+
+The retained real-file comparison now fills four previously unresolved fee rows on pages 57, 81, 87 and 91. All earlier money/date readings are unchanged. The selected 27 statement periods still contain 42 proposed rows, including 19 undated interest rows requiring review. No date was guessed, no real import or PDF changed, and no further OCR/provider call occurred. This is not independent corpus validation. Local record: data/local-runtime/capital-fee-comparison.json. Broader acceptance requirements remain open. No public push was performed.
+
+
+## Completed locally: readable tracing reports and supplied secured-card statements, 14 September 2026
+
+- [x] Include a readable report for each selected tracing scenario in the review package, with saved reasons, payment order, transfer choices, per-method results, asset/resale allocations and links to captured payments and source references.
+- [x] Retain original scenario bytes and separately hash the reports. Preserve older package rebuilds through an optional versioned report flag; reject unknown versions and identify altered derived reports.
+- [x] Split other recorded funds from unidentified/unfunded asset portions in both readable report paths so the same money is not shown twice in additive categories.
+- [x] Inspect the exact Capital One source from the earlier screenshot and verify its three transactions through a fresh local upload and browser review, without importing real payments.
+- [x] Recognise exact Secured Card and Platinum Secured Card headings in both layout and period detection. The supplied collection now identifies 52 periods instead of 7. Preserve conflicting/damaged headers as unresolved.
+
+Validation: 57 package/report/router backend checks, 21 statement checks, 13 frontend checks, TypeScript, scoped lint, guide generation and build passed. Browser package assembly, independent rebuild, desktop/mobile readable reports and the exact statement-page review passed. No full suite or public push. The supplied Andrews multi-share statements and buyer-wire document remain unsupported automatic formats; independent measurements and full original expert-packet acceptance remain open.
+
+
+## Completed locally: Andrews savings and checking sections, 15 September 2026
+
+- [x] Recognise supported Andrews savings/checking sections and group only supported continuation pages. Keep different shares and repeated statement copies separate.
+- [x] Retain exact original fields and wrapped descriptions; read amounts/balances independently and flag OCR damage, uncertain date meanings, sign conflicts and balance differences.
+- [x] Compare physical account sections for overlapping imports so separate accounts on one PDF page can both be imported. Preserve duplicate/replacement protection when a reread renumbers rows; require review when positions cannot be compared.
+- [x] Record savings/checking account types and original balance sources. Save a statement without payments only when its opening/closing balances match; prevent empty imports from hiding proposed transactions.
+- [x] Show unheaded original rows in measured positions with source highlights, without inventing headers. Retain unlocated text and keep dates/amounts on one line.
+- [x] Check two-account persistence with synthetic data and the smaller supplied PDF through real upload, separate-share selection, source clicks and page navigation. Update the user guide.
+- [ ] Extend supported source layouts beyond BASE SHARE SAVINGS and FREE CHECKING, and address the remaining unreadable/conflicting sections in the larger file.
+- [x] Add a separate interpretation for the supplied wire-detail report, preserving its sending/receiving parties, value date and redacted references without treating it as an account statement. Completed in the wire-review work below.
+
+Validation: 75 unique affected backend checks and 23 affected frontend checks passed, plus TypeScript, scoped lint, guide generation and production build. No full suite or public push. The local browser case shows 15 account/period choices and 7 first-savings payments; no real transactions were imported. A separate synthetic browser import saved a no-payment statement and opened Review accounts automatically. Native comparisons recognise 33 sections in the 99-page file and 15 in the 24-page file, with unresolved rows/coverage explicitly retained. These are not accuracy measurements. A two-page local OCR reread recovered one share heading but introduced other numerical errors, so it is not an unconditional improvement. Private receipts remain under data/local-runtime. Independent reviewed labels, measured release acceptance and applicable original expert-packet acceptance remain open.
+
+
+## Completed locally: Andrews continuation coverage and printed page order, 15 September 2026
+
+- [x] Continue an established statement when its next page has readable matching account/period details but no readable logo. Keep unidentified starting pages and conflicting headings separate.
+- [x] Read spaces around signs and decimal points without changing digits or original text. Keep damaged letters and ambiguous monetary fields flagged.
+- [x] Read complete, uniquely numbered page blocks in their printed order when the original PDF has those pages out of order. Save transaction order and original PDF locations separately. Do not invent missing page numbers.
+- [x] Start review on the first statement page and explain original PDF navigation. Remove the misleading missing-position message from whole-page browsing.
+- [x] Verify a fresh 99-page local upload, source highlighting, original page navigation and the December section. Confirm saved order and source pages with synthetic data; update the guide.
+
+Validation: 21 focused backend and 19 source-view frontend checks, TypeScript, scoped lint, guide generation and production build passed. No full suite or public push. The larger supplied file now has 37 recognised sections and 1,950 proposed rows, up from 33 sections and 1,221 rows at the initial Andrews checkpoint. The smaller file retains 381 proposed rows, with additional amounts and balances read. No previously populated date, amount, direction or balance changed. The fresh browser case shows 95 October payments and 142 December payments in printed statement order. No real payments were imported. These are detection and local verification counts, not independent accuracy measurements. Unsupported account sections, documentary wire/receipt support and the existing independent acceptance requirements remain open.
+
+## Completed locally: wire reports as supporting financial documents, 15 September 2026
+
+The supplied Wells Fargo wire-detail PDF describes one payment and includes party details, a value date, process information and redacted/unreadable references. It is not a bank statement with a statement period and opening/closing balances. Do not force it through the statement transaction table or automatically add another payment to account totals.
+
+Planned user process:
+- [x] Recognise a supported wire-detail PDF when opened from the financial file list and show its original page beside labelled, editable details. Keep the original readings and highlighted PDF locations available.
+- [x] Clearly flag unreadable currency, party labels, dates or references. Do not recover redacted values, substitute source digits or infer account ownership from the bank name.
+- [x] Let the investigator save checked details and their observations as a financial finding, retaining original readings, corrections and reasons.
+- [x] Offer matching imported payments by exact currency/amount and a bounded date window. Let the investigator choose a link and explain it. Matching suggestions never merge or add payments automatically.
+- [x] Reopen the saved wire review and its original PDF from Findings, and carry the note and supporting links into the existing report process. Repeated saves with the same request must not create duplicate notes.
+- [x] Keep case permissions, stale-source checks and private data boundaries intact. Check parser failures, persistence, matching/source links and the complete synthetic browser journey, then inspect the supplied PDF locally without adding real payments.
+
+Implementation direction: reuse prepared PDF geometry and the existing Workspace entries/revisions for a saved finding. A wire evidence link holds the reviewed document; any linked payment uses its own original evidence link and financial transaction anchor so ledger exports remain consistent. Reuse existing source-view and report components. A dedicated document-review service/response avoids pretending the wire is an account statement. No new ledger transaction is created by saving a review.
+
+Validation: 60 unique focused backend checks and 18 affected frontend checks passed, plus TypeScript, scoped lint, guide generation and the production build. No full suite or push. A fresh synthetic upload found a separate borderless-table defect: blank source cells shifted balances into payment columns. The v10 reader now uses printed column positions, retains original indices and flags ambiguous geometry. Known statement headings and balance controls are excluded from payments. A local browser import saved exactly one USD 120 payment with USD 100 opening and USD 220 closing balances.
+
+The complete synthetic wire journey passed: upload, original PDF/highlight, currency and party correction reasons, explicit link to the existing payment, save in Findings, reopen, readable report and a ZIP with both byte-identical source PDFs. Database inspection confirms one ledger payment and one wire note with two separate evidence links. File-list review status and idempotent retry are covered. The supplied private wire was opened and inspected locally, with amount/date read and damaged currency/timestamp/party labels flagged; no real payment was imported and no real wire finding was saved. Other wire layouts, unreadable account sections, independent extraction measurements and applicable full expert-packet acceptance remain open.
+
+## Completed locally: Andrews payment-share sections and closure notices, 15 September 2026
+
+- [x] Recognise exact VISA PAYMENT share headings as a separate account, keeping its printed label and type Other. Do not identify it as a credit-card balance from its name.
+- [x] Retain a matching printed closure notice and its date as account information, separate from transactions and balances. Reject a mismatched share or date.
+- [x] Allow recording a no-payment closed account section while leaving an absent closing balance unknown. Retain its original closure source and make it visible again from the statement source. Prevent excluded payments from becoming a false empty statement.
+- [x] Verify the additional sections in the supplied PDF and a complete synthetic closure save and source reopening. Preserve current savings/checking transactions and update the user guide.
+
+Validation: 19 focused backend checks and 22 affected frontend checks passed, with three closure-specific backend checks repeated after final source-identity changes. TypeScript, scoped lint, guide generation and the production build passed. No full suite. The complete synthetic browser journey saved a no-payment account closure, reopened its original text and highlighted PDF location, and produced no console errors. Read-only database inspection confirms account type Other, opening balance zero, absent closing balance and zero transactions. The first browser attempt encountered a transient disabled login; the saved-account helper then needed the actual Review statements button before Open statement and balances. Reusing the saved synthetic case verified the final journey without duplicate imports.
+
+The larger supplied Andrews PDF now has 43 recognised sections instead of 37, including six VISA PAYMENT sections. Its 1,950 proposed transaction rows and previously populated values are unchanged. The smaller PDF retains 15 sections and 381 proposed rows. The original page 83 closure notice was visually inspected, and the application displayed its 29 September 2021 closure date with a source highlight and no closing amount. No real payment or closure was imported. These are detection and source checks, not independent accuracy measurements. Private receipts stay under data/local-runtime. Other unsupported/damaged sections, independent reviewed extraction measurements and applicable original expert-packet acceptance remain open. No public push.
+
+## Completed locally: spacing errors in Andrews headings, 15 September 2026
+
+- [x] Accept extra OCR spaces within the fixed Account Statement and Previous Balance labels while preserving every original character and all numeric checks.
+- [x] Keep a damaged share heading from assigning its rows to the previous account.
+- [x] Verify the newly reachable continuation pages against the supplied PDF and check unchanged earlier readings.
+
+Validation: 15 Andrews reader checks and 5 affected import checks passed. The guide regenerated; no frontend code changed, so no repeat frontend suite or production build was needed after the preceding successful build. No full suite. The larger supplied PDF now has 44 recognised account sections and 2,044 proposed payments, adding 94 rows with 93 readable amounts and 88 readable balances. All previously populated date/amount/direction/balance values are unchanged. The smaller PDF remains 15 sections and 381 rows. Seven sources in the larger PDF and six in the smaller still need classification or coverage review. Original cells are unchanged; these counts are not independent accuracy measurements.
+
+Visual source checks compared 33 readable amount/balance pairs across pages 90 and 96. The application displays October's 80 payments, including 13 on its last page, and December's 96 payments across original pages 95 to 99. Source image/highlight and retained damaged-value flags passed with no console errors. Browser helpers were corrected after a development-server reload interrupted a read, and to select the original amount cell by its recorded column because the original text includes spaces. No real payments were imported and no further OCR or provider request was made. Private receipts remain under data/local-runtime. No push.
+
+## In progress: deposit receipts inside statement collections
+
+- [ ] Offer a recognised Andrews deposit receipt as its own choice in a mixed PDF, retaining the original page.
+- [ ] Review its deposit amount, dates, masked reference, share and separate balances against the PDF. Keep uncertain years/currency and unreadable fields for correction.
+- [ ] Save the checked receipt and observations in Findings, with an optional explicit link to an existing payment and no new ledger transaction.
+- [ ] Reopen and export the saved receipt, show both statement imports and document reviews in the file list, and retain separate drafts for each receipt.
+- [ ] Verify a synthetic mixed-document upload through save/reopen/export and inspect the real receipt without importing real records.

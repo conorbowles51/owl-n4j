@@ -7,7 +7,27 @@ export interface SortColumn {
   asc: boolean
 }
 
-export type FinancialMainView = "transactions" | "counterparties" | "trends"
+// The URL records the active financial tab. Global preferences exclude it so
+// a fresh case URL opens Transactions rather than a different case's last tab.
+export const financialMainViews = [
+  "overview",
+  "follow-money",
+  "findings",
+  "patterns",
+  "case-context",
+  "ledger",
+  "statements",
+  "quarantine",
+  "runs",
+  "decisions",
+  "transactions",
+  "counterparties",
+  "trends",
+  "tracing",
+  "transfers",
+  "posting-graph",
+] as const
+export type FinancialMainView = (typeof financialMainViews)[number]
 export type ChartGroupingOption = "auto" | "daily" | "weekly" | "monthly"
 
 interface FinancialStoreState {
@@ -99,7 +119,7 @@ const initialState: FinancialStoreState = {
   checkedKeys: new Set<string>(),
   lastClickedKey: null,
   filterPanelOpen: true,
-  mainView: "transactions",
+  mainView: "overview",
   chartGrouping: "auto",
   expandedRowKeys: new Set<string>(),
 }
@@ -110,16 +130,21 @@ export const useFinancialStore = create<FinancialStore>()(
       ...initialState,
 
       setMode: (mode) =>
-        set({
-          mode,
-          currentPage: 0,
-          checkedKeys: new Set<string>(),
-          lastClickedKey: null,
-          expandedRowKeys: new Set<string>(),
-        }),
+        set((state) =>
+          state.mode === mode
+            ? state
+            : {
+                mode,
+                currentPage: 0,
+                checkedKeys: new Set<string>(),
+                lastClickedKey: null,
+                expandedRowKeys: new Set<string>(),
+              }
+        ),
       setSearchQuery: (query) => set({ searchQuery: query, currentPage: 0 }),
 
-      setSelectedTypes: (types) => set({ selectedTypes: types, currentPage: 0 }),
+      setSelectedTypes: (types) =>
+        set({ selectedTypes: types, currentPage: 0 }),
       toggleType: (type) =>
         set((s) => {
           const next = new Set(s.selectedTypes)
@@ -127,8 +152,10 @@ export const useFinancialStore = create<FinancialStore>()(
           else next.add(type)
           return { selectedTypes: next, currentPage: 0 }
         }),
-      selectAllTypes: (types) => set({ selectedTypes: new Set(types), currentPage: 0 }),
-      clearTypes: () => set({ selectedTypes: new Set<string>(), currentPage: 0 }),
+      selectAllTypes: (types) =>
+        set({ selectedTypes: new Set(types), currentPage: 0 }),
+      clearTypes: () =>
+        set({ selectedTypes: new Set<string>(), currentPage: 0 }),
 
       setSelectedCategories: (categories) =>
         set({ selectedCategories: categories, currentPage: 0 }),
@@ -141,11 +168,13 @@ export const useFinancialStore = create<FinancialStore>()(
         }),
       selectAllCategories: (categories) =>
         set({ selectedCategories: new Set(categories), currentPage: 0 }),
-      clearCategories: () => set({ selectedCategories: new Set<string>(), currentPage: 0 }),
+      clearCategories: () =>
+        set({ selectedCategories: new Set<string>(), currentPage: 0 }),
 
       setStartDate: (date) => set({ startDate: date, currentPage: 0 }),
       setEndDate: (date) => set({ endDate: date, currentPage: 0 }),
-      setEntityFilter: (entity) => set({ entityFilter: entity, currentPage: 0 }),
+      setEntityFilter: (entity) =>
+        set({ entityFilter: entity, currentPage: 0 }),
       setMinAmount: (amount) => set({ minAmount: amount, currentPage: 0 }),
       setMaxAmount: (amount) => set({ maxAmount: amount, currentPage: 0 }),
       resetFilters: () =>
@@ -202,7 +231,8 @@ export const useFinancialStore = create<FinancialStore>()(
           for (const k of keys) next.add(k)
           return { checkedKeys: next }
         }),
-      clearChecked: () => set({ checkedKeys: new Set<string>(), lastClickedKey: null }),
+      clearChecked: () =>
+        set({ checkedKeys: new Set<string>(), lastClickedKey: null }),
       setLastClickedKey: (key) => set({ lastClickedKey: key }),
 
       setFilterPanelOpen: (open) => set({ filterPanelOpen: open }),
@@ -220,14 +250,21 @@ export const useFinancialStore = create<FinancialStore>()(
     }),
     {
       name: "owl-financial-store",
+      // The URL owns the active tab; it is not a global display preference.
       partialize: (state) => ({
-        mode: state.mode,
         sortColumns: state.sortColumns,
         pageSize: state.pageSize,
         filterPanelOpen: state.filterPanelOpen,
-        mainView: state.mainView,
         chartGrouping: state.chartGrouping,
       }),
+      // Old saved intelligence views must not hide newly imported statements.
+      // Keep display preferences, but open a fresh visit on transactions.
+      merge: (persisted, current) => {
+        const stored = { ...(persisted as Partial<FinancialStoreState> | null) }
+        delete stored.mainView
+        delete stored.mode
+        return { ...current, ...stored }
+      },
       storage: {
         getItem: (name) => {
           const str = localStorage.getItem(name)

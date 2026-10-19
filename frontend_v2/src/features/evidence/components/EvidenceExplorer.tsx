@@ -1,6 +1,6 @@
 import { EvidenceMoveProvider } from "./EvidenceMoveProvider"
 import { useEffect, useState } from "react"
-import { useLocation, useParams, useSearchParams } from "react-router-dom"
+import { Link, useLocation, useParams, useSearchParams } from "react-router-dom"
 import { foldersAPI } from "../folders.api"
 import { useQueryClient } from "@tanstack/react-query"
 import {
@@ -177,6 +177,14 @@ export function EvidenceExplorer() {
     <EvidenceMoveProvider key={caseId} caseId={caseId!}>
     <TooltipProvider delayDuration={300}>
       <div className="flex h-full flex-col overflow-hidden bg-background">
+        {searchParams.get("from") === "financial" && (
+          <div className="border-b p-3 text-sm">
+            <Link className="underline" to={`/cases/${caseId}/financial?view=statements&files=1`}>
+              Back to Financial sources
+            </Link>
+            <span className="ml-3 text-muted-foreground">Review this source and its processing status. Your Financial selection is saved.</span>
+          </div>
+        )}
         <ResizablePanelGroup orientation="horizontal" className="flex-1">
           {/* Left sidebar: Folder tree */}
           <ResizablePanel

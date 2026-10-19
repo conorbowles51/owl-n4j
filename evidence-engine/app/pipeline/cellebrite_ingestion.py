@@ -3,6 +3,9 @@ import logging
 import os
 import re
 import sys
+import threading
+import time
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -107,6 +110,7 @@ def _run_cellebrite_ingestion_sync(
     created_by_id: str | None,
     evidence_folder_id: str | None,
     log_callback,
+    pause_check=None,
 ) -> dict[str, Any]:
     _ensure_backend_imports()
 
@@ -131,51 +135,53 @@ def _run_cellebrite_ingestion_sync(
                 message=message,
             )
 
+    from app.pipeline.cellebrite.ingestion import detect_cellebrite_xml
+    from app.pipeline.cellebrite.recovery import Recovery, report_lock
+    boundary = pause_check or (lambda: None)
+    xml_path = detect_cellebrite_xml(folder_path)
+    if xml_path is None:
+        return {'status': 'error', 'reason': 'No Cellebrite XML report was found'}
+    recovery = Recovery(xml_path, boundary)
+    if recovery.state.get('phase') == 'completed':
+        return recovery.state['result']
     precheck = check_cellebrite_report(folder_path, case_id=case_id)
-    if not precheck.get("suitable"):
-        reason = precheck.get("message", "Not a valid Cellebrite report")
-        _log(f"ERROR: {reason}")
-        return {"status": "error", "reason": reason}
-
-    if precheck.get("duplicate") and not force:
-        existing = precheck.get("existing") or {}
-        _log(
-            "ERROR: Refusing to ingest duplicate phone report "
-            f"{existing.get('report_key') or precheck.get('report_key')}. "
-            "Set replace existing to re-ingest."
-        )
-        return {"status": "error", "reason": "duplicate", "existing": existing}
-
-    if force and precheck.get("duplicate"):
-        existing = precheck.get("existing") or {}
-        existing_key = existing.get("report_key")
-        if existing_key:
-            from services.neo4j_service import neo4j_service
-
-            deleted = neo4j_service.delete_phone_report(case_id, existing_key)
-            with get_background_session() as db:
-                evidence_deleted = EvidenceDBStorage.delete_by_cellebrite_report_key(
-                    db,
-                    case_uuid,
-                    existing_key,
-                )
-            _log(
-                f"Replaced existing phone report {existing_key}: "
-                f"removed {deleted.get('deleted_nodes', 0)} nodes "
-                f"+ {deleted.get('deleted_phone_report', 0)} PhoneReport node(s) "
-                f"+ {evidence_deleted} evidence row(s)."
+    if not precheck.get('suitable'):
+        return {'status': 'error', 'reason': precheck.get('message', 'Not a valid Cellebrite report')}
+    report_key = precheck.get('report_key')
+    if not report_key:
+        return {'status': 'error', 'reason': 'The phone report has no stable report identity'}
+    with report_lock(case_id, report_key, boundary):
+        # Recheck while holding the shared report lock: two separately queued
+        # uploads must not both pass duplicate detection before either writes.
+        if not recovery.state.get('phase'):
+            precheck = check_cellebrite_report(folder_path, case_id=case_id)
+            if precheck.get('duplicate') and not force:
+                return {'status': 'error', 'reason': 'duplicate', 'existing': precheck.get('existing')}
+            existing = precheck.get('existing') or {}
+            recovery.save(phase='cleanup_started', report_key=report_key,
+                replace_key=existing.get('report_key') if force and precheck.get('duplicate') else None)
+        if recovery.state['phase'] == 'cleanup_started':
+            existing_key = recovery.state.get('replace_key')
+            if existing_key:
+                from services.neo4j_service import neo4j_service
+                neo4j_service.delete_phone_report(case_id, existing_key)
+                with get_background_session() as db:
+                    EvidenceDBStorage.delete_by_cellebrite_report_key(db, case_uuid, existing_key)
+                _log(f'Replacement prepared for phone report {existing_key}.')
+            # Repeating cleanup after an interruption is safe only before any
+            # new graph writes. Resume never deletes its own completed work.
+            recovery.save(phase='cleanup_complete')
+        boundary()
+        with get_background_session() as db:
+            result = ingest_cellebrite_report(
+                report_dir=folder_path, case_id=case_id, log_callback=_log,
+                owner=owner, evidence_db=db, created_by_id=created_by_uuid,
+                evidence_root_folder_id=evidence_folder_uuid,
+                pause_check=boundary, recovery=recovery,
             )
-
-    with get_background_session() as db:
-        return ingest_cellebrite_report(
-            report_dir=folder_path,
-            case_id=case_id,
-            log_callback=_log,
-            owner=owner,
-            evidence_db=db,
-            created_by_id=created_by_uuid,
-            evidence_root_folder_id=evidence_folder_uuid,
-        )
+        if result.get('status') == 'success':
+            recovery.save(phase='completed', result=result)
+        return result
 
 
 async def run_cellebrite_pipeline(job_id: str, db: AsyncSession) -> None:
@@ -197,6 +203,17 @@ async def run_cellebrite_pipeline(job_id: str, db: AsyncSession) -> None:
 
     queue: asyncio.Queue[str] = asyncio.Queue()
     loop = asyncio.get_running_loop()
+    stop = threading.Event()
+    from app.services.ingestion_checkpoints import IngestionPaused, pause_boundary
+    last_check = 0.0
+
+    def boundary():
+        nonlocal last_check
+        if stop.is_set(): raise IngestionPaused()
+        now = time.monotonic()
+        if now - last_check >= .25:
+            asyncio.run_coroutine_threadsafe(pause_boundary(), loop).result()
+            last_check = now
 
     def log_from_thread(message: str) -> None:
         loop.call_soon_threadsafe(queue.put_nowait, message)
@@ -213,6 +230,7 @@ async def run_cellebrite_pipeline(job_id: str, db: AsyncSession) -> None:
             created_by_id=payload.get("requested_by_user_id"),
             evidence_folder_id=payload.get("evidence_folder_id") or job.source_folder_id,
             log_callback=log_from_thread,
+            pause_check=boundary,
         )
     )
 
@@ -227,7 +245,7 @@ async def run_cellebrite_pipeline(job_id: str, db: AsyncSession) -> None:
             if status is not JobStatus.FAILED:
                 await _update_job(job, status, last_progress, db, message)
 
-        ingestion_result = await worker
+        ingestion_result = await asyncio.shield(worker)
         while not queue.empty():
             message = queue.get_nowait()
             status, last_progress = _progress_from_log(message, last_progress)
@@ -259,14 +277,17 @@ async def run_cellebrite_pipeline(job_id: str, db: AsyncSession) -> None:
             error_message=str(reason),
         )
     except asyncio.CancelledError:
-        await _update_job(
-            job,
-            JobStatus.FAILED,
-            job.progress or 0.0,
-            db,
-            "Cancelled (worker timeout or shutdown)",
-            error_message="Cellebrite job cancelled during processing.",
-        )
+        # to_thread cannot be cancelled safely. Stop cooperatively and retain
+        # the exclusive checkpoint lock until the actual writer has exited.
+        stop.set()
+        with suppress(IngestionPaused, Exception):
+            await asyncio.shield(worker)
+        job.pause_requested = True
+        job.paused = True
+        job.resumable = True
+        await _update_job(job, JobStatus.PENDING, job.progress or 0.0, db,
+            'Paused after worker interruption. Resume to continue from saved work.',
+            error_message='Processing paused after an interruption; saved work is retained.')
         raise
     except Exception as exc:
         logger.exception("Cellebrite pipeline failed for job %s", job_id)

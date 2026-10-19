@@ -1,5 +1,14 @@
 import { useMemo } from "react"
-import { AlertCircle, CheckCircle2, Clock, Loader2, Hash, Link2, RotateCcw, Trash2 } from "lucide-react"
+import {
+  AlertCircle,
+  CheckCircle2,
+  Clock,
+  Loader2,
+  Hash,
+  Link2,
+  RotateCcw,
+  Trash2,
+} from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
@@ -11,7 +20,12 @@ interface JobCardProps {
   onRetry?: (job: EvidenceJob) => void
   onClear?: (job: EvidenceJob) => void
   retrying?: boolean
+  retryDisabled?: boolean
   clearing?: boolean
+  onPause?: (job: EvidenceJob) => void
+  onResume?: (job: EvidenceJob) => void
+  controlScope?: string
+  controlling?: boolean
 }
 
 const STAGE_LABELS: Record<PipelineStage, string> = {
@@ -32,12 +46,15 @@ const STAGE_LABELS: Record<PipelineStage, string> = {
 const STAGE_COLORS: Record<PipelineStage, string> = {
   pending: "bg-slate-500/10 text-slate-500 border-slate-500/20",
   extracting_text: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  generating_document_summary: "bg-blue-500/10 text-blue-500 border-blue-500/20",
+  generating_document_summary:
+    "bg-blue-500/10 text-blue-500 border-blue-500/20",
   chunking: "bg-blue-500/10 text-blue-500 border-blue-500/20",
   extracting_entities: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  consolidating_entities: "bg-purple-500/10 text-purple-500 border-purple-500/20",
+  consolidating_entities:
+    "bg-purple-500/10 text-purple-500 border-purple-500/20",
   resolving_entities: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-  resolving_relationships: "bg-indigo-500/10 text-indigo-500 border-indigo-500/20",
+  resolving_relationships:
+    "bg-indigo-500/10 text-indigo-500 border-indigo-500/20",
   generating_summaries: "bg-amber-500/10 text-amber-500 border-amber-500/20",
   writing_graph: "bg-amber-500/10 text-amber-500 border-amber-500/20",
   completed: "bg-green-500/10 text-green-600 border-green-500/20",
@@ -59,24 +76,39 @@ function formatDuration(startStr: string, endStr?: string): string {
   return `${hours}h ${remainingMinutes}m`
 }
 
-export function JobCard({ job, onRetry, onClear, retrying = false, clearing = false }: JobCardProps) {
-  const isActive =
-    job.status !== "completed" && job.status !== "failed"
+export function JobCard({
+  job,
+  onRetry,
+  onClear,
+  onPause,
+  onResume,
+  controlScope,
+  controlling = false,
+  retrying = false,
+  retryDisabled = false,
+  clearing = false,
+}: JobCardProps) {
+  const isActive = job.status !== "completed" && job.status !== "failed"
   const isFailed = job.status === "failed"
   const isCompleted = job.status === "completed"
-  const canRetry = isFailed && !!job.evidence_file_id
-  const canClear = isFailed || isCompleted
+  const isStatementReading = job.job_type === "pdf_review"
+  const canResume = !!job.resumable && (job.paused || isFailed)
+  const canRetry = isFailed && !!job.evidence_file_id && !canResume && !!onRetry
+  const canClear = (isFailed || isCompleted) && !!onClear
+  const canControl = canResume ? !!onResume : !!onPause
 
   const duration = useMemo(
-    () =>
-      formatDuration(
-        job.created_at,
-        isActive ? undefined : job.updated_at
-      ),
+    () => formatDuration(job.created_at, isActive ? undefined : job.updated_at),
     [job.created_at, job.updated_at, isActive]
   )
 
-  const stageLabel = STAGE_LABELS[job.status] ?? job.status
+  const stageLabel = job.paused
+    ? "Paused"
+    : job.pause_requested
+      ? "Pausing"
+      : isStatementReading && isCompleted
+        ? "Ready for review"
+        : (STAGE_LABELS[job.status] ?? job.status)
   const stageColor = STAGE_COLORS[job.status] ?? STAGE_COLORS.pending
   const displayName =
     job.job_type === "cellebrite_ingestion"
@@ -85,6 +117,8 @@ export function JobCard({ job, onRetry, onClear, retrying = false, clearing = fa
 
   return (
     <div
+      role="group"
+      aria-label={`${isStatementReading ? "Financial statement reading" : "Processing"}: ${job.file_name}`}
       className={cn(
         "rounded-lg border bg-card p-3 transition-colors",
         isFailed && "border-red-500/20",
@@ -100,12 +134,26 @@ export function JobCard({ job, onRetry, onClear, retrying = false, clearing = fa
           variant="secondary"
           className={cn("shrink-0 border text-[10px]", stageColor)}
         >
-          {isActive && (
+          {isActive && !job.paused && (
             <Loader2 className="mr-1 size-2.5 animate-spin" />
           )}
           {stageLabel}
         </Badge>
       </div>
+
+      {(isStatementReading ||
+        !job.job_type ||
+        job.job_type === "ingestion") && (
+        <p className="mt-1 text-xs text-muted-foreground">
+          {isStatementReading ? "Financial statement reading" : "AI ingestion"}
+        </p>
+      )}
+      {isStatementReading && isCompleted && (
+        <p className="mt-1 text-xs text-muted-foreground">
+          Open Financial → Statements & accounts to review and import payments.
+          Reading the PDF does not import them.
+        </p>
+      )}
 
       {/* Progress bar */}
       {isActive && (
@@ -131,7 +179,7 @@ export function JobCard({ job, onRetry, onClear, retrying = false, clearing = fa
           {duration}
         </span>
 
-        {isCompleted && (
+        {isCompleted && !isStatementReading && (
           <>
             <span className="flex items-center gap-1">
               <Hash className="size-2.5" />
@@ -145,15 +193,70 @@ export function JobCard({ job, onRetry, onClear, retrying = false, clearing = fa
           </>
         )}
 
-        {isFailed && (
-          <AlertCircle className="ml-auto size-3 text-red-500" />
-        )}
+        {isFailed && <AlertCircle className="ml-auto size-3 text-red-500" />}
       </div>
 
       {/* Error message */}
       {isFailed && job.error_message && (
-        <div className="mt-2 rounded-md bg-red-500/5 px-2 py-1.5 text-[11px] text-red-600 dark:text-red-400">
-          {job.error_message}
+        <div className="mt-2 rounded-md bg-red-500/5 px-2 py-1.5 text-[11px] text-red-600 dark:text-red-400 break-words">
+          <p>
+            {job.error_message.includes("TransactionTimedOut")
+              ? "Processing stopped because a database operation timed out. This does not mean the PDF is unreadable."
+              : "Processing stopped before completion."}
+          </p>
+          {job.resumable && (
+            <p className="mt-1">
+              Completed work is saved. Resume continues from the saved
+              checkpoints.
+            </p>
+          )}
+          <details className="mt-1">
+            <summary>Technical details</summary>
+            <p className="max-h-36 overflow-auto whitespace-pre-wrap">
+              {job.error_message}
+            </p>
+          </details>
+        </div>
+      )}
+
+      {job.pause_requested && (
+        <p className="mt-2 text-xs text-muted-foreground">
+          {job.paused
+            ? "Paused. Completed work is saved; this job is not using a processing slot."
+            : "Pausing after the active work unit finishes. Completed work will be kept."}
+        </p>
+      )}
+      {job.resumable && (isActive || isFailed) && canControl && (
+        <div className="mt-3 space-y-1">
+          {canResume ? (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={controlling}
+              onClick={() => onResume?.(job)}
+            >
+              Resume
+              {controlScope ? ` ${controlScope}` : job.batch_id ? " batch" : ""}
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={controlling || job.pause_requested}
+              onClick={() => onPause?.(job)}
+            >
+              {job.pause_requested
+                ? "Pausing…"
+                : `Pause${controlScope ? ` ${controlScope}` : job.batch_id ? " batch" : ""}`}
+            </Button>
+          )}
+          {job.batch_id && (
+            <p className="text-[10px] text-muted-foreground">
+              {controlScope
+                ? "Controls unfinished PDFs submitted in this reading group. Other reading groups and AI jobs continue independently."
+                : "Controls all unfinished files in this batch. Other batches continue independently."}
+            </p>
+          )}
         </div>
       )}
 
@@ -165,7 +268,7 @@ export function JobCard({ job, onRetry, onClear, retrying = false, clearing = fa
               size="sm"
               className="h-7 text-[10px]"
               onClick={() => onRetry?.(job)}
-              disabled={retrying}
+              disabled={retrying || retryDisabled}
             >
               {retrying ? (
                 <Loader2 className="size-3 animate-spin" />

@@ -1,0 +1,1428 @@
+from typing import Annotated
+"""
+Financial Ledger Router - read access to the relational ledger.
+
+``/api/financial`` reads the Neo4j graph that mirrors admitted transactions.
+This router reads the other store: the Postgres ledger tables that
+``services.financial.transactions.record_transactions`` writes into, and that
+nothing before this router could read back out through the API. It is
+read-only. Admitting, correcting, or quarantining a row stays with the
+ingestion and adjudication services that act with a run and an actor behind
+them.
+
+Reads of the same store at several levels. ``/ledger`` returns the rows.
+``/runs`` returns the executions that produced them, including the ones that
+produced nothing because they failed. ``/decisions`` returns what was decided
+about any of it, by whom, and when. ``/proof-standing`` returns how much of the
+case's evidence sits in each proof class and what each of those classes is
+allowed to do. ``/duplicates`` compares current stored readings and reports
+actual document dispositions. All reads are ``case:view`` and none writes, which is
+what keeps this router's claim about itself true.
+
+``/decisions`` is here rather than on ``routers.financial_adjudication``, where
+the two routes that *write* those records live, and the reason is that router's
+own comment: it resolves every route to ``case:edit`` unconditionally so that
+anything added there inherits the write bar. A read dropped in would take a
+permission it does not need, and would make that comment false. Reading a
+history is ``case:view`` in the same sense that reading the rows is, so it
+belongs with the reads.
+"""
+
+from datetime import date
+from typing import Optional, Literal, Annotated
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, File, UploadFile
+from sqlalchemy.orm import Session
+from pydantic import BaseModel, ConfigDict, Field
+from services.financial.amount_assessment import AmountAssessmentError, assess_source_amount, read_amount_source_text
+from services.financial.ledger_source import LedgerSourceError, ledger_source, ledger_sources, statement_source
+from services.financial.candidate_store import CandidateStoreError, read_candidate_mapping, list_candidate_mappings, list_candidate_accounts
+from services.financial.candidate_assessment import assess_candidate_amounts, assess_candidate_dates
+from services.financial.candidate_reviews import read_candidate_review
+from services.financial.candidate_overlap import check_candidate_source_reuse
+from services.financial.candidate_materialization import preview_candidate_finalization
+from services.financial.candidate_statement_scopes import StatementScopesRequest
+from services.financial.account_parties import _account_party_state
+from routers.evidence import _resolve_stored_path
+from services.financial.ledger_snapshot import capture_ledger_export, ledger_export_archive
+from services.financial.ledger_summary import ledger_summary, LedgerSummaryError
+from services.financial.export_audit import record_prepared_export
+from services.financial.statement_balances import capture_statement_running_balances
+from services.financial.statement_checks import capture_statement_checks, StatementCheckError
+from services.financial.coverage_query import requested_statement_coverage, CoverageQueryError, list_statement_coverage
+from services.financial.candidate_sources import list_candidate_sources, read_candidate_source
+from services.financial.pdf_candidates import PdfMappingError
+
+from postgres.models.enums import (
+    AdjudicationDecision,
+    AdjudicationSubject,
+    IngestionRunStatus,
+    LedgerStatus,
+)
+from postgres.session import get_db
+from routers.case_access import case_access_dependency
+from routers.users import get_current_db_user
+from services.financial import (
+    DEFAULT_DECISION_LIMIT,
+    DecisionLogError,
+    LedgerQueryError,
+    RunQueryError,
+    case_proof_standing,
+    list_case_decisions,
+    list_runs,
+    list_transactions,
+    to_run_view,
+    to_view,
+)
+
+from services.financial.duplicate_query import (
+    DuplicateQueryLimitError, list_duplicate_candidates,
+)
+
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+def _ledger_case_permission(request: Request, payload: dict) -> tuple[str, str] | None:
+    # Every route on this router reads; none of them write.
+    return ("case", "view")
+
+
+_require_ledger_case_access = case_access_dependency(_ledger_case_permission)
+
+
+router = APIRouter(
+    prefix="/api/financial",
+    tags=["financial"],
+    dependencies=[
+        Depends(get_current_db_user),
+        Depends(_require_ledger_case_access),
+    ],
+)
+
+
+@router.get("/case-access")
+def get_financial_case_access(
+    response: Response,
+    case_id: UUID = Query(...),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_db_user),
+):
+    """Expose the two permissions used by financial controls for this member."""
+    from services.case_service import check_case_access, has_permission, is_super_admin
+
+    response.headers["Cache-Control"] = "no-store"
+    _, membership = check_case_access(
+        db, case_id, current_user, required_permission=("case", "view")
+    )
+    admin = is_super_admin(current_user)
+    return dict(
+        case_id=str(case_id),
+        user_id=str(current_user.id),
+        can_edit=admin or has_permission(membership, "case", "edit"),
+        can_upload=admin or has_permission(membership, "evidence", "upload"),
+    )
+
+
+class CandidateAmountAssessmentRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    currency: str = Field(pattern=r"^[A-Z]{3}$", strict=True)
+
+
+@router.get("/candidates/{candidate_id}/review")
+async def get_candidate_review(candidate_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        return read_candidate_review(db, case_id=case_id, candidate_id=candidate_id)
+    except CandidateStoreError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Candidate review lookup failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Candidate review could not be read.")
+
+
+@router.get("/candidate-mappings/{mapping_id}")
+async def get_candidate_mapping(mapping_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        return read_candidate_mapping(db, case_id=case_id, mapping_id=mapping_id)
+    except CandidateStoreError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Candidate mapping lookup failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Candidate mapping could not be read.")
+
+
+@router.get("/candidate-mappings")
+async def get_candidate_mappings(case_id: UUID = Query(...), limit: int = Query(25, ge=1, le=100),
+                                  offset: int = Query(0, ge=0), db: Session = Depends(get_db)):
+    try:
+        return list_candidate_mappings(db, case_id=case_id, limit=limit, offset=offset)
+    except CandidateStoreError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Candidate list failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Saved PDF readings could not be listed.")
+
+
+from services.financial.ledger_tracing import LedgerTraceInput, ledger_trace_inputs, evaluate_ledger_trace
+from services.financial.tracing import TracingError
+
+
+@router.get("/ledger-trace-inputs")
+def get_ledger_trace_inputs(case_id: UUID = Query(...), account_id: UUID = Query(...),
+        start_date: date = Query(...), end_date: date = Query(...), population: str = Query("verified"), db: Session = Depends(get_db)):
+    try:
+        return ledger_trace_inputs(capture_ledger_export(db.get_bind(), case_id=case_id,
+            account_id=account_id, start_date=start_date, end_date=end_date), population=population)
+    except (LedgerSummaryError, TracingError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Tracing input capture failed")
+        raise HTTPException(status_code=500, detail="Tracing inputs could not be captured.")
+
+
+@router.post("/ledger-trace")
+def run_ledger_trace(body: LedgerTraceInput, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        captured = capture_ledger_export(db.get_bind(), case_id=case_id, account_id=body.account_id,
+            start_date=body.start_date, end_date=body.end_date)
+        return evaluate_ledger_trace(captured, body)
+    except (LedgerSummaryError, TracingError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Conditional tracing failed")
+        raise HTTPException(status_code=500, detail="Tracing scenario could not be calculated.")
+
+
+@router.get("/ledger-export")
+def download_ledger_export(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
+        start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None), db: Session = Depends(get_db), include_source_files: bool = False, include_pdf: bool = False, table_view: Optional[str] = Query(None, max_length=4096), privilege_marking: Literal["unmarked","confidential","privileged_confidential"] = "unmarked", include_case_financial_history: bool = False, current_user=Depends(get_current_db_user), account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
+    try:
+        import hashlib
+        import json
+        account_scope = dict(account_ids=[str(value) for value in (account_ids or [])], account_holders=account_holders or [])
+        account_scope_digest = hashlib.sha256(json.dumps(account_scope, ensure_ascii=False, separators=(',', ':')).encode('utf-8')).hexdigest()
+        view_options = {}
+        view_header = ''
+        view_digest = ''
+        if isinstance(table_view, str):
+            import json
+            import hashlib
+            view_digest = hashlib.sha256(table_view.encode('utf-8')).hexdigest()
+            from pydantic import ValidationError
+            from services.financial.ledger_table_view import LedgerTableView
+            try:
+                parsed_view = LedgerTableView.model_validate_json(table_view)
+            except ValidationError as exc:
+                raise LedgerSummaryError('Invalid table-view filters.') from exc
+            view_options['table_view'] = parsed_view.model_dump()
+            view_header = json.dumps(parsed_view.model_dump(), ensure_ascii=True, separators=(',', ':'))
+        if include_case_financial_history:
+            view_options['include_case_financial_history'] = True
+        source_options = dict(include_source_files=True, resolve_path=_resolve_stored_path) if include_source_files else {}
+        exported=capture_ledger_export(db.get_bind(),case_id=case_id,account_id=account_id, account_ids=account_ids, account_holders=account_holders,
+            start_date=start_date,end_date=end_date,privilege_marking=privilege_marking,
+            generated_by=dict(id=str(current_user.id),name=current_user.name,email=current_user.email) if getattr(current_user,'id',None) else None,**source_options,**view_options)
+        content=ledger_export_archive(exported, **({"include_pdf":True} if include_pdf else {}))
+        receipt=record_prepared_export(db.get_bind(),case_id=case_id,kind='ledger_exports',content=content,
+            actor=dict(id=str(current_user.id),name=current_user.name,email=current_user.email) if getattr(current_user,'id',None) else None,
+            scope=dict(**account_scope,snapshot_sha256=exported.snapshot.sha256,account_id=str(account_id) if account_id else None,
+                start_date=start_date.isoformat() if start_date else None,end_date=end_date.isoformat() if end_date else None,
+                privilege_marking=privilege_marking,include_source_files=include_source_files,include_pdf=include_pdf,
+                include_case_financial_history=include_case_financial_history,table_view=view_options.get('table_view')))
+        return Response(content=content,media_type="application/zip",headers={
+            "X-Loupe-Export-Id":receipt['export_id'],
+            "X-Loupe-Export-Event-Sha256":receipt['entry_sha256'],
+            "X-Loupe-Export-Event-Sequence":str(receipt['sequence']),
+            "Content-Disposition": 'attachment; filename="loupe-ledger-export.zip"',
+            "X-Loupe-Case-Review-History": "true" if include_case_financial_history else "false",
+            "X-Loupe-PDF-Report": "true" if include_pdf else "false",
+            "X-Loupe-Privilege-Marking": privilege_marking,
+            "X-Loupe-Table-View": view_header if len(view_header) <= 3500 else "",
+            "X-Loupe-Table-View-Sha256": view_digest,
+            "X-Loupe-Account-Selection-Sha256": account_scope_digest,
+            "Cache-Control": "no-store", "X-Loupe-Source-Files": "true" if include_source_files else "false", "X-Content-Type-Options": "nosniff",
+            "X-Loupe-Case-Id": str(case_id), "X-Loupe-Account-Id": str(account_id) if account_id else "",
+            "X-Loupe-Start-Date": start_date.isoformat() if start_date else "",
+            "X-Loupe-End-Date": end_date.isoformat() if end_date else ""})
+    except LedgerSummaryError as exc:
+        raise HTTPException(status_code=422,detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Ledger export failed for case %s",case_id)
+        raise HTTPException(status_code=500,detail="Ledger export could not be prepared.")
+
+
+
+class LedgerTableExportRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+    table_view: Annotated[str, Field(min_length=2, max_length=2 * 1024 * 1024)]
+
+
+@router.post('/ledger-export')
+def download_filtered_ledger_export(body: LedgerTableExportRequest, case_id: UUID = Query(...),
+        account_id: Optional[UUID] = Query(None), start_date: Optional[date] = Query(None),
+        end_date: Optional[date] = Query(None), db: Session = Depends(get_db),
+        include_source_files: bool = False, include_pdf: bool = False,
+        privilege_marking: Literal['unmarked', 'confidential', 'privileged_confidential'] = 'unmarked',
+        include_case_financial_history: bool = False, current_user=Depends(get_current_db_user), account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
+    # Large multi-select filters belong in the request body, not a URL or response header.
+    return download_ledger_export(case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders, start_date=start_date,
+        end_date=end_date, db=db, include_source_files=include_source_files, include_pdf=include_pdf,
+        table_view=body.table_view, privilege_marking=privilege_marking,
+        include_case_financial_history=include_case_financial_history, current_user=current_user)
+
+
+
+class TraceSupportDownload(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    scenarios: list[Annotated[str, Field(strict=True, min_length=1, max_length=16 * 1024 * 1024)]] = Field(min_length=1, max_length=8)
+    privilege_marking: Literal['unmarked', 'confidential', 'privileged_confidential'] = 'unmarked'
+
+
+@router.post('/ledger-export-comparison')
+async def compare_saved_ledger_exports(case_id: UUID = Query(...), before: UploadFile = File(...), after: UploadFile = File(...)):
+    from starlette.concurrency import run_in_threadpool
+    from services.financial.export_comparison import compare_ledger_exports, MAX_ARCHIVE_BYTES
+    try:
+        first = await before.read(MAX_ARCHIVE_BYTES + 1)
+        second = await after.read(MAX_ARCHIVE_BYTES + 1)
+        return await run_in_threadpool(compare_ledger_exports, first, second, expected_case_id=case_id)
+    except LedgerSummaryError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        logger.exception('Saved ledger export comparison failed')
+        raise HTTPException(status_code=500, detail='Saved exports could not be compared.')
+    finally:
+        await before.close()
+        await after.close()
+
+
+@router.post('/trace-support-verification')
+async def verify_saved_trace_support(case_id: UUID = Query(...), archive: UploadFile = File(...),
+                                     expected_sha256: Optional[str] = Query(None, pattern=r'^[a-f0-9]{64}$')):
+    import json
+    from starlette.concurrency import run_in_threadpool
+    from services.financial.trace_support_archive import verify_trace_support_archive, MAX_SUPPORT_ARCHIVE_BYTES
+    try:
+        content = await archive.read(MAX_SUPPORT_ARCHIVE_BYTES + 1)
+        result = await run_in_threadpool(verify_trace_support_archive, content,
+            expected_case_id=case_id, expected_sha256=expected_sha256)
+        return Response(content=json.dumps(result), media_type='application/json',
+            headers={'Cache-Control':'no-store', 'X-Content-Type-Options':'nosniff'})
+    except LedgerSummaryError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        logger.exception('Saved tracing support verification failed')
+        raise HTTPException(status_code=500, detail='Saved support could not be verified.')
+    finally:
+        await archive.close()
+
+
+@router.post('/trace-support-export')
+def download_trace_support(body: TraceSupportDownload, case_id: UUID = Query(...), current_user=Depends(get_current_db_user), db: Session=Depends(get_db)):
+    """Recompute submitted captures and package support under the case-view bar."""
+    import hashlib
+    from datetime import datetime, timezone
+    from services.financial.trace_support_archive import build_trace_support_archive
+    try:
+        content = build_trace_support_archive([value.encode('utf-8') for value in body.scenarios],
+            expected_case_id=case_id, preparation=dict(generated_at=datetime.now(timezone.utc).isoformat(),
+                generated_by=dict(id=str(current_user.id), name=current_user.name, email=current_user.email),
+                privilege_marking=body.privilege_marking,
+                basis='Authenticated bundle preparation from submitted historical captures; not authentication of their original authorship or a legal privilege determination.'))
+        receipt=record_prepared_export(db.get_bind(),case_id=case_id,kind='trace_support_exports',content=content,
+            actor=dict(id=str(current_user.id),name=current_user.name,email=current_user.email),
+            scope=dict(scenario_sha256=[hashlib.sha256(value.encode('utf-8')).hexdigest() for value in body.scenarios],
+                privilege_marking=body.privilege_marking))
+        return Response(content=content, media_type='application/zip', headers={
+            'X-Loupe-Export-Id':receipt['export_id'],
+            'X-Loupe-Export-Event-Sha256':receipt['entry_sha256'],
+            'X-Loupe-Export-Event-Sequence':str(receipt['sequence']),
+            'Content-Disposition':'attachment; filename="loupe-tracing-audit.zip"',
+            'Cache-Control':'no-store', 'X-Content-Type-Options':'nosniff',
+            'X-Loupe-Case-Id':str(case_id), 'X-Loupe-Privilege-Marking':body.privilege_marking,
+            'X-Loupe-Archive-Sha256':hashlib.sha256(content).hexdigest(),
+            'X-Loupe-Scenario-Sha256':hashlib.sha256(body.scenarios[0].encode('utf-8')).hexdigest() if len(body.scenarios) == 1 else ''})
+    except (LedgerSummaryError, TracingError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        logger.exception('Tracing support export failed')
+        raise HTTPException(status_code=500, detail='Tracing support could not be prepared.')
+
+
+@router.post('/trace-support-assembly')
+async def assemble_saved_trace_support(case_id: UUID = Query(...), scenarios: Optional[list[UploadFile]] = File(None),
+        ledger: Optional[UploadFile] = File(None), review: Optional[UploadFile] = File(None),
+        predictions: Optional[UploadFile] = File(None),
+        privilege_marking: Literal['unmarked','confidential','privileged_confidential'] = Query('unmarked'),
+        current_user=Depends(get_current_db_user), db: Session=Depends(get_db)):
+    import hashlib
+    import json
+    from datetime import datetime, timezone
+    from starlette.concurrency import run_in_threadpool
+    from services.financial.trace_support_archive import build_trace_support_archive
+    from services.financial.reference_reviews import parse_review_json
+    scenarios = scenarios or []
+    uploads = [*scenarios, *[value for value in (ledger, review, predictions) if value is not None]]
+    try:
+        if len(scenarios) > 8 or (not scenarios and ledger is None):
+            raise ValueError('Select a saved ledger export or one to eight tracing scenarios.')
+        if (review is None) != (predictions is None):
+            raise ValueError('Attach both the review record and predictions when including extraction measurements.')
+        async def read(upload, limit):
+            if upload is None:
+                return None
+            content = await upload.read(limit + 1)
+            if len(content) > limit:
+                raise ValueError('A selected file exceeds its size limit.')
+            return content
+        selected = [await read(upload, 16 * 1024 * 1024) for upload in scenarios]
+        ledger_bytes = await read(ledger, 128 * 1024 * 1024)
+        review_bytes = await read(review, 16 * 1024 * 1024)
+        predictions_bytes = await read(predictions, 16 * 1024 * 1024)
+        def sha(value):
+            return hashlib.sha256(value).hexdigest() if value is not None else None
+        inputs = dict(ledger=sha(ledger_bytes), predictions=sha(predictions_bytes), review=sha(review_bytes),
+                      scenarios=[sha(value) for value in selected])
+        input_digest = hashlib.sha256(json.dumps(inputs, sort_keys=True, separators=(',',':')).encode()).hexdigest()
+        actor = dict(id=str(current_user.id), name=current_user.name, email=current_user.email)
+        preparation = dict(generated_at=datetime.now(timezone.utc).isoformat(), generated_by=actor,
+            privilege_marking=privilege_marking, selected_input_sha256=inputs,
+            basis='Authenticated assembly of selected saved captures. Each retains its original scope and markings; this outer marking does not rewrite enclosed originals or establish legal privilege.')
+        content = await run_in_threadpool(build_trace_support_archive, selected, expected_case_id=case_id,
+            ledger_archive=ledger_bytes, reference_review=parse_review_json(review_bytes) if review_bytes is not None else None,
+            validation_predictions=parse_review_json(predictions_bytes) if predictions_bytes is not None else None,
+            preparation=preparation)
+        receipt = await run_in_threadpool(record_prepared_export, db.get_bind(), case_id=case_id,
+            kind='trace_support_exports', content=content, actor=actor,
+            scope=dict(selected_input_sha256=inputs, privilege_marking=privilege_marking))
+        return Response(content=content, media_type='application/zip', headers={
+            'X-Loupe-Export-Id':receipt['export_id'], 'X-Loupe-Export-Event-Sha256':receipt['entry_sha256'],
+            'X-Loupe-Export-Event-Sequence':str(receipt['sequence']),
+            'Content-Disposition':'attachment; filename="loupe-review-support.zip"',
+            'Cache-Control':'no-store', 'X-Content-Type-Options':'nosniff',
+            'X-Loupe-Case-Id':str(case_id), 'X-Loupe-Privilege-Marking':privilege_marking,
+            'X-Loupe-Archive-Sha256':sha(content), 'X-Loupe-Assembly-Inputs-Sha256':input_digest})
+    except (ValueError, LedgerSummaryError, TracingError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        logger.exception('Saved support assembly failed')
+        raise HTTPException(status_code=500, detail='Review support could not be prepared.')
+    finally:
+        for upload in uploads:
+            await upload.close()
+
+
+@router.get("/ledger-counterparties")
+async def get_ledger_counterparties(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
+        start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None), db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
+    from services.financial.ledger_summary import ledger_counterparties
+    try:
+        return ledger_counterparties(db, case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders, start_date=start_date, end_date=end_date)
+    except LedgerSummaryError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Ledger counterparty summary failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Ledger counterparty summary could not be calculated.")
+
+
+
+@router.get("/ledger-trends")
+async def get_ledger_trends(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
+        start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
+        grouping: Literal["daily", "monthly"] = Query("monthly"), db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
+    try:
+        return ledger_summary(db, case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders, start_date=start_date,
+            end_date=end_date, grouping=grouping)
+    except LedgerSummaryError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Ledger trends failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Ledger trends could not be calculated.")
+
+
+
+@router.get("/ledger-working-analysis")
+async def get_working_ledger_analysis(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
+        start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
+        grouping: Literal["daily", "monthly", "counterparty"] = Query("monthly"), db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
+    from services.financial.working_totals import working_ledger_analysis
+    try:
+        return working_ledger_analysis(db, case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders,
+            start_date=start_date, end_date=end_date, grouping=grouping)
+    except LedgerSummaryError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Working ledger analysis failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Working analysis could not be calculated.")
+
+
+
+@router.get("/ledger-working-summary")
+async def get_working_ledger_summary(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
+        start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
+        db: Session = Depends(get_db), include_contributions: bool = False, account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
+    from services.financial.working_totals import working_ledger_summary
+    try:
+        if include_contributions:
+            from services.financial.summary_contributions import summary_contributions
+            return summary_contributions(db, case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders,
+                start_date=start_date, end_date=end_date, population='working')
+        return working_ledger_summary(db, case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders, start_date=start_date, end_date=end_date)
+    except LedgerSummaryError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Working ledger summary failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Working totals could not be calculated.")
+
+
+
+@router.get("/ledger-summary")
+async def get_ledger_summary(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
+        start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
+        db: Session = Depends(get_db), include_contributions: bool = False, account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
+    try:
+        if include_contributions:
+            from services.financial.summary_contributions import summary_contributions
+            return summary_contributions(db, case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders,
+                start_date=start_date, end_date=end_date, population='verified')
+        return ledger_summary(db, case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders, start_date=start_date, end_date=end_date)
+    except LedgerSummaryError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Ledger summary failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Ledger summary could not be calculated.")
+
+
+
+@router.get("/requested-statement-coverage")
+async def get_requested_statement_coverage(case_id: UUID = Query(...), account_id: UUID = Query(...),
+        start_date: date = Query(...), end_date: date = Query(...), db: Session = Depends(get_db)):
+    try:
+        return requested_statement_coverage(db, case_id=case_id, account_id=account_id,
+            start_date=start_date, end_date=end_date)
+    except CoverageQueryError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Requested statement coverage failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Requested statement coverage could not be calculated.")
+
+
+@router.get("/statement-periods/{period_id}/running-balances")
+async def get_statement_running_balances(period_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        return capture_statement_running_balances(db.get_bind(), case_id=case_id, period_id=period_id)
+    except StatementCheckError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception:
+        logger.exception("Running-balance check failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Running balances could not be checked.")
+
+
+@router.get("/statement-periods/{period_id}/source")
+async def get_statement_source(period_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        return statement_source(db, case_id=case_id, period_id=period_id)
+    except LedgerSourceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+    except Exception:
+        logger.exception("Statement source read failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Statement source could not be read.")
+
+
+@router.get("/statement-checks")
+async def get_statement_checks(case_id: UUID = Query(...), offset: int = Query(0, ge=0), db: Session = Depends(get_db), include_native: bool = False, account_id: UUID | None = None):
+    try:
+        return capture_statement_checks(db.get_bind(), case_id=case_id, offset=offset,
+            **(dict(account_id=account_id) if account_id is not None else {}),
+            **(dict(include_native=True, resolve_path=_resolve_stored_path) if include_native else {}))
+    except StatementCheckError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception:
+        logger.exception("Statement balance check failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Statement balances could not be checked.")
+
+
+@router.get("/account-references")
+async def get_account_references(case_id: UUID = Query(...), offset: int = Query(0, ge=0),
+                                 search: str = Query('', max_length=128), show: Literal['missing','all'] = Query('missing'),
+                                 db: Session = Depends(get_db)):
+    from services.financial.account_mentions import account_references
+    try:
+        return account_references(db, case_id=case_id, offset=offset, search=search, show=show)
+    except Exception:
+        logger.exception("Account references could not be checked for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Account references could not be checked. Retry the check.")
+
+
+@router.get("/statement-coverage")
+async def get_statement_coverage(case_id: UUID = Query(...), offset: int = Query(0, ge=0), db: Session = Depends(get_db), account_id: UUID | None = None):
+    try:
+        return list_statement_coverage(db, case_id=case_id, offset=offset,
+            **(dict(account_id=account_id) if account_id is not None else {}))
+    except CoverageQueryError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Statement coverage failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Statement coverage could not be calculated.")
+
+
+@router.get('/account-history')
+async def get_account_history(case_id: UUID = Query(...), account_id: UUID | None = Query(None),
+        account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None,
+        start_date: date | None = Query(None), end_date: date | None = Query(None), db: Session = Depends(get_db)):
+    from services.financial.account_history import account_history
+    from services.financial.pdf_candidates import PdfMappingError
+    try:
+        return account_history(db, case_id=case_id, account_id=account_id, account_ids=account_ids,
+            account_holders=account_holders, start_date=start_date, end_date=end_date)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.get("/ledger-accounts")
+async def get_candidate_accounts(case_id: UUID = Query(...), search: str = Query("", max_length=128), offset: int = 0,
+                                  db: Session = Depends(get_db)):
+    try:
+        return list_candidate_accounts(db, case_id=case_id, search=search, offset=offset,
+            include_pending=True, include_statement_periods=True)
+    except CandidateStoreError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Candidate account list failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Ledger accounts could not be listed.")
+
+
+@router.get("/candidates/{candidate_id}/source-readings")
+async def get_candidate_source_readings(candidate_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    from services.financial.candidate_assessment import candidate_source_readings
+    try:
+        return candidate_source_readings(db, case_id=case_id, candidate_id=candidate_id)
+    except CandidateStoreError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Candidate source reading failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Original source readings could not be loaded.")
+
+
+@router.get("/candidates/{candidate_id}/date-assessment")
+async def assess_saved_candidate_dates(candidate_id: UUID, case_id: UUID = Query(...),
+                                       db: Session = Depends(get_db)):
+    try:
+        return assess_candidate_dates(db, case_id=case_id, candidate_id=candidate_id)
+    except CandidateStoreError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Candidate date assessment failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Candidate date assessment could not be completed.")
+
+
+@router.post("/candidates/{candidate_id}/amount-assessment")
+async def assess_saved_candidate(candidate_id: UUID, body: CandidateAmountAssessmentRequest,
+                                 case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        return assess_candidate_amounts(db, case_id=case_id, candidate_id=candidate_id, currency=body.currency)
+    except CandidateStoreError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Candidate amount assessment failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Candidate amount assessment could not be completed.")
+
+
+class LedgerSourcesRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    transaction_ids: list[UUID] = Field(min_length=1, max_length=500)
+
+
+@router.post("/ledger/sources")
+async def get_ledger_sources(body: LedgerSourcesRequest, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        return ledger_sources(db, case_id=case_id, transaction_ids=body.transaction_ids)
+    except LedgerSourceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Ledger sources lookup failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Selected payment sources could not be read.")
+
+
+@router.get("/ledger/{transaction_id}/source")
+async def get_ledger_source(transaction_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        return ledger_source(db, case_id=case_id, transaction_id=transaction_id)
+    except LedgerSourceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Ledger source lookup failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Ledger source could not be read.")
+
+
+class AmountAssessmentRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    start_char: int = Field(ge=0, strict=True)
+    end_char: int = Field(gt=0, strict=True)
+    expected_text: str = Field(min_length=1, max_length=128, strict=True)
+    content_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    currency: str = Field(pattern=r"^[A-Z]{3}$")
+
+
+@router.get("/source-files/{evidence_file_id}/text")
+async def get_amount_source_text(
+    evidence_file_id: UUID,
+    case_id: UUID = Query(...),
+    start_char: int = Query(0, ge=0),
+    limit: int = Query(12000, ge=1, le=20000),
+    db: Session = Depends(get_db),
+):
+    try:
+        return read_amount_source_text(db, case_id=case_id, evidence_file_id=evidence_file_id,
+                                       start_char=start_char, limit=limit)
+    except AmountAssessmentError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Source text read failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Source text could not be read.")
+
+
+@router.post("/source-files/{evidence_file_id}/amount-assessment")
+async def assess_evidence_amount(
+    evidence_file_id: UUID,
+    body: AmountAssessmentRequest,
+    case_id: UUID = Query(...),
+    db: Session = Depends(get_db),
+):
+    """Read-only review; origin comes from stored provenance, never the caller."""
+    try:
+        return assess_source_amount(db, case_id=case_id, evidence_file_id=evidence_file_id,
+                                    **body.model_dump())
+    except AmountAssessmentError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Source amount assessment failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Source amount assessment failed.")
+
+
+@router.get("/ledger")
+async def get_ledger_transactions(
+    case_id: UUID = Query(..., description="REQUIRED: Case ID"),
+    source_document_id: UUID | None = None,
+    account_id: Optional[UUID] = Query(
+        None, description="Restrict to one account"
+    ),
+    ledger_status: Optional[str] = Query(
+        None,
+        description=(
+            "Ledger status to filter on: admitted, quarantined, superseded, "
+            "or rejected. Defaults to admitted."
+        ),
+    ),
+    start_date: Optional[date] = Query(
+        None, description="Earliest ordering_date, inclusive"
+    ),
+    end_date: Optional[date] = Query(
+        None, description="Latest ordering_date, inclusive"
+    ),
+    db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
+    """Rows from the relational ledger for one case, defaulting to admitted rows.
+
+    ``ordering_date`` -- not any one of the four printed dates a row may also
+    carry -- is what ``start_date``/``end_date`` bound, because it is the
+    column the ledger itself orders and reconciles by.
+    """
+    status: Optional[LedgerStatus] = None
+    if ledger_status is not None:
+        try:
+            status = LedgerStatus(ledger_status)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Unknown ledger_status '{ledger_status}'. Valid values: "
+                    f"{', '.join(s.value for s in LedgerStatus)}"
+                ),
+            )
+
+    try:
+        rows = list_transactions(
+            db,
+            case_id,
+            source_document_id=source_document_id,
+            account_id=account_id, account_ids=account_ids, account_holders=account_holders,
+            ledger_status=status,
+            start_date=start_date,
+            end_date=end_date,
+        )
+    except LedgerQueryError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(
+            f"Failed to list ledger transactions for case {case_id}: {e}"
+        )
+        raise HTTPException(status_code=500, detail=str(e))
+
+    parties = {a['id']: a for a in _account_party_state(db, case_id=case_id)['accounts']}
+    from services.financial.transaction_query import account_label_index
+    labels = account_label_index(parties)
+    transactions = [to_view(row, account=row.account, account_parties=parties,
+        canonical_account_labels=labels).to_json() for row in rows]
+    return {
+        "case_id": str(case_id),
+        "transactions": transactions,
+        "total": len(transactions),
+    }
+
+
+
+@router.get("/runs")
+async def get_ingestion_runs(
+    case_id: UUID = Query(..., description="REQUIRED: Case ID"),
+    status: Optional[str] = Query(
+        None,
+        description=(
+            "Run status to filter on: pending, running, completed, failed, "
+            "or aborted. Defaults to every status, because a failed run is "
+            "the thing this read exists to surface."
+        ),
+    ),
+    limit: Optional[int] = Query(
+        None, description="Return at most this many runs, newest first"
+    ),
+    db: Session = Depends(get_db),
+):
+    """Ingestion runs for one case, newest first, every status by default.
+
+    Unlike ``/ledger``, which defaults to the admitted population because that
+    is what totals are filtered to, this defaults to everything. A run that
+    failed or was aborted is precisely what someone asking about a case's
+    ledger needs to see, and putting it behind a query parameter would let a
+    half-finished ingest stay invisible to anyone who did not already suspect
+    it.
+
+    A ``running`` run is reported as running, with the time it started and
+    nothing else claimed about it. Whether such a run has in fact been
+    abandoned is decided and recorded by the reaper, not guessed at here.
+    """
+    run_status: Optional[IngestionRunStatus] = None
+    if status is not None:
+        try:
+            run_status = IngestionRunStatus(status)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Unknown status '{status}'. Valid values: "
+                    f"{', '.join(s.value for s in IngestionRunStatus)}"
+                ),
+            )
+
+    try:
+        rows = list_runs(db, case_id, status=run_status, limit=limit)
+    except RunQueryError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to list ingestion runs for case {case_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    runs = [to_run_view(row).to_json() for row in rows]
+    return {
+        "case_id": str(case_id),
+        "runs": runs,
+        "total": len(runs),
+    }
+
+
+def _parsed_member(value: Optional[str], enum, field: str):
+    """One query string turned into a member of a closed vocabulary, or a 400.
+
+    The two routes above inline this. It is factored out here because this
+    route parses two vocabularies rather than one, and because the wording of
+    the refusal is the part that matters: naming the valid values in the detail
+    is what stops a caller having to guess which of three plausible spellings
+    of a decision this table uses. They are not rewritten to use it, because
+    changing a working route to save four lines is churn on a path with tests
+    already pinned to it.
+    """
+    if value is None:
+        return None
+    try:
+        return enum(value)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Unknown {field} '{value}'. Valid values: "
+                f"{', '.join(member.value for member in enum)}"
+            ),
+        )
+
+
+@router.get("/decisions")
+async def get_case_decisions(
+    case_id: UUID = Query(..., description="REQUIRED: Case ID"),
+    subject_type: Optional[str] = Query(
+        None,
+        description=(
+            "Restrict to decisions about one kind of subject: transaction, "
+            "statement_period, source_document, account, or evidence_file."
+        ),
+    ),
+    subject_id: Optional[UUID] = Query(
+        None,
+        description=(
+            "Restrict to decisions about one subject. Scoped to the case "
+            "regardless: a subject in another matter returns nothing."
+        ),
+    ),
+    decision: Optional[str] = Query(
+        None, description="Restrict to one kind of decision"
+    ),
+    limit: int = Query(
+        DEFAULT_DECISION_LIMIT,
+        description=(
+            "Return at most this many decisions, newest first. A limit above "
+            "the cap is capped rather than refused, and the response says "
+            "which limit was applied."
+        ),
+    ),
+    offset: int = Query(0, description="Skip this many decisions"),
+    db: Session = Depends(get_db),
+):
+    """What has been decided in one case, newest first.
+
+    The adjudication log is append-only and has had writers since quarantine
+    landed. This is the first thing that reads it back at the level anyone
+    actually asks about it: not "what happened to this row", which
+    ``decisions.history`` already answered for one loaded subject, but what has
+    been done to the evidence in this matter, by whom, and when.
+
+    Every record says whether a person or the reconciliation stage decided it.
+    That distinction is derived from the actor's address by the service and is
+    not a filter here, because a caller who wants only one of the two can say
+    so with ``decision`` -- ``reclassify_document`` is the only member a
+    machine writes -- and a boolean query parameter over a derived field would
+    be a second definition of the same fact.
+
+    **The page is bounded and says so.** ``total`` counts every decision
+    matching the same filters, and ``truncated`` says whether any were left
+    off. A history that quietly stops is worse than no history, which is why
+    neither figure is optional.
+
+    ``limit`` and ``offset`` are validated by the service rather than by
+    ``Query``, and deliberately: a bound declared twice drifts, and the
+    service's rules are not the ones ``Query`` would express. A limit over the
+    cap is capped and answered, not refused, so a ``le=`` here would turn a
+    served request into a 422. A limit below 1 is refused, and comes back as a
+    400 carrying the service's own words for why.
+    """
+    subject = _parsed_member(subject_type, AdjudicationSubject, "subject_type")
+    kind = _parsed_member(decision, AdjudicationDecision, "decision")
+
+    try:
+        page = list_case_decisions(
+            db,
+            case_id,
+            subject_type=subject,
+            subject_id=subject_id,
+            decision=kind,
+            limit=limit,
+            offset=offset,
+        )
+    except DecisionLogError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to list decisions for case {case_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return page.as_dict()
+
+
+@router.get("/proof-standing")
+async def get_case_proof_standing(
+    case_id: UUID = Query(..., description="REQUIRED: Case ID"),
+    db: Session = Depends(get_db),
+):
+    """How this case's evidence stands by proof class, and what each licenses.
+
+    Every class is returned, including the ones holding nothing, with the
+    document and row counts carrying that class and the four things
+    ``services.financial.proof_class`` says the class permits. The counts and
+    the permissions travel together because a figure against ``p3`` tells a
+    reader nothing on its own: the label does not say that p3 is the one class
+    no run admits by itself, and a reader who guesses wrong shows unadjudicated
+    material as though it were verified.
+
+    **No filters.** The other three reads here narrow by status, date or
+    subject; this one deliberately takes nothing but the case. It is a census,
+    so a filtered census would be a different and smaller claim wearing the
+    same name, and the per-class figures would stop adding up to the case's
+    documents and rows -- which is the one property that makes the breakdown
+    checkable.
+
+    The set of classes counted toward totals is not a query parameter either.
+    It is the set the ledger's own aggregates use, and it is reported back in
+    ``counted_classes`` so any figure derived from this census can state its
+    coverage. Letting a caller choose a different set would let the interface
+    display a coverage the totals beside it were never computed against.
+
+    A ``ProofStandingError`` is not translated to a 400 here, unlike
+    ``DecisionLogError`` above, and the difference is who can act on it. The
+    decision log refuses things a caller sent -- a negative offset, an unknown
+    filter -- and the caller can send something else. This route sends the
+    service nothing but a case, so the only way it can refuse is a stored
+    ``proof_class`` outside the vocabulary, which no request caused and no
+    request can fix. That belongs in the logs as a 500.
+    """
+    try:
+        standing = case_proof_standing(db, case_id)
+    except Exception as e:
+        logger.error(f"Failed to read proof standing for case {case_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return standing.as_dict()
+
+
+@router.get("/duplicates")
+async def get_duplicate_candidates(
+    case_id: UUID = Query(..., description="REQUIRED: Case ID"),
+    db: Session = Depends(get_db),
+):
+    """Fresh candidates and actual dispositions; viewing never changes totals."""
+    try:
+        return list_duplicate_candidates(db, case_id)
+    except DuplicateQueryLimitError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception:
+        logger.exception("Failed to compare financial documents for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Duplicate comparison could not be completed.")
+
+
+@router.get("/candidate-sources")
+async def get_candidate_sources(case_id: UUID = Query(...), limit: int = 25, offset: int = 0,
+                                db: Session = Depends(get_db)):
+    try:
+        return list_candidate_sources(db, case_id=case_id, limit=limit, offset=offset)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+    except Exception:
+        logger.exception("Failed to list candidate sources")
+        raise HTTPException(status_code=500, detail="Stored PDF sources could not be loaded.")
+
+
+class CandidateRowSuggestionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: str = Field(pattern=r"^[a-f0-9]{64}$")
+    date_column: int = Field(ge=0, strict=True)
+    amount_column: int = Field(ge=0, strict=True)
+    currency: str = Field(pattern=r"^[A-Z]{3}$", strict=True)
+
+
+@router.post("/candidate-sources/{evidence_file_id}/pages/{page_number}/row-suggestions")
+async def suggest_saved_source_rows(evidence_file_id: UUID, page_number: int, body: CandidateRowSuggestionRequest,
+        case_id: UUID = Query(...), table_index: int = 0, db: Session = Depends(get_db)):
+    from services.financial.candidate_sources import suggest_candidate_rows
+    try:
+        return suggest_candidate_rows(db, case_id=case_id, evidence_file_id=evidence_file_id,
+            page_number=page_number, table_index=table_index, **body.model_dump())
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Stored row suggestions failed")
+        raise HTTPException(status_code=500, detail="Stored row suggestions could not be prepared.")
+
+
+@router.get("/candidate-sources/{evidence_file_id}/pages/{page_number}")
+async def get_candidate_source(evidence_file_id: UUID, page_number: int, case_id: UUID = Query(...),
+                               table_index: int = 0, db: Session = Depends(get_db)):
+    try:
+        return read_candidate_source(db, case_id=case_id, evidence_file_id=evidence_file_id,
+                                     page_number=page_number, table_index=table_index)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+    except Exception:
+        logger.exception("Failed to read candidate source")
+        raise HTTPException(status_code=500, detail="Stored PDF table could not be loaded.")
+
+
+@router.get("/candidate-sources/{evidence_file_id}/progress")
+async def get_candidate_document_progress(evidence_file_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    from services.financial.candidate_progress import candidate_document_progress
+    try:
+        return candidate_document_progress(db, case_id=case_id, evidence_file_id=evidence_file_id)
+    except CandidateStoreError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Failed to read document review progress")
+        raise HTTPException(status_code=500, detail="Document review progress could not be loaded.")
+
+
+@router.get("/candidate-sources/{evidence_file_id}/reuse-check")
+async def get_candidate_source_reuse(evidence_file_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        return check_candidate_source_reuse(db, case_id=case_id, evidence_file_id=evidence_file_id)
+    except CandidateStoreError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Source reuse check failed")
+        raise HTTPException(status_code=500, detail="Source reuse check could not be completed.")
+
+
+@router.post("/candidate-sources/{evidence_file_id}/finalization-preview")
+async def preview_candidate_statement_scopes(evidence_file_id: UUID, body: StatementScopesRequest,
+                                            case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        return preview_candidate_finalization(db, case_id=case_id, evidence_file_id=evidence_file_id,
+            resolve_path=_resolve_stored_path, statement_scopes=body.statement_scopes)
+    except CandidateStoreError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Statement scope preview failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Statement controls could not be previewed.")
+
+
+@router.get("/candidate-sources/{evidence_file_id}/finalization-preview")
+async def get_candidate_finalization_preview(evidence_file_id: UUID, case_id: UUID = Query(...),
+                                             db: Session = Depends(get_db)):
+    try:
+        return preview_candidate_finalization(db, case_id=case_id,
+            evidence_file_id=evidence_file_id, resolve_path=_resolve_stored_path)
+    except CandidateStoreError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Candidate finalization preview failed")
+        raise HTTPException(status_code=500, detail="The finalization preview could not be loaded.")
+    finally:
+        db.rollback()
+
+
+@router.get("/candidate-sources/{evidence_file_id}/statement-draft")
+async def get_statement_review_draft(evidence_file_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    from services.financial.statement_review_drafts import read_statement_draft
+    try:
+        return read_statement_draft(db, case_id=case_id, evidence_file_id=evidence_file_id)
+    except CandidateStoreError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+from services.financial.ledger_transfers import ledger_transfer_candidates, evaluate_transfer_scenario, LedgerTransferScenario
+
+@router.get('/ledger-transfer-candidates')
+def get_ledger_transfer_candidates(case_id: UUID = Query(...), start_date: Optional[date] = Query(None),
+        end_date: Optional[date] = Query(None), population: Literal['working', 'verified'] = Query('working'),
+        tolerance_days: int = Query(3, ge=0, le=7), db: Session = Depends(get_db)):
+    try:
+        captured = capture_ledger_export(db.get_bind(), case_id=case_id, start_date=start_date, end_date=end_date)
+        return ledger_transfer_candidates(captured, population=population, tolerance_days=tolerance_days)
+    except LedgerSummaryError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        logger.exception('Transfer candidates failed for case %s', case_id)
+        raise HTTPException(status_code=500, detail='Transfer comparison could not be prepared.')
+
+
+@router.post('/ledger-transfer-scenario')
+def calculate_ledger_transfer_scenario(body: LedgerTransferScenario, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        captured = capture_ledger_export(db.get_bind(), case_id=case_id, start_date=body.start_date, end_date=body.end_date)
+        return evaluate_transfer_scenario(captured, body)
+    except LedgerSummaryError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        logger.exception('Transfer scenario failed for case %s', case_id)
+        raise HTTPException(status_code=500, detail='Transfer scenario could not be calculated.')
+
+
+@router.get('/ledger-posting-graph')
+def get_ledger_posting_graph(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
+        start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
+        population: Literal['working', 'verified'] = Query('working'), db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
+    from services.financial.ledger_graph import ledger_posting_graph
+    try:
+        captured = capture_ledger_export(db.get_bind(), case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders, start_date=start_date, end_date=end_date)
+        return ledger_posting_graph(captured, population=population)
+    except LedgerSummaryError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        logger.exception('Posting graph failed for case %s', case_id)
+        raise HTTPException(status_code=500, detail='Posting graph could not be prepared.')
+
+
+
+@router.get("/cross-case-duplicates")
+def get_cross_case_duplicates(case_id: UUID = Query(...), comparison_case_id: UUID = Query(...),
+        db: Session = Depends(get_db), current_user=Depends(get_current_db_user)):
+    from routers.case_access import authorize_case_view
+    from services.financial.cross_case_duplicates import compare_case_documents
+    # Authorize before querying any comparison documents. Keep unavailable and
+    # unauthorized comparison-case responses indistinguishable.
+    try:
+        authorize_case_view(db, comparison_case_id, current_user)
+    except HTTPException as exc:
+        raise HTTPException(status_code=403, detail="Comparison case is not available to this user.") from exc
+    try:
+        return compare_case_documents(db, case_id, comparison_case_id)
+    except DuplicateQueryLimitError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Cross-case document comparison failed")
+        raise HTTPException(status_code=500, detail="Document comparison could not be completed.")
+
+
+@router.get("/candidate-sources/{evidence_file_id}/page-scan")
+def get_candidate_page_scan(evidence_file_id: UUID, case_id: UUID = Query(...), start_page: int = Query(...),
+        end_page: int = Query(...), date_column: Optional[int] = Query(None), amount_column: Optional[int] = Query(None),
+        currency: str = Query(...), table_index: int = Query(0), auto_columns: bool = Query(False), db: Session = Depends(get_db)):
+    from services.financial.candidate_page_scan import scan_candidate_pages
+    try:
+        return scan_candidate_pages(db,case_id=case_id,evidence_file_id=evidence_file_id,start_page=start_page,end_page=end_page,
+            date_column=date_column,amount_column=amount_column,currency=currency,table_index=table_index,auto_columns=auto_columns)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc
+    except Exception:
+        logger.exception("PDF page scan failed")
+        raise HTTPException(status_code=500,detail="PDF page scan could not be completed.")
+
+
+from services.financial.network_tracing import NetworkTraceInput, network_trace_inputs, evaluate_network_trace
+
+@router.get("/network-trace-inputs")
+def get_network_trace_inputs(case_id: UUID = Query(...),start_date: date = Query(...),end_date: date = Query(...),
+        population: str = Query("verified"),tolerance_days: int = Query(3),db: Session = Depends(get_db)):
+    try:
+        return network_trace_inputs(capture_ledger_export(db.get_bind(),case_id=case_id,start_date=start_date,end_date=end_date),population=population,tolerance_days=tolerance_days)
+    except (LedgerSummaryError,TracingError) as exc:
+        raise HTTPException(status_code=422,detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Cross-account tracing capture failed")
+        raise HTTPException(status_code=500,detail="Cross-account tracing inputs could not be captured.")
+
+@router.post("/network-trace")
+def run_network_trace(body: NetworkTraceInput,case_id: UUID = Query(...),db: Session = Depends(get_db)):
+    try:
+        return evaluate_network_trace(capture_ledger_export(db.get_bind(),case_id=case_id,start_date=body.start_date,end_date=body.end_date),body)
+    except (LedgerSummaryError,TracingError) as exc:
+        raise HTTPException(status_code=422,detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Cross-account tracing failed")
+        raise HTTPException(status_code=500,detail="Cross-account scenario could not be calculated.")
+
+
+@router.get('/ledger-timeline')
+def get_ledger_timeline(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
+        start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
+        population: Literal['working', 'verified'] = Query('working'), db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
+    from services.financial.ledger_timeline import ledger_timeline
+    try:
+        captured = capture_ledger_export(db.get_bind(), case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders, start_date=start_date, end_date=end_date)
+        return ledger_timeline(captured, population=population)
+    except LedgerSummaryError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        logger.exception('Ledger timeline failed for case %s', case_id)
+        raise HTTPException(status_code=500, detail='Ledger timeline could not be prepared.')
+
+
+
+@router.get('/pattern-review')
+def get_pattern_review(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
+        start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
+        population: Literal['working', 'verified'] = Query('working'), window_days: int = Query(3,ge=0,le=30),
+        threshold_minor: Optional[int] = Query(None,ge=1,le=9223372036854775807),
+        threshold_currency: Optional[str] = Query(None,pattern='^[A-Z]{3}$'), db: Session = Depends(get_db), cross_account: bool = False, account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
+    from services.financial.pattern_review import screen_ledger_patterns
+    try:
+        captured = capture_ledger_export(db.get_bind(), case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders, start_date=start_date, end_date=end_date)
+        return screen_ledger_patterns(captured, population=population, window_days=window_days, threshold_minor=threshold_minor, threshold_currency=threshold_currency, **(dict(cross_account=True) if cross_account else {}))
+    except LedgerSummaryError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        logger.exception('Pattern review failed for case %s', case_id)
+        raise HTTPException(status_code=500, detail='Pattern review could not be prepared.')
+
+
+
+from services.financial.claim_comparison import ClaimComparisonInput, compare_ledger_claim
+from services.financial.correlation import CorrelationError
+from services.financial.money import MoneyError
+
+@router.post('/claim-comparison')
+def run_claim_comparison(body: ClaimComparisonInput,case_id: UUID = Query(...),db: Session = Depends(get_db)):
+    from postgres.models.evidence import EvidenceFile
+    source=db.get(EvidenceFile,body.source_file_id)
+    if source is None or source.case_id!=case_id:
+        raise HTTPException(status_code=404,detail='Claim source not available in this case.')
+    try:
+        captured=capture_ledger_export(db.get_bind(),case_id=case_id,account_id=body.account_id)
+        return compare_ledger_claim(captured,body,dict(id=str(source.id),case_id=str(case_id),filename=source.original_filename,sha256=source.sha256))
+    except (LedgerSummaryError,CorrelationError,MoneyError) as exc:
+        raise HTTPException(status_code=422,detail=str(exc)) from exc
+    except Exception:
+        logger.exception('Claim comparison failed for case %s',case_id)
+        raise HTTPException(status_code=500,detail='Claim comparison could not be prepared.')
+
+
+from services.financial.account_parties import AccountPartyError, account_parties
+
+@router.get("/account-parties")
+def get_account_parties(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        return account_parties(db, case_id=case_id)
+    except AccountPartyError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+
+from services.financial.counterparty_parties import counterparty_parties
+
+@router.get('/counterparty-parties')
+def get_counterparty_parties(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        return counterparty_parties(db, case_id=case_id)
+    except AccountPartyError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+    except Exception:
+        logger.exception('Counterparty identity directory failed for case %s',case_id)
+        raise HTTPException(status_code=500,detail='Counterparty identities could not be loaded.')
+
+
+@router.get('/counterparty-party-analysis')
+def get_counterparty_party_analysis(case_id: UUID = Query(...),account_id: Optional[UUID] = Query(None),
+        start_date: Optional[date] = Query(None),end_date: Optional[date] = Query(None),
+        population: Literal['working','verified'] = Query('working'),db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
+    from services.financial.counterparty_parties import counterparty_party_analysis
+    try:
+        return counterparty_party_analysis(capture_ledger_export(db.get_bind(),case_id=case_id,account_id=account_id, account_ids=account_ids, account_holders=account_holders,start_date=start_date,end_date=end_date),population=population)
+    except (AccountPartyError,LedgerSummaryError) as exc:
+        raise HTTPException(status_code=getattr(exc,'status_code',422),detail=str(exc))
+    except Exception:
+        logger.exception('Reviewed counterparty analysis failed for case %s',case_id)
+        raise HTTPException(status_code=500,detail='Reviewed counterparty analysis could not be prepared.')
+
+
+from services.financial.indirect_review import IndirectReviewInput, indirect_methods, evaluate_indirect_review
+
+@router.get('/indirect-review-methods')
+def get_indirect_review_methods(case_id: UUID = Query(...)):
+    return dict(case_id=str(case_id), **indirect_methods())
+
+@router.post('/indirect-review')
+def run_indirect_review(body: IndirectReviewInput,case_id: UUID = Query(...),db: Session = Depends(get_db)):
+    from postgres.models.evidence import EvidenceFile
+    ids={item.source_file_id for item in [*body.entries.values(),*body.requirements.values()] if item.source_file_id}
+    sources=[]
+    for id in sorted(ids,key=str):
+        source=db.get(EvidenceFile,id)
+        if source is None or source.case_id!=case_id:
+            raise HTTPException(status_code=404,detail='A workpaper source is unavailable in this case.')
+        sources.append(dict(id=str(source.id),case_id=str(case_id),filename=source.original_filename,sha256=source.sha256))
+    try:
+        return evaluate_indirect_review(case_id,body,sources)
+    except (LedgerSummaryError,MoneyError) as exc:
+        raise HTTPException(status_code=422,detail=str(exc)) from exc
+    except Exception:
+        logger.exception('Indirect workpaper calculation failed')
+        raise HTTPException(status_code=500,detail='The indirect workpaper could not be calculated.')
+
+
+from services.financial.model_pdf_nomination import read_pdf_model_nomination, list_pdf_model_nominations
+
+@router.get("/model-nominations/{nomination_id}")
+async def get_pdf_model_nomination(nomination_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    from services.financial.pdf_candidates import PdfMappingError
+    try:
+        return read_pdf_model_nomination(db,case_id=case_id,nomination_id=nomination_id)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Model nomination lookup failed for case %s",case_id)
+        raise HTTPException(status_code=500,detail="Saved model nomination could not be read.")
+
+@router.get("/candidate-sources/{evidence_file_id}/model-nominations")
+async def get_pdf_model_nominations(evidence_file_id: UUID, case_id: UUID = Query(...), limit: int = Query(20,ge=1,le=50), offset: int = Query(0,ge=0), page_number: int | None = Query(None,ge=1), table_index: int | None = Query(None,ge=0,le=63), db: Session = Depends(get_db)):
+    from services.financial.pdf_candidates import PdfMappingError
+    try:
+        return list_pdf_model_nominations(db,case_id=case_id,evidence_file_id=evidence_file_id,limit=limit,offset=offset,page_number=page_number,table_index=table_index)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Model nomination list failed for case %s",case_id)
+        raise HTTPException(status_code=500,detail="Saved model nominations could not be listed.")
+
+
+@router.get('/sources/{file_id}/custody')
+def read_source_custody(file_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    from services.financial.custody import source_custody
+    try:
+        return source_custody(db, case_id=case_id, file_id=file_id)
+    except CandidateStoreError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.get("/ledger-categories")
+def get_ledger_categories(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    from sqlalchemy import select
+    from postgres.models.financial import FinancialTransaction, FinancialAccount
+    from services.financial.payment_inference import infer_payment_labels
+    # Select only the fields needed for labels, not PDF provenance or source
+    # proposals. Include inferred categories so filters match the ledger view.
+    query = select(FinancialTransaction.metadata_, FinancialTransaction.description,
+        FinancialTransaction.direction, FinancialAccount.account_type, FinancialAccount.institution_name).outerjoin(
+            FinancialAccount, (FinancialAccount.id == FinancialTransaction.account_id) &
+            (FinancialAccount.case_id == FinancialTransaction.case_id)).where(
+                FinancialTransaction.case_id == case_id, FinancialTransaction.ledger_status == 'admitted',
+                FinancialTransaction.superseded_by_id.is_(None)).distinct()
+    values = set()
+    for metadata, description, direction, account_type, institution in db.execute(query):
+        labels = (metadata or {}).get('investigation_labels', {})
+        value = labels.get('category') if 'category' in labels else infer_payment_labels(
+            description, direction=direction, account_type=account_type, institution=institution).get('category', {}).get('value')
+        if value:
+            values.add(value)
+    return dict(case_id=str(case_id), categories=sorted(values))
+
+
+@router.get('/ledger/category-library')
+def get_payment_category_library(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    from services.financial.category_library import category_library
+    categories = {item['name'].casefold(): item for item in category_library(db)}
+    for name in get_ledger_categories(case_id=case_id, db=db)['categories']:
+        categories.setdefault(name.casefold(), dict(name=name, color='#8060a9', scope='case'))
+    return dict(case_id=str(case_id), categories=sorted(categories.values(), key=lambda item: item['name'].casefold()))
+
+
+@router.get('/money-trails')
+def get_money_trails(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    from services.financial.account_parties import AccountPartyError
+    try:
+        return list_trails(db, case_id=case_id)
+    except AccountPartyError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+from services.financial.money_trails import list_trails
+
+
+@router.get('/account-identities')
+def get_account_identities(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    from services.financial.account_identity import identity_state
+    try:
+        return identity_state(db, case_id)
+    except AccountPartyError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.get('/account-identities/graph-status')
+def get_account_identity_graph_status(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    from services.financial.identity_graph import identity_graph_status
+    return identity_graph_status(db, case_id)
+
+
+@router.get('/ledger-graph/status')
+def get_ledger_graph_status(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    """Graph follow-up of the ledger, reported separately from ledger completion."""
+    from services.financial.graph_followup import follow_up_status
+    return follow_up_status(db, case_id)
+
+
+@router.get('/account-consolidations')
+def get_account_consolidations(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    from services.financial.account_consolidation import consolidation_state
+    try:
+        return consolidation_state(db, case_id)
+    except AccountPartyError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc

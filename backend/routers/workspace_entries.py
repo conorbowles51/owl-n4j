@@ -27,6 +27,7 @@ from services.workspace_entry_service import (
     create_entry,
     get_entry,
     list_entries,
+    list_financial_payment_links,
     list_entry_authors,
     remove_entry_link,
     restore_entry,
@@ -253,6 +254,7 @@ def list_case_entries(
     confidence_max: int | None = Query(None, ge=0, le=100, multiple_of=5),
     author_user_id: UUID | None = Query(None),
     q: str | None = Query(None),
+    tag: str | None = Query(None, min_length=1, max_length=64),
     updated_since: datetime | None = Query(None),
     include_deleted: bool = Query(False),
     sort_by: Literal["updated_at", "created_at", "title", "confidence", "significance"] = Query("updated_at"),
@@ -271,6 +273,7 @@ def list_case_entries(
         confidence_max=confidence_max,
         author_user_id=author_user_id,
         query_text=q,
+        tag=tag,
         updated_since=updated_since,
         include_deleted=include_deleted,
         sort_by=sort_by,
@@ -278,6 +281,16 @@ def list_case_entries(
         limit=limit,
         offset=offset,
     )
+
+
+@router.get("/{case_id}/financial-payment-links", dependencies=[Depends(require_case_view)])
+def financial_payment_links(
+    case_id: UUID,
+    limit: int = Query(200, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+):
+    return list_financial_payment_links(db, case_id=case_id, limit=limit, offset=offset)
 
 
 @router.get(

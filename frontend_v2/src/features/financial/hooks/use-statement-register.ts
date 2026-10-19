@@ -1,0 +1,313 @@
+import { useQuery } from "@tanstack/react-query"
+import { z } from "zod"
+import { fetchAPI } from "@/lib/api-client"
+import { statementDuplicateDisposition } from "../lib/statement-duplicate"
+export const statementFile = z.object({
+  id: z.string(),
+  case_id: z.string(),
+  original_filename: z.string(),
+  status: z.string(),
+  created_at: z.string().optional(),
+  statement_root_evidence_id: z.string().nullable().optional(),
+  statement_parent_evidence_id: z.string().nullable().optional(),
+  financial_removed: z.boolean().default(false),
+  financial_imports_removed: z.boolean().optional(),
+  financial_visibility_revision: z.string().default("initial"),
+  financial_visibility_changed_at: z.string().nullish(),
+})
+export type StatementFile = z.infer<typeof statementFile>
+
+// Reader capability only; Financial membership is determined by the server.
+export const usesPdfStatementReader = (file: { original_filename: string }) =>
+  file.original_filename.toLowerCase().endsWith(".pdf")
+
+export function groupStatementReadings(files: StatementFile[]) {
+  const groups = new Map<string, StatementFile[]>()
+  for (const file of files) {
+    const key = file.statement_root_evidence_id || file.id
+    groups.set(key, [...(groups.get(key) || []), file])
+  }
+  return [...groups.values()].map((versions) => {
+    const byId = new Map(versions.map((file) => [file.id, file]))
+    const depth = (file: StatementFile) => {
+      const seen = new Set<string>()
+      while (
+        file.statement_parent_evidence_id &&
+        byId.has(file.statement_parent_evidence_id) &&
+        !seen.has(file.statement_parent_evidence_id)
+      ) {
+        seen.add(file.statement_parent_evidence_id)
+        file = byId.get(file.statement_parent_evidence_id)!
+      }
+      return seen.size
+    }
+    const active = versions.filter((file) => !file.financial_removed)
+    const current = [...(active.length ? active : versions)].sort(
+      (a, b) =>
+        // In Removed files, restore the latest choice. A newer reading may
+        // have been hidden separately before the active family was hidden.
+        (!active.length
+          ? (b.financial_visibility_changed_at || "").localeCompare(
+              a.financial_visibility_changed_at || ""
+            )
+          : 0) ||
+        (b.created_at || "").localeCompare(a.created_at || "") ||
+        depth(b) - depth(a) ||
+        b.id.localeCompare(a.id)
+    )[0]
+    return { ...current, readingVersions: versions }
+  })
+}
+const listing = z.object({
+  files: z.array(statementFile),
+})
+const readyPeriod = z.object({
+  statement_id: z.string(),
+  holder: z.string(),
+  institution: z.string(),
+  account: z.string(),
+  currency: z.string(),
+  period_start: z.string(),
+  period_end: z.string(),
+  transaction_count: z.number().int().nonnegative(),
+  incomplete_count: z.number().int().nonnegative(),
+  problem_count: z.number().int().nonnegative(),
+})
+export type ReadyStatementPeriod = z.infer<typeof readyPeriod>
+const importStates = z.object({
+  case_id: z.string(),
+  truncated: z.boolean(),
+  files: z.array(
+    z.object({
+      evidence_file_id: z.string(),
+      same_pdf_saved_file_ids: z.array(z.string()).default([]),
+      current_transactions: z.number().int().nonnegative(),
+      incomplete_count: z.number().int().nonnegative().default(0),
+      // Of incomplete_count: values complete, held until the statement reconciles.
+      awaiting_reconciliation_count: z.number().int().nonnegative().default(0),
+      incomplete_sources: z
+        .array(
+          z.object({
+            source_document_id: z.string(),
+            period_start: z.string().nullable(),
+            period_end: z.string().nullable(),
+            missing_count: z.number().int().nonnegative(),
+            awaiting_reconciliation_count: z.number().int().nonnegative(),
+            blockers: z.array(z.string()).default([]),
+          })
+        )
+        .default([]),
+      receipt_review_count: z.number().int().nonnegative().default(0),
+      wire_review_count: z.number().int().nonnegative().default(0),
+      prepared_periods: z.number().int().nonnegative().optional(),
+      ignored_periods: z.number().int().nonnegative().default(0),
+      duplicate_dispositions: z
+        .array(
+          z.object({
+            statement_id: z.string().nullish(),
+            currency: z.string().nullish(),
+            decision: statementDuplicateDisposition,
+          })
+        )
+        .default([]),
+      available_periods: z.number().int().nonnegative().default(0),
+      ready_periods: z.array(readyPeriod).default([]),
+      pending_periods: z.number().int().nonnegative().default(0),
+      periods_with_checks: z.number().int().nonnegative().default(0),
+      overlapping_periods: z.number().int().nonnegative().default(0),
+      repeat_periods: z.number().int().nonnegative().default(0),
+      // Every current reading of the file found nothing (no rows, records,
+      // dates or balances) and nothing was saved; the reason is plain words.
+      empty_reading: z
+        .object({
+          reason: z.enum(["scanned_image", "layout_not_supported", "no_statement"]),
+          message: z.string(),
+        })
+        .nullish(),
+      periods: z.array(
+        z.object({
+          id: z.string(),
+          account_id: z.string(),
+          account_label: z.string(),
+          start: z.string().nullable(),
+          end: z.string().nullable(),
+          source_status: z.string(),
+        })
+      ),
+    })
+  ),
+})
+
+export function useStatementFiles(
+  caseId: string | undefined,
+  uploading = false,
+  queuedIds: string[] = [],
+  includeRemoved = false,
+  enabled = true
+) {
+  return useQuery({
+    enabled: enabled && !!caseId,
+    select: (files) =>
+      includeRemoved ? files : files.filter((file) => !file.financial_removed),
+    queryKey: ["statement-import-files", caseId, "financial-only"],
+    queryFn: async () => {
+      const result = listing.parse(
+        await fetchAPI(
+          `/api/evidence?${new URLSearchParams({ case_id: caseId!, include_reading_versions: "true", financial_only: "true" })}`
+        )
+      )
+      if (result.files.some((file) => file.case_id !== caseId))
+        throw Error("The returned file list belongs to another case.")
+      return result.files
+    },
+    refetchInterval: (query) =>
+      uploading ||
+      query.state.data?.some(
+        (file) =>
+          ["processing", "queued"].includes(file.status) ||
+          (file.status === "unprocessed" && queuedIds.includes(file.id))
+      )
+        ? 3000
+        : false,
+  })
+}
+
+export const STATUS_POLL_BUSY_MS = 5000
+export const STATUS_POLL_IDLE_MS = 30000
+export function statusPollInterval({
+  active,
+  uploading,
+  importing,
+  reading,
+}: {
+  active: boolean
+  uploading: boolean
+  importing: boolean
+  reading: boolean
+}) {
+  if (!active) return false
+  return uploading || importing || reading
+    ? STATUS_POLL_BUSY_MS
+    : STATUS_POLL_IDLE_MS
+}
+
+export function useStatementRegister(
+  caseId: string,
+  uploading = false,
+  queuedIds: string[] = [],
+  includeRemoved = false,
+  active = true
+) {
+  const files = useStatementFiles(
+    caseId,
+    uploading,
+    queuedIds,
+    includeRemoved,
+    active
+  )
+  const imports = useQuery({
+    queryKey: ["statement-import-status", caseId],
+    enabled: active,
+    // Poll quickly only while something is reading or importing. TanStack
+    // Query never starts an interval refetch while one is still in flight.
+    refetchInterval: (query) =>
+      statusPollInterval({
+        active,
+        uploading,
+        importing: !!query.state.data?.files.some(
+          (file) => file.pending_periods > 0
+        ),
+        reading: !!files.data?.some((file) =>
+          ["processing", "queued"].includes(file.status)
+        ),
+      }),
+    queryFn: async () => {
+      const result = importStates.parse(
+        await fetchAPI(
+          `/api/financial/statement-import/files?${new URLSearchParams({ case_id: caseId })}`
+        )
+      )
+      if (result.case_id !== caseId)
+        throw Error("The import status belongs to another case.")
+      return result
+    },
+  })
+  const grouped = files.data ? groupStatementReadings(files.data) : undefined
+  const saved =
+    imports.data && grouped
+      ? {
+          ...imports.data,
+          files: grouped.flatMap((file) => {
+            const ids = new Set(
+              file.readingVersions.map((version) => version.id)
+            )
+            const entries = imports.data.files.filter((item) =>
+              ids.has(item.evidence_file_id)
+            )
+            if (!entries.length) return []
+            const latest = entries.find(
+              (entry) => entry.evidence_file_id === file.id
+            )
+            return [
+              {
+                evidence_file_id: file.id,
+                same_pdf_saved_file_ids: [
+                  ...new Set(
+                    entries.flatMap((entry) => entry.same_pdf_saved_file_ids)
+                  ),
+                ].filter((id) => !ids.has(id)),
+                current_transactions: entries.reduce(
+                  (sum, entry) => sum + entry.current_transactions,
+                  0
+                ),
+                incomplete_count: entries.reduce(
+                  (sum, entry) => sum + entry.incomplete_count,
+                  0
+                ),
+                awaiting_reconciliation_count: entries.reduce(
+                  (sum, entry) => sum + entry.awaiting_reconciliation_count,
+                  0
+                ),
+                incomplete_sources: entries.flatMap(
+                  (entry) => entry.incomplete_sources
+                ),
+                receipt_review_count: entries.reduce(
+                  (sum, entry) => sum + entry.receipt_review_count,
+                  0
+                ),
+                wire_review_count: entries.reduce(
+                  (sum, entry) => sum + entry.wire_review_count,
+                  0
+                ),
+                periods: entries
+                  .flatMap((entry) => entry.periods)
+                  .filter((period) => period.source_status === "admitted"),
+                history_periods: entries
+                  .flatMap((entry) => entry.periods)
+                  .filter((period) => period.source_status !== "admitted")
+                  .length,
+                prepared_periods: latest?.prepared_periods,
+                ignored_periods: latest?.ignored_periods || 0,
+                duplicate_dispositions: latest?.duplicate_dispositions || [],
+                available_periods: latest?.available_periods || 0,
+                ready_periods: latest?.ready_periods || [],
+                pending_periods: latest?.pending_periods || 0,
+                periods_with_checks: latest?.periods_with_checks || 0,
+                overlapping_periods: latest?.overlapping_periods || 0,
+                repeat_periods: latest?.repeat_periods || 0,
+                empty_reading: latest?.empty_reading ?? null,
+              },
+            ]
+          }),
+        }
+      : imports.data
+  return {
+    files: { ...files, data: grouped },
+    imports: { ...imports, data: saved },
+  }
+}
+
+/** One file's saved import state as merged across its reading versions. */
+export type SavedStatementFile = NonNullable<
+  ReturnType<typeof useStatementRegister>["imports"]["data"]
+>["files"][number]

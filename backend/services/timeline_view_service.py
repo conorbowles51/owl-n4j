@@ -145,6 +145,8 @@ def _event_snapshot(event: dict[str, Any]) -> dict[str, Any]:
         "summary": event.get("summary"),
         "notes": event.get("notes"),
         "connections": event.get("connections") or [],
+        "source": event.get("source"),
+        "source_references": event.get("source_references") or [],
     }
 
 
@@ -200,12 +202,15 @@ def _get_view(db: Session, case_id: UUID, view_id: UUID) -> TimelineView:
     return view
 
 
-def _fetch_current_events(case_id: UUID | str, event_keys: list[str], *, require_all: bool = True) -> list[dict[str, Any]]:
+def _fetch_current_events(db: Session, case_id: UUID | str, event_keys: list[str], *, require_all: bool = True) -> list[dict[str, Any]]:
+    from services.timeline_entries import list_entries, PREFIX
     events = neo4j_service.get_timeline_events_by_keys(
         case_id=str(case_id),
-        event_keys=event_keys,
+        event_keys=[key for key in event_keys if not key.startswith(PREFIX)],
         include_export_fields=True,
     )
+    if any(key.startswith(PREFIX) for key in event_keys):
+        events += list_entries(db, case_id=UUID(str(case_id)), event_keys=event_keys, limit=MAX_CSV_EVENTS)
     found = {str(event.get("key")) for event in events}
     missing = [key for key in event_keys if key not in found]
     if require_all and missing:
@@ -275,7 +280,7 @@ def create_timeline_view(
     export_defaults: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     keys = _clean_event_keys(event_keys)
-    events = _fetch_current_events(case_id, keys, require_all=True) if keys else []
+    events = _fetch_current_events(db, case_id, keys, require_all=True) if keys else []
 
     view = TimelineView(
         case_id=case_id,
@@ -384,7 +389,7 @@ def batch_update_view_events(
             item.position = position
         changed_count = len(remove_set)
     else:
-        events = _fetch_current_events(case_id, keys, require_all=True) if keys else []
+        events = _fetch_current_events(db, case_id, keys, require_all=True) if keys else []
         existing = {item.event_key for item in view.events}
         if action == "set":
             _replace_view_events(db, view=view, current_user=current_user, events=events)
@@ -499,7 +504,7 @@ def _resolve_export_events(
     else:
         keys = _clean_event_keys(event_keys, limit=MAX_CSV_EVENTS)
 
-    current_events = _fetch_current_events(case_id, keys, require_all=require_all)
+    current_events = _fetch_current_events(db, case_id, keys, require_all=require_all)
     current_by_key = _events_by_key(current_events)
     resolved: list[dict[str, Any]] = []
 

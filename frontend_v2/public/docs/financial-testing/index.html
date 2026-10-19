@@ -1,0 +1,598 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Loupe financial testing guide</title><style>body{font:17px/1.65 system-ui,sans-serif;color:#20252b;background:#f4f5f7;margin:0}main{max-width:960px;margin:24px auto;background:white;padding:32px}h1,h2,h3{line-height:1.3}h2{margin-top:2.2em;border-top:1px solid #ddd;padding-top:1em}a{color:#a71330;overflow-wrap:anywhere}li{margin:.5em 0}img{max-width:100%;height:auto;border:1px solid #ccc;border-radius:6px}.table-scroll{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:.9em}th,td{padding:9px;border:1px solid #ccc;text-align:left;vertical-align:top}th{background:#f5f5f5}@media(max-width:640px){main{padding:18px;margin:0}th,td{min-width:110px}}@media print{body{background:white;font-size:10pt}main{margin:0;padding:0}.table-scroll{overflow:visible}h2,h3{break-after:avoid}tr,img{break-inside:avoid}}</style><main><link rel="preload" as="image" href="images/01-statement-check.png"/><link rel="preload" as="image" href="images/02-exclude-footer.png"/><link rel="preload" as="image" href="images/03-transactions.png"/><h1>Loupe financial testing guide</h1>
+<p>Follow this guide in order for your first test of Financial. It starts with two invented statements and ends with a saved report that a colleague can open. You do not need previous experience of Loupe.</p>
+<p><strong>Updated: 20 September 2026.</strong> Use the full <strong>User guide</strong> for detailed explanations of each tool. This testing guide tells you what to try and what result to check. A result is only a pass after you have checked it yourself.</p>
+<p>Screenshots show light mode using the supplied test statements. The controls are the same in dark mode.</p>
+<h2 id="contents">Contents</h2>
+<ol>
+<li><a href="#1-create-a-separate-test-case">Create a separate test case</a></li>
+<li><a href="#2-upload-both-statements">Upload both statements</a></li>
+<li><a href="#3-check-the-statement-and-exclude-its-footer">Check the statement and exclude its footer</a></li>
+<li><a href="#4-leave-the-review-and-return">Leave the review and return</a></li>
+<li><a href="#5-confirm-both-imports-and-check-the-totals">Confirm both imports and check the totals</a></li>
+<li><a href="#6-find-payments-and-open-their-originals">Find payments and open their originals</a></li>
+<li><a href="#7-correct-a-description-and-check-the-history">Correct a description and check the history</a></li>
+<li><a href="#8-compare-people-and-businesses">Compare people and businesses</a></li>
+<li><a href="#9-link-payments-to-a-name">Link payments to a name</a></li>
+<li><a href="#10-compare-a-transfer">Compare a transfer</a></li>
+<li><a href="#11-check-trends-and-the-payment-graph">Check trends and the payment graph</a></li>
+<li><a href="#12-run-the-pattern-and-case-event-checks">Run the pattern and case-event checks</a></li>
+<li><a href="#13-save-payments-and-an-investigation-note">Save payments and an investigation note</a></li>
+<li><a href="#14-build-save-and-download-a-report">Build, save and download a report</a></li>
+<li><a href="#15-reopen-the-work-with-a-colleague">Reopen the work with a colleague</a></li>
+<li><a href="#16-test-a-real-statement-and-a-longer-pdf">Test a real statement and a longer PDF</a></li>
+<li><a href="#17-further-tests-for-the-tools-you-use">Further tests for the tools you use</a></li>
+<li><a href="#18-check-the-current-size-limits">Check the current size limits</a></li>
+<li><a href="#19-record-results-and-report-a-problem">Record results and report a problem</a></li>
+</ol>
+<h2 id="1-create-a-separate-test-case">1. Create a separate test case</h2>
+<p>You need the Loupe address, your own sign-in details, and permission to create or use a test case and upload files. Ask the case owner to provide a test case if you cannot create one.</p>
+<ol>
+<li>Open Loupe and select <strong>Sign in</strong> after entering your username and password.</li>
+<li>Select <strong>Cases</strong> in the left sidebar, then <strong>New</strong>.</li>
+<li>In <strong>Case Title</strong>, enter <strong>Financial test - your name - today&#x27;s date</strong>.</li>
+<li>In <strong>Description</strong>, enter <strong>Invented statements for financial testing.</strong> Select <strong>Create Case</strong>.</li>
+<li>Open that case, then select <strong>Financial</strong> in the left sidebar. Check the case title at the top before uploading anything.</li>
+<li>Select <strong>Financial guide</strong>, then <strong>Testing guide</strong> to return here. <strong>Open testing guide in a separate tab</strong> lets you keep these instructions beside your case. Closing the guide returns you to the case underneath it.</li>
+<li>Download <a href="checking.pdf">checking.pdf</a> and <a href="savings.pdf">savings.pdf</a> to a folder you can find. Alternatively, <a href="financial-test-pack.zip">download the test pack</a> and extract its files first. Upload the PDFs, not the ZIP.</li>
+</ol>
+<p><strong>Expected:</strong> you have a new empty case and the two PDFs. Use your own case so another tester&#x27;s changes do not alter your results. These PDFs contain no real customer or payment data.</p>
+<h2 id="2-upload-both-statements">2. Upload both statements</h2>
+<ol>
+<li>Close the guide and open <strong>Statements &amp; accounts</strong>.</li>
+<li>Check <strong>Files in this case</strong> in the main page. Select <strong>Statement files</strong> if the account view is showing.</li>
+<li>Select <strong>Upload PDFs</strong>. In your computer&#x27;s file chooser, select both <strong>checking.pdf</strong> and <strong>savings.pdf</strong>, then confirm the choice.</li>
+<li>Keep the browser tab open while the files upload and are read. Wait until each file says <strong>Ready to review</strong>.</li>
+<li>Select <strong>checking.pdf</strong> in that list.</li>
+</ol>
+<p><strong>Expected:</strong> both filenames appear. The checking statement opens with its original PDF beside its extracted table. Uploading alone does not put payments into Transactions; you confirm each statement in step 5.</p>
+<p>If a file says <strong>Read statement</strong>, select that action. If it says <strong>Retry reading</strong>, use that action on the existing file. After a connection failure, select <strong>Refresh files</strong> and check whether it arrived before uploading it again.</p>
+<h2 id="3-check-the-statement-and-exclude-its-footer">3. Check the statement and exclude its footer</h2>
+<ol>
+<li>In <strong>Review checking.pdf</strong>, compare the extracted table with the original. It should retain <strong>Date</strong>, <strong>Description</strong>, <strong>Credit</strong>, <strong>Debit</strong> and <strong>Balance</strong>, including blank cells.</li>
+<li>Select the printed <strong>900.00</strong> credit. The source viewer should locate that value in the original. If needed, use <strong>Fit source width</strong> to make the page readable.</li>
+<li>Check these details: holder <strong>EXAMPLE PERSON</strong>, checking account ending <strong>0040</strong>, currency <strong>USD</strong>, and period <strong>1 July to 31 July 2020</strong>. The opening balance is <strong>220.00</strong> and the closing balance is <strong>875.00</strong>.</li>
+<li>Find <strong>Rows needing a layout check</strong>. These sample files currently flag the line <strong>SYNTHETIC TEST DOCUMENT. No real customer or payment.</strong> It is the footer printed at the bottom of the PDF, not a payment.</li>
+<li>Beside that footer, select <strong>Review this row</strong>. The correction controls open at the matching row.</li>
+<li>Clear the checkbox in the <strong>Use</strong> column for that footer only.</li>
+<li>The row disappears from the correction list. Use <strong>Show excluded rows</strong> to inspect it or restore it. No reason is required; do not invent a date or amount.</li>
+<li>Check the import count. It should now say <strong>6 transactions</strong> and offer <strong>Confirm import of 6 transactions</strong>. Opening and closing balances must remain outside that count. Do not confirm yet; first try step 4.</li>
+</ol>
+<p><strong>Expected:</strong> the table still shows the original statement. The footer remains available as an excluded reading, with its original text. The six actual payments remain selected. If the footer is already excluded in a later build, check that there are six payments and continue without changing it.</p>
+<p><img src="images/01-statement-check.png" alt="Checking statement beside the extracted table, with the footer flagged below it"/></p>
+<p><em>This is the checking PDF supplied with this guide. The flagged footer is separate from its payment table.</em></p>
+<p><img src="images/02-exclude-footer.png" alt="Correction controls used to exclude the test document footer"/></p>
+<p><em>Clear Use on the footer row. An explanation is optional; The excluded footer must not become a seventh payment.</em></p>
+<p>For a wrong payment value, use <strong>Edit import values</strong> or <strong>Show corrections and import choices</strong>. Correct the field against the original; leave the optional note blank to check that it does not block import. For this exercise, leave the correct payment amounts unchanged. If any other line is flagged, inspect it before importing and record the unexpected result in your test notes.</p>
+<p>Before excluding the footer, check that its reading issue is visible but does not itself disable import. Use <strong>Review row</strong> to open the matching correction controls. Exclude the footer without entering a reason. The corrected count should then be reflected beside confirmation.</p>
+<h2 id="4-leave-the-review-and-return">4. Leave the review and return</h2>
+<ol>
+<li>While the checking statement is still unconfirmed, open <strong>Transactions</strong>, then return to <strong>Statements &amp; accounts</strong>.</li>
+<li>Reopen <strong>checking.pdf</strong> from <strong>Statement files</strong> if necessary.</li>
+<li>Check that the footer is still excluded and its original text remains available.</li>
+<li>Refresh this same browser tab. Reopen the statement if needed and check the same two details again.</li>
+<li>Open <strong>savings.pdf</strong> from the file list, then return to <strong>checking.pdf</strong>. The checking review should still be present.</li>
+</ol>
+<p><strong>Expected:</strong> changing financial tabs, switching files and refreshing the same browser tab do not lose your review. Select <strong>Save progress</strong> before closing the tab: saved statement corrections can then be reopened from another device with case access. Edits made after that save remain browser drafts until saved again. Imported payments, findings and reports are kept with the case.</p>
+<h2 id="5-confirm-both-imports-and-check-the-totals">5. Confirm both imports and check the totals</h2>
+<ol>
+<li>In the checking review, select <strong>Confirm import of 6 transactions</strong> once. Wait for the outcome. Its payments should become available in <strong>Transactions</strong>.</li>
+<li>Return to <strong>Statements &amp; accounts</strong>, open <strong>Statement files</strong>, then select <strong>savings.pdf</strong>.</li>
+<li>Check its account ending <strong>0000</strong>, USD currency and July 2020 period. Its opening balance is <strong>50.00</strong> and closing balance is <strong>355.00</strong>.</li>
+<li>Exclude the same test document footer using step 3. Check that only the <strong>300.00</strong> transfer and <strong>5.00</strong> interest payment are selected.</li>
+<li>Select <strong>Confirm import of 2 transactions</strong> once.</li>
+<li>Open <strong>Transactions</strong>, choose <strong>Imported statement payments</strong>, select <strong>Reset</strong> in the account/date filter, then <strong>Clear payment filters</strong> beside the search controls. This removes earlier searches and restrictions.</li>
+<li>Check the total count and the figures below.</li>
+</ol>
+<div class="table-scroll"><table><thead><tr><th>Account</th><th style="text-align:right">Payments</th><th style="text-align:right">Money in</th><th style="text-align:right">Money out</th><th style="text-align:right">Opening balance</th><th style="text-align:right">Closing balance</th></tr></thead><tbody><tr><td>Checking, ending 0040</td><td style="text-align:right">6</td><td style="text-align:right">USD 1,550.00</td><td style="text-align:right">USD 895.00</td><td style="text-align:right">USD 220.00</td><td style="text-align:right">USD 875.00</td></tr><tr><td>Savings, ending 0000</td><td style="text-align:right">2</td><td style="text-align:right">USD 305.00</td><td style="text-align:right">USD 0.00</td><td style="text-align:right">USD 50.00</td><td style="text-align:right">USD 355.00</td></tr><tr><td>Both accounts</td><td style="text-align:right">8</td><td style="text-align:right">USD 1,855.00</td><td style="text-align:right">USD 895.00</td><td style="text-align:right">Check each account separately</td><td style="text-align:right">Check each account separately</td></tr></tbody></table></div>
+<p><strong>Expected:</strong> eight current transactions, with combined money in of <strong>USD 1,855.00</strong>, money out of <strong>USD 895.00</strong>, and difference of <strong>USD 960.00</strong>. The difference is money in minus money out, not a closing account balance. The transfer has one entry leaving checking and another entering savings.</p>
+<p>Select checking under <strong>Bank account</strong> to check its six payments immediately. Repeat for savings and its two payments. Select <strong>Show all imported payments</strong> afterwards to return to both accounts. Choose their recorded holder under <strong>Person or company</strong> and confirm that accounts from different banks appear together when the holder name matches.</p>
+<p>If confirmation appears to fail, reopen the file and check its imported count before trying again. Do not repeatedly click confirmation or upload more copies to make the count change.</p>
+<p><img src="images/03-transactions.png" alt="Eight imported payments from the two supplied test statements"/></p>
+<p><em>Your new test case should contain these eight payments before any further test adds or excludes a transaction.</em></p>
+<h2 id="6-find-payments-and-open-their-originals">6. Find payments and open their originals</h2>
+<ol>
+<li>In <strong>Search payments</strong>, enter <strong>Example Supplies</strong>.</li>
+<li>Check that two outgoing payments remain: <strong>USD 120.00 on 5 July 2020</strong> and <strong>USD 75.00 on 16 July 2020</strong>. Together they total <strong>USD 195.00</strong>.</li>
+<li>Beside the USD 120 payment, select <strong>Open transaction</strong>. Check its date, amount, account and source filename.</li>
+<li>Select <strong>Open source file</strong>. Compare it with the USD 120 debit in checking.pdf. Close the source viewer and transaction details when finished.</li>
+<li>Refresh the browser and check that the <strong>Example Supplies</strong> search remains. Open another financial tab, then select the main <strong>Transactions</strong> tab: it should return to all imported payments with the earlier search cleared.</li>
+<li>Select <strong>Clear payment filters</strong>. Use <strong>Filters</strong>, choose USD if needed, and set both the minimum and maximum amount to <strong>120</strong>. Check that the USD 120 outgoing payment is the result. Clear the filters again afterwards.</li>
+</ol>
+<p><strong>Expected:</strong> each payment leads to the correct original file and value. Searching or changing tabs does not change the payment itself. If a value has no stored page position, the app must explain that rather than highlighting an unrelated location.</p>
+<h2 id="7-correct-a-description-and-check-the-history">7. Correct a description and check the history</h2>
+<p>This changes only wording, so the expected money totals remain the same.</p>
+<ol>
+<li>Find the USD 120 payment again and select <strong>Open transaction</strong>, then <strong>Correct a value</strong>.</li>
+<li>Change <strong>Description</strong> to <strong>Payment to Example Supplies - test correction</strong>. Leave every date, amount, direction and balance unchanged.</li>
+<li>Select <strong>Preview correction</strong>. Check that the proposed change is only the description.</li>
+<li>Enter <strong>Checking the correction workflow on synthetic data</strong> in <strong>Reason for correction</strong>.</li>
+<li>Select <strong>Record correction</strong> and wait for the result.</li>
+<li>Reopen the payment. Check the new description, its previous reading and its unchanged original PDF.</li>
+<li>Open <strong>More financial tools</strong>, then <strong>Change history</strong>. Find your correction and check its reason and before/after readings.</li>
+<li>Return to Transactions, reset the filters and confirm there are still eight current transactions with the totals from step 5.</li>
+</ol>
+<p><strong>Expected:</strong> the description changes, its history is retained, and the correction does not add a ninth current payment or change totals. A saved report made before a later correction retains its earlier captured values.</p>
+<h2 id="8-compare-people-and-businesses">8. Compare people and businesses</h2>
+<ol>
+<li>Open <strong>People &amp; businesses</strong>. Under <strong>Accounts and dates</strong>, choose all accounts for July 2020 and apply.</li>
+<li>Search <strong>Alpha Consulting</strong> under <strong>Search names and accounts</strong> and open its profile.</li>
+<li>Check two payments and <strong>USD 1,550.00</strong> incoming. Open the two payment descriptions to inspect their original records.</li>
+<li>Select <strong>Compare 2 payments</strong>. Confirm 2 July and 14 July and their amounts. Close the comparison.</li>
+<li>Return to the directory and search <strong>Example Supplies</strong>. Its two outgoing payments should total <strong>USD 195.00</strong>.</li>
+</ol>
+<p><strong>Expected:</strong> each profile leads to actual payments and originals. A recorded name is not presented as an independently verified identity.</p>
+<h2 id="9-link-payments-to-a-name">9. Link payments to a name</h2>
+<p>This checks the decision-saving controls. The invented statement already uses a consistent name; this is practice for cases with differing spellings.</p>
+<ol>
+<li>In People &amp; businesses, open <strong>Link recorded names to a person or business</strong>, then <strong>Link different names for the same person or business</strong>, then <strong>Open payment identity review</strong>.</li>
+<li>Search for <strong>Alpha Consulting</strong> under <strong>Find payment names, descriptions or references</strong>.</li>
+<li>Select the two matching payments. Check the count before continuing.</li>
+<li>Under <strong>Person or business</strong>, choose <strong>A new person or organisation</strong> and enter <strong>Alpha Consulting - test grouping</strong> in <strong>Name</strong>.</li>
+<li>In <strong>Why do these payments belong to this person or business?</strong>, enter <strong>Both invented statement descriptions name Alpha Consulting; testing a saved grouping.</strong></li>
+<li>Select <strong>Save payment identity links</strong>. Check the saved links and history.</li>
+<li>In the analysis, select <strong>Combine names I have linked to the same person or business</strong>. Check that your named group contains those two payments and USD 1,550.00 incoming.</li>
+<li>Expand <strong>Names printed on statements</strong> to check that Alpha Consulting remains recorded as the original name. Switch the grouping option off to return to the printed-name view.</li>
+</ol>
+<p><strong>Expected:</strong> the grouping is saved without rewriting the statement descriptions, original files or payment amounts. If a save response is lost, reload the current links and check whether it saved before retrying.</p>
+<h2 id="10-compare-a-transfer">10. Compare a transfer</h2>
+<ol>
+<li>Open <strong>Follow money</strong>, then <strong>Compare transfers</strong>. Set <strong>From date</strong> to <strong>1 July 2020</strong> and <strong>To date</strong> to <strong>31 July 2020</strong>.</li>
+<li>Choose <strong>All imported payments</strong> and leave <strong>Maximum days between payments</strong> at <strong>3 days</strong>.</li>
+<li>Select <strong>Find possible transfers</strong>.</li>
+<li>Find the pair for <strong>USD 300.00 on 3 July</strong>: outgoing from checking and incoming to savings. Open both source readings.</li>
+<li>Select that pair. Under <strong>Why do you think these payments are transfers?</strong>, enter <strong>The two invented statements show the same USD 300 transfer on 3 July between these accounts.</strong></li>
+<li>Select <strong>Compare totals using these transfers</strong>. Inspect the selected pair and the account comparison.</li>
+<li>Use <strong>Save this analysis with a note</strong> to keep it, with the name <strong>Test transfer between checking and savings</strong> and your observation.</li>
+</ol>
+<p><strong>Expected:</strong> the pair contains exactly the two USD 300 entries. The comparison and explanation can be reopened in Findings. Transactions still contains eight entries; saving a transfer comparison does not delete either side from the bank record.</p>
+<h2 id="11-check-trends-and-the-payment-graph">11. Check trends and the payment graph</h2>
+<ol>
+<li>Open <strong>Trends</strong>, select all accounts for July 2020 and select <strong>Apply</strong>.</li>
+<li>Under <strong>Interval</strong>, choose <strong>Monthly</strong>. Under <strong>Show</strong>, choose <strong>Amounts</strong>. Check <strong>USD · bank accounts</strong> under <strong>Amounts</strong>.</li>
+<li>Select July in the chart. Check its eight payments and totals against step 5. Change Interval to Daily to see every July date, including dates with no imported payments. Open a payment and inspect its source.</li>
+<li>Open <strong>More financial tools</strong>, then <strong>Payment graph</strong>. Apply the same account/date choice and select <strong>Show connections</strong> if needed.</li>
+<li>Search for <strong>Example Supplies</strong> under <strong>Find an account or name</strong>, then select the matching name under <strong>Choose an account or name</strong>.</li>
+<li>Select <strong>View selected connections</strong> and check its two payments. Open one to confirm its source.</li>
+<li>Select <strong>Show all connections</strong> to return to the complete selected account/date range.</li>
+</ol>
+<p><strong>Expected:</strong> the chart and graph lead to the payments that explain them. A line in the graph is not a new payment. Both recorded sides of a transfer remain available.</p>
+<h2 id="12-run-the-pattern-and-case-event-checks">12. Run the pattern and case-event checks</h2>
+<ol>
+<li>Open <strong>Follow money</strong>, then <strong>Look for repeated activity</strong>, then <strong>Review patterns</strong> if the payment-claim form is showing.</li>
+<li>Apply all accounts and July 2020. Choose <strong>All imported payments</strong>. Leave the optional split-payment amount blank and cross-account path checking off for this first run.</li>
+<li>Select <strong>Find patterns</strong>. Check the result or explicit no-result message. A small test set need not contain every type of pattern; do not mark a failure merely because a particular pattern is absent.</li>
+<li>If a result appears, open its supporting payments and check the stated dates and amounts.</li>
+<li>Open <strong>More financial tools</strong>, then <strong>Payments and case events</strong>. Apply all accounts and July 2020, then select <strong>Load payments and case events</strong>.</li>
+<li>Check that the eight payments are available. A new case with no events can legitimately show zero case events. Use the next-page control if needed to reach every payment.</li>
+</ol>
+<p><strong>Expected:</strong> the tools return results or explain a problem. A blank screen, endless loading indicator or unrelated payment is a failure. Case-event amounts must not increase transaction totals.</p>
+<h2 id="13-save-payments-and-an-investigation-note">13. Save payments and an investigation note</h2>
+<ol>
+<li>Return to Transactions. Clear earlier selections if present, then search for <strong>Example Supplies</strong>.</li>
+<li>Tick the two payments, or use <strong>Select all 2 matching payments</strong> and check that the selection count is two. <strong>Review selected payments</strong> lets you check what is included.</li>
+<li>Select <strong>Create finding</strong> and choose <strong>Question</strong> under <strong>Type</strong>.</li>
+<li>Enter <strong>Example supplier payments</strong> as <strong>Title</strong>.</li>
+<li>In <strong>Explanation</strong>, enter <strong>Two payments to Example Supplies total USD 195.</strong> In <strong>Next action</strong>, enter <strong>Request the invoices and check what was supplied.</strong> Enter your name in <strong>Assigned to</strong> and leave <strong>Progress</strong> as Open.</li>
+<li>Select <strong>Review attached payments</strong> and confirm two entries. Close that review, select <strong>Save finding</strong> once and wait for the saved confirmation.</li>
+<li>Select <strong>Open Findings</strong>. Check your question, next action and two payment links. Select <strong>Edit finding</strong>, change Progress to In progress and save. Refresh and check that the change remains.</li>
+<li>Return to Transactions, clear the search and open the outgoing USD 300 transfer and select <strong>Add investigation note</strong>.</li>
+<li>In <strong>Your transaction note</strong>, enter <strong>Check the corresponding USD 300 receipt in the savings account.</strong> Select <strong>Save investigation note</strong>.</li>
+<li>Check that this second note also appears in Findings. Refresh and reopen both notes.</li>
+</ol>
+<p><strong>Expected:</strong> both notes and their payment links remain after refresh. They are saved case work, not just text left in your browser.</p>
+<h2 id="14-build-save-and-download-a-report">14. Build, save and download a report</h2>
+<ol>
+<li>In Findings, tick <strong>Include in report</strong> for <strong>Example supplier payments</strong> and your transaction note from step 13.</li>
+<li>Select <strong>Build report</strong>. Check that it shows two selected notes.</li>
+<li>Enter <strong>First financial test report</strong> as <strong>Report title</strong>.</li>
+<li>In <strong>Introduction</strong>, enter <strong>Testing saved findings and original statement references using invented payments.</strong></li>
+<li>Use <strong>Move up</strong> or <strong>Move down</strong> to place the supplier note first. Select <strong>Preview report</strong> and read both notes and their linked payments.</li>
+<li>Select <strong>Save report to case</strong>. Wait for <strong>Report saved to this case</strong> before closing it.</li>
+<li>Refresh. In Findings, find your report and select <strong>Open financial report</strong>. It is also available under <strong>Reports</strong> in the main sidebar, in <strong>Financial reports</strong>.</li>
+<li>Select <strong>Download readable report</strong>. Open the HTML file in a browser and check its title, introduction, notes and payments. The browser&#x27;s Print command can save a PDF if you need one.</li>
+<li>Back in the saved report, expand <strong>Supporting file references</strong>. Tick <strong>Include the supporting PDFs in the download package</strong>, then select <strong>Download report package with PDFs</strong>.</li>
+<li>Extract the ZIP into one folder and open <strong>report.html</strong>. Follow its file links. Keep the other downloaded files with it.</li>
+</ol>
+<p><strong>Expected:</strong> the report reopens from the case and the downloaded copy contains both notes and the checking PDF referenced by their payments. Savings may be absent because these two notes concern checking transactions. A source used by both notes should be included once. The download must not report success while omitting a required file.</p>
+<p>A payment can appear in several notes. Do not add every note&#x27;s total together as if those were different payments. The case&#x27;s transaction totals remain the reference for money in and out.</p>
+<h2 id="15-reopen-the-work-with-a-colleague">15. Reopen the work with a colleague</h2>
+<ol>
+<li>Give a colleague who already has access to this test case its name and the report title. Do not share your password.</li>
+<li>Ask them to sign in with their own account, open the case, select Financial, then Findings.</li>
+<li>Ask them to open <strong>First financial test report</strong>, read both notes and open a linked payment&#x27;s source.</li>
+<li>Check that they see the saved descriptions and explanations. They should not need your browser tab or computer.</li>
+<li>If they have read-only access, check that they can inspect the records but cannot confirm imports, correct payments or save changes.</li>
+</ol>
+<p><strong>Expected:</strong> saved case work can be reopened by the authorised colleague. Your unfinished selections and form drafts are not shared. Mark this test <strong>Not run</strong> if no colleague is available; do not count your own second browser tab as another person&#x27;s access test.</p>
+<h2 id="16-test-a-real-statement-and-a-longer-pdf">16. Test a real statement and a longer PDF</h2>
+<p>Use a separate test case. Keep the invented eight-payment case unchanged for comparing results later.</p>
+<ol>
+<li>Before upload, note the real statement&#x27;s account, currency, dates, number of actual payments, opening balance and closing balance from the original. Keep those notes separate from Loupe&#x27;s extraction.</li>
+<li>Upload a copy through Statements. Compare the extracted table with the original, including blank columns, minus signs, refunds, balance-only rows and wrapped descriptions.</li>
+<li>For a document with several pages, use <strong>Next page</strong>, <strong>Previous page</strong> and the <strong>Page</strong> chooser. Check the first, middle and last pages. The viewer uses PDF page numbers; these can differ from numbers printed inside the document.</li>
+<li>If a file contains several statement periods or accounts, choose each recognised section separately. Check that edits made in one do not appear in another. Currency should be detected from each statement, including when periods in one PDF use different currencies. Repeat through bulk processing and check that the same currencies and amounts appear. If an older review has a wrong currency saved, use the detected-currency button and check that the amounts populate without reuploading.</li>
+<li>Correct a flagged value only when you can read it in the source. If it remains unclear, try <strong>Read the statement again</strong> or record the unresolved issue. Do not use a guessed amount to make a warning disappear.</li>
+<li>Compare the proposed payment count with your own count. Inspect any difference, including duplicate pages and headings mistaken for payments, before confirming.</li>
+<li>After confirmation, select that account and date range in Transactions and compare its payments and totals with your notes. Open sources from the first, middle and last pages.</li>
+<li>Switch files and tabs, refresh, then reopen the statement and a payment.</li>
+</ol>
+<p><strong>Expected:</strong> every difference you find is explainable and every imported payment leads back to the correct original. Agreement on a closing balance alone does not prove that all payments were read correctly. Record uncertain or missing items even if the import completed.</p>
+<p>For a credit card, compare charges, credits and <strong>Opening amount owed / Closing amount owed</strong> separately from bank money in and out. For a wire report or deposit receipt, expect its own supporting-document review and a saved finding. Do not count the receipt as an extra bank payment merely because the corresponding statement was also uploaded.</p>
+<h3>Compare a new reading with an unclear scan</h3>
+<ol>
+<li>Keep your original count and field notes from the steps above. In the test case, open <strong>Read the statement again</strong>, choose <strong>Read from page images</strong>, then select <strong>Reprocess statement</strong>.</li>
+<li>Open the new reading. Check that the earlier file and any saved reviews remain available. Compare both versions with the original PDF before replacing an import.</li>
+<li>On a supported Merrick statement with damaged date text, compare the newly read dates with their original locations. Some dates may be recovered automatically. A date the reader still cannot resolve should remain a problem to correct.</li>
+<li>Check remaining amounts, credit signs and balances. Fixing a date must not clear a separate amount problem. If a number looks valid but differs from the original, record that difference even if there is no warning on that row.</li>
+<li>After correcting known field errors, inspect the balance result. A remaining difference must stay visible and must not be called a match. Record the amount and the source page for investigation.</li>
+</ol>
+<p><strong>Expected:</strong> a new reading retains the source and earlier work. It does not silently replace an existing import. Fewer warnings alone are not a passing result; the checked fields must agree with the original.</p>
+<h2 id="17-further-tests-for-the-tools-you-use">17. Further tests for the tools you use</h2>
+<p>Do these in additional test cases or after recording the eight-payment baseline. Use the matching User guide chapter for the complete procedure. Record tests you did not attempt as <strong>Not run</strong>.</p>
+<h3>A. Exclude and restore a payment</h3>
+<ol>
+<li>Open an invented payment and select <strong>Exclude from totals</strong>. Enter a clear test reason and confirm the permitted action.</li>
+<li>Check that it leaves current totals and remains in <strong>More financial tools &gt; Excluded transactions</strong> with its source and explanation.</li>
+<li>Use its inclusion action to restore it, giving a second reason.</li>
+<li>Confirm that the eight-payment count and original totals return. Inspect Change history for both decisions.</li>
+</ol>
+<h3>B. Repeated copies and missing periods</h3>
+<ol>
+<li>In a separate case, upload two different copies of the same statement, such as a native PDF and a scan supplied for this test. Open their originals before treating them as duplicates.</li>
+<li>Open <strong>Statements &amp; accounts</strong>. In <strong>Do you have all the statements?</strong>, check that overlapping dates are shown for the imported copies. Select <strong>Check duplicate imports</strong>, open their originals, then follow <strong>Review duplicates</strong> in the User guide to record which copy to retain.</li>
+<li>Close the comparison. Check that the register no longer counts the excluded copy in its date coverage, and that Transactions totals change accordingly. Restore the decision and check that both the history and the overlap return. Do not delete the originals to make totals agree.</li>
+<li>On the account card, select <strong>Review dates &amp; statements</strong>. Check the listed filenames and open an original using <strong>Open statement and dates</strong>. Apply a requested date range that extends beyond the statement you supplied. Use <strong>View transactions in the checked date range</strong> and confirm that the correct account and dates are selected.</li>
+<li>If January and March statements for the same account are available, import them and check that the missing February dates are listed in the register. Files awaiting review must not count as imported date coverage. Check that dates which cannot be established are described as unknown or needing attention, rather than as a period with no payments. If there are more than 25 accounts, check subsequent pages as well.</li>
+</ol>
+<p><strong>Expected:</strong> the register leads directly to the missing or repeated records, exclusions and restorations update the date checks, and every listed statement can be opened without reuploading it.</p>
+<h3>C. Trace funds</h3>
+<ol>
+<li>Open <strong>More financial tools &gt; Trace funds &gt; Trace one account</strong>. Choose the invented checking account and July dates, then <strong>Apply account and dates</strong> and <strong>Load tracing inputs</strong>.</li>
+<li>Enter its USD 220 opening amount and cite the invented statement as the basis. Attribute the USD 900 deposit to a claim labelled <strong>Training example</strong>, with an explanation that this is a hypothetical test.</li>
+<li>Check the movement order, explain it, select the methods to compare and select <strong>Calculate conditional scenario</strong>.</li>
+<li>Use <strong>Save this calculation in Findings</strong>, name it and select <strong>Save calculation and note</strong>.</li>
+<li>Reopen <strong>Open saved calculation</strong> in Findings. Check the opening amount, deposit attribution, assumptions and source links. Changing an input must require a new calculation before saving a revised result.</li>
+<li>To test the separate cross-account method, use <strong>Trace between accounts</strong> and the User guide&#x27;s complete procedure, supplying both opening balances and the two sides of the USD 300 transfer.</li>
+</ol>
+<h3>D. Payment claims and other financial records</h3>
+<ol>
+<li>Follow <strong>Compare a stated payment with the records</strong> in the User guide, using an invented claim that Alpha Consulting paid USD 900 on 2 July 2020 and a supporting test document. Keep this separate from the bank import.</li>
+<li>Run the comparison and check that the correct payment is available, with its date, amount, currency and source.</li>
+<li>Record your response with a reason and the supporting payment; reopen the saved note.</li>
+<li>If the case contains <strong>Other financial records</strong>, open a record and its original. Follow that guide chapter to test an explained amount correction. Check that its original amount and reason remain available and that it does not become a bank transaction.</li>
+</ol>
+<h3>E. Asset and indirect calculations</h3>
+<ol>
+<li>Open <strong>Trace funds</strong> and choose the relevant asset or indirect review method described in the User guide.</li>
+<li>Use invented amounts with written source explanations. Calculate the result and save it in Findings.</li>
+<li>Refresh and reopen the saved workpaper. Check every entered value and its source.</li>
+<li>Make a revised copy, change one amount, calculate again and save the revision. Check that the original saved calculation remains available.</li>
+<li>Include both versions in a report and explain why their results differ.</li>
+</ol>
+<h3>F. Select existing evidence folders and remove an unrelated PDF</h3>
+<ol>
+<li>In the separate test case, place a synthetic PDF in an Evidence folder with a subfolder. Include a non-PDF file if available.</li>
+<li>Select <strong>Send to Financial</strong>. Tick the parent folder, browse into its subfolder and tick the same PDF too.</li>
+<li>Select <strong>Review selected PDFs</strong>. The PDF should appear once and the non-PDF file should be counted as skipped.</li>
+<li>Send the selection. Financial should open automatically on <strong>Prepare statements for import</strong>. Existing readings should be reused. No transactions should be imported before you confirm. Refresh and check that processing continues and the same batch remains available.</li>
+<li>Open Financial and select <strong>Remove from Financial</strong> on an unrelated, unimported PDF. Confirm removal, refresh and check that it stays out of the normal list while its original remains in Evidence.</li>
+<li>Select <strong>Removed files</strong>, restore the PDF, then select <strong>Back to financial files</strong>. It should reappear.</li>
+<li>A file already used by an imported statement should not offer removal. Existing transaction counts must stay unchanged.</li>
+</ol>
+<p><strong>Expected:</strong> folder choices work across subfolders, selections do not duplicate a file, existing evidence results are preserved, and removal is reversible for the case.</p>
+<h2 id="18-check-the-current-size-limits">18. Check the current size limits</h2>
+<p>A case can contain more payments than one analysis permits. These are separate limits, not a single maximum case size.</p>
+<div class="table-scroll"><table><thead><tr><th>Feature</th><th>Current behaviour</th><th>What to test</th></tr></thead><tbody><tr><td>Upload PDFs</td><td>Up to 20 files per selection</td><td>Confirm each file appears and can be opened separately.</td></tr><tr><td>Single statement review</td><td>Up to 25,000 possible transactions and 100,000 retained text rows</td><td>Use the correction-page controls; check first, middle and last payments before and after import.</td></tr><tr><td>Saved payment selections</td><td>No 100-payment count restriction; saved details must fit within 32 MB</td><td>Save a known selection across pages, refresh and reopen its first and last payments.</td></tr><tr><td>Payment graph</td><td>No 1,000-payment count restriction; 250 connections drawn per page</td><td>Check the total payment count and the underlying payments on later graph pages.</td></tr><tr><td>Combined reports</td><td>No 20-finding or 20-PDF count restriction; 32 MB saved report data and 64 MB supporting files</td><td>Include findings from several pages and check that the saved report and download retain all of them.</td></tr><tr><td>Transfers</td><td>500 payments per comparison, with 1,000 pair/reference comparisons</td><td>Narrow From date and To date, then select Find possible transfers.</td></tr><tr><td>Payments and case events</td><td>1,000 payments per check</td><td>Choose an account or shorter dates, select Apply, then Load payments and case events.</td></tr><tr><td>Patterns</td><td>1,000 input payments; also 200 proposed matches, 50 payments per repeated-name group, and 10,000 examined steps between accounts</td><td>Narrow the account/dates, select Apply and Find patterns again.</td></tr></tbody></table></div>
+<p>The larger imports, selections, graph and reports were checked locally with a 5,000-payment statement, a 2,700-payment case and a 50-finding report. These figures describe earlier development checks, not results your team has already obtained on the deployed server. General response and file-size bounds still apply.</p>
+<p>A refused check must explain why. It is not a finding that there are no matches. Each smaller date check covers only those dates; splitting a case into separate ranges can miss relationships crossing their boundaries. Whole-case transfer, timeline and pattern work beyond these limits remains unfinished.</p>
+<h2 id="19-record-results-and-report-a-problem">19. Record results and report a problem</h2>
+<p>Copy this table into your team&#x27;s test notes, or print this guide and fill it in. Use <strong>Pass</strong>, <strong>Fail</strong>, <strong>Blocked</strong> or <strong>Not run</strong>. Record the actual result; do not mark a pass just because a button could be clicked.</p>
+<p>Tester: __________  Date: __________  Case name: __________</p>
+<div class="table-scroll"><table><thead><tr><th>Test</th><th>Result</th><th>What differed or where the evidence is saved</th></tr></thead><tbody><tr><td>1. Separate case</td><td></td><td></td></tr><tr><td>2. Two files uploaded</td><td></td><td></td></tr><tr><td>3. Original comparison and footer exclusion</td><td></td><td></td></tr><tr><td>4. Draft kept through tabs, files and refresh</td><td></td><td></td></tr><tr><td>5. Eight imported payments and exact totals</td><td></td><td></td></tr><tr><td>6. Search, filters and original source</td><td></td><td></td></tr><tr><td>7. Correction and history, totals unchanged</td><td></td><td></td></tr><tr><td>8. People and business totals</td><td></td><td></td></tr><tr><td>9. Saved name links</td><td></td><td></td></tr><tr><td>10. Two sides of the USD 300 transfer</td><td></td><td></td></tr><tr><td>11. Trends and graph payment links</td><td></td><td></td></tr><tr><td>12. Patterns and case events</td><td></td><td></td></tr><tr><td>13. Saved selection and note</td><td></td><td></td></tr><tr><td>14. Saved report and original-file download</td><td></td><td></td></tr><tr><td>15. Colleague access</td><td></td><td></td></tr><tr><td>16. Real and multi-page statements</td><td></td><td></td></tr><tr><td>17. Further tools: name each one tested</td><td></td><td></td></tr><tr><td>18. Larger selections and known limits</td><td></td><td></td></tr></tbody></table></div>
+<p>For each failure, record:</p>
+<ol>
+<li>Case name, filename and page, and the affected payment if relevant.</li>
+<li>The numbered test above and the exact button or field used.</li>
+<li>What you expected and what actually appeared, including counts or amounts.</li>
+<li>A screenshot and the exact error message.</li>
+<li>Whether switching tabs or refreshing changed the result.</li>
+<li>Whether the action saved anything before showing the problem. Check the case before repeating an import or save.</li>
+</ol>
+<p>Keep private real statements and their screenshots within your team&#x27;s approved channels. A synthetic test passing does not establish extraction accuracy for every real statement. Keep your manually checked real-file notes so the team can compare them with the imported records.</p>
+<h3>Statement periods and transaction navigation</h3>
+<ol>
+<li>Open a PDF containing more than one statement. Check that the <strong>Statement period</strong> dropdown lists the separate accounts and dates.</li>
+<li>Choose a period. Compare its count and balance check with the PDF. Check that summary pages and terms are not counted as transactions.</li>
+<li>Select <strong>Next transaction</strong>. The counter, table highlight and original PDF must refer to the same payment. Continue across a page boundary, then use <strong>Previous transaction</strong> to return.</li>
+<li>Correct a value and enter a reason. Switch to another period, then return. The correction must still be present.</li>
+<li>For a clean statement, confirm once without opening every transaction. For a flagged statement, select <strong>Show items to check</strong> and verify that each flagged row opens directly for correction.</li>
+<li>Check a period with a balance difference and one with no readable balance controls. Neither must be labelled as having matching balances.</li>
+</ol>
+<h3>G. Import a batch, leaving one unreadable amount for later</h3>
+<ol>
+<li>In a test case, send an Evidence folder with two clean synthetic statements and a statement containing a known unreadable amount to Financial.</li>
+<li>Wait for processing. Check that each recognised account and period is listed and that <strong>Issues to check</strong> identifies the unreadable amount.</li>
+<li>Select <strong>Import [number] records</strong>. All available statements should become imported, including the statement with the unresolved reading. Files that failed processing stay separate.</li>
+<li>Refresh. Check that the counts remain and that importing the same batch again adds no duplicates.</li>
+<li>Open Transactions. All complete payments should be present. Expand the amber missing-values message and open the incomplete record with its original.</li>
+<li>Verify that the unreadable amount is absent from totals rather than counted as zero. Date and currency totals must still agree with the complete readings in the synthetic sources.</li>
+<li>Enter the amount from the original, give the reason and save. The payment must join the table and totals exactly once. Its original unreadable field and later correction must remain in the history.</li>
+<li>Reopen the batch. The issue count should reflect the saved correction. Any remaining balance difference must still be visible, without preventing work.</li>
+<li>If another file fails processing, check its retry action and confirm that the successful imports remain available.</li>
+</ol>
+<p><strong>Expected:</strong> flagged readings can be imported, incomplete records remain findable, known amounts are counted honestly, and correcting a record later does not duplicate it.</p>
+<h3>H. Follow a payment into a finding</h3>
+<p>Use a test case with an incoming EUR 125,000 payment dated 18 March and an outgoing EUR 120,000 payment dated 20 March on the same account.</p>
+<ol>
+<li>Search for the incoming payment. Open its description and confirm that its source line is highlighted.</li>
+<li>Select <strong>Related payments</strong>, choose payments after this one within seven days, then tick the outgoing payment.</li>
+<li>Narrow the interval so that the outgoing payment is hidden. Check that the selection count still includes it. Return to seven days.</li>
+<li>Select <strong>Compare 2 selected payments</strong>. Confirm that the difference is EUR 5,000 and the second payment is two days later.</li>
+<li>Choose <strong>Create finding from these payments</strong>. Enter a title and question. Check that two supporting payments are attached before saving.</li>
+<li>Save and return to the investigation. The search, source and selected payments should remain. Open Findings and reopen the saved narrative and evidence.</li>
+<li>Have another authorised investigator open the same finding. A read-only user must be able to inspect it without editing controls.</li>
+<li>Open a name from From or To and use the return button. Open Trends, choose a month or category, and confirm that its supporting list has the same count and totals.</li>
+</ol>
+<p><strong>Expected:</strong> an investigator can follow evidence, record the question and return without reconstructing the search. A timing match is not automatically presented as a proven transfer.</p>
+<h2 id="check-corrections-automatic-checks-and-saved-progress">Check corrections, automatic checks and saved progress</h2>
+<p>Use artificial test statements in a test case for these checks.</p>
+<ol>
+<li>In Evidence, select a folder containing statements and use <strong>Send to Financial</strong>. Confirm the selected PDFs. Check that Financial opens the processing batch.</li>
+<li>Open a ready statement with running balances. Check that <strong>Balances between payments</strong> gives the number of checked intervals.</li>
+<li>Select a printed transaction and <strong>Edit this row</strong>. Increase its credit or debit amount by 1.00 and enter a correction reason. Expect a balance difference with a link to the affected row. The original printed value must remain visible.</li>
+<li>Select <strong>Save progress</strong>. Return to the batch, reopen this statement and refresh the page. Expect the corrected value and reason to remain.</li>
+<li>Clear that transaction&#x27;s date and select <strong>Save progress</strong> again. Expect the statement to remain under <strong>Needs attention</strong>, with import unavailable. Saving incomplete work must not add transactions.</li>
+<li>Restore the date and amount from the PDF. Expect the checks to run again and the difference to clear. Use <strong>Save and open next problem</strong>. Expect another statement with a problem to open, or the batch list if none remains.</li>
+<li>For a PDF containing several accounts and periods, change <strong>Account</strong>, then <strong>Statement period</strong>. Check that next/previous period stays in the chosen account. Search a long collection using <strong>Find a period</strong>.</li>
+<li>Import all available records. Expect the exact transaction count shown before confirmation. Refresh and repeat opening the batch; no duplicate payments should appear.</li>
+<li>If a synthetic statement deliberately contains a printed balance error, keep its printed values. Select <strong>I checked these differences against the PDF</strong>, enter <strong>Why the difference remains</strong>, and save. Expect the difference and explanation to stay recorded. Change an amount again; the previous acknowledgement must no longer accept that new difference.</li>
+</ol>
+<p>Record the filename, account, period, action, expected result and actual result for any failure. Do not repair a test result by changing the original PDF.</p>
+<h3>Check separately printed fee and interest totals</h3>
+<ol>
+<li>Use an artificial Merrick statement whose original interest charge and interest total both show 36.32, but whose extracted charge reads 36.52. Expect <strong>Interest charges against printed total: needs checking</strong>, with a difference of 0.20. The statement must need attention in the batch as well.</li>
+<li>Select <strong>View printed value</strong> to inspect the total, then <strong>Check charge 1</strong> to open the charge&#x27;s editor beside the PDF. Correct the debit to 36.32 and explain that the original charge was checked. Expect the comparison to change to <strong>matches</strong>.</li>
+<li>Include a card-payment reading with a missing trailing minus. Expect a specific request to check its date and original amount. Enter its original value under <strong>Credit / money in</strong>, correct any misread date and give a reason. The system must not silently convert the amount to a credit just because the description says payment.</li>
+<li>Save the review, leave and reopen it. Expect both corrections and their reasons to remain, including after browser tab storage is cleared. The batch should be ready only when its other problems are resolved.</li>
+<li>Import once, then open the resulting transactions. Expect the corrected interest amount, payment date and credit amount. Open each original PDF location and confirm the original reading remains available.</li>
+<li>Check a test statement with a damaged section total or a manually added transaction whose section is unknown. Expect that comparison to be unavailable. A missing or unreadable total must not be treated as zero or described as a match.</li>
+</ol>
+<p><strong>Expected:</strong> separate charge totals expose an amount error even when that amount looks like a valid number. Corrections change the calculation and imported values while preserving the original source.</p>
+<h3>Check individual saved progress and repeated corrections</h3>
+<ol>
+<li>Open an unimported synthetic statement from <strong>Statements &amp; accounts</strong>. Clear one transaction date, select <strong>Save progress</strong> and wait for the saved message. Import should remain unavailable.</li>
+<li>Reload and reopen that statement. Expect the unfinished date correction to remain. Restore the date from the PDF and enter the reason.</li>
+<li>Open <strong>Correct several rows</strong>. Select two rows, choose <strong>Switch credit and debit</strong>, add a reason and select <strong>Preview corrections</strong>. Expect only those two rows in the preview, with their current and proposed columns.</li>
+<li>Apply the changes. Expect new balance differences where the switched values no longer match the statement. Switch the same rows back with a reason, then save. Expect the original values to remain visible in the printed table throughout.</li>
+<li>If two authorised reviewers open the same saved review, save a change from one and then attempt to save the older review from the other. Expect a conflict message; the later attempt must not overwrite the first saved review.</li>
+<li>If reprocessing changes a reading with an earlier saved review, open <strong>Earlier saved reviews</strong> and <strong>Compare earlier values</strong>. Expect individual and bulk corrections, including changed periods, to remain available. Compare them, tick the comparison box and select <strong>Save comparison for this file</strong>. Reload to check that the comparison remains saved. It must not add payments.</li>
+</ol>
+<h3>Check names read from a statement&#x27;s mailing address</h3>
+<ol>
+<li>Open an artificial Merrick statement with the account holder&#x27;s name above its mailing address, separate from the bank&#x27;s payment address. Expect <strong>Account holder</strong> to contain the complete printed name, including a surname extracted into the next cell.</li>
+<li>Check an Andrews statement with joint names. Expect both names, separated by a slash. The street address and mailing code must not become part of either name.</li>
+<li>Use a test reading with a damaged surname or incomplete address. Expect a missing-name problem where the complete name cannot be established. Enter the name from the original PDF, explain the correction and save it.</li>
+<li>Return to the batch. Expect the saved name and an updated status for that statement. Other unresolved amounts or dates must remain flagged, but must not prevent import. Their incomplete records must remain outside calculated totals.</li>
+<li>Reopen an earlier saved review after a new reading finds the name. Check its earlier corrections before importing. A newly recognised name must not create a second period or a duplicate import.</li>
+</ol>
+<p><strong>Expected:</strong> clear names appear automatically. Unclear names have a specific correction route, and the account&#x27;s payments do not change because its name was recognised.</p>
+<h3>Check an Andrews image reread</h3>
+<ol>
+<li>Use an Andrews test statement with a damaged amount or balance reading. Record its account sections and transaction count before reprocessing.</li>
+<li>Choose <strong>Read from page images</strong> under <strong>Read the statement again</strong>, then <strong>Reprocess statement</strong>.</li>
+<li>Compare recovered values with the original PDF, including decimal points and minus signs. Readable values without a sign conflict and account assignments should remain unchanged. A flagged sign conflict can be reread from its image: check both the digits and the sign of the replacement. Dates and descriptions must not change because a money cell was reread.</li>
+<li>Check the remaining problems and balance differences. A newly readable balance can reveal a mismatch in another payment. Neither that mismatch nor a conflicting visual reading should be marked as resolved automatically.</li>
+<li>Open any earlier saved review and compare its corrections before importing a changed reading. Confirm only the statements whose remaining problems you have resolved.</li>
+</ol>
+<p><strong>Expected:</strong> specific damaged money cells can improve without hiding unresolved values or replacing previous imports automatically. A lower warning count alone is not a successful test; record any wrong or missing value found against the PDF.</p>
+<h3>Check a refund whose amount is on the next line</h3>
+<ol>
+<li>Use an Andrews-style test statement with a <strong>Credit Voucher</strong> refund. Its description should be on one line and its amount and running balance immediately below. Include another refund with its amount at the end of the description line.</li>
+<li>Open the statement review. Expect one payment for each refund, with its printed amount and balance. The extracted view must retain the original lines. The amount line must not become another payment or part of the payment description.</li>
+<li>Select the amount on the second line, then <strong>Edit this row</strong>. Expect the refund&#x27;s date, description, credit and balance in the editor. Make a description correction without a reason and select <strong>Save for bulk import</strong>.</li>
+<li>Reopen the saved review after clearing this tab&#x27;s temporary storage. Expect the correction to remain. The original printed text must still be visible.</li>
+<li>Import the ready statement once. Open that refund in <strong>Transactions</strong>. Expect its amount and balance, the saved description correction, and a source highlight covering both the first line and the amount line.</li>
+<li>Repeat with an unreadable amount or an unrelated number further down the page. Expect a review problem. Loupe must not choose a value just because it would make the balances match.</li>
+</ol>
+<h3>Check missing Andrews pages and broken dates</h3>
+<ol>
+<li>Use an artificial statement whose first-page logo is unreadable in the extracted text. Its printed account and dates must match the next branded page, numbered <strong>2</strong>, and the first page must contain an account opening and a continuation notice. Expect both pages under the same account and period. A conflicting account, different dates or missing intervening page must prevent that automatic grouping.</li>
+<li>In a scanned statement with a damaged full-period date, use <strong>Read from page images</strong>. Compare the recovered date with the PDF. If the local readings disagree, it must stay unresolved. An existing readable date must remain unchanged.</li>
+<li>Check a payment with a broken date such as <strong>O6 /O3</strong>. Expect its own transaction row and a date problem. Its description and money must not be appended to the preceding payment. Correct the date beside the PDF and save.</li>
+<li>Open the PDF page selector. Recognised account applications, account agreements and fee-only pages should remain accessible as information pages. A page that also contains payments must not be dismissed as information.</li>
+</ol>
+<p>For a Merrick collection, also check recognised cover letters, application continuations, cardholder notices, separate interest-calculation pages and records-request paperwork. Open their original pages from the page selector. A payment-history list must remain available for financial review, even when it shares a page with familiar notice text. Check for payments already recorded in the monthly statements before adding anything from that list.</p>
+<p>Use an artificial Merrick statement containing an <strong>Interest Charge on Purchases</strong> or <strong>Interest Charge on Cash Advances</strong> line showing <code>0.00</code> with an unreadable date. That clearly positioned zero-charge line should remain in the source view without asking for a date correction. Change the amount to <code>0.01</code>, make the amount unreadable, or move it outside the amount column. It must then remain available for review, rather than being dismissed as a zero charge. An unfamiliar zero-value row with an unreadable date also stays flagged.</p>
+<p>Check the date warning on a nonzero row. A day read as <code>44</code>, a month read as <code>14</code> or 29 February in a non-leap year should be described as an invalid month or day. A readable month/day with no usable statement year should retain the missing-year instruction. Correct only the indicated fields against the original. For an Andrews sign warning, compare the numeric amount as well as the minus sign: a misread sign can also introduce a digit.
+5. Compare transaction counts and balances before and after processing. Additional genuine payments can raise the problem count. Verify each newly found payment, and keep earlier saved corrections available for comparison.</p>
+<p><strong>Expected:</strong> missing statement pages and damaged-date payments are recovered where the source supports them. Existing dates, amounts, signs and balances are preserved. No real imports are replaced automatically.</p>
+<h3>Check repeated statement dates</h3>
+<ol>
+<li>Use a Merrick test statement whose closing-date reading differs from its <strong>Statement Date</strong>. Keep a note of the printed dates and transaction count.</li>
+<li>Choose <strong>Read from page images</strong> under <strong>Read the statement again</strong>, then <strong>Reprocess statement</strong>.</li>
+<li>Compare any corrected closing date with both printed dates and the year-to-date heading. A remaining disagreement must still be flagged. Transaction amounts and descriptions must not change because a date was reread.</li>
+<li>In a statement where the statement-date heading was not recognised, check the separately labelled <strong>Billing Cycle Closing Date</strong>. A unique, readable closing date with a matching year-to-date year can supply missing transaction years. It must not fill the statement&#x27;s coverage dates or replace an existing conflicting heading.</li>
+<li>Check any interest-charge date warning. Confirm the printed month and day against the closing date. The warning must not silently change the transaction date to make them agree.</li>
+<li>Reopen any earlier saved review and compare it before importing a changed reading.</li>
+</ol>
+<p><strong>Expected:</strong> repeated printed dates reduce unnecessary year corrections. Conflicting dates and unreadable transaction days remain visible. Record any apparently valid date that differs from the PDF.</p>
+<h3>Check several missing transaction years</h3>
+<p>Use an artificial Merrick statement with readable numeric month/day values and an unreadable closing-date reading. Keep its original PDF legible.</p>
+<ol>
+<li>Open <strong>Correct several rows</strong> and choose <strong>Complete missing years</strong>. Enter the closing date from the PDF and a reason.</li>
+<li>Use <strong>Select readable dates missing a year</strong>, then <strong>Preview corrections</strong>. Expect the printed month/day beside each proposed full date. Check December transactions against a January closing date: their year must be the previous year.</li>
+<li>Include a row with an unreadable day or a date outside the closing month and previous month. Expect a message directing you to check it individually. No correction should apply from an invalid preview.</li>
+<li>Apply a valid preview. Expect amounts, descriptions, existing complete dates and undated charges to remain unchanged. Original printed date cells must remain available.</li>
+<li>Select <strong>Save progress</strong>, reopen the review and refresh. Expect both the completed dates and the reason to remain. Import the ready statement once and check the same dates in Transactions.</li>
+</ol>
+<p><strong>Expected:</strong> one checked closing date completes only the missing years of eligible rows, with a preview and a retained explanation. It must not replace unclear days or invent statement-period coverage.</p>
+<h3>Check a transaction assigned to the wrong statement</h3>
+<p>Use an artificial PDF with two recognised accounts or periods, before importing either statement.</p>
+<ol>
+<li>Save a correction in the receiving statement, such as a description with a reason.</li>
+<li>In the source statement, open <strong>Correct several rows</strong>, tick a transaction and choose <strong>Move to another account or period</strong>.</li>
+<li>Enter the reason, choose the receiving statement and select <strong>Preview move</strong>. Expect both accounts and periods, before/after transaction counts, and the balance checks for both statements. Preview alone must not save anything.</li>
+<li>Select <strong>Save move</strong>. Expect the transaction to leave the source review and appear once in the receiving review. Existing corrections in both reviews must remain.</li>
+<li>Refresh and reopen both statements. In the receiving statement, use <strong>View original</strong> on the moved transaction. Expect its original PDF page and location, not a new or invented source.</li>
+<li>Check the bulk list when the file also belongs to a processing batch. Its transaction counts and checks must reflect the move. A balance difference must stay under <strong>Needs attention</strong> until corrected or explained.</li>
+<li>Move the transaction back with a reason. Expect the original counts and both move reasons to remain in the saved history.</li>
+<li>With two authorised reviewers, preview a move, then save a change to either affected statement from the other reviewer. Attempt the original move. Expect a conflict and a request to preview again, with neither saved review overwritten.</li>
+<li>Import both corrected statements. Expect each transaction once. The moved transaction must retain its original source and the reason for reassignment. Moving between these reviews after import must be refused.</li>
+</ol>
+<h3>Check a missing page with unassigned payments</h3>
+<p>Use an artificial Andrews-style PDF with a checking account opening, a skipped printed page number and a continuation containing payments but no share heading.</p>
+<ol>
+<li>Prepare its bulk review. Expect a recognised account review and a separate <strong>Unassigned payments</strong> review. The latter must need attention even when every payment value is readable.</li>
+<li>Open the unassigned review. Expect its original PDF, printed main account and period, an explanation of the missing account context, and the move controls. There must be no direct <strong>Confirm import</strong> button.</li>
+<li>Select its payments, record the account evidence and preview a move to the recognised account. Expect both counts before and after. The preview must not change saved reviews.</li>
+<li>Save the move, refresh and reopen both reviews. Expect every payment once in the receiving review, with original PDF locations and corrections retained.</li>
+<li>Expect <strong>Payments assigned</strong> for the emptied page and no empty correction controls. The bulk ready count must include only the receiving statement.</li>
+<li>Import the ready statement. Open its Transactions and the moved payment&#x27;s original PDF. Expect no duplicate and no second import of the emptied page.</li>
+<li>Repeat with a PDF that has no recognised receiving account. Expect instructions to obtain the missing account page, no empty destination form and no direct import. Excluding the unassigned rows alone must not mark the account decision complete.</li>
+</ol>
+<h3>Check the link from a completed batch to Transactions</h3>
+<ol>
+<li>Use a synthetic case with an imported batch and another imported statement outside that batch.</li>
+<li>From the batch, select <strong>Open imported transactions</strong>. Expect the batch notice, the dates of those payments, and only that batch&#x27;s imported payments in the table.</li>
+<li>Check a batch with more than 100 periods if available. Its table filter must include every imported period, not just the visible batch page.</li>
+<li>Download <strong>this table view</strong>. Check that its recorded row list and batch source list agree with the displayed filter. Other case payments must not enter that recorded table selection.</li>
+<li>Select <strong>Clear batch filter</strong>, then widen the account/date range if needed. The other statement&#x27;s payments should become available again.</li>
+<li>If the batch gains another imported statement after you opened its transactions, try the old download. Expect an instruction to reopen the batch&#x27;s transactions so the displayed and downloaded statement lists agree.</li>
+</ol>
+<h3>Undated card interest</h3>
+<ol>
+<li>Use a synthetic Capital One statement containing purchases, a payment and a nonzero <strong>Interest Charge on Purchases</strong> with no date beside it.</li>
+<li>Send it to Financial. If the other fields and checks are clear, confirm that this charge alone does not put the statement in <strong>Needs attention</strong>.</li>
+<li>Open the review. Check the interest amount against the PDF. The date should remain blank and the review should explain that it was not printed. Do not enter the closing date as its transaction date.</li>
+<li>Import the ready statement. In Transactions, find the interest charge. Expect <strong>Date not printed</strong> and the statement end shown separately. Check that the charge is included in the totals.</li>
+<li>In a disposable test case, record a date correction using a known source date and a reason. Expect the corrected transaction to use that date, with the earlier undated reading retained in its history.</li>
+<li>Confirm that an ordinary payment with an unreadable date still needs attention. The interest handling must not clear that error.</li>
+</ol>
+<h3>Compare possible copies before a bulk import</h3>
+<p>Use synthetic copies in a separate test case. Do not create duplicate live case payments for this test.</p>
+<ol>
+<li>Send two different PDFs for the same bank, account and overlapping dates from Evidence to Financial. Both should need attention, with the other filename and dates identified.</li>
+<li>Open one review and select <strong>Compare original PDF</strong>. Confirm the other file opens, then close it and check that your current review is still present.</li>
+<li>Return to the batch. On the copy, select <strong>Leave unimported</strong>, give a reason and confirm. The original should become ready if it has no other problems. The copy should remain listed with its reason and <strong>Restore to review</strong>.</li>
+<li>Import the ready statement. Open its transactions and check the expected count and totals. Refresh the batch and confirm that only one statement was imported.</li>
+<li>Select <strong>Restore to review</strong> on the copy and record a reason. Its saved corrections must remain available, and its overlap with the imported statement must be flagged again.</li>
+<li>Open the copy, tick the comparison checkbox and enter a reason. Save progress, leave the page and return. Check that the decision was saved. Change its period dates and check that a new overlap is reported without silently reusing the old comparison as a fresh check. Import remains available.</li>
+<li>Leave the copy unimported when finished. Check that both original PDFs remain in Evidence.</li>
+</ol>
+<p>Expected result: overlapping dates are visible for comparison, and the choice to leave a statement unimported persists. Restoring it preserves its source and saved work. Overlap warnings do not automatically prevent import.</p>
+<h3>Follow a referenced account and save the question</h3>
+<p>Use a synthetic statement whose payment descriptions contain an explicit reference such as <strong>Transfer to account 9911223344</strong> and <strong>Payment from account 9911223344</strong>.</p>
+<ol>
+<li>Import the statement and open <strong>Statements &amp; accounts</strong>. Find <strong>Other accounts mentioned in payments</strong> below the file list.</li>
+<li>Expect one reference with two supporting payments and <strong>No matching statement imported</strong>, provided the case has no statement for that number.</li>
+<li>Select <strong>View 2 payments</strong>. Check that both descriptions are present. Open the original statement and compare the printed reference.</li>
+<li>Select <strong>Save question in Findings</strong>. Check the suggested question, two attached payments and proposed next action. Edit the question and select <strong>Save finding</strong>.</li>
+<li>Select <strong>Open Findings</strong>, refresh the page and reopen the saved question. Confirm the explanation and both payment links remain available.</li>
+<li>If the test case includes a matching account statement, tick <strong>Include references with a possible statement match</strong>. Open that account&#x27;s statements. Expect a possible match, not a claim that the number proves the account owner&#x27;s identity.</li>
+<li>Check a payment containing only a telephone number, an amount or an unlabelled trace number. It should not create an account-reference entry.</li>
+</ol>
+<p>Expected result: the investigator can follow the reference to its evidence and record what needs to be obtained, without copying payment IDs or descriptions between screens.</p>
+<h3>Information pages and damaged payment fields</h3>
+<p>Use a test collection with known transactions and separate notices. Record the expected transaction count before processing it.</p>
+<ol>
+<li>Open a recognised Capital One collection with privacy notices, billing-cycle notices or advertisements. Check that those pages do not create transactions or unnecessary coverage warnings.</li>
+<li>Open <strong>Inspect another page of the original PDF</strong>. Choose a page labelled <strong>information page</strong> and select <strong>Show selected page</strong>. The original notice must still be available.</li>
+<li>Check a transaction page with an advertisement beside its table. Its payments must remain present, and the advertising text must not become part of their descriptions.</li>
+<li>Check a payment with a damaged date or missing extracted field. It must remain flagged with a source link. Readable amounts and descriptions should remain available; the system must not silently discard the payment or invent its date.</li>
+<li>In an Andrews test statement, inspect an <strong>Ending Balance</strong> line and the period/year-to-date fee summary. Neither should be an extra payment. Actual dated fees must remain in the transaction list. A misread date on the ending balance must not cause the following summary text to join a payment description.</li>
+<li>Include a page the reader does not recognise. Expect <strong>needs coverage check</strong>, then inspect it for missed payments. It must not be labelled harmless solely because it has no detected transactions.</li>
+</ol>
+<p>Expected result: recognised information stays available without adding review tasks, while uncertain payments stay visible for optional review.</p>
+<h3>Additional dates beside Andrews payments</h3>
+<ol>
+<li>Use an Andrews-style test row with a first date of <strong>06/03</strong> and an additional date of <strong>06/02</strong>, with readable amounts and a matching balance.</li>
+<li>Open its import values. Expect the first date to be used and the additional printed date to be identified beside it. It should not require a reason merely because the second date is present.</li>
+<li>Confirm the import and open its original source. Both printed dates must remain available. The extra date must not be labelled as a value date or posting date without source support.</li>
+<li>Compare a row whose additional date is invalid or later than the first date. That row should still need attention. A missing minus sign, unreadable amount or balance difference must also remain flagged even when both dates are readable.</li>
+</ol>
+<p>Expected result: ordinary extra date text does not require repetitive approval, and unrelated payment errors remain visible.</p>
+<h2 id="check-categories-from-and-to-and-money-charts">Check categories, From and To, and money charts</h2>
+<p>Use an artificial case with at least two incoming and two outgoing payments. Include more than 50 payments to check table paging. If testing card statements, expect <strong>Card credits</strong> and <strong>Card charges</strong> instead of bank money in and out.</p>
+<ol>
+<li>In <strong>Transactions</strong>, tick two payments. Select <strong>Categorize selected</strong>, type <strong>Team test</strong>, and save. Both rows should show that category.</li>
+<li>Select one payment&#x27;s description, then <strong>Edit names and category</strong>. Change its From or To name and save. The source PDF and original description should stay available.</li>
+<li>Refresh the page. The category and edited name should remain.</li>
+<li>Choose <strong>Team test</strong> in Category at the top. Only that category should contribute to the transaction totals and chart.</li>
+<li>Open <strong>Trends</strong>. The selected category should remain active. Check its incoming and outgoing amounts against the two payments. Open its category name under <strong>Money by category</strong> to inspect the supporting payments.</li>
+<li>Choose <strong>All categories</strong>. Compare category amounts and check that different currencies and credit cards are shown separately.</li>
+<li>Open <strong>People &amp; businesses</strong>. The edited name should be present. Open the profile and one of its transactions.</li>
+<li>Open <strong>More financial tools</strong>, then <strong>Payment graph</strong>. Select the person or business and use <strong>Edit this person or business name</strong>. Save and check the same payment back in Transactions.</li>
+<li>Select payments and use <strong>Export selected</strong>. Check From, To and Category in the CSV. Use <strong>Download these transactions</strong> to check the filtered report as well.</li>
+<li>Select every matching payment in a list with more than 50 rows. Assign a category, go to the next page and confirm those payments were included. The count should represent the whole selection, not just the visible page.</li>
+<li>With two editors open on the same payment, save a change in one and try to save the older edit in the other. The older edit should be rejected without overwriting the first person&#x27;s work.</li>
+<li>Sign in as a user who can view but cannot edit the case. Categories and names should be visible, but saving changes should not be offered.</li>
+</ol>
+<h2 id="empty-entries-optional-notes-and-balance-only-statements">Empty entries, optional notes and balance-only statements</h2>
+<p>Use disposable test cases for these checks.</p>
+<ol>
+<li>Open a review with empty, unrecognised entries on more than one correction page. Confirm each input has a visible label even after scrolling.</li>
+<li>Fill the description of one empty entry, leaving another payment partly filled. Choose <strong>Exclude [number] blank rows from import</strong>. Expect all wholly empty entries across the statement to be excluded, while both partly filled rows remain selected.</li>
+<li>Select <strong>Undo excluding blank rows</strong>. Check that the entries return without losing the description you entered. Exclude them again; use <strong>Show excluded rows</strong> to inspect their original text or restore one.</li>
+<li>Correct an amount and the account holder without typing a reason. Save progress, reopen the review and confirm the import. Expect the corrected values and original readings to be retained. Repeat through <strong>Save for bulk import</strong> to check the batch path.</li>
+<li>Open a balance-only test statement with a readable closing balance and no opening balance. Select <strong>Save statement balances</strong>. Expect an account/statement record, the printed closing balance, no invented opening balance and zero new transactions.</li>
+<li>Repeat with a printed zero balance. It must remain zero. Repeat with different opening and closing balances: saving must work, and the difference must remain flagged rather than labelled as reconciled.</li>
+<li>Try an unreadable balance with no payments. Expect an actionable request for a printed balance. Correct the amount without a note, then save. Repeating the same confirmation must not create a duplicate statement.</li>
+<li>Check Alex&#x27;s <strong>01 ARRENDO BBVA EUR ENE 2021.pdf</strong> and the other balance-only files on the deployed build. Record whether their actual labels and amounts are recognised. Synthetic examples passing is not confirmation that every BBVA layout is supported.</li>
+</ol>
+<h2 id="import-a-group-without-reviewing-each-statement-first">Import a group without reviewing each statement first</h2>
+<ol>
+<li>In the main <strong>Statement files</strong> list, select several disposable PDFs containing multiple periods. Use <strong>Select all [number] shown files</strong> for the current list.</li>
+<li>Search for one selected filename. Check that the count still includes selected files hidden by the search. Clearing the search must restore their selected checkboxes.</li>
+<li>Select <strong>Prepare statements from [number] files</strong>. Expect the financial batch screen to open directly and contain every recognised account and period. Preparation must not create imported transactions yet.</li>
+<li>Select <strong>Import [number] records</strong> once. You should not need to open each period or resolve each reading issue first. After completion, check that usable transactions are available, incomplete records retain their sources outside totals, and issues remain accessible. Existing imports must not be duplicated.</li>
+<li>In a separate individual review containing an unreadable amount, select <strong>Import statement now</strong> above the PDF without opening corrections. Check the same separation between usable transactions and incomplete records after import.</li>
+<li>Record elapsed user time, number of manual corrections and any unexpected detours for a representative document. Do not use automated test runtime as the time a person needs to process a PDF.</li>
+</ol>
+<h2 id="bbva-balances-and-small-charges">BBVA balances and small charges</h2>
+<p>Use a separate test case and a BBVA Mexico <strong>Cash Management</strong> statement supplied for testing. This check does not establish support for every BBVA product.</p>
+<ol>
+<li>Prepare the PDF with <strong>Use the PDF text where available</strong>. Check that the account, dates and currency agree with its printed headings.</li>
+<li>For the September 2024 euro sample, expect two charges: €30.00 and €4.80. Both operation dates are 2 September; both liquidation dates are 1 September. The second description continues with <strong>16%</strong> on the next page.</li>
+<li>Check the opening balance (€60.00), closing balance (€25.20), total charges (€34.80) and two-charge count. Glossary, summary chart and tax-certificate lines must not appear as payments.</li>
+<li>Import once. Expect two usable transactions and no incomplete records. Open each source and check its printed amount. Repeating the confirmation must not duplicate the transactions.</li>
+<li>Test a genuinely empty statement of the same layout. Expect its printed balances to save with zero transactions, without requiring any empty rows to be filled in.</li>
+<li>For a previously incorrect import, use <strong>Review statement: [filename]</strong>, reprocess the PDF, then explicitly replace the old import. Expect only the corrected payments in the active list; the earlier reading must remain in history.</li>
+<li>Record any unexplained differences or missing charges with the filename and page. Do not enter zeros to make an unreadable amount appear complete.</li>
+</ol>
+<h2 id="save-account-details-and-missing-balances-without-reprocessing">Save account details and missing balances without reprocessing</h2>
+<h3>Before import and across a batch</h3>
+<ol>
+<li>Open a statement with no identified payments or balances. Select <strong>Show items to check</strong>. Expect focus on the balance controls, not the disabled confirmation footer.</li>
+<li>Add the opening and closing balances with their source pages. Test a printed zero separately from an unknown blank. <strong>Save statement balances</strong> should become available when a valid printed balance is present. In a batch it saves for later bulk import; an individual review saves directly.</li>
+<li>Add a missing holder and save the batch review. Reopen it and check that the holder persists and its missing-holder warning clears.</li>
+<li>Search a large batch by a currency token in filenames. Select all matching statements across pages, change the search and check the hidden-selection count. Choose a currency and apply it; the list must include GBP, CHF, JPY and KWD as well as USD, MXN and EUR. Reopen a selected statement: currency, manual account edits and corrected amounts must persist. Unselected and imported statements must remain unchanged. This is not currency conversion. In a synthetic test statement, change between two-decimal, yen and three-decimal currencies: printed numbers must stay the same after reopening. A fractional amount that yen cannot represent must refuse the change without changing any selected statement.</li>
+<li>Check the batch counts: usable transactions and incomplete records must be separate. Ordinary unmatched source text must not inflate either count; it remains available in the statement. A damaged amount inside a recognised transaction table must still be flagged.</li>
+<li>For the older BBVA Bancomer Cash Management format, check the actual source account, period, opening/closing balances and movements before accepting it. The supplied TITANIUM September 2024 PDF has also been checked locally through import and later edits. That does not establish that every historical BBVA file is supported.</li>
+<li>Mark an unchanged flagged payment <strong>Mark checked</strong>, save and reopen. Its reading flag must stay resolved. A remaining unreadable amount or balance difference must remain visible.</li>
+<li>Open an old saved review whose source has not changed. Its account and payment edits must persist after the reader upgrade. Only untouched empty text entries should leave the payment selection. A changed source must require comparison rather than silently moving corrections.</li>
+</ol>
+<h3>After import</h3>
+<p>Use an editable test case, not the investigation&#x27;s only copy.</p>
+<ol>
+<li>Before import, enter a missing account number beginning with zeros. Select <strong>Save account details</strong>, leave the review and reopen it. Expect exactly the same number.</li>
+<li>Import the statement, reopen it and check the saved number again. The original extraction must not replace the manual value.</li>
+<li>From the balance check, select <strong>Open statement and balances → Edit account and balances</strong>. Expect labelled fields beside the original PDF, in the same view.</li>
+<li>Correct the number and add a missing balance with its printed PDF page. Select <strong>Save changes</strong>. Reopen the editor, statement list and balance check; all should show the saved changes. The payment count and existing payments must be unchanged.</li>
+<li>Save a printed zero balance and reopen. It must remain zero. Clear it and save; it must become missing, not zero. A balance difference must remain visible.</li>
+<li>In a second authorised session, change the same statement after the first session opened its editor. The first session&#x27;s stale save must fail clearly and keep its unsaved text. Repeat with a viewer: the edit control must be absent and a direct save request forbidden.</li>
+<li>Test an incomplete-only import. Expect <strong>0 usable transactions</strong> and its separate incomplete-record count, including after selecting <strong>Open imported records</strong>. The file list must not describe these as usable payments or a statement with no records.</li>
+<li>Reprocess a test copy after saving account and balance corrections. Under <strong>Compare earlier values</strong>, check the previous account number and the balances with their PDF pages. They must remain available for comparison without overwriting the new reading.</li>
+<li>Correct the statement currency in <strong>Edit account and balances</strong>, first to MXN, then USD, then back to EUR. Reopen Transactions, totals and statement checks after each save. Amounts, categories and exclusions must remain unchanged, with earlier currency readings retained. When currency was an incomplete record&#x27;s only missing field, it should join the usable payments once.</li>
+<li>For an eligible old BBVA import containing only empty incomplete records, use <strong>Save [number] payments to Transactions</strong>. Check its preview against the PDF first. Expect the recognised payments and balances, no remaining empty records, and the updated batch count. Retry after a simulated lost response: no duplicate payments. The old import must remain in history. Saved payment corrections must prevent this shortcut from displacing them. Saved account details and page-cited balance edits must survive recovery.</li>
+<li>While editing a statement, there must be no <strong>Checks across all accounts</strong> panel. Open <strong>Review accounts → Account checks</strong> deliberately for case-wide checks. Returning to <strong>Statement files</strong> must retain the current review.</li>
+<li>In the batch list, distinguish two runs with the same file count using their date, starter, batch identifier, sample filenames and reading progress. Open the older one and confirm that its own saved review appears.</li>
+<li>For a PDF spanning a Capital One product-heading change from World Elite Mastercard to Quicksilver, confirm every printed period appears. On a continued transaction page, check both dates and the amount against the PDF. A conflicting account or period must remain unresolved. In an older batch, select <strong>Check for additional statement periods</strong>: existing imports and saved corrections must remain while newly recognised periods become available. Refreshing and retrying must not duplicate payments.</li>
+</ol>
+<p>Local automated checks do not replace these tests against the deployed version and the team&#x27;s actual saved imports.</p>
+<h3>Direct review-to-payments acceptance</h3>
+<ul>
+<li>In a batch, open one statement, correct the holder, and select <strong>Import [number] payments and view Transactions</strong>. Expect the exact statement&#x27;s payments immediately; other ready statements remain unimported. Reopen and reload: the holder stays saved and payments are not duplicated.</li>
+<li>Import a statement containing only balances from that same review. Expect a saved-balances confirmation with its account and balances still visible, not an empty Transactions view.</li>
+<li>Recover an eligible older empty import. Compare the displayed usable payment count with the resulting ledger, and verify saved account/balance edits survive. Incomplete readings must not be described as payments.</li>
+<li>With multiple incomplete statements and more than one page of retained records, expand the statement list. Each affected PDF must be available, including files whose records are beyond the first page.</li>
+</ul></main></html>

@@ -63,7 +63,6 @@ async def _runtime_checks() -> dict[str, bool]:
             "redis": redis_ok,
             "ocr": ocr_ok,
             "storage": storage_ok,
-            "openai": bool(settings.openai_api_key.strip()),
         }
     )
     return checks
@@ -71,6 +70,10 @@ async def _runtime_checks() -> dict[str, bool]:
 
 @router.get("/health")
 async def health_check():
+    # PDF reading and OCR run locally. AI credentials are resolved for the
+    # selected workload, including credentials saved in platform settings.
+    # An environment OpenAI key neither proves AI availability nor belongs in
+    # the readiness gate that starts the statement worker.
     checks = await _runtime_checks()
 
     all_ok = all(checks.values())

@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react"
 
-function authHeaders(): Record<string, string> {
-  const token = localStorage.getItem("authToken")
+function authHeaders(token: string | null): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
@@ -9,8 +8,9 @@ export async function fetchProtectedBlob(
   url: string,
   signal?: AbortSignal
 ): Promise<Blob> {
+  const token = localStorage.getItem("authToken")
   const response = await fetch(url, {
-    headers: authHeaders(),
+    headers: authHeaders(token),
     credentials: "include",
     signal,
   })
@@ -19,16 +19,23 @@ export async function fetchProtectedBlob(
     throw new Error(`File request failed: ${response.status}`)
   }
 
-  return response.blob()
+  const blob = await response.blob()
+  if (signal?.aborted)
+    throw new DOMException("File request was cancelled", "AbortError")
+  if (localStorage.getItem("authToken") !== token)
+    throw new Error("Your sign-in changed. Open this file again.")
+  return blob
 }
 
 export function useProtectedObjectUrl(
   url: string | null | undefined,
   enabled = true
 ) {
-  const activeUrl = enabled ? url ?? null : null
+  const activeUrl = enabled ? (url ?? null) : null
+  const token = localStorage.getItem("authToken")
   const [result, setResult] = useState<{
     url: string
+    token: string | null
     objectUrl: string | null
     error: Error | null
   } | null>(null)
@@ -44,13 +51,28 @@ export function useProtectedObjectUrl(
 
     fetchProtectedBlob(activeUrl, controller.signal)
       .then((blob) => {
+        if (
+          controller.signal.aborted ||
+          localStorage.getItem("authToken") !== token
+        )
+          return
         nextObjectUrl = URL.createObjectURL(blob)
-        setResult({ url: activeUrl, objectUrl: nextObjectUrl, error: null })
-      })
-      .catch((err: unknown) => {
-        if (controller.signal.aborted) return
         setResult({
           url: activeUrl,
+          token,
+          objectUrl: nextObjectUrl,
+          error: null,
+        })
+      })
+      .catch((err: unknown) => {
+        if (
+          controller.signal.aborted ||
+          localStorage.getItem("authToken") !== token
+        )
+          return
+        setResult({
+          url: activeUrl,
+          token,
           objectUrl: null,
           error: err instanceof Error ? err : new Error("Failed to load file"),
         })
@@ -60,11 +82,13 @@ export function useProtectedObjectUrl(
       controller.abort()
       if (nextObjectUrl) URL.revokeObjectURL(nextObjectUrl)
     }
-  }, [activeUrl])
+  }, [activeUrl, token])
 
-  const hasCurrentResult = Boolean(activeUrl && result?.url === activeUrl)
-  const objectUrl = hasCurrentResult ? result?.objectUrl ?? null : null
-  const error = hasCurrentResult ? result?.error ?? null : null
+  const hasCurrentResult = Boolean(
+    activeUrl && result?.url === activeUrl && result.token === token
+  )
+  const objectUrl = hasCurrentResult ? (result?.objectUrl ?? null) : null
+  const error = hasCurrentResult ? (result?.error ?? null) : null
   const loading = Boolean(activeUrl && !hasCurrentResult)
   return { objectUrl, loading, error }
 }
@@ -81,18 +105,20 @@ export async function downloadProtectedFile(url: string, filename: string) {
   window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
 }
 
-export async function openProtectedFile(url: string) {
+export async function openProtectedFile(url: string, page?: number) {
   const targetWindow = window.open("", "_blank")
-  if (targetWindow) targetWindow.opener = null
+  if (!targetWindow)
+    throw new Error(
+      "Your browser blocked the new tab. Allow pop-ups for Loupe, then try again. Your work is kept here."
+    )
+  targetWindow.opener = null
 
   try {
     const blob = await fetchProtectedBlob(url)
     const objectUrl = URL.createObjectURL(blob)
-    if (targetWindow) {
-      targetWindow.location.href = objectUrl
-    } else {
-      window.open(objectUrl, "_blank", "noopener,noreferrer")
-    }
+    targetWindow.location.href =
+      objectUrl +
+      (page && Number.isInteger(page) && page > 0 ? `#page=${page}` : "")
     window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000)
   } catch (err) {
     targetWindow?.close()

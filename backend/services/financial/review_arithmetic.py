@@ -1,0 +1,224 @@
+"""Exact, read-only comparisons of a proposed statement with its printed controls.
+
+All callers pass rows from one account and period in source order. A missing
+control is not a zero balance. No comparison establishes complete extraction.
+"""
+import re
+from datetime import date
+
+
+def integer(value):
+    return int(value) if isinstance(value, str) and re.fullmatch(r'-?\d{1,20}', value) else None
+
+
+def control(rows, role):
+    matches = [r for r in rows if r['kind'] == 'balance' and r['excluded']
+               and r['fields'].get('description', '').strip().lower() == role + ' balance'
+               and r['fields'].get('balance') not in (None, '')]
+    return matches[0] if len(matches) == 1 and integer(matches[0]['fields']['balance']) is not None else None
+
+
+def movement(row, liability):
+    fields = row['fields']
+    amount = integer(fields.get('amount_minor'))
+    if amount is None or amount <= 0 or fields.get('direction') not in ('credit', 'debit'):
+        return None
+    return amount * (1 if fields['direction'] == 'credit' else -1) * (-1 if liability else 1)
+
+
+def comparison(kind, expected, printed, row, **extra):
+    difference = expected - printed
+    return dict(kind=kind, status='difference' if difference else 'matches',
+                expected_minor=str(expected), printed_minor=str(printed), difference_minor=str(difference),
+                row_id=row.get('id'), page=row.get('page_number'), **extra)
+
+
+def arithmetic_checks(rows, *, liability=False):
+    included = [r for r in rows if not r['excluded']]
+    moves = [movement(r, liability) for r in included]
+    opening, closing = control(rows, 'opening'), control(rows, 'closing')
+    opening_value = integer(opening['fields']['balance']) if opening else None
+    usable = all(m is not None for m in moves)
+    checks = []
+    calculation = dict(opening_minor=str(opening_value) if opening_value is not None else None,
+        credit_minor=str(sum(integer(r['fields']['amount_minor']) for r in included if r['fields']['direction'] == 'credit')) if usable else None,
+        debit_minor=str(sum(integer(r['fields']['amount_minor']) for r in included if r['fields']['direction'] == 'debit')) if usable else None,
+        balance_convention='liability_owed' if liability else 'asset_balance')
+    if usable and opening is not None and closing is not None:
+        checks.append(comparison('closing_balance', opening_value + sum(moves), integer(closing['fields']['balance']), closing, **calculation))
+    else:
+        checks.append(dict(kind='closing_balance', status='unavailable',
+                           **calculation,
+                           **(dict(expected_minor=str(opening_value + sum(moves))) if usable and opening_value is not None else {}),
+                           **(dict(printed_minor=closing['fields']['balance']) if closing else {}),
+                           reason='An opening balance, closing balance or transaction amount is missing or unreadable.'))
+
+    # Dates establish the direction of the printed sequence, never a guessed
+    # insertion point for investigator additions. Unplaced rows affect only
+    # intervals that could contain them on their declared source page.
+    unplaced = [r for r in included if r.get('kind') == 'manual_entry' and not r['fields'].get('source_order_anchor')]
+    unplaced_ids = {row['id'] for row in unplaced}
+    source_included = [r for r in included if r.get('id') not in unplaced_ids]
+    dated_source = [r for r in source_included if r.get('kind') != 'manual_entry']
+    dates = [r['fields'].get('date') or r['fields'].get('booking_date') or r['fields'].get('value_date') or '' for r in dated_source]
+    valid_dates = bool(dates)
+    try:
+        valid_dates = valid_dates and all(date.fromisoformat(d).isoformat() == d for d in dates)
+    except ValueError:
+        valid_dates = False
+    ascending = valid_dates and all(a <= b for a, b in zip(dates, dates[1:]))
+    descending = valid_dates and all(a >= b for a, b in zip(dates, dates[1:]))
+    ordered = []
+    if ascending:
+        ordered.append(('source_order', source_included))
+    if descending and len(source_included) > 1:
+        ordered.append(('reverse_source_order', list(reversed(source_included))))
+    manual = any(r.get('kind') == 'manual_entry' for r in included)
+    interpretations = []
+    for order, sequence in ordered:
+        previous, pending, compared, mismatches, findings = opening_value, 0, 0, 0, []
+        previous_page = opening.get('page_number') if opening else None
+        interval_pages, interval_invalid, unavailable = [], [], []
+        for row in sequence:
+            move = movement(row, liability)
+            if move is None:
+                interval_invalid.append(row.get('id'))
+            else:
+                pending += move
+            if row.get('page_number') is not None:
+                interval_pages.append(row['page_number'])
+            printed = integer(row['fields'].get('balance'))
+            if printed is None:
+                continue
+            pages = interval_pages + ([previous_page] if previous_page is not None else [])
+            uncertain = [entry['id'] for entry in unplaced if entry.get('page_number') is None or
+                not pages or min(pages) <= entry['page_number'] <= max(pages)]
+            if previous is not None:
+                if interval_invalid or uncertain:
+                    unavailable.append(dict(row_id=row.get('id'), page=row.get('page_number'),
+                        unplaced_row_ids=uncertain, invalid_row_ids=list(interval_invalid),
+                        reason='Choose the source position of added payments or complete unreadable values in this interval.'))
+                else:
+                    compared += 1
+                    result = comparison('running_balance', previous + pending, printed, row)
+                    if result['status'] == 'difference':
+                        mismatches += 1
+                        if len(findings) < 100:
+                            findings.append(result)
+            previous, previous_page, pending = printed, row.get('page_number'), 0
+            interval_pages, interval_invalid = [], []
+        interpretations.append(dict(order=order, compared_intervals=compared,
+            mismatch_count=mismatches, findings=findings, findings_truncated=mismatches > len(findings),
+            unavailable_intervals=unavailable))
+    available = [i for i in interpretations if i['compared_intervals'] or i['unavailable_intervals']]
+    if available:
+        best = min(available, key=lambda i: (i['mismatch_count'], len(i['unavailable_intervals'])))
+        status = 'difference' if best['mismatch_count'] else 'unavailable' if best['unavailable_intervals'] else 'matches'
+        checks.append(dict(kind='running_balance', status=status, **best, interpretations=interpretations,
+            unplaced_row_ids=[row['id'] for row in unplaced],
+            **(dict(reason='Added payments still need a printed sequence position for the affected intervals.') if best['unavailable_intervals'] else {})))
+    else:
+        checks.append(dict(kind='running_balance', status='unavailable', unplaced_row_ids=[row['id'] for row in unplaced],
+            unavailable_intervals=[], compared_intervals=0,
+            reason=('A manually added transaction has no position in the printed sequence.' if unplaced else
+                    'There are not enough readable running balances in a known date order.')))
+
+    # Explicit totals are supplied by extraction only when their account,
+    # period and credit/debit meaning are known. Never treat a subtotal as the
+    # total for the whole statement.
+    for direction in ('credit', 'debit'):
+        controls = [r for r in rows if r.get('kind') == 'statement_total' and r['excluded']
+                    and not r['fields'].get('total_scope') and r['fields'].get('total_direction') == direction]
+        if len(controls) == 1 and usable and integer(controls[0]['fields'].get('balance')) is not None:
+            expected = sum(integer(r['fields']['amount_minor']) for r in included if r['fields']['direction'] == direction)
+            checks.append(comparison(direction + '_total', expected, integer(controls[0]['fields']['balance']), controls[0]))
+        else:
+            checks.append(dict(kind=direction + '_total', status='unavailable',
+                               reason='No separate, readable statement total was identified.'))
+    for scope in ('fee', 'interest'):
+        controls = [r for r in rows if r.get('kind') == 'statement_total' and r['excluded']
+                    and r['fields'].get('total_scope') == scope]
+        if not controls:
+            continue
+        charges = [r for r in included if r['fields'].get('charge_group') == scope]
+        movements = [movement(r, True) for r in charges]
+        if (len(controls) == 1 and not manual and all(m is not None for m in movements)
+                and integer(controls[0]['fields'].get('balance')) is not None):
+            checks.append(comparison(scope + '_total', sum(movements), integer(controls[0]['fields']['balance']),
+                                     controls[0], contributing_row_ids=[r['id'] for r in charges]))
+        else:
+            checks.append(dict(kind=scope + '_total', status='unavailable',
+                reason='The printed total or a charge is unreadable, the total appears more than once, or a manually added payment has no printed section.'))
+    return checks
+
+
+def check_proposed_rows(proposal, edits):
+    """Overlay editable values without accepting client-supplied source controls."""
+    from services.financial.pdf_candidates import PdfMappingError
+    from services.financial.statement_review_checks import check_statement_rows
+    from services.financial.import_issues import row_reviewed
+    reviewed = {r['id']: r for r in edits}
+    originals = {r['id']: r for r in proposal['rows']}
+    if len(reviewed) != len(edits) or not originals.keys() <= reviewed.keys():
+        raise PdfMappingError('The review must contain each original row once. Reopen this statement.', 409)
+    effective = []
+    for original in proposal['rows']:
+        edit = reviewed[original['id']]
+        if edit.get('source_order_anchor'):
+            raise PdfMappingError('Only a manually added payment can be assigned a source position. Printed rows keep their original order.', 422)
+        fields = original['fields']
+        effective.append({**original, 'excluded': edit['excluded'],
+            'issues': [] if row_reviewed(original, edit) else original.get('issues', []),
+            'fields': {**fields, **{k: edit[k] for k in ('date', 'description', 'direction', 'amount_minor')
+                                  if k in edit and not (k == 'description' and original['kind'] in ('balance', 'statement_total'))},
+                       'balance': edit.get('balance_minor', fields.get('balance')),
+                       'date_basis': fields.get('date_basis') if edit.get('date_unprinted') else None}})
+    for row in edits:
+        if row['id'] not in originals:
+            from services.financial.manual_balances import manual_balance
+            balance = manual_balance(row, proposal)
+            if balance:
+                effective.append(balance)
+                continue
+            if not row['id'].startswith('manual:') or row.get('manual_page') not in proposal.get('page_numbers', []):
+                raise PdfMappingError('A manually added transaction needs a page from this PDF.', 422)
+            effective.append(dict(id=row['id'], kind='manual_entry', excluded=row['excluded'], issues=[],
+                                  page_number=row['manual_page'], fields={**row, 'balance': row.get('balance_minor')}))
+    from services.financial.manual_row_placement import place_manual_rows
+    effective = place_manual_rows(effective, originals,
+        statement_pages=proposal.get('statement_page_numbers') or proposal.get('page_numbers', []))
+    from services.financial.pdf_candidates import _digest
+    result = check_statement_rows(effective, liability=proposal['metadata'].get('balance_convention') == 'liability_owed')
+    result['checks_revision'] = _digest(dict(version='statement-checks-v1', source_revision=proposal['revision'], rows=[
+        dict(id=r['id'], excluded=r['excluded'], fields={k:r['fields'].get(k) for k in
+             ('date', 'booking_date', 'value_date', 'date_basis', 'amount_minor', 'direction', 'balance', 'source_order_anchor')
+             if k != 'source_order_anchor' or r['fields'].get(k) is not None}) for r in effective]))
+    return result
+
+
+def accepted_difference(result, request):
+    return bool(request.get('balance_exception_reason', '').strip()
+                and request.get('balance_exception_revision') == result['checks_revision'])
+
+
+def arithmetic_problems(result):
+    problems = []
+    for check in result['checks']:
+        if check['status'] != 'difference':
+            continue
+        if check['kind'] == 'running_balance':
+            for finding in check['findings']:
+                problems.append(dict(message='The payments since the previous printed balance do not add up to this balance.',
+                                     row_id=finding.get('row_id'), page=finding.get('page'), check='running_balance',
+                                     **{key: finding[key] for key in ('expected_minor', 'printed_minor', 'difference_minor')}))
+        else:
+            message = {'closing_balance': 'The payments do not add up to the printed closing balance.',
+                       'credit_total': 'The money in does not agree with the printed total.',
+                       'debit_total': 'The money out does not agree with the printed total.',
+                       'fee_total': 'The fees do not add up to the printed fee total. Check the charges and the total in the PDF.',
+                       'interest_total': 'The interest charges do not add up to the printed interest total. Check the charges and the total in the PDF.'}[check['kind']]
+            problems.append(dict(message=message, row_id=check.get('row_id'), page=check.get('page'), check=check['kind'],
+                                 **{key: check[key] for key in ('expected_minor', 'printed_minor', 'difference_minor')}))
+            for row_id in check.get('contributing_row_ids', []):
+                problems.append(dict(message=message, row_id=row_id, page=check.get('page'), check=check['kind']))
+    return problems

@@ -1,4 +1,5 @@
 import { File as FileIcon } from "lucide-react"
+import { useState } from "react"
 import type { EvidenceFile } from "@/types/evidence.types"
 import { TextPreview } from "./previews/TextPreview"
 import { ImagePreview } from "./previews/ImagePreview"
@@ -41,7 +42,7 @@ export function FilePreviewPanel({ file, caseId }: FilePreviewPanelProps) {
   }
 
   if (PDF_EXTS.has(ext)) {
-    return <PdfPreview evidenceId={file.id} />
+    return <PdfReadingPreview key={file.id} file={file} />
   }
 
   return (
@@ -52,4 +53,24 @@ export function FilePreviewPanel({ file, caseId }: FilePreviewPanelProps) {
       </p>
     </div>
   )
+}
+
+function PdfReadingPreview({ file }: { file: EvidenceFile }) {
+  const [reading, setReading] = useState(file.id)
+  return <div className="space-y-3">
+    {!!file.reading_versions?.length && <details className="rounded border p-3 text-sm">
+      <summary className="cursor-pointer font-medium">Reading history · one original PDF</summary>
+      <p className="my-2 text-muted-foreground">Loupe retained {file.reading_versions.length} additional {file.reading_versions.length === 1 ? "reading" : "readings"} while preparing Financial statements. These contain the same PDF bytes and are not additional uploads. Earlier readings and their citations remain available.</p>
+      <label className="block">PDF version
+        <select aria-label="PDF reading version" value={reading} onChange={(event) => setReading(event.target.value)}
+          className="ml-2 max-w-full rounded border bg-background p-2">
+          <option value={file.id}>Original uploaded PDF</option>
+          {file.reading_versions.map((version, index) => <option value={version.id} key={version.id}>
+            Reading {index + 1} · {version.created_at ? new Date(version.created_at).toLocaleString() : "Date unavailable"} · {version.status}
+          </option>)}
+        </select>
+      </label>
+    </details>}
+    <PdfPreview key={reading} evidenceId={reading} />
+  </div>
 }

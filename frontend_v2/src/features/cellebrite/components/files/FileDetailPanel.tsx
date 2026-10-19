@@ -3,6 +3,8 @@ import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { evidenceAPI } from "@/features/evidence/api"
+import { ProcessHoldDialog } from "@/features/evidence/components/ProcessHoldDialog"
+import { useGuardedProcess } from "@/features/evidence/hooks/use-guarded-process"
 import { workspaceAPI } from "@/features/workspace/api"
 import { downloadProtectedFile, openProtectedFile, useProtectedObjectUrl } from "@/lib/protected-file"
 
@@ -36,6 +38,14 @@ export function FileDetailPanel({
   onClose: () => void
   onFileChanged: (file: CellebriteFileRecord) => void
 }) {
+  // Called before the early return below, because having no file selected must
+  // not change how many hooks this component runs.
+  //
+  // Kept whole as well as destructured, because the dialog takes the gate
+  // rather than its pieces. See `ProcessGate`.
+  const gate = useGuardedProcess(caseId)
+  const { start: startProcess, isChecking, isProcessing } = gate
+
   if (!file) {
     return (
       <aside className="flex w-96 shrink-0 items-center justify-center border-l border-border bg-muted/20 p-4 text-center text-sm text-muted-foreground">
@@ -57,8 +67,25 @@ export function FileDetailPanel({
     }
   }
 
+  /**
+   * Deliberately not routed through `run`.
+   *
+   * The gate already says what it held and why, and already reports a failed
+   * send, so `run` would put a second toast on top of the first and would
+   * announce success for a request that was held rather than started.
+   */
+  async function processFile() {
+    if ((await startProcess({ fileIds: [id] })) !== "started") return
+    toast.success("Started AI processing")
+  }
+
   return (
     <aside className="flex w-96 shrink-0 flex-col border-l border-border bg-card">
+      {/* Only on this branch. The other one renders a placeholder for "no file
+          selected", and a hold cannot exist there: the request came from this
+          file's own Process button, and losing the selection unmounts the gate
+          that holds it. */}
+      <ProcessHoldDialog gate={gate} />
       <div className="flex items-center gap-2 border-b border-border px-3 py-2" style={{ backgroundColor: `${color}18` }}>
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-semibold text-foreground">{fileName(file)}</div>
@@ -129,7 +156,12 @@ export function FileDetailPanel({
               }
             />
             <ActionButton icon={Pin} label="Pin" onClick={() => void run(() => workspaceAPI.pinItem(caseId, "evidence", id), "Pinned file")} />
-            <ActionButton icon={Sparkles} label="Process" onClick={() => void run(() => evidenceAPI.processBackground(caseId, [id]), "Started AI processing")} />
+            <ActionButton
+              icon={Sparkles}
+              label="Process"
+              disabled={isChecking || isProcessing}
+              onClick={() => void processFile()}
+            />
             <Button
               type="button"
               variant="outline"
@@ -216,15 +248,24 @@ function ActionButton({
   icon: Icon,
   label,
   active,
+  disabled,
   onClick,
 }: {
   icon: typeof CheckCircle2
   label: string
   active?: boolean
+  disabled?: boolean
   onClick: () => void
 }) {
   return (
-    <Button type="button" variant={active ? "secondary" : "outline"} size="sm" className="h-8 justify-start gap-1 px-2 text-xs" onClick={onClick}>
+    <Button
+      type="button"
+      variant={active ? "secondary" : "outline"}
+      size="sm"
+      className="h-8 justify-start gap-1 px-2 text-xs"
+      disabled={disabled}
+      onClick={onClick}
+    >
       <Icon className="size-3.5" />
       {label}
     </Button>
