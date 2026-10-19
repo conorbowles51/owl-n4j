@@ -186,13 +186,24 @@ class ReadinessDrainTests(TestCase):
         return result, len(calls)
 
     def test_refreshes_run_while_the_pending_count_falls(self):
-        self.assertEqual(self.drain([35, 20, 3, 0]), (dict(before=35, after=0, rounds=3, seconds=0.0), 3))
+        self.assertEqual(self.drain([35, 20, 3, 0]), (dict(before=35, after=0, rounds=3, quiet_rounds=0,
+                                                          stopped='drained', seconds=0.0), 3))
 
-    def test_a_round_that_removes_nothing_ends_the_drain_and_reports_what_is_left(self):
-        self.assertEqual(self.drain([5, 2, 2]), (dict(before=5, after=2, rounds=2, seconds=0.0), 2))
+    def test_a_round_that_settles_nothing_under_load_does_not_end_the_drain(self):
+        # r10-copies under load: budgeted rounds that settle nothing between rounds that do.
+        self.assertEqual(self.drain([44, 42, 42, 40, 40, 40, 37, 0]),
+                         (dict(before=44, after=0, rounds=7, quiet_rounds=3, stopped='drained', seconds=0.0), 7))
+
+    def test_only_consecutive_quiet_rounds_end_the_drain_and_what_is_left_is_reported(self):
+        self.assertEqual(self.drain([5, 2, 2, 2, 2, 2, 2, 1]),
+                         (dict(before=5, after=2, rounds=6, quiet_rounds=5, stopped='no_progress', seconds=0.0), 6))
+
+    def test_a_count_that_grows_is_a_quiet_round(self):
+        self.assertEqual(self.drain([3, 4, 0])[0]['quiet_rounds'], 1)
 
     def test_nothing_pending_runs_no_refresh(self):
-        self.assertEqual(self.drain([0]), (dict(before=0, after=0, rounds=0, seconds=0.0), 0))
+        self.assertEqual(self.drain([0]), (dict(before=0, after=0, rounds=0, quiet_rounds=0, stopped='drained',
+                                                seconds=0.0), 0))
 
 
 class DrainSweepSaveTests(TestCase):

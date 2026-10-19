@@ -179,28 +179,37 @@ def drain_batch(turn, progress, label, *, stall_turns=None, stall_seconds=None, 
                 quiet_turns=quiet_turns)
 
 
-def drain_readiness(refresh, backlog, *, clock=time.monotonic):
+def drain_readiness(refresh, backlog, *, clock=time.monotonic, max_quiet_rounds=5):
     """Let the service's background readiness refresh finish before scoring, bounded by progress.
 
     In the product the batch worker's readiness sweep (refresh_stale_readiness,
     every READINESS_SWEEP_SECONDS) brings statements whose stored readiness
     went stale during preparation up to date with no click; the harness has no
     such worker. ``backlog()`` counts what a list read would still show as
-    being updated; rounds of ``refresh()`` run while that count falls, and the
-    first round that removes nothing ends the drain (what is left is reported).
+    being updated; rounds of ``refresh()`` run while anything is pending. Each
+    round has the sweep's time budget, so on a loaded host a round can settle
+    nothing although the next one settles more (r10-copies: 44 -> 40 and a stop
+    at the first quiet round, where an unbudgeted round settled all 35 left).
+    Only ``max_quiet_rounds`` consecutive rounds that settle nothing end the
+    drain early; what is left is reported, with the rounds and quiet rounds.
     """
     started = clock()
     before = pending = backlog()
-    rounds = 0
+    rounds = quiet = quiet_run = 0
     while pending:
         refresh()
         rounds += 1
         now = backlog()
         if now >= pending:
-            pending = now
-            break
+            quiet += 1
+            quiet_run += 1
+        else:
+            quiet_run = 0
         pending = now
-    return dict(before=before, after=pending, rounds=rounds, seconds=clock() - started)
+        if quiet_run >= max_quiet_rounds:
+            break
+    return dict(before=before, after=pending, rounds=rounds, quiet_rounds=quiet,
+                stopped='drained' if not pending else 'no_progress', seconds=clock() - started)
 
 
 def drain_sweep_save(sweep, *, max_rounds=10, clock=time.monotonic):
@@ -1274,7 +1283,8 @@ def render_summary(result):
         f"incl. children); batch preparation {t['preparation']['seconds']:.1f}s over {t['preparation']['turns']} "
         f"worker turns; background readiness refresh "
         + (f"{t['readiness_refresh']['before']} statement(s) pending -> {t['readiness_refresh']['after']} in "
-           f"{t['readiness_refresh']['rounds']} round(s), {t['readiness_refresh']['seconds']:.1f}s"
+           f"{t['readiness_refresh']['rounds']} round(s) ({t['readiness_refresh'].get('quiet_rounds', 0)} settled nothing), "
+           f"{t['readiness_refresh']['seconds']:.1f}s"
            if t.get('readiness_refresh') else 'not run') +
         f"; batch status read {t['batch_status_seconds']:.2f}s; group import "
         f"{t['group_import']['seconds']:.1f}s; total {t['total_wall_seconds']:.1f}s. Host: "
