@@ -1,26 +1,33 @@
 import { useEffect, useMemo, useState } from "react"
-import {
-  CalendarClock,
-  CheckCircle2,
-  CheckSquare,
-  Circle,
-  Clock,
-  Plus,
-  Trash2,
-  UserRound,
-} from "lucide-react"
+import { useQuery } from "@tanstack/react-query"
+import { CalendarClock, CheckSquare, Plus, Trash2 } from "lucide-react"
+import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { DeadlinesSection } from "@/features/cases/components/DeadlinesSection"
 import { useCaseMembers } from "@/features/cases/hooks/use-case-members"
+import {
+  useCreateDeadline,
+  useUpdateDeadline,
+  useDeleteDeadline,
+} from "@/features/cases/hooks/use-deadlines"
+import { deadlinesAPI } from "@/features/cases/deadlines-api"
 import { cn } from "@/lib/cn"
-import type {
-  InvestigationTask,
-  TaskPriority,
-  TaskStatus,
+import {
+  workspaceAPI,
+  type CaseWorkResponse,
+  type InvestigationTask,
+  type TaskPriority,
+  type TaskStatus,
 } from "../api"
 import {
   useCreateTask,
@@ -29,327 +36,674 @@ import {
   useWork,
 } from "../hooks/use-workspace"
 
-interface TasksSectionProps {
+import { workDateLabel } from "../work-date"
+
+type Deadline = CaseWorkResponse["deadlines"][number]
+type Selection =
+  | { type: "task"; task?: InvestigationTask }
+  | { type: "deadline"; deadline?: Deadline }
+interface Props {
   caseId: string
   canEdit?: boolean
   initialItemId?: string | null
 }
 
-type WorkSurface = "upcoming" | "tasks" | "deadlines"
-
-const PRIORITY_STYLE: Record<TaskPriority, { label: string; className: string }> = {
-  urgent: { label: "Urgent", className: "border-red-500/20 bg-red-500/10 text-red-600 dark:text-red-300" },
-  high: { label: "High", className: "border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300" },
-  standard: { label: "Standard", className: "" },
-  low: { label: "Low", className: "text-muted-foreground" },
+const errorMessage = (error: unknown) =>
+  error instanceof Error ? error.message : "Could not save changes. Try again."
+const localDateTime = (value?: string | null) => {
+  if (!value) return ""
+  const date = new Date(value)
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 16)
 }
 
-const STATUS_ORDER: TaskStatus[] = ["todo", "in_progress", "done"]
-const STATUS_META: Record<TaskStatus, { label: string; icon: typeof Circle }> = {
-  todo: { label: "To Do", icon: Circle },
-  in_progress: { label: "In Progress", icon: Clock },
-  done: { label: "Done", icon: CheckCircle2 },
-}
-
-function groupByStatus(tasks: InvestigationTask[]) {
-  return STATUS_ORDER.reduce<Record<TaskStatus, InvestigationTask[]>>(
-    (groups, status) => {
-      groups[status] = tasks.filter((task) => task.status === status)
-      return groups
-    },
-    { todo: [], in_progress: [], done: [] },
+function WorkItemDialog({
+  caseId,
+  selection,
+  canEdit,
+  tasks,
+  deadlines,
+  onClose,
+}: {
+  caseId: string
+  selection: Selection
+  canEdit: boolean
+  tasks: InvestigationTask[]
+  deadlines: Deadline[]
+  onClose: () => void
+}) {
+  const task = selection.type === "task" ? selection.task : undefined
+  const deadline =
+    selection.type === "deadline" ? selection.deadline : undefined
+  const existing = Boolean(task || deadline)
+  const members = useCaseMembers(caseId).data ?? []
+  const createTask = useCreateTask(caseId)
+  const updateTask = useUpdateTask(caseId)
+  const createDeadline = useCreateDeadline(caseId)
+  const updateDeadline = useUpdateDeadline(caseId)
+  const [title, setTitle] = useState(task?.title ?? deadline?.name ?? "")
+  const [description, setDescription] = useState(task?.description ?? "")
+  const [priority, setPriority] = useState<TaskPriority>(
+    task?.priority ?? "standard"
+  )
+  const [status, setStatus] = useState<TaskStatus>(task?.status ?? "todo")
+  const [assignee, setAssignee] = useState(task?.assignee_user_id ?? "")
+  const [dueAt, setDueAt] = useState(localDateTime(task?.due_at))
+  const [dueDate, setDueDate] = useState(deadline?.due_date ?? "")
+  const [deadlineId, setDeadlineId] = useState(task?.deadline_id ?? "")
+  const [parentId, setParentId] = useState(task?.parent_task_id ?? "")
+  const [error, setError] = useState("")
+  const snapshot = JSON.stringify([
+    title,
+    description,
+    priority,
+    status,
+    assignee,
+    dueAt,
+    dueDate,
+    deadlineId,
+    parentId,
+  ])
+  const [original] = useState(snapshot)
+  const dirty = original !== snapshot
+  const busy =
+    createTask.isPending ||
+    updateTask.isPending ||
+    createDeadline.isPending ||
+    updateDeadline.isPending
+  useEffect(() => {
+    if (!dirty) return
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ""
+    }
+    window.addEventListener("beforeunload", warn)
+    return () => window.removeEventListener("beforeunload", warn)
+  }, [dirty])
+  const close = () => {
+    if (!busy && (!dirty || window.confirm("Discard your unsaved changes?")))
+      onClose()
+  }
+  const save = async (event: React.FormEvent) => {
+    event.preventDefault()
+    setError("")
+    try {
+      if (selection.type === "deadline") {
+        const data = { name: title.trim(), due_date: dueDate }
+        if (deadline)
+          await updateDeadline.mutateAsync({ deadlineId: deadline.id, data })
+        else await createDeadline.mutateAsync(data)
+      } else {
+        const data = {
+          title: title.trim(),
+          description: description.trim() || null,
+          priority,
+          status,
+          assignee_user_id: assignee || null,
+          due_at: dueAt ? new Date(dueAt).toISOString() : null,
+          deadline_id: deadlineId || null,
+          parent_task_id: parentId || null,
+        }
+        if (task)
+          await updateTask.mutateAsync({ taskId: task.id, updates: data })
+        else await createTask.mutateAsync({ ...data, links: [] })
+      }
+      toast.success(`${selection.type === "task" ? "Task" : "Deadline"} saved`)
+      onClose()
+    } catch (e) {
+      setError(errorMessage(e))
+    }
+  }
+  return (
+    <Dialog open onOpenChange={(open) => !open && close()}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle>
+            {canEdit ? (existing ? "Edit" : "New") : "View"} {selection.type}
+          </DialogTitle>
+          <DialogDescription>
+            {selection.type === "task"
+              ? "Assign work, set an optional due date and link it to a case deadline."
+              : "Record a case date. Court and jurisdiction details remain in Case Summary."}
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={save} className="space-y-3">
+          <fieldset disabled={!canEdit || busy} className="space-y-3">
+            <label className="block space-y-1 text-xs">
+              {selection.type === "task" ? "Task title" : "Deadline name"}
+              <Input
+                aria-label={
+                  selection.type === "task" ? "Task title" : "Deadline name"
+                }
+                required
+                autoFocus
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+              />
+            </label>
+            {selection.type === "deadline" ? (
+              <label className="block space-y-1 text-xs">
+                Due date
+                <Input
+                  aria-label="Deadline due date"
+                  required
+                  type="date"
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
+                />
+              </label>
+            ) : (
+              <>
+                <label className="block space-y-1 text-xs">
+                  Description
+                  <Textarea
+                    aria-label="Task description"
+                    rows={3}
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                  />
+                </label>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="text-xs">
+                    Priority
+                    <select
+                      aria-label="Task priority"
+                      className="mt-1 h-9 w-full rounded-md border bg-background px-2"
+                      value={priority}
+                      onChange={(e) =>
+                        setPriority(e.target.value as TaskPriority)
+                      }
+                    >
+                      {["low", "standard", "high", "urgent"].map((v) => (
+                        <option key={v} value={v}>
+                          {v}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-xs">
+                    Status
+                    <select
+                      aria-label="Task status"
+                      className="mt-1 h-9 w-full rounded-md border bg-background px-2"
+                      value={status}
+                      onChange={(e) => setStatus(e.target.value as TaskStatus)}
+                    >
+                      <option value="todo">To Do</option>
+                      <option value="in_progress">In Progress</option>
+                      <option value="done">Done</option>
+                    </select>
+                  </label>
+                </div>
+                <label className="block text-xs">
+                  Assignee
+                  <select
+                    aria-label="Task assignee"
+                    className="mt-1 h-9 w-full rounded-md border bg-background px-2"
+                    value={assignee}
+                    onChange={(e) => setAssignee(e.target.value)}
+                  >
+                    <option value="">Unassigned</option>
+                    {assignee &&
+                      !members.some((m) => m.user_id === assignee) && (
+                        <option value={assignee}>
+                          {task?.assignee_name || "Existing assignee"}
+                        </option>
+                      )}
+                    {members.map((m) => (
+                      <option key={m.user_id} value={m.user_id}>
+                        {m.user_name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block text-xs">
+                  Due date and time (optional)
+                  <Input
+                    aria-label="Task due date and time"
+                    type="datetime-local"
+                    value={dueAt}
+                    onChange={(e) => setDueAt(e.target.value)}
+                  />
+                </label>
+                <label className="block text-xs">
+                  Linked deadline
+                  <select
+                    aria-label="Linked deadline"
+                    className="mt-1 h-9 w-full rounded-md border bg-background px-2"
+                    value={deadlineId}
+                    onChange={(e) => setDeadlineId(e.target.value)}
+                  >
+                    <option value="">No linked deadline</option>
+                    {deadlineId &&
+                      !deadlines.some((d) => d.id === deadlineId) && (
+                        <option value={deadlineId}>
+                          {task?.deadline_name || "Existing deadline"}
+                        </option>
+                      )}
+                    {deadlines.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.name} · {d.due_date}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block text-xs">
+                  Parent task
+                  <select
+                    aria-label="Parent task"
+                    className="mt-1 h-9 w-full rounded-md border bg-background px-2"
+                    value={parentId}
+                    onChange={(e) => setParentId(e.target.value)}
+                  >
+                    <option value="">Top-level task</option>
+                    {parentId &&
+                      !tasks.some(
+                        (t) =>
+                          t.id === parentId &&
+                          !t.parent_task_id &&
+                          t.status !== "done"
+                      ) && (
+                        <option value={parentId}>Existing parent task</option>
+                      )}
+                    {tasks
+                      .filter(
+                        (t) =>
+                          t.id !== task?.id &&
+                          !t.parent_task_id &&
+                          t.status !== "done"
+                      )
+                      .map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.title}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+              </>
+            )}
+          </fieldset>
+          {error && (
+            <p role="alert" className="text-xs text-destructive">
+              {error} Your entries are still here.
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy}
+              onClick={close}
+            >
+              {canEdit ? "Cancel" : "Close"}
+            </Button>
+            {canEdit && (
+              <Button
+                type="submit"
+                disabled={
+                  busy ||
+                  !title.trim() ||
+                  (selection.type === "deadline" && !dueDate)
+                }
+              >
+                {busy
+                  ? "Saving…"
+                  : existing
+                    ? "Save changes"
+                    : `Create ${selection.type}`}
+              </Button>
+            )}
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
 
-function formatWhen(value: string) {
-  return new Date(value).toLocaleString([], {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: value.includes("T") ? "2-digit" : undefined,
-    minute: value.includes("T") ? "2-digit" : undefined,
-  })
-}
-
-export function TasksSection({ caseId, canEdit = true, initialItemId = null }: TasksSectionProps) {
-  const [surface, setSurface] = useState<WorkSurface>("upcoming")
+export function TasksSection({
+  caseId,
+  canEdit = true,
+  initialItemId = null,
+}: Props) {
+  const [typeFilter, setTypeFilter] = useState("all")
   const [statusFilter, setStatusFilter] = useState<TaskStatus | "all">("all")
   const [assigneeFilter, setAssigneeFilter] = useState("all")
-  const workQuery = useWork(caseId, {
+  const [adding, setAdding] = useState(false)
+  const [selection, setSelection] = useState<Selection | null>(null)
+  const [openedInitial, setOpenedInitial] = useState<string | null>(null)
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 60000)
+    return () => window.clearInterval(timer)
+  }, [])
+  const work = useWork(caseId, {
     taskStatus: statusFilter,
     assigneeUserId: assigneeFilter === "all" ? undefined : assigneeFilter,
   })
-  const membersQuery = useCaseMembers(caseId)
-  const createMutation = useCreateTask(caseId)
-  const updateMutation = useUpdateTask(caseId)
-  const deleteMutation = useDeleteTask(caseId)
-  const tasks = useMemo(() => workQuery.data?.tasks ?? [], [workQuery.data?.tasks])
-  const deadlines = useMemo(
-    () => workQuery.data?.deadlines ?? [],
-    [workQuery.data?.deadlines],
-  )
-  const members = membersQuery.data ?? []
-  const [renderedAt] = useState(() => Date.now())
-
-  const [title, setTitle] = useState("")
-  const [description, setDescription] = useState("")
-  const [priority, setPriority] = useState<TaskPriority>("standard")
-  const [assigneeUserId, setAssigneeUserId] = useState("")
-  const [dueAt, setDueAt] = useState("")
-  const [deadlineId, setDeadlineId] = useState("")
-  const [parentTaskId, setParentTaskId] = useState("")
-
+  const members = useCaseMembers(caseId).data ?? []
+  const update = useUpdateTask(caseId)
+  const removeTask = useDeleteTask(caseId)
+  const removeDeadline = useDeleteDeadline(caseId)
+  const initial = useQuery({
+    queryKey: ["workspace", caseId, "work-item", initialItemId],
+    enabled: Boolean(initialItemId),
+    retry: false,
+    queryFn: async (): Promise<Selection> => {
+      // Shared links can point beyond the first page or current filters.
+      const [task, dates] = await Promise.allSettled([
+        workspaceAPI.getTask(caseId, initialItemId!),
+        deadlinesAPI.list(caseId),
+      ])
+      if (task.status === "fulfilled") return { type: "task", task: task.value }
+      const deadline =
+        dates.status === "fulfilled"
+          ? dates.value.find((d) => d.id === initialItemId)
+          : undefined
+      if (deadline) return { type: "deadline", deadline }
+      throw new Error(
+        "This item could not be loaded. It may have been removed or you may not have access."
+      )
+    },
+  })
   useEffect(() => {
-    if (!initialItemId) return
-    if (tasks.some((task) => task.id === initialItemId)) setSurface("tasks")
-    else if (deadlines.some((deadline) => deadline.id === initialItemId)) setSurface("deadlines")
-  }, [deadlines, initialItemId, tasks])
-
-  const topLevelTasks = tasks.filter((task) => !task.parent_task_id)
-  const grouped = groupByStatus(tasks)
-  const upcoming = useMemo(() => {
-    const taskDates = tasks
-      .filter((task) => task.due_at && task.status !== "done")
-      .map((task) => ({
-        id: `task-${task.id}`,
-        type: "Task" as const,
-        title: task.title,
-        date: task.due_at!,
-        detail: task.assignee_name || "Unassigned",
-        urgent: task.priority === "urgent",
-      }))
-    const deadlineDates = deadlines.map((deadline) => ({
-      id: `deadline-${deadline.id}`,
-      type: "Deadline" as const,
-      title: deadline.name,
-      date: `${deadline.due_date}T00:00:00`,
-      detail: "Canonical case deadline",
-      urgent: new Date(`${deadline.due_date}T00:00:00`).getTime() < renderedAt,
-    }))
-    return [...taskDates, ...deadlineDates]
-      .sort((left, right) => new Date(left.date).getTime() - new Date(right.date).getTime())
-      .slice(0, 50)
-  }, [deadlines, renderedAt, tasks])
-
-  const handleAdd = () => {
-    if (!title.trim()) return
-    createMutation.mutate(
-      {
-        title: title.trim(),
-        description: description.trim() || null,
-        status: "todo",
-        priority,
-        assignee_user_id: assigneeUserId || null,
-        due_at: dueAt ? new Date(dueAt).toISOString() : null,
-        deadline_id: deadlineId || null,
-        parent_task_id: parentTaskId || null,
-        links: [],
-      },
-      {
-        onSuccess: () => {
-          setTitle("")
-          setDescription("")
-          setPriority("standard")
-          setAssigneeUserId("")
-          setDueAt("")
-          setDeadlineId("")
-          setParentTaskId("")
-        },
-      },
+    if (initial.data && openedInitial !== initialItemId) {
+      setSelection(initial.data)
+      setOpenedInitial(initialItemId)
+    }
+  }, [initial.data, initialItemId, openedInitial])
+  const tasks = useMemo(() => work.data?.tasks ?? [], [work.data?.tasks])
+  const deadlines = useMemo(
+    () => work.data?.deadlines ?? [],
+    [work.data?.deadlines]
+  )
+  const items = useMemo(() => {
+    const list = [
+      ...(typeFilter === "deadlines"
+        ? []
+        : tasks.map((task) => ({
+            id: task.id,
+            title: task.title,
+            date: task.due_at ?? null,
+            selection: { type: "task", task } as Selection,
+          }))),
+      ...(typeFilter === "tasks" ||
+      statusFilter !== "all" ||
+      assigneeFilter !== "all"
+        ? []
+        : deadlines.map((deadline) => ({
+            id: deadline.id,
+            title: deadline.name,
+            date: deadline.due_date,
+            selection: { type: "deadline", deadline } as Selection,
+          }))),
+    ]
+    return list.sort(
+      (a, b) =>
+        (a.date
+          ? new Date(
+              a.date.includes("T") ? a.date : `${a.date}T00:00:00`
+            ).getTime()
+          : Infinity) -
+          (b.date
+            ? new Date(
+                b.date.includes("T") ? b.date : `${b.date}T00:00:00`
+              ).getTime()
+            : Infinity) || a.title.localeCompare(b.title)
     )
+  }, [tasks, deadlines, typeFilter, statusFilter, assigneeFilter])
+  const changeStatus = async (task: InvestigationTask, status: TaskStatus) => {
+    try {
+      await update.mutateAsync({ taskId: task.id, updates: { status } })
+    } catch (e) {
+      toast.error(errorMessage(e))
+    }
   }
-
-  const toggleComplete = (task: InvestigationTask) => {
-    updateMutation.mutate({
-      taskId: task.id,
-      updates: { status: task.status === "done" ? "todo" : "done" },
-    })
+  const remove = async (item: (typeof items)[number]) => {
+    if (
+      !window.confirm(
+        `Remove “${item.title}”?${item.selection.type === "deadline" ? " Linked tasks will lose their deadline link." : ""}`
+      )
+    )
+      return
+    try {
+      if (item.selection.type === "task") await removeTask.mutateAsync(item.id)
+      else await removeDeadline.mutateAsync(item.id)
+      toast.success("Item removed")
+    } catch (e) {
+      toast.error(errorMessage(e))
+    }
   }
-
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className="space-y-4">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2">
-            <CheckSquare className="size-4 text-blue-500" />
-            <h2 className="text-sm font-semibold">Work</h2>
-            <Badge variant="slate" className="h-5 px-1.5 text-[10px]">
-              {workQuery.data?.task_total ?? tasks.length} tasks
-            </Badge>
-          </div>
+          <h2 className="flex items-center gap-2 text-sm font-semibold">
+            <CalendarClock className="size-4" />
+            Deadlines
+          </h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            Assign work to case members and keep operational dates in one place.
+            Tasks and case dates together, including tasks without a due date.
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {work.data?.task_total ?? 0} tasks ·{" "}
+            {work.data?.deadline_total ?? 0} deadlines
           </p>
         </div>
-        <div className="flex rounded-lg border border-border bg-muted/20 p-0.5">
-          {(["upcoming", "tasks", "deadlines"] as WorkSurface[]).map((value) => (
-            <Button
-              key={value}
-              variant={surface === value ? "secondary" : "ghost"}
-              size="sm"
-              className="h-7 capitalize"
-              onClick={() => setSurface(value)}
-            >
-              {value}
-            </Button>
+        {canEdit && (
+          <Button size="sm" onClick={() => setAdding(true)}>
+            <Plus className="size-3.5" />
+            Add new
+          </Button>
+        )}
+      </div>
+      {adding && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card p-3">
+          <span className="text-xs">What would you like to add?</span>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setSelection({ type: "task" })
+              setAdding(false)
+            }}
+          >
+            <CheckSquare className="size-3.5" />
+            Task
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setSelection({ type: "deadline" })
+              setAdding(false)
+            }}
+          >
+            <CalendarClock className="size-3.5" />
+            Deadline
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setAdding(false)}>
+            Cancel
+          </Button>
+        </div>
+      )}
+      <div className="flex flex-wrap gap-3">
+        <label className="text-xs">
+          Type
+          <select
+            aria-label="Type"
+            className="ml-2 h-8 rounded-md border bg-background px-2"
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+          >
+            <option value="all">All</option>
+            <option value="tasks">Tasks</option>
+            <option value="deadlines">Deadlines</option>
+          </select>
+        </label>
+        <label className="text-xs">
+          Status
+          <select
+            aria-label="Status"
+            className="ml-2 h-8 rounded-md border bg-background px-2"
+            value={statusFilter}
+            onChange={(e) =>
+              setStatusFilter(e.target.value as TaskStatus | "all")
+            }
+          >
+            <option value="all">All statuses</option>
+            <option value="todo">To Do</option>
+            <option value="in_progress">In Progress</option>
+            <option value="done">Done</option>
+          </select>
+        </label>
+        <label className="text-xs">
+          Assignee
+          <select
+            aria-label="Assignee"
+            className="ml-2 h-8 rounded-md border bg-background px-2"
+            value={assigneeFilter}
+            onChange={(e) => setAssigneeFilter(e.target.value)}
+          >
+            <option value="all">All case members</option>
+            {members.map((m) => (
+              <option key={m.user_id} value={m.user_id}>
+                {m.user_name}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      {(statusFilter !== "all" || assigneeFilter !== "all") && (
+        <p className="text-xs text-muted-foreground">
+          Status and assignee apply to tasks. Clear these filters to include
+          case deadlines.
+        </p>
+      )}
+      {initial.isError && (
+        <p role="alert" className="text-xs text-destructive">
+          {errorMessage(initial.error)}{" "}
+          <Button variant="ghost" size="sm" onClick={() => initial.refetch()}>
+            Try again
+          </Button>
+        </p>
+      )}
+      {work.isError && (
+        <div role="alert" className="rounded-lg border p-4 text-sm">
+          The list could not be loaded.{" "}
+          <Button variant="outline" onClick={() => work.refetch()}>
+            Try again
+          </Button>
+        </div>
+      )}
+      {work.isLoading ? (
+        <div className="h-32 animate-pulse rounded-lg bg-muted" />
+      ) : !items.length && !work.isError ? (
+        <p className="rounded-lg border border-dashed p-8 text-center text-xs text-muted-foreground">
+          No tasks or deadlines match these filters.
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {items.map((item, i) => (
+            <div key={`${item.selection.type}-${item.id}`}>
+              {!item.date && (i === 0 || items[i - 1].date) && (
+                <h3 className="mb-2 mt-5 text-xs font-semibold">No due date</h3>
+              )}
+              <div
+                className={cn(
+                  "flex items-start gap-3 rounded-lg border bg-card p-3",
+                  item.id === initialItemId && "ring-2 ring-ring"
+                )}
+              >
+                {item.selection.type === "task" && (
+                  <Checkbox
+                    className="mt-1"
+                    aria-label={`Mark ${item.title} complete`}
+                    checked={item.selection.task?.status === "done"}
+                    disabled={!canEdit || update.isPending}
+                    onCheckedChange={() =>
+                      changeStatus(
+                        item.selection.type === "task"
+                          ? item.selection.task!
+                          : tasks[0],
+                        item.selection.type === "task" &&
+                          item.selection.task?.status === "done"
+                          ? "todo"
+                          : "done"
+                      )
+                    }
+                  />
+                )}
+                <button
+                  className="min-w-0 flex-1 text-left"
+                  onClick={() => setSelection(item.selection)}
+                  aria-label={`Open ${item.title}`}
+                >
+                  <span className="break-words text-sm font-medium">
+                    {item.title}
+                  </span>
+                  <span className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                    <Badge variant="outline">
+                      {item.selection.type === "task" ? "Task" : "Deadline"}
+                    </Badge>
+                    <span>{workDateLabel(item.date, now)}</span>
+                  </span>
+                  {item.selection.type === "task" && (
+                    <span className="mt-1 block text-xs text-muted-foreground">
+                      {
+                        {
+                          todo: "To Do",
+                          in_progress: "In Progress",
+                          done: "Done",
+                        }[item.selection.task?.status ?? "todo"]
+                      }{" "}
+                      · {item.selection.task?.assignee_name || "Unassigned"}
+                      {item.selection.task?.priority !== "standard"
+                        ? ` · ${item.selection.task?.priority}`
+                        : ""}
+                      {item.selection.task?.subtask_progress.total
+                        ? ` · ${item.selection.task.subtask_progress.done}/${item.selection.task.subtask_progress.total} subtasks done`
+                        : ""}
+                    </span>
+                  )}
+                </button>
+                {canEdit && (
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    disabled={removeTask.isPending || removeDeadline.isPending}
+                    aria-label={`Delete ${item.title}`}
+                    onClick={() => remove(item)}
+                  >
+                    <Trash2 className="size-3.5" />
+                  </Button>
+                )}
+              </div>
+            </div>
           ))}
         </div>
-      </div>
-
-      {surface === "upcoming" && (
-        <section className="rounded-xl border border-border bg-card">
-          <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-            <CalendarClock className="size-4 text-amber-500" />
-            <h3 className="text-xs font-semibold">Upcoming dates</h3>
-          </div>
-          {workQuery.isLoading ? (
-            <div className="h-32 animate-pulse bg-muted/20" />
-          ) : upcoming.length === 0 ? (
-            <p className="px-4 py-8 text-center text-xs text-muted-foreground">
-              No open task dates or case deadlines.
-            </p>
-          ) : (
-            <div className="divide-y divide-border">
-              {upcoming.map((item) => (
-                <div key={item.id} className="flex items-center gap-3 px-4 py-3">
-                  <div className={cn(
-                    "size-2 rounded-full",
-                    item.urgent ? "bg-red-500" : item.type === "Deadline" ? "bg-amber-500" : "bg-blue-500",
-                  )} />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <p className="truncate text-xs font-medium">{item.title}</p>
-                      <Badge variant="outline" className="text-[9px]">{item.type}</Badge>
-                    </div>
-                    <p className="mt-0.5 text-[10px] text-muted-foreground">{item.detail}</p>
-                  </div>
-                  <time className="text-[10px] font-medium text-muted-foreground">
-                    {formatWhen(item.date)}
-                  </time>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
       )}
-
-      {surface === "tasks" && (
-        <>
-          <div className="flex flex-wrap items-center gap-2">
-            <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground" htmlFor="task-status-filter">Status</label>
-            <select id="task-status-filter" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as TaskStatus | "all")} className="h-8 rounded-md border border-input bg-background px-2 text-xs">
-              <option value="all">All statuses</option><option value="todo">To Do</option><option value="in_progress">In Progress</option><option value="done">Done</option>
-            </select>
-            <label className="ml-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground" htmlFor="task-assignee-filter">Assignee</label>
-            <select id="task-assignee-filter" value={assigneeFilter} onChange={(event) => setAssigneeFilter(event.target.value)} className="h-8 rounded-md border border-input bg-background px-2 text-xs">
-              <option value="all">All case members</option>
-              {members.map((member) => <option key={member.user_id} value={member.user_id}>{member.user_name}</option>)}
-            </select>
-          </div>
-
-          {canEdit && (
-            <section className="space-y-3 rounded-xl border border-border bg-card p-4">
-              <div className="flex items-center gap-2"><Plus className="size-3.5 text-blue-500" /><h3 className="text-xs font-semibold">Add task</h3></div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Input aria-label="Task title" placeholder="What needs to be done?" value={title} onChange={(event) => setTitle(event.target.value)} className="sm:col-span-2" />
-                <Textarea aria-label="Task description" placeholder="Context or expected outcome" value={description} onChange={(event) => setDescription(event.target.value)} rows={2} className="sm:col-span-2" />
-                <label className="space-y-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Priority
-                  <select aria-label="Task priority" value={priority} onChange={(event) => setPriority(event.target.value as TaskPriority)} className="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs font-normal normal-case tracking-normal text-foreground">
-                    <option value="low">Low</option><option value="standard">Standard</option><option value="high">High</option><option value="urgent">Urgent</option>
-                  </select>
-                </label>
-                <label className="space-y-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Assignee
-                  <select aria-label="Task assignee" value={assigneeUserId} onChange={(event) => setAssigneeUserId(event.target.value)} className="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs font-normal normal-case tracking-normal text-foreground">
-                    <option value="">Unassigned</option>{members.map((member) => <option key={member.user_id} value={member.user_id}>{member.user_name}</option>)}
-                  </select>
-                </label>
-                <label className="space-y-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Due date and time
-                  <Input aria-label="Task due date and time" type="datetime-local" value={dueAt} onChange={(event) => setDueAt(event.target.value)} className="mt-1 font-normal normal-case tracking-normal" />
-                </label>
-                <label className="space-y-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Linked deadline
-                  <select aria-label="Linked deadline" value={deadlineId} onChange={(event) => setDeadlineId(event.target.value)} className="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs font-normal normal-case tracking-normal text-foreground">
-                    <option value="">No linked deadline</option>{deadlines.map((deadline) => <option key={deadline.id} value={deadline.id}>{deadline.name} · {deadline.due_date}</option>)}
-                  </select>
-                </label>
-                <label className="space-y-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground sm:col-span-2">Parent task
-                  <select aria-label="Parent task" value={parentTaskId} onChange={(event) => setParentTaskId(event.target.value)} className="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-xs font-normal normal-case tracking-normal text-foreground">
-                    <option value="">Top-level task</option>{topLevelTasks.filter((task) => task.status !== "done").map((task) => <option key={task.id} value={task.id}>{task.title}</option>)}
-                  </select>
-                </label>
-              </div>
-              <div className="flex justify-end"><Button size="sm" onClick={handleAdd} disabled={!title.trim() || createMutation.isPending}><Plus className="size-3.5" /> Create task</Button></div>
-            </section>
-          )}
-
-          {workQuery.isLoading ? (
-            <div className="space-y-2">{[1, 2, 3].map((item) => <div key={item} className="h-12 animate-pulse rounded-md bg-muted/30" />)}</div>
-          ) : tasks.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-border py-10 text-center"><CheckSquare className="mx-auto size-8 text-muted-foreground/30" /><p className="mt-2 text-xs text-muted-foreground">No tasks match these filters.</p></div>
-          ) : (
-            <div className="space-y-5">
-              {STATUS_ORDER.map((status) => {
-                const group = grouped[status]
-                if (group.length === 0) return null
-                const meta = STATUS_META[status]
-                const StatusIcon = meta.icon
-                return (
-                  <section key={status} className="space-y-1.5">
-                    <div className="flex items-center gap-1.5"><StatusIcon className="size-3.5 text-muted-foreground" /><h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{meta.label}</h3><span className="text-[10px] text-muted-foreground/60">{group.length}</span></div>
-                    {group.map((task) => {
-                      const priorityMeta = PRIORITY_STYLE[task.priority]
-                      const progress = task.subtask_progress
-                      return (
-                        <div
-                          key={task.id}
-                          data-attention-target={task.id === initialItemId ? "true" : undefined}
-                          className={cn(
-                            "group rounded-lg border border-border bg-card px-3 py-2.5",
-                            task.parent_task_id && "ml-5 border-l-2 border-l-blue-500/40",
-                            task.id === initialItemId && "border-brand-400 ring-2 ring-brand-100 dark:ring-brand-500/15",
-                          )}
-                        >
-                          <div className="flex items-start gap-2.5">
-                            <Checkbox aria-label={`Mark ${task.title} complete`} checked={task.status === "done"} disabled={!canEdit} onCheckedChange={() => toggleComplete(task)} />
-                            <div className="min-w-0 flex-1">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <p className={cn("text-xs font-medium", task.status === "done" && "text-muted-foreground line-through")}>{task.title}</p>
-                                {task.priority !== "standard" && <Badge variant="outline" className={cn("text-[9px]", priorityMeta.className)}>{priorityMeta.label}</Badge>}
-                                {task.parent_task_id && <Badge variant="secondary" className="text-[9px]">Subtask</Badge>}
-                                {task.needs_migration_review && <Badge variant="outline" className="text-[9px] text-amber-600">Review migration</Badge>}
-                              </div>
-                              {task.description && <p className="mt-1 line-clamp-2 text-[11px] text-muted-foreground">{task.description}</p>}
-                              <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
-                                {task.assignee_name && <span className="flex items-center gap-1"><UserRound className="size-3" />{task.assignee_name}</span>}
-                                {task.due_at && <span className="flex items-center gap-1"><Clock className="size-3" />{formatWhen(task.due_at)}</span>}
-                                {task.deadline_name && <span className="flex items-center gap-1"><CalendarClock className="size-3" />{task.deadline_name}</span>}
-                                {progress.total > 0 && <span>{progress.done}/{progress.total} subtasks done</span>}
-                              </div>
-                            </div>
-                            {canEdit && (
-                              <div className="flex items-center gap-1">
-                                <select aria-label={`Status for ${task.title}`} value={task.status} onChange={(event) => updateMutation.mutate({ taskId: task.id, updates: { status: event.target.value as TaskStatus } })} className="h-7 rounded-md border border-input bg-background px-1.5 text-[10px]">
-                                  <option value="todo">To Do</option><option value="in_progress">In Progress</option><option value="done">Done</option>
-                                </select>
-                                <Button variant="ghost" size="icon-sm" aria-label={`Delete ${task.title}`} onClick={() => deleteMutation.mutate(task.id)}><Trash2 className="size-3" /></Button>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </section>
-                )
-              })}
-            </div>
-          )}
-        </>
+      {work.hasNextPage && (
+        <Button
+          variant="outline"
+          disabled={work.isFetchingNextPage}
+          onClick={() => work.fetchNextPage()}
+        >
+          {work.isFetchingNextPage
+            ? "Loading…"
+            : "Load more tasks and deadlines"}
+        </Button>
       )}
-
-      {surface === "deadlines" && (
-        <section className="rounded-xl border border-border bg-card p-4">
-          <div className="mb-2 flex items-center gap-2"><CalendarClock className="size-4 text-amber-500" /><h3 className="text-xs font-semibold">Case deadlines</h3></div>
-          <DeadlinesSection caseId={caseId} canEdit={canEdit} />
-        </section>
+      {selection && (
+        <WorkItemDialog
+          key={`${selection.type}-${selection.type === "task" ? (selection.task?.id ?? "new") : (selection.deadline?.id ?? "new")}`}
+          caseId={caseId}
+          selection={selection}
+          canEdit={canEdit}
+          tasks={tasks}
+          deadlines={deadlines}
+          onClose={() => setSelection(null)}
+        />
       )}
     </div>
   )

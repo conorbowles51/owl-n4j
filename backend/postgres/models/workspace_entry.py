@@ -102,7 +102,7 @@ class WorkspaceEntry(Base, TimestampMixin):
             "AND confidence IS NULL) OR "
             "(entry_type = 'finding' AND lifecycle_state IN "
             "('draft', 'active', 'superseded', 'withdrawn') AND confidence IS NULL "
-            "AND (significance IS NOT NULL OR needs_migration_review = true)) OR "
+            ") OR "
             "(entry_type = 'theory' AND lifecycle_state IN "
             "('proposed', 'investigating', 'substantiated', 'weakened', 'rejected', "
             "'converted') AND significance IS NULL)",

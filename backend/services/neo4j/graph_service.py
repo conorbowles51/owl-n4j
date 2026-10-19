@@ -671,6 +671,13 @@ class GraphService:
                     labels(n)[0] AS type,
                     n.summary AS summary,
                     n.notes AS notes
+                ORDER BY CASE
+                    WHEN toLower(coalesce(n.name, '')) = $search_lower THEN 0
+                    WHEN toLower(coalesce(n.name, '')) STARTS WITH $search_lower THEN 1
+                    WHEN toLower(coalesce(n.name, '')) CONTAINS $search_lower THEN 2
+                    WHEN toLower(coalesce(n.key, '')) = $search_lower THEN 3
+                    ELSE 4 END,
+                    toLower(coalesce(n.name, '')), n.key
                 LIMIT $limit
                 """,
                 **params,

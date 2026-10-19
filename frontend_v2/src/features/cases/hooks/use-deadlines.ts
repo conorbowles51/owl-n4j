@@ -15,6 +15,7 @@ export function useCreateDeadline(caseId: string) {
     mutationFn: (data: { name: string; due_date: string }) =>
       deadlinesAPI.create(caseId, data),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["workspace", caseId, "work"] })
       queryClient.invalidateQueries({ queryKey: ["deadlines", caseId] })
       queryClient.invalidateQueries({ queryKey: ["cases"] })
       queryClient.invalidateQueries({ queryKey: ["workspace", caseId, "overview"] })
@@ -33,6 +34,7 @@ export function useUpdateDeadline(caseId: string) {
       data: { name?: string; due_date?: string }
     }) => deadlinesAPI.update(caseId, deadlineId, data),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["workspace", caseId, "work"] })
       queryClient.invalidateQueries({ queryKey: ["deadlines", caseId] })
       queryClient.invalidateQueries({ queryKey: ["cases"] })
       queryClient.invalidateQueries({ queryKey: ["workspace", caseId, "overview"] })
@@ -46,6 +48,7 @@ export function useDeleteDeadline(caseId: string) {
     mutationFn: (deadlineId: string) =>
       deadlinesAPI.delete(caseId, deadlineId),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["workspace", caseId, "work"] })
       queryClient.invalidateQueries({ queryKey: ["deadlines", caseId] })
       queryClient.invalidateQueries({ queryKey: ["cases"] })
       queryClient.invalidateQueries({ queryKey: ["workspace", caseId, "overview"] })

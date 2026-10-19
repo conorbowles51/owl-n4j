@@ -916,7 +916,7 @@ export function AgentPage() {
     try {
       setMandateUsage(await agentAPI.adoptCurrentMandate(activeThreadId))
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not adopt the current mandate")
+      toast.error(error instanceof Error ? error.message : "Could not adopt the current objective")
     }
   }
 

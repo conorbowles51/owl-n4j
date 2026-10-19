@@ -108,7 +108,7 @@ def _entry_defaults(
         normalized_significance = significance.lower() if significance else None
         if state not in FINDING_STATES:
             raise WorkspaceEntryValidationError(f"Invalid Finding state: {state}")
-        if normalized_significance not in FINDING_SIGNIFICANCE and not allow_migration_review:
+        if normalized_significance is not None and normalized_significance not in FINDING_SIGNIFICANCE:
             raise WorkspaceEntryValidationError(
                 "Finding significance must be High, Medium, or Low"
             )
@@ -1105,9 +1105,9 @@ def change_significance(
     entry_id: UUID,
     current_user: User,
     expected_version: int,
-    significance: str,
+    significance: str | None,
 ) -> dict[str, Any]:
-    """Change a Finding's required significance with revision history."""
+    """Change a Finding's optional significance with revision history."""
 
     entry = _load_entry(db, case_id=case_id, entry_id=entry_id)
     if entry.version != expected_version:
@@ -1116,8 +1116,8 @@ def change_significance(
         )
     if entry.entry_type != "finding":
         raise WorkspaceEntryValidationError("Only Findings have significance")
-    normalized = str(significance).strip().lower()
-    if normalized not in FINDING_SIGNIFICANCE:
+    normalized = str(significance).strip().lower() if significance else None
+    if normalized is not None and normalized not in FINDING_SIGNIFICANCE:
         raise WorkspaceEntryValidationError(
             "Finding significance must be High, Medium, or Low"
         )
@@ -1223,7 +1223,7 @@ def convert_theory_to_finding(
     theory_id: UUID,
     current_user: User,
     expected_version: int,
-    significance: str,
+    significance: str | None,
     title: str | None = None,
     body: str | None = None,
 ) -> dict[str, Any]:

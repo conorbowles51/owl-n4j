@@ -25,12 +25,16 @@ export function useDossier(id?: string | null) {
 }
 function useRefresh(caseId: string, id?: string) {
   const client = useQueryClient()
-  return () => {
-    client.invalidateQueries({ queryKey: dossierKeys.lists(caseId) })
-    client.invalidateQueries({ queryKey: ["significant", caseId] })
-    client.invalidateQueries({ queryKey: ["workspace", caseId, "overview"] })
-    if (id) client.invalidateQueries({ queryKey: dossierKeys.detail(id) })
-  }
+  return () =>
+    Promise.all([
+      client.invalidateQueries({ queryKey: dossierKeys.lists(caseId) }),
+      client.invalidateQueries({ queryKey: ["dossiers", "picker", caseId] }),
+      client.invalidateQueries({ queryKey: ["significant", caseId] }),
+      client.invalidateQueries({ queryKey: ["workspace", caseId, "overview"] }),
+      ...(id
+        ? [client.invalidateQueries({ queryKey: dossierKeys.detail(id) })]
+        : []),
+    ])
 }
 export function useCreateDossier(caseId: string) {
   const refresh = useRefresh(caseId)

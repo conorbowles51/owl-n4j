@@ -460,6 +460,18 @@ class WorkspaceEntryServiceTests(unittest.TestCase):
                     body="<script>alert('x')</script>",
                 )
 
+    def test_unrated_finding_and_explicit_clear_keep_revision_history(self):
+        from services.workspace_entry_service import change_significance
+        with self.SessionLocal() as db:
+            user = self._user(db)
+            finding = create_entry(db, case_id=self.case_id, current_user=user, entry_type="finding", title="Unrated", body="Recorded observation")
+            assert finding["significance"] is None
+            rated = change_significance(db, case_id=self.case_id, entry_id=UUID(finding["id"]), current_user=user, expected_version=finding["version"], significance="high")
+            cleared = change_significance(db, case_id=self.case_id, entry_id=UUID(finding["id"]), current_user=user, expected_version=rated["version"], significance=None)
+            assert cleared["significance"] is None
+            revisions = db.query(WorkspaceEntryRevision).filter_by(entry_id=UUID(finding["id"])).order_by(WorkspaceEntryRevision.revision_number).all()
+            assert [revision.significance for revision in revisions] == [None, "high", None]
+
     def test_database_constraints_reject_invalid_types_relationships_and_duplicate_links(self):
         with self.SessionLocal() as db:
             invalid = WorkspaceEntry(
@@ -513,16 +525,12 @@ class WorkspaceEntryServiceTests(unittest.TestCase):
             with self.assertRaises(IntegrityError):
                 db.commit()
             db.rollback()
+            finding = create_entry(db, case_id=self.case_id, current_user=self._user(db), entry_type="finding", title="Finding", body="Body", significance=None)
+            db.commit()
+            assert finding["significance"] is None
+            assert finding["needs_migration_review"] is False
             with self.assertRaises(WorkspaceEntryValidationError):
-                create_entry(
-                    db,
-                    case_id=self.case_id,
-                    current_user=self._user(db),
-                    entry_type="finding",
-                    title="Finding",
-                    body="Body",
-                    significance=None,
-                )
+                create_entry(db, case_id=self.case_id, current_user=self._user(db), entry_type="finding", title="Invalid", body="Body", significance="automatic")
 
 
 if __name__ == "__main__":

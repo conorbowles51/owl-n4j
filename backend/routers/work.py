@@ -201,6 +201,7 @@ def get_case_work(
     task_status: str | None = None,
     assignee_user_id: UUID | None = None,
     limit: int = Query(100, ge=1, le=250),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
@@ -214,6 +215,7 @@ def get_case_work(
             task_status=task_status,
             assignee_user_id=assignee_user_id,
             limit=limit,
+            offset=offset,
         )
     except Exception as exc:
         _raise_work_error(exc)

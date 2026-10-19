@@ -130,7 +130,7 @@ describe("casework detail in Chromium", () => {
       expect(browserHooks.convert).toHaveBeenCalledWith({
         entryId: theory.id,
         version: 4,
-        significance: "medium",
+        significance: null,
         draft: {
           title: "Established coordinated disposal",
           body: theory.body,

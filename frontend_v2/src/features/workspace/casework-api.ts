@@ -243,7 +243,7 @@ export const caseworkAPI = {
     caseId: string,
     entryId: string,
     expectedVersion: number,
-    significance: FindingSignificance
+    significance: FindingSignificance | null
   ) =>
     fetchAPI<CaseworkEntry>(
       `${base(caseId)}/entries/${encodeURIComponent(entryId)}/significance`,
@@ -257,7 +257,7 @@ export const caseworkAPI = {
     caseId: string,
     entryId: string,
     expectedVersion: number,
-    significance: FindingSignificance,
+    significance: FindingSignificance | null,
     draft?: { title: string; body: string }
   ) =>
     fetchAPI<{ theory: CaseworkEntry; finding: CaseworkEntry }>(

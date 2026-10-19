@@ -35,7 +35,7 @@ export function MandateUsageBanner({
     <div className="flex flex-wrap items-center justify-between gap-2">
       <div className="flex items-center gap-2 text-xs">
         <BookOpenCheck className={`size-3.5 ${incomplete ? "text-muted-foreground" : "text-violet-500"}`} />
-        {incomplete ? <span className="text-muted-foreground">No saved case mandate</span> : <><span className="font-medium">Using case mandate</span><Badge variant="secondary">v{versionNumber}</Badge></>}
+        {incomplete ? <span className="text-muted-foreground">No saved case objective</span> : <><span className="font-medium">Using case objective</span><Badge variant="secondary">v{versionNumber}</Badge></>}
         {temporaryOverride.trim() && <Badge variant="outline">Request override</Badge>}
         {stale && <span className="text-amber-700 dark:text-amber-300">A newer version {activeVersionNumber ? `(v${activeVersionNumber})` : ""} is active.</span>}
       </div>
@@ -44,6 +44,6 @@ export function MandateUsageBanner({
         <Button variant="ghost" size="sm" onClick={() => setOverrideOpen((value) => !value)}>Override for next request {overrideOpen ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}</Button>
       </div>
     </div>
-    {overrideOpen && <div className="mt-2 max-w-2xl"><Textarea aria-label="Temporary mandate override" value={temporaryOverride} onChange={(event) => onTemporaryOverrideChange(event.target.value)} rows={2} placeholder="Optional instructions for the next request only. This will not change the saved mandate." /><p className="mt-1 text-[10px] text-muted-foreground">Applied as temporary perspective / posture and cleared after the request is sent.</p></div>}
+    {overrideOpen && <div className="mt-2 max-w-2xl"><Textarea aria-label="Temporary objective override" value={temporaryOverride} onChange={(event) => onTemporaryOverrideChange(event.target.value)} rows={2} placeholder="Optional instructions for the next request only. This will not change the saved objective." /><p className="mt-1 text-[10px] text-muted-foreground">Applied as temporary perspective / posture and cleared after the request is sent.</p></div>}
   </div>
 }

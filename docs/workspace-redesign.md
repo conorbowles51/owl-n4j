@@ -1070,3 +1070,155 @@ This is a living engineering record. It does not replace the product decisions o
 - `phase8-browser-verification.json` records the real Chromium owner/editor/viewer matrix across empty, small, and 2,500-entry/2,500-task cases. Viewer mutation controls remain absent, editor and owner controls remain present, and the production-shaped overview returns bounded collections without exhaustive evidence or casework loads.
 - Operational runbooks, release notes, support guidance, migration inventory, review-acceptance rules, application rollback, and the future contract-migration gate are documented in `workspace-redesign-operations.md`, `workspace-redesign-release-notes.md`, `workspace-redesign-support.md`, and `workspace-redesign-migration-inventory.md`.
 - Legacy business tables were not dropped. Their removal remains a separate destructive contract migration after retention, a verified real-environment backup, support review, and explicit product and engineering sign-off. Application rollback keeps canonical writes and never restores an older database over them.
+
+
+## Dossier workflow follow-up — 19 October 2026
+
+The user selected dossiers as the first implementation area after reviewing two
+calls. The agreed journey is: find or create the subject, add supporting material,
+open it without losing the dossier, manage interviews at the date precision known,
+and read accepted summaries and comparisons together in the Brief.
+
+Implemented locally:
+
+- The Brief retains the investigator's own writing and shows accepted statement
+  summaries/comparisons and an interview overview with source links. Existing
+  assessments remain available; pending AI proposals remain in Interviews.
+- Linked evidence, gallery images, notes, findings, theories and other dossiers
+  open over the current dossier. Closing an overlay returns to the previous
+  dossier view. Linked notes can open evidence without navigating away.
+- Evidence can be linked and unlinked from inside a dossier. Evidence's Add to
+  Dossier chooser has search and pagination. Attachments use additive endpoints,
+  row locking and idempotent gallery additions, retaining colleagues' links and
+  avoiding duplicate images on retries. Originals are preserved.
+- Entity creation search returns up to 100 matches with name relevance ordered
+  before summary/notes matches. The main dossier list has pagination. An existing
+  dossier can be opened by stable graph identity, including after a name change.
+- Interviews can be edited and removed with explicit confirmation. Date values
+  distinguish unknown, year, month, full date and timestamp; partial dates are
+  stored without inventing a day or time. Source page/time anchors survive edits.
+- Contact details support multiple labelled phones/emails/addresses and optional
+  same-case source evidence. Recorded contacts remain distinct from graph facts.
+- Dossier details/roles can be edited. Brief saves show success or failure, retain
+  unsaved drafts through tab switches, and warn before discarding on close.
+
+Verification uses synthetic data: service/API/component regressions and desktop/
+390px Chromium journeys. PostgreSQL tests use independent disposable schemas to
+check migration preservation of legacy contacts/timestamps and parallel attachment
+retries. Run the opt-in tests with DOSSIER_TEST_DATABASE_URL pointing to a local
+test PostgreSQL connection; tests never use existing application tables.
+
+Deployment remains separate: apply migration `20261019_dossier_workflows` before
+running the updated backend. It adds dossier contacts and interview date values
+and copies older profile contact attributes without deleting them. Downgrade
+requires an explicit preservation/export plan rather than silently dropping those
+values. Local tests do not establish live-case acceptance. No client case has
+been changed, and no push or deployment was performed for this follow-up.
+
+Remaining scope from the calls is unchanged: audio/video, workspace setup, notes
+formatting and graph visuals in report exports are separate work. Graph/extracted
+contact matching is future enrichment; entering contact details does not create a
+verified graph fact. The generic task/deadline/timeline/artifact dossier link types
+retain their existing presentation; this pass connects the source evidence and
+subject casework journeys discussed in the calls.
+
+
+API compatibility for this follow-up is additive. Existing full-timestamp
+`interview_date` clients remain supported; `date_value` records explicit date
+precision and null clears an unknown date. PATCH omits unrelated fields. Contacts
+are bounded to 100 entries with validated phone/email/address kinds and source
+UUIDs; attribution is derived by the service, not trusted from requests. Existing
+case read/edit permissions apply to every new field and source files must belong
+to the same case. The existing HTTP `detail` error shape and 400/403/404/409
+semantics remain unchanged. Dossier lists retain bounded offset pagination
+(maximum 200); this follows the existing endpoint contract. FastAPI's generated
+OpenAPI reflects the request-model additions. Evidence attachment retries add
+records rather than replacing the complete link set.
+
+The unrelated full Workspace AI router authorization suite cannot collect on this
+Windows host because the Financial package imports Linux-only `fcntl`. Dossier
+request-model contracts are tested independently of that eager router import;
+this does not establish full application startup or live API acceptance.
+
+
+Final local verification on 19 October: 41 backend/service/request-contract checks
+(including the PostgreSQL migration and concurrent retry tests), 12 component/API
+checks and 22 Chromium checks passed. The production build and scoped ESLint
+checks passed. Desktop and narrow contact-dialog screenshots were inspected using
+synthetic data. The temporary PostgreSQL server was stopped after verification.
+
+
+## Workspace simplification follow-up — 19 October 2026
+
+Accepted implementation scope follows the two calls: Case Summary and Objective
+replace Orientation/Mandate in the UI; Overview, Casework and Deadlines remain the
+main views. Notes/Findings/Theories retain their structure. The notes formatting
+editor, audio/video and graph report export remain separate follow-ups.
+
+Case Summary starts with one short summary. Background, investigation type and
+jurisdiction are optional additional details. Objective starts with the main
+objective plus optional constraints/special instructions; existing key questions,
+scopes, perspective and output expectations remain under Advanced instructions.
+Saving keeps the immutable objective versions used by earlier Chat/Agent sessions;
+those sessions adopt a newer objective explicitly. Internal mandate identifiers,
+routes and prompt traceability contracts retain their existing names.
+
+Criminal defence retains Client Profile, separate Charges and Allegations, and
+Defence Strategy. Denials and Legal Exposure no longer appear as normal inputs;
+existing values remain visible as previously recorded information. This hides no
+custom template fields. Court Information remains available because deadlines
+currently record only a name and date. New client accounts belong in linked notes
+or source documents; existing factual records are not automatically reclassified.
+
+Template switching retains drafts for each template and saves changed fields
+across templates together. The API now returns `template_values`, grouped by
+template key, and `custom_values` for the active template. Updates validate the
+whole request before mutation, retain omitted fields and inactive-template values,
+and clear only explicitly empty values. The frontend sends changes rather than
+resubmitting unchanged saved information. Existing callers remain supported.
+Cancel, closing setup and Workspace tab changes warn about unsaved setup edits;
+page unload also warns. Save failures keep drafts available to retry.
+
+Deadlines is one combined task/date list with Type, Status and Assignee filters;
+Status and Assignee explicitly apply to tasks. Undated tasks remain visible under
+No due date. One Add new action offers Task or Deadline. Both item types open in
+an editable dialog (read only for viewers); failures retain the form. Existing
+`?view=work&item=…` URLs still work and resolve an exact task beyond the current
+page or filters. Work pagination now accepts an additive non-negative `offset`;
+Load more exposes records beyond the first 100 of each type. Date-only deadlines
+use local calendar days, and today is not marked overdue. Deadline mutations
+refresh the combined list. Removal requires confirmation; original evidence is
+unaffected. Task edits omit the link collection so editing details does not
+replace supporting links.
+
+New findings and theory conversions start Unrated. Investigators may choose or
+explicitly clear High/Medium/Low; clearing is a nullable, required significance
+request field so omission does not silently clear a rating. Existing recorded
+ratings are not rewritten: their original intent cannot be inferred reliably.
+Revision history records changes and explicit clearing. Migration
+`20261019_workspace_setup` follows the dossier migration and relaxes only the
+finding-required-rating constraint. Its rollback stops if unrated findings would
+violate the old constraint; it never assigns ratings to make rollback succeed.
+Apply both migrations before using the new frontend with an existing database.
+
+Workspace notes now open evidence and dossiers in overlays, returning to the same
+note and route on close. The same source viewer also opens the selected pinned
+file from Overview. Graph links retain their existing Graph destination.
+
+Verification uses synthetic fixtures and an isolated local PostgreSQL schema;
+no client case was edited. Local browser journeys cover template switching,
+save/reopen, preserved advanced instructions, cancel protection, both creation
+paths, exact linked items, failed-save retry, pagination, list recovery, mobile
+read-only access, explicit rating clearing, and Workspace source/dossier return
+paths. The actual PostgreSQL constraint migration is exercised against existing
+ratings, unrated inserts and guarded rollback. Full Agent mandate traceability
+collection is unavailable in the evidence-engine test environment because
+`langchain_core` is missing. The separate full router Windows `fcntl` limitation
+recorded above remains; these checks do not establish full application startup or
+live-case acceptance. Nothing from this follow-up has been pushed or deployed.
+
+Final local Workspace verification: 71 backend/service/request-contract/PostgreSQL
+checks, 41 frontend component/API checks and 31 Chromium journeys passed. The
+production build and scoped ESLint passed; the existing large-bundle warnings
+remain. Desktop setup and mobile deadline screenshots were inspected using only
+synthetic records. The temporary PostgreSQL test server was stopped afterwards.

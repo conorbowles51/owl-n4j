@@ -112,10 +112,15 @@ class MandateContextService:
             return {
                 "case_id": str(case_id), "case_summary": None, "background": None,
                 "investigation_type": None, "jurisdiction": None,
-                "active_template_key": "generic", "custom_values": {},
+                "active_template_key": "generic", "custom_values": {}, "template_values": {},
                 "active_mandate": None, "mandate_complete": False,
                 "templates": templates, "updated_at": None,
             }
+        template_keys = {row.id: row.key for row in db.query(CaseContextTemplate).all()}
+        template_values: dict[str, dict[str, Any]] = {}
+        for value in context.values:
+            key = template_keys[value.field.template_id]
+            template_values.setdefault(key, {})[value.field.field_key] = value.value
         return {
             "case_id": str(context.case_id),
             "case_summary": context.case_summary,
@@ -123,9 +128,10 @@ class MandateContextService:
             "investigation_type": context.investigation_type,
             "jurisdiction": context.jurisdiction,
             "active_template_key": context.active_template_key,
-            "custom_values": {value.field.field_key: value.value for value in context.values},
+            "custom_values": template_values.get(context.active_template_key, {}),
+            "template_values": template_values,
             "active_mandate": _serialize_version(context.active_mandate_version),
-            "mandate_complete": context.active_mandate_version_id is not None,
+            "mandate_complete": bool(context.active_mandate_version and _clean_text(context.active_mandate_version.objective)),
             "templates": templates,
             "updated_at": context.updated_at.isoformat() if context.updated_at else None,
         }
@@ -138,50 +144,58 @@ class MandateContextService:
         user: User,
         payload: dict[str, Any],
     ) -> dict[str, Any]:
-        template_key = payload.get("active_template_key") or "generic"
-        template = (
-            db.query(CaseContextTemplate)
-            .options(joinedload(CaseContextTemplate.fields))
-            .filter(CaseContextTemplate.key == template_key)
-            .first()
-        )
-        if not template:
+        context = db.query(CaseContext).filter(CaseContext.case_id == case_id).with_for_update().first()
+        template_key = payload.get("active_template_key") or (context.active_template_key if context else "generic")
+        templates = {row.key: row for row in db.query(CaseContextTemplate).options(joinedload(CaseContextTemplate.fields)).all()}
+        if template_key not in templates:
             raise CaseContextValidationError("Unknown case-context template")
-
-        context = db.query(CaseContext).filter(CaseContext.case_id == case_id).first()
+        # Validate the entire request before touching saved information. Omitted
+        # fields and inactive templates are retained; explicit empty values clear.
+        batches = dict(payload.get("template_values") or {})
+        if "custom_values" in payload:
+            batches[template_key] = payload["custom_values"]
+        validated = []
+        for key, values in batches.items():
+            template = templates.get(key)
+            if not template or not isinstance(values, dict):
+                raise CaseContextValidationError("Unknown template or invalid template values")
+            fields = {field.field_key: field for field in template.fields}
+            unknown = sorted(set(values) - set(fields))
+            if unknown:
+                raise CaseContextValidationError(f"Fields do not belong to template {key}: {', '.join(unknown)}")
+            for field_key, raw in values.items():
+                field = fields[field_key]
+                empty = raw is None or raw == "" or raw == []
+                if empty and field.required:
+                    raise CaseContextValidationError(f"{field.label} is required")
+                value = None if empty else self._validate_field_value(db, case_id=case_id, field=field, value=raw)
+                validated.append((field, value))
+        retained = {value.template_field_id: value.value for value in context.values} if context else {}
+        candidate = {**retained, **{field.id: value for field, value in validated}}
+        for field in templates[template_key].fields:
+            if field.required and candidate.get(field.id) in (None, "", []):
+                raise CaseContextValidationError(f"{field.label} is required")
         if not context:
             context = CaseContext(case_id=case_id, created_by_user_id=user.id)
             db.add(context)
             db.flush()
-        context.case_summary = _clean_text(payload.get("case_summary"))
-        context.background = _clean_text(payload.get("background"))
-        context.investigation_type = _clean_text(payload.get("investigation_type"))
-        context.jurisdiction = _clean_text(payload.get("jurisdiction"))
+        for key in ("case_summary", "background", "investigation_type", "jurisdiction"):
+            if key in payload:
+                setattr(context, key, _clean_text(payload[key]))
         context.active_template_key = template_key
         context.updated_by_user_id = user.id
-
-        fields = {field.field_key: field for field in template.fields}
-        supplied_values = payload.get("custom_values") or {}
-        if not isinstance(supplied_values, dict):
-            raise CaseContextValidationError("custom_values must be an object")
-        unknown = sorted(set(supplied_values) - set(fields))
-        if unknown:
-            raise CaseContextValidationError(f"Fields do not belong to template {template_key}: {', '.join(unknown)}")
-
-        db.query(CaseContextValue).filter(CaseContextValue.context_id == context.id).delete(
-            synchronize_session=False
-        )
-        for key, field in fields.items():
-            raw = supplied_values.get(key)
-            if raw in (None, "", []):
-                if field.required:
-                    raise CaseContextValidationError(f"{field.label} is required")
-                continue
-            value = self._validate_field_value(db, case_id=case_id, field=field, value=raw)
-            db.add(CaseContextValue(
-                context_id=context.id, case_id=case_id, template_field_id=field.id, value=value,
-            ))
+        existing = {row.template_field_id: row for row in db.query(CaseContextValue).filter_by(context_id=context.id).all()}
+        for field, value in validated:
+            row = existing.get(field.id)
+            if value is None:
+                if row:
+                    db.delete(row)
+            elif row:
+                row.value = value
+            else:
+                db.add(CaseContextValue(context_id=context.id, case_id=case_id, template_field_id=field.id, value=value))
         db.flush()
+        db.expire(context, ["values"])
         return self.get_context(db, case_id=case_id)
 
     @staticmethod

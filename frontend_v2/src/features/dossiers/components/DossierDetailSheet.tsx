@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { lazy, Suspense, useEffect, useMemo, useState } from "react"
 import {
   Archive,
   ArrowDown,
@@ -39,7 +39,13 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { MarkdownSummary } from "@/components/ui/markdown-summary"
-import { DocumentViewer } from "@/components/ui/document-viewer"
+import { DossierSourceViewer } from "./DossierSourceViewer"
+import { AddDossierEvidenceDialog } from "./AddDossierEvidenceDialog"
+import { DossierInterviewDialog } from "./DossierInterviewDialog"
+import { EditDossierDialog } from "./EditDossierDialog"
+import { DossierContacts } from "./DossierContacts"
+import { formatInterviewDate } from "../interview-date"
+import { DossierBriefEditor } from "./DossierBriefEditor"
 import { evidenceAPI } from "@/features/evidence/api"
 import {
   Select,
@@ -57,11 +63,23 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { NotebookEntityPicker } from "@/features/notebook/components/NotebookEntityPicker"
-import { dossiersAPI, type Dossier, type DossierMedia } from "../api"
+import {
+  dossiersAPI,
+  type Dossier,
+  type DossierMedia,
+  type DossierLink,
+  type DossierInterview,
+} from "../api"
 import { useDossier, useDossierMutation } from "../hooks"
 import { DossierEvidencePicker } from "./DossierEvidencePicker"
 import { EvidenceImage } from "./EvidenceImage"
 import { WorkspaceAIPanel } from "@/features/workspace-ai/components/WorkspaceAIPanel"
+
+const CaseworkDetailSheet = lazy(() =>
+  import("@/features/workspace/components/CaseworkDetailSheet").then(
+    (module) => ({ default: module.CaseworkDetailSheet })
+  )
+)
 
 function formatDate(value?: string | null) {
   return value
@@ -325,140 +343,6 @@ function AssessmentDialog({
   )
 }
 
-function InterviewDialog({
-  caseId,
-  dossier,
-  open,
-  onOpenChange,
-  onSaved,
-}: {
-  caseId: string
-  dossier: Dossier
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  onSaved: () => void
-}) {
-  const [date, setDate] = useState("")
-  const [participants, setParticipants] = useState(dossier.display_name)
-  const [notes, setNotes] = useState("")
-  const [sources, setSources] = useState<Array<{ id: string; label: string }>>(
-    []
-  )
-  const [saving, setSaving] = useState(false)
-  useEffect(() => {
-    if (!open) {
-      setDate("")
-      setParticipants(dossier.display_name)
-      setNotes("")
-      setSources([])
-    }
-  }, [dossier.display_name, open])
-  const save = async () => {
-    if (!sources.length) return
-    setSaving(true)
-    try {
-      await dossiersAPI.createInterview(dossier.id, {
-        interview_date: date ? new Date(date).toISOString() : null,
-        participants: participants
-          .split(",")
-          .map((item) => item.trim())
-          .filter(Boolean),
-        status: "completed",
-        working_notes: notes || null,
-        evidence_links: sources.map((item) => ({ evidence_file_id: item.id })),
-      })
-      toast.success("Interview added")
-      onSaved()
-      onOpenChange(false)
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Could not create interview"
-      )
-    } finally {
-      setSaving(false)
-    }
-  }
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-xl">
-        <DialogHeader>
-          <DialogTitle>Add interview or statement</DialogTitle>
-          <DialogDescription>
-            Link an existing interview transcript or statement from Evidence.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div className="grid gap-2">
-            <Label>Date and time (optional)</Label>
-            <Input
-              type="datetime-local"
-              value={date}
-              onChange={(event) => setDate(event.target.value)}
-            />
-          </div>
-          <div className="grid gap-2">
-            <Label>Participants</Label>
-            <Input
-              value={participants}
-              onChange={(event) => setParticipants(event.target.value)}
-              placeholder="Comma-separated names"
-            />
-          </div>
-          <div className="grid gap-2">
-            <Label>Working notes</Label>
-            <Textarea
-              rows={5}
-              value={notes}
-              onChange={(event) => setNotes(event.target.value)}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label>Source evidence</Label>
-            {sources.length ? (
-              <div className="space-y-1">
-                {sources.map((item) => (
-                  <div
-                    key={item.id}
-                    className="flex justify-between rounded border border-border p-2 text-xs"
-                  >
-                    <span className="truncate">{item.label}</span>
-                    <button
-                      onClick={() =>
-                        setSources((current) =>
-                          current.filter((source) => source.id !== item.id)
-                        )
-                      }
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-            <DossierEvidencePicker
-              caseId={caseId}
-              selectedIds={sources.map((item) => item.id)}
-              onSelect={(item) => setSources((current) => [...current, item])}
-            />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button
-            variant="primary"
-            disabled={saving || !sources.length}
-            onClick={() => void save()}
-          >
-            {saving ? "Saving…" : "Add interview"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
 function MediaCard({
   dossier,
   media,
@@ -466,6 +350,7 @@ function MediaCard({
   refresh,
   onMoveEarlier,
   onMoveLater,
+  onOpen,
 }: {
   dossier: Dossier
   media: DossierMedia
@@ -473,6 +358,7 @@ function MediaCard({
   refresh: () => void
   onMoveEarlier: () => void
   onMoveLater: () => void
+  onOpen: () => void
 }) {
   const [caption, setCaption] = useState(media.caption ?? "")
   const mutation = useDossierMutation(
@@ -495,11 +381,11 @@ function MediaCard({
   }
   return (
     <article className="group overflow-hidden rounded-lg border border-border bg-card">
-      <a
-        href={media.evidence.file_url}
-        target="_blank"
-        rel="noreferrer"
-        className="relative block aspect-[4/3]"
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label={`Open ${media.evidence.original_filename}`}
+        className="relative block aspect-[4/3] w-full"
       >
         <EvidenceImage
           url={media.evidence.file_url}
@@ -514,11 +400,12 @@ function MediaCard({
           </Badge>
         ) : null}
         <ExternalLink className="absolute bottom-2 right-2 size-4 rounded bg-background/80 p-0.5 opacity-0 shadow group-hover:opacity-100" />
-      </a>
+      </button>
       <div className="space-y-2 p-3">
         <Input
           className="h-7 border-transparent bg-transparent px-0 text-xs font-medium focus:border-border focus:px-2"
           value={caption}
+          disabled={!canEdit}
           onChange={(event) => setCaption(event.target.value)}
           onBlur={() => {
             if (caption !== (media.caption ?? "")) void update({ caption })
@@ -624,10 +511,31 @@ export function DossierDetailSheet({
 }) {
   const query = useDossier(dossierId)
   const dossier = query.data
+  const [briefDirty, setBriefDirty] = useState(false)
+  const [discardOpen, setDiscardOpen] = useState(false)
   const [mediaOpen, setMediaOpen] = useState(false)
+  const [detailsOpen, setDetailsOpen] = useState(false)
   const [assessmentOpen, setAssessmentOpen] = useState(false)
   const [interviewOpen, setInterviewOpen] = useState(false)
+  const [interviewToEdit, setInterviewToEdit] =
+    useState<DossierInterview | null>(null)
+  const [interviewToRemove, setInterviewToRemove] =
+    useState<DossierInterview | null>(null)
   const [linkOpen, setLinkOpen] = useState(false)
+  const [addEvidenceOpen, setAddEvidenceOpen] = useState(false)
+  const [entryId, setEntryId] = useState<string | null>(null)
+  const [linkedDossierId, setLinkedDossierId] = useState<string | null>(null)
+  const [removeLink, setRemoveLink] = useState<DossierLink | null>(null)
+  const removeInterview = useDossierMutation(
+    caseId,
+    dossierId ?? "",
+    (id: string) => dossiersAPI.deleteInterview(dossierId!, id)
+  )
+  const removeEvidence = useDossierMutation(
+    caseId,
+    dossierId ?? "",
+    (id: string) => dossiersAPI.removeEvidence(dossierId!, id)
+  )
   const [viewerDoc, setViewerDoc] = useState<{
     evidenceId: string
     url: string
@@ -635,6 +543,40 @@ export function DossierDetailSheet({
     page?: number
     time?: number
   } | null>(null)
+  const openLinkedItem = (
+    link: Pick<
+      DossierLink,
+      "target_type" | "target_id" | "label" | "source_anchor"
+    >
+  ) => {
+    if (link.target_type === "evidence")
+      setViewerDoc({
+        evidenceId: link.target_id,
+        url: evidenceAPI.getFileUrl(link.target_id),
+        name: link.label || "Source evidence",
+        page:
+          typeof link.source_anchor?.page === "number"
+            ? link.source_anchor.page
+            : undefined,
+        time:
+          typeof link.source_anchor?.start_seconds === "number"
+            ? link.source_anchor.start_seconds
+            : undefined,
+      })
+    else if (link.target_type === "entry") setEntryId(link.target_id)
+    else if (link.target_type === "dossier" && link.target_id !== dossierId)
+      setLinkedDossierId(link.target_id)
+  }
+  const renderSourceLink = (link: DossierLink) => (
+    <button
+      type="button"
+      key={link.id}
+      className="min-h-10 break-all text-left text-xs text-amber-600 underline underline-offset-2 hover:text-amber-700 dark:text-amber-400"
+      onClick={() => openLinkedItem(link)}
+    >
+      {link.label || "Open source evidence"}
+    </button>
+  )
   const openDocument = async (filename: string, page?: number) => {
     try {
       const result = await evidenceAPI.findByFilename(filename, caseId)
@@ -670,12 +612,6 @@ export function DossierDetailSheet({
       )
     }
   }
-  const update = useDossierMutation(
-    caseId,
-    dossierId ?? "",
-    (input: Parameters<typeof dossiersAPI.update>[1]) =>
-      dossiersAPI.update(dossierId!, input)
-  )
   const cover = useMemo(
     () => dossier?.media?.find((item) => item.is_cover),
     [dossier?.media]
@@ -696,7 +632,13 @@ export function DossierDetailSheet({
     }
   }
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet
+      open={open}
+      onOpenChange={(value) => {
+        if (!value && briefDirty) setDiscardOpen(true)
+        else onOpenChange(value)
+      }}
+    >
       <SheetContent className="w-full overflow-y-auto p-0 sm:max-w-3xl">
         <SheetTitle className="sr-only">
           {dossier ? `${dossier.display_name} Dossier` : "Dossier details"}
@@ -705,7 +647,16 @@ export function DossierDetailSheet({
           Investigator-curated subject casework, evidence media, assessments,
           and interviews.
         </SheetDescription>
-        {query.isLoading || !dossier ? (
+        {query.isError ? (
+          <div className="space-y-3 p-8 text-center" role="alert">
+            <p>
+              This dossier could not be loaded. Your saved work has not changed.
+            </p>
+            <Button variant="outline" onClick={refresh}>
+              Retry dossier
+            </Button>
+          </div>
+        ) : query.isLoading || !dossier ? (
           <div className="flex h-full items-center justify-center">
             <LoadingSpinner />
           </div>
@@ -778,6 +729,9 @@ export function DossierDetailSheet({
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => setDetailsOpen(true)}>
+                          Edit dossier details
+                        </DropdownMenuItem>
                         {!dossier.canonical_entity_key ? (
                           <DropdownMenuItem onClick={() => setLinkOpen(true)}>
                             <GitBranch className="size-4" /> Link graph entity
@@ -809,7 +763,11 @@ export function DossierDetailSheet({
                   <TabsTrigger value="interviews">Interviews</TabsTrigger>
                 </TabsList>
               </div>
-              <TabsContent value="brief" className="space-y-6 p-5">
+              <TabsContent
+                value="brief"
+                forceMount
+                className="space-y-6 p-5 data-[state=inactive]:hidden"
+              >
                 <section>
                   <div className="mb-2 flex items-center gap-2">
                     <FileText className="size-4 text-muted-foreground" />
@@ -817,17 +775,105 @@ export function DossierDetailSheet({
                       Investigator brief
                     </h3>
                   </div>
-                  <Textarea
-                    defaultValue={dossier.summary ?? ""}
-                    disabled={!canEdit}
-                    rows={7}
-                    placeholder="No investigator summary yet."
-                    onBlur={(event) => {
-                      if (event.target.value !== (dossier.summary ?? ""))
-                        update.mutate({ summary: event.target.value })
-                    }}
+                  <DossierBriefEditor
+                    key={dossier.id}
+                    dossier={dossier}
+                    canEdit={canEdit}
+                    onDirtyChange={setBriefDirty}
                   />
                 </section>
+                <DossierContacts
+                  dossier={dossier}
+                  canEdit={canEdit}
+                  onOpenSource={(id) =>
+                    openLinkedItem({
+                      target_type: "evidence",
+                      target_id: id,
+                      label: "Contact source",
+                      source_anchor: {},
+                    })
+                  }
+                />
+                <section className="space-y-3">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Accepted summaries & comparisons
+                  </h3>
+                  {(dossier.assessments ?? [])
+                    .filter((item) =>
+                      ["statement_summary", "statement_comparison"].includes(
+                        item.category
+                      )
+                    )
+                    .map((item) => (
+                      <article
+                        key={item.id}
+                        className="space-y-3 rounded-lg border bg-card p-4"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant="outline">
+                            {item.category === "statement_summary"
+                              ? "Statement summary"
+                              : "Statement comparison"}
+                          </Badge>
+                          <span className="text-[11px] text-muted-foreground">
+                            {item.provenance_type === "ai_assisted"
+                              ? "AI-assisted · investigator accepted"
+                              : "Investigator recorded"}{" "}
+                            · {formatDate(item.created_at)}
+                          </span>
+                        </div>
+                        <MarkdownSummary
+                          content={item.content}
+                          onOpenFile={openDocument}
+                        />
+                        <div className="flex flex-wrap gap-x-3">
+                          {item.supporting_links.map(renderSourceLink)}
+                        </div>
+                      </article>
+                    ))}
+                  {!(dossier.assessments ?? []).some((item) =>
+                    ["statement_summary", "statement_comparison"].includes(
+                      item.category
+                    )
+                  ) && (
+                    <p className="text-xs text-muted-foreground">
+                      Accepted interview summaries and statement comparisons
+                      will appear here. Review proposals in Interviews.
+                    </p>
+                  )}
+                </section>
+                {(dossier.interviews?.length ?? 0) > 0 && (
+                  <section className="space-y-3">
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Interviews at a glance
+                    </h3>
+                    <div className="divide-y rounded-lg border">
+                      {dossier.interviews?.map((item) => (
+                        <article key={item.id} className="space-y-2 p-3">
+                          <p className="text-xs font-semibold">
+                            {formatInterviewDate(
+                              item.date_value ?? item.interview_date
+                            )}
+                          </p>
+                          <p className="whitespace-pre-wrap text-xs text-muted-foreground">
+                            {item.working_notes || "No working notes recorded."}
+                          </p>
+                          <div className="flex flex-wrap gap-x-3">
+                            {item.evidence_links.map((link) =>
+                              renderSourceLink({
+                                id: link.id,
+                                target_type: "evidence",
+                                target_id: link.evidence_file_id,
+                                label: link.evidence.original_filename,
+                                source_anchor: link.source_anchor,
+                              })
+                            )}
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  </section>
+                )}
                 {dossier.canonical_identity ? (
                   <section className="rounded-xl border border-border bg-muted/20 p-4">
                     <div className="mb-3 flex items-center gap-2">
@@ -882,11 +928,19 @@ export function DossierDetailSheet({
                   </section>
                 )}
                 <section>
-                  <div className="mb-2 flex items-center gap-2">
-                    <Link2 className="size-4 text-muted-foreground" />
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      Connected casework
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      <Link2 className="size-4" /> Evidence & connected casework
                     </h3>
+                    {canEdit && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setAddEvidenceOpen(true)}
+                      >
+                        <Plus className="size-3.5" /> Add evidence
+                      </Button>
+                    )}
                   </div>
                   {dossier.links?.length ? (
                     <div className="divide-y divide-border rounded-lg border border-border">
@@ -896,9 +950,31 @@ export function DossierDetailSheet({
                           className="flex items-center gap-3 p-3"
                         >
                           <Badge variant="outline">{link.target_type}</Badge>
-                          <span className="min-w-0 flex-1 truncate text-xs">
-                            {link.label || link.target_id}
-                          </span>
+                          {["evidence", "entry", "dossier"].includes(
+                            link.target_type
+                          ) ? (
+                            <button
+                              type="button"
+                              className="min-h-10 min-w-0 flex-1 break-all text-left text-xs font-medium underline underline-offset-2 hover:text-amber-600"
+                              onClick={() => openLinkedItem(link)}
+                            >
+                              {link.label || `Open ${link.target_type}`}
+                            </button>
+                          ) : (
+                            <span className="min-w-0 flex-1 break-all text-xs">
+                              {link.label || link.target_id}
+                            </span>
+                          )}
+                          {canEdit && link.target_type === "evidence" && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label={`Unlink ${link.label || "evidence"}`}
+                              onClick={() => setRemoveLink(link)}
+                            >
+                              <Trash2 className="size-3.5" />
+                            </Button>
+                          )}
                           {link.relationship_type ? (
                             <span className="text-[10px] text-muted-foreground">
                               {link.relationship_type}
@@ -941,6 +1017,14 @@ export function DossierDetailSheet({
                         key={item.id}
                         dossier={dossier}
                         media={item}
+                        onOpen={() =>
+                          openLinkedItem({
+                            target_type: "evidence",
+                            target_id: item.evidence_file_id,
+                            label: item.evidence.original_filename,
+                            source_anchor: item.source_anchor,
+                          })
+                        }
                         canEdit={canEdit}
                         refresh={refresh}
                         onMoveEarlier={() => void moveMedia(index, index - 1)}
@@ -1002,9 +1086,9 @@ export function DossierDetailSheet({
                       {item.supporting_links.length ? (
                         <div className="mt-3 border-t border-border pt-2 text-[11px] text-muted-foreground">
                           Supported by{" "}
-                          {item.supporting_links
-                            .map((link) => link.label || link.target_id)
-                            .join(", ")}
+                          <div className="flex flex-wrap gap-x-3">
+                            {item.supporting_links.map(renderSourceLink)}
+                          </div>
                         </div>
                       ) : null}
                     </article>
@@ -1028,7 +1112,13 @@ export function DossierDetailSheet({
                     </p>
                   </div>
                   {canEdit ? (
-                    <Button size="sm" onClick={() => setInterviewOpen(true)}>
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setInterviewToEdit(null)
+                        setInterviewOpen(true)
+                      }}
+                    >
                       <Plus className="size-4" /> Interview
                     </Button>
                   ) : null}
@@ -1041,8 +1131,33 @@ export function DossierDetailSheet({
                     >
                       <div className="flex flex-wrap items-center gap-2">
                         <CalendarDays className="size-4 text-muted-foreground" />
+                        {canEdit && (
+                          <div className="ml-auto flex gap-1">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              aria-label={`Edit interview ${formatInterviewDate(item.date_value ?? item.interview_date)}`}
+                              onClick={() => {
+                                setInterviewToEdit(item)
+                                setInterviewOpen(true)
+                              }}
+                            >
+                              Edit
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              aria-label={`Remove interview ${formatInterviewDate(item.date_value ?? item.interview_date)}`}
+                              onClick={() => setInterviewToRemove(item)}
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                        )}
                         <span className="text-xs font-semibold">
-                          {formatDate(item.interview_date)}
+                          {formatInterviewDate(
+                            item.date_value ?? item.interview_date
+                          )}
                         </span>
                         {item.participants.length ? (
                           <p className="text-xs text-muted-foreground sm:ml-auto">
@@ -1111,6 +1226,12 @@ export function DossierDetailSheet({
                 />
               </TabsContent>
             </Tabs>
+            {detailsOpen && (
+              <EditDossierDialog
+                dossier={dossier}
+                onClose={() => setDetailsOpen(false)}
+              />
+            )}
             <AddMediaDialog
               caseId={caseId}
               dossier={dossier}
@@ -1125,13 +1246,14 @@ export function DossierDetailSheet({
               onOpenChange={setAssessmentOpen}
               onSaved={refresh}
             />
-            <InterviewDialog
-              caseId={caseId}
-              dossier={dossier}
-              open={interviewOpen}
-              onOpenChange={setInterviewOpen}
-              onSaved={refresh}
-            />
+            {interviewOpen && (
+              <DossierInterviewDialog
+                key={interviewToEdit?.id ?? "new"}
+                dossier={dossier}
+                interview={interviewToEdit}
+                onClose={() => setInterviewOpen(false)}
+              />
+            )}
             <Dialog open={linkOpen} onOpenChange={setLinkOpen}>
               <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
                 <DialogHeader>
@@ -1143,6 +1265,7 @@ export function DossierDetailSheet({
                 </DialogHeader>
                 <NotebookEntityPicker
                   caseId={caseId}
+                  resultLimit={100}
                   onAttach={async (link) => {
                     try {
                       await dossiersAPI.link(dossier.id, link.target_id)
@@ -1163,18 +1286,157 @@ export function DossierDetailSheet({
           </>
         )}
       </SheetContent>
-      <DocumentViewer
+      <Dialog open={discardOpen} onOpenChange={setDiscardOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Unsaved brief</DialogTitle>
+            <DialogDescription>
+              Your brief has unsaved changes. Return to the Brief to save them,
+              or discard them and close this dossier.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDiscardOpen(false)}>
+              Keep editing
+            </Button>
+            <Button
+              onClick={() => {
+                setDiscardOpen(false)
+                setBriefDirty(false)
+                onOpenChange(false)
+              }}
+            >
+              Discard and close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <DossierSourceViewer
         caseId={caseId}
-        evidenceId={viewerDoc?.evidenceId}
-        open={!!viewerDoc}
-        onOpenChange={(open) => {
-          if (!open) setViewerDoc(null)
-        }}
-        documentUrl={viewerDoc?.url}
-        documentName={viewerDoc?.name}
-        initialPage={viewerDoc?.page}
-        initialTime={viewerDoc?.time}
+        source={viewerDoc}
+        onClose={() => setViewerDoc(null)}
       />
+      {entryId && (
+        <Suspense fallback={<div role="status">Loading linked casework…</div>}>
+          <CaseworkDetailSheet
+            caseId={caseId}
+            entryId={entryId}
+            open
+            canEdit={canEdit}
+            onOpenChange={(value) => {
+              if (!value) setEntryId(null)
+            }}
+            onOpenEntry={setEntryId}
+            onOpenEvidence={(id, name, anchor) =>
+              openLinkedItem({
+                target_type: "evidence",
+                target_id: id,
+                label: name,
+                source_anchor: anchor,
+              })
+            }
+            onOpenDossier={setLinkedDossierId}
+          />
+        </Suspense>
+      )}
+      {linkedDossierId && (
+        <DossierDetailSheet
+          key={linkedDossierId}
+          caseId={caseId}
+          dossierId={linkedDossierId}
+          open
+          canEdit={canEdit}
+          onOpenChange={(value) => {
+            if (!value) setLinkedDossierId(null)
+          }}
+        />
+      )}
+      {dossier && addEvidenceOpen && (
+        <AddDossierEvidenceDialog
+          dossier={dossier}
+          onClose={() => setAddEvidenceOpen(false)}
+        />
+      )}
+      <Dialog
+        open={Boolean(interviewToRemove)}
+        onOpenChange={(value) => {
+          if (!value && !removeInterview.isPending) setInterviewToRemove(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remove interview from dossier?</DialogTitle>
+            <DialogDescription>
+              The interview entry and its working notes will be removed.
+              Original evidence files and accepted assessments remain saved.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              disabled={removeInterview.isPending}
+              onClick={() => setInterviewToRemove(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={removeInterview.isPending}
+              onClick={async () => {
+                if (!interviewToRemove) return
+                try {
+                  await removeInterview.mutateAsync(interviewToRemove.id)
+                  setInterviewToRemove(null)
+                  toast.success("Interview removed; original evidence kept")
+                } catch {
+                  toast.error("Could not remove the interview. Try again.")
+                }
+              }}
+            >
+              {removeInterview.isPending ? "Removing…" : "Remove interview"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={Boolean(removeLink)}
+        onOpenChange={(value) => {
+          if (!value && !removeEvidence.isPending) setRemoveLink(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Unlink evidence?</DialogTitle>
+            <DialogDescription>
+              Remove {removeLink?.label || "this file"} from this dossier. The
+              original evidence file and other dossier links stay unchanged.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              disabled={removeEvidence.isPending}
+              onClick={() => setRemoveLink(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={removeEvidence.isPending}
+              onClick={async () => {
+                if (!removeLink) return
+                try {
+                  await removeEvidence.mutateAsync(removeLink.target_id)
+                  setRemoveLink(null)
+                  toast.success("Evidence unlinked")
+                } catch {
+                  toast.error("Could not unlink evidence. Try again.")
+                }
+              }}
+            >
+              {removeEvidence.isPending ? "Unlinking…" : "Unlink evidence"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Sheet>
   )
 }

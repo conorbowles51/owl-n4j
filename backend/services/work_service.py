@@ -608,6 +608,7 @@ def get_work_view(
     task_status: str | None = None,
     assignee_user_id: UUID | None = None,
     limit: int = 100,
+    offset: int = 0,
 ) -> dict[str, Any]:
     _assert_view(db, case_id, user)
     tasks: list[dict[str, Any]] = []
@@ -620,6 +621,7 @@ def get_work_view(
             status=task_status,
             assignee_user_id=assignee_user_id,
             limit=limit,
+            offset=offset,
         )
     deadlines: list[dict[str, Any]] = []
     deadline_total = 0
@@ -636,6 +638,7 @@ def get_work_view(
             select(CaseDeadline)
             .where(CaseDeadline.case_id == case_id)
             .order_by(CaseDeadline.due_date, CaseDeadline.name, CaseDeadline.id)
+            .offset(max(offset, 0))
             .limit(min(max(limit, 1), 250))
         ).all()
         deadlines = [
@@ -655,6 +658,7 @@ def get_work_view(
         "task_total": task_total,
         "deadlines": deadlines,
         "deadline_total": deadline_total,
+        "offset": max(offset, 0),
         "bounded": True,
         "limit": min(max(limit, 1), 250),
     }

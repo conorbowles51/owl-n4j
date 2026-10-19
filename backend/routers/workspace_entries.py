@@ -196,7 +196,7 @@ class EntryConfidenceRequest(BaseModel):
 
 class EntrySignificanceRequest(BaseModel):
     expected_version: int = Field(ge=1)
-    significance: FindingSignificance
+    significance: FindingSignificance | None
 
 
 class EntryVersionRequest(BaseModel):
@@ -204,7 +204,7 @@ class EntryVersionRequest(BaseModel):
 
 
 class TheoryConversionRequest(EntryVersionRequest):
-    significance: FindingSignificance
+    significance: FindingSignificance | None = None
     title: str | None = Field(default=None, max_length=255)
     body: str | None = Field(default=None, min_length=1)
 

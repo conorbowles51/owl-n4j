@@ -128,6 +128,7 @@ class DossierInterview(Base, TimestampMixin):
     dossier_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("case_profiles.id", ondelete="CASCADE"), nullable=False, index=True)
     case_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("cases.id", ondelete="CASCADE"), nullable=False, index=True)
     interview_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    date_value: Mapped[str | None] = mapped_column(String(64), nullable=True)
     participants: Mapped[list] = mapped_column(JSON_DOCUMENT, nullable=False, default=list)
     interviewer_user_ids: Mapped[list] = mapped_column(JSON_DOCUMENT, nullable=False, default=list)
     status: Mapped[str] = mapped_column(String(64), nullable=False, default="planned")

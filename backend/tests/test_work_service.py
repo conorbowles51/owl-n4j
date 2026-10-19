@@ -311,3 +311,18 @@ def test_viewer_cannot_mutate_tasks_or_pins(db):
         create_task(db, case_id=case.id, user=viewer, data=task_payload())
     with pytest.raises(Exception):
         pin_evidence(db, case_id=case.id, evidence_file_id=evidence.id, user=viewer)
+
+
+def test_combined_work_paginates_tasks_and_deadlines_including_undated(db):
+    from services.work_service import get_work_view
+    case, owner, *_ = make_case(db)
+    for index in range(3):
+        create_task(db, case_id=case.id, user=owner, data={"title": f"Undated {index}"})
+        db.add(CaseDeadline(case_id=case.id, name=f"Deadline {index}", due_date=date(2026, 10, 20 + index)))
+    db.commit()
+    first = get_work_view(db, case_id=case.id, user=owner, limit=2)
+    second = get_work_view(db, case_id=case.id, user=owner, limit=2, offset=2)
+    assert first["task_total"] == first["deadline_total"] == 3
+    assert len(second["tasks"]) == len(second["deadlines"]) == 1
+    assert set(row["id"] for row in first["tasks"]).isdisjoint(row["id"] for row in second["tasks"])
+    assert all(row["due_at"] is None for row in first["tasks"] + second["tasks"])

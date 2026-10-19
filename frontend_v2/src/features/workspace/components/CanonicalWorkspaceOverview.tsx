@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { toast } from "sonner"
 import {
@@ -29,12 +29,14 @@ import {
   useSetAttentionState,
   useWorkspaceOverview,
 } from "../hooks/use-workspace"
+import { DossierSourceViewer, type DossierSource } from "@/features/dossiers/components/DossierSourceViewer"
 import { CaseContextSection } from "./CaseContextSection"
 
 interface CanonicalWorkspaceOverviewProps {
   caseId: string
   onOpenCasework: () => void
   canEdit: boolean
+  onDirtyChange?: (dirty: boolean) => void
 }
 
 const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
@@ -186,9 +188,14 @@ export function CanonicalWorkspaceOverview({
   caseId,
   onOpenCasework,
   canEdit,
+  onDirtyChange,
 }: CanonicalWorkspaceOverviewProps) {
-  const navigate = useNavigate()
+  const routerNavigate = useNavigate()
+  const navigate = (to: string) => { if (!setupDirty || window.confirm("Discard your unsaved setup changes?")) routerNavigate(to) }
+  const [source, setSource] = useState<DossierSource | null>(null)
   const [showContextEditor, setShowContextEditor] = useState(false)
+  const [setupDirty, setSetupDirty] = useState(false)
+  useEffect(() => { onDirtyChange?.(setupDirty); return () => onDirtyChange?.(false) }, [setupDirty, onDirtyChange])
   const [pendingAttentionKey, setPendingAttentionKey] = useState<string>()
   const overview = useWorkspaceOverview(caseId)
   const setAttentionState = useSetAttentionState(caseId)
@@ -246,7 +253,7 @@ export function CanonicalWorkspaceOverview({
         <div className="relative grid gap-5 p-5 lg:grid-cols-[minmax(0,1.3fr)_minmax(280px,.7fr)]">
           <div>
             <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.13em] text-muted-foreground">
-              <BookOpenCheck className="size-3.5 text-brand-600" /> Case orientation
+              <BookOpenCheck className="size-3.5 text-brand-600" /> Case Summary
             </div>
             <h1 className="mt-2 font-display text-lg font-semibold text-foreground">
               {data.context.case_summary || "Case context has not been summarised yet."}
@@ -265,11 +272,11 @@ export function CanonicalWorkspaceOverview({
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => setShowContextEditor((current) => !current)}
+                  onClick={() => { if (!showContextEditor || !setupDirty || window.confirm("Discard your unsaved setup changes?")) setShowContextEditor((current) => !current) }}
                   aria-expanded={showContextEditor}
                 >
                   <PencilLine className="size-3.5" />
-                  {showContextEditor ? "Close context editor" : "Manage context"}
+                  {showContextEditor ? "Close setup" : "Edit case setup"}
                 </Button>
               ) : null}
             </div>
@@ -277,13 +284,13 @@ export function CanonicalWorkspaceOverview({
 
           <div className="rounded-lg border border-border/80 bg-background/75 p-4 backdrop-blur-sm">
             <div className="flex items-center justify-between gap-2">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Active mandate</p>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Objective</p>
               <Badge variant={data.context.mandate_complete ? "success" : "warning"}>
-                {data.context.mandate_complete ? `Version ${mandate?.version_number}` : "Incomplete"}
+                {data.context.mandate_complete ? `Version ${mandate?.version_number}` : "Not set"}
               </Badge>
             </div>
             <p className="mt-2 text-xs font-medium leading-relaxed text-foreground">
-              {mandate?.objective || "Define the objective and key questions so investigators and AI work from the same brief."}
+              {mandate?.objective || "Add what you want to establish so investigators and AI share the same objective."}
             </p>
             {mandate?.key_questions.length ? (
               <p className="mt-2 text-[11px] text-muted-foreground">
@@ -294,7 +301,7 @@ export function CanonicalWorkspaceOverview({
         </div>
       </section>
 
-      {showContextEditor ? <CaseContextSection caseId={caseId} canEdit={canEdit} /> : null}
+      {showContextEditor ? <CaseContextSection caseId={caseId} canEdit={canEdit} onDirtyChange={setSetupDirty} /> : null}
 
       <div className="grid items-start gap-5 lg:grid-cols-2">
         <section className="overflow-hidden rounded-xl border border-border bg-card shadow-sm" aria-labelledby="case-right-now-heading">
@@ -399,7 +406,7 @@ export function CanonicalWorkspaceOverview({
         {data.pinned_evidence.length ? (
           <div className="grid gap-px bg-border sm:grid-cols-2 lg:grid-cols-3">
             {data.pinned_evidence.map((item) => (
-              <button key={item.id} type="button" onClick={() => navigate(`/cases/${caseId}/evidence`)} className="flex min-w-0 items-center gap-3 bg-card px-4 py-3 text-left hover:bg-muted/25">
+              <button key={item.id} type="button" onClick={() => setSource({ evidenceId: item.evidence_file_id || item.item_id, name: item.display_name || item.filename || "Pinned evidence" })} className="flex min-w-0 items-center gap-3 bg-card px-4 py-3 text-left hover:bg-muted/25">
                 <FileText className="size-4 shrink-0 text-muted-foreground" />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-xs font-semibold">{item.display_name || item.filename || "Pinned evidence"}</span>
@@ -412,6 +419,7 @@ export function CanonicalWorkspaceOverview({
           <EmptyState icon={Pin} title="No pinned evidence" description="Pin selected material from Evidence to keep it in the team’s shared view." className="py-10" />
         )}
       </section>
+      {source && <DossierSourceViewer caseId={caseId} source={source} onClose={() => setSource(null)} />}
     </div>
   )
 }

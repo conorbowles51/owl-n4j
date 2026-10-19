@@ -142,7 +142,7 @@ export function useChangeCaseworkSignificance(caseId: string) {
     }: {
       entryId: string
       version: number
-      significance: FindingSignificance
+      significance: FindingSignificance | null
     }) =>
       caseworkAPI.changeSignificance(caseId, entryId, version, significance),
     onSuccess: refresh,
@@ -160,7 +160,7 @@ export function useConvertTheory(caseId: string) {
     }: {
       entryId: string
       version: number
-      significance: FindingSignificance
+      significance: FindingSignificance | null
       draft?: { title: string; body: string }
     }) => caseworkAPI.convertToFinding(caseId, entryId, version, significance, draft),
     onSuccess: refresh,

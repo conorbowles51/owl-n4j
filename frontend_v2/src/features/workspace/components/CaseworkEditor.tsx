@@ -71,7 +71,6 @@ export function CaseworkEditor({
         })
         if (
           entry.entry_type === "finding" &&
-          value.significance &&
           value.significance !== entry.significance
         ) {
           saved = await significanceMutation.mutateAsync({

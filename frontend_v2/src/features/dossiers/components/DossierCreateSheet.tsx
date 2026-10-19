@@ -1,3 +1,5 @@
+import { useQuery } from "@tanstack/react-query"
+import { dossiersAPI } from "../api"
 import { useEffect, useState } from "react"
 import { GitBranch, Link2Off, Plus, X } from "lucide-react"
 import { toast } from "sonner"
@@ -49,10 +51,12 @@ export function DossierCreateSheet({
   open,
   onOpenChange,
   initialEntity,
+  onOpenExisting,
 }: {
   caseId: string
   open: boolean
   onOpenChange: (open: boolean) => void
+  onOpenExisting?: (id: string) => void
   initialEntity?: { key: string; name?: string } | null
 }) {
   const [mode, setMode] = useState<"linked" | "unlinked">(
@@ -66,6 +70,13 @@ export function DossierCreateSheet({
   const [roles, setRoles] = useState<string[]>([])
   const [customRole, setCustomRole] = useState("")
   const create = useCreateDossier(caseId)
+  const existing = useQuery({
+    queryKey: ["dossiers", "existing", caseId, entity?.key],
+    queryFn: () =>
+      dossiersAPI.list({ caseId, canonicalEntityKey: entity!.key, limit: 1 }),
+    enabled: open && mode === "linked" && Boolean(entity?.key),
+  })
+  const existingDossier = existing.data?.dossiers[0]
   useEffect(() => {
     if (!open) {
       setMode(initialEntity ? "linked" : "unlinked")
@@ -79,7 +90,9 @@ export function DossierCreateSheet({
     }
   }, [initialEntity, open])
   const canSave =
-    mode === "linked" ? Boolean(entity?.key) : Boolean(name.trim())
+    mode === "linked"
+      ? Boolean(entity?.key) && existing.isSuccess && !existingDossier
+      : Boolean(name.trim())
 
   const save = async () => {
     try {
@@ -165,6 +178,7 @@ export function DossierCreateSheet({
               ) : (
                 <NotebookEntityPicker
                   caseId={caseId}
+                  resultLimit={100}
                   onAttach={(link) =>
                     setEntity({
                       key: link.target_id,
@@ -190,6 +204,50 @@ export function DossierCreateSheet({
               <p className="text-[11px] text-muted-foreground">
                 Clearly shown as unlinked until connected to a graph entity.
               </p>
+            </div>
+          )}
+          {mode === "linked" && entity && (
+            <div role="status" className="rounded-lg border p-3 text-xs">
+              {existing.isPending ? (
+                "Checking for an existing dossier…"
+              ) : existing.isError ? (
+                <>
+                  <p>Could not check for an existing dossier.</p>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => void existing.refetch()}
+                  >
+                    Retry check
+                  </Button>
+                </>
+              ) : existingDossier ? (
+                <>
+                  <p>{existingDossier.display_name} already has a dossier.</p>
+                  {onOpenExisting ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-2"
+                      onClick={() => {
+                        onOpenChange(false)
+                        onOpenExisting(existingDossier.id)
+                      }}
+                    >
+                      Open existing dossier
+                    </Button>
+                  ) : (
+                    <a
+                      className="mt-2 block underline"
+                      href={`/cases/${caseId}/dossiers?dossier=${encodeURIComponent(existingDossier.id)}`}
+                    >
+                      Open existing dossier
+                    </a>
+                  )}
+                </>
+              ) : (
+                "No existing dossier for this subject."
+              )}
             </div>
           )}
           <div className="grid gap-2">

@@ -45,6 +45,7 @@ export function DossiersPage() {
   const { id: caseId = "" } = useParams()
   const [searchParams, setSearchParams] = useSearchParams()
   const [search, setSearch] = useState("")
+  const [offset, setOffset] = useState(0)
   const [type, setType] = useState("all")
   const [linkage, setLinkage] = useState("all")
   const [archived, setArchived] = useState(false)
@@ -59,6 +60,7 @@ export function DossiersPage() {
     linkageState: linkage === "all" ? undefined : linkage,
     includeArchived: archived,
     limit: 100,
+    offset,
   })
   const dossiers = useMemo(() => query.data?.dossiers ?? [], [query.data])
   const setSelected = (dossierId: string | null) => {
@@ -94,12 +96,21 @@ export function DossiersPage() {
           <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) => {
+              setSearch(event.target.value)
+              setOffset(0)
+            }}
             placeholder="Search names and investigator summaries…"
             className="h-8 pl-8 text-xs"
           />
         </div>
-        <Select value={type} onValueChange={setType}>
+        <Select
+          value={type}
+          onValueChange={(value) => {
+            setType(value)
+            setOffset(0)
+          }}
+        >
           <SelectTrigger className="h-8 w-40 text-xs">
             <SelectValue />
           </SelectTrigger>
@@ -112,7 +123,13 @@ export function DossiersPage() {
             ))}
           </SelectContent>
         </Select>
-        <Select value={linkage} onValueChange={setLinkage}>
+        <Select
+          value={linkage}
+          onValueChange={(value) => {
+            setLinkage(value)
+            setOffset(0)
+          }}
+        >
           <SelectTrigger className="h-8 w-36 text-xs">
             <SelectValue />
           </SelectTrigger>
@@ -126,14 +143,24 @@ export function DossiersPage() {
         <label className="flex items-center gap-2 px-1 text-xs text-muted-foreground">
           <Checkbox
             checked={archived}
-            onCheckedChange={(value) => setArchived(value === true)}
+            onCheckedChange={(value) => {
+              setArchived(value === true)
+              setOffset(0)
+            }}
           />{" "}
           Archived
         </label>
       </div>
       <ScrollArea className="min-h-0 flex-1">
         <div className="mx-auto max-w-6xl p-4 sm:p-6">
-          {query.isLoading ? (
+          {query.isError ? (
+            <div role="alert" className="space-y-3 py-10 text-center">
+              <p>Dossiers could not be loaded.</p>
+              <Button variant="outline" onClick={() => void query.refetch()}>
+                Retry dossiers
+              </Button>
+            </div>
+          ) : query.isLoading ? (
             <div className="flex justify-center py-20">
               <LoadingSpinner />
             </div>
@@ -144,7 +171,7 @@ export function DossiersPage() {
                   {query.data?.total.toLocaleString()} Dossier
                   {query.data?.total === 1 ? "" : "s"}
                 </span>
-                <span>People shown first by default</span>
+                <span>Recently updated first</span>
               </div>
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 {dossiers.map((dossier) => (
@@ -204,6 +231,32 @@ export function DossiersPage() {
                   </button>
                 ))}
               </div>
+              {(query.data?.total ?? 0) > 100 && (
+                <div className="mt-5 flex items-center justify-between gap-2 text-xs">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={offset === 0}
+                    onClick={() =>
+                      setOffset((value) => Math.max(0, value - 100))
+                    }
+                  >
+                    Previous dossiers
+                  </Button>
+                  <span>
+                    {offset + 1}–{Math.min(offset + 100, query.data!.total)} of{" "}
+                    {query.data!.total}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={offset + 100 >= query.data!.total}
+                    onClick={() => setOffset((value) => value + 100)}
+                  >
+                    Next dossiers
+                  </Button>
+                </div>
+              )}
             </>
           ) : (
             <EmptyState
@@ -225,8 +278,10 @@ export function DossiersPage() {
         caseId={caseId}
         open={createOpen}
         onOpenChange={setCreateOpen}
+        onOpenExisting={setSelected}
       />
       <DossierDetailSheet
+        key={`detail-${selected ?? "closed"}`}
         caseId={caseId}
         dossierId={selected}
         open={Boolean(selected)}
