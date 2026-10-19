@@ -2645,11 +2645,11 @@ def _merge_summary_boxes(read):
         proved['sources'] = sorted(proved['sources'] + [s for s in box['sources']
                                                         if (s['page_number'], s['table_index']) not in known],
                                    key=lambda s: (s['page_number'], s['table_index']))
-        scope = {(s['page_number'], s['table_index']): set(s['row_indices']) for s in proved['section_sources']}
-        for s in box['section_sources']:
-            scope.setdefault((s['page_number'], s['table_index']), set()).update(s['row_indices'])
-        proved['section_sources'] = [dict(page_number=page, table_index=table, row_indices=sorted(indices))
-                                     for (page, table), indices in sorted(scope.items())]
+        # The box keeps its own scope entries, even on a table the section also reads: an import region is
+        # the vertical extent of one entry's rows, and one entry spanning the box and the movement table would
+        # cross whatever is printed between them (another account's box), making that period read as saved.
+        proved['section_sources'] = sorted(proved['section_sources'] + [dict(s) for s in box['section_sources']],
+                                           key=lambda s: (s['page_number'], s['table_index'], s['row_indices'][:1]))
         proved['engine'] = dict(proved['engine'], summary_box=box['id'])
         absorbed.add(id(box))
     return [st for st in read if id(st) not in absorbed]

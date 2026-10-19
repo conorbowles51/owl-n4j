@@ -172,10 +172,10 @@ def _own_scope(engine_statement, others, sources):
     kept = ours - theirs
     if not kept:
         return None
-    grouped = {}
-    for page, table, row in sorted(kept):
-        grouped.setdefault((page, table), []).append(row)
-    scope = [dict(page_number=page, table_index=table, row_indices=rows) for (page, table), rows in grouped.items()]
+    # Each scope entry keeps its own rows: one entry per region, as the engine recorded them (a summary box
+    # and its movement table on one page are two regions).
+    scope = [dict(entry, row_indices=rows) for entry in engine_statement['section_sources']
+             if (rows := [row for row in entry['row_indices'] if (entry['page_number'], entry['table_index'], row) in kept])]
     mine = andrews_source_regions(sources, dict(sources=scope))
     for other in others:
         region = andrews_source_regions(sources, dict(sources=other.get('section_sources') or []))

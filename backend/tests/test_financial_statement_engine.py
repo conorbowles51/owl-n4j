@@ -2619,10 +2619,10 @@ class MergedTotalLineTests(unittest.TestCase):
         self.assertEqual(moves, [])
 
 
-def boxes_statement(a_deposits='500.00'):
+def boxes_statement(a_deposits='500.00', one_page=False):
     """r10: an invented two-account layout printing each account's summary box on page 1 (opening, deposits,
-    withdrawals, closing) and each account's movement table on page 2, so each account reads as two sections
-    of one period: the box and the table."""
+    withdrawals, closing) and each account's movement table on page 2 (or below both boxes on page 1), so each
+    account reads as two sections of one period: the box and the table."""
     head = [[('BANCO EJEMPLO DEL NORTE, S.A., INSTITUCION DE BANCA MULTIPLE', 20000, 400000)],
             [('EMPRESA DE PRUEBA SA DE CV', 20000, 200000), ('PERIODO', 330000, 380000),
              ('DEL 01/03/2024 AL 31/03/2024', 390000, 590000)],
@@ -2655,6 +2655,8 @@ def boxes_statement(a_deposits='500.00'):
     second = table('0012345678', '1,000.00', ('05/03/2024', 'TRANSFERENCIA RECIBIDA', '500.00', None, '1,500.00'),
                    '1,500.00') + table('0099887766', '2,000.00', ('10/03/2024', 'PAGO DE SERVICIO', None, '100.00',
                                                                  '1,900.00'), '1,900.00')
+    if one_page:
+        return [page(1, first + second)]
     return [page(1, first), page(2, second)]
 
 
@@ -2685,6 +2687,23 @@ class SummaryBoxMergeTests(unittest.TestCase):
         first = [(s['page_numbers'], s['engine']['proved']) for s in statements
                  if s['account_reference'] == '0012345678']
         self.assertEqual(sorted(first), [([1], False), ([2], True)])
+
+    def test_a_box_keeps_its_own_import_region_beside_its_table(self):
+        # Page 1 prints box A, box B, table A, table B. One region spanning box A and table A would cross box B,
+        # and saving account B would then read as saving a period already imported.
+        from services.financial.statement_import_andrews import andrews_source_regions, source_regions_overlap
+        sources = boxes_statement(one_page=True)
+        statements = self.read(sources)
+        self.assertEqual([(s['account_reference'], s['engine']['proved']) for s in statements],
+                         [('0012345678', True), ('0099887766', True)])
+        first, second = statements
+        self.assertEqual([s['page_number'] for s in first['section_sources']], [1, 1])
+        for row in sources[0]['rows']:
+            for cell in row['cells']:
+                cell['locator'].setdefault('space', 'pdf_points_thousandths')
+                cell['locator'].setdefault('page_size', [612000, 792000])
+        regions = [andrews_source_regions(sources, dict(sources=s['section_sources'])) for s in statements]
+        self.assertIs(source_regions_overlap(*regions), False)
 
     def test_the_switch_keeps_every_section_apart(self):
         statements = self.read(boxes_statement(), merge=False)
@@ -2840,3 +2859,19 @@ class AgreementPrefersEngineTests(unittest.TestCase):
             self.assertEqual(evidence.call_args.kwargs['family'], 'generic')
         with mock.patch(target, return_value=None):
             self.assertFalse(_engine_completes(self.statement(), quiet, group, [], 'MXN'))
+
+
+class OwnScopeEntryTests(unittest.TestCase):
+    """r10: leaving out the rows another library period claims keeps each of the engine section's scope
+    entries apart: a summary box and its movement table on one page stay two import regions."""
+
+    def test_entries_on_one_table_are_not_joined(self):
+        from services.financial import statement_engine_routing as R
+        engine = dict(section_sources=[dict(page_number=1, table_index=0, row_indices=[2, 3, 4]),
+                                       dict(page_number=1, table_index=0, row_indices=[12, 13, 14])])
+        other = dict(section_sources=[dict(page_number=1, table_index=0, row_indices=[4, 7, 8])])
+        with mock.patch('services.financial.statement_import_andrews.andrews_source_regions', return_value=[{}]), \
+                mock.patch('services.financial.statement_import_andrews.source_regions_overlap', return_value=False):
+            scope = R._own_scope(engine, [other], [])
+        self.assertEqual(scope, [dict(page_number=1, table_index=0, row_indices=[2, 3]),
+                                 dict(page_number=1, table_index=0, row_indices=[12, 13, 14])])
