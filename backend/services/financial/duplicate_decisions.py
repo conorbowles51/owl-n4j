@@ -90,10 +90,12 @@ def decide_duplicate(session, *, case_id, document_id, action, expected_revision
     ``match="same_printed_statement"`` excludes a copy whose stored reading is
     worded differently but whose money is equal (the rule of
     ``admitted_statement_duplicates``, checked again under these locks).
+    ``match="same_document_across_accounts"`` is that rule for a copy saved to
+    another ledger account, accepted only when both files are one document.
     ``basis`` is recorded on the decision. ``commit=False`` leaves the commit
     to a caller combining several decisions; any failure still rolls back.
     """
-    if match not in ("identical_reading", "same_printed_statement"):
+    if match not in ("identical_reading", "same_printed_statement", "same_document_across_accounts"):
         raise DuplicateDecisionError("Unknown duplicate comparison.", 422)
     try:
         return _decide(session, case_id=case_id, document_id=document_id,
@@ -173,9 +175,10 @@ def _decide(session, *, case_id, document_id, action, expected_revision,
             raise DuplicateDecisionError("Other documents depend on this primary. Restore them first.")
         source = fingerprint_document(session, document)
         retained = fingerprint_document(session, primary)
-        if match == "same_printed_statement":
+        if match in ("same_printed_statement", "same_document_across_accounts"):
             from services.financial.admitted_statement_duplicates import same_admitted_statement
-            refusal = same_admitted_statement(session, document, primary)
+            refusal = same_admitted_statement(session, document, primary,
+                                              across_accounts=match == "same_document_across_accounts")
             if refusal:
                 raise DuplicateDecisionError(refusal)
         elif not source.content_fingerprint or source != retained:
