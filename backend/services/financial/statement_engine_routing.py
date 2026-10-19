@@ -172,10 +172,10 @@ def _own_scope(engine_statement, others, sources):
     kept = ours - theirs
     if not kept:
         return None
-    grouped = {}
-    for page, table, row in sorted(kept):
-        grouped.setdefault((page, table), []).append(row)
-    scope = [dict(page_number=page, table_index=table, row_indices=rows) for (page, table), rows in grouped.items()]
+    # Each scope entry keeps its own rows: one entry per region, as the engine recorded them (a summary box
+    # and its movement table on one page are two regions).
+    scope = [dict(entry, row_indices=rows) for entry in engine_statement['section_sources']
+             if (rows := [row for row in entry['row_indices'] if (entry['page_number'], entry['table_index'], row) in kept])]
     mine = andrews_source_regions(sources, dict(sources=scope))
     for other in others:
         region = andrews_source_regions(sources, dict(sources=other.get('section_sources') or []))
@@ -184,35 +184,80 @@ def _own_scope(engine_statement, others, sources):
     return scope
 
 
-def _covers(engine_statement, library_period):
+def _covers(engine_statement, library_period, by_address=None):
     """The engine section read everything the library period claims: every row of its recorded row scope
-    when both readers record one, else every page of it."""
+    when both readers record one, else every page of it. With the stored rows (``by_address``), a library row
+    the engine section does not read may only be page furniture: a line printing no amount and no date (a page
+    footer the engine attributes to the next section on the page)."""
     ours, theirs = _scope_rows(engine_statement), _scope_rows(library_period)
     if ours is not None and theirs is not None:
-        return theirs <= ours
+        if by_address is None:
+            return theirs <= ours
+        rows = {(s['page_number'], s['table_index'], r['row_index']): r for s in by_address.values() for r in s['rows']}
+        return all(key in rows and _furniture(rows[key]) for key in theirs - ours)
     return _pages(library_period) <= _pages(engine_statement)
 
 
 _VALUE = re.compile(r'\d[.,]\d{2}(?!\d)')
 
 
+def _furniture(row):
+    """A stored row printing neither an amount nor a date."""
+    from services.financial.statement_engine import is_date_token
+    text = ' '.join(c['expected_text'] for c in row['cells'])
+    return not _VALUE.search(text) and not any(is_date_token(word) for word in text.split())
+
+
 def _rows_apart(engine_statement, library_period, by_address):
     """Both readers record row scopes and no row printing an amount or a date belongs to both: the library
     period is another section on a shared page, not part of what the engine section read (page furniture,
     a page number or a footer line, may be counted by both)."""
-    from services.financial.statement_engine import is_date_token
     ours, theirs = _scope_rows(engine_statement), _scope_rows(library_period)
     if ours is None or theirs is None:
         return False
     rows = {(s['page_number'], s['table_index'], r['row_index']): r for s in by_address.values() for r in s['rows']}
-    for key in ours & theirs:
-        row = rows.get(key)
-        if row is None:
-            return False
-        text = ' '.join(c['expected_text'] for c in row['cells'])
-        if _VALUE.search(text) or any(is_date_token(word) for word in text.split()):
-            return False
-    return True
+    return all(key in rows and _furniture(rows[key]) for key in ours & theirs)
+
+
+# When both readers read a period alike, the engine serves it (under the library period's id, as a replacement)
+# where it alone establishes a fact the period needs from its own printed lines: the currency printed in the
+# section or under the statement's single currency label where the library read none, or, for a period without movements, the printed zero deposit and
+# withdrawal totals beside equal balances (the general no-activity proof). Off: the library keeps every agreed
+# period, as before.
+AGREEMENT_PREFERS_ENGINE = True
+AGREED_KEEPS_LIBRARY = ('institution', 'account_reference', 'holder')
+
+
+def _engine_completes(statement, engine_rows, group, sources, currency):
+    from services.financial.statement_currency import currencies_by_statement
+    if not statement.get('currency') or statement['currency'] != currency:
+        return False
+    library_currency = group.get('currency') or (currencies_by_statement([group], sources)[0].get('currency') or '')
+    if not library_currency:
+        return statement.get('currency_source') in ('printed_account_section', 'printed_statement_currency')
+    if library_currency != statement['currency']:
+        return False
+    if any(r['kind'] == 'transaction' and not r['excluded'] for r in engine_rows):
+        return False
+    from services.financial.statement_printed_no_activity import zero_totals_evidence
+    public = {k: v for k, v in statement.items() if k != '_rows'}
+    return bool((zero_totals_evidence(engine_rows, public, currency, family='generic') or {}).get('verified'))
+
+
+# A library period whose opening balance it could not read (the printed figure is a mark it cannot read as an
+# amount) has no printed opening to tell sections apart by: it is the engine section of the same printed account
+# and period when both read the same closing balance. Off: an unread opening never pairs, as before.
+UNREAD_OPENING_PAIRS_BY_CLOSING = True
+
+
+def _same_section(library_key, engine_key):
+    """Whether a library period on shared pages is the engine section's (same printed account and period
+    already checked): the same printed opening balance, or, where the library read no opening amount, the
+    same printed closing balance."""
+    if library_key[0] == engine_key[0]:
+        return True
+    return (UNREAD_OPENING_PAIRS_BY_CLOSING and len(library_key[0]) == 1 and library_key[0][0] is None
+            and len(library_key[1]) == 1 and library_key[1][0] is not None and library_key[1] == engine_key[1])
 
 
 def disagreement_row(rows, choice):
@@ -329,12 +374,13 @@ def route_catalog(sources, library_catalog):
             continue
         library_proved = proved_rows(library_rows, is_liability(group))
         engine_rows = statement['_rows']
-        if not exact and reading_key(library_rows)[0] != reading_key(engine_rows)[0]:
+        if not exact and not _same_section(reading_key(library_rows), reading_key(engine_rows)):
             # Shared pages can hold several sections of one period; a different printed opening
             # balance means a different section, not a different reading of this one.
             routing['scoped_unpaired'] = routing.get('scoped_unpaired', 0) + 1
             continue
-        if library_proved:
+        if library_proved and not (reading_key(library_rows) == reading_key(engine_rows) and AGREEMENT_PREFERS_ENGINE
+                                   and _engine_completes(statement, engine_rows, group, sources, currency)):
             if reading_key(library_rows) == reading_key(engine_rows):
                 group['engine_agrees'] = True
                 routing['agreements'] += 1
@@ -365,7 +411,7 @@ def route_catalog(sources, library_catalog):
             if not exact:
                 routing['scoped_unchecked'] = routing.get('scoped_unchecked', 0) + 1
             continue
-        if not exact and (not _covers(statement, group) or any(other is not group and _pages(other) & pages
+        if not exact and (not _covers(statement, group, by_address) or any(other is not group and _pages(other) & pages
                                                               and not _rows_apart(statement, other, by_address)
                                                               for other in groups if not other.get('document_kind'))):
             # Row-level scope: the library period claims a page the engine section does not read, or the
@@ -393,6 +439,14 @@ def route_catalog(sources, library_catalog):
                 replaced[field] = group[field]
                 if field == 'currency':
                     replaced['currency_source'] = 'printed_account_section'
+        if library_proved:
+            # (Reached only through AGREEMENT_PREFERS_ENGINE.) An agreed period served by the engine only for the fact it alone establishes (AGREEMENT_PREFERS_
+            # ENGINE): the facts both read alike keep the library's printing of them (the same name or account
+            # written with or without its punctuation), so the period's account and holder read as they do on
+            # the account's other saved statements.
+            for field in AGREED_KEEPS_LIBRARY:
+                if group.get(field):
+                    replaced[field] = group[field]
         replacements[group['id']] = replaced
         routing['replaced'].append(group['id'])
         routing['engine_served'] += 1

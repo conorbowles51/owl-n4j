@@ -142,6 +142,7 @@ def _cell_tokens(cell, rotation=0):
         words = [(m.start(), m.end(), m.group()) for m in re.finditer(r'\S+', line)]
         if not words:
             continue
+        words = _unglue_leading_date(words)
         start, end = words[0][0], words[-1][1]
         span = max(end - start, 1)
         y0 = rect[1] + (rect[3] - rect[1]) * index / count
@@ -167,12 +168,33 @@ def _cell_tokens(cell, rotation=0):
     return tokens, width
 
 
+# (B2) A full date (day, month, four-digit year) read as the first word of a line with the next word glued to it
+# by one to three stray marks the scan read in the gap ("01-MAR-2026'1234567", "01-MAR-2026)/1234567"). The four
+# printed year digits end the date; the marks are dropped. Off: the line keeps the glued word and is no movement.
+UNGLUE_LEADING_DATE = True
+# With a month word the year's end is also found with no mark at all, before a run of figures (a folio):
+# "01-MAR-20261234567"; the year must read 19xx or 20xx.
+_GLUED_DATE = re.compile(r"^(\d{1,2}[-/.][A-Za-z]{3,10}[-/.]\d{4}|\d{1,2}[-/.]\d{1,2}[-/.]\d{4})([^\w\s]{1,3})(\w\S*)$")
+_JOINED_DATE = re.compile(r"^(\d{1,2}[-/.][A-Za-z]{3,10}[-/.](?:19|20)\d{2})()(\d{3,}\S*)$")
+
+
+def _unglue_leading_date(words):
+    if not UNGLUE_LEADING_DATE:
+        return words
+    s, e, word = words[0]
+    m = _GLUED_DATE.match(word) or _JOINED_DATE.match(word)
+    if not m or not is_date_token(m[1]):
+        return words
+    return [(s, s + len(m[1]), m[1]), (s + m.end(2), e, m[3])] + words[1:]
+
+
 # OCR damage around one printed amount (C11): a stray '?' read after it (scan noise beside the
 # figure), and the amount split by a space inside one cell ("135 , 700.06", "5,173 846,29").
 _NOISE_TAIL = re.compile(r'^([-−(]?(?:US\$|\$)?(?:\d{1,3}(?:,\d{3})*)?[.,]?\d{2}(?:\)|-|−|CR)?)\?$')
-# A table's column rule read after an amount ('4,318,207.55|'), and, in a document that prints no amount in
+# A table's column rule read after an amount ('4,318,207.55|', or a run of dashes printed in the margin beside it,
+# '4,318,207.55——'), and, in a document that prints no amount in
 # parentheses, a ')' read there ('1,045,320.00)').
-_RULE_TAIL = re.compile(r'^([-−(]?(?:US\$|\$)?(?:\d{1,3}(?:,\d{3})*)?[.,]?\d{2}(?:\)|-|−|CR)?)\|$')
+_RULE_TAIL = re.compile(r'^([-−(]?(?:US\$|\$)?(?:\d{1,3}(?:,\d{3})*)?[.,]?\d{2}(?:\)|-|−|CR)?)(?:\||——+)$')
 _PAREN_TAIL = re.compile(r'^([-−]?(?:US\$|\$)?\d{1,3}(?:,\d{3})*[.,]\d{2})\)$')
 # Two separators read before the cents ('2,617,384,.91'): the one next to the cents is the decimal mark.
 _DOUBLE_MARK = re.compile(r'^([-−(]?(?:US\$|\$)?\d{1,3}(?:,\d{3})*)[.,]([.,]\d{2}(?:\)|-|−|CR)?)$')
@@ -198,7 +220,7 @@ def _rejoin_amounts(words):
         noise = _NOISE_TAIL.fullmatch(word) or _RULE_TAIL.fullmatch(word) or (
             _NO_PARENS.get() and '(' not in word and _PAREN_TAIL.fullmatch(word))
         if noise:
-            e, word = e - 1, noise[1]
+            e, word = s + len(noise[1]), noise[1]
         double = _DOUBLE_MARK.fullmatch(word)
         if double:
             word = double[1] + double[2]
@@ -386,7 +408,34 @@ def _pages(sources):
         rows.sort(key=lambda r: (r['y0'] if r['y0'] is not None else float('inf'), r['source']['table_index'],
                                  r['raw']['row_index'], r.get('x0', 0)))
         _mark_chart_scale(rows)
+        _mark_wide_amount_boxes(rows)
     return pages
+
+
+#: (E2) An amount stored alone in a box much wider than its characters (the reading joined a mark printed beside
+#: it, a margin dash or a rule, into its box) has no reliable right edge: its column is found from its box's left
+#: edge and the width its characters take in the page's other amount boxes. Off: the box's right edge is used.
+WIDE_AMOUNT_BOXES = True
+_BOXED_AMOUNT = re.compile(r'^[-−(]?(?:US\$|\$)?\d{1,3}(?:[,.]\d{3})*[.,]\d{2}(?:\)|-|−)?$')
+
+
+def _mark_wide_amount_boxes(rows):
+    """Amounts printed first in their box line whose placed width is at least 1.35 times the page's median width
+    per character of one-amount boxes (at least eight such boxes on the page) get ``_left_x1``: their left edge
+    plus the median width of their characters."""
+    if not WIDE_AMOUNT_BOXES:
+        return
+    amounts = [t for row in rows for t in row['tokens'] if t['first'] and _BOXED_AMOUNT.match(t['t'])]
+    boxed = [t for t in amounts if t['exact']]
+    if len(boxed) < 8:
+        return
+    widths = sorted((t['x1'] - t['x0']) / len(t['t']) for t in boxed)
+    median = widths[len(widths) // 2]
+    if median <= 0:
+        return
+    for token in amounts:
+        if (token['x1'] - token['x0']) / len(token['t']) >= 1.35 * median:
+            token['_left_x1'] = token['x0'] + median * len(token['t'])
 
 
 # ---------------------------------------------------------------------------
@@ -1424,14 +1473,16 @@ def _section_holder(section_pages, pages, facts, style=None):
 ADDRESSLESS_HOLDER = True
 # Only letters and the marks of a printed name; at most three lines (joint and custodial holders).
 _NAME_LINE = re.compile(r"^[A-Z][A-Z.,'&/-]*(?: [A-Z][A-Z.,'&/-]*)+$")
+# A company name may hold a word of a letter followed by figures ('K7'); never a word of figures alone.
+_COMPANY_LINE = re.compile(r"^[A-Z][A-Z0-9.,'&/-]*(?: [A-Z][A-Z0-9.,'&/-]*)+$")
 # A mailing line of figures alone (a mail sequence or the production's placeholder for a redacted line).
 _MAILING_FIGURES = re.compile(r'^\d{5,}$')
 
 
-def _name_line(text):
+def _name_line(text, company=False):
     words = ' '.join(fold(text).split())
-    return bool(_NAME_LINE.match(words) and _name_like(words) and not words.endswith(':')
-                and not any(word in words for word in INSTITUTION_WORDS))
+    return bool((_COMPANY_LINE if company else _NAME_LINE).match(words) and _name_like(words)
+                and not words.endswith(':') and not any(word in words for word in INSTITUTION_WORDS))
 
 
 def _addressless_holder(section_pages, pages, heading, style):
@@ -1484,6 +1535,9 @@ def _addressless_holder(section_pages, pages, heading, style):
         nearest_above = max(above, key=lambda other: other['y']) if above else None
         if nearest_above is not None and y - nearest_above['y'] <= height * 2.6 and _name_line(nearest_above['text']):
             continue  # not the block's top line
+        if nearest_above is not None and y - nearest_above['y'] <= height * 2.6 and any(
+                word in ' '.join(fold(nearest_above['text']).split()) for word in INSTITUTION_WORDS):
+            continue  # the issuer's own name block continued ('<bank>, S.A.', '<financial group>')
         block = [line]
         for other in sorted(same_edge, key=lambda other: other['y']):
             if other['y'] > block[-1]['y'] and other['y'] - block[-1]['y'] <= height * 2.6:
@@ -1528,10 +1582,11 @@ def _unanchored_holder(section_pages, pages, heading, style):
     The postal line can be printed over the mailing barcode, where the page's reading loses it, so
     ``address_holder`` finds no block ending in one. The block is accepted only when all of these hold:
 
-    * on the statement's first heading page, in its left half: a name line (letters only, no label, bank
-      or heading word) with no line at its edge directly above it, followed at the same edge and line
-      pitch by two to four address lines, at least one printing a figure (the street number), none a
-      name of a bank, an amount or a date (an address, not a list of names or the bank's own lines);
+    * on the statement's first heading page, in its left half: a name line (letters, or a company name's word
+      of a letter and figures, 'K7'; no label, bank or heading word) with no line at its edge directly above
+      it, followed at the same edge and line pitch by two to four address lines, at least one printing a figure
+      (the street number), none a name of a bank, an amount or a date (an address, not a list of names or the
+      bank's own lines);
     * the page's reading, where it checked its printed lines, left none unread at the block's edge
       directly above its top line or among its lines (a lost first name line would make the next line
       look like the top);
@@ -1565,7 +1620,7 @@ def _unanchored_holder(section_pages, pages, heading, style):
     found = set()
     for line in lines:
         row, x, y, height = line['row'], line['x'], line['y'], line['height']
-        if x > row['width'] * 0.5 or not _name_line(line['text']):
+        if x > row['width'] * 0.5 or not _name_line(line['text'], company=True):
             continue
         tolerance = row['width'] * 0.015
         same_edge = sorted((other for other in lines if abs(other['x'] - x) <= tolerance and other is not line),
@@ -2567,6 +2622,8 @@ def _read_segments(pages, sources, profile, style, facts):
             shared = any(page_use[row['page']] > 1 for row in section)
             read.append(_read_section(section, segment, pages, facts, style, sources, profile, shared=shared,
                                       several=len(sections) > 1))
+        if len(read) > 1 and SUMMARY_BOX_MERGE:
+            read = _merge_summary_boxes(read)
         if len(read) > 1:
             # A section with no movement, zero balances and no currency or account of its own is not a
             # period anyone could act on (annex and reference pages print zero lines too).
@@ -2575,6 +2632,100 @@ def _read_segments(pages, sources, profile, style, facts):
         statements.extend(read)
     _check_derived_starts(statements)
     return statements
+
+
+#: (A7, D6) A statement printing a summary box per account on its first page and each account's movement table
+#: on later pages reads as two sections of one account and period: the box (balances and printed totals, no
+#: movement) and the table. When exactly one of them is proved and the other repeats its printed facts, the
+#: box is the proved section's summary, not a period of its own: it joins that section. Off: both are listed,
+#: the box held as before.
+SUMMARY_BOX_MERGE = True
+_BOX_KINDS = ('header', 'balance', 'statement_total')
+
+
+def _box_facts(statement):
+    """(openings, closings, {direction: (total, count)}) a movement-less section prints, or None when it holds
+    anything else: a movement, a line it could not place, a scoped total, or two readings of one control."""
+    openings, closings, totals = set(), set(), {}
+    for row in statement['_rows']:
+        kind, fields = row['kind'], row['fields']
+        if kind == 'unresolved' and row.get('engine_hold'):
+            continue
+        if kind not in _BOX_KINDS or fields.get('total_scope'):
+            return None
+        if kind == 'balance':
+            target = {'Opening Balance': openings, 'Closing Balance': closings}.get(fields.get('description'))
+            if target is None:
+                return None
+            target.add(fields.get('balance'))
+        elif kind == 'statement_total':
+            direction = fields.get('total_direction')
+            if direction not in ('credit', 'debit') or direction in totals:
+                return None
+            totals[direction] = (fields.get('balance'), fields.get('printed_transaction_count'))
+    if len(openings) > 1 or len(closings) > 1:
+        return None
+    return openings, closings, totals
+
+
+def _box_agrees(box, proved):
+    """Every fact the box prints is the proved section's own: both balances it reads, and each printed
+    direction total (and count) equal to the proved movements of that direction."""
+    openings, closings, totals = box
+    rows = proved['_rows']
+    own = {d: {r['fields'].get('balance') for r in rows if r['kind'] == 'balance'
+               and r['fields'].get('description') == d} for d in ('Opening Balance', 'Closing Balance')}
+    if not (openings or closings) or (openings and openings != own['Opening Balance']) or (
+            closings and closings != own['Closing Balance']):
+        return False
+    for direction, (total, count) in totals.items():
+        moves = [r for r in rows if r['kind'] == 'transaction' and not r['excluded']
+                 and r['fields'].get('direction') == direction]
+        if total is None or int(total) != sum(int(r['fields']['amount_minor']) for r in moves):
+            return False
+        if count is not None and int(count) != len(moves):
+            return False
+    return True
+
+
+def _merge_summary_boxes(read):
+    """(A7, D6) Join each unproved, movement-less section to the one proved section of the same printed account,
+    period, currency and convention whose printed balances and totals it repeats (SUMMARY_BOX_MERGE). The proof
+    stays the proved section's own; the box adds its pages and rows to the period's scope, so the period's
+    import and overlap checks cover everything printed about it."""
+    digits = lambda st: re.sub(r'\D', '', st['account_reference'] or '')
+    absorbed = set()
+    for box in read:
+        if box['engine']['proved'] or not box['period_start'] or not digits(box):
+            continue
+        facts = _box_facts(box)
+        if facts is None:
+            continue
+        partners = [st for st in read if st is not box and id(st) not in absorbed and st['engine']['proved']
+                    and st['period_start'] == box['period_start'] and st['period_end'] == box['period_end']
+                    and digits(st) == digits(box) and st['balance_convention'] == box['balance_convention']
+                    and (not box['currency'] or st['currency'] == box['currency'])]
+        if len(partners) != 1 or not _box_agrees(facts, partners[0]):
+            continue
+        proved = partners[0]
+        kept = [dict(r, kind='header', excluded=True, fields=dict(summary_of=proved['id'],
+                                                                     description=r['fields'].get('description', '')))
+                for r in box['_rows'] if r['kind'] != 'unresolved']
+        before = box['page_numbers'][0] <= proved['page_numbers'][0]
+        proved['_rows'] = kept + proved['_rows'] if before else proved['_rows'] + kept
+        proved['page_numbers'] = sorted(set(proved['page_numbers']) | set(box['page_numbers']))
+        known = {(s['page_number'], s['table_index']) for s in proved['sources']}
+        proved['sources'] = sorted(proved['sources'] + [s for s in box['sources']
+                                                        if (s['page_number'], s['table_index']) not in known],
+                                   key=lambda s: (s['page_number'], s['table_index']))
+        # The box keeps its own scope entries, even on a table the section also reads: an import region is
+        # the vertical extent of one entry's rows, and one entry spanning the box and the movement table would
+        # cross whatever is printed between them (another account's box), making that period read as saved.
+        proved['section_sources'] = sorted(proved['section_sources'] + [dict(s) for s in box['section_sources']],
+                                           key=lambda s: (s['page_number'], s['table_index'], s['row_indices'][:1]))
+        proved['engine'] = dict(proved['engine'], summary_box=box['id'])
+        absorbed.add(id(box))
+    return [st for st in read if id(st) not in absorbed]
 
 
 def _check_derived_starts(statements):
@@ -3118,17 +3269,25 @@ def _resolve_dates(movements, period, liability):
 
 
 def _columns(tokens, width):
-    """Right-edge bands of money tokens (E2), as fractions of the page width."""
-    edges = sorted(_edge(t, width) for t in tokens if t['exact'] or t['last'])
-    if not edges:
-        edges = sorted(_edge(t, width) for t in tokens)
+    """Right-edge bands of money tokens (E2), as fractions of the page width. A band formed only by boxes wider
+    than their amounts (``_left_x1``), each reaching another band from its box's left edge, is no column."""
+    chosen = [t for t in tokens if t['exact'] or t['last']] or list(tokens)
+    edges = sorted(((_edge(t, width), t) for t in chosen), key=lambda pair: pair[0])
     bands = []
-    for edge in edges:
-        if bands and edge - bands[-1][-1] <= 0.012:
-            bands[-1].append(edge)
+    for edge, token in edges:
+        if bands and edge - bands[-1][-1][0] <= 0.012:
+            bands[-1].append((edge, token))
         else:
-            bands.append([edge])
-    return [sorted(band)[len(band) // 2] for band in bands]
+            bands.append([(edge, token)])
+    centres = [sorted(e for e, _ in band)[len(band) // 2] for band in bands]
+    kept = []
+    for index, band in enumerate(bands):
+        others = [c for i, c in enumerate(centres) if i != index and not all('_left_x1' in t for _, t in bands[i])]
+        if all('_left_x1' in t and any(abs(_edge(dict(t, x1=t['_left_x1']), width) - c) <= 0.012 for c in others)
+               for _, t in band):
+            continue
+        kept.append(centres[index])
+    return kept or centres
 
 
 def _edge(token, width):
@@ -3177,6 +3336,14 @@ def _page_shifts(rows, style, exponent, width):
 
 
 def _band(token, columns, width):
+    band = _edge_band(token, columns, width)
+    if band is None and '_left_x1' in token:
+        # A box wider than its amount: the column its characters reach from the box's left edge.
+        band = _edge_band(dict(token, x1=token['_left_x1']), columns, width)
+    return band
+
+
+def _edge_band(token, columns, width):
     edge = _edge(token, width)
     tolerance = 0.015 if (token['exact'] or token['last']) else 0.03
     near = [i for i, c in enumerate(columns) if abs(edge - c) <= tolerance]
