@@ -58,7 +58,8 @@ class PageIdentityBackfillTests(TestCase):
         outcomes = {o['file_id']: o for o in detail[str(self.f.case.id)]['outcomes']}
         self.assertEqual((outcomes[str(copy.id)]['after'], outcomes[str(copy.id)]['basis']), ('ignored', 'identical_pages'))
         self.assertEqual(outcomes[str(self.primary.id)]['after'], 'retained')
-        self.assertEqual(case.get('decision_ignored'), 1)
+        self.assertEqual((case.get('decision_ignored'), case.get('newly_set_aside_as_linked_copies')), (1, 1))
+        self.assertNotIn('set_aside_copies_that_would_return', case)
 
     def test_backfill_stores_only_the_identities(self):
         from scripts.financial_page_identity_backfill import backfill, dry_run

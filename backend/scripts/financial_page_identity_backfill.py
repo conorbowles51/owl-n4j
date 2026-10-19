@@ -148,7 +148,7 @@ def simulate(factory, case_id, item_ids, identities):
         try:
             for item_id in item_ids:
                 item = db.get(Item, item_id)
-                before = 'check' if _check(item.summary) else item.status
+                stored_decision = ((item.summary or {}).get('duplicate_disposition') or {}).get('status')
                 file = db.get(EvidenceFile, item.file_id)
                 try:
                     proposal = read_statement_import(db, case_id=case_id, evidence_file_id=file.id,
@@ -162,8 +162,8 @@ def simulate(factory, case_id, item_ids, identities):
                     after, basis = 'unreadable', None
                 except Exception as error:  # reported, never hidden
                     after, basis = 'error:' + type(error).__name__, None
-                outcomes.append(dict(item_id=str(item_id), file_id=str(item.file_id), before=before,
-                                     was_set_aside=item.status == 'duplicate_ignored', after=after, basis=basis))
+                outcomes.append(dict(item_id=str(item_id), file_id=str(item.file_id), status=item.status,
+                                     check=_check(item.summary), stored=stored_decision, after=after, basis=basis))
         finally:
             db.rollback()
     return outcomes
@@ -190,12 +190,15 @@ def dry_run(factory, *, case_id=None, resolve_path=None, cache=None):
                             {f: identities[f] for f in in_group}) if case_items else []
         for outcome in outcomes:
             counts[f"decision_{outcome['after']}"] += 1
-            if outcome['before'] == 'check':
-                counts['checks_settled' if outcome['after'] in ('ignored', 'retained') else 'checks_left'] += 1
-                if outcome['after'] == 'ignored':
-                    counts['checks_set_aside_as_linked_copies'] += 1
-            if outcome['was_set_aside'] and outcome['after'] != 'ignored':
-                counts['set_aside_items_that_would_change'] += 1
+            if outcome['status'] == 'attention' and outcome['check']:
+                # Today's possible-duplicate checks: set aside as a linked copy, or
+                # the retained copy (check gone), or still compared by a person.
+                counts['checks_set_aside_as_linked_copies' if outcome['after'] == 'ignored' else
+                       'checks_now_retained' if outcome['after'] == 'retained' else 'checks_left'] += 1
+            if outcome['stored'] == 'ignored' and outcome['after'] != 'ignored':
+                counts['set_aside_copies_that_would_return'] += 1
+            if outcome['stored'] != 'ignored' and outcome['after'] == 'ignored':
+                counts['newly_set_aside_as_linked_copies'] += 1
         if members:
             report['cases'][str(case)[:8]] = dict(counts)
             detail[str(case)] = dict(groups=[sorted(str(m) for m in group) for group in members], outcomes=outcomes)
