@@ -583,6 +583,10 @@ from services.financial.native_subjects import (
     SubjectError,
     describe_subjects,
 )
+from services.financial.page_identity import (
+    same_document_files,
+    same_pages,
+)
 from services.financial.page_render import (
     PageRenderError,
     render_page_png,
@@ -1503,6 +1507,8 @@ __all__ = [
     "existing_document_for",
     "ingest_case_file",
     # Rendering an evidence page as the image a stored rectangle refers to
+    "same_document_files",
+    "same_pages",
     "PageRenderError",
     "render_page_png",
     # Statement periods and the provenance of their four values

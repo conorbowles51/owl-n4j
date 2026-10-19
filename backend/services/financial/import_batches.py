@@ -1984,6 +1984,9 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
                     # Release it before a second session inserts a referencing batch item.
                     db.commit()
                 if processed:
+                    # Before its statements are compared with the case's: a file whose
+                    # pages render identically to another's is that document (page_identity).
+                    await asyncio.to_thread(_record_page_identity, factory, case_id, UUID(file['file_id']), resolve_path)
                     shared = await asyncio.to_thread(_shared_preparation, factory, case_id, batch_id, deepcopy(file))
                     if shared[0] == 'wait':
                         _reading_progress(file, 'checking_statements', SHARED_PREPARATION_WAIT, prepared_in_batch=shared[1])
@@ -2047,6 +2050,31 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
         heartbeat.cancel()
         await asyncio.gather(heartbeat,return_exceptions=True)
         await asyncio.shield(asyncio.to_thread(release, interrupted))
+
+
+def _record_page_identity(factory, case_id, file_id, resolve_path):
+    """Store the prepared file's page identity once; rendered outside any lock.
+
+    A lock that is not granted in time raises like any busy preparation step
+    (the file waits for a later turn); a file that cannot be rendered simply
+    has no identity.
+    """
+    from services.financial import page_identity
+    with factory() as db:
+        target = db.get(EvidenceFile, file_id)
+        if target is None or target.case_id != case_id or not page_identity.needs_record(target):
+            return
+        path, sha = resolve_path(target.stored_path), target.sha256
+    value = page_identity.identity_of_path(path, sha)
+    if value is None:
+        return
+    with factory() as session, _bounded_lock_waits(session) as db:
+        target = db.scalar(select(EvidenceFile).where(EvidenceFile.id == file_id)
+                           .with_for_update().execution_options(populate_existing=True))
+        if target is None or target.sha256 != sha or not page_identity.needs_record(target):
+            return
+        page_identity.store(target, value)
+        db.commit()
 
 
 # One preparation per file. The same file can be listed in several batches of
