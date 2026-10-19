@@ -25,6 +25,7 @@ from copy import deepcopy
 from pathlib import Path
 from threading import Barrier
 from unittest import TestCase
+from unittest.mock import patch
 from uuid import UUID, uuid4
 
 from sqlalchemy import func, select
@@ -96,11 +97,22 @@ class CheckpointBGateTests(TestCase):
         return file
 
     def batch(self, *files):
+        """A batch whose preparation has finished.
+
+        One worker turn is bounded (import_batches.TURN_SECONDS once a file is
+        done), so on a loaded host a turn can leave files for the next one;
+        the test opens every statement, so it runs turns until none is left
+        (r11-copy-audit: the shared file's item did not exist yet).
+        """
         with self.f.SessionLocal() as db:
             batch = batches.create_batch(db, case_id=self.f.case.id, request_id=uuid4(),
                 file_ids=[file.id for file in files], folder_ids=[], actor=self.f.actor)
-        self.b.advance(batch)
-        return batch
+        for _ in range(4 * len(files) + 4):
+            self.b.advance(batch)
+            with self.f.SessionLocal() as db:
+                if batches.batch_for(db, self.f.case.id, batch).status != 'preparing':
+                    return batch
+        self.fail('batch preparation did not finish')
 
     def preview(self, file):
         self.f.file = file
@@ -224,6 +236,14 @@ class CheckpointBGateTests(TestCase):
                 request=self.request(file, holder), expected_review_revision=token, actor=self.f.actor)
 
     def test_independent_edits_to_different_statements_and_batches_are_all_kept(self):
+        self.independent_edits()
+
+    def test_independent_edits_are_kept_when_each_worker_turn_prepares_one_file(self):
+        # What a loaded host does: every turn ends after its first file.
+        with patch.object(batches, 'TURN_SECONDS', 0):
+            self.independent_edits()
+
+    def independent_edits(self):
         a, b, c, d, shared = (self.statement(name, holder_printed=False)
             for name in ('GATEA', 'GATEB', 'GATEC', 'GATED', 'GATEE'))
         first = self.batch(a, b, c, shared)
