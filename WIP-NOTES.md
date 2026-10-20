@@ -99,7 +99,41 @@ be recorded). 13 page-copy groups, 46 files, 114 live items, all in d5b330d1
 - Synthetic (bench-runs/r11-copy-audit-b6758373): **108/125**, recoverable
   105/108, 0 wrong, 0 critical (366 rows), holds 10/10, copies held 1/1,
   duplicate contributions 0, no safety failure line. Readiness drain 4 -> 0 in 1 round.
-- Real whole set: PENDING (see below).
+- Real whole set, product default (bench/r11-copy-audit-product; truth frozen as
+  truth-backup-pre-v04 = the bench of record's 754 documents and 1,653 periods,
+  same ids and expectations; readings of bench/rel1-060d7470; 9 h 12 min niced,
+  load 6-10), against bench/wave10:
+  - ready without edits **1,351 -> 1,351**; per truth id lost 0, gained 0;
+    recoverable 1,351/1,457
+  - **wrongly admitted 0**; critical-field errors 0 (21,356 rows / 1,362
+    periods); duplicate ledger contributions 0; printed periods saved twice 0;
+    holds 5/5
+  - copies held automatically **168 -> 168** of 171; the same 1 copy saved and
+    offered (dcfc8ce1f2afc#1), no new copy saved; REAL_EXIT 1 -> 1 (same cause)
+  - possible-duplicate holds (blocking reason `duplicate`) 9 -> 9; actions
+    1,340 / 1,267 -> 1,340 / 1,267
+  - readiness drain 37 -> 0 in 15 rounds (0 quiet)
+- Real whole set, generic only (bench/r11-copy-audit-generic, LOUPE_FINANCIAL_GENERIC_ONLY=1),
+  against bench/wave10-generic-only: ready 984 -> 984, lost 0, gained 0;
+  wrongly admitted 1 -> 1, **the same d1398a6f10ccc#1** (pre-existing, owned by
+  r11-bbva-vector), none added; critical 2 -> 2 (that period); duplicate
+  contributions 0; copies held 154 -> 154; the same 1 copy saved (dcfc);
+  possible-duplicate holds 19 -> 19; readiness drain 39 -> 0 in 12 rounds, **1
+  quiet round** (the old rule would have stopped there).
+- Step removal (NEIL DIRECTIVE 2026-10-13): possible-duplicate checks removed on
+  the real whole set **0** (product 9 -> 9, generic only 19 -> 19): a fresh
+  import already records page identities at preparation, and this unit's
+  changes act on admitted copies, failed readings and existing files. Live (READ
+  ONLY dry run): **19 -> 6** once identities are backfilled and the items
+  re-evaluated (10 set aside as linked copies, 3 become the retained copy).
+
+Targets: live printed periods admitted twice found by the audit 0 -> **1** (the
+true number in the live ledger by the detector over all 6 cases), dry-run
+set-aside listed: met. Copies held 168/171: reported, unchanged (no rule Neil
+accepts yet). Duplicate ledger contributions 0: met (product, generic only,
+synthetic). Suite race fixed with a deterministic test: met. Acceptance: 0 wrong
+admissions product and synthetic, generic only adds none; no new copy saved;
+synthetic exit condition met at 108/125; no period ready in bench/wave10 lost.
 
 ## Tests actually run
 
