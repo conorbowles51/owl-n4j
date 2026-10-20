@@ -1106,6 +1106,134 @@ class SecondDateHeadingTests(unittest.TestCase):
         self.assertTrue(st['engine']['proved'], st['engine'])
 
 
+class UnreadSecondDateTests(unittest.TestCase):
+    """r11 (B5): in a table printing two date columns, a line whose second date is unread ink is not dated."""
+
+    MOVES = [('05/MAR 05/MAR', 'TRANSFERENCIA RECIBIDA', '500.00', None, '1,500.00'),
+             ('10/MAR 1l\\MAR', 'PAGO DE SERVICIO', None, '200.00', '1,300.00'),
+             ('31/MAR 31/MAR', 'PAGO DE NOMINA', None, '50.00', '1,250.00')]
+
+    @staticmethod
+    def dates(statement):
+        return [(r['fields'].get('date'), r['fields'].get('value_date')) for r in statement['_rows']
+                if r['kind'] == 'transaction']
+
+    def test_a_line_whose_second_date_is_unread_ink_holds_the_period_and_keeps_no_date(self):
+        st = read_statements(settlement_heading(mx_statement(self.MOVES, closing='1,250.00')))[0]
+        self.assertEqual((st['engine']['proved'], st['engine']['reason']), (False, 'date_unread'))
+        self.assertEqual(self.dates(st), [('2024-03-05', '2024-03-05'), (None, None), ('2024-03-31', '2024-03-31')])
+        damaged = [r for r in st['_rows'] if r['kind'] == 'transaction'][1]
+        self.assertIn('Check the printed date of this movement.', damaged['issues'])
+        hold = next(r for r in st['_rows'] if r.get('engine_hold'))
+        self.assertIn('could not be read', hold['issues'][0])
+
+    def test_the_switch_off_keeps_the_first_date(self):
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+        with mock.patch.object(E, 'UNREAD_SECOND_DATE_HOLDS', False):
+            st = read_statements(settlement_heading(mx_statement(self.MOVES, closing='1,250.00')))[0]
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual(self.dates(st)[1], ('2024-03-10', None))
+
+    def test_a_line_printing_one_date_with_its_description_in_its_own_column_still_proves(self):
+        moves = [m if i != 1 else ('10/MAR', m[1], m[2], m[3], m[4]) for i, m in enumerate(self.MOVES)]
+        st = read_statements(settlement_heading(mx_statement(moves, closing='1,250.00')))[0]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual(self.dates(st)[1], ('2024-03-10', None))
+
+    def test_damaged_second_date_ink_that_agrees_with_the_first_date_keeps_it(self):
+        for ink in ('10/MXR', '10/MAR_N0', '10\\', '~-:dO10/MAR', '—-1O/MAR', '1O/MAR_'):
+            moves = [m if i != 1 else ('10/MAR ' + ink, m[1], m[2], m[3], m[4]) for i, m in enumerate(self.MOVES)]
+            st = read_statements(settlement_heading(mx_statement(moves, closing='1,250.00')))[0]
+            self.assertTrue(st['engine']['proved'], (ink, st['engine']))
+            self.assertEqual(self.dates(st)[1], ('2024-03-10', None))
+        for ink in ('01/MAR', '10/ABR_', '1l/MAR_', '~-:d11/MAR', '~-:d10/ABR'):
+            moves = [m if i != 1 else ('10/MAR ' + ink, m[1], m[2], m[3], m[4]) for i, m in enumerate(self.MOVES)]
+            st = read_statements(settlement_heading(mx_statement(moves, closing='1,250.00')))[0]
+            if ink == '01/MAR':
+                # A readable second date is a date: the line prints two dates and is not damaged.
+                self.assertTrue(st['engine']['proved'], (ink, st['engine']))
+                continue
+            self.assertEqual(st['engine']['reason'], 'date_unread', ink)
+
+    def test_a_table_printing_one_date_per_line_is_not_affected(self):
+        moves = [('05/MAR', 'TRANSFERENCIA RECIBIDA', '500.00', None, '1,500.00'),
+                 ('10/MAR 2O REF', 'PAGO DE SERVICIO', None, '200.00', '1,300.00'),
+                 ('31/MAR', 'PAGO DE NOMINA', None, '50.00', '1,250.00')]
+        st = read_statements(mx_statement(moves, closing='1,250.00'))[0]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+
+
+class DateSlashMarkTests(unittest.TestCase):
+    """r11 (B2): a day-and-month date whose slash the scan read as another stroke reads as that date."""
+
+    def test_a_backslash_parenthesis_or_bar_between_day_and_month_reads_as_the_date(self):
+        for token in ('07\\MAR', '07)MAR', '07/)MAR', '07|MAR', '07\\/MAR', 'O7\\MAR'):
+            self.assertEqual(E._date_parts(token), [(7, 3, None, 'name')], token)
+
+    def test_a_mark_that_is_not_between_a_day_and_a_month_name_reads_as_no_date(self):
+        for token in ('41\\MAR', '07\\03', '07\\MAR\\', 'X07)MAR', '07))MAR'):
+            self.assertFalse(E.is_date_token(token), token)
+
+    def test_a_movement_dated_through_a_backslash_proves(self):
+        moves = [m if i != 1 else ('10\\MAR', m[1], m[2], m[3], m[4]) for i, m in enumerate(MOVES)]
+        st = read_statements(mx_statement(moves, closing='1,250.00'))[0]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        dates = [r['fields'].get('date') for r in st['_rows'] if r['kind'] == 'transaction']
+        self.assertEqual(dates, ['2024-03-05', '2024-03-10', '2024-03-20'])
+
+    def test_the_switch_off_reads_no_date(self):
+        E._date_parts.cache_clear()
+        with mock.patch.object(E, 'DATE_SLASH_MARKS', False):
+            self.assertFalse(E._date_parts('07\\MAR'))
+        E._date_parts.cache_clear()
+
+
+class OtherTableTotalTests(unittest.TestCase):
+    """r11 (E9): after the movement table printed its own totals, a total line totals another table below it."""
+
+    @staticmethod
+    def statement(after):
+        sources = mx_statement(MOVES, closing='1,250.00')
+        rows = sources[0]['rows']
+        for line in after:
+            y = 40000 + len(rows) * 12000
+            rows.append(dict(row_index=len(rows), cells=[cell(t, x0, x1, y, c) for c, (t, x0, x1) in enumerate(line)]))
+        return sources
+
+    INVESTMENTS = [[('INVERSIONES', 20000, 120000)],
+                   [('PAGARE 28 DIAS', 80000, 200000), ('9,000.00', 326000, 380000)],
+                   [('TOTAL', 80000, 120000), ('9,000.00', 326000, 380000)]]
+
+    def test_a_total_after_the_tables_own_credit_and_debit_totals_is_not_its_control(self):
+        after = [[('TOTAL ABONOS', 80000, 200000), ('500.00', 350000, 380000)],
+                 [('TOTAL CARGOS', 80000, 200000), ('250.00', 430000, 460000)]] + self.INVESTMENTS
+        st = read_statements(self.statement(after))[0]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual(sum(1 for r in st['_rows'] if r['kind'] == 'transaction'), 3)
+
+    def test_a_total_after_a_movement_totals_label_printed_alone_is_not_its_control(self):
+        after = [[('TOTAL DE MOVIMIENTOS', 80000, 250000)]] + self.INVESTMENTS
+        st = read_statements(self.statement(after))[0]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+
+    def test_a_wrong_total_right_after_the_movements_still_holds(self):
+        st = read_statements(self.statement(self.INVESTMENTS[2:]))[0]
+        self.assertFalse(st['engine']['proved'], st['engine'])
+
+    def test_the_switch_off_checks_every_column_total(self):
+        after = [[('TOTAL DE MOVIMIENTOS', 80000, 250000)]] + self.INVESTMENTS
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+        with mock.patch.object(E, 'OTHER_TABLE_TOTALS', False):
+            st = read_statements(self.statement(after))[0]
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+        self.assertFalse(st['engine']['proved'], st['engine'])
+
+
 class PriorPeriodBlockTests(unittest.TestCase):
     def test_a_profile_block_of_earlier_periods_operations_is_not_this_periods_movements(self):
         from services.financial.statement_engine_profiles import validate

@@ -91,6 +91,10 @@ READER_RECOVERY_FLAG = 'LOUPE_FINANCIAL_READER_RECOVERY'
 # The layer guard (revision v22) added r9-engine-santander's file 3d3b9d2b (v21): its targeted re-reads
 # could be outvoted by skipped-line layer rows overlapping them, so a period the page proved without the
 # layer was held.
+# r11-bbva-vector (revision v23) added the layer guard's file ee536c50 (v22): on vector-text pages it kept a
+# word OCR read with characters lost inside it (an operation date read '14NAR' over the outlines of a printed
+# date) unread, so the movement line carried no readable date, and could rebuild a word from the outlines
+# under a box that had cut a printed figure off beside it, so an amount lost a figure.
 # If a later change edits pdf_extraction.py, add the
 # digest of the current file here.
 AFFECTED_EXTRACTION_SHA256 = (
@@ -119,6 +123,7 @@ AFFECTED_EXTRACTION_SHA256 = (
     '8f3539f3afca7d9e4d613967aff51000e1c0fd93688f2e35a6534cb1628f0b37',  # 7b877d0b r7-alex-queue (v19)
     'ed905742085b39bead123c80c47af29dd08f3c73790a8769e964b4e39c266815',  # 7c215ef1 r8-mt-engine (v20)
     '3d3b9d2b0ab124c1722573dbde774c5030c8eddf2feb3daaacf284873a837e13',  # 3a97716c r9-engine-santander (v21)
+    'ee536c5020bcd44185621b179ceb9e2a0db9329e81b49eb676bf37ee602f30c9',  # 060d7470 layer guard (v22)
 )
 READER_RECOVERY = RecoveryCampaign(READER_RECOVERY_RELEASE, {'pdf_extraction.py': AFFECTED_EXTRACTION_SHA256},
     batch_reread=True)

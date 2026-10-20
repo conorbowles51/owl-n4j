@@ -83,6 +83,8 @@ HOLD_MESSAGES = {
     'library_disagrees': 'The general reader and the bank-specific reader both reconcile this period but read it differently.',
     'second_date_unnamed': ('Movement lines print a second date, but the heading of that date column could not be '
                             'read, so it is not known whether it is the posting date or the value date.'),
+    'date_unread': ('A movement line prints two dates, but one of them could not be read, so the line\'s date '
+                    'cannot be confirmed.'),
     'line_without_content':'A dated line in the movement table prints nothing else, so its amount is missing (it may have been blacked out).',
     'account_shared': 'This credit line prints the same account number as a deposit account in the same statement, so its records could be mixed with that account. Check it against the PDF before importing it.',
     'principal_only_balance': ('This credit line prints only its principal balance: the amount owed at the opening (principal '
@@ -795,7 +797,17 @@ def _ocr_date(text):
     text = re.sub(r'(?<=[A-Z0-9])~(?=[A-Z0-9])', '-', text)
     # A day's leading 1 read as a letter at the start of a date ('L1-MAR-2024', 'I5/03/2024').
     text = re.sub(r'^[LI|](?=\d[-/.])', '1', text)
-    return _OCR_MONTH_O.sub('O', _OCR_ZERO.sub('0', text))
+    text = _OCR_MONTH_O.sub('O', _OCR_ZERO.sub('0', text))
+    if DATE_SLASH_MARKS:
+        # A slash between a day and a month name read as another stroke or doubled ('07\\MAR', '07)MAR',
+        # '07/)MAR'): the separator carries no part of the date.
+        text = re.sub(r'^(\d{1,2})(?:/?[\\)|]|[\\)|]/)(?=[A-Z]{3,10}$)', r'\1/', text)
+    return text
+
+
+# (B2) A day-and-month date whose slash the scan read as a backslash, a closing parenthesis or a bar, or doubled
+# with one, reads as that date (``_ocr_date``). Off: such a token is no date, as before.
+DATE_SLASH_MARKS = True
 
 
 @lru_cache(maxsize=262144)
@@ -3208,6 +3220,73 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
 # Reading one section: controls, movements, columns, proof
 # ---------------------------------------------------------------------------
 
+# (B5) A table whose movement lines print two date columns: a line that reads only its first date, while the word
+# standing at the second date column's left edge is no date but date-shaped ink (digits, a short word: '2l\\MAR'
+# beside a first date read '24/MAR'), has its printed dates damaged. Unless what can be read of that ink agrees
+# with the first date (``_ink_agrees``), the first date has lost the column that would confirm it and may be
+# misread too, so the line's date is not taken and the period is not proved. Off: the line keeps its first date
+# and the damaged word joins its description.
+UNREAD_SECOND_DATE_HOLDS = True
+_DATE_COLUMN_EDGE = 0.01
+_DATE_INK = re.compile(r'^(?=\S*\d)\S{2,11}$')
+
+
+def _unread_second_dates(movements, width):
+    """Mark (``date_unread``) and return the movement lines whose second printed date is unread ink (B5)."""
+    if not UNREAD_SECOND_DATE_HOLDS:
+        return []
+    dated = [m for m in movements if m['date_tokens']]
+    two = [m for m in dated if len(m['date_tokens']) > 1]
+    if len(two) < 2 or 2 * len(two) <= len(dated):
+        return []
+
+    def left(token):
+        return token['x0'] / (token.get('_width') or width) - token.get('_shift', 0.0)
+
+    lefts = sorted(left(m['date_tokens'][1]) for m in two)
+    edge = lefts[len(lefts) // 2]
+    unread = []
+    for move in dated:
+        if len(move['date_tokens']) != 1:
+            continue
+        tokens = merged_dates(move['row']['tokens'])
+        after = [t for t in tokens if t['line'] == move['date_tokens'][0]['line']
+                 and t['x0'] > move['date_tokens'][0]['x0'] and t is not move['date_tokens'][0]]
+        if not after:
+            continue
+        word = min(after, key=lambda t: t['x0'])
+        if (abs(left(word) - edge) <= _DATE_COLUMN_EDGE and _DATE_INK.match(word['t'])
+                and not is_date_token(word['t']) and not any(word is t for t in move['money'])
+                and not _ink_agrees(word['t'], move['date_tokens'][0]['t'])):
+            move['date_unread'] = True
+            unread.append(move)
+    return unread
+
+
+_LEADING_FIGURES = re.compile(r'^(\d{1,2})(?!\d)')
+_INK_DATE = re.compile(r'(?<!\d)\d{1,2}[/.-](?:[A-Z]{3,10}|\d{1,2})(?![A-Z\d])')
+_MONTH_WORD = re.compile(r'[A-Z]{3,10}')
+
+
+def _ink_agrees(ink, first):
+    """The damaged second date still prints the first date's leading figures, and no month word other than the
+    first date's ('07/MXR' or '22/ENE_N0' beside '07/MAR' or '22/ENE'): the two columns print the same day,
+    so the first date is corroborated. A whole date the ink carries after marks OCR read over the gap
+    ('~-:dO7/MAR', the zero read as O) corroborates only when it is the first date. A leading figure that
+    differs ('31' beside '13') or that cannot be read leaves it uncorroborated."""
+    inside = [m for m in _INK_DATE.finditer(_OCR_ZERO.sub('0', _dnorm(ink))) if is_date_token(m[0])]
+    if inside:
+        # A whole date printed inside the ink (a mark OCR read over the gap glued to it): it is that date.
+        printed = {(d, mth) for d, mth, _, _ in _date_parts(first)}
+        return all({(d, mth) for d, mth, _, _ in _date_parts(m[0])} & printed for m in inside)
+    lead, own = _LEADING_FIGURES.match(_dnorm(ink)), _LEADING_FIGURES.match(_dnorm(first))
+    if not lead or not own or int(lead[1]) != int(own[1]):
+        return False
+    months = {MONTHS[w] for w in _MONTH_WORD.findall(_dnorm(ink)) if w in MONTHS}
+    printed = {MONTHS[w] for w in _MONTH_WORD.findall(_dnorm(first)) if w in MONTHS}
+    return not months or months == printed
+
+
 def _resolve_dates(movements, period, liability):
     """Row date (and a second printed date) for every movement, or a named failure (B2-B4)."""
     if not period:
@@ -3442,6 +3521,8 @@ def _reading(rows, statement, style, exponent, liability, period):
     # its lines are not this period's movements, up to a heading of the movement table again or a balance.
     main_roles, totalled, other_table = None, False, False
     consumed, blank_dated = set(), []
+    # Index of the line where the movement table printed its own credit or debit total after a movement (E9).
+    table_totals = None
     for index, row in enumerate(rows):
         if not row['tokens'] or row.get('payment_box') or index in consumed:
             continue
@@ -3526,6 +3607,9 @@ def _reading(rows, statement, style, exponent, liability, period):
                 in_summary = not region
             if role in ('credit_total', 'debit_total', 'credit_component', 'debit_component', 'net_component') and not in_summary:
                 handled = handled or bool(money_values)
+                if role in ('credit_total', 'debit_total') and money_values and movements:
+                    # The movement table printing its own totals after its last movement (E9).
+                    table_totals = index
                 continue
             if role == 'section_total' and money_values:
                 # A section's own printed total (D4): a control on the lines under the section's heading.
@@ -3545,6 +3629,15 @@ def _reading(rows, statement, style, exponent, liability, period):
                 if role == 'closing':
                     in_summary = False
                     ends.append(index)
+            elif (role == 'column_total' and money_values and OTHER_TABLE_TOTALS and table_totals is not None
+                  and table_totals > movements[-1]['row']['_index']):
+                # (E9) After the movement table printed its own totals, with no movement line since, a column-total
+                # line totals another table printed below it (a listing of investments): not this table's control.
+                handled = True
+            elif role == 'column_total' and not values and movements:
+                # A column-total label printed alone after a movement heads the movement table's own totals block
+                # ('Total de Movimientos' over its printed debit and credit totals) (E9).
+                table_totals = index
             elif role == 'column_total' and money_values:
                 ends.append(index)
                 column_totals.append(dict(row=row, tokens=money_values))
@@ -3639,6 +3732,7 @@ def _reading(rows, statement, style, exponent, liability, period):
     result['layout_key'] = layout_key({label(t['t']) for h in headers for t in h['tokens']}, proof['convention'])
     dated = [m for m in all_moves if not m.get('undated')]
     resolved, date_problem = _resolve_dates(dated, period, liability) if dated else ([], None if period else 'no_period')
+    unread_dates = _unread_second_dates(dated, width or 1)
     candidates = _search(all_moves, columns, hints, controls, column_totals, style or 'dot', exponent, liability)
     # Among readings with the same money, keep one whose running balance chains (its balances are printed values).
     proving = sorted((c for c in candidates if c['proved']), key=lambda c: not c.get('chain_ok'))
@@ -3655,6 +3749,8 @@ def _reading(rows, statement, style, exponent, liability, period):
             proof['reason'] = 'no_closing'
         elif date_problem:
             proof['reason'] = date_problem
+        elif unread_dates:
+            proof['reason'] = 'date_unread'
         elif unplaced:
             proof['reason'] = 'unplaced_money_line'
         elif blank_dated:
@@ -3706,6 +3802,10 @@ def _reading(rows, statement, style, exponent, liability, period):
 
 
 _SECTION_WORDS = INDEX['credit_component'] | INDEX['debit_component']
+# (E9) A column-total line after the movement table's own printed totals block (its credit/debit total lines,
+# or a column-total label printed alone over them), with no movement line between, totals another table and
+# is not checked against the movements. Off: every column total is.
+OTHER_TABLE_TOTALS = True
 _PLACED_ROLES = ('opening', 'closing', 'credit_total', 'debit_total', 'column_total', 'section_total')
 
 
@@ -4203,7 +4303,10 @@ def _rows(rows, moves, resolved, chosen, controls, column_totals, statement, sty
                 printed = next(dates, None) if resolved is not None else None
                 if move['date_tokens']:
                     fields['date_column'] = str(move['date_tokens'][0]['cell']['column_index'])
-                if printed:
+                if printed and move.get('date_unread'):
+                    # (B5) The line's second date is unread ink: its first date is not taken either.
+                    item['issues'].append('Check the printed date of this movement.')
+                elif printed:
                     fields['date'] = printed[0].isoformat()
                     if len(printed) > 1:
                         fields[second_date] = printed[1].isoformat()

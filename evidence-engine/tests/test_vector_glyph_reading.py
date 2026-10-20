@@ -1,4 +1,5 @@
 """Pages whose text is printed as vector outlines are read from the outlines; synthetic pages only."""
+from unittest import mock
 from pathlib import Path
 
 import fitz
@@ -241,8 +242,18 @@ def test_a_vector_text_statement_page_is_read_from_its_outlines_end_to_end(tmp_p
     ('ABONO', 'ABONQ', False),         # a letter label never replaces an OCR letter
     ('1,2xx34.5O', '1,234.50', True),  # at most two dropped inside
     ('1,2xxx34.5O', '1,234.50', False),
+    ('O3ENE', '03/ENE', True),         # a slash OCR lost inside the word, and the zero it read as O
+    ('14NAR', '14/MAR', True),         # a slash and a letter OCR read as one letter
+    ('O3E', '03/ENE', False),          # at most two lost
+    ('SPI', 'SPEI', True),             # a letter OCR lost between two it read
+    ('Saldo', 'Saldo:', False),        # never past the end of the OCR word
+    ('aldo', 'Saldo', False),          # nor before its start
+    ('699,173.62', ',699,173.62', False),  # a longer reading never slides along the figures
+    ('3,636,57', '3,636,571', False),  # nor adds a figure past them
+    ('1,23.50', '1,234.50', True),     # a figure lost inside, every other figure the reading's own
+    ('1,28.50', '1,234.50', False),
 ])
-def test_an_outline_reading_reconciles_with_the_ocr_text_only_up_to_what_ocr_adds(text, reading, accepted):
+def test_an_outline_reading_reconciles_with_the_ocr_text_only_up_to_what_ocr_adds_or_loses(text, reading, accepted):
     assert G._reconciled(text, reading) is accepted
 
 
@@ -566,3 +577,60 @@ def test_the_layer_guard_lets_the_targeted_rereads_see_the_page_without_the_laye
     assert [r['text'] for r in record['lines_read']] == ['EXAMPLE N HOLDER JR']
     assert pdf.LAYER_ROWS not in record and 'lines_left_to_rereads' not in record
     assert 'HOLDER' in text
+
+
+def test_a_word_ocr_read_with_characters_lost_inside_is_read_whole_from_its_outlines():
+    doc, page, _ = _page(LINES)
+    glyphs = G.page_glyphs(page)
+    words = _word_boxes(page, LINES)
+    labels = G.shape_labels(glyphs, words)
+    date = next(i for i, (text, _) in enumerate(words) if text == '03/ENE')
+    lost = [('O3ENE', words[date][1])]
+    assert G.read_words(glyphs, labels, lost) == ['03/ENE']
+    with mock.patch.object(G, 'LOST_CHARACTERS', False):
+        assert G.read_words(glyphs, labels, lost) == [None]
+
+
+def test_a_box_that_cut_off_a_figure_beside_it_keeps_the_ocr_reading():
+    doc, page, _ = _page(LINES)
+    glyphs = G.page_glyphs(page)
+    words = _word_boxes(page, LINES)
+    labels = G.shape_labels(glyphs, words)
+    amount = next(i for i, (text, _) in enumerate(words) if text == '3,529.25')
+    x0, y0, x1, y1 = words[amount][1]
+    line = sorted((g for g in glyphs if g.y0 >= y0 and g.y1 <= y1 and x0 <= g.centre[0] <= x1), key=lambda g: g.x0)
+    # OCR read the first three figures '3,52' as '3,527' with a box ending before the outline of the '9'.
+    cut = ('3,527', (x0, y0, (line[3].x1 + line[4].x0) / 2, y1))
+    assert G.read_words(glyphs, labels, [cut]) == [None]
+    with mock.patch.object(G, 'CUT_BOX_KEEPS_OCR', False):
+        assert G.read_words(glyphs, labels, [cut]) != [None]
+
+
+def _split_words(page, y, text, pieces):
+    """OCR-like words for the printed ``text`` at ``y``: each piece (start, end) of its characters as a word."""
+    line = sorted((g for g in G.page_glyphs(page) if g.y0 < y + 1 and g.y1 > y - 8), key=lambda g: g.x0)
+    words = []
+    for start, end in pieces:
+        under = line[start:end]
+        words.append((text.replace(' ', '')[start:end], (min(g.x0 for g in under) - .3, min(g.y0 for g in under) - .3,
+                                                          max(g.x1 for g in under) + .3, max(g.y1 for g in under) + .3)))
+    return words
+
+
+def test_an_amount_ocr_split_at_a_skipped_thousands_comma_is_joined_and_nothing_else_is():
+    doc, page, _ = _page(LINES + [(300, 300, '47,382,615.29'), (300, 314, '47,382 615.29')])
+    glyphs = G.page_glyphs(page)
+    words = _word_boxes(page, LINES)
+    labels = G.shape_labels(glyphs, words)
+    split = _split_words(page, 300, '47,382,615.29', [(0, 6), (7, 13)])
+    assert G.split_amounts(glyphs, labels, split) == [(0, 1, '47,382,615.29')]
+    # A figure the first box cut off stands in the gap: joined when OCR read it, not when OCR did not.
+    cut = _split_words(page, 300, '47,382,615.29', [(0, 5), (7, 13)])
+    assert G.split_amounts(glyphs, labels, [('47,382', cut[0][1]), cut[1]]) == [(0, 1, '47,382,615.29')]
+    assert G.split_amounts(glyphs, labels, [('47,38', cut[0][1]), cut[1]]) == []
+    assert G.split_amounts(glyphs, labels, [('47,387', cut[0][1]), cut[1]]) == []
+    # Two amounts a space apart: not joined.
+    apart = _split_words(page, 314, '47,382615.29', [(0, 6), (6, 12)])
+    assert G.split_amounts(glyphs, labels, apart) == []
+    with mock.patch.object(G, 'SPLIT_AMOUNTS_JOIN', False):
+        assert G.split_amounts(glyphs, labels, split) == []

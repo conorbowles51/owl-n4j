@@ -63,6 +63,9 @@ MIN_LABEL_SHARE = 0.6
 MIN_LABEL_MARGIN = 2
 # An outline reading may drop at most this many OCR characters inside a word.
 MAX_DROPPED = 2
+# Characters OCR lost inside a word are restored from fully labelled outlines (``_reconciled``). Off: an
+# outline reading longer than the OCR word is never taken, as before.
+LOST_CHARACTERS = True
 # A word's box widened by this much (points) touching no ink at all was not printed.
 INKLESS_PADDING = 1.0
 # Characters an outline reading may put in place of the OCR's character in an aligned word.
@@ -324,14 +327,22 @@ def read_glyphs(glyphs, labels):
 
 
 def _reconciled(text, reading):
-    """``reading`` (outlines) matches the OCR ``text`` up to what OCR can add.
+    """``reading`` (outlines) matches the OCR ``text`` up to what OCR can add or lose.
 
     Every character of the reading stands for one OCR character in order: the
     same character, or a figure or money mark (``FIGURE_CHARACTERS``) in place
     of whatever OCR read there. OCR characters with no outline are dropped: at
     most ``MAX_DROPPED``, and at the word's ends only marks that are neither
     letters nor figures, because a missing end character is more likely a
-    printed letter the OCR box cut off than one OCR invented.
+    printed letter the OCR box cut off than one OCR invented. A character of
+    the reading OCR lost (``14NAR`` over the outlines of ``14/MAR``: a slash and
+    a letter read as one) is kept only inside the word, between characters OCR
+    read on both sides of it, so it lies within the box OCR drew over the word;
+    outlines past either end of the OCR word are never added. Dropped and lost
+    characters together are at most ``MAX_DROPPED``. A reading longer than the
+    OCR word replaces only OCR letters (an ``O`` on a zero's outline, an ``N`` on
+    a slash's): every figure and mark OCR read must be the reading's own, so
+    the reading cannot slide along an amount by one character.
     """
     from functools import lru_cache
     n, m = len(text), len(reading)
@@ -344,7 +355,7 @@ def _reconciled(text, reading):
         if i == n:
             return None
         options = []
-        if text[i] == reading[j] or reading[j] in FIGURE_CHARACTERS:
+        if text[i] == reading[j] or reading[j] in FIGURE_CHARACTERS and (m <= n or text[i].isalpha()):
             after = best(i + 1, j + 1)
             if after is not None:
                 options.append(after)
@@ -352,9 +363,14 @@ def _reconciled(text, reading):
             after = best(i + 1, j)
             if after is not None:
                 options.append(after + 1)
+        if LOST_CHARACTERS and 0 < i and 0 < j < m - 1:
+            # A character OCR lost inside the word: the reading's next character is matched after it.
+            after = best(i, j + 1)
+            if after is not None:
+                options.append(after + 1)
         return min(options) if options else None
 
-    if not m or m > n:
+    if not m or (m > n and not LOST_CHARACTERS) or m > n + MAX_DROPPED:
         return False
     dropped = best(0, 0)
     return dropped is not None and dropped <= MAX_DROPPED
@@ -387,6 +403,10 @@ def _word_reading(text, under, labels):
         return None
     if len(under) == len(text):
         return _aligned_reading(text, under, labels)
+    if len(under) > len(text) and any(b.x0 < a.x1 for a, b in zip(under, under[1:])):
+        # More outlines than OCR characters, two of them stacked over each other (a colon's two dots): they
+        # may be one printed character, so OCR's reading is kept.
+        return None
     reading = read_glyphs(under, labels)
     return reading if reading is not None and _reconciled(text, reading) else None
 
@@ -483,6 +503,68 @@ def unread_words(glyphs, labels, words):
     return found
 
 
+_GROUP_HEAD = re.compile(r'-?\d{1,3}(?:,\d{3})*')
+_GROUP_TAIL = re.compile(r'\d{3}(?:,\d{3})*\.\d{2}-?')
+# Two OCR words of one printed amount split where OCR skipped its thousands comma are read as one amount
+# (``split_amounts``). Off: the two pieces stay apart, as before.
+SPLIT_AMOUNTS_JOIN = True
+MAX_UNCOVERED_JOIN = 3
+
+
+def split_amounts(glyphs, labels, words):
+    """``[(i, j, text)]``: words ``i`` and ``j`` are two pieces of one printed amount OCR split at a thousands
+    comma it skipped ('47,382' and '615.29' with the comma's outline under neither word).
+
+    The first piece is a grouped whole number, the second three figures (more groups) with two decimals.
+    Between their outlines stand at most ``MAX_UNCOVERED_JOIN`` outlines no word covers: the comma, and any
+    figure the first word's box cut off ('385' read over the outlines of '38', the '5' and the comma past its
+    edge). Every gap is narrow enough to lie inside one amount (``AMOUNT_JOIN_GAP``); the outlines up to the
+    second piece read exactly as the first OCR word and a comma, and the whole run reads exactly as the two
+    OCR pieces joined by that comma, a grouped amount with two decimals (``_AMOUNT``). Nothing else is joined.
+    """
+    if not SPLIT_AMOUNTS_JOIN:
+        return []
+    index = _Index(glyphs)
+    unders, owner = [], {}
+    for number, (text, box) in enumerate(words):
+        text = (text or '').strip()
+        under = index.within(*box) if text and not any(c.isspace() for c in text) else []
+        unders.append(under)
+        for glyph in under:
+            owner.setdefault(id(glyph), number)
+    found = []
+    for i, (text, _) in enumerate(words):
+        text = (text or '').strip()
+        under = unders[i]
+        if not under or not _GROUP_HEAD.fullmatch(text):
+            continue
+        height = max(g.y1 - g.y0 for g in under)
+        top, bottom = min(g.y0 for g in under), max(g.y1 for g in under)
+        run, between, last = list(under), [], under[-1]
+        while True:
+            reach = AMOUNT_JOIN_GAP * height
+            near = [g for g in index.within(last.x1, top - height, last.x1 + reach + height, bottom + height)
+                    if g.x0 > last.x0 and g.y0 < bottom and g.y1 > top and 0 <= g.x0 - last.x1 <= reach]
+            if not near:
+                break
+            following = min(near, key=lambda g: g.x0)
+            if id(following) in owner:
+                j = owner[id(following)]
+                tail = (words[j][0] or '').strip()
+                if (between and j != i and unders[j] and unders[j][0] is following and _GROUP_TAIL.fullmatch(tail)
+                        and _amount_gaps(run + unders[j]) and read_glyphs(run, labels) == text + ','):
+                    reading = read_glyphs(run + unders[j], labels)
+                    if reading == text + ',' + tail and _AMOUNT.fullmatch(reading):
+                        found.append((i, j, reading))
+                break
+            if len(between) >= MAX_UNCOVERED_JOIN:
+                break
+            between.append(following)
+            run.append(following)
+            last = following
+    return found
+
+
 # A printed line OCR skipped is read again only when it has at least this many characters (a lone
 # outline is a rule piece or a mark), and its words split into column runs at gaps this many line heights wide.
 MIN_UNREAD_LINE_CHARACTERS = 3
@@ -567,6 +649,25 @@ def unread_lines(glyphs, words):
     return sorted(found, key=lambda item: (item[0][1], item[0][0]))
 
 
+def _box_cut(index, under, box):
+    """An outline character of the same printed line lies just past either end of the characters under the
+    word's box, nearer than a space (``SPACE_GAP_SHARE`` of the height): the box cut a printed character off."""
+    height = max(g.y1 - g.y0 for g in under)
+    top, bottom = min(g.y0 for g in under), max(g.y1 for g in under)
+    first, last = under[0], under[-1]
+    reach = SPACE_GAP_SHARE * height
+    near = index.within(box[0] - reach - height, top, box[2] + reach + height, bottom)
+    inside = {id(g) for g in under}
+    return any(id(g) not in inside and min(g.y1, bottom) - max(g.y0, top) > 0
+               and (0 <= g.x0 - last.x1 < reach or 0 <= first.x0 - g.x1 < reach) for g in near)
+
+
+# A word with more OCR characters than outlines under its box keeps its OCR reading when the box cut off a
+# printed character beside it (``_box_cut``): OCR read 385 where the box held only the outlines of 38 and
+# the 5 stood just past its edge. Off: such a word may be rebuilt from the outlines it covers, as before.
+CUT_BOX_KEEPS_OCR = True
+
+
 def read_words(glyphs, labels, words):
     """Each word ``(text, box)`` re-read from the outlines under it, or ``None`` where it keeps its reading."""
     index = _Index(glyphs)
@@ -574,6 +675,9 @@ def read_words(glyphs, labels, words):
     for text, box in words:
         text = (text or '').strip()
         under = index.within(*box) if text and not any(c.isspace() for c in text) else []
+        if under and CUT_BOX_KEEPS_OCR and len(under) < len(text) and _box_cut(index, under, box):
+            results.append(None)
+            continue
         results.append(_word_reading(text, under, labels) if under else None)
     return results
 

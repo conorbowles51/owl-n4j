@@ -58,7 +58,11 @@ MAX_OSD_TIMEOUT_SECONDS = 30.0
 # v22 (layer guard): the skipped-line layer is held aside while the targeted re-reads run and put
 # back only where none of them added a word (_withhold_layer, _restore_layer). v21 is
 # r9-engine-santander's revision; either order of merging keeps this one distinct.
-PDF_READING_REVISION = 'bank-payment-rows-v22'
+# v23 (r11-bbva-vector): on a vector-text page a word OCR read with characters lost inside it (a date's
+# slash and month letter read as one letter) is read whole from its labelled outlines, and a word whose OCR
+# box cut off the outline of a character beside it keeps its OCR reading, and an amount OCR read as two
+# words where it skipped the thousands comma is read as one (vector_glyph_reading.split_amounts).
+PDF_READING_REVISION = 'bank-payment-rows-v23'
 OSD_INSUFFICIENT_TEXT_MARKERS = ("too few characters", "skipping this page")
 
 
@@ -960,7 +964,7 @@ def _read_vector_outlines(page: fitz.Page, data: dict, dpi: int, *, image: Image
     was added as a printed amount OCR skipped.
     """
     from app.pipeline.vector_glyph_reading import (METHOD, inkless, other_ink, page_glyphs, read_words, shape_labels,
-        unread_lines, unread_words)
+        split_amounts, unread_lines, unread_words)
     texts = data.get("text") or []
     fields = ("left", "top", "width", "height")
     if any(not isinstance(data.get(name), list) or len(data[name]) != len(texts) for name in fields):
@@ -995,6 +999,25 @@ def _read_vector_outlines(page: fitz.Page, data: dict, dpi: int, *, image: Image
             changed.append(dict(original_text=text.strip(), text=reading,
                                 rect=[round(v * 1000) for v in box]))
             new_texts[index] = reading
+    joined = []
+    for first, second, text in split_amounts(glyphs, labels, [(t, box) for t, (_, box) in zip(new_texts, words)]):
+        # One printed amount OCR split where it skipped the thousands comma: the first word becomes the whole
+        # amount over both boxes, the second is emptied (as a word printed nowhere is).
+        if not joined:
+            data = {name: list(values) if isinstance(values, list) and len(values) == len(texts) else values
+                    for name, values in data.items()}
+        (a0, a1, a2, a3), (b0, b1, b2, b3) = words[first][1], words[second][1]
+        box = (min(a0, b0), min(a1, b1), max(a2, b2), max(a3, b3))
+        left, top = data["left"][first], min(data["top"][first], data["top"][second])
+        data["width"][first] = max(data["left"][first] + data["width"][first],
+                                   data["left"][second] + data["width"][second]) - left
+        data["height"][first] = max(data["top"][first] + data["height"][first],
+                                    data["top"][second] + data["height"][second]) - top
+        data["top"][first] = top
+        joined.append(dict(original_texts=[new_texts[first], new_texts[second]], text=text,
+                           rect=[round(v * 1000) for v in box]))
+        new_texts[first], new_texts[second] = text, ''
+        words[first], words[second] = (text, box), ('', words[second][1])
     added = []
     image_width, image_height = math.floor(page.rect.width / scale), math.floor(page.rect.height / scale)
     for text, (x0, y0, x1, y1) in unread_words(glyphs, labels, [(t, box) for t, (_, box) in zip(new_texts, words)]):
@@ -1021,16 +1044,17 @@ def _read_vector_outlines(page: fitz.Page, data: dict, dpi: int, *, image: Image
     final_words = [(t, box) for t, (_, box) in zip(new_texts, words)] + [(t, box) for t, box, _ in added]
     lines_unread = [[round(v * 1000) for v in box] for box, _ in unread_lines(glyphs, final_words)]
     record = dict(field='vector_glyph_reading', method=METHOD,
-                  decision='read' if changed or dropped or added or lines_read else 'unchanged',
+                  decision='read' if changed or dropped or added or lines_read or joined else 'unchanged',
                   characters=len(glyphs), shapes=len({g.shape for g in glyphs}), labelled_shapes=len(labels),
                   characters_labelled=sum(g.shape in labels for g in glyphs),
                   words_read=sum(r is not None for r in readings), words_changed=changed, words_dropped=dropped,
+                  words_joined=joined,
                   words_added=[dict(text=t, rect=[round(v * 1000) for v in box]) for t, box, _ in added],
                   lines_read=lines_read, lines_checked=True, lines_unread=lines_unread,
                   labels=[[shape, label, votes, total] for shape, (label, votes, total) in sorted(labels.items())])
     # Not stored: which rows of the returned data are the skipped-line layer (see _withhold_layer).
     record[LAYER_ROWS] = layer_rows
-    return (dict(data, text=new_texts) if changed or dropped or added or lines_read else data), record
+    return (dict(data, text=new_texts) if changed or dropped or added or lines_read or joined else data), record
 
 
 def _ocr_page(page: fitz.Page, *, drop_inkless_words: bool = False,
