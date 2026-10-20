@@ -40,7 +40,8 @@ const entry = z.object({
   reader_file: z.boolean().optional(),
   copy_of: z.string().nullish(),
   set_aside: z.boolean().optional(),
-  /** "same_file_read": this upload's reading failed; the same bytes were read through another upload. */
+  /** "same_file_read": this upload's reading failed; the same bytes were read through another upload.
+   * "same_pages_read": the same, for a file with other bytes whose every page is identical. */
   copy_reason: z.string().nullish(),
   /** Proposed values for missing details (value, its source, whether it is certain). */
   proposals: z
@@ -110,7 +111,7 @@ export const reviewQueue = z.object({
       })
     )
     .default([]),
-  /** Files that could not be prepared, set aside because the same file was read through another upload. */
+  /** Files that could not be prepared, set aside because the same file (or the same pages) was read through another upload. */
   copy_files: z
     .array(
       z.object({
@@ -120,6 +121,7 @@ export const reviewQueue = z.object({
         filename: z.string(),
         message: z.string(),
         copy_of: z.string().nullish(),
+        copy_reason: z.string().nullish(),
       })
     )
     .default([]),

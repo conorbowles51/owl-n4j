@@ -17,6 +17,13 @@ closing date:
 * ``no_truth_period``: the document has truth, but no judged truth period matches;
 * ``live_period_undated``: the live period was admitted without period dates.
 
+A live file belongs to a truth document when the inventory lists it, when its
+bytes are the document's (an upload after the inventory was taken), or, given
+``--page-identities``, when every page renders identically to a file of that
+document. "The same printed period admitted more than once in a case" counts
+live periods of one truth period and its copies (truth ``duplicate_of``),
+whichever file and ledger account each was saved through.
+
 The live database is read inside a READ ONLY transaction. The shareable
 summary holds counts only; per-period detail goes to the private ``--out``.
 
@@ -56,7 +63,8 @@ def live_periods(session, evidence_file_ids):
         return []
     rows = session.execute(text(
         "SELECT p.id, d.evidence_file_id, d.id, p.period_start, p.period_end, p.currency, p.opening_balance_minor, "
-        "p.closing_balance_minor, a.identifier_normalised, a.identifier_as_printed, d.case_id, a.metadata->>'share' "
+        "p.closing_balance_minor, a.identifier_normalised, a.identifier_as_printed, d.case_id, a.metadata->>'share', "
+        "p.account_id "
         "FROM financial_statement_periods p JOIN financial_source_documents d ON d.id = p.source_document_id "
         "LEFT JOIN financial_accounts a ON a.id = p.account_id "
         "WHERE d.status = 'admitted' AND d.evidence_file_id IN :files").bindparams(
@@ -65,7 +73,8 @@ def live_periods(session, evidence_file_ids):
                           period_start=r[3].isoformat() if r[3] else None, period_end=r[4].isoformat() if r[4] else None,
                           currency=r[5], opening_minor=r[6], closing_minor=r[7],
                           account=_digits(r[8] or r[9]), case_id=str(r[10]),
-                          share=r[11] or _printed_share(r[9]), rows=[]) for r in rows}
+                          share=r[11] or _printed_share(r[9]), account_id=str(r[12]) if r[12] else None,
+                          rows=[]) for r in rows}
     if not periods:
         return []
     for r in session.execute(text(
@@ -170,11 +179,41 @@ def best_truth(live, candidates):
     return max(same, key=lambda truth: (overlap(truth), balances(truth)))
 
 
-def audit(truth_dir, inventory, session):
-    by_file = {}
+def live_files_of(session, inventory, page_identities=None):
+    """{live evidence file id: truth document id}: the inventory's files, every live file with a
+    document's bytes, and (given ``page_identities`` {file id: identity}) every file whose pages
+    render identically to one of those. Returns (mapping, counts by how each file was found)."""
+    from sqlalchemy import bindparam, text
+    by_file, how = {}, Counter()
+    by_sha = {}
     for doc in inventory['documents']:
+        if doc.get('sha256'):
+            by_sha[doc['sha256']] = doc['id']
         for record in doc['evidence_files']:
             by_file[record['evidence_file_id']] = doc['id']
+            how['inventory'] += 1
+    if by_sha:
+        for file_id, sha in session.execute(text(
+                "SELECT id, sha256 FROM evidence_files WHERE sha256 IN :shas").bindparams(
+                bindparam('shas', expanding=True)), dict(shas=list(by_sha))).all():
+            if str(file_id) not in by_file:
+                by_file[str(file_id)] = by_sha[sha]
+                how['same_bytes'] += 1
+    if page_identities:
+        doc_of_identity = defaultdict(set)
+        for file_id, doc in by_file.items():
+            if page_identities.get(file_id):
+                doc_of_identity[page_identities[file_id]].add(doc)
+        for file_id, identity in page_identities.items():
+            docs = doc_of_identity.get(identity) or set()
+            if file_id not in by_file and len(docs) == 1:
+                by_file[file_id] = next(iter(docs))
+                how['same_pages'] += 1
+    return by_file, how
+
+
+def audit(truth_dir, inventory, session, *, page_identities=None):
+    by_file, found = live_files_of(session, inventory, page_identities)
     truths = {}
     for path in Path(truth_dir, 'periods').glob('*.json'):
         result = json.loads(path.read_text())
@@ -195,6 +234,7 @@ def audit(truth_dir, inventory, session):
         else:
             entry = judge(period, truth)
         entry.update(doc=doc, live_period_id=period['period_id'], live_rows=len(period['rows']), case=period['case_id'],
+                     account_id=period.get('account_id'),
                      live_rows_without_transaction_or_posted_date=sum(1 for r in period['rows'] if r[2] is None),
                      of_which_with_another_date=period.get('undated_with_other_date', 0))
         if truth is not None and entry['rows'] == 'dates_differ':
@@ -218,16 +258,25 @@ def audit(truth_dir, inventory, session):
     canonical = {p['id']: p.get('duplicate_of') for t in truths.values() for p in t['periods']}
     admitted = {(e['case'], canonical.get(e['truth_id']) or e['truth_id']) for e in detail if e.get('truth_id')}
     cross_doc = Counter((e['case'], canonical.get(e['truth_id']) or e['truth_id']) for e in detail if e.get('truth_id'))
+    ledger_accounts = defaultdict(set)
+    for e in detail:
+        if e.get('truth_id'):
+            ledger_accounts[(e['case'], canonical.get(e['truth_id']) or e['truth_id'])].add(e.get('account_id'))
     offsets = defaultdict(Counter)
     for e in detail:
         for days, n in e.get('day_offsets', {}).items():
             offsets[e['family']][str(days)] += n
-    duplicates = dict(same_file_admitted_more_than_once_in_a_case=sum(1 for n in per_case.values() if n > 1),
+    duplicates = dict(same_printed_period_admitted_more_than_once_examples=sorted(
+                          f'{case[:8]} {truth_id}' for (case, truth_id), n in cross_doc.items() if n > 1)[:20],
+                      same_printed_period_in_more_than_one_ledger_account=sum(
+                          1 for key, accounts in ledger_accounts.items() if cross_doc[key] > 1 and len(accounts) > 1),
+                      same_file_admitted_more_than_once_in_a_case=sum(1 for n in per_case.values() if n > 1),
                       extra_live_periods_from_repeats_in_a_case=sum(n - 1 for n in per_case.values() if n > 1),
                       same_printed_period_admitted_more_than_once_in_a_case=sum(1 for n in cross_doc.values() if n > 1),
                       extra_live_periods_for_the_same_printed_period=sum(n - 1 for n in cross_doc.values() if n > 1),
                       distinct_printed_periods_admitted=len(admitted))
     summary = dict(live_admitted_periods_on_truth_documents=len(live), documents_with_truth=len(truths),
+                   live_files_on_truth_documents=dict(found),
                    duplicates=duplicates, day_offsets_where_dates_differ={k: dict(v.most_common(8))
                                                                           for k, v in sorted(offsets.items())},
                    by_family={k: dict(v) for k, v in sorted(counts.items())},
@@ -245,6 +294,8 @@ def main(argv=None):
     parser.add_argument('--truth', type=Path, required=True)
     parser.add_argument('--inventory', type=Path, required=True)
     parser.add_argument('--out', type=Path, required=True, help='private directory for the per-period detail')
+    parser.add_argument('--page-identities', type=Path,
+                        help='JSON {"<file id>[:<sha256>]": page identity} (e.g. the page-copy census cache)')
     args = parser.parse_args(argv)
     sys.path.insert(0, str(BACKEND))
     from postgres.session import _get_session_local
@@ -252,7 +303,12 @@ def main(argv=None):
     inventory = json.loads(args.inventory.read_text())
     with _get_session_local()() as db:
         read_only(db)
-        summary, detail = audit(args.truth, inventory, db)
+        identities = None
+        if args.page_identities:
+            raw = json.loads(args.page_identities.read_text())
+            identities = {key.split(':')[0]: (value.get('identity') if isinstance(value, dict) else value)
+                          for key, value in raw.items() if value}
+        summary, detail = audit(args.truth, inventory, db, page_identities=identities)
         db.rollback()
     args.out.mkdir(parents=True, exist_ok=True)
     os.chmod(args.out, 0o700)

@@ -391,21 +391,29 @@ it("lists failed readings of a file that another upload read as copies of that u
     if (url.includes("/review/queue"))
       return {
         ...queue,
-        counts: { ...queue.counts, copies: 3, copy_files: 1 },
+        counts: { ...queue.counts, copies: 4, copy_files: 2 },
         copies: [
           ...queue.copies,
           { ...queue.copies[0], id: "c2", filename: "Month.pdf", status: "attention", copy_of: "Month.pdf",
             copy_reason: "same_file_read" },
+          { ...queue.copies[0], id: "c3", filename: "Month resaved.pdf", status: "attention", copy_of: "Month.pdf",
+            copy_reason: "same_pages_read" },
         ],
-        copy_files: [{ batch_id: "b2", source_id: "f9", file_id: "f9", filename: "Month (2).pdf", message: "x", copy_of: "Month.pdf" }],
+        copy_files: [
+          { batch_id: "b2", source_id: "f9", file_id: "f9", filename: "Month (2).pdf", message: "x", copy_of: "Month.pdf" },
+          { batch_id: "b2", source_id: "f8", file_id: "f8", filename: "Month printed.pdf", message: "x", copy_of: "Month.pdf",
+            copy_reason: "same_pages_read" },
+        ],
       } as never
     throw Error(`unexpected ${url}`)
   })
   const onOpenBatch = mount("/cases/case/financial?view=statements&queue=1")
-  fireEvent.click(await screen.findByRole("button", { name: "Review copies (2)" }))
+  fireEvent.click(await screen.findByRole("button", { name: "Review copies (3)" }))
   expect(await screen.findByText(/Same file as Month.pdf, which was read. This upload's own reading is not used/)).toBeVisible()
   expect(screen.getByText("Files set aside as copies")).toBeVisible()
   expect(screen.getByText(/Month \(2\).pdf: same file as Month.pdf, which was read/)).toBeVisible()
+  expect(screen.getByText(/Every page is the same as Month.pdf, which was read. This upload's own reading/)).toBeVisible()
+  expect(screen.getByText(/Month printed.pdf: every page is the same as Month.pdf, which was read/)).toBeVisible()
   fireEvent.click(screen.getAllByRole("button", { name: "Open its batch" })[0])
   expect(onOpenBatch).toHaveBeenCalledWith("b2")
 })

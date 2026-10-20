@@ -425,6 +425,47 @@ class UnprintedDateAndAuditTests(unittest.TestCase):
         self.assertEqual(audit.judge(live, dict(held, expected='auto'))['outcome'], 'agrees')
 
 
+    def test_audit_counts_a_copy_saved_through_a_file_the_inventory_does_not_list(self):
+        """r11-copy-audit: an upload of the same bytes after the inventory, saved to another ledger account."""
+        from unittest import mock
+        from benchmarks.statement_automation import real_ledger_audit as audit
+        rows = [dict(amount_minor=500, direction='debit', date='2024-01-05')]
+        def truth_period(pid, duplicate_of=None):
+            return dict(id=pid, family='f', truth_status='verified', expected='duplicate' if duplicate_of else 'auto',
+                        duplicate_of=duplicate_of, period_start='2024-01-01', period_end='2024-01-31', currency='MXN',
+                        account='1234', share=None, opening_minor=1000, closing_minor=500, rows=rows)
+        inventory = dict(documents=[dict(id='dorig', sha256='a' * 64, evidence_files=[]),
+                                    dict(id='dcopy', sha256='b' * 64, evidence_files=[dict(evidence_file_id='f-copy')])])
+        def live(file_id, account):
+            return dict(period_id='p-' + file_id, evidence_file_id=file_id, source_document_id='s-' + file_id,
+                        period_start='2024-01-01', period_end='2024-01-31', currency='MXN', opening_minor=1000,
+                        closing_minor=500, account='991234', case_id='c' * 8 + '-case', share=None,
+                        account_id=account, rows=[(500, 'debit', '2024-01-05')])
+        session = mock.Mock()
+        session.execute.return_value.all.return_value = [('f-orig', 'a' * 64)]
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / 'periods').mkdir()
+            for doc, period in (('dorig', truth_period('dorig#1')), ('dcopy', truth_period('dcopy#1', 'dorig#1'))):
+                (Path(tmp) / 'periods' / (doc + '.json')).write_text(json.dumps(dict(id=doc, status='verified', periods=[period])))
+            seen = []
+            def periods(_session, files):
+                seen.append(sorted(files))
+                return [live(f, 'acct-' + f) for f in sorted(files)]
+            with mock.patch.object(audit, 'live_periods', periods):
+                summary, detail = audit.audit(Path(tmp), inventory, session)
+        self.assertEqual(seen, [['f-copy', 'f-orig']])
+        self.assertEqual(summary['live_files_on_truth_documents'], dict(inventory=1, same_bytes=1))
+        duplicates = summary['duplicates']
+        self.assertEqual(duplicates['same_printed_period_admitted_more_than_once_in_a_case'], 1)
+        self.assertEqual(duplicates['same_printed_period_in_more_than_one_ledger_account'], 1)
+        self.assertEqual(duplicates['same_printed_period_admitted_more_than_once_examples'], ['cccccccc dorig#1'])
+        self.assertEqual({e['outcome'] for e in detail}, {'agrees'})
+        # By page identity: a file with other bytes whose pages render identically to the copy.
+        session.execute.return_value.all.return_value = []
+        mapping, how = audit.live_files_of(session, inventory, {'f-copy': 'x', 'f-other': 'x', 'f-alone': 'y'})
+        self.assertEqual((mapping.get('f-other'), 'f-alone' in mapping, how['same_pages']), ('dcopy', False, 1))
+
+
 class InventoryTests(unittest.TestCase):
     def test_family_guess_and_opaque_id(self):
         self.assertEqual(real_inventory.guess_family('BBVA MEXICO, S.A.'), 'bbva-mexico')

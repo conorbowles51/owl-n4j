@@ -15,6 +15,29 @@ differs in any of these is never set aside; the pair is listed for comparison.
 A pair where an investigator recorded why both copies are needed, or where an
 investigator restored a copy, is left as the investigator decided.
 
+Copies read by different readers (r11-copy-audit). Another reader can word the
+bank differently, give the statement another product type, group its pages
+differently or capture one more printed balance, and file the copy in another
+ledger account. The printed facts do not change, so two saved copies are also
+the same printed statement when either
+
+* their files are one document (identical bytes, or every page rendering
+  identically: ``page_identity``) and the statements sit on the same pages, or
+* they print the same account reference (with digits), currency and dates and
+  carry at least one payment
+
+and their money does not conflict: the same payments (amount, direction, date)
+and balance convention, printed balances of one reading a subset of the
+other's, and the same payments and period balances in the ledger. Measured on
+every pair of verified real truth periods: 168 pairs share a printed reference,
+dates and money with at least one payment, all true copies; with no payment 17
+pairs do, all different sub-accounts of one statement, hence the payment rule.
+Product type and bank wording are not compared. A pair equal in everything but
+its ledger account is listed in ``split_across_accounts`` with the account merge
+it needs; it is set aside only on request (``across_accounts``) and only with
+the proof the pre-admission rule uses for a reader-independent copy, one
+document. Accounts are never merged here. Reverse: ``READER_INDEPENDENT``.
+
 Retained copy, one rule for every case (decision r2-admitted-duplicates; Neil
 chose the first production for case 49494305):
 
@@ -47,7 +70,7 @@ import uuid
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from postgres.models.case import Case
 from postgres.models.evidence import EvidenceFile, IngestionLog
@@ -64,6 +87,12 @@ SYSTEM_ACTOR = Actor(name='system: duplicate set-aside', email='duplicate-set-as
 SET_ASIDE_REASON = ('The same printed statement was saved twice with equal payments and printed balances. '
                     'This copy is set aside as a linked duplicate; the retained copy counts once.')
 RESTORE_REASON = 'Restored on request; both copies count again.'
+# Switch: False compares only copies of the same product and bank wording
+# (the r2 rule), with no page identity and no listing across accounts.
+READER_INDEPENDENT = True
+# The proof a copy filed in another ledger account may be set aside with: the
+# files are one document, as the pre-admission rule requires across readers.
+SAME_DOCUMENT = ('identical_bytes', 'identical_pages')
 
 # Why a matching pair is not set aside. Codes are reported; messages refuse.
 HELD = {
@@ -111,6 +140,10 @@ class _Copy:
     latest: AdjudicationEvent | None = None
     verified: bool = True
     notes: list = field(default_factory=list)
+    key: tuple | None = None
+    pages: dict | None = None
+    section: frozenset = frozenset()
+    raw_accounts: frozenset = frozenset()
 
 
 def _natural(name):
@@ -161,9 +194,25 @@ def _received(session, file, cache):
     return (str(root.created_at), _natural(root.original_filename), str(root.id))
 
 
-def _load(session, case_id, *, document_ids=None):
-    """Every saved statement copy of a case (or the given ones), with what decides equality."""
-    from services.financial.pending_statement_duplicates import _initial, _review_shape, statement_content
+def _canonical_accounts(session, case_id):
+    """Account records consolidated into one reviewed account map to it; {} when unreadable."""
+    from services.financial.account_consolidation import canonical_map
+    try:
+        return canonical_map(session, case_id)
+    except Exception:  # an inconsistent consolidation history: compare the records themselves
+        return {}
+
+
+def _load(session, case_id, *, document_ids=None, identities=None):
+    """Every saved statement copy of a case (or the given ones), with what decides equality.
+
+    ``identities``: {evidence file id: page identity} computed by the caller
+    (a read-only dry run that renders files without stored identities); a
+    stored identity is used otherwise.
+    """
+    from services.financial import page_identity
+    from services.financial.pending_statement_duplicates import (
+        _initial, _printed_key, _review_shape, _section_pages, statement_content)
     from services.financial.statement_import_overlap import scope
     query = select(FinancialSourceDocument).where(
         FinancialSourceDocument.case_id == case_id,
@@ -195,6 +244,7 @@ def _load(session, case_id, *, document_ids=None):
     decided_rows = set(session.scalars(select(AdjudicationEvent.subject_id).where(
         AdjudicationEvent.case_id == case_id, AdjudicationEvent.subject_type == 'transaction'))) & row_ids
     roots = {}
+    canonical = _canonical_accounts(session, case_id) if READER_INDEPENDENT else {}
     copies = []
     for document in documents:
         metadata = document.metadata_ or {}
@@ -210,6 +260,11 @@ def _load(session, case_id, *, document_ids=None):
             scope=None)
         if verified and not request.get('period_start_unprinted'):
             copy.scope = scope({**request, 'account_type': (original.get('metadata') or {}).get('account_type') or ''})
+            copy.key = _printed_key(copy.scope)
+            copy.section = _section_pages(original)
+        if file is not None and READER_INDEPENDENT:
+            given = (identities or {}).get(str(file.id))
+            copy.pages = given if given and given.get('source_sha256') == file.sha256 else page_identity.stored(file)
         if verified:
             copy.content, copy.payments = statement_content(original)
             copy.usable = _comparable(original, request)
@@ -224,7 +279,8 @@ def _load(session, case_id, *, document_ids=None):
                              str(r.transaction_date or r.posted_date or r.value_date or r.ordering_date)] for r in admitted),
             periods=sorted([str(p.period_start), str(p.period_end), p.currency,
                             str(p.opening_balance_minor), str(p.closing_balance_minor)] for p in periods)))
-        copy.accounts = frozenset({r.account_id for r in admitted} | {p.account_id for p in periods})
+        copy.raw_accounts = frozenset({r.account_id for r in admitted} | {p.account_id for p in periods})
+        copy.accounts = frozenset(canonical.get(a, a) for a in copy.raw_accounts)
         copy.rows_clean = all(r.ledger_status == 'admitted' and r.superseded_by_id is None for r in rows)
         copy.corrected = any(r.superseded_by_id is not None for r in rows)
         copy.work = bool(copy.edited or copy.corrected or any(r.id in decided_rows for r in rows))
@@ -246,45 +302,102 @@ def _same_period(left, right):
                                                 or same_printed_period(left.scope, right.scope)))
 
 
+def _same_document(left, right):
+    """The basis on which two copies' files are one document, or None."""
+    if left.file is None or right.file is None or left.file.id == right.file.id:
+        return None
+    if left.file.sha256 and left.file.sha256 == right.file.sha256:
+        return 'identical_bytes'
+    a, b = left.pages, right.pages
+    if a and b and a.get('identity') and (a['identity'], a.get('renderer'), a.get('page_count')) == (
+            b['identity'], b.get('renderer'), b.get('page_count')):
+        return 'identical_pages'
+    return None
+
+
+def _match(left, right):
+    """Why two saved copies are the same printed statement, or None.
+
+    ``same_printed_period``: the r2 rule (same product and, for a full
+    reference, bank). Otherwise, whatever either reader said about bank or
+    product: ``identical_bytes`` / ``identical_pages`` for statements on the
+    same pages of one document, ``printed_reference`` for the same printed
+    account reference, currency and dates.
+    """
+    if _same_period(left, right):
+        return 'same_printed_period'
+    if not READER_INDEPENDENT or not (left.scope and right.scope) or any(
+            left.scope.get(key) != right.scope.get(key) for key in ('currency', 'start', 'end')):
+        return None
+    from services.financial.pending_statement_duplicates import _page_copy
+    document = _same_document(left, right)
+    same_key = bool(left.key and left.key == right.key)
+    if document and (_page_copy(left.original, right.original) or (same_key and left.section & right.section)):
+        return document
+    # Without a payment the same reference and dates are as often two
+    # sub-accounts of one statement (measured: 17 of 20 truth pairs).
+    return 'printed_reference' if same_key and left.payments and right.payments else None
+
+
 def _compare(copy, retained):
-    """None when ``copy`` may be set aside in favour of ``retained``; otherwise why not."""
+    """None when ``copy`` may be set aside in favour of ``retained``; otherwise why not.
+
+    ``account_differs`` is decided last: it means everything else is equal.
+    """
     if not (copy.verified and retained.verified):
         return 'unverifiable'
     if _kept_reason(copy) or _kept_reason(retained):
         return 'investigator_kept_both'
-    if not _same_period(copy, retained):
+    basis = _match(copy, retained)
+    if basis is None:
         return 'not_same_period'
     if not (copy.usable and retained.usable):
         return 'reading_not_comparable'
-    if copy.scope['identity'] != retained.scope['identity'] and not copy.payments:
-        return 'other_bank_without_payments'
-    if copy.content != retained.content:
-        return 'money_differs'
+    code = None
+    if basis == 'same_printed_period':
+        if copy.scope['identity'] != retained.scope['identity'] and not copy.payments:
+            code = 'other_bank_without_payments'
+        elif copy.content != retained.content:
+            code = 'money_differs'
+        if code and READER_INDEPENDENT and copy.key and copy.key == retained.key and copy.payments and retained.payments:
+            basis = 'printed_reference'  # the same printed facts, read by another reader: compare as such
+            code = None
+        elif code:
+            return code
+    if basis != 'same_printed_period':
+        from services.financial.pending_statement_duplicates import _money_conflicts
+        if _money_conflicts(copy.original, retained.original):
+            return 'money_differs'
     if copy.ledger != retained.ledger:
         return 'ledger_differs'
-    if copy.accounts != retained.accounts:
-        return 'account_differs'
     if copy.edited and copy.review != retained.review:
         return 'edits_differ'
     if copy.corrected:
         return 'rows_corrected'
     if not retained.rows_clean:
         return 'retained_rows_set_aside'
+    if copy.accounts != retained.accounts:
+        return 'account_differs'
     return None
 
 
-def same_admitted_statement(session, document, primary):
+def same_admitted_statement(session, document, primary, *, across_accounts=False):
     """Refusal message, or None when ``document`` may be set aside for ``primary``.
 
     Called by ``decide_duplicate`` under its row locks, so the comparison is
-    made again on exactly the state being changed.
+    made again on exactly the state being changed. ``across_accounts`` also
+    accepts a copy filed in another ledger account, only when the two files are
+    one document by their stored identities.
     """
     if document.case_id != primary.case_id:
         return 'The documents belong to different cases.'
     copies = {c.document.id: c for c in _load(session, document.case_id, document_ids=[document.id, primary.id])}
     if len(copies) != 2:
         return 'A saved statement copy is unavailable.'
-    code = _compare(copies[document.id], copies[primary.id])
+    copy, retained = copies[document.id], copies[primary.id]
+    code = _compare(copy, retained)
+    if code == 'account_differs' and across_accounts and READER_INDEPENDENT and _match(copy, retained) in SAME_DOCUMENT:
+        return None
     return HELD[code] if code else None
 
 
@@ -298,6 +411,7 @@ def _set_aside_here(copy):
 
 
 def _entry(copy, retained, code=None):
+    basis = _match(copy, retained) if retained is not None and copy.scope and retained.scope else None
     return dict(document_id=str(copy.document.id), evidence_file_id=str(copy.document.evidence_file_id),
         statement_id=copy.statement_id, transactions=copy.admitted_rows,
         file_sha256=(copy.file.sha256 if copy.file else None),
@@ -305,22 +419,60 @@ def _entry(copy, retained, code=None):
         retained_evidence_file_id=str(retained.document.evidence_file_id) if retained else None,
         retained_file_sha256=(retained.file.sha256 if retained and retained.file else None),
         retained_saved_first=bool(retained and str(retained.document.created_at) <= str(copy.document.created_at)),
-        code=code, reason=HELD.get(code) if code else None)
+        basis=basis, code=code, reason=HELD.get(code) if code else None)
 
 
-def find_admitted_duplicates(session, case_id):
+def _account_merge(session, copy, retained):
+    """The account merge a copy split across two ledger accounts needs, and what blocks it.
+
+    Mirrors the checks of ``account_consolidation.preview_consolidation``
+    (bank, complete identifier, currency, product type); merging is a reviewed
+    decision there, never made here.
+    """
+    from postgres.models.financial import FinancialAccount
+    from services.financial.account_consolidation import bank_key
+    ids = sorted(copy.raw_accounts | retained.raw_accounts, key=str)
+    accounts = {a.id: a for a in session.scalars(select(FinancialAccount).where(FinancialAccount.id.in_(ids)))}
+    chosen = [accounts[i] for i in ids if i in accounts]
+    blockers = []
+    if len({bank_key(a.institution_name) for a in chosen if a.institution_name}) > 1:
+        blockers.append('banks_differ')
+    printed = {re.sub(r'[^A-Z0-9]', '', (a.identifier_as_printed or '').upper()) for a in chosen
+               if a.identifier_as_printed and not (a.metadata_ or {}).get('identity_provisional')}
+    if len(printed) > 1:
+        blockers.append('identifiers_differ')
+    if len({a.currency for a in chosen} - {None}) > 1:
+        blockers.append('currencies_differ')
+    if len({a.account_type for a in chosen} - {None}) > 1:
+        blockers.append('product_types_differ')
+    others = session.scalar(select(func.count()).select_from(FinancialStatementPeriod).join(
+        FinancialSourceDocument, FinancialSourceDocument.id == FinancialStatementPeriod.source_document_id).where(
+        FinancialStatementPeriod.account_id.in_(list(copy.raw_accounts) or [uuid.uuid4()]),
+        FinancialSourceDocument.status == 'admitted', FinancialSourceDocument.id != copy.document.id)) or 0
+    return dict(copy_account_ids=sorted(str(a) for a in copy.raw_accounts),
+        retained_account_ids=sorted(str(a) for a in retained.raw_accounts),
+        retained_account_id=str(sorted(retained.raw_accounts, key=str)[0]) if retained.raw_accounts else None,
+        blockers=blockers, other_saved_periods_in_copy_account=int(others))
+
+
+def find_admitted_duplicates(session, case_id, *, identities=None):
     """What a set-aside would do in this case. Reads only.
 
-    ``set_aside``: copies equal to their retained copy; ``held``: matching
-    periods whose copies differ (listed for comparison, never set aside);
-    ``kept``: an investigator recorded why both are needed; ``restored``:
-    periods where a copy was restored, left as decided; ``already_set_aside``:
-    copies set aside by an earlier decision.
+    ``set_aside``: copies equal to their retained copy; ``split_across_accounts``:
+    copies equal to their retained copy but saved to another ledger account,
+    with the account merge they need (``automatic``: the files are one
+    document, so ``across_accounts`` may set the copy aside); ``held``:
+    matching periods whose copies differ (listed for comparison, never set
+    aside); ``kept``: an investigator recorded why both are needed;
+    ``restored``: periods where a copy was restored, left as decided;
+    ``already_set_aside``: copies set aside by an earlier decision.
+    ``identities``: page identities computed by a dry run (see ``_load``).
     """
-    copies = _load(session, case_id)
+    copies = _load(session, case_id, identities=identities)
     by_id = {c.document.id: c for c in copies}
     report = dict(case_id=str(case_id), saved_copies=sum(c.document.status == 'admitted' for c in copies),
-        set_aside=[], held=[], kept=[], restored=[], already_set_aside=[], not_compared=Counter())
+        set_aside=[], split_across_accounts=[], held=[], kept=[], restored=[], already_set_aside=[],
+        not_compared=Counter())
     buckets = defaultdict(list)
     for copy in copies:
         if copy.document.status != 'admitted':
@@ -332,7 +484,8 @@ def find_admitted_duplicates(session, case_id):
         elif copy.scope is None:
             report['not_compared']['no_complete_period'] += 1
         else:
-            buckets[(copy.scope['currency'], copy.scope['start'], copy.scope['end'], copy.scope['account_type'])].append(copy)
+            buckets[(copy.scope['currency'], copy.scope['start'], copy.scope['end'])
+                    + (() if READER_INDEPENDENT else (copy.scope['account_type'],))].append(copy)
     for bucket in buckets.values():
         parent = list(range(len(bucket)))
 
@@ -343,7 +496,7 @@ def find_admitted_duplicates(session, case_id):
             return index
         for i in range(len(bucket)):
             for j in range(i + 1, len(bucket)):
-                if _same_period(bucket[i], bucket[j]):
+                if _match(bucket[i], bucket[j]):
                     parent[find(i)] = find(j)
         groups = defaultdict(list)
         for index, copy in enumerate(bucket):
@@ -358,6 +511,12 @@ def find_admitted_duplicates(session, case_id):
                 continue
             for copy in ranked[1:]:
                 code = _compare(copy, retained)
+                if code == 'account_differs' and READER_INDEPENDENT:
+                    entry = _entry(copy, retained, code)
+                    entry.update(account_merge=_account_merge(session, copy, retained),
+                                 automatic=entry['basis'] in SAME_DOCUMENT)
+                    report['split_across_accounts'].append(entry)
+                    continue
                 target = report['set_aside'] if code is None else (
                     report['kept'] if code == 'investigator_kept_both' else report['held'])
                 target.append(_entry(copy, retained, code))
@@ -466,12 +625,12 @@ def _log(session, case_id, document, message, **extra):
         extra=dict(source_document_id=str(document.id), **extra)))
 
 
-def _exclude(session, case_id, document, primary, actor, reason, basis, touched):
+def _exclude(session, case_id, document, primary, actor, reason, basis, touched, match='same_printed_statement'):
     from services.financial.duplicate_decisions import decide_duplicate, duplicate_revision
     result = decide_duplicate(session, case_id=case_id, document_id=document.id, action='exclude',
         expected_revision=duplicate_revision(session, document), primary_id=primary.id,
         expected_primary_revision=duplicate_revision(session, primary), actor=actor, reason=reason,
-        match='same_printed_statement', basis=basis, commit=False)
+        match=match, basis=basis, commit=False)
     _mark_items(session, case_id, document, True)
     touched.append((document.evidence_file_id, (document.metadata_ or {}).get('statement_import_statement_id') or ''))
     _log(session, case_id, document, 'Statement period set aside as a duplicate of another saved copy. '
@@ -508,15 +667,21 @@ def _guarded(session, case_id, work):
 
 
 def set_aside_copy(session, *, case_id, document_id, retained_id, actor=SYSTEM_ACTOR, reason=SET_ASIDE_REASON,
-                   basis=SET_ASIDE_BASIS):
-    """Set one saved copy aside in favour of ``retained_id``; commits. A repeat changes nothing."""
+                   basis=SET_ASIDE_BASIS, across_accounts=False):
+    """Set one saved copy aside in favour of ``retained_id``; commits. A repeat changes nothing.
+
+    ``across_accounts``: the copy may sit in another ledger account, accepted
+    only when the two files are one document (checked again under the locks).
+    """
+    match = 'same_document_across_accounts' if across_accounts else 'same_printed_statement'
+
     def work(touched):
         _lock_case(session, case_id)
         documents = _locked(session, case_id, {document_id, retained_id})
         document = documents[document_id]
         if document.status == 'superseded' and document.superseded_by_id == retained_id:
             return dict(applied=False, already=True, document_id=str(document_id))
-        return {**_exclude(session, case_id, document, documents[retained_id], actor, reason, basis, touched),
+        return {**_exclude(session, case_id, document, documents[retained_id], actor, reason, basis, touched, match),
                 'already': False}
     return _guarded(session, case_id, work)
 
@@ -581,15 +746,23 @@ def sync_batch_items(session, *, case_id, document_id):
             pass
 
 
-def set_aside_admitted_duplicates(session, case_id, *, actor=SYSTEM_ACTOR):
-    """Apply ``find_admitted_duplicates`` for one case. Each copy commits on its own."""
+def set_aside_admitted_duplicates(session, case_id, *, actor=SYSTEM_ACTOR, across_accounts=False):
+    """Apply ``find_admitted_duplicates`` for one case. Each copy commits on its own.
+
+    Copies split across two ledger accounts are set aside only with
+    ``across_accounts`` and only when ``automatic`` (one document); the account
+    merge they need is never made here.
+    """
     plan = find_admitted_duplicates(session, case_id)
     session.rollback()
     applied, refused = [], []
-    for entry in plan['set_aside']:
+    entries = [(entry, False) for entry in plan['set_aside']]
+    if across_accounts:
+        entries += [(entry, True) for entry in plan['split_across_accounts'] if entry['automatic']]
+    for entry, split in entries:
         try:
             result = set_aside_copy(session, case_id=case_id, document_id=uuid.UUID(entry['document_id']),
-                retained_id=uuid.UUID(entry['retained_document_id']), actor=actor)
+                retained_id=uuid.UUID(entry['retained_document_id']), actor=actor, across_accounts=split)
         except Exception as error:  # Reported per copy; the rest continue.
             refused.append({**entry, 'refusal': str(error)})
             continue
