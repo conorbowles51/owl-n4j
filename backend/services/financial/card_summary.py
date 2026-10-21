@@ -74,7 +74,7 @@ def _lookalike_reading(text, currency):
     return value[0] if value else None
 
 
-def summary_components(source, heading, beside, currency):
+def summary_components(source, heading, beside, currency, point_mark=False):
     """``[(role, row id, row, value, value cell key)]``: the component lines printed in this page's card summary box.
 
     ``heading`` and ``beside`` are the printed headings of the summary box and
@@ -87,6 +87,11 @@ def summary_components(source, heading, beside, currency):
     crop check left unconfirmed (marked with one trailing ``?``) and ``None``
     for a page reading that states an amount only once measured look-alike
     glyphs are read (``(None, None)`` when not even then).
+
+    ``point_mark``: a lone point between label and value is passed as a
+    printed minus mark OCR read short (it can never be an amount). The
+    backend's period checks pass it; the engine's page pinning does not, so
+    its readings are unchanged.
     """
     page = source['page_number']
     measured = [(row, [(cell, _rectangle(cell, page)) for cell in row['cells']]) for row in source['rows']]
@@ -108,7 +113,8 @@ def summary_components(source, heading, beside, currency):
         role = next((r for r in ROLES if label(located[0][0]['expected_text']) in INDEX[r]), None)
         # The value is the first cell after the label once the printed sign
         # marks between them are passed; the box beside repeats other values.
-        after = [cell for cell, _ in located[1:] if cell['expected_text'].strip() not in ('-', '+', ':', '=', '|')]
+        marks = ('-', '+', ':', '=', '|', '.') if point_mark else ('-', '+', ':', '=', '|')
+        after = [cell for cell, _ in located[1:] if cell['expected_text'].strip() not in marks]
         if role and after:
             row_id = f"{source['page_number']}:{source['table_index']}:{row['row_index']}"
             text = after[0]['expected_text']
@@ -139,6 +145,24 @@ def compared_lines(rows, components):
     return [r for r in rows if _charge_section(r) not in unprinted]
 
 
+# Several summary totals the crop check left unconfirmed may agree, but only
+# in a period whose ledger is already proven without them (``_balances_reconcile``):
+# then no saved value rests on them. Reverse in one place: False (one per side).
+DOUBTFUL_TOTALS_WHEN_PROVEN = True
+
+
+def _balances_reconcile(rows, included):
+    """Whether both printed balances are read with no issue and every line, read with no issue, moves one to the other."""
+    balances = [r for r in rows if r['kind'] == 'balance']
+    roles = {r['fields'].get('description'): r for r in balances}
+    if (len(balances) != 2 or set(roles) != {'Opening Balance', 'Closing Balance'}
+            or any(r['issues'] or not re.fullmatch(r'-?\d+', str(r['fields'].get('balance', ''))) for r in balances)
+            or any(r['issues'] for r in included)):
+        return False
+    moved = sum(int(r['fields']['amount_minor']) * (1 if r['fields']['direction'] == 'debit' else -1) for r in included)
+    return int(roles['Opening Balance']['fields']['balance']) + moved == int(roles['Closing Balance']['fields']['balance'])
+
+
 def check_summary(rows, sources, currency, heading, beside):
     """``rows`` with each card summary disagreement turned into an unresolved row.
 
@@ -147,7 +171,7 @@ def check_summary(rows, sources, currency, heading, beside):
     unreadable (a payment without amount or direction) are left to their own
     issues: the totals are compared only with complete readings.
     """
-    lines = [line for source in sources for line in summary_components(source, heading, beside, currency)]
+    lines = [line for source in sources for line in summary_components(source, heading, beside, currency, point_mark=True)]
     if not lines:
         return rows
     included = [r for r in rows if not r['excluded'] and r['kind'] in ('transaction', 'unresolved')]
@@ -159,6 +183,7 @@ def check_summary(rows, sources, currency, heading, beside):
             for direction in ('credit', 'debit')}
     by_id = {r['id']: r for r in rows}
     held = []
+    proven = DOUBTFUL_TOTALS_WHEN_PROVEN and _balances_reconcile(rows, included)
     for role, direction, name in (('credit_component', 'credit', 'payments and credits'),
                                   ('debit_component', 'debit', 'purchases, advances, fees and interest')):
         members = [(row_id, row, value) for r, row_id, row, value, _ in lines if r == role]
@@ -166,7 +191,7 @@ def check_summary(rows, sources, currency, heading, beside):
             continue
         others = [value[0] for _, _, value in members if value[1] is True]
         doubtful = [(row_id, row, value) for row_id, row, value in members if value[1] is not True]
-        if len(doubtful) <= 1 and sum(others) + sum(value[0] or 0 for _, _, value in doubtful) == read[direction] \
+        if (len(doubtful) <= 1 or proven) and sum(others) + sum(value[0] or 0 for _, _, value in doubtful) == read[direction] \
                 and all(value[0] is not None for _, _, value in doubtful):
             # Agrees. A total the crop check did not confirm (or whose page
             # reading needs its measured look-alike glyphs read) agrees only
@@ -200,6 +225,10 @@ CHECKED_LAYOUTS = ('merrick-card', 'credit-one-card')
 
 
 PAYMENT_SIGN_PINNED = 'pinned_by_printed_controls'
+# A printed payments total the crop check did not confirm may still agree
+# with the payment line (``pin_payment_direction``). Reverse in one place:
+# False (every printed payments total must be confirmed).
+UNCONFIRMED_PAYMENTS_TOTAL = True
 
 
 def pin_payment_direction(rows, sources, currency):
@@ -211,7 +240,8 @@ def pin_payment_direction(rows, sources, currency):
     is complete, both printed balances are read, the balance equation
     (previous + charges - credits = new) holds with the line as a credit and
     not as a charge, and, when the summary prints its payments and credits,
-    they equal the credit lines with it. The line then keeps its printed
+    they equal the credit lines with it (one of those totals may be a reading
+    the crop check left unconfirmed, ``UNCONFIRMED_PAYMENTS_TOTAL``). The line then keeps its printed
     amount, is recorded with ``direction_basis`` and loses its hold; anything
     else leaves it held. The printed payment wording, the two balances and the
     summary are the facts that agree; no sign is read from the image.
@@ -238,11 +268,82 @@ def pin_payment_direction(rows, sources, currency):
     if opening + charges - credits - amount != closing or opening + charges + amount - credits == closing:
         return rows
     printed = [value for heading, beside in SUMMARY_BOXES for s in sources
-               for role, _, _, value, _ in summary_components(s, heading, beside, currency) if role == 'credit_component']
-    if printed and (any(v is None or v[0] is None or v[1] is not True for v in printed)
+               for role, _, _, value, _ in summary_components(s, heading, beside, currency, point_mark=True)
+               if role == 'credit_component']
+    # As in ``check_summary``: one component the crop check left unconfirmed
+    # may agree, when it states exactly the amount the confirmed facts fix.
+    if printed and (any(v is None or v[0] is None for v in printed)
+                    or sum(v[1] is not True for v in printed) > (1 if UNCONFIRMED_PAYMENTS_TOTAL else 0)
                     or sum(v[0] for v in printed) != credits + amount):
         return rows
     line['fields'].update(direction='credit', direction_basis=PAYMENT_SIGN_PINNED)
+    line['issues'] = []
+    return rows
+
+
+AMOUNT_PINNED = 'pinned_by_printed_controls'
+# A card line's one held amount may take the reading its period's printed
+# balances fix (``pin_held_amount``). Reverse in one place: False.
+PIN_HELD_AMOUNT = True
+_AMOUNT_ISSUE = 'Check this amount in the PDF, including the decimal point and both digits after it.'
+_PAYMENT = re.compile(r'\b(?:MOBILE\s+)?PAYMENT\s*-\s*THANK\s+YOU\b', re.IGNORECASE)
+
+
+def _held_amount_reading(text):
+    """``(amount, reading)`` a held card amount cell states, or ``None``.
+
+    Two readings only: a page reading the crop check left unconfirmed (one
+    trailing ``?``), and printed digits whose decimal point was not read
+    (``741`` for 7.41: card amounts always print two decimals, so the last
+    two digits are the cents). No other glyph is read as anything else.
+    """
+    text = text.strip()
+    if re.fullmatch(r'\d{1,3}(?:,\d{3})*\.\d{2}\?|\d+\.\d{2}\?', text):
+        return int(text[:-1].replace(',', '').replace('.', '')), 'unconfirmed_page_reading'
+    if re.fullmatch(r'\d{3,7}', text):
+        return int(text), 'decimal_point_unread'
+    return None
+
+
+def pin_held_amount(rows, sources, currency):
+    """A card line whose one amount is held takes the reading its period's printed balances fix.
+
+    Exactly one line of the period may be decided: a dated charge (not a
+    payment) whose amount cell is unreadable only as ``_held_amount_reading``
+    describes, every other line complete with no issue, and both printed
+    balances read. The line is a charge (no minus was read beside it), and
+    the balance equation (previous + charges - credits = new) must hold with
+    that reading exactly. The summary is checked after (``check_summary``).
+    A second held cell, anywhere in the period, leaves every cell held: a sum
+    of held cells is never decided from one equation.
+    """
+    payments = [r for r in rows if not r['excluded'] and r['kind'] in ('transaction', 'unresolved')]
+    held = [r for r in payments if r['issues'] or not str(r['fields'].get('amount_minor') or '').isdigit()
+            or r['fields'].get('direction') not in ('credit', 'debit')]
+    if len(held) != 1:
+        return rows
+    line = held[0]
+    cells = line.get('source_cells') or []
+    if (line['kind'] != 'transaction' or line['issues'] != [_AMOUNT_ISSUE] or not line['fields'].get('date')
+            or 'amount_minor' in line['fields'] or not cells or _PAYMENT.search(line['fields'].get('description', ''))):
+        return rows
+    reading = _held_amount_reading(cells[-1]['expected_text'])
+    if reading is None:
+        return rows
+    balances = [r for r in rows if r['kind'] == 'balance']
+    roles = {r['fields'].get('description'): r for r in balances}
+    if len(balances) != 2 or set(roles) != {'Opening Balance', 'Closing Balance'} or any(r['issues'] for r in balances):
+        return rows
+    try:
+        opening, closing = (int(roles[name]['fields']['balance']) for name in ('Opening Balance', 'Closing Balance'))
+    except (KeyError, TypeError, ValueError):
+        return rows
+    others = [r for r in payments if r is not line]
+    moved = sum(int(r['fields']['amount_minor']) * (1 if r['fields']['direction'] == 'debit' else -1) for r in others)
+    if opening + moved + reading[0] != closing:
+        return rows
+    line['fields'].update(amount_minor=str(reading[0]), direction='debit', amount_basis=AMOUNT_PINNED,
+                          amount_reading=reading[1], amount_column=str(cells[-1]['column_index']))
     line['issues'] = []
     return rows
 
@@ -251,6 +352,8 @@ def check_card_period(layout, rows, sources, currency):
     """``rows`` of one card period: a payment sign fixed by its controls, then its summary checked."""
     if layout not in CHECKED_LAYOUTS:
         return rows
+    if PIN_HELD_AMOUNT:
+        rows = pin_held_amount(rows, sources, currency)
     rows = pin_payment_direction(rows, sources, currency)
     for heading, beside in SUMMARY_BOXES:
         rows = check_summary(rows, sources, currency, heading, beside)

@@ -59,13 +59,42 @@ class CardSummaryTests(unittest.TestCase):
                 if held:
                     self.assertIn('could not be read', _held(checked)[0][1])
 
-    def test_two_doubtful_totals_on_one_side_stay_held_even_when_their_sum_fits(self):
+    def test_two_doubtful_totals_on_one_side_stay_held_unless_the_ledger_is_proven_without_them(self):
+        # Proven: both balances read and every line moves one to the other, so no saved value rests on the totals.
         data = _with_interest(summary_statement(), '$0.0O')
         data['rows'][PURCHASES]['cells'][1]['expected_text'] = '+ $114.00?'
-        checked, _ = _checked(data)
-        self.assertEqual(len(_held(checked)), 2)
+        self.assertEqual(_held(_checked(data)[0]), [])
+        # Not proven (the previous balance is itself unconfirmed): a sum of doubtful totals decides nothing.
+        unproven = deepcopy(data)
+        unproven['rows'][3]['cells'][1]['expected_text'] = '$0.00?'
+        self.assertEqual(len(_held(_checked(unproven)[0])), 2)
+        # A doubtful pair whose sum does not fit stays held even in a proven ledger.
+        wrong = _with_interest(summary_statement(), '$1.0O')
+        wrong['rows'][PURCHASES]['cells'][1]['expected_text'] = '+ $114.00?'
+        self.assertEqual(len(_held(_checked(wrong)[0])), 2)
         confirmed = _with_interest(summary_statement(), '$0.00')
         self.assertEqual(_held(_checked(confirmed)[0]), [])
+        from services.financial import card_summary
+        original = card_summary.DOUBTFUL_TOTALS_WHEN_PROVEN
+        card_summary.DOUBTFUL_TOTALS_WHEN_PROVEN = False
+        try:
+            self.assertEqual(len(_held(_checked(data)[0])), 2)
+        finally:
+            card_summary.DOUBTFUL_TOTALS_WHEN_PROVEN = original
+
+    def test_a_lone_point_between_label_and_value_is_a_sign_mark(self):
+        data = summary_statement()
+        data['rows'][PURCHASES]['cells'][1]['expected_text'] = '.'
+        extra = deepcopy(data['rows'][PURCHASES]['cells'][1])
+        extra.update(expected_text='$114.00', column_index=extra['column_index'] + 10,
+                     locator=rectangle(225, x=262, width=20, height=8))
+        data['rows'][PURCHASES]['cells'].insert(2, extra)
+        lines = summary_components(data, 'SUMMARY OF ACCOUNT ACTIVITY', 'PAYMENT INFORMATION', 'USD', point_mark=True)
+        self.assertEqual([(role, value) for role, _, _, value, _ in lines], [('debit_component', (11400, True))])
+        self.assertEqual(_held(_checked(data)[0]), [])
+        # The engine's page pinning reads the summary as before: the point is the value, unreadable.
+        lines = summary_components(data, 'SUMMARY OF ACCOUNT ACTIVITY', 'PAYMENT INFORMATION', 'USD')
+        self.assertEqual([(role, value) for role, _, _, value, _ in lines], [('debit_component', (None, None))])
 
     def test_lines_that_are_unreadable_themselves_are_left_to_their_own_issues(self):
         data = summary_statement()
@@ -211,10 +240,22 @@ class PaymentSignTests(unittest.TestCase):
                 self.assertEqual((line['fields']['direction'], line['fields']['direction_basis'], line['issues']),
                                  ('credit', 'pinned_by_printed_controls', []))
 
+    def test_an_unconfirmed_payments_total_agrees_only_when_it_states_the_fixed_amount(self):
+        line = self.payment(self.statement(new='-$86.00', summary_credits='$100.00?'))
+        self.assertEqual((line['fields']['direction'], line['issues']), ('credit', []))
+        from services.financial import card_summary
+        original = card_summary.UNCONFIRMED_PAYMENTS_TOTAL
+        card_summary.UNCONFIRMED_PAYMENTS_TOTAL = False
+        try:
+            line = self.payment(self.statement(new='-$86.00', summary_credits='$100.00?'))
+            self.assertNotIn('direction', line['fields'])
+        finally:
+            card_summary.UNCONFIRMED_PAYMENTS_TOTAL = original
+
     def test_a_payment_the_controls_do_not_fix_stays_held(self):
         for kwargs in (dict(new='$114.00'),                                  # reconciles only as a charge
                        dict(new='-$86.00', summary_credits='$90.00'),        # the summary credits differ
-                       dict(new='-$86.00', summary_credits='$100.00?'),      # the summary total is unconfirmed
+                       dict(new='-$86.00', summary_credits='$90.00?'),       # an unconfirmed total that differs
                        dict(new='-$87.00')):                                 # reconciles neither way
             with self.subTest(**kwargs):
                 line = self.payment(self.statement(**kwargs))
@@ -243,3 +284,56 @@ class CardChargeTotalPinnedTests(unittest.TestCase):
         self.assertIn('interest_total', result['controls']['equations'])
         self.assertEqual(pinned_card_values(self.tables(data), {key: ['3.50']}, everything - {key}), {})
 
+
+
+class HeldAmountTests(unittest.TestCase):
+    """A card line's one held amount takes the reading the period's printed balances fix; nothing else does."""
+
+    def statement(self, amount, other='14.00', description='EXAMPLE CAFE'):
+        data = summary_statement()  # Previous 0.00, lines 14.00 and 100.00, Purchases 114.00, New 114.00.
+        for row in data['rows']:
+            texts = [c['expected_text'] for c in row['cells']]
+            if texts[:1] == ['04/23']:
+                row['cells'][2]['expected_text'] = description
+                row['cells'][3]['expected_text'] = amount
+            if texts[:1] == ['04/22']:
+                row['cells'][3]['expected_text'] = other
+        return data
+
+    def line(self, data, date='04/23'):
+        checked, _ = _checked(data)
+        return next(r for r in checked if r['source_cells'][0]['expected_text'] == date)
+
+    def test_a_lost_decimal_point_or_an_unconfirmed_reading_is_fixed_by_the_balances(self):
+        for text, reading in (('10000', 'decimal_point_unread'), ('100.00?', 'unconfirmed_page_reading')):
+            with self.subTest(text=text):
+                line = self.line(self.statement(text))
+                self.assertEqual((line['fields']['amount_minor'], line['fields']['direction'], line['issues']),
+                                 ('10000', 'debit', []))
+                self.assertEqual((line['fields']['amount_basis'], line['fields']['amount_reading']),
+                                 ('pinned_by_printed_controls', reading))
+
+    def test_readings_the_balances_do_not_fix_stay_held(self):
+        for kwargs in (dict(amount='10001'),                       # the balance equation fails
+                       dict(amount='l00.00'),                      # a letter is never read as a digit here
+                       dict(amount='1000'),                        # 10.00 does not reconcile
+                       dict(amount='10000', other='1400'),         # two held lines: a sum is never decided
+                       dict(amount='10000', description='MOBILE PAYMENT - THANK YOU')):  # a payment needs its sign
+            with self.subTest(**kwargs):
+                line = self.line(self.statement(**kwargs))
+                self.assertNotIn('amount_minor', line['fields'])
+                self.assertTrue(line['issues'])
+
+    def test_an_unreadable_balance_leaves_the_line_held(self):
+        data = self.statement('10000')
+        data['rows'][3]['cells'][1]['expected_text'] = '$0.00?'
+        self.assertNotIn('amount_minor', self.line(data)['fields'])
+
+    def test_the_switch_reverses_it(self):
+        from services.financial import card_summary
+        original = card_summary.PIN_HELD_AMOUNT
+        card_summary.PIN_HELD_AMOUNT = False
+        try:
+            self.assertNotIn('amount_minor', self.line(self.statement('10000'))['fields'])
+        finally:
+            card_summary.PIN_HELD_AMOUNT = original

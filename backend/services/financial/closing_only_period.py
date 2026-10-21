@@ -26,7 +26,20 @@ plus one, two printed facts. It is recorded as derived as well, and only when
 it agrees with the previous statement for the same card where that statement
 is in the case (closing the day before this start); a previous statement
 closing on another day holds the start for a person.
+
+A Merrick statement prints its days in the billing cycle too
+(``statement_import_merrick._printed_cycle_days``); where they are read the
+same rule applies (``_merrick_day_count``), so a statement whose predecessor
+is missing, unreadable or off-cycle still has its start. Switch
+``MERRICK_DAY_COUNT``.
+
+A Previous Balance the engine's crop check left unconfirmed is the opening
+amount owed when the one statement it follows prints the same amount as its
+confirmed New Balance (``_opening_agreement``): two printings of one amount.
+The proposal's opening row then carries it with its basis
+(``apply_opening_agreement``), outside the revision like the start date.
 """
+import re
 from datetime import date, timedelta
 
 from sqlalchemy import select
@@ -34,6 +47,8 @@ from sqlalchemy import select
 from postgres.models.evidence import EvidenceDocumentText, EvidenceFile
 
 MERRICK = 'merrick-card'
+# The basis recorded on an opening balance established by the previous statement.
+OPENING_AGREEMENT = 'previous_statement_new_balance'
 # Monthly billing cycles: shortest is February (28 days) less a few days of
 # permitted closing-day variation; a skipped statement would be at least ~55.
 CYCLE_DAYS = (27, 35)
@@ -84,7 +99,12 @@ def _printed_balances(sources, currency):
 
     A value with any reading issue (including an unread dollar sign) is not
     used. Two readings of the same role are not resolved by choosing one.
+    A page reading the engine's crop check left unconfirmed (one trailing
+    ``?`` after a dollar amount, no sign) keeps its amount apart as
+    ``unconfirmed_minor``: only another printed fact can make it a balance
+    (``_opening_agreement``).
     """
+    from services.financial.card_summary import _amount
     from services.financial.statement_import_card_balances import merrick_summary_balances
     found = {'opening': [], 'closing': []}
     for source in sources:
@@ -95,11 +115,36 @@ def _printed_balances(sources, currency):
                 continue
             cell = next((c for row in source['rows'] if row['row_index'] == row_index for c in row['cells']
                          if str(c['column_index']) == control['fields']['balance_column']), None)
+            text = cell['expected_text'] if cell else None
+            unconfirmed = _amount(text, currency) if (
+                control['issues'] and text and re.fullmatch(r'\$[\d,]+\.\d{2}\?', text.strip())) else None
             found[role].append(dict(
                 balance_minor=control['fields'].get('balance') if not control['issues'] else None,
+                unconfirmed_minor=str(unconfirmed[0]) if unconfirmed and unconfirmed[1] is False else None,
                 page_number=source['page_number'], table_index=source['table_index'], row_index=row_index,
-                expected_text=cell['expected_text'] if cell else None))
+                expected_text=text))
     return {role: values[0] if len(values) == 1 else None for role, values in found.items()}
+
+
+def _opening_agreement(this, previous):
+    """This statement's unconfirmed Previous Balance, established by the preceding statement's New Balance.
+
+    ``previous`` are the readings (exact copies included) of the one
+    statement this one follows. Its confirmed New Balance printed on that
+    statement, and this statement's Previous Balance page reading, are two
+    printings of the same amount owed: when they are the same amount the
+    opening is read; otherwise nothing is.
+    """
+    opening = (this or {}).get('opening') or {}
+    closings = {(fact['closing'] or {}).get('balance_minor') for fact in previous}
+    if (not previous or opening.get('balance_minor') is not None or opening.get('unconfirmed_minor') is None
+            or closings != {opening['unconfirmed_minor']}):
+        return None
+    first = sorted(previous, key=lambda fact: (fact['file_id'], fact['statement_id']))[0]
+    return dict(balance_minor=opening['unconfirmed_minor'], basis=OPENING_AGREEMENT,
+                this_previous_balance=opening, previous_new_balance=first['closing'],
+                previous_evidence_file_id=first['file_id'], previous_statement_id=first['statement_id'],
+                copies=len(previous))
 
 
 def _statement_facts(statement, sources, currency, *, file_id, filename):
@@ -247,6 +292,49 @@ def _day_count_dates(session, *, case_id, file, selected, cache):
     return result
 
 
+# A Merrick statement prints the days in its billing cycle beside its closing
+# date (``statement_import_merrick._printed_cycle_days``): the start is then
+# the closing date less those days plus one, as for the general engine's card
+# statements. Reverse in one place: False (the previous statement alone).
+MERRICK_DAY_COUNT = True
+
+
+def _merrick_day_count(result, hold, closing, days, selected, this, earlier):
+    """The start two printed facts of this statement establish, checked against the card's other statements.
+
+    Any statement for the same card closing within one cycle before this one,
+    or inside the counted cycle, must close exactly the day before the
+    counted start; and where it is that statement, a readable New Balance
+    must equal this statement's readable Previous Balance. Otherwise held.
+    A statement further back (a gap of more than one cycle, as when no
+    statement was issued for quiet months) does not bear on this cycle.
+    """
+    start = closing - timedelta(days=days - 1)
+    previous = [fact for fact in earlier if start <= _iso(fact['closing_date'])
+                or CYCLE_DAYS[0] <= (closing - _iso(fact['closing_date'])).days <= CYCLE_DAYS[1]
+                or _iso(fact['closing_date']) == start - timedelta(days=1)]
+    dates = {fact['closing_date'] for fact in previous}
+    if dates and dates != {(start - timedelta(days=1)).isoformat()}:
+        code = 'several_previous_statements' if len(dates) > 1 else 'previous_statement_disagrees'
+        return hold(code, candidates=sorted(dates))
+    opening = ((this or {}).get('opening') or {}).get('balance_minor')
+    closings = {(fact['closing'] or {}).get('balance_minor') for fact in previous}
+    if opening is not None and previous and None not in closings and closings != {opening}:
+        return hold('balance_mismatch')
+    agreement = _opening_agreement(this, previous)
+    if agreement:
+        result['opening_balance'] = agreement
+    evidence = dict(printed_closing_date=closing.isoformat(), printed_days_in_cycle=days,
+                    printed_days_cell=selected.get('printed_cycle_days_cell'))
+    if previous:
+        first = sorted(previous, key=lambda fact: (fact['file_id'], fact['statement_id']))[0]
+        evidence.update(previous_closing_date=first['closing_date'], previous_evidence_file_id=first['file_id'],
+                        previous_filename=first['filename'], previous_statement_id=first['statement_id'],
+                        copies=len(previous))
+    result.update(period_start=start.isoformat(), period_start_basis=DAY_COUNT, period_start_evidence=evidence)
+    return result
+
+
 def closing_only_period_dates(session, *, case_id, file, selected, sources, currency, cache):
     """Return the period dates this statement's source establishes, with provenance.
 
@@ -270,14 +358,18 @@ def closing_only_period_dates(session, *, case_id, file, selected, sources, curr
         return result
 
     account = _digits(selected.get('account_reference'))
-    if not account:
+    days = selected.get('printed_cycle_days') if MERRICK_DAY_COUNT else None
+    if not account and not days:
         return hold('no_previous_statement')
     this = _statement_facts(selected, sources, currency, file_id=file.id, filename=file.original_filename)
     # Other readings and exact copies of this statement close on the same
     # date, so only strictly earlier closings can be its predecessor.
-    neighbours = [fact for fact in _case_facts(session, case_id, currency, cache) if fact['account'] == account
+    neighbours = [fact for fact in (_case_facts(session, case_id, currency, cache) if account else [])
+                  if fact['account'] == account
                   and not (fact['file_id'] == str(file.id) and fact['statement_id'] == selected['id'])]
     earlier = [fact for fact in neighbours if _iso(fact['closing_date']) < closing]
+    if days:
+        return _merrick_day_count(result, hold, closing, days, selected, this, earlier)
     window = [fact for fact in earlier
               if CYCLE_DAYS[0] <= (closing - _iso(fact['closing_date'])).days <= CYCLE_DAYS[1]]
     if not window:
@@ -288,9 +380,12 @@ def closing_only_period_dates(session, *, case_id, file, selected, sources, curr
         return hold('several_previous_statements', candidates=sorted(previous_dates | {latest.isoformat()}))
     opening = (this or {}).get('opening')
     closings = {(fact['closing'] or {}).get('balance_minor') for fact in window}
-    if not opening or opening['balance_minor'] is None or None in closings:
+    agreement = _opening_agreement(this, window)
+    if agreement:
+        result['opening_balance'] = agreement
+    elif not opening or opening['balance_minor'] is None or None in closings:
         return hold('balance_unreadable')
-    if closings != {opening['balance_minor']}:
+    elif closings != {opening['balance_minor']}:
         return hold('balance_mismatch')
     previous = sorted(window, key=lambda fact: (fact['file_id'], fact['statement_id']))[0]
     start = _iso(previous['closing_date']) + timedelta(days=1)
@@ -302,3 +397,24 @@ def closing_only_period_dates(session, *, case_id, file, selected, sources, curr
             previous_statement_id=previous['statement_id'], previous_new_balance=previous['closing'],
             this_previous_balance=opening, copies=len(window)))
     return result
+
+
+def apply_opening_agreement(rows, period_dates):
+    """``rows`` with the opening amount owed the previous statement establishes (``_opening_agreement``).
+
+    Only this statement's own unread Previous Balance row, the cell the
+    agreement cites, takes the amount, recorded with its basis; any other
+    row, or a row that already reads a balance, is left as it is.
+    """
+    agreement = (period_dates or {}).get('opening_balance')
+    if not agreement:
+        return rows
+    cell = agreement['this_previous_balance']
+    for row in rows:
+        if (row['kind'] == 'balance' and row['fields'].get('description') == 'Opening Balance'
+                and 'balance' not in row['fields']
+                and (row['page_number'], row['table_index'], row['row_index'])
+                == (cell['page_number'], cell['table_index'], cell['row_index'])):
+            row['fields'].update(balance=agreement['balance_minor'], balance_basis=OPENING_AGREEMENT)
+            row['issues'] = []
+    return rows

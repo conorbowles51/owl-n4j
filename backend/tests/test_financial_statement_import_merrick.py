@@ -50,6 +50,16 @@ def summary_statement():
     return data
 
 
+def with_cycle_days(data, value='31', value_y=297, value_x=240, label='Days in Billing Cycle'):
+    """Add the summary box's 'Days in Billing Cycle' line, its value read on an adjacent OCR line."""
+    extra = source([[label], [value]])
+    for row, (x, y, width) in zip(extra['rows'], ((95, 300, 80), (value_x, value_y, 10))):
+        row['row_index'] += 200
+        row['cells'][0]['locator'] = rectangle(y, x=x, width=width, height=8)
+    data['rows'] = data['rows'][:7] + extra['rows'] + data['rows'][7:]
+    return data
+
+
 def measured_statement():
     data = statement()
     for row in data['rows']:
@@ -645,3 +655,28 @@ class OriginalLayerHolderTests(unittest.TestCase):
         self.assertEqual(original_layer_holder(locations, 2), {})
         locations[0]['ocr_refinements'][0]['decision'] = 'native_retained'
         self.assertEqual(original_layer_holder(locations, 1), {})
+
+
+class MerrickCycleDaysTests(unittest.TestCase):
+    """The days printed in the billing cycle, read from the activity summary box only."""
+
+    def test_the_value_on_the_labels_printed_line_is_read_outside_the_statement_id(self):
+        plain = merrick_statement(summary_statement())
+        statement = merrick_statement(with_cycle_days(summary_statement()))
+        self.assertEqual(statement['printed_cycle_days'], 31)
+        self.assertEqual(statement['printed_cycle_days_cell']['expected_text'], '31')
+        self.assertEqual(statement['printed_cycle_days_cell']['row_index'], 201)
+        self.assertNotIn('printed_cycle_days', plain)
+        self.assertEqual(statement['id'], plain['id'])
+
+    def test_anything_but_one_whole_number_beside_one_label_reads_nothing(self):
+        cases = (dict(value='3l'), dict(value='31.00'), dict(value='0'), dict(value='96'),
+                 dict(value_y=320),                 # two lines below the label
+                 dict(value_x=150),                 # in the label half of the box
+                 dict(value_x=300),                 # in the payment-information box
+                 dict(label='Credit Limit'))
+        for kwargs in cases:
+            with self.subTest(**kwargs):
+                self.assertNotIn('printed_cycle_days', merrick_statement(with_cycle_days(summary_statement(), **kwargs)))
+        doubled = with_cycle_days(with_cycle_days(summary_statement()), value='30', value_y=303)
+        self.assertNotIn('printed_cycle_days', merrick_statement(doubled))

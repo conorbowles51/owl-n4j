@@ -633,6 +633,13 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         rows.extend(proposal['rows'])
         issues.extend(proposal.get('issues', []))
         _check_review_size(rows)
+    from services.financial.closing_only_period import closing_only_period_dates, apply_opening_agreement
+    # Outside the revision (below): the start, and an opening the previous
+    # statement confirms, can depend on another statement in the case.
+    # Admission re-derives both at import.
+    period_dates = closing_only_period_dates(session, case_id=case_id, file=file, selected=selected,
+                                             sources=sources, currency=chosen_currency, cache=cache)
+    rows = apply_opening_agreement(rows, period_dates)
     if selected and selected.get('layout_id') in ('merrick-card', 'credit-one-card'):
         # Fail closed on the printed account summary: its payment and charge
         # totals must equal the card lines read for this period.
@@ -709,7 +716,6 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                         and any(row['kind'] == 'balance' and row['fields'].get('description') == 'Opening Balance'
                                 and 'balance' in row['fields'] for row in rows))
     from services.financial.statement_progress import review_progress
-    from services.financial.closing_only_period import closing_only_period_dates
     revision = _digest(snapshot)
     if identity_memory:
         # Outside the revision, like derived period dates: a confirmation or its withdrawal never
@@ -733,8 +739,7 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                     and selected.get('layout_id') == 'merrick-card' and not selected.get('date_conflict') else ''),
                 # Also outside the revision: the start can depend on another
                 # statement in the case. Admission re-derives it at import.
-                period_dates=closing_only_period_dates(session, case_id=case_id, file=file, selected=selected,
-                    sources=sources, currency=chosen_currency, cache=cache),
+                period_dates=period_dates,
                 metadata=metadata, currency=chosen_currency, detected_currency=detected_currency, rows=[] if reading_failure else rows, sources=sources, issues=issues,
                 saved_review=review_progress(file, statement_id),
                 previous_saved_review=previous_review, review_recovery=recovery,
