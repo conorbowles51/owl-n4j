@@ -65,7 +65,7 @@ MAX_OSD_TIMEOUT_SECONDS = 30.0
 # v24 (r12-kapital): on a vector-text page a day of the month OCR skipped as the first word of a movement line
 # (one or two figures, every outline labelled, an amount to its right) is added from its outlines
 # (vector_glyph_reading.LINE_START_DAYS).
-PDF_READING_REVISION = 'bank-payment-rows-v24'
+PDF_READING_REVISION = 'bank-payment-rows-v25'
 OSD_INSUFFICIENT_TEXT_MARKERS = ("too few characters", "skipping this page")
 
 
