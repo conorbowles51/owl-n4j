@@ -709,7 +709,7 @@ def run(out, python, concurrency, corpus=CORPUS, readings=None, compare=None):
         final = batches.batch_status(db, case_id=case_id, batch_id=batch_id, limit=10_000)
         final_items = {i['id']: i for i in final['items']}
         ledger = verify_ledger(db, periods, final_items, truths, FinancialTransaction, FinancialAccount, select,
-                               _incomplete(manifest))
+                               _incomplete(manifest), holder_of=saved_holder_lookup(db, select))
 
     repairs = {name: repair_summary(r.get('source_locations')) for name, r in readings.items() if 'error' not in r}
     result = dict(
@@ -900,7 +900,8 @@ def rescore(out, corpus, compare=None):
         final_items = {str(item.id): dict(status=item.status, source_document_id=(item.summary or {}).get('source_document_id'))
                        for item in db.scalars(select(FinancialImportBatchItem))}
         result['ledger'] = verify_ledger(db, result['periods'], final_items, truths, FinancialTransaction,
-                                         FinancialAccount, select, _incomplete(manifest))
+                                         FinancialAccount, select, _incomplete(manifest),
+                                         holder_of=saved_holder_lookup(db, select))
     engine.dispose()
     result['corpus'].update(periods=len(truths), path=str(corpus))
     result['rescored'] = dict(at=datetime.now(timezone.utc).isoformat(timespec='seconds'), code=_git('rev-parse', 'HEAD'),
@@ -974,7 +975,37 @@ def printed_statement(truth, truths):
     return truth['id']
 
 
-def verify_ledger(db, periods, final_items, truths, Transaction, Account, select, incomplete_files=()):
+def saved_holder_lookup(db, select=None):
+    """``holder_of(source_document_id)``: the holder a saved statement was imported with (its stored import
+    request), '' when none was recorded. Not the ledger account's holder: an account keeps the holder of
+    the first statement saved into it, while the printed holder of one account can change over time (a
+    renamed company, a changed surname)."""
+    from postgres.models.financial import FinancialSourceDocument
+
+    def holder_of(source_document_id):
+        document = db.get(FinancialSourceDocument, uuid.UUID(source_document_id))
+        request = ((document.metadata_ or {}).get('statement_import_request') or {}) if document else {}
+        return (request.get('holder') or '').strip()
+    return holder_of
+
+
+def judge_saved_holder(report, period, truth, saved):
+    """Count a saved period whose ledger holder differs from the printed holder, with the comparison's own
+    rule (``real_compare.holder_agrees``). The same entity printed with other legal-form punctuation, or with
+    its legal form omitted, is its own sub-count, never mixed with a different holder."""
+    if not truth or not truth.get('holder') or truth.get('holder_printed') is False:
+        return
+    counts = report['saved_holders']
+    counts['compared'] += 1
+    if real_compare.holder_agrees(truth['holder'], saved):
+        return
+    kind = ('not_recorded' if not saved else 'same_entity' if real_compare.same_entity_holder(truth['holder'], saved)
+            else 'differs')
+    counts[kind].append(period['truth_id'])
+    counts['by_family'].setdefault(truth['family'], Counter())[kind] += 1
+
+
+def verify_ledger(db, periods, final_items, truths, Transaction, Account, select, incomplete_files=(), holder_of=None):
     """Compare every saved transaction with the period it was admitted from.
 
     ``incomplete_files``: real documents whose truth did not find or verify every
@@ -992,7 +1023,9 @@ def verify_ledger(db, periods, final_items, truths, Transaction, Account, select
     on real statements it also counts genuine repeated payments.
     """
     report = dict(admitted_periods=0, transactions=0, critical_errors=Counter(), wrongly_admitted=[],
-                  duplicate_contributions=0, items_sharing_a_saved_statement=0, by_period={})
+                  duplicate_contributions=0, items_sharing_a_saved_statement=0, by_period={},
+                  saved_holders=dict(measured=holder_of is not None, compared=0, differs=[], same_entity=[],
+                                     not_recorded=[], by_family={}))
     seen = Counter()
     counted = set()
     printed_periods = defaultdict(dict)  # printed period -> {source document: saved rows}
@@ -1020,6 +1053,8 @@ def verify_ledger(db, periods, final_items, truths, Transaction, Account, select
             # cannot be judged; they are counted, not scored.
             report['admitted_unscored'] = report.get('admitted_unscored', 0) + 1
             continue
+        if holder_of is not None and truth is not None:
+            judge_saved_holder(report, period, truth, holder_of(item['source_document_id']))
         canonical = truth.get('duplicate_of') if truth else None
         errors = Counter()
         if truth is None:
@@ -1073,6 +1108,7 @@ def verify_ledger(db, periods, final_items, truths, Transaction, Account, select
                                             for saved in printed_periods.values() if len(saved) > 1)
     report['printed_periods_saved_twice'] = sum(len(saved) > 1 for saved in printed_periods.values())
     report['critical_errors'] = dict(report['critical_errors'])
+    report['saved_holders']['by_family'] = {k: dict(v) for k, v in sorted(report['saved_holders']['by_family'].items())}
     return report
 
 
@@ -1235,6 +1271,7 @@ def render_summary(result):
              f"proposed before review (any period): {sum(o['valid_but_wrong_values_proposed'].values())}. Batch items "
              f"matched to no ground-truth period: {o['unmatched_items']} ({o['unmatched_items_offered_for_import']} "
              f"offered for import).", '',
+             *([_holder_line(ledger['saved_holders']), ''] if ledger.get('saved_holders', {}).get('measured') else []),
              *([f"Real corpus: only periods whose truth reconciled are scored. Unscored truth periods matched or "
                 f"listed: {m['unscored']['periods']} ({m['unscored']['offered_for_import']} offered for import; "
                 f"{ledger.get('admitted_unscored', 0)} admitted, not judged).", '']
@@ -1292,6 +1329,17 @@ def render_summary(result):
         f"before reading and {result['environment']['load_average_after'][0]:.1f} after (timings are not comparable "
         f"across hosts or loads).", '']
     return '\n'.join(lines)
+
+
+def _holder_line(h):
+    """Saved periods whose ledger holder is not the printed holder (reported; not an exit condition)."""
+    ids = lambda key: (': ' + ', '.join(h[key][:12]) + (' ...' if len(h[key]) > 12 else '')) if h[key] else ''
+    families = '; '.join(f"{family} " + ', '.join(f'{k} {v}' for k, v in sorted(kinds.items()))
+                         for family, kinds in h['by_family'].items())
+    return (f"Holder: saved periods whose holder differs from the printed holder {len(h['differs'])}{ids('differs')}; "
+            f"the same entity printed otherwise (legal-form punctuation, or the legal form omitted) "
+            f"{len(h['same_entity'])}; saved with no holder {len(h['not_recorded'])} (of {h['compared']} saved periods "
+            f"whose statement prints a holder)" + (f"; by family: {families}" if families else '') + '.')
 
 
 def _git(*args):

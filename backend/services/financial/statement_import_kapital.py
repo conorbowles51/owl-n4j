@@ -8,6 +8,7 @@ from datetime import date
 from services.financial.pdf_candidates import _digest
 from services.financial.statement_import_bbva import box, norm, text
 from services.financial.statement_import_proposal import exact_amount
+from services.financial.statement_engine import addressee_name
 
 LAYOUT = 'kapital-mexico-product-statement'
 # OCR can drop the final letter where the heading meets its account number ("KAPITA 123-...").
@@ -65,13 +66,21 @@ def kapital_catalog(sources, *, institution='Kapital', product=PRODUCT, layout=L
         if not context: continue
         joined='\n'.join(norm(text(r)) for s in items for r in s['rows'])
         if not any(label in joined for label in ('PERSONA MORAL','PERSONA FISICA')):continue
-        # First text in the left address block; the header is on the right.
-        names=[c for s in items for r in s['rows'] for c in r['cells'] if box(c)
+        # The holder is the first line of the left address block (the header is on the right): the
+        # general addressee rule, so a printed name may hold figures and an address line is never taken.
+        cells=sorted((c for s in items for r in s['rows'] for c in r['cells'] if box(c)
             and (size:=(c.get('locator') or {}).get('page_size'))
             and box(c)[0]<size[0]*.2 and size[1]*.12<=box(c)[1]<size[1]*.25
-            and re.fullmatch(r'[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ &.,]{2,180}',c['expected_text'].strip())
-            and not product.match(norm(c['expected_text']))]
-        if names: holders.setdefault(context,set()).add(min(names,key=lambda c:box(c)[1])['expected_text'].strip())
+            and c['expected_text'].strip() and not product.match(norm(c['expected_text']))),
+            key=lambda c:(box(c)[1],box(c)[0]))
+        lines=[]
+        for c in cells:
+            if lines and box(c)[1]-lines[-1][0]<(box(c)[3]-box(c)[1])/2: lines[-1][1].append(c['expected_text'].strip())
+            else: lines.append((box(c)[1],[c['expected_text'].strip()]))
+        name=addressee_name([' '.join(words) for _,words in lines])
+        # A cover page whose first line reads as no name gives none; two cover pages disagreeing give none.
+        if lines: holders.setdefault(context,set())
+        if name: holders[context].add(name)
     groups,handled=[],set()
     previous=None
     for page,items in sorted(pages.items()):

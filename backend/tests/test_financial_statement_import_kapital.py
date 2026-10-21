@@ -81,6 +81,17 @@ class KapitalProposalTests(TestCase):
             self.assertEqual({v['value'] for v in found},{'EXA010101AB1'})
             self.assertTrue(all(v['page_number']==1 for v in found))
 
+    def addressed(self, block):
+        cover=header()+[[(30000,120000+10000*i,160000,line)] for i,line in enumerate(block)]+product()+table()
+        return [c['holder'] for c in kapital_catalog([source(1,cover),source(2,header()+product('USD','128000000000000002'))])[0]]
+
+    def test_a_printed_name_holding_figures_is_the_holder_and_an_address_line_never_is(self):
+        address=['AVENIDA EJEMPLO 45 PISO 3 INT 12 B','CENTRO NORTE, CIUDAD EJEMPLO','CIUDAD DE MEXICO']
+        self.assertEqual(self.addressed(['TALLERES K9 DEL NORTE']+address+['Persona Moral']),['TALLERES K9 DEL NORTE']*2)
+        # The name line unread: the street line (figures) and the district line (none) are not names.
+        self.assertEqual(self.addressed(address+['Persona Moral']),['',''])
+        self.assertEqual(self.addressed(address[1:]+['Persona Moral']),['',''])
+
     def test_malformed_payment_remains_visible_and_does_not_become_balances_only(self):
         s=statement();s[0]['rows'][-3]['cells'][-2]['expected_text']='?.01'
         c=kapital_catalog(s)[0][0];rows=propose_kapital_statement(s,'MXN',c)['rows']

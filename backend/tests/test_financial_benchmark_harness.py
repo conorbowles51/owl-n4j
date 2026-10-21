@@ -108,6 +108,38 @@ class VerifyLedgerTests(TestCase):
         ledger = self.verify(periods, final, {})
         self.assertEqual((ledger['printed_periods_saved_twice'], ledger['duplicate_contributions']), (0, 0))
 
+    def test_a_saved_holder_other_than_the_printed_one_is_counted_apart_from_the_same_entity(self):
+        names = dict(a='EJEMPLO SERVICIOS SA DE CV', b='EJEMPLO SERVICIOS S.A. DE C.V.', c='CALLE FALSA 12, CENTRO',
+                     d='EJEMPLO SERVICIOS', e='')
+        truths, periods, final, rows = {}, [], {}, {}
+        for key in names:
+            truth = _truth(key + '.pdf#1', key + '.pdf', holder='EJEMPLO SERVICIOS SA DE CV', holder_printed=True)
+            truths[truth['id']] = truth
+            periods.append(_period('i' + key, truth))
+            final['i' + key] = dict(status='imported', source_document_id=str(uuid.uuid5(uuid.NAMESPACE_URL, key)))
+            rows[uuid.uuid5(uuid.NAMESPACE_URL, key)] = _rows(truth)
+        unprinted = _truth('f.pdf#1', 'f.pdf', holder='OTRA PERSONA', holder_printed=False)
+        truths[unprinted['id']] = unprinted
+        periods.append(_period('if', unprinted))
+        final['if'] = dict(status='imported', source_document_id=str(uuid.uuid5(uuid.NAMESPACE_URL, 'f')))
+        rows[uuid.uuid5(uuid.NAMESPACE_URL, 'f')] = _rows(unprinted)
+        saved = {str(uuid.uuid5(uuid.NAMESPACE_URL, k)): v for k, v in dict(names, f='SOMEONE ELSE').items()}
+        ledger = harness.verify_ledger(_Ledger(rows), periods, final, truths, TRANSACTION, object,
+                                       lambda _model: _Query(), holder_of=saved.get)
+        h = ledger['saved_holders']
+        self.assertEqual((h['compared'], h['differs'], h['same_entity'], h['not_recorded']),
+                         (5, ['c.pdf#1'], ['b.pdf#1', 'd.pdf#1'], ['e.pdf#1']))
+        self.assertEqual(h['by_family'], {'generic': {'differs': 1, 'same_entity': 2, 'not_recorded': 1}})
+        line = harness._holder_line(h)
+        self.assertIn('differs from the printed holder 1: c.pdf#1', line)
+        self.assertNotIn('CALLE', line)
+        # A wrong holder is reported, not (yet) a safety failure: Neil decides the exit rule.
+        result = dict(ledger=ledger, periods=periods, environment={})
+        result['metrics'] = harness.metrics(result)
+        self.assertEqual(harness.safety_failures(result), [])
+        # Without a lookup (an older run) nothing is measured or reported.
+        self.assertFalse(self.verify(periods[:1], final, rows)['saved_holders']['measured'])
+
     def test_a_real_truth_copy_names_its_original_period(self):
         copy = _truth('r.pdf#1', 'r.pdf', expected='duplicate', duplicate_of='a.pdf#1')
         self.assertEqual(harness.printed_statement(copy, {**self.truths, copy['id']: copy}), 'a.pdf#1')

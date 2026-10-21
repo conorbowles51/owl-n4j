@@ -62,7 +62,10 @@ MAX_OSD_TIMEOUT_SECONDS = 30.0
 # slash and month letter read as one letter) is read whole from its labelled outlines, and a word whose OCR
 # box cut off the outline of a character beside it keeps its OCR reading, and an amount OCR read as two
 # words where it skipped the thousands comma is read as one (vector_glyph_reading.split_amounts).
-PDF_READING_REVISION = 'bank-payment-rows-v23'
+# v24 (r12-kapital): on a vector-text page a day of the month OCR skipped as the first word of a movement line
+# (one or two figures, every outline labelled, an amount to its right) is added from its outlines
+# (vector_glyph_reading.LINE_START_DAYS).
+PDF_READING_REVISION = 'bank-payment-rows-v24'
 OSD_INSUFFICIENT_TEXT_MARKERS = ("too few characters", "skipping this page")
 
 

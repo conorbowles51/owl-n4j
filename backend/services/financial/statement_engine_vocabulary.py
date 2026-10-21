@@ -136,6 +136,14 @@ HOLDER_LABELS = ('NOMBRE DEL RECEPTOR', 'TITULAR', 'NOMBRE DEL CLIENTE', 'NOMBRE
 NOT_A_NAME = ('DOMICILIO', 'DIRECCION', 'SUCURSAL', 'PLAZA', 'TELEFONO', 'R.F.C', 'RFC', 'CLIENTE', 'ESTADO DE CUENTA',
               'PERIODO', 'FECHA', 'PAGINA', 'CODIGO', 'CONTRATO', 'CUENTA', 'ADDRESS', 'CUSTOMER', 'STATEMENT',
               'ACCOUNT', 'PAGE', 'BANCO', 'BANK', 'EJECUTIVO', 'ASESOR', 'OFICINA', 'FOLIO')
+# Words that open or mark a line of a postal address (street type, floor, unit, district): a line holding
+# one as a whole word is an address line, never the addressee's name (A8). Only words no printed holder name
+# of the truth set holds; a name that did would give no holder (a person confirms), never an address.
+ADDRESS_WORDS = ('CALLE', 'AVENIDA', 'AV', 'AVE', 'BLVD', 'BOULEVARD', 'CARRETERA', 'PISO', 'INT', 'INTERIOR',
+                 'DEPTO', 'DEPARTAMENTO', 'OFIC', 'OFICINA', 'COL', 'COLONIA', 'FRACC', 'FRACCIONAMIENTO', 'MZ',
+                 'MZA', 'MANZANA', 'LOTE', 'LT', 'KM', 'SUITE', 'STE', 'APT', 'APTO')
+# The taxpayer type a Mexican addressee block prints as its last line (folded).
+TAXPAYER_TYPES = ('PERSONA MORAL', 'PERSONA FISICA')
 PERIOD_WORDS = ('PERIODO', 'PERIOD', 'STATEMENT PERIOD', 'BILLING PERIOD', 'BILLING CYCLE', 'CICLO', 'DEL')
 CURRENCY_LABELS = ('MONEDA', 'DIVISA', 'CURRENCY', 'TIPO DE MONEDA', 'STATEMENT CURRENCY', 'ACCOUNT CURRENCY')
 CURRENCY_NAMES = {

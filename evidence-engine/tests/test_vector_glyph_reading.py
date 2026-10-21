@@ -311,6 +311,65 @@ def test_an_amount_ocr_skipped_is_added_from_its_outlines_and_nothing_else_is():
     assert all(abs(a - b) < .5 for a, b in zip(added[0][1], box))
 
 
+# Movement lines printed in columns (day, reference, description, amount), as statements print them.
+DAY_COLUMNS = [(40, 300, '7'), (80, 300, '31415926  ABONO EJEMPLO'), (300, 300, '1,250.00'),
+               (40, 314, '12'), (80, 314, '27182818  PAGO EJEMPLO'),
+               (40, 328, '45'), (80, 328, '16180339  CARGO EJEMPLO'), (300, 328, '2,500.00'),
+               (40, 342, 'NOTA'), (70, 342, '9'), (90, 342, 'CARGO EJEMPLO'), (300, 342, '3,750.00')]
+
+
+def _column_boxes(page, entries):
+    """OCR-like words of entries printed side by side on one line: each entry's characters only."""
+    glyphs = G.page_glyphs(page)
+    words = []
+    for x, y, text in entries:
+        following = [e[0] for e in entries if e[1] == y and e[0] > x]
+        line = sorted((g for g in glyphs if g.y0 < y + 1 and g.y1 > y - 8 and x - .5 <= g.x0
+                       and (not following or g.x0 < min(following) - .5)), key=lambda g: g.x0)
+        position = 0
+        for word in text.split():
+            under = line[position:position + len(word)]
+            position += len(word)
+            words.append((word, (min(g.x0 for g in under) - .3, min(g.y0 for g in under) - .3,
+                                 max(g.x1 for g in under) + .3, max(g.y1 for g in under) + .3)))
+    return words
+
+
+def test_a_day_ocr_skipped_at_the_start_of_a_movement_line_is_added_and_no_other_figure_is():
+    """Live: a day printed against the table's left rule was read by no OCR word; its movement stayed undated."""
+    doc, page, _ = _page(LINES + DAY_COLUMNS)
+    glyphs = G.page_glyphs(page)
+    words = _word_boxes(page, LINES) + _column_boxes(page, DAY_COLUMNS)
+    labels = G.shape_labels(glyphs, words)
+    skipped = {(300, '7'), (314, '12'), (328, '45'), (342, '9')}
+    kept = [(t, b) for t, b in words if not any(t == word and abs(b[3] - y) < 4 for y, word in skipped)]
+    assert len(kept) == len(words) - 4
+    added = G.unread_words(glyphs, labels, kept)
+    # Only the day before an amount at the start of its line: not a day on a line with no amount, not a
+    # figure past 31, not a figure after another word.
+    assert [t for t, _ in added] == ['7']
+    box = next(b for t, b in words if t == '7')
+    assert all(abs(a - b) < .5 for a, b in zip(added[0][1], box))
+    # The second figure of a printed day read into the next word: the first figure alone is not the day.
+    entries = [(40, 300, '10'), (80, 300, '31415926  ABONO EJEMPLO'), (300, 300, '1,250.00')]
+    doc, page, _ = _page(LINES + entries)
+    glyphs = G.page_glyphs(page)
+    words = _word_boxes(page, LINES) + _column_boxes(page, entries)
+    labels = G.shape_labels(glyphs, words)
+    one = min((g for g in glyphs if 295 < g.y1 < 302), key=lambda g: g.x0)
+    folio = next(b for t, b in words if t == '31415926')
+    merged = [(t, b) for t, b in words if t not in ('10', '31415926')] + [('031415926', (one.x1 + .2, *folio[1:]))]
+    assert G.unread_words(glyphs, labels, merged) == []
+    # Read whole, the same day is added.
+    assert [t for t, _ in G.unread_words(glyphs, labels, [(t, b) for t, b in words if t != '10'])] == ['10']
+    G_days = G.LINE_START_DAYS
+    try:
+        G.LINE_START_DAYS = False
+        assert G.unread_words(glyphs, labels, [(t, b) for t, b in words if t != '10']) == []
+    finally:
+        G.LINE_START_DAYS = G_days
+
+
 def test_an_unread_part_of_a_word_ocr_read_in_part_is_not_added():
     doc, page, _ = _page(LINES)
     glyphs = G.page_glyphs(page)

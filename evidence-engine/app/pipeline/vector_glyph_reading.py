@@ -444,6 +444,23 @@ _AMOUNT = re.compile(r'-?\d{1,3}(?:,\d{3})*\.\d{2}-?')
 AMOUNT_JOIN_GAP = 0.5
 
 
+# A day of the month (one or two figures) OCR skipped as the first word of a printed line carrying an amount
+# (a movement line) is added from its outlines too (``unread_words``). Measured: a day printed against the
+# table's left rule on a statement's first page, read nowhere, left its movement undated and the period held.
+# Off: only amounts are added, as before.
+LINE_START_DAYS = True
+_DAY = re.compile(r'(?:0?[1-9]|[12]\d|3[01])')
+
+
+def _line_carries_amount(run, texts, words, top, bottom):
+    """A grouped amount with two decimals stands to the right of ``run`` on its printed line: an OCR word
+    centred within the line's band, or an amount this reading adds on the same line."""
+    right = max(g.x1 for g in run)
+    return (any(text is not None and _AMOUNT.fullmatch(text) for text in texts)
+            or any(_AMOUNT.fullmatch((text or '').strip()) and box[0] > right and top <= (box[1] + box[3]) / 2 <= bottom
+                   for text, box in words))
+
+
 def unread_words(glyphs, labels, words):
     """``[(text, box)]``: printed amounts no OCR word covers, read from their outlines.
 
@@ -454,8 +471,11 @@ def unread_words(glyphs, labels, words):
     ``AMOUNT_JOIN_GAP`` of the height) only when neither is an amount alone and
     together they are one (``9,981`` and ``.80``). A word is returned only when
     no character of it is under an OCR word, every character has a label, and
-    it is a grouped amount with two decimals (``_AMOUNT``). Nothing else is
-    added: not letters, dates or references.
+    it is a grouped amount with two decimals (``_AMOUNT``). The one other word
+    added is a day of the month (``LINE_START_DAYS``): the line's first run of
+    characters, one or two figures reading 1 to 31, every one labelled and none
+    under an OCR word, on a line where an amount stands to its right. Nothing
+    else is added: not letters, other dates or references.
     """
     covered = set()
     index = _Index(glyphs)
@@ -495,12 +515,27 @@ def unread_words(glyphs, labels, words):
                 k += 1
             joined.append((run, text))
             k += 1
-        for run, text in joined:
-            if text is None or any(id(g) in covered for g in run) or not _AMOUNT.fullmatch(text):
+        for position, (run, text) in enumerate(joined):
+            if text is None or any(id(g) in covered for g in run):
+                continue
+            if not _AMOUNT.fullmatch(text) and not (
+                    LINE_START_DAYS and position == 0 and _DAY.fullmatch(text) and _whole_day(run, ordered, height)
+                    and _line_carries_amount(run, [t for _, t in joined[1:]], words, line['y0'], line['y1'])):
                 continue
             found.append((text, (min(g.x0 for g in run), min(g.y0 for g in run),
                                  max(g.x1 for g in run), max(g.y1 for g in run))))
     return found
+
+
+def _whole_day(run, ordered, height):
+    """``run`` is a whole day entry of its own column: at most two characters, every gap inside it narrower
+    than one inside an amount (``AMOUNT_JOIN_GAP``), and no other character of the line (read or not) within
+    a column gap (``UNREAD_LINE_COLUMN_GAP`` heights) after it. Measured: OCR read the second figure of a
+    printed '10' into the word beside it, leaving the '1' alone; that '1' is not the day."""
+    if len(run) > 2 or not _amount_gaps(run):
+        return False
+    after = [g for g in ordered if g.x0 >= run[-1].x1 and g not in run]
+    return not after or min(g.x0 for g in after) - run[-1].x1 >= UNREAD_LINE_COLUMN_GAP * height
 
 
 _GROUP_HEAD = re.compile(r'-?\d{1,3}(?:,\d{3})*')

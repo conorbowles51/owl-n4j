@@ -424,6 +424,20 @@ class UnprintedDateAndAuditTests(unittest.TestCase):
                          'must_be_held')
         self.assertEqual(audit.judge(live, dict(held, expected='auto'))['outcome'], 'agrees')
 
+    def test_audit_compares_the_admitted_holder_with_the_printed_one(self):
+        from benchmarks.statement_automation import real_ledger_audit as audit
+        truth = dict(holder='EJEMPLO SERVICIOS SA DE CV')
+        cases = ((dict(holder='EJEMPLO SERVICIOS SA DE CV'), 'agrees', 'statement'),
+                 (dict(holder='EJEMPLO SERVICIOS S.A. DE C.V.'), 'same_entity', 'statement'),
+                 (dict(holder='EJEMPLO SERVICIOS'), 'same_entity', 'statement'),
+                 (dict(holder='AVENIDA EJEMPLO 12, CENTRO', account_holder='EJEMPLO SERVICIOS SA DE CV'), 'differs',
+                  'statement'),
+                 (dict(holder='', account_holder='OTRA EMPRESA SA DE CV'), 'differs', 'account'),
+                 (dict(), 'not_recorded', 'account'))
+        for live, outcome, source in cases:
+            self.assertEqual(audit.holder_outcome(live, truth), dict(holder=outcome, holder_source=source), live)
+        self.assertEqual(audit.holder_outcome(dict(holder='X Y'), dict(holder=''))['holder'], 'not_printed')
+
 
     def test_audit_counts_a_copy_saved_through_a_file_the_inventory_does_not_list(self):
         """r11-copy-audit: an upload of the same bytes after the inventory, saved to another ledger account."""

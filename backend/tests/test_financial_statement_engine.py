@@ -1468,6 +1468,28 @@ class ScanNoiseAddressTests(unittest.TestCase):
         # A whole word left of the edge is a different column, not noise: no block.
         self.assertEqual(self.holder(('NOTA EMPRESA DE PRUEBA SA DE CV', 2000, 200000)), '')
 
+    def test_an_address_line_at_the_top_of_the_block_is_never_the_holder(self):
+        # The scan lost the name (and street) lines: the block now starts with its district or street line.
+        for top in ('COL CENTRO NORTE', 'AVENIDA DEL PARQUE NORTE', 'TORRE B PISO TRES'):
+            lines = [[('BANCO EJEMPLO DEL NORTE, S.A., INSTITUCION DE BANCA MULTIPLE', 20000, 400000)],
+                     [('PERIODO DEL 01/03/2024 AL 31/03/2024', 330000, 590000)],
+                     [(top, 20000, 150000)], [('MUNICIPIO EJEMPLO', 20000, 120000)],
+                     [('CIUDAD DE MEXICO C.P. 06000', 20000, 220000)]]
+            self.assertEqual(E.address_holder(E._pages([page(1, lines)])[1]), '', top)
+
+    def test_the_addressee_name_is_the_first_line_above_a_street_line_and_may_hold_figures(self):
+        street = ['AVENIDA EJEMPLO 45 PISO 3', 'CENTRO, CIUDAD EJEMPLO', 'C.P. 01000', 'Persona Moral']
+        self.assertEqual(E.addressee_name(['TALLERES K9 DEL NORTE'] + street), 'TALLERES K9 DEL NORTE')
+        self.assertEqual(E.addressee_name(['EMPRESA EJEMPLO', 'SAUCES 31 5', 'C.P. 01000']), 'EMPRESA EJEMPLO')
+        # A block printed without its address: the name stands directly above the taxpayer type.
+        self.assertEqual(E.addressee_name(['EMPRESA EJEMPLO', 'Persona Moral']), 'EMPRESA EJEMPLO')
+        # The name line lost to the scan: the street, district or postal line is never taken.
+        self.assertEqual(E.addressee_name(street), '')
+        self.assertEqual(E.addressee_name(street[1:]), '')
+        self.assertEqual(E.addressee_name(['JARDINES DEL EJEMPLO SECCION, MUNICIPIO', 'CIUDAD EJEMPLO']), '')
+        self.assertEqual(E.addressee_name(['Persona Moral']), '')
+        self.assertEqual(E.addressee_name([]), '')
+
     def test_institution_profiles_for_two_more_mexican_banks(self):
         from services.financial.statement_engine_profiles import matching_profile
         self.assertEqual(matching_profile('Scotiabank Inverlat, S.A., Institucion de Banca Multiple')['institution'],
@@ -3122,3 +3144,224 @@ class UnreadOpeningPairingTests(unittest.TestCase):
         self.assertFalse(R._same_section(((), ('0',), ()), engine))
         with mock.patch.object(R, 'UNREAD_OPENING_PAIRS_BY_CLOSING', False):
             self.assertFalse(R._same_section(((None,), ('0',), ()), engine))
+
+
+# Column spans of the invented brokerage cash ledger (operation day, settlement day, folio, description,
+# issuer, titles, gross amount, commission, taxes, signed net).
+_BROKER_COLUMNS = dict(ope=(20000, 40000), liq=(45000, 65000), folio=(70000, 110000), desc=(115000, 230000),
+                       emisora=(235000, 280000), titulos=(285000, 330000), monto=(385000, 440000),
+                       comision=(445000, 480000), impuestos=(485000, 520000), neto=(530000, 590000))
+
+
+def _broker_line(ope, liq, folio, text, monto, neto, comision='0.00', impuestos='0.00', titulos='0', glued=False,
+                 emisora='0'):
+    def right(value, column):
+        x1 = _BROKER_COLUMNS[column][1]
+        return (value, x1 - 6000 * len(value), x1)
+    days = [(ope + '.' + liq, 20000, 65000)] if glued else [(ope, 20000, 40000), (liq, 45000, 65000)]
+    return days + [(folio, 70000, 110000), (text, 115000, 230000), (emisora, 235000, 280000),
+                   right(titulos, 'titulos'), right(monto, 'monto'), right(comision, 'comision'),
+                   right(impuestos, 'impuestos'), right(neto, 'neto')]
+
+
+def _day_balance(day, value):
+    return [('Saldo al final del dia', 115000, 230000), (day, 235000, 250000),
+            (value, 590000 - 6000 * len(value), 590000)]
+
+
+def broker_statement(*, moves=None, client_lines=('00041234 GRUPO K7 EJEMPLO', '00041234 GRUPO K7 EJEMPLO')):
+    """An invented casa de bolsa cash ledger over two pages: operation and settlement days, a gross amount
+    column beside the signed net one, end-of-day balances, and the month's opening and closing lines."""
+    if moves is None:
+        moves = [
+            _broker_line('31', '31', '0', 'Saldo Inicial del Mes', '100.00', '100.00'),
+            _day_balance('31', '100.00'),
+            # Bought on the last day of the previous month, settled on the 4th.
+            _broker_line('31', '04', '11', 'Compra de Reporto', '5,000.00', '5,010.00', impuestos='10.00', titulos='1,000',
+                         emisora='BONOEJ9'),
+            _broker_line('04', '04', '12', 'Compra de Reporto', '(5,000.00)', '(5,000.00)', titulos='1,000',
+                         emisora='BONOEJ9'),
+            _day_balance('04', '110.00'),
+            # The two days read as one word joined by a mark.
+            _broker_line('12', '12', '13', 'Deposito', '300.00', '300.00', glued=True),
+            # The gross column prints a withdrawal unsigned; only the net column carries its sign.
+            _broker_line('12', '12', '14', 'Retiro', '50.00', '(50.00)'),
+            _day_balance('12', '360.00'),
+        ]
+    second = [
+        _broker_line('29', '29', '15', 'Cobro por Timbrado', '0.01', '(0.01)'),
+        _broker_line('29', '29', '16', 'Bonificacion Cobro', '0.01', '0.01'),
+        _broker_line('29', '29', '17', 'Saldo Final del Mes', '360.00', '360.00'),
+        _day_balance('29', '360.00'),
+    ]
+    heading = [('Ope', 20000, 40000), ('Liq', 45000, 65000), ('Folio', 70000, 110000), ('Descripcion', 115000, 230000),
+               ('Emisora', 235000, 280000), ('Titulos', 285000, 330000), ('Monto', 385000, 440000),
+               ('Comision', 445000, 480000), ('Impuestos', 485000, 520000), ('NETO', 530000, 590000)]
+    first = [
+        [(client_lines[0], 20000, 200000)],
+        [('AV DE PRUEBA 45', 20000, 150000), ('ESTADO DE CUENTA', 330000, 450000)],
+        [('COL EJEMPLO, CIUDAD DE MEXICO C.P. 01000', 20000, 260000)],
+        [('CASA DE BOLSA EJEMPLO, S.A. DE C.V.', 20000, 260000)],
+        [('DETALLE DE MOVIMIENTOS DEL PERIODO', 20000, 260000)],
+        [('MOVIMIENTOS DEL 01/11/2024 AL 30/11/2024', 20000, 300000)],
+        heading,
+    ] + moves + [[('Hoja No. 1 de 2', 480000, 590000)]]
+    following = [[(client_lines[1], 20000, 200000)], [('ESTADO DE CUENTA', 330000, 450000)], heading] + second + [
+        [('Hoja No. 2 de 2', 480000, 590000)]]
+    return [page(1, first), page(2, following)]
+
+
+def broker_profile():
+    from services.financial.statement_engine_profiles import _BROKERAGE_CASH
+    return dict(name='invented-brokerage', match=dict(all=['detalle de movimientos del periodo', 'casa de bolsa ejemplo']),
+                institution='Casa de Bolsa Ejemplo', **_BROKERAGE_CASH)
+
+
+def _moves(statement):
+    return [(r['fields'].get('date'), r['fields']['direction'], r['fields']['amount_minor'])
+            for r in statement['_rows'] if r['kind'] == 'transaction' and not r['excluded']]
+
+
+class BrokerageCashLedgerTests(unittest.TestCase):
+    """r12: a casa de bolsa cash ledger read through a library profile (data). Each line prints its operation
+    day and settlement day; the net column is the movement, the gross, commission and tax columns are not;
+    the end-of-day balances printed after each settlement day's lines are the running balance, and the day
+    each one names must be the settlement day of every line it closes. Anything else holds."""
+
+    EXPECTED = [('2024-11-04', 'credit', '501000'), ('2024-11-04', 'debit', '500000'),
+                ('2024-11-12', 'credit', '30000'), ('2024-11-12', 'debit', '5000'),
+                ('2024-11-29', 'debit', '1'), ('2024-11-29', 'credit', '1')]
+
+    def read(self, sources, profile=True):
+        return [st for st in read_statements(sources, profile=broker_profile() if profile else None) if st['period_start']]
+
+    def test_the_cash_ledger_is_proved_by_its_end_of_day_balances_and_dated_by_settlement(self):
+        st, = self.read(broker_statement())
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual(st['engine']['basis'], 'running_balance')
+        self.assertEqual(_moves(st), self.EXPECTED)
+        self.assertEqual((st['period_start'], st['period_end']), ('2024-11-01', '2024-11-30'))
+        balances = [r['fields']['balance'] for r in st['_rows'] if r['kind'] == 'transaction' and r['fields'].get('balance')]
+        self.assertEqual(balances, ['11000', '36000', '36000'])
+        # The operation day is never saved as another date: the line's date is its settlement day.
+        self.assertFalse(any(r['fields'].get('value_date') or r['fields'].get('booking_date') for r in st['_rows']))
+        # The client number and the name after it (which may hold figures) are the account and the holder;
+        # no currency is printed, so none is read.
+        self.assertEqual((st['account_reference'], st['holder'], st['currency']), ('00041234', 'GRUPO K7 EJEMPLO', ''))
+        self.assertEqual(st['institution'], 'Casa de Bolsa Ejemplo')
+
+    def test_without_the_profile_nothing_is_proved(self):
+        self.assertFalse(any(st['engine']['proved'] for st in self.read(broker_statement(), profile=False)))
+
+    def test_an_end_of_day_balance_naming_another_day_holds(self):
+        sources = broker_statement()
+        for row in sources[0]['rows']:
+            if row['cells'][0]['expected_text'] == 'Saldo al final del dia' and row['cells'][1]['expected_text'] == '12':
+                row['cells'][1]['expected_text'] = '13'
+        st, = self.read(sources)
+        self.assertEqual((st['engine']['proved'], st['engine']['reason']), (False, 'day_balance_date_differs'))
+
+    def test_a_line_printing_one_day_alone_holds(self):
+        sources = broker_statement()
+        for row in sources[0]['rows']:
+            if len(row['cells']) > 3 and row['cells'][2]['expected_text'] == '14':
+                del row['cells'][1]
+                for index, c in enumerate(row['cells']):
+                    c['column_index'] = index
+        st, = self.read(sources)
+        self.assertEqual((st['engine']['proved'], st['engine']['reason']), (False, 'date_unread'))
+
+    def test_an_end_of_day_balance_the_lines_do_not_reach_holds(self):
+        for day, wrong in (('04', '111.00'), ('31', '99.00')):
+            sources = broker_statement()
+            for row in sources[0]['rows']:
+                if row['cells'][0]['expected_text'] == 'Saldo al final del dia' and row['cells'][1]['expected_text'] == day:
+                    row['cells'][2]['expected_text'] = wrong
+            st, = self.read(sources)
+            self.assertFalse(st['engine']['proved'], (day, st['engine']))
+
+    def test_the_gross_column_is_never_the_movement(self):
+        st, = self.read(broker_statement())
+        self.assertEqual(set(st['engine']['assignment']) - {'ignore'}, {'amount'})
+        self.assertEqual(st['engine']['assignment'][-1], 'amount')
+
+    def test_a_page_printing_another_client_line_reads_no_account_or_holder(self):
+        st, = self.read(broker_statement(client_lines=('00041234 GRUPO K7 EJEMPLO', '00099999 GRUPO K7 EJEMPLO')))
+        self.assertEqual((st['account_reference'], st['holder']), ('', ''))
+
+    def test_profile_keys_are_validated(self):
+        from services.financial.statement_engine_profiles import validate
+        base = dict(name='x', match={})
+        for bad in (dict(base, settlement_days=dict(operation=['OPE'])),
+                    dict(base, settlement_days=dict(operation=[], settlement=['LIQ'])),
+                    dict(base, settlement_days=['OPE', 'LIQ']), dict(base, client_line='yes'),
+                    dict(base, columns=dict(skip=['MONTO']))):
+            with self.assertRaises(ValueError):
+                validate(bad)
+        validate(dict(base, settlement_days=dict(operation=['OPE'], settlement=['LIQ']), client_line=True,
+                      columns=dict(ignore=['MONTO']), labels=dict(day_balance=['SALDO AL FINAL DEL DIA'])))
+
+
+def _marked(sources, merge=False):
+    """The invented brokerage pages as some readings deliver them: a closing parenthesis at every cell's right
+    edge (the table's vertical rules read as text), the heading's day words glued ('Ope)Liq)'); with ``merge``
+    each movement and end-of-day line is one cell spanning the table, its words placed by character offset."""
+    import copy, re
+    sources = copy.deepcopy(sources)
+    for source in sources:
+        for row in source['rows']:
+            texts = [c['expected_text'] for c in row['cells']]
+            if texts[:2] == ['Ope', 'Liq']:
+                first, second = row['cells'][0], row['cells'][1]
+                first['expected_text'] = 'Ope)Liq)'
+                first['locator']['rect'][2] = second['locator']['rect'][2]
+                row['cells'] = [first] + row['cells'][2:]
+                continue
+            if not re.match(r'^\d', texts[0]) and texts[0] != 'Saldo al final del dia':
+                continue
+            for c in row['cells']:
+                if not c['expected_text'].startswith('('):
+                    c['expected_text'] += ')'
+            if merge:
+                first = row['cells'][0]
+                first['expected_text'] = ' '.join(c['expected_text'] for c in row['cells'])
+                first['locator']['rect'][2] = 590000
+                row['cells'] = [first]
+    return sources
+
+
+class BrokerageRuleMarkTests(unittest.TestCase):
+    """r12: a reading that prints the table's rules as a closing parenthesis on every cell, or reads each line as
+    one merged cell, is read through a profile's ``rule_mark``; a parenthesized amount keeps its sign."""
+
+    def read(self, sources, **extra):
+        # Readings are cached by source revision and profile name: each variant is its own profile.
+        profile = dict(broker_profile(), **extra)
+        profile['name'] += ''.join('-%s-%s' % item for item in sorted(extra.items()))
+        return [st for st in read_statements(sources, profile=profile) if st['period_start']]
+
+    def test_rule_marks_are_removed_and_parenthesized_amounts_keep_their_sign(self):
+        for merge in (False, True):
+            st, = self.read(_marked(broker_statement(), merge=merge), rule_mark=')')
+            self.assertTrue(st['engine']['proved'], (merge, st['engine']))
+            self.assertEqual(_moves(st), BrokerageCashLedgerTests.EXPECTED, merge)
+
+    def test_without_the_rule_mark_the_marked_reading_holds(self):
+        st, = self.read(_marked(broker_statement()))
+        self.assertFalse(st['engine']['proved'])
+
+    def test_a_merged_line_whose_net_amount_is_misread_holds(self):
+        sources = _marked(broker_statement(), merge=True)
+        for row in sources[0]['rows']:
+            text = row['cells'][0]['expected_text']
+            if text.startswith('12) 12) 14)'):
+                row['cells'][0]['expected_text'] = text[:text.rindex('(')] + '(55.00)'
+        st, = self.read(sources, rule_mark=')')
+        self.assertFalse(st['engine']['proved'])
+
+    def test_the_mark_is_kept_inside_a_parenthesized_amount(self):
+        self.assertEqual(E._without_rule_marks('28) (4,321,987.65) 83.10)', ')'), '28  (4,321,987.65) 83.10 ')
+        from services.financial.statement_engine_profiles import validate
+        for bad in ('', '))', 'a', ' '):
+            with self.assertRaises(ValueError):
+                validate(dict(name='x', match={}, rule_mark=bad))

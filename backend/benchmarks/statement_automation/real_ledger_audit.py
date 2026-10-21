@@ -17,6 +17,9 @@ closing date:
 * ``no_truth_period``: the document has truth, but no judged truth period matches;
 * ``live_period_undated``: the live period was admitted without period dates.
 
+Each judged period also compares its holder with the printed holder (``holder_outcome``): the count of
+admitted periods whose holder differs, by family, with the same entity printed otherwise kept apart.
+
 A live file belongs to a truth document when the inventory lists it, when its
 bytes are the document's (an upload after the inventory was taken), or, given
 ``--page-identities``, when every page renders identically to a file of that
@@ -64,7 +67,7 @@ def live_periods(session, evidence_file_ids):
     rows = session.execute(text(
         "SELECT p.id, d.evidence_file_id, d.id, p.period_start, p.period_end, p.currency, p.opening_balance_minor, "
         "p.closing_balance_minor, a.identifier_normalised, a.identifier_as_printed, d.case_id, a.metadata->>'share', "
-        "p.account_id "
+        "p.account_id, d.metadata->'statement_import_request'->>'holder', a.holder_name "
         "FROM financial_statement_periods p JOIN financial_source_documents d ON d.id = p.source_document_id "
         "LEFT JOIN financial_accounts a ON a.id = p.account_id "
         "WHERE d.status = 'admitted' AND d.evidence_file_id IN :files").bindparams(
@@ -74,6 +77,7 @@ def live_periods(session, evidence_file_ids):
                           currency=r[5], opening_minor=r[6], closing_minor=r[7],
                           account=_digits(r[8] or r[9]), case_id=str(r[10]),
                           share=r[11] or _printed_share(r[9]), account_id=str(r[12]) if r[12] else None,
+                          holder=(r[13] or '').strip(), account_holder=(r[14] or '').strip(),
                           rows=[]) for r in rows}
     if not periods:
         return []
@@ -134,10 +138,28 @@ def compare(live, truth):
                 account_agrees=bool(truth.get('account')) and truth['account'] in live['account'])
 
 
+def holder_outcome(live, truth):
+    """The admitted statement's holder against the printed holder, with the per-statement comparison's rule:
+    ``agrees``, ``same_entity`` (other legal-form punctuation, or the legal form omitted), ``differs``,
+    ``not_recorded``, or ``not_printed`` (the statement prints none). The holder is the one the statement was
+    imported with; a statement admitted before import requests were stored is judged by its ledger account's
+    holder (``holder_source``)."""
+    from benchmarks.statement_automation.real_compare import holder_agrees, same_entity_holder
+    saved, source = (live.get('holder'), 'statement') if live.get('holder') else (live.get('account_holder'), 'account')
+    if not truth.get('holder'):
+        return dict(holder='not_printed', holder_source=source)
+    if not saved:
+        return dict(holder='not_recorded', holder_source=source)
+    outcome = ('agrees' if holder_agrees(truth['holder'], saved) else
+               'same_entity' if same_entity_holder(truth['holder'], saved) else 'differs')
+    return dict(holder=outcome, holder_source=source)
+
+
 def judge(live, truth):
-    """One live period against its truth period: ``compare`` plus the truth's identity, and
-    ``must_be_held`` when the truth says the period must not be in the ledger at all."""
-    entry = dict(compare(live, truth), family=truth['family'], truth_id=truth['id'], truth_status=truth['truth_status'])
+    """One live period against its truth period: ``compare`` and ``holder_outcome`` plus the truth's
+    identity, and ``must_be_held`` when the truth says the period must not be in the ledger at all."""
+    entry = dict(compare(live, truth), **holder_outcome(live, truth), family=truth['family'], truth_id=truth['id'],
+                 truth_status=truth['truth_status'])
     if truth.get('expected') == 'hold' or truth['truth_status'] == 'incomplete':
         entry['outcome'] = 'must_be_held'
     return entry
@@ -246,6 +268,11 @@ def audit(truth_dir, inventory, session, *, page_identities=None):
             details[key][f"rows {entry['rows']}"] += 1
             for name in entry['balances']:
                 details[key][name] += 1
+    holders = defaultdict(Counter)
+    for entry in detail:
+        if entry.get('holder'):
+            holders[entry['family']][entry['holder']] += 1
+            holders[entry['family']]['judged_by_' + entry['holder_source']] += 1
     rows = Counter()
     for entry in detail:
         if entry['outcome'] not in ('no_truth_period', 'live_period_undated'):
@@ -285,6 +312,9 @@ def audit(truth_dir, inventory, session, *, page_identities=None):
                    live_periods_per_truth_period=dict(Counter(Counter(e.get('truth_id') for e in detail
                                                                       if e.get('truth_id')).values())),
                    disagreeing_examples=[e['truth_id'] for e in detail if e['outcome'] == 'disagrees'][:10],
+                   holder_by_family={k: dict(v) for k, v in sorted(holders.items())},
+                   live_admitted_periods_holder_differs=sum(v['differs'] for v in holders.values()),
+                   holder_differs_examples=[e['truth_id'] for e in detail if e.get('holder') == 'differs'][:20],
                    must_be_held_examples=[e['truth_id'] for e in detail if e['outcome'] == 'must_be_held'][:10])
     return summary, detail
 
