@@ -13,33 +13,33 @@ sets it itself only when it is genuinely blocked on Neil; see "Halt rules".)
 
 ## ▶ NEXT
 
-**(2026-10-20 19:00) REAL-DOCUMENT wave 11 integrated into fin/release-1 (headless integrate-11). Regular merge of
-r11-copy-audit 15c1e89c, SQUASH of r11-bbva-vector 24593077 (one test, comment and message quoted a figure equal to a real
-statement amount; replaced by an invented one, no behaviour change) and regular merge of t-visual-v04 e3d1fed7 (notes
-only), on cdb9e2b9; WIP-NOTES.md dropped. NOT pushed or deployed by this session. Running state, counts and history in
+**(2026-10-21 08:00) REAL-DOCUMENT wave 12 integrated into fin/release-1 (headless integrate-12). SQUASH of r12-kapital
+2a6df8be (one engine docstring and one engine test quoted a figure equal to a real statement amount; replaced by an
+invented one, no behaviour change), regular merges of t-visual-v02 f1ebc56d and t-visual-v03 c835bdc8 (notes only), on
+d53e0915; WIP-NOTES.md dropped. NOT pushed or deployed by this session. Running state, counts and history in
 /mnt/owl-data/fin-wt/headless/real/STATE.md (counts only).**
-Real headline (bench/wave11, frozen copy of e3d1fed7, whole truth set of 778 documents, reading v23: r11-bbva-vector's
-v23 re-read of every vector-text document merged on the v22 readings, plus a fresh read of the 24 new Kapital documents;
-product default, automatic save ON): **1,388/1,506 ready without edits (92.2%)**, all saved by the system with no click;
-on wave 10's 754 documents **1,356/1,462 (was 1,351)**; the 44 new Kapital periods 32/44 (blind figure, unchanged);
-**0 wrong admissions, 0 critical-field errors (21,930 rows), 0 duplicate ledger contributions**, must-hold 5/5, 0 lost,
-37 gained. **Generic-only 1,023/1,506, 0 wrong** (wave 10: 1 wrong; it now holds `date_unread`). Valid-looking wrong values
-15 -> 4 (all on held periods). Copies held 168/171; REAL_EXIT=1 still only for the one saved copy dcfc8ce1f2afc#1 (Neil
-rule). **New finding: 5 saved Kapital periods name an address line as the account holder** (library reader's holder
-pattern admits no digits; the harness does not count holder as critical, the live audit does not compare it):
-wave 12 r12-kapital item 1. Actions per 100 statements 169 / 160 on the 754 (was 178 / 168); 223 / 212 on all 778 (the
-unread brokerage cash ledgers). Truth final 809/832 (+24), compared 778/816. Live (read-only audit-wave11): 6 periods
-disagree (same as wave 10); the live double admission across two ledger accounts is now found (0 -> 1). Synthetic
-108/125, 0 wrong. Suites: financial Ran 6,533, only the 2 known unassigned_statement failures, 0 errors (the suite race
-is fixed); tsc 0; vitest unit 2,130/2,130.
-**Wave 12 (headless/real/wave12.units, prompts headless/real/units/):** `r12-kapital` (wrong holders 5 -> 0, a harness
-count of saved periods with a differing holder and a holder comparison in the live audit, then the Kapital-layout bank
-residue 12 and the brokerage cash ledgers 5; step-removal unit), `t-visual-v02` (the last BBVA shard, 9 documents, blind
-in product and generic-only), `t-visual-v03` (Intercam, 10 documents). Acceptance for every unit: 0 wrong admissions real
-(product; generic-only must not add any) and synthetic, no new copy saved, synthetic >= 108/125, no ready period lost
-against bench/wave11.
-**Live:** the reunion ca059a42 (deployed 2026-10-17, engine v19). Deploy of fin/release-1 recommended now (STATE.md open
-decision 1).
+Real headline (bench/wave12 = r12-kapital's whole-set run on frozen 6d1d021d, which differs from the merged head only by
+that invented figure, rescored by a frozen copy of c835bdc8 against the current truth; 796 documents, 1,524 distinct
+verified periods, reading v24; product default, automatic save ON): **1,404/1,524 ready without edits (92.1%)**, all
+saved by the system with no click; on wave 11's 778 documents **1,396/1,506 (was 1,388)**; **0 wrong admissions, 0
+critical-field errors (22,419 rows), 0 duplicate ledger contributions**, must-hold 5/5, 0 lost, 16 gained. **Saved
+periods with a holder other than the printed one 5 -> 0** (new harness count; 36 BBVA same-entity spellings reported
+apart). **Generic-only 1,037/1,524, 0 wrong.** Brokerage cash ledgers: 14 of 15 read with every row equal to truth, held
+only for the currency the ledger does not print. Copies held 168/171; REAL_EXIT=1 still only for the one saved copy
+dcfc8ce1f2afc#1 (Neil rule). Actions per 100 statements 213 / 204 on the 778 (was 223 / 212); 244 / 234 on all 796 by a
+simulation that counts the brokerage rows as typed by hand (169 / 157 with the product's re-read). Truth final 828/832
+(+19), compared 796/815. Live (read-only audit-wave12): the same 6 periods disagree, the same 1 double admission; the new
+live holder comparison finds 3 Kapital periods with an address line as holder (live code). Synthetic 108/125, 0 wrong.
+Suites: financial Ran 6,550, only the 2 known unassigned_statement failures; tsc 0; **vitest unit not run** (refused by
+the session's permission layer; no frontend file changed since wave 11's 2,130/2,130; run it before deploying).
+**Wave 13 (headless/real/wave13.units, prompts headless/real/units/):** `t-visual-v19` (Navy Federal, the one bank with no
+scored truth: the independent reader 511fe673 is already in fin/release-1, regenerate and confirm; 828 -> 829/832),
+`r13-andrews` (35 recoverable held, unchanged since wave 5; target >= 245/266), `r13-merrick` (19 held, target >= 32/42;
+then a cited currency proposal for the brokerage ledgers and the harness simulation's re-read after a decision).
+Acceptance for every unit: 0 wrong admissions real (product; generic-only must not add any) and synthetic, no new copy
+saved, synthetic >= 108/125, no ready period lost against bench/wave12.
+**Live:** the reunion ca059a42 (deployed 2026-10-17, engine v19). Deploy of fin/release-1 recommended now, after a
+vitest unit run (STATE.md open decision 1).
 **Everything below in this section is the synthetic track (wave 5 state), parked behind the real waves.**
 Release-1 now (corpus v4, 124 distinct periods, bench-runs/release-1-w5, exit 0): **102/124 ready without edits (82.3%)**,
 102/107 recoverable (95.3%), 0 wrong admissions, 0 critical-field errors (347 saved), 0 valid-looking wrong values
@@ -876,3 +876,30 @@ brief (briefs = Queue entries above + the 2026-10-02 log lines). Automation is t
   errors=0, skipped 20; tsc -b 0; vitest unit 304 files 2,130/2,130 (as the app user); live node_modules 0 root-owned
   entries. Logs bench-runs/real-wave11{,-suite,-tsc,-vitest}.log.
 - Wave 12 planned: r12-kapital, t-visual-v02, t-visual-v03. STATE.md and STATUS-FOR-NEIL.md rewritten.
+
+### 2026-10-21 08:00 — REAL-DOCUMENT wave 12 merged into fin/release-1 (headless integrate-12)
+- All three notes say complete; none admits a wrong period on real or synthetic data; none commits real data except one
+  figure equal to a real statement amount in r12-kapital (an engine docstring and an engine test), so that branch is
+  SQUASHED (2a6df8be) with an invented figure; engine, Kapital reader and harness tests 263 OK after the edit.
+  t-visual-v02 (f1ebc56d) and t-visual-v03 (c835bdc8) are regular merges of notes only; no conflicts, no breakage fix.
+  Private scan of each branch and of the merged head against d53e0915: 0 hits after the squash (8 hits on a common
+  Spanish word inside an invented test name). WIP-NOTES.md dropped; notes archived
+  /mnt/owl-data/fin-wt/notes/{r12-kapital,t-visual-v02,t-visual-v03}.md.
+- **Real benchmark** (bench/wave12: copy of r12-kapital's bench/r12k-whole, frozen 6d1d021d, readings
+  tmp/r12k/readings-v24b.json, rescored by frozen c835bdc8 against the unchanged truth manifest; compare/ rewritten, backup
+  compare-backup-pre-w12): **1,404/1,524**, recoverable 1,404/1,519, all saved by the system, 0 wrong, 0 critical (22,419
+  rows), holds 5/5, copies held 168/171, saved holder differs 0 (same entity 36), 0 lost against bench/wave11-v02, 16
+  gained (kapital 7, intercam 1, bbva 8 on the v02 documents); REAL_EXIT=1 for the same saved copy dcfc8ce1f2afc#1. The
+  rescore reproduces every headline count of the run; Andrews actions differ (re-pairing artefact), so actions are
+  quoted from the run. Compare 796/815 (1,551 of 1,731 without disagreement).
+- Generic-only (bench/wave12-generic-only, same method): 1,037/1,524, **0 wrong**, 0 critical.
+- Live ledger audit (read-only, audit-wave12): 1,137 admitted periods on truth documents, 6 disagree (same ids), same
+  printed period admitted twice 1 (the d5b330d1 split-account pair); holders: 986 agree, 42 same entity, 3 differ (the
+  Kapital address-line holder, live code).
+- Census not re-run (census-r5: 1,165 ready of 3,154 raw periods).
+- Synthetic (bench-runs/real-wave12, frozen c835bdc8, product default): 108/125, 105/108, 0 wrong, copies 1/1, no safety
+  failure; 1 saved synthetic holder differs (100 dpi OCR letter; pre-existing).
+- Suites (live .venv, CHROMADB_PORT=1 CHROMA_PORT=1): financial Ran 6,550, failures=2 (known unassigned_statement),
+  errors=0, skipped 20; tsc -b 0 (as the app user); vitest unit NOT run (the permission layer refused it twice; no
+  frontend change since wave 11). Logs bench-runs/real-wave12{,-suite,-tsc}.log.
+- Wave 13 planned: t-visual-v19, r13-andrews, r13-merrick. STATE.md and STATUS-FOR-NEIL.md rewritten.
