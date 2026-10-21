@@ -2362,6 +2362,20 @@ def _work(args):
                     pages=doc.get('pages'), reason=f'error {type(error).__name__}', inventory_family=doc.get('family'))
 
 
+# Statuses a later run must read again even when it was not asked to: a
+# document that was waiting for a tier-A parser has to meet the parser once it
+# exists. Its cached result was written by the code before that parser, and
+# reusing it would hide the new reader behind the old reading indefinitely.
+REREAD_STATUSES = ('needs_parser',)
+
+
+def reuse_cached(cached_result, doc_id, only):
+    """Whether ``--only`` may reuse a document's cached result instead of reading it again."""
+    if only is None or doc_id in only or cached_result is None:
+        return False
+    return cached_result.get('status') not in REREAD_STATUSES
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--inventory', type=Path, required=True)
@@ -2369,7 +2383,7 @@ def main(argv=None):
     parser.add_argument('--docs', type=Path, help='private copies (default: <inventory dir>/docs)')
     parser.add_argument('--jobs', type=int, default=2)
     parser.add_argument('--cache', type=Path, help='private pdfplumber word cache directory')
-    parser.add_argument('--only', help='comma-separated document ids (others reuse periods/<id>.json)')
+    parser.add_argument('--only', help='comma-separated document ids (others reuse periods/<id>.json, except needs_parser)')
     parser.add_argument('--visual', type=Path, help='reviewed visual readings (default: <out>/visual; real_visual.py)')
     args = parser.parse_args(argv)
     from .real_visual import apply_visual, load_visual
@@ -2380,8 +2394,9 @@ def main(argv=None):
     todo, results = [], []
     for doc in inventory['documents']:
         cached = args.out / 'periods' / f"{doc['id']}.json"
-        if only is not None and doc['id'] not in only and cached.exists():
-            results.append(json.loads(cached.read_text()))
+        cached_result = json.loads(cached.read_text()) if only is not None and cached.exists() else None
+        if reuse_cached(cached_result, doc['id'], only):
+            results.append(cached_result)
         else:
             todo.append((doc, docs_dir, args.cache))
     todo.sort(key=lambda item: -(item[0].get('pages') or 0))

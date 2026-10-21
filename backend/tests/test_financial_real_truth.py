@@ -10,6 +10,7 @@ import json
 import os
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 from benchmarks.statement_automation import harness, real_inventory, real_truth as rt
@@ -424,6 +425,28 @@ class UnprintedDateAndAuditTests(unittest.TestCase):
                          'must_be_held')
         self.assertEqual(audit.judge(live, dict(held, expected='auto'))['outcome'], 'agrees')
 
+    def test_audit_pairs_a_share_printed_as_account_digits_with_a_named_section(self):
+        from benchmarks.statement_automation import real_ledger_audit as audit
+        def truth(share, opening, closing, rows):
+            return dict(share=share, account='1111', period_end='2024-02-16', currency='USD', opening_minor=opening,
+                        closing_minor=closing, rows=[dict(amount_minor=a, direction=d) for a, d in rows])
+        checking = truth('EveryDay Checking', 10000, 12000, [(5000, 'credit'), (3000, 'debit')])
+        credit_line = truth('Checking Line of Credit', 0, 0, [])
+        savings = dict(truth('Membership Savings', 500, 500, []), account='2222')
+        live = dict(share='1111', account='1111', period_end='2024-02-16', currency='USD', opening_minor=10000,
+                    closing_minor=12000, rows=[(5000, 'credit', '2024-01-20'), (3000, 'debit', '2024-01-25')])
+        candidates = [checking, credit_line, savings]
+        self.assertIs(audit.best_truth(live, candidates), checking)
+        quiet = dict(live, opening_minor=0, closing_minor=0, rows=[])
+        self.assertIs(audit.best_truth(quiet, candidates), credit_line)  # same digits: told apart by balances
+        self.assertIs(audit.best_truth(dict(quiet, share='2222', account='2222', opening_minor=500,
+                                            closing_minor=500), candidates), savings)
+        self.assertIsNone(audit.best_truth(dict(live, share='3333'), candidates))  # other digits: no pairing
+        # Four-digit truth shares (Andrews) still never pair across shares.
+        andrews = dict(checking, share='0040')
+        self.assertIsNone(audit.best_truth(dict(live, share='0000'), [andrews]))
+        self.assertIs(audit.best_truth(dict(live, share='0040'), [andrews]), andrews)
+
     def test_audit_compares_the_admitted_holder_with_the_printed_one(self):
         from benchmarks.statement_automation import real_ledger_audit as audit
         truth = dict(holder='EJEMPLO SERVICIOS SA DE CV')
@@ -683,6 +706,36 @@ class NavyFederalTruthTests(unittest.TestCase):
         self.assertEqual(rt.detect_issuer(self.pages()), 'navy-federal')
         self.assertIsNone(rt.detect_issuer([page(n, ['01-05 Transfer to Navy Federal Credit Union', 'x'])
                                             for n in (1, 2, 3)]))
+
+class RerunTests(unittest.TestCase):
+    """``--only`` reuses other documents' cached results, but never one that was waiting for a parser."""
+
+    def test_a_document_waiting_for_a_parser_is_read_again(self):
+        waiting = dict(id='a', status='needs_parser', reason='no tier-A parser for issuer unknown')
+        self.assertFalse(rt.reuse_cached(waiting, 'a', {'c'}))
+        self.assertTrue(rt.reuse_cached(dict(waiting, status='verified'), 'a', {'c'}))
+        self.assertTrue(rt.reuse_cached(dict(waiting, status='not_statement'), 'a', {'c'}))
+        self.assertFalse(rt.reuse_cached(dict(waiting, status='verified'), 'a', {'a'}))  # named: always read
+        self.assertFalse(rt.reuse_cached(None, 'a', {'c'}))  # nothing cached
+        self.assertFalse(rt.reuse_cached(dict(waiting, status='verified'), 'a', None))  # whole run
+
+    def test_main_reads_the_waiting_document_and_reuses_the_rest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            docs = [dict(id=name, sha256=name * 4, hash='verified', mode='image_only', pages=1, family='?')
+                    for name in ('a', 'b', 'c')]
+            (tmp / 'inventory.json').write_text(json.dumps(dict(documents=docs)))
+            (tmp / 'out' / 'periods').mkdir(parents=True)
+            cached = dict(sha256='', mode='image_only', pages=1, periods=[], period_status={})
+            (tmp / 'out' / 'periods' / 'a.json').write_text(json.dumps(dict(cached, id='a', status='needs_parser')))
+            (tmp / 'out' / 'periods' / 'b.json').write_text(json.dumps(dict(cached, id='b', status='not_statement')))
+            with open(os.devnull, 'w') as sink, unittest.mock.patch('sys.stdout', sink):
+                rt.main(['--inventory', str(tmp / 'inventory.json'), '--out', str(tmp / 'out'), '--only', 'c',
+                         '--jobs', '1'])
+            status = {r['id']: r['status'] for r in json.loads((tmp / 'out' / 'status.json').read_text())}
+        # a: read again (an image-only document now goes to the visual queue); b: cached result kept; c: read
+        self.assertEqual(status, dict(a='needs_visual', b='not_statement', c='needs_visual'))
+
 
 @unittest.skipUnless(READERS, 'pdfplumber and PyMuPDF are needed for the end-to-end reading check')
 class SyntheticCorpusTruthTests(unittest.TestCase):
