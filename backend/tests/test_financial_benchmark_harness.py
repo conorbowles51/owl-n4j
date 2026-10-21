@@ -258,3 +258,61 @@ class SavedBySystemTests(TestCase):
                  SimpleNamespace(id='c', summary={})]
         db = SimpleNamespace(scalars=lambda _query: items)
         self.assertEqual(harness.saved_by_system(db, uuid.uuid4(), Item, SYSTEM_ACTOR), {'s'})
+
+
+class SimulatedCorrectionTests(TestCase):
+    """The simulation follows the product: a statement is read again once its currency is chosen."""
+
+    truth = dict(currency='MXN', holder='EXAMPLE HOLDER', holder_printed=True, account='1234', account_printed=True,
+                 institution='Example Bank', period_end='2024-01-31', period_start='2024-01-01', start_printed=True,
+                 opening_minor=0, closing_minor=500, added_in='real',
+                 rows=[dict(date='2024-01-10', amount_minor=500, direction='credit', description='EXAMPLE DEPOSIT')])
+
+    @staticmethod
+    def proposal(readable):
+        row = dict(id='1:0:5', kind='transaction', excluded=False, issues=[] if readable else ['currency'],
+                   fields=dict(description='EXAMPLE DEPOSIT', date='2024-01-10',
+                               **(dict(amount_minor='500', direction='credit') if readable else {})))
+        return dict(rows=[row] if readable else [], currency='' if not readable else 'MXN')
+
+    @staticmethod
+    def initial_request(proposal):
+        return dict(currency=proposal['currency'], holder='EXAMPLE HOLDER', account_number='1234',
+                    institution='Example Bank', period_start='2024-01-01', period_end='2024-01-31',
+                    rows=[dict(id=r['id'], excluded=False, **{k: r['fields'].get(k) for k in
+                          ('date', 'amount_minor', 'direction')}) for r in proposal['rows']])
+
+    @staticmethod
+    def assess(proposal, raw):
+        ready = bool(raw['currency']) and len(raw['rows']) == 1
+        return ('ready' if ready else 'attention'), dict(can_import=ready, problems=[])
+
+    def test_rows_the_chosen_currency_makes_readable_are_not_counted_as_typed(self):
+        asked = []
+
+        def reread(currency):
+            asked.append(currency)
+            return self.proposal(readable=True)
+
+        result = harness.simulate_correction(self.proposal(readable=False), self.truth, self.assess,
+                                             self.initial_request, reread=reread)
+        self.assertEqual(asked, ['MXN'])
+        self.assertEqual([(a['kind'], a['field']) for a in result['actions']], [('decision', 'currency')])
+        self.assertEqual((result['missing_rows'], result['resolved']), (0, True))
+
+    def test_without_a_reread_or_when_it_fails_the_first_reading_is_kept(self):
+        def failing(currency):
+            raise ValueError('unreadable')
+
+        for reread in (None, failing):
+            with self.subTest(reread=reread):
+                result = harness.simulate_correction(self.proposal(readable=False), self.truth, self.assess,
+                                                     self.initial_request, reread=reread)
+                self.assertEqual([(a['kind'], a['field']) for a in result['actions']],
+                                 [('decision', 'currency'), ('add_row', 'missing_row')])
+                self.assertEqual(result['missing_rows'], 1)
+
+    def test_a_statement_that_has_its_currency_is_not_read_again(self):
+        result = harness.simulate_correction(self.proposal(readable=True), self.truth, self.assess,
+                                             self.initial_request, reread=lambda currency: self.fail('read again'))
+        self.assertEqual(result['actions'], [])

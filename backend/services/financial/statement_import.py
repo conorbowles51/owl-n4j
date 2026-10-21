@@ -716,6 +716,7 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                         and any(row['kind'] == 'balance' and row['fields'].get('description') == 'Opening Balance'
                                 and 'balance' in row['fields'] for row in rows))
     from services.financial.statement_progress import review_progress
+    from services.financial.statement_currency import printed_holdings_currency
     revision = _digest(snapshot)
     if identity_memory:
         # Outside the revision, like derived period dates: a confirmation or its withdrawal never
@@ -740,6 +741,10 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                 # Also outside the revision: the start can depend on another
                 # statement in the case. Admission re-derives it at import.
                 period_dates=period_dates,
+                # A currency this statement prints only in its holdings, for a person
+                # to confirm (field_proposals); never this reading's currency.
+                printed_currency=(printed_holdings_currency(all_sources if len(catalog['statements']) == 1 else sources)
+                                  if not chosen_currency and selected else None),
                 metadata=metadata, currency=chosen_currency, detected_currency=detected_currency, rows=[] if reading_failure else rows, sources=sources, issues=issues,
                 saved_review=review_progress(file, statement_id),
                 previous_saved_review=previous_review, review_recovery=recovery,

@@ -106,3 +106,42 @@ def currencies_by_statement(choices, sources):
         [by_address[(s['page_number'], s['table_index'])] for s in choice['sources']],
         layout_id=choice.get('layout_id'))} if not choice.get('document_kind') else choice
         for choice in choices]
+
+
+# Codes a holdings table's currency column was measured to print (r13: Mexican brokerage statements). A
+# short list on purpose: a column of instrument data also holds three-letter words ('CUP', 'ALL').
+_HOLDINGS_CODES = frozenset({'MXN', 'USD', 'EUR', 'CAD', 'GBP', 'JPY', 'CHF'})
+_HOLDINGS_HEADING = re.compile(r'\bEMISORA\b.*\b(?:MON|MONEDA|DIVISA)\b|\b(?:MON|MONEDA|DIVISA)\b.*\bEMISORA\b')
+_HOLDINGS_CODE = re.compile(r'(?<![A-Z/])(' + '|'.join(sorted(_HOLDINGS_CODES)) + r')(?![A-Z/])')
+
+
+def printed_holdings_currency(sources):
+    """The one currency printed in a statement's holdings currency column, with its cell, or ``None``.
+
+    A brokerage cash ledger prints no currency, but the same statement's
+    holdings table can: its heading names the instrument (``EMISORA``) and a
+    currency column (``MON``), and its lines print the code as a word of its
+    own (``0 MXN``; a table rule read as ``)`` is ignored). An exchange rate
+    (``USD/MXN``) is not a currency of the holdings. Every such table of the
+    statement must print the same one code, or nothing is returned. This is
+    a proposal for a person to confirm (``field_proposals``), never the
+    statement's currency by itself.
+    """
+    found = []
+    for source in sources:
+        heading = False
+        for row in source['rows']:
+            texts = [unicodedata.normalize('NFKD', c['expected_text']).upper() for c in row['cells']]
+            if _HOLDINGS_HEADING.search(' '.join(texts)):
+                heading = True
+                continue
+            if not heading:
+                continue
+            for cell, text in zip(row['cells'], texts):
+                for code in _HOLDINGS_CODE.findall(text.replace(')', ' ')):
+                    found.append(dict(value=code, page_number=source['page_number'], table_index=source['table_index'],
+                                      row_index=row['row_index'], column_index=cell['column_index'],
+                                      expected_text=cell['expected_text']))
+    if not found or len({cell['value'] for cell in found}) != 1:
+        return None
+    return dict(found[0], basis='printed_holdings_currency', cells=len(found))

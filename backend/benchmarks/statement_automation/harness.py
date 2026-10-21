@@ -411,8 +411,16 @@ def pair_identical_copies(periods, truths):
     return periods
 
 
-def simulate_correction(proposal, truth, assess, initial_request):
-    """Apply ground truth like an investigator; count each action; re-assess."""
+def simulate_correction(proposal, truth, assess, initial_request, reread=None):
+    """Apply ground truth like an investigator; count each action; re-assess.
+
+    ``reread(currency)`` reads the statement again with a chosen currency, as
+    the product does when a person chooses it (``bulk_statement_details``:
+    the statement is read again and the draft rebased on that reading). With
+    it, the rest of the simulation works on that reading: rows the currency
+    makes readable are not counted as typed by hand. Without it (older runs),
+    the reading before the choice is kept.
+    """
     raw = initial_request(proposal)
     actions = []
 
@@ -422,6 +430,14 @@ def simulate_correction(proposal, truth, assess, initial_request):
     if not raw.get('currency'):
         raw['currency'] = truth['currency']
         act('decision', 'currency')
+        if reread is not None:
+            try:
+                reread_proposal = reread(truth['currency'])
+            except Exception:  # noqa: BLE001 - the product would show the reading error; keep the old reading
+                reread_proposal = None
+            if reread_proposal is not None:
+                proposal = reread_proposal
+                raw = dict(initial_request(proposal), currency=truth['currency'])
     if not _norm(raw.get('holder')) or _norm(truth['holder']) not in _norm(raw.get('holder')):
         raw['holder'] = truth['holder']
         act('edit' if truth['holder_printed'] else 'decision', 'holder')
@@ -685,7 +701,10 @@ def run(out, python, concurrency, corpus=CORPUS, readings=None, compare=None):
             elif truth:
                 entry['proposal_checks'] = proposal_field_errors(proposal, truth)
                 if not entry['can_import']:
-                    entry['correction'] = simulate_correction(proposal, truth, batches.assess, batches.initial_request)
+                    entry['correction'] = simulate_correction(
+                        proposal, truth, batches.assess, batches.initial_request,
+                        reread=_reader(db, read_statement_import, case_id, uuid.UUID(item['file_id']),
+                                       item.get('statement_id')))
             periods.append(entry)
     periods = pair_identical_copies(periods, truths)
     missing = [t for t in truths.values() if t['id'] not in used]
@@ -819,6 +838,61 @@ def _compare_counts(summary):
                                      'without_disagreement')}
 
 
+def _reader(db, read_statement_import, case_id, file_id, statement_id, cache=None):
+    """``reread(currency)``: the statement read again with a chosen currency, read only (``simulate_correction``)."""
+    def reread(currency):
+        try:
+            return read_statement_import(db, case_id=case_id, evidence_file_id=file_id, currency=currency,
+                                         statement_id=statement_id, _cache=cache if cache is not None else {})
+        finally:
+            db.rollback()
+    return reread
+
+
+def resimulate(out, periods, truths):
+    """Simulated corrections again, from a finished run's database opened read-only (``rescore --resimulate``).
+
+    For a change to the simulation itself: every scored period the run did
+    not make ready is corrected again on its proposal as the current code
+    reads it from the run's own readings, following the product (a re-read
+    after a currency choice). Batch outcomes are the run's; only
+    ``correction`` changes. Returns the count of periods re-simulated and of
+    proposals that could not be read.
+    """
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from postgres.models.evidence import EvidenceFile
+    from postgres.models.financial_import_batches import FinancialImportBatchItem
+    from services.financial import import_batches as batches
+    from services.financial.statement_import import read_statement_import
+    engine = create_engine(f"sqlite+pysqlite:///file:{out / 'benchmark.db'}?mode=ro&uri=true", future=True)
+    factory = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    done, errors, caches = 0, 0, {}
+    with factory() as db:
+        for period in periods:
+            truth = truths.get(period.get('truth_id')) if period.get('item_id') else None
+            if truth is None or period.get('can_import'):
+                continue
+            item = db.get(FinancialImportBatchItem, uuid.UUID(period['item_id']))
+            if item is None:
+                continue
+            file = db.get(EvidenceFile, item.file_id)
+            cache = caches.setdefault(item.file_id, {})
+            try:
+                proposal = read_statement_import(db, case_id=file.case_id, evidence_file_id=item.file_id,
+                    currency=(item.summary or {}).get('currency') or None, statement_id=item.statement_key or None,
+                    _cache=cache)
+                period['correction'] = simulate_correction(
+                    proposal, truth, batches.assess, batches.initial_request,
+                    reread=_reader(db, read_statement_import, file.case_id, item.file_id, item.statement_key or None))
+                done += 1
+            except Exception:  # noqa: BLE001 - counted; the run's correction is kept
+                errors += 1
+            db.rollback()
+    engine.dispose()
+    return done, errors
+
+
 def rescore_views(out, periods):
     """Proposals re-read from a finished run's database, opened read-only, keyed by item id."""
     from sqlalchemy import create_engine, select
@@ -868,7 +942,7 @@ def _refresh_not_detected(periods, truths):
     return kept, added
 
 
-def rescore(out, corpus, compare=None):
+def rescore(out, corpus, compare=None, resimulated=False):
     """Re-judge a finished run against the corpus manifest as it is now, using the run's own database.
 
     For truth corrections (a convention fixed, a period re-verified) without
@@ -894,6 +968,9 @@ def rescore(out, corpus, compare=None):
         elif period['truth_id']:
             period.update(scored=False, expected=None)
     result['periods'] = pair_identical_copies(result['periods'], truths)
+    simulation = None
+    if resimulated:
+        simulation = dict(zip(('periods', 'unread'), resimulate(out, result['periods'], truths)))
     engine = create_engine(f"sqlite+pysqlite:///{out / 'benchmark.db'}", future=True)
     factory = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     with factory() as db:
@@ -906,7 +983,8 @@ def rescore(out, corpus, compare=None):
     result['corpus'].update(periods=len(truths), path=str(corpus))
     result['rescored'] = dict(at=datetime.now(timezone.utc).isoformat(timespec='seconds'), code=_git('rev-parse', 'HEAD'),
                               scored_truth=sorted(SCORED_TRUTH), rematched_items=rematched,
-                              not_detected_refreshed=added_not_detected)
+                              not_detected_refreshed=added_not_detected,
+                              **(dict(resimulated=simulation) if simulation is not None else {}))
     result['metrics'] = metrics(result)
     compare = compare or _default_compare(manifest, corpus)
     if compare:
@@ -918,7 +996,9 @@ def rescore(out, corpus, compare=None):
     text = render_summary(result).replace('# Statement automation benchmark', '# Statement automation benchmark (rescored)', 1)
     text += ('\nRescored ' + result['rescored']['at'] + ' at code ' + result['rescored']['code'][:10] +
              ' against the current manifest: ledger comparison and metrics recomputed; batch outcomes, proposal '
-             'checks and simulated corrections are from the original run (dropped for the '
+             'checks and ' + ('' if simulation is None else '(except ' + str(simulation['periods']) +
+             ' corrections simulated again by this code, ' + str(simulation['unread']) + ' unread) ') +
+             'simulated corrections are from the original run (dropped for the '
              + str(rematched) + ' items whose truth pairing changed).\n')
     (out / 'summary-rescored.md').write_text(text)
     return result
@@ -1366,6 +1446,8 @@ def main(argv=None):
                         help='Corpus directory with manifest.json (default: the committed corpus).')
     parser.add_argument('--rescore', action='store_true',
                         help='re-judge the finished run in --out against the current --corpus manifest (no re-reading)')
+    parser.add_argument('--resimulate', action='store_true',
+                        help='with --rescore: simulate the corrections again from the run database (read only)')
     parser.add_argument('--readings',
                         help='reuse this engine-readings.json instead of reading with the engine (backend-only changes)')
     parser.add_argument('--compare', help='per-statement comparison directory (default for a real corpus: '
@@ -1378,7 +1460,8 @@ def main(argv=None):
     if args.rescore:
         if not args.out:
             parser.error('--rescore needs --out (the finished run directory)')
-        result = rescore(Path(args.out), Path(args.corpus), Path(args.compare) if args.compare else None)
+        result = rescore(Path(args.out), Path(args.corpus), Path(args.compare) if args.compare else None,
+                         resimulated=args.resimulate)
         print((Path(args.out) / 'summary-rescored.md').read_text())
         return 1 if safety_failures(result) else 0
     out = Path(args.out) if args.out else Path(os.environ.get('TMPDIR', '/tmp')) / (

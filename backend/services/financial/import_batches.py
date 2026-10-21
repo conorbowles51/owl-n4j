@@ -224,6 +224,9 @@ def assess(proposal, request=None):
         summary['identity_memory'] = proposal['identity_memory']
     if proposal.get('period_dates'):
         summary['closing_only_period'] = True
+    if proposal.get('printed_currency') and not proposal['currency']:
+        # Cited for the currency proposal (field_proposals); the reading stays without a currency.
+        summary['printed_currency'] = proposal['printed_currency']
     summary['account_type'] = proposal['metadata'].get('account_type') or ''
     # The pages this period is read from: which saved periods of its file its
     # readiness depends on (_relevant_admitted).

@@ -84,6 +84,55 @@ class CurrencyTests(TestCase):
         self.assertEqual(fp.propose(values(currency='USD'), knowledge(account(*MONTHS))), {})
 
 
+class PrintedElsewhereCurrencyTests(TestCase):
+    """A currency the statement prints only in its holdings is proposed with its page, never confirmed by itself."""
+    printed = dict(value='MXN', page_number=2, table_index=1, row_index=2, expected_text='0 MXN', cells=1)
+
+    def test_proposed_with_its_page_and_never_confirmed(self):
+        for known in (knowledge(), knowledge(default='USD'), knowledge(account(MONTHS[0]))):
+            currency = fp.propose(values(printed_currency=self.printed), known)['currency']
+            self.assertEqual((currency['value'], currency['basis'], currency['confirmed']),
+                             ('MXN', 'printed_on_statement', False))
+            self.assertEqual(currency['label'], "printed in this statement's holdings on page 2")
+            self.assertEqual(currency['cited']['expected_text'], '0 MXN')
+        self.assertIn('Confirm it', fp.sentence('currency', fp.propose(values(printed_currency=self.printed), knowledge())))
+
+    def test_an_agreeing_automatic_confirmation_stands_and_a_disagreeing_one_is_withdrawn(self):
+        agreeing = fp.propose(values(printed_currency=self.printed), knowledge(account(*MONTHS)))['currency']
+        self.assertEqual((agreeing['basis'], agreeing['confirmed']), ('same_account', True))
+        usd = [saved(currency='USD', start=m.period_start, end=m.period_end) for m in MONTHS]
+        other = fp.propose(values(printed_currency=self.printed), knowledge(account(*usd, currency='USD')))['currency']
+        self.assertEqual((other['value'], other['basis'], other['confirmed']), ('MXN', 'printed_on_statement', False))
+
+    def test_a_printed_currency_on_the_statement_itself_is_never_replaced(self):
+        self.assertNotIn('currency', fp.propose(values(currency='USD', printed_currency=self.printed), knowledge()))
+
+    def test_the_summary_carries_the_cited_cell(self):
+        self.assertEqual(fp.summary_values(dict(printed_currency=self.printed))['printed_currency'], self.printed)
+        self.assertIsNone(fp.summary_values({})['printed_currency'])
+
+
+class HoldingsCurrencyTests(TestCase):
+    def test_one_code_in_the_holdings_currency_column_with_its_cell(self):
+        from services.financial.statement_currency import printed_holdings_currency
+        from tests.test_financial_statement_import_proposal import source
+
+        def page(*grid, number=2):
+            data = source(list(grid))
+            data['page_number'] = number
+            return data
+        heading = ['EMISORA SERIE CUP MON', 'CANTIDAD', 'VALUACION PESOS']
+        found = printed_holdings_currency([page(heading, ['+FUND', '0) MXN)', '1,000.00'])])
+        self.assertEqual((found['value'], found['page_number'], found['expected_text']), ('MXN', 2, '0) MXN)'))
+        for grid in ([['EXAMPLE', '0 MXN']],                                     # no holdings heading
+                     [heading, ['FX USD/MXN', '17.00']],                         # an exchange rate
+                     [heading, ['+FUND', 'MXN'], ['+OTHER', 'USD']],             # two currencies
+                     [heading, ['+FUND', 'CUP ALL', '1.00']]):                   # not a holdings code
+            with self.subTest(grid=grid):
+                self.assertIsNone(printed_holdings_currency([page(*grid)]))
+        self.assertIsNone(printed_holdings_currency([page(heading, ['+FUND', 'MXN']), page(heading, ['+X', 'USD'], number=3)]))
+
+
 class DetailTests(TestCase):
     def test_holder_confirmed_when_bank_matches_and_both_sides_print_it(self):
         holder = fp.propose(values(holder='', currency='MXN'), knowledge(account(*MONTHS)))['holder']

@@ -10,6 +10,11 @@ Currency, in order (Neil, 2026-10-13):
   (a) printed on the statement. The statement reader already adopts a printed
       code or unambiguous symbol, so a statement that asks for its currency
       has none; nothing is proposed from the page here.
+  (a') printed elsewhere on the same statement: a brokerage cash ledger
+      prints no currency, but its holdings table can
+      (``statement_currency.printed_holdings_currency``). Proposed with the
+      page it is printed on, never confirmed automatically: the currency of
+      the cash ledger stays a person's choice (standing decision, wave 12).
   (b) the same account's saved statements, when they all agree. Confirmed
       automatically only when there are at least two of them, the account is
       identified exactly and uniquely on two independent fields (account number
@@ -358,6 +363,25 @@ def _detail_proposal(name, candidates, matched, values):
 
 
 def _currency_proposal(values, candidates, matched, knowledge):
+    """The currency proposal: printed elsewhere on the statement first, unless the same account confirms it.
+
+    A currency the same statement prints in its holdings is proposed with its
+    page (one click). Where the account's saved statements would confirm the
+    same currency automatically, that confirmation stands; where they give
+    another currency, the printed one is proposed and nothing is confirmed.
+    """
+    printed = values.get('printed_currency') or {}
+    other = _account_or_case_currency(values, candidates, matched, knowledge)
+    if not printed.get('value') or (other and other['confirmed'] and other['value'] == printed['value']):
+        return other
+    return dict(value=printed['value'], basis='printed_on_statement', confirmed=False,
+                label=f"printed in this statement's holdings on page {printed.get('page_number')}",
+                statements=0, matched=[], page_number=printed.get('page_number'),
+                cited=dict(page_number=printed.get('page_number'), table_index=printed.get('table_index'),
+                           row_index=printed.get('row_index'), expected_text=printed.get('expected_text')))
+
+
+def _account_or_case_currency(values, candidates, matched, knowledge):
     if candidates and 'ambiguous' not in matched:
         currencies = [s.currency for k in candidates for s in k.statements] + [k.currency for k in candidates if k.currency]
         value = _agreed(currencies, str.upper)
@@ -408,7 +432,8 @@ def summary_values(summary):
     """Statement details of a projected batch summary, under the FIELDS names."""
     return dict(currency=summary.get('currency') or '', institution=summary.get('institution') or '',
                 holder=summary.get('holder') or '', account_number=summary.get('account') or '',
-                period_start=summary.get('period_start') or '', period_end=summary.get('period_end') or '')
+                period_start=summary.get('period_start') or '', period_end=summary.get('period_end') or '',
+                printed_currency=summary.get('printed_currency') or None)
 
 
 def resolves_all(reasons, proposals):
