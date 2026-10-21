@@ -34,6 +34,17 @@ _PREVIOUS = re.compile(r'(?<![A-Za-z])' + r'\s*'.join('PreviousBalance') + r'(?!
 # ``ID 001 0``); only the spacing is ignored, never a glyph.
 _HEADING_DATE = r'\d\s?\d\s?/\s?\d\s?\d'
 _SHARE_ID = r'\d\s?\d\s?\d\s?\d'
+# Measured on a real scan: a speck between two digits of the share ID read as
+# a point (``ID 004.0 FREE CHECKING``). The four digits and the printed label
+# must still be read exactly; one point or middle dot is ignored like a space.
+# Reverse in one place: False reads only spaces.
+SHARE_ID_SPECK = True
+if SHARE_ID_SPECK:
+    _SHARE_ID = r'\d[\s.·]?\d[\s.·]?\d[\s.·]?\d'
+
+
+def _share_reference(text):
+    return re.sub(r'[\s.·]+', '', text)
 _SHARE = re.compile(r'^(' + _HEADING_DATE + r') ID (' + _SHARE_ID + r') (' + _LABELS + ') ' + _PREVIOUS.pattern + r'(?: |$)')
 _SHARE_LABEL = re.compile(r'^' + _HEADING_DATE + r' ID \S+(?: \S+)? (' + _LABELS + ')(?: |$)')
 
@@ -435,8 +446,8 @@ def andrews_catalog(sources):
                 active = None
                 if match:
                     identity = dict(layout_id=_LAYOUT, institution='Andrews Federal Credit Union',
-                        account_reference=page['account'] + ' / Share ' + re.sub(r'\s+', '', match[2]),
-                        main_account_reference=page['account'], share_reference=re.sub(r'\s+', '', match[2]),
+                        account_reference=page['account'] + ' / Share ' + _share_reference(match[2]),
+                        main_account_reference=page['account'], share_reference=_share_reference(match[2]),
                         account_label=match[3], account_type=_share_type(match[3]),
                         period_start=page['start'], period_end=page['end'])
                     # Another opening heading is another statement occurrence,
@@ -462,7 +473,7 @@ def andrews_catalog(sources):
             closure = _CLOSED.fullmatch(text)
             if closure and active:
                 closed_on = _period_date(closure[1], active)
-                if (re.sub(r'\s+', '', closure[2]) == active['share_reference'] and closure[3] == active['account_label']
+                if (_share_reference(closure[2]) == active['share_reference'] and closure[3] == active['account_label']
                         and closed_on):
                     active['account_closure'] = dict(date=closed_on, page_number=source['page_number'], table_index=source['table_index'],
                         row_index=row['row_index'], source_cells=row['cells'])
@@ -809,9 +820,38 @@ def _date_damaged_rows_in_order(rows, damaged, statement):
             row['issues'] = [issue for issue in row['issues'] if issue != _ADDITIONAL_UNREAD]
 
 
+# A line printed inside an account section with no money and no payment word
+# (a dated notice such as a pending credit announced before its voucher) is
+# set aside as information only when the next payment's running balance
+# continues exactly from the balance printed before the line: no money moved
+# on it. Reverse in one place: False keeps such lines for the investigator.
+MONEYLESS_NOTICES = True
+# A dated money row whose first cell is a printed date read with a space
+# inside it. Reverse in one place: False needs the date without spaces.
+SPACED_ROW_DATES = True
+NOTICE_BASIS = 'no_money_and_running_balance_unbroken'
+
+
+def _moneyless_notices(result, notices):
+    """Set aside each run of money-less lines whose next payment reconciles from the balance before them."""
+    positions = {row['id']: index for index, row in enumerate(result)}
+    marked = {row['id'] for row in notices}
+    for row in notices:
+        index = positions[row['id']]
+        following = next((r for r in result[index + 1:] if r['id'] not in marked
+                          and r['kind'] not in ('continuation', 'statement_information')), None)
+        if (following is None or following['kind'] != 'transaction' or following['excluded']
+                or following['fields'].get('balance_difference_minor') != '0'
+                or any(k not in following['fields'] for k in ('amount_minor', 'direction', 'balance'))):
+            continue
+        row.update(excluded=True, kind='statement_information', issues=[])
+        row['fields']['information_basis'] = NOTICE_BASIS
+
+
 def propose_andrews_statement(sources, currency, statement):
     result = []
     damaged_dates = {}
+    notices = []
     previous_balance = None
     previous_payment = None
     scopes = {(s['page_number'], s['table_index']):s for s in statement['sources']}
@@ -888,8 +928,14 @@ def propose_andrews_statement(sources, currency, statement):
             first_box = _box(cells[0]) if cells else None
             damaged_date_payment = (_DAMAGED_DATE_PAYMENT.match(body)
                                     if not parsed and first_box and first_box[0] < page['width'] * .08 else None)
+            # A printed date read with a space inside (``06/ 03``) still opens a
+            # dated money row when it is the row's first cell.
+            spaced_date = (SPACED_ROW_DATES and cells and re.fullmatch(_DATE, cells[0]['expected_text'].strip())
+                           and re.match(r'^(' + _DATE + r')(?: |$)', body))
             dated_money = (first_box and first_box[0] < page['width'] * .08 and money_cells
-                           and re.match(r'^\S{4,7}(?: |$)', body))
+                           and (re.match(r'^\S{4,7}(?: |$)', body) or spaced_date))
+            if dated_money and re.match(r'^\S{4,7}(?: |$)', body):
+                spaced_date = None
             if parsed or damaged_date_payment or dated_money:
                 following = source['rows'][position + 1] if position + 1 < len(source['rows']) else None
                 if following is not None and following['row_index'] not in scope['row_indices']:
@@ -905,7 +951,8 @@ def propose_andrews_statement(sources, currency, statement):
                         money_continuations[voucher['source_row']['row_index']] = item
                 item.update(excluded=False, kind='transaction' if parsed else 'unresolved')
                 fields = item['fields']
-                date_text = parsed[1] if parsed else damaged_date_payment[1] if damaged_date_payment else body.split(' ', 1)[0]
+                date_text = (parsed[1] if parsed else damaged_date_payment[1] if damaged_date_payment
+                             else spaced_date[1] if spaced_date else body.split(' ', 1)[0])
                 value = _period_date(date_text, statement)
                 if value:
                     fields['date'] = value
@@ -913,7 +960,8 @@ def propose_andrews_statement(sources, currency, statement):
                     item['issues'].append(_DATE_UNREAD)
                     damaged_dates[item['id']] = date_text
                 fields['date_column'] = str(cells[0]['column_index'])
-                fields['description'] = parsed[3] if parsed else damaged_date_payment[2] if damaged_date_payment else body.partition(' ')[2]
+                fields['description'] = (parsed[3] if parsed else damaged_date_payment[2] if damaged_date_payment
+                                         else body[spaced_date.end():].strip() if spaced_date else body.partition(' ')[2])
                 fields['counterparty'] = ''
                 if parsed and parsed[2]:
                     fields['additional_printed_date'] = parsed[2]
@@ -990,6 +1038,10 @@ def propose_andrews_statement(sources, currency, statement):
             else:
                 item.update(excluded=False, kind='unresolved')
                 item['issues'].append('Check this line in the account section. It could not be linked to a transaction.')
+                if not money_cells and not re.search(_WITHDRAWAL + '|' + _DEPOSIT, body):
+                    notices.append(item)
+    if MONEYLESS_NOTICES and notices:
+        _moneyless_notices(result, notices)
     if ORDERED_DAMAGED_DATES and damaged_dates:
         _date_damaged_rows_in_order(result, damaged_dates, statement)
     issues = []
@@ -1020,13 +1072,16 @@ def andrews_no_activity_evidence(sources, statement, rows):
     page break stays unproven; the investigator's confirmation remains needed.
     Returns None when the section has payment candidates (not a quiet question).
     """
-    if statement.get('assignment_only') or statement.get('account_closure'):
+    if statement.get('assignment_only') or (statement.get('account_closure') and not CLOSURE_PROOF):
         return None
     if any(not row['excluded'] for row in rows):
         return None
 
     def held(reason, message, **extra):
         return dict(verified=False, method=NO_ACTIVITY_METHOD, reason=reason, message=message, **extra)
+
+    if statement.get('account_closure'):
+        return _closure_evidence(sources, statement, rows, held)
 
     scopes = statement.get('sources') or []
     if len(scopes) != 1:
@@ -1071,9 +1126,103 @@ def andrews_no_activity_evidence(sources, statement, rows):
     if (not opening['fields'].get('date') or closing['fields'].get('date') != statement.get('period_end')
             or opening['fields']['date'] > closing['fields']['date']):
         return held('endpoint_dates', 'The opening and ending balance dates do not cover the printed statement period. Check the page before confirming that it contains no transactions.', page_number=key[0])
+    band = _adjacent_lines(sources, source, page, opening['row_index'], closing['row_index'],
+                           [c for c in source_rows[opening['row_index']]['cells'] if c not in open_money],
+                           [c for c in source_rows[closing['row_index']]['cells'] if c not in close_money], held)
+    if band.get('verified') is False:
+        return band
+    first, second, space, pitch, distance = (band[k] for k in ('first', 'second', 'space', 'pitch', 'distance'))
+    return dict(verified=True, method=NO_ACTIVITY_METHOD, reason='adjacent_equal_endpoints',
+        message='The printed page shows this account section\'s opening balance line followed directly by its ending balance line at the statement end date, with equal balances and no line between them.',
+        page_number=key[0], table_index=key[1], opening_row_id=opening['id'], closing_row_id=closing['id'],
+        balance_minor=opening['fields']['balance'], period_start=statement.get('period_start'),
+        opening_date=opening['fields']['date'], closing_date=closing['fields']['date'],
+        period_end=statement.get('period_end'), opening_rect=first, closing_rect=second,
+        page_size=space.get('page_size'), coordinate_space=space.get('space'),
+        line_pitch=pitch, distance=distance,
+        endpoint_methods=[(row.get('value_provenance') or {}).get('method') for row in (opening, closing)])
+
+
+# Whether a closed share section can prove from its page that it had no
+# activity (``_closure_evidence``). Reverse in one place.
+CLOSURE_PROOF = True
+
+
+def _closure_evidence(sources, statement, rows, held):
+    """The page's proof that a closed section with a zero opening balance had no activity, or why not.
+
+    Printed facts only, on one page: the exact opening (Previous Balance) line
+    with a readable date in the period and a readable balance of exactly
+    0.00, followed directly by the section's own ``Closed`` line dated inside
+    the printed period, nothing read between them and no room for an unread
+    line (as for an ending balance line). An account that opens at zero and
+    closes with no payment printed ends at zero: no money moved and no
+    closing balance is needed. Any other closed section stays the
+    investigator's to confirm.
+    """
+    closure = statement['account_closure']
+    scopes = statement.get('sources') or []
+    if len(scopes) != 1:
+        return held('section_spans_pages', 'This account section continues across pages. Check every page of this period before confirming that it contains no transactions.')
+    scope = scopes[0]
+    key = (scope['page_number'], scope['table_index'])
+    source = next((s for s in sources if (s['page_number'], s['table_index']) == key), None)
+    in_scope = {row['id']: row for row in rows if (row['page_number'], row['table_index']) == key
+                and row['row_index'] in scope['row_indices']}
+    openings = [row for row in in_scope.values() if row['kind'] == 'balance'
+                and row['fields'].get('description') == 'Opening Balance']
+    closings = [row for row in in_scope.values() if row['kind'] == 'balance'
+                and row['fields'].get('description') == 'Closing Balance']
+    closed = [row for row in in_scope.values() if row['fields'].get('account_closed_on')]
+    if (source is None or len(openings) != 1 or closings or len(closed) != 1 or len(in_scope) != 2
+            or (closure.get('page_number'), closure.get('table_index')) != key
+            or closed[0]['row_index'] != closure.get('row_index')):
+        return held('endpoint_missing', 'The opening balance line or the closing notice of this section was not read as printed. Check the page before confirming that it contains no transactions.', page_number=key[0])
+    opening, notice = openings[0], closed[0]
+    page = andrews_page(source, allow_unbranded=True)
+    source_rows = {row['row_index']: row for row in source['rows']}
+    money = _money_cells(source_rows[opening['row_index']], page['width']) if page else []
+    label = ' '.join(c['expected_text'].strip() for c in source_rows[opening['row_index']]['cells'] if c not in money)
+    if not page or len(money) != 1 or not _QUIET_OPENING.fullmatch(re.sub(r'\s+', '', label)):
+        return held('endpoint_label', 'The opening balance line was not read exactly as printed. Check the page before confirming that it contains no transactions.', page_number=key[0])
+    if 'balance' not in opening['fields'] or opening['issues']:
+        return held('endpoint_unreadable', 'The opening balance could not be read. Check the page before confirming that it contains no transactions.', page_number=key[0])
+    if opening['fields']['balance'] != '0':
+        return held('closed_with_balance', 'This account opened with money in it and was closed, so money moved in this period. Check the page for transactions that were not read.', page_number=key[0])
+    start, end, closed_on = statement.get('period_start'), statement.get('period_end'), closure.get('date')
+    if (not opening['fields'].get('date') or not closed_on or not start or not end
+            or not start <= opening['fields']['date'] <= closed_on <= end):
+        return held('endpoint_dates', 'The opening line and the closing notice are not dated inside the printed statement period. Check the page before confirming that it contains no transactions.', page_number=key[0])
+    band = _adjacent_lines(sources, source, page, opening['row_index'], notice['row_index'],
+                           [c for c in source_rows[opening['row_index']]['cells'] if c not in money],
+                           source_rows[notice['row_index']]['cells'], held)
+    if band.get('verified') is False:
+        return band
+    space = band['space']
+    return dict(verified=True, method=NO_ACTIVITY_METHOD, reason='closed_without_activity',
+        message='The printed page shows this account section\'s opening balance of 0.00 followed directly by its closing notice inside the statement period, with no line between them.',
+        page_number=key[0], table_index=key[1], opening_row_id=opening['id'], closing_row_id=None,
+        closure_row_id=notice['id'], closure_date=closed_on, balance_minor='0',
+        period_start=start, opening_date=opening['fields']['date'], period_end=end,
+        opening_rect=band['first'], closing_rect=band['second'],
+        page_size=space.get('page_size'), coordinate_space=space.get('space'),
+        line_pitch=band['pitch'], distance=band['distance'],
+        endpoint_methods=[(opening.get('value_provenance') or {}).get('method')])
+
+
+def _adjacent_lines(sources, source, page, first_index, second_index, first_cells, second_cells, held):
+    """``dict(first, second, space, pitch, distance)`` when two lines of a page are printed directly one after the other.
+
+    No row is read between them, nothing read anywhere on the page lies in the
+    band between their labels (``first_cells``, ``second_cells``), and there is
+    no vertical room between them for an unread line, measured against this
+    page's own line spacing. Otherwise the ``held`` reason.
+    """
+    key = (source['page_number'], source['table_index'])
+    source_rows = {row['row_index']: row for row in source['rows']}
     ordered = sorted(source_rows)
-    position = ordered.index(opening['row_index'])
-    if position + 1 >= len(ordered) or ordered[position + 1] != closing['row_index']:
+    position = ordered.index(first_index)
+    if position + 1 >= len(ordered) or ordered[position + 1] != second_index:
         return held('rows_between_endpoints', 'Other lines were read between the opening and ending balances. Check them before confirming that it contains no transactions.', page_number=key[0])
 
     def extent(cells):
@@ -1085,9 +1234,9 @@ def andrews_no_activity_evidence(sources, statement, rows):
 
     # Positions of the printed labels: a money cell's box can be read taller
     # than its line, which would hide or invent room for an unread line.
-    first = extent([c for c in source_rows[opening['row_index']]['cells'] if c not in open_money])
-    second = extent([c for c in source_rows[closing['row_index']]['cells'] if c not in close_money])
-    space = (source_rows[opening['row_index']]['cells'][0].get('locator') or {})
+    first = extent(first_cells)
+    second = extent(second_cells)
+    space = (source_rows[first_index]['cells'][0].get('locator') or {})
     # Measure spacing only among account-section lines, never the address block.
     body = [r for r in (source_rows[i] for i in ordered) if r['row_index'] >= page['body_start'] and r['cells']]
     first_section = next((i for i, r in enumerate(body) if _SHARE_LABEL.match(_text(r)) or _PREVIOUS.search(_text(r))), len(body))
@@ -1107,21 +1256,13 @@ def andrews_no_activity_evidence(sources, statement, rows):
         if other['page_number'] != key[0]:
             continue
         for row in other['rows']:
-            if other is source and row['row_index'] in (opening['row_index'], closing['row_index']):
+            if other is source and row['row_index'] in (first_index, second_index):
                 continue
             for cell in row['cells']:
                 b = _box(cell)
                 if b is None or first[3] < (b[1] + b[3]) / 2 < second[1]:
                     return held('rows_between_endpoints', 'Other text was read between the opening and ending balance lines. Check it before confirming that it contains no transactions.', page_number=key[0])
-    return dict(verified=True, method=NO_ACTIVITY_METHOD, reason='adjacent_equal_endpoints',
-        message='The printed page shows this account section\'s opening balance line followed directly by its ending balance line at the statement end date, with equal balances and no line between them.',
-        page_number=key[0], table_index=key[1], opening_row_id=opening['id'], closing_row_id=closing['id'],
-        balance_minor=opening['fields']['balance'], period_start=statement.get('period_start'),
-        opening_date=opening['fields']['date'], closing_date=closing['fields']['date'],
-        period_end=statement.get('period_end'), opening_rect=first, closing_rect=second,
-        page_size=space.get('page_size'), coordinate_space=space.get('space'),
-        line_pitch=pitch, distance=distance,
-        endpoint_methods=[(row.get('value_provenance') or {}).get('method') for row in (opening, closing)])
+    return dict(first=first, second=second, space=space, pitch=pitch, distance=distance)
 
 
 def _overlap(a, b):

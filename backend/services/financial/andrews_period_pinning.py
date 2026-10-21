@@ -32,10 +32,32 @@ the accepted one. A reading made before the engine stored printed readings
 offers no candidate and is left as it is.
 
 ``PERIOD_PINNING = False`` turns the pass off in one place.
+
+Three wider sources of readings, each a fact the engine stored and each still
+accepted only as above (switches in one place each):
+
+* ``RECOGNISED_READINGS``: a held cell also offers every amount a recogniser
+  stated for it (``recognised_readings``: the page reading or its glyph
+  interpretation even when no crop repeats it, and each distinct crop
+  amount). Measured on real Andrews scans: crops joined a dash between the
+  amount and the balance, or read the minus as a point, while the page
+  reading was the printed value; or two of six crops gave the printed value.
+* ``DAMAGED_CELLS``: money cells whose page reading is not an amount at all
+  (``2468:13``), which the engine now crops on Andrews pages
+  (``damaged_cells``), are held cells like any other and offer their
+  recognised readings.
+* ``GLYPH_AGREEMENT``: a held cell whose page reading, its look-alike glyphs
+  read as the digits they stand for, states exactly the amount at least four
+  crop readings at both resolutions state (``page_glyphs_agree_with_crops``)
+  is agreed with that reading: two recognisers state the same amount, which
+  is what confirms any other cell. It still has to reconcile with the period.
 """
 from copy import deepcopy
 
 PERIOD_PINNING = True
+RECOGNISED_READINGS = True
+DAMAGED_CELLS = True
+GLYPH_AGREEMENT = True
 METHOD = 'andrews_period_pinned_reading'
 VERIFICATION = 'tesseract_money_cell_verification'
 REPAIRS = ('statement_money_pinned_reading', 'statement_money_pinned_repair', 'statement_money_second_reader_repair')
@@ -63,7 +85,10 @@ def stored_cells(source_locations, pages):
             continue
         repaired = {_key(page, c) for r in records if r.get('method') in REPAIRS and r.get('decision') == 'repaired'
                     for c in r.get('cells') or []}
-        for cell in verification[0].get('cells') or []:
+        cells = list(verification[0].get('cells') or [])
+        if DAMAGED_CELLS:
+            cells += [c for c in verification[0].get('damaged_cells') or [] if isinstance(c, dict) and not c.get('error')]
+        for cell in cells:
             key = _key(page, cell)
             if cell.get('status') == 'confirmed' or key in repaired:
                 agreed.add(key)
@@ -153,19 +178,35 @@ def pin_period(proposal, sources, currency, statement, source_locations):
     candidates, context = {}, {}
     for key, cell in held.items():
         readings = {}
-        for item in cell.get('printed_readings') or ():
+        offered = list(cell.get('printed_readings') or ())
+        if RECOGNISED_READINGS:
+            offered += list(cell.get('recognised_readings') or ())
+        for item in offered:
             text = item[0] if isinstance(item, (list, tuple)) else None
             try:
                 readings.setdefault(_andrews_reading(text), text)
             except Exception:
-                readings = {}
-                break
+                if not RECOGNISED_READINGS:
+                    readings = {}
+                    break
+                # A reading the statement reader cannot parse (``74.20-``) is
+                # no candidate; the cell's other readings still are.
+                continue
         candidates[key] = readings
         if cell.get('confirmed_parts') and cell.get('confirmed_parts_text'):
             context[key] = cell['confirmed_parts_text']
     if not all(candidates.values()):
         return proposal
     pinned = {}
+    if GLYPH_AGREEMENT:
+        for key, cell in held.items():
+            text = cell.get('page_glyphs_agree_with_crops')
+            try:
+                value = _andrews_reading(text) if text else None
+            except Exception:
+                value = None
+            if value is not None and value in candidates[key]:
+                pinned[key] = dict(text=candidates[key][value], pinned_by=[], basis='page_glyphs_agree_with_crops')
 
     def agreed(cell, role):
         return cell + (role,) in parts or cell in pinned or (cell in agreed_cells and cell not in held)
@@ -223,9 +264,11 @@ def pin_period(proposal, sources, currency, statement, source_locations):
         cell = held[key]
         by_row.setdefault(key[:3], []).append(dict(method=METHOD, page_number=key[0], table_index=key[1],
             row_index=key[2], column_index=key[3], page_reading=cell.get('original_text'),
-            held_text=cell.get('marked_text'), text=value['text'],
-            accepted_reading=dict(cell.get('printed_readings') or ()).get(value['text']),
-            pinned_by=value['pinned_by'], observations=len(cell.get('observations') or [])))
+            held_text=cell.get('marked_text') or cell.get('original_text'), text=value['text'],
+            accepted_reading=dict([*(cell.get('recognised_readings') or ()),
+                                   *(cell.get('printed_readings') or ())]).get(value['text']),
+            pinned_by=value['pinned_by'], observations=len(cell.get('observations') or []),
+            **({'basis': value['basis']} if value.get('basis') else {})))
     result = deepcopy(repaired)
     for row in result['rows']:
         repairs = by_row.get((row['page_number'], row['table_index'], row['row_index']))
