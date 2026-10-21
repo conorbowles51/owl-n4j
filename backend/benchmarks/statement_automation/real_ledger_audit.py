@@ -180,6 +180,20 @@ def _day_offsets(live_rows, truth_rows):
     return offsets
 
 
+def same_share(live, truth):
+    """Whether a live period and a truth period are the same share (or have no share to tell apart).
+
+    The live share is the four-digit share number at the end of the printed
+    identifier. Where the truth names the section by its product instead (Navy
+    Federal: "EveryDay Checking - 1111"), those four digits are the account
+    number itself, so they must equal the truth's account; the account, balances
+    and rows then tell sections of one account apart (a checking account and its
+    line of credit print the same digits)."""
+    if not live.get('share') or not truth.get('share') or truth['share'] == live['share']:
+        return True
+    return not re.fullmatch(r'\d{4}', truth['share']) and live['share'] == truth.get('account')
+
+
 def best_truth(live, candidates):
     def overlap(truth):
         a = Counter((r['amount_minor'], r['direction']) for r in truth['rows'])
@@ -187,8 +201,7 @@ def best_truth(live, candidates):
         return sum((a & b).values())
     # A credit-union share (savings, checking) is its own period: never pair across shares.
     same = [t for t in candidates if t['period_end'] == live['period_end']
-            and (not live['currency'] or t['currency'] == live['currency'])
-            and (not live.get('share') or not t.get('share') or t['share'] == live['share'])]
+            and (not live['currency'] or t['currency'] == live['currency']) and same_share(live, t)]
     if not same:
         return None
     if len(same) > 1:

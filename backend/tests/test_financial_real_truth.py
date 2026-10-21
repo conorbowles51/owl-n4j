@@ -425,6 +425,28 @@ class UnprintedDateAndAuditTests(unittest.TestCase):
                          'must_be_held')
         self.assertEqual(audit.judge(live, dict(held, expected='auto'))['outcome'], 'agrees')
 
+    def test_audit_pairs_a_share_printed_as_account_digits_with_a_named_section(self):
+        from benchmarks.statement_automation import real_ledger_audit as audit
+        def truth(share, opening, closing, rows):
+            return dict(share=share, account='1111', period_end='2024-02-16', currency='USD', opening_minor=opening,
+                        closing_minor=closing, rows=[dict(amount_minor=a, direction=d) for a, d in rows])
+        checking = truth('EveryDay Checking', 10000, 12000, [(5000, 'credit'), (3000, 'debit')])
+        credit_line = truth('Checking Line of Credit', 0, 0, [])
+        savings = dict(truth('Membership Savings', 500, 500, []), account='2222')
+        live = dict(share='1111', account='1111', period_end='2024-02-16', currency='USD', opening_minor=10000,
+                    closing_minor=12000, rows=[(5000, 'credit', '2024-01-20'), (3000, 'debit', '2024-01-25')])
+        candidates = [checking, credit_line, savings]
+        self.assertIs(audit.best_truth(live, candidates), checking)
+        quiet = dict(live, opening_minor=0, closing_minor=0, rows=[])
+        self.assertIs(audit.best_truth(quiet, candidates), credit_line)  # same digits: told apart by balances
+        self.assertIs(audit.best_truth(dict(quiet, share='2222', account='2222', opening_minor=500,
+                                            closing_minor=500), candidates), savings)
+        self.assertIsNone(audit.best_truth(dict(live, share='3333'), candidates))  # other digits: no pairing
+        # Four-digit truth shares (Andrews) still never pair across shares.
+        andrews = dict(checking, share='0040')
+        self.assertIsNone(audit.best_truth(dict(live, share='0000'), [andrews]))
+        self.assertIs(audit.best_truth(dict(live, share='0040'), [andrews]), andrews)
+
     def test_audit_compares_the_admitted_holder_with_the_printed_one(self):
         from benchmarks.statement_automation import real_ledger_audit as audit
         truth = dict(holder='EJEMPLO SERVICIOS SA DE CV')
