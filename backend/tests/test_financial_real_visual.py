@@ -377,6 +377,39 @@ class CardSectionAndPatchTests(unittest.TestCase):
         left['periods'][2]['truth_status'] = 'unverified'  # a second text-layer gap the patch does not cover
         self.assertEqual(rv.apply_visual(left, rv.compile_document(CARD, page_count=5))['status'], 'partly_verified')
 
+    KEEP = 'doc dcard\ndone 2\nissuer acme-card Acme Card\nkeep 2 hold rows redacted in the production\n'
+
+    def test_a_kept_period_stays_as_read_and_makes_the_document_final(self):
+        visual = rv.compile_document(self.KEEP, page_count=5)
+        self.assertEqual((visual['complete'], visual['periods'], visual['keep']),
+                         (True, [], {'2': ['hold', 'rows redacted in the production']}))
+        merged = rv.apply_visual(self.text_layer(), visual)
+        kept = merged['periods'][1]
+        self.assertEqual((kept['truth_status'], kept['truth_reasons'], kept['pages']),
+                         ('unverified', ['amount line without a date'], [2]))  # the reading is unchanged
+        self.assertEqual((kept['truth_source'], kept['expected_override'], kept['expected_reason']),
+                         ('visual', 'hold', 'rows redacted in the production'))
+        self.assertEqual([p.get('truth_source') for p in merged['periods']], [None, 'visual', None])
+        self.assertEqual((merged['status'], merged['visual_kept'], merged['visual_patch']),
+                         ('settled', ['dcard#2'], []))
+        self.assertEqual(rv.apply_visual(merged, visual), merged)  # merging twice changes nothing
+
+    def test_keep_is_refused_unless_its_pages_were_read_and_the_period_is_not_verified(self):
+        unread = rv.compile_document(self.KEEP.replace('done 2', 'done 3'), page_count=5)
+        self.assertEqual(rv.apply_visual(self.text_layer(), unread), self.text_layer())
+        verified = rv.compile_document(self.KEEP.replace('keep 2', 'keep 1').replace('done 2', 'done 1'),
+                                       page_count=5)
+        self.assertEqual(rv.apply_visual(self.text_layer(), verified), self.text_layer())
+        missing = rv.compile_document(self.KEEP.replace('keep 2', 'keep 9'), page_count=5)
+        self.assertEqual(rv.apply_visual(self.text_layer(), missing), self.text_layer())
+
+    def test_keep_lines_are_checked(self):
+        for bad in ('keep 2 maybe a reason\n', 'keep 2 hold\n', 'keep 2 hold x\nkeep 2 hold y\n'):
+            with self.assertRaises(ValueError):
+                rv.Transcription('doc dcard\n' + bad)
+        with self.assertRaises(ValueError):  # kept and replaced at once
+            rv.Transcription(CARD.replace('patch 2', 'patch 2\nkeep 2 hold x'))
+
     def test_a_patch_naming_a_period_the_text_layer_lacks_is_refused(self):
         visual = rv.compile_document(CARD.replace('patch 2', 'patch 7'), page_count=5)
         self.assertEqual(rv.apply_visual(self.text_layer(), visual), self.text_layer())

@@ -65,6 +65,18 @@ text-layer reading; the transcribed periods replace exactly those, in order,
 and every other period keeps its text-layer reading::
 
     patch 14,23,33
+
+A text-layer period that is not verified and that no reading of the images
+could verify (rows the production redacted, a balance the statement never
+prints) is kept rather than retyped once the reviewer has checked it on the
+page images: its reading and status stand, the status becomes final, and the
+line records the outcome the source supports and why (including any value the
+text layer missed, which a scored period would have needed). ``keep`` is refused at merge time unless
+every page of the kept period is on the ``done`` line, and it never applies to
+a verified period::
+
+    keep 2 hold opening balance and rows redacted in the production
+    keep 6 decision line of credit: opening outstanding total not printed
 """
 from __future__ import annotations
 
@@ -204,6 +216,7 @@ class Transcription:
                            kind='deposit')
         self.form = None  # (status, reason) when the document holds no statement
         self.patch = None  # text-layer period numbers the transcribed periods replace, in order
+        self.keep = {}  # text-layer period number -> (expected outcome, reason): checked on the images, kept as read
         self._parse(text)
 
     def _parse(self, text):
@@ -215,7 +228,7 @@ class Transcription:
             word, _, rest = line.partition(' ')
             if word == 'doc':
                 self.doc = rest.strip()
-            elif word in ('issuer', 'form', 'patch') or word in ('currency', 'kind') and page is None:
+            elif word in ('issuer', 'form', 'patch', 'keep') or word in ('currency', 'kind') and page is None:
                 if page is not None:
                     raise ValueError(f'line {number}: {word} belongs before the first page line')
                 self._document_line(word, rest.strip(), number)
@@ -340,6 +353,10 @@ class Transcription:
             raise ValueError('a document marked not_statement cannot hold statement periods')
         if self.patch is not None and (self.form or len(self.patch) != len(self.periods)):
             raise ValueError(f'patch names {len(self.patch)} periods; the transcription holds {len(self.periods)}')
+        if self.keep and self.form:
+            raise ValueError('a document marked not_statement cannot keep statement periods')
+        if self.keep and set(self.keep) & set(self.patch or ()):
+            raise ValueError('a period is either kept as read or replaced by a transcription, not both')
 
     def _document_line(self, word, rest, number):
         if word == 'issuer':
@@ -359,6 +376,13 @@ class Transcription:
             if not re.fullmatch(r'\d+(?:,\d+)*', rest) or len(set(rest.split(','))) != len(rest.split(',')):
                 raise ValueError(f'line {number}: patch needs distinct period numbers, comma separated')
             self.patch = [int(n) for n in rest.split(',')]
+        elif word == 'keep':
+            fields = re.fullmatch(r'(\d+) (auto|decision|hold|not_statement|duplicate) (\S.*)', rest)
+            if not fields:
+                raise ValueError(f'line {number}: keep needs a period number, an expected outcome and a reason')
+            if int(fields.group(1)) in self.keep:
+                raise ValueError(f'line {number}: period {fields.group(1)} is already kept')
+            self.keep[int(fields.group(1))] = (fields.group(2), fields.group(3).strip())
         else:
             form, _, reason = rest.partition(' ')
             if form != 'not_statement' or not reason.strip():
@@ -484,7 +508,9 @@ def compile_document(reviewed_text, ocr_text=None, page_count=None):
     """``visual/<doc>.json`` content: every period with its status, and the OCR-layer misread counts."""
     reviewed = Transcription(reviewed_text)
     # A patch reads only the pages of the periods it replaces; the rest keep their text-layer reading.
-    total = set(range(1, page_count + 1)) if page_count and reviewed.patch is None else reviewed.pages
+    # Kept periods are checked against ``done`` when merged (their pages are in the text-layer reading).
+    partial = reviewed.patch is not None or bool(reviewed.keep)
+    total = set(range(1, page_count + 1)) if page_count and not partial else reviewed.pages
     pending = sorted(total - reviewed.done)
     periods = []
     numbers = reviewed.patch or range(1, len(reviewed.periods) + 1)
@@ -502,7 +528,8 @@ def compile_document(reviewed_text, ocr_text=None, page_count=None):
                 complete=not pending, periods=periods, issuer=reviewed.issuer['family'],
                 form=dict(status=reviewed.form[0], reason=reviewed.form[1]) if reviewed.form else None,
                 misreads=misreads(Transcription(ocr_text, strict=False), reviewed) if ocr_text else {},
-                period_status=dict(Counter(p['truth_status'] for p in periods)), patch=reviewed.patch)
+                period_status=dict(Counter(p['truth_status'] for p in periods)), patch=reviewed.patch,
+                keep={str(n): list(v) for n, v in sorted(reviewed.keep.items())})
 
 
 # ---------------------------------------------------------------------------
@@ -523,7 +550,7 @@ def apply_visual(result, visual):
         return dict(result, status=visual['form']['status'], reason=visual['form']['reason'], periods=[],
                     period_status={}, issuer=issuer, truth_source='visual', statements_complete=True,
                     visual_misreads=visual.get('misreads', {}))
-    if visual.get('patch'):
+    if visual.get('patch') or visual.get('keep'):
         return _apply_patch(result, visual, issuer)
     periods = [dict(p) for p in visual['periods']]
     statuses = Counter(p['truth_status'] for p in periods)
@@ -543,16 +570,28 @@ def _apply_patch(result, visual, issuer):
 
     Refused (the result is returned unchanged) unless every named period exists in
     the text-layer reading. The document is final once every period that is not
-    verified has been read from the images."""
+    verified has been read from the images. Kept periods (``keep``) stay as the
+    text layer read them, marked as checked on the images with the expected
+    outcome the reviewer recorded; refused unless each exists, is not verified
+    and every one of its pages was read."""
     replaced = {p['id']: dict(p) for p in visual['periods']}
-    existing = {p['id'] for p in result.get('periods') or []}
-    if not replaced or not set(replaced) <= existing:
+    kept = {f"{result.get('id')}#{n}": tuple(v) for n, v in (visual.get('keep') or {}).items()}
+    existing = {p['id']: p for p in result.get('periods') or []}
+    if not (replaced or kept) or not (set(replaced) | set(kept)) <= set(existing):
         return result
+    done = set(visual.get('pages_done') or ())
+    if any(existing[k]['truth_status'] == 'verified' or not set(existing[k].get('pages') or ()) <= done
+           or not existing[k].get('pages') for k in kept):
+        return result
+    for key, (outcome, reason) in kept.items():
+        replaced[key] = dict(existing[key], truth_source='visual', visual_kept=True, expected_override=outcome,
+                             expected_reason=reason)
     periods = [replaced.get(p['id'], p) for p in result['periods']]
     statuses = Counter(p['truth_status'] for p in periods)
     reviewed = all(p.get('truth_source') == 'visual' for p in periods if p['truth_status'] != 'verified')
     return dict(result, status=document_status(statuses, reviewed=reviewed), periods=periods,
-                period_status=dict(statuses), truth_source='visual', visual_patch=sorted(replaced), issuer=issuer,
+                period_status=dict(statuses), truth_source='visual', visual_patch=sorted(set(replaced) - set(kept)),
+                visual_kept=sorted(kept), issuer=issuer,
                 statements_complete=all(p['truth_status'] in ('verified', 'incomplete') for p in periods),
                 visual_misreads=visual.get('misreads', {}))
 
