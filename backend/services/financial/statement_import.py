@@ -292,7 +292,7 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
     catalog_key = ('catalog', source_key)
     catalog = _shared_value(cache, shared, catalog_key, lambda: statement_catalog(all_sources))
     from services.financial.deposit_receipt_proposal import deposit_receipt_choices
-    from services.financial.statement_currency import currencies_by_statement, detect_statement_currency
+    from services.financial.statement_currency import currencies_by_statement, detect_statement_currency, printed_holdings_currency
     currencies_key = ('currencies', source_key)
     choices = _shared_value(cache, shared, currencies_key, lambda: currencies_by_statement(
         catalog['statements'] + deposit_receipt_choices(all_sources), all_sources))
@@ -516,6 +516,9 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         return dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id), filename=file.original_filename,
                     metadata=metadata, currency='', detected_currency=detected_currency, rows=[], sources=[], issues=issues + ['The statement currency could not be identified confidently. Choose it once to read the amounts.'],
                     statement_choices=choices, statement_id=statement_id,
+                    # The case the holdings currency is for: cited for a person to confirm, never this reading's currency.
+                    printed_currency=(printed_holdings_currency(all_sources if len(catalog['statements']) == 1 else sources)
+                                      if selected else None),
                     transaction_count=0, needs_attention=1, revision=_digest(dict(file=str(file.id), text=text.content_sha256, version=VERSION)), applied=False,
                     review_recovery=recovery)
     from services.financial.money import get_currency, MoneyError
@@ -716,7 +719,6 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                         and any(row['kind'] == 'balance' and row['fields'].get('description') == 'Opening Balance'
                                 and 'balance' in row['fields'] for row in rows))
     from services.financial.statement_progress import review_progress
-    from services.financial.statement_currency import printed_holdings_currency
     revision = _digest(snapshot)
     if identity_memory:
         # Outside the revision, like derived period dates: a confirmation or its withdrawal never
