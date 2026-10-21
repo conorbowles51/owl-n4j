@@ -79,6 +79,51 @@ def _coupon_holder(source):
     return candidates[0] if len(candidates) == 1 else ('', [])
 
 
+# The most days one printed billing cycle may cover (the general engine's bound
+# for a closing-only period, ``statement_engine.MAX_PERIOD_DAYS``).
+MAX_CYCLE_DAYS = 95
+
+
+def _printed_cycle_days(source):
+    """``(days, cell address)`` printed beside ``Days in Billing Cycle`` in the activity summary box, or ``None``.
+
+    The label is the one cell of the box beginning with ``Days`` (OCR damages
+    the rest of it); its value is the one whole number on the label's printed
+    line, set in the right half of the box. OCR can report the label's words
+    and the value on adjacent extracted lines, so the line is the label's
+    height widened by one more height above and below. Nothing is repaired:
+    any other count of labels or values reads nothing.
+    """
+    measured = [(row['row_index'], cell, _rectangle(cell, source['page_number']))
+                for row in source['rows'] for cell in row['cells']]
+    headings = {name: [box for _, cell, box in measured if cell['expected_text'].strip(' |[]') == name]
+                for name in ('Summary of Account Activity', 'Payment Information')}
+    if any(len(boxes) != 1 or boxes[0] is None for boxes in headings.values()):
+        return None
+    left, right = headings['Summary of Account Activity'][0], headings['Payment Information'][0]
+    size = (left.page_width, left.page_height)
+    if (right.page_width, right.page_height) != size or right.x0 <= left.x1:
+        return None
+    inside = [(index, cell, box) for index, cell, box in measured
+              if box and (box.page_width, box.page_height) == size
+              and left.x0 - left.page_width // 50 <= box.x0 and box.x1 < right.x0 and box.y0 >= left.y1]
+    labels = [box for _, cell, box in inside if re.match(r'Days\b', cell['expected_text'].strip())]
+    if len(labels) != 1:
+        return None
+    label = labels[0]
+    height = label.y1 - label.y0
+    values = [(index, cell) for index, cell, box in inside
+              if re.fullmatch(r'\d{1,2}', cell['expected_text'].strip())
+              and box.x0 > max(label.x1, (left.x0 + right.x0) // 2)
+              and box.y1 > label.y0 - height and box.y0 < label.y1 + height]
+    if len(values) != 1 or not 1 <= int(values[0][1]['expected_text']) <= MAX_CYCLE_DAYS:
+        return None
+    index, cell = values[0]
+    return int(cell['expected_text']), dict(page_number=source['page_number'], table_index=source['table_index'],
+                                            row_index=index, column_index=cell['column_index'],
+                                            expected_text=cell['expected_text'])
+
+
 # When the engine replaced a damaged Merrick text layer by the page image and
 # the image reading lost the holder, use the holder the layer printed on its
 # labelled ``Send Payments to:`` line, only for the same account number.
@@ -170,6 +215,11 @@ def merrick_statement(source):
         # The image reading lost the holder; the page's own embedded text
         # layer printed it on its labelled line, for the same account number.
         identity.update(holder=carried['holder'], holder_basis='original_text_layer_labelled_line')
+    # Outside the statement id, like the holder above: the printed days in the
+    # billing cycle establish the start with the closing date (closing_only_period).
+    cycle_days = _printed_cycle_days(source)
+    if cycle_days:
+        identity.update(printed_cycle_days=cycle_days[0], printed_cycle_days_cell=cycle_days[1])
     return dict(**identity, date_conflict=date_conflict,
                 sources=[dict(page_number=source['page_number'],table_index=source['table_index'],source_revision=source['source_revision'])],page_numbers=[source['page_number']])
 
