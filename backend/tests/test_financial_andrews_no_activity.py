@@ -350,3 +350,82 @@ class DamagedEndingDateTests(unittest.TestCase):
         _, evidence = proposal_for(data)
         self.assertFalse(evidence['verified'])
         self.assertEqual(evidence['reason'], 'unread_band')
+
+
+CLOSED = [
+    [(15, '06/01 ID 0011 VACATION CLUB Previous Balance'), (350, '0.00')],
+    [(15, '06/29 ID 0011 VACATION CLUB Closed')],
+    [(15, '*** This is the final statement you will receive for this account***')],
+]
+
+
+def closed_proposal(lines):
+    data = page(lines)
+    statement, _ = selected([data], '0011')
+    proposal, evidence = proposal_for(data, share='0011')
+    proposal['metadata']['account_closure'] = statement.get('account_closure')
+    proposal['can_record_account_closure'] = bool(statement.get('account_closure'))
+    return proposal, evidence
+
+
+class ClosedSectionEvidenceTests(unittest.TestCase):
+    def test_a_zero_section_closed_directly_after_its_opening_proves_no_activity(self):
+        proposal, evidence = closed_proposal(CLOSED)
+        self.assertTrue(evidence['verified'], evidence)
+        self.assertEqual((evidence['reason'], evidence['balance_minor'], evidence['closing_row_id']),
+                         ('closed_without_activity', '0', None))
+        self.assertEqual(evidence['closure_date'], '2020-06-29')
+        result = admit(proposal)
+        # Closed the day before the period end: no closing balance line is needed.
+        self.assertTrue(result['can_import'], result['blockers'])
+        self.assertEqual((result['status'], result['no_activity_basis']), ('confirmed_no_activity', 'source_verified'))
+
+    def test_a_closure_on_the_period_end_is_proven_the_same_way(self):
+        lines = [CLOSED[0], [(15, '06/30 ID 0011 VACATION CLUB Closed')], CLOSED[2]]
+        proposal, evidence = closed_proposal(lines)
+        self.assertTrue(evidence['verified'], evidence)
+        self.assertTrue(admit(proposal)['can_import'])
+
+    def test_a_closed_section_that_opened_with_money_or_reads_otherwise_stays_the_investigators(self):
+        cases = {
+            'closed_with_balance': [[(15, '06/01 ID 0011 VACATION CLUB Previous Balance'), (350, '25.00')], *CLOSED[1:]],
+            'endpoint_unreadable': [[(15, '06/01 ID 0011 VACATION CLUB Previous Balance'), (350, 'O.00')], *CLOSED[1:]],
+        }
+        for reason, lines in cases.items():
+            with self.subTest(reason=reason):
+                proposal, evidence = closed_proposal(lines)
+                self.assertEqual((evidence['verified'], evidence['reason']), (False, reason))
+                self.assertFalse(admit(proposal)['can_import'])
+
+    def test_a_line_read_between_the_opening_and_the_notice_stays_held(self):
+        lines = [CLOSED[0], [(75, 'Funds Transfer via Mobile')], *CLOSED[1:]]
+        proposal, evidence = closed_proposal(lines)
+        self.assertTrue(evidence is None or not evidence['verified'])
+        self.assertFalse(admit(proposal)['can_import'])
+
+    def test_an_edited_opening_balance_or_period_needs_the_investigator(self):
+        proposal, evidence = closed_proposal(CLOSED)
+
+        def balance(raw):
+            row = next(r for r in raw['rows'] if r['id'] == evidence['opening_row_id'])
+            row['balance_minor'] = '100'
+
+        def period(raw):
+            raw['period_start'] = '2020-06-02'
+        for edit in (balance, period):
+            with self.subTest(edit=edit.__name__):
+                self.assertFalse(admit(proposal, edit)['can_import'])
+
+    def test_switch_off_leaves_closed_sections_unproven(self):
+        import services.financial.statement_import_andrews as andrews
+        try:
+            andrews.CLOSURE_PROOF = False
+            proposal, evidence = closed_proposal(CLOSED)
+        finally:
+            andrews.CLOSURE_PROOF = True
+        self.assertIsNone(evidence)
+        self.assertFalse(admit(proposal)['can_import'])
+
+
+if __name__ == '__main__':
+    unittest.main()

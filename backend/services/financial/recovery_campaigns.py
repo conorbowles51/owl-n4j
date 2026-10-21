@@ -98,6 +98,10 @@ READER_RECOVERY_FLAG = 'LOUPE_FINANCIAL_READER_RECOVERY'
 # r12-kapital (revision v24) added r11-bbva-vector's file 8a06b0ca (v23): on vector-text pages a day of the month
 # OCR skipped at the start of a movement line (printed against the table's left rule) was read by no word, so
 # the movement stayed undated and its period was held.
+# r13-andrews (revision v25) added r12-kapital's file c8d57e3d (v24): on Andrews pages a money cell whose page
+# reading was damaged beyond every money reading (a colon or slash for the point, a hyphen inside the figures)
+# was never cropped, and a held cell kept only the readings the crops repeated, so a period whose printed
+# value was the page reading alone, or a minority crop reading, stayed held.
 # If a later change edits pdf_extraction.py, add the
 # digest of the current file here.
 AFFECTED_EXTRACTION_SHA256 = (
@@ -128,6 +132,7 @@ AFFECTED_EXTRACTION_SHA256 = (
     '3d3b9d2b0ab124c1722573dbde774c5030c8eddf2feb3daaacf284873a837e13',  # 3a97716c r9-engine-santander (v21)
     'ee536c5020bcd44185621b179ceb9e2a0db9329e81b49eb676bf37ee602f30c9',  # 060d7470 layer guard (v22)
     '8a06b0ca727b00b602ea636e451f27cff0daba645ee081ea841916a9e3b7612e',  # 24593077 r11-bbva-vector (v23)
+    'c8d57e3dda4e5aef378eac7da4cd50157aad94d84d71986b25e1a99b60d3a38a',  # 2a6df8be r12-kapital (v24)
 )
 READER_RECOVERY = RecoveryCampaign(READER_RECOVERY_RELEASE, {'pdf_extraction.py': AFFECTED_EXTRACTION_SHA256},
     batch_reread=True)

@@ -74,6 +74,14 @@ def source_proves_no_activity(evidence, raw):
         return False
     rows = {row.get('id'): row for row in raw.get('rows', [])}
     ends = [rows.get(evidence.get('opening_row_id')), rows.get(evidence.get('closing_row_id'))]
+    if evidence.get('reason') == 'closed_without_activity':
+        # A closed section's proof names its opening line and its closing
+        # notice; there is no ending balance line, and the account opened at
+        # exactly zero. The notice must still be the unchanged printed row.
+        notice = rows.get(evidence.get('closure_row_id'))
+        if evidence.get('balance_minor') != '0' or notice is None or not notice.get('excluded'):
+            return False
+        ends = ends[:1]
     # A printed-totals proof also names its zero deposit/withdrawal totals
     # and the currency they were read in; those must be unchanged as well.
     totals = [rows.get(row_id) for row_id in evidence.get('zero_total_row_ids') or []]
@@ -118,8 +126,14 @@ def assess_admission(proposal, request, arithmetic=None):
     originals = proposal['rows']
     opening_ids = {r['id'] for r in originals if r['kind'] == 'balance'
         and r['fields'].get('description') == 'Opening Balance'}
+    # The exact closure date is the period end, or a date inside the printed
+    # period when the page itself proves a zero section closed without activity.
+    evidence = proposal.get('no_activity_evidence') or {}
+    closed_inside = bool(evidence.get('reason') == 'closed_without_activity' and calendar_date(closure_date)
+        and evidence.get('closure_date') == closure_date and calendar_date(raw.get('period_start') or '')
+        and raw['period_start'] <= closure_date <= (raw.get('period_end') or ''))
     closure_without_closing = bool(proposal.get('can_record_account_closure')
-        and calendar_date(closure_date) and raw.get('period_end') == closure_date
+        and calendar_date(closure_date) and (raw.get('period_end') == closure_date or closed_inside)
         and not any(not r.excluded for r in request.rows)
         and not any(not r['excluded'] for r in originals)
         and not any(r['kind'] == 'balance' and r['fields'].get('description') == 'Closing Balance' for r in originals)
