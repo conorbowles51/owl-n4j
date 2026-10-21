@@ -48,6 +48,13 @@ def _share_reference(text):
 _SHARE = re.compile(r'^(' + _HEADING_DATE + r') ID (' + _SHARE_ID + r') (' + _LABELS + ') ' + _PREVIOUS.pattern + r'(?: |$)')
 _SHARE_LABEL = re.compile(r'^' + _HEADING_DATE + r' ID \S+(?: \S+)? (' + _LABELS + ')(?: |$)')
 
+# The Ending Balance line; a date read with a space inside it (``06/ 30``) is
+# the same printed date when spaced row dates are read (``SPACED_ROW_DATES``).
+_ENDING_LINE = r'^\d{2}/\d{2} Ending Balance(?: |$)'
+_ENDING_BODY = r'(\d{2}/\d{2}) Ending Balance'
+_SPACED_ENDING_LINE = r'^' + _HEADING_DATE + r' Ending Balance(?: |$)'
+_SPACED_ENDING_BODY = r'(' + _HEADING_DATE + r') Ending Balance'
+
 _CLOSED = re.compile(r'^(' + _HEADING_DATE + r') ID (' + _SHARE_ID + r') (' + _LABELS + ') Closed$')
 # The printed continuation notice. OCR can put spaces or a stray point or
 # middle dot between its letters (``Continued·on fol low.ing page``); every
@@ -480,7 +487,8 @@ def andrews_catalog(sources):
                 else:
                     unknown = True
                 active = None
-            if re.match(r'^\d{2}/\d{2} Ending Balance(?: |$)', text) or _ending_balance(row, page['width']):
+            if (re.match(_SPACED_ENDING_LINE if SPACED_ROW_DATES else _ENDING_LINE, text)
+                    or _ending_balance(row, page['width'])):
                 active = None
         if addressed:
             handled.add(key)
@@ -897,7 +905,7 @@ def propose_andrews_statement(sources, currency, statement):
             money = ' '.join(c['expected_text'].strip() for c in money_cells)
             body = ' '.join(c['expected_text'].strip() for c in cells if c not in money_cells)
             opening = _SHARE.match(body)
-            closing = re.fullmatch(r'(\d{2}/\d{2}) Ending Balance', body)
+            closing = re.fullmatch(_SPACED_ENDING_BODY if SPACED_ROW_DATES else _ENDING_BODY, body)
             damaged_closing = not closing and _ending_balance(row, page['width'])
             if opening or closing or damaged_closing:
                 item.update(kind='balance')

@@ -688,6 +688,24 @@ class AndrewsNoticeAndShareSpeckTests(unittest.TestCase):
             andrews.SPACED_ROW_DATES = True
         self.assertTrue(any(r['issues'] for r in proposal['rows']))
 
+    def test_an_ending_balance_dated_with_a_space_inside_closes_the_section(self):
+        data = source([
+            [(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],
+            [(15, '06/04'), (75, 'Withdrawal Debit Card'), (310, '-5.00'), (350, '95.00')],
+            [(15, '06/ 30'), (75, 'Ending Balance'), (350, '95.00')],
+            [(75, 'Dividends Paid Year to Date'), (318, '0.00')]])
+        _, proposal = selected([data])
+        closing = [r for r in proposal['rows'] if r['fields'].get('description') == 'Closing Balance']
+        self.assertEqual([(r['fields']['date'], r['fields']['balance']) for r in closing], [('2020-06-30', '9500')])
+        self.assertFalse(any(r['issues'] for r in proposal['rows']) or proposal['issues'])
+        import services.financial.statement_import_andrews as andrews
+        try:
+            andrews.SPACED_ROW_DATES = False
+            _, proposal = selected([data])
+        finally:
+            andrews.SPACED_ROW_DATES = True
+        self.assertTrue(proposal['issues'])
+
     def test_a_point_read_inside_the_share_number_keeps_its_four_digits(self):
         data = source([
             [(15, '06/01 ID 004.0 FREE CHECKING Previous Balance'), (350, '100.00')],
