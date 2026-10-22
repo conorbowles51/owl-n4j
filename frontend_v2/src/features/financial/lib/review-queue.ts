@@ -1,3 +1,4 @@
+import { useRef } from "react"
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import { z } from "zod"
 import { fetchAPI } from "@/lib/api-client"
@@ -164,8 +165,92 @@ export const reviewQueue = z.object({
     .array(z.object({ batch_id: z.string(), statements: z.number() }))
     .default([]),
   elapsed_ms: z.number().optional(),
+  /** Paged reads (limit given): full list lengths, this page, issue counts over every waiting entry. */
+  totals: z.record(z.string(), z.number()).optional(),
+  page: z
+    .object({
+      list: z.string(),
+      issue: z.string().nullish(),
+      offset: z.number(),
+      limit: z.number().nullish(),
+      returned: z.number(),
+      total: z.number(),
+    })
+    .optional(),
+  issue_counts: z.record(z.string(), z.number()).optional(),
+  /** Every ready entry's id, never truncated by paging. */
+  ready_item_ids: z.array(z.string()).optional(),
+  /** True: this answer predates the latest change; a current one is being built. */
+  refreshing: z.boolean().optional(),
+  as_of: z.string().nullish(),
 })
 export type ReviewQueue = z.infer<typeof reviewQueue>
+
+/** The server's list names for paging (`page_list`). */
+export type QueuePageList = "waiting" | "ready" | "filled" | "reader_fix" | "rechecking" | "copies" | "unreadable"
+export const QUEUE_PAGE_SIZE = 50
+/** Shared fixes act on every statement of one issue: one capped read of them all. */
+export const QUEUE_BULK_LIMIT = 5000
+
+/** Reads the whole queue (every list complete), waiting for a current build. */
+export async function fetchReviewQueue(caseId: string, fileIds: string[] = [], signal?: AbortSignal) {
+  const search = new URLSearchParams({ case_id: caseId })
+  for (const id of fileIds) search.append("file_id", id)
+  const result = reviewQueue.parse(
+    await fetchAPI(`/api/financial/statement-import/review/queue?${search}`, { signal, timeout: 60000 })
+  )
+  if (result.case_id !== caseId) throw Error("The review queue belongs to another case.")
+  return result
+}
+
+/**
+ * One page of one queue list (counts and status line stay whole-case). A
+ * paged read may be answered at once from a queue built moments ago
+ * (`refreshing`); `fresh()` makes the next read wait for a current one, for
+ * the refetch right after a save or fix. Against a server without paging
+ * the full lists come back and the caller pages them on screen.
+ */
+export function useReviewQueuePage(
+  caseId: string,
+  fileIds: string[],
+  page: { list: QueuePageList; issue?: string; offset?: number; limit?: number },
+  enabled = true
+) {
+  const wantFresh = useRef(false)
+  const limit = page.limit ?? QUEUE_PAGE_SIZE
+  const offset = page.offset ?? 0
+  const query = useQuery<ReviewQueue>({
+    queryKey: [...reviewQueueKey(caseId, fileIds), "page", page.list, page.issue || "", offset, limit],
+    enabled,
+    placeholderData: keepPreviousData,
+    refetchInterval: (current): number | false =>
+      isReading(current.state.data?.reading) || isMoving(current.state.data?.counts) || current.state.data?.refreshing
+        ? READING_POLL_MS
+        : false,
+    queryFn: async ({ signal }) => {
+      const search = new URLSearchParams({ case_id: caseId })
+      for (const id of fileIds) search.append("file_id", id)
+      search.set("limit", String(limit))
+      search.set("offset", String(offset))
+      search.set("page_list", page.list)
+      if (page.issue) search.set("issue", page.issue)
+      if (wantFresh.current) search.set("fresh", "1")
+      wantFresh.current = false
+      const result = reviewQueue.parse(
+        await fetchAPI(`/api/financial/statement-import/review/queue?${search}`, { signal, timeout: 60000 })
+      )
+      if (result.case_id !== caseId) throw Error("The review queue belongs to another case.")
+      return result
+    },
+  })
+  return Object.assign(query, {
+    /** Refetch, waiting for a queue built from the current data. */
+    refetchFresh: () => {
+      wantFresh.current = true
+      return query.refetch()
+    },
+  })
+}
 
 export const reviewQueueKey = (caseId: string, fileIds: string[] = []) => [
   "financial-review-queue",
@@ -560,8 +645,8 @@ export async function fillAndSaveReady(
   options: Parameters<typeof saveReadyStatements>[2] = {}
 ): Promise<QueueSaveResult & { filled: number }> {
   let filled = 0
-  const ids = data.ready.map((entry) => entry.id)
-  const counted = data.ready.length + data.filled.length
+  const ids = data.ready_item_ids ? [...data.ready_item_ids] : data.ready.map((entry) => entry.id)
+  const counted = ids.length + data.filled.length
   // Filled statements are sent only if filling made them ready.
   let notReady: QueueEntry[] = []
   if (data.filled.length || data.items.some(hasConfirmed)) {
@@ -578,7 +663,10 @@ export async function fillAndSaveReady(
     const sent = new Set(ids)
     notReady = data.filled.filter((entry) => !sent.has(entry.id))
   }
-  const listedReady = new Set([...data.ready, ...data.filled].map((entry) => entry.id))
+  const listedReady = new Set([
+    ...(data.ready_item_ids ?? []),
+    ...[...data.ready, ...data.filled].map((entry) => entry.id),
+  ])
   const madeReady = ids.filter((id) => !listedReady.has(id)).length
   if (!ids.length) {
     const result = { imported: 0, held: [], stillSaving: 0, sent: 0, notReady, counted, madeReady }

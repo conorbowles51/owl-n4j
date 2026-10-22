@@ -15,6 +15,11 @@ import {
   readRetainedAfresh,
   checkUnreadableAgain,
   useReviewQueue,
+  useReviewQueuePage,
+  fetchReviewQueue,
+  QUEUE_PAGE_SIZE,
+  QUEUE_BULK_LIMIT,
+  type QueuePageList,
   type QueueEntry,
   type QueueSaveResult,
   type ReviewQueue,
@@ -25,6 +30,14 @@ import { QueueRowDetails } from "./QueueRowDetails"
 import { QueueNoActivityConfirm } from "./QueueNoActivityConfirm"
 
 type ListName = "waiting" | "ready" | "filled" | "reader" | "copies" | "unreadable"
+const PAGE_LISTS: Record<ListName, QueuePageList> = {
+  waiting: "waiting",
+  ready: "ready",
+  filled: "filled",
+  reader: "reader_fix",
+  copies: "copies",
+  unreadable: "unreadable",
+}
 const QUEUE_KEYS = ["queueItem", "queueList", "queueFiles", "queueIssue"]
 // The issue each queue entry is listed for, in plain words, most important first.
 export const ISSUE_LABELS: Record<string, string> = {
@@ -187,7 +200,18 @@ export function ReviewQueuePanel({
   const itemId = params.get("queueItem")
   const list = (params.get("queueList") as ListName | null) || "waiting"
   const issue = params.get("queueIssue") || ""
-  const query = useReviewQueue(caseId, fileIds)
+  // One page of the list on screen (counts stay whole-case). The page is not
+  // in the URL: it starts again at the first page whenever the list, issue
+  // or file filter changes.
+  const pageScope = `${list}:${issue}:${fileIds.join(",")}`
+  const [paging, setPaging] = useState({ scope: pageScope, offset: 0 })
+  const offset = paging.scope === pageScope ? paging.offset : 0
+  const setOffset = (value: number) => setPaging({ scope: pageScope, offset: Math.max(0, value) })
+  const query = useReviewQueuePage(caseId, fileIds, {
+    list: PAGE_LISTS[list],
+    issue: list === "waiting" ? issue : "",
+    offset,
+  })
   const client = useQueryClient()
   const { canEdit, canUpload } = useFinancialAccess()
   const [readingAfresh, setReadingAfresh] = useState(false)
@@ -197,7 +221,7 @@ export function ReviewQueuePanel({
     setReadingAfresh(true)
     setAfreshResult("")
     try {
-      setAfreshResult(await readRetainedAfresh(caseId, query.data))
+      setAfreshResult(await readRetainedAfresh(caseId, await fetchReviewQueue(caseId, fileIds)))
     } catch (error) {
       setAfreshResult(error instanceof Error ? error.message : "Reading afresh could not start.")
     } finally {
@@ -213,7 +237,8 @@ export function ReviewQueuePanel({
     setCheckingAgain(true)
     setCheckAgainResult("")
     try {
-      setCheckAgainResult(await checkUnreadableAgain(caseId, query.data))
+      // Every unreadable statement, not only the page on screen.
+      setCheckAgainResult(await checkUnreadableAgain(caseId, await fetchReviewQueue(caseId, fileIds)))
     } catch (error) {
       setCheckAgainResult(error instanceof Error ? error.message : "Checking again could not start.")
     } finally {
@@ -228,12 +253,15 @@ export function ReviewQueuePanel({
   // Saves straight from the queue, across batches, with the batch save's
   // admission checks; the result is one line: N imported, M held: reason.
   const saveReady = async () => {
-    const data = query.data
-    if (!data || !(data.ready.length || data.filled.length) || saving) return
+    const counts = query.data?.counts
+    if (!counts || !(counts.ready || counts.filled) || saving) return
     setSaveError("")
     setSaveResult(null)
     setSaving("Checking the ready statements…")
     try {
+      // The save covers every ready statement, not the page on screen: it
+      // reads the whole current queue first, as it always has.
+      const data = await fetchReviewQueue(caseId, fileIds)
       setSaveResult(await fillAndSaveReady(caseId, data, { onProgress: setSaving }))
     } catch (error) {
       setSaveError(
@@ -253,29 +281,56 @@ export function ReviewQueuePanel({
   // The order the investigator is working through. Next is computed from it
   // on the client, so moving on never waits for the queue to reload.
   const [order, setOrder] = useState<QueueEntry[]>([])
-  const listed = listOf(query.data, list)
+  // A server that pages says so (`page`); against one that does not, the
+  // full list is paged here, so the screen never renders every entry at once.
+  const serverPaged = !!query.data?.page
+  const whole = listOf(query.data, list)
+  const listed = useMemo(
+    () => (serverPaged ? whole : whole.slice(offset, offset + QUEUE_PAGE_SIZE)),
+    [serverPaged, whole, offset]
+  )
+  const pageTotal = query.data?.page?.total ?? whole.length
+  const shownOffset = query.data?.page?.offset ?? offset
+  const unreadableTotal = query.data?.totals?.unreadable ?? query.data?.unreadable.length ?? 0
   const issueCounts = useMemo(() => {
     const counts = new Map<string, number>()
-    for (const entry of listed)
-      if (entry.issue_reason) counts.set(entry.issue_reason, (counts.get(entry.issue_reason) ?? 0) + 1)
+    if (query.data?.issue_counts) for (const [reason, n] of Object.entries(query.data.issue_counts)) counts.set(reason, n)
+    else
+      for (const entry of whole)
+        if (entry.issue_reason) counts.set(entry.issue_reason, (counts.get(entry.issue_reason) ?? 0) + 1)
     const rank = (reason: string) => {
       const position = Object.keys(ISSUE_LABELS).indexOf(reason)
       return position < 0 ? 99 : position
     }
-    return [...counts.entries()].sort((a, b) => rank(a[0]) - rank(b[0]) || b[1] - a[1])
-  }, [listed])
+    return [...counts.entries()].filter(([, n]) => n > 0).sort((a, b) => rank(a[0]) - rank(b[0]) || b[1] - a[1])
+  }, [query.data?.issue_counts, whole])
+  const allIssues = list === "waiting" ? (query.data?.totals?.waiting ?? whole.length) : whole.length
   const current = useMemo(
-    () => (issue && list === "waiting" ? listed.filter((entry) => entry.issue_reason === issue) : listed),
-    [issue, list, listed]
+    () => (issue && list === "waiting" && !serverPaged ? listed.filter((entry) => entry.issue_reason === issue) : listed),
+    [issue, list, listed, serverPaged]
   )
+  // Without server paging an issue filter shortens the list after paging;
+  // with it, the server filters first and says how many there are.
+  const shownTotal = serverPaged || !(issue && list === "waiting")
+    ? pageTotal
+    : whole.filter((entry) => entry.issue_reason === issue).length
   // The issue a shared fix applies to: the chosen filter, or the only issue
   // listed (the filter buttons are not shown when there is just one kind).
   const bulkIssue =
     list === "waiting" ? issue || (issueCounts.length === 1 ? issueCounts[0][0] : "") : ""
-  const bulkEntries = useMemo(
-    () => (bulkIssue ? current.filter((entry) => entry.issue_reason === bulkIssue) : []),
-    [bulkIssue, current]
+  // A shared fix acts on every statement waiting for that issue, not the page
+  // on screen: one read of all of them (capped, and said when capped).
+  const bulkQuery = useReviewQueuePage(
+    caseId,
+    fileIds,
+    { list: "waiting", issue: bulkIssue, limit: QUEUE_BULK_LIMIT },
+    !!bulkIssue && canEdit
   )
+  const bulkEntries = useMemo(
+    () => (bulkQuery.data?.items ?? []).filter((entry) => entry.issue_reason === bulkIssue),
+    [bulkIssue, bulkQuery.data]
+  )
+  const bulkTotal = bulkQuery.data?.page?.total ?? bulkEntries.length
   // Statements ticked for "no payments" confirmation together.
   const [quietChosen, setQuietChosen] = useState<Set<string>>(new Set())
   const chooseIssue = (value: string) =>
@@ -286,7 +341,7 @@ export function ReviewQueuePanel({
       next.delete("queueItem")
       return next
     })
-  const orderKey = `${list}:${fileIds.join(",")}:${issue}`
+  const orderKey = `${list}:${fileIds.join(",")}:${issue}:${offset}`
   const appliedOrder = useRef("")
   useEffect(() => {
     if (!query.data || query.isPlaceholderData) return
@@ -334,7 +389,9 @@ export function ReviewQueuePanel({
     // reloaded when opened, and the next one is loaded again now.
     void client.invalidateQueries({ queryKey: ["financial-batch-item", caseId], refetchType: "none" })
     if (entry) prefetchNext(entry, entries)
-    const result = await query.refetch()
+    // Right after a change: wait for a queue built from the current data.
+    const result = await query.refetchFresh()
+    if (bulkIssue) void bulkQuery.refetchFresh()
     if (entry && result.data && !keepOutcome) setOutcome({ entry, ...savedOutcome(result.data, entry) })
     return result.data
   }
@@ -360,8 +417,9 @@ export function ReviewQueuePanel({
     open(undefined)
   }
   const showList = (name: ListName) => {
-    setOrder(listOf(query.data, name))
-    appliedOrder.current = `${name}:${fileIds.join(",")}:${issue}`
+    // Its order is taken from its first page when that arrives.
+    setOrder([])
+    appliedOrder.current = ""
     open(undefined, name)
   }
   const clearFilter = () =>
@@ -372,7 +430,21 @@ export function ReviewQueuePanel({
     })
   const entries = order.length || !query.data ? order : current
   const index = entries.findIndex((entry) => entry.id === itemId)
-  const active = index >= 0 ? entries[index] : current.find((e) => e.id === itemId)
+  const onPage = index >= 0 ? entries[index] : current.find((e) => e.id === itemId)
+  // A link to a statement that is not on the page on screen (from a batch, or
+  // a later page): find it in the whole queue, once.
+  const lookup = useReviewQueue(
+    caseId,
+    fileIds,
+    !!itemId && !onPage && !!query.data && !query.isPlaceholderData
+  )
+  const active =
+    onPage ??
+    (lookup.data
+      ? [lookup.data.items, lookup.data.ready, lookup.data.filled, lookup.data.reader_fix, lookup.data.copies, lookup.data.unreadable]
+          .flat()
+          .find((entry) => entry.id === itemId)
+      : undefined)
   const step = (direction: 1 | -1) => {
     // Skip statements the latest queue no longer lists (fixed meanwhile).
     const latest = new Set(current.map((entry) => entry.id))
@@ -488,6 +560,11 @@ export function ReviewQueuePanel({
             saving={!!saving}
           />
           <ReadingProgress caseId={caseId} reading={query.data.reading} />
+          {query.data.refreshing && (
+            <p role="status" className="text-sm text-muted-foreground">
+              Updating the numbers: this list was built moments ago and a current one is being prepared.
+            </p>
+          )}
           {saving && <p role="status" className="text-sm">{saving}</p>}
           {saveError && <p role="alert" className="text-sm">{saveError}</p>}
           {saveResult && (
@@ -554,9 +631,9 @@ export function ReviewQueuePanel({
               Details filled automatically ({query.data.counts.filled})
             </Button>
           )}
-          {list === "waiting" && query.data.copies.length > 0 && (
+          {list === "waiting" && (query.data.totals?.copies ?? query.data.copies.length) > 0 && (
             <Button variant="outline" size="sm" onClick={() => showList("copies")}>
-              Review copies ({query.data.copies.length})
+              Review copies ({query.data.totals?.copies ?? query.data.copies.length})
             </Button>
           )}
           {list === "waiting" && query.data.reader_files.length > 0 && (
@@ -570,7 +647,7 @@ export function ReviewQueuePanel({
             <div className="flex flex-wrap items-center gap-2 text-sm" role="group" aria-label="Filter by issue">
               <span>Show:</span>
               <Button size="sm" variant={issue ? "outline" : "primary"} onClick={() => chooseIssue("")}>
-                All issues ({listed.length})
+                All issues ({allIssues})
               </Button>
               {issueCounts.map(([reason, count]) => (
                 <Button
@@ -593,7 +670,7 @@ export function ReviewQueuePanel({
                 // drop the statements already selected in it.
                 key={bulkIssue}
                 scopeName={`queue:${bulkIssue}:${fileIds.join(",")}`}
-                expected={bulkEntries.length}
+                expected={bulkTotal}
                 caseId={caseId}
                 fileIds={[...new Set(bulkEntries.flatMap((entry) => [entry.file_id, ...entry.file_ids]))]}
                 statements={bulkEntries.flatMap((entry) =>
@@ -604,7 +681,7 @@ export function ReviewQueuePanel({
                 )}
                 reviewGroup={bulkIssue}
                 datesOnly={bulkIssue === "dates"}
-                buttonLabel={`Fix all ${bulkEntries.length} together`}
+                buttonLabel={`Fix all ${bulkTotal} together`}
                 onSaved={() => reportShared(bulkEntries, "Saved")}
               />
               {bulkIssue === "no_activity" && (
@@ -646,7 +723,7 @@ export function ReviewQueuePanel({
           {list === "reader" ? (
             <details>
               <summary className="cursor-pointer text-sm">
-                Show their {current.length} statements
+                Show their {shownTotal} statements
               </summary>
               <ol className="divide-y rounded border" aria-label="Statements waiting for a reader fix">
                 {current.map((entry) => (
@@ -765,7 +842,26 @@ export function ReviewQueuePanel({
               ))}
             </ol>
           )}
-          {list === "unreadable" && query.data.unreadable.length > 0 && canEdit && (
+          {shownTotal > QUEUE_PAGE_SIZE || offset > 0 ? (
+            <nav aria-label="Pages of this list" className="flex flex-wrap items-center gap-2 text-sm">
+              <Button size="sm" variant="outline" disabled={offset === 0} onClick={() => setOffset(offset - QUEUE_PAGE_SIZE)}>
+                Previous {QUEUE_PAGE_SIZE}
+              </Button>
+              <span role="status" aria-label="Shown of this list">
+                {/* From the page actually on screen (an earlier one stays while the next loads). */}
+                Showing {current.length ? shownOffset + 1 : 0}–{shownOffset + current.length} of {shownTotal}
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={offset + QUEUE_PAGE_SIZE >= shownTotal}
+                onClick={() => setOffset(offset + QUEUE_PAGE_SIZE)}
+              >
+                Next {QUEUE_PAGE_SIZE}
+              </Button>
+            </nav>
+          ) : null}
+          {list === "unreadable" && unreadableTotal > 0 && canEdit && (
             <div className="space-y-2 rounded border p-3 text-sm" aria-label="Check unreadable statements again">
               <p>
                 The reader has improved since some of these files were prepared. Checking them again uses each file's
@@ -774,7 +870,7 @@ export function ReviewQueuePanel({
               <Button size="sm" variant="outline" disabled={checkingAgain} onClick={() => void checkAgain()}>
                 {checkingAgain
                   ? "Starting…"
-                  : `Check ${query.data.unreadable.length} ${query.data.unreadable.length === 1 ? "statement" : "statements"} again`}
+                  : `Check ${unreadableTotal} ${unreadableTotal === 1 ? "statement" : "statements"} again`}
               </Button>
               {checkAgainResult && <p role="status">{checkAgainResult}</p>}
             </div>
