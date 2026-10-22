@@ -512,7 +512,12 @@ export function ReviewQueuePanel({
           {list === "waiting" && issue && canEdit && BULK_ISSUES.has(issue) && current.length > 0 && (
             <div className="flex flex-wrap items-center gap-3 rounded border p-3 text-sm">
               <BulkStatementDetails
-                key={`${issue}:${current.length}`}
+                // Kept by issue and file filter only: the queue refreshes while
+                // files are read, and a refresh must not close the dialog or
+                // drop the statements already selected in it.
+                key={issue}
+                scopeName={`queue:${issue}:${fileIds.join(",")}`}
+                expected={current.length}
                 caseId={caseId}
                 fileIds={[...new Set(current.flatMap((entry) => [entry.file_id, ...entry.file_ids]))]}
                 statements={current.flatMap((entry) =>
@@ -537,15 +542,21 @@ export function ReviewQueuePanel({
                   })
                 }}
               />
-              {bulkOutcome && (
-                <p role="status" aria-label="Result of the shared fix" className="basis-full font-medium">
-                  {bulkOutcome}
-                </p>
-              )}
               <span>
                 Every statement listed below waits for the same detail. Choose them, enter the value once and check the
                 preview before saving. Nothing is imported until each statement checks out.
               </span>
+            </div>
+          )}
+          {bulkOutcome && (
+            // Outside the shared-fix box: when the fix clears every statement
+            // the box goes away, and the result must still be said.
+            <div role="status" aria-label="Result of the shared fix"
+              className="flex flex-wrap items-center justify-between gap-2 rounded border border-teal-500/60 p-3 text-sm font-medium">
+              <span>{bulkOutcome}</span>
+              <Button size="sm" variant="ghost" onClick={() => setBulkOutcome("")}>
+                Dismiss
+              </Button>
             </div>
           )}
           {list === "reader" && (

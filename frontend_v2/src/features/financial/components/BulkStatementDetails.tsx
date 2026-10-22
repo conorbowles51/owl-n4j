@@ -133,6 +133,15 @@ type Props = {
   buttonLabel?: string
   /** Only these statements of the files (the review queue's selection across batches). */
   statements?: { file_id: string; statement_id?: string | null }[]
+  /**
+   * A stable name for a selection that changes underneath the editor (the
+   * review queue refreshes while files are read). The editor, its draft and
+   * its listing are kept by this name instead of by the statements, so a
+   * refresh never closes the dialog or drops what was selected.
+   */
+  scopeName?: string
+  /** How many statements the caller chose: the dialog says when fewer can be listed. */
+  expected?: number
 }
 
 export function BulkStatementDetails(props: Props) {
@@ -140,13 +149,15 @@ export function BulkStatementDetails(props: Props) {
     (state) => state.user?.id || state.user?.username || "anonymous"
   )
   const key = [
-    props.batchId || [...(props.fileIds || [])].sort().join(","),
+    props.batchId || (props.scopeName ? "" : [...(props.fileIds || [])].sort().join(",")),
     props.datesOnly ? "dates" : "details",
     props.statementId === undefined ? "all" : props.statementId || "single",
     props.reviewGroup || "all-reasons",
-    props.statements
-      ? props.statements.map((s) => `${s.file_id}/${s.statement_id || ""}`).sort().join(",")
-      : "",
+    props.scopeName
+      ? `scope=${props.scopeName}`
+      : props.statements
+        ? props.statements.map((s) => `${s.file_id}/${s.statement_id || ""}`).sort().join(",")
+        : "",
   ].join(":")
   return (
     <Editor
@@ -168,6 +179,7 @@ function Editor({
   reviewGroup,
   buttonLabel,
   statements,
+  expected,
 }: Props & { scopeKey: string }) {
   const client = useQueryClient()
   const [scope, applyScope] = useInvestigationScope(caseId)
@@ -212,13 +224,6 @@ function Editor({
       )
       if (result.case_id !== caseId)
         throw Error("These statements belong to another case.")
-      if (statements) {
-        const wanted = new Set(statements.map((s) => `${s.file_id}/${s.statement_id || ""}`))
-        return {
-          ...result,
-          items: result.items.filter((item) => wanted.has(`${item.file_id}/${item.statement_id || ""}`)),
-        }
-      }
       return statementId === undefined
         ? result
         : {
@@ -369,12 +374,20 @@ function Editor({
       `Loaded the latest saved details for ${retained.length} selected statements. Your proposed values are kept; review the new before-and-after preview.${unavailable ? ` ${unavailable} statements are no longer editable here and were removed from this selection.` : ""}`
     )
   }
+  // Filtered on screen from the latest selection, so a statement that joins
+  // or leaves the queue's list shows here without listing the files again.
+  const wanted = statements
+    ? new Set(statements.map((s) => `${s.file_id}/${s.statement_id || ""}`))
+    : null
+  const listed = (query.data?.items || []).filter(
+    (item) => !wanted || wanted.has(`${item.file_id}/${item.statement_id || ""}`)
+  )
   const accountKey = (item: Statement) => JSON.stringify([
     item.values.institution || "Bank unknown", item.values.account_number || `Source: ${item.filename} (${item.file_id})`, item.values.currency || "Currency unknown",
   ])
-  const accountOptions = [...new Map((query.data?.items || []).map(item => [accountKey(item),
+  const accountOptions = [...new Map(listed.map(item => [accountKey(item),
     [item.values.institution || "Bank unknown", item.values.account_number || item.filename, item.values.currency || "Currency unknown"].join(" · ")])).entries()]
-  const matching = (query.data?.items || []).filter((item) =>
+  const matching = listed.filter((item) =>
     (!accountScope || accountKey(item) === accountScope) && [item.filename, item.status, ...Object.values(item.values)]
       .join(" ")
       .toLowerCase()
@@ -594,6 +607,13 @@ function Editor({
                         {accountOptions.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
                       </select>
                     </label>}
+                    {expected !== undefined && listed.length < expected && (
+                      <p role="status" className="rounded border border-amber-500/60 p-2 text-sm">
+                        Listed {listed.length} of the {expected} statements chosen in the queue. The
+                        other {expected - listed.length} cannot take a shared value here (their file
+                        is being read again, or its periods changed); open each from the queue.
+                      </p>
+                    )}
                     <label className="block text-sm">
                       Find statements
                       <input
