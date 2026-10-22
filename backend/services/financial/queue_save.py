@@ -37,7 +37,7 @@ import logging
 import os
 import random
 import time
-from collections import Counter
+from collections import Counter, OrderedDict
 from uuid import UUID, uuid4, uuid5
 
 from sqlalchemy import select
@@ -506,3 +506,126 @@ def _claimed(db, result):
         return []
     return [row['item_id'] for op in db.scalars(select(Operation).where(Operation.id.in_(ids)))
             for row in op.outcomes or ()]
+
+
+# The backlog: statements that were ready before automatic save existed, or
+# whose file was prepared without it (no AUTO_SAVE_MARK). ``sweep_backlog``
+# saves them in the background under exactly the rule of
+# ``scripts/financial_save_ready_backlog.py`` (which calls the same two
+# functions): ready, no stored check, no investigator edit or draft, then
+# today's admission and ``fully_reconciled`` in ``save_statements``, actor
+# System, an ordinary reversible import receipt. One more switch beside
+# AUTO_SAVE_READY: FINANCIAL_AUTO_SAVE_BACKLOG=0 stops only the sweep.
+AUTO_SAVE_BACKLOG = os.environ.get('FINANCIAL_AUTO_SAVE_BACKLOG', '1').strip().lower() not in ('0', 'false', 'off', 'no')
+BACKLOG_CHUNK = 10
+BACKLOG_PER_ROUND = 30
+# Item id -> its updated_at when the sweep last decided about it (per process,
+# bounded): a statement admission held is looked at again only after it changes.
+_BACKLOG_SEEN = OrderedDict()
+BACKLOG_SEEN_MAX = 100_000
+
+
+def backlog_choice(session, items):
+    """Ids of ready items the backlog rule may claim: no stored check, no investigator edit or draft.
+
+    Details System filled from confirmed proposals are not an edit. Admission
+    itself (``save_statements(only_reconciled=True)``) decides afterwards.
+    """
+    from services.financial.statement_progress import review_progress
+    items = [item for item in items if item.status == 'ready']
+    files = {f.id: f for f in session.scalars(select(EvidenceFile).where(
+             EvidenceFile.id.in_({i.file_id for i in items})))} if items else {}
+    return [i.id for i in items if not (i.summary or {}).get('problems') and not (i.summary or {}).get('problem_count')
+            and ((not i.review_request and not (i.file_id in files and review_progress(files[i.file_id], i.statement_key)))
+                 or system_filled_only(i, files.get(i.file_id)))]
+
+
+# Held because today's admission disagrees with the stored "ready": the stored
+# readiness is brought up to date, so the queue says what a save would do.
+_STALE_READY = ('No longer ready', 'Being rechecked')
+
+
+def save_backlog(factory, case_id, ids):
+    """Claim backlog statements as System in chunks; refresh the stored readiness of those admission held.
+
+    Returns {queued, held: Counter of reasons, refreshed}.
+    """
+    queued, held, stale = 0, Counter(), []
+    for start in range(0, len(ids), BACKLOG_CHUNK):
+        with factory() as session:
+            result = save_statements(session, case_id=case_id, item_ids=ids[start:start + BACKLOG_CHUNK],
+                                     actor=SYSTEM_ACTOR, only_reconciled=True)
+        queued += result['queued']
+        for entry in result['held']:
+            held[entry['reason']] += 1
+            if entry['item_id'] and not entry['reason'].startswith(('Already saved', 'Has a check', 'The same', 'Its batch')):
+                stale.append(UUID(entry['item_id']))
+    refreshed = 0
+    if stale:
+        from services.financial.import_batches import refresh_readiness
+        with factory() as session:
+            refreshed = refresh_readiness(session, case_id=case_id, item_ids=stale)['refreshed']
+            session.commit()
+    return dict(queued=queued, held=held, refreshed=refreshed)
+
+
+def _ready_backlog(db):
+    """(case id, item id, updated_at) of ready statements in batches that can save, not decided since they changed."""
+    rows = db.execute(select(Batch.case_id, Item.id, Item.updated_at).join(Batch, Batch.id == Item.batch_id).where(
+        Item.status == 'ready', Batch.status.notin_(SWEEP_BATCH_STATES)).order_by(Batch.case_id, Item.id))
+    return [row for row in rows if _BACKLOG_SEEN.get(row[1]) != row[2]]
+
+
+def _remember(db, ids):
+    for identity, updated in db.execute(select(Item.id, Item.updated_at).where(Item.id.in_(ids))):
+        _BACKLOG_SEEN[identity] = updated
+        _BACKLOG_SEEN.move_to_end(identity)
+    while len(_BACKLOG_SEEN) > BACKLOG_SEEN_MAX:
+        _BACKLOG_SEEN.popitem(last=False)
+
+
+def sweep_backlog(factory, *, budget_seconds=20.0, max_statements=BACKLOG_PER_ROUND):
+    """Background round: save ready backlog statements as System, a few per round. Never raises.
+
+    Bounded (statements and seconds per round) and resumable: a saved
+    statement is no longer ready, and one admission held is skipped until it
+    changes. Returns {queued, cases, considered, held: {reason: n}, refreshed}.
+    """
+    report = dict(queued=0, cases=0, considered=0, held=Counter(), refreshed=0)
+    if not (AUTO_SAVE_READY and AUTO_SAVE_BACKLOG):
+        report['held'] = {}
+        return report
+    started = time.monotonic()
+    try:
+        with factory() as db:
+            pending = _ready_backlog(db)
+            by_case = {}
+            for case_id, identity, _ in pending:
+                by_case.setdefault(case_id, []).append(identity)
+        for case_id, identities in by_case.items():
+            if report['considered'] >= max_statements or (
+                    budget_seconds is not None and time.monotonic() - started >= budget_seconds):
+                break
+            identities = identities[:max_statements - report['considered']]
+            with factory() as db:
+                chosen = backlog_choice(db, list(db.scalars(select(Item).where(Item.id.in_(identities)))))
+                db.rollback()
+            report['considered'] += len(identities)
+            try:
+                outcome = save_backlog(factory, case_id, chosen) if chosen else dict(queued=0, held=Counter(), refreshed=0)
+            except PdfMappingError as error:
+                # 409: saved meanwhile elsewhere; the next round sees the new state.
+                log.info('Backlog save for case %s: %s', str(case_id)[:8], error)
+                continue
+            with factory() as db:
+                _remember(db, identities)
+            report['queued'] += outcome['queued']
+            report['held'].update(outcome['held'])
+            report['refreshed'] += outcome['refreshed']
+            report['cases'] += 1 if outcome['queued'] else 0
+    except Exception:
+        log.exception('Saving the ready backlog failed; the next round retries')
+    report['held'] = dict(report['held'])
+    if report['queued'] or report['refreshed']:
+        log.info('Ready backlog: %s statement(s) queued for import as System; %s', report['queued'], report)
+    return report

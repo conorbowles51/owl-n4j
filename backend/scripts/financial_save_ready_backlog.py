@@ -11,7 +11,13 @@ that backlog with the same rule:
 * it is claimed with actor "System" under an ordinary import receipt, and the
   batch worker imports it (case lock, bounded retry), so it is reversible with
   the existing import removal;
-* a second run saves nothing new (saved statements are no longer ready).
+* a second run saves nothing new (saved statements are no longer ready);
+* a statement today's admission holds although its stored state says ready
+  has its stored readiness refreshed, so the queue stops calling it ready.
+
+The batch worker runs the same save in the background, a few statements per
+round (``queue_save.sweep_backlog``, switch FINANCIAL_AUTO_SAVE_BACKLOG), so
+this command is only needed to clear a case at once or to dry-run it.
 
 DRY RUN BY DEFAULT: a READ ONLY transaction; counts per case from the stored
 queue (ready, of which without stored checks or edits). ``--check`` also runs
@@ -30,12 +36,10 @@ import argparse
 import json
 import sys
 import uuid
-from collections import Counter
 from pathlib import Path
 
 BACKEND = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND))
-CHUNK = 10
 
 
 def _cases(session, requested):
@@ -50,20 +54,13 @@ def _cases(session, requested):
 def candidates(session, case_id):
     """(ready entries, candidate item ids): ready in the stored queue, no stored check, no edit or draft."""
     from sqlalchemy import select
-    from postgres.models.evidence import EvidenceFile
     from postgres.models.financial_import_batches import FinancialImportBatchItem as Item
+    from services.financial.queue_save import backlog_choice
     from services.financial.review_queue import case_review_queue
-    from services.financial.statement_progress import review_progress
     queue = case_review_queue(session, case_id=case_id, use_cache=False)
     ids = [uuid.UUID(entry['id']) for entry in queue['ready']]
     items = list(session.scalars(select(Item).where(Item.id.in_(ids)))) if ids else []
-    files = {f.id: f for f in session.scalars(select(EvidenceFile).where(
-             EvidenceFile.id.in_({i.file_id for i in items})))} if items else {}
-    from services.financial.queue_save import system_filled_only
-    chosen = [i.id for i in items if not (i.summary or {}).get('problems') and not (i.summary or {}).get('problem_count')
-              and ((not i.review_request and not (i.file_id in files and review_progress(files[i.file_id], i.statement_key)))
-                   or system_filled_only(i, files.get(i.file_id)))]
-    return queue['counts'], chosen
+    return queue['counts'], backlog_choice(session, items)
 
 
 def dry_run(factory, requested, check):
@@ -106,7 +103,7 @@ def _check(session, case_id, ids):
 
 
 def apply(factory, requested, fill=False):
-    from services.financial.queue_save import SYSTEM_ACTOR, fill_from_queue, save_statements
+    from services.financial.queue_save import fill_from_queue, save_backlog
     rows = []
     with factory() as session:
         cases = _cases(session, requested)
@@ -120,15 +117,10 @@ def apply(factory, requested, fill=False):
         with factory() as session:
             counts, chosen = candidates(session, case_id)
             session.rollback()
-        queued, held = 0, Counter()
-        for start in range(0, len(chosen), CHUNK):
-            with factory() as session:
-                result = save_statements(session, case_id=case_id, item_ids=chosen[start:start + CHUNK],
-                                         actor=SYSTEM_ACTOR, only_reconciled=True)
-            queued += result['queued']
-            held.update(entry['reason'] for entry in result['held'])
-        rows.append(dict(case=str(case_id)[:8], ready=counts['ready'], candidates=len(chosen), queued=queued,
-                         held=dict(held), details_filled=filled))
+        # The background sweep's own save (queue_save.sweep_backlog): same chunks, actor and rule.
+        result = save_backlog(factory, case_id, chosen)
+        rows.append(dict(case=str(case_id)[:8], ready=counts['ready'], candidates=len(chosen), queued=result['queued'],
+                         held=dict(result['held']), readiness_refreshed=result['refreshed'], details_filled=filled))
     return rows
 
 

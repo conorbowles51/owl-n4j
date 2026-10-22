@@ -2423,8 +2423,11 @@ async def run_batches_forever():
                     log.info('Stored batch readiness refreshed: %s', refreshed)
                 # Statements that became ready since their file was prepared,
                 # or whose automatic save failed, are saved as at preparation.
-                from services.financial.queue_save import sweep_save
+                from services.financial.queue_save import sweep_backlog, sweep_save
                 await _finish_atomic(sweep_save, factory)
+                # Statements ready from before automatic save (no preparation
+                # mark): saved under the same rule, a few per round.
+                await _finish_atomic(sweep_backlog, factory)
                 # Precompute the review queue of recently opened cases whose
                 # inputs changed, so the next open reads it from the cache.
                 try:
