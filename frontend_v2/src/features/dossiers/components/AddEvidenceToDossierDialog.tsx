@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { ContactRound, FileImage, Plus } from "lucide-react"
+import { FileImage, Plus } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import {
@@ -13,7 +13,8 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { dossiersAPI } from "../api"
-import { useDossiers } from "../hooks"
+import { useQueryClient } from "@tanstack/react-query"
+import { DossierPicker } from "./DossierPicker"
 
 const IMAGE = /\.(avif|bmp|gif|heic|jpe?g|png|tiff?|webp)$/i
 
@@ -33,10 +34,12 @@ export function AddEvidenceToDossierDialog({
   const [selected, setSelected] = useState<string | null>(null)
   const [newName, setNewName] = useState("")
   const [saving, setSaving] = useState(false)
-  const dossiers = useDossiers({ caseId, limit: 100 })
+  const client = useQueryClient()
+  const [selectedName, setSelectedName] = useState("")
   useEffect(() => {
     if (!open) {
       setSelected(null)
+      setSelectedName("")
       setNewName("")
     }
   }, [open])
@@ -54,39 +57,28 @@ export function AddEvidenceToDossierDialog({
           })
         ).id
       }
-      const dossier = await dossiersAPI.get(dossierId)
-      const links = [
-        ...(dossier.links ?? []).map((link) => ({
-          target_type: link.target_type,
-          target_id: link.target_id,
-          relationship_type: link.relationship_type,
-          label: link.label,
-          source_anchor: link.source_anchor,
-        })),
-      ]
-      for (const file of files) {
-        if (IMAGE.test(file.name)) {
+      setSelected(dossierId)
+      // Add without replacing another investigator's links. Repeating this call is safe.
+      await dossiersAPI.addEvidence(dossierId, [
+        ...new Set(files.map((file) => file.id)),
+      ])
+      const images = files.filter((file) => IMAGE.test(file.name))
+      if (images.length) {
+        const dossier = await dossiersAPI.get(dossierId)
+        const existingImages = new Set(
+          (dossier.media ?? []).map((item) => item.evidence_file_id)
+        )
+        let hasCover = Boolean(dossier.media?.some((item) => item.is_cover))
+        for (const image of images) {
+          if (existingImages.has(image.id)) continue
           await dossiersAPI.addMedia(dossierId, {
-            evidence_file_id: file.id,
-            is_cover: !dossier.media?.length,
+            evidence_file_id: image.id,
+            is_cover: !hasCover,
           })
-        } else if (
-          !links.some(
-            (link) =>
-              link.target_type === "evidence" && link.target_id === file.id
-          )
-        ) {
-          links.push({
-            target_type: "evidence",
-            target_id: file.id,
-            relationship_type: "context",
-            label: file.name,
-            source_anchor: {},
-          })
+          hasCover = true
+          existingImages.add(image.id)
         }
       }
-      if (links.length !== (dossier.links?.length ?? 0))
-        await dossiersAPI.replaceLinks(dossierId, links)
       toast.success(
         `${files.length} evidence item${files.length === 1 ? "" : "s"} added to Dossier`
       )
@@ -94,9 +86,12 @@ export function AddEvidenceToDossierDialog({
       onOpenChange(false)
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Could not update Dossier"
+        error instanceof Error
+          ? `${error.message}. Any completed links are kept; you can retry safely.`
+          : "Could not finish adding evidence. You can retry safely."
       )
     } finally {
+      await client.invalidateQueries({ queryKey: ["dossiers"] })
       setSaving(false)
     }
   }
@@ -116,33 +111,26 @@ export function AddEvidenceToDossierDialog({
               {files.length} selected item{files.length === 1 ? "" : "s"}
             </p>
             <p className="mt-1 text-[11px] text-muted-foreground">
-              Images join the gallery; other files become contextual evidence
-              links. Sources remain unchanged.
+              All files link to the dossier; images also join its gallery.
+              Original evidence stays unchanged.
             </p>
           </div>
           <div className="space-y-2">
             <Label>Existing Dossier</Label>
-            <div className="max-h-52 space-y-1 overflow-y-auto rounded-lg border border-border p-1.5">
-              {dossiers.data?.dossiers.map((dossier) => (
-                <button
-                  key={dossier.id}
-                  type="button"
-                  onClick={() => {
-                    setSelected(dossier.id)
-                    setNewName("")
-                  }}
-                  className={`flex w-full items-center gap-2 rounded-md p-2 text-left text-xs hover:bg-muted ${selected === dossier.id ? "bg-brand-50 text-brand-800 dark:bg-brand-500/10 dark:text-brand-200" : ""}`}
-                >
-                  <ContactRound className="size-4" />
-                  <span className="min-w-0 flex-1 truncate font-medium">
-                    {dossier.display_name}
-                  </span>
-                  <span className="text-[10px] text-muted-foreground">
-                    {dossier.dossier_type}
-                  </span>
-                </button>
-              ))}
-            </div>
+            {selected && (
+              <p className="text-xs font-medium" role="status">
+                Selected: {selectedName || newName}
+              </p>
+            )}
+            <DossierPicker
+              caseId={caseId}
+              selectedDossierIds={selected ? [selected] : []}
+              onSelect={(dossier) => {
+                setSelected(dossier.id)
+                setSelectedName(dossier.display_name)
+                setNewName("")
+              }}
+            />
           </div>
           <div className="relative py-1 text-center text-[10px] uppercase tracking-wider text-muted-foreground before:absolute before:left-0 before:right-0 before:top-1/2 before:border-t before:border-border">
             <span className="relative bg-background px-2">or create new</span>

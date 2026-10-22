@@ -55,6 +55,7 @@ export interface CaseContext {
   jurisdiction?: string | null
   active_template_key: string
   custom_values: Record<string, unknown>
+  template_values?: Record<string, Record<string, unknown>>
   active_mandate?: MandateVersion | null
   mandate_complete: boolean
   templates: CaseContextTemplate[]
@@ -63,7 +64,7 @@ export interface CaseContext {
 
 export type CaseContextUpdate = Pick<
   CaseContext,
-  "case_summary" | "background" | "investigation_type" | "jurisdiction" | "active_template_key" | "custom_values"
+  "case_summary" | "background" | "investigation_type" | "jurisdiction" | "active_template_key" | "custom_values" | "template_values"
 >
 
 export type MandateVersionCreate = Pick<
@@ -299,6 +300,8 @@ export const workspaceAPI = {
       `/api/workspace/${caseId}/tasks`,
     ).then((r) => r.tasks ?? []),
 
+  getTask: (caseId: string, taskId: string) => fetchAPI<InvestigationTask>(`/api/workspace/${caseId}/tasks/${encodeURIComponent(taskId)}`),
+
   createTask: (
     caseId: string,
     task: InvestigationTaskCreate,
@@ -337,6 +340,7 @@ export const workspaceAPI = {
       taskStatus?: TaskStatus | "all"
       assigneeUserId?: string
       limit?: number
+      offset?: number
     } = {},
   ) => {
     const qs = new URLSearchParams()
@@ -345,6 +349,7 @@ export const workspaceAPI = {
     if (params.taskStatus && params.taskStatus !== "all") qs.set("task_status", params.taskStatus)
     if (params.assigneeUserId) qs.set("assignee_user_id", params.assigneeUserId)
     if (params.limit) qs.set("limit", String(params.limit))
+    if (params.offset) qs.set("offset", String(params.offset))
     const suffix = qs.toString() ? `?${qs}` : ""
     return fetchAPI<CaseWorkResponse>(`/api/workspace/${caseId}/work${suffix}`)
   },

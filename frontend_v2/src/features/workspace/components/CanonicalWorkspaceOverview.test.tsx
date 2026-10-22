@@ -148,7 +148,7 @@ describe("CanonicalWorkspaceOverview", () => {
 
   it("loads the full context editor only when an editor requests it", () => {
     renderOverview()
-    fireEvent.click(screen.getByRole("button", { name: "Manage context" }))
+    fireEvent.click(screen.getByRole("button", { name: "Edit case setup" }))
     expect(screen.getByText("Full case context editor")).toBeInTheDocument()
     expect(mocks.caseContext).toHaveBeenCalledTimes(1)
   })
@@ -156,7 +156,7 @@ describe("CanonicalWorkspaceOverview", () => {
   it("lets a viewer manage only their personal attention state", async () => {
     renderOverview(false)
 
-    expect(screen.queryByRole("button", { name: "Manage context" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Edit case setup" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /dismiss disclosure response/i })).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: /dismiss review account statement/i }))

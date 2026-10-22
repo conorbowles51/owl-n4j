@@ -31,6 +31,18 @@ export function DossierEvidencePicker({
           <div className="flex justify-center py-5">
             <Loader2 className="size-4 animate-spin text-muted-foreground" />
           </div>
+        ) : options.isError ? (
+          <div role="alert" className="space-y-2 p-3 text-xs">
+            <p>Evidence could not be loaded.</p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void options.refetch()}
+            >
+              Retry evidence
+            </Button>
+          </div>
         ) : options.data?.items.length ? (
           options.data.items.map((item) => (
             <div
@@ -47,6 +59,7 @@ export function DossierEvidencePicker({
                 ) : null}
               </div>
               <Button
+                type="button"
                 size="sm"
                 variant="ghost"
                 className="h-7 text-[11px]"

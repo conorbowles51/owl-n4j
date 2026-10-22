@@ -2,6 +2,7 @@ import { useMemo, useState } from "react"
 import { Archive, Check, FolderSearch, UserRound } from "lucide-react"
 import { useQuery } from "@tanstack/react-query"
 
+import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
   Command,
@@ -26,7 +27,8 @@ const typeLabels: Record<string, string> = {
 }
 
 export function DossierTypeBadge({ type }: { type: string }) {
-  const variant = type === "person" || type === "organisation" ? "info" : "slate"
+  const variant =
+    type === "person" || type === "organisation" ? "info" : "slate"
   return (
     <Badge variant={variant} className="text-[10px]">
       {typeLabels[type] ?? type}
@@ -48,13 +50,14 @@ export function DossierPicker({
   onSelect: (dossier: Dossier) => void
 }) {
   const [search, setSearch] = useState("")
+  const [offset, setOffset] = useState(0)
   const selected = useMemo(
     () => new Set(selectedDossierIds),
     [selectedDossierIds]
   )
-  const { data, isLoading } = useQuery({
-    queryKey: ["dossiers", "picker", caseId, search],
-    queryFn: () => dossiersAPI.list({ caseId, q: search, limit: 50 }),
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ["dossiers", "picker", caseId, search, offset],
+    queryFn: () => dossiersAPI.list({ caseId, q: search, limit: 50, offset }),
     enabled: Boolean(caseId),
   })
 
@@ -65,13 +68,28 @@ export function DossierPicker({
     >
       <CommandInput
         value={search}
-        onValueChange={setSearch}
+        onValueChange={(value) => {
+          setSearch(value)
+          setOffset(0)
+        }}
         placeholder={placeholder}
       />
+      {isError && (
+        <div role="alert" className="p-3 text-xs">
+          Dossiers could not be loaded.{" "}
+          <Button variant="ghost" size="sm" onClick={() => void refetch()}>
+            Retry
+          </Button>
+        </div>
+      )}
       <CommandList>
         <ScrollArea className="max-h-72">
           <CommandEmpty>
-            {isLoading ? "Loading Dossiers..." : "No Dossiers found"}
+            {isLoading
+              ? "Loading Dossiers..."
+              : isError
+                ? "Dossiers unavailable"
+                : "No Dossiers found"}
           </CommandEmpty>
           {(data?.dossiers ?? []).map((dossier) => {
             const isSelected = selected.has(dossier.id)
@@ -117,6 +135,29 @@ export function DossierPicker({
           ) : null}
         </ScrollArea>
       </CommandList>
+      {data && data.total > 50 && (
+        <div className="flex items-center justify-between border-t p-2 text-xs">
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={offset === 0 || isLoading}
+            onClick={() => setOffset((value) => Math.max(0, value - 50))}
+          >
+            Previous dossiers
+          </Button>
+          <span>
+            {offset + 1}–{Math.min(offset + 50, data.total)} of {data.total}
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={offset + 50 >= data.total || isLoading}
+            onClick={() => setOffset((value) => value + 50)}
+          >
+            Next dossiers
+          </Button>
+        </div>
+      )}
     </Command>
   )
 }
