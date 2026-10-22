@@ -220,6 +220,52 @@ class SantanderClosingTests(TestCase):
                 self.assertEqual([r['kind'] for r in tx], ['transaction']*2 if read else ['unresolved']*2)
 
 
+def merged_total_statement(*, balance='75.00', deposit_lines=1, withdrawal='50.00\n50.00'):
+    """r14: statement() whose last cheque payment and TOTAL line were stored as one ruled row."""
+    ss=statement()
+    rows=ss[0]['rows']
+    payment=next(r for r in rows if r['cells'][0]['expected_text']=='03-SEP-2024')
+    deposit=deepcopy(next(r for r in rows if r['cells'][0]['expected_text']=='02-SEP-2024')['cells'][3])
+    deposit['locator']['rect'][1]=payment['cells'][0]['locator']['rect'][1]
+    deposit['locator']['rect'][3]=payment['cells'][0]['locator']['rect'][3]
+    deposit['expected_text']='25.00' if deposit_lines==1 else '1.00\n25.00'
+    payment['cells'][2]['expected_text']='EXAMPLE PAYMENT\nTOTAL'
+    payment['cells'][3]['expected_text']=withdrawal
+    payment['cells'][4]['expected_text']=balance
+    payment['cells'].insert(3, deposit)
+    for i, c in enumerate(payment['cells']):
+        c['column_index']=i
+    ss[0]['rows']=[r for r in rows if not (r['cells'][0]['expected_text']=='TOTAL' and r['cells'][1]['expected_text']=='25.00')]
+    return ss
+
+
+class SantanderMergedTotalTests(TestCase):
+    def read(self, ss):
+        choice=next(c for c in santander_catalog(ss)[0] if c['account_type']=='checking')
+        return propose_santander_statement(ss,'MXN',choice)['rows']
+
+    def test_a_payment_ruled_together_with_the_total_line_is_split(self):
+        rows=self.read(merged_total_statement())
+        tx=[r for r in rows if not r['excluded']]
+        self.assertEqual([(r['kind'],r['fields'].get('direction'),r['fields'].get('amount_minor'),r['fields'].get('balance')) for r in tx],
+                         [('transaction','credit','2500','12500'),('transaction','debit','5000','7500')])
+        self.assertEqual(tx[1]['fields']['description'],'EXAMPLE PAYMENT')
+        totals=[(r['fields']['total_direction'],r['fields']['balance']) for r in rows if r['kind']=='statement_total']
+        self.assertEqual(totals,[('credit','2500'),('debit','5000')])
+        checks=check_statement_rows(rows)
+        self.assertEqual((checks['balance_status'],checks['flagged_rows']),('matches',0))
+
+    def test_the_total_figures_never_become_the_payments(self):
+        for kwargs in (dict(balance='76.00'), dict(withdrawal='50.00'), dict(deposit_lines=2, withdrawal='50.00')):
+            with self.subTest(**kwargs):
+                rows=self.read(merged_total_statement(**kwargs))
+                merged=[r for r in rows if not r['excluded'] and r['fields'].get('description','').startswith('03-SEP')
+                        or r['kind']=='unresolved']
+                self.assertEqual([r['kind'] for r in merged],['unresolved'])
+                self.assertNotIn('amount_minor',merged[0]['fields'])
+                self.assertFalse(any(r['kind']=='statement_total' for r in rows))
+
+
 class SantanderSavedReviewTests(TestCase):
     def test_new_continuations_require_comparison_and_keep_manual_addition(self):
         from unittest.mock import patch

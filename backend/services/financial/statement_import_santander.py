@@ -167,6 +167,20 @@ def propose_santander_statement(sources,currency,choice):
                     item['fields']['description'] = text(raw)
                     item['issues'].append('The movement columns could not be read. Check the date, deposit or withdrawal and balance beside the PDF.')
                 continue
+            if MERGED_TOTAL and _merges_total(cells):
+                split=_split_merged_total(cells,columns,last,currency)
+                if split is None:
+                    # Never take the TOTAL line's figures as this payment's.
+                    item.update(kind='unresolved',excluded=False)
+                    item['fields']['description']=text(raw)
+                    item['issues'].append('This line prints a payment and the TOTAL line together. Check the payment amount and balance beside the PDF.')
+                    continue
+                cells,totals=split
+                for direction,cell in totals:
+                    total=dict(item,id=item['id']+':'+direction,fields={},issues=[],kind='statement_total',excluded=True)
+                    total['fields'].update(description='Total '+direction,total_direction=direction,balance_column=str(cell['column_index']),
+                        balance=exact_amount(cell['expected_text'],currency),merged_with_row=item['id'])
+                    result.append(total)
             money={n:[] for n in money_names};other=[]
             for c in cells:
                 rect=box(c)
@@ -223,6 +237,72 @@ def propose_santander_statement(sources,currency,choice):
     if COVER_CLOSING:
         _cover_closing(result, choice, currency)
     return dict(rows=result,issues=[])
+
+
+# Whether a ruled row that prints the section's last payment and its TOTAL line
+# together is split (``_split_merged_total``). Reverse in one place.
+MERGED_TOTAL = True
+_MONEY_LINE = re.compile(r'\$?\s*[\d,]+\.\d{2}')
+
+
+def _merges_total(cells):
+    """A dated row whose description cell ends in a line reading exactly TOTAL."""
+    return bool(cells and re.match(DATE, norm(cells[0]['expected_text'].strip())) and any(
+        len(lines) >= 2 and norm(lines[-1].strip()) == 'TOTAL'
+        for lines in (c['expected_text'].split('\n') for c in cells)))
+
+
+def _split_merged_total(cells, columns, last, currency):
+    """``(payment cells, [(direction, total cell)])`` for a ruled row merging a payment with the TOTAL line, or None.
+
+    The ruling stored both printed lines in one row of cells. A money cell of
+    two lines gives its first line to the payment and its second to the TOTAL
+    line. The payment's amount must come from such a two-line cell (exactly
+    one of deposit or withdrawal); a one-line cell in the other amount column
+    is then the TOTAL line's. A one-line balance cell is the payment's only
+    when the previous payment's printed balance plus or minus this amount
+    equals it exactly (the TOTAL line prints no balance). The description
+    keeps every line but the last. Anything else is None (the row is held).
+    """
+    names = ('DEPOSITO', 'RETIRO', 'SALDO')
+    payment, single, double = [], {n: [] for n in names}, {n: [] for n in names}
+    for c in cells:
+        lines = [line.strip() for line in c['expected_text'].split('\n')]
+        rect = box(c)
+        if rect and rect[0] >= box(columns['DEPOSITO'])[0] and all(_MONEY_LINE.fullmatch(line) for line in lines):
+            name = min(names, key=lambda n: abs(rect[2] - box(columns[n])[2]))
+            if len(lines) == 1:
+                single[name].append(c)
+            elif len(lines) == 2:
+                double[name].append((dict(c, expected_text=lines[0]), dict(c, expected_text=lines[1])))
+            else:
+                return None
+        elif len(lines) >= 2 and norm(lines[-1]) == 'TOTAL':
+            payment.append(dict(c, expected_text='\n'.join(lines[:-1])))
+        elif len(lines) == 1:
+            payment.append(c)
+        else:
+            return None
+    if any(len(single[n]) + len(double[n]) > 1 for n in names) or double['SALDO']:
+        return None
+    paid = [(n, d) for n, d in (('DEPOSITO', 'credit'), ('RETIRO', 'debit')) if double[n]]
+    if len(paid) != 1 or len(single['SALDO']) != 1 or not last or last['fields'].get('balance') is None:
+        return None
+    name, direction = paid[0]
+    try:
+        amount = int(exact_amount(double[name][0][0]['expected_text'], currency))
+        balance = int(exact_amount(single['SALDO'][0]['expected_text'], currency))
+        previous = int(last['fields']['balance'])
+    except ValueError:
+        return None
+    if previous + (amount if direction == 'credit' else -amount) != balance:
+        return None
+    totals = []
+    for n, d in (('DEPOSITO', 'credit'), ('RETIRO', 'debit')):
+        cell = double[n][0][1] if double[n] else single[n][0] if single[n] else None
+        if cell is not None:
+            totals.append((d, cell))
+    return payment + [double[name][0][0], single['SALDO'][0]], totals
 
 
 # Whether a section whose own closing line was not read takes its closing from
