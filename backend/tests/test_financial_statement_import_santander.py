@@ -168,6 +168,104 @@ class SantanderTests(TestCase):
             self.assertEqual(santander_catalog(ss)[0],[])
 
 
+def cover_statement(*, previous='100.00', current='75.00', closing_line=False):
+    """r14: statement() with the cheque section's SALDO FINAL line lost and a cover balance summary line."""
+    ss=statement()
+    rows=ss[0]['rows']
+    if not closing_line:
+        ss[0]['rows']=[r for r in rows if 'SALDO FINAL DEL PERIODO:' != r['cells'][0]['expected_text'] or r['cells'][-1]['expected_text']!='$75.00']
+    summary=source(1,[[(30000,100000,150000,'CUENTA SANTANDER PYME'),(200000,100000,60000,'65-00001234-0'),
+        (280000,100000,40000,previous),(330000,100000,40000,'100.00%'),(400000,100000,40000,current),(460000,100000,40000,'100.00%')]])['rows'][0]
+    ss[0]['rows'].append(summary|{'row_index':99})
+    return ss
+
+
+class SantanderClosingTests(TestCase):
+    def closing(self, ss):
+        choice=next(c for c in santander_catalog(ss)[0] if c['account_type']=='checking')
+        rows=propose_santander_statement(ss,'MXN',choice)['rows']
+        return [r for r in rows if r['kind']=='balance' and r['fields']['description']=='Closing Balance'], rows
+
+    def test_a_lost_closing_line_is_read_from_the_cover_summary_when_three_printed_facts_agree(self):
+        closings, rows = self.closing(cover_statement())
+        self.assertEqual([(c['fields']['balance'], c['fields']['balance_basis'], c['row_index']) for c in closings],
+                         [('7500', 'cover_balance_summary', 99)])
+        self.assertEqual(check_statement_rows(rows)['balance_status'], 'matches')
+
+    def test_the_cover_summary_is_not_taken_when_it_disagrees_or_the_closing_line_was_read(self):
+        for kwargs in (dict(previous='90.00'), dict(current='80.00')):
+            with self.subTest(**kwargs):
+                self.assertEqual(self.closing(cover_statement(**kwargs))[0], [])
+        closings, _ = self.closing(cover_statement(closing_line=True))
+        self.assertEqual([c['fields'].get('balance_basis') for c in closings], [None])
+
+    def test_switch_off_leaves_the_closing_unread(self):
+        import services.financial.statement_import_santander as santander
+        try:
+            santander.COVER_CLOSING=False
+            self.assertEqual(self.closing(cover_statement())[0], [])
+        finally:
+            santander.COVER_CLOSING=True
+
+    def test_a_column_rule_read_as_a_bracket_still_separates_date_and_folio(self):
+        for mark, read in ((')', True), (']', True), ('(', True), ('X', False)):
+            with self.subTest(mark=mark):
+                ss=statement(merged=True)
+                for row in ss[0]['rows']:
+                    for cell in row['cells']:
+                        if cell['expected_text'][:11] in ('02-SEP-2024','03-SEP-2024'):
+                            cell['expected_text']=cell['expected_text'].replace('|',mark,1)
+                choice=santander_catalog(ss)[0][0]
+                tx=[r for r in propose_santander_statement(ss,'MXN',choice)['rows'] if not r['excluded']]
+                self.assertEqual([r['kind'] for r in tx], ['transaction']*2 if read else ['unresolved']*2)
+
+
+def merged_total_statement(*, balance='75.00', deposit_lines=1, withdrawal='50.00\n50.00'):
+    """r14: statement() whose last cheque payment and TOTAL line were stored as one ruled row."""
+    ss=statement()
+    rows=ss[0]['rows']
+    payment=next(r for r in rows if r['cells'][0]['expected_text']=='03-SEP-2024')
+    deposit=deepcopy(next(r for r in rows if r['cells'][0]['expected_text']=='02-SEP-2024')['cells'][3])
+    deposit['locator']['rect'][1]=payment['cells'][0]['locator']['rect'][1]
+    deposit['locator']['rect'][3]=payment['cells'][0]['locator']['rect'][3]
+    deposit['expected_text']='25.00' if deposit_lines==1 else '1.00\n25.00'
+    payment['cells'][2]['expected_text']='EXAMPLE PAYMENT\nTOTAL'
+    payment['cells'][3]['expected_text']=withdrawal
+    payment['cells'][4]['expected_text']=balance
+    payment['cells'].insert(3, deposit)
+    for i, c in enumerate(payment['cells']):
+        c['column_index']=i
+    ss[0]['rows']=[r for r in rows if not (r['cells'][0]['expected_text']=='TOTAL' and r['cells'][1]['expected_text']=='25.00')]
+    return ss
+
+
+class SantanderMergedTotalTests(TestCase):
+    def read(self, ss):
+        choice=next(c for c in santander_catalog(ss)[0] if c['account_type']=='checking')
+        return propose_santander_statement(ss,'MXN',choice)['rows']
+
+    def test_a_payment_ruled_together_with_the_total_line_is_split(self):
+        rows=self.read(merged_total_statement())
+        tx=[r for r in rows if not r['excluded']]
+        self.assertEqual([(r['kind'],r['fields'].get('direction'),r['fields'].get('amount_minor'),r['fields'].get('balance')) for r in tx],
+                         [('transaction','credit','2500','12500'),('transaction','debit','5000','7500')])
+        self.assertEqual(tx[1]['fields']['description'],'EXAMPLE PAYMENT')
+        totals=[(r['fields']['total_direction'],r['fields']['balance']) for r in rows if r['kind']=='statement_total']
+        self.assertEqual(totals,[('credit','2500'),('debit','5000')])
+        checks=check_statement_rows(rows)
+        self.assertEqual((checks['balance_status'],checks['flagged_rows']),('matches',0))
+
+    def test_the_total_figures_never_become_the_payments(self):
+        for kwargs in (dict(balance='76.00'), dict(withdrawal='50.00'), dict(deposit_lines=2, withdrawal='50.00')):
+            with self.subTest(**kwargs):
+                rows=self.read(merged_total_statement(**kwargs))
+                merged=[r for r in rows if not r['excluded'] and r['fields'].get('description','').startswith('03-SEP')
+                        or r['kind']=='unresolved']
+                self.assertEqual([r['kind'] for r in merged],['unresolved'])
+                self.assertNotIn('amount_minor',merged[0]['fields'])
+                self.assertFalse(any(r['kind']=='statement_total' for r in rows))
+
+
 class SantanderSavedReviewTests(TestCase):
     def test_new_continuations_require_comparison_and_keep_manual_addition(self):
         from unittest.mock import patch

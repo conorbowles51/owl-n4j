@@ -1643,12 +1643,15 @@ def _unanchored_holder(section_pages, pages, heading, style):
                 lines.append(dict(row=row, x=x, y=min(t['y0'] for t in aligned),
                                   height=max(t['y1'] - t['y0'] for t in aligned), text=_aligned_text(row, x)))
     reprints = set()
+    reprint_pages = {}
     for other in section_pages:
         if other == page:
             continue
         for row in _above_movements(pages[other], style):
             if row['width'] and min(t['x0'] for t in row['tokens']) <= row['width'] * 0.5:
-                reprints.add(' '.join(_aligned_text(row, min(t['x0'] for t in row['tokens'])).split()))
+                text = ' '.join(_aligned_text(row, min(t['x0'] for t in row['tokens'])).split())
+                reprints.add(text)
+                reprint_pages.setdefault(text, set()).add(other)
     found = set()
     for line in lines:
         row, x, y, height = line['row'], line['x'], line['y'], line['height']
@@ -1678,8 +1681,37 @@ def _unanchored_holder(section_pages, pages, heading, style):
         top = ' '.join(t['t'] for t in _aligned_tokens(row, x) if t['line'] == 0)
         if ' '.join(fold(top).split()) in reprints:
             found.add(' '.join(top.split()))
+        elif LEGAL_FORM_COMPLETION:
+            found.update(_legal_form_completions(' '.join(fold(top).split()), reprint_pages))
     names = {fold(name) for name in found}
     return next(iter(found)) if len(names) == 1 else ''
+
+
+# (A8) A page-1 addressee line read only up to inside its company legal form ('<NAME> SA', the rest lost or
+# misread) is completed from the statement's own page headings; see _legal_form_completions. False: such
+# statements wait for a person.
+LEGAL_FORM_COMPLETION = True
+
+
+def _legal_form_completions(top, reprint_pages):
+    """The reprinted holder lines that complete ``top`` (folded) where its reading stopped inside a company
+    legal form, as a set of zero or one names.
+
+    Accepted only when a reprinted line (left cells above the movements of another page) is ``top`` followed by
+    more words, the reprinted line ends in a whole company legal form ('SA DE CV', 'S DE RL') that begins inside
+    ``top`` after at least one word of the name proper, and that same line is printed identically on at least
+    two other pages. The name proper is read on both printings; only the legal form's end comes from the
+    headings, never a word of the name. More than one such line gives nothing.
+    """
+    words = top.split()
+    found = set()
+    for text, printed_on in reprint_pages.items():
+        if len(printed_on) < 2 or not text.startswith(top + ' '):
+            continue
+        reprinted = text.split()
+        if any(_COMPANY_FORM.match(' '.join(reprinted[i:])) for i in range(1, len(words))):
+            found.add(text)
+    return found if len(found) == 1 else set()
 
 
 def _stub_holder(heading, pages, style):
