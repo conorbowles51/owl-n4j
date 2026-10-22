@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { BatchStatementReview, batchItemQuery } from "./FinancialBatchPanel"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import {
+  entryBalances,
   entryPeriod,
   importOutcome,
   savedOutcome,
@@ -152,11 +153,14 @@ function EntryLine({ entry }: { entry: QueueEntry }) {
           entry.holder,
           entry.account,
           entry.institution,
-          entryPeriod(entry),
           entry.page ? `page ${entry.page}` : "",
         ]
           .filter(Boolean)
           .join(" · ")}
+      </p>
+      {/* What the PDF prints on its first and last page: checkable at a glance without opening it. */}
+      <p className="text-xs tabular-nums" aria-label="Period and printed balances">
+        <span className="font-medium">{entryPeriod(entry)}</span> · {entryBalances(entry)}
       </p>
     </>
   )

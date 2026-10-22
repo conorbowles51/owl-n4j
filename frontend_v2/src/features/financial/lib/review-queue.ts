@@ -2,6 +2,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import { z } from "zod"
 import { fetchAPI } from "@/lib/api-client"
 import { randomRequestId } from "@/lib/browser-crypto"
+import { formatLedgerAmount } from "./ledger-format"
 import type { StatementImportReceipt } from "../components/StatementImportPanel"
 
 const entry = z.object({
@@ -43,6 +44,11 @@ const entry = z.object({
   /** "same_file_read": this upload's reading failed; the same bytes were read through another upload.
    * "same_pages_read": the same, for a file with other bytes whose every page is identical. */
   copy_reason: z.string().nullish(),
+  /** Printed opening and closing balances as read (minor units; null when not read), for checking against the PDF. */
+  opening_minor: z.string().nullish(),
+  closing_minor: z.string().nullish(),
+  balance_status: z.string().optional(),
+  transaction_count: z.number().nullish(),
   /** Proposed values for missing details (value, its source, whether it is certain). */
   proposals: z
     .record(
@@ -349,6 +355,22 @@ export function savedOutcome(data: ReviewQueue, entry: QueueEntry) {
   if (data.unreadable.some(same))
     return { held: true, message: "Saved. Nothing could be read from it yet: open it to check its pages." }
   return { held: false, message: "Saved. Nothing more is needed from you here." }
+}
+
+/** "opening 1,000.00 USD · closing 950.50 USD · 12 payments read": as printed, never a guessed zero. */
+export function entryBalances(entry: QueueEntry) {
+  const money = (minor: string | null | undefined) => {
+    if (minor === null || minor === undefined || minor === "") return "not read"
+    if (!entry.currency) return `${formatLedgerAmount(minor, "").text} (minor units; currency not chosen)`
+    const amount = formatLedgerAmount(minor, entry.currency)
+    return amount.scaled ? `${amount.text} ${amount.currency}` : `${amount.text} minor units ${amount.currency}`
+  }
+  const parts = [`opening ${money(entry.opening_minor)}`, `closing ${money(entry.closing_minor)}`]
+  if (typeof entry.transaction_count === "number")
+    parts.push(`${entry.transaction_count} ${entry.transaction_count === 1 ? "payment" : "payments"} read`)
+  if (entry.balance_status === "matches") parts.push("balances add up")
+  else if (entry.balance_status === "difference") parts.push("balances do not add up")
+  return parts.join(" · ")
 }
 
 export function entryPeriod(entry: QueueEntry) {

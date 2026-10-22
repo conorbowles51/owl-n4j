@@ -94,6 +94,9 @@ const entries = [
     issue: "Currency not printed: choose one",
     issue_reason: "currency",
     field: "holder",
+    opening_minor: "250000",
+    closing_minor: "261240",
+    transaction_count: 4,
     other_problems: 1,
     file_position: 1,
     file_statements: 1,
@@ -168,6 +171,10 @@ it("lists only statements with something to fix, each saying what before it is o
   expect(issues[0]).toHaveTextContent("3 rows unreadable on page 7")
   expect(issues[1]).toHaveTextContent("Currency not printed: choose one (and 1 more check)")
   expect(screen.getByText(/statement 7 of 54 in this file/)).toBeVisible()
+  // Each row shows its period and printed balances, checkable against the PDF without opening it.
+  expect(list.querySelectorAll('[aria-label="Period and printed balances"]')[1]).toHaveTextContent(
+    "2021-01-01 to 2021-01-31 · opening 2,500.00 USD · closing 2,612.40 USD · 4 payments read"
+  )
   expect(screen.getByLabelText("Statement status")).toHaveTextContent(
     "Imported 49 · Waiting for you 2 · Ready to import 3 · Copies set aside 1 · Couldn't read 1"
   )
