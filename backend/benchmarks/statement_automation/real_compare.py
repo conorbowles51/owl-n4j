@@ -99,6 +99,9 @@ def proposal_view(proposal):
         view['rows'].append(dict(date=fields.get('date') or fields.get('booking_date') or fields.get('value_date') or None,
                                  amount_minor=_minor(fields.get('amount_minor')), direction=fields.get('direction') or None,
                                  balance_after=_minor(fields.get('balance')), description=fields.get('description') or ''))
+    if view['closing_minor'] is None:
+        # A closing the processor established from its own source proof (not printed), e.g. a closed section.
+        view['closing_minor'] = _minor((proposal.get('proven_closing') or {}).get('balance_minor'))
     return view
 
 

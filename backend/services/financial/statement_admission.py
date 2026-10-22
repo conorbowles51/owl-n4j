@@ -200,6 +200,11 @@ def assess_admission(proposal, request, arithmetic=None):
             else (evidence.get('basis') or 'source_verified') if source_no_activity and not reviewed_no_activity
             else 'investigator_confirmed'),
         **(dict(no_activity_evidence=evidence) if no_payments and not unique and source_no_activity and not reviewed_no_activity else {}),
+        # The closing balance the source proof fixes where none is printed
+        # (a closed section): recorded with its basis, never as printed.
+        **(dict(proven_closing=proposal['proven_closing']) if no_payments and not unique and source_no_activity
+           and not reviewed_no_activity and evidence.get('reason') == 'closed_without_activity'
+           and (proposal.get('proven_closing') or {}).get('cited_row_id') == evidence.get('closure_row_id') else {}),
         checks=arithmetic['checks'], calculation=calculation, assessment_current=True)
 
 

@@ -1218,6 +1218,34 @@ def _closure_evidence(sources, statement, rows, held):
         endpoint_methods=[(opening.get('value_provenance') or {}).get('method')])
 
 
+# Whether a closed section proven without activity also offers the closing
+# balance its proof fixes (``proven_closing``). Reverse in one place.
+CLOSURE_CLOSING = True
+
+
+def proven_closing(evidence):
+    """The closing balance a closed section's own proof fixes, or None.
+
+    Only for a verified ``closed_without_activity`` proof: the printed opening
+    of exactly 0.00, the section's closing notice directly after it inside the
+    period and no line between them. No balance is printed for such a section,
+    so the value is never recorded as printed: its basis is the proof, and it
+    is cited to the closing notice (row, page and position) and the opening
+    line the proof names.
+    """
+    if (not CLOSURE_CLOSING or not isinstance(evidence, dict) or evidence.get('verified') is not True
+            or evidence.get('reason') != 'closed_without_activity' or evidence.get('balance_minor') != '0'
+            or not evidence.get('closure_row_id') or not evidence.get('opening_row_id')):
+        return None
+    return dict(balance_minor='0', printed=False, basis='closed_without_activity', method=evidence.get('method'),
+        message='No closing balance is printed for this section. It opened at 0.00 and its closing notice follows '
+                'directly, inside the statement period, with no payment between them, so it closed at 0.00.',
+        cited_row_id=evidence['closure_row_id'], opening_row_id=evidence['opening_row_id'],
+        closure_date=evidence.get('closure_date'), page_number=evidence.get('page_number'),
+        table_index=evidence.get('table_index'), rect=evidence.get('closing_rect'),
+        page_size=evidence.get('page_size'), coordinate_space=evidence.get('coordinate_space'))
+
+
 def _adjacent_lines(sources, source, page, first_index, second_index, first_cells, second_cells, held):
     """``dict(first, second, space, pitch, distance)`` when two lines of a page are printed directly one after the other.
 
