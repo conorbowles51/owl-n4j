@@ -275,6 +275,15 @@ def _proposals(summary, knowledge, detail):
     return proposals, field_proposals.resolves_all(reasons, proposals)
 
 
+def _printed_balances(summary):
+    """The stored opening and closing balances (minor units, as read) and payment count, so a
+    queue row can be checked against the PDF without opening it. Read only: nothing is decided here."""
+    closing = next((check for check in summary.get('checks') or []
+                    if isinstance(check, dict) and check.get('kind') == 'closing_balance'), None) or {}
+    return dict(opening_minor=closing.get('opening_minor'), closing_minor=closing.get('printed_minor'),
+                balance_status=summary.get('balance_status') or '', transaction_count=summary.get('transaction_count'))
+
+
 def _entry(item, batch_id, describe_result=None):
     summary = item.summary
     entry = dict(id=str(item.id), batch_id=str(batch_id), file_id=str(item.file_id),
@@ -283,7 +292,7 @@ def _entry(item, batch_id, describe_result=None):
         account=summary.get('account') or '', institution=summary.get('institution') or '',
         currency=summary.get('currency') or '', period_start=summary.get('period_start') or '',
         period_end=summary.get('period_end') or '', page=summary.get('page_number'),
-        can_import=bool(summary.get('can_import')), status=item.status)
+        can_import=bool(summary.get('can_import')), status=item.status, **_printed_balances(summary))
     if describe_result:
         entry.update(issue=describe_result['sentence'], issue_reason=describe_result['reason'],
             row_id=describe_result['row_id'], field=describe_result['field'], page=describe_result['page'],

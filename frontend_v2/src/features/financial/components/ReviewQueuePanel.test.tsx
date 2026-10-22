@@ -12,7 +12,8 @@ vi.mock("@/lib/api-client", () => ({ fetchAPI: vi.fn() }))
 vi.mock("../hooks/use-financial-access", () => ({
   useFinancialAccess: () => ({ canEdit: true, canUpload: true }),
 }))
-vi.mock("./StatementImportPanel", () => ({
+vi.mock("./StatementImportPanel", async (actual) => ({
+  statementReadingQuery: (await actual<typeof import("./StatementImportPanel")>()).statementReadingQuery,
   StatementImportPanel: ({
     onImported,
   }: {
@@ -94,6 +95,9 @@ const entries = [
     issue: "Currency not printed: choose one",
     issue_reason: "currency",
     field: "holder",
+    opening_minor: "250000",
+    closing_minor: "261240",
+    transaction_count: 4,
     other_problems: 1,
     file_position: 1,
     file_statements: 1,
@@ -168,6 +172,10 @@ it("lists only statements with something to fix, each saying what before it is o
   expect(issues[0]).toHaveTextContent("3 rows unreadable on page 7")
   expect(issues[1]).toHaveTextContent("Currency not printed: choose one (and 1 more check)")
   expect(screen.getByText(/statement 7 of 54 in this file/)).toBeVisible()
+  // Each row shows its period and printed balances, checkable against the PDF without opening it.
+  expect(list.querySelectorAll('[aria-label="Period and printed balances"]')[1]).toHaveTextContent(
+    "2021-01-01 to 2021-01-31 · opening 2,500.00 USD · closing 2,612.40 USD · 4 payments read"
+  )
   expect(screen.getByLabelText("Statement status")).toHaveTextContent(
     "Imported 49 · Waiting for you 2 · Ready to import 3 · Copies set aside 1 · Couldn't read 1"
   )
@@ -290,7 +298,7 @@ it("lists statements whose details were filled automatically, with each value an
     "Fills currency: USD (same account's 3 saved statements, all USD)"
   )
   expect(screen.getByRole("button", { name: "Open to change" })).toBeVisible()
-  expect(screen.getByRole("button", { name: "Import 4 ready statements" })).toBeVisible()
+  expect(screen.getByRole("button", { name: "Import 3 ready, and 1 once its details are filled" })).toBeVisible()
 })
 
 it("shows every blocker after the summary sentence", async () => {
@@ -463,4 +471,74 @@ it("checks the unreadable statements' files again with the current reader in one
     method: "POST",
     body: { files: [{ batch_id: "b1", file_id: "f1" }, { batch_id: "b2", file_id: "f2" }] },
   })
+})
+
+it("accounts for every statement it counted as ready: imported, held, still importing or not ready after filling", async () => {
+  const filledEntry = {
+    ...base, id: "f9", batch_id: "b1", filename: "Filled.pdf", bucket: "filled", period_start: "2021-02-01",
+    period_end: "2021-02-28", proposals: { currency: { value: "USD", label: "same account", confirmed: true } },
+  }
+  let after = false
+  const before = { ...queue, counts: { ...queue.counts, ready: 1, filled: 4 }, ready: queue.ready.slice(0, 1),
+    filled: [1, 2, 3, 4].map((n) => ({ ...filledEntry, id: `f${n}`, filename: `Filled ${n}.pdf` })) }
+  vi.mocked(fetchAPI).mockImplementation(async (url: string) => {
+    if (url.includes("/review/queue"))
+      return (after
+        ? { ...queue, ready: [], items: [1, 2, 3].map((n) => ({ ...entries[1], id: `f${n}`, filename: `Filled ${n}.pdf`,
+            issue: "Account number not found: enter it" })) }
+        : before) as never
+    if (url.includes("/review/fill"))
+      return { case_id: "case", filled: 4, statements: 4, failed: 0, ready_item_ids: ["f4"] } as never
+    if (url.includes("/review/save?"))
+      return { request_id: "q", queued: 2, held: [], operations: [{ batch_id: "b1", operation_id: "o1", queued: 2 }] } as never
+    if (url.includes("/review/save-result")) {
+      after = true
+      return { case_id: "case", found: 1, pending: 0, imported: 1, already_present: 0, duplicate_ignored: 1,
+               failed: [], transaction_count: 3 } as never
+    }
+    throw Error(`unexpected ${url}`)
+  })
+  mount("/cases/case/financial?view=statements&queue=1")
+  // The button never claims five statements will be imported.
+  fireEvent.click(await screen.findByRole("button", { name: "Import 1 ready, and 4 once their details are filled" }))
+  const result = await screen.findByLabelText("Result of importing ready statements")
+  expect(result).toHaveTextContent(
+    "Of 5 counted as ready: 1 imported, 1 held: 1 set aside as a copy of another statement, 3 not imported: details filled, but they still need something"
+  )
+  fireEvent.click(screen.getByText("Which 3 were not imported after filling their details"))
+  await waitFor(() =>
+    expect(screen.getByLabelText("Not ready after filling")).toHaveTextContent(
+      "Filled 1.pdf (2021-02-01 to 2021-02-28): still needs: Account number not found: enter it"
+    )
+  )
+  fireEvent.click(screen.getByText("Which 1 statement was held"))
+  expect(screen.getByText(/1 without a file name in the server's answer: 1 set aside as a copy/)).toBeVisible()
+})
+
+it("asks for the statement's reading together with its batch item, and closing it does not load the queue again", async () => {
+  let releaseItem = () => {}
+  vi.mocked(fetchAPI).mockImplementation(async (url: string) => {
+    if (url.includes("/review/queue")) return queue as never
+    const match = url.match(/\/items\/(i\d)/)
+    if (match && match[1] === "i1") {
+      await new Promise<void>((resolve) => { releaseItem = resolve })
+      return batchItem("i1") as never
+    }
+    if (match) return batchItem(match[1]) as never
+    if (url.includes("/statement-import/f1?")) return new Promise(() => {}) as never
+    throw Error(`unexpected ${url}`)
+  })
+  mount("/cases/case/financial?view=statements&queue=1")
+  fireEvent.click((await screen.findAllByRole("button", { name: "Open" }))[0])
+  // The reading is requested while the batch item is still loading, not after it.
+  await waitFor(() =>
+    expect(vi.mocked(fetchAPI).mock.calls.some(([url]) =>
+      String(url) === "/api/financial/statement-import/f1?case_id=case&currency=USD&statement_id=s7")).toBe(true)
+  )
+  releaseItem()
+  fireEvent.click(await screen.findByRole("button", { name: "Back to review queue" }))
+  const queueCalls = () => vi.mocked(fetchAPI).mock.calls.filter(([url]) => String(url).includes("/review/queue")).length
+  const before = queueCalls()
+  expect(await screen.findByRole("list", { name: "Statements to review" })).toBeVisible()
+  expect(queueCalls()).toBe(before)
 })

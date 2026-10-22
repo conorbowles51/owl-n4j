@@ -1,7 +1,9 @@
+import { useRef } from "react"
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import { z } from "zod"
 import { fetchAPI } from "@/lib/api-client"
 import { randomRequestId } from "@/lib/browser-crypto"
+import { formatLedgerAmount } from "./ledger-format"
 import type { StatementImportReceipt } from "../components/StatementImportPanel"
 
 const entry = z.object({
@@ -43,6 +45,11 @@ const entry = z.object({
   /** "same_file_read": this upload's reading failed; the same bytes were read through another upload.
    * "same_pages_read": the same, for a file with other bytes whose every page is identical. */
   copy_reason: z.string().nullish(),
+  /** Printed opening and closing balances as read (minor units; null when not read), for checking against the PDF. */
+  opening_minor: z.string().nullish(),
+  closing_minor: z.string().nullish(),
+  balance_status: z.string().optional(),
+  transaction_count: z.number().nullish(),
   /** Proposed values for missing details (value, its source, whether it is certain). */
   proposals: z
     .record(
@@ -158,8 +165,92 @@ export const reviewQueue = z.object({
     .array(z.object({ batch_id: z.string(), statements: z.number() }))
     .default([]),
   elapsed_ms: z.number().optional(),
+  /** Paged reads (limit given): full list lengths, this page, issue counts over every waiting entry. */
+  totals: z.record(z.string(), z.number()).optional(),
+  page: z
+    .object({
+      list: z.string(),
+      issue: z.string().nullish(),
+      offset: z.number(),
+      limit: z.number().nullish(),
+      returned: z.number(),
+      total: z.number(),
+    })
+    .optional(),
+  issue_counts: z.record(z.string(), z.number()).optional(),
+  /** Every ready entry's id, never truncated by paging. */
+  ready_item_ids: z.array(z.string()).optional(),
+  /** True: this answer predates the latest change; a current one is being built. */
+  refreshing: z.boolean().optional(),
+  as_of: z.string().nullish(),
 })
 export type ReviewQueue = z.infer<typeof reviewQueue>
+
+/** The server's list names for paging (`page_list`). */
+export type QueuePageList = "waiting" | "ready" | "filled" | "reader_fix" | "rechecking" | "copies" | "unreadable"
+export const QUEUE_PAGE_SIZE = 50
+/** Shared fixes act on every statement of one issue: one capped read of them all. */
+export const QUEUE_BULK_LIMIT = 5000
+
+/** Reads the whole queue (every list complete), waiting for a current build. */
+export async function fetchReviewQueue(caseId: string, fileIds: string[] = [], signal?: AbortSignal) {
+  const search = new URLSearchParams({ case_id: caseId })
+  for (const id of fileIds) search.append("file_id", id)
+  const result = reviewQueue.parse(
+    await fetchAPI(`/api/financial/statement-import/review/queue?${search}`, { signal, timeout: 60000 })
+  )
+  if (result.case_id !== caseId) throw Error("The review queue belongs to another case.")
+  return result
+}
+
+/**
+ * One page of one queue list (counts and status line stay whole-case). A
+ * paged read may be answered at once from a queue built moments ago
+ * (`refreshing`); `fresh()` makes the next read wait for a current one, for
+ * the refetch right after a save or fix. Against a server without paging
+ * the full lists come back and the caller pages them on screen.
+ */
+export function useReviewQueuePage(
+  caseId: string,
+  fileIds: string[],
+  page: { list: QueuePageList; issue?: string; offset?: number; limit?: number },
+  enabled = true
+) {
+  const wantFresh = useRef(false)
+  const limit = page.limit ?? QUEUE_PAGE_SIZE
+  const offset = page.offset ?? 0
+  const query = useQuery<ReviewQueue>({
+    queryKey: [...reviewQueueKey(caseId, fileIds), "page", page.list, page.issue || "", offset, limit],
+    enabled,
+    placeholderData: keepPreviousData,
+    refetchInterval: (current): number | false =>
+      isReading(current.state.data?.reading) || isMoving(current.state.data?.counts) || current.state.data?.refreshing
+        ? READING_POLL_MS
+        : false,
+    queryFn: async ({ signal }) => {
+      const search = new URLSearchParams({ case_id: caseId })
+      for (const id of fileIds) search.append("file_id", id)
+      search.set("limit", String(limit))
+      search.set("offset", String(offset))
+      search.set("page_list", page.list)
+      if (page.issue) search.set("issue", page.issue)
+      if (wantFresh.current) search.set("fresh", "1")
+      wantFresh.current = false
+      const result = reviewQueue.parse(
+        await fetchAPI(`/api/financial/statement-import/review/queue?${search}`, { signal, timeout: 60000 })
+      )
+      if (result.case_id !== caseId) throw Error("The review queue belongs to another case.")
+      return result
+    },
+  })
+  return Object.assign(query, {
+    /** Refetch, waiting for a queue built from the current data. */
+    refetchFresh: () => {
+      wantFresh.current = true
+      return query.refetch()
+    },
+  })
+}
 
 export const reviewQueueKey = (caseId: string, fileIds: string[] = []) => [
   "financial-review-queue",
@@ -351,6 +442,22 @@ export function savedOutcome(data: ReviewQueue, entry: QueueEntry) {
   return { held: false, message: "Saved. Nothing more is needed from you here." }
 }
 
+/** "opening 1,000.00 USD · closing 950.50 USD · 12 payments read": as printed, never a guessed zero. */
+export function entryBalances(entry: QueueEntry) {
+  const money = (minor: string | null | undefined) => {
+    if (minor === null || minor === undefined || minor === "") return "not read"
+    if (!entry.currency) return `${formatLedgerAmount(minor, "").text} (minor units; currency not chosen)`
+    const amount = formatLedgerAmount(minor, entry.currency)
+    return amount.scaled ? `${amount.text} ${amount.currency}` : `${amount.text} minor units ${amount.currency}`
+  }
+  const parts = [`opening ${money(entry.opening_minor)}`, `closing ${money(entry.closing_minor)}`]
+  if (typeof entry.transaction_count === "number")
+    parts.push(`${entry.transaction_count} ${entry.transaction_count === 1 ? "payment" : "payments"} read`)
+  if (entry.balance_status === "matches") parts.push("balances add up")
+  else if (entry.balance_status === "difference") parts.push("balances do not add up")
+  return parts.join(" · ")
+}
+
 export function entryPeriod(entry: QueueEntry) {
   if (!entry.period_start && !entry.period_end) return "dates not read"
   return `${entry.period_start || "?"} to ${entry.period_end || "?"}`
@@ -388,6 +495,14 @@ export type QueueSaveResult = {
   held: HeldStatement[]
   stillSaving: number
   message: string
+  /** Statements sent to be saved; every one is imported, held or still importing. */
+  sent?: number
+  /** Counted as ready before the save but never sent: their details were filled and they still are not ready. */
+  notReady?: QueueEntry[]
+  /** How many the queue counted as ready (ready + details to fill) when Import was pressed. */
+  counted?: number
+  /** Waiting statements that filling their confirmed details made ready, sent as well. */
+  madeReady?: number
 }
 
 /** "3 currency not printed: choose one, 1 already saved" — reasons, most common first. */
@@ -400,6 +515,12 @@ export function heldReasons(held: HeldStatement[]) {
     .join(", ")
 }
 
+/**
+ * What the save did, from the server's answers only: imported, held with
+ * reasons, still importing, and (when known) the ones counted as ready that
+ * were never sent. Statements the server has not reported on are counted
+ * too, so the parts always add up to the number counted.
+ */
 export function saveResultLine(result: Omit<QueueSaveResult, "message">) {
   const parts = [`${result.imported} imported`]
   if (result.held.length)
@@ -408,7 +529,20 @@ export function saveResultLine(result: Omit<QueueSaveResult, "message">) {
     parts.push(
       `${result.stillSaving} still importing in the background (refresh the queue later)`
     )
-  return parts.join(", ")
+  const notReady = result.notReady?.length ?? 0
+  if (notReady)
+    parts.push(
+      `${notReady} not imported: details filled, but ${notReady === 1 ? "it still needs" : "they still need"} something (listed under Waiting for you)`
+    )
+  if (result.sent !== undefined) {
+    const unreported = result.sent - result.imported - result.held.length - result.stillSaving
+    if (unreported > 0)
+      parts.push(`${unreported} not reported yet (refresh the queue to see where ${unreported === 1 ? "it stands" : "they stand"})`)
+  }
+  const line = parts.join(", ")
+  const total = (result.counted ?? 0) + (result.madeReady ?? 0)
+  if (result.counted === undefined || total === result.imported) return line
+  return `Of ${result.counted} counted as ready${result.madeReady ? ` (and ${result.madeReady} made ready by filling details)` : ""}: ${line}`
 }
 
 // About 2.5 s of admission per statement on the live case: ~25 s per request,
@@ -484,6 +618,7 @@ export async function saveReadyStatements(
       })),
     ],
     stillSaving: progress?.pending ?? 0,
+    sent: itemIds.length,
   }
   return { ...result, message: saveResultLine(result) }
 }
@@ -510,7 +645,10 @@ export async function fillAndSaveReady(
   options: Parameters<typeof saveReadyStatements>[2] = {}
 ): Promise<QueueSaveResult & { filled: number }> {
   let filled = 0
-  const ids = data.ready.map((entry) => entry.id)
+  const ids = data.ready_item_ids ? [...data.ready_item_ids] : data.ready.map((entry) => entry.id)
+  const counted = ids.length + data.filled.length
+  // Filled statements are sent only if filling made them ready.
+  let notReady: QueueEntry[] = []
   if (data.filled.length || data.items.some(hasConfirmed)) {
     options.onProgress?.("Filling the details found automatically…")
     const response = fillResponse.parse(
@@ -522,20 +660,32 @@ export async function fillAndSaveReady(
     )
     filled = response.filled
     ids.push(...response.ready_item_ids.filter((id) => !ids.includes(id)))
+    const sent = new Set(ids)
+    notReady = data.filled.filter((entry) => !sent.has(entry.id))
   }
+  const listedReady = new Set([
+    ...(data.ready_item_ids ?? []),
+    ...[...data.ready, ...data.filled].map((entry) => entry.id),
+  ])
+  const madeReady = ids.filter((id) => !listedReady.has(id)).length
   if (!ids.length) {
-    const line = filled
-      ? `${filled} ${filled === 1 ? "statement's details" : "statements' details"} filled automatically; none is ready to save yet`
-      : "Nothing is ready to save"
-    return { imported: 0, held: [], stillSaving: 0, message: line, filled }
+    const result = { imported: 0, held: [], stillSaving: 0, sent: 0, notReady, counted, madeReady }
+    const line = counted
+      ? saveResultLine(result)
+      : filled
+        ? `${filled} ${filled === 1 ? "statement's details" : "statements' details"} filled automatically; none is ready to save yet`
+        : "Nothing is ready to save"
+    return { ...result, message: line, filled }
   }
-  const result = await saveReadyStatements(caseId, ids, options)
+  const saved = await saveReadyStatements(caseId, ids, options)
+  const result = { ...saved, notReady, counted, madeReady }
+  const line = saveResultLine(result)
   return {
     ...result,
     filled,
     message: filled
-      ? `${result.message} (details filled automatically on ${filled} as System; change any in its statement)`
-      : result.message,
+      ? `${line} (details filled automatically on ${filled} as System; change any in its statement)`
+      : line,
   }
 }
 
