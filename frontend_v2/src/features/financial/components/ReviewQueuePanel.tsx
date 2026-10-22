@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom"
 import { useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { BatchStatementReview, batchItemQuery } from "./FinancialBatchPanel"
+import { statementReadingQuery } from "./StatementImportPanel"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import {
   entryBalances,
@@ -315,11 +316,20 @@ export function ReviewQueuePanel({
     if (position < 0 || !following) return
     void client.prefetchQuery(batchItemQuery(caseId, following.batch_id!, following.id))
   }
+  // Opening a statement asks for its batch item and its reading at once: the
+  // review used to request the reading only after the item had arrived, and
+  // each is a read of the statement on the server.
+  const prefetchReading = (entry: QueueEntry) =>
+    void client.prefetchQuery(
+      statementReadingQuery(caseId, entry.file_id, entry.currency || "", entry.statement_id || "")
+    )
   // Every save, fix and bulk save brings the queue and its totals up to date,
   // so the screen never needs reloading; with an entry, it says where that
   // statement now stands.
   const refresh = async (entry?: QueueEntry, keepOutcome = false) => {
     void client.invalidateQueries({ queryKey: ["financial-review-status", caseId] })
+    // A detail saved from the list changes the statement's reading too.
+    void client.invalidateQueries({ queryKey: ["statement-import", caseId], refetchType: "none" })
     // A save can change other statements' checks: copies loaded earlier are
     // reloaded when opened, and the next one is loaded again now.
     void client.invalidateQueries({ queryKey: ["financial-batch-item", caseId], refetchType: "none" })
@@ -343,7 +353,10 @@ export function ReviewQueuePanel({
     })
   }
   const back = () => {
-    void refresh()
+    // Every save made while the statement was open already refreshed the
+    // queue (onChanged / onImported), and the queue polls by itself while
+    // files are read or statements move: closing shows the list on screen
+    // instead of reading the whole queue again.
     open(undefined)
   }
   const showList = (name: ListName) => {
@@ -379,7 +392,7 @@ export function ReviewQueuePanel({
   if (itemId && active?.batch_id)
     return (
       <>
-      <PrefetchNext entry={active} list={entries} prefetch={prefetchNext} />
+      <PrefetchNext entry={active} list={entries} prefetch={prefetchNext} reading={prefetchReading} />
       <div className="space-y-3">
         {outcome && (
           <OutcomeNote outcome={outcome} onDismiss={() => setOutcome(null)} />
@@ -856,12 +869,15 @@ function PrefetchNext({
   entry,
   list,
   prefetch,
+  reading,
 }: {
   entry: QueueEntry
   list: QueueEntry[]
   prefetch: (from: QueueEntry, list: QueueEntry[]) => void
+  reading: (entry: QueueEntry) => void
 }) {
   useEffect(() => {
+    reading(entry)
     prefetch(entry, list)
     // Once per opened statement; a save prefetches again through refresh.
     // eslint-disable-next-line react-hooks/exhaustive-deps

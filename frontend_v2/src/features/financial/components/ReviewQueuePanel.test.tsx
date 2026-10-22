@@ -12,7 +12,8 @@ vi.mock("@/lib/api-client", () => ({ fetchAPI: vi.fn() }))
 vi.mock("../hooks/use-financial-access", () => ({
   useFinancialAccess: () => ({ canEdit: true, canUpload: true }),
 }))
-vi.mock("./StatementImportPanel", () => ({
+vi.mock("./StatementImportPanel", async (actual) => ({
+  statementReadingQuery: (await actual<typeof import("./StatementImportPanel")>()).statementReadingQuery,
   StatementImportPanel: ({
     onImported,
   }: {
@@ -512,4 +513,32 @@ it("accounts for every statement it counted as ready: imported, held, still impo
   )
   fireEvent.click(screen.getByText("Which 1 statement was held"))
   expect(screen.getByText(/1 without a file name in the server's answer: 1 set aside as a copy/)).toBeVisible()
+})
+
+it("asks for the statement's reading together with its batch item, and closing it does not load the queue again", async () => {
+  let releaseItem = () => {}
+  vi.mocked(fetchAPI).mockImplementation(async (url: string) => {
+    if (url.includes("/review/queue")) return queue as never
+    const match = url.match(/\/items\/(i\d)/)
+    if (match && match[1] === "i1") {
+      await new Promise<void>((resolve) => { releaseItem = resolve })
+      return batchItem("i1") as never
+    }
+    if (match) return batchItem(match[1]) as never
+    if (url.includes("/statement-import/f1?")) return new Promise(() => {}) as never
+    throw Error(`unexpected ${url}`)
+  })
+  mount("/cases/case/financial?view=statements&queue=1")
+  fireEvent.click((await screen.findAllByRole("button", { name: "Open" }))[0])
+  // The reading is requested while the batch item is still loading, not after it.
+  await waitFor(() =>
+    expect(vi.mocked(fetchAPI).mock.calls.some(([url]) =>
+      String(url) === "/api/financial/statement-import/f1?case_id=case&currency=USD&statement_id=s7")).toBe(true)
+  )
+  releaseItem()
+  fireEvent.click(await screen.findByRole("button", { name: "Back to review queue" }))
+  const queueCalls = () => vi.mocked(fetchAPI).mock.calls.filter(([url]) => String(url).includes("/review/queue")).length
+  const before = queueCalls()
+  expect(await screen.findByRole("list", { name: "Statements to review" })).toBeVisible()
+  expect(queueCalls()).toBe(before)
 })

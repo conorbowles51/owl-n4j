@@ -363,6 +363,39 @@ function minorAmount(value: string, digits: number) {
   return BigInt(whole + fraction.padEnd(digits, "0")).toString()
 }
 
+/**
+ * One statement's reading as its review opens it. Shared so the review queue
+ * can start it together with the batch item instead of after it (the item
+ * request and this one each read the statement on the server; run one after
+ * the other they doubled the wait to open a statement). Fresh for a few
+ * seconds only: long enough that a reading started just before the review
+ * mounts is used rather than read again, short enough that reopening a
+ * statement later still reads it afresh.
+ */
+export const STATEMENT_READING_FRESH_MS = 10_000
+export function statementReadingQuery(
+  caseId: string,
+  fileId: string,
+  currency: string,
+  statementId: string
+) {
+  return {
+    queryKey: ["statement-import", caseId, fileId, currency, statementId],
+    staleTime: STATEMENT_READING_FRESH_MS,
+    queryFn: async () => {
+      const params = new URLSearchParams({ case_id: caseId })
+      if (currency) params.set("currency", currency)
+      if (statementId) params.set("statement_id", statementId)
+      const data = proposalSchema.parse(
+        await fetchAPI(`/api/financial/statement-import/${fileId}?${params}`)
+      )
+      if (data.case_id !== caseId || data.evidence_file_id !== fileId)
+        throw Error("The review belongs to another statement.")
+      return data
+    },
+  }
+}
+
 export function StatementImportPanel({
   caseId,
   onImported,
@@ -562,20 +595,9 @@ function StatementReview({
       .getState()
       .setReviewChoice(choiceKey, { statementId, currency: "" })
   const query = useQuery({
-    queryKey: ["statement-import", caseId, fileId, currency, statementId],
+    ...statementReadingQuery(caseId, fileId, currency, statementId),
     retry: false,
     refetchOnWindowFocus: false,
-    queryFn: async () => {
-      const params = new URLSearchParams({ case_id: caseId })
-      if (currency) params.set("currency", currency)
-      if (statementId) params.set("statement_id", statementId)
-      const data = proposalSchema.parse(
-        await fetchAPI(`/api/financial/statement-import/${fileId}?${params}`)
-      )
-      if (data.case_id !== caseId || data.evidence_file_id !== fileId)
-        throw Error("The review belongs to another statement.")
-      return data
-    },
   })
   useEffect(() => {
     if (checkingSavedCurrency && !query.isFetching && query.data) {
