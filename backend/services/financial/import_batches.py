@@ -1871,6 +1871,22 @@ class _bounded_lock_waits:
         return False
 
 
+def turn_batches(db, limit=100):
+    """Running batches for the next loop turn: those holding saves (pending imports) first.
+
+    An investigator's or System's save must not wait behind every batch still
+    reading files (each takes a turn of up to TURN_SECONDS); otherwise oldest
+    activity first, as before.
+    """
+    running = Batch.status.in_(('preparing', 'pausing'))
+    order = (Batch.updated_at, Batch.id)
+    saving = list(db.scalars(select(Batch.id).where(running, select(Item.id).where(Item.batch_id == Batch.id,
+        Item.status == 'pending_import').exists()).order_by(*order).limit(limit)))
+    chosen = set(saving)
+    rest = [i for i in db.scalars(select(Batch.id).where(running).order_by(*order).limit(limit)) if i not in chosen]
+    return (saving + rest)[:limit]
+
+
 async def advance_batch(factory,batch_id,resolve_path,process_files):
     token=str(uuid4());now=datetime.now(timezone.utc)
     def claim():
@@ -2367,7 +2383,7 @@ async def run_batches_forever():
         try:
             factory=_get_session_local()
             with factory() as db:
-                ids=list(db.scalars(select(Batch.id).where(Batch.status.in_(('preparing', 'pausing'))).order_by(Batch.updated_at, Batch.id).limit(100)))
+                ids=turn_batches(db)
             capacity = asyncio.Semaphore(2)
             async def advance(identifier):
                 async with capacity:

@@ -338,6 +338,32 @@ class BacklogSweepTests(Base):
         self.assertEqual(refreshed, [[item_id]])
 
 
+class TurnOrderTests(Base):
+    test_a_statement_in_two_batches_is_one_entry_and_leaves_once_saved = None
+    test_a_statement_with_a_problem_is_queued_with_its_sentence_and_file_filter_applies = None
+
+    def test_batches_holding_saves_get_the_first_turns(self):
+        from datetime import timedelta
+        older = self.create()
+        with self.f.SessionLocal() as db:
+            first = db.get(service.Batch, older)
+            first.status = 'preparing'
+            second = service.Batch(id=uuid4(), case_id=first.case_id, created_by=first.created_by, status='preparing',
+                                   actor=dict(first.actor), files=[])
+            db.add(second)
+            db.flush()
+            second.updated_at = first.updated_at + timedelta(minutes=1)
+            newer = second.id
+            db.commit()
+            self.assertEqual(service.turn_batches(db), [older, newer])
+            item = Item(id=uuid4(), batch_id=newer, file_id=self.f.file.id, statement_key='x', status='pending_import',
+                        summary={})
+            db.add(item)
+            db.commit()
+            self.assertEqual(service.turn_batches(db), [newer, older])
+            self.assertEqual(service.turn_batches(db, limit=1), [newer])
+
+
 class SupersededBatchTests(Base):
     test_a_statement_in_two_batches_is_one_entry_and_leaves_once_saved = None
     test_a_statement_with_a_problem_is_queued_with_its_sentence_and_file_filter_applies = None
