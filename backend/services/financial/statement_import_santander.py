@@ -12,6 +12,9 @@ from services.financial.statement_import_proposal import exact_amount
 LAYOUT = 'santander-mexico-movements'
 ACCOUNT = re.compile(r'(?P<product>CUENTA SANTANDER [A-Z ]+?|INVERSION CRECIENTE|SUPER CUENTA [A-Z ]+?)\s*(?P<number>\d{2}-\d{8}-\d)\b')
 DATE = r'\d{2}-[A-Z]{3}-\d{4}'
+# Marks a printed column rule between the date and folio columns is read as: '|' and '/', and on
+# vector-text and scanned pages also ')', '(', ']' and '['. Never a digit or a letter. Reverse: r'[\s|/]*'.
+RULE = r'[\s|/()\[\]]*'
 
 
 def printed_date(value):
@@ -159,7 +162,7 @@ def propose_santander_statement(sources,currency,choice):
             if columns is None:
                 # A recognizable payment under an unreadable column heading
                 # is an incomplete reading, never evidence of no activity.
-                if re.match(r'^'+DATE+r'[\s|/]*\d{7}\b', joined):
+                if re.match(r'^'+DATE+RULE+r'\d{7}\b', joined):
                     item.update(kind='unresolved', excluded=False)
                     item['fields']['description'] = text(raw)
                     item['issues'].append('The movement columns could not be read. Check the date, deposit or withdrawal and balance beside the PDF.')
@@ -185,7 +188,7 @@ def propose_santander_statement(sources,currency,choice):
             # Native date/folio cells and scanned merged fields use the same
             # explicit printed date + folio prefix. No date from a description.
             prefix=' '.join(c['expected_text'].strip() for c in other)
-            m=re.match(r'^('+DATE+r')[\s|/]*(\d{7})(?:[\s|/]*)(.*)$',prefix,re.S)
+            m=re.match(r'^('+DATE+r')'+RULE+r'(\d{7})(?:'+RULE+r')(.*)$',prefix,re.S)
             if not m:
                 if last and not any(money.values()) and prefix and not re.match(r'P[ÁA]GINA|BANCO SANTANDER|ESTADO DE CUENTA',norm(prefix)):
                     last['fields']['description']+=' '+prefix
@@ -217,7 +220,64 @@ def propose_santander_statement(sources,currency,choice):
                 c=money['SALDO'][0];fields['balance_column']=str(c['column_index'])
                 try:fields['balance']=exact_amount(c['expected_text'],currency)
                 except ValueError as exc:item['issues'].append(str(exc))
+    if COVER_CLOSING:
+        _cover_closing(result, choice, currency)
     return dict(rows=result,issues=[])
+
+
+# Whether a section whose own closing line was not read takes its closing from
+# the cover's balance summary (``_cover_closing``). Reverse in one place.
+COVER_CLOSING = True
+_MONEY_CELL = re.compile(r'\$?\s*\d{1,3}(?:,\d{3})*\.\d{2}')
+_PERCENT_CELL = re.compile(r'-?\d{1,3}\.\d{2}\s*%')
+
+
+def _cover_closing(rows, choice, currency):
+    """The section's closing from the cover's balance summary when its SALDO FINAL line was not read.
+
+    The cover prints one summary line per account: product, account number,
+    the previous month's balance and share, and this month's balance and share.
+    That line is taken only when it names this section's account number
+    exactly, prints exactly two money values and two percentages, its previous
+    month's balance equals the section's printed opening (SALDO FINAL DEL
+    PERIODO ANTERIOR) and its current month's balance equals the printed running
+    balance of the section's last movement: three printed facts agree. The
+    value is printed on the statement and cited to its own cell. Anything else
+    leaves the closing unread.
+    """
+    balances = [row for row in rows if row['kind'] == 'balance']
+    openings = [row for row in balances if row['fields'].get('description') == 'Opening Balance']
+    if any(row['fields'].get('description') == 'Closing Balance' for row in balances) or len(openings) != 1:
+        return
+    opening = openings[0]['fields'].get('balance')
+    moves = [row for row in rows if row['kind'] in ('transaction', 'unresolved') and not row['excluded']]
+    if opening is None or not moves or moves[-1]['kind'] != 'transaction' or moves[-1]['fields'].get('balance') is None:
+        return
+    last = moves[-1]['fields']['balance']
+    account = choice.get('account_reference') or ''
+    found = []
+    for row in rows:
+        if row['kind'] != 'header':
+            continue
+        cells = row['source_cells']
+        if not any(re.search(r'(?<![\d-])' + re.escape(account) + r'(?![\d-])', c['expected_text']) for c in cells):
+            continue
+        money = [c for c in cells if _MONEY_CELL.fullmatch(c['expected_text'].strip())]
+        shares = [c for c in cells if _PERCENT_CELL.fullmatch(c['expected_text'].strip())]
+        if len(money) != 2 or len(shares) != 2 or not all(box(c) for c in money):
+            continue
+        try:
+            values = [exact_amount(c['expected_text'].replace('$', '').strip(), currency) for c in money]
+        except ValueError:
+            continue
+        if values == [opening, last]:
+            found.append((row, money[1], values[1]))
+    if len(found) != 1:
+        return
+    row, cell, value = found[0]
+    row.update(kind='balance', excluded=True)
+    row['fields'].update(description='Closing Balance', balance=value, balance_column=str(cell['column_index']),
+                         balance_basis='cover_balance_summary')
 
 
 def santander_no_activity_evidence(sources, choice, rows, currency):
