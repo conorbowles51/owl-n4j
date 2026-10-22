@@ -9,10 +9,19 @@ import.
 
 Selection is per batch file and all-or-nothing. A file qualifies only when
 every one of its periods is still held, nothing about it carries an
-investigator's work or decision, and its retained reading records an exact
-affected engine revision. Anything else is left exactly as it is and counted
-by reason, so the scope can be explained before and after the run.
+investigator's work or decision, and its retained reading records an
+affected engine revision (one the campaign names, or for the engine-release
+campaign any other than the deployed one). Anything else is left exactly as
+it is and counted by reason, so the scope can be explained before and after
+the run.
+
+Bounded and ingestion-safe: at most ``READ_AGAIN_AT_ONCE`` statements are
+handed to batches at a time across the host, and none is handed off while
+other evidence is being read (an upload's ingestion has the engine first).
+A statement waiting for a slot keeps its place; nothing is lost on restart.
 """
+import os
+import time
 from collections import Counter
 from copy import deepcopy
 from datetime import datetime, timezone
@@ -59,6 +68,11 @@ MESSAGES = {
     'not_all_held': 'A period of this statement is ready. Recovery left it unchanged.',
     'nothing_held': 'No period of this statement is still held. Recovery left it unchanged.',
 }
+# Readings handed to batches at once (host-wide), and how long the count of
+# evidence being read elsewhere is reused before it is counted again.
+READ_AGAIN_AT_ONCE = max(1, int(os.environ.get('LOUPE_FINANCIAL_READER_RECOVERY_AT_ONCE', '4') or 4))
+BUSY_SECONDS = 30.0
+_busy = {}
 PROTECTED_STATUSES = {
     'imported': 'saved_import', 'pending_import': 'saved_import',
     'skipped': 'investigator_decision', 'duplicate_ignored': 'investigator_decision',
@@ -123,8 +137,13 @@ def _uuid(value):
         return None
 
 
-def classify(session, case_id, batch, entry, campaign, scope):
-    """Return (reason, detail). Only ELIGIBLE may be re-read."""
+def classify(session, case_id, batch, entry, campaign, scope, group=False):
+    """Return (reason, detail). Only ELIGIBLE may be re-read.
+
+    ``group``: the entry is judged as one member of its original's batches
+    (``candidates`` requires every member to qualify), so being in several
+    batches is not itself a reason to leave it.
+    """
     if entry.get('standalone_import'):
         return 'standalone_import', {}
     if entry.get('status') != 'checked':
@@ -137,7 +156,7 @@ def classify(session, case_id, batch, entry, campaign, scope):
         return 'unavailable', {}
     if not reading.original_filename.lower().endswith('.pdf'):
         return 'not_pdf', {}
-    if scope['membership'][entry.get('source_id')] > 1:
+    if scope['membership'][entry.get('source_id')] > 1 and not group:
         return 'several_batches', {}
     pair = (source, reading) if source.id != reading.id else (source,)
     if any(financial_file_visibility(file)['financial_removed'] or financial_file_visibility(file)['financial_imports_removed']
@@ -176,34 +195,122 @@ def classify(session, case_id, batch, entry, campaign, scope):
         extraction_sha256=fingerprint['sources'].get('pdf_extraction.py'))
 
 
+# A member of a several-batch original that no longer holds anything there
+# (every period retired by an earlier reading) needs no new preparation.
+IDLE_MEMBER = 'nothing_held'
+
+
+def _group_reason(session, case_id, members, campaign, scope):
+    """(reason, [(batch, entry, detail)] to read again) for one original held in several batches.
+
+    All or nothing: every batch file of the original must be in scope and
+    qualify on its own (no investigator work or decision on any reading of
+    it, in any batch, nothing ready, an affected reader); a member whose
+    periods were all retired already is skipped. Otherwise the whole
+    original is left, with the first member's reason.
+    """
+    if len(members) < scope['membership'][members[0][1].get('source_id')]:
+        return 'several_batches', []  # a batch made after the release cutoff holds it too
+    chosen = []
+    for batch, entry in members:
+        reason, detail = classify(session, case_id, batch, entry, campaign, scope, group=True)
+        if reason == IDLE_MEMBER:
+            continue
+        if reason != ELIGIBLE:
+            return reason, []
+        chosen.append((batch, entry, detail))
+    return (ELIGIBLE, chosen) if chosen else (IDLE_MEMBER, [])
+
+
 def candidates(session, case_id, campaign, cutoff=None):
-    """Classify every batch file of a case. Read only: used by the dry run too."""
+    """Classify every batch file of a case. Read only: used by the dry run too.
+
+    Returns ([(batch, entry, detail, members)], reasons by batch file). An
+    original held in several batches is one selection: ``members`` lists each
+    of its batch files to read again (newest batch last, which is the one the
+    queue shows); every batch file of the group is counted with its reason.
+    """
     scope = context(session, case_id, cutoff)
-    reasons, selected = Counter(), []
+    reasons, selected, groups = Counter(), [], {}
     for batch in scope['batches']:
         for entry in batch.files or []:
             reason, detail = classify(session, case_id, batch, entry, campaign, scope)
+            if reason == 'several_batches':
+                groups.setdefault(entry.get('source_id'), []).append((batch, entry))
+                continue
             reasons[reason] += 1
             if reason == ELIGIBLE:
-                selected.append((batch, entry, detail))
+                selected.append((batch, entry, detail, [(batch, entry, detail)]))
+    for members in groups.values():
+        reason, chosen = _group_reason(session, case_id, members, campaign, scope)
+        reasons[reason] += len(members)
+        if reason == ELIGIBLE:
+            selected.append((*chosen[-1], chosen))
     return selected, reasons
+
+
+def not_prepared_breakdown(session, case_id):
+    """Why batch files never reached a finished preparation: {"batch status/file status[/auto]": n}. Read only.
+
+    'error' files are terminal (only lock conflicts are retried); 'waiting' and
+    'processing' files of a paused batch wait for the investigator; those of a
+    preparing batch are queued behind the batch's in-flight limit, waiting on
+    another batch preparing the same reading, or on an engine reading that
+    has not finished.
+    """
+    counts = Counter()
+    for batch in session.scalars(select(Batch).where(Batch.case_id == case_id, Batch.status != 'removed')):
+        for entry in batch.files or []:
+            if entry.get('status') != 'checked' and not entry.get('standalone_import'):
+                counts['/'.join([batch.status, str(entry.get('status')), *(['auto'] if 'auto_read' in entry else []),
+                    *(['recovery'] if entry.get('recovery') else [])])] += 1
+    return dict(sorted(counts.items()))
+
+
+def supersede_earlier(session, case_id, release):
+    """Move an earlier engine release's statements not yet handed off to this release. Returns how many.
+
+    Each is recorded 'kept' with its reason, so the earlier run shows where it
+    went; the newer snapshot then selects it again under today's rule. A
+    reading already handed to a batch is followed to its end by its own run.
+    """
+    from services.financial.recovery_campaigns import READER_RELEASE_PREFIX
+    moved = 0
+    for run in session.scalars(select(Run).where(Run.case_id == case_id, Run.release != release,
+            Run.release.startswith(READER_RELEASE_PREFIX), Run.status != 'complete')):
+        for item in session.scalars(select(Item).where(Item.run_id == run.id, Item.status.in_(('pending', 'waiting')))):
+            if (item.result or {}).get('handoff'):
+                continue
+            item.status = 'kept'
+            item.result = {**item.result, 'kept_reason': 'newer_release',
+                'message': 'A newer reader was deployed before this statement was read again; it is rechecked with that reader.'}
+            item.updated_at = datetime.now(timezone.utc)
+            moved += 1
+    session.flush()
+    return moved
 
 
 def snapshot(session, case_id, cutoff, campaign, run_id):
     """Durable selection at the release cutoff; the run is the idempotency key."""
+    if campaign.current_readers:
+        supersede_earlier(session, case_id, campaign.release)
     selected, reasons = candidates(session, case_id, campaign, cutoff)
     run = Run(id=run_id, case_id=case_id, release=campaign.release, status='running' if selected else 'complete')
     session.add(run)
     session.flush()
-    for batch, entry, detail in selected:
+    for batch, entry, detail, members in selected:
         reading = detail['reading']
         session.add(Item(id=uuid5(run_id, str(reading.id)), run_id=run_id, file_id=reading.id, status='pending',
             result=dict(reader_recovery=True, filename=reading.original_filename, batch_id=str(batch.id),
-                source_id=entry['source_id'], from_file_id=str(reading.id), lineage_ids=[str(reading.id)],
+                source_id=entry['source_id'], from_file_id=str(reading.id),
+                lineage_ids=sorted({str(d['reading'].id) for _, _, d in members}),
                 reading_mode=detail['reading_mode'], extraction_sha256=detail['extraction_sha256'],
-                held_items=sorted(str(item.id) for item in detail['held']), added=0,
+                held_items=sorted(str(item.id) for _, _, d in members for item in d['held']), added=0,
+                members=[dict(batch_id=str(b.id), source_id=e['source_id'], from_file_id=str(d['reading'].id),
+                    reading_mode=d['reading_mode']) for b, e, d in members],
                 visibility_revision=financial_file_visibility(detail['source'])['financial_visibility_revision'])))
     scope = dict(considered=sum(reasons.values()), scheduled=len(selected),
+        batch_files=sum(len(members) for *_, members in selected),
         excluded={key: value for key, value in sorted(reasons.items()) if key != ELIGIBLE})
     session.add(IngestionLog(case_id=case_id, level='info',
         message=f'Reader recovery scheduled {len(selected)} held statements for a new reading. '
@@ -230,79 +337,209 @@ def _wait(session, item, status, message):
     item.updated_at = datetime.now(timezone.utc)
 
 
+def rereading_files(session, case_id):
+    """Evidence ids (reading and original) of this case's statements scheduled to be read again.
+
+    Pending, waiting for a slot or being read by a reader campaign: the queue
+    counts their held statements as being rechecked, not as work, until the
+    new reading settles them.
+    """
+    from services.financial.recovery_campaigns import READER_RECOVERY_RELEASE, READER_RELEASE_PREFIX
+    from sqlalchemy import or_
+    ids = set()
+    for result in session.scalars(select(Item.result).join(Run, Item.run_id == Run.id).where(
+            Run.case_id == case_id, or_(Run.release.startswith(READER_RELEASE_PREFIX), Run.release == READER_RECOVERY_RELEASE),
+            Run.status == 'running', Item.status.in_(('pending', 'waiting', 'reading')))):
+        if (result or {}).get('reader_recovery'):
+            ids |= {result.get('from_file_id'), result.get('source_id')} - {None}
+    return ids
+
+
+def in_flight(session):
+    """Statements of reader campaigns handed to a batch and still being read (host-wide)."""
+    from services.financial.recovery_campaigns import READER_RECOVERY_RELEASE, READER_RELEASE_PREFIX
+    from sqlalchemy import or_
+    results = session.scalars(select(Item.result).join(Run, Item.run_id == Run.id).where(
+        or_(Run.release.startswith(READER_RELEASE_PREFIX), Run.release == READER_RECOVERY_RELEASE),
+        Run.status == 'running', Item.status.in_(('waiting', 'reading'))))
+    return sum(1 for result in results if (result or {}).get('handoff'))
+
+
+def evidence_being_read(session, now=None):
+    """Evidence files being read now, host-wide (reused for BUSY_SECONDS)."""
+    now = time.monotonic() if now is None else now
+    if _busy and now - _busy['at'] < BUSY_SECONDS:
+        return _busy['count']
+    from sqlalchemy import func
+    count = session.scalar(select(func.count()).select_from(EvidenceFile).where(EvidenceFile.status == 'processing')) or 0
+    _busy.update(at=now, count=count)
+    return count
+
+
+def slot_wait(session):
+    """Why a new hand-off must wait now, or None when a slot is free."""
+    running = in_flight(session)
+    if running >= READ_AGAIN_AT_ONCE:
+        return f'Waiting its turn: {running} statements are being read again now.'
+    if evidence_being_read(session) > running:
+        return 'Waiting while other evidence is being read. It is read again as soon as that finishes.'
+    return None
+
+
+def _hold_place(session, item, message):
+    """Waiting for a slot: write only when the message changes (no write per turn)."""
+    if item.status != 'waiting' or item.result.get('message') != message:
+        item.status = 'waiting'
+        item.result = {**item.result, 'message': message}
+        item.updated_at = datetime.now(timezone.utc)
+        session.commit()
+    else:
+        session.rollback()
+
+
+def _members(result):
+    """The batch files one recovery item reads again (one, or every batch holding its original)."""
+    return result.get('members') or [dict(batch_id=result['batch_id'], source_id=result['source_id'],
+        from_file_id=result['from_file_id'])]
+
+
+def _attempt(item, member):
+    """One durable attempt per distinct earlier reading: batches sharing a reading share one new reading.
+
+    The batch's retry path makes the new version idempotently per attempt, so a
+    second batch holding the same reading finds that version (read once, or
+    being read) instead of starting another engine reading.
+    """
+    if member['from_file_id'] == item.result['from_file_id']:
+        return str(uuid5(item.id, 'reader-recovery'))
+    return str(uuid5(item.id, 'reader-recovery:' + member['from_file_id']))
+
+
 def advance(session, item, file, campaign):
-    """One step for one statement, under the caller's case lock. Commits."""
-    batch = session.scalar(select(Batch).where(Batch.id == UUID(item.result['batch_id']),
-        Batch.case_id == file.case_id).with_for_update())
-    if batch is None or batch.status == 'removed':
-        _record(session, item, file, 'kept', 'The batch was removed. Recovery retained that choice.')
-        session.commit()
-        return
-    files = deepcopy(batch.files or [])
-    entry = next((value for value in files if value.get('source_id') == item.result['source_id']), None)
+    """One step for one statement (its original, in every batch holding it), under the caller's case lock. Commits."""
+    if not item.result.get('handoff') and (wait := slot_wait(session)):
+        return _hold_place(session, item, wait)
+    members = _members(item.result)
+    ids = sorted({UUID(member['batch_id']) for member in members}, key=str)
+    batches = {batch.id: batch for batch in session.scalars(select(Batch).where(Batch.id.in_(ids),
+        Batch.case_id == file.case_id).order_by(Batch.id).with_for_update())}
     handoff = item.result.get('handoff')
-    if entry is None:
-        _record(session, item, file, 'kept', 'The batch no longer contains this statement. Recovery left it unchanged.')
-        session.commit()
-        return
     if handoff:
-        return _follow(session, item, file, batch, entry, handoff)
-    if batch.status in PAUSED:
+        return _follow(session, item, file, batches, handoff)
+    found = []
+    for member in members:
+        batch = batches.get(UUID(member['batch_id']))
+        if batch is None or batch.status == 'removed':
+            _record(session, item, file, 'kept', 'The batch was removed. Recovery retained that choice.')
+            session.commit()
+            return
+        files = deepcopy(batch.files or [])
+        entry = next((value for value in files if value.get('source_id') == member['source_id']), None)
+        if entry is None:
+            _record(session, item, file, 'kept', 'The batch no longer contains this statement. Recovery left it unchanged.')
+            session.commit()
+            return
+        found.append((member, batch, files, entry))
+    if any(batch.status in PAUSED for _, batch, _, _ in found):
         # The investigator's pause is never lifted by recovery.
         _wait(session, item, 'waiting', 'Waiting for the batch to be resumed. Its pause is unchanged.')
         session.commit()
         return
-    if entry.get('file_id') != item.result['from_file_id']:
+    if any(entry.get('file_id') != member['from_file_id'] for member, _, _, entry in found):
         _record(session, item, file, 'kept', 'A newer reading of this statement exists. Recovery left it unchanged.')
         session.commit()
         return
-    reason, detail = classify(session, file.case_id, batch, entry, campaign, context(session, file.case_id))
-    if reason == 'processing':
-        _wait(session, item, 'waiting', 'Waiting for the existing reading to finish. It has not been interrupted.')
+    scope, group = context(session, file.case_id), len(found) > 1
+    if group and scope['membership'][item.result['source_id']] != len(found):
+        # Another batch took the original after scheduling: its work is not judged here.
+        _record(session, item, file, 'kept', 'Another batch now holds this statement. Recovery left it unchanged.',
+            kept_reason='several_batches')
         session.commit()
         return
-    if reason != ELIGIBLE:
-        _record(session, item, file, 'kept', MESSAGES.get(reason, 'This statement changed after recovery was scheduled. Recovery left it unchanged.'),
-            kept_reason=reason)
+    chosen = []
+    for member, batch, files, entry in found:
+        reason, detail = classify(session, file.case_id, batch, entry, campaign, scope, group=group)
+        if reason == 'processing':
+            _wait(session, item, 'waiting', 'Waiting for the existing reading to finish. It has not been interrupted.')
+            session.commit()
+            return
+        if group and reason == IDLE_MEMBER:
+            continue
+        if reason != ELIGIBLE:
+            _record(session, item, file, 'kept', MESSAGES.get(reason, 'This statement changed after recovery was scheduled. Recovery left it unchanged.'),
+                kept_reason=reason)
+            session.commit()
+            return
+        chosen.append((member, batch, files, entry, detail))
+    if not chosen:
+        _record(session, item, file, 'kept', MESSAGES['nothing_held'], kept_reason='nothing_held')
         session.commit()
         return
     now = datetime.now(timezone.utc).isoformat()
-    attempt = str(uuid5(item.id, 'reader-recovery'))
-    # The batch's own durable retry path makes the new version (idempotent per
-    # attempt), reads it, prepares reviews and retires only unedited held
-    # periods of the earlier reading. Its own guard refuses again if a review
-    # is saved before the reading starts.
-    entry['recovery'] = dict(attempt_id=attempt, action='reader_recovery', stage='queued',
-        message='A newer statement reader is reading this held statement again. The earlier reading and all saved work are retained.',
-        fresh_reading=True, read_from_file_id=item.result['from_file_id'],
-        reading_file_id=item.result['from_file_id'], review_file_id=item.result['from_file_id'],
-        reading_mode=detail['reading_mode'], release=campaign.release, updated_at=now)
-    entry.update(status='waiting', expected_revision=financial_file_visibility(detail['source'])['financial_visibility_revision'])
-    entry.pop('error', None)
-    entry.pop('preparation_retries', None)
-    batch.files = files
-    batch.status = 'preparing'
-    _record(session, item, file, 'waiting', 'Handed to the batch for a new reading. Earlier readings and saved work are retained.',
-        handoff=dict(batch_id=str(batch.id), source_id=item.result['source_id'], attempt_id=attempt, at=now))
+    handed = []
+    for member, batch, files, entry, detail in chosen:
+        attempt = _attempt(item, member)
+        # The batch's own durable retry path makes the new version (idempotent per
+        # attempt), reads it, prepares reviews and retires only unedited held
+        # periods of the earlier reading. Its own guard refuses again if a review
+        # is saved before the reading starts.
+        entry['recovery'] = dict(attempt_id=attempt, action='reader_recovery', stage='queued',
+            message='A newer statement reader is reading this held statement again. The earlier reading and all saved work are retained.',
+            fresh_reading=True, read_from_file_id=member['from_file_id'],
+            reading_file_id=member['from_file_id'], review_file_id=member['from_file_id'],
+            reading_mode=detail['reading_mode'], release=campaign.release, updated_at=now)
+        entry.update(status='waiting', expected_revision=financial_file_visibility(detail['source'])['financial_visibility_revision'])
+        entry.pop('error', None)
+        entry.pop('preparation_retries', None)
+        batch.files = files
+        batch.status = 'preparing'
+        handed.append(dict(batch_id=str(batch.id), source_id=member['source_id'], from_file_id=member['from_file_id'],
+            attempt_id=attempt))
+    first = handed[-1]
+    _record(session, item, file, 'waiting', 'Handed to the batch for a new reading. Earlier readings and saved work are retained.'
+        if len(handed) == 1 else f'Handed to its {len(handed)} batches for one new reading. Earlier readings and saved work are retained.',
+        handoff=dict(batch_id=first['batch_id'], source_id=first['source_id'], attempt_id=first['attempt_id'],
+            batches=handed, at=now))
     session.commit()
 
 
-def _follow(session, item, file, batch, entry, handoff):
-    recovery = entry.get('recovery') or {}
-    if recovery.get('attempt_id') != handoff['attempt_id']:
-        _record(session, item, file, 'kept', 'A later request replaced this reading. Recovery left it to that request.')
-    elif entry.get('status') in ('waiting', 'processing'):
+def _member_state(session, batch, entry, member, attempt):
+    """('replaced'|'reading'|'error'|'kept_earlier'|'done', detail) of one handed-off batch file."""
+    if batch is None or batch.status == 'removed' or entry is None:
+        return 'replaced', 'The batch or its statement was removed. Recovery retained that choice.'
+    if (entry.get('recovery') or {}).get('attempt_id') != attempt:
+        return 'replaced', 'A later request replaced this reading. Recovery left it to that request.'
+    if entry.get('status') in ('waiting', 'processing'):
+        return 'reading', None
+    if entry.get('status') == 'error':
+        return 'error', entry.get('error') or 'The new reading needs review. Earlier work is unchanged.'
+    if entry.get('file_id') == member['from_file_id']:
+        return 'kept_earlier', 'The batch kept the earlier reading. Open its review.'
+    return 'done', Counter(session.scalars(select(BatchItem.status).where(BatchItem.batch_id == batch.id,
+        BatchItem.file_id == UUID(entry['file_id']))))
+
+
+def _follow(session, item, file, batches, handoff):
+    """Record the outcome once every batch handed the statement has finished with its new reading."""
+    handed = handoff.get('batches') or [dict(batch_id=handoff['batch_id'], source_id=handoff['source_id'],
+        from_file_id=item.result['from_file_id'], attempt_id=handoff['attempt_id'])]
+    states = []
+    for member in handed:
+        batch = batches.get(UUID(member['batch_id']))
+        entry = next((value for value in (batch.files or []) if value.get('source_id') == member['source_id']), None) if batch else None
+        states.append((*_member_state(session, batch, entry, member, member['attempt_id']), entry))
+    kinds = {kind for kind, _, _ in states}
+    if 'replaced' in kinds:
+        _record(session, item, file, 'kept', next(detail for kind, detail, _ in states if kind == 'replaced'))
+    elif 'reading' in kinds:
         _wait(session, item, 'reading', 'Reading the original in the background; saved work is unchanged.')
-    elif entry.get('status') == 'error':
-        _record(session, item, file, 'review', entry.get('error') or 'The new reading needs review. Earlier work is unchanged.')
-    elif entry.get('file_id') == item.result['from_file_id']:
-        _record(session, item, file, 'review', 'The batch kept the earlier reading. Open its review.')
+    elif kinds & {'error', 'kept_earlier'}:
+        _record(session, item, file, 'review', next(detail for kind, detail, _ in states if kind in ('error', 'kept_earlier')))
     else:
-        statuses = Counter(session.scalars(select(BatchItem.status).where(BatchItem.batch_id == batch.id,
-            BatchItem.file_id == UUID(entry['file_id']))))
+        statuses = sum((detail for _, detail, _ in states), Counter())
         ready, held = statuses.get('ready', 0), statuses.get(HELD, 0)
         message = (f'{ready} of {sum(statuses.values())} periods are ready after the new reading; '
             f'{held} still need attention. The earlier reading is retained in history.')
         _record(session, item, file, 'recovered' if ready else 'unchanged', message,
-            review_file_id=entry['file_id'], periods=dict(statuses))
+            review_file_id=states[-1][2]['file_id'], periods=dict(statuses))
     session.commit()

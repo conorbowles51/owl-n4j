@@ -1,11 +1,22 @@
-"""Explicit reader repair manifests; deployment alone is not a reread request.
+"""Explicit reader repair manifests, and the engine-release re-read of held statements.
 
 Reader-specific campaigns identify demonstrated fixes and exact earlier reader
 revisions. The authorized unresolved-work follow-up has its own content and
 disposition eligibility policy; it is not a generic parser-version sweep.
+
+The engine-release campaign (``reader_campaign``) is the one generic sweep,
+and only of held batch statements nobody has worked on: a statement whose
+retained reading records a ``pdf_extraction.py`` other than the engine source
+deployed now is read again by its batch (``recovery_readers``). Its release id
+names the current engine source, so each engine release is one durable,
+resumable snapshot per case; a reading the current engine made, or one with no
+valid engine record, is never selected. On by default; env
+``LOUPE_FINANCIAL_READER_RECOVERY=0`` turns it off.
 """
+import hashlib
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
 
 
 @dataclass(frozen=True)
@@ -20,11 +31,18 @@ class RecoveryCampaign:
     # Re-read held batch statements whose retained reading was produced by an
     # exact earlier engine revision (affected_readers names engine source files).
     batch_reread: bool = False
+    # Engine source file -> its digest deployed now (None: unknown). A batch
+    # re-read campaign with current readers selects a recorded reading whose
+    # digest differs from it, instead of an exact list of earlier digests.
+    current_readers: dict[str, str | None] = field(default_factory=dict)
 
     def __post_init__(self):
         if not self.release or len(self.release) > 64:
             raise ValueError('Recovery campaigns require a stable release identifier of at most 64 characters.')
-        if not self.initial_snapshot and not self.affected_readers and not self.unresolved_followup:
+        if self.current_readers and not self.batch_reread:
+            raise ValueError('Only a batch re-read campaign may select readings by the current reader.')
+        if (not self.initial_snapshot and not self.affected_readers and not self.unresolved_followup
+                and not self.current_readers):
             raise ValueError('A selective recovery campaign must identify its affected readers and prior revisions.')
         if any(not versions or any(not isinstance(version, str) or not version for version in versions)
                for versions in self.affected_readers.values()):
@@ -37,6 +55,11 @@ class RecoveryCampaign:
             # The retained reading's own runtime record is the evidence; there
             # is no earlier recovery outcome to qualify a held batch statement.
             observed = observed_readers or {}
+            if self.current_readers:
+                # Recorded by another engine source than the one deployed now.
+                # An unknown current source or an unrecorded reading never qualifies.
+                return any(current and observed.get(reader) and observed[reader] != current
+                           for reader, current in self.current_readers.items())
             return any(observed.get(reader) in versions for reader, versions in self.affected_readers.items())
         if previous is None or previous.status not in self.eligible_outcomes:
             return False
@@ -102,8 +125,9 @@ READER_RECOVERY_FLAG = 'LOUPE_FINANCIAL_READER_RECOVERY'
 # reading was damaged beyond every money reading (a colon or slash for the point, a hyphen inside the figures)
 # was never cropped, and a held cell kept only the readings the crops repeated, so a period whose printed
 # value was the page reading alone, or a minority crop reading, stayed held.
-# If a later change edits pdf_extraction.py, add the
-# digest of the current file here.
+# This exact list is history: the engine-release campaign (reader_campaign)
+# selects any reading recorded by another pdf_extraction.py than the deployed
+# one, so a later engine change needs no digest added here.
 AFFECTED_EXTRACTION_SHA256 = (
     '838372af7b656fa02f655aaa564582ff7ba15c5c17ff46020935ce3356152495',  # 7b0013fb
     '8f9e668367c9c3c9f577e1357cd8130952d9206742a653b6a0a42b1da1d62489',  # 14edbfec
@@ -148,9 +172,49 @@ REGISTERED_CAMPAIGNS = (*CAMPAIGNS,
 
 
 def reader_recovery_enabled(environ=None):
-    """Off unless explicitly switched on: Neil decides activation."""
+    """On unless switched off (``LOUPE_FINANCIAL_READER_RECOVERY=0``, false, no or off)."""
     value = (os.environ if environ is None else environ).get(READER_RECOVERY_FLAG, '')
-    return value.strip().lower() in ('1', 'true', 'yes', 'on')
+    return value.strip().lower() not in ('0', 'false', 'no', 'off')
+
+
+# Engine-release campaigns: one release id per deployed engine source.
+READER_RELEASE_PREFIX = 'statement-recovery-engine-'
+ENGINE_READER_SOURCE = Path(__file__).resolve().parents[3] / 'evidence-engine' / 'app' / 'pipeline' / 'pdf_extraction.py'
+_engine_digest = []
+
+
+def current_engine_reader():
+    """SHA-256 of the deployed engine's pdf_extraction.py (the digest its readings record), or None.
+
+    Read once per process from the same tree the engine image is built from.
+    None (the source is not beside the backend) schedules nothing.
+    """
+    if not _engine_digest:
+        try:
+            _engine_digest.append(hashlib.sha256(ENGINE_READER_SOURCE.read_bytes()).hexdigest())
+        except OSError:
+            _engine_digest.append(None)
+    return _engine_digest[0]
+
+
+def is_reader_release(release):
+    return bool(release) and release.startswith(READER_RELEASE_PREFIX)
+
+
+def reader_campaign(release=None):
+    """The engine-release campaign: held statements read by another engine source than today's.
+
+    Without ``release``, the campaign of the engine deployed now (None when its
+    source is unknown). With an earlier engine release's id (its run is still
+    being followed), the same rule against today's engine: a statement read by
+    today's engine is never read again.
+    """
+    current = current_engine_reader()
+    if release is None:
+        if current is None:
+            return None
+        release = READER_RELEASE_PREFIX + current[:32]
+    return RecoveryCampaign(release, current_readers={'pdf_extraction.py': current}, batch_reread=True)
 
 
 def source_reader_evidence(session, file, campaign):
@@ -201,4 +265,6 @@ def source_reader_evidence(session, file, campaign):
 
 
 def manifest(release):
+    if is_reader_release(release):
+        return reader_campaign(release)
     return next((campaign for campaign in REGISTERED_CAMPAIGNS if campaign.release == release), None)

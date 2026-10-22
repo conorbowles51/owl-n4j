@@ -296,9 +296,33 @@ def _entry(item, batch_id, describe_result=None):
 
 
 def _preparing_again(batches):
-    """(batch id, file id) of prepared files a running batch is preparing again."""
+    """(batch id, file id) of prepared files a running batch is preparing or reading again.
+
+    A file handed back for a new reading (``recovery``) waits for its turn
+    before it is processed; it is being rechecked from the hand-off on.
+    """
     return {(batch.id, file['file_id']) for batch in batches if batch.status in ('preparing', 'pausing')
-            for file in batch.files or [] if file.get('file_id') and file.get('status') == 'processing'}
+            for file in batch.files or [] if file.get('file_id') and (file.get('status') == 'processing'
+                or (file.get('status') == 'waiting' and file.get('recovery')))}
+
+
+# Buckets a scheduled re-read moves to "Being rechecked": held statements only.
+REREAD_BUCKETS = frozenset({'waiting', 'reader_fix', 'unreadable', 'filled'})
+
+
+def _rechecked_by_recovery(session, case_id, entries):
+    """Held statements a reader campaign will read again count as being rechecked. In place; live, never cached."""
+    from services.financial.recovery_readers import rereading_files
+    try:
+        again = rereading_files(session, case_id)
+    except Exception:
+        session.rollback()  # no recovery tables (an old database): nothing scheduled
+        return entries
+    if again:
+        for entry in entries:
+            if entry['bucket'] in REREAD_BUCKETS and again & set(entry['file_ids']):
+                entry['bucket'] = 'rechecking'
+    return entries
 
 
 def _build(session, case_id):
@@ -728,6 +752,7 @@ def case_review_queue(session, *, case_id, file_ids=None, use_cache=True):
     set_aside = []
     entries, failed, copy_files = _set_aside_read_copies(session, case_id, entries,
         _failed_files(session, case_id, set(), set_aside))
+    _rechecked_by_recovery(session, case_id, entries)
     if file_filter:
         entries = [e for e in entries if file_filter & set(e['file_ids'])]
         within = lambda f: bool({f.get('file_id'), f.get('source_id')} & file_filter)

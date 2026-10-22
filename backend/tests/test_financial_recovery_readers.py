@@ -15,7 +15,8 @@ from services.financial import deployment_recovery as recovery
 from services.financial import recovery_readers as readers
 from services.financial.pdf_candidates import _digest
 from services.financial.recovery_campaigns import (AFFECTED_EXTRACTION_SHA256, READER_RECOVERY,
-    READER_RECOVERY_FLAG, READER_RECOVERY_RELEASE, manifest, reader_recovery_enabled)
+    READER_RECOVERY_FLAG, READER_RECOVERY_RELEASE, READER_RELEASE_PREFIX, manifest, reader_campaign,
+    reader_recovery_enabled)
 from tests.test_financial_deployment_recovery import f  # noqa: F401  (fixture)
 
 AFFECTED = AFFECTED_EXTRACTION_SHA256[-1]
@@ -34,6 +35,14 @@ def set_reader(f, file_id, digest=AFFECTED):
         preparation['sha256'] = _digest(preparation['content'])
         document.processing_manifest = preparation
     f.db.commit()
+
+
+@pytest.fixture(autouse=True)
+def free_engine():
+    """No evidence counted as being read elsewhere unless a test says so."""
+    readers._busy.clear()
+    yield
+    readers._busy.clear()
 
 
 def held_batch(f, *, statuses=('attention',), batch_status='review'):
@@ -57,7 +66,7 @@ def held_batch(f, *, statuses=('attention',), batch_status='review'):
 def selection(f):
     with f.SessionLocal() as db:
         selected, reasons = readers.candidates(db, f.case.id, READER_RECOVERY)
-        return [entry['source_id'] for _, entry, _ in selected], reasons
+        return [entry['source_id'] for _, entry, _, _ in selected], reasons
 
 
 def snapshot(f):
@@ -82,17 +91,32 @@ def item_state(f, item_id):
 
 # Registration and activation -------------------------------------------------
 
-def test_campaign_is_registered_with_a_stable_release_and_off_by_default(monkeypatch):
-    assert manifest(READER_RECOVERY_RELEASE) is READER_RECOVERY
-    assert len(READER_RECOVERY_RELEASE) <= 64 and READER_RECOVERY.batch_reread
+def test_engine_release_campaign_is_on_by_default_and_named_by_the_deployed_engine(monkeypatch):
+    assert manifest(READER_RECOVERY_RELEASE) is READER_RECOVERY  # history: still resolvable
     monkeypatch.delenv(READER_RECOVERY_FLAG, raising=False)
-    assert not reader_recovery_enabled()
-    assert READER_RECOVERY not in recovery.scheduled_campaigns()
-    for value in ('', '0', 'false', 'off', 'no', 'maybe'):
-        assert not reader_recovery_enabled({READER_RECOVERY_FLAG: value})
-    monkeypatch.setenv(READER_RECOVERY_FLAG, '1')
-    assert recovery.scheduled_campaigns()[-1] is READER_RECOVERY
+    assert reader_recovery_enabled()
+    campaign = recovery.scheduled_campaigns()[-1]
     assert recovery.scheduled_campaigns()[:-1] == recovery.CAMPAIGNS
+    assert campaign.release == READER_RELEASE_PREFIX + CURRENT[:32] and len(campaign.release) <= 64
+    assert campaign.batch_reread and campaign.current_readers == {'pdf_extraction.py': CURRENT}
+    assert manifest(campaign.release).current_readers == campaign.current_readers
+    for value in ('0', 'false', 'off', 'no', ' OFF '):
+        assert not reader_recovery_enabled({READER_RECOVERY_FLAG: value})
+        monkeypatch.setenv(READER_RECOVERY_FLAG, value)
+        assert recovery.scheduled_campaigns() == recovery.CAMPAIGNS
+    for value in ('', '1', 'on', 'yes'):
+        assert reader_recovery_enabled({READER_RECOVERY_FLAG: value})
+
+
+def test_engine_release_campaign_selects_any_other_recorded_engine_source():
+    campaign = reader_campaign()
+    assert campaign.eligible(None, {'pdf_extraction.py': AFFECTED})
+    assert campaign.eligible(None, {'pdf_extraction.py': 'b' * 64})  # no hand-kept list needed
+    assert not campaign.eligible(None, {'pdf_extraction.py': CURRENT})
+    assert not campaign.eligible(None, {'pdf_extraction.py': None}) and not campaign.eligible(None, {})
+    unknown = reader_campaign(READER_RELEASE_PREFIX + 'x')
+    unknown_current = type(unknown)(unknown.release, current_readers={'pdf_extraction.py': None}, batch_reread=True)
+    assert not unknown_current.eligible(None, {'pdf_extraction.py': AFFECTED})
 
 
 def test_affected_revisions_are_exact_and_exclude_the_current_reader():
@@ -204,7 +228,8 @@ def test_unfinished_standalone_and_shared_files_are_left_alone(f):
     f.db.add(Batch(id=uuid4(), case_id=f.case.id, created_by=f.user.id, status='review', actor=batch.actor,
         files=[dict(batch.files[0])]))
     f.db.commit()
-    assert selection(f)[1] == {'several_batches': 2}
+    # The second batch holds the file but no period of it: nothing to re-prepare there.
+    assert selection(f)[1] == {'eligible': 2}
 
 
 # Execution ----------------------------------------------------------------------
@@ -296,3 +321,140 @@ def test_end_to_end_new_reading_retires_only_the_unedited_held_period(f):
     status, result = item_state(f, item_id)
     assert status == 'recovered' and result['review_file_id'] == entry['file_id'], result
     assert sum(result['periods'].values()) == len(fresh)
+
+
+# Engine releases ------------------------------------------------------------------
+
+def engine_snapshot(f, campaign):
+    with f.SessionLocal() as db:
+        cutoff = recovery.activate(db, campaign.release)
+        recovery.snapshot_case(db, f.case.id, cutoff, campaign)
+        return list(db.scalars(select(Run).where(Run.case_id == f.case.id).order_by(Run.created_at)))
+
+
+def test_each_engine_release_is_one_run_per_case_and_unchanged_code_starts_none(f, monkeypatch):
+    from services.financial import recovery_campaigns
+    set_reader(f, f.file.id, AFFECTED)
+    held_batch(f)
+    first = reader_campaign()
+    runs = engine_snapshot(f, first)
+    assert [run.release for run in runs] == [first.release]
+    with f.SessionLocal() as db:
+        (item,) = db.scalars(select(Item).where(Item.run_id == runs[0].id))
+        assert item.status == 'pending' and item.result['extraction_sha256'] == AFFECTED
+    # A restart on unchanged code: the same release, no second run or item.
+    assert [run.release for run in engine_snapshot(f, reader_campaign())] == [first.release]
+    # The next engine release: a second run; the statement not yet handed off moves to it.
+    monkeypatch.setattr(recovery_campaigns, '_engine_digest', ['c' * 64])
+    second = reader_campaign()
+    assert second.release != first.release and second.release.startswith(READER_RELEASE_PREFIX)
+    runs = engine_snapshot(f, second)
+    assert [run.release for run in runs] == [first.release, second.release]
+    with f.SessionLocal() as db:
+        earlier = db.get(Item, item.id)
+        assert earlier.status == 'kept' and earlier.result['kept_reason'] == 'newer_release'
+        assert [i.file_id for i in db.scalars(select(Item).where(Item.run_id == runs[1].id))] == [f.file.id]
+
+
+def test_a_reading_made_by_todays_engine_is_never_scheduled(f):
+    set_reader(f, f.file.id, CURRENT)
+    held_batch(f)
+    runs = engine_snapshot(f, reader_campaign())
+    assert runs[0].status == 'complete'
+    with f.SessionLocal() as db:
+        assert not list(db.scalars(select(Item).where(Item.run_id == runs[0].id)))
+
+
+def two_batch_original(f, *, second_statuses=('attention',)):
+    """The same original prepared in two finished batches (the live several-batches shape)."""
+    from datetime import timedelta
+    older, items = held_batch(f)
+    newer = Batch(id=uuid4(), case_id=f.case.id, created_by=f.user.id, status='review', actor=older.actor,
+        files=[dict(older.files[0])])
+    f.db.add(newer)
+    f.db.flush()
+    older.created_at = newer.created_at - timedelta(days=2)
+    for index, status in enumerate(second_statuses):
+        f.db.add(BatchItem(id=uuid5(newer.id, f'{f.file.id}:s{index}'), batch_id=newer.id, file_id=f.file.id,
+            statement_key=f's{index}', status=status, summary=dict(source_id=str(f.file.id), revision='r')))
+    f.db.commit()
+    return older, newer
+
+
+def test_an_original_in_several_batches_is_read_once_and_each_batch_prepares_from_it(f):
+    set_reader(f, f.file.id)
+    older, newer = two_batch_original(f)
+    selected, reasons = selection(f)
+    assert selected == [str(f.file.id)] and reasons == {'eligible': 2}
+    _, (item_id,) = snapshot(f)
+    _, result = item_state(f, item_id)
+    assert {m['batch_id'] for m in result['members']} == {str(older.id), str(newer.id)}
+    assert result['batch_id'] == str(newer.id) and len(result['held_items']) == 2
+    recovery.recover_one(f.SessionLocal, item_id, Path)
+    (_, first), (_, second) = entry_of(f, older.id), entry_of(f, newer.id)
+    # One earlier reading, one attempt: the batches' retry path makes one new version for both.
+    assert first['recovery']['attempt_id'] == second['recovery']['attempt_id']
+    assert first['status'] == second['status'] == 'waiting'
+    status, result = item_state(f, item_id)
+    assert status == 'waiting' and len(result['handoff']['batches']) == 2
+
+
+@pytest.mark.parametrize('change,reason', [('edit', 'investigator_edits'), ('ready', 'not_all_held'),
+                                           ('imported', 'saved_import')])
+def test_work_in_any_batch_of_the_original_protects_it_everywhere(f, change, reason):
+    set_reader(f, f.file.id)
+    older, newer = two_batch_original(f, second_statuses=('attention', 'attention'))
+    with f.SessionLocal() as db:
+        item = db.get(BatchItem, uuid5(newer.id, f'{f.file.id}:s1'))
+        if change == 'edit':
+            item.review_request = dict(holder='Typed by the investigator')
+        else:
+            item.status = change
+        db.commit()
+    assert selection(f) == ([], {reason: 2})
+
+
+def test_an_original_another_batch_took_after_scheduling_is_left(f):
+    set_reader(f, f.file.id)
+    older, newer = two_batch_original(f)
+    _, (item_id,) = snapshot(f)
+    f.db.add(Batch(id=uuid4(), case_id=f.case.id, created_by=f.user.id, status='review', actor=older.actor,
+        files=[dict(older.files[0])]))
+    f.db.commit()
+    recovery.recover_one(f.SessionLocal, item_id, Path)
+    status, result = item_state(f, item_id)
+    assert status == 'kept' and result['kept_reason'] == 'several_batches'
+    assert entry_of(f, older.id)[1]['status'] == entry_of(f, newer.id)[1]['status'] == 'checked'
+
+
+def test_hand_offs_are_bounded_and_wait_for_other_evidence_to_be_read(f, monkeypatch):
+    set_reader(f, f.file.id)
+    batch, _ = held_batch(f)
+    _, (item_id,) = snapshot(f)
+    monkeypatch.setattr(readers, 'READ_AGAIN_AT_ONCE', 1)
+    monkeypatch.setattr(readers, 'in_flight', lambda session: 1)
+    recovery.recover_one(f.SessionLocal, item_id, Path)
+    status, result = item_state(f, item_id)
+    assert status == 'waiting' and 'Waiting its turn' in result['message'] and 'handoff' not in result
+    assert entry_of(f, batch.id)[1]['status'] == 'checked'
+    monkeypatch.setattr(readers, 'in_flight', lambda session: 0)
+    readers._busy.update(at=__import__('time').monotonic(), count=3)  # an upload is being ingested
+    recovery.recover_one(f.SessionLocal, item_id, Path)
+    status, result = item_state(f, item_id)
+    assert status == 'waiting' and 'other evidence' in result['message']
+    readers._busy.clear()
+    recovery.recover_one(f.SessionLocal, item_id, Path)
+    assert item_state(f, item_id)[0] == 'waiting' and entry_of(f, batch.id)[1]['status'] == 'waiting'
+    assert 'handoff' in item_state(f, item_id)[1]
+
+
+def test_scheduled_statements_count_as_being_rechecked_in_the_queue(f):
+    from services.financial.review_queue import REREAD_BUCKETS, _rechecked_by_recovery
+    set_reader(f, f.file.id)
+    held_batch(f)
+    snapshot(f)
+    entries = [dict(bucket='waiting', file_ids=[str(f.file.id)]), dict(bucket='ready', file_ids=[str(f.file.id)]),
+               dict(bucket='waiting', file_ids=[str(uuid4())])]
+    with f.SessionLocal() as db:
+        _rechecked_by_recovery(db, f.case.id, entries)
+    assert [e['bucket'] for e in entries] == ['rechecking', 'ready', 'waiting'] and 'ready' not in REREAD_BUCKETS

@@ -23,8 +23,8 @@ from services.financial.file_scope import financial_file_ids
 from services.financial.file_visibility import financial_file_visibility
 from services.financial.source_lineage import lineage_groups, current_version
 from services.financial.pdf_candidates import PdfMappingError
-from services.financial.recovery_campaigns import (CAMPAIGNS, INITIAL_RELEASE, READER_RECOVERY, manifest,
-    reader_recovery_enabled, source_reader_evidence)
+from services.financial.recovery_campaigns import (CAMPAIGNS, INITIAL_RELEASE, READER_RELEASE_PREFIX, manifest,
+    reader_campaign, reader_recovery_enabled, source_reader_evidence)
 
 RELEASE = INITIAL_RELEASE
 ACTOR = Actor(name='Loupe automatic statement recovery', email='statement-recovery@system.local')
@@ -33,8 +33,21 @@ log = logging.getLogger(__name__)
 
 
 def scheduled_campaigns():
-    """Campaigns this worker snapshots and runs. The reader campaign is off by default."""
-    return CAMPAIGNS + ((READER_RECOVERY,) if reader_recovery_enabled() else ())
+    """Campaigns this worker snapshots and runs: the engine-release re-read unless switched off."""
+    campaign = reader_campaign() if reader_recovery_enabled() else None
+    return CAMPAIGNS + ((campaign,) if campaign else ())
+
+
+def _running_releases():
+    """Runs this worker advances: scheduled campaigns, and earlier engine releases still being followed.
+
+    A run of an earlier engine release keeps following the readings it handed
+    to batches; its statements not yet handed off were moved to the newer
+    release's snapshot (``recovery_readers.supersede_earlier``).
+    """
+    from sqlalchemy import or_
+    releases = Run.release.in_([campaign.release for campaign in scheduled_campaigns()])
+    return or_(releases, Run.release.startswith(READER_RELEASE_PREFIX)) if reader_recovery_enabled() else releases
 
 
 def activate(session, release_id=RELEASE):
@@ -461,8 +474,7 @@ def next_recovery_items(session, after=None):
     Restarting the cursor is safe because each unit rechecks its durable state.
     """
     query = select(Item.id).join(Run, Item.run_id == Run.id).where(
-        Run.release.in_([campaign.release for campaign in scheduled_campaigns()]),
-        Run.status == 'running', Item.status.in_(PENDING)).order_by(Item.id).limit(2)
+        _running_releases(), Run.status == 'running', Item.status.in_(PENDING)).order_by(Item.id).limit(8)
     if after is not None:
         following = list(session.scalars(query.where(Item.id > after)))
         if following:
@@ -526,7 +538,7 @@ async def run_recovery_forever():
                     await asyncio.to_thread(_record_failure, factory, item_id,
                         'Recovery could not complete this file. Open its statement to inspect the retained reading and retry.')
             with factory() as db:
-                runs = list(db.scalars(select(Run).where(Run.release.in_([campaign.release for campaign in scheduled_campaigns()]), Run.status == 'running').with_for_update(skip_locked=True)))
+                runs = list(db.scalars(select(Run).where(_running_releases(), Run.status == 'running').with_for_update(skip_locked=True)))
                 for run in runs:
                     if not db.scalar(select(Item.id).where(Item.run_id == run.id, Item.status.in_(PENDING)).limit(1)):
                         run.status = 'complete'
