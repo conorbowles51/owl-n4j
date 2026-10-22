@@ -1,5 +1,5 @@
 import { BatchSavedAccounts } from "./BatchSavedAccounts"
-import { PaymentCategoryFilter } from "./PaymentCategoryFilter"
+import { ActiveCategoryNotice } from "./PaymentCategoryFilter"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { useStatementWorkspace } from "../stores/statement-workspace"
 import "../financial-workspace.css"
@@ -718,6 +718,9 @@ function FinancialPageContent() {
               ? "Loading case…"
               : (caseId ?? "Choose a case")}
         </p>
+        {/* Categories are chosen and managed under Transactions (Alex: not at
+            the top of every view). A category chosen there still narrows the
+            analysis views, so they say so instead of filtering silently. */}
         {caseId &&
           store.mode === "transactions" &&
           [
@@ -727,7 +730,10 @@ function FinancialPageContent() {
             "trends",
             "posting-graph",
           ].includes(store.mainView) && (
-            <PaymentCategoryFilter caseId={caseId} />
+            <ActiveCategoryNotice
+              caseId={caseId}
+              onChange={() => navigateFinancial("transactions")}
+            />
           )}
         <FinancialGuide />
       </div>

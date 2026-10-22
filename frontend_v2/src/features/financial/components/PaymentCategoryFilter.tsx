@@ -30,3 +30,32 @@ export function PaymentCategoryFilter({ caseId }: { caseId: string }) {
     </label>
   )
 }
+
+/**
+ * Outside Transactions: only says which category narrows the payments shown,
+ * with a way back to Transactions (where categories are chosen) or to clear
+ * it. Nothing when no category is chosen.
+ */
+export function ActiveCategoryNotice({
+  caseId,
+  onChange,
+}: {
+  caseId: string
+  onChange: () => void
+}) {
+  const [category, setCategory] = usePaymentCategory(caseId)
+  if (!category) return null
+  return (
+    <p role="status" aria-label="Category filter" className="flex items-center gap-2 text-sm">
+      <span>
+        Showing category: <strong>{category}</strong>
+      </span>
+      <button type="button" className="underline underline-offset-2" onClick={onChange}>
+        Change under Transactions
+      </button>
+      <button type="button" className="underline underline-offset-2" onClick={() => setCategory("")}>
+        Show all categories
+      </button>
+    </p>
+  )
+}
