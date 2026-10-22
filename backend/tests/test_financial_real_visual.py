@@ -392,6 +392,7 @@ class CardSectionAndPatchTests(unittest.TestCase):
         self.assertEqual([p.get('truth_source') for p in merged['periods']], [None, 'visual', None])
         self.assertEqual((merged['status'], merged['visual_kept'], merged['visual_patch']),
                          ('settled', ['dcard#2'], []))
+        self.assertNotIn('visual_confirmed', merged)  # documents with nothing confirmed keep their form
         self.assertEqual(rv.apply_visual(merged, visual), merged)  # merging twice changes nothing
 
     def test_keep_is_refused_unless_its_pages_were_read_and_the_period_is_not_verified(self):
@@ -431,8 +432,11 @@ class CardSectionAndPatchTests(unittest.TestCase):
     def test_a_confirmed_ocr_layer_period_becomes_verified_with_its_reading_unchanged(self):
         layer = self.ocr_layer()
         visual = rv.compile_document(self.confirm_text(layer), page_count=5)
-        self.assertEqual((visual['complete'], visual['periods'], visual['confirm']),
+        self.assertEqual((rv.ready(visual), visual['periods'], visual['confirm']),
                          (True, [], {'2': rv.reading_digest(layer['periods'][1])}))
+        # A reader that predates confirm lines sees an incomplete review and leaves the document alone,
+        # instead of a complete review holding no periods (which would drop every period).
+        self.assertEqual((visual['complete'], visual['complete_with_confirm']), (False, True))
         merged = rv.apply_visual(layer, visual)
         period = merged['periods'][1]
         self.assertEqual((period['truth_status'], period['truth_reasons'], period['truth_source'],
@@ -458,6 +462,10 @@ class CardSectionAndPatchTests(unittest.TestCase):
                          unverified)
         missing = rv.compile_document(text.replace('confirm 2', 'confirm 9'), page_count=5)
         self.assertEqual(rv.apply_visual(layer, missing), layer)
+
+    def test_an_unread_page_leaves_a_confirm_review_not_ready(self):
+        visual = rv.compile_document(self.confirm_text(self.ocr_layer(), done='2') + 'page 4 skip\n', page_count=5)
+        self.assertEqual((rv.ready(visual), visual['pages_pending']), (False, [4]))
 
     def test_confirm_lines_are_checked(self):
         for bad in ('confirm 2\n', 'confirm 2 xyz\n', 'confirm 2 0123456789ab\nconfirm 2 0123456789ab\n'):

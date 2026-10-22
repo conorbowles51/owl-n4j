@@ -550,8 +550,14 @@ def compile_document(reviewed_text, ocr_text=None, page_count=None):
         if item['expect']:
             record.update(expected_override=item['expect'][0], expected_reason=item['expect'][1])
         periods.append(record)
+    # A reader that predates ``confirm`` would take a complete file holding no periods as a full
+    # review that found none and drop the document's periods. With confirm lines the file says
+    # ``complete_with_confirm`` instead, which only a reader that applies confirm lines reads; an
+    # older one leaves the document as its text layer read it (fail closed).
+    done = not pending
     return dict(version=VERSION, doc=reviewed.doc, pages_done=sorted(reviewed.done), pages_pending=pending,
-                complete=not pending, periods=periods, issuer=reviewed.issuer['family'],
+                complete=done and not reviewed.confirm, complete_with_confirm=done and bool(reviewed.confirm),
+                periods=periods, issuer=reviewed.issuer['family'],
                 form=dict(status=reviewed.form[0], reason=reviewed.form[1]) if reviewed.form else None,
                 misreads=misreads(Transcription(ocr_text, strict=False), reviewed) if ocr_text else {},
                 period_status=dict(Counter(p['truth_status'] for p in periods)), patch=reviewed.patch,
@@ -563,6 +569,11 @@ def compile_document(reviewed_text, ocr_text=None, page_count=None):
 # Merge into real_truth results
 # ---------------------------------------------------------------------------
 
+def ready(visual):
+    """Every page the review covers is done (see ``compile_document`` on ``complete_with_confirm``)."""
+    return bool(visual.get('complete') or visual.get('confirm') and visual.get('complete_with_confirm'))
+
+
 def apply_visual(result, visual):
     """A document result with its periods replaced by the reviewed visual reading.
 
@@ -570,7 +581,7 @@ def apply_visual(result, visual):
     one leaves the document as it was. The document status follows the
     periods as in ``real_truth.document_truth``.
     """
-    if not visual or not visual.get('complete') or visual.get('doc') != result.get('id'):
+    if not visual or not ready(visual) or visual.get('doc') != result.get('id'):
         return result
     issuer = visual.get('issuer') or result.get('issuer')
     if visual.get('form'):
@@ -633,7 +644,7 @@ def _apply_patch(result, visual, issuer):
     return dict(result, status=document_status(statuses, reviewed=reviewed), periods=periods,
                 period_status=dict(statuses), truth_source='visual',
                 visual_patch=sorted(set(replaced) - set(kept) - set(confirmed)),
-                visual_kept=sorted(kept), visual_confirmed=sorted(confirmed), issuer=issuer,
+                visual_kept=sorted(kept), issuer=issuer, **({'visual_confirmed': sorted(confirmed)} if confirmed else {}),
                 statements_complete=all(p['truth_status'] in ('verified', 'incomplete') for p in periods),
                 visual_misreads=visual.get('misreads', {}))
 
@@ -714,7 +725,7 @@ def main(argv=None):
                               ocr.read_text() if ocr.exists() else None, page_count)
     (args.visual / f'{args.doc}.json').write_text(json.dumps(result, indent=1, default=str) + '\n')
     # Counts only on stdout.
-    print(json.dumps(dict(doc=result['doc'], complete=result['complete'], pending=len(result['pages_pending']),
+    print(json.dumps(dict(doc=result['doc'], complete=ready(result), pending=len(result['pages_pending']),
                           period_status=result['period_status'], misreads=result['misreads'])))
     return 0
 
