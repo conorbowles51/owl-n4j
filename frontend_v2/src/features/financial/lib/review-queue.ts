@@ -410,6 +410,14 @@ export type QueueSaveResult = {
   held: HeldStatement[]
   stillSaving: number
   message: string
+  /** Statements sent to be saved; every one is imported, held or still importing. */
+  sent?: number
+  /** Counted as ready before the save but never sent: their details were filled and they still are not ready. */
+  notReady?: QueueEntry[]
+  /** How many the queue counted as ready (ready + details to fill) when Import was pressed. */
+  counted?: number
+  /** Waiting statements that filling their confirmed details made ready, sent as well. */
+  madeReady?: number
 }
 
 /** "3 currency not printed: choose one, 1 already saved" — reasons, most common first. */
@@ -422,6 +430,12 @@ export function heldReasons(held: HeldStatement[]) {
     .join(", ")
 }
 
+/**
+ * What the save did, from the server's answers only: imported, held with
+ * reasons, still importing, and (when known) the ones counted as ready that
+ * were never sent. Statements the server has not reported on are counted
+ * too, so the parts always add up to the number counted.
+ */
 export function saveResultLine(result: Omit<QueueSaveResult, "message">) {
   const parts = [`${result.imported} imported`]
   if (result.held.length)
@@ -430,7 +444,20 @@ export function saveResultLine(result: Omit<QueueSaveResult, "message">) {
     parts.push(
       `${result.stillSaving} still importing in the background (refresh the queue later)`
     )
-  return parts.join(", ")
+  const notReady = result.notReady?.length ?? 0
+  if (notReady)
+    parts.push(
+      `${notReady} not imported: details filled, but ${notReady === 1 ? "it still needs" : "they still need"} something (listed under Waiting for you)`
+    )
+  if (result.sent !== undefined) {
+    const unreported = result.sent - result.imported - result.held.length - result.stillSaving
+    if (unreported > 0)
+      parts.push(`${unreported} not reported yet (refresh the queue to see where ${unreported === 1 ? "it stands" : "they stand"})`)
+  }
+  const line = parts.join(", ")
+  const total = (result.counted ?? 0) + (result.madeReady ?? 0)
+  if (result.counted === undefined || total === result.imported) return line
+  return `Of ${result.counted} counted as ready${result.madeReady ? ` (and ${result.madeReady} made ready by filling details)` : ""}: ${line}`
 }
 
 // About 2.5 s of admission per statement on the live case: ~25 s per request,
@@ -506,6 +533,7 @@ export async function saveReadyStatements(
       })),
     ],
     stillSaving: progress?.pending ?? 0,
+    sent: itemIds.length,
   }
   return { ...result, message: saveResultLine(result) }
 }
@@ -533,6 +561,9 @@ export async function fillAndSaveReady(
 ): Promise<QueueSaveResult & { filled: number }> {
   let filled = 0
   const ids = data.ready.map((entry) => entry.id)
+  const counted = data.ready.length + data.filled.length
+  // Filled statements are sent only if filling made them ready.
+  let notReady: QueueEntry[] = []
   if (data.filled.length || data.items.some(hasConfirmed)) {
     options.onProgress?.("Filling the details found automatically…")
     const response = fillResponse.parse(
@@ -544,20 +575,29 @@ export async function fillAndSaveReady(
     )
     filled = response.filled
     ids.push(...response.ready_item_ids.filter((id) => !ids.includes(id)))
+    const sent = new Set(ids)
+    notReady = data.filled.filter((entry) => !sent.has(entry.id))
   }
+  const listedReady = new Set([...data.ready, ...data.filled].map((entry) => entry.id))
+  const madeReady = ids.filter((id) => !listedReady.has(id)).length
   if (!ids.length) {
-    const line = filled
-      ? `${filled} ${filled === 1 ? "statement's details" : "statements' details"} filled automatically; none is ready to save yet`
-      : "Nothing is ready to save"
-    return { imported: 0, held: [], stillSaving: 0, message: line, filled }
+    const result = { imported: 0, held: [], stillSaving: 0, sent: 0, notReady, counted, madeReady }
+    const line = counted
+      ? saveResultLine(result)
+      : filled
+        ? `${filled} ${filled === 1 ? "statement's details" : "statements' details"} filled automatically; none is ready to save yet`
+        : "Nothing is ready to save"
+    return { ...result, message: line, filled }
   }
-  const result = await saveReadyStatements(caseId, ids, options)
+  const saved = await saveReadyStatements(caseId, ids, options)
+  const result = { ...saved, notReady, counted, madeReady }
+  const line = saveResultLine(result)
   return {
     ...result,
     filled,
     message: filled
-      ? `${result.message} (details filled automatically on ${filled} as System; change any in its statement)`
-      : result.message,
+      ? `${line} (details filled automatically on ${filled} as System; change any in its statement)`
+      : line,
   }
 }
 

@@ -10,6 +10,7 @@ import {
   importOutcome,
   savedOutcome,
   fillAndSaveReady,
+  heldReasons,
   readRetainedAfresh,
   checkUnreadableAgain,
   useReviewQueue,
@@ -126,13 +127,17 @@ export function ReviewStatusLine({
           <Button size="sm" disabled={saving} onClick={onSaveReady}>
             {saving
               ? "Importing…"
-              : `Import ${ready} ready ${ready === 1 ? "statement" : "statements"}`}
+              : c.filled
+                ? `Import ${c.ready} ready, and ${c.filled} once ${c.filled === 1 ? "its details are" : "their details are"} filled`
+                : `Import ${ready} ready ${ready === 1 ? "statement" : "statements"}`}
           </Button>
           <span>
             Ready means {ready === 1 ? "it passed" : "they passed"} every check (balances add up, account, holder,
             currency and dates are known) and {ready === 1 ? "needs" : "need"} nothing from you. Importing adds{" "}
             {ready === 1 ? "it" : "them"} to the ledger and {ready === 1 ? "it moves" : "they move"} to Imported.
             Each is checked once more first; anything that no longer passes stays here with its reason.
+            {c.filled > 0 &&
+              ` ${c.filled} of the ${ready} still ${c.filled === 1 ? "has" : "have"} details to fill: ${c.filled === 1 ? "it is" : "they are"} imported only if filling makes ${c.filled === 1 ? "it" : "them"} ready, and the result says which were not.`}
           </span>
         </div>
       )}
@@ -479,9 +484,11 @@ export function ReviewQueuePanel({
               className={`space-y-1 rounded border p-3 text-sm ${saveResult.held.length ? "border-amber-500/60" : "border-teal-500/60"}`}
             >
               <p className="font-medium">{saveResult.message}</p>
-              {saveResult.held.some((entry) => entry.filename) && (
+              {saveResult.held.length > 0 && (
                 <details>
-                  <summary className="cursor-pointer">Which statements were held</summary>
+                  <summary className="cursor-pointer">
+                    Which {saveResult.held.length} {saveResult.held.length === 1 ? "statement was" : "statements were"} held
+                  </summary>
                   <ul className="mt-1 space-y-1">
                     {saveResult.held
                       .filter((entry) => entry.filename)
@@ -490,6 +497,32 @@ export function ReviewQueuePanel({
                           {entry.filename} ({entry.period_start || "?"} to {entry.period_end || "?"}): {entry.reason}
                         </li>
                       ))}
+                    {saveResult.held.some((entry) => !entry.filename) && (
+                      <li>
+                        {saveResult.held.filter((entry) => !entry.filename).length} without a file name in the
+                        server's answer:{" "}
+                        {heldReasons(saveResult.held.filter((entry) => !entry.filename))}
+                      </li>
+                    )}
+                  </ul>
+                </details>
+              )}
+              {!!saveResult.notReady?.length && (
+                <details>
+                  <summary className="cursor-pointer">
+                    Which {saveResult.notReady.length} were not imported after filling their details
+                  </summary>
+                  <ul className="mt-1 space-y-1" aria-label="Not ready after filling">
+                    {saveResult.notReady.map((entry) => {
+                      // Where it stands now, from the refreshed queue.
+                      const now = query.data?.items.find((item) => item.id === entry.id)
+                      return (
+                        <li key={entry.id}>
+                          {entry.filename} ({entryPeriod(entry)}):{" "}
+                          {now ? `still needs: ${now.issue || "a check"}` : "no longer waiting; see the totals above"}
+                        </li>
+                      )
+                    })}
                   </ul>
                 </details>
               )}
