@@ -93,56 +93,94 @@ export async function listStatements(caseId: string, fileIds: string[]) {
 
 const statusOf = (error: unknown) => (error instanceof ApiError ? error.status : 0)
 
+type Mode = "fill_missing" | "replace"
+const requestBody = (
+  targets: DetailsStatement[],
+  change: DetailChanges,
+  mode: Mode,
+  requestId: string,
+  readCurrent: boolean
+) => ({
+  targets: targets.map(({ file_id, source_id, statement_id, revision }) => ({
+    file_id,
+    source_id,
+    statement_id,
+    revision,
+  })),
+  changes: change,
+  mode,
+  request_id: requestId,
+  ...(readCurrent ? { read_current: true } : {}),
+})
+
+/** One planned change, and how to save exactly it. */
+export type PlannedDetails = {
+  preview: DetailsPreview
+  conflicts: DetailsPreview["items"]
+  save: () => Promise<z.infer<typeof receipt>>
+}
+
 /**
- * Previews then saves one change for the listed statements, as the shared fix
- * does. A statement read again since it was listed is previewed as it reads
- * now (once); a preview that changes nothing, or that finds a field the
- * reading now fills differently, is returned unsaved with its reasons.
+ * Previews one change for the listed statements, as the shared fix does. A
+ * statement read again since it was listed is previewed as it reads now
+ * (once). `save` then saves exactly this preview, with the same request id.
+ */
+export async function previewDetails(
+  caseId: string,
+  targets: DetailsStatement[],
+  change: DetailChanges,
+  mode: Mode = "replace"
+): Promise<PlannedDetails> {
+  const requestId = newReviewId()
+  let readCurrent = false
+  const ask = () =>
+    fetchAPI(`${ENDPOINT}/preview?case_id=${caseId}`, {
+      method: "POST",
+      body: requestBody(targets, change, mode, requestId, readCurrent),
+    })
+  let planned: DetailsPreview
+  try {
+    planned = preview.parse(await ask())
+  } catch (error) {
+    if (statusOf(error) !== 409) throw error
+    readCurrent = true
+    planned = preview.parse(await ask())
+  }
+  if (planned.case_id !== caseId) throw Error("The preview belongs to another case.")
+  return {
+    preview: planned,
+    conflicts: planned.items.filter((item) => item.conflicts?.length),
+    save: async () => {
+      const saved = receipt.parse(
+        await fetchAPI(`${ENDPOINT}/save?case_id=${caseId}`, {
+          method: "POST",
+          body: {
+            ...requestBody(targets, change, mode, requestId, readCurrent),
+            preview_revision: planned.preview_revision,
+          },
+          timeout: 300000,
+        })
+      )
+      if (saved.case_id !== caseId) throw Error("The save response belongs to another case.")
+      return saved
+    },
+  }
+}
+
+/**
+ * Previews then saves one change. A preview that changes nothing, or that
+ * finds a field the reading now fills differently, is returned unsaved.
  */
 export async function previewAndSave(
   caseId: string,
   targets: DetailsStatement[],
   change: DetailChanges,
-  mode: "fill_missing" | "replace" = "replace"
+  mode: Mode = "replace"
 ) {
-  const requestId = newReviewId()
-  const body = (readCurrent: boolean) => ({
-    targets: targets.map(({ file_id, source_id, statement_id, revision }) => ({
-      file_id,
-      source_id,
-      statement_id,
-      revision,
-    })),
-    changes: change,
-    mode,
-    request_id: requestId,
-    ...(readCurrent ? { read_current: true } : {}),
-  })
-  let readCurrent = false
-  let planned: DetailsPreview
-  try {
-    planned = preview.parse(
-      await fetchAPI(`${ENDPOINT}/preview?case_id=${caseId}`, { method: "POST", body: body(false) })
-    )
-  } catch (error) {
-    if (statusOf(error) !== 409) throw error
-    readCurrent = true
-    planned = preview.parse(
-      await fetchAPI(`${ENDPOINT}/preview?case_id=${caseId}`, { method: "POST", body: body(true) })
-    )
-  }
-  if (planned.case_id !== caseId) throw Error("The preview belongs to another case.")
-  const conflicts = planned.items.filter((item) => item.conflicts?.length)
-  if (!planned.updated || conflicts.length)
-    return { saved: null, preview: planned, conflicts }
-  const saved = receipt.parse(
-    await fetchAPI(`${ENDPOINT}/save?case_id=${caseId}`, {
-      method: "POST",
-      body: { ...body(readCurrent), preview_revision: planned.preview_revision },
-    })
-  )
-  if (saved.case_id !== caseId) throw Error("The save response belongs to another case.")
-  return { saved, preview: planned, conflicts }
+  const planned = await previewDetails(caseId, targets, change, mode)
+  if (!planned.preview.updated || planned.conflicts.length)
+    return { saved: null, preview: planned.preview, conflicts: planned.conflicts }
+  return { saved: await planned.save(), preview: planned.preview, conflicts: planned.conflicts }
 }
 
 const LABELS: Record<string, string> = {

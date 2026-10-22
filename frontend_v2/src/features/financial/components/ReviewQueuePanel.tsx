@@ -19,6 +19,7 @@ import {
 import { ReadingProgress } from "./ReadingProgress"
 import { BulkStatementDetails } from "./BulkStatementDetails"
 import { QueueRowDetails } from "./QueueRowDetails"
+import { QueueNoActivityConfirm } from "./QueueNoActivityConfirm"
 
 type ListName = "waiting" | "ready" | "filled" | "reader" | "copies" | "unreadable"
 const QUEUE_KEYS = ["queueItem", "queueList", "queueFiles", "queueIssue"]
@@ -257,6 +258,16 @@ export function ReviewQueuePanel({
     () => (issue && list === "waiting" ? listed.filter((entry) => entry.issue_reason === issue) : listed),
     [issue, list, listed]
   )
+  // The issue a shared fix applies to: the chosen filter, or the only issue
+  // listed (the filter buttons are not shown when there is just one kind).
+  const bulkIssue =
+    list === "waiting" ? issue || (issueCounts.length === 1 ? issueCounts[0][0] : "") : ""
+  const bulkEntries = useMemo(
+    () => (bulkIssue ? current.filter((entry) => entry.issue_reason === bulkIssue) : []),
+    [bulkIssue, current]
+  )
+  // Statements ticked for "no payments" confirmation together.
+  const [quietChosen, setQuietChosen] = useState<Set<string>>(new Set())
   const chooseIssue = (value: string) =>
     setParams((previous) => {
       const next = new URLSearchParams(previous)
@@ -307,6 +318,20 @@ export function ReviewQueuePanel({
     const result = await query.refetch()
     if (entry && result.data && !keepOutcome) setOutcome({ entry, ...savedOutcome(result.data, entry) })
     return result.data
+  }
+  /** After a shared fix: where the statements it covered stand now, from the refreshed queue. */
+  const reportShared = (chosen: QueueEntry[], line: string) => {
+    const ids = new Set(chosen.map((entry) => entry.id))
+    void refresh().then((data) => {
+      if (!data) return
+      const left = data.items.filter((entry) => ids.has(entry.id)).length
+      const ready = [...data.ready, ...data.filled].filter((entry) => ids.has(entry.id)).length
+      setBulkOutcome(
+        left
+          ? `${line}. ${left} of ${ids.size} still need something; they stay listed below with what is left.${ready ? ` ${ready} ready to import.` : ""}`
+          : `${line}. None of the ${ids.size} statements need anything more for this.${ready ? ` ${ready} ready to import.` : ""}`
+      )
+    })
   }
   const back = () => {
     void refresh()
@@ -510,39 +535,37 @@ export function ReviewQueuePanel({
               ))}
             </div>
           )}
-          {list === "waiting" && issue && canEdit && BULK_ISSUES.has(issue) && current.length > 0 && (
+          {list === "waiting" && bulkIssue && canEdit && BULK_ISSUES.has(bulkIssue) && bulkEntries.length > 0 && (
             <div className="flex flex-wrap items-center gap-3 rounded border p-3 text-sm">
               <BulkStatementDetails
                 // Kept by issue and file filter only: the queue refreshes while
                 // files are read, and a refresh must not close the dialog or
                 // drop the statements already selected in it.
-                key={issue}
-                scopeName={`queue:${issue}:${fileIds.join(",")}`}
-                expected={current.length}
+                key={bulkIssue}
+                scopeName={`queue:${bulkIssue}:${fileIds.join(",")}`}
+                expected={bulkEntries.length}
                 caseId={caseId}
-                fileIds={[...new Set(current.flatMap((entry) => [entry.file_id, ...entry.file_ids]))]}
-                statements={current.flatMap((entry) =>
+                fileIds={[...new Set(bulkEntries.flatMap((entry) => [entry.file_id, ...entry.file_ids]))]}
+                statements={bulkEntries.flatMap((entry) =>
                   [...new Set([entry.file_id, ...entry.file_ids])].map((file_id) => ({
                     file_id,
                     statement_id: entry.statement_id,
                   }))
                 )}
-                reviewGroup={issue}
-                datesOnly={issue === "dates"}
-                buttonLabel={`Fix all ${current.length} together`}
-                onSaved={() => {
-                  const chosen = new Set(current.map((entry) => entry.id))
-                  void refresh().then((data) => {
-                    if (!data) return
-                    const left = data.items.filter((entry) => chosen.has(entry.id)).length
-                    setBulkOutcome(
-                      left
-                        ? `Saved. ${left} of ${chosen.size} still need something; they stay listed below with what is left.`
-                        : `Saved. None of the ${chosen.size} statements need anything more for this.`
-                    )
-                  })
-                }}
+                reviewGroup={bulkIssue}
+                datesOnly={bulkIssue === "dates"}
+                buttonLabel={`Fix all ${bulkEntries.length} together`}
+                onSaved={() => reportShared(bulkEntries, "Saved")}
               />
+              {bulkIssue === "no_activity" && (
+                <QueueNoActivityConfirm
+                  caseId={caseId}
+                  entries={bulkEntries}
+                  chosen={quietChosen}
+                  onChoose={setQuietChosen}
+                  onDone={(confirmed, line) => reportShared(confirmed, line)}
+                />
+              )}
               <span>
                 Every statement listed below waits for the same detail. Choose them, enter the value once and check the
                 preview before saving. Nothing is imported until each statement checks out.
@@ -615,6 +638,20 @@ export function ReviewQueuePanel({
                   key={entry.id}
                   className="flex flex-wrap items-center justify-between gap-3 p-3 text-sm"
                 >
+                  {canEdit && bulkIssue === "no_activity" && entry.issue_reason === "no_activity" && (
+                    <input
+                      type="checkbox"
+                      className="mt-1 self-start"
+                      aria-label={`Choose ${entry.filename} (${entryPeriod(entry)}) to confirm no payments`}
+                      checked={quietChosen.has(entry.id)}
+                      onChange={(event) => {
+                        const next = new Set(quietChosen)
+                        if (event.target.checked) next.add(entry.id)
+                        else next.delete(entry.id)
+                        setQuietChosen(next)
+                      }}
+                    />
+                  )}
                   <div className="min-w-0 flex-1 basis-72">
                     <EntryLine entry={entry} />
                     {entry.issue && (
