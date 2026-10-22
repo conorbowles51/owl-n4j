@@ -18,6 +18,7 @@ import {
 } from "../lib/review-queue"
 import { ReadingProgress } from "./ReadingProgress"
 import { BulkStatementDetails } from "./BulkStatementDetails"
+import { QueueRowDetails } from "./QueueRowDetails"
 
 type ListName = "waiting" | "ready" | "filled" | "reader" | "copies" | "unreadable"
 const QUEUE_KEYS = ["queueItem", "queueList", "queueFiles", "queueIssue"]
@@ -639,6 +640,14 @@ export function ReviewQueuePanel({
                           </li>
                         ))}
                       </ul>
+                    )}
+                    {canEdit && entry.batch_id && (list === "waiting" || list === "filled") && (
+                      <QueueRowDetails
+                        key={entry.id}
+                        caseId={caseId}
+                        entry={entry}
+                        onSaved={(saved) => void refresh(saved)}
+                      />
                     )}
                     {list === "copies" && (
                       <p className="mt-1">
