@@ -13,33 +13,29 @@ sets it itself only when it is genuinely blocked on Neil; see "Halt rules".)
 
 ## ▶ NEXT
 
-**(2026-10-21 08:00) REAL-DOCUMENT wave 12 integrated into fin/release-1 (headless integrate-12). SQUASH of r12-kapital
-2a6df8be (one engine docstring and one engine test quoted a figure equal to a real statement amount; replaced by an
-invented one, no behaviour change), regular merges of t-visual-v02 f1ebc56d and t-visual-v03 c835bdc8 (notes only), on
-d53e0915; WIP-NOTES.md dropped. NOT pushed or deployed by this session. Running state, counts and history in
+**(2026-10-22 04:40) REAL-DOCUMENT wave 13 integrated into fin/release-1 (headless integrate-13). Regular merges of
+t-visual-v19 f58d6dbf (truth and audit tooling only), r13-andrews ab5c16ef and r13-merrick 3e8e7f06, on 48e58b67;
+WIP-NOTES.md dropped; no conflicts. NOT pushed or deployed by this session. Running state, counts and history in
 /mnt/owl-data/fin-wt/headless/real/STATE.md (counts only).**
-Real headline (bench/wave12 = r12-kapital's whole-set run on frozen 6d1d021d, which differs from the merged head only by
-that invented figure, rescored by a frozen copy of c835bdc8 against the current truth; 796 documents, 1,524 distinct
-verified periods, reading v24; product default, automatic save ON): **1,404/1,524 ready without edits (92.1%)**, all
-saved by the system with no click; on wave 11's 778 documents **1,396/1,506 (was 1,388)**; **0 wrong admissions, 0
-critical-field errors (22,419 rows), 0 duplicate ledger contributions**, must-hold 5/5, 0 lost, 16 gained. **Saved
-periods with a holder other than the printed one 5 -> 0** (new harness count; 36 BBVA same-entity spellings reported
-apart). **Generic-only 1,037/1,524, 0 wrong.** Brokerage cash ledgers: 14 of 15 read with every row equal to truth, held
-only for the currency the ledger does not print. Copies held 168/171; REAL_EXIT=1 still only for the one saved copy
-dcfc8ce1f2afc#1 (Neil rule). Actions per 100 statements 213 / 204 on the 778 (was 223 / 212); 244 / 234 on all 796 by a
-simulation that counts the brokerage rows as typed by hand (169 / 157 with the product's re-read). Truth final 828/832
-(+19), compared 796/815. Live (read-only audit-wave12): the same 6 periods disagree, the same 1 double admission; the new
-live holder comparison finds 3 Kapital periods with an address line as holder (live code). Synthetic 108/125, 0 wrong.
-Suites: financial Ran 6,550, only the 2 known unassigned_statement failures; tsc 0; **vitest unit not run** (refused by
-the session's permission layer; no frontend file changed since wave 11's 2,130/2,130; run it before deploying).
-**Wave 13 (headless/real/wave13.units, prompts headless/real/units/):** `t-visual-v19` (Navy Federal, the one bank with no
-scored truth: the independent reader 511fe673 is already in fin/release-1, regenerate and confirm; 828 -> 829/832),
-`r13-andrews` (35 recoverable held, unchanged since wave 5; target >= 245/266), `r13-merrick` (19 held, target >= 32/42;
-then a cited currency proposal for the brokerage ledgers and the harness simulation's re-read after a decision).
+Real headline (bench/wave13 = a fresh whole-set run of frozen 3e8e7f06, 797 documents, 1,729 distinct verified periods,
+reading v24 with v25 on the Andrews documents; product default, automatic save ON): **1,645/1,729 ready without edits
+(95.1%), recoverable 1,645/1,724 (95.4%)**, all saved by the system with no click; on wave 12's 796 documents
+**1,440/1,524 (was 1,404)**; **0 wrong admissions, 0 critical-field errors (25,489 rows), 0 duplicate ledger
+contributions**, must-hold 5/5, 0 lost, 241 gained (Navy Federal 205 on its first scored truth, engine only; Andrews
+231 -> 255; Merrick 23 -> 35). Saved holder differs 0. **Generic-only 1,242/1,729, 0 wrong.** New, reported (not a wrong
+admission): 3 Andrews closed share sections saved without a closing balance (truth 0.00, no money moves). Copies held
+168/171; REAL_EXIT=1 still only for dcfc8ce1f2afc#1 (Neil rule). Actions per 100 statements **137 / 128** (wave 12 under
+the same re-read simulation: 172 / 159). Truth final 829/832 (+1, +205 verified periods), compared 797/815. Live
+(read-only audit-wave13): identical to audit-v19 (the same 6 disagreeing periods, 1 double admission, 3 Kapital holders).
+Synthetic 108/125, 0 wrong. Suites: financial Ran 6,597, only the 2 known unassigned_statement failures after a rerun of
+two load-timeout modules (19 OK) and the known intermittent page-identity test; tsc 0; vitest unit 2,130/2,130.
+**Wave 14 (headless/real/wave14.units, prompts headless/real/units/):** `t-visual-v11` and `t-visual-v12` (the last 3
+Capital One confirm documents, 832/832 final; v12 also brings the 18 all-unverified documents into the comparison,
+815/815), `r14-santander` (the 3 Andrews closed-section closings first; Santander 18 held, 393 actions; target >= 138/146).
 Acceptance for every unit: 0 wrong admissions real (product; generic-only must not add any) and synthetic, no new copy
-saved, synthetic >= 108/125, no ready period lost against bench/wave12.
-**Live:** the reunion ca059a42 (deployed 2026-10-17, engine v19). Deploy of fin/release-1 recommended now, after a
-vitest unit run (STATE.md open decision 1).
+saved, synthetic >= 108/125, no ready period lost against bench/wave13.
+**Live:** the reunion ca059a42 (deployed 2026-10-17, engine v19). Deploy of fin/release-1 recommended now (STATE.md open
+decision 1).
 **Everything below in this section is the synthetic track (wave 5 state), parked behind the real waves.**
 Release-1 now (corpus v4, 124 distinct periods, bench-runs/release-1-w5, exit 0): **102/124 ready without edits (82.3%)**,
 102/107 recoverable (95.3%), 0 wrong admissions, 0 critical-field errors (347 saved), 0 valid-looking wrong values
@@ -903,3 +899,27 @@ brief (briefs = Queue entries above + the 2026-10-02 log lines). Automation is t
   errors=0, skipped 20; tsc -b 0 (as the app user); vitest unit NOT run (the permission layer refused it twice; no
   frontend change since wave 11). Logs bench-runs/real-wave12{,-suite,-tsc}.log.
 - Wave 13 planned: t-visual-v19, r13-andrews, r13-merrick. STATE.md and STATUS-FOR-NEIL.md rewritten.
+
+### 2026-10-22 04:40 — REAL-DOCUMENT wave 13 merged into fin/release-1 (headless integrate-13)
+- All three notes say complete; none admits a wrong period on real or synthetic data; none commits real data (private
+  scan of each branch and of the merged head against 48e58b67: 0 hits). Regular merges t-visual-v19 (f58d6dbf; truth
+  and audit tooling, no processor code), r13-andrews (ab5c16ef), r13-merrick (3e8e7f06); no conflicts, no breakage fix.
+  WIP-NOTES.md dropped; notes archived /mnt/owl-data/fin-wt/notes/{t-visual-v19,r13-andrews,r13-merrick}.md.
+- **Real benchmark** (bench/wave13: fresh whole-set run, frozen 3e8e7f06, readings tmp/int13/readings-w13.json =
+  r13-andrews's readings + t-visual-v19's Navy Federal read; product default; 9 h 35 min niced): **1,645/1,729**,
+  recoverable 1,645/1,724 (95.4%), all saved by the system, 0 wrong, 0 critical (25,489 rows), holds 5/5, copies held
+  168/171, saved holder differs 0 (same entity 36), 0 lost against bench/wave12-v19, 241 gained (navy-federal 205,
+  andrews 24, merrick 12); REAL_EXIT=1 for the same saved copy dcfc8ce1f2afc#1. Valid-looking wrong values 3 (the fourth
+  was a truth error, corrected). 3 ready Andrews closed sections saved without a closing balance (reported; r14-santander
+  item 1). Compare 797/815 (1,789 of 1,950 without disagreement); the 18 never compared are the all-unverified
+  documents, which real_truth leaves out of the manifest.
+- Generic-only (bench/wave13-generic-only, same readings): 1,242/1,729, **0 wrong**, 0 critical; 0 lost.
+- Live ledger audit (read-only, audit-wave13): identical to audit-v19: 1,340 admitted periods on truth documents, 914
+  agree, 6 disagree (same ids), 1 printed period admitted twice, 3 Kapital holders differ.
+- Census not re-run (census-r5: 1,165 ready of 3,154 raw periods).
+- Synthetic (bench-runs/real-wave13, frozen 3e8e7f06): 108/125, 105/108, 0 wrong, copies 1/1, no safety failure.
+- Suites (live .venv, CHROMADB_PORT=1 CHROMA_PORT=1): financial Ran 6,597, failures=3, errors=2, skipped 20 under the
+  load of both benches; the 2 errors (extraction_release subprocess timeouts) and the page-identity failure pass on a
+  rerun of their modules (19 OK); the 2 known unassigned_statement failures remain. tsc -b 0 and vitest unit 304 files
+  2,130/2,130 (as the app user). Logs bench-runs/real-wave13{,-suite,-suite-rerun,-tsc,-vitest}.log.
+- Wave 14 planned: t-visual-v11, t-visual-v12, r14-santander. STATE.md and STATUS-FOR-NEIL.md rewritten.
