@@ -790,12 +790,24 @@ def preview_financial_batch(body: FinancialBatchPreview, case_id: UUID = Query(.
 
 @router.get('/review/queue')
 def financial_review_queue(case_id: UUID = Query(...), file_id: list[UUID] = Query([]),
+        limit: int | None = Query(None, ge=0, le=5000), offset: int = Query(0, ge=0),
+        page_list: Literal['waiting', 'ready', 'filled', 'reader_fix', 'rechecking', 'copies', 'unreadable'] = Query('waiting'),
+        issue: str | None = Query(None, max_length=64), fresh: bool | None = Query(None),
         db: Session = Depends(get_db)):
-    """The case's statements that need a decision now, from stored readings. Read only; nothing is re-read."""
+    """The case's statements that need a decision now, from stored readings. Read only; nothing is re-read.
+
+    ``limit``/``offset``/``page_list``/``issue`` page the lists (``totals`` and
+    ``page`` say how much there is). A paged read (``limit``) or ``fresh=0``
+    may be answered from a queue built moments ago while the current one is
+    built (``refreshing``); ``fresh=1``, and an unpaged read (the views that
+    predate paging), wait for the current one.
+    """
     from services.financial.review_queue import case_review_queue
     from services.financial.request_timing import stage
     with stage('review_queue'):
-        return case_review_queue(db, case_id=case_id, file_ids=file_id)
+        return case_review_queue(db, case_id=case_id, file_ids=file_id, limit=limit, offset=offset,
+                                 page_list=page_list, issue=issue,
+                                 stale_ok=fresh is False or (fresh is None and limit is not None))
 
 
 @router.get('/review/status')

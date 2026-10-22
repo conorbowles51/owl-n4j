@@ -22,7 +22,6 @@ from the same classification, so it always agrees with the queue.
 import threading
 import time
 from collections import OrderedDict
-from copy import deepcopy
 from types import SimpleNamespace
 from uuid import UUID
 
@@ -507,9 +506,17 @@ def reader_files(entries):
     return list(files.values())
 
 
-_CACHE_SIZE = 16
-_cache = OrderedDict()
+# The queue is cached per case while its inputs are unchanged (the register's
+# PostgreSQL row-version fingerprint, which covers batches, items, files,
+# readings and saved records). Cached views are never mutated: a response
+# copies only the entries it returns. Memory is bounded by cases and by
+# entries held in all, and one build per case runs at a time in a process.
+_CACHE_SIZE = 8
+CACHE_MAX_ENTRIES = 40_000
+_cache = OrderedDict()   # case -> (fingerprint, view)
 _lock = threading.Lock()
+_building = {}           # case -> threading.Event set when its build ends
+BUILD_WAIT_SECONDS = 180
 
 
 # Precompute on write: cases whose queue was read recently are rebuilt in the
@@ -542,40 +549,116 @@ def prewarm(factory, *, budget_seconds=20.0, now=None):
                     hit = _cache.get(key)
                 if fingerprint is None or (hit and hit[0] == fingerprint):
                     continue
-                _entries(session, UUID(key), note=False)
+                _view(session, UUID(key), note=False)
                 rebuilt.append(key)
             finally:
                 session.rollback()
     return rebuilt
 
 
-def _entries(session, case_id, use_cache=True, note=True):
-    """(queue entries, unread statement files) for the case, reused while its rows are unchanged."""
-    from services.financial.statement_file_status import status_fingerprint
+def _compute(session, case_id):
+    """The whole-case view: entries, failed and set-aside files, unread count. Read only."""
     from services.financial.auto_read import unread_statement_files
+    entries = _build(session, case_id)
+    set_aside = []
+    entries, failed, copy_files = _set_aside_read_copies(session, case_id, entries,
+        _failed_files(session, case_id, set(), set_aside))
+    _mark_read_afresh(session, case_id, failed)
+    from datetime import datetime, timezone
+    return dict(entries=entries, failed=failed, copy_files=copy_files, set_aside=set_aside,
+                unread=len(unread_statement_files(session, case_id=case_id)),
+                as_of=datetime.now(timezone.utc).isoformat(timespec='seconds'))
+
+
+def _store(key, fingerprint, view):
+    with _lock:
+        _cache[key] = (fingerprint, view)
+        _cache.move_to_end(key)
+        held = lambda: sum(len(value[1]['entries']) for value in _cache.values())
+        while len(_cache) > 1 and (len(_cache) > _CACHE_SIZE or held() > CACHE_MAX_ENTRIES):
+            _cache.popitem(last=False)
+
+
+def _build_once(session, key, case_id, fingerprint):
+    """Build and cache, one build per case at a time; a concurrent caller waits for it. Returns the view."""
+    with _lock:
+        running = _building.get(key)
+        if running is None:
+            running = _building[key] = threading.Event()
+            mine = True
+        else:
+            mine = False
+    if not mine:
+        running.wait(BUILD_WAIT_SECONDS)
+        with _lock:
+            hit = _cache.get(key)
+        if hit and hit[0] == fingerprint:
+            return hit[1]
+        return _compute(session, case_id)  # that build was of older inputs (or timed out)
+    try:
+        view = _compute(session, case_id)
+        _store(key, fingerprint, view)
+        return view
+    finally:
+        with _lock:
+            _building.pop(key, None)
+        running.set()
+
+
+def _refresh_in_background(bind, key, case_id):
+    """Start one background build of the current inputs (own session, same database) unless one is running."""
+    with _lock:
+        if key in _building:
+            return
+    def run():
+        from sqlalchemy.orm import sessionmaker
+        from services.financial.statement_file_status import status_fingerprint
+        try:
+            with sessionmaker(bind=bind, autoflush=False)() as session:
+                try:
+                    _build_once(session, key, case_id, status_fingerprint(session, case_id))
+                finally:
+                    session.rollback()
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception('Review queue rebuild failed; the next read builds it')
+    threading.Thread(target=run, name=f'review-queue-{key[:8]}', daemon=True).start()
+
+
+def _view(session, case_id, use_cache=True, note=True, stale_ok=False):
+    """(whole-case view, refreshing). Reused while the case's rows are unchanged.
+
+    ``stale_ok``: when the inputs changed since the cached view was built, that
+    view is returned at once (refreshing=True) and the current one is built
+    in the background; a read never waits behind a rebuild it did not need.
+    """
+    from services.financial.statement_file_status import status_fingerprint
     fingerprint = status_fingerprint(session, case_id) if use_cache else None
+    if fingerprint is None:
+        return _compute(session, case_id), False
     key = str(case_id)
-    if fingerprint is not None and note:
+    if note:
         with _lock:
             _recent_reads[key] = time.monotonic()
             _recent_reads.move_to_end(key)
-            while len(_recent_reads) > _CACHE_SIZE:
+            while len(_recent_reads) > 16:
                 _recent_reads.popitem(last=False)
-    if fingerprint is not None:
-        with _lock:
-            hit = _cache.get(key)
-            if hit and hit[0] == fingerprint:
-                _cache.move_to_end(key)
-                return deepcopy(hit[1]), hit[2]
-    entries = _build(session, case_id)
-    unread = len(unread_statement_files(session, case_id=case_id))
-    if fingerprint is not None:
-        with _lock:
-            _cache[key] = (fingerprint, deepcopy(entries), unread)
+    with _lock:
+        hit = _cache.get(key)
+        if hit:
             _cache.move_to_end(key)
-            while len(_cache) > _CACHE_SIZE:
-                _cache.popitem(last=False)
-    return entries, unread
+    if hit and hit[0] == fingerprint:
+        return hit[1], False
+    if hit and stale_ok:
+        _refresh_in_background(session.get_bind(), key, case_id)
+        return hit[1], True
+    return _build_once(session, key, case_id, fingerprint), False
+
+
+def _entries(session, case_id, use_cache=True, note=True):
+    """(queue entries, unread statement files): copies, for callers that change them."""
+    view, _ = _view(session, case_id, use_cache=use_cache, note=note)
+    return [dict(entry) for entry in view['entries']], view['unread']
 
 
 def _counts(entries):
@@ -740,46 +823,78 @@ def _uuid(value):
         return False
 
 
-def case_review_queue(session, *, case_id, file_ids=None, use_cache=True):
-    """The case's queue and status line, optionally limited to some files (evidence ids)."""
+PAGE_LISTS = {'waiting': 'items', 'ready': 'ready', 'filled': 'filled', 'reader_fix': 'reader_fix',
+              'rechecking': 'rechecking', 'copies': 'copies', 'unreadable': 'unreadable'}
+
+
+def _public(entry):
+    return {key: value for key, value in entry.items() if key != 'root'}
+
+
+def case_review_queue(session, *, case_id, file_ids=None, use_cache=True, limit=None, offset=0,
+                      page_list='waiting', issue=None, stale_ok=False):
+    """The case's queue and status line, optionally limited to some files (evidence ids).
+
+    ``limit`` caps every entry list (0: counts only) and ``offset``/``issue``
+    page the list named ``page_list``; ``totals``, ``page`` and
+    ``issue_counts`` say how much there is, so nothing is cut silently.
+    Counts and the status line are always whole-case (whole-filter).
+    ``stale_ok`` returns a view built moments ago while a current one is
+    built (``refreshing``); see ``_view``.
+    """
     from services.financial.auto_read import reading_progress
+    if page_list not in PAGE_LISTS:
+        raise ValueError(f'Unknown queue list: {page_list}')
     started = time.perf_counter()
-    entries, unread = _entries(session, case_id, use_cache=use_cache)
+    view, refreshing = _view(session, case_id, use_cache=use_cache, stale_ok=stale_ok)
     # Live (not cached): files being read or prepared, for "Reading 12 of 40 files".
-    reading = dict(reading_progress(session, case_id=case_id), unread_statement_files=unread)
+    reading = dict(reading_progress(session, case_id=case_id), unread_statement_files=view['unread'])
     file_filter = {str(i) for i in file_ids or []}
-    # Decided over the whole case: the upload that was read may be outside the filter.
-    set_aside = []
-    entries, failed, copy_files = _set_aside_read_copies(session, case_id, entries,
-        _failed_files(session, case_id, set(), set_aside))
-    _rechecked_by_recovery(session, case_id, entries)
+    entries, failed, copy_files, set_aside = view['entries'], view['failed'], view['copy_files'], view['set_aside']
+    # Live too: statements a reader campaign will read again (copies of the
+    # cached entries it moves, never the cached ones).
+    moved = _rechecked_by_recovery(session, case_id, [dict(entry) for entry in entries
+                                                      if entry['bucket'] in REREAD_BUCKETS])
+    if moved:
+        moved = {entry['id']: entry for entry in moved if entry['bucket'] == 'rechecking'}
+        entries = [moved.get(entry['id'], entry) for entry in entries]
     if file_filter:
         entries = [e for e in entries if file_filter & set(e['file_ids'])]
         within = lambda f: bool({f.get('file_id'), f.get('source_id')} & file_filter)
         failed, copy_files = [f for f in failed if within(f)], [f for f in copy_files if within(f)]
         set_aside = [f for f in set_aside if within(f)]
-    _mark_read_afresh(session, case_id, failed)
     counts = _counts(entries)
     counts['unreadable_files'] = len(failed)
     counts['removed_files'] = len(set_aside)
     counts['copies'] += len(copy_files)
     counts['copy_files'] = len(copy_files)
     waiting_for_reader = reader_files(entries)
-    for entry in entries:
-        entry.pop('root', None)
-    pick = lambda bucket: [e for e in entries if e['bucket'] == bucket]
+    lists = {name: [e for e in entries if e['bucket'] == name] for name in PAGE_LISTS}
+    issue_counts = {}
+    for entry in lists['waiting']:
+        if entry.get('issue_reason'):
+            issue_counts[entry['issue_reason']] = issue_counts.get(entry['issue_reason'], 0) + 1
+    totals = {name: len(values) for name, values in lists.items()}
+    chosen = [e for e in lists[page_list] if not issue or e.get('issue_reason') == issue]
+    offset = max(0, int(offset or 0))
+    pages = {name: (values if limit is None else values[:max(0, limit)]) for name, values in lists.items()}
+    pages[page_list] = chosen[offset:] if limit is None else chosen[offset:offset + max(0, limit)]
     ready_batches = {}
-    for entry in pick('ready'):
+    for entry in lists['ready']:
         ready_batches[entry['batch_id']] = ready_batches.get(entry['batch_id'], 0) + 1
+    public = {name: [_public(e) for e in values] for name, values in pages.items()}
     return dict(case_id=str(case_id), file_ids=sorted(file_filter), counts=counts,
-        status_line=status_line(counts, reading), reading=reading, items=pick('waiting'), copies=pick('copies'),
-        unreadable=pick('unreadable'), unreadable_files=failed, set_aside_files=set_aside, copy_files=copy_files,
-        rechecking=pick('rechecking'),
-        unexplained=pick('unexplained'), ready=pick('ready'), filled=pick('filled'),
-        reader_fix=pick('reader_fix'), reader_files=waiting_for_reader,
+        status_line=status_line(counts, reading), reading=reading, items=public['waiting'], copies=public['copies'],
+        unreadable=public['unreadable'], unreadable_files=failed, set_aside_files=set_aside, copy_files=copy_files,
+        rechecking=public['rechecking'],
+        unexplained=[_public(e) for e in entries if e['bucket'] == 'unexplained'], ready=public['ready'],
+        filled=public['filled'], reader_fix=public['reader_fix'], reader_files=waiting_for_reader,
         ready_batches=[dict(batch_id=key, statements=value) for key, value in
                        sorted(ready_batches.items(), key=lambda pair: -pair[1])],
-        elapsed_ms=round((time.perf_counter() - started) * 1000))
+        totals=totals, issue_counts=issue_counts, ready_item_ids=[e['id'] for e in lists['ready']],
+        page=dict(list=page_list, issue=issue or None, offset=offset, limit=limit, returned=len(pages[page_list]),
+                  total=len(chosen)),
+        refreshing=refreshing, as_of=view['as_of'], elapsed_ms=round((time.perf_counter() - started) * 1000))
 
 
 def reading_sentence(reading):
@@ -820,7 +935,8 @@ def status_line(counts, reading=None):
 
 
 def case_status(session, *, case_id):
-    """Counts only, for the cross-case view."""
-    queue = case_review_queue(session, case_id=case_id)
+    """Counts only, for badges and the cross-case view: never waits behind a rebuild of a cached case."""
+    queue = case_review_queue(session, case_id=case_id, limit=0, stale_ok=True)
     return dict(case_id=queue['case_id'], counts=queue['counts'], status_line=queue['status_line'],
-                reading=queue['reading'], elapsed_ms=queue['elapsed_ms'])
+                reading=queue['reading'], refreshing=queue['refreshing'], as_of=queue['as_of'],
+                elapsed_ms=queue['elapsed_ms'])

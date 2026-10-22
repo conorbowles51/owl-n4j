@@ -468,3 +468,95 @@ class SupersededFileReadingTests(QueueReadTests):
         with self.f.SessionLocal() as db:
             self.assertEqual(db.get(Batch, batch).files[0]['status'], 'checked')
         self.assertEqual(self.queue()['counts']['ready'], 1)
+
+
+class PagedQueueTests(QueueReadTests):
+    """A large synthetic case: pages say how much there is, counts stay whole, the cache stays bounded."""
+    test_a_statement_in_two_batches_is_one_entry_and_leaves_once_saved = None
+    test_a_statement_with_a_problem_is_queued_with_its_sentence_and_file_filter_applies = None
+    test_a_file_removed_from_financial_is_not_counted_as_unreadable = None
+    test_a_file_no_longer_in_the_case_or_read_from_a_copy_is_not_unreadable = None
+
+    def setUp(self):
+        super().setUp()
+        from tests import financial_large_queue
+        self.expected = financial_large_queue.build(self.f, files=30)
+        from services.financial import review_queue as rq
+        rq._cache.clear(); rq._recent_reads.clear()
+
+    def queue(self, use_cache=False, **kwargs):
+        with self.f.SessionLocal() as db, \
+                patch('services.financial.statement_import.read_statement_import', side_effect=NO_READING), \
+                patch.object(service, 'read_statement_import', side_effect=NO_READING):
+            return case_review_queue(db, case_id=self.f.case.id, use_cache=use_cache, **kwargs)
+
+    def fingerprinted(self, value):
+        import sys
+        import services.financial.statement_file_status  # noqa: F401
+        return patch.object(sys.modules['services.financial.statement_file_status'], 'status_fingerprint',
+                            side_effect=lambda *_: tuple(value))
+
+    def test_pages_are_counted_and_never_cut_silently(self):
+        whole = self.queue()
+        waiting = self.expected['waiting']
+        self.assertEqual((whole['counts']['waiting'], len(whole['items']), whole['totals']['waiting']),
+                         (waiting, waiting, waiting))
+        page = self.queue(limit=25, offset=20)
+        self.assertEqual(page['counts'], whole['counts'])
+        self.assertEqual(page['status_line'], whole['status_line'])
+        self.assertEqual([e['id'] for e in page['items']], [e['id'] for e in whole['items'][20:45]])
+        self.assertEqual(page['page'], dict(list='waiting', issue=None, offset=20, limit=25, returned=25, total=waiting))
+        self.assertEqual(len(page['ready']), 25)
+        self.assertEqual(page['totals']['ready'], whole['counts']['ready'])
+        self.assertEqual(sorted(page['ready_item_ids']), sorted(e['id'] for e in whole['ready']))
+        self.assertEqual(sum(page['issue_counts'].values()), waiting)
+        currency = self.queue(limit=1000, issue='currency')
+        self.assertEqual(currency['page']['total'], page['issue_counts']['currency'])
+        self.assertTrue(all(e['issue_reason'] == 'currency' for e in currency['items']))
+        ready = self.queue(limit=10, offset=5, page_list='ready')
+        self.assertEqual([e['id'] for e in ready['ready']], [e['id'] for e in whole['ready'][5:15]])
+        counts = self.queue(limit=0)
+        self.assertEqual((counts['items'], counts['counts']), ([], whole['counts']))
+        self.assertTrue(all('root' not in e for e in page['items']))
+
+    def test_a_changed_case_is_answered_at_once_and_rebuilt_in_the_background(self):
+        from services.financial import review_queue as rq
+        fingerprint = [('a',)]
+        with self.fingerprinted(fingerprint):
+            first = self.queue(use_cache=True, limit=10, stale_ok=True)
+            self.assertFalse(first['refreshing'])  # nothing cached yet: built now
+            fingerprint.append(('b',))
+            with self.f.SessionLocal() as db:
+                db.query(Item).filter(Item.status == 'ready').update({'status': 'removed'})
+                db.commit()
+            stale = self.queue(use_cache=True, limit=10, stale_ok=True)
+            self.assertTrue(stale['refreshing'])
+            self.assertEqual(stale['counts'], first['counts'])
+            for _ in range(100):  # the background build
+                with rq._lock:
+                    if rq._cache[str(self.f.case.id)][0] == tuple(fingerprint) and str(self.f.case.id) not in rq._building:
+                        break
+                __import__('time').sleep(0.05)
+            current = self.queue(use_cache=True, limit=10, stale_ok=True)
+            self.assertFalse(current['refreshing'])
+            self.assertEqual(current['counts']['ready'], 0)
+            fingerprint.append(('c',))
+            fresh = self.queue(use_cache=True, limit=10)  # not stale_ok: waits for the current inputs
+            self.assertFalse(fresh['refreshing'])
+
+    def test_answers_never_change_the_cached_queue_and_the_cache_is_bounded(self):
+        from services.financial import review_queue as rq
+        fingerprint = [('a',)]
+        with self.fingerprinted(fingerprint):
+            self.queue(use_cache=True, limit=5)
+            cached = rq._cache[str(self.f.case.id)][1]['entries']
+            before = [dict(e) for e in cached]
+            answer = self.queue(use_cache=True)
+            for entry in answer['items']:
+                entry['bucket'] = 'changed'
+            self.assertEqual([dict(e) for e in cached], before)
+        rq._cache.clear()
+        with patch.object(rq, 'CACHE_MAX_ENTRIES', 1):
+            rq._store('x', ('a',), dict(entries=[{}] * 5))
+            rq._store('y', ('a',), dict(entries=[{}] * 5))
+            self.assertEqual(list(rq._cache), ['y'])  # the newest stays even alone over the bound
