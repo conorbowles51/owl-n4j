@@ -774,6 +774,13 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                 revision=revision, current_import=current_import, applied=False)
     if identity_memory:
         result['identity_memory'] = identity_memory
+    if selected and selected.get('layout_id') == 'andrews-share-statement':
+        # Outside the revision, like derived period dates: bound to this
+        # reading's no-activity proof, which admission re-checks at import.
+        from services.financial.statement_import_andrews import proven_closing
+        closing_proof = proven_closing(no_activity_evidence)
+        if closing_proof:
+            result['proven_closing'] = closing_proof
     from services.financial.review_upgrade import attach_upgrade
     attach_upgrade(result, snapshot)
     if _apply_assignments:

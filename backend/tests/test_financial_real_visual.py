@@ -392,6 +392,7 @@ class CardSectionAndPatchTests(unittest.TestCase):
         self.assertEqual([p.get('truth_source') for p in merged['periods']], [None, 'visual', None])
         self.assertEqual((merged['status'], merged['visual_kept'], merged['visual_patch']),
                          ('settled', ['dcard#2'], []))
+        self.assertNotIn('visual_confirmed', merged)  # documents with nothing confirmed keep their form
         self.assertEqual(rv.apply_visual(merged, visual), merged)  # merging twice changes nothing
 
     def test_keep_is_refused_unless_its_pages_were_read_and_the_period_is_not_verified(self):
@@ -409,6 +410,83 @@ class CardSectionAndPatchTests(unittest.TestCase):
                 rv.Transcription('doc dcard\n' + bad)
         with self.assertRaises(ValueError):  # kept and replaced at once
             rv.Transcription(CARD.replace('patch 2', 'patch 2\nkeep 2 hold x'))
+
+    def ocr_layer(self):
+        layer = self.text_layer()
+        layer['periods'][1].update(truth_status='ocr_reconciled',
+                                   truth_reasons=['reconciled from an OCR text layer; needs visual confirmation'],
+                                   period_start='2024-01-01', period_end='2024-01-31', account='1234', holder='A PERSON',
+                                   currency='USD', opening_minor=1000, closing_minor=1350, expected='auto',
+                                   controls=dict(summary=dict(previous=1000, new=1350)),
+                                   rows=[dict(date='2023-12-30', posted_date='2024-01-02', direction='debit',
+                                              amount_minor=350, description='store'),
+                                         dict(date='2024-01-31', direction='debit', amount_minor=0,
+                                              description='interest', date_unprinted=True)])
+        layer['status'] = 'partly_verified'
+        return layer
+
+    def confirm_text(self, layer, number=2, done='2'):
+        digest = rv.reading_digest(layer['periods'][number - 1])
+        return f'doc dcard\ndone {done}\nissuer acme-card Acme Card\nconfirm {number} {digest}\n'
+
+    def test_a_confirmed_ocr_layer_period_becomes_verified_with_its_reading_unchanged(self):
+        layer = self.ocr_layer()
+        visual = rv.compile_document(self.confirm_text(layer), page_count=5)
+        self.assertEqual((rv.ready(visual), visual['periods'], visual['confirm']),
+                         (True, [], {'2': rv.reading_digest(layer['periods'][1])}))
+        # A reader that predates confirm lines sees an incomplete review and leaves the document alone,
+        # instead of a complete review holding no periods (which would drop every period).
+        self.assertEqual((visual['complete'], visual['complete_with_confirm']), (False, True))
+        merged = rv.apply_visual(layer, visual)
+        period = merged['periods'][1]
+        self.assertEqual((period['truth_status'], period['truth_reasons'], period['truth_source'],
+                          period['visual_confirmed']), ('verified', [], 'visual', True))
+        before = {k: v for k, v in layer['periods'][1].items() if k not in ('truth_status', 'truth_reasons')}
+        self.assertEqual({k: v for k, v in period.items()
+                          if k not in ('truth_status', 'truth_reasons', 'truth_source', 'visual_confirmed')}, before)
+        self.assertEqual((merged['status'], merged['visual_confirmed'], merged['visual_patch'], merged['visual_kept']),
+                         ('verified', ['dcard#2'], [], []))
+        self.assertEqual(rv.apply_visual(merged, visual), merged)  # merging twice changes nothing
+
+    def test_confirm_is_refused_when_the_reading_changed_its_pages_were_not_read_or_it_is_not_ocr_reconciled(self):
+        layer = self.ocr_layer()
+        text = self.confirm_text(layer)
+        changed = self.ocr_layer()
+        changed['periods'][1]['rows'][0]['amount_minor'] = 351  # the text-layer reading is no longer what was checked
+        self.assertEqual(rv.apply_visual(changed, rv.compile_document(text, page_count=5)), changed)
+        unread = rv.compile_document(text.replace('done 2', 'done 3'), page_count=5)
+        self.assertEqual(rv.apply_visual(layer, unread), layer)
+        unverified = self.ocr_layer()
+        unverified['periods'][1]['truth_status'] = 'unverified'  # a confirmation never settles a failed reconcile
+        self.assertEqual(rv.apply_visual(unverified, rv.compile_document(self.confirm_text(unverified), page_count=5)),
+                         unverified)
+        missing = rv.compile_document(text.replace('confirm 2', 'confirm 9'), page_count=5)
+        self.assertEqual(rv.apply_visual(layer, missing), layer)
+
+    def test_an_unread_page_leaves_a_confirm_review_not_ready(self):
+        visual = rv.compile_document(self.confirm_text(self.ocr_layer(), done='2') + 'page 4 skip\n', page_count=5)
+        self.assertEqual((rv.ready(visual), visual['pages_pending']), (False, [4]))
+
+    def test_confirm_lines_are_checked(self):
+        for bad in ('confirm 2\n', 'confirm 2 xyz\n', 'confirm 2 0123456789ab\nconfirm 2 0123456789ab\n'):
+            with self.assertRaises(ValueError):
+                rv.Transcription('doc dcard\n' + bad)
+        with self.assertRaises(ValueError):  # confirmed and kept at once
+            rv.Transcription('doc dcard\nkeep 2 hold x\nconfirm 2 0123456789ab\n')
+        with self.assertRaises(ValueError):  # confirmed and replaced at once
+            rv.Transcription(CARD.replace('patch 2', 'patch 2\nconfirm 2 0123456789ab'))
+
+    def test_digest_command_prints_a_confirm_line(self):
+        import io, json, tempfile, contextlib
+        from pathlib import Path
+        layer = self.ocr_layer()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'dcard.json'
+            path.write_text(json.dumps(layer))
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                self.assertEqual(rv.main(['digest', '--periods', str(path), '--n', '2']), 0)
+        self.assertEqual(out.getvalue().split('#')[0].strip(), f"confirm 2 {rv.reading_digest(layer['periods'][1])}")
 
     def test_a_patch_naming_a_period_the_text_layer_lacks_is_refused(self):
         visual = rv.compile_document(CARD.replace('patch 2', 'patch 7'), page_count=5)

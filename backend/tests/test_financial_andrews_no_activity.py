@@ -427,5 +427,66 @@ class ClosedSectionEvidenceTests(unittest.TestCase):
         self.assertFalse(admit(proposal)['can_import'])
 
 
+class ProvenClosingTests(unittest.TestCase):
+    def proven(self, lines=CLOSED):
+        from services.financial.statement_import_andrews import proven_closing
+        proposal, evidence = closed_proposal(lines)
+        closing = proven_closing(evidence)
+        if closing:
+            proposal['proven_closing'] = closing
+        return proposal, evidence, closing
+
+    def test_a_closed_zero_section_offers_its_closing_with_the_proof_as_basis(self):
+        proposal, evidence, closing = self.proven()
+        self.assertEqual((closing['balance_minor'], closing['printed'], closing['basis']),
+                         ('0', False, 'closed_without_activity'))
+        # Cited to the printed closing notice and the opening line the proof names.
+        self.assertEqual((closing['cited_row_id'], closing['opening_row_id']),
+                         (evidence['closure_row_id'], evidence['opening_row_id']))
+        self.assertEqual((closing['page_number'], closing['closure_date']), (1, '2020-06-29'))
+        self.assertEqual(closing['rect'], evidence['closing_rect'])
+        # No balance row is invented: the proposal's rows are the printed ones.
+        self.assertFalse(any(r['fields'].get('description') == 'Closing Balance' for r in proposal['rows']))
+        result = admit(proposal)
+        self.assertTrue(result['can_import'], result['blockers'])
+        self.assertEqual(result['proven_closing'], closing)
+
+    def test_the_comparison_reads_the_proven_closing_and_a_printed_one_first(self):
+        from benchmarks.statement_automation.real_compare import proposal_view
+        proposal, _, _ = self.proven()
+        self.assertEqual(proposal_view(proposal)['closing_minor'], 0)
+        proposal['proven_closing'] = dict(proposal['proven_closing'], balance_minor='5')
+        proposal['rows'].append(dict(kind='balance', excluded=True, fields=dict(description='Closing Balance', balance='0')))
+        self.assertEqual(proposal_view(proposal)['closing_minor'], 0)
+
+    def test_no_closing_without_a_verified_closure_proof(self):
+        from services.financial.statement_import_andrews import proven_closing
+        _, _, closing = self.proven([[(15, '06/01 ID 0011 VACATION CLUB Previous Balance'), (350, '25.00')], *CLOSED[1:]])
+        self.assertIsNone(closing)
+        _, quiet = proposal_for(page())
+        self.assertTrue(quiet['verified'])
+        self.assertIsNone(proven_closing(quiet))  # an ending balance line is printed there
+        self.assertIsNone(proven_closing(None))
+
+    def test_an_edit_to_the_proven_facts_drops_the_proven_closing(self):
+        proposal, evidence, _ = self.proven()
+
+        def balance(raw):
+            row = next(r for r in raw['rows'] if r['id'] == evidence['opening_row_id'])
+            row['balance_minor'] = '100'
+        result = admit(proposal, balance)
+        self.assertNotIn('proven_closing', result)
+
+    def test_switch_off_offers_no_closing(self):
+        import services.financial.statement_import_andrews as andrews
+        try:
+            andrews.CLOSURE_CLOSING = False
+            proposal, _, closing = self.proven()
+        finally:
+            andrews.CLOSURE_CLOSING = True
+        self.assertIsNone(closing)
+        self.assertNotIn('proven_closing', admit(proposal))
+
+
 if __name__ == '__main__':
     unittest.main()
