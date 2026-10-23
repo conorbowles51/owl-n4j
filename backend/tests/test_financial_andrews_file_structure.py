@@ -9,7 +9,9 @@ pages or lost a share section:
   its own printed page 2;
 - a share heading read with look-alike letters in its ID (confirmed by the
   same label printed in digits elsewhere in the file) or in its date (read
-  only as the printed period start).
+  only as the printed period start);
+- two printed statements of the same share and dates whose balances differ,
+  decided only by the next statement the file prints.
 """
 import unittest
 from copy import deepcopy
@@ -218,6 +220,87 @@ class LookalikeShareHeadingTests(unittest.TestCase):
             self.assertIn((1, 0), andrews_catalog([first, second])[2])
         finally:
             andrews.SHARE_HEADING_LOOKALIKES = True
+
+
+def month(start, opening, closing, *, page, payments=(), share='0040 FREE CHECKING'):
+    """One single-page printed statement of the checking share for the month starting ``start`` (MM)."""
+    lines = [[(15, f'{start}/01 ID {share} Previous Balance'), (350, opening)]]
+    lines += [[(15, f'{start}/03'), (75, 'Withdrawal Debit Card'), (310, amount), (350, balance)]
+              for amount, balance in payments]
+    end = {'06': '30', '07': '31', '08': '31'}[start]
+    lines += [[(15, f'{start}/{end}'), (75, 'Ending Balance'), (350, closing)]]
+    return renumber(source(lines, period=f'{start}/01/20 {start}/{end}/20'), page)
+
+
+def contradicted_file(next_opening='90.00', earlier='100.00', reprint_closing='100.00'):
+    return [month('06', '120.00', earlier, page=1, payments=[('-20.00', '100.00')]),
+            month('07', '100.00', '90.00', page=2, payments=[('-10.00', '90.00')]),
+            month('07', '100.00', reprint_closing, page=3),
+            month('08', next_opening, next_opening, page=4)]
+
+
+class ChainContradictionTests(unittest.TestCase):
+    def test_the_printing_the_next_statement_does_not_open_on_is_marked(self):
+        data = contradicted_file()
+        before = deepcopy(data)
+        groups, _, _ = andrews_catalog(data)
+        july = [g for g in groups if g['period_start'] == '2020-07-01']
+        self.assertEqual([(g['page_numbers'], g.get('chain_contradicted')) for g in july],
+                         [([2], None), ([3], dict(continued_by_page=2, next_statement_page=4))])
+        self.assertFalse(any(g.get('chain_contradicted') for g in groups if g['period_start'] != '2020-07-01'))
+        self.assertEqual(data, before)
+
+    def test_both_stay_compared_unless_the_printed_balances_decide(self):
+        cases = {
+            'next opening matches neither': contradicted_file(next_opening='95.00'),
+            'next opening matches both': contradicted_file(reprint_closing='90.00'),
+            'previous closing contradicts the chained one': contradicted_file(earlier='99.00'),
+            'no next statement': contradicted_file()[:3],
+        }
+        data = contradicted_file()
+        data[3]['rows'][9]['cells'][1]['expected_text'] = '9O.00'
+        cases['next opening unreadable'] = data
+        data = contradicted_file()
+        data[2]['rows'][10]['cells'][2]['expected_text'] = '1OO.00'
+        cases['a rival closing unreadable'] = data
+        data = contradicted_file()
+        data.append(month('08', '90.00', '90.00', page=5))
+        cases['two next statements'] = data
+        for name, data in cases.items():
+            with self.subTest(name):
+                groups, _, _ = andrews_catalog(data)
+                self.assertFalse(any(g.get('chain_contradicted') for g in groups))
+
+    def test_switch_turns_the_rule_off(self):
+        andrews.CHAIN_CONTRADICTION = False
+        try:
+            self.assertFalse(any(g.get('chain_contradicted') for g in andrews_catalog(contradicted_file())[0]))
+        finally:
+            andrews.CHAIN_CONTRADICTION = True
+
+    def test_admission_holds_the_contradicted_printing_until_a_reason_is_recorded(self):
+        from services.financial.import_batches import initial_request
+        from services.financial.statement_admission import assess_admission
+        from services.financial.statement_import import StatementImportRequest
+        data = contradicted_file()
+        groups, _, _ = andrews_catalog(data)
+        reprint = next(g for g in groups if g.get('chain_contradicted'))
+        rows = propose_andrews_statement([data[2]], 'USD', reprint)['rows']
+        proposal = dict(rows=rows, currency='USD', revision='a' * 64, statement_id=reprint['id'],
+                        metadata=dict(holder='EXAMPLE PERSON', account_number=reprint['account_reference'],
+                                      institution='Andrews Federal Credit Union', period_start='2020-07-01',
+                                      period_end='2020-07-31', balance_convention='asset_balance'),
+                        no_activity_evidence=dict(verified=False), chain_contradicted=reprint['chain_contradicted'])
+        raw = initial_request(proposal)
+        result = assess_admission(proposal, StatementImportRequest.model_validate(raw))
+        self.assertFalse(result['can_import'])
+        held = [b for b in result['blockers'] if b['message'] == andrews.CHAIN_CONTRADICTED_MESSAGE]
+        self.assertEqual([(b['kind'], b['page']) for b in held], [('printed_copies', 2)])
+        from services.financial.batch_review_summary import reason
+        self.assertEqual(reason(held[0]), 'reprint')
+        raw['coverage_review_reason'] = 'Compared both printings with the PDF.'
+        result = assess_admission(proposal, StatementImportRequest.model_validate(raw))
+        self.assertFalse(any(b['message'] == andrews.CHAIN_CONTRADICTED_MESSAGE for b in result['blockers']))
 
 
 if __name__ == '__main__':

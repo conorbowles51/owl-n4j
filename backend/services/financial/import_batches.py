@@ -254,6 +254,9 @@ def assess(proposal, request=None):
             summary['overlap_trim']['covered_movements'] = len(trim['before']) + len(trim['after'])
             summary['overlap_trim']['covered_by'] = [c['source_document_id'] for c in trim['covers']]
     summary['account_type'] = proposal['metadata'].get('account_type') or ''
+    if proposal.get('chain_contradicted'):
+        # Read by the duplicate comparison: this printing does not hold the one the file continues from.
+        summary['chain_contradicted'] = True
     # The pages this period is read from: which saved periods of its file its
     # readiness depends on (_relevant_admitted).
     summary['source_pages'] = sorted({source['page_number'] for source in proposal.get('sources') or []

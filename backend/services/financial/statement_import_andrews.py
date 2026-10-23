@@ -670,7 +670,92 @@ def andrews_catalog(sources):
             incomplete.add(key)
         previous = dict(**page, pdf_page=key[0], table_index=key[1], order_group=order_group,
                         continues=any(_continued(_text(r)) for r in source['rows']))
+    if CHAIN_CONTRADICTION:
+        _mark_chain_contradictions(list(groups.values()), sources)
     return list(groups.values()), handled, incomplete
+
+
+# Measured on a real file: it prints two statements for the same member, share
+# and dates on different pages, and their balances differ (one shows activity,
+# the other none). Only the bank's next statement in the same file decides which
+# one the account continues from. A printed statement is marked contradicted
+# (``chain_contradicted``) when every one of these holds: the file has exactly
+# one statement of the same account and share for the next period, starting the
+# day after; exactly one of the rivals ends on the opening that next statement
+# prints, and also opens on the closing of the previous period's statement
+# where the file prints exactly one; every other rival ends on another amount;
+# and every one of those balances is read as printed. The contradicted one stays
+# held (it can be imported only with a recorded comparison reason); the other is
+# no longer held for it. Anything else keeps both held for comparison, as
+# before. Reverse in one place: False.
+CHAIN_CONTRADICTION = True
+CHAIN_CONTRADICTED_MESSAGE = ('Another statement printed in this PDF for the same account and dates continues '
+    'into the next statement: its ending balance is the opening balance the next statement prints, and this '
+    'one\'s is not. Compare the two before importing this one.')
+
+
+def _printed_balance(row, width):
+    money = _money_cells(row, width)
+    if len(money) != 1:
+        return None
+    try:
+        return _amount(money[0]['expected_text'].strip(), 'USD', separate_cell=True)
+    except ValueError:
+        return None
+
+
+def _printed_endpoints(group, lookup):
+    """(opening, closing) in minor units as printed on the section's heading and
+    Ending Balance lines; either is None when it is not read as printed."""
+    rows = []
+    for scope in group['sources']:
+        source = lookup.get((scope['page_number'], scope['table_index']))
+        page = source and _heading(source)
+        if not page:
+            return None, None
+        by_index = {row['row_index']: row for row in source['rows']}
+        rows += [(by_index[i], page['width']) for i in scope['row_indices'] if i in by_index]
+    if not rows:
+        return None, None
+    opening = _printed_balance(*rows[0]) if _PREVIOUS.search(_text(rows[0][0])) else None
+    endings = [(row, width) for row, width in rows
+               if re.match(_SPACED_ENDING_LINE, _text(row)) or _ending_balance(row, width)]
+    closing = _printed_balance(*endings[0]) if len(endings) == 1 else None
+    return opening, closing
+
+
+def _mark_chain_contradictions(groups, sources):
+    from datetime import timedelta
+    lookup = {(s['page_number'], s['table_index']): s for s in sources}
+    by_account = {}
+    for group in groups:
+        if not group.get('assignment_only'):
+            by_account.setdefault(group['account_reference'], []).append(group)
+    for members in by_account.values():
+        periods = {}
+        for group in members:
+            periods.setdefault((group['period_start'], group['period_end']), []).append(group)
+        for (start, end), rivals in periods.items():
+            if len(rivals) < 2:
+                continue
+            following = [g for g in members if g['period_start'] == (date.fromisoformat(end) + timedelta(days=1)).isoformat()]
+            preceding = [g for g in members if g['period_end'] == (date.fromisoformat(start) - timedelta(days=1)).isoformat()]
+            if len(following) != 1 or len(preceding) > 1:
+                continue
+            next_opening = _printed_endpoints(following[0], lookup)[0]
+            previous_closing = _printed_endpoints(preceding[0], lookup)[1] if preceding else None
+            points = [_printed_endpoints(g, lookup) for g in rivals]
+            if (next_opening is None or (preceding and previous_closing is None)
+                    or any(None in p for p in points)):
+                continue
+            chained = [g for g, p in zip(rivals, points) if p[1] == next_opening
+                       and (previous_closing is None or p[0] == previous_closing)]
+            if len(chained) != 1 or sum(p[1] == next_opening for p in points) != 1:
+                continue
+            for group in rivals:
+                if group is not chained[0]:
+                    group['chain_contradicted'] = dict(continued_by_page=min(chained[0]['page_numbers']),
+                        next_statement_page=min(following[0]['page_numbers']))
 
 
 def leading_continuation_rows(source, page):

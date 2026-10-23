@@ -157,6 +157,7 @@ AFFECTED_EXTRACTION_SHA256 = (
     'ee536c5020bcd44185621b179ceb9e2a0db9329e81b49eb676bf37ee602f30c9',  # 060d7470 layer guard (v22)
     '8a06b0ca727b00b602ea636e451f27cff0daba645ee081ea841916a9e3b7612e',  # 24593077 r11-bbva-vector (v23)
     'c8d57e3dda4e5aef378eac7da4cd50157aad94d84d71986b25e1a99b60d3a38a',  # 2a6df8be r12-kapital (v24)
+    'bcf2d0c126e1b3cae422d531ea1556ce709ebc10dbbfb3be864e447236d1fc32',  # 19a120ce r13-andrews (v25)
 )
 READER_RECOVERY = RecoveryCampaign(READER_RECOVERY_RELEASE, {'pdf_extraction.py': AFFECTED_EXTRACTION_SHA256},
     batch_reread=True)

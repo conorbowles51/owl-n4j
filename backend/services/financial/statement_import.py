@@ -433,6 +433,9 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                 issues.append('Reviewing ' + selected['account_label'] + ', share ' + selected['share_reference'] + '. Other account sections in this PDF are reviewed separately.')
             if selected.get('uses_printed_page_order'):
                 issues.append('These statement pages are out of order in the PDF. Payments follow the printed page numbers. The source viewer keeps the original PDF page numbers.')
+            if selected.get('chain_contradicted'):
+                from services.financial.statement_import_andrews import CHAIN_CONTRADICTED_MESSAGE
+                issues.append(CHAIN_CONTRADICTED_MESSAGE)
         if catalog['unclassified_sources']:
             issues.append('Some pages could not be assigned to a printed statement period. They remain available in the original PDF.')
     all_page_numbers = sorted({p.page_number for p in pages} | {loc['page_number'] for loc in (text.source_locations or []) if type(loc.get('page_number')) is int and loc['page_number'] > 0})
@@ -768,6 +771,9 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                 previous_saved_review=previous_review, review_recovery=recovery,
                 reading_failure=reading_failure,
                 assignment_only=bool(selected and selected.get('assignment_only')),
+                # A second printing of these dates that the next statement in the
+                # file contradicts (statement_import_andrews.CHAIN_CONTRADICTION).
+                chain_contradicted=(selected.get('chain_contradicted') if selected else None),
                 printed_main_account=selected.get('main_account_reference', '') if selected else '',
                 can_record_account_closure=closure_only,
                 can_import_balances=balance_only and not closure_only,

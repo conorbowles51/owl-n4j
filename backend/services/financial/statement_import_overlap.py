@@ -156,7 +156,7 @@ def _saved_keys(session, source_ids):
 # JSON on a case with 2,400 prepared periods) was the largest part of each import's case comparison.
 COMPARED_SUMMARY_KEYS = ('revision', 'statement_id', 'currency', 'institution', 'account', 'holder', 'account_type',
                          'period_start', 'period_end', 'account_reference_kind', 'page_number', HYDRATION_ERROR_KEY,
-                         'statement_form')
+                         'statement_form', 'chain_contradicted')
 _PENDING_VALUES = None
 
 
@@ -318,6 +318,7 @@ def comparison_sources(session, case_id, pending=None, *, read_pending=None, dup
             file_id=str(file.id), statement_id=item.statement_key or None, source_document_id=None,
             filename=file.original_filename, status='awaiting_import', page_number=item.summary.get('page_number', 1),
             period_start=own['start'], period_end=own['end'],
+            chain_contradicted=bool(item.summary.get('chain_contradicted')),
             **({'statement_form': item.summary['statement_form']} if item.summary.get('statement_form') else {})))
     # A statement reviewed individually may have no batch item yet. Register
     # only explicit current decisions, never guess candidates from file names.
@@ -391,6 +392,10 @@ def coverage_review(session, *, case_id, file_id, request, sources=None):
             # and payments contradict the first), and the two must be compared.
             if not (other['status'] == 'awaiting_import' and own_page and other.get('page_number')
                     and int(other['page_number']) != int(own_page)):
+                continue
+            # A second printing the file's next statement contradicts is held by
+            # itself (admission); it does not hold the printing the file continues from.
+            if other.get('chain_contradicted') and not request.get('chain_contradicted'):
                 continue
             same_file = True
         if own['start'] > other['period_end'] or other['period_start'] > own['end']:
