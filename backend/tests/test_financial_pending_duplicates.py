@@ -467,8 +467,10 @@ class ReproducedStatementTests(TestCase):
         self.assertNotIn('bank', decision['matched_fields'])
         revised = self.fixture.copy_file(revised=True)
         self.reread_copy(revised, 'Bank: Synthetic Bank', 'Bank: Synthetic Bank NA')
-        # Different money under a differently named bank is not proof of anything.
-        self.assertEqual(self.decision(revised)['status'], 'retained')
+        # Different money under a differently named bank is not proof of a copy, but the same printed
+        # period is already saved: it is listed for a person to compare, never set aside or saved again
+        # automatically (r15-hold-gaps; was 'retained' and then saved into another ledger account).
+        self.assertEqual(self.decision(revised)['status'], 'needs_comparison')
 
     def test_same_printed_period_ignores_holder_and_reference_strength_only(self):
         from services.financial.statement_import_overlap import same_printed_period

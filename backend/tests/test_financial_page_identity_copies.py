@@ -237,7 +237,7 @@ class PageCopyTests(TestCase):
         self.drain(self.batch(copy))
         self.assert_one_statement(self.primary, copy)
 
-    def _other_reader(self, file, pages=None):
+    def _other_reader(self, file, pages=None, account_type='savings'):
         """The file read by another reader: other bank wording and another product type
         (and, with ``pages``, the statement's pages grouped differently)."""
         real_read = statement_import.read_statement_import
@@ -245,7 +245,7 @@ class PageCopyTests(TestCase):
         def read(session, **kwargs):
             proposal = real_read(session, **kwargs)
             if str(kwargs.get('evidence_file_id')) == str(file.id) and proposal.get('metadata'):
-                proposal = {**proposal, 'metadata': {**proposal['metadata'], 'account_type': 'savings',
+                proposal = {**proposal, 'metadata': {**proposal['metadata'], 'account_type': account_type or proposal['metadata'].get('account_type'),
                                                      'institution': 'SYNTHETIC BANK SA INSTITUCION DE BANCA'}}
                 if pages:
                     proposal['statement_page_numbers'] = pages
@@ -336,6 +336,21 @@ class PageCopyTests(TestCase):
             decision = db.get(EvidenceFile, copy.id).metadata_['financial_duplicate_dispositions']['']
         self.assertEqual((decision['status'], decision['basis']), ('ignored', 'identical_financial_reading'))
         self.assertEqual(decision['retained']['evidence_file_id'], str(self.primary.id))
+
+    def test_a_differently_worded_reading_of_a_saved_statement_with_other_money_goes_to_a_person(self):
+        # The live pair saved after the wave-13 deploy: the same printed reference, product, currency and dates,
+        # the bank worded otherwise, and the two readers' money differs. Never saved again automatically.
+        with patch.object(page_identity, 'ENABLED', False):
+            self.drain(self.batch(self.primary))
+        other = self.copy(data=_pdf(OTHER_STATEMENT), revised=True)
+        first, second = self._other_reader(other, account_type=None)
+        with first, second, patch.object(page_identity, 'ENABLED', False):
+            self.drain(self.batch(other))
+        status, summary = self.items()[other.id]
+        self.assertNotEqual(status, 'imported')
+        self.assertEqual((summary.get('duplicate_disposition') or {}).get('status'), 'needs_comparison')
+        self.assertEqual(self.saved(self.primary, other)[0][0].evidence_file_id, self.primary.id)
+        self.assertEqual(len(self.saved(self.primary, other)[0]), 1)
 
     def test_another_product_with_the_same_printed_reference_and_other_money_is_left_alone(self):
         # Two products of one contract can print one reference and period: with

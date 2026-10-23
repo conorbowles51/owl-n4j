@@ -595,6 +595,13 @@ def apply_duplicate_disposition(session, *, case_id, file, proposal, request=Non
         # or the holder were read differently. Reverse: require same_reading.
         same_money = same_reading or statement_content(other_proposal)[0] == own_content
         if other_bank and not (same_money and own_usable and usable and own_payments):
+            if (PRINTED_FACTS_COPIES and printed_copy and entry['status'] == 'imported' and own_payments
+                    and statement_content(other_proposal)[1]):
+                # The same printed account reference, product, currency and
+                # dates is already saved in the case, read with other money (two
+                # readers of one statement): never saved again automatically; a
+                # person compares the pair (r15-hold-gaps, live case).
+                conflicts.append(entry)
             continue  # A differently named bank is a copy only with equal payments.
         own_changes_preserved = not conflicting_saved_review and (not own_edited or own_shape == _review_shape(other_proposal, other_request))
         # Identical bytes are a copy of the same section only; a different
