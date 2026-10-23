@@ -95,6 +95,23 @@ class VerifyLedgerTests(TestCase):
         result['metrics'] = harness.metrics(result)
         self.assertTrue(any('saved twice' in f for f in harness.safety_failures(result)))
 
+    def test_a_printed_period_saved_twice_in_two_ledger_accounts_fails_the_run_and_is_named(self):
+        # r15-hold-gaps: the live defect, a copy saved again into another ledger account.
+        first, second = str(uuid.uuid4()), str(uuid.uuid4())
+        periods = [_period('i1', self.original), _period('i2', self.copy)]
+        final = {'i1': dict(status='imported', source_document_id=first),
+                 'i2': dict(status='imported', source_document_id=second)}
+        other_account = [SimpleNamespace(**dict(vars(row), account_id='b')) for row in _rows(self.copy)]
+        ledger = self.verify(periods, final, {uuid.UUID(first): _rows(self.original), uuid.UUID(second): other_account})
+        self.assertEqual((ledger['printed_periods_saved_twice'], ledger['printed_periods_saved_twice_across_accounts']), (1, 1))
+        self.assertEqual(ledger['saved_twice_across_accounts'], ['a.pdf#1'])
+        result = dict(ledger=ledger, periods=periods, environment={})
+        result['metrics'] = harness.metrics(result)
+        self.assertTrue(any('more than one ledger account' in f for f in harness.safety_failures(result)))
+        # The same pair in one account is still a failure, without the account clause.
+        ledger = self.verify(periods, final, {uuid.UUID(first): _rows(self.original), uuid.UUID(second): _rows(self.copy)})
+        self.assertEqual(ledger['printed_periods_saved_twice_across_accounts'], 0)
+
     def test_two_statements_the_truth_tells_apart_are_not_saved_twice_even_with_equal_values(self):
         # Two quiet sections of one member: same account, dates and balances, no
         # payments, two printed statements (the real set has 16 such pairs).

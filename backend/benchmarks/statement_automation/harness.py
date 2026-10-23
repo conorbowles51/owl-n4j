@@ -1162,6 +1162,7 @@ def verify_ledger(db, periods, final_items, truths, Transaction, Account, select
     trimmed = []
     sql = hasattr(db, 'scalar')  # a database session (unit tests pass a fake ledger of saved rows)
     printed_periods = defaultdict(dict)  # printed period -> {source document: saved rows}
+    printed_accounts = defaultdict(set)  # printed period -> ledger accounts its saved rows are in
     for period in periods:
         item = final_items.get(period['item_id']) if period['item_id'] else None
         period['final_status'] = item['status'] if item else period['status']
@@ -1177,6 +1178,9 @@ def verify_ledger(db, periods, final_items, truths, Transaction, Account, select
         identity = truths.get(period['truth_id'])
         printed = printed_statement(identity, truths) if identity else ('saved statement', item['source_document_id'])
         printed_periods[printed][item['source_document_id']] = len(rows)
+        # The ledger account(s) its rows were saved in: one printed period saved
+        # twice into different accounts is the r15-hold-gaps live defect.
+        printed_accounts[printed].update(str(row.account_id) for row in rows)
         truth = truths.get(period['truth_id'])
         if truth is None and period.get('filename') in incomplete_files:
             report['admitted_unscored'] = report.get('admitted_unscored', 0) + 1
@@ -1258,6 +1262,11 @@ def verify_ledger(db, periods, final_items, truths, Transaction, Account, select
     report['duplicate_contributions'] = sum(sum(saved.values()) - max(saved.values())
                                             for saved in printed_periods.values() if len(saved) > 1)
     report['printed_periods_saved_twice'] = sum(len(saved) > 1 for saved in printed_periods.values())
+    across = sorted(printed for printed, saved in printed_periods.items()
+                    if len(saved) > 1 and len(printed_accounts[printed]) > 1)
+    report['printed_periods_saved_twice_across_accounts'] = len(across)
+    report['saved_twice_across_accounts'] = [str(printed[0]) if isinstance(printed, tuple) else str(printed)
+                                             for printed in across][:20]
     report['critical_errors'] = dict(report['critical_errors'])
     report['saved_holders']['by_family'] = {k: dict(v) for k, v in sorted(report['saved_holders']['by_family'].items())}
     return report
@@ -1450,8 +1459,10 @@ def safety_failures(result):
     if ledger['wrongly_admitted']:
         failures.append(f"{len(ledger['wrongly_admitted'])} wrongly admitted period(s)")
     if ledger.get('duplicate_contributions') or ledger.get('printed_periods_saved_twice'):
+        across = ledger.get('printed_periods_saved_twice_across_accounts', 0)
         failures.append(f"{ledger.get('printed_periods_saved_twice', 0)} printed period(s) saved twice "
-                        f"({ledger.get('duplicate_contributions', 0)} duplicate ledger contributions)")
+                        f"({ledger.get('duplicate_contributions', 0)} duplicate ledger contributions"
+                        + (f"; {across} of them in more than one ledger account" if across else '') + ")")
     unscored_held = result['metrics'].get('unscored', {}).get('wrongly_ready') or []
     if unscored_held:
         failures.append(f"{len(unscored_held)} unscored period(s) offered or saved where the truth expects a hold")
@@ -1485,6 +1496,8 @@ def render_summary(result):
              f"{ledger['admitted_periods']} periods); duplicate ledger contributions {ledger['duplicate_contributions']}; "
              f"movements counted twice across overlapping saved statements {ledger.get('movements_counted_twice', 0)}; "
              f"periods saved trimmed {ledger.get('trimmed_periods', 0)}; "
+             f"printed periods saved twice {ledger.get('printed_periods_saved_twice', 0)} (in more than one ledger account "
+             f"{ledger.get('printed_periods_saved_twice_across_accounts', 0)}); "
              f"held periods kept out {o['holds_kept']}/{o['hold_periods']}; exact copies held automatically "
              f"{o['duplicate_copies_held_automatically']}/{o['duplicate_copies']}. Valid-looking but wrong values "
              f"proposed before review (any period): {sum(o['valid_but_wrong_values_proposed'].values())}. Batch items "
