@@ -464,9 +464,41 @@ def simulate_correction(proposal, truth, assess, initial_request, reread=None):
     elif not raw.get('period_start'):
         raw['period_start_unprinted'] = True
         act('decision', 'period_start_unprinted')
+    # A page of proposed lines that chains exactly (``page_row_proposals``, behind its switch): the person checks
+    # each line against the page and confirms the page in one action. A page with any line unlike the printed
+    # one is refused (counted) and its lines are entered one at a time as before.
+    covered, confirmed_ids, refused, tried = set(), set(), 0, set()
+    from services.financial import page_row_proposals
+    while page_row_proposals.enabled():
+        page = next((p for p in page_row_proposals.page_proposals(proposal, raw)['pages']
+                     if p['confirmable'] and p['page_number'] not in tried), None)
+        if page is None:
+            break
+        tried.add(page['page_number'])
+        matched = []
+        for line in page['lines']:
+            values = line['values']
+            index = next((i for i, row in enumerate(truth['rows']) if i not in covered and i not in matched
+                          and str(row['amount_minor']) == str(values['amount']['value'])
+                          and row['direction'] == line['direction'] and _same_date(row['date'], values['date']['value'])),
+                         None)
+            if index is None:
+                break
+            matched.append(index)
+        if len(matched) != len(page['lines']):
+            refused += 1
+            continue
+        raw = page_row_proposals.apply_page(proposal, raw, page['page_number'], page['digest'])
+        covered |= set(matched)
+        confirmed_ids |= {line['row_id'] for line in page['lines']}
+        act('decision', 'confirm_page', str(page['page_number']))
     rows = {r['id']: r for r in raw['rows']}
-    payments = _payment_rows(proposal)
-    pairs, missing = _match_rows(payments, truth['rows'], by_value=truth.get('added_in') == 'real')
+    payments = [r for r in _payment_rows(proposal) if r['id'] not in confirmed_ids]
+    remaining = [i for i in range(len(truth['rows'])) if i not in covered]
+    sub_pairs, sub_missing = _match_rows(payments, [truth['rows'][i] for i in remaining],
+                                         by_value=truth.get('added_in') == 'real')
+    pairs = {row_id: remaining[i] for row_id, i in sub_pairs.items()}
+    missing = [remaining[i] for i in sub_missing]
     for original in payments:
         edit = rows[original['id']]
         index = pairs.get(original['id'])
@@ -512,6 +544,7 @@ def simulate_correction(proposal, truth, assess, initial_request, reread=None):
         else:
             raw.update(no_activity_confirmed=False, no_activity_revision=None)
     return dict(actions=actions, missing_rows=len(missing), resolved=bool(summary['can_import']),
+                pages_confirmed=len(tried) - refused, page_proposals_refused=refused, page_rows_confirmed=len(covered),
                 remaining=[p['message'] for p in summary['problems']][:8], status=status)
 
 
@@ -1335,7 +1368,7 @@ def metrics(result):
         for p in unique:
             if not p['can_import']:
                 histogram.update(p['reasons'].keys() or ['unexplained'])
-        actions = grouped = unresolved = edits = decisions = added = 0
+        actions = grouped = unresolved = edits = decisions = added = pages = refused = page_rows = 0
         keys = set()
         for p in subset:
             total_actions, individual, group_keys, fixable = _period_effort(p)
@@ -1343,6 +1376,10 @@ def metrics(result):
             grouped += individual
             keys |= group_keys
             unresolved += 0 if fixable else 1
+            correction = (p.get('correction') or {}) if not p['can_import'] else {}
+            pages += correction.get('pages_confirmed', 0)
+            refused += correction.get('page_proposals_refused', 0)
+            page_rows += correction.get('page_rows_confirmed', 0)
             for a in p.get('correction', {}).get('actions', []) if not p['can_import'] else []:
                 edits += a['kind'] == 'edit'
                 decisions += a['kind'] == 'decision'
@@ -1371,6 +1408,7 @@ def metrics(result):
                     human_actions_per_period=actions, human_actions_grouped=grouped + len(keys),
                     shared_decisions=sorted('/'.join(k) for k in keys),
                     field_edits=edits, decisions=decisions, rows_to_add=added,
+                    pages_confirmed=pages, page_rows_confirmed=page_rows, page_proposals_refused=refused,
                     blocked_not_fixable_by_field_edits=unresolved,
                     proposal_critical_errors_in_ready_periods=dict(proposal_errors),
                     valid_but_wrong_values_proposed=dict(wrong_values),
