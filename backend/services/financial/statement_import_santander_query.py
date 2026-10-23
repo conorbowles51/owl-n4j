@@ -43,7 +43,7 @@ MOVEMENT_QUERY = True
 FORM = 'movement_query'
 OPENING_BASIS = 'printed_opening_after_first_movement'
 TITLE = 'CONSULTA DE MOVIMIENTOS DE LA CUENTA DE CHEQUES'
-ISSUER = re.compile(r'BANCO SANTANDER MEXICO,? S\.?A\.?')
+ISSUER = re.compile(r'(BANCO SANTANDER MEXICO),? S\.?A\.?')
 COLUMNS = {'CUENTA': 'account', 'FECHA': 'date', 'HORA': 'time', 'SUCURSAL': 'branch', 'DESCRIPCION': 'description',
            'IMPORTE CARGO': 'debit', 'IMPORTE ABONO': 'credit', 'SALDO': 'balance', 'REFERENCIA': 'reference',
            'CONCEPTO': 'concept'}
@@ -121,8 +121,12 @@ def santander_query_catalog(sources):
     if titled != set(pages):
         # A page of something else in the same file: not this layout's to claim.
         return [], set()
-    if not any(ISSUER.search(norm(text(r))) for items in pages.values() for s in items for r in s['rows']):
+    issuers = {m[1] for items in pages.values() for s in items for r in s['rows'] if (m := ISSUER.search(norm(text(r))))}
+    if len(issuers) != 1:
         return [], set()
+    # The bank's name as its legal line prints it: the same ledger account as the monthly statements the
+    # general engine reads from the same legal line (an account's identity includes its bank).
+    institution = next(iter(issuers))
     facts, numbers = None, {}
     for p, items in sorted(pages.items()):
         labels = _page_labels(items)
@@ -143,7 +147,7 @@ def santander_query_catalog(sources):
             return [], set()
     currencies = {facts[name][1] for name in ('opening', 'closing', 'credits_total', 'debits_total')}
     totals = {total for _, total in numbers.values()}
-    group = dict(layout_id='santander-mexico-movements', form=FORM, institution='Santander',
+    group = dict(layout_id='santander-mexico-movements', form=FORM, institution=institution,
                  account_reference=facts['account'], period_start=facts['period_start'],
                  period_end=facts['period_end'])
     group = dict(id=_digest(group), **group, account_type='checking', holder=facts['holder'],

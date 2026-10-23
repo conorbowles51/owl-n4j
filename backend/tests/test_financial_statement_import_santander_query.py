@@ -78,7 +78,7 @@ class MovementQueryTests(TestCase):
         choice, = choices
         self.assertEqual((choice['layout_id'], choice['form'], choice['institution'], choice['account_reference'],
                           choice['holder'], choice['currency'], choice['period_start'], choice['period_end']),
-                         ('santander-mexico-movements', 'movement_query', 'Santander', ACCOUNT,
+                         ('santander-mexico-movements', 'movement_query', 'BANCO SANTANDER MEXICO', ACCOUNT,
                           'EMPRESA EJEMPLO SA DE CV', 'MXN', '2024-10-01', '2024-10-15'))
         rows = propose_santander_statement(sources, 'MXN', choice)['rows']
         opening, = [r for r in rows if r['fields'].get('description') == 'Opening Balance']
