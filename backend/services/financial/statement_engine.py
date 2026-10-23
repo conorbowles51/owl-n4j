@@ -1850,6 +1850,10 @@ def _heading_currencies(rows, style):
             break
         if any(_value_kind(t, style, 2) == 'money' for t in row['tokens']):
             continue
+        if _defines_acronym(row['text']):
+            # A glossary entry ('SPID-SISTEMA DE PAGOS INTERBANCARIOS EN DOLARES') names a payment system or
+            # a term, not the section's currency (r15-hold-gaps: it proposed USD for a peso statement).
+            continue
         text = ' ' + fold(row['text']) + ' '
         words = fold(row['text']).split()
         for name in _HEADING_CURRENCIES:
@@ -1866,6 +1870,21 @@ def _heading_currencies(rows, style):
 
 
 _CODE = re.compile(r'[A-Z]{2,3}')
+_ACRONYM_DEFINITION = re.compile(r'(?:^|\s)([A-Z]{2,6})\s?-\s?(?=[A-Z])')
+_LINKING_WORDS = frozenset({'DE', 'DEL', 'EN', 'LA', 'LAS', 'LOS', 'EL', 'Y', 'E', 'A', 'OF', 'THE', 'AND', 'FOR', 'IN'})
+
+
+def _defines_acronym(text):
+    """A line printing an acronym, a hyphen and the words it stands for ('SPEI-SISTEMA DE PAGOS ELECTRONICOS
+    INTERBANCARIOS'): the initials of the words after the hyphen, linking words left out, spell the acronym.
+    Read on the printed text (upper case, accents removed): ``fold`` drops the hyphen."""
+    import unicodedata
+    folded = ''.join(ch for ch in unicodedata.normalize('NFKD', text.upper()) if not unicodedata.combining(ch))
+    for m in _ACRONYM_DEFINITION.finditer(folded):
+        words = [w for w in re.split(r'[\s-]+', folded[m.end():]) if w and w not in _LINKING_WORDS]
+        if len(words) >= len(m[1]) and ''.join(w[0] for w in words[:len(m[1])]) == m[1]:
+            return True
+    return False
 
 
 def _qualified_dollar(words):
