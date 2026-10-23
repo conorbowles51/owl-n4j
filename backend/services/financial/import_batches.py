@@ -1805,10 +1805,13 @@ async def _prepare_retry(session, *, case_id, file, actor, resolve_path, process
         actor = Actor(**{**recovery['requested_by'], 'user_id': UUID(recovery['requested_by']['user_id'])})
     identifier = UUID(recovery.get('read_from_file_id') or file['source_id'])
     if recovery.get('fresh_reading'):
-        reviewed = any(item.review_request or item.status in ('pending_import', 'skipped', 'duplicate_ignored') for item in session.scalars(
+        prior = session.get(EvidenceFile, identifier)
+        from services.financial.recovery_readers import settled_sibling
+        # A copy the System set aside by itself is not a decision (recovery_readers.SETTLED_SIBLINGS).
+        reviewed = any(item.review_request or (item.status in ('pending_import', 'skipped', 'duplicate_ignored')
+                       and not settled_sibling(item, prior)) for item in session.scalars(
             select(Item).join(Batch, Item.batch_id == Batch.id).where(
                 Batch.case_id == case_id, Batch.status != 'removed', Item.file_id == identifier)))
-        prior = session.get(EvidenceFile, identifier)
         if not recovery.get('reset_revision') and (reviewed or (prior and (prior.metadata_ or {}).get('financial_review_progress'))):
             raise PdfMappingError('A review decision was saved after Retry was requested. Open the statement to compare it before starting a new reading.', 409)
         from services.financial.statement_reprocessing import create_statement_version

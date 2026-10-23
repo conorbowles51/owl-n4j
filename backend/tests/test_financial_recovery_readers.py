@@ -16,7 +16,7 @@ from services.financial import recovery_readers as readers
 from services.financial.pdf_candidates import _digest
 from services.financial.recovery_campaigns import (AFFECTED_EXTRACTION_SHA256, READER_RECOVERY,
     READER_RECOVERY_FLAG, READER_RECOVERY_RELEASE, READER_RELEASE_PREFIX, manifest, reader_campaign,
-    reader_recovery_enabled)
+    reader_recovery_enabled, reader_release_id)
 from tests.test_financial_deployment_recovery import f  # noqa: F401  (fixture)
 
 AFFECTED = AFFECTED_EXTRACTION_SHA256[-1]
@@ -97,7 +97,8 @@ def test_engine_release_campaign_is_on_by_default_and_named_by_the_deployed_engi
     assert reader_recovery_enabled()
     campaign = recovery.scheduled_campaigns()[-1]
     assert recovery.scheduled_campaigns()[:-1] == recovery.CAMPAIGNS
-    assert campaign.release == READER_RELEASE_PREFIX + CURRENT[:32] and len(campaign.release) <= 64
+    assert campaign.release == reader_release_id(CURRENT) and len(campaign.release) <= 64
+    assert campaign.release.startswith(READER_RELEASE_PREFIX)
     assert campaign.batch_reread and campaign.current_readers == {'pdf_extraction.py': CURRENT}
     assert manifest(campaign.release).current_readers == campaign.current_readers
     for value in ('0', 'false', 'off', 'no', ' OFF '):
@@ -167,13 +168,41 @@ def test_never_selects_statements_with_investigator_edits(f):
 
 
 @pytest.mark.parametrize('status,reason', [
-    ('imported', 'saved_import'), ('pending_import', 'saved_import'), ('skipped', 'investigator_decision'),
+    ('pending_import', 'saved_import'), ('skipped', 'investigator_decision'),
     ('duplicate_ignored', 'investigator_decision'), ('removed', 'investigator_decision'),
     ('assigned', 'investigator_decision'), ('ready', 'not_all_held')])
 def test_any_saved_import_decision_or_ready_period_protects_the_whole_file(f, status, reason):
     set_reader(f, f.file.id)
     held_batch(f, statuses=('attention', status))
     assert selection(f) == ([], {reason: 1})
+
+
+def test_a_statement_saved_without_edits_no_longer_protects_the_held_ones_of_its_file(f, monkeypatch):
+    """SETTLED_SIBLINGS: the saved statement is left alone; only the held one is read again."""
+    set_reader(f, f.file.id)
+    held_batch(f, statuses=('attention', 'imported'))
+    assert selection(f)[1] == {'eligible': 1}
+    monkeypatch.setattr(readers, 'SETTLED_SIBLINGS', False)
+    assert selection(f) == ([], {'saved_import': 1})
+
+
+def test_a_copy_the_system_set_aside_does_not_protect_but_a_persons_decision_does(f, monkeypatch):
+    set_reader(f, f.file.id)
+    held_batch(f, statuses=('attention', 'duplicate_ignored'))
+    system = dict(status='ignored', actor=dict(name='System'),
+                  history=[dict(status='needs_comparison', actor=dict(name='System'))])
+    for value, expected in ((system, {'eligible': 1}),
+                            (dict(system, actor=dict(name='Investigator', user_id=str(f.user.id))), {'duplicate_decision': 1}),
+                            (dict(system, history=[dict(status='retained', actor=dict(user_id=str(f.user.id)))]), {'duplicate_decision': 1}),
+                            (dict(status='ignored'), {'duplicate_decision': 1}),  # no recorded actor: a person's
+                            (dict(system, status='restored'), {'duplicate_decision': 1})):
+        f.file.metadata_ = {**(f.file.metadata_ or {}), 'financial_duplicate_dispositions': {'s1': value}}
+        f.db.commit()
+        assert selection(f)[1] == expected, value
+    f.file.metadata_ = {**f.file.metadata_, 'financial_duplicate_dispositions': {'s1': system}}
+    f.db.commit()
+    monkeypatch.setattr(readers, 'SETTLED_SIBLINGS', False)
+    assert selection(f) == ([], {'duplicate_decision': 1})
 
 
 def test_admitted_imports_duplicate_decisions_and_removals_are_protected(f):
@@ -184,10 +213,15 @@ def test_admitted_imports_duplicate_decisions_and_removals_are_protected(f):
     assert selection(f) == ([], {'duplicate_decision': 1})
     system = dict(status='not_duplicate', actor=dict(name='System'))
     for decided in (dict(system, actor=dict(user_id=str(f.user.id), name='Investigator')),
-                    dict(system, history=[dict(status='ignored', actor=dict(name='System'))])):
+                    dict(system, history=[dict(status='ignored')])):
         f.file.metadata_ = {**f.file.metadata_, 'financial_duplicate_dispositions': {'': decided}}
         f.db.commit()
         assert selection(f) == ([], {'duplicate_decision': 1})
+    # A set-aside the System made by itself is a projection the new reading recomputes (SETTLED_SIBLINGS).
+    f.file.metadata_ = {**f.file.metadata_, 'financial_duplicate_dispositions': {'': dict(system,
+        history=[dict(status='ignored', actor=dict(name='System'))])}}
+    f.db.commit()
+    assert selection(f)[1] == {'eligible': 1}
     f.file.metadata_ = {**f.file.metadata_, 'financial_duplicate_dispositions': {'': system}}
     f.db.commit()
     assert selection(f)[1] == {'eligible': 1}
@@ -400,7 +434,7 @@ def test_an_original_in_several_batches_is_read_once_and_each_batch_prepares_fro
 
 
 @pytest.mark.parametrize('change,reason', [('edit', 'investigator_edits'), ('ready', 'not_all_held'),
-                                           ('imported', 'saved_import')])
+                                           ('pending_import', 'saved_import'), ('skipped', 'investigator_decision')])
 def test_work_in_any_batch_of_the_original_protects_it_everywhere(f, change, reason):
     set_reader(f, f.file.id)
     older, newer = two_batch_original(f, second_statuses=('attention', 'attention'))
@@ -486,3 +520,231 @@ def test_a_processing_file_counts_as_being_read_only_while_an_engine_job_works_o
     finally:
         readers._jobs_visible.clear()
         readers._busy.clear()
+
+
+# Selection rules and restarts (aq-b-santander) -------------------------------------
+
+def test_a_change_to_the_selection_rules_is_a_new_release_of_the_same_engine(f, monkeypatch):
+    """The snapshot is once per release id: new selection rules on an unchanged engine must snapshot again."""
+    from services.financial import recovery_campaigns
+    set_reader(f, f.file.id, AFFECTED)
+    held_batch(f)
+    first = reader_campaign()
+    assert [run.release for run in engine_snapshot(f, first)] == [first.release]
+    monkeypatch.setattr(recovery_campaigns, 'READER_SELECTION', 'held-selection-test')
+    second = reader_campaign()
+    assert second.current_readers == first.current_readers and second.release != first.release
+    runs = engine_snapshot(f, second)
+    assert [run.release for run in runs] == [first.release, second.release]
+
+
+def _restart(f, *, removed_at, batch_made, reading_made=None, removal=True, hidden=True):
+    """The original removed (imports and/or file list) at ``removed_at``; a later batch holds a newer reading of it."""
+    from datetime import datetime, timezone
+    from services.evidence_db_storage import EvidenceDBStorage
+    reading = EvidenceDBStorage.add_files(f.db, f.case.id, [dict(original_filename='version.pdf',
+        stored_path=f.file.stored_path, sha256=f.file.sha256, size=f.file.size)], folder_id=f.file.folder_id,
+        created_by_id=f.user.id)[0]
+    reading.status = 'processed'
+    old = f.db.get(EvidenceDocumentText, f.file.id)
+    f.db.add(EvidenceDocumentText(evidence_file_id=reading.id, engine_job_id=old.engine_job_id, content=old.content,
+        content_sha256=old.content_sha256, character_count=old.character_count,
+        source_locations=old.source_locations, processing_manifest=old.processing_manifest))
+    f.db.flush()
+    set_reader(f, reading.id)
+    stamp = removed_at.isoformat() if removed_at else None
+    metadata = dict(f.file.metadata_ or {})
+    if removal:
+        metadata['financial_import_removal'] = dict(id='reset-1', restart_file_id=str(f.file.id),
+            **({'at': stamp} if stamp else {}))
+    if hidden:
+        metadata['financial_file_visibility'] = dict(removed=True, revision='reset-1', **({'changed_at': stamp} if stamp else {}))
+    f.file.metadata_ = metadata
+    reading.created_at = reading_made or batch_made
+    batch = Batch(id=uuid4(), case_id=f.case.id, created_by=f.user.id, status='review', created_at=batch_made,
+        actor=dict(name=f.actor.name, email=f.actor.email, user_id=str(f.actor.user_id)),
+        files=[dict(source_id=str(f.file.id), file_id=str(reading.id), filename='version.pdf',
+            expected_revision='reset-1', status='checked')])
+    f.db.add(batch)
+    f.db.flush()
+    f.db.add(BatchItem(id=uuid5(batch.id, f'{reading.id}:s0'), batch_id=batch.id, file_id=reading.id,
+        statement_key='s0', status='attention', summary=dict(source_id=str(f.file.id), revision='r')))
+    f.db.commit()
+    return batch, reading
+
+
+def test_a_restart_after_removal_is_read_again_when_its_new_batch_holds_it(f):
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    _restart(f, removed_at=now - timedelta(days=30), batch_made=now - timedelta(days=1))
+    with f.SessionLocal() as db:
+        selected, reasons = readers.candidates(db, f.case.id, reader_campaign())
+    assert reasons == {'eligible': 1} and len(selected) == 1
+
+
+@pytest.mark.parametrize('case', ['removed_after_batch', 'removed_after_reading', 'no_time', 'reading_removed',
+                                  'switched_off', 'same_file'])
+def test_a_removal_is_still_protected_unless_it_provably_preceded_the_restart(f, monkeypatch, case):
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    removed, made, reading_made = now - timedelta(days=30), now - timedelta(days=1), None
+    if case == 'removed_after_batch':
+        removed = now
+    if case == 'removed_after_reading':
+        reading_made = now - timedelta(days=40)
+    if case == 'switched_off':
+        monkeypatch.setattr(readers, 'RESTARTED_AFTER_REMOVAL', False)
+    if case == 'same_file':
+        set_reader(f, f.file.id)
+        f.file.metadata_ = {**(f.file.metadata_ or {}), 'financial_import_removal': dict(id='x', at=removed.isoformat())}
+        f.db.commit()
+        held_batch(f)
+    else:
+        _, reading = _restart(f, removed_at=None if case == 'no_time' else removed, batch_made=made,
+                              reading_made=reading_made)
+        if case == 'reading_removed':
+            reading.metadata_ = {**(reading.metadata_ or {}), 'financial_file_visibility': dict(removed=True, revision='r9')}
+            f.db.commit()
+    with f.SessionLocal() as db:
+        selected, reasons = readers.candidates(db, f.case.id, reader_campaign())
+    assert selected == [] and reasons == {'removed': 1}
+
+
+def test_a_restart_with_investigator_work_stays_protected(f):
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    batch, reading = _restart(f, removed_at=now - timedelta(days=30), batch_made=now - timedelta(days=1))
+    item = f.db.get(BatchItem, uuid5(batch.id, f'{reading.id}:s0'))
+    item.review_request = dict(holder='Typed by the investigator')
+    f.db.commit()
+    with f.SessionLocal() as db:
+        selected, reasons = readers.candidates(db, f.case.id, reader_campaign())
+    assert selected == [] and reasons == {'investigator_edits': 1}
+
+
+def _copy_reading(f):
+    async def process_files(session, *, case_id, file_ids, preparation_mode, force_reprocess, requested_by_user_id):
+        for file_id in file_ids:
+            job = uuid4()
+            old = session.get(EvidenceDocumentText, f.file.id)
+            session.add(EvidenceDocumentText(evidence_file_id=file_id, engine_job_id=job, content=old.content,
+                content_sha256=old.content_sha256, character_count=old.character_count,
+                source_locations=old.source_locations, processing_manifest=None))
+            for geometry in session.scalars(select(EvidenceTableGeometry).where(EvidenceTableGeometry.evidence_file_id == f.file.id)):
+                session.add(EvidenceTableGeometry(evidence_file_id=file_id, page_number=geometry.page_number,
+                    engine_job_id=job, payload=geometry.payload))
+            session.get(EvidenceFile, file_id).status = 'processed'
+        session.commit()
+        return dict(job_ids=[str(uuid4()) for _ in file_ids])
+    return process_files
+
+
+def test_end_to_end_a_saved_statement_of_the_file_is_never_saved_again_by_the_new_reading(f):
+    """SETTLED_SIBLINGS safety: the held statement is read again; the saved one is not admitted a second time."""
+    from services.financial import import_batches, queue_save
+    from services.financial.statement_import import read_statement_import
+    set_reader(f, f.file.id)
+    receipt = f.confirm_legacy()
+    # Saved by the System's automatic save: its recorded dispositions carry the System, not a person.
+    f.db.refresh(f.file)
+    metadata = dict(f.file.metadata_ or {})
+    metadata['financial_duplicate_dispositions'] = {key: {**value, 'actor': dict(name='System')} for key, value in
+        (metadata.get('financial_duplicate_dispositions') or {}).items()}
+    f.file.metadata_ = metadata
+    f.db.commit()
+    with f.SessionLocal() as db:
+        key = read_statement_import(db, case_id=f.case.id, evidence_file_id=f.file.id).get('statement_id') or ''
+        admitted = set(db.scalars(select(FinancialSourceDocument.id).where(FinancialSourceDocument.status == 'admitted')))
+    assert admitted
+    batch = Batch(id=uuid4(), case_id=f.case.id, created_by=f.user.id, status='review',
+        actor=dict(name=f.actor.name, email=f.actor.email, user_id=str(f.actor.user_id)),
+        files=[dict(source_id=str(f.file.id), file_id=str(f.file.id), filename=f.file.original_filename,
+            expected_revision='initial', status='checked')])
+    f.db.add(batch)
+    f.db.flush()
+    f.db.add_all([BatchItem(id=uuid5(batch.id, f'{f.file.id}:{key}'), batch_id=batch.id, file_id=f.file.id,
+            statement_key=key, status='imported', summary=dict(source_id=str(f.file.id), revision='r',
+            source_document_id=receipt['source_document_id'])),
+        BatchItem(id=uuid5(batch.id, f'{f.file.id}:held'), batch_id=batch.id, file_id=f.file.id,
+            statement_key='held', status='attention', summary=dict(source_id=str(f.file.id), revision='r'))])
+    f.db.commit()
+    with f.SessionLocal() as db:
+        selected, reasons = readers.candidates(db, f.case.id, reader_campaign())
+    assert reasons == {'eligible': 1}
+    campaign = reader_campaign()
+    with f.SessionLocal() as db:
+        cutoff = recovery.activate(db, campaign.release)
+        recovery.snapshot_case(db, f.case.id, cutoff, campaign)
+        (item_id,) = list(db.scalars(select(Item.id).join(Run, Item.run_id == Run.id).where(Run.release == campaign.release)))
+    recovery.recover_one(f.SessionLocal, item_id, Path)
+    assert entry_of(f, batch.id)[1]['status'] == 'waiting'
+    for _ in range(6):
+        asyncio.run(import_batches.advance_batch(f.SessionLocal, batch.id, Path, _copy_reading(f)))
+        if entry_of(f, batch.id)[1]['status'] == 'checked' and entry_of(f, batch.id)[0] != 'preparing':
+            break
+    _, entry = entry_of(f, batch.id)
+    assert entry['status'] == 'checked' and entry['file_id'] != str(f.file.id), entry
+    for _ in range(3):
+        queue_save.sweep_save(f.SessionLocal, budget_seconds=None)
+        asyncio.run(import_batches.advance_batch(f.SessionLocal, batch.id, Path, _copy_reading(f)))
+    with f.SessionLocal() as db:
+        assert db.get(BatchItem, uuid5(batch.id, f'{f.file.id}:{key}')).status == 'imported'  # untouched
+        assert db.get(BatchItem, uuid5(batch.id, f'{f.file.id}:held')).status == 'superseded_reading'
+        twins = list(db.scalars(select(BatchItem).where(BatchItem.batch_id == batch.id,
+            BatchItem.file_id == __import__('uuid').UUID(entry['file_id']))))
+        # The new reading recognises the saved statement as the one already admitted (same record), so it is
+        # listed as saved without a second admission.
+        assert twins and all(twin.status != 'pending_import' and (twin.status != 'imported' or
+            __import__('uuid').UUID(twin.summary['source_document_id']) in admitted) for twin in twins), \
+            [(twin.statement_key, twin.status) for twin in twins]
+        assert set(db.scalars(select(FinancialSourceDocument.id).where(
+            FinancialSourceDocument.status == 'admitted'))) == admitted
+
+
+def test_end_to_end_a_copy_the_system_set_aside_does_not_stop_the_batch_reading_again(f):
+    """The batch's own fresh-reading guard (import_batches._prepare_retry) agrees with the selection."""
+    from services.financial import import_batches
+    set_reader(f, f.file.id)
+    batch, (held, copy) = held_batch(f, statuses=('attention', 'duplicate_ignored'))
+    f.file.metadata_ = {**(f.file.metadata_ or {}), 'financial_duplicate_dispositions': {
+        's1': dict(status='ignored', actor=dict(name='System'))}}
+    f.db.commit()
+    campaign = reader_campaign()
+    with f.SessionLocal() as db:
+        recovery.snapshot_case(db, f.case.id, recovery.activate(db, campaign.release), campaign)
+        (item_id,) = list(db.scalars(select(Item.id).join(Run, Item.run_id == Run.id).where(Run.release == campaign.release)))
+    recovery.recover_one(f.SessionLocal, item_id, Path)
+    for _ in range(6):
+        asyncio.run(import_batches.advance_batch(f.SessionLocal, batch.id, Path, _copy_reading(f)))
+        if entry_of(f, batch.id)[1]['status'] in ('checked', 'error'):
+            break
+    _, entry = entry_of(f, batch.id)
+    assert entry['status'] == 'checked' and entry['file_id'] != str(f.file.id), entry.get('error')
+    with f.SessionLocal() as db:
+        assert db.get(BatchItem, copy.id).status == 'duplicate_ignored'
+        assert db.get(BatchItem, held.id).status == 'superseded_reading'
+
+
+@pytest.mark.parametrize('holds', [False, True])
+def test_a_failed_batch_file_holding_nothing_does_not_keep_the_original_from_being_read_again(f, monkeypatch, holds):
+    """FAILED_MEMBER_IDLE: the other batch's failed preparation is left as it is; the held statements are read."""
+    set_reader(f, f.file.id)
+    older, newer = two_batch_original(f, second_statuses=())
+    newer.files = [{**newer.files[0], 'status': 'error', 'error': 'failed'}]
+    if holds:
+        f.db.add(BatchItem(id=uuid5(newer.id, f'{f.file.id}:x'), batch_id=newer.id, file_id=f.file.id,
+            statement_key='x', status='attention', summary=dict(source_id=str(f.file.id), revision='r')))
+    f.db.commit()
+    selected, reasons = selection(f)
+    if holds:  # a failed file that still lists statements is not idle: nothing changes
+        assert selected == [] and reasons == {'not_prepared': 1, 'several_batches': 1}
+        return
+    assert selected == [str(f.file.id)] and reasons == {'eligible': 2}
+    with monkeypatch.context() as off:
+        off.setattr(readers, 'FAILED_MEMBER_IDLE', False)
+        assert selection(f) == ([], {'not_prepared': 1, 'several_batches': 1})
+    _, (item_id,) = snapshot(f)
+    recovery.recover_one(f.SessionLocal, item_id, Path)
+    (_, first), (status, second) = entry_of(f, older.id), entry_of(f, newer.id)
+    assert first['status'] == 'waiting' and first['recovery']['action'] == 'reader_recovery'
+    assert second['status'] == 'error' and 'recovery' not in second  # left exactly as it was

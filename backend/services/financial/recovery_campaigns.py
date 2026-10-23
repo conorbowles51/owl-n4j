@@ -201,19 +201,34 @@ def is_reader_release(release):
     return bool(release) and release.startswith(READER_RELEASE_PREFIX)
 
 
+# Which held statements the engine-release campaign may hand back (recovery_readers.classify). The snapshot is
+# taken once per release id, so a change to that selection must change the id too, or a deploy carrying it
+# never looks at a case the deployed engine already snapshotted. Bump on every change to the selection rules.
+# v2 (aq-b-santander): a removal recorded before the batch holding the restart was made no longer protects it,
+# and a statement already settled without a person's work (saved, or set aside by the System) no longer
+# protects the held statements of its file (recovery_readers.SETTLED_SIBLINGS), and a batch file whose
+# preparation failed and that holds nothing is an idle member of its original (FAILED_MEMBER_IDLE).
+READER_SELECTION = 'held-selection-v2'
+
+
+def reader_release_id(engine_digest):
+    """The campaign id of an engine source under the current selection rules (at most 64 characters)."""
+    return READER_RELEASE_PREFIX + hashlib.sha256(f'{engine_digest}:{READER_SELECTION}'.encode()).hexdigest()[:32]
+
+
 def reader_campaign(release=None):
     """The engine-release campaign: held statements read by another engine source than today's.
 
-    Without ``release``, the campaign of the engine deployed now (None when its
-    source is unknown). With an earlier engine release's id (its run is still
-    being followed), the same rule against today's engine: a statement read by
-    today's engine is never read again.
+    Without ``release``, the campaign of the engine deployed now under today's
+    selection rules (None when its source is unknown). With an earlier
+    release's id (its run is still being followed), the same rule against
+    today's engine: a statement read by today's engine is never read again.
     """
     current = current_engine_reader()
     if release is None:
         if current is None:
             return None
-        release = READER_RELEASE_PREFIX + current[:32]
+        release = reader_release_id(current)
     return RecoveryCampaign(release, current_readers={'pdf_extraction.py': current}, batch_reread=True)
 
 

@@ -97,24 +97,64 @@ def reading_fingerprint(session, file):
         reading_mode=content['settings'].get('pdf_reading_mode', 'automatic'))
 
 
+def _system_entry(entry):
+    """A disposition the System recorded (an automatic set-aside), never a person's."""
+    actor = entry.get('actor')
+    return isinstance(actor, dict) and actor.get('name') == 'System' and not actor.get('user_id')
+
+
+def _person_disposition(value):
+    """True unless every entry of one statement's disposition is the System's own projection or set-aside."""
+    if not isinstance(value, dict):
+        return True
+    for entry in (value, *(value.get('history') or [])):
+        if not isinstance(entry, dict):
+            return True
+        if (entry.get('actor') or {}).get('user_id') if isinstance(entry.get('actor'), dict) else entry.get('actor'):
+            return True
+        if entry.get('status') == 'restored' or (entry.get('status') == 'ignored' and not (
+                SETTLED_SIBLINGS and _system_entry(entry))):
+            return True
+    return False
+
+
 def duplicate_decision(file):
-    """An ignored/restored duplicate, or any disposition a person recorded.
+    """An ignored/restored duplicate a person recorded, or any disposition a person recorded.
 
     Preparation itself stores automatic dispositions (not a duplicate,
     retained, needs comparison) for nearly every period; those are system
     projections and are recomputed by the new reading, so they do not protect.
+    A copy the System set aside by itself (status ignored, actor System, no
+    person anywhere in its history) is such a projection too (SETTLED_SIBLINGS);
+    an ignored entry without a recorded actor is treated as a person's.
     """
     dispositions = (file.metadata_ or {}).get('financial_duplicate_dispositions') or {}
     if not isinstance(dispositions, dict):
         return True
-    for value in dispositions.values():
-        if not isinstance(value, dict):
-            return True
-        for entry in (value, *(value.get('history') or [])):
-            if not isinstance(entry, dict):
-                return True
-            if entry.get('status') in ('ignored', 'restored') or (entry.get('actor') or {}).get('user_id'):
-                return True
+    return any(_person_disposition(value) for value in dispositions.values())
+
+
+# A held statement is read again even when another statement of the same file was already settled without
+# a person's work on it: saved (imported; its saved review carries no edit, since any edit protects the whole
+# file) or set aside by the System as a copy. The new reading never touches a settled statement: its own item,
+# admitted records and disposition stay; the new reading's twin of it meets the ordinary copy and
+# already-saved gates (pending_statement_duplicates, queue_save). Still protected: queued imports, a person's
+# skip, ignore, restore, assignment or removal, a ready statement, and any edit. Off: every settled statement
+# protects its file, as before.
+SETTLED_SIBLINGS = os.environ.get('LOUPE_FINANCIAL_RECOVERY_SETTLED_SIBLINGS', '1').strip().lower() not in (
+    '0', 'false', 'no', 'off')
+
+
+def settled_sibling(item, file):
+    """True for a statement settled with no person's work on it (see SETTLED_SIBLINGS). Read only."""
+    if not SETTLED_SIBLINGS or item.review_request:
+        return False
+    if item.status == 'imported':
+        return True
+    if item.status == 'duplicate_ignored' and file is not None:
+        dispositions = (file.metadata_ or {}).get('financial_duplicate_dispositions') or {}
+        value = dispositions.get(item.statement_key or '') if isinstance(dispositions, dict) else None
+        return isinstance(value, dict) and value.get('status') == 'ignored' and not _person_disposition(value)
     return False
 
 
@@ -128,6 +168,49 @@ def context(session, case_id, cutoff=None):
     admitted = set(session.scalars(select(FinancialSourceDocument.evidence_file_id).where(
         FinancialSourceDocument.case_id == case_id, FinancialSourceDocument.status == 'admitted')))
     return dict(batches=batches, membership=membership, admitted=admitted)
+
+
+# A removal recorded on an original before the batch that holds a newer reading of it was made is the start
+# of that restart (remove imports, then add the file again: ``evidence_intake.prepare_existing_financial_file``
+# reads a new version for the new batch), not a decision about the statements the restart prepared. Such a
+# batch file is judged like any other (every other guard still applies). Off: every removal protects, as before.
+RESTARTED_AFTER_REMOVAL = os.environ.get('LOUPE_FINANCIAL_RECOVERY_RESTARTED', '1').strip().lower() not in (
+    '0', 'false', 'no', 'off')
+
+
+def _instant(value):
+    if isinstance(value, datetime):
+        moment = value
+    else:
+        try:
+            moment = datetime.fromisoformat(str(value))
+        except (TypeError, ValueError):
+            return None
+    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
+
+
+def restarted_after_removal(source, reading, batch):
+    """True when every removal on this batch file predates the batch and its reading (the restart). Read only.
+
+    Fails closed: the reading itself removed, a removal without a recorded time, or one recorded at or after
+    the batch or the reading was made, keeps the file protected.
+    """
+    if not RESTARTED_AFTER_REMOVAL or source.id == reading.id or batch is None:
+        return False
+    visibility = financial_file_visibility(reading)
+    if visibility['financial_removed'] or visibility['financial_imports_removed']:
+        return False
+    metadata = source.metadata_ or {}
+    stamps = []
+    if metadata.get('financial_import_removal'):
+        stamps.append((metadata['financial_import_removal'] or {}).get('at'))
+    if financial_file_visibility(source)['financial_removed']:
+        stamps.append((metadata.get('financial_file_visibility') or {}).get('changed_at'))
+    made = [_instant(getattr(batch, 'created_at', None)), _instant(getattr(reading, 'created_at', None))]
+    removed = [_instant(stamp) for stamp in stamps]
+    if not stamps or None in made or None in removed:
+        return False
+    return max(removed) < min(made)
 
 
 def _uuid(value):
@@ -160,7 +243,7 @@ def classify(session, case_id, batch, entry, campaign, scope, group=False):
         return 'several_batches', {}
     pair = (source, reading) if source.id != reading.id else (source,)
     if any(financial_file_visibility(file)['financial_removed'] or financial_file_visibility(file)['financial_imports_removed']
-           for file in pair):
+           for file in pair) and not restarted_after_removal(source, reading, batch):
         return 'removed', {}
     if any(duplicate_decision(file) for file in pair):
         return 'duplicate_decision', {}
@@ -172,14 +255,16 @@ def classify(session, case_id, batch, entry, campaign, scope, group=False):
         Batch.case_id == case_id, Batch.status != 'removed', BatchItem.file_id.in_([file.id for file in pair]))))
     if any(item.review_request for item in items):
         return 'investigator_edits', {}
+    files = {file.id: file for file in pair}
+    settled = [item for item in items if settled_sibling(item, files.get(item.file_id))]
     for item in items:
-        if item.status in PROTECTED_STATUSES:
+        if item.status in PROTECTED_STATUSES and item not in settled:
             return PROTECTED_STATUSES[item.status], {}
-    if any(file.id in scope['admitted'] for file in pair):
+    if any(file.id in scope['admitted'] for file in pair) and not (SETTLED_SIBLINGS and any(
+            item.status == 'imported' for item in settled)):
         return 'saved_import', {}
     own = [item for item in items if item.batch_id == batch.id and item.file_id == reading.id]
-    if any(item.status not in (HELD, HISTORY) for item in own) or any(
-            item.status not in (HELD, HISTORY) for item in items):
+    if any(item.status not in (HELD, HISTORY) and item not in settled for item in items):
         return 'not_all_held', {}
     held = [item for item in own if item.status == HELD]
     if not held:
@@ -198,6 +283,20 @@ def classify(session, case_id, batch, entry, campaign, scope, group=False):
 # A member of a several-batch original that no longer holds anything there
 # (every period retired by an earlier reading) needs no new preparation.
 IDLE_MEMBER = 'nothing_held'
+# A member whose preparation failed in its batch and that holds no statement there (an error waiting for a
+# person's retry, which makes its own reading) is idle too: it does not keep the original's held statements in
+# the other batches from being read again, and it is left exactly as it is. Off: it protects them, as before.
+FAILED_MEMBER_IDLE = os.environ.get('LOUPE_FINANCIAL_RECOVERY_FAILED_MEMBER_IDLE', '1').strip().lower() not in (
+    '0', 'false', 'no', 'off')
+
+
+def failed_idle(session, batch, entry):
+    """True for a batch file whose preparation failed and that holds no statement in its batch. Read only."""
+    if not FAILED_MEMBER_IDLE or entry.get('status') != 'error' or entry.get('standalone_import'):
+        return False
+    ids = [i for i in (_uuid(entry.get('file_id')), _uuid(entry.get('source_id'))) if i]
+    return not ids or not session.scalar(select(BatchItem.id).where(BatchItem.batch_id == batch.id,
+        BatchItem.file_id.in_(ids), BatchItem.status != HISTORY).limit(1))
 
 
 def _group_reason(session, case_id, members, campaign, scope):
@@ -213,6 +312,8 @@ def _group_reason(session, case_id, members, campaign, scope):
         return 'several_batches', []  # a batch made after the release cutoff holds it too
     chosen = []
     for batch, entry in members:
+        if failed_idle(session, batch, entry):
+            continue
         reason, detail = classify(session, case_id, batch, entry, campaign, scope, group=True)
         if reason == IDLE_MEMBER:
             continue
@@ -235,7 +336,8 @@ def candidates(session, case_id, campaign, cutoff=None):
     for batch in scope['batches']:
         for entry in batch.files or []:
             reason, detail = classify(session, case_id, batch, entry, campaign, scope)
-            if reason == 'several_batches':
+            if reason == 'several_batches' or (scope['membership'][entry.get('source_id')] > 1
+                                               and failed_idle(session, batch, entry)):
                 groups.setdefault(entry.get('source_id'), []).append((batch, entry))
                 continue
             reasons[reason] += 1
@@ -295,6 +397,7 @@ def snapshot(session, case_id, cutoff, campaign, run_id):
     if campaign.current_readers:
         supersede_earlier(session, case_id, campaign.release)
     selected, reasons = candidates(session, case_id, campaign, cutoff)
+    membership = context(session, case_id)['membership']
     run = Run(id=run_id, case_id=case_id, release=campaign.release, status='running' if selected else 'complete')
     session.add(run)
     session.flush()
@@ -305,6 +408,7 @@ def snapshot(session, case_id, cutoff, campaign, run_id):
                 source_id=entry['source_id'], from_file_id=str(reading.id),
                 lineage_ids=sorted({str(d['reading'].id) for _, _, d in members}),
                 reading_mode=detail['reading_mode'], extraction_sha256=detail['extraction_sha256'],
+                member_count=membership[entry['source_id']],
                 held_items=sorted(str(item.id) for _, _, d in members for item in d['held']), added=0,
                 members=[dict(batch_id=str(b.id), source_id=e['source_id'], from_file_id=str(d['reading'].id),
                     reading_mode=d['reading_mode']) for b, e, d in members],
@@ -472,8 +576,16 @@ def advance(session, item, file, campaign):
         _record(session, item, file, 'kept', 'A newer reading of this statement exists. Recovery left it unchanged.')
         session.commit()
         return
-    scope, group = context(session, file.case_id), len(found) > 1
-    if group and scope['membership'][item.result['source_id']] != len(found):
+    scope = context(session, file.case_id)
+    group = len(found) > 1 or scope['membership'][item.result['source_id']] > 1
+    handed = {(str(batch.id), entry.get('source_id')) for _, batch, _, entry in found}
+    others = [(batch, entry) for batch in scope['batches'] for entry in batch.files or []
+              if entry.get('source_id') == item.result['source_id'] and (str(batch.id), entry.get('source_id')) not in handed]
+    # Every batch holding the original when it was scheduled, idle ones included (older items: those handed).
+    expected = item.result.get('member_count', len(found))
+    if group and (scope['membership'][item.result['source_id']] != expected or any(
+            not failed_idle(session, batch, entry) and classify(session, file.case_id, batch, entry, campaign, scope,
+                                                                 group=True)[0] != IDLE_MEMBER for batch, entry in others)):
         # Another batch took the original after scheduling: its work is not judged here.
         _record(session, item, file, 'kept', 'Another batch now holds this statement. Recovery left it unchanged.',
             kept_reason='several_batches')
