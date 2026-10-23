@@ -27,7 +27,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from uuid import UUID, uuid5
 
-from sqlalchemy import select
+from sqlalchemy import String, cast, column, exists, inspect, select, table
 
 from postgres.models.evidence import EvidenceDocumentText, EvidenceFile, IngestionLog
 from postgres.models.financial import FinancialSourceDocument
@@ -365,13 +365,36 @@ def in_flight(session):
     return sum(1 for result in results if (result or {}).get('handoff'))
 
 
+# The evidence engine's job table (same database, owned by the engine).
+_engine_jobs = table('jobs', column('source_evidence_file_id'), column('status'), column('paused'))
+_jobs_visible = {}
+
+
+def _engine_jobs_visible(session):
+    bind = session.get_bind()
+    if id(bind) not in _jobs_visible:
+        _jobs_visible[id(bind)] = inspect(bind).has_table('jobs')
+    return _jobs_visible[id(bind)]
+
+
 def evidence_being_read(session, now=None):
-    """Evidence files being read now, host-wide (reused for BUSY_SECONDS)."""
+    """Evidence files being read now, host-wide (reused for BUSY_SECONDS).
+
+    A file counts only while an engine job is actually working on it (not
+    finished, failed or paused). ``processing`` alone is not proof: a file whose
+    job died or was failed keeps that status until its case is next synced, and
+    counting it held every re-read back for as long as it stayed (one such file
+    blocked a case for weeks).
+    """
     now = time.monotonic() if now is None else now
     if _busy and now - _busy['at'] < BUSY_SECONDS:
         return _busy['count']
     from sqlalchemy import func
-    count = session.scalar(select(func.count()).select_from(EvidenceFile).where(EvidenceFile.status == 'processing')) or 0
+    query = select(func.count()).select_from(EvidenceFile).where(EvidenceFile.status == 'processing')
+    if _engine_jobs_visible(session):
+        query = query.where(exists().where(_engine_jobs.c.source_evidence_file_id == EvidenceFile.id,
+            cast(_engine_jobs.c.status, String).not_in(('completed', 'failed')), _engine_jobs.c.paused.is_(False)))
+    count = session.scalar(query) or 0
     _busy.update(at=now, count=count)
     return count
 

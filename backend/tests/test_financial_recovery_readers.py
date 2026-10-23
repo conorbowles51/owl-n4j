@@ -458,3 +458,31 @@ def test_scheduled_statements_count_as_being_rechecked_in_the_queue(f):
     with f.SessionLocal() as db:
         _rechecked_by_recovery(db, f.case.id, entries)
     assert [e['bucket'] for e in entries] == ['rechecking', 'ready', 'waiting'] and 'ready' not in REREAD_BUCKETS
+
+
+def test_a_processing_file_counts_as_being_read_only_while_an_engine_job_works_on_it(f):
+    from sqlalchemy import text
+    f.db.execute(text('CREATE TABLE jobs (id TEXT PRIMARY KEY, source_evidence_file_id CHAR(32), status TEXT, paused BOOLEAN)'))
+    readers._jobs_visible.clear()
+    try:
+        f.file.status = 'processing'
+        f.db.commit()
+        # The stuck file: still "processing", its engine job long failed. It must not hold re-reads back.
+        f.db.execute(text("INSERT INTO jobs VALUES ('a', :file, 'failed', 0)"), dict(file=f.file.id.hex))
+        f.db.commit()
+        assert readers.evidence_being_read(f.db) == 0
+        readers._busy.clear()
+        f.db.execute(text("UPDATE jobs SET status = 'pending', paused = 1"))
+        f.db.commit()
+        assert readers.evidence_being_read(f.db) == 0  # paused work is not being read
+        readers._busy.clear()
+        f.db.execute(text("UPDATE jobs SET paused = 0"))
+        f.db.commit()
+        assert readers.evidence_being_read(f.db) == 1  # queued or running work still holds re-reads back
+        readers._busy.clear()
+        f.db.execute(text("UPDATE jobs SET status = 'extracting_entities'"))
+        f.db.commit()
+        assert readers.evidence_being_read(f.db) == 1
+    finally:
+        readers._jobs_visible.clear()
+        readers._busy.clear()
