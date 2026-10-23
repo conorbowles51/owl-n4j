@@ -162,17 +162,25 @@ def _comparable(original, request):
     once every row it could not resolve was excluded in the saved review.
 
     Excluded rows put nothing in the ledger, and ledger equality is required
-    as well, so dropping them cannot hide a payment.
+    as well, so dropping them cannot hide a payment. An unread row a person
+    completed in the saved review (amount, direction and date) is read: its
+    payment is in the ledger, which must still equal the other copy's.
     """
     from services.financial.pending_statement_duplicates import _financial_reading
     if _financial_reading(original)[1]:
         return True
     unread = ('unresolved', 'unclassified')
-    excluded = {row.get('id') for row in request.get('rows', []) if row.get('excluded')}
-    if any(row.get('kind') in unread and row.get('id') not in excluded for row in original.get('rows', [])):
+    settled = {row.get('id') for row in request.get('rows', []) if row.get('excluded') or _completed(row)}
+    if any(row.get('kind') in unread and row.get('id') not in settled for row in original.get('rows', [])):
         return False
     return _financial_reading({**original, 'rows': [row for row in original.get('rows', [])
                                                     if row.get('kind') not in unread]})[1]
+
+
+def _completed(row):
+    """A saved review row a person filled in: money, a direction and a printed date."""
+    return bool(str(row.get('amount_minor') or '').lstrip('-').isdigit() and int(row['amount_minor'])
+                and row.get('direction') in ('debit', 'credit') and row.get('date'))
 
 
 def _received(session, file, cache):
@@ -339,6 +347,16 @@ def _match(left, right):
     return 'printed_reference' if same_key and left.payments and right.payments else None
 
 
+def _reviewed_to_same_ledger(copy, retained):
+    """A person completed one copy's reading in review, and both saved the same money.
+
+    The readings then differ only by what the review supplied; the ledger (every
+    admitted payment and every saved period balance) is the money compared.
+    """
+    return bool((copy.edited or retained.edited) and copy.admitted_rows and retained.admitted_rows
+                and copy.ledger == retained.ledger)
+
+
 def _compare(copy, retained):
     """None when ``copy`` may be set aside in favour of ``retained``; otherwise why not.
 
@@ -357,7 +375,7 @@ def _compare(copy, retained):
     if basis == 'same_printed_period':
         if copy.scope['identity'] != retained.scope['identity'] and not copy.payments:
             code = 'other_bank_without_payments'
-        elif copy.content != retained.content:
+        elif copy.content != retained.content and not _reviewed_to_same_ledger(copy, retained):
             code = 'money_differs'
         if code and READER_INDEPENDENT and copy.key and copy.key == retained.key and copy.payments and retained.payments:
             basis = 'printed_reference'  # the same printed facts, read by another reader: compare as such

@@ -349,6 +349,24 @@ class ComparableReadingTests(TestCase):
         # Nothing left to compare is never comparable.
         self.assertFalse(admitted._comparable(self.reading('unresolved'), dict(rows=[dict(id='0', excluded=True)])))
 
+    def test_an_unread_row_a_person_completed_in_the_saved_review_counts(self):
+        reading = self.reading('balance', 'transaction', 'unresolved')
+        done = dict(id='2', excluded=False, amount_minor='35813322', direction='debit', date='2026-03-26')
+        self.assertTrue(admitted._comparable(reading, dict(rows=[done])))
+        for missing in ('amount_minor', 'direction', 'date'):
+            self.assertFalse(admitted._comparable(reading, dict(rows=[{**done, missing: ''}])), missing)
+        self.assertFalse(admitted._comparable(reading, dict(rows=[{**done, 'amount_minor': '0'}])))
+        self.assertFalse(admitted._comparable(self.reading('unresolved'), dict(rows=[{**done, 'id': '0'}])))
+
+    def test_a_reviewed_copy_matches_only_by_an_identical_ledger(self):
+        from types import SimpleNamespace as C
+        reviewed, clean = C(edited=True, admitted_rows=58, ledger='a'), C(edited=False, admitted_rows=58, ledger='a')
+        self.assertTrue(admitted._reviewed_to_same_ledger(clean, reviewed))
+        self.assertFalse(admitted._reviewed_to_same_ledger(clean, C(edited=True, admitted_rows=58, ledger='b')))
+        self.assertFalse(admitted._reviewed_to_same_ledger(clean, C(edited=False, admitted_rows=58, ledger='a')))
+        self.assertFalse(admitted._reviewed_to_same_ledger(C(edited=False, admitted_rows=0, ledger='a'),
+                                                           C(edited=True, admitted_rows=0, ledger='a')))
+
 
 class ReaderIndependentCopyTests(TestCase):
     """r11-copy-audit: one printed statement saved through two readers, in two ledger accounts.
