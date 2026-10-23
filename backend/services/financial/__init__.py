@@ -2238,3 +2238,8 @@ from services.financial.review_carry import conflict_problems as carry_conflict_
 __all__ += ["carry_file_level_review", "conflict_problems", "carry_conflict_problems", "same_value"]
 from services.financial.row_versions import RowValues
 __all__ += ["RowValues"]
+from services.financial.page_row_proposals import (
+    page_proposals as propose_page_rows, apply_page as apply_page_row_proposal,
+    read_item_page_proposals, confirm_item_page,
+)
+__all__ += ["propose_page_rows", "apply_page_row_proposal", "read_item_page_proposals", "confirm_item_page"]
