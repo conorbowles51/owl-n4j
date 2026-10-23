@@ -30,6 +30,11 @@ def located_rows(items):
 
 
 def santander_catalog(sources):
+    from services.financial.statement_import_santander_query import santander_query_catalog
+    query, query_handled = santander_query_catalog(sources)
+    if query:
+        # An online movement query printout ("Consulta de Movimientos"): every page is the query's.
+        return query, query_handled
     pages = {}
     for s in sources:
         pages.setdefault(s['page_number'], []).append(s)
@@ -133,6 +138,9 @@ def santander_catalog(sources):
 
 
 def propose_santander_statement(sources,currency,choice):
+    from services.financial.statement_import_santander_query import FORM, propose_santander_query
+    if choice.get('form') == FORM:
+        return propose_santander_query(sources, currency, choice)
     scopes={(s['page_number'],s['table_index']):set(s['row_indices']) for s in choice['section_sources']}
     result=[];columns=None;last=None;active_page=None
     for page in sorted({s['page_number'] for s in sources}):

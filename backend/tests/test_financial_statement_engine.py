@@ -3289,6 +3289,52 @@ class BrokerageCashLedgerTests(unittest.TestCase):
         st, = self.read(broker_statement(client_lines=('00041234 GRUPO K7 EJEMPLO', '00099999 GRUPO K7 EJEMPLO')))
         self.assertEqual((st['account_reference'], st['holder']), ('', ''))
 
+    def with_holdings(self, codes):
+        """The invented statement with a holdings table on its second page printing these currency codes."""
+        sources = broker_statement()
+        rows = sources[1]['rows']
+        last = rows.pop()  # the page number line stays last
+        lines = [[('EMISORA', 20000, 80000), ('SERIE', 90000, 130000), ('MON', 140000, 170000), ('TITULOS', 200000, 260000)]]
+        lines += [[('FONDOEJ', 20000, 80000), ('M1', 90000, 130000), (code, 140000, 170000), ('1,000', 220000, 260000)]
+                  for code in codes]
+        y = rows[-1]['cells'][0]['locator']['rect'][1]
+        for line in lines:
+            y += 12000
+            built = page(2, [line])['rows'][0]
+            for c in built['cells']:
+                c['locator']['rect'][1], c['locator']['rect'][3] = y, y + 6000
+            rows.append(dict(row_index=len(rows), cells=built['cells']))
+        y += 12000
+        for c in last['cells']:
+            c['locator']['rect'][1], c['locator']['rect'][3] = y, y + 6000
+        rows.append(dict(last, row_index=len(rows)))
+        return sources
+
+    def test_the_one_currency_the_holdings_table_prints_is_the_statements(self):
+        profile = broker_profile()
+        self.assertTrue(profile['holdings_currency'])
+        st, = [s for s in read_statements(self.with_holdings(['MXN', 'MXN']), profile=profile) if s['period_start']]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual((st['currency'], st['currency_source']), ('MXN', 'printed_holdings_currency'))
+        self.assertEqual(st['currency_evidence']['page_number'], 2)
+        self.assertEqual(_moves(st), self.EXPECTED)
+        # Two codes in the holdings table: ambiguous, nothing is read.
+        st, = [s for s in read_statements(self.with_holdings(['MXN', 'USD']), profile=profile) if s['period_start']]
+        self.assertEqual(st['currency'], '')
+        # Without the profile key, or with the rule switched off, the currency stays a person's choice.
+        plain = {k: v for k, v in broker_profile().items() if k != 'holdings_currency'}
+        st, = [s for s in read_statements(self.with_holdings(['MXN']), profile=plain) if s['period_start']]
+        self.assertEqual(st['currency'], '')
+        with mock.patch.object(E, 'HOLDINGS_CURRENCY', False):
+            st, = [s for s in read_statements(self.with_holdings(['MXN']), profile=profile) if s['period_start']]
+        self.assertEqual(st['currency'], '')
+
+    def test_the_real_brokerage_profiles_read_the_holdings_currency(self):
+        from services.financial.statement_engine_profiles import PROFILES
+        names = {p['name']: p for p in PROFILES}
+        self.assertTrue(names['kapital-mexico-brokerage']['holdings_currency'])
+        self.assertTrue(names['intercam-brokerage']['holdings_currency'])
+
     def test_profile_keys_are_validated(self):
         from services.financial.statement_engine_profiles import validate
         base = dict(name='x', match={})

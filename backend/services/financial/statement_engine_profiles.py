@@ -135,8 +135,9 @@ PROFILES = (
 # effect on cash ('NETO', debits in parentheses). After each settlement day's lines it prints the cash
 # balance at the end of that day, and the month's opening and closing balances as dated lines. Measured on
 # the real collection (778 documents): the two phrases of each profile are printed by its family's
-# brokerage statements (4 Kapital, 1 Intercam) and by no other document. No currency is printed: it stays
-# the investigator's choice.
+# brokerage statements (4 Kapital, 1 Intercam) and by no other document. The cash ledger prints no currency;
+# the statement's holdings table can (``holdings_currency``, Neil 2026-10-23); a statement printing none
+# stays the investigator's choice.
 _BROKERAGE_CASH = dict(
     labels=dict(opening=['SALDO INICIAL DEL MES'], closing=['SALDO FINAL DEL MES'],
                 day_balance=['SALDO AL FINAL DEL DIA']),
@@ -147,6 +148,8 @@ _BROKERAGE_CASH = dict(
     client_line=True,
     convention='asset_balance',
     date_order='dmy',
+    # Neil, 2026-10-23: the currency the holdings table prints is the statement's (statement_engine.HOLDINGS_CURRENCY).
+    holdings_currency=True,
 )
 PROFILES += (
     dict(name='kapital-mexico-brokerage',
@@ -160,7 +163,7 @@ PROFILES += (
 
 _KEYS = {'name', 'match', 'institution', 'currency', 'convention', 'date_order', 'labels', 'columns', 'account_heading',
          'statement_account', 'prior_period_block', 'account_suffix_heading', 'holder_heading', 'settlement_days',
-         'client_line', 'rule_mark'}
+         'client_line', 'rule_mark', 'holdings_currency'}
 _LABEL_ROLES = {'opening', 'closing', 'subtotal', 'credit_total', 'debit_total', 'credit_component',
                 'debit_component', 'column_total', 'day_balance'}
 _COLUMN_ROLES = {'date', 'description', 'credit', 'debit', 'balance', 'amount', 'ignore'}
