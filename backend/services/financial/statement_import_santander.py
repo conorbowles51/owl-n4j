@@ -51,34 +51,6 @@ def located_rows(items):
         key=lambda pair: (min(box(c)[1] for c in pair[1]['cells'] if box(c)), pair[0]['table_index'], pair[1]['row_index']))
 
 
-POSITIONLESS_TABLES = _switch('LOUPE_FINANCIAL_SANTANDER_POSITIONLESS_TABLES')
-
-
-def _positionless(source):
-    """A table whose extraction kept only its outline (no cell positions): the rows of a native page's
-    ruled table, in printed order, with each cell's column number. Its outline must be located."""
-    rect = (source.get('locator') or {}).get('rect')
-    return (source.get('geometry_source') == 'table_rectangle_only' and isinstance(rect, list) and len(rect) == 4
-            and all(type(v) is int for v in rect) and not any(box(c) for r in source['rows'] for c in r['cells']))
-
-
-def section_rows(items):
-    """``located_rows`` plus (POSITIONLESS_TABLES) the rows of positionless tables, placed at their table's
-    top in their stored order. Used only by this reader (other families keep ``located_rows``)."""
-    rows = located_rows(items)
-    if not POSITIONLESS_TABLES:
-        return rows
-    extra = [(s, r) for s in items if _positionless(s) for r in s['rows']]
-    if not extra:
-        return rows
-    def key(pair):
-        source, row = pair
-        if any(box(c) for c in row['cells']):
-            return (min(box(c)[1] for c in row['cells'] if box(c)), 0, source['table_index'], row['row_index'])
-        return (source['locator']['rect'][1], 1, source['table_index'], row['row_index'])
-    return sorted(rows + extra, key=key)
-
-
 def santander_catalog(sources):
     from services.financial.statement_import_santander_query import santander_query_catalog
     query, query_handled = santander_query_catalog(sources)
@@ -149,7 +121,7 @@ def santander_catalog(sources):
             active = None
         previous_page = p
         if not key:continue
-        meta = known[key]; located = section_rows(items)
+        meta = known[key]; located = located_rows(items)
         anchors = [(i,s,r) for i,(s,r) in enumerate(located) if re.search(r'DETALLES? DE MOVIMIENTOS', norm(text(r)))]
         # Continuations repeat the customer/period and movement columns, not
         # the account heading. Carry only the immediately preceding open
@@ -192,13 +164,13 @@ def propose_santander_statement(sources,currency,choice):
     if choice.get('form') == FORM:
         return propose_santander_query(sources, currency, choice)
     scopes={(s['page_number'],s['table_index']):set(s['row_indices']) for s in choice['section_sources']}
-    result=[];columns=None;last=None;active_page=None;indexed=None;previous_balance=None
+    result=[];columns=None;last=None;active_page=None;previous_balance=None
     for page in sorted({s['page_number'] for s in sources}):
-        for s,raw in section_rows([s for s in sources if s['page_number']==page]):
+        for s,raw in located_rows([s for s in sources if s['page_number']==page]):
             cells=raw['cells'];joined=norm(text(raw))
             item=dict(id=f"{page}:{s['table_index']}:{raw['row_index']}",page_number=page,table_index=s['table_index'],row_index=raw['row_index'],source_revision=s['source_revision'],source_cells=cells,fields={},issues=[],excluded=True,kind='header')
             result.append(item)
-            if page!=active_page:columns=None;last=None;active_page=page;indexed=None
+            if page!=active_page:columns=None;last=None;active_page=page
             if raw['row_index'] not in scopes.get((page,s['table_index']),set()):continue
             labels={norm(c['expected_text']):c for c in cells}
             if 'SALDO FINAL DEL PERIODO' in joined:
@@ -213,15 +185,7 @@ def propose_santander_statement(sources,currency,choice):
                 continue
             money_names=('DEPOSITO','RETIRO','SALDO')
             if 'FECHA' in joined and all(n in labels and box(labels[n]) for n in money_names):
-                columns={n:labels[n] for n in money_names};last=None;indexed=None;continue
-            if (POSITIONLESS_TABLES and 'FECHA' in joined and _positionless(s) and all(n in labels for n in money_names)
-                    and len({labels[n]['column_index'] for n in money_names}) == 3):
-                # A positionless table: its own column heading numbers the money columns.
-                columns={n:labels[n] for n in money_names};last=None
-                indexed=(s['page_number'],s['table_index'],{labels[n]['column_index']:n for n in money_names});continue
-            if columns is not None and indexed is not None and (page,s['table_index'])!=indexed[:2]:
-                # Column numbers belong to their own table only.
-                columns=None;last=None;indexed=None
+                columns={n:labels[n] for n in money_names};last=None;continue
             if columns is None:
                 # A recognizable payment under an unreadable column heading
                 # is an incomplete reading, never evidence of no activity.
@@ -245,24 +209,7 @@ def propose_santander_statement(sources,currency,choice):
                         balance=exact_amount(cell['expected_text'],currency),merged_with_row=item['id'])
                     result.append(total)
             money={n:[] for n in money_names};other=[]
-            if indexed is not None:
-                unreadable=False
-                for c in cells:
-                    name=indexed[2].get(c['column_index'])
-                    if name is None:
-                        other.append(c)
-                    elif re.fullmatch(r'\$?\s*[\d,.]+\.\d{2}-?',c['expected_text'].strip()):
-                        money[name].append(c)
-                    elif name!='SALDO' or not all(re.fullmatch(r'\$?\s*[\d,.]+\.\d{2}-?',line.strip()) for line in c['expected_text'].split('\n')):
-                        unreadable=True
-                    # A running balance cell that took the following lines' balances too is left unread.
-                if unreadable:
-                    item.update(kind='unresolved',excluded=False)
-                    item['fields']['description']=text(raw)
-                    item['issues'].append('Check the printed amount for this payment beside the PDF.')
-                    continue
-                cells=[c for c in cells if c in other or any(c in v for v in money.values())]
-            for c in ([] if indexed is not None else cells):
+            for c in cells:
                 rect=box(c)
                 if rect and rect[0] >= box(columns['DEPOSITO'])[0] and re.fullmatch(r'\$?\s*[\d,.]+\.\d{2}-?',c['expected_text'].strip()):
                     # Both ruled cells and OCR words stay in their printed
@@ -506,7 +453,7 @@ def santander_no_activity_evidence(sources, choice, rows, currency):
 
     def guard():
         ordered = [(page, s, raw) for page in sorted({s['page_number'] for s in sources})
-                   for s, raw in section_rows([s for s in sources if s['page_number'] == page])
+                   for s, raw in located_rows([s for s in sources if s['page_number'] == page])
                    if raw['row_index'] in scopes.get((page, s['table_index']), set())]
         roles = []
         for page, s, raw in ordered:
