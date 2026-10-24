@@ -25,7 +25,7 @@ the edited review request, and the caller saves it as the confirming person's
 review (``import_batches.save_review``), so the machine reading stays in the
 proposal and only the confirmed values are used for totals and money flows.
 
-Switch: ``LOUPE_FINANCIAL_PAGE_ROW_PROPOSALS`` (default OFF: ``1`` turns it on). Measured on the real
+Switch: ``LOUPE_FINANCIAL_PAGE_ROW_PROPOSALS`` (default ON: ``0`` turns it off). Measured on the real
 statement set (bench r14s-whole, r15-batch-work): no held statement has a page whose lines can be proved this
 way, because every one also prints money-shaped lines outside any chain (summary blocks, interest and holdings
 tables) that a confirmation must not skip. Off, no page proposal is offered anywhere, which is the behaviour
@@ -52,7 +52,7 @@ EARLY, LATE = timedelta(days=45), timedelta(days=10)
 
 
 def enabled():
-    return os.environ.get('LOUPE_FINANCIAL_PAGE_ROW_PROPOSALS', '0') == '1'
+    return os.environ.get('LOUPE_FINANCIAL_PAGE_ROW_PROPOSALS', '1') != '0'
 
 
 def _iso(value):

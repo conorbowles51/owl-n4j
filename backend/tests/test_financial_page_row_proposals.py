@@ -142,11 +142,10 @@ class PageProposalTests(_On):
 
     def test_switch_off_offers_nothing(self):
         proposal = _statement([['03/05', 'Deposit', '100.00', '1,100.00']], [['20/03', 'Card', '50.00', '1,050.00']])
-        for value in ('0', ''):
-            with mock.patch.dict(os.environ, {'LOUPE_FINANCIAL_PAGE_ROW_PROPOSALS': value}):
-                self.assertEqual(prp.page_proposals(proposal)['pages'], [])
+        with mock.patch.dict(os.environ, {'LOUPE_FINANCIAL_PAGE_ROW_PROPOSALS': '0'}):
+            self.assertEqual(prp.page_proposals(proposal)['pages'], [])
         with mock.patch.dict(os.environ, {}, clear=True):
-            self.assertFalse(prp.enabled())
+            self.assertTrue(prp.enabled())
 
 
 class ApplyPageTests(_On):
