@@ -47,3 +47,25 @@ Counts and opaque ids only. Scratch evidence (private, mode 700): /mnt/owl-data/
   wrongly admitted 0, duplicate ledger contributions 0, held kept out 10/10.
 - Whole-set product bench on frozen code: started (bench/aqb-216c5a6b), about 10 h; generic-only not run
   (host shared, 6 CPUs, one bench at a time).
+
+## Carry investigator work onto the re-read (decision 2026-10-24)
+- 3771ef7e: statements with saved progress or batch drafts are re-read; her detail/row edits are carried
+  onto the new reading (hers win), hand-added rows kept in place, the carried review stays hers (never
+  System-saved), her original stays on the earlier reading (carried_from + per-file carry log). A review
+  saved after scheduling is refused (work fingerprint). Not carried, stays held with reason: rows not
+  aligned, statement/row ambiguous, work in another batch, two different drafts. Person decisions untouched.
+  Switch LOUPE_FINANCIAL_RECOVERY_CARRY_EDITS.
+- Worked statements in the 25 files of the formerly investigator_edits targets (35): carried 6 (4 exact
+  baseline, all System-filled details; 2 unproven baseline, a person's row edits); not carried 29
+  (rows_not_aligned 15, work_in_another_batch 5, statement_ambiguous 3, row_ambiguous 1, two_drafts 1,
+  plus 4 on the original's source reading).
+- The 2 statements carrying a person's carried edits stay held after carrying (row reading checks).
+- Final, the 64: ready 8 (all saved, all equal to truth, none already admitted live); held: copy_of_saved 14,
+  after re-read 11, sibling work not carried 10, own work not carried 8, duplicate_decision 6,
+  investigator_decision 4, reader_not_affected 2, not_all_held 1.
+- The 50: ready 8 (saved 8); held: copy_of_saved 12, sibling work not carried 10, own work not carried 8,
+  duplicate_decision 5, investigator_decision 4, after re-read 2, not_all_held 1.
+- Disposable carry run: 36 saved periods, 36 equal to truth, 0 differ.
+- Case-wide live selection under head rules: eligible 111, copy_of_saved 97, saved_import 137.
+- Tests head: 18 targeted files + review_carry: 536 passed / 20 failed (same 20 fail on base);
+  6 files touching review recovery: 210 passed.
