@@ -111,7 +111,10 @@ def recovery_state(session, file, *, sources, choices, statement_id, revision, c
     key = ('previous-reviews', str(file.id))
     if key not in cache:
         cache[key] = saved_ancestor_reviews(session, file)
-    records = cache[key]
+    # Work an engine re-read carried onto this reading (reread_carry) is its own saved review now; the
+    # earlier records stay listed in history but no longer ask for a comparison.
+    carried = set((file.metadata_ or {}).get('financial_review_carried') or ())
+    records = [record for record in cache[key] if record['id'] not in carried]
     if not records:
         return None, None
     reading_key = ('recovery-reading', str(file.id))

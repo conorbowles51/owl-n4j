@@ -1812,7 +1812,15 @@ async def _prepare_retry(session, *, case_id, file, actor, resolve_path, process
                        and not settled_sibling(item, prior)) for item in session.scalars(
             select(Item).join(Batch, Item.batch_id == Batch.id).where(
                 Batch.case_id == case_id, Batch.status != 'removed', Item.file_id == identifier)))
-        if not recovery.get('reset_revision') and (reviewed or (prior and (prior.metadata_ or {}).get('financial_review_progress'))):
+        carrying = False
+        if recovery.get('carry_work') and prior is not None:
+            # An engine re-read scheduled with this exact saved work carries it onto the new reading
+            # (reread_carry); any review saved since is refused as before.
+            from services.financial.reread_carry import work_fingerprint
+            source_file = session.get(EvidenceFile, UUID(file['source_id']))
+            carrying = work_fingerprint(session, case_id, {prior.id, *([source_file.id] if source_file else [])}) \
+                == recovery['carry_work']
+        if not recovery.get('reset_revision') and not carrying and (reviewed or (prior and (prior.metadata_ or {}).get('financial_review_progress'))):
             raise PdfMappingError('A review decision was saved after Retry was requested. Open the statement to compare it before starting a new reading.', 409)
         from services.financial.statement_reprocessing import create_statement_version
         version = create_statement_version(session, case_id=case_id, evidence_file_id=identifier,
@@ -2197,10 +2205,22 @@ def _review_file(factory,batch_id,case_id,file):
         # leave its periods needing a reading at list time. Store it now.
         refresh_file_readiness(db, case_id=case_id, file_id=UUID(file['file_id']))
         _refresh_closing_only_neighbours(db, case_id, batch_id, UUID(file['file_id']))
-        if (file.get('recovery') or {}).get('fresh_reading'):
+        carried_keys = set()
+        recovery = file.get('recovery') or {}
+        if recovery.get('fresh_reading') and recovery.get('carry_work') and recovery.get('read_from_file_id') \
+                and recovery['read_from_file_id'] != file['file_id']:
+            carried_keys = _carry_reread_work(db, batch_id, case_id, file)
+        if recovery.get('fresh_reading'):
             previous = list(db.scalars(select(Item).where(Item.batch_id == batch_id,
                 Item.file_id != UUID(file['file_id']), Item.status.in_(('ready', 'attention')))))
             for item in previous:
+                if item.summary.get('source_id') == file['source_id'] and item.review_request \
+                        and str(item.file_id) == recovery.get('read_from_file_id') and (item.statement_key or '') in carried_keys:
+                    # Her work now lives on the new reading (carried, unchanged); this draft stays in history.
+                    item.status = 'superseded_reading'
+                    item.summary = {**item.summary, 'can_import': False, 'superseded_by_reading': file['file_id'],
+                        'recovery_message': 'A newer reading of this original carries this saved work. This earlier preparation is retained in history.'}
+                    continue
                 if item.summary.get('source_id') == file['source_id'] and not item.review_request:
                     item.status = 'superseded_reading'
                     item.summary = {**item.summary, 'can_import': False,
@@ -2211,6 +2231,32 @@ def _review_file(factory,batch_id,case_id,file):
         # as System when their file's preparation ends (flag AUTO_SAVE_READY).
         from services.financial.queue_save import auto_save_prepared
         auto_save_prepared(db, case_id=case_id, batch_id=batch_id, file_id=UUID(file['file_id']))
+
+
+def _carry_reread_work(db, batch_id, case_id, file):
+    """Carry the earlier reading's saved work onto this fresh reading, then prepare its periods again so the
+    carried reviews take effect. Returns the earlier statement keys carried. Never raises: a failure leaves
+    every period held by the comparison step, as without carrying."""
+    from services.financial.reread_carry import carry_reread_work
+    recovery = file['recovery']
+    try:
+        outcome = carry_reread_work(db, case_id=case_id, batch_id=batch_id,
+            prior_id=UUID(recovery['read_from_file_id']), new_id=UUID(file['file_id']))
+        db.commit()
+    except Exception:
+        db.rollback()
+        log.exception('Carrying saved work onto a new reading failed; its periods stay held for comparison')
+        return set()
+    if any(value['carried'] for value in outcome.values()):
+        prepare_reviews(db, batch_for(db, case_id, batch_id), file, lock_slice=REVIEW_LOCK_SLICE_SECONDS)
+    held = {value['new_statement_id'] for value in outcome.values() if value['carried']}
+    reasons = {key: value['reason'] for key, value in outcome.items() if not value['carried']}
+    for item in db.scalars(select(Item).where(Item.batch_id == batch_id, Item.file_id == UUID(file['file_id']))):
+        if item.statement_key in held or reasons:
+            item.summary = {**item.summary, 'reread_carry': dict(carried=item.statement_key in held,
+                not_carried=reasons)}
+    db.commit()
+    return {key for key, value in outcome.items() if value['carried']}
 
 
 def _waiting_for_previous_statement(item):

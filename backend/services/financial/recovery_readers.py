@@ -308,14 +308,20 @@ def classify(session, case_id, batch, entry, campaign, scope, group=False):
         return 'removed', {}
     if any(duplicate_decision(file) for file in pair):
         return 'duplicate_decision', {}
+    from services.financial.reread_carry import CARRY_EDITS, work_fingerprint
+    carry = {}
     if any((file.metadata_ or {}).get('financial_review_progress') for file in pair):
-        return 'investigator_edits', {}
+        if not CARRY_EDITS:
+            return 'investigator_edits', {}
+        carry = dict(carry_work=work_fingerprint(session, case_id, [file.id for file in pair]))
     # Every period of this reading or its original, in any batch, counts:
     # work saved elsewhere on the same statement is still investigator work.
     items = list(session.scalars(select(BatchItem).join(Batch, BatchItem.batch_id == Batch.id).where(
         Batch.case_id == case_id, Batch.status != 'removed', BatchItem.file_id.in_([file.id for file in pair]))))
     if any(item.review_request for item in items):
-        return 'investigator_edits', {}
+        if not CARRY_EDITS:
+            return 'investigator_edits', {}
+        carry = carry or dict(carry_work=work_fingerprint(session, case_id, [file.id for file in pair]))
     files = {file.id: file for file in pair}
     saved_keys = {item.statement_key for item in items if item.status == 'imported' and item.statement_key}
     settled = [item for item in items if settled_sibling(item, files.get(item.file_id), saved_keys)]
@@ -341,7 +347,7 @@ def classify(session, case_id, batch, entry, campaign, scope, group=False):
     if not campaign.eligible(None, fingerprint['sources']):
         return 'reader_not_affected', {}
     return ELIGIBLE, dict(source=source, reading=reading, held=held, reading_mode=fingerprint['reading_mode'],
-        extraction_sha256=fingerprint['sources'].get('pdf_extraction.py'))
+        extraction_sha256=fingerprint['sources'].get('pdf_extraction.py'), **carry)
 
 
 # A member of a several-batch original that no longer holds anything there
@@ -686,7 +692,8 @@ def advance(session, item, file, campaign):
             message='A newer statement reader is reading this held statement again. The earlier reading and all saved work are retained.',
             fresh_reading=True, read_from_file_id=member['from_file_id'],
             reading_file_id=member['from_file_id'], review_file_id=member['from_file_id'],
-            reading_mode=detail['reading_mode'], release=campaign.release, updated_at=now)
+            reading_mode=detail['reading_mode'], release=campaign.release, updated_at=now,
+            **({'carry_work': detail['carry_work']} if detail.get('carry_work') else {}))
         entry.update(status='waiting', expected_revision=financial_file_visibility(detail['source'])['financial_visibility_revision'])
         entry.pop('error', None)
         entry.pop('preparation_retries', None)

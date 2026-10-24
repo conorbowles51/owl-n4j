@@ -155,16 +155,21 @@ def test_reader_gate_requires_a_recorded_affected_revision(f):
     assert selection(f) == ([], {'reader_not_affected': 1})
 
 
-def test_never_selects_statements_with_investigator_edits(f):
+def test_statements_with_investigator_edits_are_selected_to_carry_them_unless_switched_off(f, monkeypatch):
+    from services.financial import reread_carry
     set_reader(f, f.file.id)
     _, items = held_batch(f, statuses=('attention', 'attention'))
     items[1].review_request = dict(holder='Typed by the investigator')
     f.db.commit()
+    assert selection(f) == ([str(f.file.id)], {'eligible': 1})
+    monkeypatch.setattr(reread_carry, 'CARRY_EDITS', False)
     assert selection(f) == ([], {'investigator_edits': 1})
     items[1].review_request = None
     f.file.metadata_ = {**(f.file.metadata_ or {}), 'financial_review_progress': {'': dict(request={})}}
     f.db.commit()
     assert selection(f) == ([], {'investigator_edits': 1})
+    monkeypatch.setattr(reread_carry, 'CARRY_EDITS', True)
+    assert selection(f) == ([str(f.file.id)], {'eligible': 1})
 
 
 @pytest.mark.parametrize('status,reason', [
@@ -302,7 +307,9 @@ def test_hand_off_uses_the_batch_reading_path_and_is_idempotent(f):
     assert item_state(f, item_id)[0] == 'reading'
 
 
-def test_an_edit_saved_after_scheduling_is_never_overwritten(f):
+def test_an_edit_saved_after_scheduling_is_never_overwritten(f, monkeypatch):
+    from services.financial import reread_carry
+    monkeypatch.setattr(reread_carry, 'CARRY_EDITS', False)
     set_reader(f, f.file.id)
     batch, items = held_batch(f)
     _, (item_id,) = snapshot(f)
@@ -453,7 +460,9 @@ def test_an_original_in_several_batches_is_read_once_and_each_batch_prepares_fro
 
 @pytest.mark.parametrize('change,reason', [('edit', 'investigator_edits'), ('ready', 'not_all_held'),
                                            ('pending_import', 'saved_import'), ('skipped', 'investigator_decision')])
-def test_work_in_any_batch_of_the_original_protects_it_everywhere(f, change, reason):
+def test_work_in_any_batch_of_the_original_protects_it_everywhere(f, change, reason, monkeypatch):
+    from services.financial import reread_carry
+    monkeypatch.setattr(reread_carry, 'CARRY_EDITS', False)  # edits carried: see the carry tests
     set_reader(f, f.file.id)
     older, newer = two_batch_original(f, second_statuses=('attention', 'attention'))
     with f.SessionLocal() as db:
@@ -628,7 +637,9 @@ def test_a_removal_is_still_protected_unless_it_provably_preceded_the_restart(f,
     assert selected == [] and reasons == {'removed': 1}
 
 
-def test_a_restart_with_investigator_work_stays_protected(f):
+def test_a_restart_with_investigator_work_stays_protected(f, monkeypatch):
+    from services.financial import reread_carry
+    monkeypatch.setattr(reread_carry, 'CARRY_EDITS', False)
     from datetime import datetime, timedelta, timezone
     now = datetime.now(timezone.utc)
     batch, reading = _restart(f, removed_at=now - timedelta(days=30), batch_made=now - timedelta(days=1))
@@ -819,3 +830,112 @@ def test_a_held_copy_of_a_period_another_original_saved_is_left_for_comparison(f
     f.db.commit()
     monkeypatch.setattr(readers, 'COPY_OF_SAVED_PROTECTS', False)
     assert selection(f)[1] == {'eligible': 1}
+
+
+def _worked_batch(f):
+    """A held statement of f.file carrying an investigator's saved progress and the same batch draft."""
+    from services.financial.import_batches import initial_request
+    from services.financial.statement_import import read_statement_import
+    set_reader(f, f.file.id)
+    with f.SessionLocal() as db:
+        proposal = read_statement_import(db, case_id=f.case.id, evidence_file_id=f.file.id)
+    key = proposal.get('statement_id') or ''
+    request = initial_request(proposal)
+    request['holder'] = 'Typed by the investigator'
+    row = next(r for r in request['rows'] if not r['excluded'])
+    row['description'] = 'Corrected by the investigator'
+    row['reason'] = 'Printed text was cut off'
+    saved_by = dict(user_id=str(f.user.id), name='Investigator')
+    f.file.metadata_ = {**(f.file.metadata_ or {}), 'financial_review_progress': {key: dict(request=request,
+        review_revision='rev', saved_at='2026-10-01T00:00:00+00:00', saved_by=saved_by)}}
+    batch = Batch(id=uuid4(), case_id=f.case.id, created_by=f.user.id, status='review',
+        actor=dict(name=f.actor.name, email=f.actor.email, user_id=str(f.actor.user_id)),
+        files=[dict(source_id=str(f.file.id), file_id=str(f.file.id), filename=f.file.original_filename,
+            expected_revision='initial', status='checked')])
+    f.db.add(batch)
+    f.db.flush()
+    item = BatchItem(id=uuid5(batch.id, f'{f.file.id}:{key}'), batch_id=batch.id, file_id=f.file.id,
+        statement_key=key, status='attention', review_request=request,
+        summary=dict(source_id=str(f.file.id), revision=proposal['revision'], review_saved_by=saved_by))
+    f.db.add(item)
+    f.db.commit()
+    return batch, item.id, key, request, row['id']
+
+
+def _run_reread(f, batch):
+    from services.financial import import_batches
+    campaign = reader_campaign()
+    with f.SessionLocal() as db:
+        cutoff = recovery.activate(db, campaign.release)
+        recovery.snapshot_case(db, f.case.id, cutoff, campaign)
+        (item_id,) = list(db.scalars(select(Item.id).join(Run, Item.run_id == Run.id).where(Run.release == campaign.release)))
+    recovery.recover_one(f.SessionLocal, item_id, Path)
+    return item_id
+
+
+def _advance(f, batch):
+    from services.financial import import_batches
+    for _ in range(6):
+        asyncio.run(import_batches.advance_batch(f.SessionLocal, batch.id, Path, _copy_reading(f)))
+        if entry_of(f, batch.id)[1]['status'] in ('checked', 'error') and entry_of(f, batch.id)[0] != 'preparing':
+            break
+    return entry_of(f, batch.id)[1]
+
+
+def test_end_to_end_a_new_reading_carries_the_investigators_work_unchanged(f):
+    """Neil 2026-10-24: re-read statements with saved work, keeping every edit; both readings stay in history."""
+    batch, old_id, key, request, edited_row = _worked_batch(f)
+    with f.SessionLocal() as db:
+        admitted = set(db.scalars(select(FinancialSourceDocument.id).where(FinancialSourceDocument.status == 'admitted')))
+    _run_reread(f, batch)
+    assert entry_of(f, batch.id)[1].get('recovery', {}).get('carry_work')
+    entry = _advance(f, batch)
+    assert entry['status'] == 'checked' and entry['file_id'] != str(f.file.id), entry
+    with f.SessionLocal() as db:
+        old = db.get(BatchItem, old_id)
+        assert old.status == 'superseded_reading' and old.review_request == request  # her draft kept in history
+        assert db.get(EvidenceFile, f.file.id).metadata_['financial_review_progress'][key]['request'] == request
+        version = db.get(EvidenceFile, __import__('uuid').UUID(entry['file_id']))
+        (new_key, record), = version.metadata_['financial_review_progress'].items()
+        assert record['saved_by']['name'] == 'Investigator' and record['carried_by']['name'] == 'System'
+        assert record['carried_from']['evidence_file_id'] == str(f.file.id) and record['carried_from']['statement_id'] == key
+        carried = record['request']
+        assert carried['holder'] == 'Typed by the investigator'
+        row = next(r for r in carried['rows'] if r['description'] == 'Corrected by the investigator')
+        assert row['reason'] == 'Printed text was cut off'
+        fresh = list(db.scalars(select(BatchItem).where(BatchItem.batch_id == batch.id, BatchItem.file_id == version.id)))
+        assert [item.review_request for item in fresh] == [carried]
+        assert fresh[0].summary['reread_carry']['carried'] is True
+        assert fresh[0].status in ('ready', 'attention')
+        # Her edits are never saved by System: nothing new is admitted without a person.
+        assert set(db.scalars(select(FinancialSourceDocument.id).where(
+            FinancialSourceDocument.status == 'admitted'))) == admitted
+
+
+def test_work_saved_after_the_reread_was_scheduled_is_never_carried_unseen(f):
+    batch, old_id, key, request, _ = _worked_batch(f)
+    _run_reread(f, batch)
+    with f.SessionLocal() as db:
+        item = db.get(BatchItem, old_id)
+        item.review_request = {**request, 'holder': 'Typed after scheduling'}
+        db.commit()
+    entry = _advance(f, batch)
+    with f.SessionLocal() as db:
+        item = db.get(BatchItem, old_id)
+        assert item.review_request['holder'] == 'Typed after scheduling' and item.status == 'attention'
+        assert entry['file_id'] == str(f.file.id) or not db.get(EvidenceFile, __import__('uuid').UUID(
+            entry['file_id'])).metadata_.get('financial_review_progress')
+
+
+def test_rows_that_do_not_line_up_are_not_carried_and_the_period_stays_held(f):
+    from services.financial import reread_carry
+    from services.financial.statement_import import read_statement_import
+    batch, old_id, key, request, _ = _worked_batch(f)
+    with f.SessionLocal() as db:
+        proposal = read_statement_import(db, case_id=f.case.id, evidence_file_id=f.file.id)
+    stale = {**request, 'expected_revision': 'f' * 64, 'rows': [{**r, 'id': 'gone-' + r['id']} for r in request['rows']]}
+    with pytest.raises(reread_carry.NotCarried) as error:
+        reread_carry.carry(proposal, stale, proposal)
+    assert error.value.reason == 'rows_not_aligned'
+    same, audit = reread_carry.carry(proposal, request, proposal)
+    assert audit['baseline'] == 'exact' and same['holder'] == 'Typed by the investigator'
