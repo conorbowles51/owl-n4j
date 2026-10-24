@@ -55,8 +55,9 @@ def missing_pages(pages, statement_pages):
     total = next(iter(totals))
     # The pages between the statement's own pages belong to the same printing (a statement can skip a page that
     # prints another account's section), then the pages either side that continue the sequence.
+    # An unnumbered page between them (a blank back, a cover the scan lost) belongs to it too.
     run = {page for page in range(min(own), max(own) + 1) if page in pages
-           and (page in own or (numbering.get(page) and numbering[page][1] == total))}
+           and (page in own or not numbering.get(page) or numbering[page][1] == total)}
     for step in (-1, 1):
         page = (min(own) if step < 0 else max(own)) + step
         while page in pages and (not numbering.get(page) or numbering[page][1] == total):
@@ -68,6 +69,11 @@ def missing_pages(pages, statement_pages):
     unread = sum(1 for page in run if not numbering.get(page))
     missing = sorted(set(range(1, total + 1)) - seen)
     if len(missing) <= unread:
+        return None
+    # Only a missing first page (the cover: opening balance, summary) or a gap between printed pages read is proved
+    # to cut the statement. Some banks count trailing pages (notices, inserts) in the printed total that their
+    # downloads never carry: pages missing only after the last one read are not held.
+    if 1 not in missing and not any(n < max(seen) for n in missing):
         return None
     return dict(printed_total=total, missing=missing, held=len(run))
 

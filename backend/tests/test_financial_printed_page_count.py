@@ -49,7 +49,24 @@ class MissingPagesTests(unittest.TestCase):
     def test_another_printed_sequence_is_not_borrowed(self):
         pages = {1: 'PAGINA 1 / 2', 2: 'PAGINA 1 / 3', 3: 'PAGINA 2 / 3', 4: 'PAGINA 3 / 3'}
         self.assertIsNone(gate.missing_pages(pages, [2, 3, 4]))
-        self.assertEqual(gate.missing_pages(pages, [1])['missing'], [2])
+        # Page 2 of 2 is missing only after the last page read: not proved (see the trailing-pages test).
+        self.assertIsNone(gate.missing_pages(pages, [1]))
+        pages = {1: 'PAGINA 2 / 3', 2: 'PAGINA 1 / 2'}
+        self.assertEqual(gate.missing_pages(pages, [1])['missing'], [1, 3])
+
+    def test_unnumbered_page_between_the_statement_pages_counts(self):
+        # Card statement: numbered fronts, unnumbered backs; the backs may carry the missing numbers.
+        pages = {1: 'Page 1 of 4', 2: 'terms', 3: 'Page 2 of 4', 4: 'notice', 5: 'Page 1 of 2'}
+        self.assertIsNone(gate.missing_pages(pages, [1, 3]))
+
+    def test_pages_missing_only_after_the_last_page_read_are_not_held(self):
+        # Some banks count inserts in the printed total that the download never carries.
+        pages = {1: 'Page 1 of 5', 2: '', 3: 'Page 2 of 5', 4: '', 5: 'Page 1 of 2'}
+        self.assertIsNone(gate.missing_pages(pages, [1, 3]))
+
+    def test_gap_between_pages_read_is_held(self):
+        pages = numbered(6, (1, 2, 5, 6))
+        self.assertEqual(gate.missing_pages(pages, list(pages))['missing'], [3, 4])
 
     def test_ambiguous_or_impossible_numbering_is_ignored(self):
         self.assertIsNone(gate.page_numbering('PAGINA 9 / 7'))

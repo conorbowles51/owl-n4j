@@ -1,3 +1,18 @@
+# Unit rd-pagegate: hold statements whose printed page numbering shows pages absent from the file
+
+Branch fin/rd-pagegate from aa14b1d3. Switch LOUPE_FINANCIAL_PRINTED_PAGE_COUNT_GATE (default on). Counts only.
+- printed_page_count.missing_pages: "PAGINA n/N", "Pagina n de N", "Page n of N", "HOJA n DE N". Held only when the
+  missing printed pages include page 1 (cover: opening balance, summary) or lie between printed pages that were
+  read. Unnumbered pages on or between or beside the statement count as wildcards. Pages missing only after the last
+  page read are not held: some card statements count inserts in the total that the download never has.
+- Blocker kind printed_pages_missing (preparation and admission), cleared by a coverage note; queue reason pages_missing.
+- Truth (whole-set bench aqb-216c5a6b readings, 1,962 items): holds exactly the 3 bbva-mexico truth holds, 0 auto
+  items. The first version also held 2 auto capital-one-card periods (trailing inserts) and 1 auto bbva-mexico period
+  (unnumbered interior page): fixed by TAKEOVER RUN 1.
+- Live audit (read only, 4,713 saved items): 11 saved BNB2 BBVA statements in 8 files miss printed page 1 (list
+  reader-gaps/saved-missing-pages.json, opaque ids, outside git). Not changed: open decision for Neil.
+- Tests: test_financial_printed_page_count 15 + review_queue: 98 pass.
+
 # Unit rg-others: reader gaps, other named banks (Monex, Kapital, Intercam, Scotiabank)
 
 Branch fin/rg-others, base 68d95b20. Counts and opaque ids only. Targets: 32 held statements, 26 files.
