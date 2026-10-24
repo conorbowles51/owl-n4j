@@ -102,3 +102,40 @@ Counts and opaque ids only. Scratch evidence (private, mode 700): /mnt/owl-data/
 - The 22 sibling: a 1, c 14 (all details-only), d 7. No record carries a statement note; 1 carries a row note.
 - Eligible if a/b = "no edits to keep": 3 of the 18 held by uncarried work (3 of 64, 3 of 50: own_work f0e365/77fb6f/
   64a961 statements, System-only fills); 0 of the 10 sibling-held.
+
+## Settle System-only work, carry details-only work with a payment match (decision 2026-10-24)
+- e43ecebe, reread_carry.plan_statement (switch LOUPE_FINANCIAL_RECOVERY_DETAILS_CARRY, default on):
+  - no edits to keep: every saved record of the statement is System's (a batch draft with no saver counts as
+    System only when its request equals a System save) and no person is in its save or detail history ->
+    settled, not held; the new reading is prepared like any other.
+  - details carried, payments matched: row-by-row carry failed on row alignment, and her work is details only
+    (no hand-added row, row note, statement note or confirmation; rows unchanged between her saves). Her
+    holder/account/institution/currency (and period dates on a named statement) are set exactly; rows are the
+    new reading's; every payment of hers (date, amount, direction; amount-free undated lines ignored; an
+    undated payment holds) must have its own counterpart, excluded ones as excluded. Extra payments counted
+    on the item (summary.reread_carry.details.extra_rows) and pass normal readiness. Saved as System
+    (queue_save.system_filled_only accepts the basis); her saver is kept on the carried record.
+  - file-level work: per period of the new reading; released when her payments dated in it match, the
+    printed account (last six) and currency agree with hers, and no period imported from her reading
+    overlaps. Released periods listed per record in financial_review_details_release (recovery_state stops
+    holding them); the rest stay held with per-period reasons in the carry log.
+  - Her original records are never changed; carried_from names them (basis recorded).
+- Measured (fresh readings, disposable SQLite, live inputs read only; scripts live26.py, measure_details.py,
+  detailsjoin.py; private outputs details-export.json, measure-details-fresh.json, details-join.json):
+  - plans for the 31 worked statement keys: settled 9, row-by-row carried 2, details 1, per-period 7 (all
+    periods proven on 7 files); held: no_period_proven 3 (multi-currency files: the other account's period
+    differs in currency; overlaps with an imported period), statement_ambiguous 3, work_in_another_batch 3,
+    hand_added_rows 2, two_drafts 1. Per-period holds: currency_differs 4, overlaps_imported_period 3.
+  - the 64: ready 8 -> 12 (all saved, all equal to truth); held: copy_of_saved 14, after re-read 17,
+    own work not carried 5, sibling work not carried 3, duplicate_decision 6, investigator_decision 4,
+    reader_not_affected 2, not_all_held 1. Lost 0.
+  - the 50: ready 8 -> 12 (saved 12); held: copy_of_saved 12, after re-read 8, own work not carried 5,
+    sibling work not carried 3, duplicate_decision 5, investigator_decision 4, not_all_held 1. Lost 0.
+  - gains: 3 System-only statements (the 3 expected), 1 file-level details carry. 6 sibling-held targets are
+    no longer held by her work; they stay held by normal readiness after the re-read (other named periods).
+  - every saved period of the disposable run: 24 saved, 24 equal to truth, 0 differ, no truth period saved
+    twice. No live writes (live session read-only at the database).
+- Tests: targeted 19 files: 553 passed / 20 failed, the same 20 as base; recovery readers file 61 passed
+  (11 new: details carry, payment mismatch, hand-added rows, row/statement notes, undated payment, rows changed
+  between saves, System-only settle and its history guard, per-period release, end-to-end carry + System save,
+  switch off).
