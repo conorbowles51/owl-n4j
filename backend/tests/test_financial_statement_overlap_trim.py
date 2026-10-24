@@ -55,6 +55,16 @@ class PlanTests(TestCase):
     def test_nothing_saved_nothing_to_trim(self):
         self.assertIsNone(plan([]))
 
+    def test_a_saved_movement_outside_its_own_period_holds_the_query(self):
+        # The saved statement carries a movement dated after its own end (inside the query's kept dates):
+        # trimming would count it twice.
+        neighbour = saved('2023-12-15', '2024-01-05', MOVES[:2])
+        neighbour['movements'].append((date(2024, 1, 10), 10000, 'debit', 120000))
+        self.assertEqual(plan([neighbour]), ('held', 'movements_differ'))
+        undated = saved('2023-12-15', '2024-01-05', MOVES[:2])
+        undated['movements'].append((None, 10000, 'debit', 120000))
+        self.assertEqual(plan([undated]), ('held', 'movements_differ'))
+
     def test_saved_start_trims_the_query_and_derives_its_opening(self):
         kind, result = plan([saved('2023-12-15', '2024-01-05', MOVES[:2])])
         self.assertEqual(kind, 'trim')
