@@ -178,6 +178,22 @@ export const reviewQueue = z.object({
     })
     .optional(),
   issue_counts: z.record(z.string(), z.number()).optional(),
+  /** One account's same proposed value on several waiting statements: one confirmation saves them all. */
+  proposal_groups: z
+    .array(
+      z.object({
+        id: z.string(),
+        field: z.string(),
+        value: z.string(),
+        basis: z.string(),
+        label: z.string(),
+        account: z.string(),
+        institution: z.string(),
+        statements: z.number(),
+        entry_ids: z.array(z.string()),
+      })
+    )
+    .optional(),
   /** Every ready entry's id, never truncated by paging. */
   ready_item_ids: z.array(z.string()).optional(),
   /** True: this answer predates the latest change; a current one is being built. */
@@ -745,4 +761,26 @@ export async function checkUnreadableAgain(caseId: string, data: ReviewQueue): P
   const parts = [`${result.queued} ${result.queued === 1 ? "file is" : "files are"} being checked again`]
   if (result.skipped.length) parts.push(`${result.skipped.length} ${result.skipped.length === 1 ? "batch" : "batches"} not started: ${result.skipped[0].message}`)
   return parts.join("; ")
+}
+
+export type ProposalGroup = NonNullable<ReviewQueue["proposal_groups"]>[number]
+
+const groupConfirmResponse = z.object({
+  group_id: z.string(),
+  field: z.string(),
+  value: z.string(),
+  statements: z.number(),
+  saved: z.number(),
+  failed: z.number(),
+})
+
+/** Confirms one account's proposed value on all its waiting statements (empty fields only), as this person. */
+export async function confirmProposalGroup(caseId: string, group: ProposalGroup, fileIds: string[] = []) {
+  return groupConfirmResponse.parse(
+    await fetchAPI(`/api/financial/statement-import/review/proposal-groups/confirm?case_id=${caseId}`, {
+      method: "POST",
+      body: { group_id: group.id, file_ids: fileIds },
+      timeout: 300000,
+    })
+  )
 }

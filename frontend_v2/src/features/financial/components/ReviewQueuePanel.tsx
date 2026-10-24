@@ -27,6 +27,7 @@ import {
 import { ReadingProgress } from "./ReadingProgress"
 import { BulkStatementDetails } from "./BulkStatementDetails"
 import { QueueRowDetails } from "./QueueRowDetails"
+import { QueueProposalGroups } from "./QueueProposalGroups"
 import { QueueNoActivityConfirm } from "./QueueNoActivityConfirm"
 
 type ListName = "waiting" | "ready" | "filled" | "reader" | "copies" | "unreadable"
@@ -661,6 +662,17 @@ export function ReviewQueuePanel({
                 </Button>
               ))}
             </div>
+          )}
+          {list === "waiting" && canEdit && !!query.data.proposal_groups?.length && (
+            <QueueProposalGroups
+              caseId={caseId}
+              groups={query.data.proposal_groups}
+              fileIds={fileIds}
+              onDone={(line) => {
+                setBulkOutcome(line)
+                void refresh(undefined, true)
+              }}
+            />
           )}
           {list === "waiting" && bulkIssue && canEdit && BULK_ISSUES.has(bulkIssue) && bulkEntries.length > 0 && (
             <div className="flex flex-wrap items-center gap-3 rounded border p-3 text-sm">
