@@ -128,6 +128,38 @@ class ProofTest(unittest.TestCase):
         # A period using pages 1-2 of a 3-page file whose numbering counts the whole file is complete.
         vr.check_page_numbering(pages, [1, 2, 3])
 
+    def test_a_gap_in_the_printed_page_numbers_holds(self):
+        numbered = lambda *numbers: [(physical, _page([], number, 3)) for physical, number in numbers]
+        with self.assertRaisesRegex(vr.NotProved, 'skip from page 1 to page 3'):
+            vr.check_page_numbering(numbered((1, 1), (2, 3)), [1, 2, 3, 4, 5])
+        # An unnumbered page of the period may stand in for the gap only where it sits.
+        vr.check_page_numbering(numbered((1, 1), (2, None), (3, 3)), [1, 2, 3])
+        with self.assertRaisesRegex(vr.NotProved, 'skip'):
+            vr.check_page_numbering(numbered((1, 1), (2, 3), (3, None)), [1, 2, 3])
+        with self.assertRaisesRegex(vr.NotProved, 'skip'):
+            vr.check_page_numbering(numbered((1, 2), (2, 1)), [1, 2, 3])
+        # Printed pages before or after the period must at least be pages of the file.
+        later = [(5, _page([], 2, 3)), (6, _page([], 3, 3))]
+        vr.check_page_numbering(later, [1, 2, 3, 4, 5, 6])
+        with self.assertRaisesRegex(vr.NotProved, 'not in the file'):
+            vr.check_page_numbering(later, [5, 6, 7])
+        with self.assertRaisesRegex(vr.NotProved, 'not in the file'):
+            vr.check_page_numbering([(2, _page([], 1, 3)), (3, _page([], 2, 3))], [1, 2, 3])
+
+    def test_a_partial_account_number_needs_the_printed_holder(self):
+        masked = _knowledge(account='****6789')
+        masked.accounts[0].digits, masked.accounts[0].masked = '6789', True
+        self.assertEqual(len(_proved(knowledge=masked)['rows']), 3)
+        pages = _balanced_pages()
+        pages[0][1]['sections'][0]['holder'] = ''
+        with self.assertRaisesRegex(vr.NotProved, 'partial number'):
+            _proved(knowledge=masked, pages=pages)
+        # The number printed only on the page images (the text read none): the same.
+        with self.assertRaisesRegex(vr.NotProved, 'partial number'):
+            _proved(pages=pages)
+        # A full number the text reading also read needs no printed holder (the saved one is used).
+        self.assertEqual(len(_proved(_proposal(account_number='0123456789'), pages=pages)['rows']), 3)
+
     def test_header_must_agree_with_text_reading(self):
         with self.assertRaisesRegex(vr.NotProved, 'no account section matching'):
             _proved(_proposal(account_number='9999999999'))

@@ -89,6 +89,11 @@ ROW_REASON = 'Read from page image, page {page}.'
 REPLACED_REASON = ('Set aside: the reading of the page images of this period reconciles exactly and replaces '
                    'the text reading, which is retained.')
 CLAIM_SECONDS = 20 * 60
+# A statement whose request fails this many times (for the same reading) is not requested again.
+MAX_FAILURES = 3
+# Reserved before each request: an answer cut short, refused or timed out is still billed.
+RESERVE_TOKENS_PER_IMAGE = 1600
+RESERVE_OUTPUT_TOKENS = 16000
 # Outcomes not attempted again for the same reading (failed, budget and unavailable are retried later).
 FINAL = ('proved', 'not_proved', 'stale')
 # USD per million tokens (input, output). Unknown models use the most expensive line.
@@ -402,6 +407,37 @@ def check_page_numbering(pages, file_pages=None):
             missing = sorted(set(range(1, total + 1)) - numbers)
             raise NotProved('The pages print %s pages but the file has %s; pages may be missing (printed pages not read: %s).' % (
                 total, count, ', '.join(str(n) for n in missing[:10]) or 'none'))
+    _numbering_has_no_gap(pages, file_pages, next(iter(totals)) if totals else None)
+
+
+def _numbering_has_no_gap(pages, file_pages, total):
+    """NotProved when a printed page number between this period's pages is not one of them.
+
+    As the text reader's numbering rule: an unnumbered page of the period (cover,
+    notice, reverse side) may stand in for a number only where it sits in the gap.
+    Before the first and after the last numbered page the printed pages must at
+    least be pages of the file (the numbering may count the whole printed document).
+    """
+    numbered, loose, previous = [], 0, None
+    for physical, page in sorted(pages, key=lambda pair: pair[0]):
+        number = page.get('printed_page_number')
+        if not isinstance(number, int) or number < 1:
+            loose += 1
+            continue
+        if previous is not None and (number <= previous or number - previous - 1 > loose):
+            raise NotProved('The printed page numbers of this period skip from page %s to page %s; '
+                            'a page may be missing.' % (previous, number))
+        numbered.append((physical, number))
+        previous, loose = number, 0
+    if not numbered:
+        return
+    file_pages = sorted(file_pages or [p for p, _ in pages])
+    (first_physical, first), (last_physical, last) = numbered[0], numbered[-1]
+    before = len([p for p in file_pages if p < first_physical])
+    after = len([p for p in file_pages if p > last_physical])
+    if first - 1 > before or (total and total - last > after):
+        raise NotProved('The printed page numbers show pages of this statement that are not in the file; '
+                        'a page may be missing.')
 
 
 # ---------------------------------------------------------------------------
@@ -490,6 +526,10 @@ def prove(proposal, section, knowledge):
     candidates, matched = fp.matching_accounts(dict(account_number=account_text, institution=institution_printed), knowledge)
     if not candidates or 'ambiguous' in matched or 'account' not in matched:
         raise NotProved('This account has no saved statement in the case to confirm the page-image reading against.')
+    if ('masked' in matched or not rule['account_number']) and not holder_printed:
+        # Only some digits agree, or only the page images print the number: another account at the
+        # bank could end the same way, so the printed holder must also agree (checked below).
+        raise NotProved('The account holder is not printed, so the account could not be confirmed from a partial number.')
 
     def currencies(known):
         return set(known.values('currency')) or ({known.currency} if known.currency else set())
@@ -832,20 +872,32 @@ def _stored(file, key):
     return ((file.metadata_ or {}).get(METADATA_KEY) or {}).get(key or '')
 
 
-def _store(db, file_id, key, record):
+def _being_read(stored):
+    if not stored or stored.get('status') != 'reading':
+        return False
+    started = datetime.fromisoformat(stored['at'])
+    return (datetime.now(timezone.utc) - started).total_seconds() < CLAIM_SECONDS
+
+
+def _store(db, file_id, key, record, claim=None):
+    """Store the record under the file's lock. With ``claim=(revision, model)``: False, storing
+    nothing, when the statement is being read, was read or was given up (checked under the lock)."""
     from postgres.models.evidence import EvidenceFile
     file = db.scalar(select(EvidenceFile).where(EvidenceFile.id == file_id).with_for_update()
                      .execution_options(populate_existing=True))
     if file is None:
-        return
+        return False
     metadata = deepcopy(file.metadata_ or {})
     readings = metadata.setdefault(METADATA_KEY, {})
     previous = readings.get(key or '')
+    if claim and (_being_read(previous) or _current(previous, *claim) or gave_up(previous, claim[0])):
+        return False
     if previous and previous.get('status') not in ('reading',) and previous.get('revision') != record.get('revision'):
         metadata.setdefault(METADATA_KEY + '_history', []).append(previous)
         metadata[METADATA_KEY + '_history'] = metadata[METADATA_KEY + '_history'][-20:]
     readings[key or ''] = record
     file.metadata_ = metadata
+    return True
 
 
 def _note(item, record):
@@ -854,9 +906,21 @@ def _note(item, record):
                     ('status', 'message', 'pages', 'cost_usd', 'model', 'at')}}
 
 
+def reserve_usd(model_id, images):
+    """The most a request with these images can cost (counted before it is sent)."""
+    count = sum(len(strips) for _, strips in images)
+    return cost_usd(model_id, dict(prompt_tokens=count * RESERVE_TOKENS_PER_IMAGE + 4000,
+                                   completion_tokens=RESERVE_OUTPUT_TOKENS))
+
+
+def gave_up(record, revision):
+    return bool(record and record.get('version') == VERSION and record.get('status') == 'failed'
+                and record.get('revision') == revision and (record.get('failures') or 0) >= MAX_FAILURES)
+
+
 def _current(record, revision, model_id):
     return (record and record.get('version') == VERSION and record.get('revision') == revision
-            and record.get('model') == model_id and record.get('status') != 'reading')
+            and record.get('model') == model_id and record.get('status') in FINAL)
 
 
 def read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for=None, apply=True, force=False):
@@ -915,28 +979,36 @@ def read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for
             stored = _stored(file, key)
             if _current(stored, proposal['revision'], model_id) and not force:
                 return dict(stored, reason='already_read')
-            if stored and stored.get('status') == 'reading' and not force:
-                started = datetime.fromisoformat(stored['at'])
-                if (datetime.now(timezone.utc) - started).total_seconds() < CLAIM_SECONDS:
-                    return dict(record, reason='being_read')
+            if _being_read(stored) and not force:
+                return dict(record, reason='being_read')
+            if gave_up(stored, proposal['revision']) and not force:
+                return dict(stored, reason='failed_repeatedly')
             path = resolve_path(file.stored_path)
+            failures = (stored.get('failures') or 0) if stored and stored.get('status') == 'failed' \
+                and stored.get('revision') == proposal['revision'] else 0
             record.update(revision=proposal['revision'], model=model_id, pages=pages,
-                          text_reading=_rule_metadata(proposal))
+                          text_reading=_rule_metadata(proposal), failures=failures)
             if apply:
-                _store(db, file_id, key, dict(record, status='reading'))
+                # The claim, checked again under the file's lock (another worker may hold it).
+                if not _store(db, file_id, key, dict(record, status='reading'), claim=(proposal['revision'], model_id)):
+                    db.rollback()
+                    return dict(record, reason='being_read')
                 db.commit()
             else:
                 db.rollback()
         # Outside any lock or transaction: render and read page by page.
-        if spent(case_id) >= CASE_BUDGET_USD:
+        images = render_pages(path, pages)
+        reserved = reserve_usd(record['model'], images)
+        if spent(case_id) + reserved > CASE_BUDGET_USD:
             return _finish(factory, item_id, file_id, key, dict(record, status='budget',
                 message='Not read from the page images: the reading budget for this case is used for now.'), apply)
-        images = render_pages(path, pages)
         started = time.monotonic()
+        # The most it can cost is counted before the request is sent, and settled after.
+        _add_spend(case_id, reserved)
         # One request with every page of the period, each image labelled with its page number.
         document, usage = read(images)
         cost = cost_usd(record['model'], usage)
-        _add_spend(case_id, cost)
+        _add_spend(case_id, cost - reserved)
         page_costs = [dict(page=number, prompt_tokens=round((usage.get('prompt_tokens') or 0) / len(images)),
                            completion_tokens=round((usage.get('completion_tokens') or 0) / len(images)),
                            cost_usd=round(cost / len(images), 6)) for number, _ in images]
@@ -979,7 +1051,7 @@ def read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for
     except Exception as error:  # noqa: BLE001 - fail closed: the statement stays held
         log.exception('Page-image reading failed; the statement stays held')
         record.update(status='failed', message='The page images could not be read just now; the statement stays held.',
-                      error=type(error).__name__)
+                      error=type(error).__name__, failures=(record.get('failures') or 0) + 1)
         try:
             if apply and file_id is not None:
                 return _finish(factory, item_id, file_id, key, record, apply)
@@ -1067,7 +1139,8 @@ def pending(db, limit=50):
         if draft or str(file_id) not in marked.get(batch_id, ()):
             continue
         stored = ((metadata or {}).get(METADATA_KEY) or {}).get(key or '')
-        if stored and stored.get('version') == VERSION and stored.get('status') in FINAL:
+        if stored and stored.get('version') == VERSION and (stored.get('status') in FINAL or (
+                stored.get('status') == 'failed' and (stored.get('failures') or 0) >= MAX_FAILURES)):
             # Read once per reading of the file (a new reading is a new file, with its own statements).
             continue
         found.append(item_id)
