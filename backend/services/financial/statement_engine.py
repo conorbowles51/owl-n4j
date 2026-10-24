@@ -59,6 +59,21 @@ _DOCUMENT_ORDER = ContextVar('statement_engine_document_order', default=None)
 # parentheses-for-negative convention (C4, C11).
 _NO_PARENS = ContextVar('statement_engine_no_parentheses', default=False)
 ENGINE_VERSION = 'statement-engine-v1'
+
+
+def _switch(name):
+    return os.environ.get(name, '1').strip().lower() not in ('0', 'false', 'no', 'off')
+
+
+# (profile ``column_order``) A movement heading the reading lost (white letters on a coloured band read as other
+# letters) leaves the amount columns without roles; a library profile whose layout always prints the same columns
+# in the same order supplies them, only for a section printing exactly that many amount columns and only where no
+# heading word read says otherwise. The proof decides as for a read heading. Off: unread headings stay unread.
+PROFILE_COLUMN_ORDER = _switch('LOUPE_FINANCIAL_PROFILE_COLUMN_ORDER')
+# (B2) A movement date with a second date printed in parentheses glued to it ('07/Jul(04/Jul)': the settlement
+# day, then the agreed day under a 'Fechas: Liquidacion (Pactada)' heading): the first date dates the line, and the
+# parenthesized one stays as printed text of the line. Off: the glued word is no date and the line no movement.
+PARENTHESIZED_SECOND_DATE = _switch('LOUPE_FINANCIAL_PARENTHESIZED_SECOND_DATE')
 MAX_ASSIGNMENTS = 4000
 MAX_PERIOD_DAYS = 95
 
@@ -197,7 +212,28 @@ _GLUED_DATE = re.compile(r"^(\d{1,2}[-/.][A-Za-z]{3,10}[-/.]\d{4}|\d{1,2}[-/.]\d
 _JOINED_DATE = re.compile(r"^(\d{1,2}[-/.][A-Za-z]{3,10}[-/.](?:19|20)\d{2})()(\d{3,}\S*)$")
 
 
+# (B2) A movement date the scan read with the table's rule after it as underscores ('24ABR_'): the date. Only a
+# whole word of a day and month (no year) or a full date, then underscores alone. Off: the word is no date.
+DATE_RULE_UNDERSCORE = _switch('LOUPE_FINANCIAL_DATE_RULE_UNDERSCORE')
+# (E3) A movement line printing its date and amounts but no description word (the description printed on the
+# lines below it, as Monex's sideways layout prints a commission): those lines are its description, as they are for
+# a line printing one. Off: such a movement keeps an empty description and waits for a person.
+UNDESCRIBED_CONTINUATION = _switch('LOUPE_FINANCIAL_UNDESCRIBED_CONTINUATION')
+_UNDERSCORED_DATE = re.compile(r"^(\d{1,2}[/.-]?[A-Za-z]{3,10}(?:[/.-]\d{2,4})?|\d{1,2}[/.-]\d{1,2}(?:[/.-]\d{2,4})?)_+$")
+_PAREN_SECOND_DATE = re.compile(r"^(\d{1,2}[/.-][A-Za-z]{3,10})(\(\d{1,2}[/.-][A-Za-z]{3,10}\))$")
+
+
 def _unglue_leading_date(words):
+    if PARENTHESIZED_SECOND_DATE:
+        s, e, word = words[0]
+        m = _PAREN_SECOND_DATE.match(word)
+        if m and is_date_token(m[1]) and is_date_token(m[2][1:-1]):
+            words = [(s, s + len(m[1]), m[1]), (s + len(m[1]), e, m[2])] + words[1:]
+    if DATE_RULE_UNDERSCORE:
+        s, e, word = words[0]
+        m = _UNDERSCORED_DATE.match(word)
+        if m and is_date_token(m[1]):
+            words = [(s, s + len(m[1]), m[1])] + words[1:]
     if not UNGLUE_LEADING_DATE:
         return words
     s, e, word = words[0]
@@ -3943,7 +3979,7 @@ def _reading(rows, statement, style, exponent, liability, period):
                 last_move = move
                 continue
         if not has_money:
-            if last_move is not None and region and _continues(row, last_move):
+            if last_move is not None and region and _continues(row, last_move, text_only=True):
                 last_move['continuation'].append(row)
                 continuation_of[index] = last_move
             else:
@@ -3991,6 +4027,7 @@ def _reading(rows, statement, style, exponent, liability, period):
     money_tokens = [t for move in all_moves for t in move['money']]
     columns = _columns(money_tokens, width or 1) if money_tokens else []
     hints = _hints(headers, columns, width or 1) if columns else {}
+    hints = _profile_column_order(hints, columns)
     result['fingerprint'] = _fingerprint({label(t['t']) for h in headers for t in h['tokens']}, columns,
                                          labels_seen, proof['convention'])
     result['layout_key'] = layout_key({label(t['t']) for h in headers for t in h['tokens']}, proof['convention'])
@@ -4247,8 +4284,9 @@ def _below(row, move):
     return row['y0'] is not None and last['y0'] is not None and row['y0'] > last['y0']
 
 
-def _continues(row, move):
-    """A line without date or money directly below a movement, starting in its description band (E3)."""
+def _continues(row, move, text_only=False):
+    """A line without date or money directly below a movement, starting in its description band (E3).
+    ``text_only``: the line prints no money (only such a line can describe a movement printing no description)."""
     last = move['continuation'][-1] if move['continuation'] else move['row']
     if row.get('split') and last.get('split') and row['split'][0] == last['split'][0]:
         # The next printed line of the same stored cell (_split_row), whose horizontal positions are only
@@ -4261,13 +4299,31 @@ def _continues(row, move):
     if gap > height * 1.2 or gap < -height:
         return False
     start = min((t['x0'] for t in move['description']), default=None)
-    if start is None:
-        return False
-    first = min(t['x0'] for t in row['tokens'])
     width = row['width'] or 1
-    if first < start - 0.02 * width:
+    first = min(t['x0'] for t in row['tokens'])
+    if start is None:
+        # (E3) A dated line printing no description word of its own (its description printed on the lines
+        # under it): a line below starting between the line's date and its first amount continues it.
+        if not (UNDESCRIBED_CONTINUATION and text_only and move['date_tokens'] and move['money']):
+            return False
+        start = max(t['x1'] for t in move['date_tokens'])
+        if not start <= first < min(t['x0'] for t in move['money']):
+            return False
+    elif first < start - 0.02 * width:
         return False
     return not _is_header(row) and not any(_role_of(text, False) for text, _ in label_pairs(row, 'dot', 2))
+
+
+def _profile_column_order(hints, columns):
+    """(profile ``column_order``) The read hints with every unread column's role taken from the profile's printed
+    column order: only when the section prints exactly as many amount columns as the order names, and every role a
+    heading word gave agrees with the order (a balance hint may stand where the order ignores a column)."""
+    order = (_PROFILE.get() or {}).get('column_order')
+    if not PROFILE_COLUMN_ORDER or not order or len(columns) != len(order) or len(hints) == len(order):
+        return hints
+    if any(order[i] != role and not (role == 'balance' and order[i] == 'ignore') for i, role in hints.items()):
+        return hints
+    return {i: hints.get(i, role) for i, role in enumerate(order)}
 
 
 def _domains(columns, hints):

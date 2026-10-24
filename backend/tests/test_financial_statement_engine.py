@@ -3515,3 +3515,107 @@ class BrokerageRuleMarkTests(unittest.TestCase):
         for bad in ('', '))', 'a', ' '):
             with self.assertRaises(ValueError):
                 validate(dict(name='x', match={}, rule_mark=bad))
+
+
+class ProfileColumnOrderTests(unittest.TestCase):
+    """(profile ``column_order``) A lost movement heading takes its roles from the layout's printed column order."""
+    ORDER = ['credit', 'debit', 'ignore', 'balance', 'balance', 'balance']
+
+    def complete(self, hints, columns=6, order=ORDER):
+        token = E._PROFILE.set(dict(name='p', match={}, column_order=order))
+        try:
+            return E._profile_column_order(dict(hints), list(range(columns)))
+        finally:
+            E._PROFILE.reset(token)
+
+    def test_unread_columns_take_the_order_where_the_read_hints_agree(self):
+        self.assertEqual(self.complete({}), dict(enumerate(self.ORDER)))
+        # A balance hint where the order ignores the column keeps the read hint.
+        self.assertEqual(self.complete({2: 'balance', 5: 'balance'}), {**dict(enumerate(self.ORDER)), 2: 'balance'})
+
+    def test_a_disagreeing_hint_or_another_column_count_keeps_the_reading(self):
+        self.assertEqual(self.complete({0: 'debit'}), {0: 'debit'})
+        self.assertEqual(self.complete({}, columns=5), {})
+        self.assertEqual(self.complete({}, order=None), {})
+
+    def test_the_switch_off_keeps_the_reading(self):
+        with mock.patch.object(E, 'PROFILE_COLUMN_ORDER', False):
+            self.assertEqual(self.complete({}), {})
+
+    def test_the_profile_value_is_validated(self):
+        from services.financial.statement_engine_profiles import validate, PROFILES
+        for bad in ([], ['credit', 'date'], 'credit'):
+            with self.assertRaises(ValueError):
+                validate(dict(name='x', match={}, column_order=bad))
+        validate(dict(name='x', match={}, column_order=['credit', 'debit', 'balance']))
+        self.assertEqual(next(p for p in PROFILES if p['name'] == 'monex-mexico')['column_order'], self.ORDER)
+
+
+class LeadingDateDecorationTests(unittest.TestCase):
+    """A date word printed with a second, agreed date in parentheses ('07/Jul(04/Jul)'), or read with a rule's
+    underscores after it ('24ABR_')."""
+
+    def test_a_parenthesised_second_date_is_split_from_the_date(self):
+        words = E._unglue_leading_date([(0, 14, '07/Jul(04/Jul)'), (15, 20, 'SPEI')])
+        self.assertEqual([w[2] for w in words], ['07/Jul', '(04/Jul)', 'SPEI'])
+        self.assertTrue(E.is_date_token(words[0][2]))
+        self.assertFalse(E.is_date_token(words[1][2]))
+
+    def test_parentheses_not_holding_a_date_are_left(self):
+        with mock.patch.object(E, 'UNGLUE_LEADING_DATE', False):
+            for word in ('07/Jul(abc)', '07/Jul(04/Jul', '07/Jul(04/Jul))'):
+                self.assertEqual(E._unglue_leading_date([(0, len(word), word)]), [(0, len(word), word)], word)
+        with mock.patch.object(E, 'PARENTHESIZED_SECOND_DATE', False), mock.patch.object(E, 'UNGLUE_LEADING_DATE', False):
+            self.assertEqual(E._unglue_leading_date([(0, 14, '07/Jul(04/Jul)')]), [(0, 14, '07/Jul(04/Jul)')])
+
+    def test_underscores_after_a_date_are_dropped(self):
+        for word, date in (('24ABR_', '24ABR'), ('05/MAR__', '05/MAR'), ('05/03/2024_', '05/03/2024')):
+            self.assertEqual(E._unglue_leading_date([(0, len(word), word)])[0][2], date, word)
+        self.assertEqual(E._unglue_leading_date([(0, 4, 'ABC_')])[0][2], 'ABC_')
+        with mock.patch.object(E, 'DATE_RULE_UNDERSCORE', False), mock.patch.object(E, 'UNGLUE_LEADING_DATE', False):
+            self.assertEqual(E._unglue_leading_date([(0, 6, '24ABR_')])[0][2], '24ABR_')
+
+
+class UndescribedContinuationTests(unittest.TestCase):
+    """(E3) A movement line printing only its date and amounts takes the text lines printed under it."""
+
+    def setUp(self):
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+
+    tearDown = setUp
+
+    @staticmethod
+    def sources():
+        sources = mx_statement(MOVES, closing='1,250.00')
+        rows = sources[0]['rows']
+        at = next(i for i, r in enumerate(rows) if r['cells'][0]['expected_text'] == '10/MAR')
+        rows[at]['cells'] = [c for c in rows[at]['cells'] if c['expected_text'] != 'PAGO DE SERVICIO']
+        for r in rows[at + 1:]:
+            for c in r['cells']:
+                c['locator']['rect'][1] += 12000
+                c['locator']['rect'][3] += 12000
+        y = rows[at]['cells'][0]['locator']['rect'][1] + 12000
+        rows.insert(at + 1, dict(row_index=0, cells=[cell('PAGO DE SERVICIO', 80000, 300000, y, 0)]))
+        for i, r in enumerate(rows):
+            r['row_index'] = i
+        return sources
+
+    def test_the_text_line_below_is_the_description(self):
+        st = read_statements(self.sources())[0]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        tx = [r for r in st['_rows'] if r['kind'] == 'transaction']
+        self.assertEqual(tx[1]['fields'].get('description'), 'PAGO DE SERVICIO')
+
+    def test_the_switch_off_leaves_the_description_empty(self):
+        with mock.patch.object(E, 'UNDESCRIBED_CONTINUATION', False):
+            st = read_statements(deepcopy(self.sources()))[0]
+        tx = [r for r in st['_rows'] if r['kind'] == 'transaction']
+        self.assertFalse(tx[1]['fields'].get('description'))
+
+
+class ScotiabankLegalNameTests(unittest.TestCase):
+    def test_the_legal_name_read_without_its_comma_matches(self):
+        from services.financial.statement_engine_profiles import matching_profile
+        for text in ('Scotiabank Inverlat, S.A.', 'SCOTIABANK INVERLAT S.A. INSTITUCION DE BANCA MULTIPLE'):
+            self.assertEqual((matching_profile(text) or {}).get('name'), 'scotiabank-mexico', text)
