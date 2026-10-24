@@ -805,5 +805,17 @@ def test_a_held_copy_of_a_period_another_original_saved_is_left_for_comparison(f
         db.get(BatchItem, held.id).summary = dict(source_id=str(f.file.id), revision='r', period_start=start,
             period_end=end, account=number)
         db.commit()
+    with f.SessionLocal() as db:
+        db.get(BatchItem, held.id).summary = dict(source_id=str(f.file.id), revision='r', period_start=start,
+            period_end=end, account='x' + number[-6:])  # an older reading that misread the leading digits
+        db.commit()
+    assert selection(f) == ([], {'copy_of_saved': 1})
+    document = f.db.get(FinancialSourceDocument, __import__('uuid').UUID(receipt['source_document_id']))
+    document.evidence_file_id = f.file.id  # saved from these same bytes under another statement key
+    f.db.commit()
+    selected, reasons = selection(f)
+    assert selected == [] and set(reasons) <= {'copy_of_saved', 'saved_import'}
+    document.evidence_file_id = other.id
+    f.db.commit()
     monkeypatch.setattr(readers, 'COPY_OF_SAVED_PROTECTS', False)
     assert selection(f)[1] == {'eligible': 1}

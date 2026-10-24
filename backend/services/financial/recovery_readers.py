@@ -58,7 +58,7 @@ REASONS = {
     'processing': 'A reading is already running.',
     'unrecorded_reader': 'The reading has no valid engine record; its reader cannot be proven.',
     'reader_not_affected': 'The reading came from the current or an unrecognised engine revision.',
-    'copy_of_saved': 'Another original of the case already saved this account and period: a copy to compare.',
+    'copy_of_saved': 'The case already saved this account and period: a copy to compare.',
 }
 MESSAGES = {
     'removed': 'The investigator removed this source or its imports. Recovery left it unchanged.',
@@ -68,7 +68,7 @@ MESSAGES = {
     'investigator_decision': 'An investigator decision was recorded on this statement. Recovery left it unchanged.',
     'not_all_held': 'A period of this statement is ready. Recovery left it unchanged.',
     'nothing_held': 'No period of this statement is still held. Recovery left it unchanged.',
-    'copy_of_saved': 'Another file of this case already saved this account and period. Recovery left this copy for comparison.',
+    'copy_of_saved': 'This case already saved this account and period. Recovery left this copy for comparison.',
 }
 # Readings handed to batches at once (host-wide), and how long the count of
 # evidence being read elsewhere is reused before it is counted again.
@@ -148,10 +148,11 @@ SETTLED_SIBLINGS = os.environ.get('LOUPE_FINANCIAL_RECOVERY_SETTLED_SIBLINGS', '
     '0', 'false', 'no', 'off')
 
 
-# A held statement whose printed account and period another original of the case already saved is a copy for
-# the duplicate workflow to compare, not for a new reading to save: a copy read under other bank wording or
-# product type can be saved into a second ledger account (the live double admission). Fail closed: such a file
-# is left as it is. Off: not checked, as before.
+# A held statement whose printed account and period the case already saved (from another original, or from
+# this one under another statement key) is a copy for the duplicate workflow to compare, not for a new reading
+# to save: a copy read under other bank wording, product type or statement split can be saved into a second
+# ledger account (the live double admission), and the save gates key on (bytes, statement key). Fail closed:
+# such a file is left as it is. Off: not checked, as before.
 COPY_OF_SAVED_PROTECTS = os.environ.get('LOUPE_FINANCIAL_RECOVERY_COPY_OF_SAVED', '1').strip().lower() not in (
     '0', 'false', 'no', 'off')
 
@@ -160,8 +161,17 @@ def _digits(value):
     return ''.join(ch for ch in str(value or '') if ch.isdigit())
 
 
+def _same_account(saved, read):
+    """Fail closed: an older reading can misread a digit, so the last six digits decide (all, when shorter)."""
+    if not saved or not read:
+        return False
+    if min(len(saved), len(read)) < 6:
+        return saved == read
+    return saved[-6:] == read[-6:]
+
+
 def copy_of_saved(session, case_id, source, held):
-    """True when a held statement's account and period are admitted in the case from other bytes. Read only."""
+    """True when a held statement's account and period are already admitted in the case. Read only."""
     if not COPY_OF_SAVED_PROTECTS:
         return False
     from datetime import date
@@ -184,7 +194,8 @@ def copy_of_saved(session, case_id, source, held):
             .where(FinancialStatementPeriod.case_id == case_id, FinancialSourceDocument.status == 'admitted',
                    FinancialStatementPeriod.period_start == start, FinancialStatementPeriod.period_end == end))
         for normalised, printed, sha in rows:
-            if sha != source.sha256 and (_digits(normalised) in accounts or _digits(printed) in accounts):
+            if any(_same_account(_digits(saved), wanted_digits)
+                                            for saved in (normalised, printed) for wanted_digits in accounts):
                 return True
     return False
 
