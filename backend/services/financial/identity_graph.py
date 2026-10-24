@@ -8,11 +8,13 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
 import time
+from contextlib import contextmanager
 from threading import Event, Lock
 from uuid import UUID
 from neo4j import Query
-from sqlalchemy import select
+from sqlalchemy import select, text
 from postgres.models.case import Case
 from postgres.models.financial import FinancialAccount, FinancialTransaction, AdjudicationEvent
 from services.financial.account_identity import identity_state
@@ -305,6 +307,38 @@ def identity_graph_status(db, case_id):
     return result
 
 
+# Switch LOUPE_FINANCIAL_IDENTITY_SYNC_ONE_WORKER (default on; '0' turns it off): every API worker runs this
+# sweep; two syncing one case at once deadlock in Neo4j and one is terminated (LockClientStopped). A case is
+# synchronised by whichever worker holds its advisory lock; the other skips it until its next round.
+ONE_WORKER_PER_CASE = os.environ.get('LOUPE_FINANCIAL_IDENTITY_SYNC_ONE_WORKER', '1') != '0'
+
+
+@contextmanager
+def _case_claim(case_id):
+    """True while this worker holds the case's identity-sync lock (always True off Postgres or switched off).
+
+    A session-level advisory lock on one dedicated connection, held for the whole sync and released on that
+    same connection (closing it releases it too, if this worker dies mid-sync)."""
+    from postgres.session import _get_engine
+    if not ONE_WORKER_PER_CASE:
+        yield True
+        return
+    engine = _get_engine()
+    if engine.dialect.name != 'postgresql':
+        yield True
+        return
+    key = "hashtextextended('loupe.financial.identity_graph:' || CAST(:case_id AS text), 0)"
+    with engine.connect() as conn:
+        held = bool(conn.execute(text(f'SELECT pg_try_advisory_lock({key})'), dict(case_id=str(case_id))).scalar())
+        conn.commit()
+        try:
+            yield held
+        finally:
+            if held:
+                conn.execute(text(f'SELECT pg_advisory_unlock({key})'), dict(case_id=str(case_id)))
+                conn.commit()
+
+
 def sync_saved_identities(stop=None):
     from postgres.session import get_background_session
     with get_background_session() as db:
@@ -315,7 +349,10 @@ def sync_saved_identities(stop=None):
         if _is_deferred(case_id):
             continue
         try:
-            synchronize_case(case_id)
+            with _case_claim(case_id) as claimed:
+                if not claimed:
+                    continue
+                synchronize_case(case_id)
         except Exception as error:
             attempts, delay = _defer(case_id, 'failed', error=str(error)[:500])
             if attempts == 1:

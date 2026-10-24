@@ -1,10 +1,15 @@
 """Select financial sources in any format; prepare PDFs with the statement reader."""
+import os
 from uuid import NAMESPACE_URL, UUID, uuid5
 from sqlalchemy import select, or_, exists
 from postgres.models.evidence import EvidenceFile, EvidenceFolder, EvidenceDocumentText, EvidenceTableGeometry
 from services.financial.pdf_candidates import PdfMappingError
 from services.financial.file_visibility import financial_file_visibility, set_financial_file_visibility, require_financial_file
 from services.financial.statement_reprocessing import create_statement_version
+
+# Switch LOUPE_FINANCIAL_ALREADY_READING_IS_PROGRESS (default on; '0' turns it off): a preparation whose reading
+# another worker started a moment earlier reports that reading instead of failing the file.
+ALREADY_READING_IS_PROGRESS = os.environ.get('LOUPE_FINANCIAL_ALREADY_READING_IS_PROGRESS', '1') != '0'
 
 
 def resolve_financial_selection(session, *, case_id, file_ids, folder_ids, include_other_formats=False):
@@ -141,5 +146,14 @@ async def prepare_existing_financial_file(session, *, case_id, evidence_file_id,
     result = await process_files(session, case_id=case_id, file_ids=[target.id], preparation_mode='pdf_review',
         force_reprocess=target.status == 'processed', requested_by_user_id=actor.user_id)
     if len(result.get('job_ids', [])) != 1:
+        # Another worker may have started this same reading a moment earlier: the
+        # processing handoff then skips it as already processing. That reading is
+        # the one this request wanted, so report it instead of failing the file.
+        if ALREADY_READING_IS_PROGRESS:
+            session.refresh(target)
+            if target.status == 'processing' and target.engine_job_id:
+                return dict(case_id=str(case_id), source_file_id=str(file.id), evidence_file_id=str(target.id), outcome='processing')
+            if target.status == 'processed' and has_financial_reading(session, target):
+                return dict(case_id=str(case_id), source_file_id=str(file.id), evidence_file_id=str(target.id), outcome='ready')
         raise PdfMappingError('A financial reading job could not be confirmed. Refresh files before trying again. The file remains in Evidence.', 409)
     return dict(case_id=str(case_id), source_file_id=str(file.id), evidence_file_id=str(target.id), outcome='queued')

@@ -3,7 +3,7 @@ import hashlib
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 from unittest.mock import AsyncMock
 from sqlalchemy import select
 from postgres.base import Base
@@ -403,3 +403,31 @@ class FinancialFileIntakeTests(DuplicateTestCase):
         # older reading as ready after the investigator removed it.
         with self.assertRaisesRegex(PdfMappingError, 'Another user changed this file'):
             self.prepare()
+
+
+class AlreadyReadingTests(FinancialFileIntakeTests):
+    """A reading another worker started a moment earlier is reported, not failed."""
+
+    def test_reading_started_by_another_worker_is_reported_as_processing(self):
+        async def other_worker_got_there_first(db, **kwargs):
+            target = db.get(EvidenceFile, kwargs['file_ids'][0])
+            target.status = 'processing'; target.engine_job_id = 'other-worker-job'; db.commit()
+            return {'job_ids': [], 'skipped_count': 1, 'message': 'No eligible files to process'}
+        result = self.prepare(process=other_worker_got_there_first)
+        self.assertEqual(result['outcome'], 'processing')
+        self.assertEqual(self.db.get(EvidenceFile, UUID(result['evidence_file_id'])).engine_job_id, 'other-worker-job')
+
+    def test_no_job_and_no_reading_still_fails(self):
+        with self.assertRaisesRegex(PdfMappingError, 'could not be confirmed'):
+            self.prepare(process=AsyncMock(return_value={'job_ids': [], 'missing_on_disk': 1}))
+
+    def test_switch_off_keeps_the_old_failure(self):
+        from unittest import mock
+        from services.financial import evidence_intake
+        async def other_worker_got_there_first(db, **kwargs):
+            target = db.get(EvidenceFile, kwargs['file_ids'][0])
+            target.status = 'processing'; target.engine_job_id = 'other-worker-job'; db.commit()
+            return {'job_ids': []}
+        with mock.patch.object(evidence_intake, 'ALREADY_READING_IS_PROGRESS', False):
+            with self.assertRaisesRegex(PdfMappingError, 'could not be confirmed'):
+                self.prepare(process=other_worker_got_there_first)
