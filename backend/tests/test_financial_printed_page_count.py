@@ -35,6 +35,17 @@ class MissingPagesTests(unittest.TestCase):
         pages = numbered(4, (1, 2, 3, 4))
         self.assertIsNone(gate.missing_pages(pages, [2, 3]))
 
+    def test_unread_cover_next_to_the_statement_counts(self):
+        pages = numbered(6, range(1, 7))
+        pages[6] = 'COVER WITHOUT A READ NUMBER'
+        self.assertIsNone(gate.missing_pages(pages, [1, 2, 3, 4, 5]))
+        pages = numbered(7, range(2, 8))
+        self.assertEqual(gate.missing_pages(pages, [2, 3])['missing'], [1])
+
+    def test_pages_between_the_statement_pages_count(self):
+        pages = numbered(6, range(1, 7))
+        self.assertIsNone(gate.missing_pages(pages, [1, 3]))
+
     def test_another_printed_sequence_is_not_borrowed(self):
         pages = {1: 'PAGINA 1 / 2', 2: 'PAGINA 1 / 3', 3: 'PAGINA 2 / 3', 4: 'PAGINA 3 / 3'}
         self.assertIsNone(gate.missing_pages(pages, [2, 3, 4]))

@@ -11,10 +11,10 @@ admission alike, so nothing is saved automatically. A person who has checked the
 saves a coverage note (``coverage_review_reason``), as for other coverage questions.
 
 The gap is proved, never guessed:
-- only numbering printed on the statement's own pages, and on the pages next to them that continue the same
-  printed sequence (same page total), is used;
-- a statement page whose numbering could not be read may be any one missing number, so it is counted against
-  the gap (OCR losing a page number never holds a complete file);
+- only numbering printed on the statement's own pages, on the pages between them, and on the pages next to them
+  that continue the same printed sequence (same page total), is used;
+- a page of the printing whose numbering could not be read (on the statement or next to it) may be any one
+  missing number, so it is counted against the gap (OCR losing a page number never holds a complete file);
 - a number above its page total, or several page totals on one page, is not numbering.
 
 Off (LOUPE_FINANCIAL_PRINTED_PAGE_COUNT_GATE=0): no gap is recorded, as before.
@@ -53,14 +53,19 @@ def missing_pages(pages, statement_pages):
     if len(totals) != 1:
         return None  # unnumbered, or several printed sequences on the statement's own pages
     total = next(iter(totals))
-    run = set(own)
+    # The pages between the statement's own pages belong to the same printing (a statement can skip a page that
+    # prints another account's section), then the pages either side that continue the sequence.
+    run = {page for page in range(min(own), max(own) + 1) if page in pages
+           and (page in own or (numbering.get(page) and numbering[page][1] == total))}
     for step in (-1, 1):
         page = (min(own) if step < 0 else max(own)) + step
-        while page in pages and numbering.get(page) and numbering[page][1] == total:
+        while page in pages and (not numbering.get(page) or numbering[page][1] == total):
             run.add(page)
             page += step
     seen = {numbering[page][0] for page in run if numbering.get(page) and numbering[page][1] == total}
-    unread = sum(1 for page in own if not numbering.get(page))
+    # A page of the printing whose number was not read (a cover the reader set aside, a scan that lost it)
+    # may be any one missing number.
+    unread = sum(1 for page in run if not numbering.get(page))
     missing = sorted(set(range(1, total + 1)) - seen)
     if len(missing) <= unread:
         return None
