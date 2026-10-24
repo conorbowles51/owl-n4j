@@ -2124,7 +2124,7 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
                         file.pop('error', None)
                         _reading_progress(file, 'complete', SHARED_PREPARATION_DONE, review_file_id=file['file_id'], prepared_in_batch=shared[1])
                     else:
-                        await _finish_atomic(_review_file,factory,batch_id,case_id,deepcopy(file))
+                        reviewed = await _finish_atomic(_review_file,factory,batch_id,case_id,deepcopy(file))
                         file['status']='checked'
                         # Prepared with automatic save on: statements of this file
                         # that become ready later are saved by the sweep (queue_save).
@@ -2137,8 +2137,10 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
                         from services.financial.reader_release import reader_stamp
                         file['reader_stamp']=reader_stamp(); file.pop('recheck', None)
                         # And the whole backend reader it was prepared by (held_reprepare).
-                        from services.financial.held_reprepare import record_preparation
+                        from services.financial.held_reprepare import left_after_carry, record_preparation
                         record_preparation(file)
+                        if isinstance(reviewed, dict) and reviewed.get('carry_refused'):
+                            left_after_carry(file, reviewed['carry_refused'])
                         file.pop('preparation_retries', None)
                         file.pop('error', None)
                         file['prepared_reading'] = await asyncio.to_thread(_prepared_reading, factory, case_id, UUID(file['file_id']))
@@ -2297,6 +2299,12 @@ def _turn_candidates(files):
 
 def _review_file(factory,batch_id,case_id,file):
     with factory() as db:
+        # held_reprepare with investigator work: carried onto the current reading first (reprepare_carry). When it
+        # cannot be carried now, nothing is prepared and the file's statements stay exactly as they are.
+        from services.financial.held_reprepare import carry_before_preparing
+        refused = carry_before_preparing(db, case_id, batch_id, file)
+        if refused:
+            return dict(carry_refused=refused)
         prepare_reviews(db,batch_for(db,case_id,batch_id),file,lock_slice=REVIEW_LOCK_SLICE_SECONDS)
         # Saved reviews, earlier imports or duplicate decisions on this file can
         # leave its periods needing a reading at list time. Store it now.

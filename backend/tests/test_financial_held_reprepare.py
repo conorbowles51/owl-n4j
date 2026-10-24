@@ -169,6 +169,11 @@ class HeldReprepareTests(TestCase):
         self.assertEqual(held.sweep(self.f.SessionLocal)['read'], 0)
 
     def test_investigator_work_and_decisions_are_left_exactly_as_they_are(self):
+        # Switch LOUPE_FINANCIAL_REPREPARE_CARRY_EDITS off: investigator work protects the file, as before.
+        with patch.object(held, 'CARRY_EDITS', False):
+            self._left_exactly()
+
+    def _left_exactly(self):
         cases = {
             'investigator_edits': lambda db, item, file: setattr(item, 'review_request', batches.initial_request(
                 current_reader(db, case_id=self.f.case.id, evidence_file_id=item.file_id))),
@@ -288,6 +293,14 @@ class HeldReprepareTests(TestCase):
         self.assertEqual(outcome['verdicts'], {'copy_of_saved': 1})
 
     def test_work_saved_between_judging_and_hand_off_is_kept(self):
+        for carry in (True, False):
+            with self.subTest(carry=carry), patch.object(held, 'CARRY_EDITS', carry):
+                self._work_saved_between()
+                with self.f.SessionLocal() as db:
+                    db.execute(Batch.__table__.update().values(status='removed'))
+                    db.commit()
+
+    def _work_saved_between(self):
         batch = self.prepare()
         held.sweep(self.f.SessionLocal)
         with self.f.SessionLocal() as db:

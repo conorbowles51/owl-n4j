@@ -59,6 +59,16 @@ an idle moment. A long sweep never defers a deploy.
 Switch: ``LOUPE_FINANCIAL_AUTO_REPREPARE_HELD`` (default on). Off: nothing is
 selected or handed off, and pending marks are not shown as rechecking. Any
 failure leaves files as they are (fail closed) and is retried by the next sweep.
+
+Investigator work (``LOUPE_FINANCIAL_REPREPARE_CARRY_EDITS``, default on). A file
+carrying her saved progress or batch drafts is no longer left for that alone:
+``reprepare_carry`` plans, read only, how her work goes onto the current reading
+(every other protection still applies). A file whose work cannot be carried one
+to one is left ('investigator_edits', the reason recorded on the mark). The
+pending mark and the hand-off record the work's fingerprint; work saved since
+leaves the file. The worker carries her work (``reprepare_carry.apply``) before
+preparing, under the file's lock, and prepares nothing when the fingerprint or
+the reading moved. Off: investigator work protects the file, as before.
 """
 import hashlib
 import json
@@ -84,6 +94,7 @@ def _switch(name, default='1'):
 
 
 ENABLED = _switch('LOUPE_FINANCIAL_AUTO_REPREPARE_HELD')
+CARRY_EDITS = _switch('LOUPE_FINANCIAL_REPREPARE_CARRY_EDITS')
 try:
     AT_ONCE = max(1, int(os.environ.get('LOUPE_FINANCIAL_AUTO_REPREPARE_AT_ONCE', '4') or 4))
 except ValueError:
@@ -188,9 +199,10 @@ def judge_protections(session, case_id, source_id, scope):
     if not members:
         return 'unavailable', []
     if scope['membership'][source_id] > 1:
-        return readers._group_reason(session, case_id, members, CAMPAIGN, scope, refresh=True)
+        return readers._group_reason(session, case_id, members, CAMPAIGN, scope, refresh=True, carry_edits=CARRY_EDITS)
     batch, entry = members[0]
-    reason, detail = readers.classify(session, case_id, batch, entry, CAMPAIGN, scope, refresh=True)
+    reason, detail = readers.classify(session, case_id, batch, entry, CAMPAIGN, scope, refresh=True,
+                                      carry_edits=CARRY_EDITS)
     return reason, ([(batch, entry, detail)] if reason == readers.ELIGIBLE else [])
 
 
@@ -200,6 +212,29 @@ def _shared_reading(scope, chosen):
     sources = {entry.get('source_id') for _, entry, _ in chosen}
     return any(entry.get('file_id') in readings and entry.get('source_id') not in sources
                for batch in scope['batches'] for entry in batch.files or [])
+
+
+def _sharing_blocks(session, case_id, scope, chosen):
+    """Whether another original's batch file on one of these readings keeps them from being prepared again.
+
+    Without investigator work to carry: any such batch file does (one reading, one item; as before). With her
+    work to carry (CARRY_EDITS): her work lives on the reading, and recovery_readers.classify already judged
+    every batch's statements of it; the other original must also pass every protection on its own (or hold
+    nothing). Each original is then prepared by its own judgement; the carry is done once, by the first."""
+    if not _shared_reading(scope, chosen):
+        return False
+    if not (CARRY_EDITS and any(detail.get('carry_work') for _, _, detail in chosen)):
+        return True
+    from services.financial.recovery_readers import ELIGIBLE, IDLE_MEMBER
+    readings = {str(detail['reading'].id) for _, _, detail in chosen}
+    sources = {entry.get('source_id') for _, entry, _ in chosen}
+    others = {entry.get('source_id') for batch in scope['batches'] for entry in batch.files or []
+              if entry.get('file_id') in readings and entry.get('source_id') not in sources}
+    for other in sorted(others, key=str):
+        reason, _ = judge_protections(session, case_id, other, scope)
+        if reason not in (ELIGIBLE, IDLE_MEMBER):
+            return True
+    return False
 
 
 def judge_reading(session, case_id, chosen):
@@ -244,6 +279,8 @@ def judge_reading(session, case_id, chosen):
                 differs += 1
         produced = {key for key, _ in fresh}
         differs += sum(1 for key, item in stored.items() if item.status == HELD and key not in produced)
+        # Her work carried onto the current reading changes what is prepared, whatever the reader reproduces.
+        differs += sum(1 for entry in (detail.get('carry_plan') or {}).values() if entry['kind'] != 'current')
         detail['differs'] = differs
         changed = changed or bool(differs)
         # The campaign's copy rule, on the current reading: a statement it would now list (not one already
@@ -297,12 +334,28 @@ def exact_copies_rekeyed(session, case_id, source, reading, current, proposals, 
 TRANSIENT = frozenset({'recovery_scheduled', 'processing', 'not_prepared'})
 
 
-def judge(session, case_id, source_id, scope, scheduled):
+def judge_carry(session, case_id, chosen):
+    """None when the investigator work on the chosen batch files can be carried onto the current reading
+    (each detail with work gains ``carry_plan``), else the reason it cannot. Read only."""
+    from services.financial.reprepare_carry import NotCarried, plan
+    for batch, entry, detail in chosen:
+        if not detail.get('carry_work'):
+            continue
+        try:
+            detail['carry_plan'] = plan(session, case_id, detail['reading'], detail['source'],
+                                        entry.get('currency'))['statements']
+        except NotCarried as error:
+            return error.reason
+    return None
+
+
+def judge(session, case_id, source_id, scope, scheduled, notes=None):
     """(verdict, chosen, members) for one original. Read only (the caller rolls back).
 
     ``verdict`` is 'changed' (to be prepared again) or why it is left
     (recovery_readers.REASONS, LEFT_REASONS). ``members``: every batch file of the
-    original, as (batch, index, entry).
+    original, as (batch, index, entry). ``notes`` (a dict) gains ``carry``: why her work
+    cannot be carried, when that leaves the file.
     """
     from services.financial.recovery_readers import ELIGIBLE
     members = [(batch, index, entry) for batch in scope['batches'] for index, entry in enumerate(batch.files or [])
@@ -313,8 +366,13 @@ def judge(session, case_id, source_id, scope, scheduled):
     reason, chosen = judge_protections(session, case_id, source_id, scope)
     if reason != ELIGIBLE:
         return reason, [], members
-    if _shared_reading(scope, chosen):
+    if _sharing_blocks(session, case_id, scope, chosen):
         return 'shared_reading', [], members
+    refused = judge_carry(session, case_id, chosen)
+    if refused:
+        if notes is not None:
+            notes['carry'] = refused
+        return 'investigator_edits', [], members
     return judge_reading(session, case_id, chosen), chosen, members
 
 
@@ -366,9 +424,12 @@ def select_case(factory, case_id, stamp, *, out_of_time, outcome):
             continue
         with factory() as db:
             scope = readers.context(db, case_id)
-            verdict, chosen, members = judge(db, case_id, source_id, scope, scheduled)
+            notes = {}
+            verdict, chosen, members = judge(db, case_id, source_id, scope, scheduled, notes)
             # Plain values: the session ends here.
             chosen_keys = {(batch.id, entry.get('file_id')) for batch, entry, _ in chosen}
+            work = {(batch.id, entry.get('file_id')): detail['carry_work'] for batch, entry, detail in chosen
+                    if detail.get('carry_work')}
             targets = [(batch.id, index, entry.get('file_id'), (batch.id, entry.get('file_id')) in chosen_keys)
                        for batch, index, entry in members if entry.get('status') == 'checked']
             db.rollback()
@@ -379,9 +440,11 @@ def select_case(factory, case_id, stamp, *, out_of_time, outcome):
             continue
         at = _now()
         if verdict == 'changed':
-            marks = {(b, i, f): dict(stamp=stamp, state=PENDING, at=at) for b, i, f, picked in targets if picked}
+            marks = {(b, i, f): dict(stamp=stamp, state=PENDING, at=at, **(
+                {'carry_work': work[(b, f)]} if (b, f) in work else {})) for b, i, f, picked in targets if picked}
         else:
-            marks = {(b, i, f): dict(stamp=stamp, state=LEFT, reason=verdict, at=at) for b, i, f, _ in targets}
+            marks = {(b, i, f): dict(stamp=stamp, state=LEFT, reason=verdict, at=at, **(
+                {'carry': notes['carry']} if notes.get('carry') else {})) for b, i, f, _ in targets}
         _write_marks(factory, case_id, marks)
         if outcome['read'] >= FILES_PER_SWEEP:
             outcome['deferred'] += len(sources) - sources.index(source_id) - 1
@@ -429,7 +492,9 @@ def hand_off(factory, outcome):
             reason, chosen = judge_protections(db, case_id, source_id, scope)
             at, stamp = _now(), preparation_stamp()
             by_batch = {batch.id: (batch, deepcopy(batch.files or [])) for batch in locked}
-            if reason != readers.ELIGIBLE or _shared_reading(scope, chosen):
+            if reason == readers.ELIGIBLE and not _carry_unchanged(by_batch, source_id, chosen):
+                reason = 'investigator_edits'  # work saved (or changed) since it was judged: left as it is
+            if reason != readers.ELIGIBLE or _sharing_blocks(db, case_id, scope, chosen):
                 # Something changed since it was judged (a person's work, a save): left exactly as it is.
                 for batch, files in by_batch.values():
                     for entry in files:
@@ -440,14 +505,15 @@ def hand_off(factory, outcome):
                 db.commit()
                 outcome['left_at_hand_off'] += 1
                 continue
-            for batch, entry, _ in chosen:
+            for batch, entry, detail in chosen:
                 current, files = by_batch[batch.id]
                 target = next((e for e in files if e.get('source_id') == source_id
                                and e.get('file_id') == entry.get('file_id')), None)
                 if target is None or target.get('status') != 'checked':
                     continue
                 target['status'] = 'processing'
-                target['recheck'] = dict(reason=RECHECK_REASON, stamp=stamp)
+                target['recheck'] = dict(reason=RECHECK_REASON, stamp=stamp, **(
+                    {'carry_work': detail['carry_work']} if detail.get('carry_work') else {}))
                 target[MARK] = dict(stamp=stamp, state=HANDED, at=at)
                 _reading_progress(target, 'checking_statements', MESSAGE)
                 current.status = 'preparing'
@@ -461,6 +527,40 @@ def hand_off(factory, outcome):
             handed += 1
     outcome['handed'] += handed
     return handed
+
+
+def _carry_unchanged(by_batch, source_id, chosen):
+    """True when each chosen batch file's investigator work is exactly the work it was judged with."""
+    for batch, entry, detail in chosen:
+        _, files = by_batch[batch.id]
+        target = next((e for e in files if e.get('source_id') == source_id
+                       and e.get('file_id') == entry.get('file_id')), None)
+        if target is None or _mark(target).get('carry_work') != detail.get('carry_work'):
+            return False
+    return True
+
+
+def carry_before_preparing(db, case_id, batch_id, file):
+    """Worker hook (import_batches._review_file): None to prepare as usual, or why nothing may be prepared
+    (her work could not be carried now; the file's statements are left exactly as they are)."""
+    recheck = file.get('recheck') or {}
+    if recheck.get('reason') != RECHECK_REASON or not recheck.get('carry_work'):
+        return None
+    if not (ENABLED and CARRY_EDITS):
+        return 'switched_off'
+    from services.financial.reprepare_carry import apply
+    try:
+        outcome = apply(db, case_id=case_id, batch_id=batch_id, file=file, fingerprint=recheck['carry_work'])
+    except Exception:
+        db.rollback()
+        log.exception('Carrying investigator work onto the current reading failed; the file is left as it is')
+        return 'carry_failed'
+    return None if outcome in ('carried', 'already', 'nothing_to_carry') else outcome
+
+
+def left_after_carry(file, reason):
+    """Record on a batch file that the worker prepared nothing because her work could not be carried."""
+    file[MARK] = dict(stamp=preparation_stamp(), state=LEFT, reason='investigator_edits', carry=reason, at=_now())
 
 
 def sweep(factory, *, budget_seconds=None):
@@ -509,7 +609,10 @@ def estimate(session, case_id, stamp=None):
             Batch.case_id == case_id, Batch.status != 'removed', Item.status == HELD)))
     result, changed = {}, []
     for source_id in sources:
-        verdict, chosen, members = judge(session, case_id, source_id, scope, scheduled)
+        notes = {}
+        verdict, chosen, members = judge(session, case_id, source_id, scope, scheduled, notes)
+        if notes.get('carry'):
+            result.setdefault('carry_refused', Counter())[notes['carry']] += 1
         row = result.setdefault(verdict, dict(originals=0, batch_files=0, held_items=0))
         row['originals'] += 1
         row['batch_files'] += len(members)
@@ -517,4 +620,6 @@ def estimate(session, case_id, stamp=None):
         if verdict == 'changed':
             changed.append((source_id, [(str(batch.id), str(detail['reading'].id), detail.get('differs'),
                                          len(detail.get('held') or [])) for batch, entry, detail in chosen]))
+            if any(detail.get('carry_plan') for _, _, detail in chosen):
+                result.setdefault('carried', []).append((source_id, chosen))
     return result, changed
