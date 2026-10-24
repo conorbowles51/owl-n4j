@@ -4092,6 +4092,20 @@ def _reading(rows, statement, style, exponent, liability, period):
             else:
                 proof['reason'] = ('printed_total_differs' if any(c['totals_failed'] for c in near)
                                    else 'no_independent_control' if near else 'not_reconciled')
+    summary_charges = None
+    if (not proof['proved'] and liability and proof['reason'] == 'not_reconciled'
+            and not (any(len(m['date_tokens']) > 1 for m in dated)
+                     and _second_date_field(rows, headers, dated, width or 1) is None)):
+        # A credit line whose period summary prints interest and IVA no movement line lists
+        # (credit_line_summary, switch LOUPE_FINANCIAL_CREDIT_LINE_SUMMARY_CHARGES): proved only when those
+        # charges reconcile the one reading of the movements exactly; otherwise held as before. A period the
+        # second-date rule (B5) would hold is not tried, so it stays exactly as it was.
+        from services.financial import credit_line_summary
+        summary_charges = credit_line_summary.prove(rows, all_moves, candidates, controls, column_totals,
+                                                    style or 'dot', exponent)
+        if summary_charges is not None:
+            chosen = summary_charges['candidate']
+            proof.update(proved=True, reason='proved', basis=credit_line_summary.BASIS)
     if (not proof['proved'] and liability and proof['reason'] in _PRINCIPAL_ONLY_EXPLAINS
             and any(all(re.search(r'\b' + word + r'\b', fold(h['text']).upper()) for word in _PRINCIPAL_ONLY_WORDS)
                     for h in headers)):
@@ -4116,6 +4130,9 @@ def _reading(rows, statement, style, exponent, liability, period):
     result['rows'] = _rows(rows, all_moves, resolved if not date_problem else None, chosen, controls,
                            column_totals, statement, style or 'dot', exponent, liability, proof, unplaced,
                            second_date=second_date)
+    if summary_charges is not None:
+        from services.financial import credit_line_summary
+        credit_line_summary.add_rows(result['rows'], summary_charges, period)
     return result
 
 
