@@ -1,3 +1,88 @@
+# fin/rg-refresh: held statements prepared again by themselves after a reader deploy (2026-10-24)
+
+Counts and opaque ids only. Base 68d95b20. Code commit 32d4e9da.
+
+## Why held items stayed stale (live BNB2, read only)
+- 27 review batches. 258 held items: 238 in checked batch files, 9 in error files, 11 on a reading that no batch file names.
+- 240 of 258 already carried the deployed `reader_release` stamp. That sweep compares only statement keys and the
+  review revision. The revision leaves out identity, period and readiness facts, so the sweep recorded these files
+  'unchanged' and never prepared them again. The engine campaign skips them too (same engine: reader_not_affected).
+
+## Design
+- Fingerprint: `held_reprepare.preparation_stamp()`, a digest of every module under services/financial (py+json)
+  and REVIEW_MODEL. `advance_batch` records it as `file['prepared_stamp']` only when statements are actually prepared
+  (not when a comparison records 'unchanged'). `prepare_reviews` stores `summary['prepared_assessment']`, a digest of
+  each item's assessment before case gates. A file with no stamp, or an item with no digest, counts as stale once.
+- Trigger: the batch loop, in the reader-release block (every 120 s), after `reader_release.sweep`.
+  1. Hand-off of pending originals.
+  2. Selection. Checked batch files that hold a statement under another stamp are judged by
+     `recovery_readers.classify(refresh=True)`. All of the campaign's protections apply. Investigator work or a
+     review request always protects (this path carries nothing). Originals held in several batches are all or
+     nothing through `_group_reason`. A shared reading is left.
+  3. Read only, the deployed reader reads the file. Unreadable files are left. A copy of a saved account and
+     period, judged on the CURRENT reading, is left. Unchanged statements and assessments are left. Anything else
+     is marked pending.
+- Hand-off: under the batch locks, all holder batches must be 'review' and the protections are judged again (work
+  saved since judging = left). Each chosen batch file then goes to 'processing' with `recheck.reason=held_reprepare`,
+  and the batch goes to 'preparing', exactly like `refresh_files`. The worker prepares from saved text and geometry
+  (no engine, no OCR). All the normal gates apply after that: prepare_reviews, readiness, overlap trim, copies,
+  duplicates and automatic save.
+- Pacing:
+  - At most `LOUPE_FINANCIAL_AUTO_REPREPARE_AT_ONCE` (default 4) host-wide, counted together with the engine
+    campaign's in-flight hand-offs.
+  - Nothing is handed off while evidence is being read.
+  - Each sweep reads at most 10 originals, within a 20 s budget.
+- Visibility: `review_queue._preparing_again` also returns pending marks, so held buckets show "rechecking". Handed
+  files are already shown that way as processing files.
+- Deploy: all state sits on batch files. Nothing is in the ingestion gate's blocking set (engine jobs, running
+  recovery items, uploads). A handed file is ordinary batch work: one bounded turn holds the lease, the loop pauses
+  between rounds, and the gate's 120 s turn wait finds that gap. It resumes after a restart. So no exit 75 from this
+  sweep, whatever its backlog. Tested with `check_ingestion_idle.active_work`, which gives 0 when pending and 0 when
+  handed.
+- Switch `LOUPE_FINANCIAL_AUTO_REPREPARE_HELD` (default on). When off, nothing is selected or handed, and pending
+  marks are not shown. Any exception leaves files as they are, and the next sweep tries again.
+
+## BNB2 measure (read only, live reader 68d95b20 + this branch)
+- Originals judged: 219 (held items 238; the other 20 held items sit outside checked batch files).
+  - picked ('changed'): 85 originals / 90 batch files / 93 held items
+  - protected: investigator_edits 83 / 87 / 93
+  - protected: copy_of_saved (current reading) 22 / 22 / 24
+  - protected: duplicate_decision 14 / 15 / 14
+  - protected: not_prepared 8 / 16 / 16
+  - protected: unavailable 3 / 6 / 3
+  - protected: investigator_decision 2 / 2 / 2
+  - protected: shared_reading 2 / 2 / 2
+- Picked vs stored, field by field, with the LIVE reader: 92 of the 93 items read the same as stored. 1 item differs
+  (transaction count, problems, revision), and 0 read ready before case gates. They are picked only because no item
+  carries a digest yet (stale once).
+- The live reader reads 11 of the 149 reader-gap targets ready. All 11 are protected: 7 copy_of_saved (the current
+  period equals a saved account period, so they are true copies; left to the duplicate workflow), 2
+  investigator_edits, 2 unavailable.
+- With rg-integrate 8b49156d (bbva + unidentified fixes) merged in a temporary worktree, 4 picked targets read ready
+  (3 Scotiabank, 1 BBVA). The reread dry-run preview shows the change: the stored key is gone or the period is
+  now proved by the reader. So after the next deploy, those reach the queue with no --apply.
+
+## Tests
+- New tests/test_financial_held_reprepare.py: 14 pass.
+- Targeted run (reader_release, recovery_readers, held_settlement, review_queue(+balances), import_batches,
+  queue_save, recovery_campaigns, deployment_recovery, batch_read_stored/projection, reader_recovery_estimate):
+  372 pass, 9 fail. The 9 are the same deployment_recovery failures as on base (checked with base code).
+- No isolated Postgres exists on this host (55434 is absent). The selector's SQL ran on live Postgres in a
+  read-only transaction (the measure above), and a compile check on the Postgres dialect is in the tests.
+
+## Shared-code changes (small)
+- recovery_readers.classify / _group_reason: new `refresh=False` keyword argument. The default path is unchanged.
+- import_batches: prepare_reviews stores the assessment digest. advance_batch calls record_preparation (2 places).
+  run_batches_forever calls the sweep.
+- review_queue._preparing_again: adds pending marks.
+
+## Not done / open
+- The 7 Santander-query copies: the current reader still reads the exact saved account and period. They need the
+  saved-copy set-aside on the CURRENT reading. held_settlement judges the stored item, so the stale key blocks it.
+- The 83 investigator_edits originals stay protected as instructed. The refresh path has no carry.
+- The first sweep after deploy re-prepares about 90 BNB2 batch files once (no digests yet). That is throttled to 4
+  at a time.
+
 # Integration of BNB2 queue units (A2 decisions, B Santander gap, C others)
 
 ## Unit A2 notes
