@@ -101,7 +101,7 @@ FINAL = ('proved', 'not_proved', 'stale')
 # As Loupe's own pricing table (ai_pricing_rates, migration 20260722) for the 5.6 models.
 PRICES = {'gpt-4o': (2.50, 10.00), 'gpt-4.1': (2.00, 8.00), 'gpt-5': (1.25, 10.00),
           'gpt-5.6-sol': (5.00, 30.00), 'gpt-5.6-terra': (2.50, 15.00), 'gpt-5.6-luna': (1.00, 6.00)}
-FALLBACK_PRICE = (5.00, 20.00)
+FALLBACK_PRICE = (5.00, 30.00)
 
 _spend = {}
 _spend_lock = threading.Lock()
@@ -226,6 +226,9 @@ def document_pages(document, sent_pages):
     """
     sent = list(sent_pages)
     numbering = {entry.get('page'): entry for entry in document.get('pages') or []}
+    if any(page not in numbering for page in sent):
+        # Every page sent is described (its printed number), or the page-numbering check could not run.
+        raise NotProved('The page-image reading does not describe every page that was read.')
     by_page = {page: [] for page in sent}
     for index, account in enumerate(document.get('accounts') or []):
         rows = account.get('rows') or []
@@ -1125,6 +1128,21 @@ def _save(factory, item_id, case_id, file_id, key, record, request):
             db.rollback()
             return _finish(factory, item_id, file_id, key, dict(record, status='not_proved',
                 message='The page-image reading could not be recorded: ' + str(error)), True)
+        except Exception:
+            db.rollback()
+            from postgres.models.evidence import EvidenceFile
+            from services.financial.statement_progress import review_progress
+            with factory() as check:
+                file = check.get(EvidenceFile, file_id)
+                progress = review_progress(file, key) if file is not None else None
+                by = (progress or {}).get('saved_by') or {}
+                ours = any(str(row.get('id', '')).startswith('manual:vision-')
+                           for row in ((progress or {}).get('request') or {}).get('rows') or [])
+                if not (by.get('name') == SYSTEM_NAME and by.get('user_id') == 'None' and ours):
+                    raise  # this review was not saved: a failed reading (read_item)
+            # The review was saved; what failed came after its commit (the readiness refresh).
+            log.exception('Page-image reading: the review is saved; refreshing the statement after it failed')
+            outcome = dict(status='saved')
     stored = {k: v for k, v in record.items() if k != 'request'}
     stored['review_status'] = outcome.get('status')
     try:

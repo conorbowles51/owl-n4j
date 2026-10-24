@@ -291,7 +291,10 @@ class DocumentTest(unittest.TestCase):
         account = dict(_section(**HEADER), opening_balance_page=None, closing_balance_page=None,
                        rows=[dict(_row('2025-12-02', '1.00', 'credit'), page=7)])
         with self.assertRaisesRegex(vr.NotProved, 'not read'):
-            vr.document_pages(dict(pages=[], accounts=[account]), [1, 2])
+            vr.document_pages(dict(pages=[dict(page=1), dict(page=2)], accounts=[account]), [1, 2])
+        # Every page read must be described, or its printed numbering could not be checked.
+        with self.assertRaisesRegex(vr.NotProved, 'every page'):
+            vr.document_pages(dict(pages=[dict(page=1)], accounts=[]), [1, 2])
 
 
 class RequestTest(unittest.TestCase):

@@ -239,6 +239,17 @@ class ReaderReleaseTests(TestCase):
         with self.f.SessionLocal() as db:
             self.assertEqual(vision_reader.pending(db), [])
 
+    def test_a_failure_after_the_review_is_saved_is_not_recorded_as_a_failed_reading(self):
+        from services.financial import vision_reader
+
+        def refresh_fails(*args, **kwargs):
+            raise RuntimeError('refresh failed')
+        with patch.object(batches, 'refresh_file_readiness', refresh_fails):
+            batch, held, outcome = self._read_from_images(0)
+        self.assertEqual(outcome['status'], 'proved', msg=outcome.get('message'))
+        self.assertEqual(self._stored(held)['status'], 'proved')
+        self.assertTrue(self.item(batch).review_request)
+
     def test_a_page_image_reading_off_by_a_cent_changes_nothing(self):
         batch, held, outcome = self._read_from_images(1)
         self.assertEqual(outcome['status'], 'not_proved')
