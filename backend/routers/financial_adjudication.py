@@ -622,9 +622,12 @@ def record_account_identity(body: IdentityRequest, case_id: UUID = Query(...),
 
 @router.post('/account-identities/sync-graph')
 def sync_account_identity_graph(case_id: UUID = Query(...), db: Session = Depends(get_db)):
-    from services.financial.identity_graph import synchronize_case, identity_graph_status
+    from services.financial.identity_graph import synchronize_case, identity_graph_status, _case_claim
     try:
-        synchronize_case(case_id)
+        with _case_claim(case_id) as claimed:
+            # Another worker's sweep is drawing this case right now: report its state instead of colliding.
+            if claimed:
+                synchronize_case(case_id)
         return identity_graph_status(db, case_id)
     except Exception as exc:
         raise HTTPException(status_code=503, detail='Reviewed identities are saved. The case graph is temporarily unavailable and will retry automatically.') from exc
