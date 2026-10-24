@@ -352,8 +352,20 @@ Counts and opaque ids only.
   saves it as for any statement that checks out completely.
 - Otherwise held as before, with the reason stored (file metadata `financial_vision_reading`, item summary
   `vision_reading`) and shown in the queue entry (`issue_messages`, "Page images: ...").
-- Cost: per-statement record of tokens and cost (also per page), logged; cap per case per worker run
-  LOUPE_FINANCIAL_VISION_CASE_BUDGET_USD (default 30). Read once per reading and model.
-- Tests: tests/test_financial_vision_reader.py (28) + ai_model_policy, llm_service, queue_save, review_queue,
-  review_queue_balances, import_batches: 279 pass.
+- Cost: per-statement record of tokens and cost (per page = the request's cost split evenly), logged; cap per
+  case per worker run LOUPE_FINANCIAL_VISION_CASE_BUDGET_USD (default 30), the most a request can cost is
+  reserved under one lock before it is sent (a failed/cut-short answer still counts). Read once per reading and
+  model; a failed request is retried later, at most 3 times per reading (an expired 'reading' claim counts).
+  The claim is re-checked under the file row lock. A partial (masked) or images-only account number needs a
+  printed holder and bank, recorded by the saved statements. Every sent page must be described; a gap or a
+  repeated printed page number holds. Given-up and over-budget outcomes are shown in the queue too.
+- Release re-check (reader_release): vision_reader.py is in READER_MODULES; an 'unchanged' file is marked for
+  the reader, so after a deploy the existing re-check sweep hands held statements of BNB2 files to it.
+- pending(): untouched drafts are JSON null (SQL IS NULL misses them), checked in Python.
+- Independent reviews: 1st FAIL (page gaps, budget on failure), 2nd FAIL (partial number vs holderless saved
+  statements), 3rd PASS (+ delta PASS). All findings that could matter fixed and tested.
+- Truth gate (aqb bench copy): held 116 -> 4 proved, 4 correct against truth, 0 wrong, 0 double, 0 lost (lost
+  is 0 by construction: never touches ready/imported). Forced sample of 30 auto: 6 proved, 6 correct.
+- Tests: targeted set (vision_reader, reader_release, ai_model_policy, llm_service, queue_save, review_queue,
+  review_queue_balances, import_batches): 300 pass.
 - Truth tool: benchmarks/statement_automation/vision_truth.py (measure only, on a copy of a whole-set bench DB).
