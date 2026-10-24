@@ -7,7 +7,9 @@ again read-only, sees the reading differs, and hands it back to the batch's own
 preparation. Nothing is lost: drafts, imports and decisions stay as they were.
 """
 import asyncio
+import hashlib
 from copy import deepcopy
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest import TestCase
 from unittest.mock import AsyncMock, patch
@@ -33,7 +35,7 @@ def old_reader(*args, **kwargs):
     proposal = deepcopy(proposal)
     rows = [row for row in proposal['rows'] if row['kind'] == 'transaction' and not row['excluded']]
     proposal['rows'] = [row for row in proposal['rows'] if row is not rows[-1] and row['id'] != rows[-1]['id']]
-    proposal['revision'] = 'old-' + proposal['revision']
+    proposal['revision'] = hashlib.sha256(('old-' + proposal['revision']).encode()).hexdigest()
     return proposal
 
 
@@ -123,6 +125,217 @@ class ReaderReleaseTests(TestCase):
         with self.f.SessionLocal() as db:
             self.assertEqual(batches.batch_for(db, self.f.case.id, batch).status, 'review')
         self.assertEqual(self.files(batch)[0]['reader_stamp'], reader_release.reader_stamp())
+
+    def _unchanged_sweep(self, enabled):
+        from services.financial import vision_reader
+        with self.f.SessionLocal() as db:
+            batch = batches.create_batch(db, case_id=self.f.case.id, request_id=uuid4(),
+                file_ids=[self.f.file.id], folder_ids=[], actor=self.f.actor)
+        # Prepared before the page-image reader existed: not marked.
+        with patch.object(reader_release, 'reader_stamp', return_value=OLD), \
+                patch.object(vision_reader, 'ENABLED', False):
+            self.drain(batch)
+        self.assertNotIn(vision_reader.MARK, self.files(batch)[0])
+        with patch.object(vision_reader, 'ENABLED', enabled):
+            outcome = reader_release.sweep(self.f.SessionLocal)
+        self.assertEqual(outcome['left'].get('unchanged'), 1)
+        return self.files(batch)[0].get(vision_reader.MARK)
+
+    def test_an_unchanged_file_is_marked_for_the_page_image_reader(self):
+        self.assertTrue(self._unchanged_sweep(True))
+
+    def test_no_mark_with_the_page_image_reader_off(self):
+        self.assertIsNone(self._unchanged_sweep(False))
+
+    def test_held_statements_of_a_marked_file_are_pending_for_the_page_image_reader(self):
+        from services.financial import vision_reader
+        with patch.object(vision_reader, 'ENABLED', True):
+            batch = self.prepare_with_old_reader()  # held, prepared with the reader on: marked
+        held = self.item(batch)
+        self.assertEqual(held.status, 'attention')
+        self.assertTrue(self.files(batch)[0].get(vision_reader.MARK))
+        with self.f.SessionLocal() as db:
+            self.assertEqual(vision_reader.pending(db), [held.id])
+            record = db.get(Item, held.id)
+            record.review_request = dict(rows=[])  # investigator work: never read
+            db.commit()
+            self.assertEqual(vision_reader.pending(db), [])
+
+    def _image_reading(self, held, *, nudge=0):
+        """A page-image reading of the held statement as printed (the current reader's reading), optionally wrong by a cent."""
+        from services.financial.field_proposals import CaseKnowledge, KnownAccount, SavedStatement
+        with self.f.SessionLocal() as db:
+            proposal = current_reader(db, case_id=self.f.case.id, evidence_file_id=held.file_id,
+                                      currency=held.summary.get('currency') or None, statement_id=held.statement_key or None)
+        money = lambda minor: '%d.%02d' % divmod(int(minor), 100)
+        rows = [r for r in proposal['rows'] if r['kind'] == 'transaction' and not r['excluded']]
+        balances = {r['fields']['description'].lower(): r for r in proposal['rows'] if r['kind'] == 'balance'}
+        meta = proposal['metadata']
+        page = rows[0]['page_number']
+        account = dict(section_name='', institution=meta['institution'], holder=meta['holder'],
+            account_number=meta['account_number'], currency=proposal['currency'], currency_as_printed=proposal['currency'],
+            period_start=meta['period_start'], period_end=meta['period_end'],
+            opening_balance=money(balances['opening balance']['fields']['balance']), opening_balance_page=page,
+            closing_balance=money(int(balances['closing balance']['fields']['balance']) + nudge), closing_balance_page=page,
+            total_credits=None, total_debits=None, count_credits=None, count_debits=None, no_transactions_printed=False,
+            rows=[dict(page=r['page_number'], date=r['fields']['date'], description=r['fields']['description'] or 'PAYMENT',
+                       amount=money(r['fields']['amount_minor']), direction=r['fields']['direction'], balance_after=None,
+                       unreadable=False) for r in rows])
+        document = dict(pages=[dict(page=n, printed_page_number=None, printed_page_total=None, is_statement_page=True)
+                               for n in proposal['page_numbers']], accounts=[account])
+        saved = SavedStatement(currency=proposal['currency'], period_start='2000-01-01', period_end='2000-01-31',
+                               institution=meta['institution'], holder=meta['holder'], account_number=meta['account_number'])
+        from services.financial.field_proposals import account_identity
+        digits, masked = account_identity(meta['account_number'])
+        known = KnownAccount(key=str(uuid4()), account=meta['account_number'], digits=digits, masked=masked,
+                             institution=meta['institution'], currency=proposal['currency'], statements=[saved])
+        return document, CaseKnowledge(accounts=[known])
+
+    def _read_from_images(self, nudge, read=None, batch=None):
+        from services.financial import vision_reader
+        if batch is None:
+            with patch.object(vision_reader, 'ENABLED', True):
+                batch = self.prepare_with_old_reader()
+        held = self.item(batch)
+        self.assertEqual(held.status, 'attention')
+        document, knowledge = self._image_reading(held, nudge=nudge)
+        read = read or (lambda images: (document, dict(prompt_tokens=1000, completion_tokens=100)))
+        reader = lambda db, case_id: ('gpt-test', read)
+        with patch.object(vision_reader, 'render_pages', lambda path, pages: [(p, [b'png']) for p in pages]), \
+                patch.object(batches, 'read_statement_import', old_reader), \
+                patch('services.financial.statement_import.read_statement_import', old_reader), \
+                patch.object(vision_reader, 'check_neighbours', lambda *a: None), \
+                patch('services.financial.field_proposals.MIN_MASKED_DIGITS', 3):  # the fixture's account prints 3 digits
+            import services.financial.statement_import as statement_import
+            with patch.object(statement_import, 'read_statement_import', old_reader):
+                outcome = vision_reader.read_item(self.f.SessionLocal, held.id, Path, page_reader=reader,
+                                                  knowledge_for=lambda db, case_id: knowledge)
+        return batch, held, outcome
+
+    def test_a_held_statement_proved_from_its_page_images_is_saved_as_a_system_review(self):
+        from services.financial import vision_reader
+        from services.financial.statement_progress import review_progress
+        from postgres.models.evidence import EvidenceFile
+        batch, held, outcome = self._read_from_images(0)
+        self.assertEqual(outcome['status'], 'proved', msg=outcome.get('message'))
+        after = self.item(batch)
+        self.assertEqual(after.status, 'ready')
+        self.assertEqual(after.summary['vision_reading']['status'], 'proved')
+        with self.f.SessionLocal() as db:
+            file = db.get(EvidenceFile, held.file_id)
+            progress = review_progress(file, held.statement_key)
+            self.assertEqual(progress['saved_by']['name'], vision_reader.SYSTEM_NAME)
+            stored = file.metadata_[vision_reader.METADATA_KEY][held.statement_key or '']
+            self.assertEqual((stored['status'], stored['model']), ('proved', 'gpt-test'))
+            self.assertGreater(stored['cost_usd'], 0)
+        rows = after.review_request['rows']
+        added = [r for r in rows if r['id'].startswith('manual:vision-')]
+        self.assertTrue(added and all(r['reason'].startswith('Read from page image, page ') for r in added))
+        self.assertTrue(all(r['excluded'] and r['reason'] == vision_reader.REPLACED_REASON
+                            for r in rows if not r['id'].startswith('manual:') and r['amount_minor'] not in ('0', '')
+                            and r.get('direction')))
+        self.assertTrue(queue_save.system_filled_only(after, file))
+        # Read once: a second pass reuses the stored reading.
+        with self.f.SessionLocal() as db:
+            self.assertEqual(vision_reader.pending(db), [])
+
+    def test_a_failure_after_the_review_is_saved_is_not_recorded_as_a_failed_reading(self):
+        from services.financial import vision_reader
+
+        def refresh_fails(*args, **kwargs):
+            raise RuntimeError('refresh failed')
+        with patch.object(batches, 'refresh_file_readiness', refresh_fails):
+            batch, held, outcome = self._read_from_images(0)
+        self.assertEqual(outcome['status'], 'proved', msg=outcome.get('message'))
+        self.assertEqual(self._stored(held)['status'], 'proved')
+        self.assertTrue(self.item(batch).review_request)
+
+    def test_a_page_image_reading_off_by_a_cent_changes_nothing(self):
+        batch, held, outcome = self._read_from_images(1)
+        self.assertEqual(outcome['status'], 'not_proved')
+        self.assertIn('did not balance', outcome['message'])
+        after = self.item(batch)
+        self.assertEqual((after.status, after.review_request), ('attention', None))
+        self.assertIn('did not balance', after.summary['vision_reading']['message'])
+
+    def test_a_failed_page_image_request_is_counted_against_the_budget_and_given_up_after_three(self):
+        from services.financial import vision_reader
+        calls = []
+
+        def cut_short(images):
+            calls.append(len(images))
+            raise RuntimeError('The page-image reading was incomplete (length).')
+        with patch.dict(vision_reader._spend, {}, clear=True):
+            batch, held, outcome = self._read_from_images(0, read=cut_short)
+            self.assertEqual((outcome['status'], outcome['failures']), ('failed', 1))
+            reserve = vision_reader.reserve_usd('gpt-test', [(p, [b'png']) for p in outcome['pages']])
+            self.assertGreater(reserve, 0)
+            self.assertAlmostEqual(vision_reader.spent(self.f.case.id), reserve)
+            for failures in (2, 3):
+                self.assertEqual(self._read_from_images(0, read=cut_short, batch=batch)[2]['failures'], failures)
+            self.assertEqual(self._read_from_images(0, read=cut_short, batch=batch)[2]['reason'], 'failed_repeatedly')
+            self.assertEqual(len(calls), 3)
+            self.assertAlmostEqual(vision_reader.spent(self.f.case.id), 3 * reserve)
+        after = self.item(batch)
+        self.assertEqual((after.status, after.review_request), ('attention', None))
+        with self.f.SessionLocal() as db:
+            self.assertEqual(vision_reader.pending(db), [])
+
+    def test_a_claim_left_by_a_stopped_worker_counts_as_a_failed_request(self):
+        from services.financial import vision_reader
+        with patch.object(vision_reader, 'ENABLED', True):
+            batch = self.prepare_with_old_reader()
+        held = self.item(batch)
+        calls = []
+        with patch.dict(vision_reader._spend, {}, clear=True):
+            first = self._read_from_images(0, read=lambda images: calls.append(1) or 1 / 0, batch=batch)[2]
+            self.assertEqual(first['failures'], 1)
+            long_ago = datetime(2020, 1, 1, tzinfo=timezone.utc).isoformat()
+            for _ in range(2):
+                # The worker stops mid-request: its claim stays 'reading' past its time.
+                with self.f.SessionLocal() as db:
+                    vision_reader._store(db, held.file_id, held.statement_key, dict(
+                        first, status='reading', at=long_ago, failures=self._stored(held)['failures']))
+                    db.commit()
+                outcome = self._read_from_images(0, read=lambda images: calls.append(1) or 1 / 0, batch=batch)[2]
+            # 1 failed request, then a stopped one (2), then a stopped one (3): given up, not sent again.
+            self.assertEqual((outcome['status'], outcome['reason'], len(calls)), ('failed', 'failed_repeatedly', 2))
+        after = self.item(batch)
+        self.assertEqual(after.summary['vision_reading']['message'], vision_reader.GAVE_UP)
+        with self.f.SessionLocal() as db:
+            self.assertEqual(vision_reader.pending(db), [])
+
+    def _stored(self, held):
+        from services.financial import vision_reader
+        from postgres.models.evidence import EvidenceFile
+        with self.f.SessionLocal() as db:
+            return db.get(EvidenceFile, held.file_id).metadata_[vision_reader.METADATA_KEY][held.statement_key or '']
+
+    def test_no_request_beyond_the_case_budget(self):
+        from services.financial import vision_reader
+        calls = []
+        with patch.dict(vision_reader._spend, {}, clear=True), patch.object(vision_reader, 'CASE_BUDGET_USD', 0.01):
+            batch, held, outcome = self._read_from_images(0, read=lambda images: calls.append(1))
+        self.assertEqual((outcome['status'], calls), ('budget', []))
+        after = self.item(batch)
+        self.assertEqual(after.status, 'attention')
+        self.assertIn('budget', after.summary['vision_reading']['message'])
+
+    def test_a_statement_claimed_by_another_worker_is_not_read_again(self):
+        from services.financial import vision_reader
+        with patch.object(vision_reader, 'ENABLED', True):
+            batch = self.prepare_with_old_reader()
+        held = self.item(batch)
+        with self.f.SessionLocal() as db:
+            vision_reader._store(db, held.file_id, held.statement_key, dict(
+                version=vision_reader.VERSION, status='reading', at=datetime.now(timezone.utc).isoformat()))
+            db.commit()
+        calls = []
+        # The claim is missed by the first (unlocked) look and found again under the file's lock.
+        with patch.object(vision_reader, '_stored', lambda file, key: None):
+            outcome = self._read_from_images(0, read=lambda images: calls.append(1), batch=batch)[2]
+        self.assertEqual((outcome['reason'], calls), ('being_read', []))
+        self.assertEqual(self.item(batch).status, 'attention')
 
     def test_a_draft_is_kept_through_the_re_preparation(self):
         batch = self.prepare_with_old_reader()

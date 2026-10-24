@@ -700,6 +700,47 @@ construction.
 - Engine container: 117 passed and 50 skipped (the skips need a font). On the host, the font-dependent glyph
   tests (56) pass.
 
+## Vision fallback reader (fin/rd-vision, 2026-10-24)
+Counts and opaque ids only.
+
+- backend/services/financial/vision_reader.py (switch LOUPE_FINANCIAL_VISION_FALLBACK, default on). Held statements
+  only, never one with investigator work, a saved/set-aside/ready one, a document review or a fund statement.
+  Trigger: a file prepared through the normal batch path (recovery re-read or any preparation) is marked
+  (batch entry `vision_fallback`); a separate background task in the batch worker (`_vision_forever`, never
+  inside a batch turn or a case lock) reads its held statements.
+- One OpenAI request per statement: every page image (3 overlapping strips per page, labelled "Page N"),
+  schema-enforced JSON (strict json_schema), every row citing its page. Workload `financial_vision` in
+  ai_model_policy (OpenAI in every profile), default gpt-5.6-terra (LOUPE_FINANCIAL_VISION_MODEL overrides).
+  llm_service.LLMExecutionContext.call_vision_json raises on refusal / truncation / non-OpenAI (fail closed).
+- Accepted only when: opening + rows = closing to the cent; every printed running balance agrees; printed
+  credit/debit totals and counts agree; rows inside the period; printed page numbering shows no page absent
+  from the file; header agrees with the text reading wherever it read a value; the account (number + bank)
+  has saved statements in the case, the printed currency picks its sub-account, the holder matches one of its
+  saved statements; adjacent saved statements continue its balances and none overlaps it; every cleanly read
+  text payment and text balance is in the image reading; the rows are not just the printed totals. Then the
+  batch's own assess/admission must find nothing at all; only then a System review is saved (save_review),
+  rows "Read from page image, page N.", text rows set aside with a reason (retained), and auto_save_prepared
+  saves it as for any statement that checks out completely.
+- Otherwise held as before, with the reason stored (file metadata `financial_vision_reading`, item summary
+  `vision_reading`) and shown in the queue entry (`issue_messages`, "Page images: ...").
+- Cost: per-statement record of tokens and cost (per page = the request's cost split evenly), logged; cap per
+  case per worker run LOUPE_FINANCIAL_VISION_CASE_BUDGET_USD (default 30), the most a request can cost is
+  reserved under one lock before it is sent (a failed/cut-short answer still counts). Read once per reading and
+  model; a failed request is retried later, at most 3 times per reading (an expired 'reading' claim counts).
+  The claim is re-checked under the file row lock. A partial (masked) or images-only account number needs a
+  printed holder and bank, recorded by the saved statements. Every sent page must be described; a gap or a
+  repeated printed page number holds. Given-up and over-budget outcomes are shown in the queue too.
+- Release re-check (reader_release): vision_reader.py is in READER_MODULES; an 'unchanged' file is marked for
+  the reader, so after a deploy the existing re-check sweep hands held statements of BNB2 files to it.
+- pending(): untouched drafts are JSON null (SQL IS NULL misses them), checked in Python.
+- Independent reviews: 1st FAIL (page gaps, budget on failure), 2nd FAIL (partial number vs holderless saved
+  statements), 3rd PASS (+ delta PASS). All findings that could matter fixed and tested.
+- Truth gate (aqb bench copy): held 116 -> 4 proved, 4 correct against truth, 0 wrong, 0 double, 0 lost (lost
+  is 0 by construction: never touches ready/imported). Forced sample of 30 auto: 6 proved, 6 correct.
+- Tests: targeted set (vision_reader, reader_release, ai_model_policy, llm_service, queue_save, review_queue,
+  review_queue_balances, import_batches): 300 pass.
+- Truth tool: benchmarks/statement_automation/vision_truth.py (measure only, on a copy of a whole-set bench DB).
+
 ## Reader gaps: Santander (fin/rg-santander)
 31 held BNB2 Santander statements (balance 16, reading 5, currency 5, no_activity 3, account 1, holder 1).
 

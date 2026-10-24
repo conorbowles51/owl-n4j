@@ -66,6 +66,9 @@ READER_MODULES = (
     'late_posted_card_dates.py', 'closing_only_period.py', 'layout_memory.py', 'text_rows.py', 'printed_totals.py',
     'money.py', 'dates.py', 'source_dates.py', 'import_issues.py', 'review_arithmetic.py', 'payment_inference.py',
     'spei_description.py', 'deposit_receipt_proposal.py', 'payment_document_proposal.py',
+    # The page-image reader of held statements: a release of it re-checks prepared files, and a file
+    # whose text reading is unchanged but still holds statements is marked for it (_store).
+    'vision_reader.py',
 )
 # Not listed: import_batches.py. Its changes (scheduling, saves) cannot change
 # what the comparison looks at (the reading revision, computed by the reading
@@ -181,6 +184,12 @@ def _store(session, batch_id, case_id, verdicts, stamp):
                 or files[index].get('status') != 'checked' or files[index].get('reader_stamp') != entry.get('reader_stamp')):
             continue
         files[index]['reader_stamp'] = stamp
+        if verdict == 'unchanged':
+            # Its held statements are read from their page images (vision_reader); a re-prepared
+            # file is marked when its preparation ends.
+            from services.financial import vision_reader
+            if vision_reader.ENABLED:
+                files[index][vision_reader.MARK] = True
         if verdict == 'changed':
             # The worker prepares it again from its saved reading (no OCR).
             files[index]['status'] = 'processing'
