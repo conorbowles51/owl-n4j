@@ -4700,8 +4700,16 @@ def propose_engine_statement(sources, currency, choice):
         profile = next((p for p in PROFILES if p['name'] == choice['engine_profile']), None)
         if profile is None:
             raise ValueError('The reading profile of this statement period is no longer available. Reload the document.')
-    for statement in read_statements(sources, profile=profile):
+    reading = read_statements(sources, profile=profile)
+    for statement in reading:
         if statement['id'] == choice['id'] or statement['id'] == choice.get('engine_id'):
+            if not statement['engine']['proved']:
+                # A held period of a layout a family recovery reader proves from its printed running
+                # balance (santander_integral); None leaves the engine's held reading as it is.
+                from services.financial.santander_integral import recover_held
+                recovered = recover_held(statement, reading, sources, currency)
+                if recovered is not None:
+                    return dict(rows=recovered, issues=[])
             rows = _copy_rows(statement['_rows'])
             reason = (choice.get('engine') or {}).get('reason')
             if reason == 'route_library_first' and rows and not any(r.get('engine_hold') for r in rows):

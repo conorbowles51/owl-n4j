@@ -404,3 +404,58 @@ class SantanderReaderGapTests(TestCase):
         finally:
             santander.QUIET_COVER_CLOSING=True
             santander.COVER_SPACED_ACCOUNT=True
+
+
+def positionless_continuation(**changes):
+    """multipage_statement() whose last page's table kept only its outline: no cell positions, column numbers."""
+    ss = multipage_statement()
+    page = ss[2]
+    page['geometry_source'] = 'table_rectangle_only'
+    page['locator'] = dict(kind='page_rectangle', page=3, rect=[0, 100000, 612000, 700000],
+                           page_size=[612000, 792000], units='millipoints', space='pdf_displayed')
+    for row in page['rows']:
+        texts = [c['expected_text'] for c in row['cells']]
+        if texts and texts[0].startswith('05-SEP-2024'):
+            indices = [0, changes.get('amount_column', 4), 5]
+        elif texts and texts[0] == 'TOTAL':
+            indices = [2, 3, 4]
+        else:
+            indices = list(range(len(texts)))
+        for cell, index in zip(row['cells'], indices):
+            cell['column_index'] = index
+            cell['locator'] = dict(kind='unlocated', page=3)
+        if changes.get('merged_balance') and texts and texts[0].startswith('05-SEP-2024'):
+            row['cells'][2]['expected_text'] = '30.00\n30.00'
+    return ss
+
+
+class SantanderPositionlessTableTests(TestCase):
+    def read(self, ss):
+        choices, handled = santander_catalog(ss)
+        investment = next(c for c in choices if c['account_type'] == 'savings')
+        return investment, propose_santander_statement(ss, 'MXN', investment)['rows']
+
+    def test_a_positionless_continuation_table_is_read_by_its_own_column_numbers(self):
+        for merged in (False, True):
+            with self.subTest(merged_balance=merged):
+                investment, rows = self.read(positionless_continuation(merged_balance=merged))
+                self.assertEqual(investment['page_numbers'], [1, 2, 3])
+                tx = [r for r in rows if not r['excluded']]
+                self.assertEqual([(r['fields']['direction'], r['fields']['amount_minor']) for r in tx],
+                                 [('credit', '4000'), ('debit', '1000')])
+                self.assertEqual(tx[1].get('fields', {}).get('balance'), None if merged else '3000')
+                checks = check_statement_rows(rows)
+                self.assertEqual((checks['balance_status'], checks['flagged_rows']), ('matches', 0))
+
+    def test_a_positionless_amount_in_the_wrong_column_does_not_reconcile(self):
+        _, rows = self.read(positionless_continuation(amount_column=3))
+        self.assertNotEqual(check_statement_rows(rows)['balance_status'], 'matches')
+
+    def test_switch_off_leaves_the_positionless_page_unread(self):
+        import services.financial.statement_import_santander as santander
+        try:
+            santander.POSITIONLESS_TABLES = False
+            investment, _ = self.read(positionless_continuation())
+            self.assertEqual(investment['page_numbers'], [1, 2])
+        finally:
+            santander.POSITIONLESS_TABLES = True
