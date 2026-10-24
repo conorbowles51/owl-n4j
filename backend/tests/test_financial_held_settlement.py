@@ -252,6 +252,66 @@ def test_a_fund_statement_is_recognised_only_on_clear_evidence(change, monkeypat
     assert not_payment_statements.classify(file, _text(*pages), proposal) is None
 
 
+# Online balance positions ---------------------------------------------------------------------------------
+
+POSITION_PAGE = ('11/7/25, 13:13\nindex\nhttps://bank.example/portal\n1/1\nPosición Global - Posición\nDETALLE\n'
+                 'Revise el balance y posición de sus Cuentas de Cheques\nCheques\n1,000.00 USD\nVista\n0.00 USD\n'
+                 'Plazo\n0.00 USD\nTotal de la cartera:\n1,000.00 USD\nDetalle\n')
+
+
+def _position_proposal(**extra):
+    rows = [dict(id='u%d' % i, kind='unclassified', excluded=True, page_number=1, fields={}) for i in range(3)]
+    return {**dict(statement_id=None, statement_choices=[], period_dates=None, statement_page_numbers=[1], rows=rows), **extra}
+
+
+def test_a_printed_online_balance_position_is_not_a_payment_statement():
+    result = not_payment_statements.classify(FILE, _text(POSITION_PAGE), _position_proposal())
+    assert result['kind'] == 'online_balance_position' and result['status'] == 'set_aside'
+    assert result['label'] == not_payment_statements.LABEL and result['evidence']['position_pages'] == [1]
+    assert not_payment_statements.titled(POSITION_PAGE)
+
+
+@pytest.mark.parametrize('change', ['period_line', 'movements', 'statement_title', 'no_total', 'no_heading',
+                                    'second_page', 'statement_found', 'payment', 'saved_review', 'restored',
+                                    'switch_off', 'all_off'])
+def test_an_online_balance_position_is_recognised_only_on_clear_evidence(change, monkeypatch):
+    pages, proposal, file = [POSITION_PAGE], _position_proposal(), FILE
+    if change == 'period_line':
+        pages = [POSITION_PAGE + 'DEL 01/06/2025 AL 30/06/2025\n']
+    elif change == 'movements':
+        pages = [POSITION_PAGE + 'Movimientos del mes\n']
+    elif change == 'statement_title':
+        pages = [POSITION_PAGE + 'ESTADO DE CUENTA\n']
+    elif change == 'no_total':
+        pages = [POSITION_PAGE.replace('Total de la cartera', 'Total')]
+    elif change == 'no_heading':
+        pages = [POSITION_PAGE.replace('Revise el balance y posición de sus Cuentas', 'Cuentas')]
+    elif change == 'second_page':  # another page of the reading is not the position page
+        pages, proposal = [POSITION_PAGE, NOTICE], _position_proposal(statement_page_numbers=[1, 2])
+    elif change == 'statement_found':
+        proposal = dict(proposal, period_dates=dict(start='2025-06-01', end='2025-06-30'))
+    elif change == 'payment':
+        proposal['rows'].append(dict(id='t1', kind='transaction', excluded=False, page_number=1,
+                                     fields=dict(date='2025-07-01', amount_minor='100', direction='debit')))
+    elif change == 'saved_review':
+        proposal['saved_review'] = dict(request={})
+    elif change == 'restored':
+        file = SimpleNamespace(metadata_={not_payment_statements.METADATA_KEY: {'': dict(status='restored')}})
+    elif change == 'switch_off':
+        monkeypatch.setattr(not_payment_statements, 'POSITIONS', False)
+    else:
+        monkeypatch.setattr(not_payment_statements, 'ENABLED', False)
+    assert not_payment_statements.classify(file, _text(*pages), proposal) is None
+
+
+def test_a_set_aside_balance_position_is_never_saveable():
+    from services.financial.pdf_candidates import PdfMappingError
+    from services.financial.statement_import import check_import_request
+    flag = not_payment_statements.classify(FILE, _text(POSITION_PAGE), _position_proposal())
+    with pytest.raises(PdfMappingError, match='online balance position'):
+        check_import_request(dict(_position_proposal(), not_payment_statement=flag), None)
+
+
 def test_a_set_aside_fund_statement_is_never_saveable_and_leaves_the_waiting_queue():
     from services.financial.import_batches import assess
     from services.financial.pdf_candidates import PdfMappingError

@@ -1,3 +1,127 @@
+# fin/rg-unidentified: reader gaps, statements whose bank was not identified (BNB2, 2026-10-24)
+
+Counts and opaque ids only (file id prefixes). Real values, page images and transcriptions stayed in the session
+scratch directory and are not in git.
+
+## Scope
+
+There are 40 held statements in 40 files: reading 15, currency 11, institution 10, unreadable 4. Branch base is live
+68d95b20.
+
+## What the 40 files are (each file opened; the page images were checked)
+
+| Group | Statements | Issue in the queue | What it is | Outcome |
+|---|---|---|---|---|
+| BBVA Maestra PyME / Maestra Dolares PyME, scanned | 18 | reading 12, institution 2, unreadable 4 | Scans (image + OCR), not in the truth set | Not fixable from the saved reading (below). Coordinate: BBVA unit / engine |
+| Santander Consulta de Movimientos, digital | 9 | currency 9 | Already read in full by the deployed reader | Stale preparation (below). Coordinate: re-read |
+| Scotiabank Mexico, scanned | 4 | institution 4 | 3 copies (identical bytes, 3 batches) of one zero-activity statement, plus 1 with movements | **3 fixed** (Scotiabank chart heading) |
+| Intercam Casa de Bolsa brokerage | 4 | institution 2, reading 1, currency 1 | 2 copies of one digital 2022 statement, 1 image statement with investigator work, 1 proved with no printed currency | Coordinate: others unit |
+| Santander integral statement | 3 | institution 2, currency 1 | 2 copies of one badly OCR'd image scan, 1 digital statement split over 10 physical pages | Coordinate: Santander unit |
+| Santander online "Posicion Global" printout | 1 | reading 1 | A browser printout of the day's balances: no period, no movements. Not a statement | **Fixed**: set aside as not a payment statement |
+| BBVA digital | 1 | reading 1 | The reader reads it (ready). It is held by the investigator's own manual row, which needs a page | Not a reader gap (her work) |
+
+None of the 40 belongs to a bank with a reader that the routing failed to reach. Each layout either has its reader
+(BBVA, Santander, Scotiabank, Intercam) or is not a statement. Where the bank went unread, the reader did not
+recognise the pages: OCR damage (BBVA, Santander integral scans), one OCR'd heading mark (Scotiabank), or a reading
+older than the deployed reader (Santander queries).
+
+### BBVA scans (18): why they are not fixable from the saved reading
+
+I checked the page images of all 18. The OCR has three kinds of damage:
+- **4: the right edge of the page is cut off in the scan itself.** The period end, balances and amounts are
+  truncated in the image (e.g. a balance printed with its last digits missing). No reader can read them from this
+  file.
+- **7: a dark scanner-noise band covers the right-hand value column.** The balances and the period end are lost
+  under it.
+- **7: the page is legible, but the English-only OCR garbles it.** It misreads accents (the label "Operacion" read
+  with the accented letter dropped), page numbers ("1/5" read as "1.15"), account lines and handwritten ticks. On
+  these pages a balance digit can be misread (one "Saldo Final" read with its first digit wrong).
+- Several files are also only part of a statement (2 of 6 printed pages; 8 of 12; 1 of 5).
+
+The BBVA reader's identity gate needs the exact title, product, "PAGINA n/m", account and period. None of the 18
+meets it, and loosening it would mean taking the account, the period and the balances from garbled OCR (0-wrong
+rule). Two of the legible ones (052ad764, 5127a40e) only miss a balance label with its accented letter dropped. That
+label belongs to the BBVA unit's reader, so I did not touch it. The real fix for the group is a better OCR reading
+of these scans (Spanish model, value-column crop, noise-band handling): that is engine work, not reader work.
+
+**The 4 "nothing could be read" files** (c6db581e, 50ae18d8, aa327762, 9bf457e4) are BBVA scans of this group. They
+are **not image-only**: every page has saved OCR text (3.1k to 31.8k characters) and table geometry. Nothing was read
+because no reader found a statement period on any page:
+- c6db581e, 50ae18d8: the period line is misread, the account number is not read and "PAGINA" is garbled. Each
+  file holds only 2 of 6 printed pages.
+- aa327762, 9bf457e4: the period end, dates and balances sit under the noise band.
+
+So the queue shows a file-level item with no facts.
+
+### Santander Consulta de Movimientos (9): why they are still held
+
+These are digital. The deployed reader reads all 9 (bank, account, MXN, balances match; `assess` = ready 9/9). They
+are held because their batch items were prepared on 2026-10-15 and 2026-10-23, before 68d95b20.
+
+- Recovery run 92802b80 selected 7 of them. A newer release superseded that run ("kept newer_release") before they
+  were read again.
+- Release 98bfbeae (28fad995) then classified all 9 as `copy_of_saved`, because their stale periods overlap saved
+  months.
+- So no automatic path prepares them again. A refresh from the saved reading (`financial_reread_file --apply`,
+  coordinator) is what applies the current reader. The case-level overlap/duplicate disposition then decides; my
+  dry run does not simulate it.
+
+## Fixes (branch fin/rg-unidentified)
+
+1. **Scotiabank zero-activity chart heading** (`statement_import_scotiabank.py`, switch
+   `LOUPE_FINANCIAL_SCOTIABANK_FOOTNOTE_MARK`, default on). The chart heading "Otros cargos*" carries a footnote
+   asterisk, and the scans read it as a quote glyph. The heading was therefore unmatched and the whole statement
+   refused. The fix tolerates exactly one trailing quote glyph on that one heading. Every other check stays as it
+   was: five chart amounts each read as zero, equal printed opening and closing, the three pages, the account, the
+   period, Moneda NACIONAL, and no movement table.
+2. **Online balance position is not a payment statement** (`not_payment_statements.py`, switch
+   `LOUPE_FINANCIAL_NOT_PAYMENT_POSITIONS`, default on, which needs `LOUPE_FINANCIAL_NOT_PAYMENT_STATEMENTS`).
+   - It applies only when every page of the reading prints the "Posicion Global" title, its balance-position heading
+     and its portfolio total.
+   - No page may print a period, a movement, a statement title, a debit/credit/deposit/withdrawal word or a
+     statement balance label.
+   - The reader must have found no statement period, and there must be no payment, no saved review and no restore.
+   - It is set aside in the same way as fund statements: never saveable, put back on request, nothing deleted.
+   - `held_settlement` uses the new `titled()` pre-check. The import refusal message names the kind.
+
+## Measured
+
+- **Read-only dry run on live**, with `read_statement_import` and `assess` per statement, on the 40 targets:
+  - base 68d95b20: ready 10 (the 9 Santander queries and the BBVA digital, all on stale items).
+  - branch: ready 13 (adds the 3 Scotiabank) and 1 set aside as not a payment statement.
+  - `financial_reread_file` dry run (no `--apply`): the 3 Scotiabank files now read 1 library period each, with
+    bank, account and holder; the position file reads 0 periods.
+- **Scotiabank truth mini** (8 PDFs, readings reused from r15-scotia-088f9868):
+  - switch off: 5/8; switch on: 6/8 (dc3fbbaef34d0#1 saved, equal to truth).
+  - Wrongly admitted 0, critical-field errors 0, double counts 0.
+  - The one "valid-looking wrong currency" proposal is on held dec16784acb31#1. It is identical with the switch off,
+    so it predates this branch.
+- **Catalog equivalence on the whole truth set** (797 readings of r14s-whole): the Scotiabank change alters exactly
+  1 document (dc3fbbaef34d0: 0 -> 1 zero-activity period, correct dates). The position rule matches 0 of 797. Live
+  (all cases, read only): 5 files carry such a page, all in BNB2. 1 is this target; the other 4 are already removed
+  or superseded.
+- **Tests:** 269 passed, 0 failed (held_settlement, review_recovery, statement_import_scotiabank, statement_progress, statement_import, mexico_no_activity, mexico_movement_scaffold, review_queue). New: a Scotiabank footnote-mark test (marks accepted; a word, a second mark or an amount refused; switch off) and position tests (recognised, 12 refusal variants, never saveable).
+
+## Not fixed (and who should look)
+
+- **BBVA scans (18):** scan damage (above). Engine OCR work. BBVA unit: the dropped-accent balance label in 2 files.
+- **Santander queries (9):** coordinator re-read (stale items). Same for the 3 Scotiabank files: recovery classifies
+  them `reader_not_affected` (same engine), so they also need `financial_reread_file --apply` to reach the queue.
+- **Santander integral (3):** Santander unit.
+  - Image-only copies: dates are garbled by OCR.
+  - Digital file: `santander_catalog` finds no group, because the printed "HOJA n DE 5" headers fall on alternate
+    physical pages only.
+- **Intercam brokerage (4):** others unit.
+  - The 2022 digital layout is not read by the intercam-brokerage profile ("no printed balances or movement lines").
+  - The proved one has no printed currency and its account has nothing saved (Neil's account-currency rule cannot
+    fill it).
+  - The image one carries investigator work.
+- **Scotiabank with movements (1):** the movement table is the off-by-default scaffold. The opening is read without
+  punctuation, and the engine proposes the wrong currency (pre-existing). Not changed.
+- **BBVA digital (1):** the investigator's manual row needs a page (her work).
+
+---
+
 # Integration of BNB2 queue units (A2 decisions, B Santander gap, C others)
 
 ## Unit A2 notes

@@ -5,6 +5,7 @@ summary amount column. All five chart amounts must explicitly read zero. Missing
 pages, conflicting accounts, movement tables and nonzero activity fail closed to
 the ordinary review. No missing amount is filled with an assumed zero.
 """
+import os
 import re
 from datetime import date
 
@@ -17,6 +18,13 @@ LAYOUT = 'scotiabank-mexico-zero-activity'
 # below was modelled by the benchmark corpus, not taken from a real statement.
 MOVEMENTS_LAYOUT = 'scotiabank-mexico-movements'
 MONEY = r'-?\s*\$\s*[\d,.]+'
+# The chart heading "Otros cargos*" carries a footnote asterisk ("* Incluye
+# impuestos"). Scanned pages read that one mark as a quote glyph; only that
+# trailing mark of that one heading is tolerated, never a word or an amount.
+# Off: only the asterisk, as before.
+FOOTNOTE_MARK = os.environ.get('LOUPE_FINANCIAL_SCOTIABANK_FOOTNOTE_MARK', '1').strip().lower() not in (
+    '0', 'false', 'no', 'off')
+_OTHER_CHARGES = r'OTROS CARGOS[*\u201c\u201d"\u2018\u2019\']?'
 
 
 def _date(value):
@@ -71,7 +79,7 @@ def _controls(items):
         label = next((role for role, pattern in (
             ('deposits', r'DEP[OE]SITOS'), ('interest', r'INTERESES'),
             ('withdrawals', r'RETIROS\s*\.?\s*EN EFECTIVO\s*\.?'),
-            ('other', r'OTROS CARGOS\*?'), ('fees', r'COMISIONES'),
+            ('other', _OTHER_CHARGES if FOOTNOTE_MARK else r'OTROS CARGOS\*?'), ('fees', r'COMISIONES'),
         ) if re.fullmatch(pattern, value)), None)
         if label and box(cell):
             headings.setdefault(label, []).append(cell)

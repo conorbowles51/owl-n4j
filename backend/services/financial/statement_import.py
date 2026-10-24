@@ -973,7 +973,9 @@ class StatementImportRequest(StatementReviewDraft):
 
 def check_import_request(proposal, request):
     if proposal.get('not_payment_statement'):
-        raise PdfMappingError('This is a fund statement, not a payment statement: it has no payments to import. '
+        kind = proposal['not_payment_statement'].get('kind') if isinstance(proposal['not_payment_statement'], dict) else None
+        what = 'an online balance position' if kind == 'online_balance_position' else 'a fund statement'
+        raise PdfMappingError(f'This is {what}, not a payment statement: it has no payments to import. '
                               'Put it back for review first if it should be read as one.', 409)
     saved = proposal.get('saved_review')
     if saved and saved['request'].get('expected_revision') != proposal['revision']:

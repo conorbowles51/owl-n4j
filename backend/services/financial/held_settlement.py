@@ -69,7 +69,7 @@ def settle_held_statements(session, case_id, *, apply=True):
             continue
         if item.file_id not in titled:
             text = session.get(EvidenceDocumentText, item.file_id)
-            titled[item.file_id] = bool(text and not_payment_statements.TITLE.search(text.content or ''))
+            titled[item.file_id] = bool(text and not_payment_statements.titled(text.content or ''))
         if not titled[item.file_id]:
             continue
         from services.financial.pdf_candidates import PdfMappingError
