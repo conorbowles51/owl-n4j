@@ -3,6 +3,7 @@
 The changing header Numero is a statement reference. Each product's CLABE is
 the account reference. Summary totals and tax/information pages are not payments.
 """
+import os
 import re
 from datetime import date
 from services.financial.pdf_candidates import _digest
@@ -14,6 +15,26 @@ LAYOUT = 'kapital-mexico-product-statement'
 # OCR can drop the final letter where the heading meets its account number ("KAPITA 123-...").
 PRODUCT = re.compile(r'SERVICIO EMPRESARIAL FX(?: USD)? KAPITAL?\b')
 INTERCAM_PRODUCT = re.compile(r'SERVICIO EMPRESARIAL FX(?: USD)?\s+\d{3}-\d+-\d{3}-\d\b')
+
+
+def _switch(name):
+    return os.environ.get(name, '1').strip().lower() not in ('0', 'false', 'no', 'off')
+
+
+# The scan reads one stray mark after a printed amount where the cell meets the table's vertical rule
+# ('6,300,000.00)', '6,616,985.42,', '61,268,306.15?'). An amount printed whole (thousands groups, two decimals,
+# an optional trailing minus) followed by exactly one such mark is that amount; the reconciliation still decides.
+# Off: such a value is unreadable and the period waits for a person.
+AMOUNT_NOISE = _switch('LOUPE_FINANCIAL_KAPITAL_AMOUNT_NOISE')
+_NOISE_TAIL = re.compile(r'^(\d{1,3}(?:,\d{3})*\.\d{2}-?)[),;?|]$')
+# A movement heading read only in part on one page (the scan lost some of its words at the foot of the cover
+# page: 'CONCEPTO DEPOSITOS' alone) takes the missing columns from the complete heading the same product section
+# prints on its other pages, when every heading word read on this page sits where that complete heading prints
+# it (the layout's columns do not move between pages). Off: the page's payments wait for a person.
+HEADING_FROM_SECTION = _switch('LOUPE_FINANCIAL_KAPITAL_HEADING_FROM_SECTION')
+# Millipoints a heading word may sit from the complete heading's printed position (3 points).
+_HEADING_TOLERANCE = 3000
+_HEADING_NAMES = ('CONCEPTO', 'DEPOSITOS', 'RETIROS', 'SALDO')
 
 
 def kapital_information_kind(source, *, institution='Kapital', product=PRODUCT):
@@ -155,6 +176,8 @@ def kapital_catalog(sources, *, institution='Kapital', product=PRODUCT, layout=L
 
 def _amount(value,currency):
     value=value.strip()
+    if AMOUNT_NOISE and (noise:=_NOISE_TAIL.fullmatch(value)):
+        value=noise[1]
     # MN is an explicit peso marker in this recognised Mexican product.
     if re.search(r'\s+(?:MN|M\.N\.)$',value):
         value=re.sub(r'\s+(?:MN|M\.N\.)$',' MXN',value)
@@ -181,6 +204,57 @@ def _day(value,choice):
     return found[0] if len(found)==1 else None
 
 
+def _section_heading(ordered, scopes):
+    """The complete movement heading (all four words, located) printed in this product section, as
+    {word: cell}, when every complete heading it prints sits at the same positions; else None."""
+    found = []
+    for s, raw in ordered:
+        if raw['row_index'] not in scopes.get((s['page_number'], s['table_index']), set()):
+            continue
+        labels = {norm(c['expected_text']): c for c in raw['cells']}
+        if all(n in labels and box(labels[n]) for n in _HEADING_NAMES):
+            found.append({n: labels[n] for n in _HEADING_NAMES})
+    if not found:
+        return None
+    first = found[0]
+    for other in found[1:]:
+        if any(abs(box(other[n])[0] - box(first[n])[0]) > _HEADING_TOLERANCE
+               or abs(box(other[n])[2] - box(first[n])[2]) > _HEADING_TOLERANCE for n in _HEADING_NAMES):
+            return None
+    return first
+
+
+# A heading word read without its final letter ('RETIRO' under the 'RETIROS' column).
+_HEADING_SHORT = {'RETIRO': 'RETIROS', 'DEPOSITO': 'DEPOSITOS'}
+
+
+def _completed_heading(labels, template):
+    """A partly read movement heading completed from the section's complete heading, or None: it must read
+    CONCEPTO and at least one amount heading, each at the complete heading's printed position, on a page of
+    the same size, and no other word in the amount columns' area."""
+    if template is None:
+        return None
+    read = {}
+    for word, cell in labels.items():
+        name = _HEADING_SHORT.get(word, word)
+        if name in _HEADING_NAMES and box(cell):
+            read[name] = cell
+        elif box(cell) and box(cell)[0] >= box(template['DEPOSITOS'])[0] - _HEADING_TOLERANCE:
+            # Another word read in the amount columns' area: not the heading as printed elsewhere.
+            return None
+    if 'CONCEPTO' not in read or len(read) < 2:
+        return None
+    for n, cell in read.items():
+        here, there = box(cell), box(template[n])
+        # The word's box keeps one printed edge of the complete heading's (a word read short loses the other)
+        # and overlaps it.
+        if ((cell.get('locator') or {}).get('page_size') != (template[n].get('locator') or {}).get('page_size')
+                or min(abs(here[0] - there[0]), abs(here[2] - there[2])) > _HEADING_TOLERANCE
+                or min(here[2], there[2]) <= max(here[0], there[0])):
+            return None
+    return {n: read.get(n) or template[n] for n in _HEADING_NAMES}
+
+
 def propose_kapital_statement(sources,currency,choice):
     product = INTERCAM_PRODUCT if choice.get('layout_id') == 'intercam-mexico-product-statement' else PRODUCT
     scopes={(s['page_number'],s['table_index']):set(s['row_indices']) for s in choice['section_sources']}
@@ -190,6 +264,7 @@ def propose_kapital_statement(sources,currency,choice):
     from services.financial.statement_import_santander import located_rows
     ordered=[(s,raw) for page in sorted({s['page_number'] for s in sources})
              for s,raw in located_rows([s for s in sources if s['page_number']==page])]
+    template=_section_heading(ordered,scopes) if HEADING_FROM_SECTION else None
     for s,raw in ordered:
         if s['page_number']!=active_page: columns=None;last=None;active_page=s['page_number']
         cells=raw['cells'];item=dict(id=f"{s['page_number']}:{s['table_index']}:{raw['row_index']}",
@@ -203,6 +278,8 @@ def propose_kapital_statement(sources,currency,choice):
         names=('CONCEPTO','DEPOSITOS','RETIROS','SALDO')
         if all(n in labels and box(labels[n]) for n in names):
             columns={n:labels[n] for n in names};last=None;continue
+        if HEADING_FROM_SECTION and (completed:=_completed_heading(labels,template)):
+            columns=completed;last=None;continue
         if columns is None:
             role=next((role for label,role in [('SALDO INICIAL','opening'),('SALDO FINAL','closing'),('+ DEPOSITOS','credit'),('- RETIROS','debit')] if label in labels),None)
             if role:

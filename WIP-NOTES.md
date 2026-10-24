@@ -1,3 +1,56 @@
+# Unit rg-others: reader gaps, other named banks (Monex, Kapital, Intercam, Scotiabank)
+
+Branch fin/rg-others, base 68d95b20. Counts and opaque ids only. Targets: 32 held statements, 26 files.
+
+## Causes (statement counts)
+- Monex 2021 portrait: white-on-blue movement heading lost by OCR, so six unnamed amount columns overflow the
+  search (too_many_interpretations): 5 balance items.
+- Monex settlement/agreed dates glued ('DD/Mon(DD/Mon)'): no date token, so no movements: 2 items.
+- Monex movement line printing no description word (description on the lines under it): 2 "reading" items.
+- Kapital/Intercam: movement heading read only in part on one page, plus one stray mark after an amount: 4
+  balance items.
+- Scotiabank: date read with rule underscores ('DDMON_'), legal name read without its comma: 1 item (the engine
+  now proves it; still held because saved corrections belong to an older reading = investigator path).
+- OCR lost data the period needs (amount missing, date unreadable): 4 items (Monex USD 3, Intercam MXN 1).
+- Kapital brokerage: no currency printed anywhere: 6 items (needs the account-currency decision).
+- Monex EUR section with blank currency (opening label read 'Saldo ae inicial'): 2 items. NOT fixed: a reader
+  fix makes the EUR section overlap the saved USD import of the same pages (the reading would be offered as a
+  replacement of the USD import), so it stays held.
+- Holder not identified (postal-code label lost by OCR): 2 items.
+- KAPITAL Inversiones: rotated brokerage pages read as scrambled word order, nothing classifiable: 4 files.
+- Kapital USD with saved corrections from an older reading: 1 item (investigator path).
+- Manual row needing a page (investigator work, not reader): 1 file.
+
+## Code (all behind default-on switches, fail closed)
+- statement_engine.py (SHARED): LOUPE_FINANCIAL_PROFILE_COLUMN_ORDER (profile column_order fills unread
+  heading roles only when column count equals the order and every read hint agrees);
+  LOUPE_FINANCIAL_PARENTHESIZED_SECOND_DATE; LOUPE_FINANCIAL_DATE_RULE_UNDERSCORE;
+  LOUPE_FINANCIAL_UNDESCRIBED_CONTINUATION (text-only lines under a dated line with no description).
+- statement_engine_profiles.py (SHARED): column_order key + validation; monex-mexico column_order; scotiabank
+  match also on the comma-less legal name (8/8 truth Scotiabank readings, no other document).
+- statement_import_kapital.py: LOUPE_FINANCIAL_KAPITAL_HEADING_FROM_SECTION (partial heading completed from the
+  section's complete heading, positions within 3pt, no other word in the amount area);
+  LOUPE_FINANCIAL_KAPITAL_AMOUNT_NOISE (one trailing mark after a whole amount).
+
+## Result (live, read-only assess + reread dry run)
+- 11 of 32 held statements now assess ready (proved, 0 problems): Monex 8 (6 balance, 2 reading), Kapital 2,
+  Intercam 1. Before: 0. Scotiabank 1 more now proves in the engine but waits on stale saved corrections.
+- Truth set (797 readings, product mode): 789 identical, 8 changed; every changed period has 0 wrong, 0 lost
+  transactions; 2 periods move from held to ready (Scotiabank 1, Kapital 1, both matching truth exactly).
+  Field-level differences: descriptions lose a printed folio / second date (closer to truth descriptions); one
+  Kapital period carries one fewer printed running balance (split OCR cell; not wrong); one Intercam period
+  (already ready) drops an OCR-damaged credit-total check row.
+- Truth set, generic-only mode (LOUPE_FINANCIAL_GENERIC_ONLY=1): 791 identical, 6 changed; 0 wrong, 0 lost;
+  6 periods move from held to ready (Monex 5, Scotiabank 1), all matching truth amounts, dates, directions and
+  running balances. One BBVA period (other family, shared engine) changes one description only: a
+  rule-underscored second date no longer kept in the text (truth description has no date); figures identical.
+- Tests: test_financial_statement_engine.py, test_financial_statement_import_kapital.py,
+  test_financial_statement_import_monex.py, test_financial_statement_import_scotiabank.py,
+  test_financial_engine_reading_cache.py.
+
+
+---
+
 # Integration of BNB2 queue units (A2 decisions, B Santander gap, C others)
 
 ## Unit A2 notes
