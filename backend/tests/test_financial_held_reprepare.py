@@ -235,6 +235,58 @@ class HeldReprepareTests(TestCase):
         self.assertEqual(seen, [(stored.summary.get('period_start'), stored.summary['transaction_count'] + 1)])
         self.assertEqual(self.files(batch)[0][held.MARK]['reason'], 'copy_of_saved')
 
+    def stale_key(self, batch):
+        """The stored statement key is one the deployed reader no longer produces (an older reader's key)."""
+        from uuid import uuid5
+        with self.f.SessionLocal() as db:
+            item = db.scalar(select(Item).where(Item.batch_id == batch))
+            db.add(Item(id=uuid5(batch, f'{item.file_id}:older-reader-key'), batch_id=batch, file_id=item.file_id,
+                        statement_key='older-reader-key', status=item.status, summary=deepcopy(item.summary)))
+            db.delete(item)
+            db.commit()
+
+    def test_a_stale_keyed_exact_copy_is_prepared_again_with_the_current_key(self):
+        batch = self.prepare()
+        self.stale_key(batch)
+        with patch.object(recovery_readers, 'copy_of_saved', return_value=True), \
+                patch('services.financial.saved_copies.compare', return_value=dict(outcome='match')) as compare:
+            outcome = held.sweep(self.f.SessionLocal)
+        self.assertEqual(outcome['verdicts'], {'changed': 1})
+        self.assertTrue(compare.called)
+        self.assertEqual(self.files(batch)[0][held.MARK]['state'], held.PENDING)
+        self.assertEqual(held.sweep(self.f.SessionLocal)['handed'], 1)
+        self.drain(batch)
+        # Prepared again: the statement now carries the deployed reader's key; the stale one is retired.
+        keys = {(item.statement_key or '', item.status) for item in self.items(batch)}
+        self.assertIn(('older-reader-key', 'superseded_reading'), keys)
+        self.assertIn(('', 'ready'), keys)
+
+    def test_a_copy_that_differs_or_keeps_its_key_or_the_switch_off_is_left(self):
+        cases = dict(differs=(dict(outcome='differs'), True, '1'), current_key=(dict(outcome='match'), False, '1'),
+                     switch_off=(dict(outcome='match'), True, '0'))
+        for name, (result, stale, switch) in cases.items():
+            with self.subTest(name):
+                batch = self.prepare()
+                if stale:
+                    self.stale_key(batch)
+                with patch.object(recovery_readers, 'copy_of_saved', return_value=True), \
+                        patch('services.financial.saved_copies.compare', return_value=result), \
+                        patch.dict('os.environ', {'LOUPE_FINANCIAL_AUTOFILL_REAPPLY': switch}):
+                    outcome = held.sweep(self.f.SessionLocal)
+                self.assertEqual(outcome['verdicts'], {'copy_of_saved': 1})
+                self.assertEqual(self.files(batch)[0][held.MARK]['reason'], 'copy_of_saved')
+                with self.f.SessionLocal() as db:
+                    db.execute(Batch.__table__.update().values(status='removed'))
+                    db.commit()
+
+    def test_a_failed_comparison_leaves_the_copy(self):
+        batch = self.prepare()
+        self.stale_key(batch)
+        with patch.object(recovery_readers, 'copy_of_saved', return_value=True), \
+                patch('services.financial.saved_copies.compare', side_effect=RuntimeError('boom')):
+            outcome = held.sweep(self.f.SessionLocal)
+        self.assertEqual(outcome['verdicts'], {'copy_of_saved': 1})
+
     def test_work_saved_between_judging_and_hand_off_is_kept(self):
         batch = self.prepare()
         held.sweep(self.f.SessionLocal)

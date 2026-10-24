@@ -251,8 +251,46 @@ def judge_reading(session, case_id, chosen):
         current = [SimpleNamespace(id=f'{reading.id}:{key}', file_id=reading.id, statement_key=key, summary=summary)
                    for key, summary in assessed if key not in settled]
         if current and copy_of_saved(session, case_id, detail['source'], current, cache=cache):
-            return 'copy_of_saved'
+            stale_keys = any(item.status == HELD and key not in produced for key, item in stored.items())
+            if not (stale_keys and exact_copies_rekeyed(session, case_id, detail['source'], reading, current,
+                                                         dict(fresh), cache)):
+                return 'copy_of_saved'
+            detail['rekeyed_copies'] = True
     return 'changed' if changed else 'unchanged'
+
+
+def exact_copies_rekeyed(session, case_id, source, reading, current, proposals, cache):
+    """A held copy whose stored statement key the deployed reader no longer produces is prepared again
+    (re-keyed) when every current statement that is a copy of a saved account and period agrees with that saved
+    ledger exactly (saved_copies.compare: payments one for one, printed balances, currency; exactly one saved
+    period). Read only.
+
+    With a stale key nothing can judge the copy: the copy rule (held_settlement), a details fill and the
+    investigator's own review all read it by a key the reader no longer makes. Prepared again, it carries the
+    current key, and preparation's own duplicate check holds it as a copy of the saved statement (it can never
+    be saved a second time). Switch LOUPE_FINANCIAL_AUTOFILL_REAPPLY; off, such a copy stays left as before.
+    """
+    from services.financial.field_proposals import reapply_enabled
+    from services.financial.import_batches import initial_request
+    from services.financial.recovery_readers import copy_of_saved
+    from services.financial.saved_copies import compare
+    if not reapply_enabled():
+        return False
+    try:
+        for statement in current:
+            if not copy_of_saved(session, case_id, source, [statement], cache=cache):
+                continue
+            proposal = proposals.get(statement.statement_key)
+            if proposal is None:
+                return False
+            result = compare(session, case_id, proposal, initial_request(proposal), statement.summary,
+                             own={(str(reading.id), statement.statement_key or '')})
+            if result.get('outcome') != 'match':
+                return False
+    except Exception:  # noqa: BLE001 - fail closed: the copy stays left
+        log.exception('Comparing a held copy with its saved statement failed; it is left as it is')
+        return False
+    return True
 
 
 # Verdicts that can change by themselves soon: not recorded, so the next sweep judges the file again.
