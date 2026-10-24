@@ -2250,14 +2250,20 @@ def _carry_reread_work(db, batch_id, case_id, file):
         db.rollback()
         log.exception('Carrying saved work onto a new reading failed; its periods stay held for comparison')
         return set()
-    if any(value['carried'] for value in outcome.values()):
+    if any(value['carried'] or value.get('released') for value in outcome.values()):
         prepare_reviews(db, batch_for(db, case_id, batch_id), file, lock_slice=REVIEW_LOCK_SLICE_SECONDS)
-    held = {value['new_statement_id'] for value in outcome.values() if value['carried']}
+    held = {value['new_statement_id'] for value in outcome.values() if value['carried'] and value['new_statement_id'] is not None}
+    # Details carried with a payment match (reread_carry.DETAILS_MATCHED), per new statement: basis, the earlier
+    # statement and the count of payments the new reading has beyond hers.
+    details = {new_key: dict(info, carried_from=key) for key, value in outcome.items()
+               for new_key, info in (value.get('released') or {}).items()}
+    held |= set(details)
     reasons = {key: value['reason'] for key, value in outcome.items() if not value['carried']}
     for item in db.scalars(select(Item).where(Item.batch_id == batch_id, Item.file_id == UUID(file['file_id']))):
         if item.statement_key in held or reasons:
             item.summary = {**item.summary, 'reread_carry': dict(carried=item.statement_key in held,
-                not_carried=reasons)}
+                not_carried=reasons, **({'details': details[item.statement_key]}
+                                        if item.statement_key in details else {}))}
     db.commit()
     return {key for key, value in outcome.items() if value['carried']}
 

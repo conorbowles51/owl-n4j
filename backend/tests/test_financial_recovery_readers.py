@@ -939,3 +939,177 @@ def test_rows_that_do_not_line_up_are_not_carried_and_the_period_stays_held(f):
     assert error.value.reason == 'rows_not_aligned'
     same, audit = reread_carry.carry(proposal, request, proposal)
     assert audit['baseline'] == 'exact' and same['holder'] == 'Typed by the investigator'
+
+
+def _stale(request, **changes):
+    """Her request as saved on an earlier parse: row ids today's reader no longer prints."""
+    rows = [{**r, 'id': 'gone-' + r['id']} for r in request['rows']]
+    return {**request, 'expected_revision': 'f' * 64, 'rows': rows, **changes}
+
+
+def _details_only(f):
+    from services.financial.import_batches import initial_request
+    from services.financial.statement_import import read_statement_import
+    set_reader(f, f.file.id)
+    with f.SessionLocal() as db:
+        proposal = read_statement_import(db, case_id=f.case.id, evidence_file_id=f.file.id)
+    request = initial_request(proposal)
+    request['holder'] = 'Typed by the investigator'
+    return proposal, request
+
+
+def test_details_only_work_whose_rows_do_not_line_up_is_carried_when_every_payment_matches(f):
+    """Neil 2026-10-24: her details win; the rows are the new reading's, only when her payments all match."""
+    from services.financial import reread_carry as rc
+    proposal, request = _details_only(f)
+    saved = dict(request=_stale(request), saved_by=dict(name='Investigator'))
+    plan = rc.plan_statement(proposal.get('statement_id') or '', [('progress', saved)], proposal,
+                             {proposal.get('statement_id') or '': proposal})
+    assert plan['kind'] == 'details', plan
+    (carried, audit), = plan['carried'].values()
+    assert carried['holder'] == 'Typed by the investigator' and audit['basis'] == rc.DETAILS_MATCHED
+    assert [r['id'] for r in carried['rows']] == [r['id'] for r in request['rows']]  # the new reading's rows
+    assert audit['extra_rows'] == 0 and audit['payments_matched'] == sum(
+        1 for r in request['rows'] if not r['excluded'] and int(r['amount_minor'] or 0))
+
+
+@pytest.mark.parametrize('change, reason', [
+    (lambda rows: rows[0].update(amount_minor=str(int(rows[0]['amount_minor'] or 0) + 1)), 'payments_differ'),
+    (lambda rows: rows.pop(0), None),
+    (lambda rows: rows.append({**rows[0], 'id': 'manual:1', 'manual_page': 1}), 'hand_added_rows'),
+    (lambda rows: rows[0].update(reason='Checked against the printed page'), 'row_notes'),
+    (lambda rows: rows[0].update(date=''), 'undated_payment'),
+])
+def test_details_carry_stays_held_unless_her_payments_all_match_and_her_work_is_details_only(f, change, reason):
+    from services.financial import reread_carry as rc
+    proposal, request = _details_only(f)
+    stale = _stale(request)
+    paying = [r for r in stale['rows'] if not r['excluded'] and int(r['amount_minor'] or 0)]
+    stale['rows'] = paying + [r for r in stale['rows'] if r not in paying]
+    change(stale['rows'])
+    plan = rc.plan_statement('', [('progress', dict(request=stale, saved_by=dict(name='Investigator')))], proposal,
+                             {'': proposal})
+    if reason is None:  # A payment of hers fewer: the new reading has one extra, counted, still carried.
+        assert plan['kind'] == 'details' and next(iter(plan['carried'].values()))[1]['extra_rows'] == 1
+    else:
+        assert plan == dict(kind='held', reason=reason, carried={})
+
+
+def test_a_statement_note_or_rows_changed_between_her_saves_stay_held(f):
+    from services.financial import reread_carry as rc
+    proposal, request = _details_only(f)
+    noted = _stale(request, details_reason='Holder taken from the cover letter')
+    plan = rc.plan_statement('', [('progress', dict(request=noted))], proposal, {'': proposal})
+    assert plan['reason'] == 'statement_notes'
+    stale = _stale(request)
+    earlier = {**stale, 'rows': [{**stale['rows'][0], 'description': 'before'}] + stale['rows'][1:]}
+    plan = rc.plan_statement('', [('progress', dict(request=stale))], proposal, {'': proposal}, earlier_saves=[earlier])
+    assert plan['reason'] == 'rows_changed_between_saves'
+
+
+def test_system_only_records_have_no_edits_to_keep_unless_a_person_is_in_their_history(f):
+    from services.financial import reread_carry as rc
+    proposal, request = _details_only(f)
+    system = [('progress', dict(request=_stale(request), saved_by=dict(name='System')))]
+    assert rc.plan_statement('', system, proposal, {}, other_batch=True)['kind'] == 'settled'
+    held = rc.plan_statement('', system, proposal, {}, other_batch=True, history=['System', 'Investigator'])
+    assert held == dict(kind='held', reason='work_in_another_batch', carried={})
+    copy = system + [('draft', dict(request=system[0][1]['request']))]  # the batch copy of System's save
+    assert rc.plan_statement('', copy, proposal, {}, other_batch=True)['kind'] == 'settled'
+    other = system + [('draft', dict(request=_stale(request, holder='Typed in another batch')))]
+    assert rc.plan_statement('', other, proposal, {}, other_batch=True)['reason'] == 'work_in_another_batch'
+
+
+def test_file_level_details_are_carried_per_period_only_where_her_payments_match(f, monkeypatch):
+    """Neil 2026-10-24: a period is released when her payments dated in it match one to one; others stay held."""
+    from services.financial import import_batches
+    from services.financial import reread_carry as rc
+
+    def row(i, day, amount):
+        return dict(id=f'1:{i}', date=day, amount_minor=str(amount), direction='debit', description=f'p{i}')
+
+    def statement(start, end, rows, account='000111222333'):
+        return dict(metadata=dict(period_start=start, period_end=end, account_number=account),
+                    _request=dict(rows=rows, holder='', account_number=account, period_start=start, period_end=end))
+    monkeypatch.setattr(import_batches, 'initial_request', lambda proposal: __import__('copy').deepcopy(proposal['_request']))
+    january = [row(1, '2023-01-05', 100), row(2, '2023-01-09', 250)]
+    february = [row(3, '2023-02-02', 75)]
+    old = statement('', '', [{**r, 'id': 'old-' + r['id']} for r in january + february])
+    mine = dict(old['_request'], holder='Typed by the investigator', rows=old['_request']['rows'] + [
+        dict(id='old-h', date='', amount_minor='0', description='Balance brought forward')])
+    new = {'jan': statement('2023-01-01', '2023-01-31', january + [row(9, '2023-01-20', 5)]),
+           'feb': statement('2023-02-01', '2023-02-28', [row(3, '2023-02-02', 76)]),
+           'mar': statement('2023-03-01', '2023-03-31', [], account='999999999999')}
+    plan = rc.plan_statement('', [('progress', dict(request=mine))], old, new)
+    assert plan['kind'] == 'periods' and set(plan['carried']) == {'jan'} and not plan['complete']
+    carried, audit = plan['carried']['jan']
+    assert carried['holder'] == 'Typed by the investigator' and carried['period_start'] == '2023-01-01'
+    assert audit['extra_rows'] == 1 and audit['payments_matched'] == 2
+    assert plan['held_periods'] == {'feb': 'payments_differ', 'mar': 'account_differs'}
+    spans = [('2023-01-15', '2023-02-14')]
+    plan = rc.plan_statement('', [('progress', dict(request=mine))], old, new, imported_spans=spans)
+    assert plan == dict(kind='held', reason='no_period_proven', carried={}, held_periods={  # nothing proven: all held
+        'jan': 'overlaps_imported_period', 'feb': 'overlaps_imported_period', 'mar': 'account_differs'})
+
+
+def _stale_batch(f, request):
+    """_worked_batch with her saved progress and draft replaced by ``request``."""
+    batch, old_id, key, _, _ = _worked_batch(f)
+    with f.SessionLocal() as db:
+        file = db.get(EvidenceFile, f.file.id)
+        progress = dict(file.metadata_['financial_review_progress'])
+        progress[key] = {**progress[key], 'request': request}
+        file.metadata_ = {**file.metadata_, 'financial_review_progress': progress}
+        db.get(BatchItem, old_id).review_request = request
+        db.commit()
+    return batch, old_id, key
+
+
+@pytest.mark.parametrize('row_note', [False, True])
+def test_end_to_end_details_only_work_is_carried_with_matched_payments_and_saved(f, row_note):
+    """Neil 2026-10-24: her details are carried exactly, the rows are the new reading's, the period then
+    proceeds through normal readiness and automatic save; any row work keeps it held as before."""
+    proposal, request = _details_only(f)
+    stale = _stale(request)
+    if row_note:
+        stale['rows'][0]['reason'] = 'Checked against the printed page'
+    batch, old_id, key = _stale_batch(f, stale)
+    with f.SessionLocal() as db:
+        admitted = set(db.scalars(select(FinancialSourceDocument.id).where(FinancialSourceDocument.status == 'admitted')))
+    _run_reread(f, batch)
+    entry = _advance(f, batch)
+    assert entry['file_id'] != str(f.file.id), entry
+    with f.SessionLocal() as db:
+        assert db.get(EvidenceFile, f.file.id).metadata_['financial_review_progress'][key]['request'] == stale
+        assert db.get(BatchItem, old_id).review_request == stale  # her original is never changed
+        version = db.get(EvidenceFile, __import__('uuid').UUID(entry['file_id']))
+        log = version.metadata_['financial_reread_carry_log'][-1]['statements'][key]
+        fresh = list(db.scalars(select(BatchItem).where(BatchItem.batch_id == batch.id, BatchItem.file_id == version.id)))
+        now = set(db.scalars(select(FinancialSourceDocument.id).where(FinancialSourceDocument.status == 'admitted')))
+        if row_note:
+            assert log == dict(carried=False, new_statement_id=None, reason='row_notes')
+            assert not version.metadata_.get('financial_review_progress')
+            assert [item.status for item in fresh] == ['attention'] and now == admitted
+            return
+        assert log['carried'] and log['basis'] == 'details carried, payments matched'
+        (new_key, record), = version.metadata_['financial_review_progress'].items()
+        assert record['carried_from']['basis'] == 'details carried, payments matched'
+        assert record['carried_from']['statement_id'] == key and record['request']['holder'] == 'Typed by the investigator'
+        assert fresh[0].summary['reread_carry']['details']['extra_rows'] == 0
+        assert fresh[0].status == 'ready', fresh[0].summary.get('problems')
+        from services.financial import queue_save
+        # Saved as System like any statement that checks out: her details carried, every payment matched.
+        assert queue_save.system_filled_only(fresh[0], version)
+        assert queue_save.backlog_choice(db, fresh) == [fresh[0].id]
+        result = queue_save.save_statements(db, case_id=f.case.id, item_ids=[fresh[0].id],
+                                            actor=queue_save.SYSTEM_ACTOR, only_reconciled=True)
+        assert result['queued'] == 1 and not result['held'], result
+
+
+def test_details_carry_switched_off_leaves_such_work_held_as_before(f, monkeypatch):
+    from services.financial import reread_carry as rc
+    monkeypatch.setattr(rc, 'DETAILS_CARRY', False)
+    proposal, request = _details_only(f)
+    plan = rc.plan_statement('', [('progress', dict(request=_stale(request), saved_by=dict(name='System')))],
+                             proposal, {'': proposal})
+    assert plan == dict(kind='held', reason='rows_not_aligned', carried={})

@@ -242,7 +242,12 @@ def recovery_state(session, file, *, sources, choices, statement_id, revision, c
     exact = [r for r in records if r['statement_id'] == statement_id]
     # More than one saved alternative is not resolved by picking a timestamp.
     previous = exact[0] if len(exact) == 1 else None
-    unmatched_records = [r for r in records if r['statement_id'] not in available]
+    # File-level work an engine re-read carried as details onto some periods of this reading (reread_carry,
+    # payments matched): those periods no longer wait for it; the others still do.
+    from services.financial.reread_carry import DETAILS_CARRY
+    released_to = ((file.metadata_ or {}).get('financial_review_details_release') or {}) if DETAILS_CARRY else {}
+    unmatched_records = [r for r in records if r['statement_id'] not in available
+                         and not (statement_id and statement_id in (released_to.get(r['id']) or ()))]
     unmatched = len(unmatched_records)
     released = _split_release(session, file, unmatched_records, choices=choices, statement_id=statement_id,
         period=period, row_ids=row_ids, pages=pages, cache=cache) if unmatched else None

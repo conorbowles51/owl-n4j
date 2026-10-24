@@ -22,8 +22,26 @@ no single counterpart in the new reading, a hand-added row's page does not exist
 drafts of the same statement exist. Her original work stays on the earlier reading (history); the carried
 record names it (carried_from), so the audit trail shows both.
 
+Neil's decision (2026-10-24), switch LOUPE_FINANCIAL_RECOVERY_DETAILS_CARRY:
+
+* a statement whose every saved record is System's (details System filled, no person in its history) has no
+  edits to keep: it is settled, not held, and the new reading is prepared like any other (basis 'no edits to
+  keep');
+* a statement whose person work is statement details only (no hand-added row, no row or statement note, no
+  confirmation, rows not changed between her saves) and whose rows cannot be lined up row by row is carried
+  as details: her detail values are set exactly on the new reading, its rows are the new reading's, and only
+  when every payment of hers (date, amount, direction; excluded ones as excluded) has its own counterpart in
+  the new reading. Extra payments of the new reading are counted on the item and still pass every normal
+  readiness check. Basis 'details carried, payments matched'; it may then be saved automatically;
+* file-level work of that kind on a file the new reading splits into periods is carried per period: a period
+  is released when her payments dated in it match one to one, the account and currency it prints agree with
+  hers, and nothing was imported from her reading for an overlapping period. Other periods stay held.
+
+Her original records are never changed; the carry log names them (carried_from).
+
 Pure functions here; the batch hook is ``carry_reread_work``.
 """
+from collections import Counter
 import os
 from copy import deepcopy
 from datetime import datetime, timezone
@@ -41,14 +59,29 @@ CARRIED_BY = dict(user_id=None, name='System')
 # Off: recovery leaves them unchanged, as before.
 CARRY_EDITS = os.environ.get('LOUPE_FINANCIAL_RECOVERY_CARRY_EDITS', '1').strip().lower() not in (
     '0', 'false', 'no', 'off')
+# Neil's decision (2026-10-24): System-only records settle; details-only work is carried with a payment match.
+# Off: such statements stay held, as before.
+DETAILS_CARRY = os.environ.get('LOUPE_FINANCIAL_RECOVERY_DETAILS_CARRY', '1').strip().lower() not in (
+    '0', 'false', 'no', 'off')
+DETAILS_MATCHED = 'details carried, payments matched'
+NO_EDITS = 'no edits to keep'
+# Details she can set on a statement that carry as they are. Period dates only for a named statement.
+CARRIED_DETAILS = ('currency', 'account_number', 'institution', 'holder')
+PERIOD_DETAILS = ('period_start', 'period_start_unprinted', 'period_end')
+NOTES = ('details_reason', 'balance_exception_reason', 'coverage_review_reason')
+CONFIRMATIONS = ('balance_exception_revision', 'no_activity_confirmed', 'no_activity_revision',
+                 'coverage_review_revision', 'replaces_source_document_id', 'replacement_revision')
+# Row by row carrying failed only because her rows do not line up with the earlier reading as read today.
+ROWS_UNALIGNED = ('rows_not_aligned', 'rows_missing', 'row_not_found', 'row_ambiguous', 'no_saved_rows')
 
 
 class NotCarried(Exception):
     """The saved work cannot be carried; ``reason`` is recorded on the held statement."""
 
-    def __init__(self, reason):
+    def __init__(self, reason, periods=None):
         super().__init__(reason)
         self.reason = reason
+        self.periods = periods
 
 
 def _row(row):
@@ -221,6 +254,193 @@ def carried_record(carried, saved, audit, earlier_file_id, earlier_key, new_prop
         initial_request_signature=request_signature(initial_request(new_proposal)), superseded_request_signatures=[])
 
 
+def system_only(entries, history):
+    """True when every saved record of the statement is System's and no person appears in its history.
+
+    ``entries`` are (kind, saved) pairs; ``history`` the saved_by/actor names of every earlier save and every
+    audited detail change of this statement on the file. A System fill builds on whatever was stored, so any
+    person in the history means the record may hold her work."""
+    from services.financial.field_proposals import SYSTEM_NAME
+    system = {_digest_request(saved.get('request')) for _, saved in entries
+              if (saved.get('saved_by') or {}).get('name') == SYSTEM_NAME}
+    # A batch draft records no saver when a details save copied its request there: it is that save's.
+    names = [SYSTEM_NAME if kind == 'draft' and not saved.get('saved_by') and _digest_request(saved.get('request')) in system
+             else (saved.get('saved_by') or {}).get('name') for kind, saved in entries] + list(history)
+    if not entries or any(name != SYSTEM_NAME for name in names):
+        return False
+    for _, saved in entries:
+        request = saved.get('request') or {}
+        if any(str(row.get('id', '')).startswith('manual:') or str(row.get('reason') or '').strip()
+               for row in request.get('rows') or []):
+            return False
+        if any(str(request.get(field) or '').strip() for field in NOTES):
+            return False
+    return True
+
+
+def details_only(request, earlier_saves=()):
+    """Raise NotCarried unless her saved work on this statement is statement details only.
+
+    ``earlier_saves`` are her earlier requests on the same statement and reading revision: rows that differ
+    between her own saves are row work."""
+    rows = [_row(row) for row in request.get('rows') or []]
+    if any(str(row['id']).startswith('manual:') for row in rows):
+        raise NotCarried('hand_added_rows')
+    if any((row.get('reason') or '').strip() for row in rows):
+        raise NotCarried('row_notes')
+    if any(str(request.get(field) or '').strip() for field in NOTES):
+        raise NotCarried('statement_notes')
+    if any(request.get(field) not in (None, '', False) for field in CONFIRMATIONS):
+        raise NotCarried('confirmations')
+    mine = {row['id']: {key: row.get(key) for key in ROW_FIELDS} for row in rows}
+    for earlier in earlier_saves:
+        if earlier.get('expected_revision') != request.get('expected_revision'):
+            continue
+        theirs = {row['id']: {key: row.get(key) for key in ROW_FIELDS} for row in map(_row, earlier.get('rows') or [])}
+        if theirs != mine:
+            raise NotCarried('rows_changed_between_saves')
+
+
+def _row_day(row):
+    values = row.get('date_values') or {}
+    return str(row.get('date') or values.get('date') or values.get('booking_date') or values.get('value_date') or '')[:10]
+
+
+def _amount(row):
+    try:
+        return int(str(row.get('amount_minor') or '0'))
+    except ValueError:
+        return None
+
+
+def payments(rows):
+    """(included, excluded) multisets of (date, amount, direction) of rows that carry an amount. NotCarried
+    when a row with an amount has no date or an unreadable amount: it cannot be matched."""
+    included, excluded = Counter(), Counter()
+    for row in map(_row, rows):
+        amount = _amount(row)
+        if amount is None:
+            raise NotCarried('unreadable_amount')
+        if amount == 0:
+            continue  # A header or balance line: no payment.
+        day = _row_day(row)
+        if not day:
+            raise NotCarried('undated_payment')
+        (excluded if row.get('excluded') else included)[(day, amount, row.get('direction'))] += 1
+    return included, excluded
+
+
+def match_payments(mine, new_rows):
+    """Extra payments of the new reading when every payment of hers has its own counterpart there (an
+    excluded one an excluded counterpart), else NotCarried('payments_differ')."""
+    her_in, her_out = mine
+    new_in, new_out = payments(new_rows)
+    if her_in - new_in or her_out - new_out:
+        raise NotCarried('payments_differ')
+    return sum((new_in - her_in).values())
+
+
+def _in(day, start, end):
+    return bool(start and end and start <= day <= end)
+
+
+def carry_details(request, new_proposal, *, rows=None, with_period=True):
+    """Her detail values set exactly on the new reading, its own rows, after the payment match. Returns
+    (request, audit). ``rows`` are her rows to match (default: all of hers)."""
+    from services.financial.import_batches import initial_request
+    carried = initial_request(new_proposal)
+    extra = match_payments(payments(request.get('rows') or [] if rows is None else rows), carried['rows'])
+    fields = CARRIED_DETAILS + (PERIOD_DETAILS if with_period else ())
+    values = {field: request.get(field) for field in fields if request.get(field) not in (None, '', False)}
+    carried.update(values)
+    matched = sum(payments(request.get('rows') or [] if rows is None else rows)[0].values())
+    return carried, dict(baseline='details', basis=DETAILS_MATCHED, fields=sorted(values), rows=[], added=[],
+                         payments_matched=matched, extra_rows=extra)
+
+
+def plan_statement(key, entries, old_proposal, new_proposals, *, other_batch=False, history=(), earlier_saves=(),
+                   imported_spans=(), taken=()):
+    """What to do with one earlier statement's saved work. Pure. Returns a dict:
+
+    kind 'settled' (no edits to keep), 'carried' (row by row, as before), 'details' (one statement, details
+    carried), 'periods' (file-level details carried onto several periods; ``held_periods`` the others), or
+    'held' with ``reason``. ``carried`` maps a new statement id to (request, audit)."""
+    if DETAILS_CARRY and system_only(entries, history):
+        return dict(kind='settled', basis=NO_EDITS, carried={})
+    try:
+        if other_batch:
+            raise NotCarried('work_in_another_batch')
+        if len({_digest_request(saved['request']) for _, saved in entries}) != 1:
+            raise NotCarried('two_drafts')
+        saved = next((s for k, s in entries if k == 'progress'), entries[0][1])
+        request = saved['request']
+        try:
+            new_key = match_statement(old_proposal, request, new_proposals)
+            if new_key in taken:
+                raise NotCarried('new_reading_has_review')
+            carried, audit = carry(old_proposal, request, new_proposals[new_key])
+            return dict(kind='carried', carried={new_key: (carried, audit)}, saved=saved)
+        except NotCarried as error:
+            reason = error.reason
+            if not DETAILS_CARRY or reason not in ROWS_UNALIGNED + ('statement_not_found', 'statement_ambiguous'):
+                raise
+            details_only(request, earlier_saves)
+            if reason not in ('statement_not_found', 'statement_ambiguous'):
+                if new_key in taken:
+                    raise NotCarried('new_reading_has_review')
+                _no_overlap(new_proposals[new_key], imported_spans)
+                return dict(kind='details', carried={new_key: carry_details(request, new_proposals[new_key])}, saved=saved)
+            if key:
+                raise  # A named statement with no single counterpart stays held.
+            return dict(kind='periods', saved=saved, **_periods(request, old_proposal, new_proposals, imported_spans, taken))
+    except NotCarried as error:
+        return dict(kind='held', reason=error.reason, carried={}, **({'held_periods': error.periods}
+                                                                    if error.periods else {}))
+
+
+def _no_overlap(proposal, spans):
+    start, end, _ = _period(proposal)
+    if not (start and end):
+        raise NotCarried('period_unknown')
+    if any(str(a) <= end and start <= str(b) for a, b in spans):
+        raise NotCarried('overlaps_imported_period')
+
+
+def _periods(request, old_proposal, new_proposals, spans, taken):
+    """File-level details work carried onto each period of the new reading it can be proven for."""
+    from services.financial.import_batches import initial_request
+    initial = initial_request(old_proposal)
+    if any(request.get(field) not in (None, '', False) and request.get(field) != initial.get(field)
+           for field in PERIOD_DETAILS):
+        raise NotCarried('period_set_on_file')
+    rows = [_row(row) for row in request.get('rows') or []]
+    payments(rows)  # every payment of hers must be dated
+    account = _digits(request.get('account_number'))
+    currency = request.get('currency') or ''
+    carried, held, placed = {}, {}, set()
+    for new_key, proposal in sorted(new_proposals.items()):
+        start, end, printed = _period(proposal)
+        mine = [row for row in rows if _in(_row_day(row), start, end)]
+        placed |= {id(row) for row in mine}
+        try:
+            if new_key in taken:
+                raise NotCarried('new_reading_has_review')
+            if account and printed and printed[-6:] != account[-6:]:
+                raise NotCarried('account_differs')
+            other = (proposal.get('metadata') or {}).get('currency') or initial_request(proposal).get('currency')
+            if currency and other and other != currency:
+                raise NotCarried('currency_differs')
+            _no_overlap(proposal, spans)
+            carried[new_key] = carry_details(request, proposal, rows=mine, with_period=False)
+        except NotCarried as error:
+            held[new_key] = error.reason
+    unplaced = sum(1 for row in rows if id(row) not in placed and (_amount(row) or 0) != 0)
+    if not carried:
+        raise NotCarried('no_period_proven' if held else 'statement_not_found', periods=held)
+    return dict(carried=carried, held_periods=held, unplaced_payments=unplaced,
+                complete=not held and not unplaced)
+
+
 def work_fingerprint(session, case_id, file_ids):
     """Digest of every saved review and batch draft on these files: recorded when a re-read is scheduled, so a
     review saved after that is never carried unseen (the batch's own guard refuses then, as before)."""
@@ -273,6 +493,8 @@ def carry_reread_work(session, *, case_id, batch_id, prior_id, new_id):
     cache, new_proposals = {}, {}
     first = read_statement_import(session, case_id=case_id, evidence_file_id=new.id, _cache=cache)
     for choice in first.get('statement_choices') or []:
+        if choice.get('document_kind'):
+            continue  # Not a statement: nothing of hers is carried onto it.
         new_proposals[choice['id']] = read_statement_import(session, case_id=case_id, evidence_file_id=new.id,
             statement_id=choice['id'], _cache=cache)
     if not new_proposals and first.get('rows') is not None:
@@ -280,35 +502,91 @@ def carry_reread_work(session, *, case_id, batch_id, prior_id, new_id):
     metadata = deepcopy(new.metadata_ or {})
     progress = metadata.setdefault('financial_review_progress', {})
     records = saved_ancestor_reviews(session, new)
-    outcome, carried_records, taken = {}, list(metadata.get('financial_review_carried') or []), set()
+    prior_meta = prior.metadata_ or {}
+    spans = imported_spans(session, case_id, prior.id)
+    released = deepcopy(metadata.get('financial_review_details_release') or {})
+    outcome, carried_records, taken = {}, list(metadata.get('financial_review_carried') or []), set(progress)
     for key, entries in sorted(work.items()):
+        own = [record['id'] for record in records
+               if record['evidence_file_id'] == str(prior.id) and (record['statement_id'] or '') == key]
+        history = statement_history(prior_meta, key)
+        earlier = [saved.get('request') or {} for saved in prior_meta.get('financial_review_history') or []
+                   if ((saved.get('request') or {}).get('statement_id') or '') == key]
+        item = next((item for _, _, item in entries if item is not None), None)
+        currency = (item.summary or {}).get('currency') if item is not None else None
+        old_proposal = None
         try:
-            if any(item is not None and item.batch_id != batch_id for _, _, item in entries):
-                raise NotCarried('work_in_another_batch')
-            requests = {_digest_request(saved['request']) for _, saved, _ in entries}
-            if len(requests) != 1:
-                raise NotCarried('two_drafts')
-            kind, saved, item = next((entry for entry in entries if entry[0] == 'progress'), entries[0])
-            currency = (item.summary or {}).get('currency') if item is not None else None
             old_proposal = read_statement_import(session, case_id=case_id, evidence_file_id=prior.id,
                 statement_id=key or None, currency=currency or None, _cache={})
-            new_key = match_statement(old_proposal, saved['request'], new_proposals)
-            if new_key in progress or new_key in taken:
-                raise NotCarried('new_reading_has_review')
-            request, audit = carry(old_proposal, saved['request'], new_proposals[new_key])
+        except Exception:
+            old_proposal = None
+        plan = (plan_statement(key, [(kind, saved) for kind, saved, _ in entries], old_proposal, new_proposals,
+                    other_batch=any(item is not None and item.batch_id != batch_id for _, _, item in entries),
+                    history=history, earlier_saves=earlier, imported_spans=spans, taken=taken)
+                if old_proposal is not None else
+                (dict(kind='settled', basis=NO_EDITS, carried={})
+                 if DETAILS_CARRY and system_only([(k, s) for k, s, _ in entries], history)
+                 else dict(kind='held', reason='earlier_reading_unavailable', carried={})))
+        if plan['kind'] == 'held':
+            outcome[key] = dict(carried=False, new_statement_id=None, reason=plan['reason'],
+                                **({'held_periods': plan['held_periods']} if plan.get('held_periods') else {}))
+            continue
+        if plan['kind'] == 'settled':
+            carried_records += own
+            outcome[key] = dict(carried=True, new_statement_id=None, reason=None, baseline=None, basis=NO_EDITS)
+            continue
+        saved = plan['saved']
+        for new_key, (request, audit) in plan['carried'].items():
             progress[new_key] = carried_record(request, saved, audit, prior.id, key, new_proposals[new_key])
             taken.add(new_key)
-            carried_records += [record['id'] for record in records
-                                if record['evidence_file_id'] == str(prior.id) and (record['statement_id'] or '') == key]
-            outcome[key] = dict(carried=True, new_statement_id=new_key, reason=None, baseline=audit['baseline'])
-        except NotCarried as error:
-            outcome[key] = dict(carried=False, new_statement_id=None, reason=error.reason)
+        periods = {new_key: dict(basis=audit.get('basis'), extra_rows=audit.get('extra_rows'),
+                                 payments_matched=audit.get('payments_matched'))
+                   for new_key, (_, audit) in plan['carried'].items()}
+        if plan['kind'] == 'periods' and not plan['complete']:
+            # Some periods stay held: her records stay unresolved, the released periods are named.
+            for record_id in own:
+                released[record_id] = sorted(set(released.get(record_id) or ()) | set(plan['carried']))
+            outcome[key] = dict(carried=False, new_statement_id=None, reason='periods_held', basis=DETAILS_MATCHED,
+                                released=periods, held_periods=plan['held_periods'],
+                                unplaced_payments=plan['unplaced_payments'])
+            continue
+        carried_records += own
+        first = next(iter(plan['carried']))
+        audit = plan['carried'][first][1]
+        outcome[key] = dict(carried=True, new_statement_id=first if len(plan['carried']) == 1 else None, reason=None,
+                            baseline=audit['baseline'], **({'basis': audit['basis'], 'released': periods}
+                                                           if audit.get('basis') else {}))
     now = datetime.now(timezone.utc).isoformat()
     metadata['financial_review_carried'] = sorted(set(carried_records))
+    if released:
+        metadata['financial_review_details_release'] = released
     metadata.setdefault('financial_reread_carry_log', []).append(dict(at=now, earlier_file_id=str(prior.id),
         batch_id=str(batch_id), statements=outcome))
     new.metadata_ = metadata
     return outcome
+
+
+def statement_history(metadata, key):
+    """Names of everyone who saved or changed details of this statement on the file: earlier saves (history)
+    and audited detail changes."""
+    names = [((saved.get('saved_by') or {}).get('name')) for saved in metadata.get('financial_review_history') or []
+             if ((saved.get('request') or {}).get('statement_id') or '') == key]
+    names += [((entry.get('actor') or {}).get('name')) for entry in metadata.get('financial_account_detail_history') or []
+              if (entry.get('statement_id') or '') == key]
+    return names
+
+
+def imported_spans(session, case_id, file_id):
+    """(start, end) of every period imported from this reading: a released period must not overlap one."""
+    from sqlalchemy import select
+    from postgres.models.financial import FinancialSourceDocument, FinancialStatementPeriod
+    spans = []
+    for source in session.scalars(select(FinancialSourceDocument).where(
+            FinancialSourceDocument.case_id == case_id, FinancialSourceDocument.evidence_file_id == file_id)):
+        for period in session.scalars(select(FinancialStatementPeriod).where(
+                FinancialStatementPeriod.source_document_id == source.id)):
+            spans.append((str(period.period_start or '0000-00-00'), str(period.period_end or '9999-12-31')))
+    return spans
 
 
 def _digest_request(request):
