@@ -42,6 +42,27 @@ saved statement of that account must agree on the value. Confirmed
 automatically only when the match is unique and exact on at least two
 independent fields; otherwise a one-click proposal.
 
+Automatic fills (Neil, 2026-10-24; each behind a default-on switch
+``LOUPE_FINANCIAL_AUTOFILL_<NAME>``, recorded as System with its basis):
+
+* ``CURRENCY``: no currency printed takes the account's currency when every
+  saved statement of the one matching account agrees on it (one saved
+  statement is enough), no saved statement of it covers the same dates and the
+  statement prints no other currency (its holdings). The account is the one
+  whose number the statement prints (``identity_proven``). Basis
+  ``account_currency``.
+* ``IDENTITY``: a missing bank (and the full number behind a masked one, as
+  before) from the one account whose printed number the statement carries,
+  when every saved statement of it gives the same value. The holder keeps its
+  bracketing rule (a holder can change after the last saved statement: the
+  truth set holds one). An account number is never proposed from anything but
+  a matching printed number.
+
+The account is proven by its printed number alone when it is printed in full
+(at least six digits) or masked with at least six visible digits, and it is
+the only account of the case with that identity (the existing ambiguity check:
+two accounts sharing the digits, or one number at two banks, prove nothing).
+
 A field the statement prints is never replaced: only empty fields receive a
 proposal. Switches: ``LOUPE_FINANCIAL_CURRENCY_PROPOSALS`` and
 ``LOUPE_FINANCIAL_DETAIL_PROPOSALS`` (both on unless set to 0).
@@ -66,6 +87,29 @@ ACCOUNT_CURRENCY = True
 ACCOUNT_CURRENCY_BASIS = 'account_currency'
 MIN_MASKED_DIGITS = 4
 FULL_ACCOUNT_DIGITS = 6
+
+
+AUTOFILL_NAMES = ('CURRENCY', 'IDENTITY')
+AUTOFILL_CURRENCY_BASIS = 'account_currency'
+
+
+def autofill_enabled(name):
+    """A default-on automatic fill switch (``LOUPE_FINANCIAL_AUTOFILL_<NAME>``; 0/false/off/no turns it off)."""
+    return os.environ.get(f'LOUPE_FINANCIAL_AUTOFILL_{name}', '1').strip().lower() not in ('0', 'false', 'off', 'no')
+
+
+def identity_proven(values, candidates, matched):
+    """The statement's printed account number alone identifies one account of the case.
+
+    Printed in full with at least six digits, or masked with at least six
+    visible digits; one candidate identity only (``matching_accounts`` marks
+    two accounts sharing the digits, or a number at two banks, ambiguous).
+    """
+    if not candidates or 'ambiguous' in matched or 'account' not in matched:
+        return False
+    digits, _ = account_identity(values.get('account_number'))
+    # The digits both sides print: a known masked number proves only its visible digits.
+    return all(min(len(digits), len(k.digits)) >= FULL_ACCOUNT_DIGITS for k in candidates)
 
 
 def currency_proposals_enabled():
@@ -350,6 +394,11 @@ def _bracketed(values, candidates):
             and any(s.period_start and s.period_start > end for s in saved))
 
 
+def _account_key(candidates):
+    """Opaque key of the matched account (its record ids), for grouping one account's proposals."""
+    return ','.join(sorted(k.key for k in candidates))
+
+
 def _detail_proposal(name, candidates, matched, values):
     fold = {'institution': institution_key, 'holder': holder_key,
             'account_number': lambda v: account_identity(v)}[name]
@@ -372,7 +421,12 @@ def _detail_proposal(name, candidates, matched, values):
         f' and {"bank" if f == "institution" else f}' for f in other)
     independent = len(matched - {'masked', 'ambiguous'})
     confirmed = independent >= 2 and (name != 'holder' or _bracketed(values, candidates))
-    return dict(value=value, basis='same_account', confirmed=confirmed,
+    basis = 'same_account'
+    if (not confirmed and name == 'institution' and autofill_enabled('IDENTITY')
+            and identity_proven(values, candidates, matched)):
+        # IDENTITY: the bank of the one account whose number the statement prints.
+        confirmed, basis = True, 'same_account_number'
+    return dict(value=value, basis=basis, confirmed=confirmed, account_key=_account_key(candidates),
                 label=f"same account's {_plural(statements, 'saved statement', 'saved statements')} ({exact} match)",
                 statements=statements, matched=sorted(matched - {'ambiguous'}))
 
@@ -414,8 +468,15 @@ def _account_or_case_currency(values, candidates, matched, knowledge):
                 # (b') The account's one established currency: one saved statement establishes it.
                 confirmed = statements >= 1 and independent >= 2 and not same_dates
                 basis, label = ACCOUNT_CURRENCY_BASIS, 'account currency: ' + label
+            if (not confirmed and autofill_enabled('CURRENCY') and not values.get('printed_currency')
+                    and statements >= 1 and not same_dates
+                    and (independent >= 2 or identity_proven(values, candidates, matched))):
+                # CURRENCY: the account's one currency, every saved statement of it agreeing.
+                confirmed, basis = True, AUTOFILL_CURRENCY_BASIS
+                if not label.startswith('account currency: '):
+                    label = 'account currency: ' + label
             return dict(value=value, basis=basis, confirmed=confirmed, label=label, statements=statements,
-                        matched=sorted(matched), same_dates_saved=same_dates)
+                        matched=sorted(matched), same_dates_saved=same_dates, account_key=_account_key(candidates))
     if knowledge.default_currency:
         return dict(value=knowledge.default_currency, basis='case_default', confirmed=False,
                     label=f"the case's usual currency ({knowledge.default_count} of "

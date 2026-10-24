@@ -39,6 +39,9 @@ def values(**overrides):
     return base
 
 
+# The automatic fills switched off: the proposal rules as they were before them.
+OLD = patch.dict(os.environ, {'LOUPE_FINANCIAL_AUTOFILL_CURRENCY': '0', 'LOUPE_FINANCIAL_AUTOFILL_IDENTITY': '0'})
+
 MONTHS = [saved(start=f'2021-{m:02d}-01', end=f'2021-{m:02d}-28') for m in (1, 2, 3, 9, 10)]
 
 
@@ -50,11 +53,13 @@ class CurrencyTests(TestCase):
         self.assertEqual(currency['label'], "same account's 5 saved statements, all MXN")
 
     def test_one_saved_statement_is_a_proposal_only(self):
-        currency = fp.propose(values(), knowledge(account(MONTHS[0])))['currency']
+        with OLD:
+            currency = fp.propose(values(), knowledge(account(MONTHS[0])))['currency']
         self.assertEqual((currency['value'], currency['confirmed']), ('MXN', False))
 
     def test_account_number_alone_is_one_field(self):
-        currency = fp.propose(values(institution='', holder=''), knowledge(account(*MONTHS)))['currency']
+        with OLD:
+            currency = fp.propose(values(institution='', holder=''), knowledge(account(*MONTHS)))['currency']
         self.assertEqual((currency['basis'], currency['confirmed']), ('same_account', False))
 
     def test_saved_statement_on_the_same_dates_blocks_confirmation(self):
@@ -232,7 +237,8 @@ class AccountCurrencyTests(TestCase):
         self.assertTrue(currency['label'].startswith('account currency: '))
 
     def test_only_brokerage_cash_ledgers(self):
-        currency = fp.propose(values(), knowledge(account(MONTHS[0])))['currency']
+        with OLD:
+            currency = fp.propose(values(), knowledge(account(MONTHS[0])))['currency']
         self.assertEqual((currency['basis'], currency['confirmed']), ('same_account', False))
 
     def test_conflicting_account_currencies_stay_held(self):
@@ -245,7 +251,8 @@ class AccountCurrencyTests(TestCase):
         self.assertFalse(currency['confirmed'])
 
     def test_identity_on_two_fields_and_no_saved_statement_on_the_same_dates(self):
-        alone = fp.propose(self.broker(institution='', holder=''), knowledge(account(MONTHS[0])))['currency']
+        with OLD:
+            alone = fp.propose(self.broker(institution='', holder=''), knowledge(account(MONTHS[0])))['currency']
         same = fp.propose(self.broker(period_start='2021-01-01', period_end='2021-01-31'),
                           knowledge(account(MONTHS[0])))['currency']
         self.assertEqual((alone['confirmed'], same['confirmed']), (False, False))
@@ -256,7 +263,7 @@ class AccountCurrencyTests(TestCase):
         self.assertEqual((currency['value'], currency['confirmed']), ('USD', False))
 
     def test_switch(self):
-        with patch.object(fp, 'ACCOUNT_CURRENCY', False):
+        with patch.object(fp, 'ACCOUNT_CURRENCY', False), OLD:
             currency = fp.propose(self.broker(), knowledge(account(MONTHS[0])))['currency']
         self.assertEqual((currency['basis'], currency['confirmed']), ('same_account', False))
 
@@ -271,3 +278,91 @@ class AccountCurrencyTests(TestCase):
         self.assertEqual(fp.account_currency_conflict(values(currency='USD'), known), '')
         with patch.object(fp, 'ACCOUNT_CURRENCY', False):
             self.assertEqual(fp.account_currency_conflict(self.broker(currency='USD'), known), '')
+
+
+class AutofillCurrencyTests(TestCase):
+    """CURRENCY (Neil, 2026-10-24): no printed currency takes the one matching account's agreed currency."""
+
+    def test_one_saved_statement_fills_it(self):
+        currency = fp.propose(values(), knowledge(account(MONTHS[0])))['currency']
+        self.assertEqual((currency['value'], currency['basis'], currency['confirmed']), ('MXN', 'account_currency', True))
+        self.assertEqual(currency['account_key'], 'a1')
+
+    def test_the_printed_account_number_alone_identifies_the_account(self):
+        currency = fp.propose(values(institution='', holder=''), knowledge(account(*MONTHS)))['currency']
+        self.assertEqual((currency['value'], currency['confirmed']), ('MXN', True))
+
+    def test_held_when_the_saved_statements_disagree(self):
+        mixed = account(MONTHS[0], saved(currency='USD', start='2021-02-01', end='2021-02-28'))
+        self.assertFalse(fp.propose(values(institution='', holder=''), knowledge(mixed))['currency']['confirmed'])
+
+    def test_held_when_the_statement_prints_another_currency(self):
+        printed = dict(value='USD', page_number=2, table_index=0, row_index=1, expected_text='USD')
+        currency = fp.propose(values(printed_currency=printed), knowledge(account(*MONTHS)))['currency']
+        self.assertEqual((currency['value'], currency['confirmed']), ('USD', False))
+
+    def test_held_when_a_saved_statement_covers_the_same_dates(self):
+        same = saved(start='2021-06-01', end='2021-06-30')
+        self.assertFalse(fp.propose(values(institution='', holder=''), knowledge(account(MONTHS[0], same)))['currency']['confirmed'])
+
+    def test_held_on_a_short_or_masked_number(self):
+        for number in ('****5678', '45678'):
+            short = account(*[saved(account=number)], number=number)
+            currency = fp.propose(values(account_number=number, institution='', holder=''), knowledge(short))['currency']
+            self.assertFalse(currency['confirmed'], number)
+
+    def test_held_when_two_accounts_share_the_number(self):
+        other = account(saved(institution='BBVA'), institution='BBVA', key='a2')
+        currency = fp.propose(values(institution='', holder=''), knowledge(account(*MONTHS), other))['currency']
+        self.assertFalse(currency['confirmed'])
+
+    def test_a_printed_currency_is_never_replaced(self):
+        self.assertNotIn('currency', fp.propose(values(currency='USD', institution=''), knowledge(account(MONTHS[0]))))
+
+    def test_switch_off_is_the_old_rule(self):
+        with patch.dict(os.environ, {'LOUPE_FINANCIAL_AUTOFILL_CURRENCY': '0'}):
+            currency = fp.propose(values(), knowledge(account(MONTHS[0])))['currency']
+        self.assertEqual((currency['basis'], currency['confirmed']), ('same_account', False))
+
+
+class AutofillIdentityTests(TestCase):
+    """IDENTITY (Neil, 2026-10-24): a missing bank from the one account whose printed number the statement carries."""
+
+    def test_bank_from_the_printed_number_alone(self):
+        result = fp.propose(values(institution='', holder='', currency='MXN'), knowledge(account(*MONTHS)))
+        self.assertEqual((result['institution']['value'], result['institution']['confirmed'], result['institution']['basis']),
+                         ('BANCO SANTANDER', True, 'same_account_number'))
+
+    def test_holder_keeps_its_bracketing_rule(self):
+        # The truth set holds an account printed under a new name after its saved statements.
+        holder = fp.propose(values(institution='', holder='', currency='MXN', period_start='2025-03-01',
+                                   period_end='2025-03-31'), knowledge(account(*MONTHS)))['holder']
+        self.assertFalse(holder['confirmed'])
+
+    def test_held_when_the_saved_statements_disagree(self):
+        mixed = account(*MONTHS, saved(institution='BBVA', start='2021-11-01', end='2021-11-30'))
+        result = fp.propose(values(institution='', holder='', currency='MXN'), knowledge(mixed))
+        self.assertNotIn('institution', result)
+
+    def test_held_on_a_masked_number_with_few_digits(self):
+        result = fp.propose(values(account_number='****5678', institution='', holder='', currency='MXN'),
+                            knowledge(account(*MONTHS)))
+        self.assertFalse(result['institution']['confirmed'])
+        self.assertNotIn('account_number', {k for k, p in result.items() if p['confirmed']})
+
+    def test_no_number_printed_nothing_is_invented(self):
+        result = fp.propose(values(account_number='', institution='', holder='', currency='MXN'), knowledge(account(*MONTHS)))
+        self.assertEqual(result, {})
+
+    def test_a_printed_bank_is_never_replaced(self):
+        self.assertNotIn('institution', fp.propose(values(holder='', currency='MXN'), knowledge(account(*MONTHS))))
+
+    def test_switch_off_is_the_old_rule(self):
+        with patch.dict(os.environ, {'LOUPE_FINANCIAL_AUTOFILL_IDENTITY': '0'}):
+            result = fp.propose(values(institution='', holder='', currency='MXN'), knowledge(account(*MONTHS)))
+        self.assertFalse(result['institution']['confirmed'])
+
+    def test_the_fill_never_overwrites_a_persons_value(self):
+        # Proposals are applied in fill_missing mode only: a value a person entered is not empty, so not proposed.
+        self.assertNotIn('institution', fp.propose(values(institution='Typed by a person', holder='', currency='MXN'),
+                                                   knowledge(account(*MONTHS))))
