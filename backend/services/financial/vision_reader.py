@@ -1058,12 +1058,13 @@ def pending(db, limit=50):
     if not marked:
         return []
     found = []
-    for item_id, batch_id, file_id, key, metadata in db.execute(
-            select(Item.id, Item.batch_id, Item.file_id, Item.statement_key, EvidenceFile.metadata_)
+    for item_id, batch_id, file_id, key, draft, metadata in db.execute(
+            select(Item.id, Item.batch_id, Item.file_id, Item.statement_key, Item.review_request, EvidenceFile.metadata_)
             .join(EvidenceFile, EvidenceFile.id == Item.file_id)
-            .where(Item.batch_id.in_(list(marked)), Item.status == 'attention', Item.review_request.is_(None))
+            .where(Item.batch_id.in_(list(marked)), Item.status == 'attention')
             .order_by(Item.updated_at, Item.id)):
-        if str(file_id) not in marked.get(batch_id, ()):
+        # An untouched draft is stored as JSON null, which SQL "IS NULL" does not match: checked here.
+        if draft or str(file_id) not in marked.get(batch_id, ()):
             continue
         stored = ((metadata or {}).get(METADATA_KEY) or {}).get(key or '')
         if stored and stored.get('version') == VERSION and stored.get('status') in FINAL:

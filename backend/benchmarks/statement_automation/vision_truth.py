@@ -41,7 +41,9 @@ def compare(record, truth):
     """Differences between a proved reading (its review request) and the truth period."""
     request = record['request']
     diffs = []
-    if _digits(truth.get('account')) and not (_digits(request['account_number']).endswith(_digits(truth['account'])[-4:])):
+    want, got_number = _digits(truth.get('account')), _digits(request['account_number'])
+    # A number printed with a sub-account (member number / share) contains the truth's number.
+    if want and not (got_number.endswith(want[-4:]) or want in got_number):
         diffs.append('account')
     for key in ('period_start', 'period_end'):
         if truth.get(key) and request.get(key) != truth[key]:
@@ -138,6 +140,7 @@ def main(argv=None):
                 diffs = compare(record, truth)
                 line['verdict'] = 'wrong' if diffs else 'correct'
                 line['diffs'] = diffs
+                line['account_digits'] = len(_digits(record['request']['account_number']))
             if args.mode == 'held' and period.get('truth_id') in saved_truth:
                 line['double'] = True
         return line
