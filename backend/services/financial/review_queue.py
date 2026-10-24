@@ -914,9 +914,91 @@ def case_review_queue(session, *, case_id, file_ids=None, use_cache=True, limit=
         ready_batches=[dict(batch_id=key, statements=value) for key, value in
                        sorted(ready_batches.items(), key=lambda pair: -pair[1])],
         totals=totals, issue_counts=issue_counts, ready_item_ids=[e['id'] for e in lists['ready']],
+        proposal_groups=[{key: value for key, value in group.items()} for group in proposal_groups(lists['waiting'])],
         page=dict(list=page_list, issue=issue or None, offset=offset, limit=limit, returned=len(pages[page_list]),
                   total=len(chosen)),
         refreshing=refreshing, as_of=view['as_of'], elapsed_ms=round((time.perf_counter() - started) * 1000))
+
+
+def _group_account(entry, proposal):
+    """The account a proposal is grouped under: the matched saved account, else the account number the
+    statement prints (with its bank). None when the statement prints no usable number: never grouped."""
+    from services.financial import field_proposals
+    if proposal.get('account_key'):
+        return ('saved', proposal['account_key'])
+    digits, masked = field_proposals.account_identity(entry.get('account'))
+    if len(digits) < field_proposals.MIN_MASKED_DIGITS:
+        return None
+    return ('printed', digits, masked, tuple(sorted(field_proposals.institution_key(entry.get('institution')))))
+
+
+def proposal_groups(entries):
+    """One confirmation per account where the same unconfirmed proposal applies to several waiting statements.
+
+    Groups (field, value, basis, account) over the waiting entries' proposals that
+    are not confirmed automatically; only groups of two or more statements are
+    returned, largest first. Read only: a group is saved by a person's
+    confirmation (``confirm_proposal_group``), through the statement-details
+    save, filling empty fields only.
+    """
+    from services.financial.pdf_candidates import _digest
+    groups = OrderedDict()
+    for entry in entries:
+        if entry.get('bucket') != 'waiting':
+            continue
+        for name, proposal in (entry.get('proposals') or {}).items():
+            if proposal.get('confirmed') or not proposal.get('value'):
+                continue
+            account = _group_account(entry, proposal)
+            if account is None:
+                continue
+            key = (name, proposal['value'], proposal.get('basis') or '', account)
+            group = groups.setdefault(key, dict(field=name, value=proposal['value'], basis=proposal.get('basis') or '',
+                                                label=proposal.get('label') or '', account=entry.get('account') or '',
+                                                institution=entry.get('institution') or '', entry_ids=[]))
+            group['entry_ids'].append(entry['id'])
+    result = []
+    for key, group in groups.items():
+        if len(group['entry_ids']) < 2:
+            continue
+        group['entry_ids'].sort()
+        group.update(id=_digest(dict(key=[str(part) for part in key], entries=group['entry_ids'])),
+                     statements=len(group['entry_ids']))
+        result.append(group)
+    result.sort(key=lambda g: (-g['statements'], g['field'], g['value'], g['id']))
+    return result
+
+
+def confirm_proposal_group(session, *, case_id, group_id, actor, file_ids=None):
+    """Save one proposal group's value on each of its statements, as the confirming person. Commits.
+
+    The group is found again on the current queue by its id (which binds the
+    field, value, account and exact statements): a queue that changed since it
+    was shown refuses (409), nothing is saved. Fill-missing only: a value a
+    person entered is never replaced.
+    """
+    from services.financial.field_proposals import apply_confirmed_proposals
+    from services.financial.pdf_candidates import PdfMappingError
+    view, _ = _view(session, case_id, use_cache=False, note=False)
+    entries = view['entries']
+    if file_ids:
+        wanted = {str(i) for i in file_ids}
+        entries = [e for e in entries if wanted & set(e['file_ids'])]
+    group = next((g for g in proposal_groups(entries) if g['id'] == group_id), None)
+    if group is None:
+        raise PdfMappingError('These statements changed since the proposal was shown. Reload the queue.', 409)
+    ids = set(group['entry_ids'])
+    targets = []
+    for entry in entries:
+        if entry['id'] in ids:
+            proposal = dict(entry['proposals'][group['field']], confirmed=True,
+                            label=f"{entry['proposals'][group['field']].get('label', '')}; confirmed for "
+                                  f"{group['statements']} statements of one account")
+            targets.append(dict(entry, proposals={group['field']: proposal}))
+    session.rollback()
+    report = apply_confirmed_proposals(session, case_id=case_id, entries=targets, apply=True, actor=actor)
+    return dict(case_id=str(case_id), group_id=group_id, field=group['field'], value=group['value'],
+                statements=report.get('statements', 0), saved=report.get('saved', 0), failed=report.get('failed', 0))
 
 
 def reading_sentence(reading):
