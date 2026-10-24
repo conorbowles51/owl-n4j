@@ -567,7 +567,8 @@ def backlog_choice(session, items):
              EvidenceFile.id.in_({i.file_id for i in items})))} if items else {}
     return [i.id for i in items if not (i.summary or {}).get('problems') and not (i.summary or {}).get('problem_count')
             and ((not i.review_request and not (i.file_id in files and review_progress(files[i.file_id], i.statement_key)))
-                 or system_filled_only(i, files.get(i.file_id)))]
+                 or system_filled_only(i, files.get(i.file_id)))
+            and not restored_saved_copy(i, files.get(i.file_id))]
 
 
 # Held because today's admission disagrees with the stored "ready": the stored

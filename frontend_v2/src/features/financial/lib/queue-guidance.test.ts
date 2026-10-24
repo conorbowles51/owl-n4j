@@ -117,7 +117,7 @@ it("marks every value Loupe filled with where it came from", () => {
 it("splits the counts into what needs a person and what Loupe handles", () => {
   const counts = { imported: 9, saving: 1, waiting: 4, filled: 2, reader_fix: 3, ready: 5, copies: 6, unreadable: 1,
     unreadable_files: 2, removed_files: 0, copy_files: 0, rechecking: 7, left_unimported: 0, assigned: 0,
-    unexplained: 0 } satisfies QueueCounts
+    unexplained: 0, not_payment: 0 } satisfies QueueCounts
   expect(needsCount(counts)).toBe(7)
   expect(handledCount(counts)).toBe(24)
 })
