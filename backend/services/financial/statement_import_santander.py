@@ -9,12 +9,31 @@ from services.financial.pdf_candidates import _digest
 from services.financial.statement_import_bbva import box, norm, text, MONTHS
 from services.financial.statement_import_proposal import exact_amount
 
+import os
+
 LAYOUT = 'santander-mexico-movements'
+
+
+def _switch(name):
+    return os.environ.get(name, '1').strip().lower() not in ('0', 'false', 'off', 'no')
+
+
+# Reader gaps (2026-10-24), each default on and reversible in one place:
+# * LOUPE_FINANCIAL_SANTANDER_RULE_APOSTROPHE: a column rule between the date, folio and description
+#   read as an apostrophe (scanned pages) separates them like '|' does.
+# * LOUPE_FINANCIAL_SANTANDER_COVER_SPACED_ACCOUNT: the cover's balance summary names the section's
+#   account when the OCR split the number with a space (the whole cell, spaces removed, is the number).
+# * LOUPE_FINANCIAL_SANTANDER_QUIET_COVER_CLOSING: a quiet section (no movement read, printed zero
+#   TOTAL lines) whose SALDO FINAL line was not read takes its closing from the cover summary when the
+#   cover prints the section's opening as both last month's and this month's balance.
+RULE_APOSTROPHE = _switch('LOUPE_FINANCIAL_SANTANDER_RULE_APOSTROPHE')
+COVER_SPACED_ACCOUNT = _switch('LOUPE_FINANCIAL_SANTANDER_COVER_SPACED_ACCOUNT')
+QUIET_COVER_CLOSING = _switch('LOUPE_FINANCIAL_SANTANDER_QUIET_COVER_CLOSING')
 ACCOUNT = re.compile(r'(?P<product>CUENTA SANTANDER [A-Z ]+?|INVERSION CRECIENTE|SUPER CUENTA [A-Z ]+?)\s*(?P<number>\d{2}-\d{8}-\d)\b')
 DATE = r'\d{2}-[A-Z]{3}-\d{4}'
 # Marks a printed column rule between the date and folio columns is read as: '|' and '/', and on
 # vector-text and scanned pages also ')', '(', ']' and '['. Never a digit or a letter. Reverse: r'[\s|/]*'.
-RULE = r'[\s|/()\[\]]*'
+RULE = r"[\s|/()\[\]'\u2018\u2019]*" if RULE_APOSTROPHE else r'[\s|/()\[\]]*'
 
 
 def printed_date(value):
@@ -145,7 +164,7 @@ def propose_santander_statement(sources,currency,choice):
     if choice.get('form') == FORM:
         return propose_santander_query(sources, currency, choice)
     scopes={(s['page_number'],s['table_index']):set(s['row_indices']) for s in choice['section_sources']}
-    result=[];columns=None;last=None;active_page=None
+    result=[];columns=None;last=None;active_page=None;previous_balance=None
     for page in sorted({s['page_number'] for s in sources}):
         for s,raw in located_rows([s for s in sources if s['page_number']==page]):
             cells=raw['cells'];joined=norm(text(raw))
@@ -221,6 +240,10 @@ def propose_santander_statement(sources,currency,choice):
                     item['fields']['description']=prefix
                     item['issues'].append('Check the printed date and reference for this payment beside the PDF.')
                 continue
+            # The previous payment's printed running balance, when it is the line just before this one.
+            moved=[r for r in result if not r['excluded'] and r['kind'] in ('transaction','unresolved')]
+            previous_balance=(last['fields'].get('balance') if last and moved and moved[-1] is last and not last['issues']
+                              and 'amount_minor' in last['fields'] else None)
             item.update(kind='transaction',excluded=False);last=item;fields=item['fields']
             fields.update(description=m[3].strip(),bank_reference=m[2],date_column=str(other[0]['column_index']),description_column=str(other[-1]['column_index']))
             day=printed_date(m[1])
@@ -242,9 +265,38 @@ def propose_santander_statement(sources,currency,choice):
                 c=money['SALDO'][0];fields['balance_column']=str(c['column_index'])
                 try:fields['balance']=exact_amount(c['expected_text'],currency)
                 except ValueError as exc:item['issues'].append(str(exc))
+            if BALANCE_STEP_AMOUNT and 'amount_minor' not in fields and fields.get('direction'):
+                _balance_step_amount(item, previous_balance, money, currency)
     if COVER_CLOSING:
         _cover_closing(result, choice, currency)
     return dict(rows=result,issues=[])
+
+
+# LOUPE_FINANCIAL_SANTANDER_BALANCE_STEP_AMOUNT: a payment amount printed with a misread separator
+# ("2.571,151.00") is read digit for digit when it equals, exactly and in its column's direction, the step
+# between the previous payment's printed running balance and its own (_balance_step_amount).
+BALANCE_STEP_AMOUNT = _switch('LOUPE_FINANCIAL_SANTANDER_BALANCE_STEP_AMOUNT')
+_SEPARATED_AMOUNT = re.compile(r'\$?\s*\d{1,3}(?:[.,]\d{3})*[.,]\d{2}')
+
+
+def _balance_step_amount(item, previous_balance, money, currency):
+    fields = item['fields']
+    direction = fields['direction']
+    cells = money['DEPOSITO' if direction == 'credit' else 'RETIRO']
+    if previous_balance is None or fields.get('balance') is None or len(cells) != 1:
+        return
+    printed = cells[0]['expected_text'].strip()
+    if not _SEPARATED_AMOUNT.fullmatch(printed):
+        return
+    amount = int(re.sub(r'\D', '', printed))
+    step = int(fields['balance']) - int(previous_balance)
+    if amount <= 0 or step != (amount if direction == 'credit' else -amount):
+        return
+    unreadable = [issue for issue in item['issues'] if 'as an amount' in issue]
+    if len(unreadable) != len(item['issues']) or len(unreadable) != 1:
+        return
+    item['issues'] = []
+    fields.update(amount_minor=str(amount), amount_basis='printed_balance_step')
 
 
 # Whether a ruled row that prints the section's last payment and its TOTAL line
@@ -339,16 +391,27 @@ def _cover_closing(rows, choice, currency):
         return
     opening = openings[0]['fields'].get('balance')
     moves = [row for row in rows if row['kind'] in ('transaction', 'unresolved') and not row['excluded']]
-    if opening is None or not moves or moves[-1]['kind'] != 'transaction' or moves[-1]['fields'].get('balance') is None:
+    if opening is None:
         return
-    last = moves[-1]['fields']['balance']
+    if not moves and QUIET_COVER_CLOSING:
+        # A quiet section: its printed TOTAL line reads zero deposits and zero withdrawals, exactly once
+        # each, so the cover's current balance must equal its previous one and the section's opening.
+        totals = [row for row in rows if row['kind'] == 'statement_total']
+        directions = sorted(row['fields'].get('total_direction') or '' for row in totals)
+        if directions != ['credit', 'debit'] or any(row['issues'] or row['fields'].get('balance') != '0' for row in totals):
+            return
+        last = opening
+    elif not moves or moves[-1]['kind'] != 'transaction' or moves[-1]['fields'].get('balance') is None:
+        return
+    else:
+        last = moves[-1]['fields']['balance']
     account = choice.get('account_reference') or ''
     found = []
     for row in rows:
         if row['kind'] != 'header':
             continue
         cells = row['source_cells']
-        if not any(re.search(r'(?<![\d-])' + re.escape(account) + r'(?![\d-])', c['expected_text']) for c in cells):
+        if not account or not any(_names_account(c['expected_text'], account) for c in cells):
             continue
         money = [c for c in cells if _MONEY_CELL.fullmatch(c['expected_text'].strip())]
         shares = [c for c in cells if _PERCENT_CELL.fullmatch(c['expected_text'].strip())]
@@ -366,6 +429,14 @@ def _cover_closing(rows, choice, currency):
     row.update(kind='balance', excluded=True)
     row['fields'].update(description='Closing Balance', balance=value, balance_column=str(cell['column_index']),
                          balance_basis='cover_balance_summary')
+
+
+def _names_account(value, account):
+    """A cover cell prints this account number: inside its text, or (OCR split it with a space) as the
+    whole cell once its spaces are removed. Never a longer number containing it."""
+    if re.search(r'(?<![\d-])' + re.escape(account) + r'(?![\d-])', value):
+        return True
+    return COVER_SPACED_ACCOUNT and re.sub(r'\s+', '', value) == account
 
 
 def santander_no_activity_evidence(sources, choice, rows, currency):
@@ -398,6 +469,11 @@ def santander_no_activity_evidence(sources, choice, rows, currency):
             elif roles and roles[-1][0] == 'columns':
                 return ('rows_between_heading_and_total', 'Text was read between the movement column heading and the TOTAL line. Check it before confirming that the section contains no transactions.')
         sequence = [role for role, _ in roles]
+        if (QUIET_COVER_CLOSING and sequence == ['opening', 'columns', 'total'] and any(
+                row['kind'] == 'balance' and row['fields'].get('balance_basis') == 'cover_balance_summary' for row in rows)):
+            # The section's SALDO FINAL line was not read; its closing is the cover summary's, which prints
+            # the section's opening as last month's and this month's balance (_cover_closing).
+            sequence = sequence + ['closing']
         if sequence != ['opening', 'columns', 'total', 'closing'] or roles[1][1] != roles[2][1]:
             return ('section_lines', 'The balance, column heading and TOTAL lines of this account section were not read in their printed order on one page. Check the page before confirming that it contains no transactions.')
         return None

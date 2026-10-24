@@ -597,3 +597,25 @@ construction.
   the branch (recovery/scheduler/re-read environment tests).
 - Engine container: 117 passed and 50 skipped (the skips need a font). On the host, the font-dependent glyph
   tests (56) pass.
+
+## Reader gaps: Santander (fin/rg-santander)
+31 held BNB2 Santander statements (balance 16, reading 5, currency 5, no_activity 3, account 1, holder 1).
+
+### Changes (statement_import_santander.py, santander_integral.py; each default on, fails closed)
+- `LOUPE_FINANCIAL_SANTANDER_RULE_APOSTROPHE`: an apostrophe OCR'd for the column rule no longer breaks the heading (2 statements).
+- `LOUPE_FINANCIAL_SANTANDER_COVER_SPACED_ACCOUNT`: the cover's account number split by OCR spaces still names the section (exact digits only; 1 statement).
+- `LOUPE_FINANCIAL_SANTANDER_QUIET_COVER_CLOSING`: a section with no movements and zero printed totals takes its closing from the cover (equals opening) and passes the no-activity check (1 statement; it reconciles, held on saved work).
+- `LOUPE_FINANCIAL_SANTANDER_BALANCE_STEP_AMOUNT`: an amount with a misread separator is read only when the running balance steps by exactly it, in its column's direction, right after a clean line (1 statement; it reconciles, held on saved work).
+- `LOUPE_FINANCIAL_SANTANDER_INTEGRAL_RECOVERY` (new santander_integral.py): the older scanned ESTADO DE CUENTA INTEGRAL cheque section the general reader holds is proved from its printed running balance (unique amount/balance split per line, both ends agree with balances printed elsewhere, dates in period and in order, folio present, column agrees with direction). Shared code: one hook in statement_engine.propose_engine_statement, called only for a held engine statement, refused when another engine statement shares its pages (2 statements read; 1 ready, 1 held on saved work).
+- A positionless-table rule was tried and withdrawn: it made a second account section of a shared-page file ready, and the saved sibling's table overlap then matched it as already imported (2 wrong admissions on the truth set). That identity overlap (statement_import._existing_statement, table-address overlap when the Santander reader gives no section rows) is shared code, not changed.
+
+### Live (read only, fresh reading x branch)
+4 of 31 ready or importable (was 0). Reconciling but held by an earlier reading's saved review work: 10. Stale statement keys with saved work: 3. Account carry conflict: 1. Overlap-trim domain: 1. Currency not printed (autofill proposal exists): 4. Integral scans with OCR-garbled amounts: 2. Integral period with an engine fragment on the same page (guard refuses): 1 file. Engine splits the period and loses the account: 1 file. Positionless continuation tables (needs a new reading or text-layer reconstruction): 2.
+
+### Truth set (Santander corpus: 121 files, 178 periods; base 68d95b20 vs branch, readings reused, concurrency 1)
+- Bench readings: clean ready periods 145 -> 146; per-period lost 0; wrongly admitted 0; critical-field errors 0; valid-looking wrong values 0.
+- Live readings: clean ready periods 113 -> 122; per-period lost 0; wrongly admitted 0; critical-field errors 0; valid-looking wrong values 0.
+- Both base and branch report the same 2 exact copies offered instead of set aside (pre-existing, not from this branch).
+
+### Tests
+test_financial_santander_integral, test_financial_statement_import_santander, _santander_query, _santander_subaccounts, _mexico_no_activity, _statement_import_kapital, _statement_engine: 320 passed.

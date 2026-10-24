@@ -330,3 +330,111 @@ class SantanderSavedReviewTests(TestCase):
             self.assertFalse(list(f.db.scalars(select(FinancialTransaction))))
         finally:
             f.tearDown()
+
+
+class SantanderReaderGapTests(TestCase):
+    """2026-10-24 reader gaps: apostrophe column rules, cover numbers split by OCR, quiet sections' lost closing."""
+
+    def checking(self, ss):
+        choice=next(c for c in santander_catalog(ss)[0] if c['account_type']=='checking')
+        return propose_santander_statement(ss,'MXN',choice)['rows']
+
+    def test_a_column_rule_read_as_an_apostrophe_separates_date_folio_and_description(self):
+        import services.financial.statement_import_santander as santander
+        for mark in ("'", '’'):
+            with self.subTest(mark=mark):
+                ss=statement(merged=True)
+                for row in ss[0]['rows']:
+                    for cell in row['cells']:
+                        if cell['expected_text'][:11] in ('02-SEP-2024','03-SEP-2024'):
+                            cell['expected_text']=cell['expected_text'].replace('|',mark,2)
+                tx=[r for r in self.checking(ss) if not r['excluded']]
+                self.assertEqual([(r['kind'],r['fields']['amount_minor']) for r in tx], [('transaction','2500'),('transaction','5000')])
+                self.assertEqual(tx[0]['fields']['description'],'EXAMPLE DEPOSIT')
+
+    def test_the_cover_summary_names_an_account_number_split_by_a_space(self):
+        ss=cover_statement()
+        summary=next(r for r in ss[0]['rows'] if r['row_index']==99)
+        summary['cells'][1]['expected_text']='65-000012 34-0'
+        rows=self.checking(ss)
+        closings=[r for r in rows if r['kind']=='balance' and r['fields']['description']=='Closing Balance']
+        self.assertEqual([(c['fields']['balance'],c['fields']['balance_basis']) for c in closings],[('7500','cover_balance_summary')])
+        self.assertEqual(check_statement_rows(rows)['balance_status'],'matches')
+        for other in ('65-000012 34-1','165-000012 34-0','65-000012 34-0 66'):
+            with self.subTest(other=other):
+                summary['cells'][1]['expected_text']=other
+                self.assertFalse(any(r['fields'].get('balance_basis') for r in self.checking(ss)))
+
+    def quiet(self, *, previous='0.00', current='0.00', total='0.00'):
+        """The investment section of statement() with its SALDO FINAL line lost and a cover summary line."""
+        ss=statement()
+        rows=ss[0]['rows']
+        ss[0]['rows']=[r for r in rows if not (r['cells'][0]['expected_text']=='SALDO FINAL DEL PERIODO:' and r['cells'][-1]['expected_text']=='$0.00')]
+        for r in ss[0]['rows']:
+            if r['cells'][0]['expected_text']=='TOTAL' and r['cells'][1]['expected_text']=='0.00':
+                r['cells'][1]['expected_text']=total
+        summary=source(1,[[(30000,100000,150000,'INVERSION CRECIENTE'),(200000,100000,60000,'66-000012 34-0'),
+            (280000,100000,40000,previous),(330000,100000,40000,'0.00%'),(400000,100000,40000,current),(460000,100000,40000,'0.00%')]])['rows'][0]
+        ss[0]['rows'].append(summary|{'row_index':99})
+        choice=next(c for c in santander_catalog(ss)[0] if c['account_type']=='savings')
+        return ss, choice, propose_santander_statement(ss,'MXN',choice)['rows']
+
+    def test_a_quiet_section_takes_its_lost_closing_from_the_cover_and_proves_no_activity(self):
+        from services.financial.statement_import_santander import santander_no_activity_evidence
+        ss, choice, rows = self.quiet()
+        closings=[r for r in rows if r['kind']=='balance' and r['fields']['description']=='Closing Balance']
+        self.assertEqual([(c['fields']['balance'],c['fields']['balance_basis']) for c in closings],[('0','cover_balance_summary')])
+        self.assertTrue(santander_no_activity_evidence(ss, choice, rows, 'MXN')['verified'])
+
+    def test_a_quiet_section_never_takes_a_cover_that_moved_or_unequal_totals(self):
+        for kwargs in (dict(current='5.00'), dict(previous='5.00', current='5.00'), dict(total='5.00')):
+            with self.subTest(**kwargs):
+                _, _, rows = self.quiet(**kwargs)
+                self.assertFalse(any(r['fields'].get('balance_basis') for r in rows))
+
+    def test_switches_off_restore_the_earlier_reading(self):
+        import services.financial.statement_import_santander as santander
+        try:
+            santander.QUIET_COVER_CLOSING=False
+            self.assertFalse(any(r['fields'].get('balance_basis') for r in self.quiet()[2]))
+            santander.COVER_SPACED_ACCOUNT=False
+            ss=cover_statement()
+            next(r for r in ss[0]['rows'] if r['row_index']==99)['cells'][1]['expected_text']='65-000012 34-0'
+            self.assertFalse(any(r['fields'].get('balance_basis') for r in self.checking(ss)))
+        finally:
+            santander.QUIET_COVER_CLOSING=True
+            santander.COVER_SPACED_ACCOUNT=True
+
+
+class SantanderBalanceStepAmountTests(TestCase):
+    def rows(self, amount, balance='75.00'):
+        ss=statement()
+        for row in ss[0]['rows']:
+            if row['cells'][0]['expected_text']=='03-SEP-2024':
+                row['cells'][3]['expected_text']=amount
+                row['cells'][4]['expected_text']=balance
+        choice=next(c for c in santander_catalog(ss)[0] if c['account_type']=='checking')
+        return propose_santander_statement(ss,'MXN',choice)['rows']
+
+    def test_a_misread_separator_is_read_when_the_running_balance_moves_by_exactly_that_amount(self):
+        rows=self.rows('0.050.00')
+        payment=[r for r in rows if not r['excluded']][1]
+        self.assertEqual((payment['fields'].get('amount_minor'), payment['fields'].get('amount_basis'), payment['issues']),
+                         ('5000','printed_balance_step',[]))
+        self.assertEqual(check_statement_rows(rows)['balance_status'],'matches')
+
+    def test_it_is_never_read_when_the_balance_step_differs_or_the_text_is_not_an_amount(self):
+        for amount, balance in (('0.051.00','75.00'), ('0.050.00','76.00'), ('5O.00','75.00')):
+            with self.subTest(amount=amount, balance=balance):
+                payment=[r for r in self.rows(amount, balance) if not r['excluded']][1]
+                self.assertNotIn('amount_minor', payment['fields'])
+                self.assertTrue(payment['issues'])
+
+    def test_switch_off_leaves_the_amount_unread(self):
+        import services.financial.statement_import_santander as santander
+        try:
+            santander.BALANCE_STEP_AMOUNT=False
+            payment=[r for r in self.rows('0.050.00') if not r['excluded']][1]
+            self.assertNotIn('amount_minor', payment['fields'])
+        finally:
+            santander.BALANCE_STEP_AMOUNT=True
