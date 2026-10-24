@@ -79,6 +79,15 @@ def _not_ready_reason(projection):
     return 'No longer ready: open it in the queue'
 
 
+def restored_saved_copy(item, file):
+    """A copy of a saved statement that a person restored after the System set it aside (saved_copies): the
+    person saves it, never the System, so the account and period are not counted twice unasked."""
+    from services.financial.pending_statement_duplicates import METADATA_KEY
+    from services.financial.saved_copies import BASIS
+    stored = ((file.metadata_ or {}).get(METADATA_KEY) or {}).get(item.statement_key or '') if file is not None else None
+    return bool(stored and stored.get('status') == 'restored' and stored.get('basis') == BASIS)
+
+
 def system_filled_only(item, file):
     """The statement's only saved review is details System filled from confirmed proposals, or the
     investigator's statement details an engine re-read carried onto this reading after every payment of hers
@@ -358,7 +367,7 @@ def _auto_save_once(session, *, case_id, batch_id, file_id, stored_checks=False)
     ids = [item.id for item in session.scalars(select(Item).where(Item.batch_id == batch_id,
            Item.file_id == file_id, Item.status == 'ready'))
            if (not item.review_request or system_filled_only(item, file))
-           and not (stored_checks and _stored_check(item))]
+           and not (stored_checks and _stored_check(item)) and not restored_saved_copy(item, file)]
     if not ids:
         return None
     result = save_statements(session, case_id=case_id, item_ids=ids, actor=SYSTEM_ACTOR,

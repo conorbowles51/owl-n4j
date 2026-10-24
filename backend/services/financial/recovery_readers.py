@@ -170,12 +170,17 @@ def _same_account(saved, read):
     return saved[-6:] == read[-6:]
 
 
-def copy_of_saved(session, case_id, source, held):
-    """True when a held statement's account and period are already admitted in the case. Read only."""
+def copy_of_saved(session, case_id, source, held, cache=None):
+    """True when a held statement's account and period are already admitted in the case. Read only.
+
+    A saved period of another Santander product sharing the last six digits (santander_subaccounts) is not a
+    copy of it.
+    """
     if not COPY_OF_SAVED_PROTECTS:
         return False
     from datetime import date
     from postgres.models.financial import FinancialAccount, FinancialStatementPeriod
+    from services.financial.santander_subaccounts import another_product
     wanted = {}
     for item in held:
         summary = item.summary or {}
@@ -184,18 +189,23 @@ def copy_of_saved(session, case_id, source, held):
         except (KeyError, TypeError, ValueError):
             continue
         if _digits(summary.get('account')):
-            wanted.setdefault((start, end), set()).add(_digits(summary.get('account')))
-    for (start, end), accounts in wanted.items():
-        rows = session.execute(select(FinancialAccount.identifier_normalised, FinancialAccount.identifier_as_printed,
-                EvidenceFile.sha256).select_from(FinancialStatementPeriod)
+            wanted.setdefault((start, end), []).append(item)
+    memo = {}
+    for (start, end), items in wanted.items():
+        rows = session.execute(select(FinancialStatementPeriod, FinancialAccount)
             .join(FinancialSourceDocument, FinancialSourceDocument.id == FinancialStatementPeriod.source_document_id)
             .join(FinancialAccount, FinancialAccount.id == FinancialStatementPeriod.account_id)
             .join(EvidenceFile, EvidenceFile.id == FinancialSourceDocument.evidence_file_id)
             .where(FinancialStatementPeriod.case_id == case_id, FinancialSourceDocument.status == 'admitted',
-                   FinancialStatementPeriod.period_start == start, FinancialStatementPeriod.period_end == end))
-        for normalised, printed, sha in rows:
-            if any(_same_account(_digits(saved), wanted_digits)
-                                            for saved in (normalised, printed) for wanted_digits in accounts):
+                   FinancialStatementPeriod.period_start == start, FinancialStatementPeriod.period_end == end)).all()
+        for period, account in rows:
+            for item in items:
+                wanted_digits = _digits((item.summary or {}).get('account'))
+                if not any(_same_account(_digits(saved), wanted_digits)
+                           for saved in (account.identifier_normalised, account.identifier_as_printed)):
+                    continue
+                if another_product(session, case_id, item, period, account, cache=cache, memo=memo):
+                    continue
                 return True
     return False
 
@@ -474,6 +484,10 @@ def snapshot(session, case_id, cutoff, campaign, run_id):
     """Durable selection at the release cutoff; the run is the idempotency key."""
     if campaign.current_readers:
         supersede_earlier(session, case_id, campaign.release)
+    # Held statements that need no person (a copy the saved ledger agrees with, a fund statement) are set
+    # aside first; the selection below then sees them settled (held_settlement).
+    from services.financial.held_settlement import settle_held_statements
+    settled = settle_held_statements(session, case_id)
     selected, reasons = candidates(session, case_id, campaign, cutoff)
     membership = context(session, case_id)['membership']
     run = Run(id=run_id, case_id=case_id, release=campaign.release, status='running' if selected else 'complete')
@@ -493,7 +507,8 @@ def snapshot(session, case_id, cutoff, campaign, run_id):
                 visibility_revision=financial_file_visibility(detail['source'])['financial_visibility_revision'])))
     scope = dict(considered=sum(reasons.values()), scheduled=len(selected),
         batch_files=sum(len(members) for *_, members in selected),
-        excluded={key: value for key, value in sorted(reasons.items()) if key != ELIGIBLE})
+        excluded={key: value for key, value in sorted(reasons.items()) if key != ELIGIBLE},
+        settled=dict(sorted(settled.items())))
     session.add(IngestionLog(case_id=case_id, level='info',
         message=f'Reader recovery scheduled {len(selected)} held statements for a new reading. '
             f'{scope["considered"] - len(selected)} batch files were left unchanged.',

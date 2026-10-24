@@ -167,6 +167,10 @@ def plan_trim(rows, *, start, end, neighbours):
             cut_end = min(cut_end, low - timedelta(days=1))
         else:
             return ('held', 'covered_in_middle')
+        if any(m[0] is None or not (n['period_start'] <= m[0] <= n['period_end']) for m in n['movements']):
+            # A saved movement undated or dated outside its own period could fall in this query's kept dates
+            # and be counted twice: held.
+            return ('held', 'movements_differ')
         ours = [r for r in movements if low <= _day(r['fields']['date']) <= high]
         theirs = [m for m in n['movements'] if m[0] is not None and low <= m[0] <= high]
         if any(m[3] is None for m in theirs):

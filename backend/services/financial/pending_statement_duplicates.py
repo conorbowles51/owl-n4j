@@ -398,6 +398,12 @@ def apply_duplicate_disposition(session, *, case_id, file, proposal, request=Non
     if previous and previous['current'] and (previous['status'] == 'restored' or
             (previous['status'] == 'ignored' and previous.get('basis') == 'investigator_decision')):
         return previous
+    if previous and previous['current'] and previous['status'] == 'ignored':
+        # A held copy set aside because the saved ledger of its account and period agrees with it
+        # (saved_copies): kept while that still holds; otherwise compared again below.
+        from services.financial.saved_copies import BASIS, still_agrees
+        if previous.get('basis') == BASIS and still_agrees(session, case_id, file, proposal, request, previous):
+            return previous
     own = scope({**request, 'account_type': proposal.get('metadata', {}).get('account_type') or ''})
     current = proposal.get('current_import') or {}
     if current.get('excluded_as_duplicate') and current.get('duplicate_disposition'):

@@ -829,6 +829,12 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         from services.financial.pending_statement_duplicates import read_duplicate_disposition
         result['duplicate_disposition'] = ((current_import or {}).get('duplicate_disposition')
             or read_duplicate_disposition(session, file, result))
+    # Outside the revision: a fund statement (holdings, no movement ledger) is set aside as not a payment
+    # statement; a person's decision to put it back is read from the file (not_payment_statements).
+    from services.financial.not_payment_statements import classify as not_payment_statement
+    not_payment = not_payment_statement(file, text, result)
+    if not_payment:
+        result['not_payment_statement'] = not_payment
     return result
 
 
@@ -966,6 +972,9 @@ class StatementImportRequest(StatementReviewDraft):
 
 
 def check_import_request(proposal, request):
+    if proposal.get('not_payment_statement'):
+        raise PdfMappingError('This is a fund statement, not a payment statement: it has no payments to import. '
+                              'Put it back for review first if it should be read as one.', 409)
     saved = proposal.get('saved_review')
     if saved and saved['request'].get('expected_revision') != proposal['revision']:
         raise PdfMappingError('The saved corrections belong to an older reading. Compare them and use Save progress before importing.', 422)

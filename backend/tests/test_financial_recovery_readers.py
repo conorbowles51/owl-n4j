@@ -1113,3 +1113,73 @@ def test_details_carry_switched_off_leaves_such_work_held_as_before(f, monkeypat
     plan = rc.plan_statement('', [('progress', dict(request=_stale(request), saved_by=dict(name='System')))],
                              proposal, {'': proposal})
     assert plan == dict(kind='held', reason='rows_not_aligned', carried={})
+
+
+def _santander_saved_and_held(f, held_number):
+    """A period saved for Santander product 65-…; a held statement of these bytes reading ``held_number``."""
+    from postgres.models.financial import FinancialAccount, FinancialStatementPeriod
+    from services.evidence_db_storage import EvidenceDBStorage
+    set_reader(f, f.file.id)
+    receipt = f.confirm_legacy()
+    document = f.db.get(FinancialSourceDocument, __import__('uuid').UUID(receipt['source_document_id']))
+    period = f.db.scalar(select(FinancialStatementPeriod).where(FinancialStatementPeriod.source_document_id == document.id))
+    account = f.db.get(FinancialAccount, period.account_id)
+    account.institution_name, account.identifier_as_printed, account.identifier_normalised = (
+        'Santander', '65-50000001-2', '65500000012')
+    other = EvidenceDBStorage.add_files(f.db, f.case.id, [dict(original_filename='other.pdf', stored_path=f.file.stored_path,
+        sha256='e' * 64, size=1)], folder_id=f.file.folder_id, created_by_id=f.user.id)[0]
+    f.db.flush()
+    document.evidence_file_id = other.id
+    metadata = dict(f.db.get(EvidenceFile, f.file.id).metadata_ or {})
+    metadata.pop('financial_duplicate_dispositions', None)
+    f.db.get(EvidenceFile, f.file.id).metadata_ = metadata
+    f.db.commit()
+    start, end = period.period_start.isoformat(), period.period_end.isoformat()
+    _, (held,) = held_batch(f)
+    with f.SessionLocal() as db:
+        db.get(BatchItem, held.id).summary = dict(source_id=str(f.file.id), revision='r', period_start=start,
+            period_end=end, account=held_number, institution='Santander')
+        file = db.get(EvidenceFile, f.file.id)
+        file.metadata_ = {k: v for k, v in (file.metadata_ or {}).items() if k != 'financial_duplicate_dispositions'}
+        db.commit()
+    return start, end
+
+
+def _reading(number, start, end, *, beside=None, payments=None):
+    from collections import Counter
+    others = [dict(id='o', account_reference=beside, period_start=start, period_end=end, page_numbers=[1, 2])] if beside else []
+    return dict(number=''.join(c for c in number if c.isdigit()), payments=Counter(payments or {}), start=start, end=end,
+                pages={1, 3}, others=others)
+
+
+def test_a_held_santander_product_is_not_a_copy_of_the_other_product_saved_on_the_same_dates(f, monkeypatch):
+    """LOUPE_FINANCIAL_SANTANDER_SUBACCOUNTS: 66-… beside a saved 65-… (same last six digits) is its own account."""
+    from services.financial import santander_subaccounts as sub
+    start, end = _santander_saved_and_held(f, '66-50000001-2')
+    monkeypatch.setattr(sub, 'held_reading', lambda *a, **k: _reading('66-50000001-2', start, end, beside='65-50000001-2'))
+    assert selection(f)[1] == {'eligible': 1}  # its own file prints both products: re-read, saved as its own account
+    monkeypatch.setattr(sub, 'ENABLED', False)
+    assert selection(f) == ([], {'copy_of_saved': 1})  # switch off: the old hold
+
+
+def test_a_held_santander_product_whose_identity_is_not_proven_stays_a_copy(f, monkeypatch):
+    from services.financial import santander_subaccounts as sub
+    start, end = _santander_saved_and_held(f, '66-50000001-2')
+    monkeypatch.setattr(sub, 'held_reading', lambda *a, **k: None)  # unread / not Santander now
+    assert selection(f) == ([], {'copy_of_saved': 1})
+    monkeypatch.setattr(sub, 'held_reading', lambda *a, **k: _reading('65-50000001-2', start, end, beside='65-50000001-2'))
+    assert selection(f) == ([], {'copy_of_saved': 1})  # the current reading prints the saved number
+    monkeypatch.setattr(sub, 'held_reading', lambda *a, **k: _reading('66-50000001-2', start, end))
+    assert selection(f) == ([], {'copy_of_saved': 1})  # nothing beside it and no payments to tell them apart
+
+
+def test_a_held_santander_statement_of_the_same_product_stays_a_copy(f, monkeypatch):
+    from services.financial import santander_subaccounts as sub
+    start, end = _santander_saved_and_held(f, '65-50000001-2')
+    monkeypatch.setattr(sub, 'held_reading', lambda *a, **k: _reading('65-50000001-2', start, end, beside='66-50000001-2'))
+    assert selection(f) == ([], {'copy_of_saved': 1})
+    with f.SessionLocal() as db:  # a reading without the full number (only the last digits): not proven
+        item = db.scalars(select(BatchItem).where(BatchItem.status == 'attention')).one()
+        item.summary = {**item.summary, 'account': '000001-2'}
+        db.commit()
+    assert selection(f) == ([], {'copy_of_saved': 1})
