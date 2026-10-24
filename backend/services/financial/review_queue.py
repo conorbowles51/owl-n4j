@@ -130,6 +130,19 @@ def issue_sentence(reason, problems, summary):
             return f'Closing balance off by {_money(closing["difference_minor"], currency)}'
         if any(p.get('kind') == 'arithmetic' and 'opening and one closing balance' in (p.get('message') or '')
                for p in problems):
+            # Name what is actually missing: the check is unavailable when a balance or a payment amount
+            # is unread, and a statement with both balances read waits for its payments, not its balances.
+            check = next((c for c in summary.get('checks') or []
+                          if isinstance(c, dict) and c.get('kind') == 'closing_balance'), None) or {}
+            opening, closing = check.get('opening_minor') is not None, check.get('printed_minor') is not None
+            unread = [p for p in summary.get('problems') or [] if p.get('row_id') and p.get('kind') != 'arithmetic']
+            if check and opening and closing and unread:
+                n = _rows(unread)
+                return f'Both balances read; {plural(n, "payment", "payments")} could not be read{_pages(unread)}'
+            if check and opening and not closing:
+                return 'Closing balance not read: enter it from the statement'
+            if check and closing and not opening:
+                return 'Opening balance not read: enter it from the statement'
             return 'Opening or closing balance not read: enter both from the statement'
         running = [p for p in problems if p.get('check') == 'running_balance'
                    or 'running balance' in (p.get('message') or '').lower()]

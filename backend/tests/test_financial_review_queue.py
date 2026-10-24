@@ -57,6 +57,15 @@ class QueueRulesTests(TestCase):
         missing = dict(kind='arithmetic', check='closing_balance',
                        message='Enter one opening and one closing balance from the statement, and complete every selected payment, to reconcile.')
         self.assertEqual(issue_sentence('balance', [missing], {}), 'Opening or closing balance not read: enter both from the statement')
+        check = lambda opening, closing: dict(checks=[dict(kind='closing_balance', status='unavailable',
+                                                           opening_minor=opening, printed_minor=closing)])
+        unread = [dict(kind='reading', row_id=f'2:0:{n}', page=2, message='The amount is missing or unreadable.') for n in range(2)]
+        self.assertEqual(issue_sentence('balance', [missing], dict(check('100', '90'), problems=[missing, *unread])),
+                         'Both balances read; 2 payments could not be read on page 2')
+        self.assertEqual(issue_sentence('balance', [missing], check('100', None)), 'Closing balance not read: enter it from the statement')
+        self.assertEqual(issue_sentence('balance', [missing], check(None, '90')), 'Opening balance not read: enter it from the statement')
+        self.assertEqual(issue_sentence('balance', [missing], check(None, None)),
+                         'Opening or closing balance not read: enter both from the statement')
         for reason in ('import_failed', 'saved_review', 'reprint', 'assignment', 'institution', 'holder', 'account',
                        'dates', 'incomplete', 'count', 'no_activity'):
             sentence = issue_sentence(reason, [dict(message='x', row_id='1:0:1', page=1)], {})
