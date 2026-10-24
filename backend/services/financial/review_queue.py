@@ -362,9 +362,12 @@ def _preparing_again(batches):
     A file handed back for a new reading (``recovery``) waits for its turn
     before it is processed; it is being rechecked from the hand-off on.
     """
+    from services.financial.held_reprepare import pending_files
+    batches = list(batches)
+    # Also a held file marked to be prepared again with the deployed reader, waiting for its turn.
     return {(batch.id, file['file_id']) for batch in batches if batch.status in ('preparing', 'pausing')
             for file in batch.files or [] if file.get('file_id') and (file.get('status') == 'processing'
-                or (file.get('status') == 'waiting' and file.get('recovery')))}
+                or (file.get('status') == 'waiting' and file.get('recovery')))} | pending_files(batches)
 
 
 # Buckets a scheduled re-read moves to "Being rechecked": held statements only.

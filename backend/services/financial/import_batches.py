@@ -471,6 +471,8 @@ def prepare_reviews(session, batch, file, *, lock_slice=None):
             if not (existing and existing.review_request):
                 draft = None
         status,summary = assess(proposal, draft)
+        from services.financial.held_reprepare import ASSESSED, assessment_digest
+        summary[ASSESSED] = assessment_digest(status, summary)
         if conflict:
             status, summary = 'attention', conflict_summary(summary)
         summary.update(filename=file['filename'], currency=proposal['currency'], source_id=file['source_id'])
@@ -2112,6 +2114,9 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
                         # The statement-reading code this preparation used (reader_release).
                         from services.financial.reader_release import reader_stamp
                         file['reader_stamp']=reader_stamp(); file.pop('recheck', None)
+                        # And the whole backend reader it was prepared by (held_reprepare).
+                        from services.financial.held_reprepare import record_preparation
+                        record_preparation(file)
                         file.pop('preparation_retries', None)
                         file.pop('error', None)
                         _reading_progress(file, 'complete', SHARED_PREPARATION_DONE, review_file_id=file['file_id'], prepared_in_batch=shared[1])
@@ -2128,6 +2133,9 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
                         # The statement-reading code this preparation used (reader_release).
                         from services.financial.reader_release import reader_stamp
                         file['reader_stamp']=reader_stamp(); file.pop('recheck', None)
+                        # And the whole backend reader it was prepared by (held_reprepare).
+                        from services.financial.held_reprepare import record_preparation
+                        record_preparation(file)
                         file.pop('preparation_retries', None)
                         file.pop('error', None)
                         file['prepared_reading'] = await asyncio.to_thread(_prepared_reading, factory, case_id, UUID(file['file_id']))
@@ -2571,6 +2579,17 @@ async def run_batches_forever():
                     raise
                 except Exception:
                     log.exception('Re-checking statement files after a release failed; it will retry')
+                # Held statements prepared by an earlier backend reader are prepared again from their
+                # saved reading, a few at a time (held_reprepare).
+                from services.financial.held_reprepare import sweep as held_reprepare_sweep
+                try:
+                    reprepared = await _finish_atomic(held_reprepare_sweep, factory)
+                    if reprepared['handed'] or reprepared['verdicts']:
+                        log.info('Held statements checked against the deployed reader: %s', reprepared)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    log.exception('Preparing held statements again after a reader change failed; it will retry')
             if time.monotonic() >= next_sweep:
                 # Batch reads never re-read PDFs. Inputs changed by paths
                 # without their own refresh are brought current here.
