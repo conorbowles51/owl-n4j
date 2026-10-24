@@ -85,3 +85,6 @@ Counts and opaque ids only. Scratch evidence (private, mode 700): /mnt/owl-data/
 - Counts unchanged: the 64 ready 8; the 50 ready 8 (sibling work not carried 10, now held by rule, not
   by default). Wrong admissions 0, lost 0, no live writes.
 - Tests: 20 targeted files: 590 passed / 20 failed (the same 20 pre-existing failures); 5 new rule tests.
+- Whole-set bench (bench/aqb-216c5a6b) still running at 02:20 UTC (918 of about 1944 batch items).
+  Compare when done: python3 /mnt/owl-data/fin-real/tmp/aqb/compare_whole.py /mnt/owl-data/fin-real/bench/aqb-216c5a6b
+  (per-period lost/gained vs r14s-whole results-rescored.json; script self-check on r14s-whole: lost 0).
