@@ -1033,10 +1033,18 @@ def _checked_batch_items(session, case_id, items, *, validate_reviews=False, rea
                     count=waiting, plural='' if waiting == 1 else 's', verb='is' if waiting == 1 else 'are')))
                 summary.update(can_import=False, comparison_pending=True)
             summary.update(coverage_review=review, problems=problems, problem_count=len(problems) + extra_count)
-            projected[index] = (item, 'attention' if problems else 'ready', summary, projected_request, held)
+            # A fund statement set aside as not a payment statement has no problem and is never saveable: it stays
+            # held (attention), the state its assessment stored, so the queue lists it as not a payment statement.
+            held_aside = bool(summary.get('not_payment_statement')) and _not_payment_enabled()
+            projected[index] = (item, 'attention' if problems or held_aside else 'ready', summary, projected_request, held)
     with stage('batch_finish'):
         result = _finish_projection(session, case_id, projected, inputs.files)
     return result, sources
+
+
+def _not_payment_enabled():
+    from services.financial import not_payment_statements
+    return not_payment_statements.ENABLED
 
 
 def _account_currency_conflict(session, case_id, summary, raw, knowledge):
