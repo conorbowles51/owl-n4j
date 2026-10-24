@@ -212,6 +212,10 @@ def drain_readiness(refresh, backlog, *, clock=time.monotonic, max_quiet_rounds=
                 stopped='drained' if not pending else 'no_progress', seconds=clock() - started)
 
 
+# Worker cycles (readiness refresh, then sweep save, then its imports) the harness runs after preparation.
+SWEEP_CYCLES = 12
+
+
 def drain_sweep_save(sweep, *, max_rounds=10, clock=time.monotonic):
     """Rounds of the worker's sweep save until a round claims nothing; the claimed statement ids."""
     started = clock()
@@ -634,10 +638,24 @@ def run(out, python, concurrency, corpus=CORPUS, readings=None, compare=None):
     readiness = drain_readiness(lambda: batches.refresh_stale_readiness(factory), readiness_backlog)
     # The same worker round then saves, as System, statements that became
     # ready after their file's preparation or whose automatic save failed
-    # (queue_save.sweep_save); its claims are imported before scoring.
-    sweep = drain_sweep_save(lambda: queue_save.sweep_save(factory, budget_seconds=None))
-    if sweep['queued']:
-        sweep['drain'] = drain('sweep-save')
+    # (queue_save.sweep_save); its claims are imported before scoring. As in
+    # the service, the worker's next rounds refresh the readiness those saves
+    # made stale and save again (a statement that waited for another statement
+    # of its account), until a round saves nothing.
+    sweep = dict(queued=0, item_ids=[], rounds=0, seconds=0.0, cycles=0)
+    for cycle in range(SWEEP_CYCLES):
+        if cycle:
+            readiness.setdefault('after_saves', []).append(
+                drain_readiness(lambda: batches.refresh_stale_readiness(factory), readiness_backlog))
+        round_ = drain_sweep_save(lambda: queue_save.sweep_save(factory, budget_seconds=None))
+        sweep.update(queued=sweep['queued'] + round_['queued'], item_ids=sweep['item_ids'] + round_['item_ids'],
+                     rounds=sweep['rounds'] + round_['rounds'], seconds=sweep['seconds'] + round_['seconds'],
+                     cycles=cycle + 1)
+        if not round_['queued']:
+            break
+        sweep.setdefault('drains', []).append(drain('sweep-save'))
+    if sweep.get('drains'):
+        sweep['drain'] = sweep['drains'][0]
     readiness['sweep_save'] = sweep
     started = time.monotonic()
     with factory() as db:
@@ -1108,6 +1126,8 @@ def verify_ledger(db, periods, final_items, truths, Transaction, Account, select
                                      not_recorded=[], by_family={}))
     seen = Counter()
     counted = set()
+    trimmed = []
+    sql = hasattr(db, 'scalar')  # a database session (unit tests pass a fake ledger of saved rows)
     printed_periods = defaultdict(dict)  # printed period -> {source document: saved rows}
     for period in periods:
         item = final_items.get(period['item_id']) if period['item_id'] else None
@@ -1142,6 +1162,13 @@ def verify_ledger(db, periods, final_items, truths, Transaction, Account, select
             expected = []
         else:
             expected = [dict(r) for r in truth['rows']]
+            # A movement query saved trimmed (statement_overlap_trim): it holds the printed rows of its saved
+            # dates; the rows of the trimmed dates must be held by another saved statement of its account.
+            kept = trimmed_dates(db, item['source_document_id'], truth, select) if sql else None
+            if kept:
+                outside = [r for r in expected if not (r.get('date') and kept[0] <= str(r['date'])[:10] <= kept[1])]
+                expected = [r for r in expected if r not in outside]
+                trimmed.append((period, truth, outside, item['source_document_id'], errors))
         remaining = list(expected)
         for row in rows:
             account = db.get(Account, row.account_id)
@@ -1183,6 +1210,17 @@ def verify_ledger(db, periods, final_items, truths, Transaction, Account, select
         if errors or (truth and truth['expected'] in HELD):
             report['wrongly_admitted'].append(dict(period=period['truth_id'], expected=truth['expected'] if truth else None,
                                                    errors=dict(errors)))
+    for period, truth, outside, document_id, errors in trimmed:
+        report['trimmed_periods'] = report.get('trimmed_periods', 0) + 1
+        missing = covered_elsewhere(db, document_id, outside, Transaction, select)
+        if missing:
+            errors['trimmed_rows_not_saved_elsewhere'] += missing
+            report['critical_errors'].update(dict(trimmed_rows_not_saved_elsewhere=missing))
+            report['by_period'][period['truth_id'] or period['item_id']]['errors'] = dict(errors)
+            if not any(w['period'] == period['truth_id'] for w in report['wrongly_admitted']):
+                report['wrongly_admitted'].append(dict(period=period['truth_id'], expected=truth['expected'],
+                                                       errors=dict(errors)))
+    report['movements_counted_twice'] = movements_counted_twice(db, counted, Transaction, select) if sql else 0
     report['repeated_amount_date_rows'] = sum(count - 1 for count in seen.values() if count > 1)
     report['duplicate_contributions'] = sum(sum(saved.values()) - max(saved.values())
                                             for saved in printed_periods.values() if len(saved) > 1)
@@ -1190,6 +1228,55 @@ def verify_ledger(db, periods, final_items, truths, Transaction, Account, select
     report['critical_errors'] = dict(report['critical_errors'])
     report['saved_holders']['by_family'] = {k: dict(v) for k, v in sorted(report['saved_holders']['by_family'].items())}
     return report
+
+
+def trimmed_dates(db, source_document_id, truth, select):
+    """(start, end) a saved statement was trimmed to inside its truth period, or None (statement_overlap_trim)."""
+    from postgres.models.financial import FinancialSourceDocument, FinancialStatementPeriod
+    document = db.get(FinancialSourceDocument, uuid.UUID(source_document_id))
+    request = ((document.metadata_ or {}).get('statement_import_request') or {}) if document else {}
+    period = db.scalar(select(FinancialStatementPeriod).where(
+        FinancialStatementPeriod.source_document_id == uuid.UUID(source_document_id)))
+    if period is None or not period.period_start or not period.period_end or not truth.get('period_start'):
+        return None
+    start, end = period.period_start.isoformat(), period.period_end.isoformat()
+    if not any(row.get('covered_reason') or row.get('reason', '').startswith('Counted once:')
+               for row in request.get('rows') or []):
+        return None
+    if (start, end) == (truth['period_start'], truth['period_end']) or start < truth['period_start'] \
+            or end > truth['period_end']:
+        return None
+    return start, end
+
+
+def covered_elsewhere(db, source_document_id, rows, Transaction, select):
+    """How many of ``rows`` (truth rows a trimmed statement left out) no other saved statement of its account holds."""
+    account = db.scalar(select(Transaction.account_id).where(
+        Transaction.source_document_id == uuid.UUID(source_document_id)).limit(1))
+    others = Counter((t.amount_minor, t.direction, str(t.transaction_date or t.posted_date)) for t in db.scalars(
+        select(Transaction).where(Transaction.source_document_id != uuid.UUID(source_document_id),
+                                  Transaction.ledger_status == 'admitted',
+                                  *([Transaction.account_id == account] if account else []))))
+    missing = 0
+    for row in rows:
+        key = (row['amount_minor'], row['direction'], str(row.get('date'))[:10])
+        if others[key] > 0:
+            others[key] -= 1
+        else:
+            missing += 1
+    return missing
+
+
+def movements_counted_twice(db, documents, Transaction, select):
+    """Saved movements of one account that a second saved statement also holds (same date, amount, direction and
+    running balance): one movement counted twice. Movements without a running balance are not compared."""
+    keys = defaultdict(set)
+    for t in db.scalars(select(Transaction).where(Transaction.ledger_status == 'admitted')):
+        if str(t.source_document_id) not in documents or t.running_balance_minor is None:
+            continue
+        keys[(t.account_id, t.transaction_date or t.posted_date, t.amount_minor, t.direction,
+              t.running_balance_minor)].add(t.source_document_id)
+    return sum(len(sources) - 1 for sources in keys.values() if len(sources) > 1)
 
 
 ACTION_COST = dict(edit=1, decision=1, add_row=2)  # add_row: enter values + choose its place
@@ -1346,6 +1433,8 @@ def render_summary(result):
              f"Safety: wrongly admitted periods {len(ledger['wrongly_admitted'])}; critical-field errors in saved "
              f"transactions {sum(ledger['critical_errors'].values())} ({ledger['transactions']} saved from "
              f"{ledger['admitted_periods']} periods); duplicate ledger contributions {ledger['duplicate_contributions']}; "
+             f"movements counted twice across overlapping saved statements {ledger.get('movements_counted_twice', 0)}; "
+             f"periods saved trimmed {ledger.get('trimmed_periods', 0)}; "
              f"held periods kept out {o['holds_kept']}/{o['hold_periods']}; exact copies held automatically "
              f"{o['duplicate_copies_held_automatically']}/{o['duplicate_copies']}. Valid-looking but wrong values "
              f"proposed before review (any period): {sum(o['valid_but_wrong_values_proposed'].values())}. Batch items "

@@ -3333,8 +3333,37 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
             statement['id'] = _digest(dict(layout_id=LAYOUT, account=account, start=statement['period_start'],
                                            end=statement['period_end'], currency=attributed, first_page=section_pages[0],
                                            first_row=reading['first_row']))
+    if (HOLDINGS_CURRENCY and not statement['currency'] and (profile or {}).get('holdings_currency')
+            and len(named) <= 1):
+        # (C2, profile) A brokerage cash ledger prints no currency of its own; the same statement's holdings
+        # table can print one in its currency column (Neil, 2026-10-23: the currency printed on the page is
+        # the statement's). Only when every holdings line of the statement prints the same one code and the
+        # statement names no other currency; anything else stays unread (held for a person).
+        from services.financial.statement_currency import printed_holdings_currency
+        held = printed_holdings_currency([s for s in sources if s['page_number'] in segment['pages']])
+        if held and named <= {held['value']}:
+            statement.update(currency=held['value'], currency_source='printed_holdings_currency',
+                             currency_evidence=dict(page_number=held['page_number'], table_index=held['table_index'],
+                                                    row_index=held['row_index'], column_index=held['column_index'],
+                                                    cells=held['cells']))
+            try:
+                new_exponent = get_currency(held['value']).exponent
+            except MoneyError:
+                new_exponent = 2
+            if new_exponent != exponent:
+                reading = _reading(rows, statement, style, new_exponent, liability, period)
+                statement.update(layout_fingerprint=reading['fingerprint'], layout_key=reading['layout_key'],
+                                 engine=reading['proof'])
+            statement['id'] = _digest(dict(layout_id=LAYOUT, account=account, start=statement['period_start'],
+                                           end=statement['period_end'], currency=statement['currency'],
+                                           first_page=section_pages[0], first_row=reading['first_row']))
     statement['_rows'] = reading['rows']
     return statement
+
+
+#: (C2) Brokerage profiles (``holdings_currency``): the one currency a statement's holdings table prints is the
+#: statement's currency. Off: the currency of a brokerage cash ledger stays a person's choice, as before.
+HOLDINGS_CURRENCY = True
 
 
 # ---------------------------------------------------------------------------

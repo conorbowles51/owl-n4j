@@ -407,6 +407,21 @@ def _stored_check(item):
                 or summary.get('comparison_pending'))
 
 
+# Neil, 2026-10-24 (account currency, overlap trim): a statement held only until another statement of its
+# account is saved becomes saveable when that one is saved, without any change to its own row. The sweep
+# therefore looks again at a case's marked files after any save in that case. Reverse: False (a file is
+# looked at again only when its own open statements change, as before).
+REVISIT_AFTER_SAVES = True
+
+
+def _saved_marks(db, case_ids):
+    """{case id: what changes when a statement of the case is saved}, or {} with the switch off."""
+    if not REVISIT_AFTER_SAVES:
+        return {}
+    from services.financial.field_proposals import _fingerprint
+    return {case_id: _fingerprint(db, case_id) for case_id in case_ids}
+
+
 def _signature(rows):
     return tuple(sorted((str(identity), status, untouched, str(updated), problems)
                         for identity, status, untouched, updated, problems in rows))
@@ -437,8 +452,9 @@ def sweep_save(factory, *, budget_seconds=20.0):
             for row in _open_statements(db):
                 groups.setdefault((row.batch_id, row.file_id, row.case_id), []).append(
                     (row.id, row.status, row.untouched, row.updated_at, row.checks))
-            changed = {key: _signature(members) for key, members in groups.items()
-                       if _SWEPT.get(key[:2]) != _signature(members)}
+            marks = _saved_marks(db, {key[2] for key in groups})
+            changed = {key: (_signature(members), marks.get(key[2])) for key, members in groups.items()
+                       if _SWEPT.get(key[:2]) != (_signature(members), marks.get(key[2]))}
             marked = {}
             if changed:
                 for batch_id, files in db.execute(select(Batch.id, Batch.files).where(

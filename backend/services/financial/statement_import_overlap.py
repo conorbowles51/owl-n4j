@@ -155,7 +155,8 @@ def _saved_keys(session, source_ids):
 # below). Only these scalars are kept per item (row_versions): decoding every item's whole summary (14 MB of
 # JSON on a case with 2,400 prepared periods) was the largest part of each import's case comparison.
 COMPARED_SUMMARY_KEYS = ('revision', 'statement_id', 'currency', 'institution', 'account', 'holder', 'account_type',
-                         'period_start', 'period_end', 'account_reference_kind', 'page_number', HYDRATION_ERROR_KEY)
+                         'period_start', 'period_end', 'account_reference_kind', 'page_number', HYDRATION_ERROR_KEY,
+                         'statement_form')
 _PENDING_VALUES = None
 
 
@@ -316,7 +317,8 @@ def comparison_sources(session, case_id, pending=None, *, read_pending=None, dup
             key=(families.get(str(file.id), str(file.id)), item.statement_key or ''), scope=own,
             file_id=str(file.id), statement_id=item.statement_key or None, source_document_id=None,
             filename=file.original_filename, status='awaiting_import', page_number=item.summary.get('page_number', 1),
-            period_start=own['start'], period_end=own['end']))
+            period_start=own['start'], period_end=own['end'],
+            **({'statement_form': item.summary['statement_form']} if item.summary.get('statement_form') else {})))
     # A statement reviewed individually may have no batch item yet. Register
     # only explicit current decisions, never guess candidates from file names.
     registered = {(entry['file_id'], entry.get('statement_id') or '') for values in entries.values() for entry in values}
@@ -421,3 +423,27 @@ def require_coverage_decision(session, *, case_id, file_id, request):
     if requires_decision(review, request):
         raise PdfMappingError('Another statement covers some of these dates for the same account reference. Compare the files and record why this statement should also be imported, or leave this copy unimported.', 409)
     return review
+
+
+def later_queries_trim_themselves(review, request, *, file_id, statement_id, summary):
+    """The coverage review of a movement query without the waiting queries that rank after it.
+
+    Overlapping movement queries of one account are saved in order of their
+    dates (start, end, then file and statement for a tie): the first is saved
+    as read, and each later one is trimmed against it once it is saved
+    (``statement_overlap_trim``), so the later queries' overlap is theirs to
+    resolve, not a reason to hold the first. Everything else stays a candidate:
+    saved statements, waiting statements that are not queries, earlier queries,
+    and any copy of the same printed period.
+    """
+    from services.financial.statement_overlap_trim import TRIM_OVERLAPS
+    from services.financial.statement_import_santander_query import FORM
+    if not TRIM_OVERLAPS or summary.get('statement_form') != FORM or not review.get('candidates'):
+        return review
+    own = (request.get('period_start') or '', request.get('period_end') or '', str(file_id), statement_id or '')
+    kept = [c for c in review['candidates'] if not (
+        c.get('status') == 'awaiting_import' and c.get('statement_form') == FORM and not c.get('matching_statement')
+        and (c.get('period_start') or '', c.get('period_end') or '', str(c.get('file_id')), c.get('statement_id') or '') > own)]
+    if len(kept) == len(review['candidates']):
+        return review
+    return {**review, 'candidates': kept, 'later_queries': len(review['candidates']) - len(kept)}

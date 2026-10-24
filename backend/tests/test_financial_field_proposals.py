@@ -218,3 +218,56 @@ class SwitchAndQueueTests(TestCase):
         counts = dict(imported=1, saving=0, waiting=2, filled=3, ready=0, copies=0, unreadable=0, rechecking=0,
                       left_unimported=0, assigned=0, unexplained=0, unreadable_files=0)
         self.assertIn('Details filled automatically 3', status_line(counts))
+
+
+class AccountCurrencyTests(TestCase):
+    """(b') A brokerage cash ledger printing no currency takes its account's one currency (Neil, 2026-10-24)."""
+
+    def broker(self, **overrides):
+        return values(brokerage_cash_ledger=True, **overrides)
+
+    def test_one_saved_statement_establishes_the_account_currency(self):
+        currency = fp.propose(self.broker(), knowledge(account(MONTHS[0])))['currency']
+        self.assertEqual((currency['value'], currency['basis'], currency['confirmed']), ('MXN', 'account_currency', True))
+        self.assertTrue(currency['label'].startswith('account currency: '))
+
+    def test_only_brokerage_cash_ledgers(self):
+        currency = fp.propose(values(), knowledge(account(MONTHS[0])))['currency']
+        self.assertEqual((currency['basis'], currency['confirmed']), ('same_account', False))
+
+    def test_conflicting_account_currencies_stay_held(self):
+        currency = fp.propose(self.broker(), knowledge(account(MONTHS[0], saved(currency='USD', start='2021-02-01',
+                                                                                   end='2021-02-28'))))['currency']
+        self.assertEqual((currency['basis'], currency['confirmed']), ('case_default', False))
+
+    def test_no_saved_statement_of_the_account_stays_held(self):
+        currency = fp.propose(self.broker(), knowledge(account(MONTHS[0], number='99-9999999-9')))['currency']
+        self.assertFalse(currency['confirmed'])
+
+    def test_identity_on_two_fields_and_no_saved_statement_on_the_same_dates(self):
+        alone = fp.propose(self.broker(institution='', holder=''), knowledge(account(MONTHS[0])))['currency']
+        same = fp.propose(self.broker(period_start='2021-01-01', period_end='2021-01-31'),
+                          knowledge(account(MONTHS[0])))['currency']
+        self.assertEqual((alone['confirmed'], same['confirmed']), (False, False))
+
+    def test_a_currency_printed_in_the_holdings_is_not_replaced(self):
+        printed = dict(value='USD', page_number=2, table_index=0, row_index=3, expected_text='USD')
+        currency = fp.propose(self.broker(printed_currency=printed), knowledge(account(MONTHS[0])))['currency']
+        self.assertEqual((currency['value'], currency['confirmed']), ('USD', False))
+
+    def test_switch(self):
+        with patch.object(fp, 'ACCOUNT_CURRENCY', False):
+            currency = fp.propose(self.broker(), knowledge(account(MONTHS[0])))['currency']
+        self.assertEqual((currency['basis'], currency['confirmed']), ('same_account', False))
+
+    def test_summary_values_carry_the_brokerage_flag(self):
+        self.assertTrue(fp.summary_values(dict(brokerage_cash_ledger=True))['brokerage_cash_ledger'])
+        self.assertFalse(fp.summary_values({})['brokerage_cash_ledger'])
+
+    def test_a_printed_currency_differing_from_the_account_is_a_conflict(self):
+        known = knowledge(account(MONTHS[0]))
+        self.assertEqual(fp.account_currency_conflict(self.broker(currency='USD'), known), 'MXN')
+        self.assertEqual(fp.account_currency_conflict(self.broker(currency='MXN'), known), '')
+        self.assertEqual(fp.account_currency_conflict(values(currency='USD'), known), '')
+        with patch.object(fp, 'ACCOUNT_CURRENCY', False):
+            self.assertEqual(fp.account_currency_conflict(self.broker(currency='USD'), known), '')
