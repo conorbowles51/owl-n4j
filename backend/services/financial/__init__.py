@@ -2243,3 +2243,7 @@ from services.financial.page_row_proposals import (
     read_item_page_proposals, confirm_item_page,
 )
 __all__ += ["propose_page_rows", "apply_page_row_proposal", "read_item_page_proposals", "confirm_item_page"]
+from services.financial.vision_reader import (
+    ENABLED as VISION_FALLBACK, check_page_numbering, openai_page_reader, sweep as read_held_page_images,
+)
+__all__ += ["VISION_FALLBACK", "check_page_numbering", "openai_page_reader", "read_held_page_images"]
