@@ -96,7 +96,14 @@ PROFILES = (
     # counterparty transfer lines also print). The engine's printed legal name always wins.
     # Monex prints one contract number for all currency sections of a statement (its reader keys
     # every section by it); sections sharing pages take it from the statement's heading pages.
-    dict(name='monex-mexico', match=dict(any=['monex grupo financiero']), institution='Monex', statement_account=True),
+    # Its movement tables print four balance columns after the amounts (Saldo en garantia / no disponible,
+    # Saldo disponible, Saldo total) and a guarantee-movement column that is no ledger amount; naming them
+    # lets the heading fix the roles, where unnamed they leave too many readings to prove (measured on the
+    # 2021 portrait and 2022+ sideways layouts).
+    dict(name='monex-mexico', match=dict(any=['monex grupo financiero']), institution='Monex', statement_account=True,
+         columns=dict(ignore=['MOVIMIENTO GARANTIA'], balance=['SALDO EN GARANTIA', 'SALDO NO DISPONIBLE',
+                                                                'SALDO DISPONIBLE', 'SALDO TOTAL'],
+                      description=['REFERENCIA'])),
     # Santander prints some accounts only after the product name ("<PRODUCT NAME> 12-34567890-1"):
     # on the verified truth 45 such heading lines, every one the truth account.
     dict(name='santander-mexico', match=dict(any=['grupo financiero santander']), institution='Santander',

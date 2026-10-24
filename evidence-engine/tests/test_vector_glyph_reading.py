@@ -693,3 +693,21 @@ def test_an_amount_ocr_split_at_a_skipped_thousands_comma_is_joined_and_nothing_
     assert G.split_amounts(glyphs, labels, apart) == []
     with mock.patch.object(G, 'SPLIT_AMOUNTS_JOIN', False):
         assert G.split_amounts(glyphs, labels, split) == []
+
+
+@pytest.mark.parametrize('placed, turn', [(90, 90), (270, 270)])
+def test_a_page_printed_sideways_reads_its_glyphs_in_the_upright_frame(placed, turn):
+    # A landscape page placed sideways on a portrait sheet: turned back, every glyph sits where it sits on the
+    # upright page; turned the wrong way, none does.
+    source = fitz.open()
+    upright = source.new_page(width=792, height=612)
+    draw_outlined(upright, [(40, 100, '05/MAR PAGO 1,234.50'), (40, 140, '06/MAR SPEI 7,000.00')])
+    expected = sorted((round(g.x0), round(g.y0), round(g.x1), round(g.y1)) for g in G.page_glyphs(upright))
+    doc = fitz.open()
+    page = doc.new_page(width=612, height=792)
+    page.show_pdf_page(page.rect, source, 0, rotate=placed)
+    turned = G.TurnedPage(page, turn)
+    assert (turned.rect.width, turned.rect.height) == (792, 612) and turned.rotation == 0
+    assert sorted((round(g.x0), round(g.y0), round(g.x1), round(g.y1)) for g in G.page_glyphs(turned)) == expected
+    wrong = G.page_glyphs(G.TurnedPage(page, 360 - turn))
+    assert sorted((round(g.x0), round(g.y0), round(g.x1), round(g.y1)) for g in wrong) != expected

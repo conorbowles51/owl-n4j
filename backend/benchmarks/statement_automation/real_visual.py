@@ -103,8 +103,8 @@ from collections import Counter, defaultdict
 from datetime import date, timedelta
 from pathlib import Path
 
-from .real_truth import (ANDREWS_DATES, ANDREWS_TAIL, START_UNPRINTED, Period, document_status, iso, ocr_money,
-                         read_pages, reconcile, year_for)
+from .real_truth import (ANDREWS_DATES, ANDREWS_TAIL, START_UNPRINTED, ZERO_DECIMAL_CURRENCIES, Period,
+                         _whole_units, document_status, iso, ocr_money, read_pages, reconcile, year_for)
 
 VERSION = 'visual-v1'
 MONEY = re.compile(r'^-?\d+\.\d{2}$')
@@ -481,6 +481,9 @@ def to_period(item, issuer=None):
     if andrews and period.share is None:
         period.problems.append('share id not read')
     period.problems.extend(item['unverified'])
+    if period.currency in ZERO_DECIMAL_CURRENCIES:
+        # Printed with ".00" (Monex yen): kept in the currency's own minor unit, as tier-A truth keeps it.
+        _whole_units(period)
     return period
 
 

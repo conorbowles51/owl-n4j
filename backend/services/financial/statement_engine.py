@@ -813,6 +813,11 @@ def _ocr_date(text):
     text = re.sub(r'(?<=[A-Z0-9])~(?=[A-Z0-9])', '-', text)
     # A day's leading 1 read as a letter at the start of a date ('L1-MAR-2024', 'I5/03/2024').
     text = re.sub(r'^[LI|](?=\d[-/.])', '1', text)
+    if DATE_SLASH_STROKE:
+        # A stroke read as a letter after a two-figure day, before its month name ('25/INOV', '25/I0CT', or the
+        # slash itself read as one: '15INOV'): no month name opens with I or L, so the letter is not part of the
+        # date. A one-figure day is left alone: '3IMAR' may be a printed 31 whose 1 was read as I.
+        text = re.sub(r'^(\d{2})/?[IL|](?=[A-Z0]{3,10}$)', r'\1/', text)
     text = _OCR_MONTH_O.sub('O', _OCR_ZERO.sub('0', text))
     if DATE_SLASH_MARKS:
         # A slash between a day and a month name read as another stroke or doubled ('07\\MAR', '07)MAR',
@@ -824,6 +829,10 @@ def _ocr_date(text):
 # (B2) A day-and-month date whose slash the scan read as a backslash, a closing parenthesis or a bar, or doubled
 # with one, reads as that date (``_ocr_date``). Off: such a token is no date, as before.
 DATE_SLASH_MARKS = True
+# (B2) A day-and-month date whose slash is followed by, or was read as, a stroke (I, L or a bar) before the
+# month name ('15/INOV', '25/I0CT', '15INOV'; measured on outline-printed BBVA pages read by OCR) reads as that
+# date. Off: such a token is no date, as before.
+DATE_SLASH_STROKE = True
 
 
 @lru_cache(maxsize=262144)

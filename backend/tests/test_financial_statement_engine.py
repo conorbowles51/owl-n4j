@@ -1192,6 +1192,35 @@ class DateSlashMarkTests(unittest.TestCase):
         E._date_parts.cache_clear()
 
 
+class DateSlashStrokeTests(unittest.TestCase):
+    """(B2) A stroke OCR read as I, L or a bar after a two-figure day, before the month name, is not part of
+    the date (outline-printed BBVA pages)."""
+
+    def test_a_stroke_after_the_slash_or_in_its_place_reads_as_the_date(self):
+        for token, parts in (('25/I0CT', [(25, 10, None, 'name')]), ('15/INOV', [(15, 11, None, 'name')]),
+                             ('15INOV', [(15, 11, None, 'name')]), ('29|NOV', [(29, 11, None, 'name')]),
+                             ('03IMAR', [(3, 3, None, 'name')])):
+            self.assertEqual(E._date_parts(token), parts, token)
+
+    def test_a_one_figure_day_or_a_figure_too_many_reads_as_no_date(self):
+        # '3IMAR' may be a printed 31 whose 1 was read as I; '141/JUL' has a figure too many.
+        for token in ('3IMAR', '141/JUL', '1I/NOV', '15/IXYZ', '28NUL'):
+            self.assertFalse(E.is_date_token(token), token)
+
+    def test_a_movement_dated_through_a_stroke_proves(self):
+        moves = [m if i != 1 else ('10/IMAR', m[1], m[2], m[3], m[4]) for i, m in enumerate(MOVES)]
+        st = read_statements(mx_statement(moves, closing='1,250.00'))[0]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        dates = [r['fields'].get('date') for r in st['_rows'] if r['kind'] == 'transaction']
+        self.assertEqual(dates, ['2024-03-05', '2024-03-10', '2024-03-20'])
+
+    def test_the_switch_off_reads_no_date(self):
+        E._date_parts.cache_clear()
+        with mock.patch.object(E, 'DATE_SLASH_STROKE', False):
+            self.assertFalse(E._date_parts('15/INOV'))
+        E._date_parts.cache_clear()
+
+
 class OtherTableTotalTests(unittest.TestCase):
     """r11 (E9): after the movement table printed its own totals, a total line totals another table below it."""
 
@@ -3372,6 +3401,20 @@ class BrokerageCashLedgerTests(unittest.TestCase):
         validate(dict(base, settlement_days=dict(operation=['OPE'], settlement=['LIQ']), client_line=True,
                       columns=dict(ignore=['MONTO']), labels=dict(day_balance=['SALDO AL FINAL DEL DIA'])))
 
+
+    def test_the_monex_profile_names_its_balance_and_guarantee_columns(self):
+        from services.financial.statement_engine_profiles import PROFILES, validate
+        monex = next(p for p in PROFILES if p['name'] == 'monex-mexico')
+        validate(monex)
+        token = E._PROFILE.set(monex)
+        try:
+            roles = {w: E.column_role(E.label(w)) for w in ('Movimiento garantia', 'Saldo en garantia',
+                                                            'Saldo disponible', 'Saldo total', 'Referencia')}
+        finally:
+            E._PROFILE.reset(token)
+        self.assertEqual(roles, {'Movimiento garantia': 'ignore', 'Saldo en garantia': 'balance',
+                                 'Saldo disponible': 'balance', 'Saldo total': 'balance', 'Referencia': 'description'})
+        self.assertIsNone(E.column_role(E.label('Movimiento garantia')))
 
 def _marked(sources, merge=False):
     """The invented brokerage pages as some readings deliver them: a closing parenthesis at every cell's right
