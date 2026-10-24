@@ -747,7 +747,10 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         if metadata.get('holder'):
             issues = [issue for issue in issues if 'account holder' not in issue]
     recovery, previous_review = recovery_state(session, file, sources=all_sources, choices=choices,
-        statement_id=statement_id, revision=revision, cache=cache)
+        statement_id=statement_id, revision=revision, cache=cache,
+        period=(metadata.get('period_start') or (period_dates or {}).get('period_start') or '',
+                metadata.get('period_end') or (period_dates or {}).get('period_end') or ''),
+        row_ids=[row['id'] for row in rows], pages=[row.get('page_number') for row in rows])
     result = dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id), filename=file.original_filename,
                 # Derived from the same source reading; keep historical review
                 # revisions stable while exposing this date to grouped decisions.
@@ -793,6 +796,13 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         result['statement_form'] = selected['form']
     if identity_memory:
         result['identity_memory'] = identity_memory
+    if selected and selected.get('layout_id') == 'andrews-share-statement':
+        # Outside the revision, like derived period dates: bound to this
+        # reading's no-activity proof, which admission re-checks at import.
+        from services.financial.statement_import_andrews import proven_closing
+        closing_proof = proven_closing(no_activity_evidence)
+        if closing_proof:
+            result['proven_closing'] = closing_proof
     from services.financial.review_upgrade import attach_upgrade
     attach_upgrade(result, snapshot)
     if _apply_assignments:
@@ -1303,7 +1313,10 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                             proposal=proposal, statement_id=request.statement_id), coverage='all_prepared_rows_imported',
                         statement_account_id=str(account.id), statement_import_issues=issues,
                         statement_incomplete_records=incomplete, statement_import_checks=arithmetic, statement_admission=admission,
-                        whole_document_extraction_verified=False)))
+                        whole_document_extraction_verified=False,
+                        # A period released from a file whose other periods hold an investigator's work (audit).
+                        **({'split_from_held_work': (proposal.get('review_recovery') or {})['split_release']}
+                           if (proposal.get('review_recovery') or {}).get('split_release') else {}))))
                 lap('write_source_document')
                 from services.financial.periods import StatementPeriodDraft, PeriodBounds, BalanceObservation, record_statement_period
                 from services.financial.money import Money

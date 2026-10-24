@@ -3,8 +3,9 @@
 Period names are navigation aids, not permission to attach old rows to new
 locations. Different readings are shown for comparison and never remapped.
 """
+import os
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from uuid import UUID
 from sqlalchemy import select
 from postgres.models.evidence import EvidenceFile
@@ -106,12 +107,130 @@ def saved_ancestor_reviews(session, file):
     return records
 
 
-def recovery_state(session, file, *, sources, choices, statement_id, revision, cache=None):
+# Neil's decision (2026-10-24): when uncarried file-level work sits on an earlier reading and the new reading
+# names the file's periods, a period her work does not touch proceeds normally; touched periods stay held.
+# Off: any such work holds every period of the file, as before.
+SPLIT_RELEASE = os.environ.get('LOUPE_FINANCIAL_RECOVERY_SPLIT_RELEASE', '1').strip().lower() not in (
+    '0', 'false', 'no', 'off')
+_NESTED = '_held_work_nested'
+
+
+def _iso(value):
+    try:
+        return date.fromisoformat(str(value or '')[:10]) if len(str(value or '')) >= 10 else None
+    except ValueError:
+        return None
+
+
+def _row_date(fields):
+    return fields.get('date') or fields.get('booking_date') or fields.get('value_date') or ''
+
+
+def held_work_footprint(session, file, record, cache):
+    """Where a saved record's work lies: dates of every row it saved (her value, else what the earlier
+    reading prints for that row), the spans of its period and of anything imported from its reading, and
+    the row ids it references. None when any of it cannot be dated (the caller then holds the whole file)."""
+    key = ('held-work-footprint', record['id'])
+    if key in cache:
+        return cache[key]
+    result = None
+    try:
+        result = _footprint(session, file, record)
+    except Exception:
+        result = None
+    cache[key] = result
+    return result
+
+
+def _footprint(session, file, record):
+    from postgres.models.financial import FinancialStatementPeriod
+    from services.financial.statement_import import read_statement_import
+    request = record['request']
+    earlier = UUID(record['evidence_file_id'])
+    spans = []
+    start, end = _iso(request.get('period_start')), _iso(request.get('period_end'))
+    if start and end and start <= end:
+        spans.append((start, end))
+    rows = request.get('rows') or []
+    dates, ids, pages = set(), set(), set()
+    printed = None
+    for row in rows:
+        ids.add(str(row.get('id')))
+        page = row.get('manual_page') or _id_page(row.get('id'))
+        if page:
+            pages.add(int(page))
+        value = _iso(row.get('date')) or next((_iso(v) for v in (row.get('date_values') or {}).values() if _iso(v)), None)
+        if value is None and not str(row.get('id', '')).startswith('manual:'):
+            if printed is None:
+                printed = {}
+                nested = {_NESTED: True}
+                first = read_statement_import(session, case_id=file.case_id, evidence_file_id=earlier,
+                    currency=request.get('currency') or None, _include_period_checks=False, _cache=nested)
+                proposals = [read_statement_import(session, case_id=file.case_id, evidence_file_id=earlier,
+                    statement_id=choice['id'], currency=request.get('currency') or None,
+                    _include_period_checks=False, _cache=nested)
+                    for choice in first.get('statement_choices') or [] if not choice.get('document_kind')] or [first]
+                for proposal in proposals:
+                    for other in proposal.get('rows') or []:
+                        printed.setdefault(str(other['id']), set()).add(_iso(_row_date(other.get('fields') or {})))
+            found = printed.get(str(row.get('id')))
+            value = next(iter(found)) if found and len(found) == 1 else None
+        if value is None:
+            return None  # Her work's dates cannot be determined.
+        dates.add(value)
+    if not dates and not spans:
+        return None
+    for source in session.scalars(select(FinancialSourceDocument).where(
+            FinancialSourceDocument.case_id == file.case_id, FinancialSourceDocument.evidence_file_id == earlier)):
+        for period in session.scalars(select(FinancialStatementPeriod).where(
+                FinancialStatementPeriod.source_document_id == source.id)):
+            if period.period_start is None or period.period_end is None:
+                return None
+            spans.append((period.period_start, period.period_end))
+    return dict(dates=dates, spans=spans, row_ids=ids, pages=pages)
+
+
+def _id_page(identifier):
+    """The page a reader row id ('<page>:<index>') names, else None."""
+    head = str(identifier or '').split(':', 1)[0]
+    return int(head) if head.isdigit() and ':' in str(identifier) else None
+
+
+def touches(footprint, period, row_ids=(), pages=()):
+    """True when the work lies in the period (start, end), or references one of its rows or pages (the same
+    original's bytes, so a page is the same page in either reading)."""
+    start, end = _iso(period[0]), _iso(period[1])
+    if footprint is None or start is None or end is None or start > end:
+        return True
+    return (any(start <= day <= end for day in footprint['dates'])
+            or any(a <= end and start <= b for a, b in footprint['spans'])
+            or bool(footprint['row_ids'] & {str(i) for i in row_ids})
+            or bool(footprint.get('pages', set()) & {int(p) for p in pages if p}))
+
+
+def _split_release(session, file, unmatched, *, choices, statement_id, period, row_ids, pages, cache):
+    """The audit record for a period of a split file that none of her held file-level work touches, or None."""
+    if not (SPLIT_RELEASE and unmatched and statement_id and period and len(choices) > 1) or cache.get(_NESTED):
+        return None
+    if any(record['statement_id'] for record in unmatched):
+        return None  # Only file-level work on a file the new reading names periods for.
+    prints = [held_work_footprint(session, file, record, cache) for record in unmatched]
+    if any(touches(footprint, period, row_ids, pages) for footprint in prints):
+        return None
+    return dict(reason='untouched_period_of_file_with_held_work', period=[str(period[0]), str(period[1])],
+        held_reviews=sorted(record['id'] for record in unmatched),
+        held_readings=sorted({record['evidence_file_id'] for record in unmatched}))
+
+
+def recovery_state(session, file, *, sources, choices, statement_id, revision, cache=None, period=None, row_ids=(), pages=()):
     cache = cache if cache is not None else {}
     key = ('previous-reviews', str(file.id))
     if key not in cache:
         cache[key] = saved_ancestor_reviews(session, file)
-    records = cache[key]
+    # Work an engine re-read carried onto this reading (reread_carry) is its own saved review now; the
+    # earlier records stay listed in history but no longer ask for a comparison.
+    carried = set((file.metadata_ or {}).get('financial_review_carried') or ())
+    records = [record for record in cache[key] if record['id'] not in carried]
     if not records:
         return None, None
     reading_key = ('recovery-reading', str(file.id))
@@ -123,8 +242,16 @@ def recovery_state(session, file, *, sources, choices, statement_id, revision, c
     exact = [r for r in records if r['statement_id'] == statement_id]
     # More than one saved alternative is not resolved by picking a timestamp.
     previous = exact[0] if len(exact) == 1 else None
-    unmatched = sum(r['statement_id'] not in available for r in records)
-    required = bool(unmatched or len(exact) > 1 or
+    # File-level work an engine re-read carried as details onto some periods of this reading (reread_carry,
+    # payments matched): those periods no longer wait for it; the others still do.
+    from services.financial.reread_carry import DETAILS_CARRY
+    released_to = ((file.metadata_ or {}).get('financial_review_details_release') or {}) if DETAILS_CARRY else {}
+    unmatched_records = [r for r in records if r['statement_id'] not in available
+                         and not (statement_id and statement_id in (released_to.get(r['id']) or ()))]
+    unmatched = len(unmatched_records)
+    released = _split_release(session, file, unmatched_records, choices=choices, statement_id=statement_id,
+        period=period, row_ids=row_ids, pages=pages, cache=cache) if unmatched else None
+    required = bool((unmatched and not released) or len(exact) > 1 or
                     (revision and previous and previous['request'].get('expected_revision') != revision))
     comparison = (file.metadata_ or {}).get('financial_review_comparison', {})
     acknowledged = comparison.get('revision') == recovery_revision
@@ -137,7 +264,8 @@ def recovery_state(session, file, *, sources, choices, statement_id, revision, c
         period_found=r['statement_id'] in available) for r in records]
     return dict(revision=recovery_revision, required=required, acknowledged=acknowledged,
         unmatched_count=unmatched, reviews=summaries,
-        compared_at=comparison.get('saved_at') if acknowledged else None), previous
+        compared_at=comparison.get('saved_at') if acknowledged else None,
+        **({'split_release': released} if released else {})), previous
 
 
 def previous_review_detail(session, *, case_id, evidence_file_id, review_id, offset=0, limit=30):

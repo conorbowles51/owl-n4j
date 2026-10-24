@@ -249,6 +249,65 @@ class ManifestTests(unittest.TestCase):
         self.assertNotIn('d1', text)
 
 
+class UnverifiedOutcomeTests(unittest.TestCase):
+    """An unverified period's expected outcome follows the class of its reason (corpus convention)."""
+
+    PAGE = 'printed page 1 of the statement is not in the file; every present page reconciles'
+    OPENING = 'printed Saldo Inicial is the balance after the first listed movement; the opening before it is not printed'
+    CONTRADICTS = ('the one printed payment (1.00) does not take the printed opening (1.00 owed) to the printed '
+                   'closing (1.00 in favour); the summary has no second movement line')
+    BLANK = 'closing balance (Saldo al Corte) printed blank on a zero-activity credit line'
+
+    def test_each_reason_class(self):
+        cases = [(self.PAGE, 'hold', ['printed_pages_missing']), (self.OPENING, 'decision', ['opening_unprinted']),
+                 (self.CONTRADICTS, 'hold', ['printed_figures_disagree']), (self.BLANK, 'decision', ['closing_unprinted']),
+                 ('printed page 1 absent; the rest reconciles', 'hold', ['printed_pages_missing'])]
+        for reason, outcome, defects in cases:
+            self.assertEqual(rt.unverified_expectation([reason]), (outcome, defects), reason)
+            self.assertEqual(rt.expected_outcome(period(), 'unverified', [reason]), outcome, reason)
+
+    def test_hold_wins_and_unknown_reasons_keep_the_identity_rule(self):
+        self.assertEqual(rt.unverified_expectation([self.OPENING, self.PAGE]),
+                         ('hold', ['opening_unprinted', 'printed_pages_missing']))
+        self.assertEqual(rt.unverified_expectation(['ending balance differs']), (None, []))
+        self.assertEqual(rt.expected_outcome(period(), 'unverified', ['ending balance differs']), 'auto')
+        self.assertEqual(rt.expected_outcome(period(holder=None), 'unverified', ['ending balance differs']), 'decision')
+        # Only an unverified period is classed by its reasons.
+        self.assertEqual(rt.expected_outcome(period(), 'verified', [self.PAGE]), 'auto')
+        self.assertEqual(rt.expected_outcome(period(), 'incomplete', [self.OPENING]), 'hold')
+
+    def test_final_documents_without_a_scored_period_enter_the_manifest_unscored(self):
+        def result(doc, status, truth_status, reasons):
+            p = dict(period(rows=[row(500, 'credit')]).__dict__, id=doc + '#1', truth_status=truth_status,
+                     truth_reasons=reasons)
+            p['expected'] = rt.expected_outcome(rt.Period(**{k: p[k] for k in rt.Period.__dataclass_fields__}),
+                                                truth_status, reasons)
+            return dict(id=doc, sha256=doc * 4, pages=1, mode='digital', status=status, periods=[p],
+                        period_status={truth_status: 1})
+        results = [result('da', 'verified', 'verified', []),
+                   result('db', 'unverified', 'unverified', [self.OPENING]),  # final: every page read by a person
+                   result('dc', 'unverified', 'unverified', [self.PAGE]),
+                   result('dd', 'partly_verified', 'unverified', [self.PAGE]),  # not final: still queued
+                   dict(id='de', sha256='e', pages=1, mode='digital', status='not_statement', periods=[])]
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            (tmp / 'docs').mkdir()
+            for r in results:
+                (tmp / 'docs' / f"{r['id']}.pdf").write_bytes(b'%PDF')
+            manifest, _ = rt.write_outputs(tmp / 'out', results, tmp / 'docs')
+        files = {f['filename']: f for f in manifest['files']}
+        self.assertEqual(sorted(files), ['da.pdf', 'db.pdf', 'dc.pdf'])
+        self.assertTrue(files['da.pdf']['truth_complete'])
+        for name, expected, defects in (('db.pdf', 'decision', ['opening_unprinted']),
+                                        ('dc.pdf', 'hold', ['printed_pages_missing'])):
+            entry = files[name]
+            self.assertFalse(entry['truth_complete'])
+            (only,) = entry['periods']
+            self.assertEqual((only['truth_status'], only['expected'], only['defects']), ('unverified', expected, defects))
+            self.assertFalse(harness._scored(only))  # the scored denominator does not move
+        self.assertEqual(files['da.pdf']['periods'][0]['defects'], [])
+
+
 class HarnessRealCorpusTests(unittest.TestCase):
     def entry(self, scored, can_import, expected='auto'):
         return dict(item_id='i', filename='x.pdf', statement_id=None, status='ready' if can_import else 'attention',
@@ -258,7 +317,25 @@ class HarnessRealCorpusTests(unittest.TestCase):
     def test_only_scored_periods_count(self):
         m = harness.metrics(dict(periods=[self.entry(True, True), self.entry(False, True), self.entry(False, False)]))
         self.assertEqual((m['overall']['periods'], m['overall']['ready_without_edits']), (1, 1))
-        self.assertEqual(m['unscored'], dict(periods=2, offered_for_import=1, by_status={'ready': 1, 'attention': 1}))
+        self.assertEqual(m['unscored'], dict(periods=2, offered_for_import=1, by_status={'ready': 1, 'attention': 1},
+                                             by_expected={'auto': 2}, wrongly_ready=[], ready_where_decision=[]))
+
+    def test_an_unscored_period_offered_where_the_truth_expects_a_hold_fails_the_run(self):
+        held = dict(self.entry(False, True, expected='hold'), truth_id='h.pdf#1')
+        decided = dict(self.entry(False, True, expected='decision'), truth_id='d.pdf#1')
+        saved = dict(self.entry(False, False, expected='hold'), truth_id='s.pdf#1', final_status='imported')
+        kept = dict(self.entry(False, False, expected='hold'), truth_id='k.pdf#1')
+        m = harness.metrics(dict(periods=[self.entry(True, True), held, decided, saved, kept]))
+        # The scored denominator does not move; the unscored block names the failures.
+        self.assertEqual((m['overall']['periods'], m['overall']['hold_periods']), (1, 0))
+        self.assertEqual(m['unscored']['wrongly_ready'], ['h.pdf#1', 's.pdf#1'])
+        self.assertEqual(m['unscored']['ready_where_decision'], ['d.pdf#1'])
+        result = dict(metrics=m, ledger=dict(wrongly_admitted=[], duplicate_contributions=0))
+        failures = harness.safety_failures(result)
+        self.assertEqual(len(failures), 1)
+        self.assertIn('2 unscored period(s)', failures[0])
+        m = harness.metrics(dict(periods=[self.entry(True, True), decided, kept]))
+        self.assertEqual(harness.safety_failures(dict(metrics=m, ledger=dict(wrongly_admitted=[]))), [])
 
     def test_scored_truth_statuses(self):
         self.assertTrue(harness._scored(None))

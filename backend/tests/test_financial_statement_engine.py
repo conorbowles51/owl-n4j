@@ -7,6 +7,7 @@ adversarial near-ties that must hold.
 """
 import os
 import unittest
+from copy import deepcopy
 from unittest import mock
 
 from services.financial import statement_engine as E
@@ -2470,7 +2471,7 @@ class AddresslessHolderTests(unittest.TestCase):
 
 
 def barcoded_statement(*, reprint='EMPRESA DE PRUEBA SA DE CV', street='CALLE FALSA 123 PISO 4', unread=(),
-                       reprint_below_movements=False):
+                       reprint_below_movements=False, name=None, copies=1):
     """r9: an invented Spanish layout whose addressee block (name, street, neighbourhood, city) has lost its
     postal-code line (printed over the mailing barcode), with an optional continuation page reprinting
     ``reprint`` as the left cell of its heading line, as some statements reprint the addressee."""
@@ -2484,6 +2485,8 @@ def barcoded_statement(*, reprint='EMPRESA DE PRUEBA SA DE CV', street='CALLE FA
                 c['expected_text'] = street
             elif c['expected_text'] == 'COL CENTRO':
                 c['expected_text'] = 'COL CENTRO, CUAUHTEMOC'
+            elif name is not None and c['expected_text'] == 'EMPRESA DE PRUEBA SA DE CV':
+                c['expected_text'] = name  # the page-1 name line as read
     # The bank's heading prints well above the addressee block, as on the measured layout.
     for row in rows[1:]:
         for c in row['cells']:
@@ -2496,8 +2499,9 @@ def barcoded_statement(*, reprint='EMPRESA DE PRUEBA SA DE CV', street='CALLE FA
                   ('CARGOS', 410000, 460000), ('SALDO', 520000, 560000)],
                  [('PAGINA 2 DE 2', 500000, 590000)]]
         lines = lines + [heading] if reprint_below_movements else [heading] + lines
-        sources.append(page(2, lines))
-        sources[1]['printed_lines'] = dict(checked=True, unread=[])
+        for number in range(2, 2 + copies):
+            sources.append(page(number, deepcopy(lines)))
+            sources[-1]['printed_lines'] = dict(checked=True, unread=[])
     return sources
 
 
@@ -2529,6 +2533,27 @@ class UnanchoredHolderTests(unittest.TestCase):
     def test_the_switch_turns_the_rule_off(self):
         with mock.patch.object(E, 'UNANCHORED_HOLDER', False):
             self.assertEqual(self.holder(barcoded_statement()), '')
+
+    def test_a_name_read_only_into_its_legal_form_is_completed_from_headings_on_two_pages(self):
+        # r14: page 1's reading stops inside the legal form; the headings print the whole name.
+        self.assertEqual(self.holder(barcoded_statement(name='EMPRESA DE PRUEBA SA', copies=2)),
+                         'EMPRESA DE PRUEBA SA DE CV')
+        # One heading page is not enough.
+        self.assertEqual(self.holder(barcoded_statement(name='EMPRESA DE PRUEBA SA', copies=1)), '')
+        # Only the legal form's end is completed, never a word of the name proper.
+        self.assertEqual(self.holder(barcoded_statement(name='EMPRESA DE', copies=2)), '')
+        self.assertEqual(self.holder(barcoded_statement(name='EMPRESA DE PRUEBA', copies=2)), '')
+        # A heading that does not end in a whole legal form completes nothing.
+        self.assertEqual(self.holder(barcoded_statement(name='EMPRESA DE PRUEBA SA', reprint='EMPRESA DE PRUEBA SA X',
+                                                        copies=2)), '')
+        # A heading naming someone else completes nothing.
+        self.assertEqual(self.holder(barcoded_statement(name='EMPRESA DE PRUEBA SA', reprint='OTRA EMPRESA SA DE CV',
+                                                        copies=2)), '')
+
+    def test_the_completion_switch_turns_it_off(self):
+        with mock.patch.object(E, 'LEGAL_FORM_COMPLETION', False):
+            self.assertEqual(self.holder(barcoded_statement(name='EMPRESA DE PRUEBA SA', copies=2)), '')
+        self.assertEqual(self.holder(barcoded_statement(copies=2)), 'EMPRESA DE PRUEBA SA DE CV')
 
 
 class IssuerAddressTests(unittest.TestCase):

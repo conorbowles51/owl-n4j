@@ -1379,9 +1379,18 @@ def metrics(result):
                     unmatched_items_offered_for_import=sum(p['can_import'] for p in unmatched_items))
     defects = sorted({d for p in periods for d in p['defects']} | {'(none)'})
     subsets = sorted({p.get('added_in') or 'unmatched' for p in periods})
+    # An unscored period is not judged on its rows, but its truth still says whether the source lets it
+    # in: one offered or saved where the truth expects it held is a held-kept-out failure all the same.
+    def saved(p):
+        return p.get('final_status', p['status']) in ('imported', 'pending_import')
     return dict(overall=block(periods), unscored=dict(periods=len(unscored),
                     offered_for_import=sum(p['can_import'] for p in unscored),
-                    by_status=dict(Counter(p['status'] for p in unscored))),
+                    by_status=dict(Counter(p['status'] for p in unscored)),
+                    by_expected=dict(Counter(p['expected'] or 'unmatched' for p in unscored)),
+                    wrongly_ready=sorted(p['truth_id'] for p in unscored
+                                         if p['expected'] in HELD and (p['can_import'] or saved(p))),
+                    ready_where_decision=sorted(p['truth_id'] for p in unscored
+                                                if p['expected'] == 'decision' and (p['can_import'] or saved(p)))),
                 by_family={f: block([p for p in periods if p['family'] == f]) for f in families},
                 by_defect={d: block([p for p in periods if d in p['defects'] or (d == '(none)' and not p['defects'])])
                            for d in defects},
@@ -1405,6 +1414,9 @@ def safety_failures(result):
     if ledger.get('duplicate_contributions') or ledger.get('printed_periods_saved_twice'):
         failures.append(f"{ledger.get('printed_periods_saved_twice', 0)} printed period(s) saved twice "
                         f"({ledger.get('duplicate_contributions', 0)} duplicate ledger contributions)")
+    unscored_held = result['metrics'].get('unscored', {}).get('wrongly_ready') or []
+    if unscored_held:
+        failures.append(f"{len(unscored_held)} unscored period(s) offered or saved where the truth expects a hold")
     copies = overall.get('duplicate_copies_offered_for_import', 0) + overall.get('duplicate_copies_saved', 0)
     if copies:
         failures.append(f"{copies} exact cop{'y' if copies == 1 else 'ies'} offered or saved instead of set aside")
@@ -1443,7 +1455,9 @@ def render_summary(result):
              *([_holder_line(ledger['saved_holders']), ''] if ledger.get('saved_holders', {}).get('measured') else []),
              *([f"Real corpus: only periods whose truth reconciled are scored. Unscored truth periods matched or "
                 f"listed: {m['unscored']['periods']} ({m['unscored']['offered_for_import']} offered for import; "
-                f"{ledger.get('admitted_unscored', 0)} admitted, not judged).", '']
+                f"{ledger.get('admitted_unscored', 0)} admitted, not judged). Offered or saved where the truth "
+                f"expects a hold: {len(m['unscored'].get('wrongly_ready', []))}; where it expects a decision: "
+                f"{len(m['unscored'].get('ready_where_decision', []))}.", '']
                if m.get('unscored', {}).get('periods') or ledger.get('admitted_unscored') else []),
              f"Human actions to make every blocked period ready or decided: {o['human_actions_per_period']} "
              f"one statement at a time; {o['human_actions_grouped']} using today's grouped decisions "

@@ -80,12 +80,17 @@ def _not_ready_reason(projection):
 
 
 def system_filled_only(item, file):
-    """The statement's only saved review is details System filled from confirmed proposals."""
+    """The statement's only saved review is details System filled from confirmed proposals, or the
+    investigator's statement details an engine re-read carried onto this reading after every payment of hers
+    matched one to one (reread_carry.DETAILS_MATCHED): its rows are the reading's own."""
     from services.financial.field_proposals import SYSTEM_NAME
+    from services.financial.reread_carry import DETAILS_CARRY, DETAILS_MATCHED
     from services.financial.statement_progress import review_progress
     progress = review_progress(file, item.statement_key) if file is not None else None
-    return bool(progress and item.review_request and (progress.get('saved_by') or {}).get('name') == SYSTEM_NAME
-                and progress.get('request') == item.review_request)
+    if not (progress and item.review_request and progress.get('request') == item.review_request):
+        return False
+    return ((progress.get('saved_by') or {}).get('name') == SYSTEM_NAME
+            or (DETAILS_CARRY and (progress.get('carried_from') or {}).get('basis') == DETAILS_MATCHED))
 
 
 def fully_reconciled(item, projection, file):

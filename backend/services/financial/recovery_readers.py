@@ -58,6 +58,7 @@ REASONS = {
     'processing': 'A reading is already running.',
     'unrecorded_reader': 'The reading has no valid engine record; its reader cannot be proven.',
     'reader_not_affected': 'The reading came from the current or an unrecognised engine revision.',
+    'copy_of_saved': 'The case already saved this account and period: a copy to compare.',
 }
 MESSAGES = {
     'removed': 'The investigator removed this source or its imports. Recovery left it unchanged.',
@@ -67,6 +68,7 @@ MESSAGES = {
     'investigator_decision': 'An investigator decision was recorded on this statement. Recovery left it unchanged.',
     'not_all_held': 'A period of this statement is ready. Recovery left it unchanged.',
     'nothing_held': 'No period of this statement is still held. Recovery left it unchanged.',
+    'copy_of_saved': 'This case already saved this account and period. Recovery left this copy for comparison.',
 }
 # Readings handed to batches at once (host-wide), and how long the count of
 # evidence being read elsewhere is reused before it is counted again.
@@ -97,24 +99,123 @@ def reading_fingerprint(session, file):
         reading_mode=content['settings'].get('pdf_reading_mode', 'automatic'))
 
 
+def _system_entry(entry):
+    """A disposition the System recorded (an automatic set-aside), never a person's."""
+    actor = entry.get('actor')
+    return isinstance(actor, dict) and actor.get('name') == 'System' and not actor.get('user_id')
+
+
+def _person_disposition(value):
+    """True unless every entry of one statement's disposition is the System's own projection or set-aside."""
+    if not isinstance(value, dict):
+        return True
+    for entry in (value, *(value.get('history') or [])):
+        if not isinstance(entry, dict):
+            return True
+        if (entry.get('actor') or {}).get('user_id') if isinstance(entry.get('actor'), dict) else entry.get('actor'):
+            return True
+        if entry.get('status') == 'restored' or (entry.get('status') == 'ignored' and not (
+                SETTLED_SIBLINGS and _system_entry(entry))):
+            return True
+    return False
+
+
 def duplicate_decision(file):
-    """An ignored/restored duplicate, or any disposition a person recorded.
+    """An ignored/restored duplicate a person recorded, or any disposition a person recorded.
 
     Preparation itself stores automatic dispositions (not a duplicate,
     retained, needs comparison) for nearly every period; those are system
     projections and are recomputed by the new reading, so they do not protect.
+    A copy the System set aside by itself (status ignored, actor System, no
+    person anywhere in its history) is such a projection too (SETTLED_SIBLINGS);
+    an ignored entry without a recorded actor is treated as a person's.
     """
     dispositions = (file.metadata_ or {}).get('financial_duplicate_dispositions') or {}
     if not isinstance(dispositions, dict):
         return True
-    for value in dispositions.values():
-        if not isinstance(value, dict):
-            return True
-        for entry in (value, *(value.get('history') or [])):
-            if not isinstance(entry, dict):
+    return any(_person_disposition(value) for value in dispositions.values())
+
+
+# A held statement is read again even when another statement of the same file was already settled without
+# a person's work on it: saved (imported; its saved review carries no edit, since any edit protects the whole
+# file) or set aside by the System as a copy. The new reading never touches a settled statement: its own item,
+# admitted records and disposition stay; the new reading's twin of it meets the ordinary copy and
+# already-saved gates (pending_statement_duplicates, queue_save). A 'ready' listing of a statement the same
+# original already saved is settled as well. Still protected: queued imports, a person's skip, ignore, restore,
+# assignment or removal, any other ready statement, and any edit. Off: every settled statement
+# protects its file, as before.
+SETTLED_SIBLINGS = os.environ.get('LOUPE_FINANCIAL_RECOVERY_SETTLED_SIBLINGS', '1').strip().lower() not in (
+    '0', 'false', 'no', 'off')
+
+
+# A held statement whose printed account and period the case already saved (from another original, or from
+# this one under another statement key) is a copy for the duplicate workflow to compare, not for a new reading
+# to save: a copy read under other bank wording, product type or statement split can be saved into a second
+# ledger account (the live double admission), and the save gates key on (bytes, statement key). Fail closed:
+# such a file is left as it is. Off: not checked, as before.
+COPY_OF_SAVED_PROTECTS = os.environ.get('LOUPE_FINANCIAL_RECOVERY_COPY_OF_SAVED', '1').strip().lower() not in (
+    '0', 'false', 'no', 'off')
+
+
+def _digits(value):
+    return ''.join(ch for ch in str(value or '') if ch.isdigit())
+
+
+def _same_account(saved, read):
+    """Fail closed: an older reading can misread a digit, so the last six digits decide (all, when shorter)."""
+    if not saved or not read:
+        return False
+    if min(len(saved), len(read)) < 6:
+        return saved == read
+    return saved[-6:] == read[-6:]
+
+
+def copy_of_saved(session, case_id, source, held):
+    """True when a held statement's account and period are already admitted in the case. Read only."""
+    if not COPY_OF_SAVED_PROTECTS:
+        return False
+    from datetime import date
+    from postgres.models.financial import FinancialAccount, FinancialStatementPeriod
+    wanted = {}
+    for item in held:
+        summary = item.summary or {}
+        try:
+            start, end = date.fromisoformat(summary['period_start']), date.fromisoformat(summary['period_end'])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if _digits(summary.get('account')):
+            wanted.setdefault((start, end), set()).add(_digits(summary.get('account')))
+    for (start, end), accounts in wanted.items():
+        rows = session.execute(select(FinancialAccount.identifier_normalised, FinancialAccount.identifier_as_printed,
+                EvidenceFile.sha256).select_from(FinancialStatementPeriod)
+            .join(FinancialSourceDocument, FinancialSourceDocument.id == FinancialStatementPeriod.source_document_id)
+            .join(FinancialAccount, FinancialAccount.id == FinancialStatementPeriod.account_id)
+            .join(EvidenceFile, EvidenceFile.id == FinancialSourceDocument.evidence_file_id)
+            .where(FinancialStatementPeriod.case_id == case_id, FinancialSourceDocument.status == 'admitted',
+                   FinancialStatementPeriod.period_start == start, FinancialStatementPeriod.period_end == end))
+        for normalised, printed, sha in rows:
+            if any(_same_account(_digits(saved), wanted_digits)
+                                            for saved in (normalised, printed) for wanted_digits in accounts):
                 return True
-            if entry.get('status') in ('ignored', 'restored') or (entry.get('actor') or {}).get('user_id'):
-                return True
+    return False
+
+
+def settled_sibling(item, file, saved_keys=()):
+    """True for a statement settled with no person's work on it (see SETTLED_SIBLINGS). Read only.
+
+    ``saved_keys``: statement keys of the same original saved through another item. A 'ready' item of such a
+    key is a stale listing of a statement already saved (it cannot be saved again), so it is settled too.
+    """
+    if not SETTLED_SIBLINGS or item.review_request:
+        return False
+    if item.status == 'imported':
+        return True
+    if item.status == 'ready' and item.statement_key and item.statement_key in saved_keys:
+        return True
+    if item.status == 'duplicate_ignored' and file is not None:
+        dispositions = (file.metadata_ or {}).get('financial_duplicate_dispositions') or {}
+        value = dispositions.get(item.statement_key or '') if isinstance(dispositions, dict) else None
+        return isinstance(value, dict) and value.get('status') == 'ignored' and not _person_disposition(value)
     return False
 
 
@@ -128,6 +229,49 @@ def context(session, case_id, cutoff=None):
     admitted = set(session.scalars(select(FinancialSourceDocument.evidence_file_id).where(
         FinancialSourceDocument.case_id == case_id, FinancialSourceDocument.status == 'admitted')))
     return dict(batches=batches, membership=membership, admitted=admitted)
+
+
+# A removal recorded on an original before the batch that holds a newer reading of it was made is the start
+# of that restart (remove imports, then add the file again: ``evidence_intake.prepare_existing_financial_file``
+# reads a new version for the new batch), not a decision about the statements the restart prepared. Such a
+# batch file is judged like any other (every other guard still applies). Off: every removal protects, as before.
+RESTARTED_AFTER_REMOVAL = os.environ.get('LOUPE_FINANCIAL_RECOVERY_RESTARTED', '1').strip().lower() not in (
+    '0', 'false', 'no', 'off')
+
+
+def _instant(value):
+    if isinstance(value, datetime):
+        moment = value
+    else:
+        try:
+            moment = datetime.fromisoformat(str(value))
+        except (TypeError, ValueError):
+            return None
+    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
+
+
+def restarted_after_removal(source, reading, batch):
+    """True when every removal on this batch file predates the batch and its reading (the restart). Read only.
+
+    Fails closed: the reading itself removed, a removal without a recorded time, or one recorded at or after
+    the batch or the reading was made, keeps the file protected.
+    """
+    if not RESTARTED_AFTER_REMOVAL or source.id == reading.id or batch is None:
+        return False
+    visibility = financial_file_visibility(reading)
+    if visibility['financial_removed'] or visibility['financial_imports_removed']:
+        return False
+    metadata = source.metadata_ or {}
+    stamps = []
+    if metadata.get('financial_import_removal'):
+        stamps.append((metadata['financial_import_removal'] or {}).get('at'))
+    if financial_file_visibility(source)['financial_removed']:
+        stamps.append((metadata.get('financial_file_visibility') or {}).get('changed_at'))
+    made = [_instant(getattr(batch, 'created_at', None)), _instant(getattr(reading, 'created_at', None))]
+    removed = [_instant(stamp) for stamp in stamps]
+    if not stamps or None in made or None in removed:
+        return False
+    return max(removed) < min(made)
 
 
 def _uuid(value):
@@ -160,30 +304,41 @@ def classify(session, case_id, batch, entry, campaign, scope, group=False):
         return 'several_batches', {}
     pair = (source, reading) if source.id != reading.id else (source,)
     if any(financial_file_visibility(file)['financial_removed'] or financial_file_visibility(file)['financial_imports_removed']
-           for file in pair):
+           for file in pair) and not restarted_after_removal(source, reading, batch):
         return 'removed', {}
     if any(duplicate_decision(file) for file in pair):
         return 'duplicate_decision', {}
+    from services.financial.reread_carry import CARRY_EDITS, work_fingerprint
+    carry = {}
     if any((file.metadata_ or {}).get('financial_review_progress') for file in pair):
-        return 'investigator_edits', {}
+        if not CARRY_EDITS:
+            return 'investigator_edits', {}
+        carry = dict(carry_work=work_fingerprint(session, case_id, [file.id for file in pair]))
     # Every period of this reading or its original, in any batch, counts:
     # work saved elsewhere on the same statement is still investigator work.
     items = list(session.scalars(select(BatchItem).join(Batch, BatchItem.batch_id == Batch.id).where(
         Batch.case_id == case_id, Batch.status != 'removed', BatchItem.file_id.in_([file.id for file in pair]))))
     if any(item.review_request for item in items):
-        return 'investigator_edits', {}
+        if not CARRY_EDITS:
+            return 'investigator_edits', {}
+        carry = carry or dict(carry_work=work_fingerprint(session, case_id, [file.id for file in pair]))
+    files = {file.id: file for file in pair}
+    saved_keys = {item.statement_key for item in items if item.status == 'imported' and item.statement_key}
+    settled = [item for item in items if settled_sibling(item, files.get(item.file_id), saved_keys)]
     for item in items:
-        if item.status in PROTECTED_STATUSES:
+        if item.status in PROTECTED_STATUSES and item not in settled:
             return PROTECTED_STATUSES[item.status], {}
-    if any(file.id in scope['admitted'] for file in pair):
+    if any(file.id in scope['admitted'] for file in pair) and not (SETTLED_SIBLINGS and any(
+            item.status == 'imported' for item in settled)):
         return 'saved_import', {}
     own = [item for item in items if item.batch_id == batch.id and item.file_id == reading.id]
-    if any(item.status not in (HELD, HISTORY) for item in own) or any(
-            item.status not in (HELD, HISTORY) for item in items):
+    if any(item.status not in (HELD, HISTORY) and item not in settled for item in items):
         return 'not_all_held', {}
     held = [item for item in own if item.status == HELD]
     if not held:
         return 'nothing_held', {}
+    if copy_of_saved(session, case_id, source, held):
+        return 'copy_of_saved', {}
     if any(file.status == 'processing' for file in pair):
         return 'processing', {}
     fingerprint = reading_fingerprint(session, reading)
@@ -192,12 +347,26 @@ def classify(session, case_id, batch, entry, campaign, scope, group=False):
     if not campaign.eligible(None, fingerprint['sources']):
         return 'reader_not_affected', {}
     return ELIGIBLE, dict(source=source, reading=reading, held=held, reading_mode=fingerprint['reading_mode'],
-        extraction_sha256=fingerprint['sources'].get('pdf_extraction.py'))
+        extraction_sha256=fingerprint['sources'].get('pdf_extraction.py'), **carry)
 
 
 # A member of a several-batch original that no longer holds anything there
 # (every period retired by an earlier reading) needs no new preparation.
 IDLE_MEMBER = 'nothing_held'
+# A member whose preparation failed in its batch and that holds no statement there (an error waiting for a
+# person's retry, which makes its own reading) is idle too: it does not keep the original's held statements in
+# the other batches from being read again, and it is left exactly as it is. Off: it protects them, as before.
+FAILED_MEMBER_IDLE = os.environ.get('LOUPE_FINANCIAL_RECOVERY_FAILED_MEMBER_IDLE', '1').strip().lower() not in (
+    '0', 'false', 'no', 'off')
+
+
+def failed_idle(session, batch, entry):
+    """True for a batch file whose preparation failed and that holds no statement in its batch. Read only."""
+    if not FAILED_MEMBER_IDLE or entry.get('status') != 'error' or entry.get('standalone_import'):
+        return False
+    ids = [i for i in (_uuid(entry.get('file_id')), _uuid(entry.get('source_id'))) if i]
+    return not ids or not session.scalar(select(BatchItem.id).where(BatchItem.batch_id == batch.id,
+        BatchItem.file_id.in_(ids), BatchItem.status != HISTORY).limit(1))
 
 
 def _group_reason(session, case_id, members, campaign, scope):
@@ -213,6 +382,8 @@ def _group_reason(session, case_id, members, campaign, scope):
         return 'several_batches', []  # a batch made after the release cutoff holds it too
     chosen = []
     for batch, entry in members:
+        if failed_idle(session, batch, entry):
+            continue
         reason, detail = classify(session, case_id, batch, entry, campaign, scope, group=True)
         if reason == IDLE_MEMBER:
             continue
@@ -235,7 +406,8 @@ def candidates(session, case_id, campaign, cutoff=None):
     for batch in scope['batches']:
         for entry in batch.files or []:
             reason, detail = classify(session, case_id, batch, entry, campaign, scope)
-            if reason == 'several_batches':
+            if reason == 'several_batches' or (scope['membership'][entry.get('source_id')] > 1
+                                               and failed_idle(session, batch, entry)):
                 groups.setdefault(entry.get('source_id'), []).append((batch, entry))
                 continue
             reasons[reason] += 1
@@ -295,6 +467,7 @@ def snapshot(session, case_id, cutoff, campaign, run_id):
     if campaign.current_readers:
         supersede_earlier(session, case_id, campaign.release)
     selected, reasons = candidates(session, case_id, campaign, cutoff)
+    membership = context(session, case_id)['membership']
     run = Run(id=run_id, case_id=case_id, release=campaign.release, status='running' if selected else 'complete')
     session.add(run)
     session.flush()
@@ -305,6 +478,7 @@ def snapshot(session, case_id, cutoff, campaign, run_id):
                 source_id=entry['source_id'], from_file_id=str(reading.id),
                 lineage_ids=sorted({str(d['reading'].id) for _, _, d in members}),
                 reading_mode=detail['reading_mode'], extraction_sha256=detail['extraction_sha256'],
+                member_count=membership[entry['source_id']],
                 held_items=sorted(str(item.id) for _, _, d in members for item in d['held']), added=0,
                 members=[dict(batch_id=str(b.id), source_id=e['source_id'], from_file_id=str(d['reading'].id),
                     reading_mode=d['reading_mode']) for b, e, d in members],
@@ -472,8 +646,16 @@ def advance(session, item, file, campaign):
         _record(session, item, file, 'kept', 'A newer reading of this statement exists. Recovery left it unchanged.')
         session.commit()
         return
-    scope, group = context(session, file.case_id), len(found) > 1
-    if group and scope['membership'][item.result['source_id']] != len(found):
+    scope = context(session, file.case_id)
+    group = len(found) > 1 or scope['membership'][item.result['source_id']] > 1
+    handed = {(str(batch.id), entry.get('source_id')) for _, batch, _, entry in found}
+    others = [(batch, entry) for batch in scope['batches'] for entry in batch.files or []
+              if entry.get('source_id') == item.result['source_id'] and (str(batch.id), entry.get('source_id')) not in handed]
+    # Every batch holding the original when it was scheduled, idle ones included (older items: those handed).
+    expected = item.result.get('member_count', len(found))
+    if group and (scope['membership'][item.result['source_id']] != expected or any(
+            not failed_idle(session, batch, entry) and classify(session, file.case_id, batch, entry, campaign, scope,
+                                                                 group=True)[0] != IDLE_MEMBER for batch, entry in others)):
         # Another batch took the original after scheduling: its work is not judged here.
         _record(session, item, file, 'kept', 'Another batch now holds this statement. Recovery left it unchanged.',
             kept_reason='several_batches')
@@ -510,7 +692,8 @@ def advance(session, item, file, campaign):
             message='A newer statement reader is reading this held statement again. The earlier reading and all saved work are retained.',
             fresh_reading=True, read_from_file_id=member['from_file_id'],
             reading_file_id=member['from_file_id'], review_file_id=member['from_file_id'],
-            reading_mode=detail['reading_mode'], release=campaign.release, updated_at=now)
+            reading_mode=detail['reading_mode'], release=campaign.release, updated_at=now,
+            **({'carry_work': detail['carry_work']} if detail.get('carry_work') else {}))
         entry.update(status='waiting', expected_revision=financial_file_visibility(detail['source'])['financial_visibility_revision'])
         entry.pop('error', None)
         entry.pop('preparation_retries', None)
