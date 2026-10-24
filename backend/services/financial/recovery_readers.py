@@ -138,18 +138,25 @@ def duplicate_decision(file):
 # a person's work on it: saved (imported; its saved review carries no edit, since any edit protects the whole
 # file) or set aside by the System as a copy. The new reading never touches a settled statement: its own item,
 # admitted records and disposition stay; the new reading's twin of it meets the ordinary copy and
-# already-saved gates (pending_statement_duplicates, queue_save). Still protected: queued imports, a person's
-# skip, ignore, restore, assignment or removal, a ready statement, and any edit. Off: every settled statement
+# already-saved gates (pending_statement_duplicates, queue_save). A 'ready' listing of a statement the same
+# original already saved is settled as well. Still protected: queued imports, a person's skip, ignore, restore,
+# assignment or removal, any other ready statement, and any edit. Off: every settled statement
 # protects its file, as before.
 SETTLED_SIBLINGS = os.environ.get('LOUPE_FINANCIAL_RECOVERY_SETTLED_SIBLINGS', '1').strip().lower() not in (
     '0', 'false', 'no', 'off')
 
 
-def settled_sibling(item, file):
-    """True for a statement settled with no person's work on it (see SETTLED_SIBLINGS). Read only."""
+def settled_sibling(item, file, saved_keys=()):
+    """True for a statement settled with no person's work on it (see SETTLED_SIBLINGS). Read only.
+
+    ``saved_keys``: statement keys of the same original saved through another item. A 'ready' item of such a
+    key is a stale listing of a statement already saved (it cannot be saved again), so it is settled too.
+    """
     if not SETTLED_SIBLINGS or item.review_request:
         return False
     if item.status == 'imported':
+        return True
+    if item.status == 'ready' and item.statement_key and item.statement_key in saved_keys:
         return True
     if item.status == 'duplicate_ignored' and file is not None:
         dispositions = (file.metadata_ or {}).get('financial_duplicate_dispositions') or {}
@@ -256,7 +263,8 @@ def classify(session, case_id, batch, entry, campaign, scope, group=False):
     if any(item.review_request for item in items):
         return 'investigator_edits', {}
     files = {file.id: file for file in pair}
-    settled = [item for item in items if settled_sibling(item, files.get(item.file_id))]
+    saved_keys = {item.statement_key for item in items if item.status == 'imported' and item.statement_key}
+    settled = [item for item in items if settled_sibling(item, files.get(item.file_id), saved_keys)]
     for item in items:
         if item.status in PROTECTED_STATUSES and item not in settled:
             return PROTECTED_STATUSES[item.status], {}

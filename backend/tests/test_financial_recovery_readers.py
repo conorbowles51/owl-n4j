@@ -186,6 +186,24 @@ def test_a_statement_saved_without_edits_no_longer_protects_the_held_ones_of_its
     assert selection(f) == ([], {'saved_import': 1})
 
 
+def test_a_stale_ready_listing_of_a_saved_statement_does_not_protect_but_any_other_ready_one_does(f):
+    """Another batch lists, as ready, the statement this original already saved (it can never be saved again)."""
+    set_reader(f, f.file.id)
+    older, newer = two_batch_original(f, second_statuses=())
+    with f.SessionLocal() as db:
+        db.add(BatchItem(id=uuid5(older.id, f'{f.file.id}:s1'), batch_id=older.id, file_id=f.file.id,
+            statement_key='s1', status='imported', summary=dict(source_id=str(f.file.id), revision='r')))
+        db.add(BatchItem(id=uuid5(newer.id, f'{f.file.id}:s1'), batch_id=newer.id, file_id=f.file.id,
+            statement_key='s1', status='ready', summary=dict(source_id=str(f.file.id), revision='r')))
+        db.commit()
+    selected, reasons = selection(f)
+    assert selected == [str(f.file.id)] and reasons == {'eligible': 2}
+    with f.SessionLocal() as db:
+        db.get(BatchItem, uuid5(newer.id, f'{f.file.id}:s1')).statement_key = 's2'
+        db.commit()
+    assert selection(f) == ([], {'not_all_held': 2})
+
+
 def test_a_copy_the_system_set_aside_does_not_protect_but_a_persons_decision_does(f, monkeypatch):
     set_reader(f, f.file.id)
     held_batch(f, statuses=('attention', 'duplicate_ignored'))
