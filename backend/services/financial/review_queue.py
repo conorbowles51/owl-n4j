@@ -182,6 +182,9 @@ def describe(summary):
     choice = next(({key: p[key] for key in ('field', 'yours', 'reading')} for p in chosen if p.get('kind') == 'carry_conflict'), None)
     return dict(reason=reason, sentence=issue_sentence(reason, chosen, summary), row_id=row, field=field,
                 page=page, other_problems=others, problem_total=len(problems), reasons=ordered, also=also,
+                # For the queue's plain instructions: every page the issue is on, and what the checks said.
+                pages=sorted({p['page'] for p in chosen if isinstance(p.get('page'), int)}),
+                messages=[p['message'] for p in chosen[:3]],
                 **(dict(choice=choice) if choice else {}))
 
 
@@ -300,6 +303,7 @@ def _entry(item, batch_id, describe_result=None):
             reasons=describe_result.get('reasons') or [describe_result['reason']], also=describe_result.get('also') or [])
         if describe_result.get('choice'):
             entry['choice'] = describe_result['choice']
+        entry.update(issue_pages=describe_result.get('pages') or [], issue_messages=describe_result.get('messages') or [])
     return entry
 
 
@@ -573,6 +577,7 @@ def _compute(session, case_id):
     entries, failed, copy_files = _set_aside_read_copies(session, case_id, entries,
         _failed_files(session, case_id, set(), set_aside))
     _mark_read_afresh(session, case_id, failed)
+    _worked_by(session, entries)
     from datetime import datetime, timezone
     return dict(entries=entries, failed=failed, copy_files=copy_files, set_aside=set_aside,
                 unread=len(unread_statement_files(session, case_id=case_id)),
@@ -819,6 +824,32 @@ def _mark_read_afresh(session, case_id, failed):
             prepared=files.get(entry.get('file_id')))
         if problem and problem.get('retained_source_revision'):
             entry['read_afresh_revision'] = problem['retained_source_revision']
+
+
+# Held work someone saved themselves: the queue names that person, not whoever opens it.
+OWN_WORK_REASONS = frozenset({'saved_review', 'import_failed'})
+OWN_WORK_MESSAGE = 'manually added transaction'
+
+
+def _own_work(entry):
+    return entry['bucket'] in ('waiting', 'unreadable') and (
+        bool(OWN_WORK_REASONS & set(entry.get('reasons') or [entry.get('issue_reason')]))
+        or any(OWN_WORK_MESSAGE in (m or '').lower() for m in entry.get('issue_messages') or []))
+
+
+def _worked_by(session, entries):
+    """Name who saved the held review (``worked_by``: user id and name) on entries holding their own work. In place."""
+    wanted = [e for e in entries if _own_work(e) and _uuid(e['file_id'])]
+    for entry in wanted:
+        try:
+            saved = session.execute(select(EvidenceFile.metadata_['financial_review_progress'][entry['statement_id'] or '']
+                ['saved_by']).where(EvidenceFile.id == UUID(entry['file_id']))).scalar()
+        except Exception:
+            session.rollback()
+            return entries
+        if isinstance(saved, dict) and saved.get('name') and saved.get('user_id'):
+            entry['worked_by'] = dict(user_id=str(saved['user_id']), name=str(saved['name']))
+    return entries
 
 
 RESTART_UNAVAILABLE = 'The source recorded for restarting this removed import is unavailable'
