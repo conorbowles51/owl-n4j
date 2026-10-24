@@ -138,6 +138,8 @@ class ProofTest(unittest.TestCase):
             vr.check_page_numbering(numbered((1, 1), (2, 3), (3, None)), [1, 2, 3])
         with self.assertRaisesRegex(vr.NotProved, 'skip'):
             vr.check_page_numbering(numbered((1, 2), (2, 1)), [1, 2, 3])
+        with self.assertRaisesRegex(vr.NotProved, 'same page number'):
+            vr.check_page_numbering(numbered((1, 1), (2, 1)), [1, 2, 3])
         # Printed pages before or after the period must at least be pages of the file.
         later = [(5, _page([], 2, 3)), (6, _page([], 3, 3))]
         vr.check_page_numbering(later, [1, 2, 3, 4, 5, 6])

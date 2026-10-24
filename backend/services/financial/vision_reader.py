@@ -437,7 +437,10 @@ def _numbering_has_no_gap(pages, file_pages, total):
         if not isinstance(number, int) or number < 1:
             loose += 1
             continue
-        if previous is not None and (number <= previous or number - previous - 1 > loose):
+        if previous is not None and number == previous:
+            raise NotProved('Two pages of this period print the same page number (%s); the pages could not be '
+                            'put in order.' % number)
+        if previous is not None and (number < previous or number - previous - 1 > loose):
             raise NotProved('The printed page numbers of this period skip from page %s to page %s; '
                             'a page may be missing.' % (previous, number))
         numbered.append((physical, number))
