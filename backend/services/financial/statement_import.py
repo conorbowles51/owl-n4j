@@ -831,6 +831,14 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
             or read_duplicate_disposition(session, file, result))
     # Outside the revision: a fund statement (holdings, no movement ledger) is set aside as not a payment
     # statement; a person's decision to put it back is read from the file (not_payment_statements).
+    # Outside the revision: printed page numbering showing pages absent from this file holds the statement
+    # (printed_page_count); import_issues makes it a blocker.
+    from services.financial.printed_page_count import missing_pages
+    from services.financial.not_payment_statements import page_texts
+    gap = missing_pages(page_texts(text.content, text.source_locations) if text is not None else {},
+                        result.get('statement_page_numbers') or [])
+    if gap and not result.get('reading_failure'):
+        result['printed_pages_missing'] = gap
     from services.financial.not_payment_statements import classify as not_payment_statement
     not_payment = not_payment_statement(file, text, result)
     if not_payment:

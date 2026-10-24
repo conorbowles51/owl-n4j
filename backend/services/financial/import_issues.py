@@ -73,6 +73,10 @@ def retained_issues(proposal, request, *, arithmetic=None, coverage=None):
     from services.financial.review_arithmetic import arithmetic_problems
     originals = {r['id']: r for r in proposal['rows']}
     issues = []
+    gap = proposal.get('printed_pages_missing')
+    if gap and not (getattr(request, 'coverage_review_reason', None) or '').strip():
+        from services.financial.printed_page_count import message
+        issues.append(dict(kind='printed_pages_missing', row_id=None, pages=gap['missing'], message=message(gap)))
     for original in proposal['rows']:
         count = original['fields'].get('printed_transaction_count')
         direction = original['fields'].get('total_direction')

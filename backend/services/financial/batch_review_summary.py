@@ -49,6 +49,8 @@ def reason(problem):
         return 'readiness_update'
     if kind == 'printed_copies':
         return 'reprint'
+    if kind == 'printed_pages_missing':
+        return 'pages_missing'
     if kind == 'coverage' and problem.get('matching_statement'):
         return 'duplicate'
     if kind == 'coverage' or 'another statement covers' in message:
