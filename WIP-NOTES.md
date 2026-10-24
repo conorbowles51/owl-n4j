@@ -1,3 +1,75 @@
+# fin/rd-creditline: credit-line summary interest and IVA (BBVA "Linea Credito Digital PyME"), counts and opaque ids only
+
+Branch fin/rd-creditline from fin/rg-integrate aa14b1d3 (not live). Product decision (Neil): add a credit line's
+summary interest and IVA as rows only when the period then reconciles exactly. Private material under
+/mnt/owl-data/fin-real/rdcl (mode 700).
+
+## Design
+- New `services/financial/credit_line_summary.py`, switch `LOUPE_FINANCIAL_CREDIT_LINE_SUMMARY_CHARGES` (default on,
+  fails closed). Called from the general reader (`statement_engine._reading`) only for a period it read under the
+  liability convention and held as `not_reconciled`. Sign and account type are the engine's existing liability
+  precedent (`liability_owed`, account type `credit_card`, charge raises the amount owed, payment lowers it); no new
+  ledger convention.
+- Reads the one-column summary: SALDO INICIAL DEL PERIODO, DISPOSICIONES, PAGOS, COMISIONES COBRADAS, OTROS CARGOS,
+  INTERESES ORDINARIOS (SIN IVA), I.V.A. (the next line; scan forms 'LV.A.', 'LLV.A.', '1.V.A.'), INTERESES
+  MORATORIOS (SIN IVA), SALDO AL CORTE; amounts must sit in the summary's own column (right edge within 3% of the
+  page width of the interest amount); a printed sign read as 1-2 noise characters between label and amount is skipped.
+- Proves only when: exactly one reading of the movements gives opening + movements + interest + IVA (+ moratory)
+  = closing to the cent; the summary's own opening/closing equal the period's; PAGOS (when read) = payments and
+  DISPOSICIONES + COMISIONES + OTROS CARGOS (when all read) = listed charges, at least one of the two compared;
+  no other printed total unexplained (section/column totals refuse); no undated charge lines.
+- No double: a movement naming interest or IVA, or of the same amount as a summary charge, refuses (held).
+- Each added row: debit, dated on the period's printed cut-off date, `source_basis='period_summary'`,
+  `summary_page`, `summary_charge` 'interest' or 'tax' (interest also `charge_group='interest'`), description
+  "<label> (from the period summary, page N)", locator = the summary line. The summary lines the engine had read
+  as an unscoped 'Total debit' (OTROS CARGOS) become plain lines in that reading only.
+- A period the existing second-date rule (B5, `second_date_unnamed`) would hold is not tried, so it stays exactly
+  as before (same reason, same rows).
+
+## Result: 0 of the 8 held BNB2 statements prove (dry run), by design of the gates
+- 8 statements = 4 distinct prints (2 files each). Dry run (`financial_reread_file`, no --apply), all 8 unchanged:
+  printed_total_differs 2 (truth hold, stays held), no_closing 2 (truth decision, stays held), proved-but-held on
+  no activity 2 (truth auto; its hold is the no-activity confirmation, not summary charges), not_reconciled 2
+  (truth auto: the target).
+- The 2 target statements: the summary rule PROVES them on the live saved reading (interest + IVA + one payment
+  reconcile to the cent, debit-side summary totals agree), but every movement line prints two dates (authorisation,
+  application) whose headings sit two lines under the date heading and are not read, so B5 holds them.
+- Measured what-if (NOT committed; second date forced to be read as the posting date): the 2 live target readings
+  prove; on the truth copies (r14s readings) 3 of 4 credit-line docs become ready, can_import, 0 problems, amounts
+  and directions equal to truth. BUT the payment's date would be the first (authorisation) date while truth dates it
+  on the second (application) date: a date_wrong. Truth for card families uses the first printed date (checked on 3
+  card truth docs, 85 two-date rows). So the date of record for these lines needs a ruling before they can ship:
+  recommendation = application date as the transaction date for this credit-line layout (what truth records),
+  behind its own switch.
+- The 4th truth credit-line doc with summary charges stays held: its DISPOSICIONES line is OCR-damaged and PAGOS is
+  unread, so no summary total can be compared (no independent control).
+
+## Truth set (proposal-level, r14s-whole readings, disposable SQLite; base aa14b1d3 vs branch)
+- bbva-mexico: 410 files compared, 410 identical (0 changed): 0 wrong, 0 lost per period, 0 double.
+- Card families (liability convention, same engine path: capital-one, citi, credit-one, merrick, synchrony): 25
+  files, 25 identical.
+- Truth hold (printed figures disagree) and decision (closing unprinted) prints stay held.
+
+## Other finding (not changed)
+- The no-activity credit-line print reads, through the catalog, under the bbva-mexico-cash-management profile as
+  asset_balance / checking with balance -110.71, while the engine alone reads it as liability_owed (a credit in the
+  customer's favour). The figures match truth but the sign meaning and account type differ from the account's other
+  periods. Held today (no-activity confirmation); worth a look before it is confirmed.
+
+## Tests
+New tests/test_financial_credit_line_summary.py (9): proves with interest + IVA rows (marked, page, date, debit,
+reconciles, no stray totals); switch off = held as before; non-reconciling = held; PAGOS differs = held; no double
+(movement lists interest: both the double-count closing and the plain closing held); same-amount movement =
+ambiguous, held; IVA not on the next line = held; unnamed second date = held unchanged; zero charges add nothing.
+Ran: test_financial_credit_line_summary, test_financial_statement_engine, test_financial_statement_import_bbva,
+test_financial_bbva_capital_one_reading_quality: 302 passed.
+
+## Shared code touched
+- backend/services/financial/statement_engine.py (`_reading`: one guarded call before the principal-only check,
+  one after `_rows`; 17 lines).
+
+---
+
 # Unit rg-others: reader gaps, other named banks (Monex, Kapital, Intercam, Scotiabank)
 
 Branch fin/rg-others, base 68d95b20. Counts and opaque ids only. Targets: 32 held statements, 26 files.
