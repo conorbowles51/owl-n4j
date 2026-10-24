@@ -558,6 +558,8 @@ class UnprintedDateAndAuditTests(unittest.TestCase):
         self.assertIsNone(audit.overlap_trimmed(live, truth, entry, [live, dict(cover, period_end='2024-06-09')]))
         other = dict(live, opening_minor=1100)
         self.assertIsNone(audit.overlap_trimmed(other, truth, audit.compare(other, truth), [other, cover]))
+        unclosed = dict(live, closing_minor=None)
+        self.assertIsNone(audit.overlap_trimmed(unclosed, truth, audit.compare(unclosed, truth), [unclosed, cover]))
         # A kept day's row missing as well is a disagreement, whatever covers the earlier days.
         short = dict(live, rows=[])
         self.assertIsNone(audit.overlap_trimmed(short, truth, audit.compare(short, truth), [short, cover]))

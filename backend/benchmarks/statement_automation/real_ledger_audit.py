@@ -180,6 +180,8 @@ def overlap_trimmed(live, truth, entry, account_periods):
     from datetime import date, timedelta
     if entry['outcome'] != 'disagrees' or entry['extra_rows'] or set(entry['balances']) - {'opening'}:
         return None
+    if live.get('closing_minor') is None or live['closing_minor'] != truth.get('closing_minor'):
+        return None
     if not live.get('period_start') or not truth.get('period_start') or live['period_start'] <= truth['period_start']:
         return None
     before = [r for r in truth['rows'] if r.get('date') and r['date'] < live['period_start']]

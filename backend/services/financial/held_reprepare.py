@@ -64,7 +64,8 @@ Investigator work (``LOUPE_FINANCIAL_REPREPARE_CARRY_EDITS``, default on). A fil
 carrying her saved progress or batch drafts is no longer left for that alone:
 ``reprepare_carry`` plans, read only, how her work goes onto the current reading
 (every other protection still applies). A file whose work cannot be carried one
-to one is left ('investigator_edits', the reason recorded on the mark). The
+to one is left ('investigator_edits', the reason recorded on the mark; like a file the worker could not
+carry for any reason, it is not judged again until the next deploy). The
 pending mark and the hand-off record the work's fingerprint; work saved since
 leaves the file. The worker carries her work (``reprepare_carry.apply``) before
 preparing, under the file's lock, and prepares nothing when the fingerprint or
