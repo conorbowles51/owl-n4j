@@ -10,6 +10,7 @@ import json
 import os
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 from benchmarks.statement_automation import harness, real_inventory, real_truth as rt
@@ -248,6 +249,65 @@ class ManifestTests(unittest.TestCase):
         self.assertNotIn('d1', text)
 
 
+class UnverifiedOutcomeTests(unittest.TestCase):
+    """An unverified period's expected outcome follows the class of its reason (corpus convention)."""
+
+    PAGE = 'printed page 1 of the statement is not in the file; every present page reconciles'
+    OPENING = 'printed Saldo Inicial is the balance after the first listed movement; the opening before it is not printed'
+    CONTRADICTS = ('the one printed payment (1.00) does not take the printed opening (1.00 owed) to the printed '
+                   'closing (1.00 in favour); the summary has no second movement line')
+    BLANK = 'closing balance (Saldo al Corte) printed blank on a zero-activity credit line'
+
+    def test_each_reason_class(self):
+        cases = [(self.PAGE, 'hold', ['printed_pages_missing']), (self.OPENING, 'decision', ['opening_unprinted']),
+                 (self.CONTRADICTS, 'hold', ['printed_figures_disagree']), (self.BLANK, 'decision', ['closing_unprinted']),
+                 ('printed page 1 absent; the rest reconciles', 'hold', ['printed_pages_missing'])]
+        for reason, outcome, defects in cases:
+            self.assertEqual(rt.unverified_expectation([reason]), (outcome, defects), reason)
+            self.assertEqual(rt.expected_outcome(period(), 'unverified', [reason]), outcome, reason)
+
+    def test_hold_wins_and_unknown_reasons_keep_the_identity_rule(self):
+        self.assertEqual(rt.unverified_expectation([self.OPENING, self.PAGE]),
+                         ('hold', ['opening_unprinted', 'printed_pages_missing']))
+        self.assertEqual(rt.unverified_expectation(['ending balance differs']), (None, []))
+        self.assertEqual(rt.expected_outcome(period(), 'unverified', ['ending balance differs']), 'auto')
+        self.assertEqual(rt.expected_outcome(period(holder=None), 'unverified', ['ending balance differs']), 'decision')
+        # Only an unverified period is classed by its reasons.
+        self.assertEqual(rt.expected_outcome(period(), 'verified', [self.PAGE]), 'auto')
+        self.assertEqual(rt.expected_outcome(period(), 'incomplete', [self.OPENING]), 'hold')
+
+    def test_final_documents_without_a_scored_period_enter_the_manifest_unscored(self):
+        def result(doc, status, truth_status, reasons):
+            p = dict(period(rows=[row(500, 'credit')]).__dict__, id=doc + '#1', truth_status=truth_status,
+                     truth_reasons=reasons)
+            p['expected'] = rt.expected_outcome(rt.Period(**{k: p[k] for k in rt.Period.__dataclass_fields__}),
+                                                truth_status, reasons)
+            return dict(id=doc, sha256=doc * 4, pages=1, mode='digital', status=status, periods=[p],
+                        period_status={truth_status: 1})
+        results = [result('da', 'verified', 'verified', []),
+                   result('db', 'unverified', 'unverified', [self.OPENING]),  # final: every page read by a person
+                   result('dc', 'unverified', 'unverified', [self.PAGE]),
+                   result('dd', 'partly_verified', 'unverified', [self.PAGE]),  # not final: still queued
+                   dict(id='de', sha256='e', pages=1, mode='digital', status='not_statement', periods=[])]
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            (tmp / 'docs').mkdir()
+            for r in results:
+                (tmp / 'docs' / f"{r['id']}.pdf").write_bytes(b'%PDF')
+            manifest, _ = rt.write_outputs(tmp / 'out', results, tmp / 'docs')
+        files = {f['filename']: f for f in manifest['files']}
+        self.assertEqual(sorted(files), ['da.pdf', 'db.pdf', 'dc.pdf'])
+        self.assertTrue(files['da.pdf']['truth_complete'])
+        for name, expected, defects in (('db.pdf', 'decision', ['opening_unprinted']),
+                                        ('dc.pdf', 'hold', ['printed_pages_missing'])):
+            entry = files[name]
+            self.assertFalse(entry['truth_complete'])
+            (only,) = entry['periods']
+            self.assertEqual((only['truth_status'], only['expected'], only['defects']), ('unverified', expected, defects))
+            self.assertFalse(harness._scored(only))  # the scored denominator does not move
+        self.assertEqual(files['da.pdf']['periods'][0]['defects'], [])
+
+
 class HarnessRealCorpusTests(unittest.TestCase):
     def entry(self, scored, can_import, expected='auto'):
         return dict(item_id='i', filename='x.pdf', statement_id=None, status='ready' if can_import else 'attention',
@@ -257,7 +317,25 @@ class HarnessRealCorpusTests(unittest.TestCase):
     def test_only_scored_periods_count(self):
         m = harness.metrics(dict(periods=[self.entry(True, True), self.entry(False, True), self.entry(False, False)]))
         self.assertEqual((m['overall']['periods'], m['overall']['ready_without_edits']), (1, 1))
-        self.assertEqual(m['unscored'], dict(periods=2, offered_for_import=1, by_status={'ready': 1, 'attention': 1}))
+        self.assertEqual(m['unscored'], dict(periods=2, offered_for_import=1, by_status={'ready': 1, 'attention': 1},
+                                             by_expected={'auto': 2}, wrongly_ready=[], ready_where_decision=[]))
+
+    def test_an_unscored_period_offered_where_the_truth_expects_a_hold_fails_the_run(self):
+        held = dict(self.entry(False, True, expected='hold'), truth_id='h.pdf#1')
+        decided = dict(self.entry(False, True, expected='decision'), truth_id='d.pdf#1')
+        saved = dict(self.entry(False, False, expected='hold'), truth_id='s.pdf#1', final_status='imported')
+        kept = dict(self.entry(False, False, expected='hold'), truth_id='k.pdf#1')
+        m = harness.metrics(dict(periods=[self.entry(True, True), held, decided, saved, kept]))
+        # The scored denominator does not move; the unscored block names the failures.
+        self.assertEqual((m['overall']['periods'], m['overall']['hold_periods']), (1, 0))
+        self.assertEqual(m['unscored']['wrongly_ready'], ['h.pdf#1', 's.pdf#1'])
+        self.assertEqual(m['unscored']['ready_where_decision'], ['d.pdf#1'])
+        result = dict(metrics=m, ledger=dict(wrongly_admitted=[], duplicate_contributions=0))
+        failures = harness.safety_failures(result)
+        self.assertEqual(len(failures), 1)
+        self.assertIn('2 unscored period(s)', failures[0])
+        m = harness.metrics(dict(periods=[self.entry(True, True), decided, kept]))
+        self.assertEqual(harness.safety_failures(dict(metrics=m, ledger=dict(wrongly_admitted=[]))), [])
 
     def test_scored_truth_statuses(self):
         self.assertTrue(harness._scored(None))
@@ -423,6 +501,83 @@ class UnprintedDateAndAuditTests(unittest.TestCase):
         self.assertEqual(audit.judge(live, dict(held, truth_status='incomplete', expected='auto'))['outcome'],
                          'must_be_held')
         self.assertEqual(audit.judge(live, dict(held, expected='auto'))['outcome'], 'agrees')
+
+    def test_audit_pairs_a_share_printed_as_account_digits_with_a_named_section(self):
+        from benchmarks.statement_automation import real_ledger_audit as audit
+        def truth(share, opening, closing, rows):
+            return dict(share=share, account='1111', period_end='2024-02-16', currency='USD', opening_minor=opening,
+                        closing_minor=closing, rows=[dict(amount_minor=a, direction=d) for a, d in rows])
+        checking = truth('EveryDay Checking', 10000, 12000, [(5000, 'credit'), (3000, 'debit')])
+        credit_line = truth('Checking Line of Credit', 0, 0, [])
+        savings = dict(truth('Membership Savings', 500, 500, []), account='2222')
+        live = dict(share='1111', account='1111', period_end='2024-02-16', currency='USD', opening_minor=10000,
+                    closing_minor=12000, rows=[(5000, 'credit', '2024-01-20'), (3000, 'debit', '2024-01-25')])
+        candidates = [checking, credit_line, savings]
+        self.assertIs(audit.best_truth(live, candidates), checking)
+        quiet = dict(live, opening_minor=0, closing_minor=0, rows=[])
+        self.assertIs(audit.best_truth(quiet, candidates), credit_line)  # same digits: told apart by balances
+        self.assertIs(audit.best_truth(dict(quiet, share='2222', account='2222', opening_minor=500,
+                                            closing_minor=500), candidates), savings)
+        self.assertIsNone(audit.best_truth(dict(live, share='3333'), candidates))  # other digits: no pairing
+        # Four-digit truth shares (Andrews) still never pair across shares.
+        andrews = dict(checking, share='0040')
+        self.assertIsNone(audit.best_truth(dict(live, share='0000'), [andrews]))
+        self.assertIs(audit.best_truth(dict(live, share='0040'), [andrews]), andrews)
+
+    def test_audit_compares_the_admitted_holder_with_the_printed_one(self):
+        from benchmarks.statement_automation import real_ledger_audit as audit
+        truth = dict(holder='EJEMPLO SERVICIOS SA DE CV')
+        cases = ((dict(holder='EJEMPLO SERVICIOS SA DE CV'), 'agrees', 'statement'),
+                 (dict(holder='EJEMPLO SERVICIOS S.A. DE C.V.'), 'same_entity', 'statement'),
+                 (dict(holder='EJEMPLO SERVICIOS'), 'same_entity', 'statement'),
+                 (dict(holder='AVENIDA EJEMPLO 12, CENTRO', account_holder='EJEMPLO SERVICIOS SA DE CV'), 'differs',
+                  'statement'),
+                 (dict(holder='', account_holder='OTRA EMPRESA SA DE CV'), 'differs', 'account'),
+                 (dict(), 'not_recorded', 'account'))
+        for live, outcome, source in cases:
+            self.assertEqual(audit.holder_outcome(live, truth), dict(holder=outcome, holder_source=source), live)
+        self.assertEqual(audit.holder_outcome(dict(holder='X Y'), dict(holder=''))['holder'], 'not_printed')
+
+
+    def test_audit_counts_a_copy_saved_through_a_file_the_inventory_does_not_list(self):
+        """r11-copy-audit: an upload of the same bytes after the inventory, saved to another ledger account."""
+        from unittest import mock
+        from benchmarks.statement_automation import real_ledger_audit as audit
+        rows = [dict(amount_minor=500, direction='debit', date='2024-01-05')]
+        def truth_period(pid, duplicate_of=None):
+            return dict(id=pid, family='f', truth_status='verified', expected='duplicate' if duplicate_of else 'auto',
+                        duplicate_of=duplicate_of, period_start='2024-01-01', period_end='2024-01-31', currency='MXN',
+                        account='1234', share=None, opening_minor=1000, closing_minor=500, rows=rows)
+        inventory = dict(documents=[dict(id='dorig', sha256='a' * 64, evidence_files=[]),
+                                    dict(id='dcopy', sha256='b' * 64, evidence_files=[dict(evidence_file_id='f-copy')])])
+        def live(file_id, account):
+            return dict(period_id='p-' + file_id, evidence_file_id=file_id, source_document_id='s-' + file_id,
+                        period_start='2024-01-01', period_end='2024-01-31', currency='MXN', opening_minor=1000,
+                        closing_minor=500, account='991234', case_id='c' * 8 + '-case', share=None,
+                        account_id=account, rows=[(500, 'debit', '2024-01-05')])
+        session = mock.Mock()
+        session.execute.return_value.all.return_value = [('f-orig', 'a' * 64)]
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / 'periods').mkdir()
+            for doc, period in (('dorig', truth_period('dorig#1')), ('dcopy', truth_period('dcopy#1', 'dorig#1'))):
+                (Path(tmp) / 'periods' / (doc + '.json')).write_text(json.dumps(dict(id=doc, status='verified', periods=[period])))
+            seen = []
+            def periods(_session, files):
+                seen.append(sorted(files))
+                return [live(f, 'acct-' + f) for f in sorted(files)]
+            with mock.patch.object(audit, 'live_periods', periods):
+                summary, detail = audit.audit(Path(tmp), inventory, session)
+        self.assertEqual(seen, [['f-copy', 'f-orig']])
+        self.assertEqual(summary['live_files_on_truth_documents'], dict(inventory=1, same_bytes=1))
+        duplicates = summary['duplicates']
+        self.assertEqual(duplicates['same_printed_period_admitted_more_than_once_in_a_case'], 1)
+        self.assertEqual(duplicates['same_printed_period_in_more_than_one_ledger_account'], 1)
+        self.assertEqual(duplicates['same_printed_period_admitted_more_than_once_examples'], ['cccccccc dorig#1'])
+        self.assertEqual({e['outcome'] for e in detail}, {'agrees'})
+        # By page identity: a file with other bytes whose pages render identically to the copy.
+        session.execute.return_value.all.return_value = []
+        mapping, how = audit.live_files_of(session, inventory, {'f-copy': 'x', 'f-other': 'x', 'f-alone': 'y'})
+        self.assertEqual((mapping.get('f-other'), 'f-alone' in mapping, how['same_pages']), ('dcopy', False, 1))
 
 
 class InventoryTests(unittest.TestCase):
@@ -628,6 +783,36 @@ class NavyFederalTruthTests(unittest.TestCase):
         self.assertEqual(rt.detect_issuer(self.pages()), 'navy-federal')
         self.assertIsNone(rt.detect_issuer([page(n, ['01-05 Transfer to Navy Federal Credit Union', 'x'])
                                             for n in (1, 2, 3)]))
+
+class RerunTests(unittest.TestCase):
+    """``--only`` reuses other documents' cached results, but never one that was waiting for a parser."""
+
+    def test_a_document_waiting_for_a_parser_is_read_again(self):
+        waiting = dict(id='a', status='needs_parser', reason='no tier-A parser for issuer unknown')
+        self.assertFalse(rt.reuse_cached(waiting, 'a', {'c'}))
+        self.assertTrue(rt.reuse_cached(dict(waiting, status='verified'), 'a', {'c'}))
+        self.assertTrue(rt.reuse_cached(dict(waiting, status='not_statement'), 'a', {'c'}))
+        self.assertFalse(rt.reuse_cached(dict(waiting, status='verified'), 'a', {'a'}))  # named: always read
+        self.assertFalse(rt.reuse_cached(None, 'a', {'c'}))  # nothing cached
+        self.assertFalse(rt.reuse_cached(dict(waiting, status='verified'), 'a', None))  # whole run
+
+    def test_main_reads_the_waiting_document_and_reuses_the_rest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            docs = [dict(id=name, sha256=name * 4, hash='verified', mode='image_only', pages=1, family='?')
+                    for name in ('a', 'b', 'c')]
+            (tmp / 'inventory.json').write_text(json.dumps(dict(documents=docs)))
+            (tmp / 'out' / 'periods').mkdir(parents=True)
+            cached = dict(sha256='', mode='image_only', pages=1, periods=[], period_status={})
+            (tmp / 'out' / 'periods' / 'a.json').write_text(json.dumps(dict(cached, id='a', status='needs_parser')))
+            (tmp / 'out' / 'periods' / 'b.json').write_text(json.dumps(dict(cached, id='b', status='not_statement')))
+            with open(os.devnull, 'w') as sink, unittest.mock.patch('sys.stdout', sink):
+                rt.main(['--inventory', str(tmp / 'inventory.json'), '--out', str(tmp / 'out'), '--only', 'c',
+                         '--jobs', '1'])
+            status = {r['id']: r['status'] for r in json.loads((tmp / 'out' / 'status.json').read_text())}
+        # a: read again (an image-only document now goes to the visual queue); b: cached result kept; c: read
+        self.assertEqual(status, dict(a='needs_visual', b='not_statement', c='needs_visual'))
+
 
 @unittest.skipUnless(READERS, 'pdfplumber and PyMuPDF are needed for the end-to-end reading check')
 class SyntheticCorpusTruthTests(unittest.TestCase):

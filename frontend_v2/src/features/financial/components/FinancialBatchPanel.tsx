@@ -115,6 +115,27 @@ function reviewProblems(item: z.infer<typeof itemSchema>, group: string) {
       Number(b.review_reason === group) - Number(a.review_reason === group)
   )
 }
+/** What the server is doing with this batch right now, in plain words; "" when nothing. */
+function batchWorkLine(batch: {
+  status: string
+  files: { status: string; recheck?: { reason: string } | null }[]
+  operations: { pending: number }[]
+}) {
+  if (batch.status !== "preparing") return ""
+  const rechecking = batch.files.filter(
+    (file) => file.status === "processing" && file.recheck
+  ).length
+  if (rechecking)
+    return `Loupe was updated, so it is checking ${rechecking} ${rechecking === 1 ? "file" : "files"} in this batch again. This page updates by itself. No action is needed.`
+  const saving = batch.operations.reduce(
+    (total, operation) => total + operation.pending,
+    0
+  )
+  if (saving)
+    return `Saving ${saving} ${saving === 1 ? "statement" : "statements"}. This page updates by itself. No action is needed.`
+  return "Files are being prepared. This page updates by itself. No action is needed."
+}
+
 const batchSchema = z.object({
   id: z.string(),
   case_id: z.string(),
@@ -131,6 +152,7 @@ const batchSchema = z.object({
       last_progress_at: z.string().optional(),
       last_checked_at: z.string().optional(),
       recovery: recoveryReceipt.nullish(),
+      recheck: z.object({ reason: z.string() }).passthrough().nullish(),
     })
   ),
   counts: z.record(z.string(), z.number()),
@@ -517,14 +539,6 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
     },
     onError: refresh,
   })
-  const updateStatements = useMutation({
-    retry: false,
-    mutationFn: () =>
-      fetchAPI(`${prefix}/${batchId}/refresh-statements?case_id=${caseId}`, {
-        method: "POST",
-      }),
-    onSuccess: refresh,
-  })
   const openImported = useMutation({
     mutationFn: async (operationId?: string) => {
       const result = batchSavedAccountsScope.parse(
@@ -855,6 +869,11 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
                 ? "Pausing after the current statement finishes. No further statements or imports will start."
                 : "Preparation and imports continue on the server. You can leave this page and return to the batch."}
           </p>
+          {batchWorkLine(batch) && (
+            <p role="status" className="text-sm">
+              {batchWorkLine(batch)}
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap gap-2">
           {canEdit &&
@@ -1284,32 +1303,6 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
           />{" "}
           Show statements with issues only
         </label>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => void query.refetch()}
-        >
-          Refresh batch
-        </Button>
-        {canEdit && (
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={
-              query.data.status === "preparing" ||
-              paused ||
-              updateStatements.isPending
-            }
-            onClick={() => updateStatements.mutate()}
-          >
-            {updateStatements.isPending
-              ? "Updating statement list…"
-              : "Check for additional statement periods"}
-          </Button>
-        )}
-        {updateStatements.isError && (
-          <p role="alert">{updateStatements.error.message}</p>
-        )}
       </div>
       <div className="space-y-2">
         <div className="flex flex-wrap items-center gap-3">
@@ -1667,12 +1660,32 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
   )
 }
 
+/** One batch statement as its review opens it. Shared so the review queue can
+ * load the next statement in the background: Next then shows it at once. */
+export const BATCH_ITEM_FRESH_MS = 120_000
+export function batchItemQuery(caseId: string, batchId: string, itemId: string) {
+  return {
+    queryKey: ["financial-batch-item", caseId, batchId, itemId],
+    queryFn: async () =>
+      itemSchema
+        .extend({ review_revision: z.string() })
+        .parse(
+          await fetchAPI(
+            `/api/financial/statement-import/batches/${batchId}/items/${itemId}?case_id=${caseId}`
+          )
+        ),
+    staleTime: BATCH_ITEM_FRESH_MS,
+  }
+}
+
 /** Navigation supplied by the case review queue instead of the batch's own lists. */
 export type QueueNavigation = {
   /** The plain sentence naming the problem, shown before anything else. */
   issue?: string
   field?: "holder" | "account_number" | "period" | "currency" | "institution"
   proposals?: Record<string, { value: string; label: string; confirmed?: boolean }>
+  /** The numbered steps for it: where to look in the PDF and what to enter. */
+  steps?: string[]
   /** The other blockers, so fixing the stated one is never mistaken for the end. */
   also?: string[]
   fixMakesReady?: boolean
@@ -1681,6 +1694,8 @@ export type QueueNavigation = {
   onNext: () => void
   onPrevious: () => void
   onImported: (receipt?: StatementImportReceipt) => void
+  /** A review save landed: the queue refreshes and says where the statement stands. */
+  onChanged?: () => void
 }
 
 export function BatchStatementReview({
@@ -1709,16 +1724,8 @@ export function BatchStatementReview({
   const user = useAuthStore((state) => state.user),
     owner = user?.id || user?.username || "anonymous"
   const query = useQuery({
-    queryKey: ["financial-batch-item", caseId, batchId, itemId],
+    ...batchItemQuery(caseId, batchId, itemId),
     refetchOnWindowFocus: false,
-    queryFn: async () =>
-      itemSchema
-        .extend({ review_revision: z.string() })
-        .parse(
-          await fetchAPI(
-            `/api/financial/statement-import/batches/${batchId}/items/${itemId}?case_id=${caseId}`
-          )
-        ),
   })
   const item = query.data
   const [savedBalances, setSavedBalances] = useState(false)
@@ -1890,6 +1897,9 @@ export function BatchStatementReview({
       )
     reviewRevision.current = result.review_revision
     void client.invalidateQueries({ queryKey: ["financial-batch", caseId] })
+    // A reopened statement must show this save, not a copy loaded before it.
+    void client.invalidateQueries({ queryKey: ["financial-batch-item", caseId], refetchType: "none" })
+    queue?.onChanged?.()
     return result
   }
   const raw = item?.review_request
@@ -1910,6 +1920,13 @@ export function BatchStatementReview({
             className="w-full rounded border border-amber-500/60 bg-amber-50/60 p-2 text-sm font-medium dark:bg-amber-950/20"
           >
             To fix: {queue.issue}
+            {!!queue.steps?.length && (
+              <ol className="mt-1 list-decimal pl-5 font-normal" aria-label="What to do">
+                {queue.steps.map((text, index) => (
+                  <li key={index}>{text}</li>
+                ))}
+              </ol>
+            )}
             {!!queue.also?.length && (
               <span className="block font-normal">Also: {queue.also.join("; ")}</span>
             )}

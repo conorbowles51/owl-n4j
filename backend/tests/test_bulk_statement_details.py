@@ -98,7 +98,7 @@ class BulkStatementDetailsTests(TestCase):
         stale = self.request()
         self.save(self.request(dict(institution='Other reviewer bank')))
         before = self.listing()
-        with self.assertRaisesRegex(PdfMappingError, 'changed since selection'):
+        with self.assertRaisesRegex(PdfMappingError, 'read again since you selected it'):
             self.save(stale)
         self.assertEqual(self.listing(), before)
 
@@ -175,7 +175,7 @@ class BulkStatementDetailsTests(TestCase):
 
     def test_case_boundaries_and_preview_required(self):
         request = self.request()
-        with self.assertRaisesRegex(PdfMappingError, 'not in this case'):
+        with self.assertRaisesRegex(PdfMappingError, 'no longer in this case'):
             self.save(request, uuid4())
         with self.assertRaisesRegex(PdfMappingError, 'preview'):
             self.save(request.model_copy(update={'preview_revision': None}))
@@ -261,7 +261,7 @@ class BulkStatementDetailsTests(TestCase):
         self.save(request.model_copy(update={'preview_revision': preview['preview_revision']}))
         self.assertEqual({row['values']['holder'] for row in self.listing()['items']}, {'Reviewed Company'})
 
-    def test_a_stored_reading_that_no_longer_matches_is_refused_at_save(self):
+    def test_a_statement_read_again_since_its_batch_check_previews_as_it_now_is(self):
         batch_id = self.prepare_batch()
         with self.f.SessionLocal() as db:
             for item in db.scalars(select(Item).where(Item.batch_id == batch_id, Item.file_id == self.second.id)):
@@ -272,10 +272,39 @@ class BulkStatementDetailsTests(TestCase):
         request = service.BulkEdit(targets=[{k: row[k] for k in ('file_id', 'source_id', 'statement_id', 'revision')} for row in rows],
             changes=dict(institution='Reviewed Bank'), mode='replace', request_id=uuid4())
         with self.f.SessionLocal() as db:
+            listed = service.preview(db, case_id=self.f.case.id, request=request)
+        self.assertFalse(any(row.get('refreshed') for row in listed['items']))
+        # The save reads the current version and refuses the listed preview...
+        with self.assertRaisesRegex(PdfMappingError, 'Review the updated preview'):
+            self.save(request.model_copy(update={'preview_revision': listed['preview_revision']}))
+        # ...so the editor asks for the current one, which names what moved.
+        request = request.model_copy(update={'read_current': True})
+        with self.f.SessionLocal() as db:
             preview = service.preview(db, case_id=self.f.case.id, request=request)
-        with self.assertRaisesRegex(PdfMappingError, 'read again since its batch check'):
-            self.save(request.model_copy(update={'preview_revision': preview['preview_revision']}))
-        self.assertEqual(self.listing()['items'], rows)
+        moved = [row for row in preview['items'] if row.get('refreshed')]
+        self.assertEqual(len(moved), 1)
+        self.assertEqual(moved[0]['refreshed']['holder']['listed'], 'Earlier reading')
+        self.assertNotEqual(moved[0]['values']['holder'], 'Earlier reading')
+        self.assertEqual(moved[0]['conflicts'], [])  # the edited field did not move
+        # The preview and the save read the same version: the save goes through.
+        self.save(request.model_copy(update={'preview_revision': preview['preview_revision']}))
+        self.assertEqual({row['values']['institution'] for row in self.listing()['items']}, {'Reviewed Bank'})
+
+    def test_choosing_the_shown_value_for_a_flagged_field_confirms_it(self):
+        batch_id = self.prepare_batch()
+        with self.f.SessionLocal() as db:
+            for item in db.scalars(select(Item).where(Item.batch_id == batch_id, Item.file_id == self.second.id)):
+                item.summary = {**item.summary, 'problems': [dict(kind='statement_detail', field='holder', row_id=None,
+                    message='Account holder not found: enter it'), *item.summary.get('problems', [])]}
+            db.commit()
+        rows = [row for row in self.listing()['items'] if row['file_id'] == str(self.second.id)]
+        shown = rows[0]['values']['holder']
+        request = service.BulkEdit(targets=[{k: rows[0][k] for k in ('file_id', 'source_id', 'statement_id', 'revision')}],
+            changes=dict(holder=shown), mode='fill_missing', request_id=uuid4())
+        with self.f.SessionLocal() as db:
+            preview = service.preview(db, case_id=self.f.case.id, request=request)
+        self.assertEqual(preview['updated'], 1)
+        self.assertEqual(preview['items'][0]['changes']['holder'], dict(before=shown, after=shown, confirmed=True))
 
     def test_a_currency_change_reads_only_the_affected_statements(self):
         self.prepare_batch()

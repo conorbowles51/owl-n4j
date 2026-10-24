@@ -144,6 +144,38 @@ class QueueSaveTests(Base):
         with self.f.SessionLocal() as db:
             self.assertEqual(db.get(Item, UUID(str(item_id))).status, 'imported')
 
+    def test_automatic_save_tries_again_after_a_lock_conflict(self):
+        from sqlalchemy.exc import OperationalError
+
+        class Deadlock(Exception):
+            sqlstate = '40P01'
+        outcomes = [OperationalError('INSERT', {}, Deadlock()), dict(queued=2)]
+
+        def once(*args, **kwargs):
+            outcome = outcomes.pop(0)
+            if isinstance(outcome, Exception):
+                raise outcome
+            return outcome
+        with patch.object(queue_save, 'AUTO_SAVE_READY', True), patch.object(queue_save, '_auto_save_once', once), \
+                patch.object(queue_save.time, 'sleep') as sleep:
+            with self.f.SessionLocal() as db:
+                result = queue_save.auto_save_prepared(db, case_id=self.f.case.id, batch_id=uuid4(),
+                                                       file_id=self.f.file.id)
+        self.assertEqual(result, dict(queued=2))
+        self.assertEqual(sleep.call_count, 1)
+
+    def test_automatic_save_gives_up_after_repeated_lock_conflicts(self):
+        from sqlalchemy.exc import OperationalError
+
+        class Deadlock(Exception):
+            sqlstate = '40P01'
+        with patch.object(queue_save, 'AUTO_SAVE_READY', True), patch.object(queue_save.time, 'sleep'), \
+                patch.object(queue_save, '_auto_save_once', side_effect=OperationalError('INSERT', {}, Deadlock())) as once:
+            with self.f.SessionLocal() as db:
+                self.assertIsNone(queue_save.auto_save_prepared(db, case_id=self.f.case.id, batch_id=uuid4(),
+                                                                file_id=self.f.file.id))
+        self.assertEqual(once.call_count, queue_save.AUTO_SAVE_ATTEMPTS)
+
     def test_automatic_save_never_raises(self):
         with patch.object(queue_save, 'AUTO_SAVE_READY', True), \
                 patch.object(queue_save, 'save_statements', side_effect=RuntimeError('boom')):
@@ -219,6 +251,117 @@ class BacklogCommandTests(Base):
         self.advance(batch)
         with self.f.SessionLocal() as db:
             self.assertEqual(db.query(Item).filter(Item.batch_id == batch).one().status, 'imported')
+
+
+class BacklogSweepTests(Base):
+    """The background save of the ready backlog: the backlog command's rule, a few per round, never twice."""
+    test_a_statement_in_two_batches_is_one_entry_and_leaves_once_saved = None
+    test_a_statement_with_a_problem_is_queued_with_its_sentence_and_file_filter_applies = None
+
+    def setUp(self):
+        super().setUp()
+        queue_save._BACKLOG_SEEN.clear()
+        switch = patch.object(queue_save, 'AUTO_SAVE_READY', True)  # tests/__init__ switches it off
+        switch.start()
+        self.addCleanup(switch.stop)
+
+    def prepared_backlog(self):
+        """A ready statement prepared before automatic save (no preparation mark, nothing saved)."""
+        batch = self.create()
+        with patch.object(queue_save, 'AUTO_SAVE_READY', False):
+            self.advance(batch)
+        with self.f.SessionLocal() as db:
+            record = db.query(Item).filter(Item.batch_id == batch).one()
+            self.assertEqual(record.status, 'ready')
+            record.review_request = None
+            db.commit()
+            return batch, record.id
+
+    def test_the_sweep_saves_the_backlog_as_system_and_only_once(self):
+        batch, item_id = self.prepared_backlog()
+        calls, real = [], queue_save.save_statements
+
+        def spy(*args, **kwargs):
+            calls.append(kwargs)
+            return real(*args, **kwargs)
+        with patch.object(queue_save, 'save_statements', spy), patch.object(queue_save, 'fully_reconciled', return_value=True):
+            report = queue_save.sweep_backlog(self.f.SessionLocal)
+            self.assertEqual((report['queued'], report['considered']), (1, 1))
+            self.assertEqual((calls[0]['actor'], calls[0]['only_reconciled']), (queue_save.SYSTEM_ACTOR, True))
+            self.assertEqual(queue_save.sweep_backlog(self.f.SessionLocal)['considered'], 0)  # no longer ready
+        self.advance(batch)
+        with self.f.SessionLocal() as db:
+            item = db.get(Item, item_id)
+            self.assertEqual((item.status, item.summary['import_actor']['name']), ('imported', 'System'))
+
+    def test_edited_or_checked_statements_and_the_switches_are_respected(self):
+        _, item_id = self.prepared_backlog()
+        with patch.object(queue_save, 'fully_reconciled', return_value=True):
+            with patch.object(queue_save, 'AUTO_SAVE_BACKLOG', False):
+                self.assertEqual(queue_save.sweep_backlog(self.f.SessionLocal)['considered'], 0)
+            with patch.object(queue_save, 'AUTO_SAVE_READY', False):
+                self.assertEqual(queue_save.sweep_backlog(self.f.SessionLocal)['considered'], 0)
+            with self.f.SessionLocal() as db:
+                db.get(Item, item_id).review_request = dict(holder='Typed by the investigator')
+                db.commit()
+            report = queue_save.sweep_backlog(self.f.SessionLocal)
+        self.assertEqual((report['considered'], report['queued']), (1, 0))
+        with self.f.SessionLocal() as db:
+            self.assertEqual(db.get(Item, item_id).status, 'ready')
+
+    def test_a_statement_admission_holds_is_not_retried_until_it_changes(self):
+        _, item_id = self.prepared_backlog()
+        calls = []
+        with patch.object(queue_save, 'fully_reconciled', side_effect=lambda *a: calls.append(1) or False):
+            first = queue_save.sweep_backlog(self.f.SessionLocal)
+            self.assertEqual((first['queued'], first['held']), (0, {'Has a check or an edit: left for you': 1}))
+            self.assertEqual(queue_save.sweep_backlog(self.f.SessionLocal)['considered'], 0)
+            with self.f.SessionLocal() as db:
+                item = db.get(Item, item_id)
+                item.summary = {**item.summary, 'touched': True}
+                from datetime import datetime, timedelta, timezone
+                item.updated_at = datetime.now(timezone.utc) + timedelta(seconds=5)  # SQLite: second resolution
+                db.commit()
+            self.assertEqual(queue_save.sweep_backlog(self.f.SessionLocal)['considered'], 1)
+        self.assertEqual(len(calls), 2)
+
+    def test_stale_stored_ready_is_refreshed_when_admission_holds_it(self):
+        _, item_id = self.prepared_backlog()
+        refreshed = []
+        from services.financial import import_batches
+        with patch.object(queue_save, '_not_ready_reason', return_value='No longer ready: open it in the queue'), \
+                patch.object(import_batches, 'import_available', return_value=False), \
+                patch.object(import_batches, 'refresh_readiness',
+                             side_effect=lambda session, **kw: refreshed.append(kw['item_ids']) or dict(refreshed=1)):
+            report = queue_save.sweep_backlog(self.f.SessionLocal)
+        self.assertEqual((report['queued'], report['refreshed']), (0, 1))
+        self.assertEqual(refreshed, [[item_id]])
+
+
+class TurnOrderTests(Base):
+    test_a_statement_in_two_batches_is_one_entry_and_leaves_once_saved = None
+    test_a_statement_with_a_problem_is_queued_with_its_sentence_and_file_filter_applies = None
+
+    def test_batches_holding_saves_get_the_first_turns(self):
+        from datetime import timedelta
+        older = self.create()
+        with self.f.SessionLocal() as db:
+            first = db.get(service.Batch, older)
+            first.status = 'preparing'
+            second = service.Batch(id=uuid4(), case_id=first.case_id, created_by=first.created_by, status='preparing',
+                                   actor=dict(first.actor), files=[])
+            db.add(second)
+            db.flush()
+            second.updated_at = first.updated_at + timedelta(minutes=1)
+            newer = second.id
+            db.commit()
+            self.assertEqual(service.turn_batches(db), [older, newer])
+            item = Item(id=uuid4(), batch_id=newer, file_id=self.f.file.id, statement_key='x', status='pending_import',
+                        summary={})
+            db.add(item)
+            db.commit()
+            self.assertEqual(service.turn_batches(db), [newer, older])
+            self.assertEqual(service.turn_batches(db, limit=1), [newer])
 
 
 class SupersededBatchTests(Base):

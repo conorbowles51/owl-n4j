@@ -32,7 +32,10 @@ read matches. Two different readings that both prove are held. A period that
 is not proved is returned with its best reading and a named reason; the reason
 is carried by an unresolved line so the existing review gate holds it.
 """
+import pickle
 import re
+import threading
+from collections import OrderedDict
 from contextvars import ContextVar
 from datetime import date, timedelta
 from functools import lru_cache
@@ -40,14 +43,17 @@ from itertools import product
 
 from services.financial.pdf_candidates import _digest
 from services.financial.statement_engine_vocabulary import (
-    ACCOUNT_LABELS, CURRENCY_LABELS, CURRENCY_NAMES, COLUMN_INDEX, HOLDER_LABELS, INDEX, INSTITUTION_WORDS,
-    LIABILITY_EVIDENCE, MONTHS, NOT_A_NAME, PAGE_NUMBERING, PERIOD_WORDS, UNDATED_CHARGES, FUZZY_INDEX, fold, label)
+    ACCOUNT_LABELS, ADDRESS_WORDS, CLOSING_DATE_LABELS, CONTINUATION_NOTICES, CURRENCY_LABELS, CURRENCY_NAMES, COLUMN_INDEX,
+    CYCLE_DAYS_LABELS, HOLDER_LABELS, INDEX, INSTITUTION_WORDS, LIABILITY_EVIDENCE, MONTHS, NOT_A_NAME, PAGE_NUMBERING,
+    PAYMENT_BOX_HEADINGS, PERIOD_WORDS, SECTION_HEADINGS, SECTION_SCOPE, TAXPAYER_TYPES, UNDATED_CHARGES, YEAR_TO_DATE, FUZZY_INDEX, fold, label)
 
 LAYOUT = 'generic'
 # The library profile applied to the current reading (None for the plain engine).
 _PROFILE = ContextVar('statement_engine_profile', default=None)
 # The document's movement headings name the date column "DIA"/"DAY": a row may start with the day alone (B2).
 _DAY_COLUMN = ContextVar('statement_engine_day_column', default=False)
+# The document's day-month order from its unambiguous numeric dates (_document_date_order), or None.
+_DOCUMENT_ORDER = ContextVar('statement_engine_document_order', default=None)
 # The document never prints an amount in parentheses: a ')' read after an amount is scan noise, not the
 # parentheses-for-negative convention (C4, C11).
 _NO_PARENS = ContextVar('statement_engine_no_parentheses', default=False)
@@ -71,11 +77,28 @@ HOLD_MESSAGES = {
     'printed_total_differs': 'A printed total or count differs from the movement lines read.',
     'two_readings': 'Two different readings of the amount columns both reconcile.',
     'pages_missing': 'The printed page numbering shows missing pages.',
+    'period_start_contradicted': ('The start date worked out from the printed days in the billing period does not '
+                                  'follow the previous statement for this card in the same file.'),
     'route_library_first': 'This layout is routed to the bank-specific reader library first.',
     'library_disagrees': 'The general reader and the bank-specific reader both reconcile this period but read it differently.',
-    'line_without_content': 'A dated line in the movement table prints nothing else, so its amount is missing (it may have been blacked out).',
+    'second_date_unnamed': ('Movement lines print a second date, but the heading of that date column could not be '
+                            'read, so it is not known whether it is the posting date or the value date.'),
+    'date_unread': ('A movement line prints two dates, but one of them could not be read, so the line\'s date '
+                    'cannot be confirmed.'),
+    'day_balance_date_differs': ('A movement line\'s settlement day is not the day printed on the end-of-day balance '
+                                 'after it, or no end-of-day balance follows it, so its date cannot be confirmed.'),
+    'line_without_content':'A dated line in the movement table prints nothing else, so its amount is missing (it may have been blacked out).',
     'account_shared': 'This credit line prints the same account number as a deposit account in the same statement, so its records could be mixed with that account. Check it against the PDF before importing it.',
+    'principal_only_balance': ('This credit line prints only its principal balance: the amount owed at the opening (principal '
+                               'with interest and fees) is not printed, so the movement lines cannot be checked against it.'),
 }
+# A credit line's movement table that prints the principal, the interest and a balance column side by side
+# keeps its balance column as the principal only (C5).
+_PRINCIPAL_ONLY_WORDS = ('PRINCIPAL', 'INTEREST', 'BALANCE')
+# Hold reasons a principal-only balance explains: the money could not be proved from the printed balances.
+_PRINCIPAL_ONLY_EXPLAINS = frozenset({'not_reconciled', 'no_independent_control', 'no_geometry', 'no_opening',
+                                      'no_closing', 'unplaced_money_line', 'printed_total_differs', 'two_readings',
+                                      'too_many_interpretations'})
 # (B7) A line a statement prints inside an account section when nothing moved in the period.
 NO_TRANSACTIONS = ('NO TRANSACTIONS THIS PERIOD',)
 
@@ -112,17 +135,32 @@ def _rect(cell, rotation=0):
 _SIGN_ONLY = re.compile(r'^(?:-|−|\$|US\$|€|£|¥|MN|M\.N\.|MXN|USD|EUR|DLS|CR)$')
 
 
+_PARENTHESIZED = re.compile(r'\([^()\s]*\)')
+
+
+def _without_rule_marks(line, mark):
+    """(profile ``rule_mark``) The line with the mark the reading prints at every cell's edge (a table rule read
+    as text, '28)' '83.10)' 'Ope)Liq)') replaced by spaces, so word positions stay where they were printed. A
+    parenthesized amount ('(4,321,987.65)') keeps its parentheses: its sign is printed."""
+    kept = {i for m in _PARENTHESIZED.finditer(line) for i in range(m.start(), m.end())}
+    return ''.join(' ' if ch == mark and i not in kept else ch for i, ch in enumerate(line))
+
+
 def _cell_tokens(cell, rotation=0):
     rect, width = _rect(cell, rotation)
     if rect is None:
         return None, None
     lines = cell['expected_text'].split('\n')
+    mark = (_PROFILE.get() or {}).get('rule_mark')
+    if mark:
+        lines = [_without_rule_marks(line, mark) for line in lines]
     count = len(lines)
     tokens = []
     for index, line in enumerate(lines):
         words = [(m.start(), m.end(), m.group()) for m in re.finditer(r'\S+', line)]
         if not words:
             continue
+        words = _unglue_leading_date(words)
         start, end = words[0][0], words[-1][1]
         span = max(end - start, 1)
         y0 = rect[1] + (rect[3] - rect[1]) * index / count
@@ -148,12 +186,33 @@ def _cell_tokens(cell, rotation=0):
     return tokens, width
 
 
+# (B2) A full date (day, month, four-digit year) read as the first word of a line with the next word glued to it
+# by one to three stray marks the scan read in the gap ("01-MAR-2026'1234567", "01-MAR-2026)/1234567"). The four
+# printed year digits end the date; the marks are dropped. Off: the line keeps the glued word and is no movement.
+UNGLUE_LEADING_DATE = True
+# With a month word the year's end is also found with no mark at all, before a run of figures (a folio):
+# "01-MAR-20261234567"; the year must read 19xx or 20xx.
+_GLUED_DATE = re.compile(r"^(\d{1,2}[-/.][A-Za-z]{3,10}[-/.]\d{4}|\d{1,2}[-/.]\d{1,2}[-/.]\d{4})([^\w\s]{1,3})(\w\S*)$")
+_JOINED_DATE = re.compile(r"^(\d{1,2}[-/.][A-Za-z]{3,10}[-/.](?:19|20)\d{2})()(\d{3,}\S*)$")
+
+
+def _unglue_leading_date(words):
+    if not UNGLUE_LEADING_DATE:
+        return words
+    s, e, word = words[0]
+    m = _GLUED_DATE.match(word) or _JOINED_DATE.match(word)
+    if not m or not is_date_token(m[1]):
+        return words
+    return [(s, s + len(m[1]), m[1]), (s + m.end(2), e, m[3])] + words[1:]
+
+
 # OCR damage around one printed amount (C11): a stray '?' read after it (scan noise beside the
 # figure), and the amount split by a space inside one cell ("135 , 700.06", "5,173 846,29").
 _NOISE_TAIL = re.compile(r'^([-−(]?(?:US\$|\$)?(?:\d{1,3}(?:,\d{3})*)?[.,]?\d{2}(?:\)|-|−|CR)?)\?$')
-# A table's column rule read after an amount ('4,318,207.55|'), and, in a document that prints no amount in
+# A table's column rule read after an amount ('4,318,207.55|', or a run of dashes printed in the margin beside it,
+# '4,318,207.55——'), and, in a document that prints no amount in
 # parentheses, a ')' read there ('1,045,320.00)').
-_RULE_TAIL = re.compile(r'^([-−(]?(?:US\$|\$)?(?:\d{1,3}(?:,\d{3})*)?[.,]?\d{2}(?:\)|-|−|CR)?)\|$')
+_RULE_TAIL = re.compile(r'^([-−(]?(?:US\$|\$)?(?:\d{1,3}(?:,\d{3})*)?[.,]?\d{2}(?:\)|-|−|CR)?)(?:\||——+)$')
 _PAREN_TAIL = re.compile(r'^([-−]?(?:US\$|\$)?\d{1,3}(?:,\d{3})*[.,]\d{2})\)$')
 # Two separators read before the cents ('2,617,384,.91'): the one next to the cents is the decimal mark.
 _DOUBLE_MARK = re.compile(r'^([-−(]?(?:US\$|\$)?\d{1,3}(?:,\d{3})*)[.,]([.,]\d{2}(?:\)|-|−|CR)?)$')
@@ -170,7 +229,7 @@ def _rejoin_amounts(words):
     separators printed before the cents the one next to them is kept. Words are joined only inside
     one cell line, only across a gap of spaces or a lone comma, and only when the
     result is one amount with complete three-digit groups (a thousands group is
-    never invented): '3,215 , 677.12' -> '3,215,677.12', '12,486, 37' -> '12,486,37',
+    never invented): '3,215 , 677.12' -> '3,215,677.12', '12,486, 37' -> '12,486,37', '$4 321.09' -> '$4,321.09',
     '5,291 157,82' -> '5,291,157,82' (read by the document's decimal convention).
     The proof still decides whether the value is used.
     """
@@ -179,7 +238,7 @@ def _rejoin_amounts(words):
         noise = _NOISE_TAIL.fullmatch(word) or _RULE_TAIL.fullmatch(word) or (
             _NO_PARENS.get() and '(' not in word and _PAREN_TAIL.fullmatch(word))
         if noise:
-            e, word = e - 1, noise[1]
+            e, word = s + len(noise[1]), noise[1]
         double = _DOUBLE_MARK.fullmatch(word)
         if double:
             word = double[1] + double[2]
@@ -195,9 +254,9 @@ def _rejoin_amounts(words):
             for size in (1, 2):
                 if len(parts) < size:
                     continue
-                if size == 2 and parts[0] != ',' or size == 1 and ',' not in word:
+                if size == 2 and parts[0] != ',' or size == 1 and ',' not in word and not re.match(r'^[-−(]?(?:US)?\$', word):
                     # A head without its own comma (a printed count before an amount) joins only
-                    # across a lone comma.
+                    # across a lone comma; a head printing the money sign ('$4 321.09') is not a count.
                     continue
                 tail = parts[size - 1]
                 head = word.rstrip(',')
@@ -334,6 +393,8 @@ def _pages(sources):
     """Rows of every page in reading order, each with its located tokens."""
     pages = {}
     for source in sources:
+        heading = False
+        payment_boxes = []
         for raw in source['rows']:
             tokens, width, located = [], None, True
             for cell in raw['cells']:
@@ -351,16 +412,237 @@ def _pages(sources):
                         located=False, text=' '.join(c['expected_text'] for c in raw['cells'])))
                 continue
             tokens.sort(key=lambda t: (t['line'], t['x0']))
-            tokens = _attach_detached_minus(_rejoin_split_cells(tokens))
-            pages.setdefault(source['page_number'], []).append(dict(
-                page=source['page_number'], source=source, raw=raw, tokens=tokens,
-                y0=min(t['y0'] for t in tokens), width=width, located=located,
-                text=' '.join(t['t'] for t in tokens)))
+            row = dict(page=source['page_number'], source=source, raw=raw, tokens=tokens,
+                       y0=min(t['y0'] for t in tokens), width=width, located=located)
+            parts = _split_row(row, heading, payment_boxes) if located else None
+            for part in parts or [row]:
+                part['tokens'] = _attach_detached_minus(_rejoin_split_cells(part['tokens']))
+                part['text'] = ' '.join(t['t'] for t in part['tokens'])
+                pages.setdefault(source['page_number'], []).append(part)
+            heading = heading or (_is_header(row) and any(column_role(label(t['t'])) == 'description'
+                                                          for t in row['tokens']))
+            payment_boxes.extend(_payment_box_headings(raw, source.get('reading_rotation') or 0))
     for rows in pages.values():
         rows.sort(key=lambda r: (r['y0'] if r['y0'] is not None else float('inf'), r['source']['table_index'],
-                                 r['raw']['row_index']))
+                                 r['raw']['row_index'], r.get('x0', 0)))
         _mark_chart_scale(rows)
+        _mark_wide_amount_boxes(rows)
     return pages
+
+
+#: (E2) An amount stored alone in a box much wider than its characters (the reading joined a mark printed beside
+#: it, a margin dash or a rule, into its box) has no reliable right edge: its column is found from its box's left
+#: edge and the width its characters take in the page's other amount boxes. Off: the box's right edge is used.
+WIDE_AMOUNT_BOXES = True
+_BOXED_AMOUNT = re.compile(r'^[-−(]?(?:US\$|\$)?\d{1,3}(?:[,.]\d{3})*[.,]\d{2}(?:\)|-|−)?$')
+
+
+def _mark_wide_amount_boxes(rows):
+    """Amounts printed first in their box line whose placed width is at least 1.35 times the page's median width
+    per character of one-amount boxes (at least eight such boxes on the page) get ``_left_x1``: their left edge
+    plus the median width of their characters."""
+    if not WIDE_AMOUNT_BOXES:
+        return
+    amounts = [t for row in rows for t in row['tokens'] if t['first'] and _BOXED_AMOUNT.match(t['t'])]
+    boxed = [t for t in amounts if t['exact']]
+    if len(boxed) < 8:
+        return
+    widths = sorted((t['x1'] - t['x0']) / len(t['t']) for t in boxed)
+    median = widths[len(widths) // 2]
+    if median <= 0:
+        return
+    for token in amounts:
+        if (token['x1'] - token['x0']) / len(token['t']) >= 1.35 * median:
+            token['_left_x1'] = token['x0'] + median * len(token['t'])
+
+
+# ---------------------------------------------------------------------------
+# One stored row holding several printed lines
+# ---------------------------------------------------------------------------
+#
+# A drawn table without row rules is stored as one cell per box: the cell's
+# text holds every printed line of the box, one per text line. Two forms are
+# read as what they are, printed lines:
+#
+# * a movement table's body cell (under a heading naming date, description and
+#   amount columns) whose dated lines each carry their own amount: every printed
+#   line becomes a row of its own (wrapped description lines, section headings
+#   and totals included; the reading decides what each is);
+# * side-by-side boxes on one stored row (an account summary beside a payment
+#   box) where a box prints label + amount lines: each box is read on its own,
+#   so one box's label never runs into the other box's line.
+#
+# A line's horizontal positions inside its box are estimates (the stored cell
+# has one rectangle); its vertical band is the line's share of the cell.
+
+
+def _cell_lines(tokens):
+    """[(line index in the cell's text, the line's tokens left to right)] of one cell's printed lines."""
+    lines = {}
+    for token in tokens:
+        lines.setdefault(token['line'], []).append(token)
+    return [(index, sorted(lines[index], key=lambda t: t['x0'])) for index in sorted(lines)]
+
+
+def _dated_money_line(line):
+    words = merged_dates(line)
+    return bool(words) and _leading_date(words[0]['t'].rstrip('.,')) and any(_money_like(t['t']) for t in words[1:])
+
+
+def _money_like(text):
+    return money(text, 'dot') is not None or money(text, 'comma') is not None
+
+
+def _label_amount_line(line):
+    """A line printing words and then one amount at its end ('Previous Balance $1,234.56')."""
+    return (len(line) >= 2 and _money_like(line[-1]['t'])
+            and not any(_money_like(t['t']) for t in line[:-1]) and any(label(t['t']) for t in line[:-1])
+            and not is_date_token(line[0]['t']))
+
+
+def _split_row(row, under_heading, payment_boxes):
+    """The printed lines (or boxes) of one stored row as rows of their own, or None to keep the row whole."""
+    cells = [cell for cell in row['raw']['cells'] if cell['expected_text'].strip()]
+    rotation = row['source'].get('reading_rotation') or 0
+    by_cell = {}
+    for token in row['tokens']:
+        by_cell.setdefault(id(token['cell']), []).append(token)
+    if under_heading and not rotation and len(cells) == 1 and '\n' in cells[0]['expected_text'].strip():
+        lines = _cell_lines(by_cell.get(id(cells[0]), []))
+        dated = [line for _, line in lines if _leading_date(merged_dates(line)[0]['t'].rstrip('.,'))]
+        if (len(lines) >= 2 and any(_dated_money_line(line) for _, line in lines)
+                and all(_dated_money_line(line) for line in dated)):
+            count = len(cells[0]['expected_text'].split('\n'))
+            return [_line_row(row, cells[0], line, index, count) for index, line in lines]
+    if under_heading and not rotation and len(cells) >= 3:
+        parts = _merged_total_line(row, cells, by_cell)
+        if parts:
+            return parts
+    if len(cells) >= 2 and any(sum(_label_amount_line(line) for _, line in _cell_lines(by_cell.get(id(cell), []))) >= 2
+                               for cell in cells):
+        parts = []
+        for cell in cells:
+            own = by_cell.get(id(cell))
+            if not own:
+                continue
+            part = dict(row, raw=dict(row['raw'], cells=[cell], box=cell['column_index']), tokens=own,
+                        y0=min(t['y0'] for t in own), x0=min(t['x0'] for t in own))
+            rect, _ = _rect(cell, rotation)
+            if rect is not None and any(_beneath(rect, box) for box in payment_boxes):
+                part['payment_box'] = True
+            parts.append(part)
+        return parts
+    return None
+
+
+def _merged_total_line(row, cells, by_cell):
+    """(E10) A drawn table row holding the table's last movement line and its printed total line, or None.
+
+    A ruled table with no rule between its last movement and its ``TOTAL`` line stores both printed lines
+    in one row of boxes: the description box reads '<description>' over 'TOTAL', the amount boxes the
+    movement's amount over the column totals, and a box printing one figure belongs to one of the two
+    lines. Read as one movement it has two amounts and no proof can place them. Split only when:
+
+    * the row's first box is one line opening with a date (a movement), and one other box prints two or
+      more lines of which only the last is a column-total label;
+    * every box of figures prints one line, or as many lines as that box (one per printed line);
+    * every other box prints one line.
+
+    A box of figures with one line per printed line is split line by line; a box with one figure belongs
+    to the movement line when it is the row's rightmost box of figures (the balance column, which the
+    total line does not print) and to the total line otherwise. The proof checks the result twice: the
+    movement against the running balance, the total line against the sums of the column.
+    Returns ``[movement row, total row]``.
+    """
+    ordered = sorted(cells, key=lambda c: (_rect(c)[0] or [0])[0])
+    first = by_cell.get(id(ordered[0]), [])
+    if not first or len(_cell_lines(first)) != 1 or not _leading_date(merged_dates(_cell_lines(first)[0][1])[0]['t'].rstrip('.,')):
+        return None
+    texts = {id(c): c['expected_text'].strip('\n').split('\n') for c in cells}
+    if any(not line.strip() for lines in texts.values() for line in lines) or any(
+            c['expected_text'].strip('\n') != c['expected_text'] for c in cells):
+        return None
+    total_cells = [c for c in cells if len(texts[id(c)]) >= 2 and label(texts[id(c)][-1]) in INDEX['column_total']
+                   and not any(label(line) in INDEX['column_total'] for line in texts[id(c)][:-1])]
+    if len(total_cells) != 1:
+        return None
+    total_cell = total_cells[0]
+    count = len(texts[id(total_cell)])
+    figures = [c for c in cells if c is not total_cell and all(
+        all(_money_like(word) for word in line.split()) for line in texts[id(c)])]
+    if not figures:
+        return None
+    rightmost = max(figures, key=lambda c: (_rect(c)[0] or [0])[0])
+    movement, total = [], []
+    for cell in cells:
+        tokens = by_cell.get(id(cell), [])
+        lines = texts[id(cell)]
+        if cell is total_cell or (cell in figures and len(lines) == count and count > 1):
+            split = _cell_lines(tokens)
+            if len(split) != count:
+                return None
+            movement.append((cell, [t for _, line in split[:-1] for t in line], 0, count - 1, count))
+            total.append((cell, split[-1][1], count - 1, count, count))
+        elif len(lines) == 1:
+            (movement if cell not in figures or cell is rightmost else total).append((cell, tokens, None, None, None))
+        else:
+            return None
+    band = next(t for t in by_cell[id(total_cell)] if t['line'] == count - 1)
+
+    def part(pieces, index, at_total):
+        own_cells, own = [], []
+        for cell, tokens, start, stop, of in pieces:
+            if start is None:
+                part_cell = cell
+            else:
+                locator = dict(cell['locator'])
+                x0, y0, x1, y1 = locator['rect']
+                locator['rect'] = [x0, y0 + (y1 - y0) * start // of, x1, max(y0 + (y1 - y0) * stop // of, y0 + 1)]
+                part_cell = dict(cell, expected_text='\n'.join(cell['expected_text'].split('\n')[start:stop]),
+                                 locator=locator, cell_line=dict(line=start, lines=of))
+            own_cells.append(part_cell)
+            for t in tokens:
+                moved = dict(t, cell=part_cell, line=t['line'] - (start or 0))
+                if at_total and start is None:
+                    moved.update(y0=band['y0'], y1=band['y1'])
+                own.append(moved)
+        raw = dict(row['raw'], cells=own_cells, line=index)
+        return dict(row, raw=raw, tokens=sorted(own, key=lambda t: (t['line'], t['x0'])),
+                    y0=min(t['y0'] for t in own), x0=min(t['x0'] for t in own), split=(id(row['raw']), index))
+
+    if not any(t for _, tokens, *_ in total for t in tokens):
+        return None
+    return [part(movement, 0, False), part(total, count - 1, True)]
+
+
+def _line_row(row, cell, tokens, index, count):
+    """One printed line of a multi-line cell as a row: its own cell (the line's text, the line's band of the
+    cell's rectangle) and its tokens renumbered as the only line."""
+    locator = dict(cell['locator'])
+    x0, y0, x1, y1 = locator['rect']
+    top, bottom = y0 + (y1 - y0) * index // count, y0 + (y1 - y0) * (index + 1) // count
+    locator['rect'] = [x0, top, x1, max(bottom, top + 1)]
+    line_cell = dict(cell, expected_text=' '.join(cell['expected_text'].split('\n')[index].split()),
+                     locator=locator, cell_line=dict(line=index, lines=count))
+    own = [dict(t, cell=line_cell, line=0) for t in tokens]
+    raw = dict(row['raw'], cells=[line_cell], line=index)
+    return dict(row, raw=raw, tokens=own, y0=min(t['y0'] for t in own), x0=min(t['x0'] for t in own),
+                split=(id(row['raw']), index))
+
+
+def _payment_box_headings(raw, rotation):
+    boxes = []
+    for cell in raw['cells']:
+        if label(cell['expected_text']) in {label(h) for h in PAYMENT_BOX_HEADINGS}:
+            rect, _ = _rect(cell, rotation)
+            if rect is not None:
+                boxes.append(rect)
+    return boxes
+
+
+def _beneath(rect, box):
+    """A cell's rectangle printed under a box heading's: below it, inside its horizontal extent."""
+    return rect[1] >= box[3] - 1 and rect[0] >= box[0] - 1 and rect[2] <= box[2] + 1
 
 
 _SCALE_VALUE = re.compile(r'^[-−]?\$?(\d{1,3}(?:,\d{3})*|\d+)[.,]00$')
@@ -531,7 +813,26 @@ def _ocr_date(text):
     text = re.sub(r'(?<=[A-Z0-9])~(?=[A-Z0-9])', '-', text)
     # A day's leading 1 read as a letter at the start of a date ('L1-MAR-2024', 'I5/03/2024').
     text = re.sub(r'^[LI|](?=\d[-/.])', '1', text)
-    return _OCR_MONTH_O.sub('O', _OCR_ZERO.sub('0', text))
+    if DATE_SLASH_STROKE:
+        # A stroke read as a letter after a two-figure day, before its month name ('25/INOV', '25/I0CT', or the
+        # slash itself read as one: '15INOV'): no month name opens with I or L, so the letter is not part of the
+        # date. A one-figure day is left alone: '3IMAR' may be a printed 31 whose 1 was read as I.
+        text = re.sub(r'^(\d{2})/?[IL|](?=[A-Z0]{3,10}$)', r'\1/', text)
+    text = _OCR_MONTH_O.sub('O', _OCR_ZERO.sub('0', text))
+    if DATE_SLASH_MARKS:
+        # A slash between a day and a month name read as another stroke or doubled ('07\\MAR', '07)MAR',
+        # '07/)MAR'): the separator carries no part of the date.
+        text = re.sub(r'^(\d{1,2})(?:/?[\\)|]|[\\)|]/)(?=[A-Z]{3,10}$)', r'\1/', text)
+    return text
+
+
+# (B2) A day-and-month date whose slash the scan read as a backslash, a closing parenthesis or a bar, or doubled
+# with one, reads as that date (``_ocr_date``). Off: such a token is no date, as before.
+DATE_SLASH_MARKS = True
+# (B2) A day-and-month date whose slash is followed by, or was read as, a stroke (I, L or a bar) before the
+# month name ('15/INOV', '25/I0CT', '15INOV'; measured on outline-printed BBVA pages read by OCR) reads as that
+# date. Off: such a token is no date, as before.
+DATE_SLASH_STROKE = True
 
 
 @lru_cache(maxsize=262144)
@@ -705,9 +1006,15 @@ def label_pairs(row, style, exponent):
     printed row can hold two side-by-side blocks, and only the words right
     before a value are its label.
     """
+    if row.get('stacked_pairs') is not None:
+        # A summary printed as a table: each amount's label is the heading printed over it (D7).
+        return row['stacked_pairs']
     pairs, words, values = [], [], []
     previous = None
     width = row.get('width') or 1
+    if row.get('payment_box'):
+        # The remittance box beside a card summary repeats its new balance: never a control (D7).
+        return []
     for token in merged_dates(row['tokens']):
         kind = _value_kind(token, style, exponent)
         if kind == 'date' or ' ' in token['t'] and is_date_token(token['t']):
@@ -716,8 +1023,8 @@ def label_pairs(row, style, exponent):
             values.append((kind, token))
             previous = token
             continue
-        if not label(token['t']):
-            # Printed signs between a label and its value ("=", "+") are neither.
+        if not label(token['t']) or token['t'] in ('+/-', '+/−', '±'):
+            # Printed signs between a label and its value ("=", "+", "+/-") are neither.
             continue
         if values:
             pairs.append((label(' '.join(words)), values))
@@ -752,9 +1059,13 @@ def _profile_role(text, liability):
 
 
 def column_role(text):
-    """A movement-heading word's role: the shared vocabulary, then the active profile's words."""
-    role = COLUMN_INDEX.get(text)
+    """A movement-heading word's role: the shared vocabulary, then the active profile's words. A profile's
+    ``ignore`` words come first: an amount column the profile names as not the movement's effect (a gross
+    amount beside the net one) is never read as the amount, whatever the shared vocabulary says."""
     profile = _PROFILE.get()
+    if profile and text in {label(w) for w in ((profile.get('columns') or {}).get('ignore') or ())}:
+        return 'ignore'
+    role = COLUMN_INDEX.get(text)
     if role is None and profile:
         role = next((r for r, words in (profile.get('columns') or {}).items() if text in {label(w) for w in words}), None)
     return role
@@ -765,11 +1076,15 @@ def _role_of(text, liability):
     if extra:
         return extra
     if liability:
-        # Card summaries print components per direction, not one total (D7).
+        # Card summaries print components per direction, not one total (D7), or a net of both.
         if text in INDEX['credit_component']:
             return 'credit_component'
         if text in INDEX['debit_component']:
             return 'debit_component'
+        if text in INDEX['net_component']:
+            return 'net_component'
+        if text in INDEX['section_total']:
+            return 'section_total'
     for role in ('opening', 'closing', 'subtotal', 'column_total', 'credit_total', 'debit_total'):
         if text in INDEX[role]:
             return role
@@ -805,7 +1120,9 @@ def _leading_date(text):
     return is_date_token(text) or _day_only(text)
 
 
-def page_facts(rows, style, exponent=2):
+def page_facts(rows, style, exponent=2, order=None):
+    """``order``: the document's day-month order ('dmy'/'mdy'), used only for a period whose printed dates
+    read as a valid range in both orders (B3)."""
     facts = dict(periods=set(), labelled_periods=set(), accounts={}, numbering=set(), currencies=set(),
                  liability=False, legal=set(), holders=set())
     for row in rows:
@@ -817,7 +1134,8 @@ def page_facts(rows, style, exponent=2):
         if not movement:
             # (B1) A range printed for an interest or dividend accrual ('for the dividend period from ...
             # through ...') dates that accrual, not the statement.
-            ranges = [] if _ACCRUAL_PERIOD.search(folded) else period_ranges(text)
+            ranges = [] if _ACCRUAL_PERIOD.search(folded) else (
+                period_ranges(text) or (period_ranges(text, order) if order else []))
             if ranges:
                 facts['periods'].update(ranges)
                 if any(word in folded.split() or folded.startswith(word) for word in PERIOD_WORDS):
@@ -908,6 +1226,7 @@ def _derived_period(rows, style, exponent, facts):
         cuts.update(m[1] for m in _CUT_DATE.finditer(folded))
         days.update(int(m[1]) for m in _PERIOD_DAYS.finditer(folded))
     if len(cuts) != 1 or len(days) != 1:
+        _closing_only_period(rows, style, exponent, facts)
         return
     end, count = _full_date(next(iter(cuts)), 'dmy'), next(iter(days))
     if end is None or not 1 <= count <= MAX_PERIOD_DAYS:
@@ -916,6 +1235,36 @@ def _derived_period(rows, style, exponent, facts):
     facts['periods'].add(period)
     facts['labelled_periods'].add(period)
     facts['derived_periods'] = {period}
+
+
+_CLOSING_DATE = re.compile(r'\b(?:' + '|'.join(re.escape(fold(w)) for w in sorted(CLOSING_DATE_LABELS, key=len, reverse=True))
+                           + r')\s+(\d{1,2}/\d{1,2}/\d{4})\b')
+_CYCLE_DAYS = re.compile(r'\b(?:' + '|'.join(re.escape(fold(w)) for w in CYCLE_DAYS_LABELS) + r')\s+(\d{1,2})\b')
+
+
+def _closing_only_period(rows, style, exponent, facts):
+    """(B1) A card statement printing only its closing date ('Statement Closing Date') and the days in its
+    billing cycle, exactly one of each on the page. The closing date is printed; the start is not: it is
+    the closing date less the printed days plus one, recorded as derived (``closing_only``), never as a
+    printed date. The closing date is read in the statement's one date order: the library profile's, or
+    a date that reads the same way in both orders."""
+    closings, days = set(), set()
+    for row in rows:
+        if not row['tokens'] or _row_is_movement(row, style, exponent):
+            continue
+        folded = fold(row['text'])
+        closings.update(m[1] for m in _CLOSING_DATE.finditer(folded))
+        days.update(int(m[1]) for m in _CYCLE_DAYS.finditer(folded))
+    if len(closings) != 1 or len(days) != 1:
+        return
+    end, count = _full_date(next(iter(closings)), (_PROFILE.get() or {}).get('date_order')), next(iter(days))
+    if end is None or not 1 <= count <= MAX_PERIOD_DAYS:
+        return
+    period = (end - timedelta(days=count - 1), end)
+    facts['periods'].add(period)
+    facts['labelled_periods'].add(period)
+    facts['derived_periods'] = {period}
+    facts['closing_only'] = {period}
 
 
 _ACCOUNT_VALUE = re.compile(r'^(?:\*{2,}|X{2,}|#)?[\d][\d -]{3,30}\d$|^(?:\*{2,}|X{2,})\d{3,6}$')
@@ -961,13 +1310,17 @@ def _accounts(row, found):
                 # The value can continue in the next cells as further digit groups.
                 groups = []
                 for following in raw[index + 1:]:
-                    text_value = following['expected_text'].strip()
+                    # A quote mark the scan put before or after the digits is not part of the number (F2).
+                    text_value = following['expected_text'].strip().strip('\'\u2018\u2019`"').strip()
                     if not re.fullmatch(r'[\d -]+', text_value):
                         break
                     groups.append(text_value.replace(' ', ''))
                 value = ''.join(groups)
                 digits = re.sub(r'\D', '', value)
-                if value and _ACCOUNT_VALUE.fullmatch(value) and 6 <= len(digits) <= 20:
+                # Under a full account-number label four printed digits are enough (statements printing only
+                # the last digits of the number), as for a stacked label (_stacked_accounts).
+                if value and (_ACCOUNT_VALUE.fullmatch(value) or rank >= 3 and re.fullmatch(r'\d{4,5}', value)) \
+                        and (4 if rank >= 3 else 6) <= len(digits) <= 20 and not value.startswith('0' * 4):
                     found.setdefault(value, set()).add(rank)
                 break
 
@@ -1151,7 +1504,241 @@ def _section_holder(section_pages, pages, facts, style=None):
         if addressed and fold(addressed) not in fold(name) and fold(name) not in fold(addressed):
             return ''
         return name
-    return addressed or _receipt_holder(section_pages, pages, heading)
+    return (addressed or _receipt_holder(section_pages, pages, heading) or _stub_holder(heading, pages, style)
+            or _addressless_holder(section_pages, pages, heading, style)
+            or _unanchored_holder(section_pages, pages, heading, style))
+
+
+# (A8) An addressee block printed without its address (the production redacted it) gives the holder
+# only with a second printed fact; see _addressless_holder. False: such statements wait for a person.
+ADDRESSLESS_HOLDER = True
+# Only letters and the marks of a printed name; at most three lines (joint and custodial holders).
+_NAME_LINE = re.compile(r"^[A-Z][A-Z.,'&/-]*(?: [A-Z][A-Z.,'&/-]*)+$")
+# A company name may hold a word of a letter followed by figures ('K7'); never a word of figures alone.
+_COMPANY_LINE = re.compile(r"^[A-Z][A-Z0-9.,'&/-]*(?: [A-Z][A-Z0-9.,'&/-]*)+$")
+# A mailing line of figures alone (a mail sequence or the production's placeholder for a redacted line).
+_MAILING_FIGURES = re.compile(r'^\d{5,}$')
+
+
+def _name_line(text, company=False):
+    words = ' '.join(fold(text).split())
+    return bool((_COMPANY_LINE if company else _NAME_LINE).match(words) and _name_like(words)
+                and not words.endswith(':') and not any(word in words for word in INSTITUTION_WORDS))
+
+
+def _addressless_holder(section_pages, pages, heading, style):
+    """(A8) The top line of an addressee block printed with no address, or ''.
+
+    Productions redact the holder's address: the window then prints the name
+    lines alone, with no postal-code line to show they are an address block. The
+    block is accepted only when all of these hold:
+
+    * it is one to three name lines (letters only, no label, bank or heading
+      word) at one left edge in the left half of the statement's first page,
+      above its first movement table, with no other line at that edge directly
+      above (other than the mailing line below) or below it;
+    * a second printed fact marks it as the addressee: either a mailing line of
+      figures alone printed at the block's edge directly above it (a mail
+      sequence or the redaction's placeholder), or its top line printed again
+      as a whole line elsewhere in the statement (page headers and payment
+      coupons reprint the addressee);
+    * the page's reading checked its printed lines and none near the block is
+      unread (a lost first name line would make the second one look like the
+      top); a page whose reading did not check gives no holder this way;
+    * every block found this way names the same holder.
+    """
+    if not ADDRESSLESS_HOLDER or not heading:
+        return ''
+    page, rows = heading[0]
+    source = next((row['source'] for row in pages[page] if row['tokens']), None)
+    checked = (source or {}).get('printed_lines') or {}
+    if source is None or source.get('reading_rotation') or checked.get('checked') is not True:
+        return ''
+    unread = [rect for rect in checked.get('unread') or [] if isinstance(rect, list) and len(rect) == 4]
+    # Each line's cells at its left edge: their own position, not the stored row's (OCR can store a name
+    # line and a summary-box line beside it as one row).
+    lines = []
+    for row in rows:
+        if row['tokens'] and row['width']:
+            x = min(t['x0'] for t in row['tokens'])
+            aligned = _aligned_tokens(row, x)
+            if aligned:
+                lines.append(dict(row=row, x=x, y=min(t['y0'] for t in aligned),
+                                  height=max(t['y1'] - t['y0'] for t in aligned), text=_aligned_text(row, x)))
+    found = set()
+    for line in lines:
+        row, x, y, height = line['row'], line['x'], line['y'], line['height']
+        if x > row['width'] * 0.5 or not _name_line(line['text']):
+            continue
+        tolerance = row['width'] * 0.015
+        same_edge = [other for other in lines if abs(other['x'] - x) <= tolerance and other is not line]
+        above = [other for other in same_edge if other['y'] < y]
+        nearest_above = max(above, key=lambda other: other['y']) if above else None
+        if nearest_above is not None and y - nearest_above['y'] <= height * 2.6 and _name_line(nearest_above['text']):
+            continue  # not the block's top line
+        if nearest_above is not None and y - nearest_above['y'] <= height * 2.6 and any(
+                word in ' '.join(fold(nearest_above['text']).split()) for word in INSTITUTION_WORDS):
+            continue  # the issuer's own name block continued ('<bank>, S.A.', '<financial group>')
+        block = [line]
+        for other in sorted(same_edge, key=lambda other: other['y']):
+            if other['y'] > block[-1]['y'] and other['y'] - block[-1]['y'] <= height * 2.6:
+                if not _name_line(other['text']) or len(block) == 3:
+                    block = None
+                    break
+                block.append(other)
+        if not block:
+            continue
+        bottom = block[-1]['y'] + height
+        right = max(t['x1'] for member in block for t in _aligned_tokens(member['row'], x))
+        if any(r[0] < right + tolerance and r[2] > x - tolerance and r[1] < bottom + height * 3
+               and r[3] > y - height * 3 for r in unread):
+            continue
+        top = ' '.join(t['t'] for t in _aligned_tokens(row, x) if t['line'] == 0)
+        mailing = (nearest_above is not None and y - nearest_above['y'] <= height * 4
+                   and _MAILING_FIGURES.match(nearest_above['text'].replace(' ', '')))
+        reprinted = sum(1 for p in section_pages for other in pages[p] if other['tokens'] and other is not row
+                        and fold(' '.join(other['text'].split())) == fold(' '.join(top.split())))
+        if mailing or reprinted:
+            found.add(' '.join(top.split()))
+    names = {fold(name) for name in found}
+    return next(iter(found)) if len(names) == 1 else ''
+
+
+# (A8) An addressee block whose postal-code line was not read (a barcode printed over it) gives the holder
+# only when the statement reprints its top line on another page; see _unanchored_holder. False: such
+# statements wait for a person.
+UNANCHORED_HOLDER = True
+
+
+def _above_movements(rows, style):
+    """A page's lines above its first movement-table heading or movement line."""
+    cut = next((row['y0'] for row in rows if row['tokens'] and row['y0'] is not None
+                and (_is_header(row) or _row_is_movement(row, style or 'dot', 2))), None)
+    return [row for row in rows if row['tokens'] and row['y0'] is not None and (cut is None or row['y0'] < cut)]
+
+
+def _unanchored_holder(section_pages, pages, heading, style):
+    """(A8) The top line of an addressee block whose postal-code line was not read, or ''.
+
+    The postal line can be printed over the mailing barcode, where the page's reading loses it, so
+    ``address_holder`` finds no block ending in one. The block is accepted only when all of these hold:
+
+    * on the statement's first heading page, in its left half: a name line (letters, or a company name's word
+      of a letter and figures, 'K7'; no label, bank or heading word) with no line at its edge directly above
+      it, followed at the same edge and line pitch by two to four address lines, at least one printing a figure
+      (the street number), none a name of a bank, an amount or a date (an address, not a list of names or the
+      bank's own lines);
+    * the page's reading, where it checked its printed lines, left none unread at the block's edge
+      directly above its top line or among its lines (a lost first name line would make the next line
+      look like the top);
+    * a second printed fact: the top line printed again, as the whole of a line's left cells, above the
+      movements of another page of the same statement (the page headings that reprint the addressee);
+    * every block found this way names the same holder.
+    """
+    if not UNANCHORED_HOLDER or not heading:
+        return ''
+    page, rows = heading[0]
+    source = next((row['source'] for row in pages[page] if row['tokens']), None)
+    if source is None or source.get('reading_rotation'):
+        return ''
+    checked = source.get('printed_lines') or {}
+    unread = [rect for rect in checked.get('unread') or [] if isinstance(rect, list) and len(rect) == 4]
+    lines = []
+    for row in rows:
+        if row['tokens'] and row['width']:
+            x = min(t['x0'] for t in row['tokens'])
+            aligned = _aligned_tokens(row, x)
+            if aligned:
+                lines.append(dict(row=row, x=x, y=min(t['y0'] for t in aligned),
+                                  height=max(t['y1'] - t['y0'] for t in aligned), text=_aligned_text(row, x)))
+    reprints = set()
+    reprint_pages = {}
+    for other in section_pages:
+        if other == page:
+            continue
+        for row in _above_movements(pages[other], style):
+            if row['width'] and min(t['x0'] for t in row['tokens']) <= row['width'] * 0.5:
+                text = ' '.join(_aligned_text(row, min(t['x0'] for t in row['tokens'])).split())
+                reprints.add(text)
+                reprint_pages.setdefault(text, set()).add(other)
+    found = set()
+    for line in lines:
+        row, x, y, height = line['row'], line['x'], line['y'], line['height']
+        if x > row['width'] * 0.5 or not _name_line(line['text'], company=True):
+            continue
+        tolerance = row['width'] * 0.015
+        same_edge = sorted((other for other in lines if abs(other['x'] - x) <= tolerance and other is not line),
+                           key=lambda other: other['y'])
+        if any(y - height * 2.6 <= other['y'] < y for other in same_edge):
+            continue  # not the block's top line
+        block = [line]
+        for other in same_edge:
+            if other['y'] > block[-1]['y'] and other['y'] - block[-1]['y'] <= height * 2.6 and len(block) < 5:
+                block.append(other)
+        address = block[1:]
+        if (len(address) < 2 or not any(re.search(r'\d', other['text']) for other in address)
+                or any(_not_address(other['row'], x, style) or any(w in other['text'] for w in INSTITUTION_WORDS)
+                       for other in address)):
+            continue
+        bottom = block[-1]['y'] + height
+        right = max(t['x1'] for member in block for t in _aligned_tokens(member['row'], x))
+        # A printed text line is one line high; a taller unread mark (the mailing barcode under the block) is
+        # not a lost line of text.
+        if any(r[0] < right + tolerance and r[2] > x - tolerance and r[1] < bottom and r[3] > y - height * 3
+               and r[3] - r[1] <= height * 2 for r in unread):
+            continue
+        top = ' '.join(t['t'] for t in _aligned_tokens(row, x) if t['line'] == 0)
+        if ' '.join(fold(top).split()) in reprints:
+            found.add(' '.join(top.split()))
+        elif LEGAL_FORM_COMPLETION:
+            found.update(_legal_form_completions(' '.join(fold(top).split()), reprint_pages))
+    names = {fold(name) for name in found}
+    return next(iter(found)) if len(names) == 1 else ''
+
+
+# (A8) A page-1 addressee line read only up to inside its company legal form ('<NAME> SA', the rest lost or
+# misread) is completed from the statement's own page headings; see _legal_form_completions. False: such
+# statements wait for a person.
+LEGAL_FORM_COMPLETION = True
+
+
+def _legal_form_completions(top, reprint_pages):
+    """The reprinted holder lines that complete ``top`` (folded) where its reading stopped inside a company
+    legal form, as a set of zero or one names.
+
+    Accepted only when a reprinted line (left cells above the movements of another page) is ``top`` followed by
+    more words, the reprinted line ends in a whole company legal form ('SA DE CV', 'S DE RL') that begins inside
+    ``top`` after at least one word of the name proper, and that same line is printed identically on at least
+    two other pages. The name proper is read on both printings; only the legal form's end comes from the
+    headings, never a word of the name. More than one such line gives nothing.
+    """
+    words = top.split()
+    found = set()
+    for text, printed_on in reprint_pages.items():
+        if len(printed_on) < 2 or not text.startswith(top + ' '):
+            continue
+        reprinted = text.split()
+        if any(_COMPANY_FORM.match(' '.join(reprinted[i:])) for i in range(1, len(words))):
+            found.add(text)
+    return found if len(found) == 1 else set()
+
+
+def _stub_holder(heading, pages, style):
+    """(A8) The holder printed in a payment stub below the first page's movement table: the top line of a
+    postal-anchored address block there, accepted only when the same name is printed as a whole cell above
+    the movements (two printed facts agree; a counterparty in a movement line is never in an address block
+    and never repeated as a heading cell)."""
+    if not heading:
+        return ''
+    page, above = heading[0]
+    cut = {id(row) for row in above}
+    below = [row for row in pages[page] if id(row) not in cut and row['tokens'] and row['y0'] is not None
+             and above and row['y0'] > max(r['y0'] for r in above if r['y0'] is not None)]
+    if not below or len(below) == len([r for r in pages[page] if r['tokens']]):
+        return ''
+    names = {fold(' '.join(cell['expected_text'].split())) for row in above for cell in row['raw']['cells']}
+    found = {name for _, name, accepted in _address_tops(below, style) if accepted and fold(name) in names}
+    return found.pop() if len(found) == 1 else ''
 
 
 # Mexican statements are fiscal receipts (CFDI): the receipt names its recipient, the account holder,
@@ -1212,9 +1799,17 @@ def _heading_currencies(rows, style):
         for name in _HEADING_CURRENCIES:
             if ' ' + name + ' ' in text and (' ' in name or words[-1:] == [name]
                                               or words[:1] == [name] and not _qualified_dollar(words)):
+                if _CODE.fullmatch(name) and not re.search(r'(?<![A-Za-z])' + name + r'(?![A-Za-z])', row['text']):
+                    # A bare code is printed in capitals. OCR noise folds to
+                    # one: 'Ci cad de Mexico' (Ciudad) was read as CAD, 'SA DE
+                    # mn' (SA DE CV) as MN.
+                    continue
                 found.add(CURRENCY_NAMES[name])
                 break
     return found
+
+
+_CODE = re.compile(r'[A-Z]{2,3}')
 
 
 def _qualified_dollar(words):
@@ -1282,6 +1877,46 @@ def _name_like(name):
                 and not any(re.search(r'\b' + re.escape(word) + r'\b', fold(name)) for word in NOT_A_NAME))
 
 
+def address_line(text):
+    """Whether a printed line reads as a line of a postal address: a postal-code line, a post-office box, or
+    a line holding a street, floor, unit or district word (A8)."""
+    folded = fold(text)
+    words = folded.replace('.', ' ').replace(',', ' ').split()
+    return bool(_postal(folded) or re.search(r'\bP\.?\s?O\.?\s?BOX\b', folded)
+                or any(word in ADDRESS_WORDS for word in words))
+
+
+def _street_line(text):
+    """A line that reads as the street line under an addressee's name: a street, floor, unit or post-office
+    box line, or one holding a house number (a word of figures, with at most one letter after them). A postal
+    line is not: the line printed directly above it is the district or city line."""
+    folded = fold(text)
+    if _postal(folded):
+        return False
+    return address_line(folded) or any(re.fullmatch(r'\d+[A-Z]?', word) for word in folded.split())
+
+
+def addressee_name(lines):
+    """The holder printed as the first line of an addressee block, from the block's lines top first, or ''
+    (A8).
+
+    The name may hold a word of letters and figures ('GRUPO K7'); it is never an address line, and the line
+    printed directly under it must read as the street line, or as the taxpayer type closing a block printed
+    without its address ('PERSONA MORAL'). A block whose first line is lost to the scan starts with its
+    street or district line, which never passes: the reader then gives no holder (a person confirms it)
+    rather than an address line.
+    """
+    if len(lines) < 2:
+        return ''
+    name = ' '.join(lines[0].split())
+    below = fold(lines[1])
+    if not _name_like(name) or address_line(name) or any(kind in fold(name) for kind in TAXPAYER_TYPES):
+        return ''
+    if not (_street_line(lines[1]) or below in TAXPAYER_TYPES):
+        return ''
+    return name
+
+
 def address_holder(rows, style=None):
     """The top line of the left address block ending with a postal-code line (A8)."""
     found = [(y0, name) for y0, name, accepted in _address_tops(rows, style) if accepted]
@@ -1297,16 +1932,26 @@ def _address_tops(rows, style=None):
         return []
     found, anchored = [], []
     for index, row in enumerate(located):
-        if not _postal(fold(row['text'])):
-            continue
         x = min(t['x0'] for t in row['tokens'])
+        # The postal line can be the block's own cell only: another box shares its stored row ('<city> <ZIP>'
+        # beside the remittance address). Such a block must read as an address block itself: three or four
+        # lines (name, street, postal line), or the lines below a paragraph gap that are (_spaced_block).
+        own_cell = not _postal(fold(row['text']))
+        if own_cell and not _postal(_aligned_text(row, x)):
+            continue
         if _not_address(row, x, style):
             continue
         block = _grow_block(located, index, x, style)
+        if own_cell:
+            block = block if 3 <= len(block) <= 4 else _spaced_block(block)
+            top = _block_top(block, x) if block and 3 <= len(block) <= 4 and _street_lines(block, x) else None
+            if top and top[2] and not re.search(r'\d', top[1]) and not _damaged_above(located, block, x):
+                found.append(top)
+            continue
         if 3 <= len(block) <= 7:
             anchored.append((block, x))
             top = _block_top(block, x)
-            if top and _damaged_above(located, block, x):
+            if top and (_damaged_above(located, block, x) or _issuer_headed(located, block, x)):
                 top = (top[0], top[1], False)
             if top:
                 found.append(top)
@@ -1351,6 +1996,30 @@ def _grow_block(located, index, x, style):
     return block
 
 
+_STREET = re.compile(r'^(?:\d+[A-Z]?|P\.?\s?O\.?\s?BOX|PO BOX)\b')
+
+
+def _street_lines(block, x):
+    """Every line between a block's top (the name) and its postal line opens with a house number or a
+    post-office box (A8)."""
+    return all(_STREET.match(_aligned_text(row, x)) for row in block[1:-1])
+
+
+def _spaced_block(block):
+    """(A8) The lines of a grown block (bottom first) below its first gap wider than one and a half times its
+    own line pitch (postal line to the line above it), when they are at least three, or None. A paragraph
+    printed above an address (a change-of-address prompt, help text) is not part of it."""
+    if len(block) < 4:
+        return None
+    pitch = block[0]['y0'] - block[1]['y0']
+    if pitch <= 0:
+        return None
+    for size in range(3, len(block)):
+        if block[size - 1]['y0'] - block[size]['y0'] > 1.5 * pitch:
+            return block[:size]
+    return None
+
+
 def _lead_noise(row, x):
     """The scan-noise glyph printed left of an address block's edge x at the start of a line, or None.
 
@@ -1374,6 +2043,27 @@ def _aligned_tokens(row, x):
     tolerance = row['width'] * 0.015
     aligned = {id(t['cell']) for t in row['tokens'] if t['first'] and (abs(t['x0'] - x) <= tolerance or t is noise)}
     return [t for t in sorted(row['tokens'], key=lambda t: (t['line'], t['x0'])) if id(t['cell']) in aligned and t is not noise]
+
+
+def _issuer_headed(located, block, x):
+    """(A8) A bank's bare name printed as the first line of the block itself, at its edge and its own
+    line pitch ('<BANK> / REMITTANCE DEPT / PO BOX ... / <city> <ZIP>'): the issuer's remittance or
+    return address, never the addressee's. A bank heading printed further above, or its legal-name line
+    (a comma, a legal form or a designation after the name), is not part of the block."""
+    if len(block) < 2:
+        return False
+    top = block[-1]
+    pitch = block[-2]['y0'] - top['y0']
+    tolerance = top['width'] * 0.015
+    above = [row for row in located if row['y0'] is not None and row['y0'] < top['y0']
+             and abs(min(t['x0'] for t in row['tokens']) - x) <= tolerance]
+    if not above or pitch <= 0:
+        return False
+    nearest = max(above, key=lambda row: row['y0'])
+    text = ' '.join(_aligned_text(nearest, x).split())
+    return (top['y0'] - nearest['y0'] <= pitch * 1.3 and len(text.split()) <= 4 and ',' not in text
+            and not _LEGAL_FORM.search(re.sub(r'\b(?:BANK|BANCO)\b', '', text))
+            and any(word in text for word in INSTITUTION_WORDS))
 
 
 def _damaged_above(located, block, x):
@@ -1410,13 +2100,15 @@ def _block_top(block, x):
     """(y0, name, accepted) of a block's top line, or None."""
     top = block[-1]
     name = ' '.join(t['t'] for t in _aligned_tokens(top, x) if t['line'] == 0)
-    accepted = _name_like(name)
+    # An address line at the top means the scan lost the name line above it.
+    accepted = _name_like(name) and not address_line(name)
     if not accepted:
         # A row recognised as one cell can run into the right-hand column ("<name> CLIENTE No. 123"):
         # the words before the first label word are the name when they read as one.
         words = name.split()
         cut = next((i for i, w in enumerate(words) if fold(w).strip(':') in _LABEL_WORDS), None)
-        if cut is not None and cut >= 2 and _name_like(' '.join(words[:cut])):
+        if (cut is not None and cut >= 2 and _name_like(' '.join(words[:cut]))
+                and not address_line(' '.join(words[:cut]))):
             name, accepted = ' '.join(words[:cut]), True
     return (top['y0'], name, accepted) if name.strip() else None
 
@@ -1507,7 +2199,7 @@ _TRAILING_FORM = re.compile(r'[\s,]+(?:S\.?\s?A\.?(?:\s+DE\s+C\.?\s?V\.?)?|N\.?\
 _CONNECTOR_START = re.compile(r'^(?:DE|DEL|Y|E|A|AL|LA|EL|LOS|LAS|POR|PARA|CON|EN|OF|THE|FROM|TO|BY|AND|FOR)\b')
 
 
-def _institution(legal_by_page, statement_first=()):
+def _institution(legal_by_page, statement_first=(), pages=None):
     """The issuer's name from its legal-name line (A9): short form before its first comma and legal form.
 
     Two tiers. First, lines printing a banking designation ("Institucion de Banca
@@ -1518,6 +2210,9 @@ def _institution(legal_by_page, statement_first=()):
     and no number, on a line naming no account (transfer lines name counterparty banks). One name in a tier is the institution; none or several give no
     name (a person decides). Designation-only fragments, headings ("Estado de
     cuenta ...") and narrative lines (starting with a connector word) are never names.
+    With ``pages`` (the document's rows), a name of the second tier must be printed on at least two
+    lines of the document: a logo read as letters ('EXAMPIE BANK' for a bank every other line names
+    differently) is printed once, and is not the issuer's name.
     """
     repeated = set(_repeated_legal(legal_by_page))
     designated, plain = set(), set()
@@ -1542,12 +2237,40 @@ def _institution(legal_by_page, statement_first=()):
         elif (line in repeated and not re.search(r'\d', short) and not re.search(r'\d{6,}', line)
               and not {'CUENTA', 'ACCOUNT', 'CLABE', 'CONTRATO'} & set(line.split())
               and any(words[0] == w or words[-1] == w or short.startswith(w) or short.endswith(w)
-                      for w in ('BANCO', 'BANK', 'CREDIT UNION', 'BANCA', 'CASA DE BOLSA'))):
+                      for w in ('BANCO', 'BANK', 'CREDIT UNION', 'BANCA', 'CASA DE BOLSA'))
+              and (pages is None or _printed_twice(short, pages))):
             plain.add(short)
     for names in (designated, plain):
         if names:
             return next(iter(names)) if len(names) == 1 else ''
     return ''
+
+
+def _name_words(text):
+    return re.sub(r'[^A-Z0-9&]', ' ', fold(text)).split()
+
+
+def _printed_twice(name, pages):
+    """(A9) The issuer's name (its words in order, at least one of them not a banking word) is printed on
+    at least two lines of the document."""
+    from services.financial.statement_engine_routing import _BANKING_WORDS
+    words = _name_words(name)
+    if not any(word not in _BANKING_WORDS for word in words):
+        return False
+    wanted = ' ' + ' '.join(words) + ' '
+    count = 0
+    for rows in pages.values():
+        for row in rows:
+            if row['tokens']:
+                count += wanted in ' ' + ' '.join(_name_words(row['text'])) + ' '
+                if count >= 2:
+                    return True
+    return False
+
+
+def _same_issuer(a, b):
+    from services.financial.statement_engine_routing import _same_identity
+    return _same_identity('institution', a, b)
 
 
 _DESIGNATED_REST = re.compile(r'^[\s,.]*(?:S\.?\s?A\.?(?:\s+DE\s+C\.?\s?V\.?)?[\s,.]*)?'
@@ -1578,6 +2301,7 @@ def _segments(pages, facts):
         # A page whose next numbered page continues a run (number above 1) is that run's unnumbered first
         # page, not an appendix.
         following = next((facts[q]['numbering'] for q in ordered[ordered.index(page) + 1:] if facts[q]['numbering']), set())
+        other = current is not None and _other_account_statement(f, current, facts)
         finished = (current is not None and not period and not f['numbering'] and f.get('file_numbered')
                     and current['pages'] and any(n == m for n, m in facts[current['pages'][-1]]['numbering'])
                     and not current.get('appendix') and not any(n > 1 for n, _ in following))
@@ -1589,14 +2313,37 @@ def _segments(pages, facts):
             current = dict(period=period, pages=[], conflict=len(candidates) > 1)
             segments.append(current)
         elif (current is None or (period and current['period'] and period != current['period'])
-                or (restart and current['pages'] and any(facts[p]['numbering'] for p in current['pages']))):
-            current = dict(period=period, pages=[], conflict=len(candidates) > 1)
+                or (restart and current['pages'] and any(facts[p]['numbering'] for p in current['pages'])) or other):
+            current = dict(period=period, pages=[], conflict=len(candidates) > 1, mailed_with_previous=other)
             segments.append(current)
         elif period and not current['period']:
             current['period'] = period
         current['pages'].append(page)
         current['conflict'] = current['conflict'] or (len(candidates) > 1 and not f['labelled_periods'])
+    # Another account's statement in the same mailing continues its page numbering (A3): every statement
+    # of one mailing is checked against the mailing's printed numbering, over all of its pages.
+    run = []
+    for segment in segments:
+        if not segment.get('mailed_with_previous'):
+            run = []
+        run.append(segment)
+        mailing = [page for member in run for page in member['pages']]
+        for member in run:
+            member['numbering_pages'] = mailing
     return segments
+
+
+def _other_account_statement(f, current, facts):
+    """(A6, A7) A page labelling its own period and printing, under a full account-number label, only
+    accounts the statement so far has not printed under one, starts another statement: a second account's
+    statement mailed with the first continues its page numbering and can print the same period (a credit
+    line's statement inside a deposit statement's envelope)."""
+    if not f['labelled_periods'] or not current['pages']:
+        return False
+    own = {re.sub(r'\D', '', value) for value, ranks in f['accounts'].items() if 3 in ranks} - {''}
+    before = {re.sub(r'\D', '', value) for p in current['pages'] for value, ranks in facts[p]['accounts'].items()
+              if 3 in ranks} - {''}
+    return bool(own and before and not own & before)
 
 
 def _drop_contradicted_derived(pages, facts):
@@ -1644,13 +2391,15 @@ def _drop_file_numbering(facts):
             facts[page]['file_numbered'] = True
 
 
-def _numbering_complete(pages, facts):
+def _numbering_complete(pages, facts, after=None):
     """Printed page numbers (A3) must leave no gap.
 
     Unnumbered pages (covers, notices, reverse sides) are extra pages; they may
     stand in for a number only where they physically sit in the gap.
+    ``after``: a page (physical number) on which the movement table printed its
+    own end; printed pages missing only after it are allowed.
     """
-    expected, loose, total = 1, 0, None
+    expected, loose, total, previous = 1, 0, None, None
     for page in pages:
         numbers = facts[page]['numbering']
         if len(numbers) > 1:
@@ -1662,13 +2411,44 @@ def _numbering_complete(pages, facts):
         if total is not None and count != total:
             return False
         total = count
-        if number < expected or number - expected > loose or number > count:
+        if number < expected or number > count:
             return False
-        expected, loose = number + 1, 0
-    return total is None or total - (expected - 1) <= loose
+        if number - expected > loose and (after is None or previous is None or previous < after):
+            return False
+        expected, loose, previous = number + 1, 0, page
+    return total is None or total - (expected - 1) <= loose or (after is not None and previous is not None
+                                                                and previous >= after)
 
 
-_READINGS = {}
+# Readings of the last few documents. A live reading of a long production is
+# ~140k dicts and lists (a 345-page Navy Federal file), and every full pass of
+# the cyclic garbage collector walks every live container with the GIL held:
+# eight cached readings made each pass take seconds, long enough for a busy
+# worker to miss uvicorn's health ping and be killed with its saves in flight.
+# So the cache keeps them pickled (bytes are invisible to the collector, and a
+# reading of that file decodes in ~0.15 s) and only the readings of the
+# documents in use (the last LIVE_READINGS asked for) stay live, so proposing
+# each period of a file in turn decodes nothing.
+READINGS_KEPT = 8
+LIVE_READINGS = 2
+_READINGS = OrderedDict()   # key -> pickled reading
+_LIVE_READINGS = OrderedDict()  # key -> reading, at most LIVE_READINGS
+_READINGS_LOCK = threading.Lock()
+
+
+def _keep_live(key, result):
+    with _READINGS_LOCK:
+        _LIVE_READINGS[key] = result
+        _LIVE_READINGS.move_to_end(key)
+        while len(_LIVE_READINGS) > LIVE_READINGS:
+            _LIVE_READINGS.popitem(last=False)
+
+
+def _printed_lines_key(source):
+    checked = source.get('printed_lines') or {}
+    return (checked.get('checked') is True,
+            tuple(tuple(rect) for rect in checked.get('unread') or () if isinstance(rect, (list, tuple))),
+            tuple(tuple(rect) for rect in checked.get('layer') or () if isinstance(rect, (list, tuple))))
 
 
 def _source_signature(sources):
@@ -1676,8 +2456,80 @@ def _source_signature(sources):
     revision is missing, in which case nothing is cached)."""
     parts = tuple((s['page_number'], s['table_index'], s.get('source_revision'), s.get('reading_rotation') or 0,
                    hash(tuple((c['expected_text'], tuple((c.get('locator') or {}).get('rect') or ()))
-                              for r in s['rows'] for c in r['cells']))) for s in sources)
+                              for r in s['rows'] for c in r['cells'])), _printed_lines_key(s)) for s in sources)
     return parts if all(part[2] for part in parts) else None
+
+
+# The layer guard (backend half). A reading step that only adds to a page (the skipped-line layer,
+# reading revision v20 on) must never cost a period the page proved without it: a document whose pages
+# carry layer lines is read with and without them, and each group of statements sharing pages keeps the
+# reading that proves more of its periods (the layered one when both prove as many). The evidence
+# engine's half keeps the layer from switching off its targeted re-reads (pdf_extraction._withhold_layer).
+def _inside(rect, area):
+    x, y = (rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2
+    return area[0] <= x <= area[2] and area[1] <= y <= area[3]
+
+
+def _without_layer(sources):
+    """The sources without the cells the skipped-line layer read, or None when no page carries any."""
+    if not any((s.get('printed_lines') or {}).get('layer') for s in sources):
+        return None
+    stripped = []
+    for source in sources:
+        checked = source.get('printed_lines') or {}
+        layer = [r for r in checked.get('layer') or () if isinstance(r, (list, tuple)) and len(r) == 4]
+        if not layer:
+            stripped.append(source)
+            continue
+        rows = []
+        for row in source['rows']:
+            cells = [c for c in row['cells'] if not (isinstance((c.get('locator') or {}).get('rect'), list)
+                     and len(c['locator']['rect']) == 4 and any(_inside(c['locator']['rect'], area) for area in layer))]
+            if cells:
+                rows.append(dict(row, cells=cells))
+        # Without the layer those lines are unread again, as the page OCR left them.
+        stripped.append(dict(source, rows=rows, printed_lines=dict(checked=checked.get('checked'),
+                             unread=list(checked.get('unread') or []) + [list(r) for r in layer])))
+    return stripped
+
+
+def _keep_proved(layered, base):
+    """Per group of statements sharing a page (across both readings), the reading proving more periods."""
+    items = [('layered', i, st) for i, st in enumerate(layered)] + [('base', i, st) for i, st in enumerate(base)]
+    parent = list(range(len(items)))
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+    pages = [set(st.get('page_numbers') or ()) for _, _, st in items]
+    for a in range(len(items)):
+        for b in range(a + 1, len(items)):
+            if pages[a] & pages[b]:
+                parent[find(a)] = find(b)
+    groups = {}
+    for index, item in enumerate(items):
+        groups.setdefault(find(index), []).append(item)
+    kept, any_base = [], False
+    for members in groups.values():
+        proved = {kind: sum(1 for k, _, st in members if k == kind and st['engine']['proved']) for kind in ('layered', 'base')}
+        kind = 'base' if proved['base'] > proved['layered'] else 'layered'
+        any_base = any_base or kind == 'base'
+        for k, i, st in members:
+            if k == kind:
+                kept.append((min(st.get('page_numbers') or [0]), i,
+                             dict(st, reading_layer='without_skipped_lines') if kind == 'base' else st))
+    if not any_base:
+        return layered
+    return [st for _, _, st in sorted(kept, key=lambda item: (item[0], item[1]))]
+
+
+def _guarded_reading(sources, profile):
+    layered = _read_statements(sources, profile=profile)
+    base_sources = _without_layer(sources)
+    if base_sources is None:
+        return layered
+    return _keep_proved(layered, _read_statements(base_sources, profile=profile))
 
 
 def read_statements(sources, *, profile=None):
@@ -1689,17 +2541,32 @@ def read_statements(sources, *, profile=None):
     """
     signature = _source_signature(sources)
     key = (signature, profile and profile.get('name'))
-    if signature is not None and key in _READINGS:
-        return _READINGS[key]
+    if signature is not None:
+        with _READINGS_LOCK:
+            live = _LIVE_READINGS.get(key)
+            if live is not None:
+                _LIVE_READINGS.move_to_end(key)
+                return live
+            stored = _READINGS.get(key)
+            if stored is not None:
+                _READINGS.move_to_end(key)
+        if stored is not None:
+            result = pickle.loads(stored)
+            _keep_live(key, result)
+            return result
     token = _PROFILE.set(profile)
     try:
-        result = _read_statements(sources, profile=profile)
+        result = _guarded_reading(sources, profile)
     finally:
         _PROFILE.reset(token)
     if signature is not None:
-        if len(_READINGS) >= 8:
-            _READINGS.pop(next(iter(_READINGS)))
-        _READINGS[key] = result
+        stored = pickle.dumps(result, pickle.HIGHEST_PROTOCOL)
+        with _READINGS_LOCK:
+            _READINGS[key] = stored
+            _READINGS.move_to_end(key)
+            while len(_READINGS) > READINGS_KEPT:
+                _READINGS.popitem(last=False)
+        _keep_live(key, result)
     return result
 
 
@@ -1717,8 +2584,8 @@ def _read_statements_parens(sources, profile):
     pages = _pages(sources)
     if not pages:
         return []
-    day_column = any(_is_header(row) and any(column_role(label(t['t'])) == 'date' and label(t['t']) in _DAY_WORDS
-                                             for t in row['tokens'])
+    day_column = any(_is_header(row) and (any(column_role(label(t['t'])) == 'date' and label(t['t']) in _DAY_WORDS
+                                              for t in row['tokens']) or _settlement_heading(row))
                      for rows in pages.values() for row in rows if row['tokens']) or _lost_day_heading(pages)
     token = _DAY_COLUMN.set(day_column)
     try:
@@ -1728,6 +2595,31 @@ def _read_statements_parens(sources, profile):
 
 
 _DAY_WORDS = {'DIA', 'DAY'}
+
+
+def _settlement_words():
+    """The active profile's (operation, settlement) day heading words, or None (``settlement_days``)."""
+    days = (_PROFILE.get() or {}).get('settlement_days')
+    if not days:
+        return None
+    return {label(w) for w in days['operation']}, {label(w) for w in days['settlement']}
+
+
+def _under_settlement_word(token, heading):
+    """The token is printed under the movement heading's settlement-day word (``settlement_days``), not in a
+    column further right (a short folio printed where a lost settlement day would be)."""
+    words = _settlement_words()
+    return any(label(t['t']) in words[1] and token['x0'] < t['x1'] and token['x1'] > t['x0'] for t in heading['tokens'])
+
+
+def _settlement_heading(row):
+    """A movement heading printing the profile's operation-day word left of its settlement-day word."""
+    words = _settlement_words()
+    if words is None:
+        return False
+    operation = [t['x0'] for t in row['tokens'] if label(t['t']) in words[0]]
+    settlement = [t['x0'] for t in row['tokens'] if label(t['t']) in words[1]]
+    return bool(operation and settlement) and min(operation) < min(settlement)
 
 
 def _dateless_heading(row):
@@ -1753,10 +2645,81 @@ def _lost_day_heading(pages):
     return False
 
 
+def _mark_stacked_summaries(rows, style):
+    """(D7) A summary printed as a table: its labels as column headings of one to four lines, its amounts
+    in the line below them ('Previous / Balance' ... 'New / Balance' over '$0.00 ... $107.82').
+
+    Each heading word is assigned to the amount nearest it horizontally (the one it overlaps most, or one
+    within a fiftieth of the page width); an amount's label is its
+    words read top to bottom (``stacked_pairs``, read by ``label_pairs``). The fewest heading lines
+    directly above the amounts are taken for which every word overlaps an amount, every amount has a
+    label, and the labels name both an opening and a closing balance; otherwise nothing is marked.
+    """
+    located = [r for r in rows if r['tokens'] and r['y0'] is not None]
+    for index, row in enumerate(located):
+        if len(row['tokens']) < 3 or any(_value_kind(t, style, 2) != 'money' for t in row['tokens']):
+            continue
+        height = max(t['y1'] - t['y0'] for t in row['tokens'])
+        values = sorted(row['tokens'], key=lambda t: t['x0'])
+        headers, bottom = [], row['y0']
+        for earlier in reversed(located[:index]):
+            if bottom - earlier['y0'] > height * 2.2 or len(headers) == 4:
+                break
+            if any(_value_kind(t, style, 2) in ('money', 'date', 'count') for t in earlier['tokens']):
+                break
+            headers.append(earlier)
+            bottom = earlier['y0']
+            assigned = {id(v): [] for v in values}
+            for word in (t for h in headers for t in h['tokens']):
+                # The amount the word overlaps most, or (a short word beside its column's amount, '&') the
+                # nearest one within a fiftieth of the page width.
+                gap, best = min(((max(v['x0'] - word['x1'], word['x0'] - v['x1']), v) for v in values),
+                                key=lambda item: item[0])
+                if gap > (row['width'] or 0) * 0.02:
+                    break
+                assigned[id(best)].append(word)
+            else:
+                if all(assigned.values()):
+                    pairs = [(label(' '.join(t['t'] for t in sorted(assigned[id(v)], key=lambda t: (t['y0'], t['x0'])))),
+                              [('money', v)]) for v in values]
+                    roles = {_role_of(text, liability) for text, _ in pairs for liability in (False, True)}
+                    if {'opening', 'closing'} <= roles:
+                        row['stacked_pairs'] = pairs
+                        break
+
+
+def _document_date_order(pages):
+    """(B3) The day-month order of every numeric date with a year that reads in one order only
+    ('11/19/2021': month first), or None when the document prints none or both."""
+    orders = set()
+    for rows in pages.values():
+        for row in rows:
+            for token in row['tokens']:
+                if not re.search(r'\d[/.-]\d', token['t']):
+                    continue
+                kinds = {kind for d, mth, y, kind in _date_parts(token['t'])
+                         if kind in ('dmy', 'mdy') and y and _calendar(y, mth, d)}
+                if len(kinds) == 1:
+                    orders |= kinds
+    return orders.pop() if len(orders) == 1 else None
+
+
 def _read_statements_in(pages, sources, profile):
     style = separator_style(pages)
-    facts = {page: page_facts(rows, style or 'dot') for page, rows in pages.items()}
+    for rows in pages.values():
+        _mark_stacked_summaries(rows, style or 'dot')
+    document_order = _document_date_order(pages)
+    order = (profile or {}).get('date_order') or document_order
+    facts = {page: page_facts(rows, style or 'dot', order=order) for page, rows in pages.items()}
     _drop_file_numbering(facts)
+    token = _DOCUMENT_ORDER.set(document_order)
+    try:
+        return _read_segments(pages, sources, profile, style, facts)
+    finally:
+        _DOCUMENT_ORDER.reset(token)
+
+
+def _read_segments(pages, sources, profile, style, facts):
     by_source = {}
     for source in sources:
         by_source.setdefault(source['page_number'], []).append(source)
@@ -1799,26 +2762,150 @@ def _read_statements_in(pages, sources, profile):
             shared = any(page_use[row['page']] > 1 for row in section)
             read.append(_read_section(section, segment, pages, facts, style, sources, profile, shared=shared,
                                       several=len(sections) > 1))
+        if len(read) > 1 and SUMMARY_BOX_MERGE:
+            read = _merge_summary_boxes(read)
         if len(read) > 1:
             # A section with no movement, zero balances and no currency or account of its own is not a
             # period anyone could act on (annex and reference pages print zero lines too).
             read = [st for st in read if not _empty_section(st)] or read[:1]
         _hold_shared_account_credit_lines(read)
         statements.extend(read)
+    _check_derived_starts(statements)
     return statements
+
+
+#: (A7, D6) A statement printing a summary box per account on its first page and each account's movement table
+#: on later pages reads as two sections of one account and period: the box (balances and printed totals, no
+#: movement) and the table. When exactly one of them is proved and the other repeats its printed facts, the
+#: box is the proved section's summary, not a period of its own: it joins that section. Off: both are listed,
+#: the box held as before.
+SUMMARY_BOX_MERGE = True
+_BOX_KINDS = ('header', 'balance', 'statement_total')
+
+
+def _box_facts(statement):
+    """(openings, closings, {direction: (total, count)}) a movement-less section prints, or None when it holds
+    anything else: a movement, a line it could not place, a scoped total, or two readings of one control."""
+    openings, closings, totals = set(), set(), {}
+    for row in statement['_rows']:
+        kind, fields = row['kind'], row['fields']
+        if kind == 'unresolved' and row.get('engine_hold'):
+            continue
+        if kind not in _BOX_KINDS or fields.get('total_scope'):
+            return None
+        if kind == 'balance':
+            target = {'Opening Balance': openings, 'Closing Balance': closings}.get(fields.get('description'))
+            if target is None:
+                return None
+            target.add(fields.get('balance'))
+        elif kind == 'statement_total':
+            direction = fields.get('total_direction')
+            if direction not in ('credit', 'debit') or direction in totals:
+                return None
+            totals[direction] = (fields.get('balance'), fields.get('printed_transaction_count'))
+    if len(openings) > 1 or len(closings) > 1:
+        return None
+    return openings, closings, totals
+
+
+def _box_agrees(box, proved):
+    """Every fact the box prints is the proved section's own: both balances it reads, and each printed
+    direction total (and count) equal to the proved movements of that direction."""
+    openings, closings, totals = box
+    rows = proved['_rows']
+    own = {d: {r['fields'].get('balance') for r in rows if r['kind'] == 'balance'
+               and r['fields'].get('description') == d} for d in ('Opening Balance', 'Closing Balance')}
+    if not (openings or closings) or (openings and openings != own['Opening Balance']) or (
+            closings and closings != own['Closing Balance']):
+        return False
+    for direction, (total, count) in totals.items():
+        moves = [r for r in rows if r['kind'] == 'transaction' and not r['excluded']
+                 and r['fields'].get('direction') == direction]
+        if total is None or int(total) != sum(int(r['fields']['amount_minor']) for r in moves):
+            return False
+        if count is not None and int(count) != len(moves):
+            return False
+    return True
+
+
+def _merge_summary_boxes(read):
+    """(A7, D6) Join each unproved, movement-less section to the one proved section of the same printed account,
+    period, currency and convention whose printed balances and totals it repeats (SUMMARY_BOX_MERGE). The proof
+    stays the proved section's own; the box adds its pages and rows to the period's scope, so the period's
+    import and overlap checks cover everything printed about it."""
+    digits = lambda st: re.sub(r'\D', '', st['account_reference'] or '')
+    absorbed = set()
+    for box in read:
+        if box['engine']['proved'] or not box['period_start'] or not digits(box):
+            continue
+        facts = _box_facts(box)
+        if facts is None:
+            continue
+        partners = [st for st in read if st is not box and id(st) not in absorbed and st['engine']['proved']
+                    and st['period_start'] == box['period_start'] and st['period_end'] == box['period_end']
+                    and digits(st) == digits(box) and st['balance_convention'] == box['balance_convention']
+                    and (not box['currency'] or st['currency'] == box['currency'])]
+        if len(partners) != 1 or not _box_agrees(facts, partners[0]):
+            continue
+        proved = partners[0]
+        kept = [dict(r, kind='header', excluded=True, fields=dict(summary_of=proved['id'],
+                                                                     description=r['fields'].get('description', '')))
+                for r in box['_rows'] if r['kind'] != 'unresolved']
+        before = box['page_numbers'][0] <= proved['page_numbers'][0]
+        proved['_rows'] = kept + proved['_rows'] if before else proved['_rows'] + kept
+        proved['page_numbers'] = sorted(set(proved['page_numbers']) | set(box['page_numbers']))
+        known = {(s['page_number'], s['table_index']) for s in proved['sources']}
+        proved['sources'] = sorted(proved['sources'] + [s for s in box['sources']
+                                                        if (s['page_number'], s['table_index']) not in known],
+                                   key=lambda s: (s['page_number'], s['table_index']))
+        # The box keeps its own scope entries, even on a table the section also reads: an import region is
+        # the vertical extent of one entry's rows, and one entry spanning the box and the movement table would
+        # cross whatever is printed between them (another account's box), making that period read as saved.
+        proved['section_sources'] = sorted(proved['section_sources'] + [dict(s) for s in box['section_sources']],
+                                           key=lambda s: (s['page_number'], s['table_index'], s['row_indices'][:1]))
+        proved['engine'] = dict(proved['engine'], summary_box=box['id'])
+        absorbed.add(id(box))
+    return [st for st in read if id(st) not in absorbed]
+
+
+def _check_derived_starts(statements):
+    """(B1) A start derived from the printed days in the billing cycle must follow the previous cycle of the
+    same account where this file prints it (closing 27 to 35 days earlier): its closing date plus one. A
+    start that does not is not used: the period is held."""
+    for statement in statements:
+        if statement.get('period_start_basis') != 'printed_day_count' or not statement['engine']['proved']:
+            continue
+        digits = re.sub(r'\D', '', statement['account_reference'])
+        start, end = date.fromisoformat(statement['period_start']), date.fromisoformat(statement['period_end'])
+        previous = [date.fromisoformat(other['period_end']) for other in statements if other is not statement
+                    and digits and re.sub(r'\D', '', other['account_reference']) == digits and other['period_end']
+                    and 27 <= (end - date.fromisoformat(other['period_end'])).days <= 35]
+        if previous and start - timedelta(days=1) not in previous:
+            statement['engine'].update(proved=False, reason='period_start_contradicted')
+            rows = statement['_rows']
+            if rows and not any(r.get('engine_hold') for r in rows):
+                rows.append(_hold_row(rows, 'period_start_contradicted'))
+
+
+#: (A6, A7) A credit line sharing its deposit account's number is its own ledger account
+#: (accounts.TIER_CREDIT_LINE). Off: such a section is held, as before the ledger could keep them apart.
+SHARED_NUMBER_CREDIT_LINES_SEPARATE = True
 
 
 def _hold_shared_account_credit_lines(read):
     """(A6, A7) Two sections of one statement printing the same account number in the same currency under
-    different balance conventions (a deposit account and the credit line attached to it) cannot be kept
-    apart by the ledger, which knows an account by its institution and number: the amounts-owed section is
-    held, with a named reason; the deposit account it shares the number with is read as usual."""
+    different balance conventions: a deposit account and the credit line attached to it. The ledger knows an
+    account by its institution and number, so the amounts-owed section is marked a credit line and kept as
+    an account of its own (its key carries the product); the deposit account is read as usual. With the
+    switch off the credit line is held, with a named reason."""
     deposits = {(re.sub(r'\D', '', st['account_reference']), st['currency']) for st in read
                 if st['account_reference'] and st['balance_convention'] == 'asset_balance'}
     for st in read:
         key = (re.sub(r'\D', '', st['account_reference'] or ''), st['currency'])
         if st['balance_convention'] == 'liability_owed' and key[0] and key in deposits:
-            if st['engine']['proved']:
+            if SHARED_NUMBER_CREDIT_LINES_SEPARATE:
+                st['account_reference_kind'] = 'credit_line'
+            elif st['engine']['proved']:
                 st['engine'] = dict(st['engine'], proved=False, reason='account_shared')
                 st['_rows'] = [r for r in st['_rows'] if r['kind'] != 'unresolved'] + [_hold_row(st['_rows'], 'account_shared')]
             else:
@@ -1971,6 +3058,33 @@ def _titled_holder(segment_pages, pages, rule):
     return names.pop() if len(names) == 1 else ''
 
 
+_CLIENT_LINE = re.compile(r'^(\d{6,12})\s+(\S.*)$')
+
+
+def _client_line(segment_pages, pages):
+    """Library profile (data, ``client_line``): (client number, holder) printed as the first line of every page
+    of the statement ('<client number> <holder name>'), over the address on its first page. Every page printing
+    such a line must print the same pair, and on some page the next line must be a street line (the addressee
+    block); otherwise ('', '')."""
+    found, addressed = set(), False
+    for page in segment_pages:
+        located = [r for r in pages[page] if r['tokens']]
+        if not located:
+            continue
+        matched = _CLIENT_LINE.match(' '.join(located[0]['text'].split()))
+        if not matched:
+            continue
+        number, name = matched[1], matched[2].strip()
+        if not _name_like(name) or address_line(name):
+            return '', ''
+        found.add((number, name))
+        # A line of rule marks the scan read between the name and the street prints no letter or figure.
+        below = [r for r in located[1:] if re.search(r'[A-Za-z0-9]', r['text'])]
+        if below and addressee_name([name, ' '.join(below[0]['text'].split())]):
+            addressed = True
+    return found.pop() if len(found) == 1 and addressed else ('', '')
+
+
 def _heading_account(row):
     """'<product name> <hyphenated account number>' as a whole heading line, or as one whole line of one of
     its cells (a heading recognised together with the text beside or above it), or ''. One number or none."""
@@ -2104,6 +3218,9 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
     elif account:
         scope = head if shared else [row for page in _heading_pages(segment['pages'], facts) for row in pages[page]]
         account, account_basis = _printed_over_interbank(account, scope)
+    client_number, client_name = _client_line(segment['pages'], pages) if profile and profile.get('client_line') else ('', '')
+    if client_number and not account:
+        account, account_basis = client_number, 'client_line'
     own_currencies = set()
     for row in head:
         if row['tokens']:
@@ -2157,10 +3274,19 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
             holder = titled
         elif not titled or holder:
             holder = holder if not titled else ''
-    institution = (_institution([item['legal'] for item in f],
-                                {line for page in set(_heading_pages(segment['pages'], facts)) | set(segment['pages'][:2])
-                                 for line in facts[page]['legal']})
-                   or (profile or {}).get('institution', ''))
+    if client_name:
+        # Library profile (data): the name printed after the client number on every page, never over a
+        # different holder read from the address block.
+        holder = client_name if not holder or fold(holder) == fold(client_name) else ''
+    institution = _institution([item['legal'] for item in f],
+                               {line for page in set(_heading_pages(segment['pages'], facts)) | set(segment['pages'][:2])
+                                for line in facts[page]['legal']}, pages)
+    profiled = (profile or {}).get('institution', '')
+    if institution and profiled and not _same_issuer(institution, profiled):
+        # The library profile matched printed wording that only its issuer prints: a different name
+        # read from a logo or heading is a misreading, never another issuer.
+        institution = ''
+    institution = institution or profiled
     if holder and fold(holder) in {fold(name) for name in (institution, (profile or {}).get('institution')) if name}:
         # The issuer's own name (its remittance address block) is never the holder.
         holder = ''
@@ -2190,8 +3316,19 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
                      layout_fingerprint=reading['fingerprint'], layout_key=reading['layout_key'], engine=reading['proof'])
     if profile:
         statement['engine_profile'] = profile['name']
-    if not _numbering_complete(segment['pages'], facts) and reading['proof']['proved']:
-        reading['proof'].update(proved=False, reason='pages_missing')
+    if period and any(period in facts[p].get('closing_only', set()) for p in segment['pages']):
+        # Only the closing date is printed: the start is the closing date less the printed days in the
+        # billing cycle (B1), derived, never printed. The import records it as derived.
+        statement.update(period_start_basis='printed_day_count', printed_closing_date=period[1].isoformat())
+    numbered = segment.get('numbering_pages') or segment['pages']
+    if not _numbering_complete(numbered, facts) and reading['proof']['proved']:
+        if reading['table_end'] and _numbering_complete(numbered, facts, after=reading['table_end']):
+            # (A3) Printed pages unread only after the page on which the movement table printed its own end
+            # (year-to-date heading, column total or closing line, after its last movement): such a page cannot
+            # hold one of this period's movements. The proof records it.
+            reading['proof']['pages_unread_after_table'] = True
+        else:
+            reading['proof'].update(proved=False, reason='pages_missing')
     if segment.get('conflict') and reading['proof']['proved']:
         reading['proof'].update(proved=False, reason='no_period')
     if not period and reading['proof']['proved']:
@@ -2219,8 +3356,8 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
         # named inside the section above its opening balance; otherwise it stays unread (C2, A7).
         opening = next((r for r in reading['rows'] if r['kind'] == 'balance'
                         and r['fields'].get('description') == 'Opening Balance'), None)
-        rows_by_id = {(r['page'], r['source']['table_index'], r['raw']['row_index']): r for r in rows}
-        anchor = rows_by_id.get((opening['page_number'], opening['table_index'], opening['row_index'])) if opening else None
+        rows_by_id = {_item(r)['id']: r for r in rows}
+        anchor = rows_by_id.get(opening['id'].split(':opening')[0]) if opening else None
         start, stop = rows[0]['_seg'], (anchor['_seg'] if anchor else rows[-1]['_seg'])
         own = [code for position, code in segment['currency_mentions'] if start <= position <= stop]
         attributed = own[-1] if own and len(set(own[-1:])) == 1 else ''
@@ -2237,13 +3374,109 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
             statement['id'] = _digest(dict(layout_id=LAYOUT, account=account, start=statement['period_start'],
                                            end=statement['period_end'], currency=attributed, first_page=section_pages[0],
                                            first_row=reading['first_row']))
+    if (HOLDINGS_CURRENCY and not statement['currency'] and (profile or {}).get('holdings_currency')
+            and len(named) <= 1):
+        # (C2, profile) A brokerage cash ledger prints no currency of its own; the same statement's holdings
+        # table can print one in its currency column (Neil, 2026-10-23: the currency printed on the page is
+        # the statement's). Only when every holdings line of the statement prints the same one code and the
+        # statement names no other currency; anything else stays unread (held for a person).
+        from services.financial.statement_currency import printed_holdings_currency
+        held = printed_holdings_currency([s for s in sources if s['page_number'] in segment['pages']])
+        if held and named <= {held['value']}:
+            statement.update(currency=held['value'], currency_source='printed_holdings_currency',
+                             currency_evidence=dict(page_number=held['page_number'], table_index=held['table_index'],
+                                                    row_index=held['row_index'], column_index=held['column_index'],
+                                                    cells=held['cells']))
+            try:
+                new_exponent = get_currency(held['value']).exponent
+            except MoneyError:
+                new_exponent = 2
+            if new_exponent != exponent:
+                reading = _reading(rows, statement, style, new_exponent, liability, period)
+                statement.update(layout_fingerprint=reading['fingerprint'], layout_key=reading['layout_key'],
+                                 engine=reading['proof'])
+            statement['id'] = _digest(dict(layout_id=LAYOUT, account=account, start=statement['period_start'],
+                                           end=statement['period_end'], currency=statement['currency'],
+                                           first_page=section_pages[0], first_row=reading['first_row']))
     statement['_rows'] = reading['rows']
     return statement
+
+
+#: (C2) Brokerage profiles (``holdings_currency``): the one currency a statement's holdings table prints is the
+#: statement's currency. Off: the currency of a brokerage cash ledger stays a person's choice, as before.
+HOLDINGS_CURRENCY = True
 
 
 # ---------------------------------------------------------------------------
 # Reading one section: controls, movements, columns, proof
 # ---------------------------------------------------------------------------
+
+# (B5) A table whose movement lines print two date columns: a line that reads only its first date, while the word
+# standing at the second date column's left edge is no date but date-shaped ink (digits, a short word: '2l\\MAR'
+# beside a first date read '24/MAR'), has its printed dates damaged. Unless what can be read of that ink agrees
+# with the first date (``_ink_agrees``), the first date has lost the column that would confirm it and may be
+# misread too, so the line's date is not taken and the period is not proved. Off: the line keeps its first date
+# and the damaged word joins its description.
+UNREAD_SECOND_DATE_HOLDS = True
+_DATE_COLUMN_EDGE = 0.01
+_DATE_INK = re.compile(r'^(?=\S*\d)\S{2,11}$')
+
+
+def _unread_second_dates(movements, width):
+    """Mark (``date_unread``) and return the movement lines whose second printed date is unread ink (B5)."""
+    if not UNREAD_SECOND_DATE_HOLDS:
+        return []
+    dated = [m for m in movements if m['date_tokens']]
+    two = [m for m in dated if len(m['date_tokens']) > 1]
+    if len(two) < 2 or 2 * len(two) <= len(dated):
+        return []
+
+    def left(token):
+        return token['x0'] / (token.get('_width') or width) - token.get('_shift', 0.0)
+
+    lefts = sorted(left(m['date_tokens'][1]) for m in two)
+    edge = lefts[len(lefts) // 2]
+    unread = []
+    for move in dated:
+        if len(move['date_tokens']) != 1:
+            continue
+        tokens = merged_dates(move['row']['tokens'])
+        after = [t for t in tokens if t['line'] == move['date_tokens'][0]['line']
+                 and t['x0'] > move['date_tokens'][0]['x0'] and t is not move['date_tokens'][0]]
+        if not after:
+            continue
+        word = min(after, key=lambda t: t['x0'])
+        if (abs(left(word) - edge) <= _DATE_COLUMN_EDGE and _DATE_INK.match(word['t'])
+                and not is_date_token(word['t']) and not any(word is t for t in move['money'])
+                and not _ink_agrees(word['t'], move['date_tokens'][0]['t'])):
+            move['date_unread'] = True
+            unread.append(move)
+    return unread
+
+
+_LEADING_FIGURES = re.compile(r'^(\d{1,2})(?!\d)')
+_INK_DATE = re.compile(r'(?<!\d)\d{1,2}[/.-](?:[A-Z]{3,10}|\d{1,2})(?![A-Z\d])')
+_MONTH_WORD = re.compile(r'[A-Z]{3,10}')
+
+
+def _ink_agrees(ink, first):
+    """The damaged second date still prints the first date's leading figures, and no month word other than the
+    first date's ('07/MXR' or '22/ENE_N0' beside '07/MAR' or '22/ENE'): the two columns print the same day,
+    so the first date is corroborated. A whole date the ink carries after marks OCR read over the gap
+    ('~-:dO7/MAR', the zero read as O) corroborates only when it is the first date. A leading figure that
+    differs ('31' beside '13') or that cannot be read leaves it uncorroborated."""
+    inside = [m for m in _INK_DATE.finditer(_OCR_ZERO.sub('0', _dnorm(ink))) if is_date_token(m[0])]
+    if inside:
+        # A whole date printed inside the ink (a mark OCR read over the gap glued to it): it is that date.
+        printed = {(d, mth) for d, mth, _, _ in _date_parts(first)}
+        return all({(d, mth) for d, mth, _, _ in _date_parts(m[0])} & printed for m in inside)
+    lead, own = _LEADING_FIGURES.match(_dnorm(ink)), _LEADING_FIGURES.match(_dnorm(first))
+    if not lead or not own or int(lead[1]) != int(own[1]):
+        return False
+    months = {MONTHS[w] for w in _MONTH_WORD.findall(_dnorm(ink)) if w in MONTHS}
+    printed = {MONTHS[w] for w in _MONTH_WORD.findall(_dnorm(first)) if w in MONTHS}
+    return not months or months == printed
+
 
 def _resolve_dates(movements, period, liability):
     """Row date (and a second printed date) for every movement, or a named failure (B2-B4)."""
@@ -2257,7 +3490,8 @@ def _resolve_dates(movements, period, liability):
             for d, mth, y, kind in _date_parts(token['t']):
                 if kind in ('dmy', 'mdy') and (d > 12) != (mth > 12) and 1 <= d <= 31 and 1 <= mth <= 12:
                     orders.add(kind)
-    fixed = (_PROFILE.get() or {}).get('date_order')
+    # A library profile's order, or the order every unambiguous numeric date of the document prints (B3).
+    fixed = (_PROFILE.get() or {}).get('date_order') or _DOCUMENT_ORDER.get()
     if fixed and not orders - {fixed}:
         orders = {fixed}
     choices = [orders.pop()] if len(orders) == 1 else (['dmy', 'mdy'] if not orders else [])
@@ -2305,17 +3539,25 @@ def _resolve_dates(movements, period, liability):
 
 
 def _columns(tokens, width):
-    """Right-edge bands of money tokens (E2), as fractions of the page width."""
-    edges = sorted(_edge(t, width) for t in tokens if t['exact'] or t['last'])
-    if not edges:
-        edges = sorted(_edge(t, width) for t in tokens)
+    """Right-edge bands of money tokens (E2), as fractions of the page width. A band formed only by boxes wider
+    than their amounts (``_left_x1``), each reaching another band from its box's left edge, is no column."""
+    chosen = [t for t in tokens if t['exact'] or t['last']] or list(tokens)
+    edges = sorted(((_edge(t, width), t) for t in chosen), key=lambda pair: pair[0])
     bands = []
-    for edge in edges:
-        if bands and edge - bands[-1][-1] <= 0.012:
-            bands[-1].append(edge)
+    for edge, token in edges:
+        if bands and edge - bands[-1][-1][0] <= 0.012:
+            bands[-1].append((edge, token))
         else:
-            bands.append([edge])
-    return [sorted(band)[len(band) // 2] for band in bands]
+            bands.append([(edge, token)])
+    centres = [sorted(e for e, _ in band)[len(band) // 2] for band in bands]
+    kept = []
+    for index, band in enumerate(bands):
+        others = [c for i, c in enumerate(centres) if i != index and not all('_left_x1' in t for _, t in bands[i])]
+        if all('_left_x1' in t and any(abs(_edge(dict(t, x1=t['_left_x1']), width) - c) <= 0.012 for c in others)
+               for _, t in band):
+            continue
+        kept.append(centres[index])
+    return kept or centres
 
 
 def _edge(token, width):
@@ -2364,6 +3606,14 @@ def _page_shifts(rows, style, exponent, width):
 
 
 def _band(token, columns, width):
+    band = _edge_band(token, columns, width)
+    if band is None and '_left_x1' in token:
+        # A box wider than its amount: the column its characters reach from the box's left edge.
+        band = _edge_band(dict(token, x1=token['_left_x1']), columns, width)
+    return band
+
+
+def _edge_band(token, columns, width):
     edge = _edge(token, width)
     tolerance = 0.015 if (token['exact'] or token['last']) else 0.03
     near = [i for i, c in enumerate(columns) if abs(edge - c) <= tolerance]
@@ -2393,7 +3643,7 @@ def _hints(header_rows, columns, width):
         for i, column in enumerate(columns):
             scored = []
             for role, x0, x1, w in words:
-                if role not in ('credit', 'debit', 'balance', 'amount'):
+                if role not in ('credit', 'debit', 'balance', 'amount', 'ignore'):
                     continue
                 left, right = x0 / w, x1 / w
                 gap = 0 if left - 0.005 <= column <= right + 0.01 else min(abs(column - left), abs(column - right))
@@ -2422,16 +3672,45 @@ def _money_roles(header):
     return frozenset(roles)
 
 
+_GLUED_DAYS = re.compile(r'^(\d{1,2})[.,](\d{1,2})$')
+
+
+def _split_glued_days(row, style):
+    """(profile, settlement days) The operation and settlement days read as one word joined by a mark
+    ('13.13' for '13 13') at the start of a movement line are the two days. Only the settlement day is
+    taken, and it is confirmed against the day printed on the end-of-day balance after the line."""
+    tokens = sorted(row['tokens'], key=lambda t: (t['line'], t['x0']))
+    if len(tokens) < 3:
+        return
+    first = tokens[0]
+    found = _GLUED_DAYS.match(first['t'])
+    if not found or not all(1 <= int(day) <= 31 for day in found.groups()):
+        return
+    if not any(money(t['t'], style, 2) is not None and re.search(r'[.,]\d{2}\)?$', t['t']) for t in tokens[2:]):
+        return
+    middle = first['x0'] + (first['x1'] - first['x0']) * len(found[1]) / len(first['t'])
+    operation = dict(first, t=found[1], f=fold(found[1]), x1=middle, exact=False, last=False)
+    settlement = dict(first, t=found[2], f=fold(found[2]), x0=middle, exact=False)
+    row['tokens'] = [operation, settlement] + [t for t in row['tokens'] if t is not first]
+
+
 def _reading(rows, statement, style, exponent, liability, period):
     width = next((r['width'] for r in rows if r['width']), None)
     proof = dict(engine=ENGINE_VERSION, proved=False, reason='', convention='liability_owed' if liability else 'asset_balance')
-    result = dict(rows=[], proof=proof, fingerprint='', layout_key='', first_row='')
+    result = dict(rows=[], proof=proof, fingerprint='', layout_key='', first_row='', table_end=None)
     if style is None:
         proof['reason'] = 'separators_mixed'
-    if any(not r['located'] for r in rows):
+    if any(not r['located'] and _unlocated_matters(r, style or 'dot', exponent) for r in rows):
         proof['reason'] = proof['reason'] or 'no_geometry'
-    controls = dict(opening=[], closing=[], credit_total=[], debit_total=[], credit_component=[], debit_component=[])
+    controls = dict(opening=[], closing=[], credit_total=[], debit_total=[], credit_component=[], debit_component=[],
+                    net_component=[], section_total=[], day_opening=[])
+    # (profile) Movement lines print the operation day then the settlement day (``settlement_days``).
+    settlement = _DAY_COLUMN.get() and _settlement_words() is not None
     movements, headers, labels_seen, unplaced, continuation_of, column_totals = [], [], set(), [], {}, []
+    # The movement table's printed section (its heading's folded label) the lines below belong to (D4).
+    section = None
+    # Rows printing the end of the movement table: the year-to-date heading, a column total, a closing line.
+    ends = []
     region = False
     # Printed totals count only inside a summary block: after an opening balance, up to the closing one (D4, D7).
     in_summary = False
@@ -2439,6 +3718,8 @@ def _reading(rows, statement, style, exponent, liability, period):
     last_move = None
     for index, row in enumerate(rows):
         row['_index'] = index
+        if settlement:
+            _split_glued_days(row, style or 'dot')
         for token in row['tokens']:
             token['_width'] = row['width'] or width
             token['_shift'] = 0.0
@@ -2457,8 +3738,10 @@ def _reading(rows, statement, style, exponent, liability, period):
     # its lines are not this period's movements, up to a heading of the movement table again or a balance.
     main_roles, totalled, other_table = None, False, False
     consumed, blank_dated = set(), []
+    # Index of the line where the movement table printed its own credit or debit total after a movement (E9).
+    table_totals = None
     for index, row in enumerate(rows):
-        if not row['tokens'] or index in consumed:
+        if not row['tokens'] or row.get('payment_box') or index in consumed:
             continue
         if other_table:
             if _is_header(row) and _money_roles(row) == main_roles:
@@ -2489,6 +3772,18 @@ def _reading(rows, statement, style, exponent, liability, period):
             labels_seen.update(w for w in words if column_role(w))
             region = True
             continue
+        if region and YEAR_TO_DATE.fullmatch(label(row['text'])):
+            # A card's year-to-date block after its section totals: neither movements nor controls, up to the
+            # movement table's heading again or a balance (read as another table, E9).
+            other_table = True
+            last_move = None
+            ends.append(index)
+            continue
+        if region and liability and _section_heading(row, style or 'dot', exponent):
+            section = label(row['text'])
+            labels_seen.add(section)
+            last_move = None
+            continue
         if _row_is_movement(row, style or 'dot', exponent):
             tokens = merged_dates(row['tokens'])
             date_tokens = []
@@ -2497,20 +3792,37 @@ def _reading(rows, statement, style, exponent, liability, period):
                 date_tokens.append(rest.pop(0))
             while rest and is_date_token(rest[0]['t']) and len(date_tokens) < 2:
                 date_tokens.append(rest.pop(0))
+            settlement_unread = False
+            if settlement:
+                # (profile) The operation day, then the settlement day the printed balance moved on: the line is
+                # dated by its settlement day. A line printing one day alone cannot say which day it is.
+                if (len(date_tokens) == 1 and rest and _day_only(rest[0]['t'].rstrip('.,')) and headers
+                        and _under_settlement_word(rest[0], headers[-1])):
+                    date_tokens = [rest.pop(0)]
+                else:
+                    settlement_unread = True
             money_tokens = [t for t in rest if _value_kind(t, style or 'dot', exponent) == 'money']
             words_only = [t for t in rest if t not in money_tokens]
-            text = label(' '.join(t['t'] for t in words_only))
+            # Under settlement days the line also prints figures between its days and its label (a folio,
+            # titles, a price): only words carry the label of an opening or closing line.
+            text = label(' '.join(t['t'] for t in words_only if not settlement or re.search(r'[A-Za-z]', t['t'])))
             role = _role_of(text, liability)
             if role in ('opening', 'closing') and len(money_tokens) >= 1:
                 controls[role].append(dict(row=row, value_token=money_tokens[-1], count=None))
                 labels_seen.add(text)
                 continue
-            if role in ('subtotal', 'column_total', 'credit_total', 'debit_total', 'credit_component', 'debit_component'):
+            if role in ('subtotal', 'column_total', 'credit_total', 'debit_total', 'credit_component', 'debit_component',
+                        'net_component', 'section_total') and not (role in ('credit_component', 'debit_component')
+                                                                   and section == text):
+                # A dated line under its own section heading ('Interest Charged:' over '<date> INTEREST CHARGED
+                # 1.10') is that section's movement, not the summary's component (D4, D7).
                 continue
             first_money = min(money_tokens, key=lambda t: t['x0'])
             description = [t for t in words_only if t['x0'] < first_money['x0'] or t['line'] > 0]
             move = dict(row=row, date_tokens=date_tokens, money=money_tokens, description=description,
-                        stray=[t for t in words_only if t not in description], continuation=[])
+                        stray=[t for t in words_only if t not in description], continuation=[], section=section)
+            if settlement_unread:
+                move['date_unread'] = True
             movements.append(move)
             last_move = move
             region = True
@@ -2523,17 +3835,55 @@ def _reading(rows, statement, style, exponent, liability, period):
             counts = [t for kind, t in values if kind == 'count']
             if role == 'opening' and money_values:
                 in_summary = not region
-            if role in ('credit_total', 'debit_total', 'credit_component', 'debit_component') and not in_summary:
+            if role in ('credit_total', 'debit_total', 'credit_component', 'debit_component', 'net_component') and not in_summary:
                 handled = handled or bool(money_values)
+                if role in ('credit_total', 'debit_total') and money_values and movements:
+                    # The movement table printing its own totals after its last movement (E9).
+                    table_totals = index
                 continue
-            if role in ('opening', 'closing', 'credit_total', 'debit_total', 'credit_component', 'debit_component') and money_values:
+            if role == 'day_balance' and money_values:
+                # (profile) The balance at the end of a day, printed after that day's movements: the running
+                # balance after the last movement line printed before it (page furniture and a page break may
+                # stand between them), or, before any movement, the opening balance again.
+                value_token = _control_value(money_values)
+                # The day the line names, printed between its label and its balance ('... dia 25 98.01').
+                days = [t for _, t in values if t is not value_token and re.fullmatch(r'\d{1,2}', t['t'])]
+                if movements:
+                    movements[-1].setdefault('day_balances', []).append(value_token)
+                    movements[-1].setdefault('balance_days', []).append(int(days[-1]['t']) if len(days) == 1 else None)
+                else:
+                    controls['day_opening'].append(dict(row=row, value_token=value_token, count=None))
+                handled = True
+                continue
+            if role == 'section_total' and money_values:
+                # A section's own printed total (D4): a control on the lines under the section's heading.
+                controls['section_total'].append(dict(row=row, value_token=_control_value(money_values), count=None,
+                                                      headings=SECTION_HEADINGS[text], scope=SECTION_SCOPE[text]))
+                labels_seen.add(text)
+                handled = True
+                if section in SECTION_HEADINGS[text]:
+                    section = None
+                continue
+            if role in ('opening', 'closing', 'credit_total', 'debit_total', 'credit_component', 'debit_component',
+                        'net_component') and money_values:
                 count = counts[0]['t'] if role.endswith('_total') and len(counts) == 1 and values[0][0] == 'count' else None
                 controls[role].append(dict(row=row, value_token=_control_value(money_values), count=count))
                 labels_seen.add(text)
                 handled = True
                 if role == 'closing':
                     in_summary = False
+                    ends.append(index)
+            elif (role == 'column_total' and money_values and OTHER_TABLE_TOTALS and table_totals is not None
+                  and table_totals > movements[-1]['row']['_index']):
+                # (E9) After the movement table printed its own totals, with no movement line since, a column-total
+                # line totals another table printed below it (a listing of investments): not this table's control.
+                handled = True
+            elif role == 'column_total' and not values and movements:
+                # A column-total label printed alone after a movement heads the movement table's own totals block
+                # ('Total de Movimientos' over its printed debit and credit totals) (E9).
+                table_totals = index
             elif role == 'column_total' and money_values:
+                ends.append(index)
                 column_totals.append(dict(row=row, tokens=money_values))
                 labels_seen.add(text)
                 handled = True
@@ -2553,7 +3903,7 @@ def _reading(rows, statement, style, exponent, liability, period):
             has_money = False
         if liability and has_money and movements and _undated_charge(row, style or 'dot', exponent):
             # A card interest/fee line without a date (B6), ordered at the period end only.
-            undated_rows.append(row)
+            undated_rows.append((row, section))
             continue
         if not has_money and region and len(row['tokens']) == 1 and _leading_date(row['tokens'][0]['t'].rstrip('.,')):
             # A movement date printed with nothing beside it: the line's content is missing (blacked out by
@@ -2592,6 +3942,9 @@ def _reading(rows, statement, style, exponent, liability, period):
                 continue
             unplaced.append(row)
     result['first_row'] = (rows[0]['page'], rows[0]['source']['table_index'], rows[0]['raw']['row_index']) if rows else ''
+    # The page on which the movement table printed its end after its last movement (or None).
+    last = max((m['row']['_index'] for m in movements), default=None)
+    result['table_end'] = next((rows[end]['page'] for end in ends if last is not None and end > last), None)
     # Unplaced money lines only count inside a page's movement region: between its first and last movement.
     spans = {}
     for move in movements:
@@ -2608,12 +3961,12 @@ def _reading(rows, statement, style, exponent, liability, period):
                    and shape(row['tokens'][0]['t']) in forms]
     # Undated card charges (B6) inside the region are movements ordered at the period end.
     undated = []
-    for row in undated_rows:
+    for row, undated_section in undated_rows:
         money_tokens = [t for t in row['tokens'] if _value_kind(t, style or 'dot', exponent) == 'money']
         first_money = min(money_tokens, key=lambda t: t['x0'])
         undated.append(dict(row=row, date_tokens=[], money=money_tokens,
                             description=[t for t in row['tokens'] if t not in money_tokens and t['x0'] < first_money['x0']],
-                            stray=[], continuation=[], undated=True))
+                            stray=[], continuation=[], undated=True, section=undated_section))
     all_moves = sorted(movements + undated, key=lambda m: m['row']['_index'])
     money_tokens = [t for move in all_moves for t in move['money']]
     columns = _columns(money_tokens, width or 1) if money_tokens else []
@@ -2623,6 +3976,22 @@ def _reading(rows, statement, style, exponent, liability, period):
     result['layout_key'] = layout_key({label(t['t']) for h in headers for t in h['tokens']}, proof['convention'])
     dated = [m for m in all_moves if not m.get('undated')]
     resolved, date_problem = _resolve_dates(dated, period, liability) if dated else ([], None if period else 'no_period')
+    unread_dates = _unread_second_dates(dated, width or 1) + [m for m in dated if m.get('date_unread')
+                                                               and settlement]
+    # (profile) Every movement's settlement day is the day printed on the end-of-day balance closing its group
+    # of lines; a line no end-of-day balance follows is not confirmed.
+    day_differs = []
+    if settlement:
+        group = []
+        for move in dated:
+            group.append(move)
+            if move.get('balance_days'):
+                for other in group:
+                    day = other['date_tokens'][0]['t'].rstrip('.,') if other['date_tokens'] else ''
+                    if not day.isdigit() or any(printed != int(day) for printed in move['balance_days']):
+                        day_differs.append(other)
+                group = []
+        day_differs.extend(group)
     candidates = _search(all_moves, columns, hints, controls, column_totals, style or 'dot', exponent, liability)
     # Among readings with the same money, keep one whose running balance chains (its balances are printed values).
     proving = sorted((c for c in candidates if c['proved']), key=lambda c: not c.get('chain_ok'))
@@ -2639,6 +4008,10 @@ def _reading(rows, statement, style, exponent, liability, period):
             proof['reason'] = 'no_closing'
         elif date_problem:
             proof['reason'] = date_problem
+        elif unread_dates:
+            proof['reason'] = 'date_unread'
+        elif day_differs:
+            proof['reason'] = 'day_balance_date_differs'
         elif unplaced:
             proof['reason'] = 'unplaced_money_line'
         elif blank_dated:
@@ -2662,6 +4035,12 @@ def _reading(rows, statement, style, exponent, liability, period):
             else:
                 proof['reason'] = ('printed_total_differs' if any(c['totals_failed'] for c in near)
                                    else 'no_independent_control' if near else 'not_reconciled')
+    if (not proof['proved'] and liability and proof['reason'] in _PRINCIPAL_ONLY_EXPLAINS
+            and any(all(re.search(r'\b' + word + r'\b', fold(h['text']).upper()) for word in _PRINCIPAL_ONLY_WORDS)
+                    for h in headers)):
+        # (C5) The section's balance is the principal alone; the amount owed it would have to reconcile is not
+        # printed. Only the reason changes: the period stays held, and a person supplies the amount owed.
+        proof['reason'] = 'principal_only_balance'
     if chosen is None:
         chosen = _best_effort(candidates, hints)
         # A held period keeps a column reading as its prefill only when that reading reconciles the
@@ -2669,17 +4048,65 @@ def _reading(rows, statement, style, exponent, liability, period):
         if chosen is not None and not chosen.get('closing_ok'):
             chosen = dict(chosen, values=None)
     proof['assignment'] = chosen['assignment'] if chosen else None
-    # Two dates on a movement line (B5): the second is the posting (booking) date when the movement headings
-    # name one ("Trans date / Post date" on card statements); otherwise a value date.
-    # A heading can print on two lines ("Trans. Post" above "date date Description Amount").
-    heading_lines = headers + [rows[h['_index'] - 1] for h in headers
-                               if h['_index'] > 0 and rows[h['_index'] - 1]['page'] == h['page']]
-    second_date = ('booking_date' if any(label(t['t']) in _POSTING_WORDS for h in heading_lines for t in h['tokens'])
-                   else 'value_date')
+    second_date = _second_date_field(rows, headers, dated, width or 1)
+    if second_date is None and any(len(m['date_tokens']) > 1 for m in dated):
+        # (B5) A second printed date whose heading names neither a posting nor a value date: carrying it under
+        # either name, or dropping it, would save a printed fact wrongly, so the period is not proved. The
+        # reconciling reading stays as the prefill.
+        if proof['proved']:
+            proof.update(proved=False, reason='second_date_unnamed')
+        second_date = 'value_date'
     result['rows'] = _rows(rows, all_moves, resolved if not date_problem else None, chosen, controls,
                            column_totals, statement, style or 'dot', exponent, liability, proof, unplaced,
                            second_date=second_date)
     return result
+
+
+_SECTION_WORDS = INDEX['credit_component'] | INDEX['debit_component']
+# (E9) A column-total line after the movement table's own printed totals block (its credit/debit total lines,
+# or a column-total label printed alone over them), with no movement line between, totals another table and
+# is not checked against the movements. Off: every column total is.
+OTHER_TABLE_TOTALS = True
+_PLACED_ROLES = ('opening', 'closing', 'credit_total', 'debit_total', 'column_total', 'section_total')
+
+
+def _unlocated_matters(row, style, exponent):
+    """A stored row without positions holds the reading (no_geometry) when one of its printed lines could be
+    read as a movement or a balance control: a line starting with a date and carrying an amount, an undated
+    card charge, or an amount after an opening, closing, total or section-total label. Lines are taken per
+    cell and across cells (the cells' lines side by side). Any other unlocated row is not part of what the
+    proof reads."""
+    cells = [c['expected_text'].split('\n') for c in sorted(row['raw']['cells'], key=lambda c: c['column_index'])]
+    lines = [line for lines in cells for line in lines]
+    lines += [' '.join(lines[i] for lines in cells if i < len(lines)) for i in range(max(map(len, cells), default=0))]
+    for line in lines:
+        words = line.split()
+        amounts = [i for i, word in enumerate(words) if money(word, style, exponent) is not None and re.search(r'\d', word)]
+        if not amounts:
+            continue
+        if is_date_token(words[0].rstrip('.,')):
+            return True
+        text = label(' '.join(words[:amounts[0]]))
+        if (any(text == label(p) or text.startswith(label(p) + ' ') for p in UNDATED_CHARGES)
+                or _role_of(text, True) in _PLACED_ROLES):
+            return True
+    return False
+
+
+def _section_heading(row, style, exponent):
+    """A card movement table's section heading ('FEES', 'INTEREST CHARGED'): a line printing only a summary
+    component's words, no amount and no date (D4, D7)."""
+    return (label(row['text']) in _SECTION_WORDS
+            and not any(_value_kind(t, style, exponent) in ('money', 'date') for t in row['tokens']))
+
+
+def _not_description(row):
+    """A line that never continues a movement's description: a table heading, a section heading or total,
+    a continuation notice, the year-to-date heading, or a labelled control."""
+    text = label(row['text'])
+    return (_is_header(row) or text in _SECTION_WORDS or text in {label(n) for n in CONTINUATION_NOTICES}
+            or bool(YEAR_TO_DATE.fullmatch(text)) or text in INDEX['section_total']
+            or any(_role_of(name, True) for name, _ in label_pairs(row, 'dot', 2)))
 
 
 def _two_line_entry(rows, index, style, exponent, columns, width):
@@ -2706,7 +4133,9 @@ def _two_line_entry(rows, index, style, exponent, columns, width):
     if any(_role_of(text, False) for text, values in label_pairs(following, style, exponent) if values):
         return None
     money_tokens = [t for t in later if _value_kind(t, style, exponent) == 'money']
-    if not money_tokens or not columns or any(_band(t, columns, width) is None for t in money_tokens):
+    placed = lambda t: _band(t, columns, width) is not None or (
+        _merged_partner(t, money_tokens) is not None and _band(_merged_partner(t, money_tokens), columns, width) is not None)
+    if not money_tokens or not columns or not all(placed(t) for t in money_tokens):
         return None
     height = max(t['y1'] - t['y0'] for t in row['tokens'])
     gap = following['y0'] - max(t['y1'] for t in row['tokens'])
@@ -2733,9 +4162,11 @@ def _printed_no_transactions(rows, controls, style, exponent):
     start, end = opening['row']['_index'], closing['row']['_index']
     found = [row for row in rows[start + 1:end] if row['tokens'] and ' '.join(fold(row['text']).split()) in NO_TRANSACTIONS]
     # Between the two balances only the no-activity line and lines that cannot be movements may stand (the
-    # page heading repeated where the section crosses a page break): no amount and no leading date.
+    # page heading repeated where the section crosses a page break, a payment voucher printing a zero
+    # total): no amount other than zero and no leading date.
     others = [row for row in rows[start + 1:end] if row['tokens'] and row not in found
-              and (any(_value_kind(t, style, exponent) == 'money' for t in row['tokens'])
+              and (any(_value_kind(t, style, exponent) == 'money' and money(t['t'], style, exponent) != 0
+                       for t in row['tokens'])
                    or _leading_date(merged_dates(row['tokens'])[0]['t'].rstrip('.,')))]
     if len(found) != 1 or others:
         return None
@@ -2799,6 +4230,10 @@ def _below(row, move):
 def _continues(row, move):
     """A line without date or money directly below a movement, starting in its description band (E3)."""
     last = move['continuation'][-1] if move['continuation'] else move['row']
+    if row.get('split') and last.get('split') and row['split'][0] == last['split'][0]:
+        # The next printed line of the same stored cell (_split_row), whose horizontal positions are only
+        # estimates: a wrapped description line unless it is printed as something else.
+        return row['split'][1] == last['split'][1] + 1 and len(move['continuation']) < 8 and not _not_description(row)
     if row['page'] != last['page'] or row['y0'] is None or last['y0'] is None or len(move['continuation']) >= 8:
         return False
     height = max(t['y1'] - t['y0'] for t in last['tokens'])
@@ -2821,7 +4256,8 @@ def _domains(columns, hints):
         hint = hints.get(i)
         if hint == 'balance':
             domains.append(('balance', 'ignore'))
-        elif hint in ('credit', 'debit', 'amount'):
+        elif hint in ('credit', 'debit', 'amount', 'ignore'):
+            # 'ignore' is hinted only by a library profile's ignore column words.
             domains.append((hint,))
         else:
             domains.append(('credit', 'debit', 'amount', 'balance', 'ignore'))
@@ -2837,14 +4273,40 @@ def _valid(assignment):
     return bool({'credit', 'debit', 'amount'} & set(roles))
 
 
+def _merged_partner(token, tokens):
+    """(E10) The balance printed after ``token`` in the same merged cell, or None.
+
+    A text table can deliver a movement's amount and balance (or its whole line) as one cell; each word's
+    position inside it is then interpolated, so an amount that is neither alone in its cell nor its last
+    word cannot be placed in a column. It is the line's amount when the line prints exactly two amounts and
+    the other is the last word of the same cell line (the balance, placed by the cell's own right edge)."""
+    if token['exact'] or token['last'] or len(tokens) != 2:
+        return None
+    other = next(t for t in tokens if t is not token)
+    if other['cell'] is token['cell'] and other['line'] == token['line'] and other['last'] and other['x0'] > token['x0']:
+        return other
+    return None
+
+
 def _movement_value(move, assignment, columns, width, style, exponent, liability):
     """Signed effect of one movement line on the printed balance under ``assignment``, or None."""
-    amounts, balance, balance_token, zero = [], None, None, False
+    amounts, balance, balance_token, zero, partner = [], None, None, False, None
     for token in move['money']:
         band = _band(token, columns, width)
         if band is None:
-            return None
-        role = assignment[band]
+            # (E10) An amount merged into its balance's cell takes the reading's one signed amount column;
+            # the reading proves only through the printed running balance (_search).
+            partner = _merged_partner(token, move['money']) if 'amount' in assignment else None
+            if partner is None and ((_PROFILE.get() or {}).get('columns') or {}).get('ignore'):
+                # (profile) A layout whose profile names the amount columns that are not the movement (gross,
+                # fees, taxes) and that reads a line as one merged cell: an amount placed in no column is one of
+                # them. The movement is the amount in a column the reading assigns, proved by the balances.
+                continue
+            if partner is None:
+                return None
+            role = 'amount'
+        else:
+            role = assignment[band]
         value = money(token['t'], style, exponent)
         if role == 'ignore' or value is None:
             continue
@@ -2856,7 +4318,13 @@ def _movement_value(move, assignment, columns, width, style, exponent, liability
             zero = True
         else:
             amounts.append((role, value, token))
-    if len(amounts) > 1:
+    for token in move.get('day_balances', ()):
+        # (profile) A day's closing balance printed after this line: its running balance.
+        value = money(token['t'], style, exponent)
+        if value is None or (balance_token is not None and value != balance):
+            return None
+        balance, balance_token = value, token
+    if len(amounts) > 1 or (partner is not None and balance_token is not partner):
         return None
     if not amounts:
         return dict(zero=True, balance=balance, balance_token=balance_token) if zero else None
@@ -2871,7 +4339,7 @@ def _movement_value(move, assignment, columns, width, style, exponent, liability
     size = abs(value)
     effect = (size if direction == 'debit' else -size) if liability else (size if direction == 'credit' else -size)
     return dict(zero=False, effect=effect, direction=direction, amount=size, balance=balance,
-                balance_token=balance_token, amount_token=token)
+                balance_token=balance_token, amount_token=token, merged=partner is not None)
 
 
 def _search(moves, columns, hints, controls, column_totals, style, exponent, liability):
@@ -2919,10 +4387,20 @@ def _search(moves, columns, hints, controls, column_totals, style, exponent, lia
         totals_ok, totals_found, totals_failed = True, 0, False
         for role, expected in (('credit_component', credits), ('debit_component', debits)):
             parts = [money(item['value_token']['t'], style, exponent) for item in controls[role]]
-            if parts:
+            # Net summary lines (charges less credits, signed as printed) are part of the charges' side.
+            nets = ([money(item['value_token']['t'], style, exponent) for item in controls['net_component']]
+                    if role == 'debit_component' else [])
+            if parts or nets:
                 totals_found += 1
-                if None in parts or sum(abs(p) for p in parts) != expected:
+                if None in parts or None in nets or sum(abs(p) for p in parts) + sum(nets) != expected:
                     totals_ok, totals_failed = False, True
+        for item in controls['section_total']:
+            # A section's printed total equals the net of the lines under its heading (D4).
+            printed = money(item['value_token']['t'], style, exponent)
+            net = sum(v['effect'] for m, v in zip(moves, values) if not v['zero'] and m.get('section') in item['headings'])
+            totals_found += 1
+            if printed is None or printed != net:
+                totals_ok, totals_failed = False, True
         for role, expected in (('credit_total', credits), ('debit_total', debits)):
             for item in controls[role]:
                 printed = money(item['value_token']['t'], style, exponent)
@@ -2951,7 +4429,9 @@ def _search(moves, columns, hints, controls, column_totals, style, exponent, lia
                         here_closings.setdefault(value, dict(row=item['row'], value_token=token, count=None))
         for opening, closing in product(openings, here_closings):
             net = sum(v['effect'] for v in effects)
-            closing_ok = opening + net == closing
+            # (profile) A day's balance printed before any movement restates the opening balance.
+            closing_ok = opening + net == closing and all(
+                money(item['value_token']['t'], style, exponent) == opening for item in controls['day_opening'])
             chains = []
             for order in (values, list(reversed(values))):
                 previous, pending, compared, mismatch = opening, 0, 0, 0
@@ -2968,7 +4448,10 @@ def _search(moves, columns, hints, controls, column_totals, style, exponent, lia
             # A column read as the running balance that does not chain contradicts this reading: printed
             # totals cannot prove it (the same reading without that column still can).
             contradicted = any(v['balance'] is not None for v in values) and not chain_ok
-            proved = closing_ok and totals_ok and (chain_ok or (totals_found > 0 and totals_ok and not contradicted))
+            # (E10) An amount placed from a merged cell is proved only by the running balance printed beside it.
+            merged = any(v.get('merged') for v in values)
+            proved = closing_ok and totals_ok and (chain_ok or (not merged and totals_found > 0 and totals_ok
+                                                                and not contradicted))
             basis = 'running_balance' if chain_ok else 'printed_totals'
             key = (opening, closing, tuple((m['row']['_index'], v.get('direction'), v.get('amount')) for m, v in zip(moves, values)))
             results.append(dict(proved=proved, closing_ok=closing_ok, totals_failed=totals_failed, chain_ok=chain_ok,
@@ -2987,13 +4470,82 @@ def _best_effort(candidates, hints):
 
 def _item(row, suffix=''):
     source, raw = row['source'], row['raw']
-    return dict(id=f"{source['page_number']}:{source['table_index']}:{raw['row_index']}{suffix}",
+    # A printed line or box of a stored row read as a row of its own (_split_row) keeps the stored row's index.
+    part = ':line%d' % raw['line'] if 'line' in raw else ':box%s' % raw['box'] if 'box' in raw else ''
+    return dict(id=f"{source['page_number']}:{source['table_index']}:{raw['row_index']}{part}{suffix}",
                 page_number=source['page_number'], table_index=source['table_index'], row_index=raw['row_index'],
                 source_revision=source['source_revision'], source_cells=raw['cells'], fields={}, issues=[],
                 excluded=True, kind='header')
 
 
 _POSTING_WORDS = {'POST', 'POSTED', 'POSTING'}
+# A second date column's heading naming a settlement or value date (measured: 'OPER LIQ' on BBVA).
+_VALUE_DATE_WORDS = {'LIQ', 'LIQUIDACION', 'VALOR', 'VALUE', 'SETTLEMENT'}
+# Lines searched above a page's first two-date movement for the heading of its date columns, and lines a
+# heading of the date columns may span (a two-line heading with a side column's line between them).
+_DATE_HEADING_SEARCH = 20
+_DATE_HEADING_SPAN = 3
+
+
+def _date_column_headings(rows, moves, width):
+    """The words printed over the date columns of the movement lines carrying two dates, page by page.
+
+    From each page's first such movement, the lines above it on the page are read through their
+    words that lie over either date column (a side column's text beside the table counts for
+    nothing). A line whose words there are all date-column words ('Trans.', 'Post', 'date',
+    'FECHA', 'OPER') is the date columns' heading; up to ``_DATE_HEADING_SPAN`` lines above the
+    nearest one count with it (a heading printed on two lines). Other words over the columns (a
+    section heading 'Standard Purchases') are passed over. Returns ``{folded word}`` printed over
+    the second date column.
+    """
+    def span(token):
+        w = token.get('_width') or width
+        return token['x0'] / w, token['x1'] / w
+
+    def over(token, columns):
+        x0, x1 = span(token)
+        return any(x0 < right and x1 > left for left, right in columns)
+
+    firsts = {}
+    for move in moves:
+        if len(move['date_tokens']) > 1:
+            firsts.setdefault(move['row']['page'], move)
+    words = set()
+    for page, move in firsts.items():
+        first, second = (span(t) for t in move['date_tokens'][:2])
+        found = None
+        for index in range(move['row']['_index'] - 1, max(-1, move['row']['_index'] - 1 - _DATE_HEADING_SEARCH), -1):
+            row = rows[index]
+            if row['page'] != page or (found is not None and found - index > _DATE_HEADING_SPAN):
+                break
+            above = [t for t in row['tokens'] if over(t, (first, second))]
+            if above and all(column_role(label(t['t'])) == 'date' for t in above):
+                found = index if found is None else found
+                words.update(label(t['t']) for t in above if over(t, (second,)))
+    return words
+
+
+def _second_date_field(rows, headers, moves, width):
+    """(B5) The field a movement line's second printed date fills: 'booking_date' when the movement
+    headings name a posting date ("Trans date / Post date" on card statements), 'value_date' when they
+    name a settlement or value date ("FECHA OPER LIQ"), and None when no movement line prints a second
+    date or when the headings name neither (the second date's meaning is not printed where it was read).
+
+    The movement heading's own line and the line directly above it count with every word (a heading can
+    print on two lines: "Trans. Post" above "date date Description Amount"). A heading line that is not
+    read as the movement heading (a side column's text printed on the same line) counts through the words
+    over the date columns (``_date_column_headings``).
+    """
+    if not any(len(m['date_tokens']) > 1 for m in moves):
+        return None
+    heading_lines = headers + [rows[h['_index'] - 1] for h in headers
+                               if h['_index'] > 0 and rows[h['_index'] - 1]['page'] == h['page']]
+    words = {label(t['t']) for h in heading_lines for t in h['tokens']} | _date_column_headings(rows, moves, width)
+    if words & _POSTING_WORDS:
+        return 'booking_date'
+    if words & _VALUE_DATE_WORDS:
+        return 'value_date'
+    return None
 
 
 def _rows(rows, moves, resolved, chosen, controls, column_totals, statement, style, exponent, liability, proof, unplaced,
@@ -3026,7 +4578,10 @@ def _rows(rows, moves, resolved, chosen, controls, column_totals, statement, sty
                 printed = next(dates, None) if resolved is not None else None
                 if move['date_tokens']:
                     fields['date_column'] = str(move['date_tokens'][0]['cell']['column_index'])
-                if printed:
+                if printed and move.get('date_unread'):
+                    # (B5) The line's second date is unread ink: its first date is not taken either.
+                    item['issues'].append('Check the printed date of this movement.')
+                elif printed:
                     fields['date'] = printed[0].isoformat()
                     if len(printed) > 1:
                         fields[second_date] = printed[1].isoformat()
@@ -3085,6 +4640,15 @@ def _rows(rows, moves, resolved, chosen, controls, column_totals, statement, sty
                 extra['printed_transaction_count'] = entry['count']
             item = control(entry, 'Total ' + direction, role, **extra)
             item['fields']['balance'] = str(abs(int(item['fields']['balance'])))
+    if chosen and chosen.get('values') is not None:
+        for entry in controls['section_total']:
+            # A section's printed total (D4) as the review's scoped control, with the lines it totals.
+            scope = entry['scope']
+            control(entry, 'Printed %s total' % scope, 'section_' + scope, kind='statement_total', total_scope=scope)
+            for move in moves:
+                item = items[move['row']['_index']]
+                if move.get('section') in entry['headings'] and item['kind'] == 'transaction':
+                    item['fields']['charge_group'] = scope
     for row in unplaced:
         item = items[row['_index']]
         item.update(kind='unresolved', excluded=False)

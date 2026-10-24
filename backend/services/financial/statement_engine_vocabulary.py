@@ -74,11 +74,37 @@ LIABILITY_EVIDENCE = (
 )
 # Card account summaries print components per direction between the
 # previous and the new balance (D7): their sum must equal what was read.
-LIABILITY_CREDIT_COMPONENTS = ('PAYMENTS', 'OTHER CREDITS', 'CREDITS', 'PAYMENTS AND CREDITS', 'PAYMENTS AND OTHER CREDITS',
+LIABILITY_CREDIT_COMPONENTS = ('PAYMENTS', 'OTHER CREDITS', 'CREDITS', 'PAYMENTS AND CREDITS', 'PAYMENTS & CREDITS',
+                               'PAYMENTS AND OTHER CREDITS',
                                'PAYMENTS, CREDITS AND ADJUSTMENTS', 'PAGOS', 'PAGOS Y ABONOS', 'ABONOS')
 LIABILITY_DEBIT_COMPONENTS = ('TRANSACTIONS', 'PURCHASES', 'CASH ADVANCES', 'FEES CHARGED', 'INTEREST CHARGED',
                               'FEES', 'INTEREST', 'BALANCE TRANSFERS', 'PURCHASES AND ADJUSTMENTS',
-                              'PURCHASES AND OTHER CHARGES', 'CARGOS', 'COMPRAS', 'COMISIONES', 'INTERESES')
+                              'PURCHASES AND OTHER CHARGES', 'CARGOS', 'COMPRAS', 'COMISIONES', 'INTERESES',
+                              'NEW PURCHASES', 'LOANS & DEBITS', 'LOANS AND DEBITS')
+# Summary lines printed as a NET of charges and credits ("+/- Interest Charge (net)"): signed as printed
+# (a credit balance in parentheses), they join the debit components' sum (D7). The printed '+/-' before
+# the label is a sign mark, not part of it.
+LIABILITY_NET_COMPONENTS = ('CREDITS, FEES & ADJUSTMENTS (NET)', 'INTEREST CHARGE (NET)')
+# A card movement table can print its lines in sections under a heading ("FEES", "INTEREST CHARGED": the
+# component words above) closed by the section's own total. Each total names the headings of the section it
+# totals; the lines between that heading and the total must sum to it (D4, a control, never a row).
+SECTION_TOTALS = {
+    'TOTAL FEES FOR THIS PERIOD': ('FEES', 'FEES CHARGED'),
+    'TOTAL INTEREST FOR THIS PERIOD': ('INTEREST CHARGED', 'INTEREST'),
+}
+# The review's charge scope of each section total (the review arithmetic checks fee and interest totals).
+SECTION_SCOPES = {'TOTAL FEES FOR THIS PERIOD': 'fee', 'TOTAL INTEREST FOR THIS PERIOD': 'interest'}
+# The year-to-date block printed after a card's section totals ("2024 Totals Year-to-Date" and its fee and
+# interest totals for the calendar year): not this period's movements, nor its controls.
+YEAR_TO_DATE = re.compile(r'^(?:\d{4} )?TOTALS YEAR TO DATE$')
+# A table's continuation notice: never part of a movement's description.
+CONTINUATION_NOTICES = ('CONTINUED ON NEXT PAGE', 'CONTINUED ON THE NEXT PAGE', 'CONTINUED ON REVERSE SIDE')
+# The heading of the remittance box printed beside a card's account summary. It repeats the new balance
+# and prints the payment due; its lines are never the summary's controls (D7).
+PAYMENT_BOX_HEADINGS = ('PAYMENT INFORMATION',)
+# A card statement printing only its closing date and the number of days in the billing cycle (B1).
+CLOSING_DATE_LABELS = ('STATEMENT CLOSING DATE', 'CLOSING DATE')
+CYCLE_DAYS_LABELS = ('DAYS IN BILLING PERIOD', 'DAYS IN BILLING CYCLE')
 
 # Movement table column words (E1). A header line holds a date word and a
 # money word; the words are hints for the proof, never the decision.
@@ -86,11 +112,11 @@ COLUMN_WORDS = {
     'date': ('FECHA', 'FECHAS', 'FECHA OPER', 'OPER', 'DIA', 'DATE', 'TRANS', 'TRANS DATE', 'POST', 'POST DATE',
              'POSTING DATE', 'TRANSACTION DATE', 'DATE POSTED'),
     'description': ('DESCRIPCION', 'COD DESCRIPCION', 'CONCEPTO', 'DETALLE', 'DESCRIPTION', 'DETAILS',
-                    'TRANSACTION', 'TRANSACTION DESCRIPTION'),
+                    'TRANSACTION', 'TRANSACTION DESCRIPTION', 'DESCRIPTIONS'),
     'credit': ('ABONOS', 'ABONO', 'DEPOSITOS', 'DEPOSITO', 'CREDITOS', 'CREDITO', 'ENTRADAS', 'INGRESOS',
                'CREDITS', 'CREDIT', 'DEPOSITS', 'DEPOSIT', 'ADDITIONS', 'MONEY IN', 'PAID IN'),
     'debit': ('CARGOS', 'CARGO', 'RETIROS', 'RETIRO', 'SALIDAS', 'EGRESOS', 'DEBITS', 'DEBIT', 'WITHDRAWALS',
-              'WITHDRAWAL', 'SUBTRACTIONS', 'MONEY OUT', 'PAID OUT', 'CHARGES'),
+              'WITHDRAWAL', 'SUBTRACTIONS', 'MONEY OUT', 'PAID OUT', 'CHARGES', 'LOANS'),
     'balance': ('SALDO', 'SALDOS', 'BALANCE', 'RUNNING BALANCE', 'DAILY BALANCE'),
     'amount': ('IMPORTE', 'MONTO', 'AMOUNT', 'CANTIDAD'),
 }
@@ -110,6 +136,14 @@ HOLDER_LABELS = ('NOMBRE DEL RECEPTOR', 'TITULAR', 'NOMBRE DEL CLIENTE', 'NOMBRE
 NOT_A_NAME = ('DOMICILIO', 'DIRECCION', 'SUCURSAL', 'PLAZA', 'TELEFONO', 'R.F.C', 'RFC', 'CLIENTE', 'ESTADO DE CUENTA',
               'PERIODO', 'FECHA', 'PAGINA', 'CODIGO', 'CONTRATO', 'CUENTA', 'ADDRESS', 'CUSTOMER', 'STATEMENT',
               'ACCOUNT', 'PAGE', 'BANCO', 'BANK', 'EJECUTIVO', 'ASESOR', 'OFICINA', 'FOLIO')
+# Words that open or mark a line of a postal address (street type, floor, unit, district): a line holding
+# one as a whole word is an address line, never the addressee's name (A8). Only words no printed holder name
+# of the truth set holds; a name that did would give no holder (a person confirms), never an address.
+ADDRESS_WORDS = ('CALLE', 'AVENIDA', 'AV', 'AVE', 'BLVD', 'BOULEVARD', 'CARRETERA', 'PISO', 'INT', 'INTERIOR',
+                 'DEPTO', 'DEPARTAMENTO', 'OFIC', 'OFICINA', 'COL', 'COLONIA', 'FRACC', 'FRACCIONAMIENTO', 'MZ',
+                 'MZA', 'MANZANA', 'LOTE', 'LT', 'KM', 'SUITE', 'STE', 'APT', 'APTO')
+# The taxpayer type a Mexican addressee block prints as its last line (folded).
+TAXPAYER_TYPES = ('PERSONA MORAL', 'PERSONA FISICA')
 PERIOD_WORDS = ('PERIODO', 'PERIOD', 'STATEMENT PERIOD', 'BILLING PERIOD', 'BILLING CYCLE', 'CICLO', 'DEL')
 CURRENCY_LABELS = ('MONEDA', 'DIVISA', 'CURRENCY', 'TIPO DE MONEDA', 'STATEMENT CURRENCY', 'ACCOUNT CURRENCY')
 CURRENCY_NAMES = {
@@ -179,6 +213,9 @@ INDEX = dict(
     opening=_index(OPENING), closing=_index(CLOSING), subtotal=_index(SUBTOTALS),
     credit_total=_index(CREDIT_TOTAL), debit_total=_index(DEBIT_TOTAL), column_total=_index(COLUMN_TOTAL),
     credit_component=_index(LIABILITY_CREDIT_COMPONENTS), debit_component=_index(LIABILITY_DEBIT_COMPONENTS),
+    net_component=_index(LIABILITY_NET_COMPONENTS), section_total=_index(SECTION_TOTALS),
 )
+SECTION_HEADINGS = {label(total): {label(heading) for heading in headings} for total, headings in SECTION_TOTALS.items()}
+SECTION_SCOPE = {label(total): scope for total, scope in SECTION_SCOPES.items()}
 COLUMN_INDEX = {label(word): role for role, words in COLUMN_WORDS.items() for word in words}
 FUZZY_INDEX = {role: [compiled for phrase in phrases if (compiled := _fuzzy(phrase))] for role, phrases in INDEX.items()}

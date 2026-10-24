@@ -53,6 +53,9 @@ def create_batch(session, *, case_id, request_id, file_ids, folder_ids, actor, s
             raise PdfMappingError('The selection changed. Start a new batch for these files.', 409)
         return existing.id
     if not selection['files']:
+        if selection['skipped_removed']:
+            raise PdfMappingError('Every PDF in this selection was removed from Financial. Restore them, or choose the '
+                                  'files themselves, to read them again.', 422)
         raise PdfMappingError('No PDF files were found in this selection.', 422)
     selected_ids = {f['id'] for f in selection['files']}
     if not any(f.get('financial_removed') for f in selection['files']):
@@ -85,16 +88,28 @@ def initial_request(proposal):
     # A closing-only statement's printed closing date, and a start that its
     # source establishes, fill only dates the printed header left empty.
     dates = proposal.get('period_dates') or {}
+    # A movement query trimmed where a saved statement already counts its days (statement_overlap_trim).
+    trim = proposal.get('overlap_trim') if (proposal.get('overlap_trim') or {}).get('status') == 'trimmed' else {}
     return dict(expected_revision=proposal['revision'], statement_id=proposal.get('statement_id'),
         currency=proposal['currency'], holder=metadata.get('holder',''), account_number=metadata.get('account_number',''),
-        institution=metadata.get('institution',''), period_start=metadata.get('period_start','') or dates.get('period_start') or '',
-        period_end=metadata.get('period_end','') or dates.get('period_end') or '',
+        institution=metadata.get('institution',''),
+        period_start=trim.get('period_start') or metadata.get('period_start','') or dates.get('period_start') or '',
+        period_end=trim.get('period_end') or metadata.get('period_end','') or dates.get('period_end') or '',
         rows=[dict(id=r['id'], excluded=r['excluded'], date=r['fields'].get('date') or r['fields'].get('booking_date') or r['fields'].get('value_date') or '',
             date_unprinted=r['fields'].get('date_basis') == 'statement_end_ordering_only',
             date_values={role:r['fields'].get(role,'') for role in _date_roles(r['fields']) if role != _primary_date_role(r['fields'])},
             description=r['fields'].get('description',''), counterparty=r['fields'].get('counterparty',''),
             amount_minor=r['fields'].get('amount_minor') or ('0' if r['excluded'] else ''), direction=r['fields'].get('direction'),
-            balance_minor=r['fields'].get('balance'), reason=r.get('assignment_reason', '')) for r in proposal['rows']])
+            balance_minor=r['fields'].get('balance'), reason=r.get('assignment_reason') or r.get('covered_reason') or '')
+            for r in proposal['rows']])
+
+
+# Statement details kept from corrections saved on an earlier reading; rows
+# are never carried over, their ids belong to the earlier reading.
+EARLIER_READING_FIELDS = ('holder', 'account_number', 'institution', 'period_start', 'period_end')
+EARLIER_READING_MESSAGE = ('Your saved corrections were made on an earlier reading of this statement, and it has been '
+                           'read again since. They are not applied to the new reading. Check its rows against the PDF '
+                           'and save the statement again.')
 
 
 def assess(proposal, request=None):
@@ -102,6 +117,21 @@ def assess(proposal, request=None):
     problems = []
     can_import = True
     raw = request or initial_request(proposal)
+    earlier_reading = False
+    if request and request.get('expected_revision') and request['expected_revision'] != proposal['revision']:
+        # Corrections saved on an earlier reading whose rows the new reading no
+        # longer has. Checking them against the new rows used to fail with a
+        # misleading message ('A manually added transaction needs a page'):
+        # the new reading is checked as read, with the saved statement
+        # details, and held until the investigator saves a review of it.
+        from services.financial.review_upgrade import upgrade_request
+        upgraded = upgrade_request(request, proposal)
+        if upgraded is not None:
+            raw = upgraded
+        else:
+            earlier_reading = True
+            raw = {**initial_request(proposal), **{key: request[key] for key in EARLIER_READING_FIELDS
+                                                   if str(request.get(key) or '').strip()}}
     rows = proposal['rows']
     current = proposal.get('current_import')
     if proposal.get('document_review'):
@@ -122,6 +152,11 @@ def assess(proposal, request=None):
         problems.append(dict(message='Compare the earlier saved reviews for this file before importing. Saved corrections may belong to different statement periods in the new reading.', row_id=None))
     if not proposal['currency']:
         problems.append(dict(message='Choose the currency printed on these statements.', row_id=None))
+    from services.financial.review_carry import conflict_problems
+    carry_conflicts = conflict_problems(proposal, request)
+    if carry_conflicts:
+        can_import = False
+        problems.extend(carry_conflicts)
     try:
         validated = StatementImportRequest.model_validate(raw)
         check_import_request(proposal, validated)
@@ -151,7 +186,8 @@ def assess(proposal, request=None):
     for row in rows:
         edit = reviewed.get(row['id'],{})
         if row['issues'] and not edit.get('excluded', row['excluded']) and not row_reviewed(row, edit):
-            problems.append(dict(message=' '.join(row['issues']),row_id=row['id'],page=row['page_number']))
+            problems.append(dict(message=' '.join(row['issues']),row_id=row['id'],page=row['page_number'],
+                                 **({'engine_hold': row['engine_hold']} if row.get('engine_hold') else {})))
     balance = check_proposed_rows(proposal, raw['rows'])
     if can_import:
         from services.financial.import_issues import retained_issues
@@ -159,6 +195,9 @@ def assess(proposal, request=None):
             if not any(p.get('row_id') == issue.get('row_id') and p['message'] == issue['message'] for p in problems):
                 problems.append(issue)
     problems.extend(arithmetic_problems(balance))
+    if earlier_reading:
+        can_import = False
+        problems.insert(0, dict(kind='earlier_reading_review', row_id=None, message=EARLIER_READING_MESSAGE))
     admission = None
     if can_import:
         from services.financial.statement_admission import assess_admission
@@ -187,9 +226,40 @@ def assess(proposal, request=None):
         # Which identity facts came from a person's layout confirmation (layout_memory), so a
         # withdrawal re-reads this period without them.
         summary['identity_memory'] = proposal['identity_memory']
+    if (recovery or {}).get('split_release'):
+        # Released from a split file whose other periods hold an investigator's uncarried work (audit).
+        summary['split_from_held_work'] = recovery['split_release']
     if proposal.get('period_dates'):
         summary['closing_only_period'] = True
+    if proposal.get('printed_currency') and not proposal['currency']:
+        # Cited for the currency proposal (field_proposals); the reading stays without a currency.
+        summary['printed_currency'] = proposal['printed_currency']
+    if proposal.get('brokerage_cash_ledger'):
+        # Its currency is printed only in its holdings, or taken from its account (field_proposals).
+        summary['brokerage_cash_ledger'] = True
+    if proposal.get('statement_form'):
+        # A movement query ranks with other queries of its account for the overlap trim (statement_overlap_trim).
+        summary['statement_form'] = proposal['statement_form']
+    if proposal.get('overlap_trim'):
+        trim = proposal['overlap_trim']
+        summary['overlap_trim'] = {key: trim[key] for key in ('status', 'code', 'message', 'period_start', 'period_end',
+                                                              'printed_period_start', 'printed_period_end') if key in trim}
+        if trim['status'] == 'held' and trim.get('code') == 'fully_covered':
+            # Every movement is in saved statements already: saving it would count them twice.
+            summary['can_import'] = False
+            problems.insert(0, dict(kind='overlap_trim', row_id=None, message=trim['message']))
+            summary['problems'] = problems[:50]
+            summary['problem_count'] = summary.get('problem_count', 0) + 1
+        if trim['status'] == 'trimmed':
+            summary['overlap_trim']['covered_movements'] = len(trim['before']) + len(trim['after'])
+            summary['overlap_trim']['covered_by'] = [c['source_document_id'] for c in trim['covers']]
     summary['account_type'] = proposal['metadata'].get('account_type') or ''
+    # The pages this period is read from: which saved periods of its file its
+    # readiness depends on (_relevant_admitted).
+    summary['source_pages'] = sorted({source['page_number'] for source in proposal.get('sources') or []
+                                      if type(source.get('page_number')) is int})
+    if proposal['metadata'].get('account_reference_kind'):
+        summary['account_reference_kind'] = proposal['metadata']['account_reference_kind']
     summary['unclassified_count'] = sum(row['kind'] == 'unclassified' and reviewed.get(row['id'], {}).get('excluded', row['excluded']) for row in rows)
     if admission is not None:
         from services.financial.import_issues import incomplete_records
@@ -207,6 +277,12 @@ def assess(proposal, request=None):
         summary.update(duplicate_disposition=current['duplicate_disposition'], can_import=False, problems=[],
             problem_count=0, transaction_count=0, record_count=0, incomplete_count=0)
         return 'duplicate_ignored', summary
+    if proposal.get('not_payment_statement') and not current and not any(
+            not row.get('excluded') and str(row.get('amount_minor') or '0').strip('0-') for row in raw['rows']):
+        # A fund statement (not_payment_statements): never saved, not waiting for anyone; put back on request.
+        summary.update(not_payment_statement=proposal['not_payment_statement'], can_import=False, problems=[],
+                       problem_count=0)
+        return 'attention', summary
     if current:
         retained = current.get('issues', problems)
         details = current.get('details', {})
@@ -341,6 +417,10 @@ VANISHED_PERIOD_MESSAGE = ('This file was read again and the statement periods w
                            'preparation is retained in history; review the periods listed now.')
 
 
+CARRIED_REVIEW_MESSAGE = ('This file was read again and its statement period is now named. Your saved corrections '
+                          'were carried to that statement, which is listed now.')
+
+
 def prepare_reviews(session, batch, file, *, lock_slice=None):
     cache = {}
     fid = UUID(file['file_id'])
@@ -354,6 +434,7 @@ def prepare_reviews(session, batch, file, *, lock_slice=None):
     identifiers = [c['id'] for c in choices]
     if not identifiers: identifiers=[None]
     produced = set()
+    carried_from_file_level = False
     for statement_id in identifiers:
         review_lock.yield_case()
         proposal = read_statement_import(session,case_id=batch.case_id,evidence_file_id=fid,currency=file.get('currency') or None,statement_id=statement_id,_cache=cache)
@@ -365,6 +446,15 @@ def prepare_reviews(session, batch, file, *, lock_slice=None):
         existing = session.get(Item,identifier)
         if existing and existing.status in ('imported','pending_import','skipped','duplicate_ignored'):
             continue
+        if not proposal.get('saved_review') and key:
+            # A review saved on an earlier file-level reading of this file is
+            # carried to the one period this reading names (review_carry).
+            from services.financial.review_carry import carry_file_level_review
+            evidence = session.get(EvidenceFile, fid)
+            record = carry_file_level_review(evidence, proposal, identifiers) if evidence is not None else None
+            if record:
+                proposal = {**proposal, 'saved_review': record}
+                carried_from_file_level = True
         progress = proposal.get('saved_review') or proposal.get('previous_saved_review')
         if existing and existing.review_request and not progress:
             continue  # An independent saved batch draft is never reset by refresh.
@@ -398,6 +488,11 @@ def prepare_reviews(session, batch, file, *, lock_slice=None):
         stale = session.get(Item,uuid5(batch.id,str(fid)+':'))
         if stale and stale.status=='attention' and not stale.review_request:
             session.delete(stale)
+        elif stale and carried_from_file_level and stale.status in ('ready', 'attention'):
+            # Its saved review now lives on the named period; history keeps this one.
+            stale.status = 'superseded_reading'
+            stale.summary = {**stale.summary, 'can_import': False, 'superseded_by_reading': str(fid),
+                             'recovery_message': CARRIED_REVIEW_MESSAGE}
     if RETIRE_VANISHED_PERIODS and not file.get('standalone_import'):
         # The file was read again (refresh from its saved reading) and the current reader no longer finds a
         # period an earlier preparation listed: that untouched item is retired to history, never deleted, so
@@ -471,15 +566,66 @@ def _json_copy(value, without=None):
     return json.loads(json.dumps(value))
 
 
+class _AdmittedSource(SimpleNamespace):
+    """An admitted saved period of a file: id, statement id, source pages (None if unknown), recovery section."""
+
+
+# The keys a period's readiness reads from each admitted saved period, reused while the row is unchanged
+# (row_versions): reading them detoasted every saved period's whole metadata on each readiness check.
+_ADMITTED_VALUES = None
+
+
+def _admitted_values(values):
+    sources, pages = values['sources'], None
+    if isinstance(sources, list) and sources and all(isinstance(source, dict) and type(source.get('page_number')) is int
+                                                     for source in sources):
+        pages = frozenset(source['page_number'] for source in sources)
+    return dict(statement_id=values['statement_id'] or '', pages=pages, recovery=bool(values['recovery']))
+
+
 def _admitted_sources(session, case_id, file_ids):
+    """{file id: [admitted saved periods, by id]}, with only the keys a period's readiness can depend on."""
+    global _ADMITTED_VALUES
     from postgres.models.financial import FinancialSourceDocument
+    from services.financial.row_versions import RowValues
+    if _ADMITTED_VALUES is None:
+        _ADMITTED_VALUES = RowValues(FinancialSourceDocument)
+    metadata = FinancialSourceDocument.metadata_
     result = {}
     if file_ids:
-        for file_id, source_id in session.execute(select(FinancialSourceDocument.evidence_file_id, FinancialSourceDocument.id)
-                .where(FinancialSourceDocument.case_id == case_id, FinancialSourceDocument.status == 'admitted',
-                    FinancialSourceDocument.evidence_file_id.in_(list(file_ids)))):
-            result.setdefault(file_id, []).append(str(source_id))
-    return {key: sorted(value) for key, value in result.items()}
+        rows = _ADMITTED_VALUES.rows(session, (FinancialSourceDocument.id, FinancialSourceDocument.evidence_file_id), (
+                metadata['statement_import_statement_id'].as_string().label('statement_id'),
+                metadata['statement_import_original']['sources'].label('sources'),
+                metadata['statement_recovery_parent_id'].as_string().label('recovery')),
+            (FinancialSourceDocument.case_id == case_id, FinancialSourceDocument.status == 'admitted',
+             FinancialSourceDocument.evidence_file_id.in_(list(file_ids))), transform=_admitted_values)
+        for row in rows:
+            result.setdefault(row.evidence_file_id, []).append(_AdmittedSource(id=str(row.id),
+                statement_id=row.statement_id, pages=row.pages, recovery=row.recovery))
+    return {key: sorted(value, key=lambda source: source.id) for key, value in result.items()}
+
+
+# Readiness of one period depends on the file's other saved periods only where
+# a reading consults them: the same statement (or a whole-file import), a
+# saved period sharing one of its pages (the overlap check of
+# statement_import._existing_statement), a recovered section (it changes the
+# file's catalogue) and a copy decision's retained source. Every admission
+# used to make every other period of its file stale, so the readiness sweep
+# re-read the whole file after each import (a 217-period production: every
+# period, after every import). Items prepared before their source pages were
+# recorded keep the whole-file dependency. Switch off to restore it everywhere.
+RELEVANT_ADMISSIONS_ONLY = True
+
+
+def _relevant_admitted(entries, item, summary, decision):
+    pages = summary.get('source_pages')
+    if not RELEVANT_ADMISSIONS_ONLY or not isinstance(pages, list):
+        return [entry.id for entry in entries]
+    pages = set(pages)
+    key = item.statement_key or ''
+    retained = str(((decision or {}).get('retained') or {}).get('source_document_id') or '')
+    return [entry.id for entry in entries if entry.recovery or entry.statement_id in ('', key) or entry.pages is None
+            or entry.pages & pages or entry.id == retained]
 
 
 def _reading_guards(session, files):
@@ -521,7 +667,8 @@ class _ProjectionInputs:
 
     def __init__(self, session, case_id, items):
         self.session, self.case_id = session, case_id
-        self.files = {file.id: file for file in session.scalars(select(EvidenceFile).where(
+        from services.financial.source_lineage import case_wide_files
+        self.files = {file.id: file for file in session.scalars(case_wide_files().where(
             EvidenceFile.case_id == case_id, EvidenceFile.id.in_({item.file_id for item in items})))}
         self.admitted = _admitted_sources(session, case_id, {item.file_id for item in items})
         self._guards = None
@@ -582,7 +729,24 @@ class _ProjectionInputs:
             summary={name: value for name, value in summary.items() if name != 'readiness'},
             progress=review_progress(file, item.statement_key) if file else None,
             visibility=metadata.get('financial_file_visibility'), decision=metadata.get(METADATA_KEY, {}).get(key),
-            duplicate=projection, admitted=self.admitted.get(item.file_id, []), reading=self.guards.get(item.file_id)))
+            duplicate=projection, admitted=_relevant_admitted(self.admitted.get(item.file_id, []), item, summary,
+                metadata.get(METADATA_KEY, {}).get(key)),
+            reading=self.guards.get(item.file_id),
+            **({'saved_in_case': self.saved_mark} if self._trims(summary) else {})))
+
+    @staticmethod
+    def _trims(summary):
+        """A movement query's reading depends on the saved statements of its account (statement_overlap_trim)."""
+        from services.financial.statement_overlap_trim import TRIM_OVERLAPS
+        from services.financial.statement_import_santander_query import FORM
+        return TRIM_OVERLAPS and (summary or {}).get('statement_form') == FORM
+
+    @property
+    def saved_mark(self):
+        if getattr(self, '_saved_mark', None) is None:
+            from services.financial.field_proposals import _fingerprint
+            self._saved_mark = _fingerprint(self.session, self.case_id)
+        return self._saved_mark
 
     def stored_readiness(self, item):
         """(state, summary, request) from a still-current readiness record, or None."""
@@ -658,7 +822,10 @@ def _project_item(session, case_id, item, file, *, read, saved_files, duplicate_
                 state = progress['assessment_status']
             else:
                 state, summary = 'attention', conflict_summary(summary)
-        elif progress or validate_reviews or item.file_id in saved_files or 'can_import' not in summary or summary.get('review_model') != REVIEW_MODEL:
+        elif (progress or validate_reviews or item.file_id in saved_files or 'can_import' not in summary
+              or summary.get('review_model') != REVIEW_MODEL or _ProjectionInputs._trims(summary)):
+            # A movement query's reading depends on its account's saved statements (the overlap trim): its
+            # projection is read again whenever its stored readiness is not current.
             try:
                 proposal = read(item)
                 from services.financial.review_upgrade import upgrade_request
@@ -759,9 +926,10 @@ def _pending_with_files(session, case_id):
         Item.status.in_(('ready', 'attention', 'pending_import')))).all()
     if not items:
         return []
-    owners = {file.id: file for file in session.scalars(select(EvidenceFile).where(
-        EvidenceFile.case_id == case_id, EvidenceFile.id.in_({item.file_id for item in items})))}
-    return [(item, owners[item.file_id]) for item in items]
+    # Read-only copies for the comparison, reused per row while unchanged.
+    from services.financial.source_lineage import case_files
+    owners = case_files(session, case_id)
+    return [(item, owners[item.file_id]) for item in items if item.file_id in owners]
 
 
 def checked_batch_items(session, case_id, items, *, validate_reviews=False, reading='stored'):
@@ -820,6 +988,7 @@ def _checked_batch_items(session, case_id, items, *, validate_reviews=False, rea
                     state, summary, projected_request = _readiness_pending(item)
                     held = True
             projected.append((item, state, summary, projected_request, held))
+    knowledge = {}
     with stage('batch_coverage'):
         for index, (item, state, summary, projected_request, held) in enumerate(projected):
             if held or state not in ('ready', 'attention'):
@@ -830,7 +999,13 @@ def _checked_batch_items(session, case_id, items, *, validate_reviews=False, rea
                 # Where the statement starts in its file: a second printed statement
                 # for the same account and dates in the same file is compared.
                 'page_number': summary.get('page_number') or item.summary.get('page_number')}
+            if not projected_request and _ProjectionInputs._trims(summary):
+                # The dates of this projection's own reading (a trimmed query's kept dates), not the stored ones.
+                raw.update(period_start=summary.get('period_start', ''), period_end=summary.get('period_end', ''))
             review = coverage_review(session, case_id=case_id, file_id=item.file_id, request=raw, sources=sources)
+            from services.financial.statement_import_overlap import later_queries_trim_themselves
+            review = later_queries_trim_themselves(review, raw, file_id=item.file_id, statement_id=item.statement_key,
+                                                   summary=summary)
             problems = [p for p in summary.get('problems', []) if p.get('kind') not in ('coverage', 'coverage_load', 'readiness_pending')]
             extra_count = max(0, summary.get('problem_count', 0) - len(summary.get('problems', [])))
             if raw.get('_coverage_error'):
@@ -840,8 +1015,15 @@ def _checked_batch_items(session, case_id, items, *, validate_reviews=False, rea
                     message=('This file prints another statement for the same bank, full account, holder, currency and statement period on a different page. Compare the two before importing either.'
                         if duplicate_hold(review, raw) and review.get('same_file_statement') else
                         'A separate file matches this bank, full account, holder, currency and statement period. Compare the existing statement before importing another copy.'
-                        if duplicate_hold(review, raw) else 'Another statement covers some of these dates. You can compare their payments now or after importing.')))
+                        if duplicate_hold(review, raw) else 'Another statement covers some of these dates. You can compare their payments now or after importing.'
+                        + ((' ' + summary['overlap_trim']['message']) if (summary.get('overlap_trim') or {}).get('message') else ''))))
             if duplicate_hold(review, raw):
+                summary['can_import'] = False
+            conflict = _account_currency_conflict(session, case_id, summary, raw, knowledge)
+            if conflict:
+                problems.append(dict(kind='statement_detail', field='currency', row_id=None,
+                    message=f"This statement prints {raw.get('currency')}, but its account's saved statements are in "
+                            f"{conflict}. Check which currency applies before saving."))
                 summary['can_import'] = False
             if unhydrated:
                 # A comparison missing older pending statements could hide a
@@ -855,6 +1037,20 @@ def _checked_batch_items(session, case_id, items, *, validate_reviews=False, rea
     with stage('batch_finish'):
         result = _finish_projection(session, case_id, projected, inputs.files)
     return result, sources
+
+
+def _account_currency_conflict(session, case_id, summary, raw, knowledge):
+    """The other currencies of a brokerage cash ledger's account when its own differs (field_proposals)."""
+    from services.financial import field_proposals
+    if not field_proposals.ACCOUNT_CURRENCY or not summary.get('brokerage_cash_ledger') or not raw.get('currency'):
+        return ''
+    if 'case' not in knowledge:
+        knowledge['case'] = field_proposals.case_knowledge(session, case_id)
+    values = dict(field_proposals.summary_values(summary), currency=raw.get('currency') or '',
+                  institution=raw.get('institution') or summary.get('institution') or '',
+                  holder=raw.get('holder') or summary.get('holder') or '',
+                  account_number=raw.get('account_number') or summary.get('account') or '')
+    return field_proposals.account_currency_conflict(values, knowledge['case'])
 
 
 def _finish_projection(session, case_id, projected, files):
@@ -1687,11 +1883,22 @@ async def _prepare_retry(session, *, case_id, file, actor, resolve_path, process
         actor = Actor(**{**recovery['requested_by'], 'user_id': UUID(recovery['requested_by']['user_id'])})
     identifier = UUID(recovery.get('read_from_file_id') or file['source_id'])
     if recovery.get('fresh_reading'):
-        reviewed = any(item.review_request or item.status in ('pending_import', 'skipped', 'duplicate_ignored') for item in session.scalars(
+        prior = session.get(EvidenceFile, identifier)
+        from services.financial.recovery_readers import settled_sibling
+        # A copy the System set aside by itself is not a decision (recovery_readers.SETTLED_SIBLINGS).
+        reviewed = any(item.review_request or (item.status in ('pending_import', 'skipped', 'duplicate_ignored')
+                       and not settled_sibling(item, prior)) for item in session.scalars(
             select(Item).join(Batch, Item.batch_id == Batch.id).where(
                 Batch.case_id == case_id, Batch.status != 'removed', Item.file_id == identifier)))
-        prior = session.get(EvidenceFile, identifier)
-        if not recovery.get('reset_revision') and (reviewed or (prior and (prior.metadata_ or {}).get('financial_review_progress'))):
+        carrying = False
+        if recovery.get('carry_work') and prior is not None:
+            # An engine re-read scheduled with this exact saved work carries it onto the new reading
+            # (reread_carry); any review saved since is refused as before.
+            from services.financial.reread_carry import work_fingerprint
+            source_file = session.get(EvidenceFile, UUID(file['source_id']))
+            carrying = work_fingerprint(session, case_id, {prior.id, *([source_file.id] if source_file else [])}) \
+                == recovery['carry_work']
+        if not recovery.get('reset_revision') and not carrying and (reviewed or (prior and (prior.metadata_ or {}).get('financial_review_progress'))):
             raise PdfMappingError('A review decision was saved after Retry was requested. Open the statement to compare it before starting a new reading.', 409)
         from services.financial.statement_reprocessing import create_statement_version
         version = create_statement_version(session, case_id=case_id, evidence_file_id=identifier,
@@ -1751,6 +1958,22 @@ class _bounded_lock_waits:
         if self.active:
             event.remove(self.db, 'after_begin', self._limit)
         return False
+
+
+def turn_batches(db, limit=100):
+    """Running batches for the next loop turn: those holding saves (pending imports) first.
+
+    An investigator's or System's save must not wait behind every batch still
+    reading files (each takes a turn of up to TURN_SECONDS); otherwise oldest
+    activity first, as before.
+    """
+    running = Batch.status.in_(('preparing', 'pausing'))
+    order = (Batch.updated_at, Batch.id)
+    saving = list(db.scalars(select(Batch.id).where(running, select(Item.id).where(Item.batch_id == Batch.id,
+        Item.status == 'pending_import').exists()).order_by(*order).limit(limit)))
+    chosen = set(saving)
+    rest = [i for i in db.scalars(select(Batch.id).where(running).order_by(*order).limit(limit)) if i not in chosen]
+    return (saving + rest)[:limit]
 
 
 async def advance_batch(factory,batch_id,resolve_path,process_files):
@@ -1818,16 +2041,23 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
         started = time.monotonic()
         # An investigator's accepted imports do not wait for every PDF in the
         # batch. Bounded turns also allow other cases to make progress.
+        # Imports and preparation share the turn: while files wait, imports
+        # get the first half of it (at least one import), and at least one
+        # file is looked at every turn. A long import queue (each import can
+        # take seconds) used to spend every turn and starve the batch's own
+        # file preparation until the queue was empty.
         pending = await asyncio.to_thread(pending_imports)
-        for item_id in pending:
-            if await should_stop() or time.monotonic() - started >= TURN_SECONDS:
+        preparing = bool(_turn_candidates(await asyncio.to_thread(batch_files)))
+        import_seconds = TURN_SECONDS / 2 if preparing else TURN_SECONDS
+        for position, item_id in enumerate(pending):
+            if await should_stop() or (position and time.monotonic() - started >= import_seconds):
                 break
             await _finish_atomic(_import_item,factory,case_id,batch_id,item_id,resolve_path)
             if not await asyncio.to_thread(extend_lease): return
         files = await asyncio.to_thread(batch_files)
         candidates = _turn_candidates(files)
-        for index,file in candidates:
-            if await should_stop() or time.monotonic() - started >= TURN_SECONDS:
+        for position, (index,file) in enumerate(candidates):
+            if await should_stop() or (position and time.monotonic() - started >= TURN_SECONDS):
                 break
             previous_status = file['status']
             busy = False
@@ -1862,11 +2092,38 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
                     # Release it before a second session inserts a referencing batch item.
                     db.commit()
                 if processed:
-                    await _finish_atomic(_review_file,factory,batch_id,case_id,deepcopy(file))
-                    file['status']='checked'
-                    file.pop('preparation_retries', None)
-                    file.pop('error', None)
-                    _reading_progress(file, 'complete', 'The reading is complete. Open its statement review to check reconciliation before importing.', review_file_id=file['file_id'])
+                    # Before its statements are compared with the case's: a file whose
+                    # pages render identically to another's is that document (page_identity).
+                    await asyncio.to_thread(_record_page_identity, factory, case_id, UUID(file['file_id']), resolve_path)
+                    shared = await asyncio.to_thread(_shared_preparation, factory, case_id, batch_id, deepcopy(file))
+                    if shared[0] == 'wait':
+                        _reading_progress(file, 'checking_statements', SHARED_PREPARATION_WAIT, prepared_in_batch=shared[1])
+                    elif shared[0] == 'adopt':
+                        await _finish_atomic(_adopt_preparation, factory, case_id, batch_id, deepcopy(file), shared[1])
+                        file['status']='checked'
+                        # The statement-reading code this preparation used (reader_release).
+                        from services.financial.reader_release import reader_stamp
+                        file['reader_stamp']=reader_stamp(); file.pop('recheck', None)
+                        file.pop('preparation_retries', None)
+                        file.pop('error', None)
+                        _reading_progress(file, 'complete', SHARED_PREPARATION_DONE, review_file_id=file['file_id'], prepared_in_batch=shared[1])
+                    else:
+                        await _finish_atomic(_review_file,factory,batch_id,case_id,deepcopy(file))
+                        file['status']='checked'
+                        # Prepared with automatic save on: statements of this file
+                        # that become ready later are saved by the sweep (queue_save).
+                        from services.financial import queue_save
+                        if queue_save.AUTO_SAVE_READY:
+                            file[queue_save.AUTO_SAVE_MARK] = True
+                        else:
+                            file.pop(queue_save.AUTO_SAVE_MARK, None)
+                        # The statement-reading code this preparation used (reader_release).
+                        from services.financial.reader_release import reader_stamp
+                        file['reader_stamp']=reader_stamp(); file.pop('recheck', None)
+                        file.pop('preparation_retries', None)
+                        file.pop('error', None)
+                        file['prepared_reading'] = await asyncio.to_thread(_prepared_reading, factory, case_id, UUID(file['file_id']))
+                        _reading_progress(file, 'complete', 'The reading is complete. Open its statement review to check reconciliation before importing.', review_file_id=file['file_id'])
             except Exception as error:
                 retries = file.get('preparation_retries', 0)
                 if _lock_busy_error(error):
@@ -1903,6 +2160,100 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
         await asyncio.shield(asyncio.to_thread(release, interrupted))
 
 
+def _record_page_identity(factory, case_id, file_id, resolve_path):
+    """Store the prepared file's page identity once; rendered outside any lock.
+
+    A lock that is not granted in time raises like any busy preparation step
+    (the file waits for a later turn); a file that cannot be rendered simply
+    has no identity.
+    """
+    from services.financial import page_identity
+    with factory() as db:
+        target = db.get(EvidenceFile, file_id)
+        if target is None or target.case_id != case_id or not page_identity.needs_record(target):
+            return
+        path, sha = resolve_path(target.stored_path), target.sha256
+    value = page_identity.identity_of_path(path, sha)
+    if value is None:
+        return
+    with factory() as session, _bounded_lock_waits(session) as db:
+        target = db.scalar(select(EvidenceFile).where(EvidenceFile.id == file_id)
+                           .with_for_update().execution_options(populate_existing=True))
+        if target is None or target.sha256 != sha or not page_identity.needs_record(target):
+            return
+        page_identity.store(target, value)
+        db.commit()
+
+
+# One preparation per file. The same file can be listed in several batches of
+# a case (an investigator's batch and the batches that hold it from earlier
+# selections). The review queue lets the newest batch's preparation stand for
+# each statement, so preparing the file again in every older batch (after a
+# re-read, each one a full pass over every period under the case lock) only
+# repeated work nobody is shown. Only the newest batch prepares it; an older
+# batch waits for that and then retires its own untouched copies of the
+# file's statements. Whenever this cannot be established exactly (a paused or
+# failed newest batch, saved review work in the older batch, a recovery
+# reading, a reading changed since), the older batch prepares the file itself
+# as before. Switch off to restore that everywhere.
+SHARED_PREPARATION = True
+SHARED_PREPARATION_WAIT = ('This file is also listed in a newer batch, which is preparing it now. '
+    'Its statements are prepared once, there; no action is needed.')
+SHARED_PREPARATION_DONE = ('This file was prepared in a newer batch, which stands for its statements in the review queue. '
+    'Saved work in this batch is unchanged.')
+SHARED_PREPARATION_RETIRED = ('This statement is prepared in a newer batch, which stands for it in the review queue. '
+    'This earlier preparation is retained in history.')
+
+
+def _prepared_reading(factory, case_id, file_id):
+    """The reading guard of a file as its preparation left it (None if unavailable)."""
+    with factory() as db:
+        file = db.scalar(select(EvidenceFile).where(EvidenceFile.id == file_id, EvidenceFile.case_id == case_id))
+        return _reading_guards(db, {file.id: file}).get(file.id) if file else None
+
+
+def _shared_preparation(factory, case_id, batch_id, entry):
+    """('prepare', None), ('wait', newest batch id) or ('adopt', newest batch id) for this file entry."""
+    if not SHARED_PREPARATION or entry.get('recovery') or entry.get('standalone_import'):
+        return 'prepare', None
+    file_id = entry['file_id']
+    with factory() as db:
+        batches = list(db.execute(select(Batch.id, Batch.created_at, Batch.status, Batch.files).where(
+            Batch.case_id == case_id, Batch.status != 'removed')))
+        holders = [(created, str(identity), identity, status, other) for identity, created, status, files in batches
+            for other in (files or []) if other.get('file_id') == file_id and not other.get('standalone_import')]
+        if not holders:
+            return 'prepare', None
+        _, _, newest, status, other = max(holders, key=lambda holder: (holder[0], holder[1]))
+        if newest == batch_id or status in PAUSED_STATES or other.get('recovery'):
+            return 'prepare', None
+        if any(item.review_request for item in db.scalars(select(Item).where(Item.batch_id == batch_id,
+                Item.file_id == UUID(file_id), Item.status.in_(('ready', 'attention'))))):
+            return 'prepare', None  # saved review work in this batch is resolved by its own preparation
+        if other.get('status') in ('waiting', 'processing') and status == 'preparing':
+            return 'wait', str(newest)
+        if other.get('status') != 'checked' or not other.get('prepared_reading'):
+            return 'prepare', None
+        file = db.scalar(select(EvidenceFile).where(EvidenceFile.id == UUID(file_id), EvidenceFile.case_id == case_id))
+        if file is None or _reading_guards(db, {file.id: file}).get(file.id) != other['prepared_reading']:
+            return 'prepare', None
+        return 'adopt', str(newest)
+
+
+def _adopt_preparation(factory, case_id, batch_id, entry, newest):
+    """Retire this batch's untouched ready/attention copies of the file's statements."""
+    with factory() as db:
+        batch_for(db, case_id, batch_id)
+        for item in db.scalars(select(Item).where(Item.batch_id == batch_id, Item.file_id == UUID(entry['file_id']),
+                Item.status.in_(('ready', 'attention'))).with_for_update()):
+            if item.review_request:
+                continue
+            item.status = 'superseded_reading'
+            item.summary = {**item.summary, 'can_import': False, 'prepared_in_batch': newest,
+                'recovery_message': SHARED_PREPARATION_RETIRED}
+        db.commit()
+
+
 def _turn_candidates(files):
     """Files this turn works on. Automatic reading keeps few readings in flight.
 
@@ -1932,10 +2283,22 @@ def _review_file(factory,batch_id,case_id,file):
         # leave its periods needing a reading at list time. Store it now.
         refresh_file_readiness(db, case_id=case_id, file_id=UUID(file['file_id']))
         _refresh_closing_only_neighbours(db, case_id, batch_id, UUID(file['file_id']))
-        if (file.get('recovery') or {}).get('fresh_reading'):
+        carried_keys = set()
+        recovery = file.get('recovery') or {}
+        if recovery.get('fresh_reading') and recovery.get('carry_work') and recovery.get('read_from_file_id') \
+                and recovery['read_from_file_id'] != file['file_id']:
+            carried_keys = _carry_reread_work(db, batch_id, case_id, file)
+        if recovery.get('fresh_reading'):
             previous = list(db.scalars(select(Item).where(Item.batch_id == batch_id,
                 Item.file_id != UUID(file['file_id']), Item.status.in_(('ready', 'attention')))))
             for item in previous:
+                if item.summary.get('source_id') == file['source_id'] and item.review_request \
+                        and str(item.file_id) == recovery.get('read_from_file_id') and (item.statement_key or '') in carried_keys:
+                    # Her work now lives on the new reading (carried, unchanged); this draft stays in history.
+                    item.status = 'superseded_reading'
+                    item.summary = {**item.summary, 'can_import': False, 'superseded_by_reading': file['file_id'],
+                        'recovery_message': 'A newer reading of this original carries this saved work. This earlier preparation is retained in history.'}
+                    continue
                 if item.summary.get('source_id') == file['source_id'] and not item.review_request:
                     item.status = 'superseded_reading'
                     item.summary = {**item.summary, 'can_import': False,
@@ -1946,6 +2309,38 @@ def _review_file(factory,batch_id,case_id,file):
         # as System when their file's preparation ends (flag AUTO_SAVE_READY).
         from services.financial.queue_save import auto_save_prepared
         auto_save_prepared(db, case_id=case_id, batch_id=batch_id, file_id=UUID(file['file_id']))
+
+
+def _carry_reread_work(db, batch_id, case_id, file):
+    """Carry the earlier reading's saved work onto this fresh reading, then prepare its periods again so the
+    carried reviews take effect. Returns the earlier statement keys carried. Never raises: a failure leaves
+    every period held by the comparison step, as without carrying."""
+    from services.financial.reread_carry import carry_reread_work
+    recovery = file['recovery']
+    try:
+        outcome = carry_reread_work(db, case_id=case_id, batch_id=batch_id,
+            prior_id=UUID(recovery['read_from_file_id']), new_id=UUID(file['file_id']))
+        db.commit()
+    except Exception:
+        db.rollback()
+        log.exception('Carrying saved work onto a new reading failed; its periods stay held for comparison')
+        return set()
+    if any(value['carried'] or value.get('released') for value in outcome.values()):
+        prepare_reviews(db, batch_for(db, case_id, batch_id), file, lock_slice=REVIEW_LOCK_SLICE_SECONDS)
+    held = {value['new_statement_id'] for value in outcome.values() if value['carried'] and value['new_statement_id'] is not None}
+    # Details carried with a payment match (reread_carry.DETAILS_MATCHED), per new statement: basis, the earlier
+    # statement and the count of payments the new reading has beyond hers.
+    details = {new_key: dict(info, carried_from=key) for key, value in outcome.items()
+               for new_key, info in (value.get('released') or {}).items()}
+    held |= set(details)
+    reasons = {key: value['reason'] for key, value in outcome.items() if not value['carried']}
+    for item in db.scalars(select(Item).where(Item.batch_id == batch_id, Item.file_id == UUID(file['file_id']))):
+        if item.statement_key in held or reasons:
+            item.summary = {**item.summary, 'reread_carry': dict(carried=item.statement_key in held,
+                not_carried=reasons, **({'details': details[item.statement_key]}
+                                        if item.statement_key in details else {}))}
+    db.commit()
+    return {key for key, value in outcome.items() if value['carried']}
 
 
 def _waiting_for_previous_statement(item):
@@ -2002,7 +2397,24 @@ def _same_failed_import(item, accepted):
 
 
 def _import_item(factory,case_id,batch_id,item_id,resolve_path):
+    """Import one claimed statement; logs one line with the time of each step (IMPORT_TIMING)."""
+    from services.financial.request_timing import count_sql, recording, summary
+    count_sql()
+    with recording() as recorder:
+        outcome = _import_item_steps(factory, case_id, batch_id, item_id, resolve_path)
+    if outcome and IMPORT_TIMING:
+        log.info('Financial import timing (item %s, %s): %s', str(item_id)[:8], outcome, summary(recorder))
+    return None
+
+
+# One log line per import with the seconds of each step (fixed step names,
+# no case or financial values), so a live import reports its end-to-end time.
+IMPORT_TIMING = True
+
+
+def _import_item_steps(factory,case_id,batch_id,item_id,resolve_path):
     from services.financial.import_operations import record_outcome
+    from services.financial.request_timing import lap
     from sqlalchemy.exc import OperationalError, TimeoutError as DatabaseTimeout
     # Never retain an Item lock while a second session confirms the import.
     # Save/removal can own Evidence/Case before waiting for this Item, forming
@@ -2010,12 +2422,13 @@ def _import_item(factory,case_id,batch_id,item_id,resolve_path):
     with factory() as db:
         item=db.scalar(select(Item).join(Batch, Item.batch_id == Batch.id).where(Item.id==item_id,Item.batch_id==batch_id,
             Batch.case_id == case_id).with_for_update(of=Item, skip_locked=True))
-        if not item or item.status!='pending_import': return
+        if not item or item.status!='pending_import': return None
         retry_after = item.summary.get('automatic_import_retry_after')
         if retry_after and datetime.fromisoformat(retry_after) > datetime.now(timezone.utc):
-            return
+            return None
         accepted = _accepted_import_snapshot(item)
         db.commit()
+    lap('claim')
     receipt, error_message, transient_failure = None, None, False
     try:
         with factory() as db:
@@ -2026,6 +2439,7 @@ def _import_item(factory,case_id,batch_id,item_id,resolve_path):
                 raise PdfMappingError('The statement changed after the batch was checked. Open it and review the new reading.',409)
             request=StatementImportRequest.model_validate(raw)
             actor=accepted['summary']['import_actor'];actor=Actor(**{**actor,'user_id':UUID(actor['user_id']) if actor.get('user_id') else None})
+        lap('accept_read')
         # The strict writer rechecks the current source, removal, reading,
         # duplicate and reconciliation state under its Case/Evidence locks.
         # Concurrent retries of this same accepted request reuse its receipt.
@@ -2037,16 +2451,17 @@ def _import_item(factory,case_id,batch_id,item_id,resolve_path):
         # The same immutable request reaches the idempotent strict writer.
         transient_failure = isinstance(error, (OperationalError, DatabaseTimeout, TimeoutError, ConnectionError))
         error_message = str(error) if isinstance(error,PdfMappingError) else 'Import could not be confirmed. Open this statement to check its current import before retrying.'
+    lap('writer_rest' if receipt else 'writer_failed')
     with factory() as db:
         batch = db.scalar(select(Batch).where(Batch.id == batch_id, Batch.case_id == case_id).with_for_update())
         item = db.scalar(select(Item).where(Item.id == item_id, Item.batch_id == batch_id).with_for_update())
         # A later removal, review, accepted request or completed receipt wins.
         # In particular a late failure must not reset another worker's success.
         if batch is None or batch.status == 'removed' or item is None:
-            return
+            return 'superseded'
         same_pending = item.status == 'pending_import' and _accepted_import_snapshot(item) == accepted
         if not same_pending and not (receipt and _same_failed_import(item, accepted)):
-            return
+            return 'superseded'
         if receipt:
             item.summary = deepcopy(accepted['summary'])
             item.summary.pop('automatic_import_retry_after', None)
@@ -2078,11 +2493,15 @@ def _import_item(factory,case_id,batch_id,item_id,resolve_path):
             else:
                 item.status='attention';item.summary=_failed_import_summary(item.summary, error_message)
                 record_outcome(db, case_id, item, 'failed', message=item.summary['problems'][0]['message'])
+        final = item.status if receipt or item.status != 'pending_import' else 'retry'
         db.commit()
+    lap('record_outcome')
+    return final
 
 
 READINESS_SWEEP_SECONDS = 60
 AUTO_READ_SWEEP_SECONDS = 10
+READER_RELEASE_SWEEP_SECONDS = 120
 READINESS_SWEEP_BUDGET = 20.0
 
 
@@ -2092,11 +2511,12 @@ async def run_batches_forever():
     from services.evidence_processing_service import process_db_files
     next_sweep = time.monotonic() + READINESS_SWEEP_SECONDS
     next_auto_read = time.monotonic()
+    next_reader_release = time.monotonic() + READINESS_SWEEP_SECONDS
     while True:
         try:
             factory=_get_session_local()
             with factory() as db:
-                ids=list(db.scalars(select(Batch.id).where(Batch.status.in_(('preparing', 'pausing'))).order_by(Batch.updated_at, Batch.id).limit(100)))
+                ids=turn_batches(db)
             capacity = asyncio.Semaphore(2)
             async def advance(identifier):
                 async with capacity:
@@ -2130,6 +2550,19 @@ async def run_batches_forever():
                     raise
                 except Exception:
                     log.exception('Automatic statement reading round failed; it will retry')
+            if time.monotonic() >= next_reader_release:
+                # After a release that reads statements differently, prepared
+                # files of unfinished batches are prepared again (no click).
+                next_reader_release = time.monotonic() + READER_RELEASE_SWEEP_SECONDS
+                from services.financial.reader_release import sweep as reader_release_sweep
+                try:
+                    released = await _finish_atomic(reader_release_sweep, factory)
+                    if released['rechecked'] or released['compared']:
+                        log.info('Statement files checked again after a release: %s', released)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    log.exception('Re-checking statement files after a release failed; it will retry')
             if time.monotonic() >= next_sweep:
                 # Batch reads never re-read PDFs. Inputs changed by paths
                 # without their own refresh are brought current here.
@@ -2137,6 +2570,13 @@ async def run_batches_forever():
                 refreshed = await _finish_atomic(refresh_stale_readiness, factory)
                 if refreshed:
                     log.info('Stored batch readiness refreshed: %s', refreshed)
+                # Statements that became ready since their file was prepared,
+                # or whose automatic save failed, are saved as at preparation.
+                from services.financial.queue_save import sweep_backlog, sweep_save
+                await _finish_atomic(sweep_save, factory)
+                # Statements ready from before automatic save (no preparation
+                # mark): saved under the same rule, a few per round.
+                await _finish_atomic(sweep_backlog, factory)
                 # Precompute the review queue of recently opened cases whose
                 # inputs changed, so the next open reads it from the cache.
                 try:
@@ -2233,6 +2673,30 @@ def retry_file(session, *, case_id, batch_id, source_id, _commit=True, _prepared
     return result
 
 
+def recover_retained_sources(session, *, case_id, files, actor):
+    """Read several retained PDFs afresh under one explicit request.
+
+    Each file goes through recover_retained_source with the revision the
+    investigator was shown, so every one is checked and byte-verified exactly
+    as a single request; one refused file does not stop the others.
+    """
+    queued = already = 0
+    refused = []
+    for file in files:
+        try:
+            result = recover_retained_source(session, case_id=case_id, batch_id=UUID(str(file['batch_id'])),
+                source_id=UUID(str(file['source_id'])), expected_revision=file['expected_revision'], actor=actor)
+        except PdfMappingError as error:
+            session.rollback()
+            refused.append(dict(batch_id=str(file['batch_id']), source_id=str(file['source_id']), message=str(error)))
+            continue
+        if result.get('queued'):
+            queued += 1
+        else:
+            already += 1
+    return dict(requested=len(files), queued=queued, already=already, refused=refused)
+
+
 def recover_retained_source(session, *, case_id, batch_id, source_id, expected_revision, actor):
     """Explicitly start a new reading from the selected PDF, not a stale pointer."""
     from services.financial.file_visibility import financial_file_visibility
@@ -2267,6 +2731,45 @@ def recover_retained_source(session, *, case_id, batch_id, source_id, expected_r
     batch.status = 'preparing'
     session.commit()
     return dict(queued=True, status='waiting', **result)
+
+
+def refresh_files(session, *, case_id, files):
+    """Check the listed files again from their saved readings, keeping reviews.
+
+    The narrow form of refresh_statement_list: only these files, in their own
+    batches, are prepared again with the current reader. Nothing is re-read by
+    the engine and nothing is imported; edited and imported items are kept.
+    """
+    wanted = {}
+    for file in files:
+        wanted.setdefault(str(file['batch_id']), set()).add(str(file['file_id']))
+    queued, skipped = 0, []
+    for batch_id, ids in sorted(wanted.items()):
+        try:
+            batch = batch_for(session, case_id, UUID(batch_id), True)
+            require_running(batch)
+        except PdfMappingError as error:
+            session.rollback()
+            skipped.append(dict(batch_id=batch_id, message=str(error)))
+            continue
+        if batch.status == 'preparing':
+            session.rollback()
+            skipped.append(dict(batch_id=batch_id, message='This batch is already being prepared; check again when it finishes.'))
+            continue
+        changed = deepcopy(batch.files)
+        count = 0
+        for file in changed:
+            if file['status'] == 'checked' and ({file.get('file_id'), file.get('source_id')} & ids):
+                file['status'] = 'processing'
+                count += 1
+        if count:
+            batch.files = changed
+            batch.status = 'preparing'
+            session.commit()
+            queued += count
+        else:
+            session.rollback()
+    return dict(requested=len(files), queued=queued, skipped=skipped)
 
 
 def refresh_statement_list(session, *, case_id, batch_id):

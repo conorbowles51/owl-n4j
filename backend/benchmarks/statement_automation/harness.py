@@ -26,6 +26,13 @@ What runs, in order, all against a disposable SQLite database in DIR:
    worker turns until the queue drains. Every saved transaction is compared
    with the ground truth for amount, direction, currency, account and date.
 
+The automatic save of fully reconciled statements runs as in the product
+(``FINANCIAL_AUTO_SAVE_READY=0`` turns it off, for comparison with older runs):
+a period the system saved by itself counts as ready without any edit, and is
+judged exactly like one offered for the group import. The run exits 1 on a
+wrong admission, a printed period saved twice, or an exact copy offered or
+saved instead of set aside (``safety_failures``).
+
 No cached readings, saved corrections or prior admissions exist: this is the
 plan's fresh-upload track. Nothing outside DIR is written.
 """
@@ -54,7 +61,19 @@ HERE = Path(__file__).resolve().parent
 BACKEND = HERE.parents[1]
 REPO = BACKEND.parent
 CORPUS = HERE / 'corpus'
-MAX_WORKER_TURNS = 400
+# A drain ends when the batch leaves 'preparing', or when this many consecutive
+# worker turns, lasting at least STALL_SECONDS together, changed nothing (no item
+# or file moved). Bounded by progress rather than a turn count: a real corpus
+# needs thousands of turns, and a stuck one is reported, not waited on forever.
+# STALL_SECONDS outlasts the worker's 5-minute batch lease: on SQLite (no row
+# locks) a lease renewal still in flight when a turn releases the batch can
+# commit after the release, and every turn until it expires does nothing
+# (bench/wave6: ~1,660 of its 2,711 import turns). PostgreSQL serialises the
+# two on the batch row, so the product is not affected. A quiet turn pauses
+# for QUIET_PAUSE_SECONDS instead of spinning.
+STALL_TURNS = 40
+STALL_SECONDS = 420.0
+QUIET_PAUSE_SECONDS = 1.0
 
 
 def _load_models():
@@ -125,6 +144,97 @@ def read_corpus(python, files, out, concurrency, readings=None):
         raise RuntimeError('Engine reading failed; see ' + str(out / 'engine-read.log'))
     data = json.loads(target.read_text())
     return data['readings'], wall, data.get('child_cpu_seconds', 0.0)
+
+
+def drain_batch(turn, progress, label, *, stall_turns=None, stall_seconds=None, clock=time.monotonic,
+                pause=lambda: time.sleep(QUIET_PAUSE_SECONDS)):
+    """Run worker turns until the batch leaves 'preparing' or stops making progress.
+
+    ``progress()`` returns ``(batch status, signature)``; the signature changes
+    whenever an item or file moves. A stall is ``stall_turns`` consecutive turns
+    lasting ``stall_seconds`` together with the same signature (an import
+    retry waiting out its backoff is not a stall until that time has passed).
+    """
+    stall_turns = STALL_TURNS if stall_turns is None else stall_turns
+    stall_seconds = STALL_SECONDS if stall_seconds is None else stall_seconds
+    started = clock()
+    turns, quiet, quiet_since, stalled, quiet_turns = 0, 0, clock(), False, 0
+    state, signature = progress()
+    while True:
+        turn()
+        turns += 1
+        state, now = progress()
+        if state != 'preparing':
+            break
+        if now != signature:
+            signature, quiet, quiet_since = now, 0, clock()
+            continue
+        quiet += 1
+        quiet_turns += 1
+        if quiet >= stall_turns and clock() - quiet_since >= stall_seconds:
+            stalled = True
+            break
+        pause()
+    return dict(stage=label, turns=turns, seconds=clock() - started, final_status=state, stalled=stalled,
+                quiet_turns=quiet_turns)
+
+
+def drain_readiness(refresh, backlog, *, clock=time.monotonic, max_quiet_rounds=5):
+    """Let the service's background readiness refresh finish before scoring, bounded by progress.
+
+    In the product the batch worker's readiness sweep (refresh_stale_readiness,
+    every READINESS_SWEEP_SECONDS) brings statements whose stored readiness
+    went stale during preparation up to date with no click; the harness has no
+    such worker. ``backlog()`` counts what a list read would still show as
+    being updated; rounds of ``refresh()`` run while anything is pending. Each
+    round has the sweep's time budget, so on a loaded host a round can settle
+    nothing although the next one settles more (r10-copies: 44 -> 40 and a stop
+    at the first quiet round, where an unbudgeted round settled all 35 left).
+    Only ``max_quiet_rounds`` consecutive rounds that settle nothing end the
+    drain early; what is left is reported, with the rounds and quiet rounds.
+    """
+    started = clock()
+    before = pending = backlog()
+    rounds = quiet = quiet_run = 0
+    while pending:
+        refresh()
+        rounds += 1
+        now = backlog()
+        if now >= pending:
+            quiet += 1
+            quiet_run += 1
+        else:
+            quiet_run = 0
+        pending = now
+        if quiet_run >= max_quiet_rounds:
+            break
+    return dict(before=before, after=pending, rounds=rounds, quiet_rounds=quiet,
+                stopped='drained' if not pending else 'no_progress', seconds=clock() - started)
+
+
+# Worker cycles (readiness refresh, then sweep save, then its imports) the harness runs after preparation.
+SWEEP_CYCLES = 12
+
+
+def drain_sweep_save(sweep, *, max_rounds=10, clock=time.monotonic):
+    """Rounds of the worker's sweep save until a round claims nothing; the claimed statement ids."""
+    started = clock()
+    claimed, rounds = [], 0
+    while rounds < max_rounds:
+        outcome = sweep()
+        rounds += 1
+        claimed += outcome.get('item_ids', [])
+        if not outcome.get('queued'):
+            break
+    return dict(queued=len(claimed), item_ids=claimed, rounds=rounds, seconds=clock() - started)
+
+
+def saved_by_system(db, batch_id, Item, actor):
+    """Ids of the batch's statements claimed by the automatic save (actor System), saved or saving."""
+    from sqlalchemy import select
+    return {str(item.id) for item in db.scalars(select(Item).where(
+        Item.batch_id == batch_id, Item.status.in_(('imported', 'pending_import'))))
+        if ((item.summary or {}).get('import_actor') or {}).get('email') == actor.email}
 
 
 def repair_summary(locations):
@@ -222,6 +332,41 @@ def _score(proposal, truth, summary):
     return score, shared, int(bool(currency) and currency == (truth.get('currency') or '').upper())
 
 
+def pair_file(entries, candidates):
+    """``{entry index: truth}`` for one file's batch items, independent of the order the batch lists them in.
+
+    ``entries`` are ``(proposal, summary)``. Every item is scored against every
+    truth period of the file and the best-scoring pairs are taken first; equal
+    scores fall back to the items' printed period and statement id, never to
+    their random item ids. Items without a positive pair are left to
+    ``pair_truth`` with what remains, as before. (Greedy pairing in the batch's
+    item order gave three equal-dated Monex sections whichever truth period was
+    left, depending on random item ids: an admitted period equal to its truth
+    in every field was reported as wrong in one run and right in the next.)
+    """
+    scored = []
+    for index, (proposal, summary) in enumerate(entries):
+        if proposal is None:
+            continue
+        for truth in candidates:
+            score = _score(proposal, truth, summary)
+            if any(score):
+                scored.append((score, summary.get('statement_id') or '', truth['id'], index, truth))
+    scored.sort(key=lambda s: (tuple(-v for v in s[0]), s[1], s[2]))
+    pairs, used = {}, set()
+    for _, _, truth_id, index, truth in scored:
+        if index not in pairs and truth_id not in used:
+            pairs[index] = truth
+            used.add(truth_id)
+    for index, (proposal, summary) in enumerate(entries):
+        if index not in pairs:
+            truth = pair_truth(proposal, [t for t in candidates if t['id'] not in used], summary)
+            if truth:
+                pairs[index] = truth
+                used.add(truth['id'])
+    return pairs
+
+
 def pair_truth(proposal, candidates, summary):
     """The unused ground-truth period a batch item describes, or None."""
     if proposal is None or not candidates:
@@ -270,8 +415,16 @@ def pair_identical_copies(periods, truths):
     return periods
 
 
-def simulate_correction(proposal, truth, assess, initial_request):
-    """Apply ground truth like an investigator; count each action; re-assess."""
+def simulate_correction(proposal, truth, assess, initial_request, reread=None):
+    """Apply ground truth like an investigator; count each action; re-assess.
+
+    ``reread(currency)`` reads the statement again with a chosen currency, as
+    the product does when a person chooses it (``bulk_statement_details``:
+    the statement is read again and the draft rebased on that reading). With
+    it, the rest of the simulation works on that reading: rows the currency
+    makes readable are not counted as typed by hand. Without it (older runs),
+    the reading before the choice is kept.
+    """
     raw = initial_request(proposal)
     actions = []
 
@@ -281,6 +434,14 @@ def simulate_correction(proposal, truth, assess, initial_request):
     if not raw.get('currency'):
         raw['currency'] = truth['currency']
         act('decision', 'currency')
+        if reread is not None:
+            try:
+                reread_proposal = reread(truth['currency'])
+            except Exception:  # noqa: BLE001 - the product would show the reading error; keep the old reading
+                reread_proposal = None
+            if reread_proposal is not None:
+                proposal = reread_proposal
+                raw = dict(initial_request(proposal), currency=truth['currency'])
     if not _norm(raw.get('holder')) or _norm(truth['holder']) not in _norm(raw.get('holder')):
         raw['holder'] = truth['holder']
         act('edit' if truth['holder_printed'] else 'decision', 'holder')
@@ -402,6 +563,8 @@ def run(out, python, concurrency, corpus=CORPUS, readings=None, compare=None):
     from services.financial.batch_review_summary import reason as review_reason
     from services.financial.decisions import Actor
     from services.financial.statement_import import read_statement_import
+    from services.financial import queue_save
+    from postgres.models.financial_import_batches import FinancialImportBatchItem as Item
 
     engine, factory, skipped_tables = _database(out / 'benchmark.db')
     with factory() as db:
@@ -453,22 +616,47 @@ def run(out, python, concurrency, corpus=CORPUS, readings=None, compare=None):
         batch_id = batches.create_batch(db, case_id=case_id, request_id=uuid.uuid4(), file_ids=[],
                                         folder_ids=[folder_id], actor=actor)
 
-    # A worker turn checks or imports a handful of items; a large real corpus
-    # needs more turns than the synthetic one (whose limit stays 400).
-    turn_limit = max(MAX_WORKER_TURNS, 2 * len(manifest['files']) + sum(len(f['periods']) for f in manifest['files']))
+    def progress():
+        with factory() as db:
+            batch = batches.batch_for(db, case_id, batch_id)
+            items = Counter(db.scalars(select(Item.status).where(Item.batch_id == batch_id)))
+            return batch.status, (tuple(sorted(items.items())),
+                                  tuple((f['status'], (f.get('progress') or {}).get('stage')) for f in batch.files))
 
     def drain(label):
-        started, turns = time.monotonic(), 0
-        while turns < turn_limit:
-            asyncio.run(batches.advance_batch(factory, batch_id, Path, process_files))
-            turns += 1
-            with factory() as db:
-                state = batches.batch_for(db, case_id, batch_id).status
-            if state not in ('preparing',):
-                break
-        return dict(stage=label, turns=turns, seconds=time.monotonic() - started, final_status=state)
+        return drain_batch(lambda: asyncio.run(batches.advance_batch(factory, batch_id, Path, process_files)),
+                           progress, label)
 
     preparation = drain('preparation')
+
+    def readiness_backlog():
+        with factory() as db:
+            stale, unhydrated = batches.readiness_backlog(db, case_id)
+            return len(stale) + len(unhydrated)
+
+    # The same sweep the batch worker runs every minute in the service.
+    readiness = drain_readiness(lambda: batches.refresh_stale_readiness(factory), readiness_backlog)
+    # The same worker round then saves, as System, statements that became
+    # ready after their file's preparation or whose automatic save failed
+    # (queue_save.sweep_save); its claims are imported before scoring. As in
+    # the service, the worker's next rounds refresh the readiness those saves
+    # made stale and save again (a statement that waited for another statement
+    # of its account), until a round saves nothing.
+    sweep = dict(queued=0, item_ids=[], rounds=0, seconds=0.0, cycles=0)
+    for cycle in range(SWEEP_CYCLES):
+        if cycle:
+            readiness.setdefault('after_saves', []).append(
+                drain_readiness(lambda: batches.refresh_stale_readiness(factory), readiness_backlog))
+        round_ = drain_sweep_save(lambda: queue_save.sweep_save(factory, budget_seconds=None))
+        sweep.update(queued=sweep['queued'] + round_['queued'], item_ids=sweep['item_ids'] + round_['item_ids'],
+                     rounds=sweep['rounds'] + round_['rounds'], seconds=sweep['seconds'] + round_['seconds'],
+                     cycles=cycle + 1)
+        if not round_['queued']:
+            break
+        sweep.setdefault('drains', []).append(drain('sweep-save'))
+    if sweep.get('drains'):
+        sweep['drain'] = sweep['drains'][0]
+    readiness['sweep_save'] = sweep
     started = time.monotonic()
     with factory() as db:
         status = batches.batch_status(db, case_id=case_id, batch_id=batch_id, limit=10_000)
@@ -483,24 +671,40 @@ def run(out, python, concurrency, corpus=CORPUS, readings=None, compare=None):
     used = set()
     views = {}  # item id -> what its proposal offers, for the per-statement comparison
     with factory() as db:
+        system_saved = saved_by_system(db, batch_id, Item, queue_save.SYSTEM_ACTOR)
+        swept = set(sweep['item_ids'])
+        read = []
         for item in status['items']:
             filename = file_names.get(uuid.UUID(item['file_id'])) or item.get('filename')
+            proposal_error = None
             try:
                 proposal = read_statement_import(db, case_id=case_id, evidence_file_id=uuid.UUID(item['file_id']),
                     currency=item.get('currency') or None, statement_id=item.get('statement_id'))
             except Exception as error:
                 proposal = None
                 proposal_error = f'{type(error).__name__}: {error}'
-            candidates = [t for t in by_file.get(filename, []) if t['id'] not in used]
-            truth = pair_truth(proposal, candidates, item)
+            read.append((item, filename, proposal, proposal_error))
+        paired = {}
+        for filename in dict.fromkeys(name for _, name, _, _ in read):
+            members = [index for index, entry in enumerate(read) if entry[1] == filename]
+            pairs = pair_file([(read[i][2], read[i][0]) for i in members], by_file.get(filename, []))
+            paired.update({members[k]: truth for k, truth in pairs.items()})
+        for index, (item, filename, proposal, proposal_error) in enumerate(read):
+            truth = paired.get(index)
             if truth:
                 used.add(truth['id'])
             reasons = Counter(review_reason(p) for p in item.get('problems', []))
             if item.get('problem_count', 0) > len(item.get('problems', [])):
                 reasons['additional'] += item['problem_count'] - len(item['problems'])
+            # A statement the system saved by itself at the end of preparation
+            # (AUTO_SAVE_READY) is the best case, ready with no click at all:
+            # it counts as ready, and every safety check below applies to it
+            # exactly as to a statement offered for the group import.
+            auto_saved = item['id'] in system_saved
             entry = dict(item_id=item['id'], filename=filename, statement_id=item.get('statement_id'),
-                         scored=_scored(truth),
-                         status=item['status'], can_import=bool(item.get('can_import')),
+                         scored=_scored(truth), auto_saved=auto_saved,
+                         saved_by_sweep=item['id'] in swept,
+                         status=item['status'], can_import=bool(item.get('can_import')) or auto_saved,
                          truth_id=truth['id'] if truth else None, family=truth['family'] if truth else 'unmatched',
                          expected=truth['expected'] if truth else None, defects=truth['defects'] if truth else [],
                          added_in=truth.get('added_in', 'v1-v3') if truth else None,
@@ -515,7 +719,10 @@ def run(out, python, concurrency, corpus=CORPUS, readings=None, compare=None):
             elif truth:
                 entry['proposal_checks'] = proposal_field_errors(proposal, truth)
                 if not entry['can_import']:
-                    entry['correction'] = simulate_correction(proposal, truth, batches.assess, batches.initial_request)
+                    entry['correction'] = simulate_correction(
+                        proposal, truth, batches.assess, batches.initial_request,
+                        reread=_reader(db, read_statement_import, case_id, uuid.UUID(item['file_id']),
+                                       item.get('statement_id')))
             periods.append(entry)
     periods = pair_identical_copies(periods, truths)
     missing = [t for t in truths.values() if t['id'] not in used]
@@ -539,7 +746,7 @@ def run(out, python, concurrency, corpus=CORPUS, readings=None, compare=None):
         final = batches.batch_status(db, case_id=case_id, batch_id=batch_id, limit=10_000)
         final_items = {i['id']: i for i in final['items']}
         ledger = verify_ledger(db, periods, final_items, truths, FinancialTransaction, FinancialAccount, select,
-                               _incomplete(manifest))
+                               _incomplete(manifest), holder_of=saved_holder_lookup(db, select))
 
     repairs = {name: repair_summary(r.get('source_locations')) for name, r in readings.items() if 'error' not in r}
     result = dict(
@@ -547,13 +754,15 @@ def run(out, python, concurrency, corpus=CORPUS, readings=None, compare=None):
         corpus=dict(version=manifest['version'], files=len(manifest['files']), periods=len(truths), path=str(corpus)),
         code=dict(commit=_git('rev-parse', 'HEAD'), dirty=bool(_git('status', '--porcelain', '--', 'backend', 'evidence-engine'))),
         environment=dict(cpus=os.cpu_count(), load_average_before=load_before, load_average_after=os.getloadavg(),
+                         auto_save_ready=queue_save.AUTO_SAVE_READY,
                          python=sys.version.split()[0], engine_python=python, tesseract=_tesseract(),
                          database='sqlite (disposable, ' + str(out / 'benchmark.db') + ')',
                          skipped_non_financial_tables=skipped_tables),
         upload=dict(duplicates_flagged=duplicates_flagged),
         timing=dict(engine_read_wall_seconds=read_wall, engine_read_cpu_seconds=read_cpu,
                     engine_read_seconds_per_file={k: v.get('seconds') for k, v in readings.items()},
-                    preparation=preparation, batch_status_seconds=status_seconds, group_import=import_result,
+                    preparation=preparation, readiness_refresh=readiness, batch_status_seconds=status_seconds,
+                    group_import=import_result,
                     total_wall_seconds=time.monotonic() - run_started),
         reading_errors={k: v['error'] for k, v in readings.items() if 'error' in v},
         repairs={k: dict(v, detection_reasons=dict(v['detection_reasons']), refinements=dict(v['refinements']))
@@ -647,6 +856,61 @@ def _compare_counts(summary):
                                      'without_disagreement')}
 
 
+def _reader(db, read_statement_import, case_id, file_id, statement_id, cache=None):
+    """``reread(currency)``: the statement read again with a chosen currency, read only (``simulate_correction``)."""
+    def reread(currency):
+        try:
+            return read_statement_import(db, case_id=case_id, evidence_file_id=file_id, currency=currency,
+                                         statement_id=statement_id, _cache=cache if cache is not None else {})
+        finally:
+            db.rollback()
+    return reread
+
+
+def resimulate(out, periods, truths):
+    """Simulated corrections again, from a finished run's database opened read-only (``rescore --resimulate``).
+
+    For a change to the simulation itself: every scored period the run did
+    not make ready is corrected again on its proposal as the current code
+    reads it from the run's own readings, following the product (a re-read
+    after a currency choice). Batch outcomes are the run's; only
+    ``correction`` changes. Returns the count of periods re-simulated and of
+    proposals that could not be read.
+    """
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from postgres.models.evidence import EvidenceFile
+    from postgres.models.financial_import_batches import FinancialImportBatchItem
+    from services.financial import import_batches as batches
+    from services.financial.statement_import import read_statement_import
+    engine = create_engine(f"sqlite+pysqlite:///file:{out / 'benchmark.db'}?mode=ro&uri=true", future=True)
+    factory = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    done, errors, caches = 0, 0, {}
+    with factory() as db:
+        for period in periods:
+            truth = truths.get(period.get('truth_id')) if period.get('item_id') else None
+            if truth is None or period.get('can_import'):
+                continue
+            item = db.get(FinancialImportBatchItem, uuid.UUID(period['item_id']))
+            if item is None:
+                continue
+            file = db.get(EvidenceFile, item.file_id)
+            cache = caches.setdefault(item.file_id, {})
+            try:
+                proposal = read_statement_import(db, case_id=file.case_id, evidence_file_id=item.file_id,
+                    currency=(item.summary or {}).get('currency') or None, statement_id=item.statement_key or None,
+                    _cache=cache)
+                period['correction'] = simulate_correction(
+                    proposal, truth, batches.assess, batches.initial_request,
+                    reread=_reader(db, read_statement_import, file.case_id, item.file_id, item.statement_key or None))
+                done += 1
+            except Exception:  # noqa: BLE001 - counted; the run's correction is kept
+                errors += 1
+            db.rollback()
+    engine.dispose()
+    return done, errors
+
+
 def rescore_views(out, periods):
     """Proposals re-read from a finished run's database, opened read-only, keyed by item id."""
     from sqlalchemy import create_engine, select
@@ -696,7 +960,7 @@ def _refresh_not_detected(periods, truths):
     return kept, added
 
 
-def rescore(out, corpus, compare=None):
+def rescore(out, corpus, compare=None, resimulated=False):
     """Re-judge a finished run against the corpus manifest as it is now, using the run's own database.
 
     For truth corrections (a convention fixed, a period re-verified) without
@@ -722,18 +986,23 @@ def rescore(out, corpus, compare=None):
         elif period['truth_id']:
             period.update(scored=False, expected=None)
     result['periods'] = pair_identical_copies(result['periods'], truths)
+    simulation = None
+    if resimulated:
+        simulation = dict(zip(('periods', 'unread'), resimulate(out, result['periods'], truths)))
     engine = create_engine(f"sqlite+pysqlite:///{out / 'benchmark.db'}", future=True)
     factory = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     with factory() as db:
         final_items = {str(item.id): dict(status=item.status, source_document_id=(item.summary or {}).get('source_document_id'))
                        for item in db.scalars(select(FinancialImportBatchItem))}
         result['ledger'] = verify_ledger(db, result['periods'], final_items, truths, FinancialTransaction,
-                                         FinancialAccount, select, _incomplete(manifest))
+                                         FinancialAccount, select, _incomplete(manifest),
+                                         holder_of=saved_holder_lookup(db, select))
     engine.dispose()
     result['corpus'].update(periods=len(truths), path=str(corpus))
     result['rescored'] = dict(at=datetime.now(timezone.utc).isoformat(timespec='seconds'), code=_git('rev-parse', 'HEAD'),
                               scored_truth=sorted(SCORED_TRUTH), rematched_items=rematched,
-                              not_detected_refreshed=added_not_detected)
+                              not_detected_refreshed=added_not_detected,
+                              **(dict(resimulated=simulation) if simulation is not None else {}))
     result['metrics'] = metrics(result)
     compare = compare or _default_compare(manifest, corpus)
     if compare:
@@ -745,7 +1014,9 @@ def rescore(out, corpus, compare=None):
     text = render_summary(result).replace('# Statement automation benchmark', '# Statement automation benchmark (rescored)', 1)
     text += ('\nRescored ' + result['rescored']['at'] + ' at code ' + result['rescored']['code'][:10] +
              ' against the current manifest: ledger comparison and metrics recomputed; batch outcomes, proposal '
-             'checks and simulated corrections are from the original run (dropped for the '
+             'checks and ' + ('' if simulation is None else '(except ' + str(simulation['periods']) +
+             ' corrections simulated again by this code, ' + str(simulation['unread']) + ' unread) ') +
+             'simulated corrections are from the original run (dropped for the '
              + str(rematched) + ' items whose truth pairing changed).\n')
     (out / 'summary-rescored.md').write_text(text)
     return result
@@ -780,24 +1051,99 @@ def proposal_field_errors(proposal, truth):
     return {k: v for k, v in errors.items() if v}
 
 
-def verify_ledger(db, periods, final_items, truths, Transaction, Account, select, incomplete_files=()):
+def printed_statement(truth, truths):
+    """The truth period a copy repeats, else the period itself: what "the same printed statement" means.
+
+    The truth decides it, not equal values: two quiet sections of one member
+    with the same account, dates and zero balances are two statements (bench
+    r7-autosave: 16 such pairs). Real truth names the original period
+    (``duplicate_of`` = its id); the synthetic corpus names the original file,
+    whose period with the same dates and money is the original.
+    """
+    original = truth.get('duplicate_of')
+    if not original:
+        return truth['id']
+    if original in truths:
+        return original
+    for other in truths.values():
+        if (other.get('filename') == original and not other.get('duplicate_of')
+                and (other['period_start'], other['period_end']) == (truth['period_start'], truth['period_end'])
+                and _same_money(other, truth)):
+            return other['id']
+    return truth['id']
+
+
+def saved_holder_lookup(db, select=None):
+    """``holder_of(source_document_id)``: the holder a saved statement was imported with (its stored import
+    request), '' when none was recorded. Not the ledger account's holder: an account keeps the holder of
+    the first statement saved into it, while the printed holder of one account can change over time (a
+    renamed company, a changed surname)."""
+    from postgres.models.financial import FinancialSourceDocument
+
+    def holder_of(source_document_id):
+        document = db.get(FinancialSourceDocument, uuid.UUID(source_document_id))
+        request = ((document.metadata_ or {}).get('statement_import_request') or {}) if document else {}
+        return (request.get('holder') or '').strip()
+    return holder_of
+
+
+def judge_saved_holder(report, period, truth, saved):
+    """Count a saved period whose ledger holder differs from the printed holder, with the comparison's own
+    rule (``real_compare.holder_agrees``). The same entity printed with other legal-form punctuation, or with
+    its legal form omitted, is its own sub-count, never mixed with a different holder."""
+    if not truth or not truth.get('holder') or truth.get('holder_printed') is False:
+        return
+    counts = report['saved_holders']
+    counts['compared'] += 1
+    if real_compare.holder_agrees(truth['holder'], saved):
+        return
+    kind = ('not_recorded' if not saved else 'same_entity' if real_compare.same_entity_holder(truth['holder'], saved)
+            else 'differs')
+    counts[kind].append(period['truth_id'])
+    counts['by_family'].setdefault(truth['family'], Counter())[kind] += 1
+
+
+def verify_ledger(db, periods, final_items, truths, Transaction, Account, select, incomplete_files=(), holder_of=None):
     """Compare every saved transaction with the period it was admitted from.
 
     ``incomplete_files``: real documents whose truth did not find or verify every
     statement; an admitted item there that matches no truth period is counted
     as admitted-unscored, not as a wrong admission.
+
+    Each saved statement (source document) is counted once. A second item
+    pointing at a statement already counted (a copy shown as saved through the
+    original's import) adds no rows; it is counted in ``items_sharing_a_saved_statement``
+    and judged by the copy check in :func:`safety_failures`. ``duplicate_contributions``
+    are the rows written through a second saved statement of the same printed
+    statement, as the truth judges it (:func:`printed_statement`: a copy is its original).
+    ``repeated_amount_date_rows`` is the older, coarse figure (rows sharing family,
+    account, amount, direction and date), kept for comparison with earlier runs:
+    on real statements it also counts genuine repeated payments.
     """
     report = dict(admitted_periods=0, transactions=0, critical_errors=Counter(), wrongly_admitted=[],
-                  duplicate_contributions=0, by_period={})
+                  duplicate_contributions=0, items_sharing_a_saved_statement=0, by_period={},
+                  saved_holders=dict(measured=holder_of is not None, compared=0, differs=[], same_entity=[],
+                                     not_recorded=[], by_family={}))
     seen = Counter()
+    counted = set()
+    trimmed = []
+    sql = hasattr(db, 'scalar')  # a database session (unit tests pass a fake ledger of saved rows)
+    printed_periods = defaultdict(dict)  # printed period -> {source document: saved rows}
     for period in periods:
         item = final_items.get(period['item_id']) if period['item_id'] else None
         period['final_status'] = item['status'] if item else period['status']
         if not item or item['status'] != 'imported' or not item.get('source_document_id'):
             continue
+        if item['source_document_id'] in counted:
+            report['items_sharing_a_saved_statement'] += 1
+            continue
+        counted.add(item['source_document_id'])
         report['admitted_periods'] += 1
         rows = list(db.scalars(select(Transaction).where(
             Transaction.source_document_id == uuid.UUID(item['source_document_id']))))
+        identity = truths.get(period['truth_id'])
+        printed = printed_statement(identity, truths) if identity else ('saved statement', item['source_document_id'])
+        printed_periods[printed][item['source_document_id']] = len(rows)
         truth = truths.get(period['truth_id'])
         if truth is None and period.get('filename') in incomplete_files:
             report['admitted_unscored'] = report.get('admitted_unscored', 0) + 1
@@ -807,6 +1153,8 @@ def verify_ledger(db, periods, final_items, truths, Transaction, Account, select
             # cannot be judged; they are counted, not scored.
             report['admitted_unscored'] = report.get('admitted_unscored', 0) + 1
             continue
+        if holder_of is not None and truth is not None:
+            judge_saved_holder(report, period, truth, holder_of(item['source_document_id']))
         canonical = truth.get('duplicate_of') if truth else None
         errors = Counter()
         if truth is None:
@@ -814,6 +1162,13 @@ def verify_ledger(db, periods, final_items, truths, Transaction, Account, select
             expected = []
         else:
             expected = [dict(r) for r in truth['rows']]
+            # A movement query saved trimmed (statement_overlap_trim): it holds the printed rows of its saved
+            # dates; the rows of the trimmed dates must be held by another saved statement of its account.
+            kept = trimmed_dates(db, item['source_document_id'], truth, select) if sql else None
+            if kept:
+                outside = [r for r in expected if not (r.get('date') and kept[0] <= str(r['date'])[:10] <= kept[1])]
+                expected = [r for r in expected if r not in outside]
+                trimmed.append((period, truth, outside, item['source_document_id'], errors))
         remaining = list(expected)
         for row in rows:
             account = db.get(Account, row.account_id)
@@ -855,9 +1210,73 @@ def verify_ledger(db, periods, final_items, truths, Transaction, Account, select
         if errors or (truth and truth['expected'] in HELD):
             report['wrongly_admitted'].append(dict(period=period['truth_id'], expected=truth['expected'] if truth else None,
                                                    errors=dict(errors)))
-    report['duplicate_contributions'] = sum(count - 1 for count in seen.values() if count > 1)
+    for period, truth, outside, document_id, errors in trimmed:
+        report['trimmed_periods'] = report.get('trimmed_periods', 0) + 1
+        missing = covered_elsewhere(db, document_id, outside, Transaction, select)
+        if missing:
+            errors['trimmed_rows_not_saved_elsewhere'] += missing
+            report['critical_errors'].update(dict(trimmed_rows_not_saved_elsewhere=missing))
+            report['by_period'][period['truth_id'] or period['item_id']]['errors'] = dict(errors)
+            if not any(w['period'] == period['truth_id'] for w in report['wrongly_admitted']):
+                report['wrongly_admitted'].append(dict(period=period['truth_id'], expected=truth['expected'],
+                                                       errors=dict(errors)))
+    report['movements_counted_twice'] = movements_counted_twice(db, counted, Transaction, select) if sql else 0
+    report['repeated_amount_date_rows'] = sum(count - 1 for count in seen.values() if count > 1)
+    report['duplicate_contributions'] = sum(sum(saved.values()) - max(saved.values())
+                                            for saved in printed_periods.values() if len(saved) > 1)
+    report['printed_periods_saved_twice'] = sum(len(saved) > 1 for saved in printed_periods.values())
     report['critical_errors'] = dict(report['critical_errors'])
+    report['saved_holders']['by_family'] = {k: dict(v) for k, v in sorted(report['saved_holders']['by_family'].items())}
     return report
+
+
+def trimmed_dates(db, source_document_id, truth, select):
+    """(start, end) a saved statement was trimmed to inside its truth period, or None (statement_overlap_trim)."""
+    from postgres.models.financial import FinancialSourceDocument, FinancialStatementPeriod
+    document = db.get(FinancialSourceDocument, uuid.UUID(source_document_id))
+    request = ((document.metadata_ or {}).get('statement_import_request') or {}) if document else {}
+    period = db.scalar(select(FinancialStatementPeriod).where(
+        FinancialStatementPeriod.source_document_id == uuid.UUID(source_document_id)))
+    if period is None or not period.period_start or not period.period_end or not truth.get('period_start'):
+        return None
+    start, end = period.period_start.isoformat(), period.period_end.isoformat()
+    if not any(row.get('covered_reason') or row.get('reason', '').startswith('Counted once:')
+               for row in request.get('rows') or []):
+        return None
+    if (start, end) == (truth['period_start'], truth['period_end']) or start < truth['period_start'] \
+            or end > truth['period_end']:
+        return None
+    return start, end
+
+
+def covered_elsewhere(db, source_document_id, rows, Transaction, select):
+    """How many of ``rows`` (truth rows a trimmed statement left out) no other saved statement of its account holds."""
+    account = db.scalar(select(Transaction.account_id).where(
+        Transaction.source_document_id == uuid.UUID(source_document_id)).limit(1))
+    others = Counter((t.amount_minor, t.direction, str(t.transaction_date or t.posted_date)) for t in db.scalars(
+        select(Transaction).where(Transaction.source_document_id != uuid.UUID(source_document_id),
+                                  Transaction.ledger_status == 'admitted',
+                                  *([Transaction.account_id == account] if account else []))))
+    missing = 0
+    for row in rows:
+        key = (row['amount_minor'], row['direction'], str(row.get('date'))[:10])
+        if others[key] > 0:
+            others[key] -= 1
+        else:
+            missing += 1
+    return missing
+
+
+def movements_counted_twice(db, documents, Transaction, select):
+    """Saved movements of one account that a second saved statement also holds (same date, amount, direction and
+    running balance): one movement counted twice. Movements without a running balance are not compared."""
+    keys = defaultdict(set)
+    for t in db.scalars(select(Transaction).where(Transaction.ledger_status == 'admitted')):
+        if str(t.source_document_id) not in documents or t.running_balance_minor is None:
+            continue
+        keys[(t.account_id, t.transaction_date or t.posted_date, t.amount_minor, t.direction,
+              t.running_balance_minor)].add(t.source_document_id)
+    return sum(len(sources) - 1 for sources in keys.values() if len(sources) > 1)
 
 
 ACTION_COST = dict(edit=1, decision=1, add_row=2)  # add_row: enter values + choose its place
@@ -935,6 +1354,8 @@ def metrics(result):
             wrong_values.update({k: v for k, v in (p.get('proposal_checks') or {}).items() if k.endswith('_wrong')})
         return dict(periods=total, ready_without_edits=len(ready),
                     ready_without_edits_pct=round(100 * len(ready) / total, 1) if total else None,
+                    saved_automatically=sum(bool(p.get('auto_saved')) for p in unique),
+                    saved_by_sweep=sum(bool(p.get('saved_by_sweep')) for p in unique),
                     clean_ready=sum(p['status'] == 'ready' and p['can_import'] for p in unique),
                     recoverable_periods=len(auto), recoverable_ready=len(auto_ready),
                     recoverable_ready_pct=round(100 * len(auto_ready) / len(auto), 1) if auto else None,
@@ -944,6 +1365,8 @@ def metrics(result):
                     duplicate_copies=len(copies),
                     duplicate_copies_held_automatically=sum(p['status'] == 'duplicate_ignored' for p in copies),
                     duplicate_copies_offered_for_import=sum(p['can_import'] for p in copies),
+                    duplicate_copies_saved=sum(p.get('final_status', p['status']) in ('imported', 'pending_import')
+                                               for p in copies),
                     blocked=total - len(ready), blocking_reasons=dict(histogram.most_common()),
                     human_actions_per_period=actions, human_actions_grouped=grouped + len(keys),
                     shared_decisions=sorted('/'.join(k) for k in keys),
@@ -956,9 +1379,18 @@ def metrics(result):
                     unmatched_items_offered_for_import=sum(p['can_import'] for p in unmatched_items))
     defects = sorted({d for p in periods for d in p['defects']} | {'(none)'})
     subsets = sorted({p.get('added_in') or 'unmatched' for p in periods})
+    # An unscored period is not judged on its rows, but its truth still says whether the source lets it
+    # in: one offered or saved where the truth expects it held is a held-kept-out failure all the same.
+    def saved(p):
+        return p.get('final_status', p['status']) in ('imported', 'pending_import')
     return dict(overall=block(periods), unscored=dict(periods=len(unscored),
                     offered_for_import=sum(p['can_import'] for p in unscored),
-                    by_status=dict(Counter(p['status'] for p in unscored))),
+                    by_status=dict(Counter(p['status'] for p in unscored)),
+                    by_expected=dict(Counter(p['expected'] or 'unmatched' for p in unscored)),
+                    wrongly_ready=sorted(p['truth_id'] for p in unscored
+                                         if p['expected'] in HELD and (p['can_import'] or saved(p))),
+                    ready_where_decision=sorted(p['truth_id'] for p in unscored
+                                                if p['expected'] == 'decision' and (p['can_import'] or saved(p)))),
                 by_family={f: block([p for p in periods if p['family'] == f]) for f in families},
                 by_defect={d: block([p for p in periods if d in p['defects'] or (d == '(none)' and not p['defects'])])
                            for d in defects},
@@ -966,6 +1398,29 @@ def metrics(result):
                                    for v in subsets},
                 by_expected={e: block([p for p in periods if (p['expected'] or 'unmatched') == e])
                              for e in sorted({p['expected'] or 'unmatched' for p in periods})})
+
+
+def safety_failures(result):
+    """Why this run must fail (exit 1); empty when it may pass.
+
+    A wrong admission; a printed period saved through two statements (rows or
+    not); an exact copy offered for import, saved, or shown as saved through
+    the original's import instead of being set aside.
+    """
+    ledger, overall = result['ledger'], result['metrics']['overall']
+    failures = []
+    if ledger['wrongly_admitted']:
+        failures.append(f"{len(ledger['wrongly_admitted'])} wrongly admitted period(s)")
+    if ledger.get('duplicate_contributions') or ledger.get('printed_periods_saved_twice'):
+        failures.append(f"{ledger.get('printed_periods_saved_twice', 0)} printed period(s) saved twice "
+                        f"({ledger.get('duplicate_contributions', 0)} duplicate ledger contributions)")
+    unscored_held = result['metrics'].get('unscored', {}).get('wrongly_ready') or []
+    if unscored_held:
+        failures.append(f"{len(unscored_held)} unscored period(s) offered or saved where the truth expects a hold")
+    copies = overall.get('duplicate_copies_offered_for_import', 0) + overall.get('duplicate_copies_saved', 0)
+    if copies:
+        failures.append(f"{copies} exact cop{'y' if copies == 1 else 'ies'} offered or saved instead of set aside")
+    return failures
 
 
 def render_summary(result):
@@ -980,17 +1435,29 @@ def render_summary(result):
              f"({o['ready_without_edits_pct']}%).** Recoverable periods (source establishes every fact) ready: "
              f"{o['recoverable_ready']} of {o['recoverable_periods']} ({o['recoverable_ready_pct']}%). "
              f"The other {o['decision_periods']} need a genuine decision and {o['hold_periods']} must stay held.", '',
+             *([f"Saved automatically by the system (no click; counted as ready): {o['saved_automatically']} of "
+                f"{o['ready_without_edits']} ready periods ({o.get('saved_by_sweep', 0)} of them after their "
+                f"file's preparation, by the worker's sweep save).", '']
+               if result.get('environment', {}).get('auto_save_ready') else
+               ['Automatic save of ready statements was off (FINANCIAL_AUTO_SAVE_READY=0).', '']),
+             *([f"**SAFETY FAILURE (exit 1): {'; '.join(safety_failures(result))}.**", '']
+               if safety_failures(result) else []),
              f"Safety: wrongly admitted periods {len(ledger['wrongly_admitted'])}; critical-field errors in saved "
              f"transactions {sum(ledger['critical_errors'].values())} ({ledger['transactions']} saved from "
              f"{ledger['admitted_periods']} periods); duplicate ledger contributions {ledger['duplicate_contributions']}; "
+             f"movements counted twice across overlapping saved statements {ledger.get('movements_counted_twice', 0)}; "
+             f"periods saved trimmed {ledger.get('trimmed_periods', 0)}; "
              f"held periods kept out {o['holds_kept']}/{o['hold_periods']}; exact copies held automatically "
              f"{o['duplicate_copies_held_automatically']}/{o['duplicate_copies']}. Valid-looking but wrong values "
              f"proposed before review (any period): {sum(o['valid_but_wrong_values_proposed'].values())}. Batch items "
              f"matched to no ground-truth period: {o['unmatched_items']} ({o['unmatched_items_offered_for_import']} "
              f"offered for import).", '',
+             *([_holder_line(ledger['saved_holders']), ''] if ledger.get('saved_holders', {}).get('measured') else []),
              *([f"Real corpus: only periods whose truth reconciled are scored. Unscored truth periods matched or "
                 f"listed: {m['unscored']['periods']} ({m['unscored']['offered_for_import']} offered for import; "
-                f"{ledger.get('admitted_unscored', 0)} admitted, not judged).", '']
+                f"{ledger.get('admitted_unscored', 0)} admitted, not judged). Offered or saved where the truth "
+                f"expects a hold: {len(m['unscored'].get('wrongly_ready', []))}; where it expects a decision: "
+                f"{len(m['unscored'].get('ready_where_decision', []))}.", '']
                if m.get('unscored', {}).get('periods') or ledger.get('admitted_unscored') else []),
              f"Human actions to make every blocked period ready or decided: {o['human_actions_per_period']} "
              f"one statement at a time; {o['human_actions_grouped']} using today's grouped decisions "
@@ -1034,12 +1501,28 @@ def render_summary(result):
         for k, v in reread.items()) or 'none triggered') + '.', '',
         f"Timing: engine reading {t['engine_read_wall_seconds']:.1f}s wall ({t['engine_read_cpu_seconds']:.1f}s CPU "
         f"incl. children); batch preparation {t['preparation']['seconds']:.1f}s over {t['preparation']['turns']} "
-        f"worker turns; batch status read {t['batch_status_seconds']:.2f}s; group import "
+        f"worker turns; background readiness refresh "
+        + (f"{t['readiness_refresh']['before']} statement(s) pending -> {t['readiness_refresh']['after']} in "
+           f"{t['readiness_refresh']['rounds']} round(s) ({t['readiness_refresh'].get('quiet_rounds', 0)} settled nothing), "
+           f"{t['readiness_refresh']['seconds']:.1f}s"
+           if t.get('readiness_refresh') else 'not run') +
+        f"; batch status read {t['batch_status_seconds']:.2f}s; group import "
         f"{t['group_import']['seconds']:.1f}s; total {t['total_wall_seconds']:.1f}s. Host: "
         f"{result['environment']['cpus']} CPUs, 1-minute load {result['environment']['load_average_before'][0]:.1f} "
         f"before reading and {result['environment']['load_average_after'][0]:.1f} after (timings are not comparable "
         f"across hosts or loads).", '']
     return '\n'.join(lines)
+
+
+def _holder_line(h):
+    """Saved periods whose ledger holder is not the printed holder (reported; not an exit condition)."""
+    ids = lambda key: (': ' + ', '.join(h[key][:12]) + (' ...' if len(h[key]) > 12 else '')) if h[key] else ''
+    families = '; '.join(f"{family} " + ', '.join(f'{k} {v}' for k, v in sorted(kinds.items()))
+                         for family, kinds in h['by_family'].items())
+    return (f"Holder: saved periods whose holder differs from the printed holder {len(h['differs'])}{ids('differs')}; "
+            f"the same entity printed otherwise (legal-form punctuation, or the legal form omitted) "
+            f"{len(h['same_entity'])}; saved with no holder {len(h['not_recorded'])} (of {h['compared']} saved periods "
+            f"whose statement prints a holder)" + (f"; by family: {families}" if families else '') + '.')
 
 
 def _git(*args):
@@ -1066,6 +1549,8 @@ def main(argv=None):
                         help='Corpus directory with manifest.json (default: the committed corpus).')
     parser.add_argument('--rescore', action='store_true',
                         help='re-judge the finished run in --out against the current --corpus manifest (no re-reading)')
+    parser.add_argument('--resimulate', action='store_true',
+                        help='with --rescore: simulate the corrections again from the run database (read only)')
     parser.add_argument('--readings',
                         help='reuse this engine-readings.json instead of reading with the engine (backend-only changes)')
     parser.add_argument('--compare', help='per-statement comparison directory (default for a real corpus: '
@@ -1078,16 +1563,17 @@ def main(argv=None):
     if args.rescore:
         if not args.out:
             parser.error('--rescore needs --out (the finished run directory)')
-        result = rescore(Path(args.out), Path(args.corpus), Path(args.compare) if args.compare else None)
+        result = rescore(Path(args.out), Path(args.corpus), Path(args.compare) if args.compare else None,
+                         resimulated=args.resimulate)
         print((Path(args.out) / 'summary-rescored.md').read_text())
-        return 0 if not result['ledger']['wrongly_admitted'] else 1
+        return 1 if safety_failures(result) else 0
     out = Path(args.out) if args.out else Path(os.environ.get('TMPDIR', '/tmp')) / (
         f"loupe-statement-benchmark-{os.environ.get('USER') or os.getuid()}-{datetime.now():%Y%m%d-%H%M%S}")
     result = run(out, args.engine_python, args.concurrency, Path(args.corpus), args.readings,
                  Path(args.compare) if args.compare else None)
     print((out / 'summary.md').read_text())
     print(f'Full results: {out / "results.json"}')
-    return 0 if not result['ledger']['wrongly_admitted'] else 1
+    return 1 if safety_failures(result) else 0
 
 
 if __name__ == '__main__':

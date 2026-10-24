@@ -107,16 +107,22 @@ def identity_graph_plan(db, case_id):
         parties.append(dict(key='financial-party:' + party['id'], name=party['name'], financial_party_id=party['id'],
             financial_identity_url=f'/cases/{case_id}/financial?view=counterparties',
             summary='Reviewed financial identity. Account-holder, control, signatory and grouping relationships are distinct; inspect dates and evidence on each relationship.'))
-    from services.financial.payment_counterparty_link import display_link
-    for row in db.scalars(select(FinancialTransaction).where(FinancialTransaction.case_id == case_id,
+    from services.financial.payment_counterparty_link import resolved_link, stored_link
+    # Only the columns a payment's identity link is read from: loading every
+    # admitted payment of the case whole (with its saved reading) made each
+    # snapshot grow with the case, and the sweep takes one per case every 30 s.
+    for row_id, ref_id, direction, labels, reviewed in db.execute(select(FinancialTransaction.id,
+            FinancialTransaction.ref_id, FinancialTransaction.direction,
+            FinancialTransaction.metadata_['investigation_labels'],
+            FinancialTransaction.provenance['reviewed_counterparty']).where(FinancialTransaction.case_id == case_id,
             FinancialTransaction.superseded_by_id.is_(None), FinancialTransaction.ledger_status == 'admitted')
             .order_by(FinancialTransaction.id)):
-        identity = display_link(row)
+        identity = resolved_link(db, case_id, stored_link(labels, reviewed))
         if not identity:
             continue
         target = ('financial-party:' + identity['id']) if identity['kind'] == 'party' else account_key(indexed[identity['id']].identity_key)
-        payment_links.append(dict(key='payment-identity:' + str(row.id), source=row.ref_id, target=target,
-            direction=row.direction, recorded_identity=json.dumps(identity, sort_keys=True)))
+        payment_links.append(dict(key='payment-identity:' + str(row_id), source=ref_id, target=target,
+            direction=direction, recorded_identity=json.dumps(identity, sort_keys=True)))
     revision = hashlib.sha256(json.dumps([state['revision'], payment_links], sort_keys=True).encode()).hexdigest()
     return dict(case_id=str(case_id), revision=revision, accounts=accounts, parties=parties, links=links,
         entity_links=entity_links, account_links=account_links, payment_links=payment_links)
@@ -156,6 +162,14 @@ def apply_identity_graph(graph_session, plan, *, is_current=None):
         marker = tx.run('''MERGE (m:FinancialIdentitySync {case_id:$case})
             SET m.system_node=true, m.projection_lock=coalesce(m.projection_lock,0)+1
             RETURN m.revision AS revision''', case=case_id).single()
+        # The ledger projection MERGEs the same FinancialAccount keys under its
+        # own marker, and (case_id, key) is indexed, not unique. Two writers
+        # creating one account at once committed two nodes, every later
+        # projection drew each payment onto both, and validate_graph_targets
+        # then refused the case for good. Take the projection's lock too, after
+        # this one; the projection never takes this marker, so the order holds.
+        from services.financial.graph_followup import _LOCK_MARKER
+        tx.run(_LOCK_MARKER, case_id=case_id).consume()
         # Revalidate only after acquiring the graph marker lock. Otherwise an
         # older snapshot could wait behind a newer writer and overwrite it.
         # The callback closes its short SQL snapshot before graph work resumes.

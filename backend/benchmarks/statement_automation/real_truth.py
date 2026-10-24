@@ -390,12 +390,43 @@ def reconcile(period):
     return ('verified', []) if not reasons else ('unverified', reasons)
 
 
-def expected_outcome(period, status):
+def expected_outcome(period, status, reasons=None):
     if status == 'incomplete':
         return 'hold'
+    if status == 'unverified':
+        outcome, _ = unverified_expectation(reasons or ())
+        if outcome:
+            return outcome
     if not period.holder or not period.account:
         return 'decision'
     return 'auto'
+
+
+# What a period the source itself cannot verify must lead to, by the class of the reason it is
+# unverified (the corpus convention): printed pages absent from the file, or printed figures that
+# contradict each other, must be held; a balance the statement does not print is a fact a person
+# supplies (a decision, named by its defect). Hold wins over decision when reasons of both classes
+# apply. A reason of no listed class leaves the outcome to the identity fields, as before.
+UNVERIFIED_CLASSES = (
+    (re.compile(r'printed page \d+ (?:of the statement )?(?:is )?(?:not in the file|absent)', re.I), 'hold',
+     'printed_pages_missing'),
+    (re.compile(r'does not take the printed opening|has no second movement line|printed figures? (?:do|does) not '
+                r'reconcile', re.I), 'hold', 'printed_figures_disagree'),
+    (re.compile(r'the opening before it is not printed|opening balance (?:is )?not printed', re.I), 'decision',
+     'opening_unprinted'),
+    (re.compile(r'closing balance (?:\([^)]*\) )?printed blank|closing balance (?:is )?not printed', re.I), 'decision',
+     'closing_unprinted'),
+)
+
+
+def unverified_expectation(reasons):
+    """(outcome, defects) for an unverified period's reasons; (None, []) when no reason has a class."""
+    matched = [(outcome, defect) for reason in reasons for pattern, outcome, defect in UNVERIFIED_CLASSES
+               if pattern.search(reason)]
+    if not matched:
+        return None, []
+    outcome = 'hold' if any(o == 'hold' for o, _ in matched) else 'decision'
+    return outcome, sorted({d for _, d in matched})
 
 
 # ---------------------------------------------------------------------------
@@ -2130,7 +2161,7 @@ def document_truth(doc, docs_dir, cache_dir=None):
             status, reasons = 'unverified', ['printed page without a text layer'] + reasons
         record = {k: v for k, v in period.__dict__.items()}
         record.update(id=f"{doc['id']}#{index + 1}", truth_status=status, truth_reasons=reasons,
-                      expected=expected_outcome(period, status))
+                      expected=expected_outcome(period, status, reasons))
         out.append(record)
     statuses = Counter(p['truth_status'] for p in out)
     if not out:
@@ -2207,13 +2238,15 @@ def mark_duplicates(results):
 
 
 def manifest_period(period):
+    # An unverified period names what keeps it from the source (e.g. opening_unprinted), unscored.
+    defects = unverified_expectation(period.get('truth_reasons') or ())[1] if period['truth_status'] == 'unverified' else []
     return dict(id=period['id'], family=period['family'], institution=period['institution'],
                 account=period['account'], account_printed=bool(period['account']),
                 holder=period['holder'] or '', holder_printed=bool(period['holder']),
                 currency=period['currency'], period_start=period['period_start'], period_end=period['period_end'],
                 start_printed=bool(period['period_start']), opening_minor=period['opening_minor'],
-                closing_minor=period['closing_minor'], expected=period['expected'], defects=[],
-                notes='', share=period.get('share'), added_in='real', truth_status=period['truth_status'],
+                closing_minor=period['closing_minor'], expected=period['expected'], defects=defects,
+                notes=period.get('expected_reason') or '', share=period.get('share'), added_in='real', truth_status=period['truth_status'],
                 duplicate_of=period.get('duplicate_of'),
                 rows=[dict({k: v for k, v in r.items() if k in ('date', 'description', 'amount_minor', 'direction',
                                                                  'balance_after', 'posted_date')},
@@ -2229,7 +2262,11 @@ def write_outputs(out, results, docs_dir):
     files = []
     for result in sorted(results, key=lambda r: r['id']):
         periods = result.get('periods') or []
-        if not any(p['truth_status'] in ('verified', 'ocr_reconciled') for p in periods):
+        if not any(p['truth_status'] in ('verified', 'ocr_reconciled') for p in periods) \
+                and not (periods and result['status'] in FINAL):
+            # A document with no scored period still enters, unscored, once its truth is final (e.g.
+            # every period unverified with the reason the source cannot settle): the benchmark then
+            # reads and compares it, and reports an admission where its truth expects a hold.
             continue
         name = f"{result['id']}.pdf"
         link = out / name
@@ -2362,6 +2399,20 @@ def _work(args):
                     pages=doc.get('pages'), reason=f'error {type(error).__name__}', inventory_family=doc.get('family'))
 
 
+# Statuses a later run must read again even when it was not asked to: a
+# document that was waiting for a tier-A parser has to meet the parser once it
+# exists. Its cached result was written by the code before that parser, and
+# reusing it would hide the new reader behind the old reading indefinitely.
+REREAD_STATUSES = ('needs_parser',)
+
+
+def reuse_cached(cached_result, doc_id, only):
+    """Whether ``--only`` may reuse a document's cached result instead of reading it again."""
+    if only is None or doc_id in only or cached_result is None:
+        return False
+    return cached_result.get('status') not in REREAD_STATUSES
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--inventory', type=Path, required=True)
@@ -2369,7 +2420,7 @@ def main(argv=None):
     parser.add_argument('--docs', type=Path, help='private copies (default: <inventory dir>/docs)')
     parser.add_argument('--jobs', type=int, default=2)
     parser.add_argument('--cache', type=Path, help='private pdfplumber word cache directory')
-    parser.add_argument('--only', help='comma-separated document ids (others reuse periods/<id>.json)')
+    parser.add_argument('--only', help='comma-separated document ids (others reuse periods/<id>.json, except needs_parser)')
     parser.add_argument('--visual', type=Path, help='reviewed visual readings (default: <out>/visual; real_visual.py)')
     args = parser.parse_args(argv)
     from .real_visual import apply_visual, load_visual
@@ -2380,8 +2431,9 @@ def main(argv=None):
     todo, results = [], []
     for doc in inventory['documents']:
         cached = args.out / 'periods' / f"{doc['id']}.json"
-        if only is not None and doc['id'] not in only and cached.exists():
-            results.append(json.loads(cached.read_text()))
+        cached_result = json.loads(cached.read_text()) if only is not None and cached.exists() else None
+        if reuse_cached(cached_result, doc['id'], only):
+            results.append(cached_result)
         else:
             todo.append((doc, docs_dir, args.cache))
     todo.sort(key=lambda item: -(item[0].get('pages') or 0))
@@ -2396,7 +2448,8 @@ def main(argv=None):
         for period in result.get('periods', []):
             period.pop('duplicate_of', None)
             period['expected'] = period.get('expected_override') or expected_outcome(
-                Period(**{k: period[k] for k in Period.__dataclass_fields__}), period['truth_status'])
+                Period(**{k: period[k] for k in Period.__dataclass_fields__}), period['truth_status'],
+                period.get('truth_reasons'))
     mark_duplicates(results)
     _, status = write_outputs(args.out, results, docs_dir)
     previous = args.out / 'visual-queue.json'

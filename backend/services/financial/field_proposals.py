@@ -10,12 +10,28 @@ Currency, in order (Neil, 2026-10-13):
   (a) printed on the statement. The statement reader already adopts a printed
       code or unambiguous symbol, so a statement that asks for its currency
       has none; nothing is proposed from the page here.
+  (a') printed elsewhere on the same statement: a brokerage cash ledger
+      prints no currency, but its holdings table can
+      (``statement_currency.printed_holdings_currency``). Proposed with the
+      page it is printed on, never confirmed automatically: the currency of
+      the cash ledger stays a person's choice (standing decision, wave 12).
   (b) the same account's saved statements, when they all agree. Confirmed
       automatically only when there are at least two of them, the account is
       identified exactly and uniquely on two independent fields (account number
       plus bank or holder), and no saved statement of that account covers the
       same dates (several currency sections share one account number at some
       banks: those sections must never inherit each other's currency).
+  (b') a brokerage cash ledger that prints no currency anywhere (not even in
+      its holdings) takes the currency of the ledger account it joins (Neil,
+      2026-10-24): confirmed automatically when that account's saved
+      statements give exactly one currency (one saved statement is enough),
+      the account is identified exactly and uniquely on two independent fields
+      and no saved statement of it covers the same dates. No saved statement,
+      or several currencies, proposes nothing that is confirmed: it stays held.
+      Basis ``account_currency``, recorded with the System details save.
+      Switch ``ACCOUNT_CURRENCY``. A brokerage statement that prints a
+      currency keeps it; one that differs from its account's is held
+      (``account_currency_conflict``).
   (c) the case's usual currency (the currency of most of its saved
       statements). Always a proposal that needs one click.
 
@@ -25,6 +41,27 @@ a masked number, plus the bank or holder where both sides print them). Every
 saved statement of that account must agree on the value. Confirmed
 automatically only when the match is unique and exact on at least two
 independent fields; otherwise a one-click proposal.
+
+Automatic fills (Neil, 2026-10-24; each behind a default-on switch
+``LOUPE_FINANCIAL_AUTOFILL_<NAME>``, recorded as System with its basis):
+
+* ``CURRENCY``: no currency printed takes the account's currency when every
+  saved statement of the one matching account agrees on it (one saved
+  statement is enough), no saved statement of it covers the same dates and the
+  statement prints no other currency (its holdings). The account is the one
+  whose number the statement prints (``identity_proven``). Basis
+  ``account_currency``.
+* ``IDENTITY``: a missing bank (and the full number behind a masked one, as
+  before) from the one account whose printed number the statement carries,
+  when every saved statement of it gives the same value. The holder keeps its
+  bracketing rule (a holder can change after the last saved statement: the
+  truth set holds one). An account number is never proposed from anything but
+  a matching printed number.
+
+The account is proven by its printed number alone when it is printed in full
+(at least six digits) or masked with at least six visible digits, and it is
+the only account of the case with that identity (the existing ambiguity check:
+two accounts sharing the digits, or one number at two banks, prove nothing).
 
 A field the statement prints is never replaced: only empty fields receive a
 proposal. Switches: ``LOUPE_FINANCIAL_CURRENCY_PROPOSALS`` and
@@ -44,8 +81,35 @@ FIELDS = ('currency', 'institution', 'holder', 'account_number')
 REASONS = {'currency': 'currency', 'institution': 'institution', 'holder': 'holder', 'account_number': 'account'}
 LABELS = {'currency': 'Currency', 'institution': 'Bank', 'holder': 'Account holder', 'account_number': 'Account number'}
 MIN_AGREEING_STATEMENTS = 2
+# Neil, 2026-10-24: a brokerage cash ledger printing no currency takes its account's one currency (b').
+# Reverse: False (such a statement's currency stays a person's choice, as before).
+ACCOUNT_CURRENCY = True
+ACCOUNT_CURRENCY_BASIS = 'account_currency'
 MIN_MASKED_DIGITS = 4
 FULL_ACCOUNT_DIGITS = 6
+
+
+AUTOFILL_NAMES = ('CURRENCY', 'IDENTITY')
+AUTOFILL_CURRENCY_BASIS = 'account_currency'
+
+
+def autofill_enabled(name):
+    """A default-on automatic fill switch (``LOUPE_FINANCIAL_AUTOFILL_<NAME>``; 0/false/off/no turns it off)."""
+    return os.environ.get(f'LOUPE_FINANCIAL_AUTOFILL_{name}', '1').strip().lower() not in ('0', 'false', 'off', 'no')
+
+
+def identity_proven(values, candidates, matched):
+    """The statement's printed account number alone identifies one account of the case.
+
+    Printed in full with at least six digits, or masked with at least six
+    visible digits; one candidate identity only (``matching_accounts`` marks
+    two accounts sharing the digits, or a number at two banks, ambiguous).
+    """
+    if not candidates or 'ambiguous' in matched or 'account' not in matched:
+        return False
+    digits, _ = account_identity(values.get('account_number'))
+    # The digits both sides print: a known masked number proves only its visible digits.
+    return all(min(len(digits), len(k.digits)) >= FULL_ACCOUNT_DIGITS for k in candidates)
 
 
 def currency_proposals_enabled():
@@ -330,6 +394,11 @@ def _bracketed(values, candidates):
             and any(s.period_start and s.period_start > end for s in saved))
 
 
+def _account_key(candidates):
+    """Opaque key of the matched account (its record ids), for grouping one account's proposals."""
+    return ','.join(sorted(k.key for k in candidates))
+
+
 def _detail_proposal(name, candidates, matched, values):
     fold = {'institution': institution_key, 'holder': holder_key,
             'account_number': lambda v: account_identity(v)}[name]
@@ -352,12 +421,36 @@ def _detail_proposal(name, candidates, matched, values):
         f' and {"bank" if f == "institution" else f}' for f in other)
     independent = len(matched - {'masked', 'ambiguous'})
     confirmed = independent >= 2 and (name != 'holder' or _bracketed(values, candidates))
-    return dict(value=value, basis='same_account', confirmed=confirmed,
+    basis = 'same_account'
+    if (not confirmed and name == 'institution' and autofill_enabled('IDENTITY')
+            and identity_proven(values, candidates, matched)):
+        # IDENTITY: the bank of the one account whose number the statement prints.
+        confirmed, basis = True, 'same_account_number'
+    return dict(value=value, basis=basis, confirmed=confirmed, account_key=_account_key(candidates),
                 label=f"same account's {_plural(statements, 'saved statement', 'saved statements')} ({exact} match)",
                 statements=statements, matched=sorted(matched - {'ambiguous'}))
 
 
 def _currency_proposal(values, candidates, matched, knowledge):
+    """The currency proposal: printed elsewhere on the statement first, unless the same account confirms it.
+
+    A currency the same statement prints in its holdings is proposed with its
+    page (one click). Where the account's saved statements would confirm the
+    same currency automatically, that confirmation stands; where they give
+    another currency, the printed one is proposed and nothing is confirmed.
+    """
+    printed = values.get('printed_currency') or {}
+    other = _account_or_case_currency(values, candidates, matched, knowledge)
+    if not printed.get('value') or (other and other['confirmed'] and other['value'] == printed['value']):
+        return other
+    return dict(value=printed['value'], basis='printed_on_statement', confirmed=False,
+                label=f"printed in this statement's holdings on page {printed.get('page_number')}",
+                statements=0, matched=[], page_number=printed.get('page_number'),
+                cited=dict(page_number=printed.get('page_number'), table_index=printed.get('table_index'),
+                           row_index=printed.get('row_index'), expected_text=printed.get('expected_text')))
+
+
+def _account_or_case_currency(values, candidates, matched, knowledge):
     if candidates and 'ambiguous' not in matched:
         currencies = [s.currency for k in candidates for s in k.statements] + [k.currency for k in candidates if k.currency]
         value = _agreed(currencies, str.upper)
@@ -370,8 +463,20 @@ def _currency_proposal(values, candidates, matched, knowledge):
             label = f"same account's {_plural(statements, 'saved statement', 'saved statements')}"
             if statements > 1:
                 label += ', all ' + value
-            return dict(value=value, basis='same_account', confirmed=confirmed, label=label, statements=statements,
-                        matched=sorted(matched), same_dates_saved=same_dates)
+            basis = 'same_account'
+            if ACCOUNT_CURRENCY and values.get('brokerage_cash_ledger') and not values.get('printed_currency'):
+                # (b') The account's one established currency: one saved statement establishes it.
+                confirmed = statements >= 1 and independent >= 2 and not same_dates
+                basis, label = ACCOUNT_CURRENCY_BASIS, 'account currency: ' + label
+            if (not confirmed and autofill_enabled('CURRENCY') and not values.get('printed_currency')
+                    and statements >= 1 and not same_dates
+                    and (independent >= 2 or identity_proven(values, candidates, matched))):
+                # CURRENCY: the account's one currency, every saved statement of it agreeing.
+                confirmed, basis = True, AUTOFILL_CURRENCY_BASIS
+                if not label.startswith('account currency: '):
+                    label = 'account currency: ' + label
+            return dict(value=value, basis=basis, confirmed=confirmed, label=label, statements=statements,
+                        matched=sorted(matched), same_dates_saved=same_dates, account_key=_account_key(candidates))
     if knowledge.default_currency:
         return dict(value=knowledge.default_currency, basis='case_default', confirmed=False,
                     label=f"the case's usual currency ({knowledge.default_count} of "
@@ -408,7 +513,26 @@ def summary_values(summary):
     """Statement details of a projected batch summary, under the FIELDS names."""
     return dict(currency=summary.get('currency') or '', institution=summary.get('institution') or '',
                 holder=summary.get('holder') or '', account_number=summary.get('account') or '',
-                period_start=summary.get('period_start') or '', period_end=summary.get('period_end') or '')
+                period_start=summary.get('period_start') or '', period_end=summary.get('period_end') or '',
+                printed_currency=summary.get('printed_currency') or None,
+                brokerage_cash_ledger=bool(summary.get('brokerage_cash_ledger')))
+
+
+def account_currency_conflict(values, knowledge):
+    """The account's established currency when a brokerage cash ledger's own currency differs from it, else ''.
+
+    The statement's currency is printed (its holdings); its account (same
+    number and bank, any currency) has saved statements in another currency.
+    The printed currency is never replaced: the statement is held for a person.
+    """
+    if not ACCOUNT_CURRENCY or not values.get('brokerage_cash_ledger') or not values.get('currency') or knowledge is None:
+        return ''
+    candidates, matched = matching_accounts(dict(values, currency=''), knowledge)
+    if not candidates or 'ambiguous' in matched:
+        return ''
+    established = {c.upper() for k in candidates for c in [s.currency for s in k.statements] + [k.currency] if c}
+    other = sorted(established - {values['currency'].upper()})
+    return ', '.join(other)
 
 
 def resolves_all(reasons, proposals):

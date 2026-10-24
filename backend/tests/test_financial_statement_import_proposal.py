@@ -25,6 +25,14 @@ class AutomaticStatementProposalTests(unittest.TestCase):
         for value in ('12, 34.56', '12,345.67 890.12', '12 345.67', '12,345\n,678.90'):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 exact_amount(value, 'MXN')
+        # The same spacing beside the decimal point, only before exactly the currency's decimal places.
+        for value in ('12,345,678 .90', '12,345,678. 90', '12,345,678 . 90', '(12,345,678 .90)'):
+            with self.subTest(value=value):
+                self.assertEqual(exact_amount(value, 'MXN').lstrip('-'), '1234567890')
+        for value in ('12,345,67 .90', '12,345,678 .9', '12,345,678 .901', '12,345 678 .90', '12,345,678\n.90'):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                exact_amount(value, 'MXN')
+        self.assertEqual(exact_amount('1,234 .567', 'KWD'), '1234567')
         original = source([['Date', 'Description', 'Credit', 'Debit', 'Balance'],
             ['2026-04-01', 'Synthetic payment', '12,345 ,678.90', '', '12,345 ,678.90']])
         before = deepcopy(original)

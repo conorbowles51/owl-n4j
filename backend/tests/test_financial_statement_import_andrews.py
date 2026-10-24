@@ -638,6 +638,87 @@ class AndrewsReaderTests(unittest.TestCase):
         self.assertTrue(statement_catalog([grid])['unclassified_sources'])
 
 
+class AndrewsNoticeAndShareSpeckTests(unittest.TestCase):
+    def notice_page(self, next_balance='104.20'):
+        return source([
+            [(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],
+            [(15, '06/02'), (75, 'Example Store Pending credit/return')],
+            [(75, 'for $4.20 on card 1234')],
+            [(15, '06/02'), (75, 'Deposit Adjustment Debit Card Credit Voucher'), (310, '4.20'), (350, next_balance)],
+            [(15, '06/30'), (75, 'Ending Balance'), (350, next_balance)]])
+
+    def test_a_dated_line_without_money_is_information_when_the_next_payment_reconciles_across_it(self):
+        _, proposal = selected([self.notice_page()])
+        notices = [r for r in proposal['rows'] if r['fields'].get('information_basis')]
+        self.assertEqual(len(notices), 2)
+        self.assertTrue(all(r['excluded'] and r['kind'] == 'statement_information' and not r['issues'] for r in notices))
+        self.assertFalse(any(r['issues'] for r in proposal['rows']))
+        payments = [r for r in proposal['rows'] if not r['excluded']]
+        self.assertEqual([(r['fields']['amount_minor'], r['fields']['direction']) for r in payments], [('420', 'credit')])
+
+    def test_a_money_less_line_stays_held_when_money_may_have_moved_on_it(self):
+        _, proposal = selected([self.notice_page(next_balance='98.37')])
+        self.assertTrue(any(r['kind'] == 'unresolved' and r['issues'] for r in proposal['rows']))
+        import services.financial.statement_import_andrews as andrews
+        try:
+            andrews.MONEYLESS_NOTICES = False
+            _, proposal = selected([self.notice_page()])
+        finally:
+            andrews.MONEYLESS_NOTICES = True
+        self.assertTrue(any(r['kind'] == 'unresolved' for r in proposal['rows']))
+
+    def test_a_row_date_read_with_a_space_inside_still_opens_its_payment(self):
+        data = source([
+            [(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],
+            [(15, '06/ 03'), (75, '~Ii thdrawal Debit Card'), (310, '-20.00'), (350, '80.00')],
+            [(15, '06/04'), (75, 'Withdrawal Debit Card'), (310, '-5.00'), (350, '75.00')],
+            [(15, '06/30'), (75, 'Ending Balance'), (350, '75.00')]])
+        _, proposal = selected([data])
+        payments = [r for r in proposal['rows'] if not r['excluded']]
+        self.assertEqual([(r['fields']['date'], r['fields']['amount_minor'], r['fields']['direction']) for r in payments],
+                         [('2020-06-03', '2000', 'debit'), ('2020-06-04', '500', 'debit')])
+        # The misread payment word takes its direction from the sign and both balances (ruling 1).
+        self.assertEqual(payments[0]['fields']['direction_basis'], 'printed_sign_and_balances')
+        self.assertFalse(any(r['issues'] for r in proposal['rows']) or proposal['issues'])
+        import services.financial.statement_import_andrews as andrews
+        try:
+            andrews.SPACED_ROW_DATES = False
+            _, proposal = selected([data])
+        finally:
+            andrews.SPACED_ROW_DATES = True
+        self.assertTrue(any(r['issues'] for r in proposal['rows']))
+
+    def test_an_ending_balance_dated_with_a_space_inside_closes_the_section(self):
+        data = source([
+            [(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],
+            [(15, '06/04'), (75, 'Withdrawal Debit Card'), (310, '-5.00'), (350, '95.00')],
+            [(15, '06/ 30'), (75, 'Ending Balance'), (350, '95.00')],
+            [(75, 'Dividends Paid Year to Date'), (318, '0.00')]])
+        _, proposal = selected([data])
+        closing = [r for r in proposal['rows'] if r['fields'].get('description') == 'Closing Balance']
+        self.assertEqual([(r['fields']['date'], r['fields']['balance']) for r in closing], [('2020-06-30', '9500')])
+        self.assertFalse(any(r['issues'] for r in proposal['rows']) or proposal['issues'])
+        import services.financial.statement_import_andrews as andrews
+        try:
+            andrews.SPACED_ROW_DATES = False
+            _, proposal = selected([data])
+        finally:
+            andrews.SPACED_ROW_DATES = True
+        self.assertTrue(proposal['issues'])
+
+    def test_a_point_read_inside_the_share_number_keeps_its_four_digits(self):
+        data = source([
+            [(15, '06/01 ID 004.0 FREE CHECKING Previous Balance'), (350, '100.00')],
+            [(15, '06/03'), (75, 'Withdrawal Debit Card'), (310, '-20.00'), (350, '80.00')],
+            [(15, '06/30'), (75, 'Ending Balance'), (350, '80.00')]])
+        statement, proposal = selected([data])
+        self.assertEqual((statement['share_reference'], statement['account_reference']), ('0040', '123456789 / Share 0040'))
+        self.assertFalse(any(r['issues'] for r in proposal['rows']) or proposal['issues'])
+        # Any other glyph inside the number is not a share number.
+        data['rows'][9]['cells'][0]['expected_text'] = '06/01 ID 004,0 FREE CHECKING Previous Balance'
+        self.assertFalse(any(s.get('share_reference') == '0040' for s in statement_catalog([data])['statements']))
+
+
 class AndrewsMailingHolderTests(unittest.TestCase):
     def test_spaced_or_doubled_marker_uses_complete_same_page_mailing_block(self):
         from services.financial.statement_import_andrews import _holder

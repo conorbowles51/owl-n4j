@@ -46,6 +46,28 @@ def original_layer_holder(locations, page_number):
     return {}
 
 
+def printed_lines(locations, page_number):
+    """``{'checked': True, 'unread': [rect, ...]}`` when the engine checked a page's printed lines against
+    its reading (vector-text pages: ``vector_glyph_reading`` with ``lines_checked``), each rect a printed
+    line still under no read word (page points x1000, displayed page space), plus ``'layer'``: the rects of
+    the lines the skipped-line layer read, when it read any; ``{}`` otherwise, and for every reading made
+    before the check existed."""
+    for location in locations if isinstance(locations, list) else []:
+        if isinstance(location, dict) and location.get('kind') == 'page' and location.get('page_number') == page_number:
+            for refinement in location.get('ocr_refinements') or []:
+                if (isinstance(refinement, dict) and refinement.get('field') == 'vector_glyph_reading'
+                        and refinement.get('lines_checked') is True):
+                    unread = [rect for rect in refinement.get('lines_unread') or []
+                              if isinstance(rect, list) and len(rect) == 4 and all(type(v) is int for v in rect)]
+                    # Lines the skipped-line layer read (reading revision v20 on): the statement engine also
+                    # reads the page without them and keeps whichever reading proves (the layer guard).
+                    layer = [line['rect'] for line in refinement.get('lines_read') or []
+                             if isinstance(line, dict) and isinstance(line.get('rect'), list) and len(line['rect']) == 4
+                             and all(type(v) is int for v in line['rect'])]
+                    return dict(checked=True, unread=unread, **(dict(layer=layer) if layer else {}))
+    return {}
+
+
 def list_candidate_sources(session, *, case_id, limit=25, offset=0):
     if type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or offset < 0:
         raise PdfMappingError("Invalid source page limits.", 422)
@@ -72,7 +94,9 @@ def read_candidate_source(session, *, case_id, evidence_file_id, page_number, ta
         if not text:
             continue
         if len(text) > 4096:
-            raise PdfMappingError("A stored cell is too long for candidate review; no text was truncated.", 422)
+            raise PdfMappingError(f"Page {page_number} has a column of text the reader has not split into rows yet, so this "
+                                  "copy cannot be edited here. It is waiting for a reader fix; nothing was changed. If another "
+                                  "copy of this PDF is listed, edit that one.", 422)
         columns.add(column)
         rows.setdefault(row, []).append(dict(column_index=column, expected_text=text,
                                              locator=cell_locator.to_json()))
@@ -82,9 +106,11 @@ def read_candidate_source(session, *, case_id, evidence_file_id, page_number, ta
     source_rows = [dict(row_index=row, cells=values) for row, values in rows.items()]
     rotation = reading_rotation(locations, page_number)
     carried = original_layer_holder(locations, page_number)
+    checked = printed_lines(locations, page_number)
     return dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id), page_number=page_number,
         **(dict(reading_rotation=rotation) if rotation else {}),
         **(dict(original_layer_holder=carried) if carried else {}),
+        **(dict(printed_lines=checked) if checked else {}),
         table_index=table_index, table_count=len(payload), source_revision=revision,
         table_source=source.value, geometry_source=geometry.value, locator=locator.to_json(),
         text_origin=_page_origin(content, locations, page_number).value,

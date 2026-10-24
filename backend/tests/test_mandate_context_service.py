@@ -140,3 +140,34 @@ def test_chat_and_agent_can_share_the_exact_rendered_context(db):
     agent_context = mandate_context_service.resolve(db, case_id=case_id, version_id=version["id"])
     assert chat_context.block == agent_context.block
     assert "supporting and contradicting material" in chat_context.block
+
+
+def test_switching_templates_preserves_values_and_partial_updates(db):
+    case_id, user = uuid4(), make_user(db)
+    service = mandate_context_service
+    service.update_context(db, case_id=case_id, user=user, payload={"active_template_key": "typed", "case_summary": "Keep this", "custom_values": {"title": "Original", "risk": "high"}})
+    service.update_context(db, case_id=case_id, user=user, payload={"active_template_key": "generic", "custom_values": {}})
+    db.expire_all()
+    result = service.get_context(db, case_id=case_id)
+    assert result["case_summary"] == "Keep this"
+    assert result["custom_values"] == {}
+    assert result["template_values"]["typed"]["title"] == "Original"
+    result = service.update_context(db, case_id=case_id, user=user, payload={"active_template_key": "typed", "custom_values": {"title": "Edited"}})
+    assert result["custom_values"] == {"title": "Edited", "risk": "high"}
+    result = service.update_context(db, case_id=case_id, user=user, payload={"custom_values": {"risk": None}})
+    assert result["custom_values"] == {"title": "Edited"}
+
+
+def test_template_drafts_are_saved_together_without_reinterpreting_old_information(db):
+    case_id, user = uuid4(), make_user(db)
+    result = mandate_context_service.update_context(db, case_id=case_id, user=user, payload={"active_template_key": "generic", "custom_values": {}, "template_values": {"typed": {"title": "Account of meeting"}}})
+    assert result["template_values"]["typed"]["title"] == "Account of meeting"
+
+
+def test_invalid_context_update_does_not_overwrite_saved_summary(db):
+    case_id, user = uuid4(), make_user(db)
+    service = mandate_context_service
+    service.update_context(db, case_id=case_id, user=user, payload={"case_summary": "Original"})
+    with pytest.raises(CaseContextValidationError):
+        service.update_context(db, case_id=case_id, user=user, payload={"case_summary": "Replacement", "active_template_key": "typed", "custom_values": {"started": "invalid"}})
+    assert service.get_context(db, case_id=case_id)["case_summary"] == "Original"

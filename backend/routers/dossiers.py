@@ -37,6 +37,14 @@ class LinkIn(BaseModel):
     source_anchor: dict[str, Any] = Field(default_factory=dict)
 
 
+class ContactIn(BaseModel):
+    id: UUID | None = None
+    kind: str = Field(pattern="^(phone|email|address)$")
+    label: str | None = Field(default=None, max_length=128)
+    value: str = Field(min_length=1, max_length=2000)
+    evidence_file_id: UUID | None = None
+
+
 class DossierCreate(BaseModel):
     case_id: UUID
     dossier_type: str | None = None
@@ -45,6 +53,7 @@ class DossierCreate(BaseModel):
     summary: str | None = None
     importance: str | None = Field(default=None, max_length=255)
     status: str = "active"
+    contacts: list[ContactIn] = Field(default_factory=list, max_length=100)
     roles: list[RoleIn] = Field(default_factory=list)
 
 
@@ -54,6 +63,7 @@ class DossierUpdate(BaseModel):
     summary: str | None = None
     importance: str | None = Field(default=None, max_length=255)
     status: str | None = None
+    contacts: list[ContactIn] | None = Field(default=None, max_length=100)
     roles: list[RoleIn] | None = None
 
 
@@ -108,6 +118,7 @@ class InterviewEvidenceIn(BaseModel):
 
 class InterviewCreate(BaseModel):
     interview_date: datetime | None = None
+    date_value: str | None = Field(default=None, max_length=64)
     participants: list[dict[str, Any] | str] = Field(default_factory=list, max_length=100)
     interviewer_user_ids: list[UUID] = Field(default_factory=list, max_length=50)
     status: str = "planned"
@@ -117,6 +128,7 @@ class InterviewCreate(BaseModel):
 
 class InterviewUpdate(BaseModel):
     interview_date: datetime | None = None
+    date_value: str | None = Field(default=None, max_length=64)
     participants: list[dict[str, Any] | str] | None = Field(default=None, max_length=100)
     interviewer_user_ids: list[UUID] | None = Field(default=None, max_length=50)
     status: str | None = None
@@ -143,12 +155,12 @@ def _error(exc: Exception) -> None:
 @router.get("")
 def dossiers(case_id: UUID = Query(...), q: str | None = None, dossier_type: str | None = None,
              linkage_state: str | None = None, linked_evidence_file_id: UUID | None = None,
-             include_archived: bool = False,
+             include_archived: bool = False, canonical_entity_key: str | None = None,
              limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0),
              db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
     try:
         return list_dossiers(db, case_id=case_id, user=user, query=q, dossier_type=dossier_type,
-                             linkage_state=linkage_state,
+                             linkage_state=linkage_state, canonical_entity_key=canonical_entity_key,
                              linked_evidence_file_id=linked_evidence_file_id,
                              include_archived=include_archived, limit=limit, offset=offset)
     except Exception as exc: _error(exc)

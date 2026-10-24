@@ -52,6 +52,7 @@ from app.services.claim_ledger import (
 )
 from app.pipeline.verify_claims import verify_grounded_claims
 from app.services.ingestion_checkpoints import checkpointed, pause_boundary, IngestionPaused
+from app.services.db_retry import retry_transient
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +92,22 @@ async def _update_job_status(
     quality_report: dict | None = None,
     staged_revision: StagedChunkRevision | None = None,
 ) -> None:
+    await retry_transient(lambda: _write_job_status(
+        job_id, status, progress, message, error_message, entity_count, relationship_count, document_summary,
+        transcription, transcription_segments, quality_report, staged_revision))
+    await _publish_job_status(
+        job_id,
+        status,
+        progress,
+        message,
+        document_summary=document_summary,
+        error_message=error_message,
+    )
+
+
+async def _write_job_status(job_id, status, progress, message, error_message, entity_count, relationship_count,
+                            document_summary, transcription, transcription_segments, quality_report,
+                            staged_revision) -> None:
     async with async_session() as db:
         result = await db.execute(select(Job).where(Job.id == job_id))
         job = result.scalar_one()
@@ -125,14 +142,6 @@ async def _update_job_status(
             error=error_message,
         )
         await db.commit()
-    await _publish_job_status(
-        job_id,
-        status,
-        progress,
-        message,
-        document_summary=document_summary,
-        error_message=error_message,
-    )
 
 
 @checkpointed("file-extraction-v2")

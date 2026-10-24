@@ -260,8 +260,10 @@ class SpacedHeadingTests(unittest.TestCase):
                          [('0011', '123456789 / Share 0011'), ('0040', '123456789 / Share 0040')])
         rows = propose_andrews_statement([data], 'USD', groups[0])['rows']
         self.assertEqual([r['fields']['date'] for r in rows if r['kind'] == 'balance'], ['2020-06-01', '2020-06-30'])
-        # A glyph inside the ID or date is still not read as a digit.
-        for heading in ('06/01 ID 004.0 FREE CHECKING Previous Balance', '06/0l ID 0040 FREE CHECKING Previous Balance'):
+        # A glyph inside the ID or date is still not read as a digit (a point beside all four
+        # digits is a speck, SHARE_ID_SPECK; a comma or a point standing for a digit is not).
+        for heading in ('06/01 ID 004,0 FREE CHECKING Previous Balance', '06/01 ID 00.4 FREE CHECKING Previous Balance',
+                        '06/0l ID 0040 FREE CHECKING Previous Balance'):
             bad = source([[(15, heading), (350, '10.00')], [(15, '06/30'), (75, 'Ending Balance'), (350, '10.00')]])
             with self.subTest(heading=heading):
                 self.assertEqual(andrews_catalog([bad])[0], [])

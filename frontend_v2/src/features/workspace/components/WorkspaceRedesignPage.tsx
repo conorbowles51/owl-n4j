@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { BriefcaseBusiness, FolderKanban, LayoutDashboard, FileText, Lightbulb, ShieldCheck } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -10,6 +11,16 @@ import { TasksSection } from "./TasksSection"
 
 export function WorkspaceRedesignPage({ caseId }: { caseId: string }) {
   const [searchParams, setSearchParams] = useSearchParams()
+  const [setupDirty, setSetupDirty] = useState(false)
+  useEffect(() => {
+    if (!setupDirty) return
+    const warn = (event: MouseEvent) => {
+      const link = (event.target as Element)?.closest?.("a[href]")
+      if (link && !window.confirm("Discard your unsaved setup changes?")) { event.preventDefault(); event.stopPropagation() }
+    }
+    document.addEventListener("click", warn, true)
+    return () => document.removeEventListener("click", warn, true)
+  }, [setupDirty])
   const requestedView = searchParams.get("view")
   const section = requestedView === "casework" || requestedView === "work" ? requestedView : "overview"
   const caseworkSection = searchParams.get("kind") === "theory" ? "theories" : searchParams.get("kind") === "note" ? "notes" : "findings"
@@ -19,6 +30,7 @@ export function WorkspaceRedesignPage({ caseId }: { caseId: string }) {
   const { canEdit } = useCasePermissions(caseQuery.data)
 
   const setSection = (view: string) => {
+    if (setupDirty && !window.confirm("Discard your unsaved setup changes?")) return
     const next = new URLSearchParams(searchParams)
     if (view === "overview") next.delete("view")
     else next.set("view", view)
@@ -42,12 +54,12 @@ export function WorkspaceRedesignPage({ caseId }: { caseId: string }) {
         <TabsList variant="line" className="h-11">
           <TabsTrigger value="overview"><LayoutDashboard className="size-3.5" /> Overview</TabsTrigger>
           <TabsTrigger value="casework"><FolderKanban className="size-3.5" /> Casework</TabsTrigger>
-          <TabsTrigger value="work"><BriefcaseBusiness className="size-3.5" /> Work</TabsTrigger>
+          <TabsTrigger value="work"><BriefcaseBusiness className="size-3.5" /> Deadlines</TabsTrigger>
         </TabsList>
       </div>
 
       <TabsContent value="overview" className="min-h-0 flex-1 overflow-hidden">
-        <ScrollArea className="h-full"><CanonicalWorkspaceOverview caseId={caseId} canEdit={canEdit} onOpenCasework={() => setSection("casework")} /></ScrollArea>
+        <ScrollArea className="h-full"><CanonicalWorkspaceOverview caseId={caseId} canEdit={canEdit} onDirtyChange={setSetupDirty} onOpenCasework={() => setSection("casework")} /></ScrollArea>
       </TabsContent>
 
       <TabsContent value="casework" className="min-h-0 flex-1 overflow-hidden">

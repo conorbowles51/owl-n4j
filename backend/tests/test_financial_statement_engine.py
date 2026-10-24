@@ -7,6 +7,7 @@ adversarial near-ties that must hold.
 """
 import os
 import unittest
+from copy import deepcopy
 from unittest import mock
 
 from services.financial import statement_engine as E
@@ -437,6 +438,43 @@ class EngineRoutingTests(unittest.TestCase):
         self.assertEqual(catalog['statements'], [group])
         self.assertTrue(group.get('engine_agrees'))
         self.assertEqual(catalog['engine_routing']['agreements'], 1)
+
+    def test_an_agreeing_library_period_takes_the_identity_facts_it_left_unread_from_the_engine(self):
+        from services.financial import statement_engine_routing as R
+        sources = mx_statement(MOVES, closing='1,250.00')
+        engine = read_statements(sources)[0]
+        self.assertTrue(engine['institution'] and engine['holder'])
+        catalog, group = self._route(sources, engine['_rows'])
+        self.assertEqual(catalog['statements'], [group])
+        self.assertEqual((group['institution'], group['holder'], group['identity_from_engine']),
+                         (engine['institution'], engine['holder'], ['institution', 'holder']))
+        self.assertEqual(group['account_reference'], '0012345678')  # its own reading stays
+        with mock.patch.object(R, 'AGREEMENT_FILLS_IDENTITY', False):
+            catalog, group = self._route(sources, engine['_rows'])
+        self.assertEqual((group['institution'], group.get('holder'), group.get('identity_from_engine')), ('', None, None))
+
+    def test_an_agreeing_library_period_never_takes_a_currency_or_an_account(self):
+        sources = mx_statement(MOVES, closing='1,250.00')
+        engine = read_statements(sources)[0]
+        self.assertTrue(engine['currency'])
+        group, library = self._library(sources, engine['_rows'])
+        group.update(currency='', account_reference='')
+        from services.financial import statement_engine_routing as R
+        with mock.patch.dict(os.environ, {'LOUPE_FINANCIAL_GENERIC_READER': '1'}), \
+                mock.patch('services.financial.statement_review_checks.statement_rows', return_value=engine['_rows']):
+            R.route_catalog(sources, library)
+        self.assertEqual((group['currency'], group['account_reference']), ('', ''))
+
+    def test_an_agreeing_library_period_with_a_conflicting_identity_fact_takes_nothing(self):
+        from services.financial import statement_engine_routing as R
+        sources = mx_statement(MOVES, closing='1,250.00')
+        rows = read_statements(sources)[0]['_rows']
+        group, library = self._library(sources, rows)
+        group['account_reference'] = '9999999999'
+        with mock.patch.dict(os.environ, {'LOUPE_FINANCIAL_GENERIC_READER': '1'}), \
+                mock.patch('services.financial.statement_review_checks.statement_rows', return_value=rows):
+            catalog = R.route_catalog(sources, library)
+        self.assertEqual((group['institution'], group.get('identity_from_engine')), ('', None))
 
     def test_disagreeing_proved_readings_hold_the_period(self):
         sources = mx_statement(MOVES, closing='1,250.00')
@@ -973,13 +1011,27 @@ class QualifiedDollarTests(unittest.TestCase):
                                   [('DOLAR AMERICANO SOBRE CUENTAS', 20000, 200000)], [('DOLARES', 20000, 200000)]])])[1]
         self.assertEqual([E._heading_currencies([row], 'dot') for row in rows], [set(), set(), {'USD'}, {'USD'}])
 
+    def test_a_bare_currency_code_counts_only_when_printed_in_capitals(self):
+        # Live: OCR of 'Ciudad de Mexico' as 'Ci cad de Mexico' proposed CAD for a peso statement.
+        rows = E._pages([page(1, [[('Cad de Mexico', 20000, 200000)], [('EMPRESA SA DE mn', 20000, 200000)],
+                                  [('CAD', 20000, 200000)], [('SALDOS EN MN', 20000, 200000)]])])[1]
+        self.assertEqual([E._heading_currencies([row], 'dot') for row in rows], [set(), set(), {'CAD'}, {'MXN'}])
+
+
+def settlement_heading(sources):
+    """The movement heading names its two date columns: 'FECHA OPER LIQ' (operation, settlement)."""
+    for row in sources[0]['rows']:
+        if row['cells'][0]['expected_text'] == 'FECHA':
+            row['cells'][0]['expected_text'] = 'FECHA OPER LIQ'
+    return sources
+
 
 class SettlementDateTests(unittest.TestCase):
     def test_a_settlement_date_after_the_period_keeps_the_row_dated_inside_it(self):
         moves = [('05/MAR 05/MAR', 'TRANSFERENCIA RECIBIDA', '500.00', None, '1,500.00'),
                  ('10/MAR 10/MAR', 'PAGO DE SERVICIO', None, '200.00', '1,300.00'),
                  ('31/MAR 02/ABR', 'PAGO DE NOMINA', None, '50.00', '1,250.00')]
-        st = read_statements(mx_statement(moves, closing='1,250.00'))[0]
+        st = read_statements(settlement_heading(mx_statement(moves, closing='1,250.00')))[0]
         self.assertTrue(st['engine']['proved'], st['engine'])
         last = [r for r in st['_rows'] if r['kind'] == 'transaction'][-1]['fields']
         self.assertEqual((last['date'], last['value_date']), ('2024-03-31', '2024-04-02'))
@@ -989,6 +1041,227 @@ class SettlementDateTests(unittest.TestCase):
         st = read_statements(mx_statement(moves, closing='950.00'))[0]
         self.assertFalse(st['engine']['proved'])
         self.assertEqual(st['engine']['reason'], 'date_unresolved')
+
+
+class SecondDateHeadingTests(unittest.TestCase):
+    """r9 (B5): a second printed date is saved only under the name its column heading prints."""
+
+    MOVES = [('05/MAR 05/MAR', 'TRANSFERENCIA RECIBIDA', '500.00', None, '1,500.00'),
+             ('10/MAR 11/MAR', 'PAGO DE SERVICIO', None, '200.00', '1,300.00'),
+             ('31/MAR 31/MAR', 'PAGO DE NOMINA', None, '50.00', '1,250.00')]
+
+    @staticmethod
+    def card(qualifier='Post'):
+        """A card table whose date heading prints on two lines with a side column's line between them, and whose
+        'date date Description Amount' line also carries the side column's text (so it is not read as the
+        movement heading); a section heading spans the date columns above the first movement."""
+        lines = [
+            [('Example Card Services Bank, N.A.', 20000, 300000)],
+            [('JANE Q SAMPLE', 20000, 150000), ('Statement Period 02/16/24 - 03/15/24', 330000, 590000)],
+            [('100 MAIN ST APT 1', 20000, 150000), ('Account number ending in 4321', 330000, 590000)],
+            [('SPRINGFIELD, IL 62701', 20000, 170000)],
+            [('Previous Balance', 330000, 430000), ('$100.00', 520000, 560000)],
+            [('Payments', 330000, 430000), ('-$50.00', 520000, 560000)],
+            [('Purchases', 330000, 430000), ('+$90.00', 520000, 560000)],
+            [('New Balance', 330000, 430000), ('$140.00', 520000, 560000)],
+            [('Trans.', 20000, 45000), (qualifier, 60000, 85000), ('Rewards are posted to your account', 330000, 590000)],
+            [('every month for each eligible purchase', 330000, 590000)],
+            [('date', 20000, 45000), ('date', 60000, 85000), ('Description', 100000, 160000),
+             ('see the program terms for other participating companies', 200000, 480000), ('Amount', 500000, 560000)],
+            [('Standard Purchases', 20000, 120000)],
+            [('02/20', 20000, 45000), ('02/21', 60000, 85000), ('ONLINE PAYMENT THANK YOU', 100000, 300000),
+             ('-$50.00', 510000, 560000)],
+            [('03/02', 20000, 45000), ('03/04', 60000, 85000), ('GROCERY STORE 12', 100000, 300000), ('$60.00', 516000, 560000)],
+            [('03/09', 20000, 45000), ('03/10', 60000, 85000), ('HARDWARE SHOP', 100000, 300000), ('$30.00', 516000, 560000)],
+        ]
+        return [page(1, lines)]
+
+    @staticmethod
+    def dates(statement):
+        return [(r['fields'].get('date'), r['fields'].get('booking_date'), r['fields'].get('value_date'))
+                for r in statement['_rows'] if r['kind'] == 'transaction']
+
+    def test_a_posting_heading_two_lines_above_a_side_column_line_names_the_posting_date(self):
+        st = read_statements(self.card())[0]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual(self.dates(st), [('2024-02-20', '2024-02-21', None), ('2024-03-02', '2024-03-04', None),
+                                          ('2024-03-09', '2024-03-10', None)])
+
+    def test_a_second_date_column_whose_heading_names_no_date_kind_does_not_prove(self):
+        st = read_statements(self.card(qualifier='Ref'))[0]
+        self.assertFalse(st['engine']['proved'])
+        self.assertEqual(st['engine']['reason'], 'second_date_unnamed')
+        hold = next(r for r in st['_rows'] if r.get('engine_hold'))
+        self.assertIn('posting date or the value date', hold['issues'][0])
+        # The reconciling reading stays as the prefill, every printed date kept.
+        self.assertEqual([d[2] for d in self.dates(st)], ['2024-02-21', '2024-03-04', '2024-03-10'])
+        plain = read_statements(mx_statement(self.MOVES, closing='1,250.00'))[0]
+        self.assertEqual((plain['engine']['proved'], plain['engine']['reason']), (False, 'second_date_unnamed'))
+
+    def test_a_settlement_heading_names_the_value_date_and_one_date_needs_no_heading(self):
+        st = read_statements(settlement_heading(mx_statement(self.MOVES, closing='1,250.00')))[0]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual(self.dates(st)[1], ('2024-03-10', None, '2024-03-11'))
+        single = [(d.split()[0], t, c, dbt, b) for d, t, c, dbt, b in self.MOVES]
+        st = read_statements(mx_statement(single, closing='1,250.00'))[0]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+
+
+class UnreadSecondDateTests(unittest.TestCase):
+    """r11 (B5): in a table printing two date columns, a line whose second date is unread ink is not dated."""
+
+    MOVES = [('05/MAR 05/MAR', 'TRANSFERENCIA RECIBIDA', '500.00', None, '1,500.00'),
+             ('10/MAR 1l\\MAR', 'PAGO DE SERVICIO', None, '200.00', '1,300.00'),
+             ('31/MAR 31/MAR', 'PAGO DE NOMINA', None, '50.00', '1,250.00')]
+
+    @staticmethod
+    def dates(statement):
+        return [(r['fields'].get('date'), r['fields'].get('value_date')) for r in statement['_rows']
+                if r['kind'] == 'transaction']
+
+    def test_a_line_whose_second_date_is_unread_ink_holds_the_period_and_keeps_no_date(self):
+        st = read_statements(settlement_heading(mx_statement(self.MOVES, closing='1,250.00')))[0]
+        self.assertEqual((st['engine']['proved'], st['engine']['reason']), (False, 'date_unread'))
+        self.assertEqual(self.dates(st), [('2024-03-05', '2024-03-05'), (None, None), ('2024-03-31', '2024-03-31')])
+        damaged = [r for r in st['_rows'] if r['kind'] == 'transaction'][1]
+        self.assertIn('Check the printed date of this movement.', damaged['issues'])
+        hold = next(r for r in st['_rows'] if r.get('engine_hold'))
+        self.assertIn('could not be read', hold['issues'][0])
+
+    def test_the_switch_off_keeps_the_first_date(self):
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+        with mock.patch.object(E, 'UNREAD_SECOND_DATE_HOLDS', False):
+            st = read_statements(settlement_heading(mx_statement(self.MOVES, closing='1,250.00')))[0]
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual(self.dates(st)[1], ('2024-03-10', None))
+
+    def test_a_line_printing_one_date_with_its_description_in_its_own_column_still_proves(self):
+        moves = [m if i != 1 else ('10/MAR', m[1], m[2], m[3], m[4]) for i, m in enumerate(self.MOVES)]
+        st = read_statements(settlement_heading(mx_statement(moves, closing='1,250.00')))[0]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual(self.dates(st)[1], ('2024-03-10', None))
+
+    def test_damaged_second_date_ink_that_agrees_with_the_first_date_keeps_it(self):
+        for ink in ('10/MXR', '10/MAR_N0', '10\\', '~-:dO10/MAR', '—-1O/MAR', '1O/MAR_'):
+            moves = [m if i != 1 else ('10/MAR ' + ink, m[1], m[2], m[3], m[4]) for i, m in enumerate(self.MOVES)]
+            st = read_statements(settlement_heading(mx_statement(moves, closing='1,250.00')))[0]
+            self.assertTrue(st['engine']['proved'], (ink, st['engine']))
+            self.assertEqual(self.dates(st)[1], ('2024-03-10', None))
+        for ink in ('01/MAR', '10/ABR_', '1l/MAR_', '~-:d11/MAR', '~-:d10/ABR'):
+            moves = [m if i != 1 else ('10/MAR ' + ink, m[1], m[2], m[3], m[4]) for i, m in enumerate(self.MOVES)]
+            st = read_statements(settlement_heading(mx_statement(moves, closing='1,250.00')))[0]
+            if ink == '01/MAR':
+                # A readable second date is a date: the line prints two dates and is not damaged.
+                self.assertTrue(st['engine']['proved'], (ink, st['engine']))
+                continue
+            self.assertEqual(st['engine']['reason'], 'date_unread', ink)
+
+    def test_a_table_printing_one_date_per_line_is_not_affected(self):
+        moves = [('05/MAR', 'TRANSFERENCIA RECIBIDA', '500.00', None, '1,500.00'),
+                 ('10/MAR 2O REF', 'PAGO DE SERVICIO', None, '200.00', '1,300.00'),
+                 ('31/MAR', 'PAGO DE NOMINA', None, '50.00', '1,250.00')]
+        st = read_statements(mx_statement(moves, closing='1,250.00'))[0]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+
+
+class DateSlashMarkTests(unittest.TestCase):
+    """r11 (B2): a day-and-month date whose slash the scan read as another stroke reads as that date."""
+
+    def test_a_backslash_parenthesis_or_bar_between_day_and_month_reads_as_the_date(self):
+        for token in ('07\\MAR', '07)MAR', '07/)MAR', '07|MAR', '07\\/MAR', 'O7\\MAR'):
+            self.assertEqual(E._date_parts(token), [(7, 3, None, 'name')], token)
+
+    def test_a_mark_that_is_not_between_a_day_and_a_month_name_reads_as_no_date(self):
+        for token in ('41\\MAR', '07\\03', '07\\MAR\\', 'X07)MAR', '07))MAR'):
+            self.assertFalse(E.is_date_token(token), token)
+
+    def test_a_movement_dated_through_a_backslash_proves(self):
+        moves = [m if i != 1 else ('10\\MAR', m[1], m[2], m[3], m[4]) for i, m in enumerate(MOVES)]
+        st = read_statements(mx_statement(moves, closing='1,250.00'))[0]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        dates = [r['fields'].get('date') for r in st['_rows'] if r['kind'] == 'transaction']
+        self.assertEqual(dates, ['2024-03-05', '2024-03-10', '2024-03-20'])
+
+    def test_the_switch_off_reads_no_date(self):
+        E._date_parts.cache_clear()
+        with mock.patch.object(E, 'DATE_SLASH_MARKS', False):
+            self.assertFalse(E._date_parts('07\\MAR'))
+        E._date_parts.cache_clear()
+
+
+class DateSlashStrokeTests(unittest.TestCase):
+    """(B2) A stroke OCR read as I, L or a bar after a two-figure day, before the month name, is not part of
+    the date (outline-printed BBVA pages)."""
+
+    def test_a_stroke_after_the_slash_or_in_its_place_reads_as_the_date(self):
+        for token, parts in (('25/I0CT', [(25, 10, None, 'name')]), ('15/INOV', [(15, 11, None, 'name')]),
+                             ('15INOV', [(15, 11, None, 'name')]), ('29|NOV', [(29, 11, None, 'name')]),
+                             ('03IMAR', [(3, 3, None, 'name')])):
+            self.assertEqual(E._date_parts(token), parts, token)
+
+    def test_a_one_figure_day_or_a_figure_too_many_reads_as_no_date(self):
+        # '3IMAR' may be a printed 31 whose 1 was read as I; '141/JUL' has a figure too many.
+        for token in ('3IMAR', '141/JUL', '1I/NOV', '15/IXYZ', '28NUL'):
+            self.assertFalse(E.is_date_token(token), token)
+
+    def test_a_movement_dated_through_a_stroke_proves(self):
+        moves = [m if i != 1 else ('10/IMAR', m[1], m[2], m[3], m[4]) for i, m in enumerate(MOVES)]
+        st = read_statements(mx_statement(moves, closing='1,250.00'))[0]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        dates = [r['fields'].get('date') for r in st['_rows'] if r['kind'] == 'transaction']
+        self.assertEqual(dates, ['2024-03-05', '2024-03-10', '2024-03-20'])
+
+    def test_the_switch_off_reads_no_date(self):
+        E._date_parts.cache_clear()
+        with mock.patch.object(E, 'DATE_SLASH_STROKE', False):
+            self.assertFalse(E._date_parts('15/INOV'))
+        E._date_parts.cache_clear()
+
+
+class OtherTableTotalTests(unittest.TestCase):
+    """r11 (E9): after the movement table printed its own totals, a total line totals another table below it."""
+
+    @staticmethod
+    def statement(after):
+        sources = mx_statement(MOVES, closing='1,250.00')
+        rows = sources[0]['rows']
+        for line in after:
+            y = 40000 + len(rows) * 12000
+            rows.append(dict(row_index=len(rows), cells=[cell(t, x0, x1, y, c) for c, (t, x0, x1) in enumerate(line)]))
+        return sources
+
+    INVESTMENTS = [[('INVERSIONES', 20000, 120000)],
+                   [('PAGARE 28 DIAS', 80000, 200000), ('9,000.00', 326000, 380000)],
+                   [('TOTAL', 80000, 120000), ('9,000.00', 326000, 380000)]]
+
+    def test_a_total_after_the_tables_own_credit_and_debit_totals_is_not_its_control(self):
+        after = [[('TOTAL ABONOS', 80000, 200000), ('500.00', 350000, 380000)],
+                 [('TOTAL CARGOS', 80000, 200000), ('250.00', 430000, 460000)]] + self.INVESTMENTS
+        st = read_statements(self.statement(after))[0]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual(sum(1 for r in st['_rows'] if r['kind'] == 'transaction'), 3)
+
+    def test_a_total_after_a_movement_totals_label_printed_alone_is_not_its_control(self):
+        after = [[('TOTAL DE MOVIMIENTOS', 80000, 250000)]] + self.INVESTMENTS
+        st = read_statements(self.statement(after))[0]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+
+    def test_a_wrong_total_right_after_the_movements_still_holds(self):
+        st = read_statements(self.statement(self.INVESTMENTS[2:]))[0]
+        self.assertFalse(st['engine']['proved'], st['engine'])
+
+    def test_the_switch_off_checks_every_column_total(self):
+        after = [[('TOTAL DE MOVIMIENTOS', 80000, 250000)]] + self.INVESTMENTS
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+        with mock.patch.object(E, 'OTHER_TABLE_TOTALS', False):
+            st = read_statements(self.statement(after))[0]
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+        self.assertFalse(st['engine']['proved'], st['engine'])
 
 
 class PriorPeriodBlockTests(unittest.TestCase):
@@ -1224,6 +1497,28 @@ class ScanNoiseAddressTests(unittest.TestCase):
         self.assertEqual(self.holder(('J PRUEBA EJEMPLO', 20000, 200000)), 'J PRUEBA EJEMPLO')
         # A whole word left of the edge is a different column, not noise: no block.
         self.assertEqual(self.holder(('NOTA EMPRESA DE PRUEBA SA DE CV', 2000, 200000)), '')
+
+    def test_an_address_line_at_the_top_of_the_block_is_never_the_holder(self):
+        # The scan lost the name (and street) lines: the block now starts with its district or street line.
+        for top in ('COL CENTRO NORTE', 'AVENIDA DEL PARQUE NORTE', 'TORRE B PISO TRES'):
+            lines = [[('BANCO EJEMPLO DEL NORTE, S.A., INSTITUCION DE BANCA MULTIPLE', 20000, 400000)],
+                     [('PERIODO DEL 01/03/2024 AL 31/03/2024', 330000, 590000)],
+                     [(top, 20000, 150000)], [('MUNICIPIO EJEMPLO', 20000, 120000)],
+                     [('CIUDAD DE MEXICO C.P. 06000', 20000, 220000)]]
+            self.assertEqual(E.address_holder(E._pages([page(1, lines)])[1]), '', top)
+
+    def test_the_addressee_name_is_the_first_line_above_a_street_line_and_may_hold_figures(self):
+        street = ['AVENIDA EJEMPLO 45 PISO 3', 'CENTRO, CIUDAD EJEMPLO', 'C.P. 01000', 'Persona Moral']
+        self.assertEqual(E.addressee_name(['TALLERES K9 DEL NORTE'] + street), 'TALLERES K9 DEL NORTE')
+        self.assertEqual(E.addressee_name(['EMPRESA EJEMPLO', 'SAUCES 31 5', 'C.P. 01000']), 'EMPRESA EJEMPLO')
+        # A block printed without its address: the name stands directly above the taxpayer type.
+        self.assertEqual(E.addressee_name(['EMPRESA EJEMPLO', 'Persona Moral']), 'EMPRESA EJEMPLO')
+        # The name line lost to the scan: the street, district or postal line is never taken.
+        self.assertEqual(E.addressee_name(street), '')
+        self.assertEqual(E.addressee_name(street[1:]), '')
+        self.assertEqual(E.addressee_name(['JARDINES DEL EJEMPLO SECCION, MUNICIPIO', 'CIUDAD EJEMPLO']), '')
+        self.assertEqual(E.addressee_name(['Persona Moral']), '')
+        self.assertEqual(E.addressee_name([]), '')
 
     def test_institution_profiles_for_two_more_mexican_banks(self):
         from services.financial.statement_engine_profiles import matching_profile
@@ -1616,13 +1911,220 @@ class ServedScopeTests(unittest.TestCase):
         self.assertIsNone(_own_scope(engine, [other], self.sources()))
 
 
+def box(text, x0, x1, y0, y1, column):
+    """One drawn cell holding every printed line of a box (no row rules), as the drawn geometry stores it."""
+    return dict(column_index=column, expected_text=text,
+                locator=dict(kind='page_rectangle', page=1, rect=[x0, y0, x1, y1], page_size=[WIDTH, HEIGHT],
+                             units='millipoints', space='pdf_displayed'))
+
+
+SUMMARY = ('Previous Balance $1,000.00\n+ New Purchases $240.00\n- Payments $300.00\n'
+           '+/- Credits, Fees & Adjustments (net) $35.00\n+/- Interest Charge (net) $12.50')
+LINES = ['04/03/2024 04/03/2024 REF0001 PAYMENT - THANK YOU ($300.00)',
+         '04/10/2024 04/11/2024 REF0002 HARDWARE STORE $240.00',
+         'SAMPLE CITY ST',
+         'FEES',
+         '04/15/2024 04/15/2024 LATE FEE $35.00',
+         'TOTAL FEES FOR THIS PERIOD $35.00',
+         'INTEREST CHARGED',
+         '04/30/2024 04/30/2024 INTEREST CHARGE ON PURCHASES $12.50',
+         'TOTAL INTEREST FOR THIS PERIOD $12.50',
+         '2024 Totals Year-to-Date',
+         'Total Fees Charged in 2024 $70.00',
+         'Total Interest Charged in 2024 $25.00']
+
+
+def boxed_card(*, summary=SUMMARY, lines=LINES, closing='04/30/2024', days='30', new_balance='$987.50',
+               payment_box_balance='$987.50', page_number='PAGE 1 of 1', number=1, account='1234 5678 9012 3456',
+               stub_below=False, heading_name=True):
+    """An invented US card layout: a summary box beside a payment box (one stored row, a multi-line cell
+    each) and a transaction table whose body is ONE cell of printed lines, in sections with their totals."""
+    drawn = dict(case_id='c', evidence_file_id='f', page_number=number, table_index=0, source_revision='d%d' % number,
+                 table_source='drawn_geometry', rows=[
+                     dict(row_index=0, cells=[box('Summary of Account Activity', 36000, 255000, 300000, 312000, 0),
+                                              box('Payment Information', 260000, 490000, 300000, 312000, 2)]),
+                     dict(row_index=1, cells=[box(summary, 36000, 255000, 312000, 372000, 0),
+                                              box('New Balance %s\nTotal Minimum Payment Due $40.00\n'
+                                                  'Payment Due Date 05/25/2024' % payment_box_balance,
+                                                  260000, 490000, 312000, 372000, 2)]),
+                     dict(row_index=2, cells=[box('New Balance %s\nCredit Limit $2,000.00\nAvailable Credit $1,012.50\n'
+                                                  'Days in Billing Period %s' % (new_balance, days),
+                                                  36000, 255000, 372000, 420000, 0)])])
+    body_top = 452000
+    table = dict(case_id='c', evidence_file_id='f', page_number=number, table_index=1, source_revision='t%d' % number,
+                 table_source='drawn_geometry', rows=[
+                     dict(row_index=0, cells=[box('Transaction Summary', 36000, 490000, 430000, 440000, 0)]),
+                     dict(row_index=1, cells=[box('Tran Date', 36000, 89000, 440000, 452000, 0),
+                                              box('Post Date', 89000, 142000, 440000, 452000, 1),
+                                              box('Reference Number', 142000, 245000, 440000, 452000, 2),
+                                              box('Description', 245000, 413000, 440000, 452000, 3),
+                                              box('Amount', 413000, 490000, 440000, 452000, 4)]),
+                     dict(row_index=2, cells=[box('\n'.join(lines), 36000, 490000, body_top,
+                                                  body_top + 9000 * len(lines), 0)])])
+    heading = [[('EXAMPLE CARD BANK', 40000, 200000)] + ([('JANE Q SAMPLE', 264000, 323000)] if heading_name else []),
+               [('Account Number : %s' % account, 264000, 408000)],
+               [('Statement Closing Date: %s' % closing, 264000, 392000)],
+               [(page_number, 400000, 460000)]]
+    text = page(number, heading, table=2)
+    for row in text['rows']:  # above the summary box
+        for c in row['cells']:
+            c['locator']['rect'][1] -= 20000
+            c['locator']['rect'][3] -= 20000
+    stub = [[('JANE Q SAMPLE', 49000, 108000)], [('100 MAIN ST', 49000, 143000)],
+            [('SPRINGFIELD IL 62701', 49000, 160000), ('Make Payment to: EXAMPLE CARD BANK', 244000, 382000)]]
+    stub_page = page(number, stub, table=3)
+    top = 800000 if stub_below else 200000
+    for index, row in enumerate(stub_page['rows']):
+        for c in row['cells']:
+            c['locator']['rect'][1] = top + index * 8400
+            c['locator']['rect'][3] = top + index * 8400 + 8000
+    return [drawn, table, text, stub_page]
+
+
+def rows_of(statement):
+    return sorted((r['fields'].get('date'), r['fields']['direction'], r['fields']['amount_minor'])
+                  for r in statement['_rows'] if r['kind'] == 'transaction' and not r['excluded'])
+
+
+class BoxedCardTests(unittest.TestCase):
+    """r6: a card table stored as one multi-line cell, a closing date with the days in the billing period,
+    net summary lines, section totals and a year-to-date block (any issuer; synthetic fixtures)."""
+
+    def read(self, **kwargs):
+        statements = read_statements(boxed_card(**kwargs))
+        self.assertEqual(len(statements), 1)
+        return statements[0]
+
+    def test_each_printed_line_of_the_body_cell_is_read_and_the_period_proves(self):
+        st = self.read()
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual(rows_of(st), [('2024-04-03', 'credit', '30000'), ('2024-04-10', 'debit', '24000'),
+                                       ('2024-04-15', 'debit', '3500'), ('2024-04-30', 'debit', '1250')])
+        self.assertEqual(st['balance_convention'], 'liability_owed')
+        balances = {r['fields']['description']: r['fields']['balance'] for r in st['_rows'] if r['kind'] == 'balance'}
+        self.assertEqual(balances, {'Opening Balance': '100000', 'Closing Balance': '98750'})
+        purchase = next(r for r in st['_rows'] if r['fields'].get('amount_minor') == '24000')
+        # The wrapped line joins its movement; the section heading below it does not.
+        self.assertEqual(purchase['fields']['description'], 'REF0002 HARDWARE STORE SAMPLE CITY ST')
+        self.assertEqual(purchase['fields']['booking_date'], '2024-04-11')
+        # One row per printed line, each citing its own line of the stored cell.
+        self.assertEqual(purchase['id'], '1:1:2:line1')
+        self.assertEqual(purchase['source_cells'][0]['expected_text'], LINES[1])
+        self.assertEqual(purchase['source_cells'][0]['cell_line'], dict(line=1, lines=len(LINES)))
+        # The section totals are the review's scoped controls over the lines under their headings.
+        totals = {r['fields']['total_scope']: r['fields']['balance'] for r in st['_rows'] if r['kind'] == 'statement_total'}
+        self.assertEqual(totals, {'fee': '3500', 'interest': '1250'})
+        groups = {r['fields']['amount_minor']: r['fields'].get('charge_group') for r in st['_rows'] if r['kind'] == 'transaction'}
+        self.assertEqual(groups, {'30000': None, '24000': None, '3500': 'fee', '1250': 'interest'})
+        from services.financial.statement_review_checks import check_statement_rows
+        checks = {c['kind']: c['status'] for c in check_statement_rows(st['_rows'], liability=True)['checks']}
+        self.assertEqual((checks['fee_total'], checks['interest_total'], checks['closing_balance']),
+                         ('matches', 'matches', 'matches'))
+
+    def test_the_start_is_derived_from_the_printed_days_never_printed(self):
+        st = self.read()
+        self.assertEqual((st['period_start'], st['period_end']), ('2024-04-01', '2024-04-30'))
+        self.assertEqual(st['period_start_basis'], 'printed_day_count')
+        self.assertEqual(st['printed_closing_date'], '2024-04-30')
+
+    def test_year_to_date_lines_are_neither_rows_nor_controls(self):
+        st = self.read()
+        texts = ' '.join(r['fields'].get('description', '') for r in st['_rows'] if not r['excluded'])
+        self.assertNotIn('2024', texts)
+        self.assertEqual(len([r for r in st['_rows'] if r['kind'] == 'transaction']), 4)
+
+    def test_a_section_total_that_differs_from_its_lines_holds(self):
+        lines = list(LINES)
+        lines[5] = 'TOTAL FEES FOR THIS PERIOD $36.00'
+        st = self.read(lines=lines)
+        self.assertFalse(st['engine']['proved'])
+        self.assertEqual(st['engine']['reason'], 'printed_total_differs')
+
+    def test_a_net_summary_line_that_differs_holds(self):
+        st = self.read(summary=SUMMARY.replace('(net) $12.50', '(net) $12.60'))
+        self.assertFalse(st['engine']['proved'])
+        self.assertEqual(st['engine']['reason'], 'printed_total_differs')
+
+    def test_a_credit_the_payments_line_does_not_cover_holds(self):
+        # A return credited in the main section: payments printed 300.00, credits read 300.00 + 20.00.
+        lines = list(LINES)
+        lines.insert(2, '04/12/2024 04/12/2024 REF0003 RETURN ($20.00)')
+        st = self.read(lines=lines, summary=SUMMARY.replace('(net) $35.00', '(net) $15.00'), new_balance='$967.50')
+        self.assertFalse(st['engine']['proved'])
+
+    def test_the_payment_box_beside_the_summary_is_never_a_control(self):
+        st = self.read(payment_box_balance='$5.00')
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        closing = next(r for r in st['_rows'] if r['fields'].get('description') == 'Closing Balance')
+        self.assertEqual((closing['fields']['balance'], closing['row_index']), ('98750', 2))
+
+    def test_an_ambiguous_closing_date_needs_the_profiles_date_order(self):
+        lines = [line.replace('04/30/2024', '04/11/2024').replace('04/15/2024', '04/05/2024') for line in LINES]
+        self.assertFalse(read_statements(boxed_card(lines=lines, closing='04/11/2024', days='31'))[0]['engine']['proved'])
+        profile = dict(name='test-card', match=dict(any=['example card bank']), date_order='mdy')
+        st = read_statements(boxed_card(lines=lines, closing='04/11/2024', days='31'), profile=profile)[0]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual((st['period_start'], st['period_end']), ('2024-03-12', '2024-04-11'))
+
+    def test_pages_unread_after_the_tables_printed_end_do_not_hold(self):
+        st = self.read(page_number='PAGE 1 of 2')
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertTrue(st['engine']['pages_unread_after_table'])
+        # Without the year-to-date block the table's end is not printed: the missing page may hold movements.
+        st = self.read(page_number='PAGE 1 of 2', lines=LINES[:9])
+        self.assertFalse(st['engine']['proved'])
+        self.assertEqual(st['engine']['reason'], 'pages_missing')
+
+    def test_a_previous_cycle_in_the_same_file_must_end_the_day_before(self):
+        first = boxed_card()
+        second = boxed_card(number=2, closing='05/30/2024', days='29', lines=[line.replace('04/', '05/') for line in LINES])
+        for source in second:
+            for row in source['rows']:
+                for c in row['cells']:
+                    c['locator']['page'] = 2
+        statements = read_statements(first + second)
+        later = next(st for st in statements if st['period_end'] == '2024-05-30')
+        # 30 May less 29 days is 2 May: the previous cycle closed on 30 April, so 1 May would follow it.
+        self.assertFalse(later['engine']['proved'])
+        self.assertEqual(later['engine']['reason'], 'period_start_contradicted')
+        second = boxed_card(number=2, closing='05/30/2024', days='30', lines=[line.replace('04/', '05/') for line in LINES])
+        for source in second:
+            for row in source['rows']:
+                for c in row['cells']:
+                    c['locator']['page'] = 2
+        later = next(st for st in read_statements(first + second) if st['period_end'] == '2024-05-30')
+        self.assertTrue(later['engine']['proved'], later['engine'])
+        self.assertEqual(later['period_start'], '2024-05-01')
+
+    def test_a_dated_line_without_its_amount_keeps_the_cell_whole(self):
+        lines = ['04/10/2024 04/11/2024 REF0002 HARDWARE STORE', 'SAMPLE CITY ST $240.00']
+        rows = E._pages(boxed_card(lines=lines))[1]
+        self.assertFalse(any('line' in r['raw'] for r in rows))
+
+    def test_holder_from_the_stub_below_the_movements_when_printed_above_them(self):
+        self.assertEqual(self.read(stub_below=True)['holder'], 'JANE Q SAMPLE')
+        self.assertEqual(self.read(stub_below=True, heading_name=False)['holder'], '')
+
+    def test_unlocated_rows_hold_only_when_they_could_be_a_movement_or_a_control(self):
+        sources = boxed_card()
+        sources.append(dict(case_id='c', evidence_file_id='f', page_number=1, table_index=4, source_revision='u',
+                            table_source='drawn_geometry', rows=[dict(row_index=0, cells=[
+                                dict(column_index=0, expected_text='Purchases\nPromotional', locator=dict(kind='unlocated')),
+                                dict(column_index=1, expected_text='$100.00\n$0.00', locator=dict(kind='unlocated'))])]))
+        self.assertTrue(read_statements(sources)[0]['engine']['proved'])
+        sources[-1]['rows'][0]['cells'][0]['expected_text'] = '04/20/2024 SHOP\nPromotional'
+        st = read_statements(sources)[0]
+        self.assertFalse(st['engine']['proved'])
+        self.assertEqual(st['engine']['reason'], 'no_geometry')
+
+
 def _r(text, x1):
     """A right-aligned amount cell ending at ``x1``."""
     return (text, x1 - 6000 * len(text), x1)
 
 
 def credit_union_statement(*, redacted=False, quiet_line='No Transactions This Period', appendix=True,
-                           dividend=True, loc_credit_limit=True):
+                           dividend=True, loc_credit_limit=True, check_line=None, voucher=None, principal=None):
     """An invented US credit-union 'statement of account': several account sections, each headed
     '<product> - <last digits>', a summary page, a check list after each table, a production's running page
     stamp on every page, and an appended record page after the statement's last numbered page."""
@@ -1641,7 +2143,7 @@ def credit_union_statement(*, redacted=False, quiet_line='No Transactions This P
     rows += [[('01-20', 14000, 35000), ('Deposit', 43000, 74000), _r('50.00', 471000), _r('150.00', 594000)],
              [('01-25', 14000, 35000), ('POS Debit - Debit Card 9999 Transaction 01-24-24 EXAMPLE STORE', 43000, 330000)],
              [('Somewhere ST', 43000, 100000), _r('25.00-', 475000), _r('125.00', 594000)],
-             [('02-01', 14000, 35000), ('Check 101', 43000, 85000), _r('5.00-', 475000), _r('120.00', 594000)],
+             check_line or [('02-01', 14000, 35000), ('Check 101', 43000, 85000), _r('5.00-', 475000), _r('120.00', 594000)],
              [('02-16', 14000, 35000), ('Ending Balance', 43000, 102000), _r('120.00', 594000)]]
     if dividend:
         rows.append([('Your account earned $0.00 for the dividend period from 01-01-2024 through 01-31-2024', 14000, 560000)])
@@ -1652,12 +2154,27 @@ def credit_union_statement(*, redacted=False, quiet_line='No Transactions This P
              [('Checking Line of Credit - 1111', 14000, 200000)]]
     if loc_credit_limit:
         rows.append([('Credit Limit', 14000, 54000), ('$1,000.00', 137000, 172000)])
-    rows += [[('Date', 14000, 31000), ('Transaction Detail', 43000, 111000), ('Amount($)', 248000, 287000),
-              ('Balance ($)', 555000, 597000)],
-             [('01-17', 14000, 35000), ('Beginning Balance', 43000, 110000), _r('0.00', 594000)],
-             [(quiet_line, 200000, 400000)] if quiet_line else [],
-             [('02-16', 14000, 35000), ('Ending Balance', 43000, 102000), _r('0.00', 594000)],
-             [('Membership Savings - 2222', 14000, 200000)], money_head,
+    if principal:
+        # A credit line whose movement table prints the principal, the interest and a balance column: the
+        # balance is the principal alone ('active': interest charged and a payment split across the columns).
+        rows.append([('Date', 14000, 31000), ('Transaction Detail', 43000, 111000), ('Amount($)', 248000, 287000),
+                     ('Fee(s) ($)', 310000, 345000), ('Interest($)', 365000, 403000), ('Principal ($)', 440000, 489000),
+                     ('Balance ($)', 555000, 597000)])
+    else:
+        rows.append([('Date', 14000, 31000), ('Transaction Detail', 43000, 111000), ('Amount($)', 248000, 287000),
+                     ('Balance ($)', 555000, 597000)])
+    if principal == 'active':
+        rows += [[('01-17', 14000, 35000), ('Beginning Balance', 43000, 110000), _r('1,000.00', 594000)],
+                 [('01-31', 14000, 35000), ('Interest Charge', 43000, 100000), _r('10.00', 403000), _r('1,000.00', 594000)],
+                 [('02-05', 14000, 35000), ('Payment', 43000, 80000), _r('60.00', 287000), _r('10.00-', 405000),
+                  _r('50.00-', 491000), _r('950.00', 594000)],
+                 [('02-16', 14000, 35000), ('Ending Balance', 43000, 102000), _r('950.00', 594000)]]
+    else:
+        rows += [[('01-17', 14000, 35000), ('Beginning Balance', 43000, 110000), _r('0.00', 594000)],
+                 [('TOTAL', 241000, 331000), (voucher, 331000, 413000)] if voucher else [],
+                 [(quiet_line, 200000, 400000)] if quiet_line else [],
+                 [('02-16', 14000, 35000), ('Ending Balance', 43000, 102000), _r('0.00', 594000)]]
+    rows += [[('Membership Savings - 2222', 14000, 200000)], money_head,
              [('01-17', 14000, 35000), ('Beginning Balance', 43000, 110000), _r('500.00', 594000)],
              [(quiet_line, 200000, 400000)] if quiet_line else [],
              [('02-16', 14000, 35000), ('Ending Balance', 43000, 102000), _r('500.00', 594000)]]
@@ -1705,12 +2222,64 @@ class MultiAccountStatementTests(unittest.TestCase):
         _, _, unprinted = self.sections(credit_union_statement(quiet_line=None))
         self.assertFalse(unprinted['engine']['proved'])
 
-    def test_a_credit_line_sharing_the_deposit_accounts_number_is_held(self):
-        _, line, _ = self.sections(credit_union_statement())
+    def test_a_credit_line_sharing_the_deposit_accounts_number_is_its_own_account(self):
+        checking, line, _ = self.sections(credit_union_statement())
         self.assertEqual((line['account_reference'], line['balance_convention']), ('Checking Line of Credit 1111', 'liability_owed'))
+        self.assertTrue(line['engine']['proved'], line['engine'])
+        self.assertEqual(line['account_reference_kind'], 'credit_line')
+        self.assertNotIn('account_reference_kind', checking)
+        from services.financial.accounts import AccountDraft
+        key = lambda st: AccountDraft.observed(institution_name='Example Federal Credit Union',
+            identifier_as_printed=st['account_reference'], metadata=dict(account_reference_kind=st.get('account_reference_kind'))).identity()
+        self.assertNotEqual(key(line).key, key(checking).key)
+
+    def test_switched_off_a_credit_line_sharing_the_deposit_accounts_number_is_held(self):
+        # The switch is process-wide; the reading caches are keyed on the sources only.
+        with mock.patch.object(E, 'SHARED_NUMBER_CREDIT_LINES_SEPARATE', False), \
+                mock.patch.object(E, '_READINGS', E.OrderedDict()), mock.patch.object(E, '_LIVE_READINGS', E.OrderedDict()):
+            _, line, _ = self.sections(credit_union_statement())
         self.assertFalse(line['engine']['proved'])
         self.assertEqual(line['engine']['reason'], 'account_shared')
         self.assertTrue(any(r.get('engine_hold') == 'account_shared' for r in line['_rows']))
+        self.assertNotIn('account_reference_kind', line)
+
+    def test_an_amount_merged_into_its_balance_cell_is_proved_by_the_running_balance(self):
+        # (E10) The text table delivered the amount and the balance as one cell, or the whole line as one.
+        for line in ([('02-01', 14000, 35000), ('Check 101', 43000, 85000), ('5.00 - 120.00', 431000, 594000)],
+                     [('02-01 Check 101 5.00 - 120.00', 14000, 594000)]):
+            checking = self.sections(credit_union_statement(check_line=line))[0]
+            self.assertTrue(checking['engine']['proved'], (line, checking['engine']))
+            self.assertEqual(checking['engine']['basis'], 'running_balance')
+            self.assertEqual(self.moves(checking)[-1], ('2024-02-01', 'debit', '500', '12000'))
+
+    def test_a_merged_amount_whose_printed_balance_does_not_chain_is_held(self):
+        # The period still reconciles (100 + 50 - 25 - 5 = 120), but the balance printed beside the merged
+        # amount does not follow from it: nothing proves the amount read from the merged cell.
+        line = [('02-01', 14000, 35000), ('Check 101', 43000, 85000), ('5.00 - 121.00', 431000, 594000)]
+        checking = self.sections(credit_union_statement(check_line=line))[0]
+        self.assertFalse(checking['engine']['proved'])
+        self.assertEqual(checking['engine']['reason'], 'no_independent_control')
+
+    def test_a_zero_voucher_total_between_the_balances_keeps_a_quiet_section_proved(self):
+        # A payment voucher printed inside the quiet credit line's section ('TOTAL $0.00') moves nothing.
+        _, line, _ = self.sections(credit_union_statement(voucher='$0.00'))
+        self.assertTrue(line['engine']['proved'], line['engine'])
+        self.assertEqual(line['engine']['basis'], 'printed_no_transactions')
+        _, line, _ = self.sections(credit_union_statement(voucher='$5.00'))
+        self.assertFalse(line['engine']['proved'])
+
+    def test_a_credit_line_printing_only_its_principal_balance_is_held_with_that_reason(self):
+        # (C5) The balance column is the principal alone: the amount owed is not printed, nothing can prove it.
+        _, line, _ = self.sections(credit_union_statement(principal='active'))
+        self.assertEqual(line['balance_convention'], 'liability_owed')
+        self.assertFalse(line['engine']['proved'])
+        self.assertEqual(line['engine']['reason'], 'principal_only_balance')
+        hold = next(r for r in line['_rows'] if r.get('engine_hold'))
+        self.assertEqual(hold['engine_hold'], 'principal_only_balance')
+        self.assertIn('prints only its principal balance', hold['issues'][0])
+        # The same table with nothing owed and nothing moved is still proved by its printed no-activity line.
+        _, quiet, _ = self.sections(credit_union_statement(principal='quiet'))
+        self.assertTrue(quiet['engine']['proved'], quiet['engine'])
 
     def test_redacted_rows_never_prove(self):
         checking = self.sections(credit_union_statement(redacted=True))[0]
@@ -1794,7 +2363,7 @@ class MultiAccountStatementTests(unittest.TestCase):
         self.assertEqual(catalog['engine_routing']['profile'], 'invented-credit-union')
         served = {(st['account_reference'][-4:], st['balance_convention']): st['engine'] for st in catalog['statements']}
         self.assertTrue(served[('1111', 'asset_balance')]['proved'])
-        self.assertEqual(served[('1111', 'liability_owed')]['reason'], 'account_shared')
+        self.assertTrue(served[('1111', 'liability_owed')]['proved'])
 
     def test_a_summary_closed_before_the_movement_table_does_not_make_it_another_table(self):
         sources = mx_statement(MOVES, closing='1,250.00')
@@ -1836,3 +2405,1077 @@ class MultiAccountStatementTests(unittest.TestCase):
         for page in facts.values():
             page.pop('file_numbered')
         self.assertEqual([s['pages'] for s in E._segments({p: [] for p in facts}, facts)], [[1, 2, 3, 4, 5]])
+
+
+def redacted_statement(names=('JANE Q EXAMPLE', 'JOHN R EXAMPLE'), *, mailing='1029384', checked=True, unread=(),
+                       reprint=None, below=None, edge=117000):
+    """r8-mt-engine: an invented US deposit layout whose addressee block prints the name lines with the
+    address redacted; optionally a mailing line of figures above the names, a continuation page
+    reprinting ``reprint`` as a whole line, and a line ``below`` the names at their edge. ``checked``:
+    the reading recorded that it checked its printed lines; ``unread``: rects it left unread."""
+    lines = [[('EXAMPLE SAVINGS', 20000, 150000)],
+             [('FOR INQUIRIES CALL: (800) 555-0100', 20000, 250000), ('STATEMENT PERIOD', 380000, 470000),
+              ('03/01/2024 - 03/31/2024', 480000, 590000)]]
+    if mailing:
+        lines.append([(mailing, edge, edge + 28000)])
+    lines += [[(name, edge, edge + 95000)] for name in names]
+    if below:
+        lines.append([(below, edge, edge + 95000)])
+    lines += [[],
+              [('BEGINNING BALANCE', 330000, 430000), ('$1,000.00', 500000, 560000)],
+              [('ENDING BALANCE', 330000, 430000), ('$1,250.00', 500000, 560000)],
+              [('DATE', 20000, 60000), ('DESCRIPTION', 80000, 160000), ('DEPOSITS', 330000, 380000),
+               ('WITHDRAWALS', 400000, 460000), ('BALANCE', 520000, 560000)]]
+    for day, text, credit, debit, balance in (('03/15/2024', 'TRANSFER RECEIVED', '500.00', None, '1,500.00'),
+                                              ('03/20/2024', 'SERVICE PAYMENT', None, '200.00', '1,300.00'),
+                                              ('03/25/2024', 'SERVICE CHARGE', None, '50.00', '1,250.00')):
+        line = [(day, 20000, 60000), (text, 80000, 300000)]
+        if credit:
+            line.append((credit, 380000 - 6000 * len(credit), 380000))
+        if debit:
+            line.append((debit, 460000 - 6000 * len(debit), 460000))
+        line.append((balance, 560000 - 6000 * len(balance), 560000))
+        lines.append(line)
+    pages = [page(1, lines)]
+    if reprint:
+        pages.append(page(2, [[(reprint, 380000, 590000)], [('PAGE 2 OF 2', 500000, 590000)]]))
+    for source in pages:
+        if checked:
+            source['printed_lines'] = dict(checked=True, unread=[list(rect) for rect in unread])
+    return pages
+
+
+class AddresslessHolderTests(unittest.TestCase):
+    """r8-mt-engine: an addressee block printed without its address gives the holder only with a second
+    printed fact, on a page whose reading checked its printed lines."""
+
+    def holder(self, sources):
+        return read_statements(sources)[0]['holder']
+
+    def test_a_mailing_line_of_figures_above_the_name_block_confirms_it(self):
+        self.assertEqual(self.holder(redacted_statement()), 'JANE Q EXAMPLE')
+        self.assertEqual(self.holder(redacted_statement(names=('JANE Q EXAMPLE',))), 'JANE Q EXAMPLE')
+
+    def test_the_top_line_reprinted_on_a_continuation_page_confirms_it(self):
+        self.assertEqual(self.holder(redacted_statement(mailing=None)), '')
+        self.assertEqual(self.holder(redacted_statement(mailing=None, reprint='JANE Q EXAMPLE')), 'JANE Q EXAMPLE')
+        # A reprint of the second name line is not a reprint of the block's top.
+        self.assertEqual(self.holder(redacted_statement(mailing=None, reprint='JOHN R EXAMPLE')), '')
+
+    def test_a_reading_that_did_not_check_its_printed_lines_gives_no_holder(self):
+        self.assertEqual(self.holder(redacted_statement(checked=False)), '')
+
+    def test_an_unread_printed_line_beside_the_block_gives_no_holder(self):
+        # The reading lost a line just above the names (a first name line): the second line is not the top.
+        lost = (117000, 64000, 210000, 70000)
+        self.assertEqual(self.holder(redacted_statement(unread=[lost])), '')
+        # A line left unread far away (the summary box) does not matter.
+        self.assertEqual(self.holder(redacted_statement(unread=[(370000, 280000, 470000, 286000)])), 'JANE Q EXAMPLE')
+
+    def test_a_block_with_another_kind_of_line_at_its_edge_is_not_an_addressee_block(self):
+        self.assertEqual(self.holder(redacted_statement(below='100 MAIN STREET')), '')
+        self.assertEqual(self.holder(redacted_statement(names=('JANE Q EXAMPLE', 'TRANSFER SUMMARY: ACCOUNT'))), '')
+        self.assertEqual(self.holder(redacted_statement(names=('A', 'B', 'C', 'D'))), '')
+        self.assertEqual(self.holder(redacted_statement(names=('JANE Q EXAMPLE', 'JOHN R EXAMPLE', 'ANN EXAMPLE',
+                                                               'MORE EXAMPLE'))), '')
+
+    def test_bank_heading_and_right_half_lines_are_never_the_holder(self):
+        self.assertEqual(self.holder(redacted_statement(names=('EXAMPLE SAVINGS BANK',))), '')
+        self.assertEqual(self.holder(redacted_statement(edge=330000)), '')
+
+    def test_two_different_confirmed_names_give_no_holder(self):
+        sources = redacted_statement(reprint='JANE Q EXAMPLE')
+        sources[1]['rows'].insert(0, dict(row_index=50, cells=[cell('OTHER N PERSON', 117000, 210000, 30000, 0)]))
+        sources[1]['rows'].insert(1, dict(row_index=51, cells=[cell('OTHER N PERSON', 380000, 590000, 300000, 0)]))
+        self.assertEqual(self.holder(sources), 'JANE Q EXAMPLE')  # the block is read on the first page only
+        sources[0]['rows'].append(dict(row_index=99, cells=[cell('OTHER N PERSON', 20000, 110000, 700000, 0)]))
+        sources[0]['rows'].append(dict(row_index=98, cells=[cell('OTHER N PERSON', 300000, 400000, 720000, 0)]))
+        self.assertEqual(self.holder(sources), 'JANE Q EXAMPLE')  # below the movements: not the heading
+
+    def test_the_switch_turns_the_rule_off(self):
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+        with mock.patch.object(E, 'ADDRESSLESS_HOLDER', False):
+            self.assertEqual(self.holder(redacted_statement()), '')
+
+
+def barcoded_statement(*, reprint='EMPRESA DE PRUEBA SA DE CV', street='CALLE FALSA 123 PISO 4', unread=(),
+                       reprint_below_movements=False, name=None, copies=1):
+    """r9: an invented Spanish layout whose addressee block (name, street, neighbourhood, city) has lost its
+    postal-code line (printed over the mailing barcode), with an optional continuation page reprinting
+    ``reprint`` as the left cell of its heading line, as some statements reprint the addressee."""
+    sources = mx_statement(MOVES, closing='1,250.00')
+    rows = sources[0]['rows']
+    for row in rows:
+        for c in row['cells']:
+            if c['expected_text'] == 'CIUDAD DE MEXICO C.P. 06000':
+                c['expected_text'] = 'CIUDAD DE MEXICO, CIUDAD DE MEXICO'
+            elif c['expected_text'] == 'CALLE FALSA 123':
+                c['expected_text'] = street
+            elif c['expected_text'] == 'COL CENTRO':
+                c['expected_text'] = 'COL CENTRO, CUAUHTEMOC'
+            elif name is not None and c['expected_text'] == 'EMPRESA DE PRUEBA SA DE CV':
+                c['expected_text'] = name  # the page-1 name line as read
+    # The bank's heading prints well above the addressee block, as on the measured layout.
+    for row in rows[1:]:
+        for c in row['cells']:
+            c['locator']['rect'][1] += 30000
+            c['locator']['rect'][3] += 30000
+    sources[0]['printed_lines'] = dict(checked=True, unread=[list(rect) for rect in unread])
+    if reprint:
+        heading = [(reprint, 20000, 200000), ('CODIGO DE CLIENTE NO. 12345', 330000, 500000)]
+        lines = [[('FECHA', 20000, 60000), ('CONCEPTO', 80000, 160000), ('ABONOS', 330000, 380000),
+                  ('CARGOS', 410000, 460000), ('SALDO', 520000, 560000)],
+                 [('PAGINA 2 DE 2', 500000, 590000)]]
+        lines = lines + [heading] if reprint_below_movements else [heading] + lines
+        for number in range(2, 2 + copies):
+            sources.append(page(number, deepcopy(lines)))
+            sources[-1]['printed_lines'] = dict(checked=True, unread=[])
+    return sources
+
+
+class UnanchoredHolderTests(unittest.TestCase):
+    """r9: an addressee block whose postal-code line was not read gives the holder only when the statement
+    reprints its top line above another page's movements."""
+
+    def holder(self, sources):
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+        return read_statements(sources)[0]['holder']
+
+    def test_the_top_line_reprinted_on_another_page_confirms_the_block(self):
+        self.assertEqual(self.holder(barcoded_statement()), 'EMPRESA DE PRUEBA SA DE CV')
+        self.assertEqual(self.holder(barcoded_statement(reprint=None)), '')
+        self.assertEqual(self.holder(barcoded_statement(reprint='OTRA EMPRESA SA DE CV')), '')
+        # A name printed among another page's movements is not the page heading's reprint.
+        self.assertEqual(self.holder(barcoded_statement(reprint_below_movements=True)), '')
+
+    def test_an_unread_text_line_at_the_block_gives_no_holder_and_a_barcode_does_not_count(self):
+        lost = (20000, 70000, 200000, 79000)  # a line just above the name: the name may not be the block's top
+        self.assertEqual(self.holder(barcoded_statement(unread=[lost])), '')
+        barcode = (20000, 125000, 200000, 175000)  # five lines high, under the block
+        self.assertEqual(self.holder(barcoded_statement(unread=[barcode])), 'EMPRESA DE PRUEBA SA DE CV')
+
+    def test_a_block_printing_no_street_number_is_not_an_address(self):
+        self.assertEqual(self.holder(barcoded_statement(street='CALLE FALSA SIN NUMERO')), '')
+
+    def test_the_switch_turns_the_rule_off(self):
+        with mock.patch.object(E, 'UNANCHORED_HOLDER', False):
+            self.assertEqual(self.holder(barcoded_statement()), '')
+
+    def test_a_name_read_only_into_its_legal_form_is_completed_from_headings_on_two_pages(self):
+        # r14: page 1's reading stops inside the legal form; the headings print the whole name.
+        self.assertEqual(self.holder(barcoded_statement(name='EMPRESA DE PRUEBA SA', copies=2)),
+                         'EMPRESA DE PRUEBA SA DE CV')
+        # One heading page is not enough.
+        self.assertEqual(self.holder(barcoded_statement(name='EMPRESA DE PRUEBA SA', copies=1)), '')
+        # Only the legal form's end is completed, never a word of the name proper.
+        self.assertEqual(self.holder(barcoded_statement(name='EMPRESA DE', copies=2)), '')
+        self.assertEqual(self.holder(barcoded_statement(name='EMPRESA DE PRUEBA', copies=2)), '')
+        # A heading that does not end in a whole legal form completes nothing.
+        self.assertEqual(self.holder(barcoded_statement(name='EMPRESA DE PRUEBA SA', reprint='EMPRESA DE PRUEBA SA X',
+                                                        copies=2)), '')
+        # A heading naming someone else completes nothing.
+        self.assertEqual(self.holder(barcoded_statement(name='EMPRESA DE PRUEBA SA', reprint='OTRA EMPRESA SA DE CV',
+                                                        copies=2)), '')
+
+    def test_the_completion_switch_turns_it_off(self):
+        with mock.patch.object(E, 'LEGAL_FORM_COMPLETION', False):
+            self.assertEqual(self.holder(barcoded_statement(name='EMPRESA DE PRUEBA SA', copies=2)), '')
+        self.assertEqual(self.holder(barcoded_statement(copies=2)), 'EMPRESA DE PRUEBA SA DE CV')
+
+
+class IssuerAddressTests(unittest.TestCase):
+    """r8-mt-engine: a postal-anchored block whose first line is the bank's bare name is the bank's own
+    (remittance or return) address, never the holder's."""
+
+    def test_the_remittance_address_under_a_bank_name_is_not_the_holder(self):
+        lines = [[('EXAMPLE SAVINGS BANK', 60000, 200000)], [('REMITTANCE DEPT', 60000, 200000)],
+                 [('PO BOX 1000', 60000, 160000)], [('SPRINGFIELD, IL 62701-1000', 60000, 220000)]]
+        self.assertEqual(E.address_holder(E._pages([page(1, lines)])[1]), '')
+        lines[0] = [('JANE Q EXAMPLE', 60000, 200000)]
+        self.assertEqual(E.address_holder(E._pages([page(1, lines)])[1]), 'JANE Q EXAMPLE')
+
+    def test_a_legal_name_heading_above_the_addressee_block_still_leaves_it_the_holder(self):
+        self.assertEqual(read_statements(mx_statement(MOVES, closing='1,250.00'))[0]['holder'], 'EMPRESA DE PRUEBA SA DE CV')
+
+
+class LogoInstitutionTests(unittest.TestCase):
+    """r8-mt-engine: an institution read from one line only (a logo read as letters) is not the issuer, and
+    a matched profile's issuer is never replaced by another bank's name."""
+
+    def sources(self, logo='SAMPLEVILLE BANK', elsewhere=()):
+        sources = redacted_statement()
+        sources[0]['rows'][0]['cells'][0]['expected_text'] = logo
+        for index, text in enumerate(elsewhere):
+            sources[0]['rows'].append(dict(row_index=200 + index, cells=[cell(text, 20000, 400000, 700000 + index * 12000, 0)]))
+        return sources
+
+    def test_a_bank_name_printed_once_is_not_read_and_one_printed_twice_is(self):
+        self.assertEqual(read_statements(self.sources())[0]['institution'], '')
+        self.assertEqual(read_statements(self.sources(elsewhere=('HOW TO BALANCE YOUR SAMPLEVILLE BANK ACCOUNT',)))[0]
+                         ['institution'], 'SAMPLEVILLE BANK')
+        self.assertTrue(E._printed_twice('SAMPLEVILLE BANK', E._pages(self.sources(elsewhere=('SAMPLEVILLE BANK',)))))
+        self.assertFalse(E._printed_twice('SAMPLEVILLE BANK', E._pages(self.sources(elsewhere=('SAMPLEVILLE',)))))
+        self.assertFalse(E._printed_twice('BANK', E._pages(self.sources(elsewhere=('BANK',)))))
+
+    def test_a_profile_issuer_replaces_a_differing_name_and_keeps_an_agreeing_one(self):
+        profile = dict(name='invented-us', match=dict(any=['for inquiries call']), institution='Exemplar Bank')
+        misread = self.sources(logo='EXEMPIAR BANK', elsewhere=('EXEMPIAR BANK',))
+        self.assertEqual(read_statements(misread)[0]['institution'], 'EXEMPIAR BANK')
+        self.assertEqual(read_statements(misread, profile=profile)[0]['institution'], 'Exemplar Bank')
+        agreeing = self.sources(logo='EXEMPLAR BANK', elsewhere=('EXEMPLAR BANK',))
+        self.assertEqual(read_statements(agreeing, profile=profile)[0]['institution'], 'EXEMPLAR BANK')
+
+    def test_a_movement_line_naming_another_issuer_does_not_make_the_profile_ambiguous(self):
+        from services.financial import statement_engine_profiles as P
+        first = dict(name='first', match=dict(any=['example telephone banking']), institution='First')
+        second = dict(name='second', match=dict(any=['other card']), institution='Second')
+        sources = self.sources(elsewhere=('EXAMPLE TELEPHONE BANKING CENTER',))
+        sources[0]['rows'].append(dict(row_index=300, cells=[cell('41/19/2021', 20000, 60000, 760000, 0),
+                                                               cell('OTHER CARD PAYMENT', 80000, 300000, 760000, 1)]))
+        with mock.patch.object(P, 'PROFILES', (first, second)):
+            text, furniture = P.profile_text(sources), P.furniture_text(sources)
+            self.assertIsNone(P.matching_profile(text))
+            self.assertEqual(P.matching_profile(text, furniture)['name'], 'first')
+            # Printed in the furniture as well: still ambiguous.
+            sources[0]['rows'].append(dict(row_index=301, cells=[cell('OTHER CARD SERVICES', 20000, 300000, 772000, 0)]))
+            self.assertIsNone(P.matching_profile(P.profile_text(sources), P.furniture_text(sources)))
+
+
+def mailed_credit_line(same_period=True, interest_only=False):
+    """r8-mt-engine: an invented deposit statement (pages 1-2 of 4) mailed with a credit line's statement
+    (pages 3-4 of 4) that prints its summary as a table (headings over one line of amounts), its own
+    account under 'Account Number:' and, optionally, the deposit's period."""
+    deposit = [[('EXAMPLE SAVINGS', 20000, 150000), ('PAGE 1 OF 4', 500000, 590000)],
+               [('ACCOUNT NUMBER', 380000, 460000), ('STATEMENT PERIOD', 480000, 570000)],
+               [('1234', 420000, 440000), ('03/01/2024 - 03/31/2024', 480000, 590000)],
+               [('BEGINNING BALANCE', 330000, 430000), ('$1,000.00', 500000, 560000)],
+               [('ENDING BALANCE', 330000, 430000), ('$1,250.00', 500000, 560000)],
+               [('DATE', 20000, 60000), ('DESCRIPTION', 80000, 160000), ('DEPOSITS', 330000, 380000),
+                ('WITHDRAWALS', 400000, 460000), ('BALANCE', 520000, 560000)],
+               [('03/15/2024', 20000, 60000), ('TRANSFER RECEIVED', 80000, 300000), ('500.00', 344000, 380000),
+                ('1,500.00', 512000, 560000)],
+               [('03/20/2024', 20000, 60000), ('SERVICE PAYMENT', 80000, 300000), ('250.00', 424000, 460000),
+                ('1,250.00', 512000, 560000)]]
+    period = '03/01/2024 - 03/31/2024' if same_period else '03/04/2024 - 04/02/2024'
+    summary = ('$100.00', '$0.00', '$0.00', '$1.50', '$0.00', '$101.50') if interest_only else \
+              ('$100.00', '$40.00', '$25.00', '$1.50', '$8.00', '$124.50')
+    columns = (60000, 150000, 240000, 330000, 420000, 520000)
+    credit_line = [[('Line of Credit Statement', 380000, 590000)], [('Page 3 of 4', 480000, 590000)],
+                   [('Statement Period: ' + period, 380000, 590000)],
+                   [('Account Number:', 20000, 120000), ('5678', 260000, 290000), ('PAYMENT DUE DATE:', 330000, 450000),
+                    ('04/25/2024', 520000, 590000)],
+                   [('Account Summary', 20000, 120000)],
+                   [('Previous', 60000, 100000), ('Loans', 150000, 180000), ('Payments', 240000, 285000),
+                    ('Interest', 330000, 370000), ('New', 520000, 545000)],
+                   [('Balance', 60000, 100000), ('& Debits', 150000, 190000), ('& Credits', 240000, 285000),
+                    ('Charged', 330000, 370000), ('Fees', 420000, 445000), ('Balance', 520000, 560000)],
+                   [(value, x, x + 40000) for value, x in zip(summary, columns)],
+                   [('Effective', 20000, 70000), ('Transactions & Fee', 80000, 200000), ('Fees, Premiums', 300000, 380000),
+                    ('Payments', 420000, 480000)],
+                   [('Date', 20000, 50000), ('Descriptions', 80000, 160000), ('& Loans', 300000, 350000),
+                    ('& Credits', 420000, 480000)]]
+    if not interest_only:
+        credit_line += [[('Payments and Advances:', 20000, 200000)],
+                        [('03/10/2024', 20000, 70000), ('ADVANCE', 80000, 200000), ('$40.00', 330000, 370000)],
+                        [('03/18/2024', 20000, 70000), ('WEB PAYMENT', 80000, 200000), ('$25.00', 440000, 480000)],
+                        [('Fees:', 20000, 60000)],
+                        [('03/10/2024', 20000, 70000), ('PER ITEM CHARGE', 80000, 200000), ('$8.00', 340000, 370000)]]
+    credit_line += [[('Interest Charged:', 20000, 150000)],
+                    [('03/31/2024', 20000, 70000), ('INTEREST CHARGED', 80000, 200000), ('$1.50', 340000, 370000)]]
+    return [page(1, deposit), page(2, [[('HOW TO BALANCE YOUR ACCOUNT', 20000, 300000)]]),
+            page(3, credit_line), page(4, [[('Page 4 of 4', 480000, 590000)], [('IMPORTANT TERMS', 20000, 200000)]])]
+
+
+class MailedCreditLineTests(unittest.TestCase):
+    """r8-mt-engine: a credit line's statement mailed inside a deposit statement is its own period."""
+
+    def statements(self, **options):
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+        return read_statements(mailed_credit_line(**options))
+
+    def test_the_credit_line_is_its_own_proved_period_even_with_the_deposits_period(self):
+        for same in (True, False):
+            deposit, credit = self.statements(same_period=same)
+            self.assertEqual((deposit['page_numbers'], credit['page_numbers']), ([1, 2], [3, 4]), same)
+            self.assertTrue(deposit['engine']['proved'], deposit['engine'])
+            self.assertTrue(credit['engine']['proved'], credit['engine'])
+            self.assertEqual((credit['account_reference'], credit['balance_convention']), ('5678', 'liability_owed'))
+            balances = {r['fields']['description']: r['fields']['balance'] for r in credit['_rows'] if r['kind'] == 'balance'}
+            self.assertEqual(balances, {'Opening Balance': '10000', 'Closing Balance': '12450'})
+            moves = sorted((r['fields']['date'], r['fields']['direction'], r['fields']['amount_minor'])
+                           for r in credit['_rows'] if r['kind'] == 'transaction' and not r['excluded'])
+            self.assertEqual(moves, [('2024-03-10', 'debit', '4000'), ('2024-03-10', 'debit', '800'),
+                                     ('2024-03-18', 'credit', '2500'), ('2024-03-31', 'debit', '150')])
+
+    def test_a_second_period_inside_one_numbered_statement_of_the_same_account_stays_held(self):
+        # Pages 3-4 print another period but no other account: they continue the same statement, whose
+        # printed numbering then lacks pages 1-2 for them (A3); only another account's statement is mailed.
+        sources = mailed_credit_line(same_period=False)
+        for row in sources[2]['rows']:
+            for c in row['cells']:
+                c['expected_text'] = c['expected_text'].replace('5678', '1234')
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+        later = [st for st in read_statements(sources) if 3 in st['page_numbers']]
+        self.assertEqual(len(later), 1)
+        self.assertFalse(later[0]['engine']['proved'])
+        self.assertEqual(later[0]['engine']['reason'], 'pages_missing')
+
+    def test_a_dated_line_under_its_own_section_heading_is_a_movement_and_the_date_order_is_the_documents(self):
+        # The one movement's date (03/31 reads only month first) and the period (both orders valid once
+        # the deposit is gone) take the document's order.
+        credit = self.statements(interest_only=True)[1]
+        self.assertTrue(credit['engine']['proved'], credit['engine'])
+        moves = [(r['fields']['date'], r['fields']['description']) for r in credit['_rows'] if r['kind'] == 'transaction']
+        self.assertEqual(moves, [('2024-03-31', 'INTEREST CHARGED')])
+
+    def test_a_table_summary_needs_an_opening_and_a_closing_heading(self):
+        rows = E._pages(mailed_credit_line())[3]
+        E._mark_stacked_summaries(rows, 'dot')
+        marked = [r for r in rows if r.get('stacked_pairs')]
+        self.assertEqual(len(marked), 1)
+        self.assertEqual([text for text, _ in marked[0]['stacked_pairs']],
+                         ['PREVIOUS BALANCE', 'LOANS & DEBITS', 'PAYMENTS & CREDITS', 'INTEREST CHARGED', 'FEES',
+                          'NEW BALANCE'])
+        sources = mailed_credit_line()
+        for row in sources[2]['rows']:
+            for c in row['cells']:
+                c['expected_text'] = c['expected_text'].replace('New', 'Average')
+        rows = E._pages(sources)[3]
+        E._mark_stacked_summaries(rows, 'dot')
+        self.assertFalse([r for r in rows if r.get('stacked_pairs')])
+
+    def test_the_document_date_order_needs_one_order_only(self):
+        pages = E._pages(mailed_credit_line())
+        self.assertEqual(E._document_date_order(pages), 'mdy')
+        pages[1].append(dict(pages[1][0], tokens=[dict(pages[1][0]['tokens'][0], t='25/03/2024')]))
+        self.assertIsNone(E._document_date_order(pages))
+
+
+class ScanDamageR8Tests(unittest.TestCase):
+    """r8-mt-engine: scan damage on identity and money cells."""
+
+    def test_a_money_sign_head_and_a_lost_thousands_comma_are_one_amount(self):
+        self.assertEqual(E._rejoin_amounts([(0, 2, '$4'), (3, 9, '321.09')]), [(0, 9, '$4,321.09')])
+        # Without the money sign the head can be a printed count; a two-digit tail is never a group.
+        self.assertEqual(E._rejoin_amounts([(0, 1, '4'), (2, 8, '321.09')]), [(0, 1, '4'), (2, 8, '321.09')])
+        self.assertEqual(E._rejoin_amounts([(0, 2, '$4'), (3, 8, '32.09')]), [(0, 2, '$4'), (3, 8, '32.09')])
+
+    def test_a_quote_mark_before_a_labelled_account_and_four_printed_digits_are_read(self):
+        found = {}
+        row = dict(raw=dict(cells=[dict(expected_text='Account Number:'), dict(expected_text='‘5678')]))
+        E._accounts(row, found)
+        self.assertEqual(found, {'5678': {3}})
+        found = {}
+        E._accounts(dict(raw=dict(cells=[dict(expected_text='Account:'), dict(expected_text='5678')])), found)
+        self.assertEqual(found, {})  # a short number needs the full account-number label
+        E._accounts(dict(raw=dict(cells=[dict(expected_text='Account Number:'), dict(expected_text='0000')])), found)
+        self.assertEqual(found, {})
+
+    def test_a_mailing_numbered_across_two_statements_is_complete_for_both(self):
+        facts = {1: dict(numbering={(1, 4)}), 2: dict(numbering=set()), 3: dict(numbering={(3, 4)}),
+                 4: dict(numbering=set())}
+        self.assertFalse(E._numbering_complete([3, 4], facts))
+        self.assertTrue(E._numbering_complete([1, 2, 3, 4], facts))
+
+
+def merged_total_statement(debit_total='250.00', description='COMISION\nTOTAL'):
+    """The invented Spanish layout as a ruled table with no rule between its last movement and its TOTAL
+    line: one stored row of boxes holds both printed lines (E10)."""
+    sources = mx_statement(MOVES, closing='1,250.00')
+    row = sources[0]['rows'][-1]
+    y = row['cells'][0]['locator']['rect'][1]
+
+    def box(text, x0, x1, column):
+        made = cell(text, x0, x1, y, column)
+        made['locator']['rect'][3] = y + 9000 * (text.count('\n') + 1)
+        return made
+    row['cells'] = [box('20/MAR', 20000, 60000, 0), box(description, 80000, 300000, 1), box('500.00', 340000, 380000, 2),
+                    box('50.00\n' + debit_total, 420000, 460000, 3), box('1,250.00', 512000, 560000, 4)]
+    return sources
+
+
+class MergedTotalLineTests(unittest.TestCase):
+    def read(self, sources):
+        statements = read_statements(sources)
+        self.assertEqual(len(statements), 1)
+        st = statements[0]
+        return st, [(r['fields'].get('date'), r['fields'].get('direction'), r['fields'].get('amount_minor'))
+                    for r in st['_rows'] if not r['excluded'] and r['kind'] == 'transaction']
+
+    def test_the_last_movement_and_the_total_line_in_one_row_are_read_apart_and_prove(self):
+        st, moves = self.read(merged_total_statement())
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual(moves, [('2024-03-05', 'credit', '50000'), ('2024-03-10', 'debit', '20000'),
+                                 ('2024-03-20', 'debit', '5000')])
+
+    def test_a_split_total_line_that_differs_from_the_column_holds(self):
+        st, _ = self.read(merged_total_statement(debit_total='260.00'))
+        self.assertFalse(st['engine']['proved'])
+        self.assertEqual(st['engine']['reason'], 'printed_total_differs')
+
+    def test_a_row_whose_last_description_line_is_not_a_total_is_not_split(self):
+        st, moves = self.read(merged_total_statement(description='COMISION\nIVA'))
+        self.assertFalse(st['engine']['proved'])
+        self.assertEqual(moves, [])
+
+
+class LayerGuardTests(unittest.TestCase):
+    """The layer guard: lines the skipped-line layer read never cost a period the page proved without them."""
+
+    def setUp(self):
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+
+    def with_layer_line(self, line, sources=None):
+        sources = sources or mx_statement(MOVES, closing='1,250.00')
+        rows = sources[0]['rows']
+        y = max(c['locator']['rect'][1] for r in rows for c in r['cells']) + 12000
+        cells = [cell(t, x0, x1, y, c) for c, (t, x0, x1) in enumerate(line)]
+        rows.append(dict(row_index=len(rows), cells=cells))
+        rect = [min(c['locator']['rect'][0] for c in cells) - 500, y - 500,
+                max(c['locator']['rect'][2] for c in cells) + 500, y + 9500]
+        sources[0]['printed_lines'] = dict(checked=True, unread=[], layer=[rect])
+        return sources, rect
+
+    def test_a_layer_line_that_breaks_a_proved_period_is_read_without(self):
+        plain = read_statements(mx_statement(MOVES, closing='1,250.00'))
+        self.assertTrue(plain[0]['engine']['proved'])
+        sources, rect = self.with_layer_line([('25/MAR', 20000, 60000), ('CARGO', 80000, 300000),
+                                              ('77.00', 460000 - 6000 * 5, 460000)])
+        self.assertFalse(E._read_statements(sources)[0]['engine']['proved'])  # the layered reading alone
+        statements = read_statements(sources)
+        self.assertEqual(len(statements), 1)
+        self.assertTrue(statements[0]['engine']['proved'], statements[0]['engine'])
+        self.assertEqual(statements[0]['reading_layer'], 'without_skipped_lines')
+        self.assertEqual(statements[0]['id'], plain[0]['id'])
+        # The period is found again by its id in a fresh reading of the same sources.
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+        self.assertEqual(read_statements(sources)[0]['id'], plain[0]['id'])
+
+    def test_a_layer_line_that_costs_nothing_keeps_the_layered_reading(self):
+        sources, _ = self.with_layer_line([('GRACIAS POR SU PREFERENCIA', 20000, 300000)])
+        statements = read_statements(sources)
+        self.assertTrue(statements[0]['engine']['proved'])
+        self.assertNotIn('reading_layer', statements[0])
+        self.assertEqual(statements, E._read_statements(sources))
+
+    def test_without_the_layer_its_lines_are_unread_again(self):
+        sources, rect = self.with_layer_line([('GRACIAS POR SU PREFERENCIA', 20000, 300000)])
+        stripped = E._without_layer(sources)
+        texts = [c['expected_text'] for r in stripped[0]['rows'] for c in r['cells']]
+        self.assertNotIn('GRACIAS POR SU PREFERENCIA', texts)
+        self.assertEqual(stripped[0]['printed_lines'], dict(checked=True, unread=[rect]))
+        self.assertIsNone(E._without_layer(mx_statement(MOVES, closing='1,250.00')))
+
+    def test_a_group_keeps_the_reading_that_proves_more(self):
+        proved = lambda pages, ok, name: dict(page_numbers=pages, engine=dict(proved=ok), id=name)
+        layered = [proved([1], True, 'a'), proved([2, 3], False, 'b')]
+        base = [proved([1], True, 'a'), proved([2], True, 'c'), proved([3], True, 'd')]
+        kept = E._keep_proved(layered, base)
+        self.assertEqual([st['id'] for st in kept], ['a', 'c', 'd'])
+        self.assertNotIn('reading_layer', kept[0])
+        self.assertEqual(kept[1]['reading_layer'], 'without_skipped_lines')
+        # Equal proof: the layered reading stays, in its own order.
+        self.assertIs(E._keep_proved(layered[:1], base[:1])[0], layered[0])
+
+    def test_the_layer_is_part_of_the_reading_cache_key(self):
+        sources, rect = self.with_layer_line([('GRACIAS POR SU PREFERENCIA', 20000, 300000)])
+        without = [dict(s) for s in sources]
+        without[0]['printed_lines'] = dict(checked=True, unread=[])
+        self.assertNotEqual(E._source_signature(sources), E._source_signature(without))
+
+
+def boxes_statement(a_deposits='500.00', one_page=False):
+    """r10: an invented two-account layout printing each account's summary box on page 1 (opening, deposits,
+    withdrawals, closing) and each account's movement table on page 2 (or below both boxes on page 1), so each
+    account reads as two sections of one period: the box and the table."""
+    head = [[('BANCO EJEMPLO DEL NORTE, S.A., INSTITUCION DE BANCA MULTIPLE', 20000, 400000)],
+            [('EMPRESA DE PRUEBA SA DE CV', 20000, 200000), ('PERIODO', 330000, 380000),
+             ('DEL 01/03/2024 AL 31/03/2024', 390000, 590000)],
+            [('CALLE FALSA 123', 20000, 150000), ('MONEDA', 330000, 380000), ('PESOS', 390000, 450000)],
+            [('CIUDAD DE MEXICO C.P. 06000', 20000, 220000)]]
+
+    def box(account, opening, deposits, withdrawals, closing):
+        return [[('CUENTA EJEMPLO', 20000, 120000), ('NO. DE CUENTA', 330000, 400000), (account, 410000, 500000)],
+                [('SALDO ANTERIOR', 330000, 430000), (opening, 500000, 560000)],
+                [('DEPOSITOS', 330000, 400000), (deposits, 500000, 560000)],
+                [('RETIROS', 330000, 400000), (withdrawals, 500000, 560000)],
+                [('SALDO FINAL', 330000, 400000), (closing, 500000, 560000)]]
+
+    def table(account, opening, move, closing):
+        day, text, credit, debit, balance = move
+        line = [(day, 20000, 60000), (text, 80000, 300000)]
+        if credit:
+            line.append((credit, 380000 - 6000 * len(credit), 380000))
+        if debit:
+            line.append((debit, 460000 - 6000 * len(debit), 460000))
+        line.append((balance, 560000 - 6000 * len(balance), 560000))
+        return [[('DETALLE CUENTA EJEMPLO', 20000, 160000), ('NO. DE CUENTA', 330000, 400000), (account, 410000, 500000)],
+                [('SALDO ANTERIOR', 330000, 430000), (opening, 500000, 560000)],
+                [('FECHA', 20000, 60000), ('CONCEPTO', 80000, 160000), ('ABONOS', 330000, 380000),
+                 ('CARGOS', 410000, 460000), ('SALDO', 520000, 560000)],
+                line, [('SALDO FINAL', 330000, 400000), (closing, 500000, 560000)]]
+
+    first = head + box('0012345678', '1,000.00', a_deposits, '0.00', '1,500.00') + box(
+        '0099887766', '2,000.00', '0.00', '100.00', '1,900.00')
+    second = table('0012345678', '1,000.00', ('05/03/2024', 'TRANSFERENCIA RECIBIDA', '500.00', None, '1,500.00'),
+                   '1,500.00') + table('0099887766', '2,000.00', ('10/03/2024', 'PAGO DE SERVICIO', None, '100.00',
+                                                                 '1,900.00'), '1,900.00')
+    if one_page:
+        return [page(1, first + second)]
+    return [page(1, first), page(2, second)]
+
+
+class SummaryBoxMergeTests(unittest.TestCase):
+    """r10: an account's summary box printed apart from its movement table joins the proved table's period when
+    every fact the box prints is the table's own; otherwise both stay listed and the box stays held."""
+
+    def read(self, sources, merge=True):
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+        with mock.patch.object(E, 'SUMMARY_BOX_MERGE', merge):
+            return read_statements(sources)
+
+    def test_each_box_joins_its_own_accounts_proved_table(self):
+        statements = self.read(boxes_statement())
+        self.assertEqual([(s['account_reference'], s['page_numbers'], s['engine']['proved']) for s in statements],
+                         [('0012345678', [1, 2], True), ('0099887766', [1, 2], True)])
+        first = statements[0]
+        self.assertEqual(first['engine']['summary_box'] != '', True)
+        # The box's rows are in the period's scope, as furniture: one opening and one closing balance remain.
+        self.assertEqual({s['page_number'] for s in first['section_sources']}, {1, 2})
+        balances = [r['fields']['description'] for r in first['_rows'] if r['kind'] == 'balance']
+        self.assertEqual(sorted(balances), ['Closing Balance', 'Opening Balance'])
+        self.assertFalse(any(r['kind'] == 'unresolved' for r in first['_rows']))
+
+    def test_a_box_whose_printed_total_differs_from_the_movements_stays_apart_and_held(self):
+        statements = self.read(boxes_statement(a_deposits='400.00'))
+        first = [(s['page_numbers'], s['engine']['proved']) for s in statements
+                 if s['account_reference'] == '0012345678']
+        self.assertEqual(sorted(first), [([1], False), ([2], True)])
+
+    def test_a_box_keeps_its_own_import_region_beside_its_table(self):
+        # Page 1 prints box A, box B, table A, table B. One region spanning box A and table A would cross box B,
+        # and saving account B would then read as saving a period already imported.
+        from services.financial.statement_import_andrews import andrews_source_regions, source_regions_overlap
+        sources = boxes_statement(one_page=True)
+        statements = self.read(sources)
+        self.assertEqual([(s['account_reference'], s['engine']['proved']) for s in statements],
+                         [('0012345678', True), ('0099887766', True)])
+        first, second = statements
+        self.assertEqual([s['page_number'] for s in first['section_sources']], [1, 1])
+        for row in sources[0]['rows']:
+            for cell in row['cells']:
+                cell['locator'].setdefault('space', 'pdf_points_thousandths')
+                cell['locator'].setdefault('page_size', [612000, 792000])
+        regions = [andrews_source_regions(sources, dict(sources=s['section_sources'])) for s in statements]
+        self.assertIs(source_regions_overlap(*regions), False)
+
+    def test_the_switch_keeps_every_section_apart(self):
+        statements = self.read(boxes_statement(), merge=False)
+        self.assertEqual(len(statements), 4)
+        self.assertEqual(sum(1 for s in statements if s['engine']['proved']), 2)
+
+
+FIVE_MOVES = [('05/03/2024', 'TRANSFERENCIA RECIBIDA', '500.00', None, '1,500.00'),
+              ('06/03/2024', 'PAGO DE SERVICIO', None, '200.00', '1,300.00'),
+              ('07/03/2024', 'PAGO DE SERVICIO', None, '100.00', '1,200.00'),
+              ('08/03/2024', 'TRANSFERENCIA RECIBIDA', '300.00', None, '1,500.00'),
+              ('20/03/2024', 'COMISION', None, '50.00', '1,450.00')]
+
+
+class MarginMarkTests(unittest.TestCase):
+    """r10: marks printed in the margin beside an amount (a dash or a rule joined into its box, or read as
+    dashes after it), and a date glued to the next word, do not cost the line its values."""
+
+    def read(self, sources, **switches):
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+        with mock.patch.multiple(E, **switches) if switches else mock.patch.object(E, 'WIDE_AMOUNT_BOXES', True):
+            statement = read_statements(sources)[0]
+        rows = [(r['fields'].get('date'), r['fields'].get('amount_minor'), r['fields'].get('balance'))
+                for r in statement['_rows'] if r['kind'] == 'transaction']
+        return statement['engine'], rows
+
+    @staticmethod
+    def edit(sources, text, new_text=None, widen=0):
+        for row in sources[0]['rows']:
+            for c in row['cells']:
+                if c['expected_text'] == text:
+                    c['expected_text'] = new_text or text
+                    c['locator']['rect'][2] += widen
+        return sources
+
+    def test_an_amount_box_widened_by_a_margin_mark_keeps_its_column(self):
+        sources = self.edit(mx_statement(FIVE_MOVES, closing='1,450.00'), '1,200.00', widen=30000)
+        engine, rows = self.read(sources)
+        self.assertEqual(engine['assignment'], ('credit', 'debit', 'balance'))
+        self.assertEqual(rows[2], ('2024-03-07', '10000', '120000'))
+        sources = self.edit(mx_statement(FIVE_MOVES, closing='1,450.00'), '1,200.00', widen=30000)
+        engine, rows = self.read(sources, WIDE_AMOUNT_BOXES=False)
+        self.assertEqual(rows[2], ('2024-03-07', '10000', None))  # as before: the box formed a column of its own
+
+    def test_dashes_read_after_an_amount_are_not_part_of_it(self):
+        sources = self.edit(mx_statement(FIVE_MOVES, closing='1,450.00'), '1,200.00', '1,200.00———', widen=18000)
+        engine, rows = self.read(sources)
+        self.assertTrue(engine['proved'])
+        self.assertEqual(rows[2], ('2024-03-07', '10000', '120000'))
+        # One dash after an amount may be its printed minus sign: never dropped as a mark.
+        self.assertEqual(E._rejoin_amounts([(0, 9, '1,200.00—')]), [(0, 9, '1,200.00—')])
+
+    def test_a_date_glued_to_the_next_word_is_read_apart(self):
+        named = [(move[0].replace('/03/2024', '-MAR-2024'),) + move[1:] for move in FIVE_MOVES]
+        for mark in ("'", ')/', ''):
+            sources = mx_statement(named, closing='1,450.00')
+            for row in sources[0]['rows']:
+                cells = row['cells']
+                if cells and cells[0]['expected_text'] == '07-MAR-2024':
+                    cells[0]['expected_text'] = '07-MAR-2024' + mark + '1234567 ' + cells[1]['expected_text']
+                    cells[0]['locator']['rect'][2] = cells[1]['locator']['rect'][2]
+                    del cells[1]
+                    for index, c in enumerate(cells):
+                        c['column_index'] = index
+            engine, rows = self.read(sources)
+            self.assertTrue(engine['proved'], mark)
+            self.assertEqual(rows[2], ('2024-03-07', '10000', '120000'))
+            self.assertFalse(self.read(sources, UNGLUE_LEADING_DATE=False)[0]['proved'])
+
+    def test_only_a_full_date_with_a_plausible_year_is_split(self):
+        split = lambda word: [w for _, _, w in E._unglue_leading_date([(0, len(word), word)])]
+        self.assertEqual(split("01-MAR-2026'X1"), ['01-MAR-2026', 'X1'])
+        self.assertEqual(split('01/03/2026,ABC'), ['01/03/2026', 'ABC'])
+        self.assertEqual(split('01-MAR-20261234567'), ['01-MAR-2026', '1234567'])
+        for word in ('01-MAR-260000000', '01/03/20261234', '01-MAR-2026AB', '45-MAR-2026)/1', '01-MAR-2026'):
+            self.assertEqual(split(word), [word])
+
+
+class IssuerAndCompanyHolderTests(unittest.TestCase):
+    """r10: the issuer's own name block is never an addressee; a company name may print a letter-and-figure
+    word."""
+
+    def holder(self, sources):
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+        return read_statements(sources)[0]['holder']
+
+    def test_a_line_under_the_issuers_name_line_is_not_an_addressee_top(self):
+        names = ('EJEMPLO BANCO, S.A.', 'GRUPO EJEMPLO DEL NORTE')
+        self.assertEqual(self.holder(redacted_statement(names=names, mailing=None, reprint='GRUPO EJEMPLO DEL NORTE')), '')
+        self.assertEqual(self.holder(redacted_statement(names=('GRUPO EJEMPLO DEL NORTE',), mailing=None,
+                                                        reprint='GRUPO EJEMPLO DEL NORTE')), 'GRUPO EJEMPLO DEL NORTE')
+
+    def test_a_company_name_with_a_letter_and_figure_word_is_confirmed_by_its_reprint(self):
+        sources = barcoded_statement(reprint='EMPRESA K7 SA DE CV')
+        for source in sources:
+            for row in source['rows']:
+                for c in row['cells']:
+                    if c['expected_text'] == 'EMPRESA DE PRUEBA SA DE CV':
+                        c['expected_text'] = 'EMPRESA K7 SA DE CV'
+        self.assertEqual(self.holder(sources), 'EMPRESA K7 SA DE CV')
+
+
+class FurnitureCoverTests(unittest.TestCase):
+    """r10: a library period's page footer that the engine attributes to the next section does not stop the
+    engine section from covering it."""
+
+    def test_rows_the_engine_section_does_not_read_may_only_be_furniture(self):
+        from services.financial.statement_engine_routing import _covers
+        scoped = RoutingScopeTests.scoped
+        texts = ['SALDO FINAL 1,000.00', 'PAGINA 1 DE 2', 'ABONO 05/03/2024', 'NOTA']
+        by_address = RoutingScopeTests().by_address(texts)
+        engine = scoped([(1, [0, 2])])
+        self.assertTrue(_covers(engine, scoped([(1, [0, 1, 3])]), by_address))
+        self.assertFalse(_covers(scoped([(1, [0])]), scoped([(1, [0, 2])]), by_address))
+        self.assertFalse(_covers(engine, scoped([(1, [0, 1])])))  # without the stored rows: every row, as before
+
+
+class AgreementPrefersEngineTests(unittest.TestCase):
+    """r10: when both readers read a period alike, the engine serves it only where it alone establishes a fact
+    from the period's own printed lines: a printed currency the library did not read, or a quiet period's
+    printed zero totals."""
+
+    @staticmethod
+    def statement(currency='MXN', source='printed_statement_currency'):
+        return dict(currency=currency, currency_source=source, _rows=[])
+
+    @staticmethod
+    def row(kind, excluded=False):
+        return dict(kind=kind, excluded=excluded, fields={})
+
+    def test_a_printed_currency_the_library_did_not_read(self):
+        from services.financial.statement_engine_routing import _engine_completes
+        group = dict(currency='USD')
+        with mock.patch('services.financial.statement_currency.currencies_by_statement', return_value=[{}]):
+            self.assertTrue(_engine_completes(self.statement(), [], dict(), [], 'MXN'))
+            self.assertTrue(_engine_completes(self.statement(source='printed_account_section'), [], dict(), [], 'MXN'))
+            self.assertFalse(_engine_completes(self.statement(source=''), [], dict(), [], 'MXN'))
+            self.assertFalse(_engine_completes(self.statement(currency=''), [], dict(), [], ''))
+        self.assertFalse(_engine_completes(self.statement(), [], group, [], 'MXN'))  # the readers differ
+
+    def test_a_quiet_period_needs_its_printed_zero_totals(self):
+        from services.financial.statement_engine_routing import _engine_completes
+        group = dict(currency='MXN')
+        moving = [self.row('balance', True), self.row('transaction'), self.row('balance', True)]
+        quiet = [self.row('balance', True), self.row('statement_total', True), self.row('balance', True)]
+        target = 'services.financial.statement_printed_no_activity.zero_totals_evidence'
+        with mock.patch(target, return_value=dict(verified=True)) as evidence:
+            self.assertFalse(_engine_completes(self.statement(), moving, group, [], 'MXN'))
+            evidence.assert_not_called()
+            self.assertTrue(_engine_completes(self.statement(), quiet, group, [], 'MXN'))
+            self.assertEqual(evidence.call_args.kwargs['family'], 'generic')
+        with mock.patch(target, return_value=None):
+            self.assertFalse(_engine_completes(self.statement(), quiet, group, [], 'MXN'))
+
+
+class OwnScopeEntryTests(unittest.TestCase):
+    """r10: leaving out the rows another library period claims keeps each of the engine section's scope
+    entries apart: a summary box and its movement table on one page stay two import regions."""
+
+    def test_entries_on_one_table_are_not_joined(self):
+        from services.financial import statement_engine_routing as R
+        engine = dict(section_sources=[dict(page_number=1, table_index=0, row_indices=[2, 3, 4]),
+                                       dict(page_number=1, table_index=0, row_indices=[12, 13, 14])])
+        other = dict(section_sources=[dict(page_number=1, table_index=0, row_indices=[4, 7, 8])])
+        with mock.patch('services.financial.statement_import_andrews.andrews_source_regions', return_value=[{}]), \
+                mock.patch('services.financial.statement_import_andrews.source_regions_overlap', return_value=False):
+            scope = R._own_scope(engine, [other], [])
+        self.assertEqual(scope, [dict(page_number=1, table_index=0, row_indices=[2, 3]),
+                                 dict(page_number=1, table_index=0, row_indices=[12, 13, 14])])
+
+
+class AgreedPeriodServedByEngineTests(unittest.TestCase):
+    """r10: an agreed period the engine serves because only it reads the printed currency keeps the library's
+    printing of the facts both read alike (holder, account, institution)."""
+
+    def route(self, prefers=True):
+        from services.financial import statement_engine_routing as R
+        sources = mx_statement(MOVES, closing='1,250.00')
+        engine = read_statements(sources)[0]
+        group = dict(id='LIB', layout_id='fake-library', institution='BANCO EJEMPLO DEL NORTE S.A.',
+                     account_reference='0012345678', holder='EMPRESA DE PRUEBA S.A. DE C.V.', currency='',
+                     period_start='2024-03-01', period_end='2024-03-31',
+                     sources=[dict(page_number=1, table_index=0, source_revision='r1')], page_numbers=[1])
+        library = lambda s: dict(statements=[group], unclassified_sources=[], information_sources=[], complete_coverage=True)
+        with mock.patch.dict(os.environ, {'LOUPE_FINANCIAL_GENERIC_READER': '1'}), \
+                mock.patch.object(R, 'AGREEMENT_PREFERS_ENGINE', prefers), \
+                mock.patch('services.financial.statement_currency.currencies_by_statement', return_value=[{}]), \
+                mock.patch('services.financial.statement_review_checks.statement_rows', return_value=engine['_rows']):
+            return R.route_catalog(sources, library), engine, group
+
+    def test_the_engine_serves_with_its_printed_currency_and_the_librarys_names(self):
+        catalog, engine, group = self.route()
+        served = catalog['statements'][0]
+        self.assertEqual((served['id'], served['layout_id'], served['currency']), ('LIB', 'generic', 'MXN'))
+        self.assertEqual(engine['holder'], 'EMPRESA DE PRUEBA SA DE CV')
+        self.assertEqual((served['holder'], served['institution'], served['account_reference']),
+                         (group['holder'], group['institution'], group['account_reference']))
+        self.assertEqual(catalog['engine_routing']['replaced'], ['LIB'])
+
+    def test_off_the_library_keeps_the_period(self):
+        catalog, engine, group = self.route(prefers=False)
+        self.assertEqual(catalog['statements'], [group])
+        self.assertTrue(group.get('engine_agrees'))
+
+
+class UnreadOpeningPairingTests(unittest.TestCase):
+    """r10: a library period whose opening balance is an unreadable mark pairs with the engine section of the
+    same printed account and period by their equal printed closing balance; a different read opening, or a
+    different closing, still means a different section."""
+
+    def test_pairing_keys(self):
+        from services.financial import statement_engine_routing as R
+        engine = (('0',), ('0',), ())
+        self.assertTrue(R._same_section((('0',), ('0',), ()), engine))
+        self.assertTrue(R._same_section(((None,), ('0',), ()), engine))
+        self.assertFalse(R._same_section((('5',), ('0',), ()), engine))
+        self.assertFalse(R._same_section(((None,), ('7',), ()), engine))
+        self.assertFalse(R._same_section(((None,), (None,), ()), (('0',), (None,), ())))  # no closing read either
+        self.assertFalse(R._same_section(((), ('0',), ()), engine))
+        with mock.patch.object(R, 'UNREAD_OPENING_PAIRS_BY_CLOSING', False):
+            self.assertFalse(R._same_section(((None,), ('0',), ()), engine))
+
+
+# Column spans of the invented brokerage cash ledger (operation day, settlement day, folio, description,
+# issuer, titles, gross amount, commission, taxes, signed net).
+_BROKER_COLUMNS = dict(ope=(20000, 40000), liq=(45000, 65000), folio=(70000, 110000), desc=(115000, 230000),
+                       emisora=(235000, 280000), titulos=(285000, 330000), monto=(385000, 440000),
+                       comision=(445000, 480000), impuestos=(485000, 520000), neto=(530000, 590000))
+
+
+def _broker_line(ope, liq, folio, text, monto, neto, comision='0.00', impuestos='0.00', titulos='0', glued=False,
+                 emisora='0'):
+    def right(value, column):
+        x1 = _BROKER_COLUMNS[column][1]
+        return (value, x1 - 6000 * len(value), x1)
+    days = [(ope + '.' + liq, 20000, 65000)] if glued else [(ope, 20000, 40000), (liq, 45000, 65000)]
+    return days + [(folio, 70000, 110000), (text, 115000, 230000), (emisora, 235000, 280000),
+                   right(titulos, 'titulos'), right(monto, 'monto'), right(comision, 'comision'),
+                   right(impuestos, 'impuestos'), right(neto, 'neto')]
+
+
+def _day_balance(day, value):
+    return [('Saldo al final del dia', 115000, 230000), (day, 235000, 250000),
+            (value, 590000 - 6000 * len(value), 590000)]
+
+
+def broker_statement(*, moves=None, client_lines=('00041234 GRUPO K7 EJEMPLO', '00041234 GRUPO K7 EJEMPLO')):
+    """An invented casa de bolsa cash ledger over two pages: operation and settlement days, a gross amount
+    column beside the signed net one, end-of-day balances, and the month's opening and closing lines."""
+    if moves is None:
+        moves = [
+            _broker_line('31', '31', '0', 'Saldo Inicial del Mes', '100.00', '100.00'),
+            _day_balance('31', '100.00'),
+            # Bought on the last day of the previous month, settled on the 4th.
+            _broker_line('31', '04', '11', 'Compra de Reporto', '5,000.00', '5,010.00', impuestos='10.00', titulos='1,000',
+                         emisora='BONOEJ9'),
+            _broker_line('04', '04', '12', 'Compra de Reporto', '(5,000.00)', '(5,000.00)', titulos='1,000',
+                         emisora='BONOEJ9'),
+            _day_balance('04', '110.00'),
+            # The two days read as one word joined by a mark.
+            _broker_line('12', '12', '13', 'Deposito', '300.00', '300.00', glued=True),
+            # The gross column prints a withdrawal unsigned; only the net column carries its sign.
+            _broker_line('12', '12', '14', 'Retiro', '50.00', '(50.00)'),
+            _day_balance('12', '360.00'),
+        ]
+    second = [
+        _broker_line('29', '29', '15', 'Cobro por Timbrado', '0.01', '(0.01)'),
+        _broker_line('29', '29', '16', 'Bonificacion Cobro', '0.01', '0.01'),
+        _broker_line('29', '29', '17', 'Saldo Final del Mes', '360.00', '360.00'),
+        _day_balance('29', '360.00'),
+    ]
+    heading = [('Ope', 20000, 40000), ('Liq', 45000, 65000), ('Folio', 70000, 110000), ('Descripcion', 115000, 230000),
+               ('Emisora', 235000, 280000), ('Titulos', 285000, 330000), ('Monto', 385000, 440000),
+               ('Comision', 445000, 480000), ('Impuestos', 485000, 520000), ('NETO', 530000, 590000)]
+    first = [
+        [(client_lines[0], 20000, 200000)],
+        [('AV DE PRUEBA 45', 20000, 150000), ('ESTADO DE CUENTA', 330000, 450000)],
+        [('COL EJEMPLO, CIUDAD DE MEXICO C.P. 01000', 20000, 260000)],
+        [('CASA DE BOLSA EJEMPLO, S.A. DE C.V.', 20000, 260000)],
+        [('DETALLE DE MOVIMIENTOS DEL PERIODO', 20000, 260000)],
+        [('MOVIMIENTOS DEL 01/11/2024 AL 30/11/2024', 20000, 300000)],
+        heading,
+    ] + moves + [[('Hoja No. 1 de 2', 480000, 590000)]]
+    following = [[(client_lines[1], 20000, 200000)], [('ESTADO DE CUENTA', 330000, 450000)], heading] + second + [
+        [('Hoja No. 2 de 2', 480000, 590000)]]
+    return [page(1, first), page(2, following)]
+
+
+def broker_profile():
+    from services.financial.statement_engine_profiles import _BROKERAGE_CASH
+    return dict(name='invented-brokerage', match=dict(all=['detalle de movimientos del periodo', 'casa de bolsa ejemplo']),
+                institution='Casa de Bolsa Ejemplo', **_BROKERAGE_CASH)
+
+
+def _moves(statement):
+    return [(r['fields'].get('date'), r['fields']['direction'], r['fields']['amount_minor'])
+            for r in statement['_rows'] if r['kind'] == 'transaction' and not r['excluded']]
+
+
+class BrokerageCashLedgerTests(unittest.TestCase):
+    """r12: a casa de bolsa cash ledger read through a library profile (data). Each line prints its operation
+    day and settlement day; the net column is the movement, the gross, commission and tax columns are not;
+    the end-of-day balances printed after each settlement day's lines are the running balance, and the day
+    each one names must be the settlement day of every line it closes. Anything else holds."""
+
+    EXPECTED = [('2024-11-04', 'credit', '501000'), ('2024-11-04', 'debit', '500000'),
+                ('2024-11-12', 'credit', '30000'), ('2024-11-12', 'debit', '5000'),
+                ('2024-11-29', 'debit', '1'), ('2024-11-29', 'credit', '1')]
+
+    def read(self, sources, profile=True):
+        return [st for st in read_statements(sources, profile=broker_profile() if profile else None) if st['period_start']]
+
+    def test_the_cash_ledger_is_proved_by_its_end_of_day_balances_and_dated_by_settlement(self):
+        st, = self.read(broker_statement())
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual(st['engine']['basis'], 'running_balance')
+        self.assertEqual(_moves(st), self.EXPECTED)
+        self.assertEqual((st['period_start'], st['period_end']), ('2024-11-01', '2024-11-30'))
+        balances = [r['fields']['balance'] for r in st['_rows'] if r['kind'] == 'transaction' and r['fields'].get('balance')]
+        self.assertEqual(balances, ['11000', '36000', '36000'])
+        # The operation day is never saved as another date: the line's date is its settlement day.
+        self.assertFalse(any(r['fields'].get('value_date') or r['fields'].get('booking_date') for r in st['_rows']))
+        # The client number and the name after it (which may hold figures) are the account and the holder;
+        # no currency is printed, so none is read.
+        self.assertEqual((st['account_reference'], st['holder'], st['currency']), ('00041234', 'GRUPO K7 EJEMPLO', ''))
+        self.assertEqual(st['institution'], 'Casa de Bolsa Ejemplo')
+
+    def test_without_the_profile_nothing_is_proved(self):
+        self.assertFalse(any(st['engine']['proved'] for st in self.read(broker_statement(), profile=False)))
+
+    def test_an_end_of_day_balance_naming_another_day_holds(self):
+        sources = broker_statement()
+        for row in sources[0]['rows']:
+            if row['cells'][0]['expected_text'] == 'Saldo al final del dia' and row['cells'][1]['expected_text'] == '12':
+                row['cells'][1]['expected_text'] = '13'
+        st, = self.read(sources)
+        self.assertEqual((st['engine']['proved'], st['engine']['reason']), (False, 'day_balance_date_differs'))
+
+    def test_a_line_printing_one_day_alone_holds(self):
+        sources = broker_statement()
+        for row in sources[0]['rows']:
+            if len(row['cells']) > 3 and row['cells'][2]['expected_text'] == '14':
+                del row['cells'][1]
+                for index, c in enumerate(row['cells']):
+                    c['column_index'] = index
+        st, = self.read(sources)
+        self.assertEqual((st['engine']['proved'], st['engine']['reason']), (False, 'date_unread'))
+
+    def test_an_end_of_day_balance_the_lines_do_not_reach_holds(self):
+        for day, wrong in (('04', '111.00'), ('31', '99.00')):
+            sources = broker_statement()
+            for row in sources[0]['rows']:
+                if row['cells'][0]['expected_text'] == 'Saldo al final del dia' and row['cells'][1]['expected_text'] == day:
+                    row['cells'][2]['expected_text'] = wrong
+            st, = self.read(sources)
+            self.assertFalse(st['engine']['proved'], (day, st['engine']))
+
+    def test_the_gross_column_is_never_the_movement(self):
+        st, = self.read(broker_statement())
+        self.assertEqual(set(st['engine']['assignment']) - {'ignore'}, {'amount'})
+        self.assertEqual(st['engine']['assignment'][-1], 'amount')
+
+    def test_a_page_printing_another_client_line_reads_no_account_or_holder(self):
+        st, = self.read(broker_statement(client_lines=('00041234 GRUPO K7 EJEMPLO', '00099999 GRUPO K7 EJEMPLO')))
+        self.assertEqual((st['account_reference'], st['holder']), ('', ''))
+
+    def with_holdings(self, codes):
+        """The invented statement with a holdings table on its second page printing these currency codes."""
+        sources = broker_statement()
+        rows = sources[1]['rows']
+        last = rows.pop()  # the page number line stays last
+        lines = [[('EMISORA', 20000, 80000), ('SERIE', 90000, 130000), ('MON', 140000, 170000), ('TITULOS', 200000, 260000)]]
+        lines += [[('FONDOEJ', 20000, 80000), ('M1', 90000, 130000), (code, 140000, 170000), ('1,000', 220000, 260000)]
+                  for code in codes]
+        y = rows[-1]['cells'][0]['locator']['rect'][1]
+        for line in lines:
+            y += 12000
+            built = page(2, [line])['rows'][0]
+            for c in built['cells']:
+                c['locator']['rect'][1], c['locator']['rect'][3] = y, y + 6000
+            rows.append(dict(row_index=len(rows), cells=built['cells']))
+        y += 12000
+        for c in last['cells']:
+            c['locator']['rect'][1], c['locator']['rect'][3] = y, y + 6000
+        rows.append(dict(last, row_index=len(rows)))
+        return sources
+
+    def test_the_one_currency_the_holdings_table_prints_is_the_statements(self):
+        profile = broker_profile()
+        self.assertTrue(profile['holdings_currency'])
+        st, = [s for s in read_statements(self.with_holdings(['MXN', 'MXN']), profile=profile) if s['period_start']]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual((st['currency'], st['currency_source']), ('MXN', 'printed_holdings_currency'))
+        self.assertEqual(st['currency_evidence']['page_number'], 2)
+        self.assertEqual(_moves(st), self.EXPECTED)
+        # Two codes in the holdings table: ambiguous, nothing is read.
+        st, = [s for s in read_statements(self.with_holdings(['MXN', 'USD']), profile=profile) if s['period_start']]
+        self.assertEqual(st['currency'], '')
+        # Without the profile key, or with the rule switched off, the currency stays a person's choice.
+        plain = {k: v for k, v in broker_profile().items() if k != 'holdings_currency'}
+        st, = [s for s in read_statements(self.with_holdings(['MXN']), profile=plain) if s['period_start']]
+        self.assertEqual(st['currency'], '')
+        with mock.patch.object(E, 'HOLDINGS_CURRENCY', False):
+            st, = [s for s in read_statements(self.with_holdings(['MXN']), profile=profile) if s['period_start']]
+        self.assertEqual(st['currency'], '')
+
+    def test_the_real_brokerage_profiles_read_the_holdings_currency(self):
+        from services.financial.statement_engine_profiles import PROFILES
+        names = {p['name']: p for p in PROFILES}
+        self.assertTrue(names['kapital-mexico-brokerage']['holdings_currency'])
+        self.assertTrue(names['intercam-brokerage']['holdings_currency'])
+
+    def test_profile_keys_are_validated(self):
+        from services.financial.statement_engine_profiles import validate
+        base = dict(name='x', match={})
+        for bad in (dict(base, settlement_days=dict(operation=['OPE'])),
+                    dict(base, settlement_days=dict(operation=[], settlement=['LIQ'])),
+                    dict(base, settlement_days=['OPE', 'LIQ']), dict(base, client_line='yes'),
+                    dict(base, columns=dict(skip=['MONTO']))):
+            with self.assertRaises(ValueError):
+                validate(bad)
+        validate(dict(base, settlement_days=dict(operation=['OPE'], settlement=['LIQ']), client_line=True,
+                      columns=dict(ignore=['MONTO']), labels=dict(day_balance=['SALDO AL FINAL DEL DIA'])))
+
+
+    def test_the_monex_profile_names_its_balance_and_guarantee_columns(self):
+        from services.financial.statement_engine_profiles import PROFILES, validate
+        monex = next(p for p in PROFILES if p['name'] == 'monex-mexico')
+        validate(monex)
+        token = E._PROFILE.set(monex)
+        try:
+            roles = {w: E.column_role(E.label(w)) for w in ('Movimiento garantia', 'Saldo en garantia',
+                                                            'Saldo disponible', 'Saldo total', 'Referencia')}
+        finally:
+            E._PROFILE.reset(token)
+        self.assertEqual(roles, {'Movimiento garantia': 'ignore', 'Saldo en garantia': 'balance',
+                                 'Saldo disponible': 'balance', 'Saldo total': 'balance', 'Referencia': 'description'})
+        self.assertIsNone(E.column_role(E.label('Movimiento garantia')))
+
+def _marked(sources, merge=False):
+    """The invented brokerage pages as some readings deliver them: a closing parenthesis at every cell's right
+    edge (the table's vertical rules read as text), the heading's day words glued ('Ope)Liq)'); with ``merge``
+    each movement and end-of-day line is one cell spanning the table, its words placed by character offset."""
+    import copy, re
+    sources = copy.deepcopy(sources)
+    for source in sources:
+        for row in source['rows']:
+            texts = [c['expected_text'] for c in row['cells']]
+            if texts[:2] == ['Ope', 'Liq']:
+                first, second = row['cells'][0], row['cells'][1]
+                first['expected_text'] = 'Ope)Liq)'
+                first['locator']['rect'][2] = second['locator']['rect'][2]
+                row['cells'] = [first] + row['cells'][2:]
+                continue
+            if not re.match(r'^\d', texts[0]) and texts[0] != 'Saldo al final del dia':
+                continue
+            for c in row['cells']:
+                if not c['expected_text'].startswith('('):
+                    c['expected_text'] += ')'
+            if merge:
+                first = row['cells'][0]
+                first['expected_text'] = ' '.join(c['expected_text'] for c in row['cells'])
+                first['locator']['rect'][2] = 590000
+                row['cells'] = [first]
+    return sources
+
+
+class BrokerageRuleMarkTests(unittest.TestCase):
+    """r12: a reading that prints the table's rules as a closing parenthesis on every cell, or reads each line as
+    one merged cell, is read through a profile's ``rule_mark``; a parenthesized amount keeps its sign."""
+
+    def read(self, sources, **extra):
+        # Readings are cached by source revision and profile name: each variant is its own profile.
+        profile = dict(broker_profile(), **extra)
+        profile['name'] += ''.join('-%s-%s' % item for item in sorted(extra.items()))
+        return [st for st in read_statements(sources, profile=profile) if st['period_start']]
+
+    def test_rule_marks_are_removed_and_parenthesized_amounts_keep_their_sign(self):
+        for merge in (False, True):
+            st, = self.read(_marked(broker_statement(), merge=merge), rule_mark=')')
+            self.assertTrue(st['engine']['proved'], (merge, st['engine']))
+            self.assertEqual(_moves(st), BrokerageCashLedgerTests.EXPECTED, merge)
+
+    def test_without_the_rule_mark_the_marked_reading_holds(self):
+        st, = self.read(_marked(broker_statement()))
+        self.assertFalse(st['engine']['proved'])
+
+    def test_a_merged_line_whose_net_amount_is_misread_holds(self):
+        sources = _marked(broker_statement(), merge=True)
+        for row in sources[0]['rows']:
+            text = row['cells'][0]['expected_text']
+            if text.startswith('12) 12) 14)'):
+                row['cells'][0]['expected_text'] = text[:text.rindex('(')] + '(55.00)'
+        st, = self.read(sources, rule_mark=')')
+        self.assertFalse(st['engine']['proved'])
+
+    def test_the_mark_is_kept_inside_a_parenthesized_amount(self):
+        self.assertEqual(E._without_rule_marks('28) (4,321,987.65) 83.10)', ')'), '28  (4,321,987.65) 83.10 ')
+        from services.financial.statement_engine_profiles import validate
+        for bad in ('', '))', 'a', ' '):
+            with self.assertRaises(ValueError):
+                validate(dict(name='x', match={}, rule_mark=bad))

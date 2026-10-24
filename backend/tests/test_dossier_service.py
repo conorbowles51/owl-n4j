@@ -277,3 +277,96 @@ def test_graph_lifecycle_preserves_material_and_flags_ambiguous_merge(setup_db):
         rows = db.scalars(select(CaseProfile).where(CaseProfile.id.in_([uuid.UUID(first["id"]), uuid.UUID(second["id"])]))).all()
         assert all(row.canonical_entity_key is None and row.needs_link_review for row in rows)
         assert db.scalar(select(DossierLink).where(DossierLink.dossier_id == rows[0].id, DossierLink.target_id == "merged"))
+
+
+@pytest.mark.parametrize("value", ["2025", "2025-07", "2025-07-23", "2025-07-23T16:00:00+01:00", None])
+def test_interview_dates_keep_recorded_precision_and_can_be_updated(setup_db, value):
+    factory, user_id, case_id, _image, source_id, _foreign = setup_db
+    with factory() as db, patch.object(dossier_service, "_case_member_ids", return_value=set()):
+        user = db.get(User, user_id)
+        dossier = dossier_service.create_dossier(db, case_id=case_id, user=user, data={"display_name": "Witness"})
+        dossier_id = uuid.UUID(dossier["id"])
+        interview = dossier_service.create_interview(db, dossier_id=dossier_id, user=user, data={"date_value": value, "working_notes": "Original notes", "evidence_links": [{"evidence_file_id": source_id, "source_anchor": {"page": 2}}]})
+        assert interview["date_value"] == value
+        if value is None or len(value) in (4, 7):
+            assert interview["interview_date"] is None
+        updated = dossier_service.update_interview(db, dossier_id=dossier_id, interview_id=uuid.UUID(interview["id"]), user=user, data={"working_notes": "Corrected notes"})
+        assert updated["date_value"] == value
+        assert updated["evidence_links"][0]["source_anchor"] == {"page": 2}
+        assert updated["working_notes"] == "Corrected notes"
+        undated = dossier_service.update_interview(db, dossier_id=dossier_id, interview_id=uuid.UUID(interview["id"]), user=user, data={"date_value": None})
+        assert undated["date_value"] is None and undated["interview_date"] is None
+
+
+@pytest.mark.parametrize("value", ["2025-13", "2025-02-30", "0000", "July 2025", "2025-07-23T16:00", "2025-07-23T99:00:00Z"])
+def test_interview_rejects_invalid_dates_before_saving(setup_db, value):
+    factory, user_id, case_id, *_ = setup_db
+    with factory() as db, patch.object(dossier_service, "_case_member_ids", return_value=set()):
+        user = db.get(User, user_id)
+        dossier = dossier_service.create_dossier(db, case_id=case_id, user=user, data={"display_name": "Witness"})
+        with pytest.raises(ValueError, match="Enter a year"):
+            dossier_service.create_interview(db, dossier_id=uuid.UUID(dossier["id"]), user=user, data={"date_value": value})
+        assert db.query(DossierInterview).count() == 0
+
+
+def test_removing_interview_preserves_original_and_accepted_assessment(setup_db):
+    factory, user_id, case_id, _image, source_id, _foreign = setup_db
+    with factory() as db, patch.object(dossier_service, "_case_member_ids", return_value=set()):
+        user = db.get(User, user_id)
+        dossier = dossier_service.create_dossier(db, case_id=case_id, user=user, data={"display_name": "Witness"})
+        dossier_id = uuid.UUID(dossier["id"])
+        interview = dossier_service.create_interview(db, dossier_id=dossier_id, user=user, data={"date_value": "2025-07", "evidence_links": [{"evidence_file_id": source_id}]})
+        assessment = dossier_service.create_assessment(db, dossier_id=dossier_id, user=user, data={"category": "statement_summary", "content": "Accepted reading", "supporting_links": [{"target_type": "evidence", "target_id": str(source_id)}]})
+        dossier_service.delete_interview(db, dossier_id=dossier_id, interview_id=uuid.UUID(interview["id"]), user=user)
+        assert db.get(EvidenceFile, source_id) is not None
+        assert db.get(DossierAssessment, uuid.UUID(assessment["id"])) is not None
+        assert dossier_service.get_dossier(db, dossier_id=dossier_id, user=user)["interviews"] == []
+
+
+def test_contacts_roundtrip_sources_attribution_and_other_fields(setup_db):
+    factory, user_id, case_id, _image, source_id, foreign_id = setup_db
+    with factory() as db:
+        user = db.get(User, user_id)
+        dossier = dossier_service.create_dossier(db, case_id=case_id, user=user, data={"display_name": "Witness", "summary": "Preserve this brief", "contacts": [{"kind": "phone", "label": "Work", "value": "+1 555 0100", "evidence_file_id": source_id}]})
+        dossier_id = uuid.UUID(dossier["id"])
+        contact = dossier["contacts"][0]
+        assert contact["recorded_by_user_id"] == str(user_id)
+        assert contact["evidence_file_id"] == str(source_id)
+        updated = dossier_service.update_dossier(db, dossier_id=dossier_id, user=user, data={"contacts": [contact, {"kind": "email", "value": "witness@example.test"}]})
+        assert updated["summary"] == "Preserve this brief"
+        assert updated["contacts"][0]["id"] == contact["id"]
+        assert len(updated["contacts"]) == 2
+        with pytest.raises(ValueError, match="not in this case"):
+            dossier_service.update_dossier(db, dossier_id=dossier_id, user=user, data={"contacts": [{"kind": "phone", "value": "test", "evidence_file_id": foreign_id}]})
+        db.rollback()
+        assert len(dossier_service.get_dossier(db, dossier_id=dossier_id, user=user)["contacts"]) == 2
+
+
+def test_repeated_image_attachment_is_idempotent_and_has_distinct_ordinals(setup_db):
+    factory, user_id, case_id, image_id, *_ = setup_db
+    with factory() as db:
+        user = db.get(User, user_id)
+        dossier = dossier_service.create_dossier(db, case_id=case_id, user=user, data={"display_name": "Subject"})
+        dossier_id = uuid.UUID(dossier["id"])
+        first = dossier_service.add_media(db, dossier_id=dossier_id, user=user, data={"evidence_file_id": image_id, "is_cover": True})
+        repeated = dossier_service.add_media(db, dossier_id=dossier_id, user=user, data={"evidence_file_id": image_id})
+        assert repeated["id"] == first["id"] and repeated["is_cover"]
+        other = EvidenceFile(id=uuid.uuid4(), case_id=case_id, original_filename="other.png", stored_path="other.png", size=1, sha256="e" * 64, status="unprocessed", metadata_={})
+        db.add(other); db.commit()
+        second = dossier_service.add_media(db, dossier_id=dossier_id, user=user, data={"evidence_file_id": other.id})
+        assert first["ordinal"] == 0 and second["ordinal"] == 1
+        assert db.query(DossierMedia).filter_by(dossier_id=dossier_id).count() == 2
+
+
+def test_canonical_lookup_finds_a_dossier_after_its_graph_name_changes(setup_db):
+    factory, user_id, case_id, *_ = setup_db
+    identity = {"name": "Original name", "key": "person:stable", "type": "person"}
+    with factory() as db, patch.object(dossier_service, "_graph_identity", side_effect=lambda *_: dict(identity)), patch.object(dossier_service, "add_significant_entities"):
+        user = db.get(User, user_id)
+        dossier = dossier_service.create_dossier(db, case_id=case_id, user=user, data={"canonical_entity_key": "person:stable"})
+        identity["name"] = "Current name"
+        result = dossier_service.list_dossiers(db, case_id=case_id, user=user, canonical_entity_key="person:stable")
+        assert result["total"] == 1
+        assert result["dossiers"][0]["id"] == dossier["id"]
+        assert result["dossiers"][0]["display_name"] == "Current name"
+        assert dossier_service.list_dossiers(db, case_id=case_id, user=user, canonical_entity_key="person:other")["total"] == 0

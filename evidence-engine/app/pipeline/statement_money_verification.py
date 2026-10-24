@@ -367,6 +367,29 @@ def _stacked_readings(page, rects, *, rotation, deadline, language, whitelist=WH
     return results
 
 
+# A cell printed on a shaded band (a grey 'saldo anterior' strip) has paper
+# darker than the lighter ink thresholds: at 190 or 220 the whole crop turns
+# black and reads nothing. On paper darker than GREY_PAPER every threshold is
+# scaled to the cell's own paper tone (its 90th-percentile luminance), so the
+# six crops measure the same ink-to-paper contrast as on white paper. White
+# and off-white cells are unchanged.
+GREY_PAPER = 230
+
+
+def _paper_threshold(image, threshold):
+    histogram = image.histogram()[:256]
+    total = sum(histogram)
+    if not total:
+        return threshold
+    seen, paper = 0, 255
+    for value, count in enumerate(histogram):
+        seen += count
+        if seen >= 0.9 * total:
+            paper = value
+            break
+    return threshold if paper >= GREY_PAPER else max(1, round(threshold * paper / 255))
+
+
 def _read_stack(images, dpi, threshold, language, timeout, whitelist=WHITELIST):
     gap = max(20, int(dpi / 72 * 8))
     pad = 30
@@ -376,7 +399,8 @@ def _read_stack(images, dpi, threshold, language, timeout, whitelist=WHITELIST):
     with Image.new('L', (width, height), 255) as canvas:
         y = gap
         for image in images:
-            with image.point(lambda value: 255 if value >= threshold else 0) as ink:
+            cut = _paper_threshold(image, threshold)
+            with image.point(lambda value: 255 if value >= cut else 0) as ink:
                 canvas.paste(ink, (pad, y))
             spans.append((y, y + image.height))
             y += image.height + gap
@@ -720,12 +744,146 @@ def _figures_cell(cell, row_cells, page):
     return ordered[-1] is cell and len(ordered) >= 3 and bool(_ROW_DATE.fullmatch((ordered[0].text or '').strip()))
 
 
-def verify_money_cells(page, tables, *, rotation=0, deadline, language, chunk=None, measure=True):
+# Characters measured in real Andrews money cells whose page reading no money
+# reading above parses (``2468:13``, ``3579 /24``, ``25-81. 47``, ``,1357.92``,
+# ``30?4. 16``, ``l.46l..35``): digits, money marks, the look-alike letters and
+# stray marks above, and the colon, semicolon, slash, ``!`` and ``?`` the
+# embedded layer put for a printed point or digit.
+_DAMAGED_MONEY = re.compile(r"[0-9.,:;/!?$+\-−" + re.escape(''.join(_DIGIT_LOOKALIKES) + _STRAY_MARKS) + r"]+")
+
+# Whether money cells whose page reading is damaged beyond every reading above
+# are cropped on Andrews pages (``damaged_money_kind``). Reverse in one place.
+CROP_DAMAGED_MONEY = True
+
+
+def damaged_money_kind(cell, row_cells, page):
+    """``pair``, ``single`` or ``None``: an Andrews payment row's money cell that no money reading parses.
+
+    The cell lies in the right-hand money columns of a row that starts with a
+    printed date, holds at least three digits, and is made only of digits,
+    money marks and glyphs measured to stand for them. ``pair`` when it is the
+    row's last cell and its only money-column cell (the amount and the
+    running balance read as one cell), else ``single``. Such a cell is cropped
+    so that what the image prints is on record (``verify_money_cells``,
+    ``damaged_cells``); its page text, already unreadable as money, is never
+    changed, and only the statement's agreed controls may accept a reading of it.
+    """
+    compact = re.sub(r'\s+', '', cell.text or '')
+    if (not CROP_DAMAGED_MONEY or not _DAMAGED_MONEY.fullmatch(compact)
+            or sum(ch.isdigit() for ch in compact) < 3 or not _money_column(cell, page)):
+        return None
+    ordered = sorted(row_cells, key=lambda c: c.column)
+    if len(ordered) < 3 or not _ROW_DATE.fullmatch((ordered[0].text or '').strip()):
+        return None
+    money = [c for c in ordered if _money_column(c, page)]
+    return 'pair' if money == [cell] and ordered[-1] is cell else 'single'
+
+
+def recognised_readings(cell):
+    """``[(text, source)]``: every amount a recogniser stated for one held cell, with or without support.
+
+    Unlike ``_printed_readings`` (which the page's own pinned rule uses) no
+    agreement is required: the page reading or its glyph interpretation
+    (``page_reading``, ``page_reading_normalised``) and each distinct amount
+    any crop reading states (``crop_reading``), in that order. Measured on real
+    Andrews scans: the printed value was the page reading that no crop gave
+    (crops joining a dash between amount and balance, or reading the minus as
+    a point), or a crop reading two of six crops gave. None of these is ever a
+    value on its own: the backend's whole-period pass accepts one only when the
+    period's agreed controls pin exactly that reading and no other. Every
+    observation profile must be present, or nothing is offered.
+    """
+    observations = cell.get('observations') or []
+    if len(observations) != len(PROFILES) or not cell.get('rect'):
+        return []
+    kind = cell.get('kind') or 'single'
+    pair = kind == 'pair'
+    page_parse, image = _readers(kind)
+    original = cell['original_text']
+    found, seen = [], set()
+    page_value = page_parse(original)
+    normalised = None
+    if page_value is None:
+        normalised = crop_money_pair(original) if pair else separator_garbled_money(original)
+        if normalised is None and not pair:
+            normalised = dollar_garbled_money(original)
+        if normalised is None:
+            normalised = lookalike_money(original, 'pair' if pair else 'single')
+        if normalised is None:
+            normalised = stray_marked_money(original, 'pair' if pair else 'single')
+    if page_value is not None:
+        found.append((original.strip(), 'page_reading'))
+        seen.add(page_value)
+    elif normalised is not None:
+        found.append((money_text(normalised), 'page_reading_normalised'))
+        seen.add(normalised)
+    for observation in observations:
+        value = image(observation['text'])
+        if value is None or value in seen:
+            continue
+        seen.add(value)
+        found.append((money_text(value), 'crop_reading'))
+    return found
+
+
+def page_glyphs_agree_with_crops(cell):
+    """The canonical text both readers state for a held cell whose page reading shows look-alike glyphs, else ``None``.
+
+    The page reading holds letters measured to stand for digits or stray
+    marks (``-63,4l``, ``-48.25 2716.3i``); read as those digits it states one
+    amount (two for a joined cell), and at least four crop readings at both
+    resolutions state exactly that amount. Two recognisers then state the
+    same printed amount, which is what confirms any other cell; it is stored
+    as a fact for the whole-period pass and the page text is not changed here.
+    """
+    observations = cell.get('observations') or []
+    if len(observations) != len(PROFILES) or not cell.get('rect'):
+        return None
+    kind = cell.get('kind') or 'single'
+    if kind not in ('single', 'pair'):
+        return None
+    original = cell['original_text']
+    value = lookalike_money(original, kind)
+    if value is None:
+        value = stray_marked_money(original, kind)
+    if value is None:
+        return None
+    _, image = _readers(kind)
+    agreeing = [o for o in observations if image(o['text']) == value]
+    if len(agreeing) < MIN_AGREEING or not _both_resolutions(agreeing):
+        return None
+    return money_text(value)
+
+
+def _outline_status(cell, rect, kind, outline_reading):
+    """``(status, outline text)`` from the page's character outlines, or ``(None, None)`` without one.
+
+    On a page printed as vector outlines (``vector_glyph_reading``) a cell is
+    read from the outlines themselves. The same amount as the page reading
+    confirms it; a complete outline reading of another amount contradicts it.
+    A figures-only cell (``kind == 'figures'``) is left to the crop readings.
+    """
+    if outline_reading is None or rect is None or kind == 'figures':
+        return None, None
+    text = outline_reading([v / 1000 for v in rect])
+    if text is None:
+        return None, None
+    page, _ = _readers(kind)
+    expected, read = page(cell.text), page(text)
+    if read is None:
+        return None, None
+    return ('confirmed' if expected is not None and read == expected else 'contradicted'), text
+
+
+def verify_money_cells(page, tables, *, rotation=0, deadline, language, chunk=None, measure=True,
+                       outline_reading=None):
     """Return ``(tables, records)`` with every unconfirmed money cell marked.
 
     ``chunk`` rebuilds a table's text from its grid (default: the financial
     reader's own chunk format). Tables without measured cells are left as they
-    are: they carry no money cell to reread.
+    are: they carry no money cell to reread. ``outline_reading`` (a page printed
+    as vector outlines) reads a cell rectangle in points from the outlines; a
+    cell it settles is not cropped (``_outline_status``).
     """
     if chunk is None:
         from services.financial.pdf_tables import _chunk as chunk
@@ -735,7 +893,7 @@ def verify_money_cells(page, tables, *, rotation=0, deadline, language, chunk=No
     # the money cells stay unverified and are held rather than admitted.
     rects_available = measure and not page.rotation
     andrews = _andrews_page(tables)
-    targets = []
+    targets, damaged = [], []
     for table_index, table in enumerate(tables):
         geometry = getattr(table, 'geometry', None)
         rows = {}
@@ -745,9 +903,19 @@ def verify_money_cells(page, tables, *, rotation=0, deadline, language, chunk=No
             kind = _target_kind(cell, page, andrews) or ('figures' if _figures_cell(cell, rows[cell.row], page) else None)
             if kind:
                 targets.append((table_index, cell, _cell_rect(cell, page) if rects_available else None, kind))
+            elif andrews and rects_available and (kind := damaged_money_kind(cell, rows[cell.row], page)):
+                rect = _cell_rect(cell, page)
+                if rect is not None:
+                    damaged.append((table_index, cell, rect, kind))
     if not targets:
         return tables, []
-    measured = [t for t in targets if t[2] is not None]
+    outlines = {}
+    if rotation == 0:
+        for table_index, cell, rect, kind in targets:
+            status, text = _outline_status(cell, rect, kind, outline_reading)
+            if status is not None:
+                outlines[(table_index, cell.row, cell.column)] = (status, text)
+    measured = [t for t in targets if t[2] is not None and (t[0], t[1].row, t[1].column) not in outlines]
     readings = {}
     error = None
     if measured:
@@ -781,6 +949,18 @@ def verify_money_cells(page, tables, *, rotation=0, deadline, language, chunk=No
                     original_text=cell.text, status='confirmed', rect=rect, observations=observations,
                     kind='figures', page_decimal_point_missing=True, normalised_text=normalisations[key],
                     reason='page_figures_confirmed_by_crops_with_their_point'))
+            continue
+        if key in outlines:
+            status, outline_text = outlines[key]
+            entry = dict(table_index=table_index, row_index=cell.row, column_index=cell.column,
+                original_text=cell.text, status=status, rect=rect, observations=[], outline_text=outline_text,
+                reason='vector_outlines_confirm_page_reading' if status == 'confirmed'
+                else 'vector_outlines_contradict_page_reading')
+            if kind != 'single':
+                entry['kind'] = kind
+            if status != 'confirmed':
+                entry['marked_text'] = replacements[key] = _dispute_marked(cell.text, outline_text)
+            cells_record.append(entry)
             continue
         status, contradiction = classify(cell.text, observations, kind) if rect else ('unconfirmed', None)
         entry = dict(table_index=table_index, row_index=cell.row, column_index=cell.column,
@@ -821,6 +1001,11 @@ def verify_money_cells(page, tables, *, rotation=0, deadline, language, chunk=No
                 # pin one of them later (the backend's whole-period pass); a
                 # value is still only ever one of these printed readings.
                 entry['printed_readings'] = [list(item) for item in _printed_readings(entry)]
+                if andrews:
+                    entry['recognised_readings'] = [list(item) for item in recognised_readings(entry)]
+                    agreed = page_glyphs_agree_with_crops(entry)
+                    if agreed is not None:
+                        entry['page_glyphs_agree_with_crops'] = agreed
                 if entry.get('confirmed_parts') and _page_pair(cell.text) is not None:
                     entry['confirmed_parts_text'] = money_text(_page_pair(cell.text))
         cells_record.append(entry)
@@ -834,9 +1019,39 @@ def verify_money_cells(page, tables, *, rotation=0, deadline, language, chunk=No
         seconds=round(time.monotonic() - started, 3), cells=cells_record)
     if error:
         record['error'] = error
+    elif damaged:
+        record['damaged_cells'] = _damaged_cells(page, damaged, rotation, deadline, language)
     if not replacements and not normalisations:
         return tables, [record]
     return _with_cells(page, tables, {**normalisations, **replacements}, chunk), [record]
+
+
+def _damaged_cells(page, damaged, rotation, deadline, language):
+    """Record entries for an Andrews page's damaged money cells (``damaged_money_kind``), read in their own crops.
+
+    The crops are read in a call of their own, so the readings of every other
+    money cell on the page are exactly what they were without them. Each entry
+    is ``unconfirmed`` (the page reading is not an amount, so nothing can
+    confirm it) and keeps every crop reading and the readings a recogniser
+    stated (``recognised_readings``). Nothing on the page is changed. A
+    reading that fails or runs out of time records the error instead.
+    """
+    try:
+        readings = stacked_readings(page, [rect for _, _, rect, _ in damaged], rotation=rotation,
+            deadline=deadline, language=language)
+    except (RuntimeError, pytesseract.TesseractError) as exc:
+        return [dict(error=str(exc)[:200])]
+    entries = []
+    for position, (table_index, cell, rect, kind) in enumerate(damaged):
+        observations = [dict(dpi=PROFILES[i][0], threshold=PROFILES[i][1], text=readings[i][position][0],
+                             confidence=readings[i][position][1])
+                        for i in sorted(readings) if position < len(readings[i])]
+        entry = dict(table_index=table_index, row_index=cell.row, column_index=cell.column,
+            original_text=cell.text, status='unconfirmed', rect=rect, observations=observations, kind=kind,
+            page_money_damaged=True, reason='page_reading_not_an_amount')
+        entry['recognised_readings'] = [list(item) for item in recognised_readings(entry)]
+        entries.append(entry)
+    return entries
 
 
 def _with_cells(page, tables, replacements, chunk):

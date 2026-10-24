@@ -34,6 +34,7 @@ class CaseContextUpdate(BaseModel):
     jurisdiction: str | None = None
     active_template_key: str = "generic"
     custom_values: dict[str, Any] = Field(default_factory=dict)
+    template_values: dict[str, dict[str, Any]] | None = None
 
 
 class MandateVersionCreate(BaseModel):
@@ -87,7 +88,7 @@ async def update_case_context(
             db,
             case_id=canonical_case_id,
             user=current_user,
-            payload=context.model_dump(),
+            payload=context.model_dump(exclude_unset=True),
         )
         system_log_service.log(
             log_type=LogType.CASE_OPERATION,

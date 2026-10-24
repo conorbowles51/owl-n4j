@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import mimetypes
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+import re
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -88,6 +89,7 @@ def _read(db: Session, dossier_id: uuid.UUID, user: User) -> CaseProfile:
 def _write(db: Session, dossier_id: uuid.UUID, user: User) -> CaseProfile:
     dossier = _load(db, dossier_id)
     check_case_access(db, dossier.case_id, user, required_permission=("case", "edit"))
+    db.execute(select(CaseProfile.id).where(CaseProfile.id == dossier_id).with_for_update())
     return dossier
 
 
@@ -160,6 +162,7 @@ def _serialize_interview(db: Session, item: DossierInterview) -> dict[str, Any]:
     evidence_links = db.scalars(select(DossierInterviewEvidenceLink).where(DossierInterviewEvidenceLink.interview_id == item.id).order_by(DossierInterviewEvidenceLink.created_at)).all()
     return {
         "id": str(item.id), "interview_date": _dt(item.interview_date),
+        "date_value": item.date_value or _dt(item.interview_date),
         "participants": list(item.participants or []), "interviewer_user_ids": list(item.interviewer_user_ids or []),
         "status": item.status, "working_notes": item.working_notes,
         "created_by_user_id": str(item.created_by_user_id) if item.created_by_user_id else None,
@@ -182,6 +185,7 @@ def serialize_dossier(db: Session, dossier: CaseProfile, *, detail: bool = True)
         "display_name": (identity or {}).get("name") or dossier.display_name,
         "display_name_snapshot": dossier.display_name,
         "summary": dossier.summary, "importance": dossier.importance,
+        "contacts": list(dossier.contacts or []),
         "canonical_entity_key": dossier.canonical_entity_key,
         "linkage_state": dossier.linkage_state, "status": dossier.status,
         "needs_link_review": dossier.needs_link_review,
@@ -209,7 +213,7 @@ def serialize_dossier(db: Session, dossier: CaseProfile, *, detail: bool = True)
 
 def list_dossiers(db: Session, *, case_id: uuid.UUID, user: User, query: str | None = None,
                   dossier_type: str | None = None, linkage_state: str | None = None,
-                  linked_evidence_file_id: uuid.UUID | None = None,
+                  linked_evidence_file_id: uuid.UUID | None = None, canonical_entity_key: str | None = None,
                   include_archived: bool = False, limit: int = 50, offset: int = 0) -> dict[str, Any]:
     get_case_if_allowed(db, case_id, user)
     conditions = [CaseProfile.case_id == case_id]
@@ -219,6 +223,8 @@ def list_dossiers(db: Session, *, case_id: uuid.UUID, user: User, query: str | N
         conditions.append(CaseProfile.profile_type == dossier_type)
     if linkage_state:
         conditions.append(CaseProfile.linkage_state == linkage_state)
+    if canonical_entity_key:
+        conditions.append(CaseProfile.canonical_entity_key == canonical_entity_key)
     if linked_evidence_file_id:
         conditions.append(
             CaseProfile.id.in_(
@@ -259,6 +265,56 @@ def _replace_roles(db: Session, dossier: CaseProfile, roles: Iterable[dict[str, 
         ))
 
 
+def _contacts(db: Session, case_id: uuid.UUID, user: User, raw_contacts: list[dict], existing: list[dict]) -> list[dict]:
+    if len(raw_contacts) > 100:
+        raise ValueError("A dossier can hold up to 100 contact details")
+    by_id = {str(item.get("id")): item for item in existing}
+    result = []
+    seen = set()
+    for raw in raw_contacts:
+        kind, value = raw.get("kind"), _text(raw.get("value"))
+        if kind not in {"phone", "email", "address"} or not value:
+            raise ValueError("Each contact needs a phone, email or address value")
+        contact_id = str(raw.get("id") or uuid.uuid4())
+        if contact_id in seen:
+            raise ValueError("Contact identifiers must be unique")
+        seen.add(contact_id)
+        evidence_id = raw.get("evidence_file_id")
+        if evidence_id:
+            evidence_id = uuid.UUID(str(evidence_id))
+            _get_evidence(db, case_id, evidence_id)
+        previous = by_id.get(contact_id, {})
+        evidence_id = str(evidence_id) if evidence_id else None
+        unchanged = previous.get("value") == value and previous.get("kind") == kind and previous.get("evidence_file_id") == evidence_id
+        result.append({"id": contact_id, "kind": kind, "label": _text(raw.get("label")), "value": value,
+                       "evidence_file_id": evidence_id,
+                       "recorded_by_user_id": previous.get("recorded_by_user_id") if unchanged else str(user.id)})
+    return result
+
+
+def _interview_date(data: dict[str, Any]) -> tuple[datetime | None, str | None]:
+    value = _text(data.get("date_value"))
+    if value is None:
+        old = data.get("interview_date")
+        return old, _dt(old)
+    try:
+        if re.fullmatch(r"\d{4}", value):
+            date(int(value), 1, 1)
+            return None, value
+        if re.fullmatch(r"\d{4}-\d{2}", value):
+            date.fromisoformat(value + "-01")
+            return None, value
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+            parsed = date.fromisoformat(value)
+            return datetime(parsed.year, parsed.month, parsed.day, tzinfo=timezone.utc), value
+        parsed_time = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if "T" not in value or parsed_time.tzinfo is None:
+            raise ValueError()
+        return parsed_time, parsed_time.isoformat()
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Enter a year, year-month, full date or timestamp with timezone") from exc
+
+
 def create_dossier(db: Session, *, case_id: uuid.UUID, user: User, data: dict[str, Any]) -> dict[str, Any]:
     check_case_access(db, case_id, user, required_permission=("case", "edit"))
     key = _text(data.get("canonical_entity_key"))
@@ -273,7 +329,7 @@ def create_dossier(db: Session, *, case_id: uuid.UUID, user: User, data: dict[st
         raise ValueError("display_name is required for an unlinked Dossier")
     dossier = CaseProfile(
         case_id=case_id, profile_type=_dossier_type(data.get("dossier_type") or (identity or {}).get("type")),
-        display_name=str(name), summary=_text(data.get("summary")), importance=_text(data.get("importance")),
+        display_name=str(name), summary=_text(data.get("summary")), contacts=_contacts(db, case_id, user, data.get("contacts") or [], []), importance=_text(data.get("importance")),
         canonical_entity_key=key, linkage_state="linked" if key else "unlinked",
         status=_text(data.get("status")) or "active", needs_link_review=False,
         graph_entity_deleted=False, created_by_user_id=user.id, updated_by_user_id=user.id,
@@ -309,6 +365,8 @@ def update_dossier(db: Session, *, dossier_id: uuid.UUID, user: User, data: dict
             setattr(dossier, field, _text(data.get(field)))
     if "dossier_type" in data and data.get("dossier_type"):
         dossier.profile_type = _dossier_type(data["dossier_type"])
+    if "contacts" in data:
+        dossier.contacts = _contacts(db, dossier.case_id, user, data.get("contacts") or [], dossier.contacts or [])
     if "roles" in data:
         _replace_roles(db, dossier, data.get("roles") or [], user)
     dossier.updated_by_user_id = user.id
@@ -554,12 +612,16 @@ def add_media(db: Session, *, dossier_id: uuid.UUID, user: User, data: dict[str,
     mime = mimetypes.guess_type(file.original_filename)[0] or ""
     if not mime.startswith("image/") and Path(file.original_filename).suffix.lower() not in IMAGE_EXTENSIONS:
         raise ValueError("The initial Dossier gallery supports image evidence only")
+    existing = db.scalar(select(DossierMedia).where(DossierMedia.dossier_id == dossier.id, DossierMedia.evidence_file_id == evidence_id))
+    if existing is not None:
+        return _serialize_media(existing)
     is_cover = bool(data.get("is_cover"))
     if is_cover:
         db.query(DossierMedia).filter(DossierMedia.dossier_id == dossier.id, DossierMedia.is_cover.is_(True)).update({"is_cover": False})
     ordinal = data.get("ordinal")
     if ordinal is None:
-        ordinal = (db.scalar(select(func.max(DossierMedia.ordinal)).where(DossierMedia.dossier_id == dossier.id)) or -1) + 1
+        last_ordinal = db.scalar(select(func.max(DossierMedia.ordinal)).where(DossierMedia.dossier_id == dossier.id))
+        ordinal = (last_ordinal if last_ordinal is not None else -1) + 1
     item = DossierMedia(
         dossier_id=dossier.id, case_id=dossier.case_id, evidence_file_id=file.id,
         is_cover=is_cover, ordinal=int(ordinal), caption=_text(data.get("caption")),
@@ -625,8 +687,9 @@ def create_interview(db: Session, *, dossier_id: uuid.UUID, user: User, data: di
     valid_members = _case_member_ids(db, dossier.case_id)
     if any(value not in valid_members for value in interviewer_ids):
         raise ValueError("Interviewers must be current case members")
+    interview_date, date_value = _interview_date(data)
     item = DossierInterview(
-        dossier_id=dossier.id, case_id=dossier.case_id, interview_date=data.get("interview_date"),
+        dossier_id=dossier.id, case_id=dossier.case_id, interview_date=interview_date, date_value=date_value,
         participants=list(data.get("participants") or []), interviewer_user_ids=interviewer_ids,
         status=_text(data.get("status")) or "planned", working_notes=_text(data.get("working_notes")),
         created_by_user_id=user.id, updated_by_user_id=user.id,
@@ -658,7 +721,9 @@ def update_interview(db: Session, *, dossier_id: uuid.UUID, interview_id: uuid.U
         if any(value not in _case_member_ids(db, dossier.case_id) for value in interviewer_ids):
             raise ValueError("Interviewers must be current case members")
         data = {**data, "interviewer_user_ids": interviewer_ids}
-    for field in ("interview_date", "participants", "interviewer_user_ids", "status", "working_notes"):
+    if "date_value" in data or "interview_date" in data:
+        item.interview_date, item.date_value = _interview_date(data)
+    for field in ("participants", "interviewer_user_ids", "status", "working_notes"):
         if field in data:
             setattr(item, field, data[field])
     if "evidence_links" in data:

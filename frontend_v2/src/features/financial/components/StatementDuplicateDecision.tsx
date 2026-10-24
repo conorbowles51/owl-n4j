@@ -37,6 +37,9 @@ const fields: Record<string, string> = {
   account_reference: "Account reference as printed",
   payments_and_balances: "Payments and balances",
   source_file: "Same PDF",
+  source_sha256: "Same original file",
+  page_images: "Every page identical",
+  source_pages: "Same pages",
 }
 
 const titles: Record<StatementDuplicateDisposition["status"], string> = {
@@ -151,6 +154,14 @@ function StatementDuplicateDecisionView({
     })
   }
 
+  // Nothing else in the case matches this statement: there is no decision to
+  // make, so say so plainly instead of showing a warning panel.
+  if (current?.status === "retained" && !current.basis && !stale && !mutation.isError)
+    return (
+      <p aria-label="Statement duplicate decision" className="text-sm text-muted-foreground">
+        Not a copy of any other statement in this case. Nothing to do here.
+      </p>
+    )
   return (
     <section
       aria-label="Statement duplicate decision"
@@ -186,6 +197,13 @@ function StatementDuplicateDecisionView({
           {stale
             ? "The earlier comparison found matching original file contents."
             : "The original file contents match."}
+        </p>
+      )}
+      {current?.basis === "identical_pages" && (
+        <p>
+          {stale
+            ? "The earlier comparison found every page identical to the retained file."
+            : "Every page is identical to the retained file, so this is the same statement."}
         </p>
       )}
       {current?.basis === "identical_financial_reading" && (

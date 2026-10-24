@@ -260,6 +260,29 @@ def duplicate_disposition(evidence_file_id: UUID, body: DuplicateDispositionRequ
         raise HTTPException(status_code=500, detail='The duplicate decision could not be confirmed. Reopen the statement to check its saved result.')
 
 
+class NotPaymentStatementRequest(_Contract):
+    action: Literal['restore', 'set_aside']
+    statement_id: _Digest | None = None
+    reason: str = Field(default='', max_length=4096)
+
+
+@router.post('/{evidence_file_id}/not-payment-statement', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+def not_payment_statement(evidence_file_id: UUID, body: NotPaymentStatementRequest,
+        case_id: UUID = Query(...), user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    """Put a fund statement set aside as not a payment statement back for review, or set it aside again."""
+    from services.financial.not_payment_statements import decide
+    try:
+        return decide(db, case_id=case_id, evidence_file_id=evidence_file_id, actor=actor_from_user(user),
+                      **body.model_dump())
+    except PdfMappingError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        db.rollback()
+        logger.exception('Not-a-payment-statement decision failed')
+        raise HTTPException(status_code=500, detail='The decision could not be confirmed. Reopen the statement to check it.')
+
+
 class RefreshStoredReadingRequest(_Contract):
     compared_review_revision: _Digest | None = None
     expected_revision: _Digest
@@ -790,12 +813,24 @@ def preview_financial_batch(body: FinancialBatchPreview, case_id: UUID = Query(.
 
 @router.get('/review/queue')
 def financial_review_queue(case_id: UUID = Query(...), file_id: list[UUID] = Query([]),
+        limit: int | None = Query(None, ge=0, le=5000), offset: int = Query(0, ge=0),
+        page_list: Literal['waiting', 'ready', 'filled', 'reader_fix', 'rechecking', 'copies', 'unreadable'] = Query('waiting'),
+        issue: str | None = Query(None, max_length=64), fresh: bool | None = Query(None),
         db: Session = Depends(get_db)):
-    """The case's statements that need a decision now, from stored readings. Read only; nothing is re-read."""
+    """The case's statements that need a decision now, from stored readings. Read only; nothing is re-read.
+
+    ``limit``/``offset``/``page_list``/``issue`` page the lists (``totals`` and
+    ``page`` say how much there is). A paged read (``limit``) or ``fresh=0``
+    may be answered from a queue built moments ago while the current one is
+    built (``refreshing``); ``fresh=1``, and an unpaged read (the views that
+    predate paging), wait for the current one.
+    """
     from services.financial.review_queue import case_review_queue
     from services.financial.request_timing import stage
     with stage('review_queue'):
-        return case_review_queue(db, case_id=case_id, file_ids=file_id)
+        return case_review_queue(db, case_id=case_id, file_ids=file_id, limit=limit, offset=offset,
+                                 page_list=page_list, issue=issue,
+                                 stale_ok=fresh is False or (fresh is None and limit is not None))
 
 
 @router.get('/review/status')
@@ -849,6 +884,25 @@ def fill_from_review_queue(body: QueueFill, case_id: UUID = Query(...), db: Sess
     from services.financial.request_timing import stage
     with stage('review_queue_fill'):
         return fill_from_queue(db, case_id=case_id, file_ids=body.file_ids)
+
+
+class ProposalGroupConfirm(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    group_id: str = Field(min_length=64, max_length=64)
+    file_ids: list[UUID] = Field(default_factory=list, max_length=10000)
+
+
+@router.post('/review/proposal-groups/confirm', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+def confirm_review_proposal_group(body: ProposalGroupConfirm, case_id: UUID = Query(...),
+        user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    """Confirm one account's proposed value for all its waiting statements at once (fills empty fields only)."""
+    from services.financial.review_queue import confirm_proposal_group
+    try:
+        return confirm_proposal_group(db, case_id=case_id, group_id=body.group_id, actor=actor_from_user(user),
+                                      file_ids=body.file_ids)
+    except PdfMappingError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
 @router.get('/review/save-result')
@@ -1056,6 +1110,45 @@ async def retry_financial_batch_file(batch_id: UUID,source_id: UUID,case_id: UUI
         return await retry_file_checked(db,case_id=case_id,batch_id=batch_id,source_id=source_id)
     except PdfMappingError as exc:
         db.rollback();raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc
+
+
+class ReadAfreshFile(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    batch_id: UUID
+    source_id: UUID
+    expected_revision: str = Field(min_length=1, max_length=64)
+
+
+class ReadAfreshRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    files: list[ReadAfreshFile] = Field(min_length=1, max_length=1000)
+
+
+@router.post('/review/read-afresh', dependencies=[
+    Depends(case_access_dependency(lambda request,payload: ('case','edit'))),
+    Depends(case_access_dependency(lambda request,payload: ('evidence','upload')))])
+def read_retained_sources_afresh(body: ReadAfreshRequest, case_id: UUID=Query(...),
+        user=Depends(get_current_db_user), db: Session=Depends(get_db)):
+    """Explicitly read the listed retained PDFs afresh; each is verified as a single request would be."""
+    return import_batches.recover_retained_sources(db, case_id=case_id,
+        files=[file.model_dump() for file in body.files], actor=actor_from_user(user))
+
+
+class CheckAgainFile(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    batch_id: UUID
+    file_id: UUID
+
+
+class CheckAgainRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    files: list[CheckAgainFile] = Field(min_length=1, max_length=2000)
+
+
+@router.post('/review/check-again', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit')))])
+def check_files_again(body: CheckAgainRequest, case_id: UUID=Query(...), db: Session=Depends(get_db)):
+    """Prepare the listed files again from their saved readings with the current reader; reviews are kept."""
+    return import_batches.refresh_files(db, case_id=case_id, files=[file.model_dump() for file in body.files])
 
 
 @router.post('/batches/{batch_id}/files/{source_id}/recover-source', dependencies=[

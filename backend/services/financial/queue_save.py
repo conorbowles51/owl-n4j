@@ -19,19 +19,30 @@ and no investigator edit or draft are claimed with the actor "System".
 Details missing only where a proposal is automatically confirmed
 (``field_proposals``) are filled first, as System, through the statement
 details save; such a statement then saves only if it checks out completely. It
-fires only from preparation, so statements read before deploy are untouched;
-the backlog is an explicit action (the queue's "Save all N ready statements",
-or ``scripts/financial_save_ready_backlog.py``). Every automatic save is an
+fires for files prepared with it on: preparation marks the batch's file entry
+(``AUTO_SAVE_MARK``), so statements read before deploy are untouched; that
+backlog is an explicit action (the queue's "Save all N ready statements", or
+``scripts/financial_save_ready_backlog.py``). Every automatic save is an
 ordinary import receipt with actor System, reversible with the existing
 import removal.
+
+A statement of such a file that becomes ready later (the background readiness
+sweep, or a readiness refresh after a change elsewhere), or whose automatic
+save failed (a database lock), is saved by ``sweep_save`` in the batch
+worker's next readiness round, exactly as at the end of preparation: the same
+fill, the same checks, the same System actor and switch. A statement with an
+investigator's draft or saved review is never saved by it.
 """
 import logging
 import os
-from collections import Counter
+import random
+import time
+from collections import Counter, OrderedDict
 from uuid import UUID, uuid4, uuid5
 
 from sqlalchemy import select
 
+from postgres.models.case import Case
 from postgres.models.evidence import EvidenceFile
 from postgres.models.financial_import_batches import (FinancialImportBatch as Batch, FinancialImportBatchItem as Item,
                                                       FinancialImportOperation as Operation)
@@ -68,13 +79,27 @@ def _not_ready_reason(projection):
     return 'No longer ready: open it in the queue'
 
 
+def restored_saved_copy(item, file):
+    """A copy of a saved statement that a person restored after the System set it aside (saved_copies): the
+    person saves it, never the System, so the account and period are not counted twice unasked."""
+    from services.financial.pending_statement_duplicates import METADATA_KEY
+    from services.financial.saved_copies import BASIS
+    stored = ((file.metadata_ or {}).get(METADATA_KEY) or {}).get(item.statement_key or '') if file is not None else None
+    return bool(stored and stored.get('status') == 'restored' and stored.get('basis') == BASIS)
+
+
 def system_filled_only(item, file):
-    """The statement's only saved review is details System filled from confirmed proposals."""
+    """The statement's only saved review is details System filled from confirmed proposals, or the
+    investigator's statement details an engine re-read carried onto this reading after every payment of hers
+    matched one to one (reread_carry.DETAILS_MATCHED): its rows are the reading's own."""
     from services.financial.field_proposals import SYSTEM_NAME
+    from services.financial.reread_carry import DETAILS_CARRY, DETAILS_MATCHED
     from services.financial.statement_progress import review_progress
     progress = review_progress(file, item.statement_key) if file is not None else None
-    return bool(progress and item.review_request and (progress.get('saved_by') or {}).get('name') == SYSTEM_NAME
-                and progress.get('request') == item.review_request)
+    if not (progress and item.review_request and progress.get('request') == item.review_request):
+        return False
+    return ((progress.get('saved_by') or {}).get('name') == SYSTEM_NAME
+            or (DETAILS_CARRY and (progress.get('carried_from') or {}).get('basis') == DETAILS_MATCHED))
 
 
 def fully_reconciled(item, projection, file):
@@ -172,7 +197,13 @@ def save_statements(session, *, case_id, item_ids, actor, request_id=None, only_
     # A repeated request (a retry after a lost response) returns its receipts.
     done = {op.batch_id: op for op in session.scalars(select(Operation).where(Operation.case_id == case_id,
             Operation.id.in_([operation_id_for(request_id, b) for b in batch_ids])))} if batch_ids else {}
-    # Lock order as the batch save: batch rows, then items, then evidence rows.
+    # The case row first, as every case-level writer takes it (the strict
+    # import writer holds it while it locks the evidence rows). A share lock:
+    # saves still run side by side, but none can hold an evidence row while
+    # waiting for the case behind an import, which deadlocked them.
+    if session.scalar(select(Case.id).where(Case.id == case_id).with_for_update(key_share=True)) is None:
+        raise PdfMappingError('Case not found.', 404)
+    # Then as the batch save: batch rows, then items, then evidence rows.
     batches = {batch.id: batch for batch in session.scalars(select(Batch).where(Batch.case_id == case_id,
                Batch.id.in_(batch_ids)).order_by(Batch.id).with_for_update())} if batch_ids else {}
     candidates = []
@@ -200,26 +231,42 @@ def save_statements(session, *, case_id, item_ids, actor, request_id=None, only_
     # through another batch, or requested twice.
     saved, _ = _saved_scopes(session, case_id)
     identity = lambda item: (files[item.file_id].sha256 if item.file_id in files else None, item.statement_key or '')
+    # Files whose pages render identically are one document too (page_identity):
+    # each statement also carries its page key, checked beside its bytes key.
+    from services.financial import page_identity
+    def pages_of(file):
+        value = page_identity.stored(file)
+        return ('pages', value['renderer'], value['identity']) if value else None
+    page_key = lambda item: (pages_of(files[item.file_id]) if item.file_id in files else None, item.statement_key or '')
     shas = {identity(i)[0] for i in candidates} - {None}
+    identities = {page_identity.stored(f)['identity'] for f in files.values() if page_identity.stored(f)}
     busy = set()
-    if shas:
-        for file_sha, key in session.execute(select(EvidenceFile.sha256, Item.statement_key)
+    if shas or identities:
+        from sqlalchemy import or_
+        matching = ([EvidenceFile.sha256.in_(shas)] if shas else []) + ([EvidenceFile.metadata_[
+            page_identity.METADATA_KEY]['identity'].as_string().in_(identities)] if identities else [])
+        for file, key in session.execute(select(EvidenceFile, Item.statement_key)
                 .join(Item, Item.file_id == EvidenceFile.id).join(Batch, Batch.id == Item.batch_id)
-                .where(Batch.case_id == case_id, Batch.status != 'removed', EvidenceFile.sha256.in_(shas),
+                .where(Batch.case_id == case_id, Batch.status != 'removed', or_(*matching),
                        Item.status.in_(('pending_import', 'imported')))):
-            busy.add((file_sha, key or ''))
+            busy.add((file.sha256, key or ''))
+            if pages_of(file):
+                busy.add((pages_of(file), key or ''))
     unique, seen = [], set()
     for item in candidates:
         scope = identity(item)
+        pages = page_key(item) if page_key(item)[0] else None
         if item.status not in ('ready', 'attention'):
             held.append(_held(item, 'Already saved' if item.status in ('imported', 'pending_import')
                               else 'No longer ready: open it in the queue'))
-        elif scope in saved or scope in busy:
+        elif scope in saved or scope in busy or pages in busy:
             held.append(_held(item, 'Already saved through another batch'))
-        elif scope in seen:
+        elif scope in seen or (pages and pages in seen):
             held.append(_held(item, 'The same statement is already in this save'))
         else:
             seen.add(scope)
+            if pages:
+                seen.add(pages)
             unique.append(item)
     checked = {p.id: p for p in checked_batch_items(session, case_id, unique, validate_reviews=True,
                                                     reading='all')} if unique else {}
@@ -278,30 +325,338 @@ def held_summary(held):
     return ', '.join(f'{n} {reason[0].lower() + reason[1:]}' for reason, n in counts.most_common())
 
 
+AUTO_SAVE_ATTEMPTS = 3
+
+
 def auto_save_prepared(session, *, case_id, batch_id, file_id):
-    """After a file's preparation: save its fully reconciled statements as System. Never raises."""
+    """After a file's preparation: save its fully reconciled statements as System. Never raises.
+
+    A save that loses a lock conflict (deadlock or serialization failure, when
+    the same file is prepared in several batches at once) is tried again;
+    statements left ready after the last attempt stay in the queue.
+    """
     if not AUTO_SAVE_READY:
         return None
-    try:
-        # Details the system can fill with certainty (confirmed proposals) are
-        # filled first, as System; the statement then saves only when it
-        # checks out completely like any other.
-        entries = _prepared_entries(session, case_id, batch_id, file_id)
-        if entries:
-            fill_confirmed(session, case_id=case_id, entries=entries, owned_batch_id=batch_id)
-        file = session.get(EvidenceFile, file_id)
-        ids = [item.id for item in session.scalars(select(Item).where(Item.batch_id == batch_id,
-               Item.file_id == file_id, Item.status == 'ready'))
-               if not item.review_request or system_filled_only(item, file)]
-        if not ids:
+    from sqlalchemy.exc import OperationalError
+    for attempt in range(1, AUTO_SAVE_ATTEMPTS + 1):
+        try:
+            return _auto_save_once(session, case_id=case_id, batch_id=batch_id, file_id=file_id)
+        except OperationalError as error:
+            session.rollback()
+            if attempt < AUTO_SAVE_ATTEMPTS and getattr(error.orig, 'sqlstate', None) in ('40P01', '40001'):
+                log.warning('Automatic save of file %s lost a lock conflict; trying again (%s of %s)',
+                            str(file_id)[:8], attempt + 1, AUTO_SAVE_ATTEMPTS)
+                time.sleep(attempt + random.random())
+                continue
+            log.exception('Automatic save of ready statements failed; they stay ready in the queue')
             return None
-        result = save_statements(session, case_id=case_id, item_ids=ids, actor=SYSTEM_ACTOR,
-                                 only_reconciled=True)
-        if result['queued']:
-            log.info('Automatic save: %s statement(s) of file %s queued for import (actor System)',
-                     result['queued'], str(file_id)[:8])
-        return result
-    except Exception:
-        session.rollback()
-        log.exception('Automatic save of ready statements failed; they stay ready in the queue')
+        except Exception:
+            session.rollback()
+            log.exception('Automatic save of ready statements failed; they stay ready in the queue')
+            return None
+
+
+def _auto_save_once(session, *, case_id, batch_id, file_id, stored_checks=False):
+    # Details the system can fill with certainty (confirmed proposals) are
+    # filled first, as System; the statement then saves only when it
+    # checks out completely like any other.
+    entries = _prepared_entries(session, case_id, batch_id, file_id)
+    if entries:
+        fill_confirmed(session, case_id=case_id, entries=entries, owned_batch_id=batch_id)
+    file = session.get(EvidenceFile, file_id)
+    ids = [item.id for item in session.scalars(select(Item).where(Item.batch_id == batch_id,
+           Item.file_id == file_id, Item.status == 'ready'))
+           if (not item.review_request or system_filled_only(item, file))
+           and not (stored_checks and _stored_check(item)) and not restored_saved_copy(item, file)]
+    if not ids:
         return None
+    result = save_statements(session, case_id=case_id, item_ids=ids, actor=SYSTEM_ACTOR,
+                             only_reconciled=True)
+    if result['queued']:
+        log.info('Automatic save: %s statement(s) of file %s queued for import (actor System)',
+                 result['queued'], str(file_id)[:8])
+    return result
+
+
+# Marks a batch's file entry as prepared with automatic save on (set by the
+# batch worker when the file's preparation ends). Only such files are swept.
+AUTO_SAVE_MARK = 'auto_save'
+SWEEP_BATCH_STATES = ('removed',) + PAUSED
+# (batch id, file id) -> the signature of its open statements when the sweep
+# last looked. Unchanged files are not checked again; per process, so after a
+# restart every marked file is looked at once more.
+_SWEPT = {}
+
+
+_OPEN_VALUES = None
+
+
+def _checks(values):
+    summary = values['summary'] if isinstance(values['summary'], dict) else {}
+    return dict(checks=(len(summary.get('problems') or ()), summary.get('problem_count') or 0,
+                        bool(summary.get('readiness_pending')), (summary.get('readiness') or {}).get('inputs')))
+
+
+def _open_statements(db):
+    """Ready and held statements of batches that can still save, with what the sweep compares.
+
+    The stored summaries are reused per PostgreSQL row version (row_versions):
+    each round reads ids and versions, and decodes only the summaries that
+    changed, not every open statement's summary every minute.
+    """
+    global _OPEN_VALUES
+    from services.financial.row_versions import RowValues
+    if _OPEN_VALUES is None:
+        _OPEN_VALUES = RowValues(Item, kept=100_000)
+    return _OPEN_VALUES.rows(db, (Item.id, Item.batch_id, Item.file_id, Item.status, Item.updated_at,
+        Item.review_request.is_(None).label('untouched'), Batch.case_id), (Item.summary.label('summary'),),
+        (Batch.id == Item.batch_id, Batch.status.notin_(SWEEP_BATCH_STATES), Item.status.in_(('ready', 'attention'))),
+        order_by=Item.id, transform=_checks)
+
+
+def _stored_check(item):
+    """The stored readiness already shows a check, so a save would hold it (the sweep's cheap filter)."""
+    summary = item.summary or {}
+    return bool(summary.get('problems') or summary.get('problem_count') or summary.get('readiness_pending')
+                or summary.get('comparison_pending'))
+
+
+# Neil, 2026-10-24 (account currency, overlap trim): a statement held only until another statement of its
+# account is saved becomes saveable when that one is saved, without any change to its own row. The sweep
+# therefore looks again at a case's marked files after any save in that case. Reverse: False (a file is
+# looked at again only when its own open statements change, as before).
+REVISIT_AFTER_SAVES = True
+
+
+def _saved_marks(db, case_ids):
+    """{case id: what changes when a statement of the case is saved}, or {} with the switch off."""
+    if not REVISIT_AFTER_SAVES:
+        return {}
+    from services.financial.field_proposals import _fingerprint
+    return {case_id: _fingerprint(db, case_id) for case_id in case_ids}
+
+
+def _signature(rows):
+    return tuple(sorted((str(identity), status, untouched, str(updated), problems)
+                        for identity, status, untouched, updated, problems in rows))
+
+
+def sweep_save(factory, *, budget_seconds=20.0):
+    """Background round: save, as System, statements that are ready now but were not saved when their file was prepared.
+
+    Covers a statement that became ready after its file's preparation (the
+    readiness sweep, a refresh after a change elsewhere) and one whose
+    automatic save failed. Only files prepared with automatic save on
+    (``AUTO_SAVE_MARK``); each file goes through the preparation-end save
+    (``_auto_save_once``), so the proof, the copy rule (a copy is set aside by
+    the import writer, never saved) and the System actor are the same. Two
+    workers may run it at once: claims are compare-and-set under the case,
+    batch, item and evidence locks, and the loser saves nothing. A file whose
+    open statements are unchanged since the last look is skipped. Never raises.
+
+    Returns {queued, files, item_ids: [...]} for what this round claimed.
+    """
+    report = dict(queued=0, files=0, item_ids=[])
+    if not AUTO_SAVE_READY:
+        return report
+    started = time.monotonic()
+    try:
+        with factory() as db:
+            groups = {}
+            for row in _open_statements(db):
+                groups.setdefault((row.batch_id, row.file_id, row.case_id), []).append(
+                    (row.id, row.status, row.untouched, row.updated_at, row.checks))
+            marks = _saved_marks(db, {key[2] for key in groups})
+            changed = {key: (_signature(members), marks.get(key[2])) for key, members in groups.items()
+                       if _SWEPT.get(key[:2]) != (_signature(members), marks.get(key[2]))}
+            marked = {}
+            if changed:
+                for batch_id, files in db.execute(select(Batch.id, Batch.files).where(
+                        Batch.id.in_({key[0] for key in changed}))):
+                    marked[batch_id] = {entry.get('file_id') for entry in files or () if entry.get(AUTO_SAVE_MARK)}
+    except Exception:
+        log.exception('Saving statements that became ready failed; the next round retries')
+        return report
+    for (batch_id, file_id, case_id), signature in sorted(changed.items(), key=lambda pair: str(pair[0][:2])):
+        if budget_seconds is not None and time.monotonic() - started >= budget_seconds:
+            break
+        if str(file_id) not in marked.get(batch_id, ()):
+            _SWEPT[(batch_id, file_id)] = signature
+            continue
+        outcome = _sweep_file(factory, case_id, batch_id, file_id)
+        if outcome is None:
+            continue  # failed: looked at again next round
+        _SWEPT[(batch_id, file_id)] = signature
+        if outcome.get('queued'):
+            report['queued'] += outcome['queued']
+            report['files'] += 1
+            report['item_ids'] += outcome['item_ids']
+    if report['queued']:
+        log.info('Automatic save after preparation: %s statement(s) of %s file(s) queued for import (actor System)',
+                 report['queued'], report['files'])
+    return report
+
+
+def _sweep_file(factory, case_id, batch_id, file_id):
+    """One marked file's preparation-end save; None when it failed (retried next round)."""
+    from sqlalchemy.exc import OperationalError
+    for attempt in range(1, AUTO_SAVE_ATTEMPTS + 1):
+        with factory() as db:
+            try:
+                result = _auto_save_once(db, case_id=case_id, batch_id=batch_id, file_id=file_id, stored_checks=True)
+            except PdfMappingError as error:
+                db.rollback()
+                if error.status_code == 409:
+                    # Another worker or a person saved one of them first; nothing
+                    # of this claim was kept. The next round sees the new state.
+                    log.info('Automatic save of file %s: saved meanwhile elsewhere', str(file_id)[:8])
+                    return None
+                log.exception('Automatic save of statements that became ready failed; they stay ready in the queue')
+                return None
+            except OperationalError as error:
+                db.rollback()
+                if attempt < AUTO_SAVE_ATTEMPTS and getattr(error.orig, 'sqlstate', None) in ('40P01', '40001'):
+                    time.sleep(attempt + random.random())
+                    continue
+                log.warning('Automatic save of file %s hit a database lock; the next round retries', str(file_id)[:8])
+                return None
+            except Exception:
+                db.rollback()
+                log.exception('Automatic save of statements that became ready failed; they stay ready in the queue')
+                return None
+            if not result:
+                return dict(queued=0, item_ids=[])
+            return dict(queued=result['queued'], item_ids=_claimed(db, result))
+    return None
+
+
+def _claimed(db, result):
+    ids = [UUID(op['operation_id']) for op in result.get('operations', ())]
+    if not ids:
+        return []
+    return [row['item_id'] for op in db.scalars(select(Operation).where(Operation.id.in_(ids)))
+            for row in op.outcomes or ()]
+
+
+# The backlog: statements that were ready before automatic save existed, or
+# whose file was prepared without it (no AUTO_SAVE_MARK). ``sweep_backlog``
+# saves them in the background under exactly the rule of
+# ``scripts/financial_save_ready_backlog.py`` (which calls the same two
+# functions): ready, no stored check, no investigator edit or draft, then
+# today's admission and ``fully_reconciled`` in ``save_statements``, actor
+# System, an ordinary reversible import receipt. One more switch beside
+# AUTO_SAVE_READY: FINANCIAL_AUTO_SAVE_BACKLOG=0 stops only the sweep.
+AUTO_SAVE_BACKLOG = os.environ.get('FINANCIAL_AUTO_SAVE_BACKLOG', '1').strip().lower() not in ('0', 'false', 'off', 'no')
+BACKLOG_CHUNK = 10
+BACKLOG_PER_ROUND = 30
+# Item id -> its updated_at when the sweep last decided about it (per process,
+# bounded): a statement admission held is looked at again only after it changes.
+_BACKLOG_SEEN = OrderedDict()
+BACKLOG_SEEN_MAX = 100_000
+
+
+def backlog_choice(session, items):
+    """Ids of ready items the backlog rule may claim: no stored check, no investigator edit or draft.
+
+    Details System filled from confirmed proposals are not an edit. Admission
+    itself (``save_statements(only_reconciled=True)``) decides afterwards.
+    """
+    from services.financial.statement_progress import review_progress
+    items = [item for item in items if item.status == 'ready']
+    files = {f.id: f for f in session.scalars(select(EvidenceFile).where(
+             EvidenceFile.id.in_({i.file_id for i in items})))} if items else {}
+    return [i.id for i in items if not (i.summary or {}).get('problems') and not (i.summary or {}).get('problem_count')
+            and ((not i.review_request and not (i.file_id in files and review_progress(files[i.file_id], i.statement_key)))
+                 or system_filled_only(i, files.get(i.file_id)))
+            and not restored_saved_copy(i, files.get(i.file_id))]
+
+
+# Held because today's admission disagrees with the stored "ready": the stored
+# readiness is brought up to date, so the queue says what a save would do.
+_STALE_READY = ('No longer ready', 'Being rechecked')
+
+
+def save_backlog(factory, case_id, ids):
+    """Claim backlog statements as System in chunks; refresh the stored readiness of those admission held.
+
+    Returns {queued, held: Counter of reasons, refreshed}.
+    """
+    queued, held, stale = 0, Counter(), []
+    for start in range(0, len(ids), BACKLOG_CHUNK):
+        with factory() as session:
+            result = save_statements(session, case_id=case_id, item_ids=ids[start:start + BACKLOG_CHUNK],
+                                     actor=SYSTEM_ACTOR, only_reconciled=True)
+        queued += result['queued']
+        for entry in result['held']:
+            held[entry['reason']] += 1
+            if entry['item_id'] and not entry['reason'].startswith(('Already saved', 'Has a check', 'The same', 'Its batch')):
+                stale.append(UUID(entry['item_id']))
+    refreshed = 0
+    if stale:
+        from services.financial.import_batches import refresh_readiness
+        with factory() as session:
+            refreshed = refresh_readiness(session, case_id=case_id, item_ids=stale)['refreshed']
+            session.commit()
+    return dict(queued=queued, held=held, refreshed=refreshed)
+
+
+def _ready_backlog(db):
+    """(case id, item id, updated_at) of ready statements in batches that can save, not decided since they changed."""
+    rows = db.execute(select(Batch.case_id, Item.id, Item.updated_at).join(Batch, Batch.id == Item.batch_id).where(
+        Item.status == 'ready', Batch.status.notin_(SWEEP_BATCH_STATES)).order_by(Batch.case_id, Item.id))
+    return [row for row in rows if _BACKLOG_SEEN.get(row[1]) != row[2]]
+
+
+def _remember(db, ids):
+    for identity, updated in db.execute(select(Item.id, Item.updated_at).where(Item.id.in_(ids))):
+        _BACKLOG_SEEN[identity] = updated
+        _BACKLOG_SEEN.move_to_end(identity)
+    while len(_BACKLOG_SEEN) > BACKLOG_SEEN_MAX:
+        _BACKLOG_SEEN.popitem(last=False)
+
+
+def sweep_backlog(factory, *, budget_seconds=20.0, max_statements=BACKLOG_PER_ROUND):
+    """Background round: save ready backlog statements as System, a few per round. Never raises.
+
+    Bounded (statements and seconds per round) and resumable: a saved
+    statement is no longer ready, and one admission held is skipped until it
+    changes. Returns {queued, cases, considered, held: {reason: n}, refreshed}.
+    """
+    report = dict(queued=0, cases=0, considered=0, held=Counter(), refreshed=0)
+    if not (AUTO_SAVE_READY and AUTO_SAVE_BACKLOG):
+        report['held'] = {}
+        return report
+    started = time.monotonic()
+    try:
+        with factory() as db:
+            pending = _ready_backlog(db)
+            by_case = {}
+            for case_id, identity, _ in pending:
+                by_case.setdefault(case_id, []).append(identity)
+        for case_id, identities in by_case.items():
+            if report['considered'] >= max_statements or (
+                    budget_seconds is not None and time.monotonic() - started >= budget_seconds):
+                break
+            identities = identities[:max_statements - report['considered']]
+            with factory() as db:
+                chosen = backlog_choice(db, list(db.scalars(select(Item).where(Item.id.in_(identities)))))
+                db.rollback()
+            report['considered'] += len(identities)
+            try:
+                outcome = save_backlog(factory, case_id, chosen) if chosen else dict(queued=0, held=Counter(), refreshed=0)
+            except PdfMappingError as error:
+                # 409: saved meanwhile elsewhere; the next round sees the new state.
+                log.info('Backlog save for case %s: %s', str(case_id)[:8], error)
+                continue
+            with factory() as db:
+                _remember(db, identities)
+            report['queued'] += outcome['queued']
+            report['held'].update(outcome['held'])
+            report['refreshed'] += outcome['refreshed']
+            report['cases'] += 1 if outcome['queued'] else 0
+    except Exception:
+        log.exception('Saving the ready backlog failed; the next round retries')
+    report['held'] = dict(report['held'])
+    if report['queued'] or report['refreshed']:
+        log.info('Ready backlog: %s statement(s) queued for import as System; %s', report['queued'], report)
+    return report

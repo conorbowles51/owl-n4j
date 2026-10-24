@@ -80,20 +80,21 @@ def select_live(session, case_id, resolve_path):
     from postgres.models.financial import FinancialSourceDocument
     from postgres.models.financial_import_batches import FinancialImportBatchItem as BatchItem
     from services.financial.batch_review_summary import reason as review_reason
-    from services.financial.recovery_campaigns import READER_RECOVERY
+    from services.financial.recovery_campaigns import READER_RECOVERY, reader_campaign
     from services.financial.recovery_readers import candidates
-    selected, reasons = candidates(session, case_id, READER_RECOVERY)
+    # The campaign the worker schedules now: readings by another engine source than this tree's.
+    selected, reasons = candidates(session, case_id, reader_campaign() or READER_RECOVERY)
     admitted_hashes = set(session.scalars(select(EvidenceFile.sha256).join(FinancialSourceDocument,
         FinancialSourceDocument.evidence_file_id == EvidenceFile.id).where(
         FinancialSourceDocument.case_id == case_id, FinancialSourceDocument.status == 'admitted')))
     files, live_reasons, live_periods = [], Counter(), 0
-    for batch, entry, detail in selected:
+    for batch, entry, detail, members in selected:
         reading, source = detail['reading'], detail['source']
         document = session.get(EvidenceDocumentText, reading.id)
         geometry = list(session.scalars(select(EvidenceTableGeometry).where(
             EvidenceTableGeometry.evidence_file_id == reading.id,
             EvidenceTableGeometry.engine_job_id == document.engine_job_id)))
-        for item in detail['held']:
+        for item in (held for _, _, member in members for held in member['held']):
             live_periods += 1
             problems = (item.summary or {}).get('problems') or []
             live_reasons.update({review_reason(problem) for problem in problems} or {'unspecified'})
@@ -105,7 +106,8 @@ def select_live(session, case_id, resolve_path):
                 character_count=document.character_count, source_locations=document.source_locations,
                 processing_manifest=document.processing_manifest,
                 geometry={str(row.page_number): row.payload for row in geometry})))
-    return dict(reasons=dict(reasons), files=files, live_held_periods=live_periods,
+    from services.financial.recovery_readers import not_prepared_breakdown
+    return dict(reasons=dict(reasons), not_prepared=not_prepared_breakdown(session, case_id), files=files, live_held_periods=live_periods,
         live_reasons=dict(live_reasons))
 
 
@@ -318,7 +320,7 @@ def estimate(factory, case_id, *, reread=True, python=sys.executable, concurrenc
         db.rollback()
     files = live.pop('files')
     report = dict(generated_at=datetime.now(timezone.utc).isoformat(timespec='seconds'), code=_code(),
-        selection=live['reasons'], live_held_periods=live['live_held_periods'], live_reasons=live['live_reasons'],
+        selection=live['reasons'], not_prepared=live['not_prepared'], live_held_periods=live['live_held_periods'], live_reasons=live['live_reasons'],
         identical_bytes_admitted=sum(f['identical_bytes_admitted'] for f in files),
         limits=__doc__.split('Limits: ', 1)[1].strip())
     if not reread or not files:

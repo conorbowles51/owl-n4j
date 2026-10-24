@@ -10,7 +10,7 @@ from sqlalchemy import select
 from services.financial import closing_only_period as module
 from services.financial.closing_only_period import closing_only_period_dates
 from services.financial.statement_import_merrick import merrick_statement
-from tests.test_financial_statement_import_merrick import summary_statement
+from tests.test_financial_statement_import_merrick import summary_statement, with_cycle_days
 
 THIS_FILE = SimpleNamespace(id='this-file', original_filename='this.pdf')
 
@@ -268,3 +268,139 @@ class ClosingOnlyBatchOrderTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def day_count(neighbours, *, start='2024-04-01', end='2024-04-30', account='1234 5678 9012 3456'):
+    selected = dict(layout_id='generic', period_start_basis='printed_day_count', period_start=start, period_end=end,
+                    account_reference=account, id='this')
+    with patch.object(module, '_day_count_neighbours', return_value=neighbours):
+        return closing_only_period_dates(None, case_id='case', file=THIS_FILE, selected=selected,
+                                         sources=[], currency='USD', cache={})
+
+
+def previous(closing_date, statement_id='previous'):
+    return dict(file_id='other-file', filename='other.pdf', statement_id=statement_id, closing_date=closing_date)
+
+
+class DayCountPeriodTests(unittest.TestCase):
+    """r6: a general-engine card statement printing its closing date and the days in its billing cycle."""
+
+    def test_the_start_is_derived_and_agrees_with_the_previous_statement(self):
+        result = day_count([previous('2024-03-31')])
+        self.assertEqual((result['period_start'], result['period_end']), ('2024-04-01', '2024-04-30'))
+        self.assertEqual((result['period_start_basis'], result['period_end_basis']),
+                         ('printed_day_count', 'printed_closing_date'))
+        self.assertIsNone(result['period_start_hold'])
+        self.assertEqual(result['period_start_evidence']['printed_days_in_cycle'], 30)
+        self.assertEqual(result['period_start_evidence']['previous_closing_date'], '2024-03-31')
+
+    def test_without_a_previous_statement_the_printed_days_establish_the_start(self):
+        result = day_count([])
+        self.assertEqual(result['period_start'], '2024-04-01')
+        self.assertNotIn('previous_closing_date', result['period_start_evidence'])
+
+    def test_a_previous_statement_closing_on_another_day_holds_the_start(self):
+        result = day_count([previous('2024-03-29')])
+        self.assertEqual(result['period_start'], '')
+        self.assertEqual(result['period_start_hold']['code'], 'previous_statement_disagrees')
+        result = day_count([previous('2024-03-31'), previous('2024-03-29', 'other')])
+        self.assertEqual(result['period_start_hold']['code'], 'several_previous_statements')
+
+    def test_statements_outside_one_cycle_are_not_the_previous_one(self):
+        for closing in ('2024-02-29', '2024-04-15', '2024-05-31'):
+            self.assertEqual(day_count([previous(closing)])['period_start'], '2024-04-01')
+
+    def test_other_layouts_keep_their_own_rule(self):
+        selected = dict(layout_id='generic', period_start='2024-04-01', period_end='2024-04-30', id='x')
+        self.assertIsNone(closing_only_period_dates(None, case_id='case', file=THIS_FILE, selected=selected,
+                                                    sources=[], currency='USD', cache={}))
+
+
+class MerrickDayCountTests(unittest.TestCase):
+    """A Merrick statement's printed days in its billing cycle establish its start with its closing date."""
+
+    def dates(self, neighbours, days='31'):
+        return dates(neighbours, with_cycle_days(summary_statement(), value=days))  # closes 2021-04-25
+
+    def test_without_a_previous_statement_the_printed_days_establish_the_start(self):
+        for neighbours in ([], [fact('2021-01-25')],                         # further back than one cycle
+                           [fact('2021-03-25', account='9999222233334444')]):  # another card
+            result = self.dates(neighbours)
+            self.assertEqual((result['period_start'], result['period_end']), ('2021-03-26', '2021-04-25'))
+            self.assertEqual(result['period_start_basis'], 'printed_day_count')
+            self.assertIsNone(result['period_start_hold'])
+            self.assertEqual(result['period_start_evidence']['printed_days_in_cycle'], 31)
+            self.assertEqual(result['period_start_evidence']['printed_days_cell']['expected_text'], '31')
+
+    def test_an_off_cycle_period_agrees_with_the_previous_statement_closing_the_day_before(self):
+        result = self.dates([fact('2021-04-05')], days='20')
+        self.assertEqual(result['period_start'], '2021-04-06')
+        self.assertEqual(result['period_start_evidence']['previous_closing_date'], '2021-04-05')
+
+    def test_a_previous_statement_closing_on_another_day_or_inside_the_cycle_holds_the_start(self):
+        for neighbours, code in (([fact('2021-03-24')], 'previous_statement_disagrees'),
+                                 ([fact('2021-04-10')], 'previous_statement_disagrees'),
+                                 ([fact('2021-03-25'), fact('2021-04-10', statement_id='odd')],
+                                  'several_previous_statements')):
+            with self.subTest(neighbours=[n['closing_date'] for n in neighbours]):
+                result = self.dates(neighbours)
+                self.assertEqual((result['period_start'], result['period_start_hold']['code']), ('', code))
+
+    def test_readable_balances_that_differ_hold_the_start_and_unreadable_ones_do_not(self):
+        self.assertEqual(self.dates([fact('2021-03-25', balance='100')])['period_start_hold']['code'], 'balance_mismatch')
+        self.assertEqual(self.dates([fact('2021-03-25', balance=None)])['period_start'], '2021-03-26')
+
+    def test_the_switch_returns_to_the_previous_statement_rule(self):
+        original = module.MERRICK_DAY_COUNT
+        module.MERRICK_DAY_COUNT = False
+        try:
+            result = self.dates([])
+            self.assertEqual((result['period_start'], result['period_start_hold']['code']), ('', 'no_previous_statement'))
+        finally:
+            module.MERRICK_DAY_COUNT = original
+
+
+class OpeningAgreementTests(unittest.TestCase):
+    """An unconfirmed Previous Balance becomes the opening when the previous statement's New Balance prints it."""
+
+    def unconfirmed(self, text='$0.00?', days=None):
+        data = summary_statement()
+        data['rows'][3]['cells'][1]['expected_text'] = text
+        return with_cycle_days(data, value=days) if days else data
+
+    def test_the_previous_new_balance_establishes_the_opening_and_the_start(self):
+        for data in (self.unconfirmed(), self.unconfirmed(days='31')):
+            result = dates([fact('2021-03-25')], data)
+            self.assertEqual(result['period_start'], '2021-03-26')
+            agreement = result['opening_balance']
+            self.assertEqual((agreement['balance_minor'], agreement['basis']), ('0', 'previous_statement_new_balance'))
+            self.assertEqual(agreement['this_previous_balance']['expected_text'], '$0.00?')
+            self.assertEqual(agreement['previous_new_balance']['balance_minor'], '0')
+            selected = merrick_statement(data)
+            from services.financial.statement_import_merrick import propose_merrick_table
+            rows = module.apply_opening_agreement(propose_merrick_table(data, 'USD', selected)['rows'], result)
+            [opening] = [r for r in rows if r['fields'].get('description') == 'Opening Balance']
+            self.assertEqual((opening['fields']['balance'], opening['fields']['balance_basis'], opening['issues']),
+                             ('0', 'previous_statement_new_balance', []))
+
+    def test_no_agreement_without_the_one_previous_statement_or_with_another_amount(self):
+        cases = ((self.unconfirmed(), [fact('2021-03-25', balance='5')], 'balance_unreadable'),
+                 (self.unconfirmed(), [fact('2021-03-25', balance=None)], 'balance_unreadable'),
+                 (self.unconfirmed(), [], 'no_previous_statement'),
+                 (self.unconfirmed('$0.0O?'), [fact('2021-03-25')], 'balance_unreadable'),
+                 (self.unconfirmed('0.00?'), [fact('2021-03-25')], 'balance_unreadable'),
+                 (self.unconfirmed('-$0.00?'), [fact('2021-03-25')], 'balance_unreadable'))
+        for data, neighbours, code in cases:
+            with self.subTest(text=data['rows'][3]['cells'][1]['expected_text'], neighbours=len(neighbours)):
+                result = dates(neighbours, data)
+                self.assertNotIn('opening_balance', result)
+                self.assertEqual(result['period_start_hold']['code'], code)
+        # With the printed days the start stands, but the opening still needs the agreement.
+        result = dates([fact('2021-03-25', balance='5')], self.unconfirmed(days='31'))
+        self.assertEqual(result['period_start'], '2021-03-26')
+        self.assertNotIn('opening_balance', result)
+
+    def test_a_confirmed_opening_is_never_replaced(self):
+        result = dates([fact('2021-03-25')])
+        self.assertNotIn('opening_balance', result)
+        self.assertEqual(module.apply_opening_agreement([dict(kind='balance')], result), [dict(kind='balance')])

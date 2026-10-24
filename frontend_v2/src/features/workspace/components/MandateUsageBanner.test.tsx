@@ -16,7 +16,7 @@ describe("MandateUsageBanner", () => {
       />,
     )
 
-    expect(screen.getByText("Using case mandate")).toBeInTheDocument()
+    expect(screen.getByText("Using case objective")).toBeInTheDocument()
     expect(screen.getByText("v2")).toBeInTheDocument()
     expect(screen.getByText(/newer version \(v3\)/i)).toBeInTheDocument()
 
@@ -37,7 +37,7 @@ describe("MandateUsageBanner", () => {
     fireEvent.click(
       screen.getByRole("button", { name: /override for next request/i }),
     )
-    fireEvent.change(screen.getByLabelText("Temporary mandate override"), {
+    fireEvent.change(screen.getByLabelText("Temporary objective override"), {
       target: { value: "Test the contrary explanation" },
     })
     expect(onTemporaryOverrideChange).toHaveBeenCalledWith(
@@ -64,6 +64,6 @@ describe("MandateUsageBanner", () => {
       />,
     )
 
-    expect(screen.getByText("No saved case mandate")).toBeInTheDocument()
+    expect(screen.getByText("No saved case objective")).toBeInTheDocument()
   })
 })

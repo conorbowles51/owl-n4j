@@ -40,7 +40,7 @@ const context: CaseContext = {
       fields: [],
     },
     {
-      key: "criminal_defence",
+      key: "criminal_defense",
       name: "Criminal defence",
       description: "Specialised criminal-defence context.",
       is_builtin: true,
@@ -104,18 +104,18 @@ describe("CaseContextSection", () => {
     render(<CaseContextSection caseId="case-1" canEdit={false} />)
 
     expect(screen.getByText(context.case_summary!)).toBeInTheDocument()
-    expect(screen.getByText("Trace the disputed transfers")).toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument()
+    expect(screen.getAllByText("Trace the disputed transfers")[0]).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Edit summary" })).not.toBeInTheDocument()
     expect(
-      screen.queryByRole("button", { name: /new version/i }),
+      screen.queryByRole("button", { name: /edit objective/i }),
     ).not.toBeInTheDocument()
   })
 
   it("uses typed template controls and saves structured context", async () => {
     render(<CaseContextSection caseId="case-1" canEdit />)
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }))
+    fireEvent.click(screen.getByRole("button", { name: "Edit summary" }))
     fireEvent.change(screen.getByDisplayValue("General investigation"), {
-      target: { value: "criminal_defence" },
+      target: { value: "criminal_defense" },
     })
     fireEvent.change(screen.getByLabelText("Charges / allegations"), {
       target: { value: "Fraud and false accounting" },
@@ -124,12 +124,12 @@ describe("CaseContextSection", () => {
     fireEvent.change(screen.getByLabelText("Risk level"), {
       target: { value: "High" },
     })
-    fireEvent.click(screen.getByRole("button", { name: "Save" }))
+    fireEvent.click(screen.getByRole("button", { name: "Save summary" }))
 
     await waitFor(() => expect(mocks.updateContext).toHaveBeenCalledTimes(1))
     expect(mocks.updateContext).toHaveBeenCalledWith(
       expect.objectContaining({
-        active_template_key: "criminal_defence",
+        active_template_key: "criminal_defense",
         custom_values: {
           charges: "Fraud and false accounting",
           custody: true,
@@ -141,11 +141,11 @@ describe("CaseContextSection", () => {
 
   it("creates a new immutable mandate version from the visible current version", async () => {
     render(<CaseContextSection caseId="case-1" canEdit />)
-    fireEvent.click(screen.getByRole("button", { name: /new version/i }))
+    fireEvent.click(screen.getByRole("button", { name: /edit objective/i }))
     fireEvent.change(screen.getByLabelText("Objective"), {
       target: { value: "Test the revised transfer theory" },
     })
-    fireEvent.click(screen.getByRole("button", { name: /activate version/i }))
+    fireEvent.click(screen.getByRole("button", { name: /save objective/i }))
 
     await waitFor(() => expect(mocks.createMandate).toHaveBeenCalledTimes(1))
     expect(mocks.createMandate).toHaveBeenCalledWith(

@@ -13,36 +13,29 @@ sets it itself only when it is genuinely blocked on Neil; see "Halt rules".)
 
 ## ▶ NEXT
 
-**(2026-10-11 15:30) REAL-DOCUMENT wave 4 integrated into fin/release-1 and LIVE (a15230a0 deployed by Neil's
-interactive session on 2026-10-10). Squash merges t-visual-v08 3512460d, r4-any-layout 435a6514, r4-cards 8f9258c8;
-r4-any-layout REVERTED 2a9ba3ab; fin/alex-1009 02c1e7cb and fin/r5-alex-feedback 6e9bc80a merged per Neil's 2026-10-09
-instruction, tsc fix 14423877; the interactive session's fin/alex-release merges 00bce7c1, a15230a0 on top. NOT pushed
-by this session. The real-document driver owns the next waves; running state, counts and history in
+**(2026-10-22 04:40) REAL-DOCUMENT wave 13 integrated into fin/release-1 (headless integrate-13). Regular merges of
+t-visual-v19 f58d6dbf (truth and audit tooling only), r13-andrews ab5c16ef and r13-merrick 3e8e7f06, on 48e58b67;
+WIP-NOTES.md dropped; no conflicts. NOT pushed or deployed by this session. Running state, counts and history in
 /mnt/owl-data/fin-wt/headless/real/STATE.md (counts only).**
-Why the revert: the whole-set run on the merged code (bench/wave4, full fresh engine read, reading revision v16) admitted
-1 period matching no truth period: a Santander scan whose money equals truth but whose holder is a movement description
-line (the general engine's address-block holder fallback accepts movement lines ending in a five-digit reference as a
-postal line) and whose account is the 18-digit interbank number. Replayed: before the merge held, with it admitted,
-reverted held. Integration rule: a unit that admits a wrong period on real data is not merged. Never deployed.
-Real headline on the deployed code (bench/wave4-a152, frozen copy of a15230a0, wave-4 readings, exit 0): **1,034/1,237
-ready without edits (83.6%)**, recoverable 1,034/1,233; on wave 3's 529 documents 1,028/1,191 (was 977); **0 wrong
-admissions**, 0 critical-field errors (13,804 rows), must-hold 4/4, 0 previously ready periods lost, 57 gained (Credit
-One 18 -> 51/53, Merrick 0 -> 16/42, Monex +6 engine-served). Engine-served 46, library-served 988. With r4-any-layout it
-was 1,050 and 1 wrong. Truth: inventory 729 -> 832 statement documents (M&T, Synchrony, Navy Federal, Wells Fargo
-arrivals), final 587/832, compared 567/827; Monex holder truth defect fixed. Actions per 100 statements 994 / 961
-grouped (791 / 769 on wave 3's 529, was 920 / 897). Live (read-only, post-deploy): 811 admitted periods on truth
-documents, 4 disagree (current code reads all 4 equal; they need a re-read), 0 printed periods admitted twice (was 102).
-Census (measured before the revert): 1,118/2,466 (45.3%). Synthetic 105/125, 0 wrong. Suites on a15230a0: financial
-5,985 (2 known failures + 3 load/frozen-copy artefacts that pass in the worktree); tsc 0; vitest unit 2,093/2,094 (1
-pre-existing failure: the route-check limit test vs upstream 4309cb5f, open decision).
-**Wave 5 (headless/real/wave5.units, prompts headless/real/units/):** `r5-any-layout` (re-apply r4-any-layout, fix the
-holder rule and the interbank-number account first, prove 0 wrong on the whole set, then Santander/BBVA/Intercam/Kapital/
-Scotiabank/Monex residue, census currency, generic-only figure), `r5-andrews-cards` (Neil's rulings of 2026-10-09:
-Andrews direction from the printed sign when both printed balances agree, not built yet; late-posted card charges, built
-for saved statements by ec6fca0b, to extend to fresh reads and measure; Andrews residue 66, Merrick 26), `t-visual-v17`
-(16 Synchrony card statements, all read empty live: truth plus the blind on-arrival figure; Synchrony reader in wave 6).
-Acceptance for every unit: 0 wrong admissions real and synthetic (including 0 admitted items that match no truth
-period), synthetic >= 105/125, no ready period lost against bench/wave4-a152.
+Real headline (bench/wave13 = a fresh whole-set run of frozen 3e8e7f06, 797 documents, 1,729 distinct verified periods,
+reading v24 with v25 on the Andrews documents; product default, automatic save ON): **1,645/1,729 ready without edits
+(95.1%), recoverable 1,645/1,724 (95.4%)**, all saved by the system with no click; on wave 12's 796 documents
+**1,440/1,524 (was 1,404)**; **0 wrong admissions, 0 critical-field errors (25,489 rows), 0 duplicate ledger
+contributions**, must-hold 5/5, 0 lost, 241 gained (Navy Federal 205 on its first scored truth, engine only; Andrews
+231 -> 255; Merrick 23 -> 35). Saved holder differs 0. **Generic-only 1,242/1,729, 0 wrong.** New, reported (not a wrong
+admission): 3 Andrews closed share sections saved without a closing balance (truth 0.00, no money moves). Copies held
+168/171; REAL_EXIT=1 still only for dcfc8ce1f2afc#1 (Neil rule). Actions per 100 statements **137 / 128** (wave 12 under
+the same re-read simulation: 172 / 159). Truth final 829/832 (+1, +205 verified periods), compared 797/815. Live
+(read-only audit-wave13): identical to audit-v19 (the same 6 disagreeing periods, 1 double admission, 3 Kapital holders).
+Synthetic 108/125, 0 wrong. Suites: financial Ran 6,597, only the 2 known unassigned_statement failures after a rerun of
+two load-timeout modules (19 OK) and the known intermittent page-identity test; tsc 0; vitest unit 2,130/2,130.
+**Wave 14 (headless/real/wave14.units, prompts headless/real/units/):** `t-visual-v11` and `t-visual-v12` (the last 3
+Capital One confirm documents, 832/832 final; v12 also brings the 18 all-unverified documents into the comparison,
+815/815), `r14-santander` (the 3 Andrews closed-section closings first; Santander 18 held, 393 actions; target >= 138/146).
+Acceptance for every unit: 0 wrong admissions real (product; generic-only must not add any) and synthetic, no new copy
+saved, synthetic >= 108/125, no ready period lost against bench/wave13.
+**Live:** the reunion ca059a42 (deployed 2026-10-17, engine v19). Deploy of fin/release-1 recommended now (STATE.md open
+decision 1).
 **Everything below in this section is the synthetic track (wave 5 state), parked behind the real waves.**
 Release-1 now (corpus v4, 124 distinct periods, bench-runs/release-1-w5, exit 0): **102/124 ready without edits (82.3%)**,
 102/107 recoverable (95.3%), 0 wrong admissions, 0 critical-field errors (347 saved), 0 valid-looking wrong values
@@ -68,11 +61,13 @@ Correctly held and not in a unit: 10 must-hold (omitted rows, missing pages, dep
 
 **Open Neil decisions (nothing above waits on them; all have a recorded default):**
 - **Deployed: a15230a0 is live** (Neil's interactive session, 2026-10-10): real waves 1-4 without r4-any-layout, plus the
-  investigator-feedback work. Never deploy a head containing 435a6514 without its r5-any-layout fix.
+  investigator-feedback work. Never deploy a head containing 435a6514 without its r5-any-layout fix (fin/release-1 carries both since
+  780b31a1; wave 5 is measured 0 wrong and not deployed).
 - **Live double admission: resolved.** The read-only audit on 2026-10-11 finds 0 printed periods admitted twice (was 102);
   the set-aside was applied live (not by the headless runner).
-- **4 live periods disagree with verified truth** (opaque ids in headless/real/STATE.md). The deployed code reads all 4
-  equal to truth; recommend re-reading their sources now (a live write: interactive session).
+- **5 live periods disagree with verified truth** (opaque ids in headless/real/STATE.md, audit 2026-10-13): 3 that the
+  current code reads equal to truth (re-read them), and the investigator's 2 hand-entered Synchrony periods with every
+  row's direction inverted (set the card account's type, or re-read after r6-synchrony; live writes, interactive).
 - **Route-check: deployed.** a15230a0 (live) carries the route-check fix 41a306a8 (no more 500 from the missing
   `MAX_BATCH_SIZE`) and upstream 4309cb5f, which removed the route-check file limit itself; our frontend unit test still
   asserts that limit (the one vitest failure). Recommend aligning that test with the server.
@@ -205,6 +200,16 @@ reasoning, proceed. Set `STATUS: HALT — <reason>` only when:
 
 ## Open defects (found, not fixed)
 
+- **AUTO_SAVE_READY saves an exact copy** (2d8bdf20, default ON): synthetic run with the product default saved the byte
+  copy generic-01-copy-of-clean.pdf#1 (copies 0/1, 5 duplicate ledger rows); with FINANCIAL_AUTO_SAVE_READY=0 it is set
+  aside (1/1). Likely: the save fires per file before the batch compares files. Wave 7 r7-autosave. Found integrate-6.
+- **CLAUDE.md suite command runs with auto-save ON**: `unittest discover` never loads tests/conftest.py (its only job is
+  FINANCIAL_AUTO_SAVE_READY=0): 63 failures + 60 errors. Until fixed, prefix the command with
+  FINANCIAL_AUTO_SAVE_READY=0 (then only the 2 known + 8 test_financial_exports failures for the interactive modules
+  auto_read, batch_file_overview, batch_selection_preview, batch_supersession, field_proposals, queue_save, review_queue,
+  statement_detection). Wave 7 r7-autosave. Found integrate-6.
+- **Benchmark import turn budget**: on fin/release-1 the harness group import used all 2,711 turns and left 105 ready
+  items pending (660 turns before the interactive queue/save work). Wave 7 r7-autosave. Found integrate-6.
 - `tests.test_financial_extraction_release` (3 of 4 tests) spawns `scripts/check_financial_extraction_release.py`
   with a 20 s subprocess timeout; each spawn takes ~14 s at load 5–6 and times out at load ~13 (full suite during a
   benchmark, integrate-5). Reruns alone OK. Not a code fault; raise the timeout or run the suite without a concurrent
@@ -664,3 +669,257 @@ brief (briefs = Queue entries above + the 2026-10-02 log lines). Automation is t
   code reads all 4 equal), 0 printed periods admitted twice.
 - Wave 5 third slot changed to t-visual-v17 (Synchrony, all 16 read empty live) from v15 (M&T; prompt kept). Wave 5:
   r5-any-layout, r5-andrews-cards, t-visual-v17. STATUS-FOR-NEIL.md rewritten.
+
+### 2026-10-13 19:50 — REAL-DOCUMENT wave 5 merged into fin/release-1 (headless integrate-5)
+- All three notes say complete with 0 wrong on real and synthetic; none refused. Private scan of the net diffs, every
+  intermediate commit and every message against truth holders, words, accounts, inventory file names and non-round
+  amounts: clean (only the round synthetic figure 100,000.00). Regular merges, WIP-NOTES.md dropped, notes archived
+  /mnt/owl-data/fin-wt/notes/{t-visual-v17,r5-any-layout,r5-andrews-cards}.md: `fin/t-visual-v17` (65c13e2c),
+  `fin/r5-any-layout` (780b31a1), `fin/r5-andrews-cards` (ef0877d6). Disjoint files, no conflicts.
+- Merge breakage fixed (e3649edb): t-visual-v17 inserted its tests between the pdfplumber skip decorator and
+  SyntheticCorpusTruthTests, so that class failed without pdfplumber (the service venv) and the Synchrony tests were
+  skipped. Decorator moved back; module 43 OK with and without pdfplumber.
+- **Real benchmark, full fresh read** (bench/wave5, frozen ef0877d6; read 3 h 23 min, 0 reading errors; import 11 h;
+  REAL_EXIT=0): **1,118/1,253**, recoverable 1,118/1,249, 0 wrong, 0 critical (17,085 rows), holds 4/4, copies
+  148/151, 0 lost, 84 gained; 68 valid-looking wrong values, none in a ready period; 18 unmatched items, 0 offered.
+  Compare 583/827 statements (1,263 of 1,442 without disagreement; in ready periods only BBVA holder punctuation 24).
+- Live ledger audit (read-only, audit-wave5): 813 admitted periods on truth documents, 5 disagree (3 earlier + 2
+  hand-entered Synchrony periods with inverted directions), 0 printed periods admitted twice.
+- Census not re-run (census-r5 on this wave's engine: 1,165 ready of 3,154 raw periods).
+- Synthetic (bench-runs/real-wave5, BENCH_EXIT=0): 105/125, 105/108, 0 wrong.
+- Suites (live .venv, CHROMADB_PORT=1 CHROMA_PORT=1): financial **Ran 6,089, failures=3** (2 known unassigned_statement
+  + the test-placement failure fixed in e3649edb), skipped 21; tsc -b 0; vitest unit 300 files 2,093/2,094
+  (route-check limit test, pre-existing). Logs bench-runs/real-wave5{,-suite,-tsc,-vitest}.log.
+- Wave 6 planned: r6-synchrony, r6-vector-text, t-visual-v15 (prompt updated: the M&T institution profile is back).
+  STATE.md and STATUS-FOR-NEIL.md rewritten.
+
+### 2026-10-15 12:00 — REAL-DOCUMENT wave 6 merged into fin/release-1 (headless integrate-6)
+- All three notes say complete with 0 wrong on real and synthetic; none refused. Private scan of the net diffs, every
+  intermediate commit and every message against truth holders, words, accounts, inventory file names and non-round
+  amounts: clean (0 hits). Regular merges, WIP-NOTES.md dropped, notes archived
+  /mnt/owl-data/fin-wt/notes/{t-visual-v15,r6-synchrony,r6-vector-text}.md: `fin/t-visual-v15` (9a9a9fcb),
+  `fin/r6-synchrony` (b64a75ee), `fin/r6-vector-text` (f234fa56). No conflicts, no merge breakage.
+- **Real benchmark, full fresh read** (bench/wave6, frozen f234fa56; read 4 h 10 min at v18, 0 reading errors; REAL_EXIT=0):
+  **1,146/1,294** (1,146/1,253 on wave 5's documents), recoverable 1,146/1,290, 0 wrong, holds 4/4, copies 148/151,
+  0 lost, 28 gained; 6 valid-looking wrong values, none in a ready period; 16 unmatched items, 0 offered. The group import
+  hit the harness turn limit (2,711 turns, 105 ready items pending); finished on a copy of the run database
+  (bench/wave6-cont, harness advance_batch + verify_ledger): every ready period imported, 0 critical errors in 17,940 rows.
+  Compare 623/827 statements (1,290 of 1,481 without disagreement; in ready periods only BBVA holder punctuation 26).
+- **AUTO_SAVE_READY finding**: the first run (product default, auto-save ON) scored synthetic 0/125 "ready" because System
+  had already saved 106 periods, and it saved the exact copy generic-01-copy-of-clean.pdf#1 (copies 0/1, 5 duplicate
+  rows). All figures are measured with FINANCIAL_AUTO_SAVE_READY=0; r7-autosave fixes the copy and the harness.
+- Live ledger audit (read-only, audit-wave6): 568 admitted periods on truth documents, 5 disagree (same as wave 5), 0
+  printed periods admitted twice, 0 live periods on M&T documents.
+- Census not re-run (census-r5: 1,165 ready of 3,154 raw periods).
+- Synthetic (bench-runs/real-wave6, auto-save off, BENCH_EXIT=0): 105/125, 105/108, 0 wrong, copies 1/1.
+- Suites (live .venv, CHROMADB_PORT=1 CHROMA_PORT=1): financial Ran 6,234: CLAUDE.md command failures=63 errors=60
+  (auto-save ON in unittest: tests/conftest.py is pytest-only); with FINANCIAL_AUTO_SAVE_READY=0 failures=10 (2 known
+  unassigned_statement + 8 test_financial_exports for interactive modules). Evidence engine vector glyph 24 passed.
+  tsc -b 0; vitest unit 303 files 2,117/2,119 (route-check limit; FinancialPage load timeout, 39/39 alone).
+  Logs bench-runs/real-wave6{,-autosave-on}/ and real-wave6{,-suite,-suite-noautosave,-tsc,-vitest}.log.
+- Wave 7 planned: r7-autosave, t-visual-v16, plus Neil's directive units r7-import-ops and r7-alex-queue (prompts his);
+  r7-mt-engine ready for wave 8. A merge of the live branch into fin/release-1 conflicted in three engine files and was
+  aborted (not permitted to resolve here). STATE.md and STATUS-FOR-NEIL.md rewritten.
+
+### 2026-10-16 15:40 — REAL-DOCUMENT wave 7 merged into fin/release-1 (headless integrate-7)
+- All four notes say complete with 0 wrong on real and synthetic; none refused. Private scan of the net diffs, every
+  intermediate commit and every message against truth holders, words, accounts, inventory file names and non-round
+  amounts: clean (0 hits); r7-alex-queue's pre-rewrite history is unreachable. Regular merges, WIP-NOTES.md dropped,
+  notes archived /mnt/owl-data/fin-wt/notes/{t-visual-v16,r7-autosave,r7-import-ops,r7-alex-queue}.md:
+  `fin/t-visual-v16` (acb4873d), `fin/r7-autosave` (4124f12a), `fin/r7-import-ops` (f0bf00f4), `fin/r7-alex-queue`
+  (3a043d56).
+- Conflicts (r7-import-ops over r7-autosave): services/financial/__init__.py keeps both export blocks;
+  import_batches.advance_batch keeps the shared-preparation branches and records the reader stamp on both paths that mark
+  a file checked (own preparation and adoption). 209 targeted tests OK. Merge breakage 0c112612: unread_pages (new in
+  r7-alex-queue, masked there by the 8 export failures r7-autosave fixed) exported; 14 OK.
+- **Real benchmark, full fresh read** (bench/wave7, frozen 0c112612; read 3 h 07 min at v19, 0 reading errors;
+  preparation + import 5 h 35 min; product default auto-save ON; REAL_EXIT=0): **1,147/1,343** (1,147/1,294 on wave 6's
+  documents), recoverable 1,147/1,339, all 1,147 saved by the system, 0 wrong, 0 copies saved, 0 duplicate
+  contributions, holds 4/4, copies 148/153, 0 lost, 1 gained; 5 valid-looking wrong values, none in a ready period;
+  16 unmatched items, 0 offered. Compare 668/827 statements (1,291 of 1,532 without disagreement; in ready periods only
+  BBVA holder punctuation 26). 35 held periods were scored while their readiness refresh was still pending (none held by
+  that alone): handed to r8-import-ops.
+- Generic-only (bench/wave7-generic-only, same readings): 749/1,343, 0 wrong.
+- Live ledger audit (read-only, audit-wave7): 826 admitted periods on truth documents, 5 disagree (same as waves 5-6),
+  0 printed periods admitted twice.
+- Census not re-run (census-r5: 1,165 ready of 3,154 raw periods).
+- Synthetic (bench-runs/real-wave7, product default, BENCH_EXIT=0): 105/125, 105/108, 0 wrong, copies 1/1, all saved by
+  the system. The first run (beside the suite and vitest, load ~13) read 104/125: bisected over every merge commit on the
+  same readings (all 104), engine code identical to r7-alex-queue's; the loaded engine reading lacked one
+  tesseract_native_statement_cell_consensus refinement, whose six crop reads run under a 5 s / 60 s wall-clock budget.
+  Fails closed; recorded in STATE.md as a finding.
+- Suites (live .venv, CHROMADB_PORT=1 CHROMA_PORT=1): financial Ran 6,348, failures=2 (known unassigned_statement),
+  errors=6 (extraction_release subprocess timeout under load; 4/4 alone), skipped 20; tsc -b 0; vitest unit 304 files
+  2,121/2,122 (route-check limit test). Logs bench-runs/real-wave7{,-loaded,-rerun}/ and real-wave7{,-suite,-tsc,-vitest}.log.
+- Live branch: 30 commits not on fin/release-1, a read-only trial merge conflicts in 13 files (integrate-6: 3). Not merged.
+- Wave 8 planned: r8-import-ops (mandatory continuation), r8-mt-engine, t-visual-v05. STATE.md and STATUS-FOR-NEIL.md
+  rewritten.
+
+### 2026-10-17 13:40 — REAL-DOCUMENT wave 8 merged into fin/release-1 (headless integrate-8)
+- All three notes say complete with 0 wrong on real and synthetic; none refused. Private scan of the net diffs, all 33
+  intermediate commits and every message against truth holders, words, accounts, inventory file names and non-round
+  amounts: clean (0 hits). Regular merges, WIP-NOTES.md dropped, notes archived
+  /mnt/owl-data/fin-wt/notes/{r8-import-ops,r8-mt-engine,t-visual-v05}.md: `fin/r8-import-ops` (6972fbc6),
+  `fin/r8-mt-engine` (e5396bee), `fin/t-visual-v05` (3648e776).
+- Conflicts (r8-mt-engine over r8-import-ops' carried live engine rules) in statement_engine.py (4 hunks),
+  statement_engine_profiles.py and the engine test file, each resolved keeping both behaviours (accrual ranges + day-month
+  order; appendix + mailed-statement segments, mailed flag read with .get; file-numbering drop after ordered page facts;
+  holder heading before the stricter institution rule; profile tie-break: furniture when it names exactly one profile,
+  else the must-all specificity rule). 187 engine/exports/recovery/cache tests OK; no separate breakage fix.
+- **Real benchmark, full fresh read** (bench/wave8, frozen 3648e776; read 4 h 10 min at v20, 0 reading errors;
+  preparation + import 6 h 50 min; product default; REAL_EXIT=0): **1,252/1,397** (1,236/1,343 on wave 7's documents),
+  recoverable 1,252/1,393, 1,250 saved by the system, 0 wrong, 0 copies saved, 0 duplicate contributions, holds 4/4,
+  copies 159/165, 0 lost against wave 7, 105 gained; 4 valid-looking wrong values, none in a ready period; 16 unmatched
+  items, 0 offered; 0 periods scored while a readiness refresh was pending. Compare 703/827 statements (1,393 of 1,598
+  without disagreement; in ready periods BBVA holder punctuation 26 and 5 holders supplied by the detail proposal).
+- Against t-visual-v05's blind run (pre-wave-8 code, v19): 18 Santander v05 periods lost to an unread closing balance.
+  A/B on truth-mini-v05: merged code + v19 readings 28/54; pre-wave-8 code + v20 readings 12/54. Cause: the v20 reading
+  (r8-mt-engine 7c215ef1), measured by that unit on documents that did not include v05. Kept; wave 9.
+- Generic-only (bench/wave8-generic-only, same readings): 868/1,397, **2 wrong** (Citi d9b89251845be#5, #9: printed
+  posting date missing on 7 rows; the engine emits no posting date). Product unaffected (Citi library reader admitted with
+  posting dates). Wave 9.
+- Live ledger audit (read-only, audit-wave8): 842 admitted periods on truth documents, 5 disagree (same as waves 5-7),
+  0 printed periods admitted twice.
+- Census not re-run (census-r5: 1,165 ready of 3,154 raw periods).
+- Synthetic (bench-runs/real-wave8, product default, BENCH_EXIT=0): 105/125, 105/108, 0 wrong, copies 1/1, all saved by
+  the system.
+- Suites (live .venv, CHROMADB_PORT=1 CHROMA_PORT=1): financial Ran 6,435, failures=2 (known unassigned_statement),
+  errors=0, skipped 20; tsc -b 0; vitest unit 304 files 2,127/2,129 (route-check limit test; FinancialPage under load,
+  39/39 alone). Logs bench-runs/real-wave8{,-suite,-tsc,-vitest,-vitest-fp}.log.
+- Wave 9 planned: r9-import-ops (mandatory continuation + step removal), r9-engine-santander, t-visual-v06. STATE.md and
+  STATUS-FOR-NEIL.md rewritten.
+
+### 2026-10-18 16:40 — REAL-DOCUMENT wave 9 merged into fin/release-1 (headless integrate-9)
+- All three notes say complete; none admits a wrong period on real or synthetic data, none commits real data. Private
+  scan of each branch's net diff and every message: 0 hits except one code comment in r9-engine-santander (49ac4c82)
+  quoting a real statement amount, so that branch is SQUASHED (581ee837) with the figure replaced by an invented one;
+  r9-import-ops (992c3cde) and t-visual-v06 (0883184a, notes only) are regular merges. Merged head scan: 0 hits.
+  WIP-NOTES.md dropped; notes archived /mnt/owl-data/fin-wt/notes/{r9-import-ops,r9-engine-santander,t-visual-v06}.md.
+- No conflicts over the reunion base e646121c. Targeted at merge: 272 (sweep save, import timing, queue save, import
+  batches, copy model, review queue, row versions, finalization, harness, exports, reader release) OK; 208 (engine,
+  currency, exports, recovery) OK; 67 evidence-engine reading tests passed.
+- **Real benchmark, full fresh read** (bench/wave9, frozen 0883184a; read 4 h 13 min at v21, load 3-7; whole run 11 h
+  07 min; product default): **1,315/1,436** (1,290/1,397 on wave 8's documents), recoverable 1,315/1,431, all saved by
+  the system (1 by the sweep), 0 wrong, 0 critical (20,306 rows), 0 duplicate contributions, holds 5/5, copies held
+  164/171, 0 lost, 63 gained; **REAL_EXIT=1: 1 copy saved** (dcfc8ce1f2afc#1, values equal to truth, original held
+  unpaired). The unit's proposal to score such a copy as safe was not taken. Compare 728/827 (1,468 of 1,643 without
+  disagreement; in ready periods BBVA holder punctuation 26, 6 holders from the detail proposal, the 1 copy).
+- Generic-only (bench/wave9-generic-only, same readings, run in parallel): 896/1,436, 0 wrong (was 2), same copy saved.
+- t-visual-v06's 25 new documents: 12/38 blind on cf932651 -> 25/38 on the merged code.
+- Live ledger audit (read-only, audit-wave9): 874 admitted periods on truth documents, 5 disagree (same as waves 5-8),
+  0 printed periods admitted twice.
+- Census not re-run (census-r5: 1,165 ready of 3,154 raw periods).
+- Synthetic (bench-runs/real-wave9, product default, BENCH_EXIT=0): 108/125, 105/108, 0 wrong, copies 1/1, all saved by
+  the system (3 by the sweep).
+- Suites (live .venv, CHROMADB_PORT=1 CHROMA_PORT=1): financial Ran 6,466, failures=2 (known unassigned_statement),
+  errors=0, skipped 20; tsc -b 0; vitest unit 304 files 2,130/2,130. Logs bench-runs/real-wave9{,-suite,-tsc,-vitest}.log.
+  A chown of 15 root-owned cache entries in the live node_modules (from 2026-10-17, not this session) was refused by
+  the sandbox: left for Neil.
+- Wave 10 planned: r10-copies, r10-engine-residue, t-visual-v01. STATE.md and STATUS-FOR-NEIL.md rewritten.
+
+### 2026-10-19 21:10 — REAL-DOCUMENT wave 10 merged into fin/release-1 (headless integrate-10)
+- All three notes say complete; none admits a wrong period on real or synthetic data in its own runs; none commits real
+  data. Private scan of each branch's net diff and every message, and of the merged head against 060d7470: 0 hits (test
+  fixtures use invented names). Regular merges onto 060d7470: `fin/r10-copies` (335820ab), `fin/r10-engine-residue`
+  (a9938dc9; conflict in test_financial_statement_engine.py where fin/layer-guard's LayerGuardTests and the unit's tests
+  were both appended at the end; both kept; 230 engine/page-identity/exports tests OK), `fin/t-visual-v01` (a9e6c1ab,
+  notes only). WIP-NOTES.md dropped; notes archived /mnt/owl-data/fin-wt/notes/{r10-copies,r10-engine-residue,
+  t-visual-v01}.md. No separate breakage fix.
+- **Real benchmark** (bench/wave10, frozen a9e6c1ab, readings of bench/rel1-060d7470 reused: no evidence-engine file
+  changed, reading v22 in both, truth unchanged since that read; product default; 8 h 06 min niced): **1,351/1,462**
+  (1,332/1,436 on wave 9's documents), recoverable 1,351/1,457, all saved by the system, 0 wrong, 0 critical (21,356
+  rows), 0 duplicate contributions, holds 5/5, copies held 168/171, 0 lost against 060d7470, 18 gained; REAL_EXIT=1 for
+  the same saved copy dcfc8ce1f2afc#1. Compare 754/816 (1,500 of 1,669 without disagreement; in ready periods BBVA holder
+  spelling 34, 6 holders from the detail proposal, the 1 copy).
+- Generic-only (bench/wave10-generic-only, same readings, in parallel): 984/1,462, **1 wrong** (d1398a6f10ccc#1: one
+  row dated three days after its printed operation date). A/B on truth-mini-v01 (bench/int10-ab-v01-gen-{base,merged}):
+  060d7470 and a9e6c1ab both admit it, so it predates this wave; the product holds it. Owned by wave 11 r11-bbva-vector.
+- Live ledger audit (read-only, audit-wave10): 885 admitted periods on truth documents, 6 disagree (the 5 of waves 5-9 +
+  d6d2d26fac5f4#1 found by t-visual-v01), audit's own double-admission count 0; r10-copies' read-only census found one
+  printed period admitted twice across two ledger accounts (case d5b330d1) that the detector and audit both miss:
+  wave 11 r11-copy-audit; the live fix is Neil's.
+- Census not re-run (census-r5: 1,165 ready of 3,154 raw periods).
+- Synthetic (bench-runs/real-wave10, product default): 108/125, 105/108, 0 wrong, copies 1/1, no safety failure.
+- Suites (live .venv, CHROMADB_PORT=1 CHROMA_PORT=1): financial Ran 6,503, failures=2 (known unassigned_statement),
+  errors=1 (checkpoint_b_gate under load, AttributeError on a None batch item; 12/12 alone x3; also seen on
+  r10-engine-residue's branch), skipped 20; tsc -b 0; vitest unit 304 files 2,130/2,130 (as the app user). Live
+  node_modules: 0 root-owned entries now. Logs bench-runs/real-wave10{,-suite,-tsc,-vitest}.log.
+- Wave 11 planned: r11-bbva-vector, r11-copy-audit, t-visual-v04. STATE.md and STATUS-FOR-NEIL.md rewritten.
+
+### 2026-10-20 19:00 — REAL-DOCUMENT wave 11 merged into fin/release-1 (headless integrate-11)
+- All three notes say complete; none admits a wrong period on real or synthetic data; none commits real data except one
+  figure equal to a real statement amount in r11-bbva-vector (an evidence-engine test, a code comment, one commit
+  message), so that branch is SQUASHED (24593077) with an invented figure; test_vector_glyph_reading 47 passed after the
+  edit. r11-copy-audit (15c1e89c) and t-visual-v04 (e3d1fed7, notes only) are regular merges; no conflicts, no breakage
+  fix. Private scan of each branch and of the merged head against cdb9e2b9: 0 hits after the squash. WIP-NOTES.md
+  dropped; notes archived /mnt/owl-data/fin-wt/notes/{r11-bbva-vector,r11-copy-audit,t-visual-v04}.md.
+- **Real benchmark** (bench/wave11, frozen e3d1fed7, readings tmp/int11/readings-w11.json: r11-bbva-vector's v23
+  readings of the 754 documents + a fresh read of the 24 v04 documents by the frozen code; v23 changes only
+  vector-outline reading; product default; 7 h 48 min niced): **1,388/1,506** (1,356/1,462 on wave 10's documents),
+  recoverable 1,388/1,501, all saved by the system, 0 wrong, 0 critical (21,930 rows), 0 duplicate contributions, holds
+  5/5, copies held 168/171, 0 lost against bench/wave10-v04, 37 gained (kapital 29 + intercam 3 on the new documents,
+  bbva 5); REAL_EXIT=1 for the same saved copy dcfc8ce1f2afc#1. Valid-looking wrong values 4 (all held). Compare 778/816
+  (1,532 of 1,713 without disagreement). In ready periods: BBVA holder spelling 34, **Kapital wrong holder 5** (an address
+  line; library reader), 6 holders from the detail proposal, the 1 copy.
+- Generic-only (bench/wave11-generic-only, same readings, in parallel): 1,023/1,506, **0 wrong** (d1398a6f10ccc#1 held),
+  0 critical; 991/1,462 on wave 10's documents.
+- Live ledger audit (read-only, audit-wave11): 1,129 admitted periods on truth documents (live files now also matched by
+  bytes), 6 disagree (same ids as wave 10), same printed period admitted twice **1** (the split-account pair in case
+  d5b330d1, now found by the audit).
+- Census not re-run (census-r5: 1,165 ready of 3,154 raw periods).
+- Synthetic (bench-runs/real-wave11, product default): 108/125, 105/108, 0 wrong, copies 1/1, no safety failure.
+- Suites (live .venv, CHROMADB_PORT=1 CHROMA_PORT=1): financial Ran 6,533, failures=2 (known unassigned_statement),
+  errors=0, skipped 20; tsc -b 0; vitest unit 304 files 2,130/2,130 (as the app user); live node_modules 0 root-owned
+  entries. Logs bench-runs/real-wave11{,-suite,-tsc,-vitest}.log.
+- Wave 12 planned: r12-kapital, t-visual-v02, t-visual-v03. STATE.md and STATUS-FOR-NEIL.md rewritten.
+
+### 2026-10-21 08:00 — REAL-DOCUMENT wave 12 merged into fin/release-1 (headless integrate-12)
+- All three notes say complete; none admits a wrong period on real or synthetic data; none commits real data except one
+  figure equal to a real statement amount in r12-kapital (an engine docstring and an engine test), so that branch is
+  SQUASHED (2a6df8be) with an invented figure; engine, Kapital reader and harness tests 263 OK after the edit.
+  t-visual-v02 (f1ebc56d) and t-visual-v03 (c835bdc8) are regular merges of notes only; no conflicts, no breakage fix.
+  Private scan of each branch and of the merged head against d53e0915: 0 hits after the squash (8 hits on a common
+  Spanish word inside an invented test name). WIP-NOTES.md dropped; notes archived
+  /mnt/owl-data/fin-wt/notes/{r12-kapital,t-visual-v02,t-visual-v03}.md.
+- **Real benchmark** (bench/wave12: copy of r12-kapital's bench/r12k-whole, frozen 6d1d021d, readings
+  tmp/r12k/readings-v24b.json, rescored by frozen c835bdc8 against the unchanged truth manifest; compare/ rewritten, backup
+  compare-backup-pre-w12): **1,404/1,524**, recoverable 1,404/1,519, all saved by the system, 0 wrong, 0 critical (22,419
+  rows), holds 5/5, copies held 168/171, saved holder differs 0 (same entity 36), 0 lost against bench/wave11-v02, 16
+  gained (kapital 7, intercam 1, bbva 8 on the v02 documents); REAL_EXIT=1 for the same saved copy dcfc8ce1f2afc#1. The
+  rescore reproduces every headline count of the run; Andrews actions differ (re-pairing artefact), so actions are
+  quoted from the run. Compare 796/815 (1,551 of 1,731 without disagreement).
+- Generic-only (bench/wave12-generic-only, same method): 1,037/1,524, **0 wrong**, 0 critical.
+- Live ledger audit (read-only, audit-wave12): 1,137 admitted periods on truth documents, 6 disagree (same ids), same
+  printed period admitted twice 1 (the d5b330d1 split-account pair); holders: 986 agree, 42 same entity, 3 differ (the
+  Kapital address-line holder, live code).
+- Census not re-run (census-r5: 1,165 ready of 3,154 raw periods).
+- Synthetic (bench-runs/real-wave12, frozen c835bdc8, product default): 108/125, 105/108, 0 wrong, copies 1/1, no safety
+  failure; 1 saved synthetic holder differs (100 dpi OCR letter; pre-existing).
+- Suites (live .venv, CHROMADB_PORT=1 CHROMA_PORT=1): financial Ran 6,550, failures=2 (known unassigned_statement),
+  errors=0, skipped 20; tsc -b 0 (as the app user); vitest unit NOT run (the permission layer refused it twice; no
+  frontend change since wave 11). Logs bench-runs/real-wave12{,-suite,-tsc}.log.
+- Wave 13 planned: t-visual-v19, r13-andrews, r13-merrick. STATE.md and STATUS-FOR-NEIL.md rewritten.
+
+### 2026-10-22 04:40 — REAL-DOCUMENT wave 13 merged into fin/release-1 (headless integrate-13)
+- All three notes say complete; none admits a wrong period on real or synthetic data; none commits real data (private
+  scan of each branch and of the merged head against 48e58b67: 0 hits). Regular merges t-visual-v19 (f58d6dbf; truth
+  and audit tooling, no processor code), r13-andrews (ab5c16ef), r13-merrick (3e8e7f06); no conflicts, no breakage fix.
+  WIP-NOTES.md dropped; notes archived /mnt/owl-data/fin-wt/notes/{t-visual-v19,r13-andrews,r13-merrick}.md.
+- **Real benchmark** (bench/wave13: fresh whole-set run, frozen 3e8e7f06, readings tmp/int13/readings-w13.json =
+  r13-andrews's readings + t-visual-v19's Navy Federal read; product default; 9 h 35 min niced): **1,645/1,729**,
+  recoverable 1,645/1,724 (95.4%), all saved by the system, 0 wrong, 0 critical (25,489 rows), holds 5/5, copies held
+  168/171, saved holder differs 0 (same entity 36), 0 lost against bench/wave12-v19, 241 gained (navy-federal 205,
+  andrews 24, merrick 12); REAL_EXIT=1 for the same saved copy dcfc8ce1f2afc#1. Valid-looking wrong values 3 (the fourth
+  was a truth error, corrected). 3 ready Andrews closed sections saved without a closing balance (reported; r14-santander
+  item 1). Compare 797/815 (1,789 of 1,950 without disagreement); the 18 never compared are the all-unverified
+  documents, which real_truth leaves out of the manifest.
+- Generic-only (bench/wave13-generic-only, same readings): 1,242/1,729, **0 wrong**, 0 critical; 0 lost.
+- Live ledger audit (read-only, audit-wave13): identical to audit-v19: 1,340 admitted periods on truth documents, 914
+  agree, 6 disagree (same ids), 1 printed period admitted twice, 3 Kapital holders differ.
+- Census not re-run (census-r5: 1,165 ready of 3,154 raw periods).
+- Synthetic (bench-runs/real-wave13, frozen 3e8e7f06): 108/125, 105/108, 0 wrong, copies 1/1, no safety failure.
+- Suites (live .venv, CHROMADB_PORT=1 CHROMA_PORT=1): financial Ran 6,597, failures=3, errors=2, skipped 20 under the
+  load of both benches; the 2 errors (extraction_release subprocess timeouts) and the page-identity failure pass on a
+  rerun of their modules (19 OK); the 2 known unassigned_statement failures remain. tsc -b 0 and vitest unit 304 files
+  2,130/2,130 (as the app user). Logs bench-runs/real-wave13{,-suite,-suite-rerun,-tsc,-vitest}.log.
+- Wave 14 planned: t-visual-v11, t-visual-v12, r14-santander. STATE.md and STATUS-FOR-NEIL.md rewritten.

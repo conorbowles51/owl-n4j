@@ -583,6 +583,10 @@ from services.financial.native_subjects import (
     SubjectError,
     describe_subjects,
 )
+from services.financial.page_identity import (
+    same_document_files,
+    same_pages,
+)
 from services.financial.page_render import (
     PageRenderError,
     render_page_png,
@@ -1503,6 +1507,8 @@ __all__ = [
     "existing_document_for",
     "ingest_case_file",
     # Rendering an evidence page as the image a stored rectangle refers to
+    "same_document_files",
+    "same_pages",
     "PageRenderError",
     "render_page_png",
     # Statement periods and the provenance of their four values
@@ -2203,3 +2209,32 @@ from services.financial.late_posted_card_dates import LATE_POSTED_CARD_DATES, pr
 __all__ += ["LATE_POSTED_CARD_DATES", "late_posted_card_date"]
 from services.financial.andrews_period_pinning import PERIOD_PINNING, pin_period as pin_andrews_period
 __all__ += ["PERIOD_PINNING", "pin_andrews_period"]
+from services.financial.auto_read import intake_pdf_review, unread_statement_files
+from services.financial.batch_file_overview import file_overview, copy_files
+from services.financial.batch_selection_preview import selection_preview
+from services.financial.batch_supersession import superseded_batches
+from services.financial.field_proposals import apply_confirmed_proposals, case_knowledge
+from services.financial.queue_save import (
+    save_statements as save_queue_statements, save_result as queue_save_result, auto_save_prepared,
+)
+from services.financial.review_queue import case_review_queue
+from services.financial.statement_detection import classify_text, detect as detect_statement_file
+__all__ += [
+    "intake_pdf_review", "unread_statement_files", "file_overview", "copy_files", "selection_preview",
+    "superseded_batches", "apply_confirmed_proposals", "case_knowledge", "save_queue_statements",
+    "queue_save_result", "auto_save_prepared", "case_review_queue", "classify_text",
+    "detect_statement_file",
+]
+from services.financial.reader_release import (
+    RECHECK_AFTER_RELEASE, reader_stamp, reading_changed, sweep as recheck_after_release,
+)
+__all__ += ["RECHECK_AFTER_RELEASE", "reader_stamp", "reading_changed", "recheck_after_release"]
+from services.financial.statement_catalogue import compact_original, full_original, saved_catalogue
+__all__ += ["compact_original", "full_original", "saved_catalogue"]
+from services.financial.unread_pages import unread_pages, unread_pages_message, unread_pages_of_statement
+__all__ += ["unread_pages", "unread_pages_message", "unread_pages_of_statement"]
+from services.financial.review_carry import carry_file_level_review, conflict_problems, same_value
+from services.financial.review_carry import conflict_problems as carry_conflict_problems
+__all__ += ["carry_file_level_review", "conflict_problems", "carry_conflict_problems", "same_value"]
+from services.financial.row_versions import RowValues
+__all__ += ["RowValues"]

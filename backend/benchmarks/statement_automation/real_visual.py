@@ -51,6 +51,8 @@ share number uses ``-``::
     control credits_total 50.00   (printed totals and counts: credits_/debits_total, credits_/debits_/rows_count)
     group purchases        (inside a share: the rows that follow belong to this printed section)
     subtotal purchases -20.00     (the section's printed total, signed as rows are: the rows must add up to it)
+    subcount checks 2      (the section's printed number of items: its rows must number exactly that)
+    kind card              (inside a share: this period's kind, e.g. a line of credit mailed with a deposit account)
 
 A ``page`` line whose ``stmt`` dates, ``no 1`` or member differ from the open
 statement starts a new statement; ``cont`` and same-statement pages continue
@@ -63,11 +65,37 @@ text-layer reading; the transcribed periods replace exactly those, in order,
 and every other period keeps its text-layer reading::
 
     patch 14,23,33
+
+A text-layer period that is not verified and that no reading of the images
+could verify (rows the production redacted, a balance the statement never
+prints) is kept rather than retyped once the reviewer has checked it on the
+page images: its reading and status stand, the status becomes final, and the
+line records the outcome the source supports and why (including any value the
+text layer missed, which a scored period would have needed). ``keep`` is refused at merge time unless
+every page of the kept period is on the ``done`` line, and it never applies to
+a verified period::
+
+    keep 2 hold opening balance and rows redacted in the production
+    keep 6 decision line of credit: opening outstanding total not printed
+
+A text-layer period that reconciled from a producer's OCR layer
+(``ocr_reconciled``) and whose every value the reviewer found equal on the
+page images (dates, amounts, directions, balances, every printed total) is
+confirmed rather than retyped, so it keeps the text-layer reader's own form
+(post dates, interest lines that print no date) like the document's other
+verified periods. The line carries the digest of the reading that was checked
+(``digest`` prints it); the merge refuses it unless the period is still
+``ocr_reconciled``, every one of its pages is on ``done`` and the reading still
+has that digest, so a later change to the text-layer reading never inherits
+the confirmation::
+
+    confirm 2 0123456789ab
 """
 from __future__ import annotations
 
 import argparse
 import difflib
+import hashlib
 import json
 import re
 import sys
@@ -75,8 +103,8 @@ from collections import Counter, defaultdict
 from datetime import date, timedelta
 from pathlib import Path
 
-from .real_truth import (ANDREWS_DATES, ANDREWS_TAIL, START_UNPRINTED, Period, document_status, iso, ocr_money,
-                         read_pages, reconcile, year_for)
+from .real_truth import (ANDREWS_DATES, ANDREWS_TAIL, START_UNPRINTED, ZERO_DECIMAL_CURRENCIES, Period,
+                         _whole_units, document_status, iso, ocr_money, read_pages, reconcile, year_for)
 
 VERSION = 'visual-v1'
 MONEY = re.compile(r'^-?\d+\.\d{2}$')
@@ -202,6 +230,8 @@ class Transcription:
                            kind='deposit')
         self.form = None  # (status, reason) when the document holds no statement
         self.patch = None  # text-layer period numbers the transcribed periods replace, in order
+        self.keep = {}  # text-layer period number -> (expected outcome, reason): checked on the images, kept as read
+        self.confirm = {}  # text-layer period number -> digest of the OCR-layer reading found equal on the images
         self._parse(text)
 
     def _parse(self, text):
@@ -213,7 +243,7 @@ class Transcription:
             word, _, rest = line.partition(' ')
             if word == 'doc':
                 self.doc = rest.strip()
-            elif word in ('issuer', 'kind', 'form', 'patch') or word == 'currency' and page is None:
+            elif word in ('issuer', 'form', 'patch', 'keep', 'confirm') or word in ('currency', 'kind') and page is None:
                 if page is not None:
                     raise ValueError(f'line {number}: {word} belongs before the first page line')
                 self._document_line(word, rest.strip(), number)
@@ -223,13 +253,19 @@ class Transcription:
                 if not re.fullmatch(r'[A-Z]{3}', rest.strip()):
                     raise ValueError(f'line {number}: currency needs a three-letter code')
                 period['currency'] = rest.strip()
+            elif word == 'kind':
+                if period is None:
+                    raise ValueError(f'line {number}: kind inside a statement follows its share line')
+                if rest.strip() not in ('deposit', 'card'):
+                    raise ValueError(f'line {number}: kind is deposit or card')
+                period['kind'] = rest.strip()
             elif word == 'control':
                 fields = rest.split()
                 if period is None or len(fields) != 2 or fields[0] not in CONTROLS:
                     raise ValueError(f'line {number}: control needs a share open and one of {", ".join(CONTROLS)}')
                 period['controls'][fields[0]] = (_minor(fields[1], number) if fields[0].endswith('_total')
                                                  else _count(fields[1], number))
-            elif word in ('group', 'subtotal'):
+            elif word in ('group', 'subtotal', 'subcount'):
                 fields = rest.split()
                 if period is None or len(fields) != (1 if word == 'group' else 2) \
                         or not re.fullmatch(r'[a-z][a-z_]*', fields[0]):
@@ -237,6 +273,8 @@ class Transcription:
                                      + (' and its printed total' if word == 'subtotal' else ''))
                 if word == 'group':
                     period['group'] = fields[0]
+                elif word == 'subcount':
+                    period['subcounts'][fields[0]] = _count(fields[1], number)
                 else:
                     period['subtotals'][fields[0]] = _minor(fields[1], number)
             elif word == 'done':
@@ -275,7 +313,8 @@ class Transcription:
                     raise ValueError(f'line {number}: share line not understood')
                 period = dict(statement=statement, share=fields.group(1), opening=None, closing=None, rows=[],
                               pages=[statement['pages'][-1]], hold=[], unverified=[], expect=None, unread=0,
-                              line=number, currency=None, controls={}, group=None, subtotals={})
+                              line=number, currency=None, controls={}, group=None, subtotals={},
+                              subcounts={}, kind=None)
                 if fields.group(2) == '??':
                     period['unread'] += 1
                 else:
@@ -286,7 +325,8 @@ class Transcription:
                 if period is None and not self.strict and statement is not None:
                     period = dict(statement=statement, share='?', opening=None, closing=None, rows=[],
                                   pages=[statement['pages'][-1]], hold=[], unverified=[], expect=None, unread=0,
-                                  line=number, currency=None, controls={}, group=None, subtotals={})
+                                  line=number, currency=None, controls={}, group=None, subtotals={},
+                              subcounts={}, kind=None)
                     self.periods.append(period)
                 if period is None:
                     raise ValueError(f'line {number}: {word} outside a share')
@@ -328,6 +368,14 @@ class Transcription:
             raise ValueError('a document marked not_statement cannot hold statement periods')
         if self.patch is not None and (self.form or len(self.patch) != len(self.periods)):
             raise ValueError(f'patch names {len(self.patch)} periods; the transcription holds {len(self.periods)}')
+        if self.keep and self.form:
+            raise ValueError('a document marked not_statement cannot keep statement periods')
+        if self.keep and set(self.keep) & set(self.patch or ()):
+            raise ValueError('a period is either kept as read or replaced by a transcription, not both')
+        if self.confirm and self.form:
+            raise ValueError('a document marked not_statement cannot confirm statement periods')
+        if set(self.confirm) & (set(self.keep) | set(self.patch or ())):
+            raise ValueError('a confirmed period is neither kept as read nor replaced by a transcription')
 
     def _document_line(self, word, rest, number):
         if word == 'issuer':
@@ -347,6 +395,20 @@ class Transcription:
             if not re.fullmatch(r'\d+(?:,\d+)*', rest) or len(set(rest.split(','))) != len(rest.split(',')):
                 raise ValueError(f'line {number}: patch needs distinct period numbers, comma separated')
             self.patch = [int(n) for n in rest.split(',')]
+        elif word == 'keep':
+            fields = re.fullmatch(r'(\d+) (auto|decision|hold|not_statement|duplicate) (\S.*)', rest)
+            if not fields:
+                raise ValueError(f'line {number}: keep needs a period number, an expected outcome and a reason')
+            if int(fields.group(1)) in self.keep:
+                raise ValueError(f'line {number}: period {fields.group(1)} is already kept')
+            self.keep[int(fields.group(1))] = (fields.group(2), fields.group(3).strip())
+        elif word == 'confirm':
+            fields = re.fullmatch(r'(\d+) ([0-9a-f]{12})', rest)
+            if not fields:
+                raise ValueError(f'line {number}: confirm needs a period number and the digest of its reading')
+            if int(fields.group(1)) in self.confirm:
+                raise ValueError(f'line {number}: period {fields.group(1)} is already confirmed')
+            self.confirm[int(fields.group(1))] = fields.group(2)
         else:
             form, _, reason = rest.partition(' ')
             if form != 'not_statement' or not reason.strip():
@@ -385,7 +447,8 @@ def to_period(item, issuer=None):
                     account=s['member'] if s['member'] != '?' else None,
                     period_start=s['start'] if s['start'] != '-' else None,
                     period_end=s['end'], opening_minor=item['opening'], closing_minor=item['closing'],
-                    pages=sorted(set(item['pages'])), share=share if andrews else None, kind=issuer['kind'],
+                    pages=sorted(set(item['pages'])), share=share if andrews else None,
+                    kind=item.get('kind') or issuer['kind'],
                     controls=dict(item.get('controls') or {}))
     if not andrews and item['share'] not in ('-', '?'):
         period.notes.append(f"section {item['share']}")
@@ -399,21 +462,28 @@ def to_period(item, issuer=None):
         if row['balance'] is not None:
             record['balance_after'] = row['balance']
         period.rows.append(record)
-    if item.get('subtotals'):
+    if item.get('subtotals') or item.get('subcounts'):
         # A printed section total (e.g. a card's payments, purchases, fees, interest): the rows
-        # transcribed under that section, signed as transcribed, must add up to it.
-        sections = defaultdict(int)
+        # transcribed under that section, signed as transcribed, must add up to it. A printed
+        # section count (e.g. a deposit account's number of checks paid) must equal its rows.
+        sections, counts = defaultdict(int), Counter()
         for row in item['rows']:
+            counts[row.get('group')] += 1
             if not row.get('unread'):
                 sections[row.get('group')] += row['amount']
         period.controls['other_checks'] = [
             dict(ok=sections[name] == value, reason=f'{name} rows differ from the printed {name} total')
-            for name, value in sorted(item['subtotals'].items())]
+            for name, value in sorted((item.get('subtotals') or {}).items())] + [
+            dict(ok=counts[name] == value, reason=f'{name} rows differ from the printed {name} count')
+            for name, value in sorted((item.get('subcounts') or {}).items())]
     if item['unread']:
         period.problems.append('value not legible on the page image')
     if andrews and period.share is None:
         period.problems.append('share id not read')
     period.problems.extend(item['unverified'])
+    if period.currency in ZERO_DECIMAL_CURRENCIES:
+        # Printed with ".00" (Monex yen): kept in the currency's own minor unit, as tier-A truth keeps it.
+        _whole_units(period)
     return period
 
 
@@ -467,7 +537,9 @@ def compile_document(reviewed_text, ocr_text=None, page_count=None):
     """``visual/<doc>.json`` content: every period with its status, and the OCR-layer misread counts."""
     reviewed = Transcription(reviewed_text)
     # A patch reads only the pages of the periods it replaces; the rest keep their text-layer reading.
-    total = set(range(1, page_count + 1)) if page_count and reviewed.patch is None else reviewed.pages
+    # Kept periods are checked against ``done`` when merged (their pages are in the text-layer reading).
+    partial = reviewed.patch is not None or bool(reviewed.keep) or bool(reviewed.confirm)
+    total = set(range(1, page_count + 1)) if page_count and not partial else reviewed.pages
     pending = sorted(total - reviewed.done)
     periods = []
     numbers = reviewed.patch or range(1, len(reviewed.periods) + 1)
@@ -481,16 +553,29 @@ def compile_document(reviewed_text, ocr_text=None, page_count=None):
         if item['expect']:
             record.update(expected_override=item['expect'][0], expected_reason=item['expect'][1])
         periods.append(record)
+    # A reader that predates ``confirm`` would take a complete file holding no periods as a full
+    # review that found none and drop the document's periods. With confirm lines the file says
+    # ``complete_with_confirm`` instead, which only a reader that applies confirm lines reads; an
+    # older one leaves the document as its text layer read it (fail closed).
+    done = not pending
     return dict(version=VERSION, doc=reviewed.doc, pages_done=sorted(reviewed.done), pages_pending=pending,
-                complete=not pending, periods=periods, issuer=reviewed.issuer['family'],
+                complete=done and not reviewed.confirm, complete_with_confirm=done and bool(reviewed.confirm),
+                periods=periods, issuer=reviewed.issuer['family'],
                 form=dict(status=reviewed.form[0], reason=reviewed.form[1]) if reviewed.form else None,
                 misreads=misreads(Transcription(ocr_text, strict=False), reviewed) if ocr_text else {},
-                period_status=dict(Counter(p['truth_status'] for p in periods)), patch=reviewed.patch)
+                period_status=dict(Counter(p['truth_status'] for p in periods)), patch=reviewed.patch,
+                keep={str(n): list(v) for n, v in sorted(reviewed.keep.items())},
+                confirm={str(n): v for n, v in sorted(reviewed.confirm.items())})
 
 
 # ---------------------------------------------------------------------------
 # Merge into real_truth results
 # ---------------------------------------------------------------------------
+
+def ready(visual):
+    """Every page the review covers is done (see ``compile_document`` on ``complete_with_confirm``)."""
+    return bool(visual.get('complete') or visual.get('confirm') and visual.get('complete_with_confirm'))
+
 
 def apply_visual(result, visual):
     """A document result with its periods replaced by the reviewed visual reading.
@@ -499,14 +584,14 @@ def apply_visual(result, visual):
     one leaves the document as it was. The document status follows the
     periods as in ``real_truth.document_truth``.
     """
-    if not visual or not visual.get('complete') or visual.get('doc') != result.get('id'):
+    if not visual or not ready(visual) or visual.get('doc') != result.get('id'):
         return result
     issuer = visual.get('issuer') or result.get('issuer')
     if visual.get('form'):
         return dict(result, status=visual['form']['status'], reason=visual['form']['reason'], periods=[],
                     period_status={}, issuer=issuer, truth_source='visual', statements_complete=True,
                     visual_misreads=visual.get('misreads', {}))
-    if visual.get('patch'):
+    if visual.get('patch') or visual.get('keep') or visual.get('confirm'):
         return _apply_patch(result, visual, issuer)
     periods = [dict(p) for p in visual['periods']]
     statuses = Counter(p['truth_status'] for p in periods)
@@ -526,18 +611,56 @@ def _apply_patch(result, visual, issuer):
 
     Refused (the result is returned unchanged) unless every named period exists in
     the text-layer reading. The document is final once every period that is not
-    verified has been read from the images."""
+    verified has been read from the images. Kept periods (``keep``) stay as the
+    text layer read them, marked as checked on the images with the expected
+    outcome the reviewer recorded; refused unless each exists, is not verified
+    and every one of its pages was read. Confirmed periods (``confirm``) become
+    verified with their reading unchanged; refused unless each is ``ocr_reconciled``,
+    every one of its pages was read and its reading still has the confirmed digest.
+    A period merged once is left as it is, so merging twice changes nothing."""
     replaced = {p['id']: dict(p) for p in visual['periods']}
-    existing = {p['id'] for p in result.get('periods') or []}
-    if not replaced or not set(replaced) <= existing:
+    kept = {f"{result.get('id')}#{n}": tuple(v) for n, v in (visual.get('keep') or {}).items()}
+    confirmed = {f"{result.get('id')}#{n}": v for n, v in (visual.get('confirm') or {}).items()}
+    existing = {p['id']: p for p in result.get('periods') or []}
+    if not (replaced or kept or confirmed) or not (set(replaced) | set(kept) | set(confirmed)) <= set(existing):
         return result
+    done = set(visual.get('pages_done') or ())
+
+    def read(key):
+        return bool(existing[key].get('pages')) and set(existing[key]['pages']) <= done
+
+    if any(existing[k]['truth_status'] == 'verified' or not read(k) for k in kept):
+        return result
+    if any(not read(k) or reading_digest(existing[k]) != digest
+           or existing[k]['truth_status'] != ('verified' if existing[k].get('visual_confirmed') else 'ocr_reconciled')
+           for k, digest in confirmed.items()):
+        return result
+    for key, (outcome, reason) in kept.items():
+        replaced[key] = dict(existing[key], truth_source='visual', visual_kept=True, expected_override=outcome,
+                             expected_reason=reason)
+    for key in confirmed:
+        replaced[key] = dict(existing[key], truth_status='verified', truth_reasons=[], truth_source='visual',
+                             visual_confirmed=True)
     periods = [replaced.get(p['id'], p) for p in result['periods']]
     statuses = Counter(p['truth_status'] for p in periods)
     reviewed = all(p.get('truth_source') == 'visual' for p in periods if p['truth_status'] != 'verified')
     return dict(result, status=document_status(statuses, reviewed=reviewed), periods=periods,
-                period_status=dict(statuses), truth_source='visual', visual_patch=sorted(replaced), issuer=issuer,
+                period_status=dict(statuses), truth_source='visual',
+                visual_patch=sorted(set(replaced) - set(kept) - set(confirmed)),
+                visual_kept=sorted(kept), issuer=issuer, **({'visual_confirmed': sorted(confirmed)} if confirmed else {}),
                 statements_complete=all(p['truth_status'] in ('verified', 'incomplete') for p in periods),
                 visual_misreads=visual.get('misreads', {}))
+
+
+def reading_digest(period):
+    """Short digest of every value a text-layer period's reading states (dates, account, holder,
+    currency, balances, printed summary, every row): what a ``confirm`` line was checked against."""
+    fields = dict(start=period.get('period_start'), end=period.get('period_end'), account=period.get('account'),
+                  holder=period.get('holder'), currency=period.get('currency'), opening=period.get('opening_minor'),
+                  closing=period.get('closing_minor'), summary=(period.get('controls') or {}).get('summary'),
+                  rows=[[r.get('date'), r.get('posted_date'), r.get('direction'), r.get('amount_minor'),
+                         r.get('balance_after')] for r in period.get('rows') or []])
+    return hashlib.sha256(json.dumps(fields, sort_keys=True, default=str).encode()).hexdigest()[:12]
 
 
 def load_visual(directory, doc_id):
@@ -575,7 +698,17 @@ def main(argv=None):
     c.add_argument('--doc', required=True)
     c.add_argument('--docs', type=Path, required=True)
     c.add_argument('--visual', type=Path, required=True)
+    g = sub.add_parser('digest', help='print a confirm line for named periods of a real_truth periods/<doc>.json')
+    g.add_argument('--periods', type=Path, required=True)
+    g.add_argument('--n', required=True, help='comma-separated period numbers')
     args = parser.parse_args(argv)
+    if args.command == 'digest':
+        result = json.loads(args.periods.read_text())
+        by_id = {p['id']: p for p in result.get('periods') or []}
+        for n in args.n.split(','):
+            period = by_id[f"{result['id']}#{int(n)}"]
+            print(f"confirm {int(n)} {reading_digest(period)}  # {period['truth_status']}")
+        return 0
     args.visual.mkdir(parents=True, exist_ok=True)
     args.visual.chmod(0o700)
     pdf = args.docs / f'{args.doc}.pdf'
@@ -595,7 +728,7 @@ def main(argv=None):
                               ocr.read_text() if ocr.exists() else None, page_count)
     (args.visual / f'{args.doc}.json').write_text(json.dumps(result, indent=1, default=str) + '\n')
     # Counts only on stdout.
-    print(json.dumps(dict(doc=result['doc'], complete=result['complete'], pending=len(result['pages_pending']),
+    print(json.dumps(dict(doc=result['doc'], complete=ready(result), pending=len(result['pages_pending']),
                           period_status=result['period_status'], misreads=result['misreads'])))
     return 0
 

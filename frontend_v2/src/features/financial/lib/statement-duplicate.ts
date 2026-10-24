@@ -29,6 +29,7 @@ export const statementDuplicateDisposition = z
     basis: z
       .enum([
         "identical_bytes",
+        "identical_pages",
         "identical_financial_reading",
         "investigator_decision",
       ])

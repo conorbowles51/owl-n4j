@@ -150,6 +150,98 @@ class PeriodPinningTests(unittest.TestCase):
         proposal, result = read(sources, locations)
         self.assertIs(result, proposal)
 
+    def test_a_recognised_reading_no_crop_repeats_is_offered_and_pinned(self):
+        # The crops gave no supported reading; the page reading itself is a recognised reading.
+        sources, locations = self.first_payment_held(readings=())
+        held = locations[1]['ocr_refinements'][0]['cells'][0]
+        held['recognised_readings'] = [['-10.00', 'page_reading_normalised'], ['-1.00', 'crop_reading']]
+        proposal, result = read(sources, locations)
+        self.assertIsNot(result, proposal)
+        [repair] = payments(result)[1]['value_repairs']
+        self.assertEqual((repair['text'], repair['accepted_reading']), ('-10.00', 'page_reading_normalised'))
+        try:
+            period.RECOGNISED_READINGS = False
+            proposal, result = read(sources, locations)
+        finally:
+            period.RECOGNISED_READINGS = True
+        self.assertIs(result, proposal)
+
+    def test_an_unparseable_reading_is_skipped_not_the_cells_other_readings(self):
+        sources, locations = self.first_payment_held(readings=(('10.00-', 'crop_reading'),))
+        held = locations[1]['ocr_refinements'][0]['cells'][0]
+        held['recognised_readings'] = [['-10.00', 'page_reading_normalised']]
+        proposal, result = read(sources, locations)
+        self.assertIsNot(result, proposal)
+        try:
+            period.RECOGNISED_READINGS = False
+            proposal, result = read(sources, locations)
+        finally:
+            period.RECOGNISED_READINGS = True
+        self.assertIs(result, proposal)
+
+    def test_a_damaged_cell_is_held_and_pinned_from_its_recognised_readings(self):
+        sources, locations = self.first_payment_held()
+        cells = locations[1]['ocr_refinements'][0]['cells']
+        locations[1]['ocr_refinements'][0]['cells'] = [c for c in cells if (c['row_index'], c['column_index']) != (5, 2)]
+        locations[1]['ocr_refinements'][0]['damaged_cells'] = [dict(
+            table_index=0, row_index=5, column_index=2, rect=[0, 0, 1, 1], status='unconfirmed', kind='single',
+            original_text='-1O.00', page_money_damaged=True, observations=[dict(dpi=300, text='x')] * 6,
+            recognised_readings=[['-16.00', 'crop_reading'], ['-10.00', 'crop_reading']])]
+        proposal, result = read(sources, locations)
+        self.assertIsNot(result, proposal)
+        [repair] = payments(result)[1]['value_repairs']
+        self.assertEqual((repair['text'], repair['held_text'], repair['accepted_reading']),
+                         ('-10.00', '-1O.00', 'crop_reading'))
+        locations[1]['ocr_refinements'][0]['damaged_cells'][0]['recognised_readings'] = [['-16.00', 'crop_reading']]
+        proposal, result = read(sources, locations)
+        self.assertIs(result, proposal)
+        # A damaged reading that failed is no cell at all; the period stays as the reader left it.
+        locations[1]['ocr_refinements'][0]['damaged_cells'] = [dict(error='timed out')]
+        proposal, result = read(sources, locations)
+        self.assertIs(result, proposal)
+
+    def adjacent_held(self):
+        """Payment 1 on page 2 has amount and balance held; payment 2's amount is held with glyph agreement."""
+        sources = pages(
+            [[(15, '06/03'), (75, 'Withdrawal Debit Card'), (310, '-20.00'), (350, '80.00')]],
+            [[(15, '06/05'), (75, 'Withdrawal Debit Card'), (310, '-1?.00'), (350, '7?.00')],
+             [(15, '06/06'), (75, 'Withdrawal Debit Card'), (310, '-?.00'), (350, '65.00')],
+             [(15, '06/30'), (75, 'Ending Balance'), (350, '65.00')]])
+        amount = dict(original_text='-10.00', marked_text='-1?.00', printed_readings=[],
+                      recognised_readings=[['-10.00', 'page_reading'], ['-16.00', 'crop_reading']])
+        balance = dict(original_text='70.00', marked_text='7?.00', printed_readings=[['70.00', 'page_reading']])
+        glyphs = dict(original_text='-S.00', marked_text='-?.00', printed_readings=[['-5.00', 'page_reading_normalised']],
+                      page_glyphs_agree_with_crops='-5.00')
+        locations = [record(1, {(9, 1): 'confirmed', (10, 2): 'confirmed', (10, 3): 'confirmed'}),
+                     record(2, {(5, 2): amount, (5, 3): balance, (6, 2): glyphs, (6, 3): 'confirmed',
+                                (7, 2): 'confirmed'})]
+        return sources, locations
+
+    def test_a_cell_whose_page_glyphs_and_crops_agree_pins_its_neighbours(self):
+        sources, locations = self.adjacent_held()
+        proposal, result = read(sources, locations)
+        self.assertIsNot(result, proposal)
+        first, second = payments(result)[1:3]
+        self.assertEqual((first['fields']['amount_minor'], first['fields']['balance'], second['fields']['amount_minor']),
+                         ('1000', '7000', '500'))
+        [glyph] = second['value_repairs']
+        self.assertEqual((glyph['text'], glyph['basis'], glyph['pinned_by']), ('-5.00', 'page_glyphs_agree_with_crops', []))
+        self.assertEqual(first['value_repairs'][1]['pinned_by'], [[2, 0, 6, 2], [2, 0, 6, 3]])
+        # Without the agreement three disputed cells share two controls: nothing is pinned.
+        try:
+            period.GLYPH_AGREEMENT = False
+            proposal, result = read(sources, locations)
+        finally:
+            period.GLYPH_AGREEMENT = True
+        self.assertIs(result, proposal)
+
+    def test_a_glyph_agreement_that_does_not_reconcile_leaves_the_period_held(self):
+        sources, locations = self.adjacent_held()
+        locations[1]['ocr_refinements'][0]['cells'][2].update(
+            page_glyphs_agree_with_crops='-6.00', printed_readings=[['-6.00', 'page_reading_normalised']])
+        proposal, result = read(sources, locations)
+        self.assertIs(result, proposal)
+
 
 if __name__ == '__main__':
     unittest.main()

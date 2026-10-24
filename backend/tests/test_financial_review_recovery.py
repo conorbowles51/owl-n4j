@@ -236,3 +236,65 @@ class ReviewRecoveryTests(TestCase):
                 action='check', expected_reading_revision=current['revision'], actor=self.f.actor)
             self.assertEqual(result['duplicate_disposition']['status'], 'ignored')
             self.assertEqual(db.get(Item, item.id).review_request, item.review_request)
+
+
+class SplitReleaseTests(TestCase):
+    """Neil's decision (2026-10-24): a period of a split file that her held file-level work does not touch
+    proceeds; touched or undatable work keeps every period held."""
+
+    def state(self, records, footprints, *, period=('2024-02-01', '2024-02-29'), row_ids=('2:1',), pages=(2,),
+              choices=({'id': 'jan'}, {'id': 'feb'}), statement_id='feb'):
+        from types import SimpleNamespace
+        file = SimpleNamespace(id=uuid4(), sha256='0' * 64, metadata_={})
+        cache = {('previous-reviews', str(file.id)): records}
+        for record, footprint in zip(records, footprints):
+            cache[('held-work-footprint', record['id'])] = footprint
+        return review_recovery.recovery_state(None, file, sources=[], choices=list(choices),
+            statement_id=statement_id, revision=None, cache=cache, period=period, row_ids=row_ids, pages=pages)[0]
+
+    def record(self, statement_id=None, ident='r1'):
+        return dict(id=ident, statement_id=statement_id, evidence_file_id=str(uuid4()), filename='a.pdf',
+            origin='Statement review', saved_at=None, saved_by=None, review_revision='x',
+            request=dict(rows=[dict(id='1:1')]))
+
+    def january(self, **extra):
+        from datetime import date
+        return dict(dates={date(2024, 1, 5)}, spans=[], row_ids={'1:1'}, pages={1}, **extra)
+
+    def test_untouched_period_is_released_and_recorded(self):
+        record = self.record()
+        recovery = self.state([record], [self.january()])
+        self.assertFalse(recovery['required'])
+        self.assertEqual(recovery['split_release']['held_reviews'], [record['id']])
+        self.assertEqual(recovery['split_release']['period'], ['2024-02-01', '2024-02-29'])
+        self.assertEqual(recovery['unmatched_count'], 1)
+
+    def test_touched_by_date_row_or_imported_span_stays_held(self):
+        from datetime import date
+        self.assertTrue(self.state([self.record()], [self.january()], period=('2024-01-01', '2024-01-31'))['required'])
+        self.assertTrue(self.state([self.record()], [self.january()], row_ids=('1:1',))['required'])
+        # A row of hers on one of the period's pages, under another id in this reading, still touches it.
+        self.assertTrue(self.state([self.record()], [self.january()], pages=(1, 2))['required'])
+        spans = self.january(); spans['spans'] = [(date(2024, 1, 20), date(2024, 2, 3))]
+        self.assertTrue(self.state([self.record()], [spans])['required'])
+
+    def test_undatable_work_named_work_or_unsplit_file_holds_every_period(self):
+        self.assertTrue(self.state([self.record()], [None])['required'])
+        self.assertTrue(self.state([self.record('gone')], [self.january()])['required'])
+        self.assertTrue(self.state([self.record()], [self.january()], choices=({'id': 'feb'},))['required'])
+        self.assertTrue(self.state([self.record()], [self.january()], period=('', ''))['required'])
+        held = self.state([self.record(), self.record(ident='r2')], [self.january(), None])
+        self.assertTrue(held['required'])
+        self.assertNotIn('split_release', held)
+
+    def test_switch_off_keeps_the_file_hold(self):
+        from unittest import mock
+        with mock.patch.object(review_recovery, 'SPLIT_RELEASE', False):
+            self.assertTrue(self.state([self.record()], [self.january()])['required'])
+
+    def test_manual_row_without_a_date_cannot_be_placed(self):
+        record = self.record()
+        record['request'] = dict(rows=[dict(id='manual:x', description='added')])
+        self.assertIsNone(review_recovery._footprint(None, None, record))
+        self.assertEqual(review_recovery._id_page('12:3'), 12)
+        self.assertIsNone(review_recovery._id_page('manual:x'))

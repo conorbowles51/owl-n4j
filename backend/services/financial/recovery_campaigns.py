@@ -1,11 +1,22 @@
-"""Explicit reader repair manifests; deployment alone is not a reread request.
+"""Explicit reader repair manifests, and the engine-release re-read of held statements.
 
 Reader-specific campaigns identify demonstrated fixes and exact earlier reader
 revisions. The authorized unresolved-work follow-up has its own content and
 disposition eligibility policy; it is not a generic parser-version sweep.
+
+The engine-release campaign (``reader_campaign``) is the one generic sweep,
+and only of held batch statements nobody has worked on: a statement whose
+retained reading records a ``pdf_extraction.py`` other than the engine source
+deployed now is read again by its batch (``recovery_readers``). Its release id
+names the current engine source, so each engine release is one durable,
+resumable snapshot per case; a reading the current engine made, or one with no
+valid engine record, is never selected. On by default; env
+``LOUPE_FINANCIAL_READER_RECOVERY=0`` turns it off.
 """
+import hashlib
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
 
 
 @dataclass(frozen=True)
@@ -20,11 +31,18 @@ class RecoveryCampaign:
     # Re-read held batch statements whose retained reading was produced by an
     # exact earlier engine revision (affected_readers names engine source files).
     batch_reread: bool = False
+    # Engine source file -> its digest deployed now (None: unknown). A batch
+    # re-read campaign with current readers selects a recorded reading whose
+    # digest differs from it, instead of an exact list of earlier digests.
+    current_readers: dict[str, str | None] = field(default_factory=dict)
 
     def __post_init__(self):
         if not self.release or len(self.release) > 64:
             raise ValueError('Recovery campaigns require a stable release identifier of at most 64 characters.')
-        if not self.initial_snapshot and not self.affected_readers and not self.unresolved_followup:
+        if self.current_readers and not self.batch_reread:
+            raise ValueError('Only a batch re-read campaign may select readings by the current reader.')
+        if (not self.initial_snapshot and not self.affected_readers and not self.unresolved_followup
+                and not self.current_readers):
             raise ValueError('A selective recovery campaign must identify its affected readers and prior revisions.')
         if any(not versions or any(not isinstance(version, str) or not version for version in versions)
                for versions in self.affected_readers.values()):
@@ -37,6 +55,11 @@ class RecoveryCampaign:
             # The retained reading's own runtime record is the evidence; there
             # is no earlier recovery outcome to qualify a held batch statement.
             observed = observed_readers or {}
+            if self.current_readers:
+                # Recorded by another engine source than the one deployed now.
+                # An unknown current source or an unrecorded reading never qualifies.
+                return any(current and observed.get(reader) and observed[reader] != current
+                           for reader, current in self.current_readers.items())
             return any(observed.get(reader) in versions for reader, versions in self.affected_readers.items())
         if previous is None or previous.status not in self.eligible_outcomes:
             return False
@@ -80,8 +103,31 @@ READER_RECOVERY_FLAG = 'LOUPE_FINANCIAL_READER_RECOVERY'
 # statement-wide control could pin a cell its own page could not (first and
 # last payments of a page), offered no page reading whose minus the crops
 # read as 2 or +, and pinned no cell whose neighbour was itself only pinned.
-# If a later change edits pdf_extraction.py, add the
-# digest of the current file here.
+# r8-mt-engine (revision v20) added r7-alex-queue's file 8f3539f3 (v19): on vector-text pages its
+# readings lost every printed line page OCR skipped (an addressee's name line, summary lines), kept
+# dates whose two 1s stand a space-wide bearing apart as OCR misread them ('41/05/2021'), and did not
+# record which printed lines stayed unread, so no addressless name block could be checked.
+# r9-engine-santander (revision v21) added r8-mt-engine's file ed905742 (v20): on vector-text pages it read a
+# printed line's label without its amount whenever the amount printed a thousands comma (the comma was
+# grouped as a line of its own), so a closing line read as 'SALDO FINAL DEL PERIODO:' with no amount and
+# the Santander closing reread no longer ran.
+# The layer guard (revision v22) added r9-engine-santander's file 3d3b9d2b (v21): its targeted re-reads
+# could be outvoted by skipped-line layer rows overlapping them, so a period the page proved without the
+# layer was held.
+# r11-bbva-vector (revision v23) added the layer guard's file ee536c50 (v22): on vector-text pages it kept a
+# word OCR read with characters lost inside it (an operation date read '14NAR' over the outlines of a printed
+# date) unread, so the movement line carried no readable date, and could rebuild a word from the outlines
+# under a box that had cut a printed figure off beside it, so an amount lost a figure.
+# r12-kapital (revision v24) added r11-bbva-vector's file 8a06b0ca (v23): on vector-text pages a day of the month
+# OCR skipped at the start of a movement line (printed against the table's left rule) was read by no word, so
+# the movement stayed undated and its period was held.
+# r13-andrews (revision v25) added r12-kapital's file c8d57e3d (v24): on Andrews pages a money cell whose page
+# reading was damaged beyond every money reading (a colon or slash for the point, a hyphen inside the figures)
+# was never cropped, and a held cell kept only the readings the crops repeated, so a period whose printed
+# value was the page reading alone, or a minority crop reading, stayed held.
+# This exact list is history: the engine-release campaign (reader_campaign)
+# selects any reading recorded by another pdf_extraction.py than the deployed
+# one, so a later engine change needs no digest added here.
 AFFECTED_EXTRACTION_SHA256 = (
     '838372af7b656fa02f655aaa564582ff7ba15c5c17ff46020935ce3356152495',  # 7b0013fb
     '8f9e668367c9c3c9f577e1357cd8130952d9206742a653b6a0a42b1da1d62489',  # 14edbfec
@@ -104,6 +150,13 @@ AFFECTED_EXTRACTION_SHA256 = (
     '5eca9825fe4fdd4c06783eb7820fb91d8bc359cd8d77bb45487e307161d6942e',  # 7b00e2f3 r1-reproduced (v14)
     '3e2343916ad66c94b85230947d48841235f8c4ff22963adb1f7c3a58c6591149',  # bffe7375 r3-andrews (v15)
     'b9248b807d535565e21969c81fcc59adb148cf1d6f185232958afb181bc129a1',  # r4-cards (v16)
+    '015bd1d2a28867ae8771cb7a69b67fca4e30302468e394b93d572fcef6e8800a',  # r5-andrews-cards (v17)
+    '8f3539f3afca7d9e4d613967aff51000e1c0fd93688f2e35a6534cb1628f0b37',  # 7b877d0b r7-alex-queue (v19)
+    'ed905742085b39bead123c80c47af29dd08f3c73790a8769e964b4e39c266815',  # 7c215ef1 r8-mt-engine (v20)
+    '3d3b9d2b0ab124c1722573dbde774c5030c8eddf2feb3daaacf284873a837e13',  # 3a97716c r9-engine-santander (v21)
+    'ee536c5020bcd44185621b179ceb9e2a0db9329e81b49eb676bf37ee602f30c9',  # 060d7470 layer guard (v22)
+    '8a06b0ca727b00b602ea636e451f27cff0daba645ee081ea841916a9e3b7612e',  # 24593077 r11-bbva-vector (v23)
+    'c8d57e3dda4e5aef378eac7da4cd50157aad94d84d71986b25e1a99b60d3a38a',  # 2a6df8be r12-kapital (v24)
 )
 READER_RECOVERY = RecoveryCampaign(READER_RECOVERY_RELEASE, {'pdf_extraction.py': AFFECTED_EXTRACTION_SHA256},
     batch_reread=True)
@@ -119,9 +172,70 @@ REGISTERED_CAMPAIGNS = (*CAMPAIGNS,
 
 
 def reader_recovery_enabled(environ=None):
-    """Off unless explicitly switched on: Neil decides activation."""
+    """On unless switched off (``LOUPE_FINANCIAL_READER_RECOVERY=0``, false, no or off)."""
     value = (os.environ if environ is None else environ).get(READER_RECOVERY_FLAG, '')
-    return value.strip().lower() in ('1', 'true', 'yes', 'on')
+    return value.strip().lower() not in ('0', 'false', 'no', 'off')
+
+
+# Engine-release campaigns: one release id per deployed engine source.
+READER_RELEASE_PREFIX = 'statement-recovery-engine-'
+ENGINE_READER_SOURCE = Path(__file__).resolve().parents[3] / 'evidence-engine' / 'app' / 'pipeline' / 'pdf_extraction.py'
+_engine_digest = []
+
+
+def current_engine_reader():
+    """SHA-256 of the deployed engine's pdf_extraction.py (the digest its readings record), or None.
+
+    Read once per process from the same tree the engine image is built from.
+    None (the source is not beside the backend) schedules nothing.
+    """
+    if not _engine_digest:
+        try:
+            _engine_digest.append(hashlib.sha256(ENGINE_READER_SOURCE.read_bytes()).hexdigest())
+        except OSError:
+            _engine_digest.append(None)
+    return _engine_digest[0]
+
+
+def is_reader_release(release):
+    return bool(release) and release.startswith(READER_RELEASE_PREFIX)
+
+
+# Which held statements the engine-release campaign may hand back (recovery_readers.classify). The snapshot is
+# taken once per release id, so a change to that selection must change the id too, or a deploy carrying it
+# never looks at a case the deployed engine already snapshotted. Bump on every change to the selection rules.
+# v2 (aq-b-santander): a removal recorded before the batch holding the restart was made no longer protects it,
+# and a statement already settled without a person's work (saved, or set aside by the System) no longer
+# protects the held statements of its file (recovery_readers.SETTLED_SIBLINGS), and a batch file whose
+# preparation failed and that holds nothing is an idle member of its original (FAILED_MEMBER_IDLE); a held
+# copy of an account and period the case already saved is left for comparison (COPY_OF_SAVED_PROTECTS).
+# v3 (aq-copies-funds): before selecting, a held copy whose reading the saved ledger of its account and period
+# agrees with is set aside as a linked duplicate, and a held fund statement as not a payment statement
+# (held_settlement).
+# v4: a held Santander product is no longer kept as a copy of the other product saved under the same last six
+# digits and dates (santander_subaccounts).
+READER_SELECTION = 'held-selection-v4'
+
+
+def reader_release_id(engine_digest):
+    """The campaign id of an engine source under the current selection rules (at most 64 characters)."""
+    return READER_RELEASE_PREFIX + hashlib.sha256(f'{engine_digest}:{READER_SELECTION}'.encode()).hexdigest()[:32]
+
+
+def reader_campaign(release=None):
+    """The engine-release campaign: held statements read by another engine source than today's.
+
+    Without ``release``, the campaign of the engine deployed now under today's
+    selection rules (None when its source is unknown). With an earlier
+    release's id (its run is still being followed), the same rule against
+    today's engine: a statement read by today's engine is never read again.
+    """
+    current = current_engine_reader()
+    if release is None:
+        if current is None:
+            return None
+        release = reader_release_id(current)
+    return RecoveryCampaign(release, current_readers={'pdf_extraction.py': current}, batch_reread=True)
 
 
 def source_reader_evidence(session, file, campaign):
@@ -172,4 +286,6 @@ def source_reader_evidence(session, file, campaign):
 
 
 def manifest(release):
+    if is_reader_release(release):
+        return reader_campaign(release)
     return next((campaign for campaign in REGISTERED_CAMPAIGNS if campaign.release == release), None)

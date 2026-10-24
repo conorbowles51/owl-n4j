@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { lazy, Suspense, useEffect, useMemo, useState } from "react"
 import {
   Archive,
   ArrowDownUp,
@@ -56,6 +56,9 @@ import { CaseworkDetailSheet } from "./CaseworkDetailSheet"
 import { CaseworkEditor } from "./CaseworkEditor"
 import { RelationshipBadge } from "./CaseworkBadges"
 
+import { DossierSourceViewer, type DossierSource } from "@/features/dossiers/components/DossierSourceViewer"
+const DossierDetailSheet = lazy(() => import("@/features/dossiers/components/DossierDetailSheet").then((m) => ({ default: m.DossierDetailSheet })))
+
 interface CaseworkListViewProps {
   caseId: string
   entryType: CaseworkEntryType
@@ -90,6 +93,8 @@ export function CaseworkListView({
   const [offset, setOffset] = useState(0)
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(initialSelectedEntryId)
   const [createOpen, setCreateOpen] = useState(false)
+  const [source, setSource] = useState<DossierSource | null>(null)
+  const [dossierId, setDossierId] = useState<string | null>(null)
   const currentSelection = useCurrentCaseworkLinks(caseId)
   const authorsQuery = useCaseworkAuthors(caseId)
 
@@ -226,7 +231,7 @@ export function CaseworkListView({
                 <div className="flex flex-wrap items-center gap-1.5">
                   <h3 className="mr-1 min-w-0 truncate text-sm font-semibold text-foreground">{caseworkTitle(entry)}</h3>
                   {entry.lifecycle_state && <Badge variant="slate" className="capitalize">{entry.lifecycle_state}</Badge>}
-                  {entry.significance && <Badge variant="outline" className="capitalize">{entry.significance}</Badge>}
+                  {entry.entry_type === "finding" && <Badge variant="outline" className="capitalize">{entry.significance ?? "Unrated"}</Badge>}
                   {entry.confidence !== null && entry.confidence !== undefined && <Badge variant="outline">{entry.confidence}%</Badge>}
                   <ReviewBadge entry={entry} />
                   {entry.deleted_at && <Badge variant="destructive">Deleted</Badge>}
@@ -262,7 +267,9 @@ export function CaseworkListView({
         </DialogContent>
       </Dialog>
 
-      <CaseworkDetailSheet caseId={caseId} entryId={selectedEntryId} open={!!selectedEntryId} canEdit={canEdit} onOpenChange={(open) => !open && setSelectedEntryId(null)} onOpenEntry={setSelectedEntryId} />
+      <CaseworkDetailSheet caseId={caseId} entryId={selectedEntryId} open={!!selectedEntryId} canEdit={canEdit} onOpenChange={(open) => !open && setSelectedEntryId(null)} onOpenEntry={setSelectedEntryId} onOpenDossier={setDossierId} onOpenEvidence={(evidenceId, name, anchor) => setSource({ evidenceId, name, page: typeof anchor.page === "number" ? anchor.page : undefined, time: typeof anchor.timestamp === "number" ? anchor.timestamp : undefined })} />
+      {source && <DossierSourceViewer caseId={caseId} source={source} onClose={() => setSource(null)} />}
+      {dossierId && <Suspense fallback={<p role="status">Loading dossier…</p>}><DossierDetailSheet caseId={caseId} dossierId={dossierId} open canEdit={canEdit} onOpenChange={(open) => !open && setDossierId(null)} /></Suspense>}
     </div>
   )
 }

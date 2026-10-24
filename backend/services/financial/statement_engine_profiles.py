@@ -18,9 +18,27 @@ Profile format (every key optional except ``name`` and ``match``):
     date_order   'dmy' or 'mdy' for numeric dates without a month name
     labels       {role: [printed labels]} added to the vocabulary; roles are
                  opening, closing, subtotal, credit_total, debit_total,
-                 credit_component, debit_component, column_total
+                 credit_component, debit_component, column_total, and
+                 day_balance: a line printing the balance at the end of a day
+                 after that day's movements ('Saldo al final del dia 25 98.01'),
+                 checked as the running balance after the movement line above it
     columns      {role: [printed column words]} added to the movement headings;
-                 roles are date, description, credit, debit, balance, amount
+                 roles are date, description, credit, debit, balance, amount, and
+                 ignore: an amount column that is not the movement's effect on the
+                 balance (a gross amount, a fee or tax already inside a net column);
+                 an ignore word outranks the shared vocabulary
+    rule_mark    one character the reading prints at the edge of every table cell (a
+                 vertical rule read as text, '28)' '83.10)'): removed wherever it is not
+                 part of a parenthesized amount, whose sign is printed
+    client_line  True: every page's first line prints the client (contract) number then
+                 the holder's name ('<number> <name>'), over the address on the first
+                 page; with no other account read, the number is the account, and the
+                 name is the holder (one pair on every page printing it, or none)
+    settlement_days  {'operation': [...], 'settlement': [...]}: each movement line
+                 prints two days of the month, the operation day then the settlement
+                 day, under these heading words (operation left of settlement); the
+                 movement's date is the settlement day, the day the printed balance
+                 moved. A line printing only one of the two days is not proved
     account_heading  True: with no labelled account, a section heading of the
                  product name followed by a hyphenated account number (one
                  distinct number in the section's heading area) is the account
@@ -43,6 +61,8 @@ readers stay in the library unchanged); Monex, Santander, Intercam, Citi,
 M&T, Scotiabank and Kapital supply only their institution. Facts a person confirms per layout and account
 are not profiles: they are case data (``layout_memory``).
 """
+
+import re
 
 PROFILES = (
     dict(
@@ -76,7 +96,14 @@ PROFILES = (
     # counterparty transfer lines also print). The engine's printed legal name always wins.
     # Monex prints one contract number for all currency sections of a statement (its reader keys
     # every section by it); sections sharing pages take it from the statement's heading pages.
-    dict(name='monex-mexico', match=dict(any=['monex grupo financiero']), institution='Monex', statement_account=True),
+    # Its movement tables print four balance columns after the amounts (Saldo en garantia / no disponible,
+    # Saldo disponible, Saldo total) and a guarantee-movement column that is no ledger amount; naming them
+    # lets the heading fix the roles, where unnamed they leave too many readings to prove (measured on the
+    # 2021 portrait and 2022+ sideways layouts).
+    dict(name='monex-mexico', match=dict(any=['monex grupo financiero']), institution='Monex', statement_account=True,
+         columns=dict(ignore=['MOVIMIENTO GARANTIA'], balance=['SALDO EN GARANTIA', 'SALDO NO DISPONIBLE',
+                                                                'SALDO DISPONIBLE', 'SALDO TOTAL'],
+                      description=['REFERENCIA'])),
     # Santander prints some accounts only after the product name ("<PRODUCT NAME> 12-34567890-1"):
     # on the verified truth 45 such heading lines, every one the truth account.
     dict(name='santander-mexico', match=dict(any=['grupo financiero santander']), institution='Santander',
@@ -94,6 +121,12 @@ PROFILES = (
     # every Kapital statement and by no other document.
     dict(name='scotiabank-mexico', match=dict(any=['scotiabank inverlat, s.a.']), institution='Scotiabank'),
     dict(name='kapital-mexico', match=dict(any=['aclaraciones@kapital.com']), institution='Kapital'),
+    # Synchrony card (r6): the summary-box furniture is printed by every Synchrony statement in the real
+    # collection and by no other document (a bank statement paying the card names the bank, not this line).
+    # A US card: amounts owed, a bare '$' is US dollars, numeric dates month first (its closing date is
+    # printed with a day of 12 or less in every cycle, so the date alone cannot fix the order).
+    dict(name='synchrony-card', match=dict(any=['for synchrony bank customer service']), institution='Synchrony Bank',
+         currency='USD', convention='liability_owed', date_order='mdy'),
     # Navy Federal Credit Union statements of account: one statement prints several accounts (checking,
     # its line of credit, savings), each in a section headed '<product name> - <last four digits>'; the
     # holder is printed under the title on every continuation page ('Statement of Account' / 'For <name>');
@@ -103,11 +136,50 @@ PROFILES = (
          holder_heading=dict(title=['STATEMENT OF ACCOUNT'], prefix='FOR')),
 )
 
+# Mexican brokerage (casa de bolsa) cash ledgers (r12): the movement table prints, per line, the operation
+# day and the settlement day ('Ope', 'Liq'), the instrument's columns (folio, issuer, series, coupon,
+# titles, price, term, rate), a gross amount, commission, premium and taxes, and the line's signed net
+# effect on cash ('NETO', debits in parentheses). After each settlement day's lines it prints the cash
+# balance at the end of that day, and the month's opening and closing balances as dated lines. Measured on
+# the real collection (778 documents): the two phrases of each profile are printed by its family's
+# brokerage statements (4 Kapital, 1 Intercam) and by no other document. The cash ledger prints no currency;
+# the statement's holdings table can (``holdings_currency``, Neil 2026-10-23); a statement printing none
+# stays the investigator's choice.
+_BROKERAGE_CASH = dict(
+    labels=dict(opening=['SALDO INICIAL DEL MES'], closing=['SALDO FINAL DEL MES'],
+                day_balance=['SALDO AL FINAL DEL DIA']),
+    columns=dict(date=['OPE', 'LIQ'], amount=['NETO'],
+                 ignore=['MONTO', 'COMISION', 'PREMIO', 'IMPUESTOS', 'FOLIO', 'EMISORA', 'SERIE', 'CUPON',
+                         'TITULOS', 'PRECIO', 'PLAZO', 'TASA']),
+    settlement_days=dict(operation=['OPE'], settlement=['LIQ']),
+    client_line=True,
+    convention='asset_balance',
+    date_order='dmy',
+    # Neil, 2026-10-23: the currency the holdings table prints is the statement's (statement_engine.HOLDINGS_CURRENCY).
+    holdings_currency=True,
+)
+PROFILES += (
+    dict(name='kapital-mexico-brokerage',
+         match=dict(all=['detalle de movimientos del periodo', 'kapital mexico casa de bolsa']),
+         institution='Kapital Mexico Casa de Bolsa', **_BROKERAGE_CASH),
+    # Some Intercam statements read every table cell with a closing parenthesis at its right edge (the
+    # vertical rule): measured on 10 of the 11 Intercam brokerage statements of the real collection.
+    dict(name='intercam-brokerage', match=dict(all=['detalle de movimientos del periodo', 'intercam casa de bolsa']),
+         institution='Intercam Casa de Bolsa', rule_mark=')', **_BROKERAGE_CASH),
+)
+
 _KEYS = {'name', 'match', 'institution', 'currency', 'convention', 'date_order', 'labels', 'columns', 'account_heading',
-         'statement_account', 'prior_period_block', 'account_suffix_heading', 'holder_heading'}
+         'statement_account', 'prior_period_block', 'account_suffix_heading', 'holder_heading', 'settlement_days',
+         'client_line', 'rule_mark', 'holdings_currency'}
 _LABEL_ROLES = {'opening', 'closing', 'subtotal', 'credit_total', 'debit_total', 'credit_component',
-                'debit_component', 'column_total'}
-_COLUMN_ROLES = {'date', 'description', 'credit', 'debit', 'balance', 'amount'}
+                'debit_component', 'column_total', 'day_balance'}
+_COLUMN_ROLES = {'date', 'description', 'credit', 'debit', 'balance', 'amount', 'ignore'}
+
+
+def brokerage_cash_ledger(name):
+    """A statement read with a brokerage cash-ledger profile (``holdings_currency``): its own currency, if any,
+    is printed only in its holdings, and one printing none takes its account's (field_proposals)."""
+    return bool(name) and any(p['name'] == name and p.get('holdings_currency') for p in PROFILES)
 
 
 def validate(profile):
@@ -122,7 +194,7 @@ def validate(profile):
     if set(profile.get('labels') or {}) - _LABEL_ROLES or set(profile.get('columns') or {}) - _COLUMN_ROLES:
         raise ValueError('Invalid profile label or column role.')
     if (profile.get('account_heading') not in (None, True) or profile.get('statement_account') not in (None, True)
-            or profile.get('account_suffix_heading') not in (None, True)):
+            or profile.get('account_suffix_heading') not in (None, True) or profile.get('client_line') not in (None, True)):
         raise ValueError('Invalid profile account heading flag.')
     titled = profile.get('holder_heading')
     if titled is not None and (not isinstance(titled, dict) or set(titled) != {'title', 'prefix'}
@@ -133,6 +205,14 @@ def validate(profile):
     if block is not None and (not isinstance(block, dict) or set(block) != {'start', 'end'}
                               or not all(isinstance(v, list) and v for v in block.values())):
         raise ValueError('Invalid profile prior-period block.')
+    mark = profile.get('rule_mark')
+    if mark is not None and not (isinstance(mark, str) and len(mark) == 1 and not mark.isalnum() and not mark.isspace()):
+        raise ValueError('Invalid profile rule mark.')
+    days = profile.get('settlement_days')
+    if days is not None and (not isinstance(days, dict) or set(days) != {'operation', 'settlement'}
+                             or not all(isinstance(v, list) and v and all(isinstance(w, str) and w.strip() for w in v)
+                                        for v in days.values())):
+        raise ValueError('Invalid profile settlement days.')
     if profile.get('currency'):
         from services.financial.money import get_currency
         get_currency(profile['currency'])
@@ -143,14 +223,29 @@ for _profile in PROFILES:
     validate(_profile)
 
 
-def matching_profile(text):
-    """The one profile whose printed phrases occur in ``text``; None if none or several match."""
+def _matching(text):
     lowered = ' '.join(text.lower().split())
     found = []
     for profile in PROFILES:
         rule = profile['match']
         if all(p in lowered for p in rule.get('all', [])) and (not rule.get('any') or any(p in lowered for p in rule['any'])):
             found.append(profile)
+    return found
+
+
+def matching_profile(text, furniture=None):
+    """The one profile whose printed phrases occur in ``text``; None if none or several match.
+
+    When several match and ``furniture`` (the same document without its dated lines, see
+    ``furniture_text``) is given and exactly one matches there, that one is used: a statement paying
+    another issuer names that issuer in a movement line ('<date> | CAPITAL ONE ...'), never in its
+    printed furniture.
+    """
+    found = _matching(text)
+    if len(found) > 1 and furniture is not None:
+        printed = _matching(furniture)
+        if len(printed) == 1:
+            found = printed
     if len(found) > 1:
         # A profile matched only by phrases that must all occur (no 'any' list) is specific to one layout:
         # it outranks profiles matched by a single phrase, which a transaction line can print (a payment
@@ -162,4 +257,15 @@ def matching_profile(text):
 
 def profile_text(sources):
     return '\n'.join(c['expected_text'] for s in sources for r in s['rows'] for c in r['cells'])
+
+
+# A stored row opening with a numeric date (its digits possibly misread: '41/19/2021') is a dated line.
+_DATED_LINE = re.compile(r'^\W{0,2}\d{1,2}[/.-]\d{1,2}(?:[/.-]\d{2,4})?\b')
+
+
+def furniture_text(sources):
+    """``profile_text`` without the stored rows that open with a numeric date (movement lines)."""
+    return '\n'.join(c['expected_text'] for s in sources for r in s['rows']
+                     if not (r['cells'] and _DATED_LINE.match(r['cells'][0]['expected_text']))
+                     for c in r['cells'])
 

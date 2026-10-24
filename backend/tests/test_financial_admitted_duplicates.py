@@ -348,3 +348,200 @@ class ComparableReadingTests(TestCase):
         self.assertTrue(admitted._comparable(self.reading('balance', 'transaction'), dict(rows=[])))
         # Nothing left to compare is never comparable.
         self.assertFalse(admitted._comparable(self.reading('unresolved'), dict(rows=[dict(id='0', excluded=True)])))
+
+    def test_an_unread_row_a_person_completed_in_the_saved_review_counts(self):
+        reading = self.reading('balance', 'transaction', 'unresolved')
+        done = dict(id='2', excluded=False, amount_minor='35813322', direction='debit', date='2026-03-26')
+        self.assertTrue(admitted._comparable(reading, dict(rows=[done])))
+        for missing in ('amount_minor', 'direction', 'date'):
+            self.assertFalse(admitted._comparable(reading, dict(rows=[{**done, missing: ''}])), missing)
+        self.assertFalse(admitted._comparable(reading, dict(rows=[{**done, 'amount_minor': '0'}])))
+        self.assertFalse(admitted._comparable(self.reading('unresolved'), dict(rows=[{**done, 'id': '0'}])))
+
+    def test_a_reviewed_copy_matches_only_by_an_identical_ledger(self):
+        from types import SimpleNamespace as C
+        reviewed, clean = C(edited=True, admitted_rows=58, ledger='a'), C(edited=False, admitted_rows=58, ledger='a')
+        self.assertTrue(admitted._reviewed_to_same_ledger(clean, reviewed))
+        self.assertFalse(admitted._reviewed_to_same_ledger(clean, C(edited=True, admitted_rows=58, ledger='b')))
+        self.assertFalse(admitted._reviewed_to_same_ledger(clean, C(edited=False, admitted_rows=58, ledger='a')))
+        self.assertFalse(admitted._reviewed_to_same_ledger(C(edited=False, admitted_rows=0, ledger='a'),
+                                                           C(edited=True, admitted_rows=0, ledger='a')))
+
+
+class ReaderIndependentCopyTests(TestCase):
+    """r11-copy-audit: one printed statement saved through two readers, in two ledger accounts.
+
+    The second reader words the bank differently (another ledger account),
+    calls the product something else and captures one more printed balance.
+    The payments are equal row for row, so they count twice until one copy is
+    set aside.
+    """
+
+    setUp, tearDown = AdmittedDuplicateTests.setUp, AdmittedDuplicateTests.tearDown
+    mask_reference, masked_request = AdmittedDuplicateTests.mask_reference, AdmittedDuplicateTests.masked_request
+    save_twice, admitted_rows = AdmittedDuplicateTests.save_twice, AdmittedDuplicateTests.admitted_rows
+    source_of, plan, apply = AdmittedDuplicateTests.source_of, AdmittedDuplicateTests.plan, AdmittedDuplicateTests.apply
+
+    def save_split(self):
+        def other_reader(request):
+            return {**request, 'institution': 'Synthetic Bank Wording SA'}
+        other, _ = self.save_twice(batch=False, second_request=other_reader)
+        from services.financial.pdf_candidates import _digest
+        with self.f.SessionLocal() as db:
+            source = db.scalar(select(FinancialSourceDocument).where(FinancialSourceDocument.evidence_file_id == other.id))
+            metadata = deepcopy(source.metadata_)
+            original = metadata['statement_import_original']
+            original.setdefault('metadata', {})['account_type'] = 'savings'
+            original['rows'].append(dict(id='extra-balance', kind='balance', excluded=False, page_number=1,
+                                         fields=dict(balance='424242')))
+            metadata['statement_import_original_sha256'] = _digest(original)
+            source.metadata_ = metadata
+            db.commit()
+        return other
+
+    def accounts(self):
+        with self.f.SessionLocal() as db:
+            return {row.account_id for row in db.scalars(select(FinancialTransaction).where(
+                FinancialTransaction.ledger_status == 'admitted'))}
+
+    def same_pages(self, *files, identity='a' * 64):
+        from services.financial import page_identity
+        with self.f.SessionLocal() as db:
+            for file in files:
+                row = db.get(EvidenceFile, file.id)
+                page_identity.store(row, dict(version=page_identity.VERSION, renderer='pymupdf-test',
+                    dpi=page_identity.DPI, page_count=1, identity=identity, source_sha256=row.sha256))
+            db.commit()
+
+    def test_copy_in_another_account_is_listed_with_the_merge_it_needs(self):
+        other = self.save_split()
+        self.assertEqual(len(self.accounts()), 2, 'the copy landed in a second ledger account')
+        plan = self.plan()
+        self.assertEqual((plan['set_aside'], plan['held']), ([], []), plan)
+        self.assertEqual(len(plan['split_across_accounts']), 1, plan)
+        entry = plan['split_across_accounts'][0]
+        self.assertEqual((entry['code'], entry['basis'], entry['automatic']), ('account_differs', 'printed_reference', False))
+        self.assertEqual({entry['document_id'], entry['retained_document_id']},
+                         {str(self.source_of(other).id), str(self.source_of(self.primary).id)})
+        merge = entry['account_merge']
+        self.assertEqual(len(set(merge['copy_account_ids']) | set(merge['retained_account_ids'])), 2)
+        self.assertIn('banks_differ', merge['blockers'])
+        self.assertEqual(merge['other_saved_periods_in_copy_account'], 0)
+        # Without the proof of one document nothing is set aside, even on request.
+        for across in (False, True):
+            with self.f.SessionLocal() as db:
+                result = admitted.set_aside_admitted_duplicates(db, self.case_id, across_accounts=across)
+            self.assertEqual(result['applied'], [])
+        self.assertEqual(self.admitted_rows(), 24)
+        with self.f.SessionLocal() as db:
+            with self.assertRaises(DuplicateDecisionError):
+                admitted.set_aside_copy(db, case_id=self.case_id, document_id=UUID(entry['document_id']),
+                    retained_id=UUID(entry['retained_document_id']), across_accounts=True)
+        self.assertEqual(self.admitted_rows(), 24)
+
+    def test_page_identical_copy_in_another_account_is_set_aside_on_request(self):
+        other = self.save_split()
+        self.same_pages(self.primary, other)
+        plan = self.plan()
+        entry, = plan['split_across_accounts']
+        self.assertEqual((entry['basis'], entry['automatic']), ('identical_pages', True))
+        self.assertEqual(self.apply()['applied'], [], 'never across accounts by default')
+        self.assertEqual(self.admitted_rows(), 24)
+        with self.f.SessionLocal() as db:
+            result = admitted.set_aside_admitted_duplicates(db, self.case_id, across_accounts=True)
+        self.assertEqual(len(result['applied']), 1, result['refused'])
+        self.assertEqual(self.admitted_rows(), 12)
+        copy = self.source_of(UUID(entry['evidence_file_id']) == self.primary.id and self.primary or other)
+        self.assertEqual((copy.status, str(copy.superseded_by_id)), ('superseded', entry['retained_document_id']))
+        self.assertEqual(len(self.accounts()), 1, 'its payments count once, in the retained account')
+        again = self.plan()
+        self.assertEqual((again['split_across_accounts'], len(again['already_set_aside'])), ([], 1))
+
+    def test_different_pages_are_not_one_document(self):
+        other = self.save_split()
+        self.same_pages(self.primary)
+        self.same_pages(other, identity='b' * 64)
+        entry, = self.plan()['split_across_accounts']
+        self.assertEqual((entry['basis'], entry['automatic']), ('printed_reference', False))
+
+    def test_a_copy_whose_money_differs_is_held(self):
+        def other_reader(request):
+            request = {**request, 'institution': 'Synthetic Bank Wording SA'}
+            request['rows'] = deepcopy(request['rows'])
+            return request
+        self.mask_reference()
+        other = self.fixture.copy_file(revised=True)
+        with legacy_matching():
+            self.f.file = self.primary
+            self.f.confirm(self.masked_request())
+            self.f.file = other
+            self.assertTrue(self.f.confirm(other_reader(self.masked_request())).get('created'))
+        plan = self.plan()
+        self.assertEqual((plan['set_aside'], plan['split_across_accounts']), ([], []))
+        self.assertEqual([e['code'] for e in plan['held']], ['money_differs'])
+
+    def test_switch_off_is_the_r2_rule(self):
+        self.save_split()
+        with patch.object(admitted, 'READER_INDEPENDENT', False):
+            plan = self.plan()
+        self.assertEqual((plan['set_aside'], plan['split_across_accounts'], plan['held']), ([], [], []))
+
+
+class ReaderIndependentRuleTests(TestCase):
+    """The pair rule on stub copies: printed facts, not reader wording."""
+
+    def copy(self, *, payments=(('100', 'debit', '2024-01-02'),), balances=('5',), account='a', key='123',
+             sha='s1', pages=None, section=(1,), account_type='checking', identity='bank-a'):
+        rows = [dict(id=f'p{i}', kind='transaction', excluded=False, page_number=1,
+                     fields=dict(amount_minor=a, direction=d, date=t)) for i, (a, d, t) in enumerate(payments)]
+        rows += [dict(id=f'b{i}', kind='balance', excluded=False, page_number=1, fields=dict(balance=b))
+                 for i, b in enumerate(balances)]
+        original = dict(rows=rows, metadata=dict(balance_convention='asset_balance'), statement_page_numbers=list(section))
+        scope = dict(identity=identity, currency='MXN', start='2024-01-01', end='2024-01-31', holder='h',
+                     account_type=account_type, account_reference=key, full_reference=True)
+        from types import SimpleNamespace
+        copy = admitted._Copy(document=SimpleNamespace(id=object()), file=SimpleNamespace(id=object(), sha256=sha),
+            received=('', [], ''), statement_id='x', scope=scope, original=original, request={}, first_page=1,
+            content=str((payments, balances)), payments=len(payments), usable=True, ledger='L',
+            accounts=frozenset({account}), raw_accounts=frozenset({account}))
+        copy.key = (key, 'MXN', '2024-01-01', '2024-01-31') if key else None
+        copy.pages = pages
+        copy.section = frozenset(section)
+        return copy
+
+    def test_product_and_bank_wording_do_not_decide(self):
+        left = self.copy()
+        right = self.copy(account_type='savings', identity='bank-b', sha='s2', balances=('5', '7'))
+        self.assertEqual(admitted._match(left, right), 'printed_reference')
+        self.assertIsNone(admitted._compare(right, left))
+
+    def test_no_payment_is_no_proof(self):
+        left, right = self.copy(payments=()), self.copy(payments=(), account_type='savings', sha='s2')
+        self.assertIsNone(admitted._match(left, right))
+        self.assertEqual(admitted._compare(right, left), 'not_same_period')
+        # One document proves it without payments.
+        pages = dict(identity='p' * 64, renderer='r', page_count=1)
+        left.pages, right.pages = pages, dict(pages)
+        self.assertEqual(admitted._match(left, right), 'identical_pages')
+        self.assertIsNone(admitted._compare(right, left))
+
+    def test_money_conflicts_hold(self):
+        left = self.copy()
+        self.assertEqual(admitted._compare(self.copy(sha='s2', account_type='savings',
+            payments=(('100', 'credit', '2024-01-02'),)), left), 'money_differs')
+        self.assertEqual(admitted._compare(self.copy(sha='s2', account_type='savings', balances=('6',)), left),
+                         'money_differs', 'a printed balance read differently in both')
+        other = self.copy(sha='s2', account_type='savings')
+        other.ledger = 'other'
+        self.assertEqual(admitted._compare(other, left), 'ledger_differs')
+
+    def test_another_reference_or_period_is_another_statement(self):
+        left = self.copy()
+        self.assertIsNone(admitted._match(left, self.copy(key='124', sha='s2')))
+        later = self.copy(sha='s2')
+        later.scope = {**later.scope, 'end': '2024-02-29'}
+        self.assertIsNone(admitted._match(left, later))
+
+    def test_split_account_is_decided_last(self):
+        left = self.copy()
+        self.assertEqual(admitted._compare(self.copy(sha='s2', account='b', account_type='savings'), left), 'account_differs')

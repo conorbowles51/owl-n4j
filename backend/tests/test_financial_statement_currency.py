@@ -33,6 +33,14 @@ class CurrencyDetectionTests(TestCase):
                          layout_id='capital-one-card'), 'USD')
         self.assertEqual(detect_statement_currency([source([['CA$21.19'], ['$28.78']])]), 'CAD')
 
+    def test_a_symbol_beside_a_short_whole_number_is_not_currency_evidence(self):
+        # On a scan '$' can be read as '£'; '£12' beside a label is a count, not an amount.
+        self.assertEqual(detect_statement_currency([source([['Dias del periodo :', '£31'], ['1,250.00']])]), '')
+        self.assertEqual(detect_statement_currency([source([['Dias del periodo :', '£31'], ['USD 21.19']])]), 'USD')
+        for cells, expected in [(['£1,250'], 'GBP'), (['€ 12 500'], 'EUR'), (['¥1,000'], ''), (['EUR 7'], '')]:
+            with self.subTest(cells=cells):
+                self.assertEqual(detect_statement_currency([source([cells])]), expected)
+
     def test_conflicting_markers_and_account_labels_are_not_guessed(self):
         for rows in ([['USD 21.19'], ['EUR 28.78']], [['€21.19'], ['$28.78']],
                      [['Currency: USD'], ['Currency: CAD']]):
@@ -113,6 +121,49 @@ class AutomaticCurrencyImportTests(TestCase):
         self.assertEqual(fixed['fields']['amount_minor'], '18000')
         self.assertEqual(fixed['fields']['direction'], 'credit')
         self.assertEqual(fixed['source_cells'], payment['source_cells'])
+
+    def test_a_reading_stopped_for_its_currency_still_cites_the_holdings_currency(self):
+        # The holdings currency is for exactly the statement whose currency is not
+        # established: the reading stops before its amounts, and the cited code
+        # must still reach the batch summary the currency proposal reads.
+        from postgres.models.evidence import EvidenceTableGeometry
+        from postgres.models.financial_import_batches import FinancialImportBatch, FinancialImportBatchItem
+        from services.financial.import_batches import create_batch, prepare_reviews
+        from sqlalchemy import select
+        from tests.test_financial_pdf_geometry_candidates import rectangle
+        f = self.fixture
+        geometry = f.db.get(EvidenceTableGeometry, (f.file.id, 1))
+        payload = deepcopy(geometry.payload)
+        for table in payload:
+            for value in table['table']['values']:
+                value['text'] = value['text'].replace('$', '')
+        values = payload[1]['table']['values']
+        for row, column, text in ((97, 0, 'EMISORA SERIE CUP MON'), (98, 0, '+FUND'), (98, 1, '0) MXN)')):
+            cell = deepcopy(values[-1])
+            cell.update(row=row, column=column, text=text)
+            cell['locator'] = {**rectangle(700 + (row - 97) * 20, x=20 + column * 180, width=170), 'page': 1}
+            values.append(cell)
+        geometry.payload = payload
+        f.db.commit()
+        proposal = f.preview()
+        self.assertEqual((proposal['currency'], proposal['rows']), ('', []))
+        self.assertIn('could not be identified confidently', proposal['issues'][-1])
+        printed = proposal['printed_currency']
+        self.assertEqual((printed['value'], printed['page_number'], printed['row_index'], printed['expected_text']),
+                         ('MXN', 1, 98, '0) MXN)'))
+        with f.SessionLocal() as db:
+            batch_id = create_batch(db, case_id=f.case.id, request_id=uuid4(),
+                file_ids=[f.file.id], folder_ids=[], actor=f.actor)
+            batch = db.get(FinancialImportBatch, batch_id)
+            prepare_reviews(db, batch, batch.files[0])
+            item = db.scalars(select(FinancialImportBatchItem).where(FinancialImportBatchItem.batch_id == batch_id)).one()
+            self.assertEqual(item.summary['currency'], '')
+            self.assertEqual(item.summary['printed_currency']['value'], 'MXN')
+        # A chosen currency reads the amounts; the hint is then not offered.
+        with f.SessionLocal() as db:
+            chosen = read_statement_import(db, case_id=f.case.id, evidence_file_id=f.file.id, currency='MXN')
+        self.assertEqual(chosen['currency'], 'MXN')
+        self.assertIsNone(chosen['printed_currency'])
 
     def test_bulk_review_uses_each_period_currency_in_a_mixed_document(self):
         from postgres.models.evidence import EvidenceTableGeometry

@@ -93,6 +93,11 @@ def exact_amount(text, currency):
     # PDF text positioning can leave spaces beside a grouping comma. Keep
     # every digit and separator; the complete grouping pattern is checked below.
     value = re.sub(r'(?<=\d)[ \t\u202f]*,[ \t\u202f]*(?=\d)', ',', value)
+    if code.exponent:
+        # The same spacing beside the decimal point, when exactly the currency's decimal places follow it
+        # ('1,234 .56'). The digits before it still have to form the complete grouping pattern below.
+        value = re.sub(r'(?<=\d)[ \t\u202f]+\.[ \t\u202f]*(?=\d{%d}\)?$)|(?<=\d)\.[ \t\u202f]+(?=\d{%d}\)?$)'
+                       % (code.exponent, code.exponent), '.', value)
     negative = value.startswith('(') and value.endswith(')')
     if negative:
         value = value[1:-1]

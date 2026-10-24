@@ -377,6 +377,117 @@ class CardSectionAndPatchTests(unittest.TestCase):
         left['periods'][2]['truth_status'] = 'unverified'  # a second text-layer gap the patch does not cover
         self.assertEqual(rv.apply_visual(left, rv.compile_document(CARD, page_count=5))['status'], 'partly_verified')
 
+    KEEP = 'doc dcard\ndone 2\nissuer acme-card Acme Card\nkeep 2 hold rows redacted in the production\n'
+
+    def test_a_kept_period_stays_as_read_and_makes_the_document_final(self):
+        visual = rv.compile_document(self.KEEP, page_count=5)
+        self.assertEqual((visual['complete'], visual['periods'], visual['keep']),
+                         (True, [], {'2': ['hold', 'rows redacted in the production']}))
+        merged = rv.apply_visual(self.text_layer(), visual)
+        kept = merged['periods'][1]
+        self.assertEqual((kept['truth_status'], kept['truth_reasons'], kept['pages']),
+                         ('unverified', ['amount line without a date'], [2]))  # the reading is unchanged
+        self.assertEqual((kept['truth_source'], kept['expected_override'], kept['expected_reason']),
+                         ('visual', 'hold', 'rows redacted in the production'))
+        self.assertEqual([p.get('truth_source') for p in merged['periods']], [None, 'visual', None])
+        self.assertEqual((merged['status'], merged['visual_kept'], merged['visual_patch']),
+                         ('settled', ['dcard#2'], []))
+        self.assertNotIn('visual_confirmed', merged)  # documents with nothing confirmed keep their form
+        self.assertEqual(rv.apply_visual(merged, visual), merged)  # merging twice changes nothing
+
+    def test_keep_is_refused_unless_its_pages_were_read_and_the_period_is_not_verified(self):
+        unread = rv.compile_document(self.KEEP.replace('done 2', 'done 3'), page_count=5)
+        self.assertEqual(rv.apply_visual(self.text_layer(), unread), self.text_layer())
+        verified = rv.compile_document(self.KEEP.replace('keep 2', 'keep 1').replace('done 2', 'done 1'),
+                                       page_count=5)
+        self.assertEqual(rv.apply_visual(self.text_layer(), verified), self.text_layer())
+        missing = rv.compile_document(self.KEEP.replace('keep 2', 'keep 9'), page_count=5)
+        self.assertEqual(rv.apply_visual(self.text_layer(), missing), self.text_layer())
+
+    def test_keep_lines_are_checked(self):
+        for bad in ('keep 2 maybe a reason\n', 'keep 2 hold\n', 'keep 2 hold x\nkeep 2 hold y\n'):
+            with self.assertRaises(ValueError):
+                rv.Transcription('doc dcard\n' + bad)
+        with self.assertRaises(ValueError):  # kept and replaced at once
+            rv.Transcription(CARD.replace('patch 2', 'patch 2\nkeep 2 hold x'))
+
+    def ocr_layer(self):
+        layer = self.text_layer()
+        layer['periods'][1].update(truth_status='ocr_reconciled',
+                                   truth_reasons=['reconciled from an OCR text layer; needs visual confirmation'],
+                                   period_start='2024-01-01', period_end='2024-01-31', account='1234', holder='A PERSON',
+                                   currency='USD', opening_minor=1000, closing_minor=1350, expected='auto',
+                                   controls=dict(summary=dict(previous=1000, new=1350)),
+                                   rows=[dict(date='2023-12-30', posted_date='2024-01-02', direction='debit',
+                                              amount_minor=350, description='store'),
+                                         dict(date='2024-01-31', direction='debit', amount_minor=0,
+                                              description='interest', date_unprinted=True)])
+        layer['status'] = 'partly_verified'
+        return layer
+
+    def confirm_text(self, layer, number=2, done='2'):
+        digest = rv.reading_digest(layer['periods'][number - 1])
+        return f'doc dcard\ndone {done}\nissuer acme-card Acme Card\nconfirm {number} {digest}\n'
+
+    def test_a_confirmed_ocr_layer_period_becomes_verified_with_its_reading_unchanged(self):
+        layer = self.ocr_layer()
+        visual = rv.compile_document(self.confirm_text(layer), page_count=5)
+        self.assertEqual((rv.ready(visual), visual['periods'], visual['confirm']),
+                         (True, [], {'2': rv.reading_digest(layer['periods'][1])}))
+        # A reader that predates confirm lines sees an incomplete review and leaves the document alone,
+        # instead of a complete review holding no periods (which would drop every period).
+        self.assertEqual((visual['complete'], visual['complete_with_confirm']), (False, True))
+        merged = rv.apply_visual(layer, visual)
+        period = merged['periods'][1]
+        self.assertEqual((period['truth_status'], period['truth_reasons'], period['truth_source'],
+                          period['visual_confirmed']), ('verified', [], 'visual', True))
+        before = {k: v for k, v in layer['periods'][1].items() if k not in ('truth_status', 'truth_reasons')}
+        self.assertEqual({k: v for k, v in period.items()
+                          if k not in ('truth_status', 'truth_reasons', 'truth_source', 'visual_confirmed')}, before)
+        self.assertEqual((merged['status'], merged['visual_confirmed'], merged['visual_patch'], merged['visual_kept']),
+                         ('verified', ['dcard#2'], [], []))
+        self.assertEqual(rv.apply_visual(merged, visual), merged)  # merging twice changes nothing
+
+    def test_confirm_is_refused_when_the_reading_changed_its_pages_were_not_read_or_it_is_not_ocr_reconciled(self):
+        layer = self.ocr_layer()
+        text = self.confirm_text(layer)
+        changed = self.ocr_layer()
+        changed['periods'][1]['rows'][0]['amount_minor'] = 351  # the text-layer reading is no longer what was checked
+        self.assertEqual(rv.apply_visual(changed, rv.compile_document(text, page_count=5)), changed)
+        unread = rv.compile_document(text.replace('done 2', 'done 3'), page_count=5)
+        self.assertEqual(rv.apply_visual(layer, unread), layer)
+        unverified = self.ocr_layer()
+        unverified['periods'][1]['truth_status'] = 'unverified'  # a confirmation never settles a failed reconcile
+        self.assertEqual(rv.apply_visual(unverified, rv.compile_document(self.confirm_text(unverified), page_count=5)),
+                         unverified)
+        missing = rv.compile_document(text.replace('confirm 2', 'confirm 9'), page_count=5)
+        self.assertEqual(rv.apply_visual(layer, missing), layer)
+
+    def test_an_unread_page_leaves_a_confirm_review_not_ready(self):
+        visual = rv.compile_document(self.confirm_text(self.ocr_layer(), done='2') + 'page 4 skip\n', page_count=5)
+        self.assertEqual((rv.ready(visual), visual['pages_pending']), (False, [4]))
+
+    def test_confirm_lines_are_checked(self):
+        for bad in ('confirm 2\n', 'confirm 2 xyz\n', 'confirm 2 0123456789ab\nconfirm 2 0123456789ab\n'):
+            with self.assertRaises(ValueError):
+                rv.Transcription('doc dcard\n' + bad)
+        with self.assertRaises(ValueError):  # confirmed and kept at once
+            rv.Transcription('doc dcard\nkeep 2 hold x\nconfirm 2 0123456789ab\n')
+        with self.assertRaises(ValueError):  # confirmed and replaced at once
+            rv.Transcription(CARD.replace('patch 2', 'patch 2\nconfirm 2 0123456789ab'))
+
+    def test_digest_command_prints_a_confirm_line(self):
+        import io, json, tempfile, contextlib
+        from pathlib import Path
+        layer = self.ocr_layer()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'dcard.json'
+            path.write_text(json.dumps(layer))
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                self.assertEqual(rv.main(['digest', '--periods', str(path), '--n', '2']), 0)
+        self.assertEqual(out.getvalue().split('#')[0].strip(), f"confirm 2 {rv.reading_digest(layer['periods'][1])}")
+
     def test_a_patch_naming_a_period_the_text_layer_lacks_is_refused(self):
         visual = rv.compile_document(CARD.replace('patch 2', 'patch 7'), page_count=5)
         self.assertEqual(rv.apply_visual(self.text_layer(), visual), self.text_layer())
@@ -410,6 +521,60 @@ class CardSectionAndPatchTests(unittest.TestCase):
                      CARD.replace('subtotal fees 0.00', 'subtotal fees'),
                      CARD.replace('subtotal fees 0.00', 'subtotal fees 1'),
                      CARD.replace('share - open 100.00\ngroup payments', 'group payments\nshare - open 100.00')):
+            with self.assertRaises(ValueError):
+                rv.Transcription(text)
+
+
+MAILING = """doc dmail
+done 1-2
+issuer acme-bank Acme Bank
+currency USD
+page 1 stmt 2024-01-01 2024-01-31 no 1 member 1111 holder A PERSON
+share - open 500.00
+group deposits
+r 2024-01-05 100.00 600.00 | deposit
+subtotal deposits 100.00
+subcount deposits 1
+group checks
+r 2024-01-10 -50.00 - | check 101
+r 2024-01-10 -25.00 525.00 | check 102
+subtotal checks -75.00
+subcount checks 2
+group interest
+r 2024-01-31 0.05 525.05 | interest
+subtotal interest 0.05
+close 525.05
+page 2 stmt 2024-01-02 2024-01-30 no 1 member 2222 holder A PERSON
+share - open 100.00
+kind card
+group fees
+r 2024-01-03 -10.00 - | late charge
+subtotal fees -10.00
+subcount fees 1
+close 110.00
+"""
+
+
+class MailingKindAndSectionCountTests(unittest.TestCase):
+    def test_section_counts_are_checked_and_a_period_may_carry_its_own_kind(self):
+        deposit, credit = rv.compile_document(MAILING, page_count=2)['periods']
+        self.assertEqual((deposit['truth_status'], credit['truth_status']), ('verified', 'verified'))
+        self.assertEqual([c['ok'] for c in deposit['controls']['other_checks']], [True, True, True, True, True])
+        self.assertEqual((deposit['kind'], credit['kind']), ('deposit', 'card'))
+        # The line of credit only reconciles as an amount owed: as a deposit it would not.
+        as_deposit = rv.compile_document(MAILING.replace('kind card\n', ''), page_count=2)['periods'][1]
+        self.assertIn('opening + transactions != closing', as_deposit['truth_reasons'])
+        # A check missed from the count is caught even when its amount was folded into another row.
+        folded = MAILING.replace('r 2024-01-10 -50.00 - | check 101\nr 2024-01-10 -25.00 525.00 | check 102',
+                                 'r 2024-01-10 -75.00 525.00 | check 101')
+        self.assertEqual(rv.compile_document(folded, page_count=2)['periods'][0]['truth_reasons'],
+                         ['checks rows differ from the printed checks count'])
+
+    def test_malformed_kind_and_count_lines_are_refused(self):
+        for text in (MAILING.replace('subcount checks 2', 'subcount checks'),
+                     MAILING.replace('subcount checks 2', 'subcount checks 2.00'),
+                     MAILING.replace('kind card', 'kind loan'),
+                     MAILING.replace('share - open 100.00\nkind card', 'kind card\nshare - open 100.00')):
             with self.assertRaises(ValueError):
                 rv.Transcription(text)
 

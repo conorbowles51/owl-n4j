@@ -60,6 +60,7 @@ export interface InterviewEvidenceLink {
 }
 export interface DossierInterview {
   id: string
+  date_value?: string | null
   interview_date?: string | null
   participants: Array<Record<string, unknown> | string>
   interviewer_user_ids: string[]
@@ -80,6 +81,14 @@ export interface CanonicalIdentity {
   properties?: Record<string, unknown>
   connections?: unknown[]
 }
+export interface DossierContact {
+  id?: string | null
+  kind: "phone" | "email" | "address"
+  label?: string | null
+  value: string
+  evidence_file_id?: string | null
+  recorded_by_user_id?: string | null
+}
 export interface Dossier {
   id: string
   case_id: string
@@ -87,6 +96,7 @@ export interface Dossier {
   display_name: string
   display_name_snapshot: string
   summary?: string | null
+  contacts?: DossierContact[]
   importance?: string | null
   canonical_entity_key?: string | null
   linkage_state: "linked" | "unlinked" | "deleted"
@@ -117,6 +127,7 @@ export interface DossierCreateInput {
   display_name?: string | null
   canonical_entity_key?: string | null
   summary?: string | null
+  contacts?: DossierContact[]
   importance?: string | null
   status?: string
   roles?: Array<{ name: string; template_key?: string }>
@@ -144,13 +155,14 @@ export const dossiersAPI = {
     q?: string
     dossierType?: string
     linkageState?: string
+    canonicalEntityKey?: string
     linkedEvidenceFileId?: string
     includeArchived?: boolean
     limit?: number
     offset?: number
   }) =>
     fetchAPI<DossierListResponse>(
-      `/api/dossiers?${query({ case_id: params.caseId, q: params.q, dossier_type: params.dossierType, linkage_state: params.linkageState, linked_evidence_file_id: params.linkedEvidenceFileId, include_archived: params.includeArchived, limit: params.limit, offset: params.offset })}`
+      `/api/dossiers?${query({ case_id: params.caseId, q: params.q, dossier_type: params.dossierType, linkage_state: params.linkageState, linked_evidence_file_id: params.linkedEvidenceFileId, canonical_entity_key: params.canonicalEntityKey, include_archived: params.includeArchived, limit: params.limit, offset: params.offset })}`
     ),
   get: (id: string) =>
     fetchAPI<Dossier>(`/api/dossiers/${encodeURIComponent(id)}`),
@@ -258,6 +270,7 @@ export const dossiersAPI = {
   createInterview: (
     id: string,
     input: {
+      date_value?: string | null
       interview_date?: string | null
       participants?: Array<Record<string, unknown> | string>
       interviewer_user_ids?: string[]
@@ -276,7 +289,12 @@ export const dossiersAPI = {
   updateInterview: (
     id: string,
     interviewId: string,
-    input: Partial<DossierInterview>
+    input: Partial<Omit<DossierInterview, "evidence_links">> & {
+      evidence_links?: Array<{
+        evidence_file_id: string
+        source_anchor?: Record<string, unknown>
+      }>
+    }
   ) =>
     fetchAPI<DossierInterview>(
       `/api/dossiers/${encodeURIComponent(id)}/interviews/${encodeURIComponent(interviewId)}`,

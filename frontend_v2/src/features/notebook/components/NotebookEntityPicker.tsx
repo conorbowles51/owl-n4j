@@ -9,15 +9,23 @@ import type { NotebookLinkInput } from "../api"
 export function NotebookEntityPicker({
   caseId,
   onAttach,
+  resultLimit = 8,
 }: {
   caseId: string
+  resultLimit?: number
   onAttach: (link: NotebookLinkInput) => void
 }) {
   const [query, setQuery] = useState("")
   const normalizedQuery = query.trim()
   const searchQuery = useQuery({
-    queryKey: ["notebook", caseId, "entity-search", normalizedQuery],
-    queryFn: () => graphAPI.search(normalizedQuery, caseId, 8),
+    queryKey: [
+      "notebook",
+      caseId,
+      "entity-search",
+      normalizedQuery,
+      resultLimit,
+    ],
+    queryFn: () => graphAPI.search(normalizedQuery, caseId, resultLimit),
     enabled: normalizedQuery.length >= 2,
     staleTime: 15_000,
   })
@@ -67,7 +75,9 @@ export function NotebookEntityPicker({
                 className="flex w-full min-w-0 items-center justify-between gap-2 px-2 py-1.5 text-left text-xs transition-colors hover:bg-background focus-visible:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 onClick={() => attach(node)}
               >
-                <span className="min-w-0 truncate font-medium">{node.label}</span>
+                <span className="min-w-0 truncate font-medium">
+                  {node.label}
+                </span>
                 <span className="shrink-0 text-[10px] text-muted-foreground">
                   {node.type}
                 </span>
@@ -80,6 +90,12 @@ export function NotebookEntityPicker({
           )}
         </div>
       ) : null}
+      {searchQuery.data?.nodes.length === resultLimit && (
+        <p className="text-xs text-muted-foreground">
+          Showing the first {resultLimit} matches. Add more of the name to
+          narrow the results.
+        </p>
+      )}
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   workspaceAPI,
   type InvestigationTaskCreate,
@@ -118,14 +118,15 @@ export function useWork(
   caseId: string,
   filters: { taskStatus?: TaskStatus | "all"; assigneeUserId?: string } = {},
 ) {
-  return useQuery({
+  const query = useInfiniteQuery({
     queryKey: [...keys.work(caseId), filters],
-    queryFn: () => workspaceAPI.getWork(caseId, {
-      taskStatus: filters.taskStatus,
-      assigneeUserId: filters.assigneeUserId,
-      limit: 250,
-    }),
+    initialPageParam: 0,
+    queryFn: ({ pageParam }) => workspaceAPI.getWork(caseId, { ...filters, limit: 100, offset: pageParam }),
+    getNextPageParam: (last, _pages, offset) => offset + last.limit < Math.max(last.task_total, last.deadline_total) ? offset + last.limit : undefined,
   })
+  const pages = query.data?.pages
+  return { ...query, data: pages?.length ? { ...pages[0], tasks: pages.flatMap((p) => p.tasks), deadlines: pages.flatMap((p) => p.deadlines) } : undefined }
+
 }
 
 // ---------------------------------------------------------------------------

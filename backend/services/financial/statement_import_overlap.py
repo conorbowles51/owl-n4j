@@ -4,6 +4,7 @@ A matching account reference and overlapping period are a reason to compare
 sources, not a determination that the payments or account holders are identical.
 """
 import re
+from functools import lru_cache
 from datetime import date
 from sqlalchemy import select
 from postgres.models.evidence import EvidenceFile
@@ -42,21 +43,44 @@ def needs_hydration(item):
     return (not item.review_request and 'institution' not in item.summary) or 'account_type' not in item.summary
 
 
+@lru_cache(maxsize=65536)
+def _account_identity(institution, account_number, currency, kind=None):
+    """(identity key, provisional) of a printed account, or None. A pure function of its four
+    inputs; a case comparison derives it for every statement in the case (thousands) per import.
+    ``kind``: the same reference kind as the ledger key (a credit line sharing its deposit
+    account's number)."""
+    try:
+        identity = AccountDraft.observed(institution_name=institution or None,
+            identifier_as_printed=account_number, currency=currency,
+            metadata=dict(account_reference_kind=kind) if kind else None).identity()
+    except (ValueError, TypeError, AccountError):
+        return None
+    return identity.key, identity.is_provisional
+
+
 def scope(raw):
     try:
         start, end = date.fromisoformat(raw.get('period_start', '')), date.fromisoformat(raw.get('period_end', ''))
         if start > end:
             return None
-        identity = AccountDraft.observed(institution_name=raw.get('institution') or None,
-            identifier_as_printed=raw.get('account_number'), currency=raw.get('currency')).identity()
-    except (ValueError, TypeError, AccountError):
+    except (ValueError, TypeError):
         return None
+    institution, account_number, currency = raw.get('institution'), raw.get('account_number'), raw.get('currency')
+    # The same reference kind as the ledger key (a credit line sharing its deposit account's number).
+    kind = raw.get('account_reference_kind') or None
+    try:
+        identity = _account_identity(institution, account_number, currency, kind)
+    except TypeError:  # an unhashable stored value: derive it without the cache
+        identity = _account_identity.__wrapped__(institution, account_number, currency, kind)
+    if identity is None:
+        return None
+    key, provisional = identity
     holder = _fold(raw.get('holder'))
-    return dict(identity=identity.key, currency=raw.get('currency'), start=start.isoformat(), end=end.isoformat(),
+    return dict(identity=key, currency=currency, start=start.isoformat(), end=end.isoformat(),
                 holder=holder if holder not in NON_VALUES else '', account_type=_fold(raw.get('account_type')),
-                account_reference=re.sub(r'[\s-]+', '', _fold(raw.get('account_number'))),
-                full_reference=not identity.is_provisional and bool(_fold(raw.get('institution')))
-                    and _fold(raw.get('institution')) not in NON_VALUES)
+                account_reference=re.sub(r'[\s-]+', '', _fold(account_number)),
+                full_reference=not provisional and bool(_fold(institution))
+                    and _fold(institution) not in NON_VALUES)
 
 
 def same_statement(left, right):
@@ -97,21 +121,85 @@ def summary_request(summary):
     return dict(expected_revision=summary.get('revision'), statement_id=summary.get('statement_id'),
         currency=summary.get('currency'), institution=summary.get('institution', ''),
         account_number=summary.get('account', ''), holder=summary.get('holder', ''), account_type=summary.get('account_type', ''),
-        period_start=summary.get('period_start', ''), period_end=summary.get('period_end', ''))
+        period_start=summary.get('period_start', ''), period_end=summary.get('period_end', ''),
+        account_reference_kind=summary.get('account_reference_kind', ''))
+
+
+# A saved period's statement id and first printed page never change once the
+# record is written (both are set when it is created; nothing rewrites them).
+# Reading them makes PostgreSQL detoast the record's whole metadata, which made
+# every comparison (one per import, and per batch check) read every saved
+# reading of the case. They are remembered per record id, so a comparison
+# reads them only for records saved since the last one.
+_SAVED_KEYS = {}
+SAVED_KEYS_LIMIT = 200_000
+
+
+def _saved_keys(session, source_ids):
+    """{source id: (statement id, first page)} for these saved records."""
+    missing = [identity for identity in source_ids if identity not in _SAVED_KEYS]
+    for start in range(0, len(missing), 2000):
+        chunk = missing[start:start + 2000]
+        found = {identity: (statement_id, page) for identity, statement_id, page in session.execute(select(
+            FinancialSourceDocument.id,
+            FinancialSourceDocument.metadata_['statement_import_statement_id'].as_string(),
+            FinancialSourceDocument.metadata_['statement_import_original']['rows'][0]['page_number'].as_integer())
+            .where(FinancialSourceDocument.id.in_(chunk)))}
+        if len(_SAVED_KEYS) + len(found) > SAVED_KEYS_LIMIT:
+            _SAVED_KEYS.clear()
+        _SAVED_KEYS.update(found)
+    return {identity: _SAVED_KEYS.get(identity, (None, None)) for identity in source_ids}
+
+
+# What comparison_sources reads from a prepared period's stored summary (summary_request and the checks
+# below). Only these scalars are kept per item (row_versions): decoding every item's whole summary (14 MB of
+# JSON on a case with 2,400 prepared periods) was the largest part of each import's case comparison.
+COMPARED_SUMMARY_KEYS = ('revision', 'statement_id', 'currency', 'institution', 'account', 'holder', 'account_type',
+                         'period_start', 'period_end', 'account_reference_kind', 'page_number', HYDRATION_ERROR_KEY,
+                         'statement_form')
+_PENDING_VALUES = None
+
+
+def _compared_summary(values):
+    summary = values['summary'] if isinstance(values['summary'], dict) else {}
+    return dict(summary={key: summary[key] for key in COMPARED_SUMMARY_KEYS
+                         if key in summary and isinstance(summary[key], (str, int, float, bool, type(None)))},
+                review_request_text=values['review_request_text'])
+
+
+def _pending_copies(session, case_id):
+    """Read-only copies of the case's prepared, unsaved periods: id, file, statement key, status, the
+    compared summary keys and the saved batch review (decoded afresh for every read: callers may change it)."""
+    global _PENDING_VALUES
+    import json
+    from sqlalchemy import Text, cast
+    from services.financial.row_versions import RowValues
+    if _PENDING_VALUES is None:
+        _PENDING_VALUES = RowValues(Item, kept=100_000)
+    rows = _PENDING_VALUES.rows(session, (Item.id, Item.file_id, Item.statement_key, Item.status),
+        (Item.summary.label('summary'), cast(Item.review_request, Text).label('review_request_text')),
+        (Batch.id == Item.batch_id, EvidenceFile.id == Item.file_id, Batch.case_id == case_id,
+         EvidenceFile.case_id == case_id, Batch.status != 'removed',
+         Item.status.in_(('ready', 'attention', 'pending_import'))),
+        order_by=Item.id, transform=_compared_summary)
+    from types import SimpleNamespace
+    return [SimpleNamespace(id=row.id, file_id=row.file_id, statement_key=row.statement_key, status=row.status,
+                            summary=dict(row.summary),
+                            review_request=json.loads(row.review_request_text) if row.review_request_text else None)
+            for row in rows]
 
 
 def comparison_sources(session, case_id, pending=None, *, read_pending=None, duplicate_context=None):
     """Load a case once per batch check, without loading imported PDF readings."""
-    imported = session.execute(select(
+    periods = session.execute(select(
         FinancialAccount.identity_key, FinancialStatementPeriod.currency,
         FinancialStatementPeriod.period_start, FinancialStatementPeriod.period_end,
         FinancialSourceDocument.id,
-        FinancialSourceDocument.metadata_['statement_import_statement_id'].as_string(),
-        FinancialSourceDocument.metadata_['statement_import_original']['rows'][0]['page_number'].as_integer(),
         EvidenceFile.id, EvidenceFile.original_filename,
         EvidenceFile.metadata_['statement_root_evidence_id'].as_string(),
         FinancialAccount.institution_name, FinancialAccount.identifier_as_printed,
-        FinancialAccount.holder_name, FinancialAccount.account_type)
+        FinancialAccount.holder_name, FinancialAccount.account_type,
+        FinancialAccount.metadata_['account_reference_kind'].as_string())
         .select_from(FinancialStatementPeriod)
         .join(FinancialSourceDocument, FinancialSourceDocument.id == FinancialStatementPeriod.source_document_id)
         .join(FinancialAccount, FinancialAccount.id == FinancialStatementPeriod.account_id)
@@ -119,18 +207,18 @@ def comparison_sources(session, case_id, pending=None, *, read_pending=None, dup
         .where(FinancialStatementPeriod.case_id == case_id, FinancialSourceDocument.case_id == case_id,
                FinancialAccount.case_id == case_id, EvidenceFile.case_id == case_id,
                FinancialSourceDocument.status == 'admitted')).all()
+    keys = _saved_keys(session, [row[4] for row in periods])
+    imported = [(*row[:5], *keys[row[4]], *row[5:]) for row in periods]
     if pending is None:
-        items = session.scalars(select(Item).join(Batch, Batch.id == Item.batch_id)
-            .join(EvidenceFile, EvidenceFile.id == Item.file_id)
-            .where(Batch.case_id == case_id, EvidenceFile.case_id == case_id,
-                   Batch.status != 'removed', Item.status.in_(('ready', 'attention', 'pending_import')))).all()
+        items = _pending_copies(session, case_id)
         # One evidence row per PDF, not one per prepared period: joining the file
         # to every item decoded its metadata thousands of times on a large case.
-        owners = {file.id: file for file in session.scalars(select(EvidenceFile).where(
-            EvidenceFile.case_id == case_id, EvidenceFile.id.in_({item.file_id for item in items})))} if items else {}
-        pending = [(item, owners[item.file_id]) for item in items]
-    from services.financial.source_lineage import case_lineage, current_version
-    groups = case_lineage(session, case_id)
+        from services.financial.source_lineage import case_files
+        owners = case_files(session, case_id) if items else {}
+        pending = [(item, owners[item.file_id]) for item in items if item.file_id in owners]
+    from services.financial.source_lineage import comparison_lineage, current_version
+    # Read-only copies, reused per row while unchanged: this function never writes.
+    groups = comparison_lineage(session, case_id)
     families = {str(file.id): root for root, versions in groups.items() for file in versions}
     current_ids = {str(current_version(versions).id) for versions in groups.values()}
     entries, prepared, cache = ComparisonSources(), {}, {}
@@ -166,11 +254,11 @@ def comparison_sources(session, case_id, pending=None, *, read_pending=None, dup
             _include_duplicate_disposition=include_duplicate_disposition)
     def add(identity, currency, value):
         entries.setdefault((identity, currency), []).append(value)
-    for identity, currency, start, end, document_id, statement_id, page_number, file_id, filename, root, bank, account, holder, account_type in imported:
+    for identity, currency, start, end, document_id, statement_id, page_number, file_id, filename, root, bank, account, holder, account_type, kind in imported:
         if start is None or end is None:
             continue
         descriptor = scope(dict(institution=bank, account_number=account, holder=holder, account_type=account_type,
-            currency=currency, period_start=start.isoformat(), period_end=end.isoformat()))
+            currency=currency, period_start=start.isoformat(), period_end=end.isoformat(), account_reference_kind=kind))
         add(identity, currency, dict(key=(families.get(str(file_id), str(file_id)), statement_id or ''), scope=descriptor,
             file_id=str(file_id), statement_id=statement_id, source_document_id=str(document_id),
             filename=filename, status='imported', page_number=page_number or 1, period_start=start.isoformat(), period_end=end.isoformat()))
@@ -181,7 +269,8 @@ def comparison_sources(session, case_id, pending=None, *, read_pending=None, dup
         raw = effective or summary_request(item.summary)
         if conflict:
             raw = {**raw, '_coverage_error': 'The individual statement and batch have different saved edits. Compare both reviews before importing.'}
-        raw = {**raw, 'account_type': item.summary.get('account_type', '')}
+        raw = {**raw, 'account_type': item.summary.get('account_type', ''),
+               'account_reference_kind': item.summary.get('account_reference_kind', '')}
         # Older summaries did not save bank/product identity. Recover only
         # absent fields from that reading, preserving every saved correction.
         # Source geometry/catalogue is cached per PDF.
@@ -228,7 +317,8 @@ def comparison_sources(session, case_id, pending=None, *, read_pending=None, dup
             key=(families.get(str(file.id), str(file.id)), item.statement_key or ''), scope=own,
             file_id=str(file.id), statement_id=item.statement_key or None, source_document_id=None,
             filename=file.original_filename, status='awaiting_import', page_number=item.summary.get('page_number', 1),
-            period_start=own['start'], period_end=own['end']))
+            period_start=own['start'], period_end=own['end'],
+            **({'statement_form': item.summary['statement_form']} if item.summary.get('statement_form') else {})))
     # A statement reviewed individually may have no batch item yet. Register
     # only explicit current decisions, never guess candidates from file names.
     registered = {(entry['file_id'], entry.get('statement_id') or '') for values in entries.values() for entry in values}
@@ -269,7 +359,8 @@ def coverage_review(session, *, case_id, file_id, request, sources=None):
     if own is None:
         return dict(available=False, candidates=[], revision=None,
                     reason='A bank, account reference and complete statement dates are needed to compare coverage.')
-    sources = sources if sources is not None else comparison_sources(session, case_id)[0]
+    # `sources` may be a callable giving the case snapshot, built only when needed.
+    sources = sources() if callable(sources) else sources if sources is not None else comparison_sources(session, case_id)[0]
     families = getattr(sources, 'families', None)
     if families is None:
         from services.financial.source_lineage import case_lineage
@@ -332,3 +423,27 @@ def require_coverage_decision(session, *, case_id, file_id, request):
     if requires_decision(review, request):
         raise PdfMappingError('Another statement covers some of these dates for the same account reference. Compare the files and record why this statement should also be imported, or leave this copy unimported.', 409)
     return review
+
+
+def later_queries_trim_themselves(review, request, *, file_id, statement_id, summary):
+    """The coverage review of a movement query without the waiting queries that rank after it.
+
+    Overlapping movement queries of one account are saved in order of their
+    dates (start, end, then file and statement for a tie): the first is saved
+    as read, and each later one is trimmed against it once it is saved
+    (``statement_overlap_trim``), so the later queries' overlap is theirs to
+    resolve, not a reason to hold the first. Everything else stays a candidate:
+    saved statements, waiting statements that are not queries, earlier queries,
+    and any copy of the same printed period.
+    """
+    from services.financial.statement_overlap_trim import TRIM_OVERLAPS
+    from services.financial.statement_import_santander_query import FORM
+    if not TRIM_OVERLAPS or summary.get('statement_form') != FORM or not review.get('candidates'):
+        return review
+    own = (request.get('period_start') or '', request.get('period_end') or '', str(file_id), statement_id or '')
+    kept = [c for c in review['candidates'] if not (
+        c.get('status') == 'awaiting_import' and c.get('statement_form') == FORM and not c.get('matching_statement')
+        and (c.get('period_start') or '', c.get('period_end') or '', str(c.get('file_id')), c.get('statement_id') or '') > own)]
+    if len(kept) == len(review['candidates']):
+        return review
+    return {**review, 'candidates': kept, 'later_queries': len(review['candidates']) - len(kept)}

@@ -47,7 +47,7 @@ describe("CaseworkComposer", () => {
     expect(onSubmit.mock.calls[0][0]).toMatchObject({
       entry_type: "finding",
       title: "Funds moved after notice",
-      significance: "medium",
+      significance: null,
       links: [
         {
           target_type: "evidence",

@@ -43,6 +43,32 @@ def _norm(value):
     return re.sub(r'\s+', ' ', (value or '').strip().lower())
 
 
+def holder_agrees(truth, processor):
+    """The comparison's holder rule: the printed holder (normalised spacing and case) is contained in the
+    processor's holder."""
+    return bool(_norm(truth)) and _norm(truth) in _norm(processor)
+
+
+# A legal form at the end of a compacted company name (letters and figures only): 'S.A. DE C.V.' -> 'sadecv'.
+_LEGAL_FORM_TAIL = re.compile(r'(?:sapi|sab|sa|sderl|sc|ac)(?:decv)?$')
+
+
+def same_entity_holder(truth, processor):
+    """Two printings of one entity's name that ``holder_agrees`` tells apart: equal once spacing and
+    punctuation are dropped ('S.A. DE C.V.' / 'SA DE CV'), or equal but for a legal form one of them omits
+    (the fiscal-receipt receiver name). Wave 10 decision 6 records these as the same entity; any other
+    difference is a different holder."""
+    a, b = (re.sub(r'[^a-z0-9]', '', _norm(v)) for v in (truth, processor))
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    longer, shorter = (a, b) if len(a) > len(b) else (b, a)
+    tail = _LEGAL_FORM_TAIL.search(longer)
+    # Only a full Mexican company form ('... DE C.V.', 'S. DE R.L.'): a bare 'SA' can end an ordinary word.
+    return bool(tail and ('decv' in tail.group(0) or tail.group(0) == 'sderl') and longer[:tail.start()] == shorter)
+
+
 def _minor(value):
     if value in (None, ''):
         return None
@@ -73,6 +99,9 @@ def proposal_view(proposal):
         view['rows'].append(dict(date=fields.get('date') or fields.get('booking_date') or fields.get('value_date') or None,
                                  amount_minor=_minor(fields.get('amount_minor')), direction=fields.get('direction') or None,
                                  balance_after=_minor(fields.get('balance')), description=fields.get('description') or ''))
+    if view['closing_minor'] is None:
+        # A closing the processor established from its own source proof (not printed), e.g. a closed section.
+        view['closing_minor'] = _minor((proposal.get('proven_closing') or {}).get('balance_minor'))
     return view
 
 
@@ -113,7 +142,7 @@ def compare_period(truth, view, card=False):
         ('period_start', None, 'period_start_missing', 'period_start_differs'),
         ('period_end', None, 'period_end_missing', 'period_end_differs'),
         ('currency', lambda a, b: (a or '').upper() == (b or '').upper(), 'currency_missing', 'currency_differs'),
-        ('holder', lambda a, b: bool(_norm(a)) and _norm(a) in _norm(b), 'holder_missing', 'holder_differs'),
+        ('holder', holder_agrees, 'holder_missing', 'holder_differs'),
         ('account', lambda a, b: bool(a) and a in _digits(b), 'account_missing', 'account_differs'),
     )
     for name, equal, missing, differs in checks:

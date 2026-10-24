@@ -8,6 +8,7 @@ Replaces the old _track_engine_jobs() polling daemon thread.
 import asyncio
 import json
 import logging
+import time
 from typing import Dict, Set
 
 from config import REDIS_URL
@@ -19,6 +20,13 @@ _ENGINE_STATUS_MAP = {
     "completed": "processed",
     "failed": "failed",
 }
+
+# The engine publishes a terminal status once. When syncing it raises (e.g. a
+# Postgres deadlock) no later message comes, so the subscriber retries on its
+# own: backoff after a failed sync, and a sweep that asks the engine directly
+# about tracked jobs that have been quiet (covers messages lost in transit).
+_RETRY_DELAYS = (5, 30, 120, 300)
+_QUIET_SWEEP_SECONDS = 300
 
 
 def _extract_failure_message(payload: dict) -> str | None:
@@ -57,6 +65,10 @@ class JobStatusSubscriber:
         self._redis = None
         self._pubsub = None
         self._tracked: Dict[str, str] = {}  # job_id -> case_id
+        self._last_seen: Dict[str, float] = {}  # job_id -> monotonic time of last message/check
+        self._retry_at: Dict[str, float] = {}  # job_id -> monotonic time the failed sync is retried
+        self._failures: Dict[str, int] = {}  # job_id -> consecutive failed syncs
+        self._next_sweep = time.monotonic() + _QUIET_SWEEP_SECONDS
         self._task: asyncio.Task | None = None
 
     async def start(self):
@@ -88,6 +100,7 @@ class JobStatusSubscriber:
         """Add job IDs to the subscriber's watch list."""
         for jid in job_ids:
             self._tracked[jid] = case_id
+            self._last_seen[jid] = time.monotonic()
             channel = f"job:{jid}:progress"
             await self._pubsub.subscribe(channel)
             logger.debug("Subscribed to %s", channel)
@@ -201,6 +214,7 @@ class JobStatusSubscriber:
                 )
                 if message and message["type"] == "message":
                     await self._handle_message(message)
+                await self._check_quiet_jobs()
                 await asyncio.sleep(0.1)
             except asyncio.CancelledError:
                 raise
@@ -219,27 +233,83 @@ class JobStatusSubscriber:
 
         job_id = data.get("job_id", "")
         status = data.get("status", "")
+        if job_id in self._tracked:
+            self._last_seen[job_id] = time.monotonic()
 
         if status not in ("completed", "failed"):
             return  # Only sync terminal states
 
+        await self._settle(job_id, data, status)
+
+    async def _settle(self, job_id: str, data: dict, status: str):
+        """Sync one terminal state. On success stop tracking the job; on a
+        raise keep it tracked and schedule a retry, since the engine will not
+        publish this terminal status again."""
         case_id = self._tracked.get(job_id)
 
         try:
             handled = await self._dispatch_terminal(job_id, data, status, case_id)
         except Exception:
+            failures = self._failures.get(job_id, 0) + 1
+            self._failures[job_id] = failures
+            delay = _RETRY_DELAYS[min(failures, len(_RETRY_DELAYS)) - 1]
+            self._retry_at[job_id] = time.monotonic() + delay
             logger.exception(
-                "Handler raised for %s; leaving subscription intact for retry",
-                job_id,
+                "Handler raised for %s (attempt %d); retrying in %ds",
+                job_id, failures, delay,
             )
             return
 
         if handled:
-            self._tracked.pop(job_id, None)
+            self._forget(job_id)
             try:
                 await self._pubsub.unsubscribe(f"job:{job_id}:progress")
             except Exception:
                 pass
+
+    def _forget(self, job_id: str):
+        self._tracked.pop(job_id, None)
+        self._last_seen.pop(job_id, None)
+        self._retry_at.pop(job_id, None)
+        self._failures.pop(job_id, None)
+
+    async def _check_quiet_jobs(self):
+        """Ask the engine directly about tracked jobs whose sync is due for a
+        retry, and (every _QUIET_SWEEP_SECONDS) about jobs quiet that long. A
+        job the engine reports terminal is settled as if its message arrived."""
+        now = time.monotonic()
+        due = [jid for jid, at in self._retry_at.items() if at <= now and jid in self._tracked]
+        if now >= self._next_sweep:
+            self._next_sweep = now + _QUIET_SWEEP_SECONDS
+            due += [
+                jid for jid in self._tracked
+                if jid not in self._retry_at
+                and now - self._last_seen.get(jid, 0) >= _QUIET_SWEEP_SECONDS
+            ]
+        if not due:
+            return
+
+        from services import evidence_engine_client
+
+        for jid in due:
+            self._last_seen[jid] = now
+            try:
+                job = await evidence_engine_client.get_job(jid)
+            except Exception as e:
+                # Engine unreachable: keep the retry pending, check again later.
+                if jid in self._retry_at:
+                    self._retry_at[jid] = now + _RETRY_DELAYS[-1]
+                    logger.warning("Could not check engine job %s: %s", jid, e)
+                else:
+                    logger.debug("Could not check quiet engine job %s: %s", jid, e)
+                continue
+            status = job.get("status", "")
+            if status in ("completed", "failed"):
+                await self._settle(jid, {**job, "job_id": jid, "status": status}, status)
+            else:
+                # Not terminal after all; the next message will sync it.
+                self._retry_at.pop(jid, None)
+                self._failures.pop(jid, None)
 
     async def _dispatch_terminal(self, job_id: str, data: dict, status: str, case_id: str | None) -> bool:
         """Route a terminal message to the right DB writer. Returns True only

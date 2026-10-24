@@ -3130,3 +3130,34 @@ it("keeps unreadable charges selected and shows their source before a review dec
   expect(screen.getByLabelText("Include row 1:0:9")).toBeChecked()
   expect(screen.getByLabelText("Debit 1:0:9")).toBeVisible()
 })
+
+it("shows a batch draft saved on an earlier reading for comparison and never applies it to the new rows", async () => {
+  // Live: such statements said "A manually added transaction needs a page from this PDF".
+  const { BatchReviewContext } = await import("../lib/batch-review-context")
+  const { serverStatementDraft } = await import("../lib/statement-review-draft")
+  const draft = serverStatementDraft({
+    expected_revision: "b".repeat(64),
+    holder: "Example Ltd",
+    account_number: "12345",
+    period_start: "2023-01-01",
+    period_end: "2023-01-31",
+    rows: [{ id: "old-row", date: "2023-01-02", description: "Corrected on the earlier reading",
+      direction: "credit", amount_minor: "12500", balance_minor: null, counterparty: "", excluded: false,
+      reason: "Checked against the PDF" }],
+  })!
+  useStatementWorkspace.getState().select("anonymous:case", "file")
+  render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <BatchReviewContext.Provider value={{ save: vi.fn(), saved: vi.fn(), draft, draftRevision: "d1" }}>
+        <StatementImportPanel caseId="case" onImported={vi.fn()} />
+      </BatchReviewContext.Provider>
+    </QueryClientProvider>
+  )
+  await screen.findByText("Review statement.pdf")
+  const earlier = screen.getByRole("region", { name: "Previous saved review" })
+  expect(earlier).toHaveTextContent("The reading changed after this review was saved")
+  fireEvent.click(within(earlier).getByText(/Show previous saved values/))
+  expect(earlier).toHaveTextContent("Corrected on the earlier reading")
+  expect(screen.queryByLabelText("Description old-row")).toBeNull()
+  expect(screen.getByLabelText("I have compared the previous saved review")).not.toBeChecked()
+})

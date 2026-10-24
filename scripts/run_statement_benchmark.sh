@@ -7,7 +7,9 @@
 # (SQLAlchemy, pydantic, PyMuPDF, pytesseract, Pillow) plus the tesseract
 # binary. Set LOUPE_BENCH_PYTHON to choose it (default: python3). Writes only
 # to the run directory (default: a new directory under $TMPDIR or /tmp).
-# Exit status is 1 if any period was admitted that should not have been.
+# Exit status is 1 if any period was admitted that should not have been, a printed
+# period was saved twice, or an exact copy was offered or saved instead of set
+# aside. The automatic save runs as in the product (FINANCIAL_AUTO_SAVE_READY=0 turns it off).
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PY="${LOUPE_BENCH_PYTHON:-python3}"

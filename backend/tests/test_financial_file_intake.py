@@ -214,6 +214,33 @@ class FinancialFileIntakeTests(DuplicateTestCase):
         with self.assertRaisesRegex(PdfMappingError, 'no longer available'):
             resolve_financial_selection(self.db, case_id=self.case.id, file_ids=[foreign.id], folder_ids=[parent.id])
 
+    def test_folder_selection_leaves_out_files_removed_from_financial_unless_chosen(self):
+        parent = EvidenceFolder(id=uuid4(), case_id=self.case.id, name='Statements')
+        self.db.add(parent); self.db.flush()
+        kept = self.new_file('kept.pdf', folder=parent.id)
+        gone = self.new_file('gone.pdf', folder=parent.id)
+        self.db.commit()
+        self.change(True, file=gone)
+        swept = resolve_financial_selection(self.db, case_id=self.case.id, file_ids=[], folder_ids=[parent.id])
+        self.assertEqual([f['id'] for f in swept['files']], [str(kept.id)])
+        self.assertEqual((swept['skipped_removed'], swept['grouped_readings']), (1, 0))
+        # Choosing the removed file itself keeps it in the selection (sending it restores it).
+        chosen = resolve_financial_selection(self.db, case_id=self.case.id, file_ids=[gone.id], folder_ids=[parent.id])
+        self.assertEqual({f['id'] for f in chosen['files']}, {str(kept.id), str(gone.id)})
+        self.assertEqual(chosen['skipped_removed'], 0)
+        self.assertTrue(next(f for f in chosen['files'] if f['id'] == str(gone.id))['financial_removed'])
+
+    def test_a_folder_holding_only_removed_pdfs_starts_no_batch_and_says_why(self):
+        from services.financial.import_batches import create_batch
+        parent = EvidenceFolder(id=uuid4(), case_id=self.case.id, name='Removed')
+        self.db.add(parent); self.db.flush()
+        gone = self.new_file('gone.pdf', folder=parent.id)
+        self.db.commit()
+        self.change(True, file=gone)
+        with self.assertRaisesRegex(PdfMappingError, 'Every PDF in this selection was removed from Financial'):
+            create_batch(self.db, case_id=self.case.id, request_id=uuid4(), file_ids=[], folder_ids=[parent.id],
+                         actor=self.actor)
+
     def test_readable_processed_file_is_reused_without_upload_or_processing(self):
         self.db.add(EvidenceDocumentText(evidence_file_id=self.file.id, content='synthetic', content_sha256='a'*64, character_count=9, engine_job_id=uuid4()))
         self.db.add(EvidenceTableGeometry(evidence_file_id=self.file.id, page_number=1, payload=[], engine_job_id=uuid4()))

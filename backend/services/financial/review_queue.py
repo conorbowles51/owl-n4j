@@ -22,7 +22,6 @@ from the same classification, so it always agrees with the queue.
 import threading
 import time
 from collections import OrderedDict
-from copy import deepcopy
 from types import SimpleNamespace
 from uuid import UUID
 
@@ -38,13 +37,15 @@ NOTE_REASONS = frozenset({'overlap', 'balance_unavailable', 'readiness_update', 
 # to fix; the statement is counted as being rechecked.
 SYSTEM_KINDS = frozenset({'readiness_pending', 'coverage_load'})
 # Most important first: the reason a statement is opened for.
-REASON_ORDER = ('import_failed', 'saved_review', 'reprint', 'assignment', 'currency', 'institution', 'holder',
-                'account', 'dates', 'balance', 'incomplete', 'count', 'no_activity', 'reading')
+# A credit line printing only its principal balance (principal_only) cannot be checked whatever details are
+# filled in, so its missing amount owed leads, ahead of the details a person can fill for it.
+REASON_ORDER = ('import_failed', 'saved_review', 'reprint', 'assignment', 'principal_only', 'currency', 'institution',
+                'holder', 'account', 'dates', 'balance', 'incomplete', 'count', 'no_activity', 'reading')
 # The one control a single-field issue opens on (the field its sentence names).
 DETAIL_FIELDS = {'holder': 'holder', 'account': 'account_number', 'dates': 'period', 'currency': 'currency',
                  'institution': 'institution'}
 BUCKETS = ('imported', 'saving', 'waiting', 'reader_fix', 'filled', 'ready', 'copies', 'unreadable', 'rechecking', 'left_unimported',
-           'assigned', 'unexplained')
+           'assigned', 'unexplained', 'not_payment')
 
 
 def actionable_problems(summary):
@@ -97,6 +98,9 @@ def issue_sentence(reason, problems, summary):
     rows = _rows(problems)
     where = _pages(problems)
     plural = lambda n, one, many: f'{n} {one if n == 1 else many}'
+    carried = next((p for p in problems if p.get('kind') == 'carry_conflict'), None)
+    if carried:
+        return carried['message']
     if reason == 'import_failed':
         return 'Saving did not finish: open it to retry'
     if reason == 'saved_review':
@@ -115,6 +119,10 @@ def issue_sentence(reason, problems, summary):
         return 'Account number not found: enter it'
     if reason == 'dates':
         return 'Statement dates not found: enter them'
+    if reason == 'principal_only':
+        page = next((p['page'] for p in problems if isinstance(p.get('page'), int)), None)
+        return ('The statement prints only the principal balance; the opening amount owed is not printed'
+                + (f' on page {page}' if page else ''))
     if reason == 'balance':
         currency = summary.get('currency') or ''
         closing = next((p for p in problems if p.get('check') == 'closing_balance'), None)
@@ -122,6 +130,19 @@ def issue_sentence(reason, problems, summary):
             return f'Closing balance off by {_money(closing["difference_minor"], currency)}'
         if any(p.get('kind') == 'arithmetic' and 'opening and one closing balance' in (p.get('message') or '')
                for p in problems):
+            # Name what is actually missing: the check is unavailable when a balance or a payment amount
+            # is unread, and a statement with both balances read waits for its payments, not its balances.
+            check = next((c for c in summary.get('checks') or []
+                          if isinstance(c, dict) and c.get('kind') == 'closing_balance'), None) or {}
+            opening, closing = check.get('opening_minor') is not None, check.get('printed_minor') is not None
+            unread = [p for p in summary.get('problems') or [] if p.get('row_id') and p.get('kind') != 'arithmetic']
+            if check and opening and closing and unread:
+                n = _rows(unread)
+                return f'Both balances read; {plural(n, "payment", "payments")} could not be read{_pages(unread)}'
+            if check and opening and not closing:
+                return 'Closing balance not read: enter it from the statement'
+            if check and closing and not opening:
+                return 'Opening balance not read: enter it from the statement'
             return 'Opening or closing balance not read: enter both from the statement'
         running = [p for p in problems if p.get('check') == 'running_balance'
                    or 'running balance' in (p.get('message') or '').lower()]
@@ -171,8 +192,13 @@ def describe(summary):
                 ordered.append(key)
                 by_reason[key] = []
     also = [issue_sentence(key, by_reason[key], summary) for key in ordered if key != reason]
+    choice = next(({key: p[key] for key in ('field', 'yours', 'reading')} for p in chosen if p.get('kind') == 'carry_conflict'), None)
     return dict(reason=reason, sentence=issue_sentence(reason, chosen, summary), row_id=row, field=field,
-                page=page, other_problems=others, problem_total=len(problems), reasons=ordered, also=also)
+                page=page, other_problems=others, problem_total=len(problems), reasons=ordered, also=also,
+                # For the queue's plain instructions: every page the issue is on, and what the checks said.
+                pages=sorted({p['page'] for p in chosen if isinstance(p.get('page'), int)}),
+                messages=[p['message'] for p in chosen[:3]],
+                **(dict(choice=choice) if choice else {}))
 
 
 def _empty_reading(summary):
@@ -192,6 +218,9 @@ def classify(item):
         return 'left_unimported'
     if item.status == 'assigned':
         return 'assigned'
+    if item.status == 'attention' and summary.get('not_payment_statement'):
+        # A fund statement set aside as not a payment statement (not_payment_statements).
+        return 'not_payment'
     if item.status not in ('ready', 'attention') or is_duplicate_review(item):
         return 'copies' if item.status == 'duplicate_ignored' or is_duplicate_review(item) else 'unexplained'
     if summary.get('readiness_pending') or summary.get('comparison_pending'):
@@ -215,8 +244,20 @@ def _saved_scopes(session, case_id):
     columns = (Source.id, Source.sha256_at_ingestion, Source.metadata_['statement_import_statement_id'].as_string(),
                Source.metadata_['statement_recovery_parent_id'].as_string(),
                Source.metadata_['financial_import_removal'].as_string(), Source.evidence_file_id)
-    rows = session.execute(select(*columns).where(Source.case_id == case_id, Source.status == 'admitted',
-        Source.document_type == 'statement_review')).all()
+    postgres = session.get_bind().dialect.name == 'postgresql'
+
+    def read(*conditions):
+        if not postgres:
+            return session.execute(select(*columns).where(*conditions)).all()
+        # The three metadata fields sit inside each record's large saved
+        # reading; read them again only for records changed since last time.
+        from sqlalchemy import func
+        from services.financial.pending_duplicate_projection import _digested
+        return [(identifier, sha, *fields, file_id) for (identifier,), (sha, file_id), fields in _digested(session, Source,
+            (Source.id,), (Source.sha256_at_ingestion, Source.evidence_file_id), func.jsonb_build_array(*columns[2:5]),
+            *conditions, kind='saved_scopes')]
+
+    rows = read(Source.case_id == case_id, Source.status == 'admitted', Source.document_type == 'statement_review')
     current = {}
     for _, sha, key, _, removed, file_id in rows:
         if not removed:
@@ -233,7 +274,7 @@ def _saved_scopes(session, case_id):
                 ids.append(UUID(value))
             except ValueError:
                 continue
-        for _, sha, key, parent, _, _ in session.execute(select(*columns).where(Source.case_id == case_id, Source.id.in_(ids))):
+        for _, sha, key, parent, _, _ in read(Source.case_id == case_id, Source.id.in_(ids)):
             scopes.add((sha, key or ''))
             if parent:
                 parents.add(parent)
@@ -253,6 +294,15 @@ def _proposals(summary, knowledge, detail):
     return proposals, field_proposals.resolves_all(reasons, proposals)
 
 
+def _printed_balances(summary):
+    """The stored opening and closing balances (minor units, as read) and payment count, so a
+    queue row can be checked against the PDF without opening it. Read only: nothing is decided here."""
+    closing = next((check for check in summary.get('checks') or []
+                    if isinstance(check, dict) and check.get('kind') == 'closing_balance'), None) or {}
+    return dict(opening_minor=closing.get('opening_minor'), closing_minor=closing.get('printed_minor'),
+                balance_status=summary.get('balance_status') or '', transaction_count=summary.get('transaction_count'))
+
+
 def _entry(item, batch_id, describe_result=None):
     summary = item.summary
     entry = dict(id=str(item.id), batch_id=str(batch_id), file_id=str(item.file_id),
@@ -261,13 +311,79 @@ def _entry(item, batch_id, describe_result=None):
         account=summary.get('account') or '', institution=summary.get('institution') or '',
         currency=summary.get('currency') or '', period_start=summary.get('period_start') or '',
         period_end=summary.get('period_end') or '', page=summary.get('page_number'),
-        can_import=bool(summary.get('can_import')), status=item.status)
+        can_import=bool(summary.get('can_import')), status=item.status, **_printed_balances(summary))
     if describe_result:
         entry.update(issue=describe_result['sentence'], issue_reason=describe_result['reason'],
             row_id=describe_result['row_id'], field=describe_result['field'], page=describe_result['page'],
             other_problems=describe_result['other_problems'], problem_total=describe_result['problem_total'],
             reasons=describe_result.get('reasons') or [describe_result['reason']], also=describe_result.get('also') or [])
+        if describe_result.get('choice'):
+            entry['choice'] = describe_result['choice']
+        entry.update(issue_pages=describe_result.get('pages') or [], issue_messages=describe_result.get('messages') or [])
+    not_payment = summary.get('not_payment_statement')
+    if not_payment:
+        entry.update(not_payment=dict(kind=not_payment.get('kind'), label=not_payment.get('label'),
+                                      reason=not_payment.get('reason')))
+    check = summary.get('saved_copy_check')
+    if check and check.get('outcome') in ('differs', 'not_comparable') and item.status == 'attention':
+        # A copy of an account and period the case already saved, held because it differs (saved_copies).
+        entry['saved_copy'] = dict(outcome=check['outcome'], saved_filename=(check.get('saved') or {}).get('filename'),
+                                   differences=check.get('differences') or [])
+        if describe_result:
+            entry['also'] = [*entry.get('also', []), saved_copy_sentence(check)]
     return entry
+
+
+def saved_copy_sentence(check):
+    """One plain sentence: why a copy of a saved account and period was not set aside."""
+    parts = []
+    for difference in check.get('differences') or []:
+        field = difference.get('field')
+        if field == 'payments':
+            parts.append(f"{difference['copy']} payments here, {difference['saved']} saved "
+                         f"({difference['only_in_copy']} only here, {difference['only_in_saved']} only in the saved one)")
+        elif field in ('opening', 'closing', 'currency'):
+            parts.append(f"the {field}{' balance' if field != 'currency' else ''} differs")
+        elif field == 'unread_rows':
+            parts.append('some lines here are not read')
+        elif field == 'incomplete_payment':
+            parts.append('a payment here has no date, amount or direction')
+        elif field == 'no_payments':
+            parts.append('no payments to compare')
+        elif field == 'several_saved_statements':
+            parts.append('several saved statements match')
+    return ('This account and period is already saved; this copy is held because ' + ('; '.join(parts) or 'it differs')
+            + ': compare it with the saved statement')
+
+
+def _preparing_again(batches):
+    """(batch id, file id) of prepared files a running batch is preparing or reading again.
+
+    A file handed back for a new reading (``recovery``) waits for its turn
+    before it is processed; it is being rechecked from the hand-off on.
+    """
+    return {(batch.id, file['file_id']) for batch in batches if batch.status in ('preparing', 'pausing')
+            for file in batch.files or [] if file.get('file_id') and (file.get('status') == 'processing'
+                or (file.get('status') == 'waiting' and file.get('recovery')))}
+
+
+# Buckets a scheduled re-read moves to "Being rechecked": held statements only.
+REREAD_BUCKETS = frozenset({'waiting', 'reader_fix', 'unreadable', 'filled'})
+
+
+def _rechecked_by_recovery(session, case_id, entries):
+    """Held statements a reader campaign will read again count as being rechecked. In place; live, never cached."""
+    from services.financial.recovery_readers import rereading_files
+    try:
+        again = rereading_files(session, case_id)
+    except Exception:
+        session.rollback()  # no recovery tables (an old database): nothing scheduled
+        return entries
+    if again:
+        for entry in entries:
+            if entry['bucket'] in REREAD_BUCKETS and again & set(entry['file_ids']):
+                entry['bucket'] = 'rechecking'
+    return entries
 
 
 def _build(session, case_id):
@@ -321,11 +437,22 @@ def _build(session, case_id):
             rows.append((identity, bucket, full[item.id], None, None))
     from services.financial import field_proposals
     knowledge = []  # loaded once, only when a waiting statement lacks a detail
+    preparing_again = _preparing_again(batches.values())
+    # A file-level preparation that found nothing does not stand for a file
+    # that a preparation (another batch, a later reader) split into named
+    # statements: those statements are the file's entries, wherever they stand.
+    named = {root for root, key in identities if key}
     for identity, item in representatives.items():
         current = projected.get(item.id)
         if current is None:
             continue
         bucket = classify(current)
+        if bucket == 'unreadable' and not identity[1] and identity[0] in named:
+            continue
+        if bucket in ('waiting', 'ready', 'filled', 'unreadable') and (item.batch_id, str(item.file_id)) in preparing_again:
+            # Its file is being prepared again (after a release, or a retry):
+            # what it shows now may change in a moment.
+            bucket = 'rechecking'
         detail = describe(current.summary) if bucket in ('waiting', 'unreadable') else None
         if bucket == 'unreadable':
             page = current.summary.get('page_number')
@@ -441,9 +568,17 @@ def reader_files(entries):
     return list(files.values())
 
 
-_CACHE_SIZE = 16
-_cache = OrderedDict()
+# The queue is cached per case while its inputs are unchanged (the register's
+# PostgreSQL row-version fingerprint, which covers batches, items, files,
+# readings and saved records). Cached views are never mutated: a response
+# copies only the entries it returns. Memory is bounded by cases and by
+# entries held in all, and one build per case runs at a time in a process.
+_CACHE_SIZE = 8
+CACHE_MAX_ENTRIES = 40_000
+_cache = OrderedDict()   # case -> (fingerprint, view)
 _lock = threading.Lock()
+_building = {}           # case -> threading.Event set when its build ends
+BUILD_WAIT_SECONDS = 180
 
 
 # Precompute on write: cases whose queue was read recently are rebuilt in the
@@ -476,40 +611,117 @@ def prewarm(factory, *, budget_seconds=20.0, now=None):
                     hit = _cache.get(key)
                 if fingerprint is None or (hit and hit[0] == fingerprint):
                     continue
-                _entries(session, UUID(key), note=False)
+                _view(session, UUID(key), note=False)
                 rebuilt.append(key)
             finally:
                 session.rollback()
     return rebuilt
 
 
-def _entries(session, case_id, use_cache=True, note=True):
-    """(queue entries, unread statement files) for the case, reused while its rows are unchanged."""
-    from services.financial.statement_file_status import status_fingerprint
+def _compute(session, case_id):
+    """The whole-case view: entries, failed and set-aside files, unread count. Read only."""
     from services.financial.auto_read import unread_statement_files
+    entries = _build(session, case_id)
+    set_aside = []
+    entries, failed, copy_files = _set_aside_read_copies(session, case_id, entries,
+        _failed_files(session, case_id, set(), set_aside))
+    _mark_read_afresh(session, case_id, failed)
+    _worked_by(session, entries)
+    from datetime import datetime, timezone
+    return dict(entries=entries, failed=failed, copy_files=copy_files, set_aside=set_aside,
+                unread=len(unread_statement_files(session, case_id=case_id)),
+                as_of=datetime.now(timezone.utc).isoformat(timespec='seconds'))
+
+
+def _store(key, fingerprint, view):
+    with _lock:
+        _cache[key] = (fingerprint, view)
+        _cache.move_to_end(key)
+        held = lambda: sum(len(value[1]['entries']) for value in _cache.values())
+        while len(_cache) > 1 and (len(_cache) > _CACHE_SIZE or held() > CACHE_MAX_ENTRIES):
+            _cache.popitem(last=False)
+
+
+def _build_once(session, key, case_id, fingerprint):
+    """Build and cache, one build per case at a time; a concurrent caller waits for it. Returns the view."""
+    with _lock:
+        running = _building.get(key)
+        if running is None:
+            running = _building[key] = threading.Event()
+            mine = True
+        else:
+            mine = False
+    if not mine:
+        running.wait(BUILD_WAIT_SECONDS)
+        with _lock:
+            hit = _cache.get(key)
+        if hit and hit[0] == fingerprint:
+            return hit[1]
+        return _compute(session, case_id)  # that build was of older inputs (or timed out)
+    try:
+        view = _compute(session, case_id)
+        _store(key, fingerprint, view)
+        return view
+    finally:
+        with _lock:
+            _building.pop(key, None)
+        running.set()
+
+
+def _refresh_in_background(bind, key, case_id):
+    """Start one background build of the current inputs (own session, same database) unless one is running."""
+    with _lock:
+        if key in _building:
+            return
+    def run():
+        from sqlalchemy.orm import sessionmaker
+        from services.financial.statement_file_status import status_fingerprint
+        try:
+            with sessionmaker(bind=bind, autoflush=False)() as session:
+                try:
+                    _build_once(session, key, case_id, status_fingerprint(session, case_id))
+                finally:
+                    session.rollback()
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception('Review queue rebuild failed; the next read builds it')
+    threading.Thread(target=run, name=f'review-queue-{key[:8]}', daemon=True).start()
+
+
+def _view(session, case_id, use_cache=True, note=True, stale_ok=False):
+    """(whole-case view, refreshing). Reused while the case's rows are unchanged.
+
+    ``stale_ok``: when the inputs changed since the cached view was built, that
+    view is returned at once (refreshing=True) and the current one is built
+    in the background; a read never waits behind a rebuild it did not need.
+    """
+    from services.financial.statement_file_status import status_fingerprint
     fingerprint = status_fingerprint(session, case_id) if use_cache else None
+    if fingerprint is None:
+        return _compute(session, case_id), False
     key = str(case_id)
-    if fingerprint is not None and note:
+    if note:
         with _lock:
             _recent_reads[key] = time.monotonic()
             _recent_reads.move_to_end(key)
-            while len(_recent_reads) > _CACHE_SIZE:
+            while len(_recent_reads) > 16:
                 _recent_reads.popitem(last=False)
-    if fingerprint is not None:
-        with _lock:
-            hit = _cache.get(key)
-            if hit and hit[0] == fingerprint:
-                _cache.move_to_end(key)
-                return deepcopy(hit[1]), hit[2]
-    entries = _build(session, case_id)
-    unread = len(unread_statement_files(session, case_id=case_id))
-    if fingerprint is not None:
-        with _lock:
-            _cache[key] = (fingerprint, deepcopy(entries), unread)
+    with _lock:
+        hit = _cache.get(key)
+        if hit:
             _cache.move_to_end(key)
-            while len(_cache) > _CACHE_SIZE:
-                _cache.popitem(last=False)
-    return entries, unread
+    if hit and hit[0] == fingerprint:
+        return hit[1], False
+    if hit and stale_ok:
+        _refresh_in_background(session.get_bind(), key, case_id)
+        return hit[1], True
+    return _build_once(session, key, case_id, fingerprint), False
+
+
+def _entries(session, case_id, use_cache=True, note=True):
+    """(queue entries, unread statement files): copies, for callers that change them."""
+    view, _ = _view(session, case_id, use_cache=use_cache, note=note)
+    return [dict(entry) for entry in view['entries']], view['unread']
 
 
 def _counts(entries):
@@ -519,8 +731,40 @@ def _counts(entries):
     return counts
 
 
-def _failed_files(session, case_id, file_filter):
-    """Files a batch could not prepare and that have no statement at all."""
+REMOVED_FILE_MESSAGE = ('You removed this file from Financial, so it is not read. If it should be read, restore it '
+                        'under Removed files in Statements & accounts.')
+GONE_FILE_MESSAGE = 'This file is no longer in the case, so there is nothing to read.'
+
+
+def _set_aside_reason(session, case_id, record):
+    """Why a failed preparation is not a reading problem: 'removed' or 'gone'; None when it is one.
+
+    A batch can hold a file the investigator later removed from Financial
+    (or a selection can sweep removed files in): its preparation then fails
+    ('Statement not found in this case', 'The source recorded for restarting
+    this removed import is unavailable'). Nothing can be read until she
+    restores it, so it is counted as removed, never as "Couldn't read".
+    """
+    from services.financial.file_visibility import financial_file_visibility
+    ids = [UUID(i) for i in (record.get('source_id'), record.get('file_id')) if i and _uuid(i)]
+    files = [session.get(EvidenceFile, i) for i in ids]
+    files = [f for f in files if f is not None]
+    if not files or all(f.case_id != case_id for f in files):
+        return 'gone'
+    own = [f for f in files if f.case_id == case_id]
+    if any(financial_file_visibility(f)['financial_removed'] for f in own):
+        return 'removed'
+    return None
+
+
+def _failed_files(session, case_id, file_filter, set_aside=None):
+    """Files a batch could not prepare and that have no statement at all.
+
+    Failures that are not reading problems (the file was removed from
+    Financial or is no longer in the case) are moved to ``set_aside`` with
+    their reason instead. A failed upload whose identical bytes or pages were
+    read from another upload is linked to it by _set_aside_read_copies.
+    """
     prepared = set(session.scalars(select(Item.file_id).join(Batch, Batch.id == Item.batch_id).where(
         Batch.case_id == case_id, Batch.status != 'removed', Item.status != 'removed')))
     failed = {}
@@ -539,7 +783,125 @@ def _failed_files(session, case_id, file_filter):
                     message=file.get('error') or 'This file could not be prepared.')
             else:
                 failed.pop(file.get('source_id'), None)
-    return list(failed.values())
+    if not failed:
+        return []
+    result = []
+    for record in failed.values():
+        why = _set_aside_reason(session, case_id, record)
+        if why is None:
+            result.append(record)
+        elif set_aside is not None:
+            set_aside.append(dict(record, reason=why, message={'removed': REMOVED_FILE_MESSAGE,
+                'gone': GONE_FILE_MESSAGE}[why], error=record['message']))
+    return result
+
+
+def _set_aside_read_copies(session, case_id, entries, failed):
+    """Move failed readings of a file that another upload of the same document read into copies.
+
+    A second upload of the same bytes, or of a file whose every page renders
+    identically (``page_identity``: the same statement saved again by another
+    program), reaches the copy review only through its own statements. When its
+    reading failed (an older reader, a removed import's lost source) it would
+    stay under "Couldn't read" for good although the same pages were read
+    through another upload. Such entries are set aside, linked to the upload
+    that was read. Nothing is written; if that upload also could not read a
+    statement, its own entry still says so.
+    """
+    from services.financial import page_identity
+    read = {e['file_id'] for e in entries if e['bucket'] not in ('unreadable', 'unexplained')}
+    failed_ids = {f.get('file_id') or f.get('source_id') for f in failed}
+    wanted = {e['file_id'] for e in entries if e['bucket'] == 'unreadable'} | failed_ids
+    if not read or not wanted:
+        return entries, failed, []
+    ids = {UUID(i) for i in read | wanted if i and _uuid(i)}
+    files = {}
+    for file in session.scalars(select(EvidenceFile).where(EvidenceFile.case_id == case_id, EvidenceFile.id.in_(ids))):
+        pages = page_identity.stored(file)
+        files[str(file.id)] = (file.sha256, file.original_filename,
+                               (pages['identity'], pages['renderer'], pages['page_count']) if pages else None)
+    read_by_sha, read_by_pages = {}, {}
+    for file_id in sorted(read):
+        sha, name, pages = files.get(file_id, (None, None, None))
+        if sha:
+            read_by_sha.setdefault(sha, (file_id, name))
+        if pages:
+            read_by_pages.setdefault(pages, (file_id, name))
+
+    def copy_of(file_id):
+        sha, _, pages = files.get(file_id, (None, None, None))
+        for match, reason in ((read_by_sha.get(sha) if sha else None, 'same_file_read'),
+                              (read_by_pages.get(pages) if pages else None, 'same_pages_read')):
+            if match and match[0] != file_id:
+                return match, reason
+        return None, None
+
+    for entry in entries:
+        match, reason = copy_of(entry['file_id']) if entry['bucket'] == 'unreadable' else (None, None)
+        if match:
+            entry.update(bucket='copies', set_aside=True, copy_of=match[1] or None,
+                         copy_reason=reason, copy_file_id=match[0])
+    kept, copies = [], []
+    for file in failed:
+        match, reason = copy_of(file.get('file_id') or file.get('source_id'))
+        if match:
+            copies.append(dict(file, copy_of=match[1] or None, copy_file_id=match[0], copy_reason=reason))
+        else:
+            kept.append(file)
+    return entries, kept, copies
+
+
+def _mark_read_afresh(session, case_id, failed):
+    """Mark failed files whose retained PDF the investigator can explicitly read afresh.
+
+    The removal they would restart from is gone from Evidence. Only the
+    explicit, byte-verified recovery may read them again; this marks each with
+    the revision that recovery requires, nothing more.
+    """
+    from services.financial.reading_recovery import retry_reference_problem
+    candidates = [f for f in failed if (f.get('message') or '').startswith(RESTART_UNAVAILABLE)]
+    ids = {UUID(i) for f in candidates for i in (f.get('source_id'), f.get('file_id')) if i and _uuid(i)}
+    if not ids:
+        return
+    files = {str(file.id): file for file in session.scalars(select(EvidenceFile).where(
+        EvidenceFile.case_id == case_id, EvidenceFile.id.in_(ids)))}
+    for entry in candidates:
+        source = files.get(entry.get('source_id'))
+        if source is None:
+            continue
+        problem = retry_reference_problem(session, case_id=case_id, source_id=source.id, source=source,
+            prepared=files.get(entry.get('file_id')))
+        if problem and problem.get('retained_source_revision'):
+            entry['read_afresh_revision'] = problem['retained_source_revision']
+
+
+# Held work someone saved themselves: the queue names that person, not whoever opens it.
+OWN_WORK_REASONS = frozenset({'saved_review', 'import_failed'})
+OWN_WORK_MESSAGE = 'manually added transaction'
+
+
+def _own_work(entry):
+    return entry['bucket'] in ('waiting', 'unreadable') and (
+        bool(OWN_WORK_REASONS & set(entry.get('reasons') or [entry.get('issue_reason')]))
+        or any(OWN_WORK_MESSAGE in (m or '').lower() for m in entry.get('issue_messages') or []))
+
+
+def _worked_by(session, entries):
+    """Name who saved the held review (``worked_by``: user id and name) on entries holding their own work. In place."""
+    wanted = [e for e in entries if _own_work(e) and _uuid(e['file_id'])]
+    for entry in wanted:
+        try:
+            saved = session.execute(select(EvidenceFile.metadata_['financial_review_progress'][entry['statement_id'] or '']
+                ['saved_by']).where(EvidenceFile.id == UUID(entry['file_id']))).scalar()
+        except Exception:
+            session.rollback()
+            return entries
+        if isinstance(saved, dict) and saved.get('name') and saved.get('user_id'):
+            entry['worked_by'] = dict(user_id=str(saved['user_id']), name=str(saved['name']))
+    return entries
+
+
+RESTART_UNAVAILABLE = 'The source recorded for restarting this removed import is unavailable'
 
 
 def _uuid(value):
@@ -550,34 +912,160 @@ def _uuid(value):
         return False
 
 
-def case_review_queue(session, *, case_id, file_ids=None, use_cache=True):
-    """The case's queue and status line, optionally limited to some files (evidence ids)."""
+PAGE_LISTS = {'waiting': 'items', 'ready': 'ready', 'filled': 'filled', 'reader_fix': 'reader_fix',
+              'rechecking': 'rechecking', 'copies': 'copies', 'unreadable': 'unreadable', 'not_payment': 'not_payment'}
+
+
+def _public(entry):
+    return {key: value for key, value in entry.items() if key != 'root'}
+
+
+def case_review_queue(session, *, case_id, file_ids=None, use_cache=True, limit=None, offset=0,
+                      page_list='waiting', issue=None, stale_ok=False):
+    """The case's queue and status line, optionally limited to some files (evidence ids).
+
+    ``limit`` caps every entry list (0: counts only) and ``offset``/``issue``
+    page the list named ``page_list``; ``totals``, ``page`` and
+    ``issue_counts`` say how much there is, so nothing is cut silently.
+    Counts and the status line are always whole-case (whole-filter).
+    ``stale_ok`` returns a view built moments ago while a current one is
+    built (``refreshing``); see ``_view``.
+    """
     from services.financial.auto_read import reading_progress
+    if page_list not in PAGE_LISTS:
+        raise ValueError(f'Unknown queue list: {page_list}')
     started = time.perf_counter()
-    entries, unread = _entries(session, case_id, use_cache=use_cache)
+    view, refreshing = _view(session, case_id, use_cache=use_cache, stale_ok=stale_ok)
     # Live (not cached): files being read or prepared, for "Reading 12 of 40 files".
-    reading = dict(reading_progress(session, case_id=case_id), unread_statement_files=unread)
+    reading = dict(reading_progress(session, case_id=case_id), unread_statement_files=view['unread'])
     file_filter = {str(i) for i in file_ids or []}
+    entries, failed, copy_files, set_aside = view['entries'], view['failed'], view['copy_files'], view['set_aside']
+    # Live too: statements a reader campaign will read again (copies of the
+    # cached entries it moves, never the cached ones).
+    moved = _rechecked_by_recovery(session, case_id, [dict(entry) for entry in entries
+                                                      if entry['bucket'] in REREAD_BUCKETS])
+    if moved:
+        moved = {entry['id']: entry for entry in moved if entry['bucket'] == 'rechecking'}
+        entries = [moved.get(entry['id'], entry) for entry in entries]
     if file_filter:
         entries = [e for e in entries if file_filter & set(e['file_ids'])]
-    failed = _failed_files(session, case_id, file_filter)
+        within = lambda f: bool({f.get('file_id'), f.get('source_id')} & file_filter)
+        failed, copy_files = [f for f in failed if within(f)], [f for f in copy_files if within(f)]
+        set_aside = [f for f in set_aside if within(f)]
     counts = _counts(entries)
     counts['unreadable_files'] = len(failed)
+    counts['removed_files'] = len(set_aside)
+    counts['copies'] += len(copy_files)
+    counts['copy_files'] = len(copy_files)
     waiting_for_reader = reader_files(entries)
-    for entry in entries:
-        entry.pop('root', None)
-    pick = lambda bucket: [e for e in entries if e['bucket'] == bucket]
+    lists = {name: [e for e in entries if e['bucket'] == name] for name in PAGE_LISTS}
+    issue_counts = {}
+    for entry in lists['waiting']:
+        if entry.get('issue_reason'):
+            issue_counts[entry['issue_reason']] = issue_counts.get(entry['issue_reason'], 0) + 1
+    totals = {name: len(values) for name, values in lists.items()}
+    chosen = [e for e in lists[page_list] if not issue or e.get('issue_reason') == issue]
+    offset = max(0, int(offset or 0))
+    pages = {name: (values if limit is None else values[:max(0, limit)]) for name, values in lists.items()}
+    pages[page_list] = chosen[offset:] if limit is None else chosen[offset:offset + max(0, limit)]
     ready_batches = {}
-    for entry in pick('ready'):
+    for entry in lists['ready']:
         ready_batches[entry['batch_id']] = ready_batches.get(entry['batch_id'], 0) + 1
+    public = {name: [_public(e) for e in values] for name, values in pages.items()}
     return dict(case_id=str(case_id), file_ids=sorted(file_filter), counts=counts,
-        status_line=status_line(counts, reading), reading=reading, items=pick('waiting'), copies=pick('copies'),
-        unreadable=pick('unreadable'), unreadable_files=failed, rechecking=pick('rechecking'),
-        unexplained=pick('unexplained'), ready=pick('ready'), filled=pick('filled'),
-        reader_fix=pick('reader_fix'), reader_files=waiting_for_reader,
+        status_line=status_line(counts, reading), reading=reading, items=public['waiting'], copies=public['copies'],
+        unreadable=public['unreadable'], unreadable_files=failed, set_aside_files=set_aside, copy_files=copy_files,
+        rechecking=public['rechecking'], not_payment=public['not_payment'],
+        unexplained=[_public(e) for e in entries if e['bucket'] == 'unexplained'], ready=public['ready'],
+        filled=public['filled'], reader_fix=public['reader_fix'], reader_files=waiting_for_reader,
         ready_batches=[dict(batch_id=key, statements=value) for key, value in
                        sorted(ready_batches.items(), key=lambda pair: -pair[1])],
-        elapsed_ms=round((time.perf_counter() - started) * 1000))
+        totals=totals, issue_counts=issue_counts, ready_item_ids=[e['id'] for e in lists['ready']],
+        proposal_groups=[{key: value for key, value in group.items()} for group in proposal_groups(lists['waiting'])],
+        page=dict(list=page_list, issue=issue or None, offset=offset, limit=limit, returned=len(pages[page_list]),
+                  total=len(chosen)),
+        refreshing=refreshing, as_of=view['as_of'], elapsed_ms=round((time.perf_counter() - started) * 1000))
+
+
+def _group_account(entry, proposal):
+    """The account a proposal is grouped under: the matched saved account, else the account number the
+    statement prints (with its bank). None when the statement prints no usable number: never grouped."""
+    from services.financial import field_proposals
+    if proposal.get('account_key'):
+        return ('saved', proposal['account_key'])
+    digits, masked = field_proposals.account_identity(entry.get('account'))
+    if len(digits) < field_proposals.MIN_MASKED_DIGITS:
+        return None
+    return ('printed', digits, masked, tuple(sorted(field_proposals.institution_key(entry.get('institution')))))
+
+
+def proposal_groups(entries):
+    """One confirmation per account where the same unconfirmed proposal applies to several waiting statements.
+
+    Groups (field, value, basis, account) over the waiting entries' proposals that
+    are not confirmed automatically; only groups of two or more statements are
+    returned, largest first. Read only: a group is saved by a person's
+    confirmation (``confirm_proposal_group``), through the statement-details
+    save, filling empty fields only.
+    """
+    from services.financial.pdf_candidates import _digest
+    groups = OrderedDict()
+    for entry in entries:
+        if entry.get('bucket') != 'waiting':
+            continue
+        for name, proposal in (entry.get('proposals') or {}).items():
+            if proposal.get('confirmed') or not proposal.get('value'):
+                continue
+            account = _group_account(entry, proposal)
+            if account is None:
+                continue
+            key = (name, proposal['value'], proposal.get('basis') or '', account)
+            group = groups.setdefault(key, dict(field=name, value=proposal['value'], basis=proposal.get('basis') or '',
+                                                label=proposal.get('label') or '', account=entry.get('account') or '',
+                                                institution=entry.get('institution') or '', entry_ids=[]))
+            group['entry_ids'].append(entry['id'])
+    result = []
+    for key, group in groups.items():
+        if len(group['entry_ids']) < 2:
+            continue
+        group['entry_ids'].sort()
+        group.update(id=_digest(dict(key=[str(part) for part in key], entries=group['entry_ids'])),
+                     statements=len(group['entry_ids']))
+        result.append(group)
+    result.sort(key=lambda g: (-g['statements'], g['field'], g['value'], g['id']))
+    return result
+
+
+def confirm_proposal_group(session, *, case_id, group_id, actor, file_ids=None):
+    """Save one proposal group's value on each of its statements, as the confirming person. Commits.
+
+    The group is found again on the current queue by its id (which binds the
+    field, value, account and exact statements): a queue that changed since it
+    was shown refuses (409), nothing is saved. Fill-missing only: a value a
+    person entered is never replaced.
+    """
+    from services.financial.field_proposals import apply_confirmed_proposals
+    from services.financial.pdf_candidates import PdfMappingError
+    view, _ = _view(session, case_id, use_cache=False, note=False)
+    entries = view['entries']
+    if file_ids:
+        wanted = {str(i) for i in file_ids}
+        entries = [e for e in entries if wanted & set(e['file_ids'])]
+    group = next((g for g in proposal_groups(entries) if g['id'] == group_id), None)
+    if group is None:
+        raise PdfMappingError('These statements changed since the proposal was shown. Reload the queue.', 409)
+    ids = set(group['entry_ids'])
+    targets = []
+    for entry in entries:
+        if entry['id'] in ids:
+            proposal = dict(entry['proposals'][group['field']], confirmed=True,
+                            label=f"{entry['proposals'][group['field']].get('label', '')}; confirmed for "
+                                  f"{group['statements']} statements of one account")
+            targets.append(dict(entry, proposals={group['field']: proposal}))
+    session.rollback()
+    report = apply_confirmed_proposals(session, case_id=case_id, entries=targets, apply=True, actor=actor)
+    return dict(case_id=str(case_id), group_id=group_id, field=group['field'], value=group['value'],
+                statements=report.get('statements', 0), saved=report.get('saved', 0), failed=report.get('failed', 0))
 
 
 def reading_sentence(reading):
@@ -609,6 +1097,10 @@ def status_line(counts, reading=None):
         parts.append(f"Being rechecked {counts['rechecking']}")
     if counts['left_unimported']:
         parts.append(f"Left out by you {counts['left_unimported']}")
+    if counts.get('not_payment'):
+        parts.append(f"Not payment statements {counts['not_payment']}")
+    if counts.get('removed_files'):
+        parts.append(f"Files removed from Financial {counts['removed_files']}")
     sentence = reading_sentence(reading)
     if sentence:
         parts.insert(0, sentence)
@@ -616,7 +1108,8 @@ def status_line(counts, reading=None):
 
 
 def case_status(session, *, case_id):
-    """Counts only, for the cross-case view."""
-    queue = case_review_queue(session, case_id=case_id)
+    """Counts only, for badges and the cross-case view: never waits behind a rebuild of a cached case."""
+    queue = case_review_queue(session, case_id=case_id, limit=0, stale_ok=True)
     return dict(case_id=queue['case_id'], counts=queue['counts'], status_line=queue['status_line'],
-                reading=queue['reading'], elapsed_ms=queue['elapsed_ms'])
+                reading=queue['reading'], refreshing=queue['refreshing'], as_of=queue['as_of'],
+                elapsed_ms=queue['elapsed_ms'])

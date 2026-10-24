@@ -1,6 +1,6 @@
 import "@/styles/globals.css"
 import { page } from "vitest/browser"
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { focusManager, QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
@@ -42,6 +42,16 @@ vi.mock("./TransactionSourceHighlight", () => ({
     <div className="h-64 rounded border p-4">Synthetic original: {sourceDocumentId}</div>
   ),
 }))
+
+
+// No refresh button: the batch view reads itself again while work runs and
+// when the investigator returns to the page (what this simulates).
+function returnToPage() {
+  act(() => {
+    focusManager.setFocused(false)
+    focusManager.setFocused(true)
+  })
+}
 
 const batch = {
   id: "batch-origin", case_id: "case", status: "review",
@@ -197,7 +207,7 @@ it("retries the exact retained reading from its job card, shows progress and ret
   expect(jobReads).toBeGreaterThan(1)
   await page.screenshot({ path: "/private/tmp/loupe-reading-job-retry-wide.png", element: details })
   completed = true
-  await page.getByRole("button", { name: "Refresh batch", exact: true }).click()
+  returnToPage()
   await page.getByText("File processing (1)", { exact: true }).click()
   await page
     .getByRole("button", { name: "Open file review", exact: true })
@@ -542,13 +552,12 @@ it("retains confirmed progress through a connection failure and restores actions
   })
   mount(`/cases/case/financial?view=statements&statementMode=batches&batch=${batch.id}`)
   await screen.findByRole("region", {name: "Financial processing batch"})
-  await page.getByRole("button", {name: "Refresh batch", exact:true}).click()
+  returnToPage()
   await screen.findByText(/Progress could not be refreshed/)
   expect(screen.getByRole("region", {name: "Batch progress"})).toBeVisible()
-  expect(screen.queryByRole("button", {name: "Check for additional statement periods"})).toBeNull()
   await page.screenshot({path: "/private/tmp/loupe-batch-refresh-retained.png"})
   await page.getByRole("button", {name: "Retry batch", exact:true}).click()
   await waitFor(() => expect(screen.queryByText(/Progress could not be refreshed/)).toBeNull())
-  expect(screen.getByRole("button", {name: "Check for additional statement periods"})).toBeEnabled()
+  expect(screen.queryByRole("button", {name: "Check for additional statement periods"})).toBeNull()
   expect(vi.mocked(fetchAPI).mock.calls.every(([, options]) => !options?.method)).toBe(true)
 })

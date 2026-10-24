@@ -1,3 +1,4 @@
+import json
 import copy
 import unittest
 from uuid import uuid4, UUID
@@ -58,7 +59,24 @@ class ConsolidationTests(unittest.TestCase):
         before = identity_graph_plan(self.f.db, self.f.case.id)
         stored = copy.deepcopy(self.a.metadata_)
         saved = save_consolidation(self.f.db, case_id=self.f.case.id, request=self.request(), actor=self.actor)
+        # The plan loads whole payment rows only for payments with identity decisions; every
+        # other payment's link is read from its columns, resolved exactly as the payment shows it.
+        from sqlalchemy import event
+        from postgres.models.financial import FinancialTransaction
+        from services.financial.payment_counterparty_link import display_link
+        loaded = []
+        listener = lambda target, context: loaded.append(target)
+        with self.f.SessionLocal() as db:
+            event.listen(FinancialTransaction, 'load', listener)
+            try:
+                fresh = identity_graph_plan(db, self.f.case.id)
+            finally:
+                event.remove(FinancialTransaction, 'load', listener)
+            self.assertEqual({row.id for row in loaded}, {self.a.id})
+            self.assertEqual(json.loads(fresh['payment_links'][0]['recorded_identity']),
+                             display_link(db.get(FinancialTransaction, self.a.id)))
         merged = identity_graph_plan(self.f.db, self.f.case.id)
+        self.assertEqual(fresh, merged)
         self.assertNotEqual(before['revision'], merged['revision'])
         self.assertEqual(len(merged['account_links']), 1)
         self.assertEqual(merged['payment_links'][0]['target'], merged['account_links'][0]['target'])
