@@ -243,6 +243,11 @@ def _shared_value(cache, shared, key, compute):
     return cache[key]
 
 
+def _brokerage_cash_ledger(selected):
+    from services.financial.statement_engine_profiles import brokerage_cash_ledger
+    return bool(selected and brokerage_cash_ledger(selected.get('engine_profile')))
+
+
 def read_statement_import(session, *, case_id, evidence_file_id, currency=None, statement_id=None, _cache=None, _include_period_checks=True, _apply_assignments=True, _include_duplicate_disposition=True, _compare_printings=True):
     # The identity map already holds the row after the first read in a request;
     # re-querying decoded its whole metadata again for every statement.
@@ -519,6 +524,7 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                     # The case the holdings currency is for: cited for a person to confirm, never this reading's currency.
                     printed_currency=(printed_holdings_currency(all_sources if len(catalog['statements']) == 1 else sources)
                                       if selected else None),
+                    brokerage_cash_ledger=_brokerage_cash_ledger(selected),
                     transaction_count=0, needs_attention=1, revision=_digest(dict(file=str(file.id), text=text.content_sha256, version=VERSION)), applied=False,
                     review_recovery=recovery)
     from services.financial.money import get_currency, MoneyError
@@ -643,6 +649,11 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
     period_dates = closing_only_period_dates(session, case_id=case_id, file=file, selected=selected,
                                              sources=sources, currency=chosen_currency, cache=cache)
     rows = apply_opening_agreement(rows, period_dates)
+    # A movement query whose dates a saved statement of its account partly covers counts those days once
+    # (statement_overlap_trim, Neil 2026-10-24). Part of the revision when it trims.
+    from services.financial.statement_overlap_trim import overlap_trim
+    rows, trim = overlap_trim(session, case_id=case_id, file=file, selected=selected, rows=rows, metadata=metadata,
+                              currency=chosen_currency, statement_id=statement_id, current=current)
     if selected and selected.get('layout_id') in ('merrick-card', 'credit-one-card'):
         # Fail closed on the printed account summary: its payment and charge
         # totals must equal the card lines read for this period.
@@ -695,6 +706,8 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         snapshot['generic_statement_v1'] = dict(rows=rows, layout_fingerprint=selected.get('layout_fingerprint'))
     if selected and selected.get('engine_disagreement'):
         snapshot['engine_disagreement_v1'] = selected['engine_disagreement']
+    if trim and trim['status'] == 'trimmed':
+        snapshot['overlap_trim_v1'] = trim
     undated_charges = [row['id'] for row in rows if row['fields'].get('date_basis') == 'statement_end_ordering_only']
     if undated_charges:
         snapshot['undated_statement_charges_v1'] = undated_charges
@@ -772,6 +785,12 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                 transaction_count=0 if reading_failure else sum(not row['excluded'] for row in rows),
                 needs_attention=sum(bool(row['issues']) for row in rows) + len(issues),
                 revision=revision, current_import=current_import, applied=False)
+    if trim:
+        result['overlap_trim'] = trim
+    if _brokerage_cash_ledger(selected):
+        result['brokerage_cash_ledger'] = True
+    if selected and selected.get('form'):
+        result['statement_form'] = selected['form']
     if identity_memory:
         result['identity_memory'] = identity_memory
     from services.financial.review_upgrade import attach_upgrade
@@ -1225,6 +1244,9 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                                     'account_reference_kind': proposal['metadata'].get('account_reference_kind') or ''}
                 coverage = coverage_review(session, case_id=case_id, file_id=evidence_file_id,
                                            request=coverage_request, sources=case_comparison)
+                from services.financial.statement_import_overlap import later_queries_trim_themselves
+                coverage = later_queries_trim_themselves(coverage, coverage_request, file_id=evidence_file_id,
+                    statement_id=request.statement_id, summary=dict(statement_form=proposal.get('statement_form')))
                 if duplicate_hold(coverage, coverage_request):
                     raise PdfMappingError('A separate file matches this bank, full account, holder, currency and statement period. Compare the existing statement, then leave this copy unimported or record why both are needed.', 409)
                 coverage['requires_review'] = requires_decision(coverage, request.model_dump(mode='json'))
@@ -1300,6 +1322,17 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                 if request.period_start_unprinted and not start and end:
                     from postgres.models.enums import PeriodBoundsSource
                     bounds = PeriodBounds(end=end, end_source=PeriodBoundsSource.printed)
+                trim = proposal.get('overlap_trim') or {}
+                if (bounds.start and trim.get('status') == 'trimmed'
+                        and (request.period_start, request.period_end) == (trim['period_start'], trim['period_end'])):
+                    # A movement query trimmed where a saved statement counts its days: a trimmed end is
+                    # derived (the day next to the covered dates), re-derived from source in this transaction.
+                    from postgres.models.enums import PeriodBoundsSource
+                    bounds = PeriodBounds(start=start, end=end,
+                        start_source=(PeriodBoundsSource.printed if trim['period_start'] == trim['printed_period_start']
+                                      else PeriodBoundsSource.derived),
+                        end_source=(PeriodBoundsSource.printed if trim['period_end'] == trim['printed_period_end']
+                                    else PeriodBoundsSource.derived))
                 from services.financial.import_issues import usable_balance
                 convention = proposal['metadata'].get('balance_convention')
                 openings = [row for row in request.rows if row.excluded and originals[row.id]['kind'] == 'balance'

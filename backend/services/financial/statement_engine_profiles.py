@@ -169,6 +169,12 @@ _LABEL_ROLES = {'opening', 'closing', 'subtotal', 'credit_total', 'debit_total',
 _COLUMN_ROLES = {'date', 'description', 'credit', 'debit', 'balance', 'amount', 'ignore'}
 
 
+def brokerage_cash_ledger(name):
+    """A statement read with a brokerage cash-ledger profile (``holdings_currency``): its own currency, if any,
+    is printed only in its holdings, and one printing none takes its account's (field_proposals)."""
+    return bool(name) and any(p['name'] == name and p.get('holdings_currency') for p in PROFILES)
+
+
 def validate(profile):
     """Refuse a malformed profile before it can change any reading."""
     unknown = set(profile) - _KEYS

@@ -21,6 +21,17 @@ Currency, in order (Neil, 2026-10-13):
       plus bank or holder), and no saved statement of that account covers the
       same dates (several currency sections share one account number at some
       banks: those sections must never inherit each other's currency).
+  (b') a brokerage cash ledger that prints no currency anywhere (not even in
+      its holdings) takes the currency of the ledger account it joins (Neil,
+      2026-10-24): confirmed automatically when that account's saved
+      statements give exactly one currency (one saved statement is enough),
+      the account is identified exactly and uniquely on two independent fields
+      and no saved statement of it covers the same dates. No saved statement,
+      or several currencies, proposes nothing that is confirmed: it stays held.
+      Basis ``account_currency``, recorded with the System details save.
+      Switch ``ACCOUNT_CURRENCY``. A brokerage statement that prints a
+      currency keeps it; one that differs from its account's is held
+      (``account_currency_conflict``).
   (c) the case's usual currency (the currency of most of its saved
       statements). Always a proposal that needs one click.
 
@@ -49,6 +60,10 @@ FIELDS = ('currency', 'institution', 'holder', 'account_number')
 REASONS = {'currency': 'currency', 'institution': 'institution', 'holder': 'holder', 'account_number': 'account'}
 LABELS = {'currency': 'Currency', 'institution': 'Bank', 'holder': 'Account holder', 'account_number': 'Account number'}
 MIN_AGREEING_STATEMENTS = 2
+# Neil, 2026-10-24: a brokerage cash ledger printing no currency takes its account's one currency (b').
+# Reverse: False (such a statement's currency stays a person's choice, as before).
+ACCOUNT_CURRENCY = True
+ACCOUNT_CURRENCY_BASIS = 'account_currency'
 MIN_MASKED_DIGITS = 4
 FULL_ACCOUNT_DIGITS = 6
 
@@ -394,7 +409,12 @@ def _account_or_case_currency(values, candidates, matched, knowledge):
             label = f"same account's {_plural(statements, 'saved statement', 'saved statements')}"
             if statements > 1:
                 label += ', all ' + value
-            return dict(value=value, basis='same_account', confirmed=confirmed, label=label, statements=statements,
+            basis = 'same_account'
+            if ACCOUNT_CURRENCY and values.get('brokerage_cash_ledger') and not values.get('printed_currency'):
+                # (b') The account's one established currency: one saved statement establishes it.
+                confirmed = statements >= 1 and independent >= 2 and not same_dates
+                basis, label = ACCOUNT_CURRENCY_BASIS, 'account currency: ' + label
+            return dict(value=value, basis=basis, confirmed=confirmed, label=label, statements=statements,
                         matched=sorted(matched), same_dates_saved=same_dates)
     if knowledge.default_currency:
         return dict(value=knowledge.default_currency, basis='case_default', confirmed=False,
@@ -433,7 +453,25 @@ def summary_values(summary):
     return dict(currency=summary.get('currency') or '', institution=summary.get('institution') or '',
                 holder=summary.get('holder') or '', account_number=summary.get('account') or '',
                 period_start=summary.get('period_start') or '', period_end=summary.get('period_end') or '',
-                printed_currency=summary.get('printed_currency') or None)
+                printed_currency=summary.get('printed_currency') or None,
+                brokerage_cash_ledger=bool(summary.get('brokerage_cash_ledger')))
+
+
+def account_currency_conflict(values, knowledge):
+    """The account's established currency when a brokerage cash ledger's own currency differs from it, else ''.
+
+    The statement's currency is printed (its holdings); its account (same
+    number and bank, any currency) has saved statements in another currency.
+    The printed currency is never replaced: the statement is held for a person.
+    """
+    if not ACCOUNT_CURRENCY or not values.get('brokerage_cash_ledger') or not values.get('currency') or knowledge is None:
+        return ''
+    candidates, matched = matching_accounts(dict(values, currency=''), knowledge)
+    if not candidates or 'ambiguous' in matched:
+        return ''
+    established = {c.upper() for k in candidates for c in [s.currency for s in k.statements] + [k.currency] if c}
+    other = sorted(established - {values['currency'].upper()})
+    return ', '.join(other)
 
 
 def resolves_all(reasons, proposals):

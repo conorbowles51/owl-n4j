@@ -88,16 +88,20 @@ def initial_request(proposal):
     # A closing-only statement's printed closing date, and a start that its
     # source establishes, fill only dates the printed header left empty.
     dates = proposal.get('period_dates') or {}
+    # A movement query trimmed where a saved statement already counts its days (statement_overlap_trim).
+    trim = proposal.get('overlap_trim') if (proposal.get('overlap_trim') or {}).get('status') == 'trimmed' else {}
     return dict(expected_revision=proposal['revision'], statement_id=proposal.get('statement_id'),
         currency=proposal['currency'], holder=metadata.get('holder',''), account_number=metadata.get('account_number',''),
-        institution=metadata.get('institution',''), period_start=metadata.get('period_start','') or dates.get('period_start') or '',
-        period_end=metadata.get('period_end','') or dates.get('period_end') or '',
+        institution=metadata.get('institution',''),
+        period_start=trim.get('period_start') or metadata.get('period_start','') or dates.get('period_start') or '',
+        period_end=trim.get('period_end') or metadata.get('period_end','') or dates.get('period_end') or '',
         rows=[dict(id=r['id'], excluded=r['excluded'], date=r['fields'].get('date') or r['fields'].get('booking_date') or r['fields'].get('value_date') or '',
             date_unprinted=r['fields'].get('date_basis') == 'statement_end_ordering_only',
             date_values={role:r['fields'].get(role,'') for role in _date_roles(r['fields']) if role != _primary_date_role(r['fields'])},
             description=r['fields'].get('description',''), counterparty=r['fields'].get('counterparty',''),
             amount_minor=r['fields'].get('amount_minor') or ('0' if r['excluded'] else ''), direction=r['fields'].get('direction'),
-            balance_minor=r['fields'].get('balance'), reason=r.get('assignment_reason', '')) for r in proposal['rows']])
+            balance_minor=r['fields'].get('balance'), reason=r.get('assignment_reason') or r.get('covered_reason') or '')
+            for r in proposal['rows']])
 
 
 # Statement details kept from corrections saved on an earlier reading; rows
@@ -227,6 +231,25 @@ def assess(proposal, request=None):
     if proposal.get('printed_currency') and not proposal['currency']:
         # Cited for the currency proposal (field_proposals); the reading stays without a currency.
         summary['printed_currency'] = proposal['printed_currency']
+    if proposal.get('brokerage_cash_ledger'):
+        # Its currency is printed only in its holdings, or taken from its account (field_proposals).
+        summary['brokerage_cash_ledger'] = True
+    if proposal.get('statement_form'):
+        # A movement query ranks with other queries of its account for the overlap trim (statement_overlap_trim).
+        summary['statement_form'] = proposal['statement_form']
+    if proposal.get('overlap_trim'):
+        trim = proposal['overlap_trim']
+        summary['overlap_trim'] = {key: trim[key] for key in ('status', 'code', 'message', 'period_start', 'period_end',
+                                                              'printed_period_start', 'printed_period_end') if key in trim}
+        if trim['status'] == 'held' and trim.get('code') == 'fully_covered':
+            # Every movement is in saved statements already: saving it would count them twice.
+            summary['can_import'] = False
+            problems.insert(0, dict(kind='overlap_trim', row_id=None, message=trim['message']))
+            summary['problems'] = problems[:50]
+            summary['problem_count'] = summary.get('problem_count', 0) + 1
+        if trim['status'] == 'trimmed':
+            summary['overlap_trim']['covered_movements'] = len(trim['before']) + len(trim['after'])
+            summary['overlap_trim']['covered_by'] = [c['source_document_id'] for c in trim['covers']]
     summary['account_type'] = proposal['metadata'].get('account_type') or ''
     # The pages this period is read from: which saved periods of its file its
     # readiness depends on (_relevant_admitted).
@@ -699,7 +722,22 @@ class _ProjectionInputs:
             visibility=metadata.get('financial_file_visibility'), decision=metadata.get(METADATA_KEY, {}).get(key),
             duplicate=projection, admitted=_relevant_admitted(self.admitted.get(item.file_id, []), item, summary,
                 metadata.get(METADATA_KEY, {}).get(key)),
-            reading=self.guards.get(item.file_id)))
+            reading=self.guards.get(item.file_id),
+            **({'saved_in_case': self.saved_mark} if self._trims(summary) else {})))
+
+    @staticmethod
+    def _trims(summary):
+        """A movement query's reading depends on the saved statements of its account (statement_overlap_trim)."""
+        from services.financial.statement_overlap_trim import TRIM_OVERLAPS
+        from services.financial.statement_import_santander_query import FORM
+        return TRIM_OVERLAPS and (summary or {}).get('statement_form') == FORM
+
+    @property
+    def saved_mark(self):
+        if getattr(self, '_saved_mark', None) is None:
+            from services.financial.field_proposals import _fingerprint
+            self._saved_mark = _fingerprint(self.session, self.case_id)
+        return self._saved_mark
 
     def stored_readiness(self, item):
         """(state, summary, request) from a still-current readiness record, or None."""
@@ -775,7 +813,10 @@ def _project_item(session, case_id, item, file, *, read, saved_files, duplicate_
                 state = progress['assessment_status']
             else:
                 state, summary = 'attention', conflict_summary(summary)
-        elif progress or validate_reviews or item.file_id in saved_files or 'can_import' not in summary or summary.get('review_model') != REVIEW_MODEL:
+        elif (progress or validate_reviews or item.file_id in saved_files or 'can_import' not in summary
+              or summary.get('review_model') != REVIEW_MODEL or _ProjectionInputs._trims(summary)):
+            # A movement query's reading depends on its account's saved statements (the overlap trim): its
+            # projection is read again whenever its stored readiness is not current.
             try:
                 proposal = read(item)
                 from services.financial.review_upgrade import upgrade_request
@@ -938,6 +979,7 @@ def _checked_batch_items(session, case_id, items, *, validate_reviews=False, rea
                     state, summary, projected_request = _readiness_pending(item)
                     held = True
             projected.append((item, state, summary, projected_request, held))
+    knowledge = {}
     with stage('batch_coverage'):
         for index, (item, state, summary, projected_request, held) in enumerate(projected):
             if held or state not in ('ready', 'attention'):
@@ -948,7 +990,13 @@ def _checked_batch_items(session, case_id, items, *, validate_reviews=False, rea
                 # Where the statement starts in its file: a second printed statement
                 # for the same account and dates in the same file is compared.
                 'page_number': summary.get('page_number') or item.summary.get('page_number')}
+            if not projected_request and _ProjectionInputs._trims(summary):
+                # The dates of this projection's own reading (a trimmed query's kept dates), not the stored ones.
+                raw.update(period_start=summary.get('period_start', ''), period_end=summary.get('period_end', ''))
             review = coverage_review(session, case_id=case_id, file_id=item.file_id, request=raw, sources=sources)
+            from services.financial.statement_import_overlap import later_queries_trim_themselves
+            review = later_queries_trim_themselves(review, raw, file_id=item.file_id, statement_id=item.statement_key,
+                                                   summary=summary)
             problems = [p for p in summary.get('problems', []) if p.get('kind') not in ('coverage', 'coverage_load', 'readiness_pending')]
             extra_count = max(0, summary.get('problem_count', 0) - len(summary.get('problems', [])))
             if raw.get('_coverage_error'):
@@ -958,8 +1006,15 @@ def _checked_batch_items(session, case_id, items, *, validate_reviews=False, rea
                     message=('This file prints another statement for the same bank, full account, holder, currency and statement period on a different page. Compare the two before importing either.'
                         if duplicate_hold(review, raw) and review.get('same_file_statement') else
                         'A separate file matches this bank, full account, holder, currency and statement period. Compare the existing statement before importing another copy.'
-                        if duplicate_hold(review, raw) else 'Another statement covers some of these dates. You can compare their payments now or after importing.')))
+                        if duplicate_hold(review, raw) else 'Another statement covers some of these dates. You can compare their payments now or after importing.'
+                        + ((' ' + summary['overlap_trim']['message']) if (summary.get('overlap_trim') or {}).get('message') else ''))))
             if duplicate_hold(review, raw):
+                summary['can_import'] = False
+            conflict = _account_currency_conflict(session, case_id, summary, raw, knowledge)
+            if conflict:
+                problems.append(dict(kind='statement_detail', field='currency', row_id=None,
+                    message=f"This statement prints {raw.get('currency')}, but its account's saved statements are in "
+                            f"{conflict}. Check which currency applies before saving."))
                 summary['can_import'] = False
             if unhydrated:
                 # A comparison missing older pending statements could hide a
@@ -973,6 +1028,20 @@ def _checked_batch_items(session, case_id, items, *, validate_reviews=False, rea
     with stage('batch_finish'):
         result = _finish_projection(session, case_id, projected, inputs.files)
     return result, sources
+
+
+def _account_currency_conflict(session, case_id, summary, raw, knowledge):
+    """The other currencies of a brokerage cash ledger's account when its own differs (field_proposals)."""
+    from services.financial import field_proposals
+    if not field_proposals.ACCOUNT_CURRENCY or not summary.get('brokerage_cash_ledger') or not raw.get('currency'):
+        return ''
+    if 'case' not in knowledge:
+        knowledge['case'] = field_proposals.case_knowledge(session, case_id)
+    values = dict(field_proposals.summary_values(summary), currency=raw.get('currency') or '',
+                  institution=raw.get('institution') or summary.get('institution') or '',
+                  holder=raw.get('holder') or summary.get('holder') or '',
+                  account_number=raw.get('account_number') or summary.get('account') or '')
+    return field_proposals.account_currency_conflict(values, knowledge['case'])
 
 
 def _finish_projection(session, case_id, projected, files):
