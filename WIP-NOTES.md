@@ -122,6 +122,66 @@ are held because their batch items were prepared on 2026-10-15 and 2026-10-23, b
 
 ---
 
+# fin/rg-bbva: BBVA reader gaps (BNB2 held statements), counts and opaque ids only
+
+Branch fin/rg-bbva from live 68d95b20. Targets: reader-gaps/bbva.json (46 held statements). Private
+material (bench runs, mini corpus) under /mnt/owl-data/fin-real/rgb (mode 700).
+
+## Causes (46 statements)
+
+| Cause | Statements | Outcome |
+|---|---|---|
+| Fund statements (holdings only) listed 'unexplained' | 11 (+1 more held as 'balance') | FIXED (projection) |
+| File misses printed pages (printed "page n of m", file holds fewer) | 10 | correctly held, not a reader gap |
+| BBVA credit line ("Linea Credito Digital PyME", amounts owed, OCR-garbled summary) | 8 (4 distinct prints) | not built: needs a credit-line (liability) reading with summary interest/IVA as rows; truth: 2 of 4 distinct auto, 1 hold, 1 decision |
+| Scanned movement lines whose date has an underscore/hyphen mark ('11/DIC_') | 2 | FIXED for 1 (engine B2 rule); the other still holds on one damaged second date ('{7IDIC_') |
+| OCR digit misread in an amount (5 read as 9, chain breaks by exactly the difference) | 2 | not fixable from the saved text (needs a new engine reading) |
+| Damaged operation date with a legible settlement date ('OS/MAY' beside '05/MAY') | 2 (+ others inside held files) | NOT built: on 400 BBVA files, 654 of 11,832 movement lines print different operation and settlement dates (5.5%, e.g. 07 vs 05), so the settlement date cannot stand in for a damaged operation date |
+| Investigator's earlier saved review on the file | 3 | investigator decision, not reader |
+| Account number not read (OCR) | 4 | not reached |
+| Other single cases (currency proposal, manual row needs page, 1 no-activity, 1 two-page fragment) | 4 | not reached |
+
+### Fund statements: why the rule did not trigger live
+The rule did trigger: all 11 items store `summary.not_payment_statement` (assess, 68d95b20). The listing
+projection (`import_batches._checked_batch_items`, coverage stage) re-derived each item's state from its problems
+alone; a fund statement has no problem and is never saveable, so it came out 'ready' with can_import False, and
+`review_queue.classify` (which looks for not_payment only on 'attention') counted it 'unexplained'. Fix: the coverage
+stage keeps such an item 'attention' (follows LOUPE_FINANCIAL_NOT_PAYMENT_STATEMENTS). Live read-only _compute:
+unexplained 11 -> 0, not_payment 0 -> 11, every other bucket unchanged. A 12th BBVA fund statement (held 'balance',
+stored reading older than 68d95b20) reads as not_payment on a fresh read; it moves on its next re-read.
+
+### Date edge marks (engine, shared code)
+`statement_engine._date_parts`: when a token reads as no date, an underscore at either end and a hyphen before an
+underscore are stripped and only a day-and-month-name reading is accepted (`'11/DIC_'`, `'-11/DIC_'`, `'13/DIC._'`,
+`'27/IMAR_'`). Switch LOUPE_FINANCIAL_DATE_EDGE_MARKS (default on). Changed one existing test expectation: a second
+date printed with an underscore ('1O/MAR_', '10/ABR_') now reads as that date, like the same ink without it.
+
+## Measured
+- Dry run (fresh reading + assess, worktree, read-only) of the 46: not_payment 12, ready 1 (was 0), held 33.
+- Live engine survey, BNB2 files carrying such date tokens (62 files): 17 periods newly proved, 0 lost, 0 read
+  differently.
+- Truth: 26 distinct tokens in the 797 truth readings change reading, in 8 truth documents. Mini bench on those 8
+  (r14s-whole readings, base 68d95b20 vs branch): product 6 -> 7 ready, generic-only 6 -> 7, 0 wrong, 0 critical,
+  0 lost (gained d889c7856ad55#1).
+- Synthetic (aqb synth readings, branch): 108/125 ready, 0 wrong, held 10/10 (same as base figures recorded).
+
+## Coordinator extras (2 BBVA scans from unidentified.json, files 052ad764 / 5127a40e)
+Tried a dropped-accent label rule ('SALDO DE OPERACIN FINAL') in the engine vocabulary and the BBVA reader. It
+fixes the label but neither statement proves: 052ad764 prints no recognisable balance labels at all (no profile
+match, 'no_movements_or_controls'); 5127a40e has OCR noise between the closing label and its value and damaged
+totals ('0.00?'), so closing and the deposit total stay unread. No gain, so the change was reverted (fail closed).
+
+## Tests
+test_financial_statement_engine.py, test_financial_statement_import_bbva.py,
+test_financial_bbva_capital_one_reading_quality.py, test_financial_held_settlement.py: all pass.
+New: DateEdgeMarkTests (4), the listing-projection fund test (2).
+
+## Shared code touched
+- backend/services/financial/import_batches.py (coverage stage of the listing projection, 3 lines).
+- backend/services/financial/statement_engine.py (`_date_parts`, new switch).
+
+---
+
 # Integration of BNB2 queue units (A2 decisions, B Santander gap, C others)
 
 ## Unit A2 notes

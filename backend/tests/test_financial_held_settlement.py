@@ -398,3 +398,35 @@ def test_the_engine_release_snapshot_settles_held_copies_before_selecting(f):
         log = db.scalar(select(IngestionLog).where(IngestionLog.extra['operation'].as_string()
                                                    == 'statement_recovery_reader_snapshot'))
         assert log.extra['scope']['settled'] == {'saved_copy:set_aside': 1}
+
+
+@pytest.mark.parametrize('enabled', [True, False])
+def test_the_listing_projection_keeps_a_set_aside_fund_statement_held(f, monkeypatch, enabled):
+    """The coverage stage of the listing projection re-derived the state from problems alone, so a fund statement
+    (no problem, never saveable) was listed as ready-yet-unsaveable ('unexplained'), not as not a payment statement."""
+    from services.financial import import_batches
+    from services.financial.review_queue import classify as bucket
+    monkeypatch.setattr(not_payment_statements, 'ENABLED', enabled)
+    flag = not_payment_statements.classify(FILE, _text(NOTICE, FUND_PAGE, MOVES_PAGE), _fund_proposal())
+    batch = Batch(id=uuid4(), case_id=f.case.id, created_by=f.user.id, status='review',
+        actor=dict(name=f.actor.name, email=f.actor.email, user_id=str(f.actor.user_id)),
+        files=[dict(source_id=str(f.file.id), file_id=str(f.file.id), filename=f.file.original_filename,
+            expected_revision='initial', status='checked')])
+    f.db.add(batch)
+    f.db.flush()
+    summary = dict(source_id=str(f.file.id), revision='r', can_import=False, problems=[], problem_count=0,
+                   institution='BBVA', account_type='', holder='', account='', currency='MXN',
+                   **({'not_payment_statement': flag} if enabled else {}))
+    item = BatchItem(id=uuid5(batch.id, 'fund-list'), batch_id=batch.id, file_id=f.file.id, statement_key='s1',
+                     status='attention', summary=summary)
+    f.db.add(item)
+    f.db.commit()
+    monkeypatch.setattr(import_batches, '_project_item', lambda session, case_id, item, *a, **k: (
+        'attention', dict(item.summary), None))
+    with f.SessionLocal() as db:
+        projected = import_batches.checked_batch_items(db, f.case.id, [db.get(BatchItem, item.id)])[0]
+    if enabled:
+        assert projected.status == 'attention' and projected.summary['can_import'] is False
+        assert bucket(projected) == 'not_payment'
+    else:
+        assert bucket(projected) != 'not_payment'
