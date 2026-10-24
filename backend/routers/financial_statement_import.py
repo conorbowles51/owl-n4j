@@ -260,6 +260,29 @@ def duplicate_disposition(evidence_file_id: UUID, body: DuplicateDispositionRequ
         raise HTTPException(status_code=500, detail='The duplicate decision could not be confirmed. Reopen the statement to check its saved result.')
 
 
+class NotPaymentStatementRequest(_Contract):
+    action: Literal['restore', 'set_aside']
+    statement_id: _Digest | None = None
+    reason: str = Field(default='', max_length=4096)
+
+
+@router.post('/{evidence_file_id}/not-payment-statement', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+def not_payment_statement(evidence_file_id: UUID, body: NotPaymentStatementRequest,
+        case_id: UUID = Query(...), user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    """Put a fund statement set aside as not a payment statement back for review, or set it aside again."""
+    from services.financial.not_payment_statements import decide
+    try:
+        return decide(db, case_id=case_id, evidence_file_id=evidence_file_id, actor=actor_from_user(user),
+                      **body.model_dump())
+    except PdfMappingError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        db.rollback()
+        logger.exception('Not-a-payment-statement decision failed')
+        raise HTTPException(status_code=500, detail='The decision could not be confirmed. Reopen the statement to check it.')
+
+
 class RefreshStoredReadingRequest(_Contract):
     compared_review_revision: _Digest | None = None
     expected_revision: _Digest

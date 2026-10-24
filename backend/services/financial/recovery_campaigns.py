@@ -209,7 +209,10 @@ def is_reader_release(release):
 # protects the held statements of its file (recovery_readers.SETTLED_SIBLINGS), and a batch file whose
 # preparation failed and that holds nothing is an idle member of its original (FAILED_MEMBER_IDLE); a held
 # copy of an account and period the case already saved is left for comparison (COPY_OF_SAVED_PROTECTS).
-READER_SELECTION = 'held-selection-v2'
+# v3 (aq-copies-funds): before selecting, a held copy whose reading the saved ledger of its account and period
+# agrees with is set aside as a linked duplicate, and a held fund statement as not a payment statement
+# (held_settlement).
+READER_SELECTION = 'held-selection-v3'
 
 
 def reader_release_id(engine_digest):

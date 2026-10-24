@@ -17,6 +17,7 @@ import {
   useReviewQueue,
   useReviewQueuePage,
   fetchReviewQueue,
+  putBackNotPaymentStatement,
   QUEUE_PAGE_SIZE,
   QUEUE_BULK_LIMIT,
   type QueuePageList,
@@ -29,7 +30,7 @@ import { BulkStatementDetails } from "./BulkStatementDetails"
 import { QueueRowDetails } from "./QueueRowDetails"
 import { QueueNoActivityConfirm } from "./QueueNoActivityConfirm"
 
-type ListName = "waiting" | "ready" | "filled" | "reader" | "copies" | "unreadable"
+type ListName = "waiting" | "ready" | "filled" | "reader" | "copies" | "unreadable" | "not_payment"
 const PAGE_LISTS: Record<ListName, QueuePageList> = {
   waiting: "waiting",
   ready: "ready",
@@ -37,6 +38,7 @@ const PAGE_LISTS: Record<ListName, QueuePageList> = {
   reader: "reader_fix",
   copies: "copies",
   unreadable: "unreadable",
+  not_payment: "not_payment",
 }
 const QUEUE_KEYS = ["queueItem", "queueList", "queueFiles", "queueIssue"]
 // The issue each queue entry is listed for, in plain words, most important first.
@@ -69,6 +71,8 @@ function listOf(data: ReviewQueue | undefined, name: ListName): QueueEntry[] {
   if (!data) return []
   return name === "copies"
     ? data.copies
+    : name === "not_payment"
+      ? data.not_payment
     : name === "filled"
       ? data.filled
       : name === "reader"
@@ -111,7 +115,7 @@ export function ReviewStatusLine({
   const ready = c.ready + c.filled
   const total =
     c.imported + c.waiting + (c.reader_fix ?? 0) + c.filled + c.ready + c.copies +
-    c.unreadable + c.unreadable_files + c.saving + c.rechecking + c.left_unimported
+    c.unreadable + c.unreadable_files + c.saving + c.rechecking + c.left_unimported + (c.not_payment ?? 0)
   const parts = [
     <span key="total">Total {total}:</span>,
     part("Imported", c.imported),
@@ -124,6 +128,7 @@ export function ReviewStatusLine({
     ...(c.saving ? [part("Importing now", c.saving)] : []),
     ...(c.rechecking ? [part("Being rechecked", c.rechecking)] : []),
     ...(c.left_unimported ? [part("Left out by you", c.left_unimported)] : []),
+    ...(c.not_payment ? [part("Not payment statements", c.not_payment, "not_payment")] : []),
     ...(c.removed_files ? [part("Files removed from Financial", c.removed_files, "unreadable")] : []),
   ]
   return (
@@ -504,6 +509,8 @@ export function ReviewQueuePanel({
         <h3 className="text-lg font-semibold">
           {list === "copies"
             ? "Review copies"
+            : list === "not_payment"
+              ? "Not payment statements"
             : list === "filled"
               ? "Details filled automatically"
               : list === "reader"
@@ -521,6 +528,8 @@ export function ReviewQueuePanel({
             ? "Statements whose only missing details were found with certainty in the same account's saved statements. Saving fills them as System (each change is kept in the file's account-detail history) and the statement is saved only if everything else checks out. To use another value, open the statement and change it before or after saving."
             : list === "copies"
             ? "Statements that are copies of another statement in this case. Copies the system set aside count nothing; possible copies wait for you to compare them with the original."
+            : list === "not_payment"
+            ? "Fund statements: they list fund units, prices and market value, not payments in and out of an account. They are set aside and count nothing; the PDF and its reading are kept. Put one back to review it as a payment statement."
             : list === "unreadable"
               ? "Statements or files where nothing usable could be read. Open one to see its pages."
               : list === "ready"
@@ -812,6 +821,24 @@ export function ReviewQueuePanel({
                         entry={entry}
                         onSaved={(saved) => void refresh(saved)}
                       />
+                    )}
+                    {list === "not_payment" && (
+                      <div className="mt-1 space-y-1">
+                        <p>{entry.not_payment?.reason ?? "Set aside: not a payment statement."}</p>
+                        {canEdit && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              void putBackNotPaymentStatement(caseId, entry.file_id, entry.statement_id).then(() =>
+                                refresh()
+                              )
+                            }}
+                          >
+                            Put back for review
+                          </Button>
+                        )}
+                      </div>
                     )}
                     {list === "copies" && (
                       <p className="mt-1">

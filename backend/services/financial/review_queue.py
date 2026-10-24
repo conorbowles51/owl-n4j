@@ -45,7 +45,7 @@ REASON_ORDER = ('import_failed', 'saved_review', 'reprint', 'assignment', 'princ
 DETAIL_FIELDS = {'holder': 'holder', 'account': 'account_number', 'dates': 'period', 'currency': 'currency',
                  'institution': 'institution'}
 BUCKETS = ('imported', 'saving', 'waiting', 'reader_fix', 'filled', 'ready', 'copies', 'unreadable', 'rechecking', 'left_unimported',
-           'assigned', 'unexplained')
+           'assigned', 'unexplained', 'not_payment')
 
 
 def actionable_problems(summary):
@@ -202,6 +202,9 @@ def classify(item):
         return 'left_unimported'
     if item.status == 'assigned':
         return 'assigned'
+    if item.status == 'attention' and summary.get('not_payment_statement'):
+        # A fund statement set aside as not a payment statement (not_payment_statements).
+        return 'not_payment'
     if item.status not in ('ready', 'attention') or is_duplicate_review(item):
         return 'copies' if item.status == 'duplicate_ignored' or is_duplicate_review(item) else 'unexplained'
     if summary.get('readiness_pending') or summary.get('comparison_pending'):
@@ -300,7 +303,40 @@ def _entry(item, batch_id, describe_result=None):
             reasons=describe_result.get('reasons') or [describe_result['reason']], also=describe_result.get('also') or [])
         if describe_result.get('choice'):
             entry['choice'] = describe_result['choice']
+    not_payment = summary.get('not_payment_statement')
+    if not_payment:
+        entry.update(not_payment=dict(kind=not_payment.get('kind'), label=not_payment.get('label'),
+                                      reason=not_payment.get('reason')))
+    check = summary.get('saved_copy_check')
+    if check and check.get('outcome') in ('differs', 'not_comparable') and item.status == 'attention':
+        # A copy of an account and period the case already saved, held because it differs (saved_copies).
+        entry['saved_copy'] = dict(outcome=check['outcome'], saved_filename=(check.get('saved') or {}).get('filename'),
+                                   differences=check.get('differences') or [])
+        if describe_result:
+            entry['also'] = [*entry.get('also', []), saved_copy_sentence(check)]
     return entry
+
+
+def saved_copy_sentence(check):
+    """One plain sentence: why a copy of a saved account and period was not set aside."""
+    parts = []
+    for difference in check.get('differences') or []:
+        field = difference.get('field')
+        if field == 'payments':
+            parts.append(f"{difference['copy']} payments here, {difference['saved']} saved "
+                         f"({difference['only_in_copy']} only here, {difference['only_in_saved']} only in the saved one)")
+        elif field in ('opening', 'closing', 'currency'):
+            parts.append(f"the {field}{' balance' if field != 'currency' else ''} differs")
+        elif field == 'unread_rows':
+            parts.append('some lines here are not read')
+        elif field == 'incomplete_payment':
+            parts.append('a payment here has no date, amount or direction')
+        elif field == 'no_payments':
+            parts.append('no payments to compare')
+        elif field == 'several_saved_statements':
+            parts.append('several saved statements match')
+    return ('This account and period is already saved; this copy is held because ' + ('; '.join(parts) or 'it differs')
+            + ': compare it with the saved statement')
 
 
 def _preparing_again(batches):
@@ -833,7 +869,7 @@ def _uuid(value):
 
 
 PAGE_LISTS = {'waiting': 'items', 'ready': 'ready', 'filled': 'filled', 'reader_fix': 'reader_fix',
-              'rechecking': 'rechecking', 'copies': 'copies', 'unreadable': 'unreadable'}
+              'rechecking': 'rechecking', 'copies': 'copies', 'unreadable': 'unreadable', 'not_payment': 'not_payment'}
 
 
 def _public(entry):
@@ -895,7 +931,7 @@ def case_review_queue(session, *, case_id, file_ids=None, use_cache=True, limit=
     return dict(case_id=str(case_id), file_ids=sorted(file_filter), counts=counts,
         status_line=status_line(counts, reading), reading=reading, items=public['waiting'], copies=public['copies'],
         unreadable=public['unreadable'], unreadable_files=failed, set_aside_files=set_aside, copy_files=copy_files,
-        rechecking=public['rechecking'],
+        rechecking=public['rechecking'], not_payment=public['not_payment'],
         unexplained=[_public(e) for e in entries if e['bucket'] == 'unexplained'], ready=public['ready'],
         filled=public['filled'], reader_fix=public['reader_fix'], reader_files=waiting_for_reader,
         ready_batches=[dict(batch_id=key, statements=value) for key, value in
@@ -935,6 +971,8 @@ def status_line(counts, reading=None):
         parts.append(f"Being rechecked {counts['rechecking']}")
     if counts['left_unimported']:
         parts.append(f"Left out by you {counts['left_unimported']}")
+    if counts.get('not_payment'):
+        parts.append(f"Not payment statements {counts['not_payment']}")
     if counts.get('removed_files'):
         parts.append(f"Files removed from Financial {counts['removed_files']}")
     sentence = reading_sentence(reading)

@@ -474,6 +474,10 @@ def snapshot(session, case_id, cutoff, campaign, run_id):
     """Durable selection at the release cutoff; the run is the idempotency key."""
     if campaign.current_readers:
         supersede_earlier(session, case_id, campaign.release)
+    # Held statements that need no person (a copy the saved ledger agrees with, a fund statement) are set
+    # aside first; the selection below then sees them settled (held_settlement).
+    from services.financial.held_settlement import settle_held_statements
+    settled = settle_held_statements(session, case_id)
     selected, reasons = candidates(session, case_id, campaign, cutoff)
     membership = context(session, case_id)['membership']
     run = Run(id=run_id, case_id=case_id, release=campaign.release, status='running' if selected else 'complete')
@@ -493,7 +497,8 @@ def snapshot(session, case_id, cutoff, campaign, run_id):
                 visibility_revision=financial_file_visibility(detail['source'])['financial_visibility_revision'])))
     scope = dict(considered=sum(reasons.values()), scheduled=len(selected),
         batch_files=sum(len(members) for *_, members in selected),
-        excluded={key: value for key, value in sorted(reasons.items()) if key != ELIGIBLE})
+        excluded={key: value for key, value in sorted(reasons.items()) if key != ELIGIBLE},
+        settled=dict(sorted(settled.items())))
     session.add(IngestionLog(case_id=case_id, level='info',
         message=f'Reader recovery scheduled {len(selected)} held statements for a new reading. '
             f'{scope["considered"] - len(selected)} batch files were left unchanged.',

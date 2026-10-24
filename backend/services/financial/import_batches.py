@@ -277,6 +277,12 @@ def assess(proposal, request=None):
         summary.update(duplicate_disposition=current['duplicate_disposition'], can_import=False, problems=[],
             problem_count=0, transaction_count=0, record_count=0, incomplete_count=0)
         return 'duplicate_ignored', summary
+    if proposal.get('not_payment_statement') and not current and not any(
+            not row.get('excluded') and str(row.get('amount_minor') or '0').strip('0-') for row in raw['rows']):
+        # A fund statement (not_payment_statements): never saved, not waiting for anyone; put back on request.
+        summary.update(not_payment_statement=proposal['not_payment_statement'], can_import=False, problems=[],
+                       problem_count=0)
+        return 'attention', summary
     if current:
         retained = current.get('issues', problems)
         details = current.get('details', {})

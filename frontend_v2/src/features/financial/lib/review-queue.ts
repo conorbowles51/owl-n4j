@@ -45,6 +45,8 @@ const entry = z.object({
   /** "same_file_read": this upload's reading failed; the same bytes were read through another upload.
    * "same_pages_read": the same, for a file with other bytes whose every page is identical. */
   copy_reason: z.string().nullish(),
+  /** A fund statement (holdings, no payments) set aside as not a payment statement, with the reason. */
+  not_payment: z.object({ kind: z.string().nullish(), label: z.string().nullish(), reason: z.string().nullish() }).nullish(),
   /** Printed opening and closing balances as read (minor units; null when not read), for checking against the PDF. */
   opening_minor: z.string().nullish(),
   closing_minor: z.string().nullish(),
@@ -82,6 +84,8 @@ export const queueCounts = z.object({
   left_unimported: z.number().default(0),
   assigned: z.number().default(0),
   unexplained: z.number().default(0),
+  /** Fund statements set aside as not payment statements. */
+  not_payment: z.number().default(0),
 })
 export type QueueCounts = z.infer<typeof queueCounts>
 
@@ -104,6 +108,7 @@ export const reviewQueue = z.object({
   reading: readingProgress.optional(),
   items: z.array(entry),
   copies: z.array(entry).default([]),
+  not_payment: z.array(entry).default([]),
   unreadable: z.array(entry).default([]),
   unreadable_files: z
     .array(
@@ -187,7 +192,7 @@ export const reviewQueue = z.object({
 export type ReviewQueue = z.infer<typeof reviewQueue>
 
 /** The server's list names for paging (`page_list`). */
-export type QueuePageList = "waiting" | "ready" | "filled" | "reader_fix" | "rechecking" | "copies" | "unreadable"
+export type QueuePageList = "waiting" | "ready" | "filled" | "reader_fix" | "rechecking" | "copies" | "unreadable" | "not_payment"
 export const QUEUE_PAGE_SIZE = 50
 /** Shared fixes act on every statement of one issue: one capped read of them all. */
 export const QUEUE_BULK_LIMIT = 5000
@@ -745,4 +750,12 @@ export async function checkUnreadableAgain(caseId: string, data: ReviewQueue): P
   const parts = [`${result.queued} ${result.queued === 1 ? "file is" : "files are"} being checked again`]
   if (result.skipped.length) parts.push(`${result.skipped.length} ${result.skipped.length === 1 ? "batch" : "batches"} not started: ${result.skipped[0].message}`)
   return parts.join("; ")
+}
+
+/** Put a fund statement set aside as not a payment statement back for review (recorded as your decision). */
+export async function putBackNotPaymentStatement(caseId: string, fileId: string, statementId?: string | null) {
+  return fetchAPI(
+    `/api/financial/statement-import/${encodeURIComponent(fileId)}/not-payment-statement?${new URLSearchParams({ case_id: caseId })}`,
+    { method: "POST", body: JSON.stringify({ action: "restore", statement_id: statementId ?? null }) }
+  )
 }
