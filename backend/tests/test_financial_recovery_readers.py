@@ -766,3 +766,44 @@ def test_a_failed_batch_file_holding_nothing_does_not_keep_the_original_from_bei
     (_, first), (status, second) = entry_of(f, older.id), entry_of(f, newer.id)
     assert first['status'] == 'waiting' and first['recovery']['action'] == 'reader_recovery'
     assert second['status'] == 'error' and 'recovery' not in second  # left exactly as it was
+
+
+def test_a_held_copy_of_a_period_another_original_saved_is_left_for_comparison(f, monkeypatch):
+    """COPY_OF_SAVED_PROTECTS: other bytes already saved this account and period; no new reading may save it."""
+    from postgres.models.financial import FinancialAccount, FinancialStatementPeriod
+    from services.evidence_db_storage import EvidenceDBStorage
+    set_reader(f, f.file.id)
+    receipt = f.confirm_legacy()
+    with f.SessionLocal() as db:
+        period = db.scalar(select(FinancialStatementPeriod).where(
+            FinancialStatementPeriod.source_document_id == __import__('uuid').UUID(receipt['source_document_id'])))
+        account = db.get(FinancialAccount, period.account_id)
+        start, end = period.period_start.isoformat(), period.period_end.isoformat()
+        number = account.identifier_as_printed or account.identifier_normalised
+    other = EvidenceDBStorage.add_files(f.db, f.case.id, [dict(original_filename='other.pdf', stored_path=f.file.stored_path,
+        sha256='e' * 64, size=1)], folder_id=f.file.folder_id, created_by_id=f.user.id)[0]
+    f.db.flush()
+    document = f.db.get(FinancialSourceDocument, __import__('uuid').UUID(receipt['source_document_id']))
+    document.evidence_file_id = other.id  # the period was saved from other bytes
+    f.db.commit()
+    metadata = dict(f.db.get(EvidenceFile, f.file.id).metadata_ or {})
+    metadata.pop('financial_duplicate_dispositions', None)
+    f.db.get(EvidenceFile, f.file.id).metadata_ = metadata
+    f.db.commit()
+    _, (held,) = held_batch(f)
+    with f.SessionLocal() as db:
+        db.get(BatchItem, held.id).summary = dict(source_id=str(f.file.id), revision='r', period_start=start,
+            period_end=end, account=number)
+        db.commit()
+    assert selection(f) == ([], {'copy_of_saved': 1})
+    with f.SessionLocal() as db:
+        db.get(BatchItem, held.id).summary = dict(source_id=str(f.file.id), revision='r', period_start=start,
+            period_end=end, account='999')  # another account: not a copy of it
+        db.commit()
+    assert selection(f)[1] == {'eligible': 1}
+    with f.SessionLocal() as db:
+        db.get(BatchItem, held.id).summary = dict(source_id=str(f.file.id), revision='r', period_start=start,
+            period_end=end, account=number)
+        db.commit()
+    monkeypatch.setattr(readers, 'COPY_OF_SAVED_PROTECTS', False)
+    assert selection(f)[1] == {'eligible': 1}

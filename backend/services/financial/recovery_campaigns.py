@@ -207,7 +207,8 @@ def is_reader_release(release):
 # v2 (aq-b-santander): a removal recorded before the batch holding the restart was made no longer protects it,
 # and a statement already settled without a person's work (saved, or set aside by the System) no longer
 # protects the held statements of its file (recovery_readers.SETTLED_SIBLINGS), and a batch file whose
-# preparation failed and that holds nothing is an idle member of its original (FAILED_MEMBER_IDLE).
+# preparation failed and that holds nothing is an idle member of its original (FAILED_MEMBER_IDLE); a held
+# copy of an account and period other bytes already saved is left for comparison (COPY_OF_SAVED_PROTECTS).
 READER_SELECTION = 'held-selection-v2'
 
 

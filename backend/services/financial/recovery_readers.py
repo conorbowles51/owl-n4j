@@ -58,6 +58,7 @@ REASONS = {
     'processing': 'A reading is already running.',
     'unrecorded_reader': 'The reading has no valid engine record; its reader cannot be proven.',
     'reader_not_affected': 'The reading came from the current or an unrecognised engine revision.',
+    'copy_of_saved': 'Another original of the case already saved this account and period: a copy to compare.',
 }
 MESSAGES = {
     'removed': 'The investigator removed this source or its imports. Recovery left it unchanged.',
@@ -67,6 +68,7 @@ MESSAGES = {
     'investigator_decision': 'An investigator decision was recorded on this statement. Recovery left it unchanged.',
     'not_all_held': 'A period of this statement is ready. Recovery left it unchanged.',
     'nothing_held': 'No period of this statement is still held. Recovery left it unchanged.',
+    'copy_of_saved': 'Another file of this case already saved this account and period. Recovery left this copy for comparison.',
 }
 # Readings handed to batches at once (host-wide), and how long the count of
 # evidence being read elsewhere is reused before it is counted again.
@@ -144,6 +146,47 @@ def duplicate_decision(file):
 # protects its file, as before.
 SETTLED_SIBLINGS = os.environ.get('LOUPE_FINANCIAL_RECOVERY_SETTLED_SIBLINGS', '1').strip().lower() not in (
     '0', 'false', 'no', 'off')
+
+
+# A held statement whose printed account and period another original of the case already saved is a copy for
+# the duplicate workflow to compare, not for a new reading to save: a copy read under other bank wording or
+# product type can be saved into a second ledger account (the live double admission). Fail closed: such a file
+# is left as it is. Off: not checked, as before.
+COPY_OF_SAVED_PROTECTS = os.environ.get('LOUPE_FINANCIAL_RECOVERY_COPY_OF_SAVED', '1').strip().lower() not in (
+    '0', 'false', 'no', 'off')
+
+
+def _digits(value):
+    return ''.join(ch for ch in str(value or '') if ch.isdigit())
+
+
+def copy_of_saved(session, case_id, source, held):
+    """True when a held statement's account and period are admitted in the case from other bytes. Read only."""
+    if not COPY_OF_SAVED_PROTECTS:
+        return False
+    from datetime import date
+    from postgres.models.financial import FinancialAccount, FinancialStatementPeriod
+    wanted = {}
+    for item in held:
+        summary = item.summary or {}
+        try:
+            start, end = date.fromisoformat(summary['period_start']), date.fromisoformat(summary['period_end'])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if _digits(summary.get('account')):
+            wanted.setdefault((start, end), set()).add(_digits(summary.get('account')))
+    for (start, end), accounts in wanted.items():
+        rows = session.execute(select(FinancialAccount.identifier_normalised, FinancialAccount.identifier_as_printed,
+                EvidenceFile.sha256).select_from(FinancialStatementPeriod)
+            .join(FinancialSourceDocument, FinancialSourceDocument.id == FinancialStatementPeriod.source_document_id)
+            .join(FinancialAccount, FinancialAccount.id == FinancialStatementPeriod.account_id)
+            .join(EvidenceFile, EvidenceFile.id == FinancialSourceDocument.evidence_file_id)
+            .where(FinancialStatementPeriod.case_id == case_id, FinancialSourceDocument.status == 'admitted',
+                   FinancialStatementPeriod.period_start == start, FinancialStatementPeriod.period_end == end))
+        for normalised, printed, sha in rows:
+            if sha != source.sha256 and (_digits(normalised) in accounts or _digits(printed) in accounts):
+                return True
+    return False
 
 
 def settled_sibling(item, file, saved_keys=()):
@@ -277,6 +320,8 @@ def classify(session, case_id, batch, entry, campaign, scope, group=False):
     held = [item for item in own if item.status == HELD]
     if not held:
         return 'nothing_held', {}
+    if copy_of_saved(session, case_id, source, held):
+        return 'copy_of_saved', {}
     if any(file.status == 'processing' for file in pair):
         return 'processing', {}
     fingerprint = reading_fingerprint(session, reading)
