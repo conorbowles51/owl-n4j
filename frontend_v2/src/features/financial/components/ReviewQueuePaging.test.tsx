@@ -15,7 +15,7 @@ vi.mock("../hooks/use-financial-access", () => ({
 
 const entry = (n: number, reason = n % 2 ? "currency" : "reading") => ({
   id: `i${n}`, batch_id: "b1", file_id: `f${n}`, file_ids: [`f${n}`], source_id: `f${n}`, statement_id: null,
-  filename: `S${n}.pdf`, holder: "A", account: "1", institution: "B", currency: "USD",
+  filename: `S${n}.pdf`, holder: "A", account: `${n}`, institution: "B", currency: "USD",
   period_start: "2021-01-01", period_end: "2021-01-31", can_import: false, status: "attention", bucket: "waiting",
   file_position: 1, file_statements: 1, other_problems: 0, problem_total: 1, issue: `Issue ${n}`, issue_reason: reason,
 })

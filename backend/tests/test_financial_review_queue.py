@@ -106,6 +106,18 @@ class QueueRulesTests(TestCase):
         self.assertEqual((detail['row_id'], detail['page']), ('7:0:3', 7))
         self.assertEqual(describe(item(dict(kind='statement_detail', field='holder', message='Holder missing')).summary)['field'], 'holder')
 
+    def test_instruction_fields(self):
+        # Every page the issue is on and what the checks said, for the queue's plain steps.
+        detail = describe(item(READING, dict(READING, row_id='9:0:1', page=9)).summary)
+        self.assertEqual(detail['pages'], [7, 9])
+        self.assertEqual(detail['messages'][0], READING['message'])
+        from services.financial.review_queue import _own_work
+        manual = dict(bucket='waiting', reasons=['reading'], issue_messages=['A manually added transaction needs a page from this PDF.'])
+        self.assertTrue(_own_work(manual))
+        self.assertTrue(_own_work(dict(bucket='waiting', reasons=['saved_review'], issue_messages=[])))
+        self.assertFalse(_own_work(dict(bucket='waiting', reasons=['balance'], issue_messages=['Off by 1'])))
+        self.assertFalse(_own_work(dict(manual, bucket='ready')))
+
     def test_buckets(self):
         cases = {
             'waiting': item(READING),

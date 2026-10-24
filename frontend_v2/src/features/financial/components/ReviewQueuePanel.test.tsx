@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MemoryRouter, useLocation } from "react-router-dom"
 import { beforeEach, expect, it, vi } from "vitest"
@@ -166,11 +166,18 @@ beforeEach(() => {
 it("lists only statements with something to fix, each saying what before it is opened", async () => {
   mount("/cases/case/financial?view=statements&queue=1")
   const list = await screen.findByRole("list", { name: "Statements to review" })
-  const issues = list.querySelectorAll('[aria-label="Issue"]')
-  // Every queue entry states its problem: none can open with nothing to fix.
+  const issues = list.querySelectorAll('[aria-label="What is wrong"]')
+  // Every queue entry states its problem in plain words, with numbered steps: none can open with nothing to fix.
   expect(issues).toHaveLength(entries.length)
-  expect(issues[0]).toHaveTextContent("3 rows unreadable on page 7")
-  expect(issues[1]).toHaveTextContent("Currency not printed: choose one (and 1 more check)")
+  expect(issues[0]).toHaveTextContent("Some rows could not be read on page 7")
+  expect(list.querySelectorAll('[aria-label="What to do"]')[0]).toHaveTextContent(
+    "Open the PDF at page 7.Read each highlighted row in the PDF."
+  )
+  expect(issues[1]).toHaveTextContent("The currency is not printed where Loupe looks")
+  expect(screen.getByText("After that, the statement shows 1 more check.")).toBeVisible()
+  // The split: what needs a person first, named for the signed-in person (no name here: "you").
+  expect(screen.getByRole("tab", { name: /Needs you \(3\)/ })).toHaveAttribute("aria-selected", "true")
+  expect(screen.getByRole("tab", { name: /Loupe is handling \(4\)/ })).toBeVisible()
   expect(screen.getByText(/statement 7 of 54 in this file/)).toBeVisible()
   // Each row shows its period and printed balances, checkable against the PDF without opening it.
   expect(list.querySelectorAll('[aria-label="Period and printed balances"]')[1]).toHaveTextContent(
@@ -182,21 +189,25 @@ it("lists only statements with something to fix, each saying what before it is o
   expect(screen.getByLabelText("Statement status")).toHaveTextContent(/^Total \d+: Imported 49/)
   // Copies are behind their own entry, not in the queue.
   expect(screen.queryByText("Copy.pdf")).toBeNull()
-  fireEvent.click(screen.getByRole("button", { name: "Review copies (1)" }))
+  fireEvent.click(screen.getByRole("tab", { name: /Loupe is handling/ }))
+  const handled = await screen.findByRole("list", { name: "What Loupe is handling" })
+  expect(handled).toHaveTextContent("Copies set aside (1)")
+  fireEvent.click(within(handled).getAllByRole("button", { name: "Show them" }).at(-1)!)
   expect(await screen.findByText(/Set aside as a copy of Card statements.pdf/)).toBeVisible()
+  expect(screen.getByRole("note")).toHaveTextContent("Loupe is handling these. Nothing here needs you.")
 })
 
 it("opens the statement itself at its problem, and Next moves to the next one with issues without reloading", async () => {
   mount("/cases/case/financial?view=statements&queue=1")
-  fireEvent.click((await screen.findAllByRole("button", { name: "Open" }))[0])
-  expect(await screen.findByLabelText("What needs fixing")).toHaveTextContent("To fix: 3 rows unreadable on page 7")
+  fireEvent.click((await screen.findAllByRole("button", { name: "Open page 7" }))[0])
+  expect(await screen.findByLabelText("What needs fixing")).toHaveTextContent("To fix: Some rows could not be read on page 7")
   expect(await screen.findByText("Focused row: 7:0:17")).toBeVisible()
   expect(screen.getByText(/Statement 1 of 2 waiting for you/)).toBeVisible()
   const queueCalls = () => vi.mocked(fetchAPI).mock.calls.filter(([url]) => String(url).includes("/review/queue")).length
   const before = queueCalls()
   fireEvent.click(screen.getByRole("button", { name: "Next statement with issues (2 of 2)" }))
   await waitFor(() =>
-    expect(screen.getByLabelText("What needs fixing")).toHaveTextContent("Currency not printed: choose one")
+    expect(screen.getByLabelText("What needs fixing")).toHaveTextContent("The currency is not printed where Loupe looks")
   )
   expect(location).toContain("queueItem=i2")
   expect(await screen.findByText("Focused field: holder")).toBeVisible()
@@ -294,9 +305,12 @@ it("lists statements whose details were filled automatically, with each value an
   mount("/cases/case/financial?view=statements&queue=1")
   fireEvent.click(await screen.findByRole("button", { name: "Details filled automatically 1" }))
   expect(await screen.findByText("Filled.pdf")).toBeVisible()
-  expect(screen.getByLabelText("Details found automatically")).toHaveTextContent(
-    "Fills currency: USD (same account's 3 saved statements, all USD)"
+  // Marked as Loupe's, with where it came from, and an undo that takes her own value instead.
+  expect(screen.getByLabelText("Filled by Loupe")).toHaveTextContent(
+    "Currency: USD · filled by Loupe from same account's 3 saved statements, all USD"
   )
+  fireEvent.click(screen.getByRole("button", { name: "Undo" }))
+  expect(screen.getByText("Enter the right value. Loupe uses yours instead of USD.")).toBeVisible()
   expect(screen.getByRole("button", { name: "Open to change" })).toBeVisible()
   expect(screen.getByRole("button", { name: "Import 3 ready, and 1 once its details are filled" })).toBeVisible()
 })
@@ -312,7 +326,7 @@ it("shows every blocker after the summary sentence", async () => {
   })
   mount("/cases/case/financial?view=statements&queue=1")
   expect((await screen.findAllByLabelText("Also to fix"))[0]).toHaveTextContent(
-    "also: Account number not found: enter it; Account holder not found: enter it"
+    "After that, also: Account number not found: enter it; Account holder not found: enter it"
   )
 })
 
@@ -332,7 +346,7 @@ it("collapses a file the reader cannot handle yet into one line outside the wait
   mount("/cases/case/financial?view=statements&queue=1")
   expect(await screen.findByLabelText("Statement status")).toHaveTextContent("Waiting for a reader fix 2")
   expect(screen.queryByText("Subpoena.pdf")).toBeNull()
-  fireEvent.click(screen.getByRole("button", { name: "Waiting for a reader fix (2 in 1 file)" }))
+  fireEvent.click(screen.getByRole("button", { name: "Waiting for a reader fix 2" }))
   expect(await screen.findByText(/Loupe can't read this file reliably yet \(2 statements\)/)).toBeVisible()
   expect(screen.getByText("Show their 2 statements")).toBeVisible()
 })
@@ -385,11 +399,11 @@ it("loads the next statement in the background so Next shows it without waiting 
   mount("/cases/case/financial?view=statements&queue=1&queueItem=i1&queueList=waiting")
   const itemCalls = (id: string) =>
     vi.mocked(fetchAPI).mock.calls.filter(([url]) => String(url).includes(`/items/${id}?`)).length
-  expect(await screen.findByLabelText("What needs fixing")).toHaveTextContent("3 rows unreadable on page 7")
+  expect(await screen.findByLabelText("What needs fixing")).toHaveTextContent("Some rows could not be read on page 7")
   await waitFor(() => expect(itemCalls("i2")).toBe(1))
   fireEvent.click(screen.getByRole("button", { name: "Next statement with issues (2 of 2)" }))
   await waitFor(() =>
-    expect(screen.getByLabelText("What needs fixing")).toHaveTextContent("Currency not printed: choose one")
+    expect(screen.getByLabelText("What needs fixing")).toHaveTextContent("The currency is not printed where Loupe looks")
   )
   expect(itemCalls("i2")).toBe(1)
 })
@@ -416,7 +430,7 @@ it("lists failed readings of a file that another upload read as copies of that u
     throw Error(`unexpected ${url}`)
   })
   const onOpenBatch = mount("/cases/case/financial?view=statements&queue=1")
-  fireEvent.click(await screen.findByRole("button", { name: "Review copies (3)" }))
+  fireEvent.click(await screen.findByRole("button", { name: "Copies set aside 4" }))
   expect(await screen.findByText(/Same file as Month.pdf, which was read. This upload's own reading is not used/)).toBeVisible()
   expect(screen.getByText("Files set aside as copies")).toBeVisible()
   expect(screen.getByText(/Month \(2\).pdf: same file as Month.pdf, which was read/)).toBeVisible()
@@ -529,7 +543,7 @@ it("asks for the statement's reading together with its batch item, and closing i
     throw Error(`unexpected ${url}`)
   })
   mount("/cases/case/financial?view=statements&queue=1")
-  fireEvent.click((await screen.findAllByRole("button", { name: "Open" }))[0])
+  fireEvent.click((await screen.findAllByRole("button", { name: "Open page 7" }))[0])
   // The reading is requested while the batch item is still loading, not after it.
   await waitFor(() =>
     expect(vi.mocked(fetchAPI).mock.calls.some(([url]) =>

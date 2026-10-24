@@ -1684,6 +1684,8 @@ export type QueueNavigation = {
   issue?: string
   field?: "holder" | "account_number" | "period" | "currency" | "institution"
   proposals?: Record<string, { value: string; label: string; confirmed?: boolean }>
+  /** The numbered steps for it: where to look in the PDF and what to enter. */
+  steps?: string[]
   /** The other blockers, so fixing the stated one is never mistaken for the end. */
   also?: string[]
   fixMakesReady?: boolean
@@ -1918,6 +1920,13 @@ export function BatchStatementReview({
             className="w-full rounded border border-amber-500/60 bg-amber-50/60 p-2 text-sm font-medium dark:bg-amber-950/20"
           >
             To fix: {queue.issue}
+            {!!queue.steps?.length && (
+              <ol className="mt-1 list-decimal pl-5 font-normal" aria-label="What to do">
+                {queue.steps.map((text, index) => (
+                  <li key={index}>{text}</li>
+                ))}
+              </ol>
+            )}
             {!!queue.also?.length && (
               <span className="block font-normal">Also: {queue.also.join("; ")}</span>
             )}

@@ -27,13 +27,32 @@ import {
 } from "../lib/review-queue"
 import { ReadingProgress } from "./ReadingProgress"
 import { BulkStatementDetails } from "./BulkStatementDetails"
-import { QueueRowDetails } from "./QueueRowDetails"
-import { QueueProposalGroups } from "./QueueProposalGroups"
+import { QueueRowDetails, needsRowDetails } from "./QueueRowDetails"
 import { QueueNoActivityConfirm } from "./QueueNoActivityConfirm"
+import { QueueAnswerOnce } from "./QueueAnswerOnce"
+import { useAuthStore } from "@/features/auth/hooks/use-auth"
+import {
+  HANDLED_PARTS,
+  ISSUE_LABELS,
+  filledMarks,
+  groupEntries,
+  groupGuidance,
+  guidanceFor,
+  handledCount,
+  isGroup,
+  issueLabel,
+  needsCount,
+  needsLabel,
+  reasonProposal,
+  type QueueGroup,
+  type QueuePerson,
+} from "../lib/queue-guidance"
 
-type ListName = "waiting" | "ready" | "filled" | "reader" | "copies" | "unreadable" | "not_payment"
+type ListName = "waiting" | "ready" | "filled" | "reader" | "copies" | "unreadable" | "not_payment" | "handled"
 const PAGE_LISTS: Record<ListName, QueuePageList> = {
   waiting: "waiting",
+  // The overview of what Loupe handles: counts only, its first list's page.
+  handled: "ready",
   ready: "ready",
   filled: "filled",
   reader: "reader_fix",
@@ -42,31 +61,12 @@ const PAGE_LISTS: Record<ListName, QueuePageList> = {
   not_payment: "not_payment",
 }
 const QUEUE_KEYS = ["queueItem", "queueList", "queueFiles", "queueIssue"]
-// The issue each queue entry is listed for, in plain words, most important first.
-export const ISSUE_LABELS: Record<string, string> = {
-  import_failed: "Saving did not finish",
-  saved_review: "Earlier corrections to compare",
-  reprint: "Printed twice",
-  assignment: "Payments need an account",
-  currency: "Currency",
-  institution: "Bank name",
-  holder: "Account holder",
-  account: "Account number",
-  dates: "Statement dates",
-  balance: "Balances",
-  incomplete: "Missing values",
-  count: "Number of payments",
-  no_activity: "No payments read",
-  reading: "Unreadable rows",
-}
+export { ISSUE_LABELS }
 // Issues one shared answer can fix for many statements at once.
 const BULK_ISSUES = new Set(["currency", "institution", "holder", "account", "dates", "no_activity"])
-const FIELD_NAMES: Record<string, string> = {
-  currency: "currency",
-  institution: "bank",
-  holder: "account holder",
-  account_number: "account number",
-}
+// Reasons a value given once on the queue answers (single statement or a group).
+const ANSWER_ONCE = new Set(["currency", "institution", "holder", "account", "no_activity"])
+const HANDLED_LISTS = new Set<ListName>(["ready", "filled", "reader", "copies", "not_payment", "handled"])
 
 function listOf(data: ReviewQueue | undefined, name: ListName): QueueEntry[] {
   if (!data) return []
@@ -80,7 +80,7 @@ function listOf(data: ReviewQueue | undefined, name: ListName): QueueEntry[] {
         ? data.reader_fix
       : name === "unreadable"
       ? data.unreadable
-      : name === "ready"
+      : name === "ready" || name === "handled"
         ? data.ready
       : data.items
 }
@@ -220,6 +220,8 @@ export function ReviewQueuePanel({
   })
   const client = useQueryClient()
   const { canEdit, canUpload } = useFinancialAccess()
+  const signedIn = useAuthStore((state) => state.user)
+  const user: QueuePerson | null = signedIn ? { id: signedIn.id, name: signedIn.name } : null
   const [readingAfresh, setReadingAfresh] = useState(false)
   const [afreshResult, setAfreshResult] = useState("")
   const readAfresh = async () => {
@@ -467,6 +469,9 @@ export function ReviewQueuePanel({
     open(entries[position])
   }
 
+  const activeGuide = active && (active.bucket === "waiting" || active.bucket === "unreadable" || list === "unreadable")
+    ? guidanceFor(active, user, list === "unreadable" ? "unreadable" : active.bucket)
+    : undefined
   if (itemId && active?.batch_id)
     return (
       <>
@@ -483,7 +488,8 @@ export function ReviewQueuePanel({
           rowId={active.row_id ?? (active.page ? `page:${active.page}` : undefined)}
           onBack={back}
           queue={{
-            issue: active.issue,
+            issue: activeGuide?.title ?? active.issue,
+            steps: activeGuide?.steps,
             field: active.field ?? undefined,
             proposals: active.proposals,
             also: active.also,
@@ -509,33 +515,37 @@ export function ReviewQueuePanel({
       <header className="space-y-1">
         <h3 className="text-lg font-semibold">
           {list === "copies"
-            ? "Review copies"
+            ? "Copies set aside"
             : list === "not_payment"
               ? "Not payment statements"
             : list === "filled"
-              ? "Details filled automatically"
+              ? "Details filled by Loupe"
               : list === "reader"
-                ? "Waiting for a reader fix"
+                ? "Waiting for a better reader"
               : list === "unreadable"
-              ? "Couldn't read"
+              ? "Nothing could be read"
               : list === "ready"
                 ? "Ready to import"
-              : "Waiting for you"}
+              : list === "handled"
+                ? "Loupe is handling"
+              : needsLabel(user)}
         </h3>
         <p className="text-sm text-muted-foreground">
           {list === "reader"
-            ? "Files Loupe cannot read reliably yet: most of their statements fail on reading or on the account's identity, and no single field would make one ready. Nothing needs reviewing by hand; they are re-read when the reader is fixed. Their statements are listed below each file and can still be opened."
+            ? "Loupe cannot read these files reliably yet. Nothing needs doing by hand: they are read again when the reader improves. You can still open their statements below."
             : list === "filled"
-            ? "Statements whose only missing details were found with certainty in the same account's saved statements. Saving fills them as System (each change is kept in the file's account-detail history) and the statement is saved only if everything else checks out. To use another value, open the statement and change it before or after saving."
+            ? "The missing details were found in the same account's saved statements. Each value says where it came from. They are filled and imported when you press Import; change any value that is not right."
             : list === "copies"
-            ? "Statements that are copies of another statement in this case. Copies the system set aside count nothing; possible copies wait for you to compare them with the original."
+            ? "Copies of statements already in the case. Copies set aside count nothing. A possible copy says so and asks you to compare it."
             : list === "not_payment"
             ? "Fund statements: they list fund units, prices and market value, not payments in and out of an account. They are set aside and count nothing; the PDF and its reading are kept. Put one back to review it as a payment statement."
             : list === "unreadable"
-              ? "Statements or files where nothing usable could be read. Open one to see its pages."
+              ? "Each item says which pages to look at and what to do."
               : list === "ready"
-                ? "Statements that passed every check and need nothing from you. Use Import above to add them to the ledger; open one to look at it first."
-              : "Only statements that need a decision from you. Each says what to fix before you open it. Imported statements, copies and statements ready to import are not listed here."}
+                ? "Every check passes. Press Import above to add them to the ledger; open one to look at it first."
+              : list === "handled"
+                ? "Nothing here needs you. Loupe moves these on by itself."
+              : "Only what needs a person. Each item says what is wrong, where to look in the PDF and what to enter. It saves by itself once it checks out."}
         </p>
       </header>
       {fileIds.length > 0 && (
@@ -563,6 +573,19 @@ export function ReviewQueuePanel({
         <p role="status">Loading the review queue…</p>
       ) : (
         <>
+          <QueueSplit
+            counts={query.data.counts}
+            user={user}
+            handling={HANDLED_LISTS.has(list)}
+            onNeeds={() => showList("waiting")}
+            onHandled={() => showList("handled")}
+          />
+          {HANDLED_LISTS.has(list) && (
+            <p role="note" className="rounded border border-dashed bg-muted/40 p-2 text-sm text-muted-foreground">
+              Loupe is handling these. Nothing here needs you.
+            </p>
+          )}
+          {list === "handled" && <HandledOverview counts={query.data.counts} onOpen={showList} />}
           <ReviewStatusLine
             data={query.data}
             onOpen={showList}
@@ -631,26 +654,14 @@ export function ReviewQueuePanel({
               </Button>
             </div>
           )}
-          {list !== "waiting" && (
-            <Button variant="outline" size="sm" onClick={() => showList("waiting")}>
-              Back to waiting for you ({query.data.counts.waiting})
+          {list !== "waiting" && list !== "handled" && (
+            <Button variant="outline" size="sm" onClick={() => showList(HANDLED_LISTS.has(list) ? "handled" : "waiting")}>
+              {HANDLED_LISTS.has(list) ? "Back to Loupe is handling" : `Back to ${needsLabel(user)} (${query.data.counts.waiting})`}
             </Button>
           )}
-          {list === "waiting" && query.data.counts.filled > 0 && (
-            <Button variant="outline" size="sm" onClick={() => showList("filled")}>
-              Details filled automatically ({query.data.counts.filled})
-            </Button>
-          )}
-          {list === "waiting" && (query.data.totals?.copies ?? query.data.copies.length) > 0 && (
-            <Button variant="outline" size="sm" onClick={() => showList("copies")}>
-              Review copies ({query.data.totals?.copies ?? query.data.copies.length})
-            </Button>
-          )}
-          {list === "waiting" && query.data.reader_files.length > 0 && (
-            <Button variant="outline" size="sm" onClick={() => showList("reader")}>
-              Waiting for a reader fix ({query.data.counts.reader_fix} in{" "}
-              {query.data.reader_files.length}{" "}
-              {query.data.reader_files.length === 1 ? "file" : "files"})
+          {list === "waiting" && query.data.counts.unreadable + query.data.counts.unreadable_files > 0 && (
+            <Button variant="outline" size="sm" onClick={() => showList("unreadable")}>
+              Nothing could be read ({query.data.counts.unreadable + query.data.counts.unreadable_files})
             </Button>
           )}
           {list === "waiting" && issueCounts.length > 1 && (
@@ -667,21 +678,10 @@ export function ReviewQueuePanel({
                   aria-pressed={issue === reason}
                   onClick={() => chooseIssue(issue === reason ? "" : reason)}
                 >
-                  {ISSUE_LABELS[reason] ?? reason} ({count})
+                  {issueLabel(reason)} ({count})
                 </Button>
               ))}
             </div>
-          )}
-          {list === "waiting" && canEdit && !!query.data.proposal_groups?.length && (
-            <QueueProposalGroups
-              caseId={caseId}
-              groups={query.data.proposal_groups}
-              fileIds={fileIds}
-              onDone={(line) => {
-                setBulkOutcome(line)
-                void refresh(undefined, true)
-              }}
-            />
           )}
           {list === "waiting" && bulkIssue && canEdit && BULK_ISSUES.has(bulkIssue) && bulkEntries.length > 0 && (
             <div className="flex flex-wrap items-center gap-3 rounded border p-3 text-sm">
@@ -731,7 +731,7 @@ export function ReviewQueuePanel({
               </Button>
             </div>
           )}
-          {list === "reader" && (
+          {list === "handled" ? null : list === "reader" && (
             <ul className="space-y-2" aria-label="Files waiting for a reader fix">
               {query.data.reader_files.map((file) => (
                 <li key={file.file_id} className="rounded border p-3 text-sm">
@@ -741,7 +741,7 @@ export function ReviewQueuePanel({
               ))}
             </ul>
           )}
-          {list === "reader" ? (
+          {list === "handled" ? null : list === "reader" ? (
             <details>
               <summary className="cursor-pointer text-sm">
                 Show their {shownTotal} statements
@@ -770,7 +770,7 @@ export function ReviewQueuePanel({
           ) : current.length === 0 ? (
             <p role="status" className="rounded border p-3">
               {list === "waiting"
-                ? "Nothing is waiting for you."
+                ? "Nothing needs you. Loupe is handling the rest."
                 : list === "copies"
                   ? query.data.copy_files.length > 0
                     ? "No statement is a copy; the files below are."
@@ -780,26 +780,61 @@ export function ReviewQueuePanel({
                   : "Every statement could be read."}
             </p>
           ) : (
-            <ol className="divide-y rounded border" aria-label="Statements to review">
-              {current.map((entry, position) => (
+            <ol
+              className={`divide-y rounded border ${HANDLED_LISTS.has(list) ? "border-dashed bg-muted/30 text-muted-foreground" : ""}`}
+              aria-label="Statements to review"
+            >
+              {(list === "waiting" || list === "unreadable") && groupEntries(
+                // Chosen together with the no-payments confirmation above, one tick each.
+                current, bulkIssue === "no_activity" ? ["no_activity"] : []
+              ).map((item, position) => {
+                const openEntry = (entry: QueueEntry) => {
+                  setOrder(current)
+                  appliedOrder.current = orderKey
+                  open(entry)
+                }
+                return isGroup(item) ? (
+                  <GroupItem
+                    key={item.key}
+                    group={item}
+                    user={user}
+                    caseId={caseId}
+                    canEdit={canEdit}
+                    onOpen={openEntry}
+                    onSaved={(entries, line) => reportShared(entries, line)}
+                  />
+                ) : (
+                  <NeedsItem
+                    key={item.id}
+                    entry={item}
+                    first={position === 0}
+                    user={user}
+                    caseId={caseId}
+                    canEdit={canEdit}
+                    bucket={list === "unreadable" ? "unreadable" : item.bucket}
+                    onOpen={() => openEntry(item)}
+                    onSaved={(saved) => void refresh(saved)}
+                    noActivityPick={
+                      canEdit && bulkIssue === "no_activity" && item.issue_reason === "no_activity"
+                        ? {
+                            checked: quietChosen.has(item.id),
+                            onChange: (checked: boolean) => {
+                              const next = new Set(quietChosen)
+                              if (checked) next.add(item.id)
+                              else next.delete(item.id)
+                              setQuietChosen(next)
+                            },
+                          }
+                        : undefined
+                    }
+                  />
+                )
+              })}
+              {list !== "waiting" && list !== "unreadable" && current.map((entry, position) => (
                 <li
                   key={entry.id}
                   className="flex flex-wrap items-center justify-between gap-3 p-3 text-sm"
                 >
-                  {canEdit && bulkIssue === "no_activity" && entry.issue_reason === "no_activity" && (
-                    <input
-                      type="checkbox"
-                      className="mt-1 self-start"
-                      aria-label={`Choose ${entry.filename} (${entryPeriod(entry)}) to confirm no payments`}
-                      checked={quietChosen.has(entry.id)}
-                      onChange={(event) => {
-                        const next = new Set(quietChosen)
-                        if (event.target.checked) next.add(entry.id)
-                        else next.delete(entry.id)
-                        setQuietChosen(next)
-                      }}
-                    />
-                  )}
                   <div className="min-w-0 flex-1 basis-72">
                     <EntryLine entry={entry} />
                     {entry.issue && (
@@ -815,18 +850,10 @@ export function ReviewQueuePanel({
                         also: {entry.also.join("; ")}
                       </p>
                     )}
-                    {entry.proposals && (list === "filled" || list === "waiting") && (
-                      <ul className="mt-1 text-xs" aria-label="Details found automatically">
-                        {Object.entries(entry.proposals).map(([field, proposal]) => (
-                          <li key={field}>
-                            {proposal.confirmed ? "Fills" : "Proposed"}{" "}
-                            {FIELD_NAMES[field] ?? field}: <strong>{proposal.value}</strong>{" "}
-                            ({proposal.label})
-                          </li>
-                        ))}
-                      </ul>
+                    {list === "filled" && (
+                      <FilledMarks caseId={caseId} entry={entry} canEdit={canEdit} onSaved={(saved) => void refresh(saved)} />
                     )}
-                    {canEdit && entry.batch_id && (list === "waiting" || list === "filled") && (
+                    {canEdit && entry.batch_id && list === "filled" && (
                       <QueueRowDetails
                         key={entry.id}
                         caseId={caseId}
@@ -860,7 +887,7 @@ export function ReviewQueuePanel({
                           ? `Every page is the same as ${entry.copy_of ?? "another upload"}, which was read. This upload's own reading is not used. It counts nothing.`
                           : entry.set_aside
                           ? `Set aside as a copy${entry.copy_of ? ` of ${entry.copy_of}` : ""}. It counts nothing.`
-                          : "Possible copy of another statement: compare it with the original."}
+                          : `${needsLabel(user, entry)}: this may be a copy of another statement. Open it and compare it with the original; keep one.`}
                       </p>
                     )}
                   </div>
@@ -1043,5 +1070,290 @@ function OutcomeNote({
         Dismiss
       </Button>
     </div>
+  )
+}
+
+/** The two halves of the queue: what needs a person, and what Loupe moves on by itself. */
+function QueueSplit({
+  counts,
+  user,
+  handling,
+  onNeeds,
+  onHandled,
+}: {
+  counts: ReviewQueue["counts"]
+  user: QueuePerson | null
+  handling: boolean
+  onNeeds: () => void
+  onHandled: () => void
+}) {
+  const needs = needsCount(counts)
+  const handled = handledCount(counts)
+  return (
+    <div role="tablist" aria-label="Queue" className="grid gap-2 sm:grid-cols-2">
+      <button
+        type="button"
+        role="tab"
+        aria-selected={!handling}
+        onClick={onNeeds}
+        className={`rounded-md border-2 p-3 text-left ${!handling ? "border-amber-500 bg-amber-50 dark:bg-amber-950/30" : "border-border"}`}
+      >
+        <span className="block text-base font-semibold">
+          {needsLabel(user)} ({needs})
+        </span>
+        <span className="block text-xs text-muted-foreground">
+          {needs ? "Each one says what to do and where to look." : "Nothing needs you right now."}
+        </span>
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={handling}
+        onClick={onHandled}
+        className={`rounded-md border p-3 text-left text-muted-foreground ${handling ? "border-foreground/40 bg-muted" : "border-dashed bg-muted/30"}`}
+      >
+        <span className="block text-base font-semibold">Loupe is handling ({handled})</span>
+        <span className="block text-xs">Filled, checked again, ready to import or set aside. You can ignore these.</span>
+      </button>
+    </div>
+  )
+}
+
+function HandledOverview({
+  counts,
+  onOpen,
+}: {
+  counts: ReviewQueue["counts"]
+  onOpen: (list: ListName) => void
+}) {
+  return (
+    <ul className="divide-y rounded border bg-muted/30 text-sm text-muted-foreground" aria-label="What Loupe is handling">
+      {HANDLED_PARTS.filter((part) => part.count(counts) > 0).map((part) => {
+        const n = part.count(counts)
+        const canList = part.list !== "rechecking" && part.list !== "saving"
+        return (
+          <li key={part.list} className="flex flex-wrap items-center justify-between gap-2 p-3">
+            <span>
+              <span className="font-medium text-foreground">
+                {part.label} ({n})
+              </span>
+              {" · "}
+              {part.line}
+            </span>
+            {canList && n > 0 && (
+              <Button size="sm" variant="ghost" onClick={() => onOpen(part.list as ListName)}>
+                Show them
+              </Button>
+            )}
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
+/** "Filled by Loupe from <where>": each value it filled, with a way to put in her own. */
+function FilledMarks({
+  caseId,
+  entry,
+  canEdit,
+  onSaved,
+}: {
+  caseId: string
+  entry: QueueEntry
+  canEdit: boolean
+  onSaved: (entry: QueueEntry) => void
+}) {
+  const marks = filledMarks(entry)
+  const [undoing, setUndoing] = useState("")
+  if (!marks.length) return null
+  const reasonOf: Record<string, string> = { currency: "currency", institution: "institution", holder: "holder", account_number: "account" }
+  return (
+    <ul className="mt-1 space-y-1 text-xs" aria-label="Filled by Loupe">
+      {marks.map((mark) => (
+        <li key={mark.field} className="rounded border border-teal-500/50 bg-teal-50/60 px-2 py-1 dark:bg-teal-950/30">
+          <span className="font-medium">
+            {mark.name}: {mark.value}
+          </span>{" "}
+          <span className="text-muted-foreground">· filled by Loupe from {mark.basis}</span>
+          {canEdit && undoing !== mark.field && (
+            <Button size="sm" variant="ghost" className="ml-1 h-6 px-1" onClick={() => setUndoing(mark.field)}>
+              Undo
+            </Button>
+          )}
+          {undoing === mark.field && (
+            <>
+              <p>Enter the right value. Loupe uses yours instead of {mark.value}.</p>
+              <QueueAnswerOnce
+                caseId={caseId}
+                reason={reasonOf[mark.field] ?? mark.field}
+                entries={[entry]}
+                actionLabel="Save"
+                onSaved={() => onSaved(entry)}
+              />
+            </>
+          )}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/** One statement that needs a person: what is wrong, numbered steps, one button. */
+function NeedsItem({
+  entry,
+  first,
+  user,
+  caseId,
+  canEdit,
+  bucket,
+  onOpen,
+  onSaved,
+  noActivityPick,
+}: {
+  entry: QueueEntry
+  first: boolean
+  user: QueuePerson | null
+  caseId: string
+  canEdit: boolean
+  bucket: string
+  onOpen: () => void
+  onSaved: (entry: QueueEntry) => void
+  noActivityPick?: { checked: boolean; onChange: (checked: boolean) => void }
+}) {
+  const guide = guidanceFor(entry, user, bucket)
+  const reason = entry.issue_reason || ""
+  const proposal = reasonProposal(entry, reason)
+  // One press (or one typed value) when that answer is all the identity lacks;
+  // otherwise the row's detail fields, which take several values at once.
+  const othersKnown = (["currency", "institution", "holder"] as const).every(
+    (field) => field === reason || !!entry[field]
+  )
+  const answerHere =
+    canEdit && bucket === "waiting" && ANSWER_ONCE.has(reason) && reason !== "no_activity" && othersKnown &&
+    (reason === "account" || (!!proposal && !proposal.confirmed))
+  const rowDetails = canEdit && bucket === "waiting" && !!entry.batch_id && !answerHere && needsRowDetails(entry)
+  return (
+    <li className="flex flex-wrap items-start justify-between gap-3 border-l-4 border-l-amber-500 p-3 text-sm">
+      {noActivityPick && (
+        <input
+          type="checkbox"
+          className="mt-1 self-start"
+          aria-label={`Choose ${entry.filename} (${entryPeriod(entry)}) to confirm no payments`}
+          checked={noActivityPick.checked}
+          onChange={(event) => noActivityPick.onChange(event.target.checked)}
+        />
+      )}
+      <div className="min-w-0 flex-1 basis-72 space-y-1">
+        <p className="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">
+          {needsLabel(user, entry)}
+        </p>
+        <p className="text-base font-semibold" aria-label="What is wrong">
+          {guide.title}
+        </p>
+        <ol className="list-decimal space-y-0.5 pl-5" aria-label="What to do">
+          {guide.steps.map((text, index) => (
+            <li key={index}>{text}</li>
+          ))}
+        </ol>
+        <p className="text-xs text-muted-foreground" aria-label="What happens next">
+          {guide.after}
+        </p>
+        {entry.also.length > 0 && (
+          <p className="text-xs" aria-label="Also to fix">
+            After that, also: {entry.also.join("; ")}
+          </p>
+        )}
+        {!entry.also.length && entry.other_problems > 0 && (
+          <p className="text-xs">
+            After that, the statement shows {entry.other_problems} more {entry.other_problems === 1 ? "check" : "checks"}.
+          </p>
+        )}
+        <div className="rounded bg-muted/40 p-2 text-xs">
+          <EntryLine entry={entry} />
+        </div>
+        <FilledMarks caseId={caseId} entry={entry} canEdit={canEdit} onSaved={onSaved} />
+        {answerHere && (
+          <QueueAnswerOnce
+            caseId={caseId}
+            reason={reason}
+            entries={[entry]}
+            proposal={proposal && !proposal.confirmed ? { value: proposal.value, label: proposal.label } : undefined}
+            actionLabel={guide.action}
+            onSaved={() => onSaved(entry)}
+          />
+        )}
+        {rowDetails && <QueueRowDetails key={entry.id} caseId={caseId} entry={entry} onSaved={(saved) => onSaved(saved)} />}
+      </div>
+      {entry.batch_id && (
+        <Button size="sm" variant={first && !answerHere ? "primary" : "outline"} onClick={onOpen}>
+          {answerHere ? "Open the PDF" : guide.action}
+        </Button>
+      )}
+    </li>
+  )
+}
+
+/** Several statements of one account answered at once: one item, one confirm. */
+function GroupItem({
+  group,
+  user,
+  caseId,
+  canEdit,
+  onOpen,
+  onSaved,
+}: {
+  group: QueueGroup
+  user: QueuePerson | null
+  caseId: string
+  canEdit: boolean
+  onOpen: (entry: QueueEntry) => void
+  onSaved: (entries: QueueEntry[], line: string) => void
+}) {
+  const guide = groupGuidance(group)
+  return (
+    <li className="space-y-1 border-l-4 border-l-amber-500 p-3 text-sm" aria-label="Same answer for several statements">
+      <p className="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">
+        {needsLabel(user, group.entries[0])} · one answer for {group.entries.length} statements
+      </p>
+      <p className="text-base font-semibold" aria-label="What is wrong">
+        {guide.title}
+      </p>
+      <ol className="list-decimal space-y-0.5 pl-5" aria-label="What to do">
+        {guide.steps.map((text, index) => (
+          <li key={index}>{text}</li>
+        ))}
+      </ol>
+      <p className="text-xs text-muted-foreground" aria-label="What happens next">
+        {guide.after}
+      </p>
+      {canEdit && (
+        <QueueAnswerOnce
+          caseId={caseId}
+          reason={group.reason}
+          entries={group.entries}
+          proposal={group.proposal}
+          actionLabel={guide.action}
+          onSaved={(entries, line) => onSaved(entries, line)}
+        />
+      )}
+      <details className="text-xs">
+        <summary className="cursor-pointer">Which {group.entries.length} statements</summary>
+        <ul className="mt-1 divide-y rounded border">
+          {group.entries.map((entry) => (
+            <li key={entry.id} className="flex flex-wrap items-center justify-between gap-2 p-2">
+              <div className="min-w-0 flex-1">
+                <EntryLine entry={entry} />
+              </div>
+              {entry.batch_id && (
+                <Button size="sm" variant="outline" onClick={() => onOpen(entry)}>
+                  Open the PDF
+                </Button>
+              )}
+            </li>
+          ))}
+        </ul>
+      </details>
+    </li>
   )
 }
