@@ -3,6 +3,7 @@
 A matching account reference and overlapping period are a reason to compare
 sources, not a determination that the payments or account holders are identical.
 """
+import os
 import re
 from functools import lru_cache
 from datetime import date
@@ -347,7 +348,7 @@ def comparison_sources(session, case_id, pending=None, *, read_pending=None, dup
 # A saved statement printing the same account reference, product, currency and
 # dates under another bank wording holds this one for comparison (r15-hold-gaps).
 # Off: only the same bank identity is compared.
-SAVED_PRINTED_PERIOD_ACROSS_BANKS = True
+SAVED_PRINTED_PERIOD_ACROSS_BANKS = os.environ.get('LOUPE_FINANCIAL_SAVED_PRINTED_PERIOD_ACROSS_BANKS', '1') != '0'
 
 
 def coverage_review(session, *, case_id, file_id, request, sources=None):

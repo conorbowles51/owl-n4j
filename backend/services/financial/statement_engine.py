@@ -1850,7 +1850,7 @@ def _heading_currencies(rows, style):
             break
         if any(_value_kind(t, style, 2) == 'money' for t in row['tokens']):
             continue
-        if _defines_acronym(row['text']):
+        if GLOSSARY_CURRENCY and _defines_acronym(row['text']):
             # A glossary entry ('SPID-SISTEMA DE PAGOS INTERBANCARIOS EN DOLARES') names a payment system or
             # a term, not the section's currency (r15-hold-gaps: it proposed USD for a peso statement).
             continue
@@ -1870,6 +1870,10 @@ def _heading_currencies(rows, style):
 
 
 _CODE = re.compile(r'[A-Z]{2,3}')
+# Switch LOUPE_FINANCIAL_GLOSSARY_CURRENCY (default on; '0' turns it off): a glossary line defining an acronym
+# names no heading currency. An acronym that is itself a currency code ('USD - UNITED STATES DOLLARS') is a
+# currency heading, never a glossary entry.
+GLOSSARY_CURRENCY = os.environ.get('LOUPE_FINANCIAL_GLOSSARY_CURRENCY', '1') != '0'
 _ACRONYM_DEFINITION = re.compile(r'(?:^|\s)([A-Z]{2,6})\s?-\s?(?=[A-Z])')
 _LINKING_WORDS = frozenset({'DE', 'DEL', 'EN', 'LA', 'LAS', 'LOS', 'EL', 'Y', 'E', 'A', 'OF', 'THE', 'AND', 'FOR', 'IN'})
 
@@ -1882,6 +1886,8 @@ def _defines_acronym(text):
     folded = ''.join(ch for ch in unicodedata.normalize('NFKD', text.upper()) if not unicodedata.combining(ch))
     for m in _ACRONYM_DEFINITION.finditer(folded):
         words = [w for w in re.split(r'[\s-]+', folded[m.end():]) if w and w not in _LINKING_WORDS]
+        if m[1] in CURRENCY_NAMES or m[1] in CURRENCY_NAMES.values():
+            continue
         if len(words) >= len(m[1]) and ''.join(w[0] for w in words[:len(m[1])]) == m[1]:
             return True
     return False

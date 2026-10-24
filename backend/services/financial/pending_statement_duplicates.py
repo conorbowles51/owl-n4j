@@ -4,6 +4,7 @@ No evidence, review, source or payment is removed. A case lock serializes the
 choice of retained source with imports. Metadata equality nominates candidates;
 matching actual financial readings (or source bytes) establishes a copy.
 """
+import os
 from collections import Counter
 from copy import deepcopy
 from datetime import datetime, timezone
@@ -20,7 +21,7 @@ POLICY = 'pending-statement-duplicate-v1'
 # dates with the same payments, whatever product type or bank wording its reader
 # gave it (r15-hold-gaps: such a copy was saved again into another ledger
 # account). Off: only the bank identity and product type nominate copies.
-PRINTED_FACTS_COPIES = True
+PRINTED_FACTS_COPIES = os.environ.get('LOUPE_FINANCIAL_PRINTED_FACTS_COPIES', '1') != '0'
 METADATA_KEY = 'financial_duplicate_dispositions'
 MATCHED_FIELDS = ['bank', 'full_account_number', 'account_holder', 'period_start', 'period_end', 'currency', 'account_type']
 

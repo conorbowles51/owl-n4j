@@ -12,6 +12,10 @@ class GlossaryCurrencyTests(TestCase):
         for text in ('CUENTA EJE-DOLARES', 'CHEQUES - DOLARES', 'SALDO EN DOLARES', 'USD-DOLAR ESTADOUNIDENSE', 'ABC-ALPHA BETA'):
             self.assertFalse(engine._defines_acronym(text), text)
 
+    def test_a_currency_code_heading_is_never_a_glossary_entry(self):
+        for text in ('USD - UNITED STATES DOLLARS', 'MXN-PESOS MEXICANOS', 'EUR - EURO'):
+            self.assertFalse(engine._defines_acronym(text), text)
+
     def test_the_glossary_line_names_no_heading_currency(self):
         from tests.test_financial_statement_engine import page
         rows = engine._pages([page(1, [[('SPID-SISTEMA DE PAGOS INTERBANCARIOS EN DOLARES', 20000, 300000)],

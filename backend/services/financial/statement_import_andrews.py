@@ -6,6 +6,7 @@ unique printed page numbers. They require the same account and period, a prior
 continuation notice and no conflicting page number.
 Original cells are retained, including joined or damaged OCR money fields.
 """
+import os
 import re
 from datetime import date
 from difflib import SequenceMatcher
@@ -180,7 +181,7 @@ _CYCLE_LOOKALIKES = str.maketrans({'O': '0', 'o': '0', 'l': '1', 'I': '1'})
 # exactly and in order; at most one such mark is ignored per word. Reverse in
 # one place: False reads only the exact words (and the existing mark between
 # the two title words).
-HEADING_SPECK = True
+HEADING_SPECK = os.environ.get('LOUPE_FINANCIAL_HEADING_SPECK', '1') != '0'
 _SPECK = '.,·\'’`-'
 
 
@@ -459,7 +460,7 @@ def _account_corroborated(page, ordered, index):
 # then the one page 2 prints, and the statement must still reconcile from its
 # own printed balances. Nothing is inferred when any of these fails. Reverse
 # in one place: False.
-DAMAGED_ACCOUNT_FROM_NEXT_PAGE = True
+DAMAGED_ACCOUNT_FROM_NEXT_PAGE = os.environ.get('LOUPE_FINANCIAL_DAMAGED_ACCOUNT_FROM_NEXT_PAGE', '1') != '0'
 DAMAGED_ACCOUNT_EDITS = 2
 
 
@@ -501,7 +502,7 @@ def _damaged_account_corroborated(source, page, following):
 # digits, and that ID is the look-alike reading. A look-alike date is read only
 # when it then is the printed period start (the date every opening heading
 # prints). Reverse in one place: False.
-SHARE_HEADING_LOOKALIKES = True
+SHARE_HEADING_LOOKALIKES = os.environ.get('LOUPE_FINANCIAL_SHARE_HEADING_LOOKALIKES', '1') != '0'
 SHARE_ID_FROM_FILE = 'share_label_printed_in_digits_elsewhere_in_file'
 HEADING_DATE_IS_PERIOD_START = 'heading_date_lookalikes_read_as_period_start'
 _HEADING_LOOKALIKE_TABLE = str.maketrans({'O': '0', 'o': '0', 'D': '0', 'l': '1', 'I': '1', 'B': '8', 'S': '5', 'Z': '2'})
@@ -688,7 +689,7 @@ def andrews_catalog(sources):
 # held (it can be imported only with a recorded comparison reason); the other is
 # no longer held for it. Anything else keeps both held for comparison, as
 # before. Reverse in one place: False.
-CHAIN_CONTRADICTION = True
+CHAIN_CONTRADICTION = os.environ.get('LOUPE_FINANCIAL_CHAIN_CONTRADICTION', '1') != '0'
 CHAIN_CONTRADICTED_MESSAGE = ('Another statement printed in this PDF for the same account and dates continues '
     'into the next statement: its ending balance is the opening balance the next statement prints, and this '
     'one\'s is not. Compare the two before importing this one.')
