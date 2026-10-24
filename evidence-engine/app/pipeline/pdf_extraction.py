@@ -438,9 +438,15 @@ def _outline_reader(page, refinements):
     record = next((r for r in refinements or () if r.get('field') == 'vector_glyph_reading'), None)
     if record is None or not record.get('labels') or page.rotation:
         return None
-    from app.pipeline.vector_glyph_reading import page_glyphs, read_rect
-    glyphs = page_glyphs(page)
+    from app.pipeline.vector_glyph_reading import TurnedPage, page_glyphs, read_rect, turn_rect
     labels = {shape: (label, votes, total) for shape, label, votes, total in record['labels']}
+    rotation = record.get('rotation') or 0
+    if rotation:
+        # The labels were decided on the page turned upright: the cells are read in that frame too.
+        glyphs = page_glyphs(TurnedPage(page, rotation))
+        width, height = page.rect.width, page.rect.height
+        return lambda rect: read_rect(glyphs, labels, turn_rect(rect, rotation, width, height))
+    glyphs = page_glyphs(page)
     return lambda rect: read_rect(glyphs, labels, rect)
 
 
@@ -1060,6 +1066,11 @@ def _read_vector_outlines(page: fitz.Page, data: dict, dpi: int, *, image: Image
     return (dict(data, text=new_texts) if changed or dropped or added or lines_read or joined else data), record
 
 
+def _turned_outlines_enabled() -> bool:
+    from app.pipeline.vector_glyph_reading import TURNED_PAGES
+    return TURNED_PAGES
+
+
 def _ocr_page(page: fitz.Page, *, drop_inkless_words: bool = False,
               vector_text: bool = False) -> tuple[str, float | None, int, list | None, list[dict]]:
     deadline = time.monotonic() + max(
@@ -1180,18 +1191,35 @@ def _ocr_page(page: fitz.Page, *, drop_inkless_words: bool = False,
         inkless = []
         outlines = None
         # A vector-text page renders its print solid black, like a prepared scan.
-        if (drop_inkless_words or vector_text) and best_rotation == 0:
-            best_data, inkless = _drop_inkless_words(best_data, image)
-            if inkless:
-                text, confidence = _text_and_confidence_from_tesseract(best_data)
-        if vector_text and best_rotation == 0 and not page.rotation:
-            try:
-                best_data, outlines = _read_vector_outlines(page, best_data, dpi, image=image, deadline=deadline)
-                if outlines and (outlines['words_changed'] or outlines['words_dropped'] or outlines['words_added']
-                                 or outlines['lines_read']):
+        # A vector-text page OCR read turned (a sideways landscape page) is read from its outlines turned
+        # the same way (``vector_glyph_reading.TURNED_PAGES``): image, words and outlines share one frame.
+        turned = (vector_text and best_rotation in (90, 180, 270) and not page.rotation
+                  and _turned_outlines_enabled())
+        oriented = image if not turned else image.rotate(-best_rotation, expand=True, fillcolor="white")
+        try:
+            if (drop_inkless_words or vector_text) and (best_rotation == 0 or turned):
+                best_data, inkless = _drop_inkless_words(best_data, oriented)
+                if inkless:
                     text, confidence = _text_and_confidence_from_tesseract(best_data)
-            except Exception:
-                logger.warning('Vector outline reading unavailable; retaining the OCR reading', exc_info=True)
+            if vector_text and (best_rotation == 0 or turned) and not page.rotation:
+                try:
+                    if turned:
+                        from app.pipeline.vector_glyph_reading import TurnedPage
+                        target = TurnedPage(page, best_rotation)
+                    else:
+                        target = page
+                    best_data, outlines = _read_vector_outlines(target, best_data, dpi, image=oriented,
+                                                                deadline=deadline)
+                    if outlines and turned:
+                        outlines['rotation'] = best_rotation
+                    if outlines and (outlines['words_changed'] or outlines['words_dropped'] or outlines['words_added']
+                                     or outlines['lines_read']):
+                        text, confidence = _text_and_confidence_from_tesseract(best_data)
+                except Exception:
+                    logger.warning('Vector outline reading unavailable; retaining the OCR reading', exc_info=True)
+        finally:
+            if oriented is not image:
+                oriented.close()
     finally:
         image.close()
     refinements = []

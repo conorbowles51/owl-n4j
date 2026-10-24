@@ -220,6 +220,91 @@ def drawn_upright(drawings):
             and votes[0] >= UPRIGHT_REVERSE_RATIO * votes[180])
 
 
+# A page whose outlines are drawn sideways (a landscape statement printed on a portrait page) is read
+# turned upright, as its OCR is: the outlines are turned the same way first (``TurnedPage``), so every
+# character, word box and shape label lives in the one frame the OCR words are measured in. Measured on
+# real sideways outline pages (one producer, 2022-2025 statements): read without their outlines, OCR
+# invented words ('Saldo ae inicial'), split an amount from its line and skipped printed amounts, so their
+# periods did not reconcile. Off: a page OCR reads turned keeps its OCR reading, as before.
+TURNED_PAGES = True
+
+
+def turn_point(x, y, rotation, width, height):
+    """(x, y) on a ``width`` x ``height`` page, in the frame of the page turned clockwise by ``rotation``."""
+    if rotation == 90:
+        return height - y, x
+    if rotation == 180:
+        return width - x, height - y
+    if rotation == 270:
+        return y, width - x
+    return x, y
+
+
+def turn_rect(rect, rotation, width, height):
+    """``rect`` (x0, y0, x1, y1) in the turned frame (see ``turn_point``)."""
+    (ax, ay), (bx, by) = (turn_point(rect[0], rect[1], rotation, width, height),
+                          turn_point(rect[2], rect[3], rotation, width, height))
+    return min(ax, bx), min(ay, by), max(ax, bx), max(ay, by)
+
+
+class TurnedPage:
+    """The parts of a page the outline reading uses, turned clockwise by ``rotation`` (90, 180 or 270).
+
+    Points, rectangles and quads of every drawing and the boxes of every image are moved into the frame of
+    the turned page; nothing else changes, so a turned character keeps its outline and its shape identity.
+    """
+
+    def __init__(self, page, rotation):
+        import fitz
+        if rotation not in (90, 180, 270):
+            raise ValueError(f'unsupported rotation {rotation}')
+        self._fitz, self._page, self.rotation_turned = fitz, page, rotation
+        self._width, self._height = page.rect.width, page.rect.height
+        turned_width, turned_height = ((self._height, self._width) if rotation in (90, 270)
+                                       else (self._width, self._height))
+        self.rect = fitz.Rect(0, 0, turned_width, turned_height)
+        self.rotation = 0
+        self._drawings = None
+
+    def _point(self, point):
+        return self._fitz.Point(*turn_point(point.x, point.y, self.rotation_turned, self._width, self._height))
+
+    def _rect(self, rect):
+        return self._fitz.Rect(*turn_rect((rect.x0, rect.y0, rect.x1, rect.y1), self.rotation_turned,
+                                          self._width, self._height))
+
+    def _item(self, item):
+        kind = item[0]
+        if kind == 're':
+            return (kind, self._rect(item[1])) + tuple(item[2:])
+        if kind == 'qu':
+            quad = item[1]
+            return (kind, self._fitz.Quad(*(self._point(p) for p in (quad.ul, quad.ur, quad.ll, quad.lr))))
+        return (kind,) + tuple(self._point(p) if hasattr(p, 'x') else p for p in item[1:])
+
+    def get_drawings(self):
+        if self._drawings is None:
+            turned = []
+            for path in self._page.get_drawings():
+                path = dict(path)
+                path['items'] = [self._item(item) for item in path.get('items') or ()]
+                if path.get('rect') is not None:
+                    path['rect'] = self._rect(path['rect'])
+                turned.append(path)
+            self._drawings = turned
+        return self._drawings
+
+    def get_image_info(self):
+        infos = []
+        for info in self._page.get_image_info():
+            try:
+                infos.append(dict(info, bbox=turn_rect(tuple(info['bbox']), self.rotation_turned,
+                                                      self._width, self._height)))
+            except (KeyError, TypeError, ValueError):
+                continue
+        return infos
+
+
 def page_glyphs(page, drawings=None):
     """The page's printed characters drawn as filled outlines, left to right."""
     if drawings is None:
