@@ -192,7 +192,7 @@ def propose_santander_statement(sources,currency,choice):
     if choice.get('form') == FORM:
         return propose_santander_query(sources, currency, choice)
     scopes={(s['page_number'],s['table_index']):set(s['row_indices']) for s in choice['section_sources']}
-    result=[];columns=None;last=None;active_page=None;indexed=None
+    result=[];columns=None;last=None;active_page=None;indexed=None;previous_balance=None
     for page in sorted({s['page_number'] for s in sources}):
         for s,raw in section_rows([s for s in sources if s['page_number']==page]):
             cells=raw['cells'];joined=norm(text(raw))
@@ -293,6 +293,10 @@ def propose_santander_statement(sources,currency,choice):
                     item['fields']['description']=prefix
                     item['issues'].append('Check the printed date and reference for this payment beside the PDF.')
                 continue
+            # The previous payment's printed running balance, when it is the line just before this one.
+            moved=[r for r in result if not r['excluded'] and r['kind'] in ('transaction','unresolved')]
+            previous_balance=(last['fields'].get('balance') if last and moved and moved[-1] is last and not last['issues']
+                              and 'amount_minor' in last['fields'] else None)
             item.update(kind='transaction',excluded=False);last=item;fields=item['fields']
             fields.update(description=m[3].strip(),bank_reference=m[2],date_column=str(other[0]['column_index']),description_column=str(other[-1]['column_index']))
             day=printed_date(m[1])
@@ -314,9 +318,38 @@ def propose_santander_statement(sources,currency,choice):
                 c=money['SALDO'][0];fields['balance_column']=str(c['column_index'])
                 try:fields['balance']=exact_amount(c['expected_text'],currency)
                 except ValueError as exc:item['issues'].append(str(exc))
+            if BALANCE_STEP_AMOUNT and 'amount_minor' not in fields and fields.get('direction'):
+                _balance_step_amount(item, previous_balance, money, currency)
     if COVER_CLOSING:
         _cover_closing(result, choice, currency)
     return dict(rows=result,issues=[])
+
+
+# LOUPE_FINANCIAL_SANTANDER_BALANCE_STEP_AMOUNT: a payment amount printed with a misread separator
+# ("2.571,151.00") is read digit for digit when it equals, exactly and in its column's direction, the step
+# between the previous payment's printed running balance and its own (_balance_step_amount).
+BALANCE_STEP_AMOUNT = _switch('LOUPE_FINANCIAL_SANTANDER_BALANCE_STEP_AMOUNT')
+_SEPARATED_AMOUNT = re.compile(r'\$?\s*\d{1,3}(?:[.,]\d{3})*[.,]\d{2}')
+
+
+def _balance_step_amount(item, previous_balance, money, currency):
+    fields = item['fields']
+    direction = fields['direction']
+    cells = money['DEPOSITO' if direction == 'credit' else 'RETIRO']
+    if previous_balance is None or fields.get('balance') is None or len(cells) != 1:
+        return
+    printed = cells[0]['expected_text'].strip()
+    if not _SEPARATED_AMOUNT.fullmatch(printed):
+        return
+    amount = int(re.sub(r'\D', '', printed))
+    step = int(fields['balance']) - int(previous_balance)
+    if amount <= 0 or step != (amount if direction == 'credit' else -amount):
+        return
+    unreadable = [issue for issue in item['issues'] if 'as an amount' in issue]
+    if len(unreadable) != len(item['issues']) or len(unreadable) != 1:
+        return
+    item['issues'] = []
+    fields.update(amount_minor=str(amount), amount_basis='printed_balance_step')
 
 
 # Whether a ruled row that prints the section's last payment and its TOTAL line

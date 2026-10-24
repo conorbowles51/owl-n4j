@@ -459,3 +459,37 @@ class SantanderPositionlessTableTests(TestCase):
             self.assertEqual(investment['page_numbers'], [1, 2])
         finally:
             santander.POSITIONLESS_TABLES = True
+
+
+class SantanderBalanceStepAmountTests(TestCase):
+    def rows(self, amount, balance='75.00'):
+        ss=statement()
+        for row in ss[0]['rows']:
+            if row['cells'][0]['expected_text']=='03-SEP-2024':
+                row['cells'][3]['expected_text']=amount
+                row['cells'][4]['expected_text']=balance
+        choice=next(c for c in santander_catalog(ss)[0] if c['account_type']=='checking')
+        return propose_santander_statement(ss,'MXN',choice)['rows']
+
+    def test_a_misread_separator_is_read_when_the_running_balance_moves_by_exactly_that_amount(self):
+        rows=self.rows('0.050.00')
+        payment=[r for r in rows if not r['excluded']][1]
+        self.assertEqual((payment['fields'].get('amount_minor'), payment['fields'].get('amount_basis'), payment['issues']),
+                         ('5000','printed_balance_step',[]))
+        self.assertEqual(check_statement_rows(rows)['balance_status'],'matches')
+
+    def test_it_is_never_read_when_the_balance_step_differs_or_the_text_is_not_an_amount(self):
+        for amount, balance in (('0.051.00','75.00'), ('0.050.00','76.00'), ('5O.00','75.00')):
+            with self.subTest(amount=amount, balance=balance):
+                payment=[r for r in self.rows(amount, balance) if not r['excluded']][1]
+                self.assertNotIn('amount_minor', payment['fields'])
+                self.assertTrue(payment['issues'])
+
+    def test_switch_off_leaves_the_amount_unread(self):
+        import services.financial.statement_import_santander as santander
+        try:
+            santander.BALANCE_STEP_AMOUNT=False
+            payment=[r for r in self.rows('0.050.00') if not r['excluded']][1]
+            self.assertNotIn('amount_minor', payment['fields'])
+        finally:
+            santander.BALANCE_STEP_AMOUNT=True
