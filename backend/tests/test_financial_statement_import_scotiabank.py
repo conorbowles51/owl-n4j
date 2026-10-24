@@ -106,6 +106,30 @@ class ScotiabankProposalTests(TestCase):
         for i,sources in enumerate(variants):
             with self.subTest(i=i): self.assertEqual(scotiabank_catalog(sources),([],set()),str(i))
 
+    def test_scanned_footnote_mark_on_other_charges_heading(self):
+        # A scan reads the asterisk of "Otros cargos*" as a quote glyph: the same statement is recognised.
+        from services.financial import statement_import_scotiabank as module
+        for mark in ('“', '”', '"', "'", '’', ''):
+            sources = statement()
+            sources[0]['rows'][17]['cells'][3]['expected_text'] = 'Otros cargos' + mark
+            with self.subTest(mark=mark):
+                choices, _ = scotiabank_catalog(sources)
+                self.assertEqual([(c['period_start'], c['period_end']) for c in choices], [('2026-01-19', '2026-01-30')])
+        # Only that one trailing mark: a word, a second mark or an amount still refuses the statement.
+        for text in ('Otros cargos x', 'Otros cargos““', 'Otros cargos $0.00', 'Otros“ cargos'):
+            sources = statement()
+            sources[0]['rows'][17]['cells'][3]['expected_text'] = text
+            with self.subTest(text=text):
+                self.assertEqual(scotiabank_catalog(sources), ([], set()))
+        # Switch off: only the asterisk, as before.
+        sources = statement()
+        sources[0]['rows'][17]['cells'][3]['expected_text'] = 'Otros cargos“'
+        with patch.object(module, 'FOOTNOTE_MARK', False):
+            self.assertEqual(scotiabank_catalog(sources), ([], set()))
+        sources[0]['rows'][17]['cells'][3]['expected_text'] = 'Otros cargos*'
+        with patch.object(module, 'FOOTNOTE_MARK', False):
+            self.assertEqual(len(scotiabank_catalog(sources)[0]), 1)
+
     def test_currency_mismatch_is_a_review_issue_not_an_exception(self):
         sources=statement(); choices,_=scotiabank_catalog(sources)
         rows=propose_scotiabank_statement(sources,'EUR',choices[0])['rows']

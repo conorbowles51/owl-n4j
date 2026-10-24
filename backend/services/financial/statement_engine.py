@@ -32,6 +32,7 @@ read matches. Two different readings that both prove are held. A period that
 is not proved is returned with its best reading and a named reason; the reason
 is carried by an unresolved line so the existing review gate holds it.
 """
+import os
 import pickle
 import re
 import threading
@@ -58,6 +59,21 @@ _DOCUMENT_ORDER = ContextVar('statement_engine_document_order', default=None)
 # parentheses-for-negative convention (C4, C11).
 _NO_PARENS = ContextVar('statement_engine_no_parentheses', default=False)
 ENGINE_VERSION = 'statement-engine-v1'
+
+
+def _switch(name):
+    return os.environ.get(name, '1').strip().lower() not in ('0', 'false', 'no', 'off')
+
+
+# (profile ``column_order``) A movement heading the reading lost (white letters on a coloured band read as other
+# letters) leaves the amount columns without roles; a library profile whose layout always prints the same columns
+# in the same order supplies them, only for a section printing exactly that many amount columns and only where no
+# heading word read says otherwise. The proof decides as for a read heading. Off: unread headings stay unread.
+PROFILE_COLUMN_ORDER = _switch('LOUPE_FINANCIAL_PROFILE_COLUMN_ORDER')
+# (B2) A movement date with a second date printed in parentheses glued to it ('07/Jul(04/Jul)': the settlement
+# day, then the agreed day under a 'Fechas: Liquidacion (Pactada)' heading): the first date dates the line, and the
+# parenthesized one stays as printed text of the line. Off: the glued word is no date and the line no movement.
+PARENTHESIZED_SECOND_DATE = _switch('LOUPE_FINANCIAL_PARENTHESIZED_SECOND_DATE')
 MAX_ASSIGNMENTS = 4000
 MAX_PERIOD_DAYS = 95
 
@@ -196,7 +212,28 @@ _GLUED_DATE = re.compile(r"^(\d{1,2}[-/.][A-Za-z]{3,10}[-/.]\d{4}|\d{1,2}[-/.]\d
 _JOINED_DATE = re.compile(r"^(\d{1,2}[-/.][A-Za-z]{3,10}[-/.](?:19|20)\d{2})()(\d{3,}\S*)$")
 
 
+# (B2) A movement date the scan read with the table's rule after it as underscores ('24ABR_'): the date. Only a
+# whole word of a day and month (no year) or a full date, then underscores alone. Off: the word is no date.
+DATE_RULE_UNDERSCORE = _switch('LOUPE_FINANCIAL_DATE_RULE_UNDERSCORE')
+# (E3) A movement line printing its date and amounts but no description word (the description printed on the
+# lines below it, as Monex's sideways layout prints a commission): those lines are its description, as they are for
+# a line printing one. Off: such a movement keeps an empty description and waits for a person.
+UNDESCRIBED_CONTINUATION = _switch('LOUPE_FINANCIAL_UNDESCRIBED_CONTINUATION')
+_UNDERSCORED_DATE = re.compile(r"^(\d{1,2}[/.-]?[A-Za-z]{3,10}(?:[/.-]\d{2,4})?|\d{1,2}[/.-]\d{1,2}(?:[/.-]\d{2,4})?)_+$")
+_PAREN_SECOND_DATE = re.compile(r"^(\d{1,2}[/.-][A-Za-z]{3,10})(\(\d{1,2}[/.-][A-Za-z]{3,10}\))$")
+
+
 def _unglue_leading_date(words):
+    if PARENTHESIZED_SECOND_DATE:
+        s, e, word = words[0]
+        m = _PAREN_SECOND_DATE.match(word)
+        if m and is_date_token(m[1]) and is_date_token(m[2][1:-1]):
+            words = [(s, s + len(m[1]), m[1]), (s + len(m[1]), e, m[2])] + words[1:]
+    if DATE_RULE_UNDERSCORE:
+        s, e, word = words[0]
+        m = _UNDERSCORED_DATE.match(word)
+        if m and is_date_token(m[1]):
+            words = [(s, s + len(m[1]), m[1])] + words[1:]
     if not UNGLUE_LEADING_DATE:
         return words
     s, e, word = words[0]
@@ -835,14 +872,33 @@ DATE_SLASH_MARKS = True
 DATE_SLASH_STROKE = True
 
 
+# (B2) Marks at a date token's edges that are no part of the date: an underscore at either end (a rule or an
+# underline the scan read beside the figures) and a hyphen before it ('11/DIC_', '_11/DIC_', '-11/DIC_',
+# '13/DIC._'; measured on scanned BBVA movement lines). Only used when the token reads as no date as printed.
+# Off (LOUPE_FINANCIAL_DATE_EDGE_MARKS=0): such a token is no date, as before.
+DATE_EDGE_MARKS = os.environ.get('LOUPE_FINANCIAL_DATE_EDGE_MARKS', '1').strip().lower() not in (
+    '0', 'false', 'no', 'off')
+
+
+def _date_readings(core):
+    parts = _date_parts_printed(core)
+    if not parts:
+        repaired = _ocr_date(core)
+        if repaired != core and re.search(r'\d', repaired):
+            parts = _date_parts_printed(repaired)
+    return parts
+
+
 @lru_cache(maxsize=262144)
 def _date_parts(text):
     """Possible (day, month, year|None, order) readings of one date token."""
-    parts = _date_parts_printed(_dnorm(text).strip(',.:;'))
-    if not parts:
-        repaired = _ocr_date(_dnorm(text).strip(',.:;'))
-        if repaired != _dnorm(text).strip(',.:;') and re.search(r'\d', repaired):
-            parts = _date_parts_printed(repaired)
+    core = _dnorm(text).strip(',.:;')
+    parts = _date_readings(core)
+    if not parts and DATE_EDGE_MARKS and re.search(r'^-?_|_$', core):
+        # Only beside an underscore, and only a day-and-month-name date: a hyphen alone before figures can be a sign.
+        edged = re.sub(r'^-?_*', '', core).rstrip('_').strip(',.:;')
+        if edged != core and edged[:1].isalnum():
+            parts = [p for p in _date_readings(edged) if p[3] == 'name']
     return parts
 
 
@@ -1794,6 +1850,10 @@ def _heading_currencies(rows, style):
             break
         if any(_value_kind(t, style, 2) == 'money' for t in row['tokens']):
             continue
+        if GLOSSARY_CURRENCY and _defines_acronym(row['text']):
+            # A glossary entry ('SPID-SISTEMA DE PAGOS INTERBANCARIOS EN DOLARES') names a payment system or
+            # a term, not the section's currency (r15-hold-gaps: it proposed USD for a peso statement).
+            continue
         text = ' ' + fold(row['text']) + ' '
         words = fold(row['text']).split()
         for name in _HEADING_CURRENCIES:
@@ -1810,6 +1870,27 @@ def _heading_currencies(rows, style):
 
 
 _CODE = re.compile(r'[A-Z]{2,3}')
+# Switch LOUPE_FINANCIAL_GLOSSARY_CURRENCY (default on; '0' turns it off): a glossary line defining an acronym
+# names no heading currency. An acronym that is itself a currency code ('USD - UNITED STATES DOLLARS') is a
+# currency heading, never a glossary entry.
+GLOSSARY_CURRENCY = os.environ.get('LOUPE_FINANCIAL_GLOSSARY_CURRENCY', '1') != '0'
+_ACRONYM_DEFINITION = re.compile(r'(?:^|\s)([A-Z]{2,6})\s?-\s?(?=[A-Z])')
+_LINKING_WORDS = frozenset({'DE', 'DEL', 'EN', 'LA', 'LAS', 'LOS', 'EL', 'Y', 'E', 'A', 'OF', 'THE', 'AND', 'FOR', 'IN'})
+
+
+def _defines_acronym(text):
+    """A line printing an acronym, a hyphen and the words it stands for ('SPEI-SISTEMA DE PAGOS ELECTRONICOS
+    INTERBANCARIOS'): the initials of the words after the hyphen, linking words left out, spell the acronym.
+    Read on the printed text (upper case, accents removed): ``fold`` drops the hyphen."""
+    import unicodedata
+    folded = ''.join(ch for ch in unicodedata.normalize('NFKD', text.upper()) if not unicodedata.combining(ch))
+    for m in _ACRONYM_DEFINITION.finditer(folded):
+        words = [w for w in re.split(r'[\s-]+', folded[m.end():]) if w and w not in _LINKING_WORDS]
+        if m[1] in CURRENCY_NAMES or m[1] in CURRENCY_NAMES.values():
+            continue
+        if len(words) >= len(m[1]) and ''.join(w[0] for w in words[:len(m[1])]) == m[1]:
+            return True
+    return False
 
 
 def _qualified_dollar(words):
@@ -3923,7 +4004,7 @@ def _reading(rows, statement, style, exponent, liability, period):
                 last_move = move
                 continue
         if not has_money:
-            if last_move is not None and region and _continues(row, last_move):
+            if last_move is not None and region and _continues(row, last_move, text_only=True):
                 last_move['continuation'].append(row)
                 continuation_of[index] = last_move
             else:
@@ -3971,6 +4052,7 @@ def _reading(rows, statement, style, exponent, liability, period):
     money_tokens = [t for move in all_moves for t in move['money']]
     columns = _columns(money_tokens, width or 1) if money_tokens else []
     hints = _hints(headers, columns, width or 1) if columns else {}
+    hints = _profile_column_order(hints, columns)
     result['fingerprint'] = _fingerprint({label(t['t']) for h in headers for t in h['tokens']}, columns,
                                          labels_seen, proof['convention'])
     result['layout_key'] = layout_key({label(t['t']) for h in headers for t in h['tokens']}, proof['convention'])
@@ -4035,6 +4117,20 @@ def _reading(rows, statement, style, exponent, liability, period):
             else:
                 proof['reason'] = ('printed_total_differs' if any(c['totals_failed'] for c in near)
                                    else 'no_independent_control' if near else 'not_reconciled')
+    summary_charges = None
+    if (not proof['proved'] and liability and proof['reason'] == 'not_reconciled'
+            and not (any(len(m['date_tokens']) > 1 for m in dated)
+                     and _second_date_field(rows, headers, dated, width or 1) is None)):
+        # A credit line whose period summary prints interest and IVA no movement line lists
+        # (credit_line_summary, switch LOUPE_FINANCIAL_CREDIT_LINE_SUMMARY_CHARGES): proved only when those
+        # charges reconcile the one reading of the movements exactly; otherwise held as before. A period the
+        # second-date rule (B5) would hold is not tried, so it stays exactly as it was.
+        from services.financial import credit_line_summary
+        summary_charges = credit_line_summary.prove(rows, all_moves, candidates, controls, column_totals,
+                                                    style or 'dot', exponent)
+        if summary_charges is not None:
+            chosen = summary_charges['candidate']
+            proof.update(proved=True, reason='proved', basis=credit_line_summary.BASIS)
     if (not proof['proved'] and liability and proof['reason'] in _PRINCIPAL_ONLY_EXPLAINS
             and any(all(re.search(r'\b' + word + r'\b', fold(h['text']).upper()) for word in _PRINCIPAL_ONLY_WORDS)
                     for h in headers)):
@@ -4059,6 +4155,9 @@ def _reading(rows, statement, style, exponent, liability, period):
     result['rows'] = _rows(rows, all_moves, resolved if not date_problem else None, chosen, controls,
                            column_totals, statement, style or 'dot', exponent, liability, proof, unplaced,
                            second_date=second_date)
+    if summary_charges is not None:
+        from services.financial import credit_line_summary
+        credit_line_summary.add_rows(result['rows'], summary_charges, period)
     return result
 
 
@@ -4227,8 +4326,9 @@ def _below(row, move):
     return row['y0'] is not None and last['y0'] is not None and row['y0'] > last['y0']
 
 
-def _continues(row, move):
-    """A line without date or money directly below a movement, starting in its description band (E3)."""
+def _continues(row, move, text_only=False):
+    """A line without date or money directly below a movement, starting in its description band (E3).
+    ``text_only``: the line prints no money (only such a line can describe a movement printing no description)."""
     last = move['continuation'][-1] if move['continuation'] else move['row']
     if row.get('split') and last.get('split') and row['split'][0] == last['split'][0]:
         # The next printed line of the same stored cell (_split_row), whose horizontal positions are only
@@ -4241,13 +4341,31 @@ def _continues(row, move):
     if gap > height * 1.2 or gap < -height:
         return False
     start = min((t['x0'] for t in move['description']), default=None)
-    if start is None:
-        return False
-    first = min(t['x0'] for t in row['tokens'])
     width = row['width'] or 1
-    if first < start - 0.02 * width:
+    first = min(t['x0'] for t in row['tokens'])
+    if start is None:
+        # (E3) A dated line printing no description word of its own (its description printed on the lines
+        # under it): a line below starting between the line's date and its first amount continues it.
+        if not (UNDESCRIBED_CONTINUATION and text_only and move['date_tokens'] and move['money']):
+            return False
+        start = max(t['x1'] for t in move['date_tokens'])
+        if not start <= first < min(t['x0'] for t in move['money']):
+            return False
+    elif first < start - 0.02 * width:
         return False
     return not _is_header(row) and not any(_role_of(text, False) for text, _ in label_pairs(row, 'dot', 2))
+
+
+def _profile_column_order(hints, columns):
+    """(profile ``column_order``) The read hints with every unread column's role taken from the profile's printed
+    column order: only when the section prints exactly as many amount columns as the order names, and every role a
+    heading word gave agrees with the order (a balance hint may stand where the order ignores a column)."""
+    order = (_PROFILE.get() or {}).get('column_order')
+    if not PROFILE_COLUMN_ORDER or not order or len(columns) != len(order) or len(hints) == len(order):
+        return hints
+    if any(order[i] != role and not (role == 'balance' and order[i] == 'ignore') for i, role in hints.items()):
+        return hints
+    return {i: hints.get(i, role) for i, role in enumerate(order)}
 
 
 def _domains(columns, hints):
@@ -4700,8 +4818,16 @@ def propose_engine_statement(sources, currency, choice):
         profile = next((p for p in PROFILES if p['name'] == choice['engine_profile']), None)
         if profile is None:
             raise ValueError('The reading profile of this statement period is no longer available. Reload the document.')
-    for statement in read_statements(sources, profile=profile):
+    reading = read_statements(sources, profile=profile)
+    for statement in reading:
         if statement['id'] == choice['id'] or statement['id'] == choice.get('engine_id'):
+            if not statement['engine']['proved']:
+                # A held period of a layout a family recovery reader proves from its printed running
+                # balance (santander_integral); None leaves the engine's held reading as it is.
+                from services.financial.santander_integral import recover_held
+                recovered = recover_held(statement, reading, sources, currency)
+                if recovered is not None:
+                    return dict(rows=recovered, issues=[])
             rows = _copy_rows(statement['_rows'])
             reason = (choice.get('engine') or {}).get('reason')
             if reason == 'route_library_first' and rows and not any(r.get('engine_hold') for r in rows):

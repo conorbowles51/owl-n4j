@@ -433,6 +433,9 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                 issues.append('Reviewing ' + selected['account_label'] + ', share ' + selected['share_reference'] + '. Other account sections in this PDF are reviewed separately.')
             if selected.get('uses_printed_page_order'):
                 issues.append('These statement pages are out of order in the PDF. Payments follow the printed page numbers. The source viewer keeps the original PDF page numbers.')
+            if selected.get('chain_contradicted'):
+                from services.financial.statement_import_andrews import CHAIN_CONTRADICTED_MESSAGE
+                issues.append(CHAIN_CONTRADICTED_MESSAGE)
         if catalog['unclassified_sources']:
             issues.append('Some pages could not be assigned to a printed statement period. They remain available in the original PDF.')
     all_page_numbers = sorted({p.page_number for p in pages} | {loc['page_number'] for loc in (text.source_locations or []) if type(loc.get('page_number')) is int and loc['page_number'] > 0})
@@ -768,6 +771,9 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                 previous_saved_review=previous_review, review_recovery=recovery,
                 reading_failure=reading_failure,
                 assignment_only=bool(selected and selected.get('assignment_only')),
+                # A second printing of these dates that the next statement in the
+                # file contradicts (statement_import_andrews.CHAIN_CONTRADICTION).
+                chain_contradicted=(selected.get('chain_contradicted') if selected else None),
                 printed_main_account=selected.get('main_account_reference', '') if selected else '',
                 can_record_account_closure=closure_only,
                 can_import_balances=balance_only and not closure_only,
@@ -831,6 +837,14 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
             or read_duplicate_disposition(session, file, result))
     # Outside the revision: a fund statement (holdings, no movement ledger) is set aside as not a payment
     # statement; a person's decision to put it back is read from the file (not_payment_statements).
+    # Outside the revision: printed page numbering showing pages absent from this file holds the statement
+    # (printed_page_count); import_issues makes it a blocker.
+    from services.financial.printed_page_count import missing_pages
+    from services.financial.not_payment_statements import page_texts
+    gap = missing_pages(page_texts(text.content, text.source_locations) if text is not None else {},
+                        result.get('statement_page_numbers') or [])
+    if gap and not result.get('reading_failure'):
+        result['printed_pages_missing'] = gap
     from services.financial.not_payment_statements import classify as not_payment_statement
     not_payment = not_payment_statement(file, text, result)
     if not_payment:
@@ -973,7 +987,9 @@ class StatementImportRequest(StatementReviewDraft):
 
 def check_import_request(proposal, request):
     if proposal.get('not_payment_statement'):
-        raise PdfMappingError('This is a fund statement, not a payment statement: it has no payments to import. '
+        kind = proposal['not_payment_statement'].get('kind') if isinstance(proposal['not_payment_statement'], dict) else None
+        what = 'an online balance position' if kind == 'online_balance_position' else 'a fund statement'
+        raise PdfMappingError(f'This is {what}, not a payment statement: it has no payments to import. '
                               'Put it back for review first if it should be read as one.', 409)
     saved = proposal.get('saved_review')
     if saved and saved['request'].get('expected_revision') != proposal['revision']:

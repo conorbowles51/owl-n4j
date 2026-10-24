@@ -65,7 +65,12 @@ MAX_OSD_TIMEOUT_SECONDS = 30.0
 # v24 (r12-kapital): on a vector-text page a day of the month OCR skipped as the first word of a movement line
 # (one or two figures, every outline labelled, an amount to its right) is added from its outlines
 # (vector_glyph_reading.LINE_START_DAYS).
-PDF_READING_REVISION = 'bank-payment-rows-v25'
+# v25 (r13-andrews): held Andrews money cells keep every reading a recogniser stated; damaged cells are cropped.
+# v26 (r15-andrews-structure): no change in this file's logic. The Andrews page recogniser the money
+# verification shares with the backend (statement_import_andrews) now identifies a page whose brand or title
+# word carries one stray mark, and reads share headings with look-alike letters confirmed by the file, so
+# such pages' money cells are cropped and their sections pinned on a fresh read.
+PDF_READING_REVISION = 'bank-payment-rows-v26'
 OSD_INSUFFICIENT_TEXT_MARKERS = ("too few characters", "skipping this page")
 
 

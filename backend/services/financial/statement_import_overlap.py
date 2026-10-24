@@ -3,6 +3,7 @@
 A matching account reference and overlapping period are a reason to compare
 sources, not a determination that the payments or account holders are identical.
 """
+import os
 import re
 from functools import lru_cache
 from datetime import date
@@ -156,7 +157,7 @@ def _saved_keys(session, source_ids):
 # JSON on a case with 2,400 prepared periods) was the largest part of each import's case comparison.
 COMPARED_SUMMARY_KEYS = ('revision', 'statement_id', 'currency', 'institution', 'account', 'holder', 'account_type',
                          'period_start', 'period_end', 'account_reference_kind', 'page_number', HYDRATION_ERROR_KEY,
-                         'statement_form')
+                         'statement_form', 'chain_contradicted')
 _PENDING_VALUES = None
 
 
@@ -318,6 +319,7 @@ def comparison_sources(session, case_id, pending=None, *, read_pending=None, dup
             file_id=str(file.id), statement_id=item.statement_key or None, source_document_id=None,
             filename=file.original_filename, status='awaiting_import', page_number=item.summary.get('page_number', 1),
             period_start=own['start'], period_end=own['end'],
+            chain_contradicted=bool(item.summary.get('chain_contradicted')),
             **({'statement_form': item.summary['statement_form']} if item.summary.get('statement_form') else {})))
     # A statement reviewed individually may have no batch item yet. Register
     # only explicit current decisions, never guess candidates from file names.
@@ -341,6 +343,12 @@ def comparison_sources(session, case_id, pending=None, *, read_pending=None, dup
                     page_number=(decision.get('retained') or {}).get('page_number', 1),
                     period_start=own['start'], period_end=own['end']))
     return entries, prepared
+
+
+# A saved statement printing the same account reference, product, currency and
+# dates under another bank wording holds this one for comparison (r15-hold-gaps).
+# Off: only the same bank identity is compared.
+SAVED_PRINTED_PERIOD_ACROSS_BANKS = os.environ.get('LOUPE_FINANCIAL_SAVED_PRINTED_PERIOD_ACROSS_BANKS', '1') != '0'
 
 
 def coverage_review(session, *, case_id, file_id, request, sources=None):
@@ -392,6 +400,10 @@ def coverage_review(session, *, case_id, file_id, request, sources=None):
             if not (other['status'] == 'awaiting_import' and own_page and other.get('page_number')
                     and int(other['page_number']) != int(own_page)):
                 continue
+            # A second printing the file's next statement contradicts is held by
+            # itself (admission); it does not hold the printing the file continues from.
+            if other.get('chain_contradicted') and not request.get('chain_contradicted'):
+                continue
             same_file = True
         if own['start'] > other['period_end'] or other['period_start'] > own['end']:
             continue
@@ -399,6 +411,24 @@ def coverage_review(session, *, case_id, file_id, request, sources=None):
         if identifier not in candidates or other['status'] == 'imported':
             candidates[identifier] = {**{k: v for k, v in other.items() if k not in ('key', 'scope')},
                 'matching_statement': exact, 'same_file_statement': same_file}
+    if SAVED_PRINTED_PERIOD_ACROSS_BANKS:
+        # A saved statement of the same printed account reference, product,
+        # currency and exact dates, filed under another bank identity (another
+        # reader worded the bank differently): the same printed statement until
+        # its money shows otherwise. A copy with the same money was already set
+        # aside before this check (pending_statement_duplicates); one with other
+        # money is held here for a person, never saved again into another
+        # ledger account (r15-hold-gaps, live case).
+        for (identity, currency), entries in sources.items():
+            if identity == own['identity'] or currency != own['currency']:
+                continue
+            for other in entries:
+                identifier = other['key']
+                if (other['status'] != 'imported' or identifier[0] == own_key[0] or identifier in candidates
+                        or not same_printed_period(own, other.get('scope'))):
+                    continue
+                candidates[identifier] = {**{k: v for k, v in other.items() if k not in ('key', 'scope')},
+                    'matching_statement': True, 'same_file_statement': False, 'other_bank_wording': True}
     ordered = sorted(candidates.items())
     revision = _digest(dict(version='statement-coverage-review-v1', scope=own,
         reading=request.get('expected_revision'), candidates=[dict(key=k, start=v['period_start'], end=v['period_end'],

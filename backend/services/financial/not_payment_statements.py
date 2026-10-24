@@ -26,6 +26,14 @@ person sets it aside again. Nothing is deleted.
 
 Switch: LOUPE_FINANCIAL_NOT_PAYMENT_STATEMENTS (default on). Off: fund statements are read and held as
 before; any recorded decision is ignored.
+
+Online balance positions (switch LOUPE_FINANCIAL_NOT_PAYMENT_POSITIONS, default on, needs the switch above): a
+printed online-banking "Posición Global" page shows the balances of the accounts at the moment it was printed. It
+has no statement period, no opening balance and no movements, so it can never be proved as a statement either. It
+is set aside the same way only when every page of the reading prints the position title, its balance-position
+heading and its portfolio total, no page prints a period, a movement table or a balance label of a statement, the
+reader found no statement period in it, and nothing else above applies (no payment, no saved review, not imported,
+not put back). Off: such a page is held as before.
 """
 import os
 import re
@@ -44,6 +52,18 @@ REASON = ('This is an investment-fund statement: it lists the fund units held, t
 LABEL = 'Not a payment statement'
 TITLE = re.compile(r'ESTADO\s+DE\s+CUENTA\s+FONDOS\s+DE\s+INVERSI[OÓ0]N', re.I)
 HOLDINGS = (re.compile(r'T[IÍ]TULOS', re.I), re.compile(r'PRECIO', re.I), re.compile(r'VALOR\s+DE\s+MERCADO', re.I))
+POSITIONS = ENABLED and os.environ.get('LOUPE_FINANCIAL_NOT_PAYMENT_POSITIONS', '1').strip().lower() not in (
+    '0', 'false', 'no', 'off')
+POSITION_KIND = 'online_balance_position'
+POSITION_REASON = ('This is a printed online-banking balance position (Posicion Global): it shows the balances of the '
+                   'accounts at the moment it was printed, with no statement period and no payments. It has nothing '
+                   'to import. Set aside; the PDF and its reading are kept.')
+POSITION_TITLE = re.compile(r'POSICI[OÓ0]N\s+GLOBAL', re.I)
+POSITION_MARKS = (re.compile(r'BALANCE\s+Y\s+POSICI[OÓ0]N\s+DE\s+SUS\s+CUENTAS', re.I),
+                  re.compile(r'TOTAL\s+DE\s+LA\s+CARTERA', re.I))
+# Any of these on a page means it may be (part of) a statement or a movement list: never a bare position.
+POSITION_REFUSALS = re.compile(r'PER[IÍ]ODO|MOVIMIENTO|SALDO\s+(?:INICIAL|ANTERIOR|FINAL)|ESTADO\s+DE\s+CUENTA|'
+                               r'CARGOS|ABONOS|DEP[OÓ]SITOS|RETIROS|\bDEL\s+\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\s+AL\b', re.I)
 # Rows a reading takes from a statement's money. Header rows are the page furniture the reader set aside.
 MONEY_KINDS = ('transaction', 'balance', 'statement_total', 'total', 'unresolved', 'unclassified')
 
@@ -64,6 +84,17 @@ def fund_pages(pages):
     title = {number for number, text in pages.items() if TITLE.search(text or '')}
     holdings = {number for number in title if all(pattern.search(pages[number]) for pattern in HOLDINGS)}
     return title, holdings
+
+
+def position_pages(pages):
+    """Pages of a reading's page texts that are a bare online balance position (see the module docstring)."""
+    return {number for number, text in pages.items() if POSITION_TITLE.search(text or '')
+            and all(pattern.search(text) for pattern in POSITION_MARKS) and not POSITION_REFUSALS.search(text)}
+
+
+def titled(content):
+    """True when a reading's text may hold a statement this module sets aside (a cheap pre-check)."""
+    return bool(content and (TITLE.search(content) or (POSITIONS and POSITION_TITLE.search(content))))
 
 
 def decision(file, statement_id):
@@ -99,13 +130,30 @@ def classify(file, text, proposal):
     pages = {number: value for number, value in pages.items() if not statement_pages or number in statement_pages}
     title, holdings = fund_pages(pages)
     if not title or not holdings:
-        return None
+        return _position(pages, proposal, money, notes, statement_pages, recorded)
     if any(row.get('page_number') not in title for row in money):
         return None  # a row read from a page of another kind: not proven to be the fund statement
     return dict(kind=KIND, status='set_aside', label=LABEL, reason=REASON,
                 evidence=dict(title_pages=sorted(title), holdings_pages=sorted(holdings),
                               statement_pages=sorted(statement_pages), payments=0, unread_rows=sum(
                                   row.get('kind') in ('unresolved', 'unclassified') for row in money),
+                              reader_notes=len(notes)),
+                **({'decided_by': recorded.get('actor')} if recorded else {}))
+
+
+def _position(pages, proposal, money, notes, statement_pages, recorded):
+    if not POSITIONS or not pages:
+        return None
+    if proposal.get('statement_choices') or proposal.get('statement_id') or proposal.get('period_dates'):
+        return None  # the reader found a statement period: it is not a bare position
+    position = position_pages(pages)
+    if position != set(pages):
+        return None  # every page of the reading must be the position page
+    if any(row.get('page_number') not in position for row in money):
+        return None
+    return dict(kind=POSITION_KIND, status='set_aside', label=LABEL, reason=POSITION_REASON,
+                evidence=dict(position_pages=sorted(position), statement_pages=sorted(statement_pages), payments=0,
+                              unread_rows=sum(row.get('kind') in ('unresolved', 'unclassified') for row in money),
                               reader_notes=len(notes)),
                 **({'decided_by': recorded.get('actor')} if recorded else {}))
 

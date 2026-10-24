@@ -51,6 +51,9 @@ Profile format (every key optional except ``name`` and ``match``):
     holder_heading  {'title': [...], 'prefix': 'FOR'}: the holder is the name printed
                  on the line under a title line ('Statement of Account' / 'For <name>'),
                  the same on every page printing it
+    column_order  [role, ...]: the layout's amount columns, left to right (roles credit, debit, balance, amount,
+                 ignore); used only for a section printing exactly that many amount columns whose heading did not
+                 give every role, and only where each role read from the heading agrees
     prior_period_block  {'start': [...], 'end': [...]}: a line starting with a
                  ``start`` phrase opens a block of earlier periods' operations
                  repeated to explain a balance (E7); its lines are not this
@@ -100,10 +103,15 @@ PROFILES = (
     # Saldo disponible, Saldo total) and a guarantee-movement column that is no ledger amount; naming them
     # lets the heading fix the roles, where unnamed they leave too many readings to prove (measured on the
     # 2021 portrait and 2022+ sideways layouts).
+    # The scanned 2021 portrait layout prints its movement heading in white on a blue band, which the OCR often
+    # reads as other letters or not at all; both layouts print the same six amount columns in the same order
+    # (Abonos, Cargos, Movimiento garantia, Saldo en garantia / no disponible, Saldo disponible, Saldo total), so
+    # ``column_order`` supplies the roles a lost heading would have given (the same roles the read heading gives).
     dict(name='monex-mexico', match=dict(any=['monex grupo financiero']), institution='Monex', statement_account=True,
          columns=dict(ignore=['MOVIMIENTO GARANTIA'], balance=['SALDO EN GARANTIA', 'SALDO NO DISPONIBLE',
                                                                 'SALDO DISPONIBLE', 'SALDO TOTAL'],
-                      description=['REFERENCIA'])),
+                      description=['REFERENCIA']),
+         column_order=['credit', 'debit', 'ignore', 'balance', 'balance', 'balance']),
     # Santander prints some accounts only after the product name ("<PRODUCT NAME> 12-34567890-1"):
     # on the verified truth 45 such heading lines, every one the truth account.
     dict(name='santander-mexico', match=dict(any=['grupo financiero santander']), institution='Santander',
@@ -119,7 +127,10 @@ PROFILES = (
     # Scotiabank statement in the real collection and by no other document; Kapital's own bank name also
     # appears in other banks' transfer lines, so its phrase is the complaints-contact furniture printed by
     # every Kapital statement and by no other document.
-    dict(name='scotiabank-mexico', match=dict(any=['scotiabank inverlat, s.a.']), institution='Scotiabank'),
+    # The same legal name read without its comma ('Scotiabank Inverlat S.A.'): printed by every Scotiabank statement
+    # of the real collection (8 of 8 truth readings) and by no other document.
+    dict(name='scotiabank-mexico', match=dict(any=['scotiabank inverlat, s.a.', 'scotiabank inverlat s.a.']),
+         institution='Scotiabank'),
     dict(name='kapital-mexico', match=dict(any=['aclaraciones@kapital.com']), institution='Kapital'),
     # Synchrony card (r6): the summary-box furniture is printed by every Synchrony statement in the real
     # collection and by no other document (a bank statement paying the card names the bank, not this line).
@@ -170,7 +181,7 @@ PROFILES += (
 
 _KEYS = {'name', 'match', 'institution', 'currency', 'convention', 'date_order', 'labels', 'columns', 'account_heading',
          'statement_account', 'prior_period_block', 'account_suffix_heading', 'holder_heading', 'settlement_days',
-         'client_line', 'rule_mark', 'holdings_currency'}
+         'client_line', 'rule_mark', 'holdings_currency', 'column_order'}
 _LABEL_ROLES = {'opening', 'closing', 'subtotal', 'credit_total', 'debit_total', 'credit_component',
                 'debit_component', 'column_total', 'day_balance'}
 _COLUMN_ROLES = {'date', 'description', 'credit', 'debit', 'balance', 'amount', 'ignore'}
@@ -205,6 +216,10 @@ def validate(profile):
     if block is not None and (not isinstance(block, dict) or set(block) != {'start', 'end'}
                               or not all(isinstance(v, list) and v for v in block.values())):
         raise ValueError('Invalid profile prior-period block.')
+    order = profile.get('column_order')
+    if order is not None and (not isinstance(order, list) or not order
+                              or not set(order) <= {'credit', 'debit', 'balance', 'amount', 'ignore'}):
+        raise ValueError('Invalid profile column order.')
     mark = profile.get('rule_mark')
     if mark is not None and not (isinstance(mark, str) and len(mark) == 1 and not mark.isalnum() and not mark.isspace()):
         raise ValueError('Invalid profile rule mark.')

@@ -291,12 +291,17 @@ def _uuid(value):
         return None
 
 
-def classify(session, case_id, batch, entry, campaign, scope, group=False):
+def classify(session, case_id, batch, entry, campaign, scope, group=False, refresh=False):
     """Return (reason, detail). Only ELIGIBLE may be re-read.
 
     ``group``: the entry is judged as one member of its original's batches
     (``candidates`` requires every member to qualify), so being in several
     batches is not itself a reason to leave it.
+
+    ``refresh`` (held_reprepare): the file is prepared again from its saved reading, not read again by the
+    engine. Every protection applies, except that investigator work always protects (that path carries
+    nothing), and the copy and engine-reader checks are left to the caller (it judges the copy on the
+    current reader's periods; ``campaign`` is not used).
     """
     if entry.get('standalone_import'):
         return 'standalone_import', {}
@@ -321,7 +326,7 @@ def classify(session, case_id, batch, entry, campaign, scope, group=False):
     from services.financial.reread_carry import CARRY_EDITS, work_fingerprint
     carry = {}
     if any((file.metadata_ or {}).get('financial_review_progress') for file in pair):
-        if not CARRY_EDITS:
+        if not CARRY_EDITS or refresh:
             return 'investigator_edits', {}
         carry = dict(carry_work=work_fingerprint(session, case_id, [file.id for file in pair]))
     # Every period of this reading or its original, in any batch, counts:
@@ -329,7 +334,7 @@ def classify(session, case_id, batch, entry, campaign, scope, group=False):
     items = list(session.scalars(select(BatchItem).join(Batch, BatchItem.batch_id == Batch.id).where(
         Batch.case_id == case_id, Batch.status != 'removed', BatchItem.file_id.in_([file.id for file in pair]))))
     if any(item.review_request for item in items):
-        if not CARRY_EDITS:
+        if not CARRY_EDITS or refresh:
             return 'investigator_edits', {}
         carry = carry or dict(carry_work=work_fingerprint(session, case_id, [file.id for file in pair]))
     files = {file.id: file for file in pair}
@@ -347,10 +352,12 @@ def classify(session, case_id, batch, entry, campaign, scope, group=False):
     held = [item for item in own if item.status == HELD]
     if not held:
         return 'nothing_held', {}
-    if copy_of_saved(session, case_id, source, held):
+    if not refresh and copy_of_saved(session, case_id, source, held):
         return 'copy_of_saved', {}
     if any(file.status == 'processing' for file in pair):
         return 'processing', {}
+    if refresh:
+        return ELIGIBLE, dict(source=source, reading=reading, held=held)
     fingerprint = reading_fingerprint(session, reading)
     if fingerprint is None:
         return 'unrecorded_reader', {}
@@ -379,7 +386,7 @@ def failed_idle(session, batch, entry):
         BatchItem.file_id.in_(ids), BatchItem.status != HISTORY).limit(1))
 
 
-def _group_reason(session, case_id, members, campaign, scope):
+def _group_reason(session, case_id, members, campaign, scope, refresh=False):
     """(reason, [(batch, entry, detail)] to read again) for one original held in several batches.
 
     All or nothing: every batch file of the original must be in scope and
@@ -394,7 +401,7 @@ def _group_reason(session, case_id, members, campaign, scope):
     for batch, entry in members:
         if failed_idle(session, batch, entry):
             continue
-        reason, detail = classify(session, case_id, batch, entry, campaign, scope, group=True)
+        reason, detail = classify(session, case_id, batch, entry, campaign, scope, group=True, refresh=refresh)
         if reason == IDLE_MEMBER:
             continue
         if reason != ELIGIBLE:

@@ -63,6 +63,14 @@ The account is proven by its printed number alone when it is printed in full
 the only account of the case with that identity (the existing ambiguity check:
 two accounts sharing the digits, or one number at two banks, prove nothing).
 
+Re-application with no click (``LOUPE_FINANCIAL_AUTOFILL_REAPPLY``, default on;
+``autofill_reapply``): a held statement whose reading is current is filled by
+itself only with ``automatic_fills``, a stricter subset of the confirmed
+proposals: currency only from the account's saved statements when the
+statement's printed balances continue that account's ledger, bank and holder
+only when saved statements of the account bracket it, never an account number
+and never the case's usual currency.
+
 A field the statement prints is never replaced: only empty fields receive a
 proposal. Switches: ``LOUPE_FINANCIAL_CURRENCY_PROPOSALS`` and
 ``LOUPE_FINANCIAL_DETAIL_PROPOSALS`` (both on unless set to 0).
@@ -203,6 +211,9 @@ class SavedStatement:
     institution: str
     holder: str
     account_number: str
+    # The saved period's opening and closing balances (minor units), when saved.
+    opening_minor: int = None
+    closing_minor: int = None
 
 
 @dataclass
@@ -278,7 +289,7 @@ def _case_knowledge(session, case_id, evidence_file_ids=None):
     request, review = Source.metadata_['statement_import_request'], Source.metadata_['statement_details_review']
     rows = session.execute(select(Account.id, Account.identifier_as_printed, Account.identifier_normalised,
             Account.institution_name, Account.currency, Period.currency, Period.period_start, Period.period_end,
-            request['holder'].as_string(), request['institution'].as_string(), request['account_number'].as_string(),
+            Period.opening_balance_minor, Period.closing_balance_minor, request['holder'].as_string(), request['institution'].as_string(), request['account_number'].as_string(),
             review['details']['holder'].as_string(), review['details']['institution'].as_string(),
             review['details']['account_number'].as_string())
         .join(Period, Period.account_id == Account.id).join(Source, Source.id == Period.source_document_id)
@@ -287,7 +298,7 @@ def _case_knowledge(session, case_id, evidence_file_ids=None):
                Source.metadata_['financial_import_removal'].as_string().is_(None),
                *([Source.evidence_file_id.in_(list(evidence_file_ids))] if evidence_file_ids is not None else []))).all()
     accounts, currencies = {}, Counter()
-    for (account_id, printed, normalised, institution, account_currency, currency, start, end,
+    for (account_id, printed, normalised, institution, account_currency, currency, start, end, opening, closing,
          holder, saved_institution, saved_account, reviewed_holder, reviewed_institution, reviewed_account) in rows:
         known = accounts.get(account_id)
         if known is None:
@@ -298,7 +309,8 @@ def _case_knowledge(session, case_id, evidence_file_ids=None):
             period_start=start.isoformat() if start else '', period_end=end.isoformat() if end else '',
             institution=(reviewed_institution if reviewed_institution is not None else saved_institution) or institution or '',
             holder=(reviewed_holder if reviewed_holder is not None else holder) or '',
-            account_number=(reviewed_account if reviewed_account is not None else saved_account) or printed or ''))
+            account_number=(reviewed_account if reviewed_account is not None else saved_account) or printed or '',
+            opening_minor=opening, closing_minor=closing))
         if currency:
             currencies[currency] += 1
     knowledge = CaseKnowledge(accounts=list(accounts.values()), saved_total=sum(currencies.values()))
@@ -511,11 +523,101 @@ def propose(values, knowledge, fields=None):
 
 def summary_values(summary):
     """Statement details of a projected batch summary, under the FIELDS names."""
+    balances = next((check for check in summary.get('checks') or []
+                     if isinstance(check, dict) and check.get('kind') == 'closing_balance'), None) or {}
     return dict(currency=summary.get('currency') or '', institution=summary.get('institution') or '',
                 holder=summary.get('holder') or '', account_number=summary.get('account') or '',
                 period_start=summary.get('period_start') or '', period_end=summary.get('period_end') or '',
                 printed_currency=summary.get('printed_currency') or None,
-                brokerage_cash_ledger=bool(summary.get('brokerage_cash_ledger')))
+                brokerage_cash_ledger=bool(summary.get('brokerage_cash_ledger')),
+                opening_minor=_minor(balances.get('opening_minor')), closing_minor=_minor(balances.get('printed_minor')))
+
+
+def _minor(value):
+    try:
+        return int(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Automatic re-application (LOUPE_FINANCIAL_AUTOFILL_REAPPLY)
+# ---------------------------------------------------------------------------
+#
+# The no-click fill of a held statement whose reading is current (autofill_reapply). It applies only the
+# answers the account's saved statements establish, under rules stricter than a one-click confirmation
+# (each found necessary by leave-one-out on the saved statements and the truth set):
+#
+# * currency: the same account's saved statements, all in one currency (basis same_account /
+#   account_currency, never the case's usual currency), nothing printed on the statement giving another, no
+#   saved statement of the account on the same dates, AND the statement's printed balances continue the
+#   account's ledger: its opening equals the closing of the account's saved statement just before it, or its
+#   closing equals the opening of the one just after (a non-zero balance). Several currency sections can share
+#   one account number (a section of another currency arriving first among an all-one-currency account): the
+#   balance chain is what proves this statement is that ledger.
+# * bank and holder: confirmed from the account's agreeing saved statements AND bracketed by them (saved
+#   statements both before and after its dates): a bank renamed, or a holder changed, after the last saved
+#   statement is not carried onto a statement outside the saved span.
+# * account number: never. A masked number's visible digits can be shared by another account of the case
+#   that has no saved statement yet; the full number would then be invented.
+
+REAPPLY_BASIS = {'currency': 'account_ledger', 'institution': 'same_account_bracketed',
+                 'holder': 'same_account_bracketed'}
+
+
+def reapply_enabled():
+    """Default-on switch LOUPE_FINANCIAL_AUTOFILL_REAPPLY (0/false/off/no turns it off)."""
+    return autofill_enabled('REAPPLY')
+
+
+def balance_chained(values, candidates):
+    """The statement's printed balances continue the matched account's saved ledger (see above)."""
+    start, end = values.get('period_start') or '', values.get('period_end') or ''
+    opening, closing = values.get('opening_minor'), values.get('closing_minor')
+    if not start or not end:
+        return False
+    saved = [s for k in candidates for s in k.statements if s.period_start and s.period_end]
+    before = [s for s in saved if s.period_end < start]
+    after = [s for s in saved if s.period_start > end]
+    if opening not in (None, 0) and before:
+        last = max(s.period_end for s in before)
+        previous = [s for s in before if s.period_end == last]
+        if all(s.closing_minor == opening for s in previous):
+            return True
+    if closing not in (None, 0) and after:
+        first = min(s.period_start for s in after)
+        following = [s for s in after if s.period_start == first]
+        if all(s.opening_minor == closing for s in following):
+            return True
+    return False
+
+
+def automatic_fills(values, proposals, knowledge):
+    """{field: proposal} of the confirmed proposals the no-click re-application may save. Fail closed."""
+    if not reapply_enabled() or not proposals or knowledge is None:
+        return {}
+    candidates, matched = matching_accounts(values, knowledge)
+    if not candidates or 'ambiguous' in matched:
+        return {}
+    result = {}
+    for name, proposal in proposals.items():
+        if not proposal.get('confirmed') or not proposal.get('value') or name not in REAPPLY_BASIS:
+            continue
+        if str(values.get(name) or '').strip():
+            continue  # a printed or entered value is never replaced
+        if name == 'currency':
+            if (proposal.get('basis') not in ('same_account', ACCOUNT_CURRENCY_BASIS) or values.get('printed_currency')
+                    or proposal.get('same_dates_saved') or not balance_chained(values, candidates)):
+                continue
+            established = {c.upper() for k in candidates for c in [s.currency for s in k.statements] + [k.currency] if c}
+            if established != {proposal['value'].upper()}:
+                continue
+        elif not _bracketed(values, candidates):
+            continue
+        result[name] = dict(proposal, basis=REAPPLY_BASIS[name],
+                            label=proposal.get('label', '') + ('; balances continue its saved statements'
+                                                                if name == 'currency' else '; saved before and after it'))
+    return result
 
 
 def account_currency_conflict(values, knowledge):

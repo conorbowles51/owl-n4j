@@ -1042,6 +1042,35 @@ def save_financial_batch_review(batch_id: UUID,item_id: UUID,body: SaveFinancial
         db.rollback();raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc
 
 
+class ConfirmFinancialBatchPage(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    expected_review_revision: str = Field(pattern=r'^[a-f0-9]{64}$')
+    digest: str = Field(pattern=r'^[a-f0-9]{64}$')
+
+
+@router.get('/batches/{batch_id}/items/{item_id}/page-proposals')
+def financial_batch_page_proposals(batch_id: UUID, item_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    from services.financial import page_row_proposals
+    try:
+        return page_row_proposals.read_item_page_proposals(db, case_id=case_id, batch_id=batch_id, item_id=item_id)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    finally:
+        db.rollback()
+
+
+@router.post('/batches/{batch_id}/items/{item_id}/pages/{page_number}/confirm', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit')))])
+def confirm_financial_batch_page(batch_id: UUID, item_id: UUID, page_number: int, body: ConfirmFinancialBatchPage,
+        case_id: UUID = Query(...), user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    from services.financial import page_row_proposals
+    try:
+        return page_row_proposals.confirm_item_page(db, case_id=case_id, batch_id=batch_id, item_id=item_id,
+            page_number=page_number, digest=body.digest, expected_review_revision=body.expected_review_revision,
+            actor=actor_from_user(user))
+    except PdfMappingError as exc:
+        db.rollback(); raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
 @router.post('/batches/{batch_id}/files/{source_id}/currency', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit')))])
 def financial_batch_currency(batch_id: UUID,source_id: UUID,body: FinancialBatchCurrency,case_id: UUID=Query(...),db: Session=Depends(get_db)):
     from services.financial.money import MoneyError

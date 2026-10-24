@@ -30,6 +30,9 @@ def legacy_matching():
     for target in ('services.financial.statement_import_overlap.same_printed_period',
                    'services.financial.pending_statement_duplicates.same_printed_period'):
         stack.enter_context(patch(target, return_value=False))
+    # Nor the r15 printed-facts copy rules (the ledgers built here predate them).
+    stack.enter_context(patch('services.financial.pending_statement_duplicates.PRINTED_FACTS_COPIES', False))
+    stack.enter_context(patch('services.financial.statement_import_overlap.SAVED_PRINTED_PERIOD_ACROSS_BANKS', False))
     return stack
 
 

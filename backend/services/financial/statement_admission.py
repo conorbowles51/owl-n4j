@@ -183,6 +183,13 @@ def assess_admission(proposal, request, arithmetic=None):
             if evidence.get('page_number'):
                 blocker['page'] = evidence['page_number']
         blockers.append(blocker)
+    if proposal.get('chain_contradicted') and not (raw.get('coverage_review_reason') or '').strip():
+        # Held until a person compares it with the printing the next statement continues
+        # from and records why it should also be imported (statement_import_andrews).
+        from services.financial.statement_import_andrews import CHAIN_CONTRADICTED_MESSAGE
+        # The reprint reason (batch_review_summary): one file printing the period twice, read differently.
+        blockers.append(dict(kind='printed_copies', row_id=None, message=CHAIN_CONTRADICTED_MESSAGE,
+                             page=proposal['chain_contradicted'].get('continued_by_page')))
     if proposal.get('reading_failure') or proposal.get('assignment_only'):
         blockers.append(dict(kind='reading', row_id=None, message=proposal.get('reading_failure') or 'Assign the unallocated statement pages before importing.'))
     unique = []

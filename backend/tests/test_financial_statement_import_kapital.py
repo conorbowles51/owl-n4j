@@ -197,3 +197,57 @@ class KapitalProductScopeTests(TestCase):
         from services.financial.statement_import_kapital import kapital_no_activity_evidence
         rows = propose_kapital_statement(s, 'USD', dollar)['rows']
         self.assertEqual(kapital_no_activity_evidence(s, dollar, rows, 'USD')['reason'], 'printed_zero_totals')
+
+
+def _partial_heading_statement(shift=0):
+    """Page 1 reads only 'CONCEPTO DEPOSITOS' over its movements; page 2 prints the complete heading."""
+    first = table()
+    concepto, depositos = first[0][0], first[0][1]
+    first[0] = [concepto, (depositos[0] + shift,) + depositos[1:]]
+    return [source(1, header() + [[(30000,120000,160000,'EXAMPLE SERVICES')],[(30000,150000,160000,'Persona Moral')]]
+                   + product() + first), source(2, header() + table(200000))]
+
+
+class KapitalHeadingFromSectionTests(TestCase):
+    def proposal(self, s):
+        choices = currencies_by_statement(kapital_catalog(s)[0], s)
+        return propose_kapital_statement(s, 'MXN', choices[0])['rows']
+
+    def test_a_partly_read_heading_takes_its_columns_from_the_sections_complete_heading(self):
+        rows = self.proposal(_partial_heading_statement())
+        tx = [r for r in rows if not r['excluded']]
+        self.assertEqual([r['fields'].get('amount_minor') for r in tx], ['1', '1', '1', '1'])
+        self.assertEqual([r['fields'].get('direction') for r in tx], ['debit', 'credit'] * 2)
+        self.assertEqual(check_statement_rows(rows)['flagged_rows'], 0)
+
+    def test_a_heading_word_away_from_the_complete_headings_position_is_not_completed(self):
+        rows = self.proposal(_partial_heading_statement(shift=20000))
+        page_one = [r for r in rows if not r['excluded'] and r['id'].startswith('1:')]
+        self.assertTrue(page_one and all(r['fields'].get('amount_minor') is None for r in page_one))
+
+    def test_the_switch_off_leaves_the_page_for_a_person(self):
+        from unittest import mock
+        from services.financial import statement_import_kapital as K
+        with mock.patch.object(K, 'HEADING_FROM_SECTION', False):
+            rows = self.proposal(_partial_heading_statement())
+        page_one = [r for r in rows if not r['excluded'] and r['id'].startswith('1:')]
+        self.assertTrue(page_one and all(r['fields'].get('amount_minor') is None for r in page_one))
+
+
+class KapitalAmountNoiseTests(TestCase):
+    def test_one_mark_read_after_a_whole_amount_is_that_amount(self):
+        from services.financial.statement_import_kapital import _amount
+        for noisy, plain in (('6,300,000.00)', '6,300,000.00'), ('6,616,985.42,', '6,616,985.42'),
+                             ('1,268,306.15?', '1,268,306.15'), ('0.01-|', '0.01-')):
+            self.assertEqual(_amount(noisy, 'MXN'), _amount(plain, 'MXN'), noisy)
+            self.assertIsNotNone(_amount(noisy, 'MXN'))
+
+    def test_two_marks_or_a_damaged_amount_stay_unreadable(self):
+        from unittest import mock
+        from services.financial import statement_import_kapital as K
+        for value in ('6,300,000.00))', '6,300,00.00)', '6,300,000.0)'):
+            with self.assertRaises(ValueError, msg=value):
+                K._amount(value, 'MXN')
+        with mock.patch.object(K, 'AMOUNT_NOISE', False):
+            with self.assertRaises(ValueError):
+                K._amount('6,300,000.00)', 'MXN')

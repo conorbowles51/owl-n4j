@@ -6,6 +6,7 @@ unique printed page numbers. They require the same account and period, a prior
 continuation notice and no conflicting page number.
 Original cells are retained, including joined or damaged OCR money fields.
 """
+import os
 import re
 from datetime import date
 from difflib import SequenceMatcher
@@ -175,19 +176,58 @@ def _full_date(value):
 _CYCLE_LOOKALIKES = str.maketrans({'O': '0', 'o': '0', 'l': '1', 'I': '1'})
 
 
-def andrews_page(source, *, allow_unbranded=False):
-    """Identify the heading, never a number from the body or an application."""
+# Measured on real scans: OCR put one stray mark inside a printed heading word
+# (``Andr,ews``, ``A.ccount Statement``). Every letter must still be read
+# exactly and in order; at most one such mark is ignored per word. Reverse in
+# one place: False reads only the exact words (and the existing mark between
+# the two title words).
+HEADING_SPECK = os.environ.get('LOUPE_FINANCIAL_HEADING_SPECK', '1') != '0'
+_SPECK = '.,·\'’`-'
+
+
+def _speck_word(text, word):
+    """``text`` is ``word`` with at most one stray mark between two of its letters."""
+    if text == word:
+        return True
+    if not HEADING_SPECK or len(text) != len(word) + 1:
+        return False
+    return any(text[i] in _SPECK and text[:i] + text[i + 1:] == word for i in range(1, len(text) - 1))
+
+
+def _brand_mark(text):
+    text = text.strip()
+    return bool(re.fullmatch(r'\.?Andrews', text)) or _speck_word(text, 'Andrews')
+
+
+def _title(text, word='Statement'):
+    text = re.sub(r'\s+', '', text)
+    if re.fullmatch(r'Account[-·.,]?' + word, text):
+        return True
+    # One stray mark inside either word; none between them then.
+    return any(_speck_word(text[:i], 'Account') and text[i:] == word or text[:i] == 'Account' and _speck_word(text[i:], word)
+               for i in (len('Account'), len('Account') + 1))
+
+
+def andrews_page(source, *, allow_unbranded=False, damaged_account=False):
+    """Identify the heading, never a number from the body or an application.
+
+    ``damaged_account``: a heading whose account cell is not nine digits but
+    reads as digits and spaces only (eight to nine digits, ``12 345 67 9``) is
+    returned with ``account`` None and the digits read under
+    ``account_digits``; only the catalog may complete it, from the next page
+    (``_damaged_account_corroborated``). Other callers never see such a page.
+    """
     rows = source['rows']
     cells = [c for r in rows for c in r['cells']]
-    marks = [c for c in cells if re.fullmatch(r'\.?Andrews', c['expected_text'].strip()) and _box(c)]
+    marks = [c for c in cells if _brand_mark(c['expected_text']) and _box(c)]
     # OCR can put a stray mark between the two printed words; their letters must be exact.
-    titles = [c for c in cells if re.fullmatch(r'Account[-·.,]?Statement', re.sub(r'\s+', '', c['expected_text'])) and _box(c)]
+    titles = [c for c in cells if _title(c['expected_text']) and _box(c)]
     # A title read with a lower-case ``s`` is accepted only on a page without
     # the brand mark, which opens nothing unless it continues the previous
     # page's statement (``andrews_catalog``).
     lowercase_title = False
     if not titles and not marks:
-        titles = [c for c in cells if re.fullmatch(r'Account[-·.,]?statement', re.sub(r'\s+', '', c['expected_text'])) and _box(c)]
+        titles = [c for c in cells if _title(c['expected_text'], 'statement') and _box(c)]
         lowercase_title = bool(titles)
     if len(titles) != 1 or len(marks) > 1 or (not marks and not allow_unbranded):
         return None
@@ -226,9 +266,16 @@ def andrews_page(source, *, allow_unbranded=False):
                 if a and b and 0 <= (b-a).days <= 62:
                     cycles.append((row, a, b))
         cycle_lookalike = bool(cycles)
-    if len(accounts) != 1 or len(cycles) != 1:
+    damaged = None
+    if not accounts and damaged_account and DAMAGED_ACCOUNT_FROM_NEXT_PAGE:
+        found = [(r, c) for r in top for c in r['cells']
+                 if re.fullmatch(r'(?:\d\s*){7,8}\d', c['expected_text'].strip()) and re.search(r'\s', c['expected_text'].strip())
+                 and _box(c)[0] > width * .4]
+        if len(found) == 1:
+            damaged = found[0]
+    if len(accounts) + bool(damaged) != 1 or len(cycles) != 1:
         return None
-    account_row, account = accounts[0]
+    account_row, account = accounts[0] if accounts else damaged
     cycle_row, start, end = cycles[0]
     if account_row['row_index'] >= cycle_row['row_index']:
         return None
@@ -237,7 +284,9 @@ def andrews_page(source, *, allow_unbranded=False):
     if following and re.fullmatch(r'\d{1,3}', _text(following)):
         page_number = int(_text(following))
     body = following['row_index'] + 1 if page_number is not None else cycle_row['row_index'] + 1
-    return dict(account=re.sub(r'\s+', '', account['expected_text']), start=start.isoformat(), end=end.isoformat(),
+    return dict(account=None if damaged else re.sub(r'\s+', '', account['expected_text']),
+                **(dict(account_digits=re.sub(r'\s+', '', account['expected_text'])) if damaged else {}),
+                start=start.isoformat(), end=end.isoformat(),
                 branded=bool(marks), account_spaced=bool(re.search(r'\s', account['expected_text'].strip())),
                 printed_page=page_number, body_start=body, width=width,
                 heading_rows=[r['row_index'] for r in rows if r['row_index'] < body],
@@ -401,6 +450,114 @@ def _account_corroborated(page, ordered, index):
     return False
 
 
+# Measured on a real scan: the account cell of a statement's first page read
+# with spaces and two digits wrong (one lost, one misread). Such a page opens a
+# statement only when every one of these holds: it is printed page 1, branded,
+# opens a share section and carries the continuation notice; the next PDF page
+# is its printed page 2, branded, with exactly the same cycle and the account
+# printed exactly; and the digits read are within two single-digit edits of
+# that account (an account of another member differs in more). The account is
+# then the one page 2 prints, and the statement must still reconcile from its
+# own printed balances. Nothing is inferred when any of these fails. Reverse
+# in one place: False.
+DAMAGED_ACCOUNT_FROM_NEXT_PAGE = os.environ.get('LOUPE_FINANCIAL_DAMAGED_ACCOUNT_FROM_NEXT_PAGE', '1') != '0'
+DAMAGED_ACCOUNT_EDITS = 2
+
+
+def _digit_edits(a, b):
+    """Single-digit insertions, deletions and substitutions turning ``a`` into ``b``."""
+    row = list(range(len(b) + 1))
+    for i, x in enumerate(a, 1):
+        previous, row[0] = row[0], i
+        for j, y in enumerate(b, 1):
+            previous, row[j] = row[j], min(row[j] + 1, row[j - 1] + 1, previous + (x != y))
+    return row[-1]
+
+
+def _damaged_account_corroborated(source, page, following):
+    """The account page 2 prints, when it completes this page's damaged account cell; else None."""
+    digits = page.get('account_digits') or ''
+    if (not DAMAGED_ACCOUNT_FROM_NEXT_PAGE or page.get('account') is not None or not digits
+            or following is None or page['printed_page'] != 1 or not page['branded']
+            or following['page_number'] != source['page_number'] + 1
+            or following['table_index'] != source['table_index']
+            or not any(_SHARE.match(_text(r)) for r in source['rows'] if r['row_index'] >= page['body_start'])
+            or not any(_continued(_text(r)) for r in source['rows'])):
+        return None
+    next_page = andrews_page(following)
+    if (next_page is None or next_page['printed_page'] != 2 or next_page['account_spaced']
+            or (next_page['start'], next_page['end']) != (page['start'], page['end'])):
+        return None
+    account = next_page['account']
+    if _digit_edits(digits, account) > DAMAGED_ACCOUNT_EDITS:
+        return None
+    return account
+
+
+# Measured on real scans: a share heading read with letters for digits in its
+# ID (``ID ODDO BASE SHARE SAVINGS Previous Balance``) or in its date
+# (``05/0l ID 0040 ...``). Its label and the words Previous Balance must be read
+# exactly. A look-alike ID is read only when the same main account prints that
+# label, on other pages of the same file, with exactly one share ID read in
+# digits, and that ID is the look-alike reading. A look-alike date is read only
+# when it then is the printed period start (the date every opening heading
+# prints). Reverse in one place: False.
+SHARE_HEADING_LOOKALIKES = os.environ.get('LOUPE_FINANCIAL_SHARE_HEADING_LOOKALIKES', '1') != '0'
+SHARE_ID_FROM_FILE = 'share_label_printed_in_digits_elsewhere_in_file'
+HEADING_DATE_IS_PERIOD_START = 'heading_date_lookalikes_read_as_period_start'
+_HEADING_LOOKALIKE_TABLE = str.maketrans({'O': '0', 'o': '0', 'D': '0', 'l': '1', 'I': '1', 'B': '8', 'S': '5', 'Z': '2'})
+_LOOK = r'[\dOoDlIBSZ]'
+_SHARE_LOOKALIKE = re.compile(r'^(' + _LOOK + r'\s?' + _LOOK + r'\s?/\s?' + _LOOK + r'\s?' + _LOOK + r') ID ('
+                              + _LOOK + r'(?:[\s.·]?' + _LOOK + r'){3}) (' + _LABELS + ') '
+                              + _PREVIOUS.pattern + r'(?: |$)')
+
+
+def _file_share_labels(sources):
+    """{(main account, printed label): {share IDs read in digits}} across a file's statement pages."""
+    found = {}
+    for source in sources:
+        page = andrews_page(source, allow_unbranded=True)
+        if page is None:
+            continue
+        for row in source['rows']:
+            if row['row_index'] >= page['body_start'] and (match := _SHARE.match(_text(row))):
+                found.setdefault((page['account'], match[3]), set()).add(_share_reference(match[2]))
+    return found
+
+
+def _lookalike_share(text, page, labels):
+    """(match, share ID, bases) for a heading read through look-alikes and confirmed; else None.
+
+    ``labels`` None skips the file check (the catalog already made it for
+    this row; the proposal only re-reads the row it recorded).
+    """
+    if not SHARE_HEADING_LOOKALIKES:
+        return None
+    match = _SHARE_LOOKALIKE.match(text)
+    if not match or _SHARE.match(text):
+        return None
+    bases = []
+    share = _share_reference(match[2])
+    if not re.fullmatch(_SHARE_ID, match[2]):
+        share = share.translate(_HEADING_LOOKALIKE_TABLE)
+        if labels is not None and (labels.get((page['account'], match[3])) or set()) != {share}:
+            return None
+        bases.append(SHARE_ID_FROM_FILE)
+    if not re.fullmatch(_HEADING_DATE, match[1]):
+        printed = re.sub(r'\s+', '', match[1]).translate(_HEADING_LOOKALIKE_TABLE)
+        if printed != page['start'][5:7] + '/' + page['start'][8:10]:
+            return None
+        bases.append(HEADING_DATE_IS_PERIOD_START)
+    if not re.fullmatch(r'\d{4}', share) or not bases:
+        return None
+    return match, share, bases
+
+
+def _heading(source):
+    """The page heading of a page the catalog already placed in a statement."""
+    return andrews_page(source, allow_unbranded=True) or andrews_page(source, damaged_account=True)
+
+
 def andrews_catalog(sources):
     groups = {}
     handled = set()
@@ -408,9 +565,19 @@ def andrews_catalog(sources):
     previous = None
     active = None
     ordered = list(_reading_order(sources))
+    labels = _file_share_labels(sources) if SHARE_HEADING_LOOKALIKES else {}
     for index, (source, order_group) in enumerate(ordered):
         page = andrews_page(source, allow_unbranded=True)
         key = (source['page_number'], source['table_index'])
+        following = ordered[index + 1][0] if index + 1 < len(ordered) else None
+        account_reading = None
+        if page is None and DAMAGED_ACCOUNT_FROM_NEXT_PAGE:
+            damaged = andrews_page(source, damaged_account=True)
+            account = damaged and _damaged_account_corroborated(source, damaged, following)
+            if account:
+                page = dict(damaged, account=account)
+                account_reading = dict(basis='printed_on_next_page', digits_read=damaged['account_digits'],
+                                       page_number=following['page_number'])
         if page is None:
             active = None
             previous = None
@@ -423,12 +590,11 @@ def andrews_catalog(sources):
                      and (page['printed_page'] is None or previous['printed_page'] is None
                           or page['printed_page'] == previous['printed_page'] + 1)
                      and page['printed_page'] != 1)
-        following = ordered[index + 1][0] if index + 1 < len(ordered) else None
         if page.get('continuation_only') and not continues:
             active = None
             previous = None
             continue
-        if page['account_spaced'] and not continues and not _account_corroborated(page, ordered, index):
+        if page['account_spaced'] and not continues and not account_reading and not _account_corroborated(page, ordered, index):
             active = None
             previous = None
             continue
@@ -449,12 +615,16 @@ def andrews_catalog(sources):
             if _continued(text):
                 break
             match = _SHARE.match(text)
+            share = _share_reference(match[2]) if match else None
+            lookalike = None if match else _lookalike_share(text, page, labels)
+            if lookalike:
+                match, share, bases = lookalike
             if _PREVIOUS.search(text) or (_SHARE_LABEL.match(text) and not _CLOSED.fullmatch(text)):
                 active = None
                 if match:
                     identity = dict(layout_id=_LAYOUT, institution='Andrews Federal Credit Union',
-                        account_reference=page['account'] + ' / Share ' + _share_reference(match[2]),
-                        main_account_reference=page['account'], share_reference=_share_reference(match[2]),
+                        account_reference=page['account'] + ' / Share ' + share,
+                        main_account_reference=page['account'], share_reference=share,
                         account_label=match[3], account_type=_share_type(match[3]),
                         period_start=page['start'], period_end=page['end'])
                     # Another opening heading is another statement occurrence,
@@ -462,6 +632,11 @@ def andrews_catalog(sources):
                     identifier = _digest(dict(**identity, opening_source=[*key, row['row_index']]))
                     active = groups.setdefault(identifier, dict(id=identifier, **identity,
                         holder=_holder(source['rows'], page), sources=[], page_numbers=[]))
+                    if lookalike:
+                        active['share_heading'] = dict(bases=bases, page_number=key[0], table_index=key[1],
+                            row_index=row['row_index'], printed_date=match[1], printed_share=match[2])
+                    if account_reading:
+                        active['account_reading'] = account_reading
                 else:
                     unknown = True
             if active is not None:
@@ -496,7 +671,92 @@ def andrews_catalog(sources):
             incomplete.add(key)
         previous = dict(**page, pdf_page=key[0], table_index=key[1], order_group=order_group,
                         continues=any(_continued(_text(r)) for r in source['rows']))
+    if CHAIN_CONTRADICTION:
+        _mark_chain_contradictions(list(groups.values()), sources)
     return list(groups.values()), handled, incomplete
+
+
+# Measured on a real file: it prints two statements for the same member, share
+# and dates on different pages, and their balances differ (one shows activity,
+# the other none). Only the bank's next statement in the same file decides which
+# one the account continues from. A printed statement is marked contradicted
+# (``chain_contradicted``) when every one of these holds: the file has exactly
+# one statement of the same account and share for the next period, starting the
+# day after; exactly one of the rivals ends on the opening that next statement
+# prints, and also opens on the closing of the previous period's statement
+# where the file prints exactly one; every other rival ends on another amount;
+# and every one of those balances is read as printed. The contradicted one stays
+# held (it can be imported only with a recorded comparison reason); the other is
+# no longer held for it. Anything else keeps both held for comparison, as
+# before. Reverse in one place: False.
+CHAIN_CONTRADICTION = os.environ.get('LOUPE_FINANCIAL_CHAIN_CONTRADICTION', '1') != '0'
+CHAIN_CONTRADICTED_MESSAGE = ('Another statement printed in this PDF for the same account and dates continues '
+    'into the next statement: its ending balance is the opening balance the next statement prints, and this '
+    'one\'s is not. Compare the two before importing this one.')
+
+
+def _printed_balance(row, width):
+    money = _money_cells(row, width)
+    if len(money) != 1:
+        return None
+    try:
+        return _amount(money[0]['expected_text'].strip(), 'USD', separate_cell=True)
+    except ValueError:
+        return None
+
+
+def _printed_endpoints(group, lookup):
+    """(opening, closing) in minor units as printed on the section's heading and
+    Ending Balance lines; either is None when it is not read as printed."""
+    rows = []
+    for scope in group['sources']:
+        source = lookup.get((scope['page_number'], scope['table_index']))
+        page = source and _heading(source)
+        if not page:
+            return None, None
+        by_index = {row['row_index']: row for row in source['rows']}
+        rows += [(by_index[i], page['width']) for i in scope['row_indices'] if i in by_index]
+    if not rows:
+        return None, None
+    opening = _printed_balance(*rows[0]) if _PREVIOUS.search(_text(rows[0][0])) else None
+    endings = [(row, width) for row, width in rows
+               if re.match(_SPACED_ENDING_LINE, _text(row)) or _ending_balance(row, width)]
+    closing = _printed_balance(*endings[0]) if len(endings) == 1 else None
+    return opening, closing
+
+
+def _mark_chain_contradictions(groups, sources):
+    from datetime import timedelta
+    lookup = {(s['page_number'], s['table_index']): s for s in sources}
+    by_account = {}
+    for group in groups:
+        if not group.get('assignment_only'):
+            by_account.setdefault(group['account_reference'], []).append(group)
+    for members in by_account.values():
+        periods = {}
+        for group in members:
+            periods.setdefault((group['period_start'], group['period_end']), []).append(group)
+        for (start, end), rivals in periods.items():
+            if len(rivals) < 2:
+                continue
+            following = [g for g in members if g['period_start'] == (date.fromisoformat(end) + timedelta(days=1)).isoformat()]
+            preceding = [g for g in members if g['period_end'] == (date.fromisoformat(start) - timedelta(days=1)).isoformat()]
+            if len(following) != 1 or len(preceding) > 1:
+                continue
+            next_opening = _printed_endpoints(following[0], lookup)[0]
+            previous_closing = _printed_endpoints(preceding[0], lookup)[1] if preceding else None
+            points = [_printed_endpoints(g, lookup) for g in rivals]
+            if (next_opening is None or (preceding and previous_closing is None)
+                    or any(None in p for p in points)):
+                continue
+            chained = [g for g, p in zip(rivals, points) if p[1] == next_opening
+                       and (previous_closing is None or p[0] == previous_closing)]
+            if len(chained) != 1 or sum(p[1] == next_opening for p in points) != 1:
+                continue
+            for group in rivals:
+                if group is not chained[0]:
+                    group['chain_contradicted'] = dict(continued_by_page=min(chained[0]['page_numbers']),
+                        next_statement_page=min(following[0]['page_numbers']))
 
 
 def leading_continuation_rows(source, page):
@@ -865,7 +1125,7 @@ def propose_andrews_statement(sources, currency, statement):
     scopes = {(s['page_number'], s['table_index']):s for s in statement['sources']}
     order = {key: index for index, key in enumerate(scopes)}
     for source in sorted(sources, key=lambda s: order[(s['page_number'], s['table_index'])]):
-        page = andrews_page(source, allow_unbranded=True)
+        page = _heading(source)
         scope = scopes[(source['page_number'], source['table_index'])]
         money_continuations = {}
         for position, row in enumerate(source['rows']):
@@ -905,6 +1165,12 @@ def propose_andrews_statement(sources, currency, statement):
             money = ' '.join(c['expected_text'].strip() for c in money_cells)
             body = ' '.join(c['expected_text'].strip() for c in cells if c not in money_cells)
             opening = _SHARE.match(body)
+            heading = statement.get('share_heading')
+            if (not opening and heading and (heading['page_number'], heading['table_index'], heading['row_index'])
+                    == (source['page_number'], source['table_index'], index)):
+                found = _lookalike_share(body, dict(account=statement['main_account_reference'],
+                                                    start=statement['period_start']), None)
+                opening = found[0] if found else None
             closing = re.fullmatch(_SPACED_ENDING_BODY if SPACED_ROW_DATES else _ENDING_BODY, body)
             damaged_closing = not closing and _ending_balance(row, page['width'])
             if opening or closing or damaged_closing:
@@ -912,6 +1178,8 @@ def propose_andrews_statement(sources, currency, statement):
                 fields = item['fields']
                 fields['description'] = 'Opening Balance' if opening else 'Closing Balance'
                 fields['date'] = (_period_date((opening or closing)[1], statement) or '') if opening or closing else ''
+                if opening and not fields['date'] and HEADING_DATE_IS_PERIOD_START in (heading or {}).get('bases', ()):
+                    fields.update(date=statement['period_start'], date_reading=HEADING_DATE_IS_PERIOD_START)
                 if damaged_closing and ORDERED_DAMAGED_DATES:
                     # A speck or a measured look-alike in the Ending Balance
                     # date: read only when it is then the printed period end.
@@ -1107,7 +1375,7 @@ def andrews_no_activity_evidence(sources, statement, rows):
     opening, closing = openings[0], closings[0]
     if len(in_scope) != 2:
         return held('rows_between_endpoints', 'Other lines were read inside this account section. Check them before confirming that it contains no transactions.', page_number=key[0])
-    page = andrews_page(source, allow_unbranded=True)
+    page = _heading(source)
     width = page['width'] if page else None
 
     def label(row):
@@ -1187,7 +1455,7 @@ def _closure_evidence(sources, statement, rows, held):
             or closed[0]['row_index'] != closure.get('row_index')):
         return held('endpoint_missing', 'The opening balance line or the closing notice of this section was not read as printed. Check the page before confirming that it contains no transactions.', page_number=key[0])
     opening, notice = openings[0], closed[0]
-    page = andrews_page(source, allow_unbranded=True)
+    page = _heading(source)
     source_rows = {row['row_index']: row for row in source['rows']}
     money = _money_cells(source_rows[opening['row_index']], page['width']) if page else []
     label = ' '.join(c['expected_text'].strip() for c in source_rows[opening['row_index']]['cells'] if c not in money)

@@ -254,6 +254,9 @@ def assess(proposal, request=None):
             summary['overlap_trim']['covered_movements'] = len(trim['before']) + len(trim['after'])
             summary['overlap_trim']['covered_by'] = [c['source_document_id'] for c in trim['covers']]
     summary['account_type'] = proposal['metadata'].get('account_type') or ''
+    if proposal.get('chain_contradicted'):
+        # Read by the duplicate comparison: this printing does not hold the one the file continues from.
+        summary['chain_contradicted'] = True
     # The pages this period is read from: which saved periods of its file its
     # readiness depends on (_relevant_admitted).
     summary['source_pages'] = sorted({source['page_number'] for source in proposal.get('sources') or []
@@ -471,6 +474,8 @@ def prepare_reviews(session, batch, file, *, lock_slice=None):
             if not (existing and existing.review_request):
                 draft = None
         status,summary = assess(proposal, draft)
+        from services.financial.held_reprepare import ASSESSED, assessment_digest
+        summary[ASSESSED] = assessment_digest(status, summary)
         if conflict:
             status, summary = 'attention', conflict_summary(summary)
         summary.update(filename=file['filename'], currency=proposal['currency'], source_id=file['source_id'])
@@ -1033,10 +1038,18 @@ def _checked_batch_items(session, case_id, items, *, validate_reviews=False, rea
                     count=waiting, plural='' if waiting == 1 else 's', verb='is' if waiting == 1 else 'are')))
                 summary.update(can_import=False, comparison_pending=True)
             summary.update(coverage_review=review, problems=problems, problem_count=len(problems) + extra_count)
-            projected[index] = (item, 'attention' if problems else 'ready', summary, projected_request, held)
+            # A fund statement set aside as not a payment statement has no problem and is never saveable: it stays
+            # held (attention), the state its assessment stored, so the queue lists it as not a payment statement.
+            held_aside = bool(summary.get('not_payment_statement')) and _not_payment_enabled()
+            projected[index] = (item, 'attention' if problems or held_aside else 'ready', summary, projected_request, held)
     with stage('batch_finish'):
         result = _finish_projection(session, case_id, projected, inputs.files)
     return result, sources
+
+
+def _not_payment_enabled():
+    from services.financial import not_payment_statements
+    return not_payment_statements.ENABLED
 
 
 def _account_currency_conflict(session, case_id, summary, raw, knowledge):
@@ -2104,6 +2117,9 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
                         # The statement-reading code this preparation used (reader_release).
                         from services.financial.reader_release import reader_stamp
                         file['reader_stamp']=reader_stamp(); file.pop('recheck', None)
+                        # And the whole backend reader it was prepared by (held_reprepare).
+                        from services.financial.held_reprepare import record_preparation
+                        record_preparation(file)
                         file.pop('preparation_retries', None)
                         file.pop('error', None)
                         _reading_progress(file, 'complete', SHARED_PREPARATION_DONE, review_file_id=file['file_id'], prepared_in_batch=shared[1])
@@ -2127,6 +2143,9 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
                         # The statement-reading code this preparation used (reader_release).
                         from services.financial.reader_release import reader_stamp
                         file['reader_stamp']=reader_stamp(); file.pop('recheck', None)
+                        # And the whole backend reader it was prepared by (held_reprepare).
+                        from services.financial.held_reprepare import record_preparation
+                        record_preparation(file)
                         file.pop('preparation_retries', None)
                         file.pop('error', None)
                         file['prepared_reading'] = await asyncio.to_thread(_prepared_reading, factory, case_id, UUID(file['file_id']))
@@ -2590,6 +2609,17 @@ async def run_batches_forever():
                     raise
                 except Exception:
                     log.exception('Re-checking statement files after a release failed; it will retry')
+                # Held statements prepared by an earlier backend reader are prepared again from their
+                # saved reading, a few at a time (held_reprepare).
+                from services.financial.held_reprepare import sweep as held_reprepare_sweep
+                try:
+                    reprepared = await _finish_atomic(held_reprepare_sweep, factory)
+                    if reprepared['handed'] or reprepared['verdicts']:
+                        log.info('Held statements checked against the deployed reader: %s', reprepared)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    log.exception('Preparing held statements again after a reader change failed; it will retry')
             if time.monotonic() >= next_sweep:
                 # Batch reads never re-read PDFs. Inputs changed by paths
                 # without their own refresh are brought current here.
@@ -2601,6 +2631,11 @@ async def run_batches_forever():
                 # or whose automatic save failed, are saved as at preparation.
                 from services.financial.queue_save import sweep_backlog, sweep_save
                 await _finish_atomic(sweep_save, factory)
+                # Held statements whose reading is current and whose only questions their account's saved
+                # statements answer are filled as System (autofill_reapply); the backlog round below saves
+                # those that then check out completely.
+                from services.financial.autofill_reapply import sweep as autofill_reapply_sweep
+                await _finish_atomic(autofill_reapply_sweep, factory)
                 # Statements ready from before automatic save (no preparation
                 # mark): saved under the same rule, a few per round.
                 await _finish_atomic(sweep_backlog, factory)

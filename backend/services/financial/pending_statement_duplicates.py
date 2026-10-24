@@ -4,6 +4,7 @@ No evidence, review, source or payment is removed. A case lock serializes the
 choice of retained source with imports. Metadata equality nominates candidates;
 matching actual financial readings (or source bytes) establishes a copy.
 """
+import os
 from collections import Counter
 from copy import deepcopy
 from datetime import datetime, timezone
@@ -16,6 +17,11 @@ from services.financial.pdf_candidates import PdfMappingError, _digest
 from services.financial.statement_import_overlap import scope, same_statement, same_printed_period, comparison_sources
 
 POLICY = 'pending-statement-duplicate-v1'
+# A copy is also another file printing the same account reference, currency and
+# dates with the same payments, whatever product type or bank wording its reader
+# gave it (r15-hold-gaps: such a copy was saved again into another ledger
+# account). Off: only the bank identity and product type nominate copies.
+PRINTED_FACTS_COPIES = os.environ.get('LOUPE_FINANCIAL_PRINTED_FACTS_COPIES', '1') != '0'
 METADATA_KEY = 'financial_duplicate_dispositions'
 MATCHED_FIELDS = ['bank', 'full_account_number', 'account_holder', 'period_start', 'period_end', 'currency', 'account_type']
 
@@ -453,6 +459,22 @@ def apply_duplicate_disposition(session, *, case_id, file, proposal, request=Non
         candidates += [entry for (identity, currency), entries in sources.items()
             if identity != own['identity'] and currency == own['currency']
             for entry in entries if same_printed_period(own, entry.get('scope')) and not own_period(entry)]
+    # r15-hold-gaps: another file printing the same account reference, currency
+    # and dates, whatever bank wording and product type its reader gave it (so
+    # whatever ledger account it was or would be filed in). A copy only with the
+    # same money (below); otherwise two products sharing a printed reference.
+    printed_only = set()
+    own_printed = _printed_key(own) if own and PRINTED_FACTS_COPIES else None
+    if own_printed:
+        listed = {(entry['file_id'], entry.get('statement_id') or '') for entry in candidates}
+        for entries in sources.values():
+            for entry in entries:
+                key = (entry['file_id'], entry.get('statement_id') or '')
+                if (entry['file_id'] != str(file.id) and key not in listed and not own_period(entry)
+                        and _printed_key(entry.get('scope')) == own_printed):
+                    candidates.append(entry)
+                    listed.add(key)
+                    printed_only.add(key)
     # Metadata nominated these; a candidate among them that cannot be compared
     # holds this statement for comparison, as before.
     nominated = {(entry['file_id'], entry.get('statement_id') or '') for entry in candidates}
@@ -544,6 +566,22 @@ def apply_duplicate_disposition(session, *, case_id, file, proposal, request=Non
             continue
         if key in page_only:
             continue  # Nominated by its document only, and not on the same pages.
+        if key in printed_only:
+            # The same printed reference, currency and dates in another file,
+            # read as another product or bank (r15-hold-gaps). The same payments
+            # (at least one), balance convention and printed balances (one
+            # reading's a subset of the other's) make it the same printed
+            # statement; anything else is another statement, left alone.
+            _, usable = _financial_reading(other_proposal)
+            if not (own_usable and usable and own_payments and not _money_conflicts(proposal, other_proposal)):
+                continue
+            if conflicting_saved_review or (own_edited and own_shape != _review_shape(other_proposal, other_request)):
+                conflicts.append(entry)
+                continue
+            peers.append((entry, other_file, reviewed, 'identical_financial_reading', other_proposal['revision'],
+                ['account_reference', 'period_start', 'period_end', 'currency', 'payments_and_balances'],
+                _edited(other_proposal, other_request), _proved(other_proposal, other_request)))
+            continue
         # A corrected candidate identity must still match its current reading/review.
         other_scope = scope({**other_request, 'account_type': other_proposal.get('metadata', {}).get('account_type') or ''})
         same_bytes = bool(file.sha256 and file.sha256 == other_file.sha256)
@@ -558,6 +596,13 @@ def apply_duplicate_disposition(session, *, case_id, file, proposal, request=Non
         # or the holder were read differently. Reverse: require same_reading.
         same_money = same_reading or statement_content(other_proposal)[0] == own_content
         if other_bank and not (same_money and own_usable and usable and own_payments):
+            if (PRINTED_FACTS_COPIES and printed_copy and entry['status'] == 'imported' and own_payments
+                    and statement_content(other_proposal)[1]):
+                # The same printed account reference, product, currency and
+                # dates is already saved in the case, read with other money (two
+                # readers of one statement): never saved again automatically; a
+                # person compares the pair (r15-hold-gaps, live case).
+                conflicts.append(entry)
             continue  # A differently named bank is a copy only with equal payments.
         own_changes_preserved = not conflicting_saved_review and (not own_edited or own_shape == _review_shape(other_proposal, other_request))
         # Identical bytes are a copy of the same section only; a different
