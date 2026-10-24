@@ -32,6 +32,7 @@ read matches. Two different readings that both prove are held. A period that
 is not proved is returned with its best reading and a named reason; the reason
 is carried by an unresolved line so the existing review gate holds it.
 """
+import os
 import pickle
 import re
 import threading
@@ -835,14 +836,33 @@ DATE_SLASH_MARKS = True
 DATE_SLASH_STROKE = True
 
 
+# (B2) Marks at a date token's edges that are no part of the date: an underscore at either end (a rule or an
+# underline the scan read beside the figures) and a hyphen before it ('11/DIC_', '_11/DIC_', '-11/DIC_',
+# '13/DIC._'; measured on scanned BBVA movement lines). Only used when the token reads as no date as printed.
+# Off (LOUPE_FINANCIAL_DATE_EDGE_MARKS=0): such a token is no date, as before.
+DATE_EDGE_MARKS = os.environ.get('LOUPE_FINANCIAL_DATE_EDGE_MARKS', '1').strip().lower() not in (
+    '0', 'false', 'no', 'off')
+
+
+def _date_readings(core):
+    parts = _date_parts_printed(core)
+    if not parts:
+        repaired = _ocr_date(core)
+        if repaired != core and re.search(r'\d', repaired):
+            parts = _date_parts_printed(repaired)
+    return parts
+
+
 @lru_cache(maxsize=262144)
 def _date_parts(text):
     """Possible (day, month, year|None, order) readings of one date token."""
-    parts = _date_parts_printed(_dnorm(text).strip(',.:;'))
-    if not parts:
-        repaired = _ocr_date(_dnorm(text).strip(',.:;'))
-        if repaired != _dnorm(text).strip(',.:;') and re.search(r'\d', repaired):
-            parts = _date_parts_printed(repaired)
+    core = _dnorm(text).strip(',.:;')
+    parts = _date_readings(core)
+    if not parts and DATE_EDGE_MARKS and re.search(r'^-?_|_$', core):
+        # Only beside an underscore, and only a day-and-month-name date: a hyphen alone before figures can be a sign.
+        edged = re.sub(r'^-?_*', '', core).rstrip('_').strip(',.:;')
+        if edged != core and edged[:1].isalnum():
+            parts = [p for p in _date_readings(edged) if p[3] == 'name']
     return parts
 
 

@@ -1145,12 +1145,18 @@ class UnreadSecondDateTests(unittest.TestCase):
         self.assertEqual(self.dates(st)[1], ('2024-03-10', None))
 
     def test_damaged_second_date_ink_that_agrees_with_the_first_date_keeps_it(self):
-        for ink in ('10/MXR', '10/MAR_N0', '10\\', '~-:dO10/MAR', '—-1O/MAR', '1O/MAR_'):
+        for ink in ('10/MXR', '10/MAR_N0', '10\\', '~-:dO10/MAR', '—-1O/MAR'):
             moves = [m if i != 1 else ('10/MAR ' + ink, m[1], m[2], m[3], m[4]) for i, m in enumerate(self.MOVES)]
             st = read_statements(settlement_heading(mx_statement(moves, closing='1,250.00')))[0]
             self.assertTrue(st['engine']['proved'], (ink, st['engine']))
             self.assertEqual(self.dates(st)[1], ('2024-03-10', None))
-        for ink in ('01/MAR', '10/ABR_', '1l/MAR_', '~-:d11/MAR', '~-:d10/ABR'):
+        # (DATE_EDGE_MARKS) An underscore beside a legible date is no damage: the ink reads as that date.
+        for ink, second in (('1O/MAR_', '2024-03-10'), ('10/ABR_', '2024-04-10')):
+            moves = [m if i != 1 else ('10/MAR ' + ink, m[1], m[2], m[3], m[4]) for i, m in enumerate(self.MOVES)]
+            st = read_statements(settlement_heading(mx_statement(moves, closing='1,250.00')))[0]
+            self.assertTrue(st['engine']['proved'], (ink, st['engine']))
+            self.assertEqual(self.dates(st)[1], ('2024-03-10', second))
+        for ink in ('01/MAR', '1l/MAR_', '~-:d11/MAR', '~-:d10/ABR'):
             moves = [m if i != 1 else ('10/MAR ' + ink, m[1], m[2], m[3], m[4]) for i, m in enumerate(self.MOVES)]
             st = read_statements(settlement_heading(mx_statement(moves, closing='1,250.00')))[0]
             if ink == '01/MAR':
@@ -1218,6 +1224,36 @@ class DateSlashStrokeTests(unittest.TestCase):
         E._date_parts.cache_clear()
         with mock.patch.object(E, 'DATE_SLASH_STROKE', False):
             self.assertFalse(E._date_parts('15/INOV'))
+        E._date_parts.cache_clear()
+
+
+class DateEdgeMarkTests(unittest.TestCase):
+    """(B2) An underscore at a date token's edges, or a hyphen before it, is no part of the date (scanned BBVA
+    movement lines: '11/DIC_', '-11/DIC_', '13/DIC._')."""
+
+    def test_edge_marks_read_as_the_date(self):
+        for token, parts in (('11/DIC_', [(11, 12, None, 'name')]), ('_11/DIC_', [(11, 12, None, 'name')]),
+                             ('-11/DIC_', [(11, 12, None, 'name')]), ('-_11/DIC', [(11, 12, None, 'name')]),
+                             ('13/DIC._', [(13, 12, None, 'name')]),
+                             ('27/IMAR_', [(27, 3, None, 'name')]), ('27/MAR__', [(27, 3, None, 'name')])):
+            self.assertEqual(E._date_parts(token), parts, token)
+
+    def test_marks_elsewhere_or_damaged_figures_still_read_as_no_date(self):
+        for token in ('11_/DIC', '1_1/DIC', '_', '-_', '41/DIC_', '11/DXC_', '11/DIC_X', '--11/DIC', '-11/DIC',
+                      '-12-05', '12/05_', '_12-05'):
+            self.assertFalse(E.is_date_token(token), token)
+
+    def test_a_movement_dated_through_an_underscore_proves(self):
+        moves = [m if i != 1 else ('10/MAR_', m[1], m[2], m[3], m[4]) for i, m in enumerate(MOVES)]
+        st = read_statements(mx_statement(moves, closing='1,250.00'))[0]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        dates = [r['fields'].get('date') for r in st['_rows'] if r['kind'] == 'transaction']
+        self.assertEqual(dates, ['2024-03-05', '2024-03-10', '2024-03-20'])
+
+    def test_the_switch_off_reads_no_date(self):
+        E._date_parts.cache_clear()
+        with mock.patch.object(E, 'DATE_EDGE_MARKS', False):
+            self.assertFalse(E._date_parts('11/DIC_'))
         E._date_parts.cache_clear()
 
 
