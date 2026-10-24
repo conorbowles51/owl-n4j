@@ -2125,26 +2125,34 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
                         _reading_progress(file, 'complete', SHARED_PREPARATION_DONE, review_file_id=file['file_id'], prepared_in_batch=shared[1])
                     else:
                         reviewed = await _finish_atomic(_review_file,factory,batch_id,case_id,deepcopy(file))
-                        file['status']='checked'
-                        # Prepared with automatic save on: statements of this file
-                        # that become ready later are saved by the sweep (queue_save).
-                        from services.financial import queue_save
-                        if queue_save.AUTO_SAVE_READY:
-                            file[queue_save.AUTO_SAVE_MARK] = True
-                        else:
-                            file.pop(queue_save.AUTO_SAVE_MARK, None)
-                        # The statement-reading code this preparation used (reader_release).
-                        from services.financial.reader_release import reader_stamp
-                        file['reader_stamp']=reader_stamp(); file.pop('recheck', None)
-                        # And the whole backend reader it was prepared by (held_reprepare).
-                        from services.financial.held_reprepare import left_after_carry, record_preparation
-                        record_preparation(file)
                         if isinstance(reviewed, dict) and reviewed.get('carry_refused'):
+                            # Nothing was prepared (held_reprepare: her work could not be carried now). The file
+                            # keeps the stamps of the reader that did prepare it; only the mark records why.
+                            from services.financial.held_reprepare import left_after_carry
+                            file['status']='checked'; file.pop('recheck', None)
                             left_after_carry(file, reviewed['carry_refused'])
-                        file.pop('preparation_retries', None)
-                        file.pop('error', None)
-                        file['prepared_reading'] = await asyncio.to_thread(_prepared_reading, factory, case_id, UUID(file['file_id']))
-                        _reading_progress(file, 'complete', 'The reading is complete. Open its statement review to check reconciliation before importing.', review_file_id=file['file_id'])
+                            file.pop('preparation_retries', None)
+                            file.pop('error', None)
+                            _reading_progress(file, 'complete', 'The reading is complete. Open its statement review to check reconciliation before importing.', review_file_id=file['file_id'])
+                        else:
+                            file['status']='checked'
+                            # Prepared with automatic save on: statements of this file
+                            # that become ready later are saved by the sweep (queue_save).
+                            from services.financial import queue_save
+                            if queue_save.AUTO_SAVE_READY:
+                                file[queue_save.AUTO_SAVE_MARK] = True
+                            else:
+                                file.pop(queue_save.AUTO_SAVE_MARK, None)
+                            # The statement-reading code this preparation used (reader_release).
+                            from services.financial.reader_release import reader_stamp
+                            file['reader_stamp']=reader_stamp(); file.pop('recheck', None)
+                            # And the whole backend reader it was prepared by (held_reprepare).
+                            from services.financial.held_reprepare import record_preparation
+                            record_preparation(file)
+                            file.pop('preparation_retries', None)
+                            file.pop('error', None)
+                            file['prepared_reading'] = await asyncio.to_thread(_prepared_reading, factory, case_id, UUID(file['file_id']))
+                            _reading_progress(file, 'complete', 'The reading is complete. Open its statement review to check reconciliation before importing.', review_file_id=file['file_id'])
             except Exception as error:
                 retries = file.get('preparation_retries', 0)
                 if _lock_busy_error(error):

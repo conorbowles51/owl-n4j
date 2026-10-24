@@ -10,7 +10,7 @@ import hashlib
 from copy import deepcopy
 from unittest import TestCase
 from unittest.mock import patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from sqlalchemy import select
 from sqlalchemy.dialects import postgresql
@@ -204,11 +204,16 @@ class ReprepareCarryTests(TestCase):
             item.review_request = {**item.review_request, 'holder': 'Changed again'}
             db.commit()
         before = self.snapshot(batch)
+        stamps = {key: self.h.files(batch)[0].get(key) for key in ('reader_stamp', held.STAMP)}
         self.h.drain(batch)
         self.assertEqual(self.snapshot(batch), before)
         entry = self.h.files(batch)[0]
         self.assertEqual((entry['status'], entry[held.MARK]['state'], entry[held.MARK]['carry']),
                          ('checked', held.LEFT, 'work_changed'))
+        # Nothing was prepared: the file keeps the stamps of the reader that did prepare it.
+        self.assertEqual({key: entry.get(key) for key in stamps}, stamps)
+        self.assertNotEqual(entry.get(held.STAMP), held.preparation_stamp())
+        self.assertNotIn('recheck', entry)
 
     def test_switched_off_at_the_worker_prepares_nothing(self):
         batch = self.h.prepare(reader=missing_reader)
@@ -220,6 +225,38 @@ class ReprepareCarryTests(TestCase):
             self.h.drain(batch)
         self.assertEqual(self.snapshot(batch), before)
         self.assertEqual(self.h.files(batch)[0][held.MARK]['carry'], 'switched_off')
+        self.assertNotEqual(self.h.files(batch)[0].get(held.STAMP), held.preparation_stamp())
+
+    def test_a_carry_already_committed_is_prepared_on_retry_even_after_she_saves(self):
+        batch = self.h.prepare(reader=missing_reader)
+        self.her_work(batch, missing_reader, lambda request: request.update(holder='Her Holder Name'), progress=True)
+        held.sweep(self.f.SessionLocal)
+        self.assertEqual(held.sweep(self.f.SessionLocal)['handed'], 1)
+        entry = self.h.files(batch)[0]
+        # The worker's first attempt carried her work, then its preparation failed (retried later).
+        with self.f.SessionLocal() as db:
+            self.assertIsNone(held.carry_before_preparing(db, self.f.case.id, batch, deepcopy(entry)))
+        with self.f.SessionLocal() as db:
+            file = db.get(EvidenceFile, UUID(entry['file_id']))
+            progress = deepcopy(file.metadata_['financial_review_progress'])
+            for record in progress.values():
+                record['request'] = {**record['request'], 'details_reason': 'Saved after the carry.'}
+            file.metadata_ = {**file.metadata_, 'financial_review_progress': progress}
+            db.commit()
+        with patch.object(queue_save, 'AUTO_SAVE_READY', True):
+            self.h.drain(batch)
+        entry = self.h.files(batch)[0]
+        self.assertEqual((entry['status'], entry[held.MARK]['state']), ('checked', 'done'))
+        self.assertEqual(entry.get(held.STAMP), held.preparation_stamp())
+
+    def test_carried_work_never_names_the_system_as_its_saver(self):
+        entry = dict(saved=dict(saved_by=dict(user_id=None, name='System')), request=dict(rows=[]),
+                     audit=dict(fields=[]), conflicts={}, row_conflicts=[],
+                     proposal=dict(rows=[], revision='r', metadata={}))
+        reading = type('R', (), dict(id=uuid4()))()
+        with patch('services.financial.import_batches.initial_request', return_value=dict(rows=[])):
+            record = carry.carried_record(entry, reading, 's1')
+        self.assertEqual(record['saved_by'], dict(user_id=None, name='Investigator'))
 
     def test_a_hand_added_payment_the_reader_now_reads_is_not_carried(self):
         batch = self.h.prepare(reader=missing_reader)

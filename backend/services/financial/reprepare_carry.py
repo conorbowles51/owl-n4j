@@ -338,7 +338,9 @@ def plan(session, case_id, reading, source, currency=None):
         if request.get('expected_revision') == proposal['revision'] and new_key == key:
             statements[key] = dict(kind='current', new_key=key, entries=entries)  # already on this reading
             continue
+        read_currency = currency or None
         if not currency and request.get('currency') and request['currency'] != proposal['currency']:
+            read_currency = request['currency']
             # prepare_reviews reads the statement with her saved currency: carry onto that reading.
             from services.financial.statement_import import read_statement_import
             proposal = read_statement_import(session, case_id=case_id, evidence_file_id=reading.id,
@@ -346,7 +348,7 @@ def plan(session, case_id, reading, source, currency=None):
         carried, audit, conflicts, row_conflicts = carry_request(request, proposal)
         statements[key] = dict(kind='carried', new_key=new_key, entries=entries, request=carried, saved=saved,
                                audit=audit, conflicts=conflicts, row_conflicts=row_conflicts, proposal=proposal,
-                               initial=initial_request(proposal))
+                               initial=initial_request(proposal), read_currency=read_currency)
     for key in statements:
         if statements[key]['kind'] == 'settled' and key in targets and targets[key] != key:
             raise NotCarried('statement_ambiguous')  # a settled record on the statement hers moves onto
@@ -357,9 +359,14 @@ def carried_record(entry, reading, key):
     from services.financial.effective_statement_review import request_signature
     from services.financial.import_batches import initial_request
     from services.financial.pdf_candidates import _digest
+    from services.financial.field_proposals import SYSTEM_NAME
     saved, request = entry['saved'], entry['request']
+    saver = deepcopy(saved.get('saved_by')) or {}
+    if not saver or saver.get('name') == SYSTEM_NAME:
+        # Carried work is a person's (it is carried, not settled): never a record the System may save.
+        saver = dict(user_id=None, name='Investigator')
     record = dict(request=request, review_revision=_digest(request), saved_at=_now(),
-                  saved_by=deepcopy(saved.get('saved_by')) or dict(user_id=None, name='Investigator'),
+                  saved_by=saver,
                   carried_by=dict(user_id=None, name='System'),
                   carried_from=dict(evidence_file_id=str(reading.id), statement_id=key,
                                     review_revision=saved.get('review_revision'), saved_at=saved.get('saved_at'),
@@ -396,8 +403,10 @@ def apply(session, *, case_id, batch_id, file, fingerprint):
     ids = [reading.id] + ([source.id] if source is not None and source.id != reading.id else [])
     current = work_fingerprint(session, case_id, ids)
     if current != fingerprint:
-        done = [entry for entry in (reading.metadata_ or {}).get(LOG) or [] if entry.get('fingerprint') == fingerprint]
-        if done and done[-1].get('progress_after') == progress_digest(reading):
+        # Carried already for this hand-off (by this file's earlier attempt whose preparation was then retried, or
+        # by another batch's preparation of the same reading): her work is on the current reading, and anything
+        # saved since is work on that reading, which preparing keeps like any saved review.
+        if any(entry.get('fingerprint') == fingerprint for entry in (reading.metadata_ or {}).get(LOG) or []):
             return 'already'
         return 'work_changed'
     try:
@@ -456,7 +465,8 @@ def apply(session, *, case_id, batch_id, file, fingerprint):
         if entry['kind'] != 'carried':
             continue
         proposal = read_statement_import(session, case_id=case_id, evidence_file_id=reading.id,
-                                         currency=file.get('currency') or None, statement_id=entry['new_key'] or None,
+                                         currency=entry.get('read_currency', file.get('currency') or None),
+                                         statement_id=entry['new_key'] or None,
                                          _cache={})
         if proposal['revision'] != entry['request']['expected_revision']:
             session.rollback()
