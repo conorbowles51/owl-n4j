@@ -886,6 +886,25 @@ def fill_from_review_queue(body: QueueFill, case_id: UUID = Query(...), db: Sess
         return fill_from_queue(db, case_id=case_id, file_ids=body.file_ids)
 
 
+class ProposalGroupConfirm(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    group_id: str = Field(min_length=64, max_length=64)
+    file_ids: list[UUID] = Field(default_factory=list, max_length=10000)
+
+
+@router.post('/review/proposal-groups/confirm', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+def confirm_review_proposal_group(body: ProposalGroupConfirm, case_id: UUID = Query(...),
+        user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    """Confirm one account's proposed value for all its waiting statements at once (fills empty fields only)."""
+    from services.financial.review_queue import confirm_proposal_group
+    try:
+        return confirm_proposal_group(db, case_id=case_id, group_id=body.group_id, actor=actor_from_user(user),
+                                      file_ids=body.file_ids)
+    except PdfMappingError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
 @router.get('/review/save-result')
 def review_queue_save_result(case_id: UUID = Query(...), operation_id: list[UUID] = Query([]),
         db: Session = Depends(get_db)):

@@ -57,6 +57,15 @@ class QueueRulesTests(TestCase):
         missing = dict(kind='arithmetic', check='closing_balance',
                        message='Enter one opening and one closing balance from the statement, and complete every selected payment, to reconcile.')
         self.assertEqual(issue_sentence('balance', [missing], {}), 'Opening or closing balance not read: enter both from the statement')
+        check = lambda opening, closing: dict(checks=[dict(kind='closing_balance', status='unavailable',
+                                                           opening_minor=opening, printed_minor=closing)])
+        unread = [dict(kind='reading', row_id=f'2:0:{n}', page=2, message='The amount is missing or unreadable.') for n in range(2)]
+        self.assertEqual(issue_sentence('balance', [missing], dict(check('100', '90'), problems=[missing, *unread])),
+                         'Both balances read; 2 payments could not be read on page 2')
+        self.assertEqual(issue_sentence('balance', [missing], check('100', None)), 'Closing balance not read: enter it from the statement')
+        self.assertEqual(issue_sentence('balance', [missing], check(None, '90')), 'Opening balance not read: enter it from the statement')
+        self.assertEqual(issue_sentence('balance', [missing], check(None, None)),
+                         'Opening or closing balance not read: enter both from the statement')
         for reason in ('import_failed', 'saved_review', 'reprint', 'assignment', 'institution', 'holder', 'account',
                        'dates', 'incomplete', 'count', 'no_activity'):
             sentence = issue_sentence(reason, [dict(message='x', row_id='1:0:1', page=1)], {})
@@ -560,3 +569,59 @@ class PagedQueueTests(QueueReadTests):
             rq._store('x', ('a',), dict(entries=[{}] * 5))
             rq._store('y', ('a',), dict(entries=[{}] * 5))
             self.assertEqual(list(rq._cache), ['y'])  # the newest stays even alone over the bound
+
+
+class ProposalGroupTests(TestCase):
+    """Rule 5 (Neil, 2026-10-24): one confirmation per account for the same proposal on several statements."""
+
+    @staticmethod
+    def waiting(n, account='65-1234567-8', institution='Santander', value='MXN', basis='same_account', key='a1',
+                confirmed=False, field='currency'):
+        proposal = dict(value=value, basis=basis, confirmed=confirmed, label='x', account_key=key if key else None)
+        return dict(id=f'i{n}', bucket='waiting', account=account, institution=institution,
+                    proposals={field: proposal}, file_ids=[f'f{n}'])
+
+    def test_one_group_per_account_and_value(self):
+        from services.financial.review_queue import proposal_groups
+        entries = [self.waiting(1), self.waiting(2), self.waiting(3, key='a2'), self.waiting(4, key='a2'),
+                   self.waiting(5, value='USD')]
+        groups = proposal_groups(entries)
+        self.assertEqual(sorted((g['value'], g['statements']) for g in groups), [('MXN', 2), ('MXN', 2)])
+        self.assertEqual(len({g['id'] for g in groups}), 2)
+
+    def test_printed_number_groups_without_a_saved_account(self):
+        from services.financial.review_queue import proposal_groups
+        entries = [self.waiting(1, key=None, basis='case_default'), self.waiting(2, key=None, basis='case_default'),
+                   self.waiting(3, key=None, basis='case_default', account='', institution='')]
+        groups = proposal_groups(entries)
+        self.assertEqual([g['entry_ids'] for g in groups], [['i1', 'i2']])
+
+    def test_confirmed_single_and_not_waiting_are_not_grouped(self):
+        from services.financial.review_queue import proposal_groups
+        entries = [self.waiting(1, confirmed=True), self.waiting(2, confirmed=True), self.waiting(3),
+                   dict(self.waiting(4), bucket='filled')]
+        self.assertEqual(proposal_groups(entries), [])
+
+    def test_the_group_id_binds_its_statements(self):
+        from services.financial.review_queue import proposal_groups
+        two = proposal_groups([self.waiting(1), self.waiting(2)])[0]
+        three = proposal_groups([self.waiting(1), self.waiting(2), self.waiting(3)])[0]
+        self.assertNotEqual(two['id'], three['id'])
+
+    def test_confirm_refuses_a_changed_queue_and_saves_as_the_person(self):
+        from unittest.mock import patch
+        from services.financial import review_queue
+        from services.financial.pdf_candidates import PdfMappingError
+        entries = [self.waiting(1), self.waiting(2)]
+        group = review_queue.proposal_groups(entries)[0]
+        session = SimpleNamespace(rollback=lambda: None)
+        with patch.object(review_queue, '_view', return_value=(dict(entries=entries), False)), \
+                patch('services.financial.field_proposals.apply_confirmed_proposals',
+                      return_value=dict(statements=2, saved=2, failed=0)) as apply:
+            result = review_queue.confirm_proposal_group(session, case_id='c', group_id=group['id'], actor='person')
+            with self.assertRaises(PdfMappingError):
+                review_queue.confirm_proposal_group(session, case_id='c', group_id='0' * 64, actor='person')
+        self.assertEqual((result['saved'], result['value']), (2, 'MXN'))
+        kwargs = apply.call_args.kwargs
+        self.assertEqual(kwargs['actor'], 'person')
+        self.assertTrue(all(e['proposals']['currency']['confirmed'] for e in kwargs['entries']))
