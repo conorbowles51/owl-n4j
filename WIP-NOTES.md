@@ -88,3 +88,17 @@ Counts and opaque ids only. Scratch evidence (private, mode 700): /mnt/owl-data/
 - Whole-set bench (bench/aqb-216c5a6b) still running at 02:20 UTC (918 of about 1944 batch items).
   Compare when done: python3 /mnt/owl-data/fin-real/tmp/aqb/compare_whole.py /mnt/owl-data/fin-real/bench/aqb-216c5a6b
   (per-period lost/gained vs r14s-whole results-rescored.json; script self-check on r14s-whole: lost 0).
+
+## Do her uncarried records hold real edits? (read only, 2026-10-24 02:35 UTC)
+- Script fin-real/tmp/aqb/baseline_classify.py (+ baseline_diff.py, baseline_proxy.py); private output baseline-classes.json.
+- Baseline recovery: today's code reproduces the saved-on reading for 1 record only (revision match). Others recovered
+  through the account-detail audit (an entry at the same instant: before/after/actor; rows verified unchanged vs her
+  previous save on the same revision) or provable work (hand-added rows, row changes between her own saves).
+- 48 uncarried records (the 22 sibling + 26 on the worked statements incl. source-reading and row-less drafts):
+  a 1, b 4 (audited System fills: holder 2, currency 2), c 31, d 12.
+  c: statement details only 25 (holder 16, account 13, institution 12, currency 3 field-touches; audited, by the investigator);
+  rows 6 (hand-added rows 15 / 4 x4 records with 1 row changed and 1 row note / 19). d: unaudited first saves on
+  readings today's code does not reproduce (no hand-added rows, no notes).
+- The 22 sibling: a 1, c 14 (all details-only), d 7. No record carries a statement note; 1 carries a row note.
+- Eligible if a/b = "no edits to keep": 3 of the 18 held by uncarried work (3 of 64, 3 of 50: own_work f0e365/77fb6f/
+  64a961 statements, System-only fills); 0 of the 10 sibling-held.
