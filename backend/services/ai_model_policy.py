@@ -7,7 +7,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from config import ANTHROPIC_API_KEY, DEEPSEEK_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY
+from config import ANTHROPIC_API_KEY, DEEPSEEK_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, OPENAI_VISION_MODEL
 from models.llm_models import LLMProvider, get_model_by_id
 from postgres.models.runtime_state import AIModelPolicy
 
@@ -55,7 +55,27 @@ WORKLOADS: dict[str, dict[str, str]] = {
         "description": "Claim entailment and final summary quality checks.",
         "group": "Ingestion",
     },
+    "financial_vision": {
+        "label": "Statement page images",
+        "description": "Reads held bank statement pages from their images; saved only when the figures reconcile exactly.",
+        "group": "Financial",
+    },
 }
+
+# Page-image reading is implemented for OpenAI only (llm_service.call_vision_json):
+# every recommended profile keeps it on OpenAI (Neil, 2026-10-24). Default model:
+# gpt-5.6-terra, Loupe's default OpenAI model, measured on held BNB2 statements in
+# document mode to prove 7 of 24 where gpt-4o (OPENAI_VISION_MODEL) proved 2.
+# LOUPE_FINANCIAL_VISION_MODEL overrides it; the AI settings page switches it.
+def _financial_vision_model() -> str:
+    import os
+    chosen = (os.environ.get("LOUPE_FINANCIAL_VISION_MODEL") or "gpt-5.6-terra").strip()
+    model = get_model_by_id(chosen)
+    return chosen if model and model.provider == LLMProvider.OPENAI else (
+        OPENAI_VISION_MODEL if get_model_by_id(OPENAI_VISION_MODEL) else "gpt-4o")
+
+
+FINANCIAL_VISION_DEFAULT = {"provider": "openai", "model_id": _financial_vision_model()}
 
 
 DEFAULT_POLICY: dict[str, dict[str, str]] = {
@@ -67,6 +87,7 @@ DEFAULT_POLICY: dict[str, dict[str, str]] = {
     "ingestion_entity_summary": {"provider": "openai", "model_id": "gpt-5.6-terra"},
     "ingestion_document_summary": {"provider": "openai", "model_id": "gpt-5.6-sol"},
     "ingestion_quality": {"provider": "openai", "model_id": "gpt-5.6-terra"},
+    "financial_vision": dict(FINANCIAL_VISION_DEFAULT),
 }
 
 PROVIDER_DEFAULTS: dict[str, dict[str, dict[str, str]]] = {
@@ -80,6 +101,7 @@ PROVIDER_DEFAULTS: dict[str, dict[str, dict[str, str]]] = {
         "ingestion_entity_summary": {"provider": "anthropic", "model_id": "claude-sonnet-5"},
         "ingestion_document_summary": {"provider": "anthropic", "model_id": "claude-opus-4-8"},
         "ingestion_quality": {"provider": "anthropic", "model_id": "claude-sonnet-5"},
+        "financial_vision": dict(FINANCIAL_VISION_DEFAULT),
     },
     "gemini": {
         "chat": {"provider": "gemini", "model_id": "gemini-3.6-flash"},
@@ -90,6 +112,7 @@ PROVIDER_DEFAULTS: dict[str, dict[str, dict[str, str]]] = {
         "ingestion_entity_summary": {"provider": "gemini", "model_id": "gemini-3.6-flash"},
         "ingestion_document_summary": {"provider": "gemini", "model_id": "gemini-3.5-flash"},
         "ingestion_quality": {"provider": "gemini", "model_id": "gemini-3.6-flash"},
+        "financial_vision": dict(FINANCIAL_VISION_DEFAULT),
     },
     "deepseek": {
         "chat": {"provider": "deepseek", "model_id": "deepseek-v4-flash"},
@@ -100,6 +123,7 @@ PROVIDER_DEFAULTS: dict[str, dict[str, dict[str, str]]] = {
         "ingestion_entity_summary": {"provider": "deepseek", "model_id": "deepseek-v4-flash"},
         "ingestion_document_summary": {"provider": "deepseek", "model_id": "deepseek-v4-pro"},
         "ingestion_quality": {"provider": "deepseek", "model_id": "deepseek-v4-flash"},
+        "financial_vision": dict(FINANCIAL_VISION_DEFAULT),
     },
 }
 
@@ -183,7 +207,7 @@ def validate_policy(
             raise ValueError(f"{model_id} does not belong to {provider}")
         if workload == "agent" and not model.supports_agent:
             raise ValueError(f"{model_id} does not support agent tool use")
-        if (workload.startswith("ingestion_") or workload == "workspace_analysis") and not model.supports_structured_output:
+        if (workload.startswith("ingestion_") or workload in ("workspace_analysis", "financial_vision")) and not model.supports_structured_output:
             raise ValueError(f"{model_id} does not support reliable structured output")
         if require_configured_provider and not provider_is_configured(provider, db):
             raise ValueError(

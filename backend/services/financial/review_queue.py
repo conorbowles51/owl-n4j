@@ -320,6 +320,12 @@ def _entry(item, batch_id, describe_result=None):
         if describe_result.get('choice'):
             entry['choice'] = describe_result['choice']
         entry.update(issue_pages=describe_result.get('pages') or [], issue_messages=describe_result.get('messages') or [])
+    vision = summary.get('vision_reading')
+    if vision and item.status == 'attention' and vision.get('status') == 'not_proved' and vision.get('message'):
+        # Why reading its page images did not settle it (vision_reader); the statement stays as it was.
+        entry['vision_reading'] = dict(status=vision['status'], message=vision['message'])
+        if describe_result and vision['message'] not in entry['issue_messages']:
+            entry['issue_messages'] = [*entry['issue_messages'], 'Page images: ' + vision['message']]
     not_payment = summary.get('not_payment_statement')
     if not_payment:
         entry.update(not_payment=dict(kind=not_payment.get('kind'), label=not_payment.get('label'),

@@ -328,3 +328,32 @@ construction.
   the branch (recovery/scheduler/re-read environment tests).
 - Engine container: 117 passed and 50 skipped (the skips need a font). On the host, the font-dependent glyph
   tests (56) pass.
+
+## Vision fallback reader (fin/rd-vision, 2026-10-24)
+Counts and opaque ids only.
+
+- backend/services/financial/vision_reader.py (switch LOUPE_FINANCIAL_VISION_FALLBACK, default on). Held statements
+  only, never one with investigator work, a saved/set-aside/ready one, a document review or a fund statement.
+  Trigger: a file prepared through the normal batch path (recovery re-read or any preparation) is marked
+  (batch entry `vision_fallback`); a separate background task in the batch worker (`_vision_forever`, never
+  inside a batch turn or a case lock) reads its held statements.
+- One OpenAI request per statement: every page image (3 overlapping strips per page, labelled "Page N"),
+  schema-enforced JSON (strict json_schema), every row citing its page. Workload `financial_vision` in
+  ai_model_policy (OpenAI in every profile), default gpt-5.6-terra (LOUPE_FINANCIAL_VISION_MODEL overrides).
+  llm_service.LLMExecutionContext.call_vision_json raises on refusal / truncation / non-OpenAI (fail closed).
+- Accepted only when: opening + rows = closing to the cent; every printed running balance agrees; printed
+  credit/debit totals and counts agree; rows inside the period; printed page numbering shows no page absent
+  from the file; header agrees with the text reading wherever it read a value; the account (number + bank)
+  has saved statements in the case, the printed currency picks its sub-account, the holder matches one of its
+  saved statements; adjacent saved statements continue its balances and none overlaps it; every cleanly read
+  text payment and text balance is in the image reading; the rows are not just the printed totals. Then the
+  batch's own assess/admission must find nothing at all; only then a System review is saved (save_review),
+  rows "Read from page image, page N.", text rows set aside with a reason (retained), and auto_save_prepared
+  saves it as for any statement that checks out completely.
+- Otherwise held as before, with the reason stored (file metadata `financial_vision_reading`, item summary
+  `vision_reading`) and shown in the queue entry (`issue_messages`, "Page images: ...").
+- Cost: per-statement record of tokens and cost (also per page), logged; cap per case per worker run
+  LOUPE_FINANCIAL_VISION_CASE_BUDGET_USD (default 30). Read once per reading and model.
+- Tests: tests/test_financial_vision_reader.py (28) + ai_model_policy, llm_service, queue_save, review_queue,
+  review_queue_balances, import_batches: 279 pass.
+- Truth tool: benchmarks/statement_automation/vision_truth.py (measure only, on a copy of a whole-set bench DB).

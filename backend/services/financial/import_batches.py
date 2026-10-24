@@ -2117,6 +2117,13 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
                             file[queue_save.AUTO_SAVE_MARK] = True
                         else:
                             file.pop(queue_save.AUTO_SAVE_MARK, None)
+                        # Prepared with the page-image reader on: its held statements are
+                        # read from their page images in the background (vision_reader).
+                        from services.financial import vision_reader
+                        if vision_reader.ENABLED:
+                            file[vision_reader.MARK] = True
+                        else:
+                            file.pop(vision_reader.MARK, None)
                         # The statement-reading code this preparation used (reader_release).
                         from services.financial.reader_release import reader_stamp
                         file['reader_stamp']=reader_stamp(); file.pop('recheck', None)
@@ -2505,6 +2512,22 @@ READER_RELEASE_SWEEP_SECONDS = 120
 READINESS_SWEEP_BUDGET = 20.0
 
 
+VISION_SWEEP_PAUSE_SECONDS = 30
+
+
+async def _vision_forever(resolve_path):
+    from postgres.session import _get_session_local
+    from services.financial import vision_reader
+    while vision_reader.ENABLED:
+        try:
+            await asyncio.to_thread(vision_reader.sweep, _get_session_local(), resolve_path)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception('Page-image reading round failed; it will retry')
+        await asyncio.sleep(VISION_SWEEP_PAUSE_SECONDS)
+
+
 async def run_batches_forever():
     from postgres.session import _get_session_local
     from routers.evidence import _resolve_stored_path
@@ -2512,6 +2535,10 @@ async def run_batches_forever():
     next_sweep = time.monotonic() + READINESS_SWEEP_SECONDS
     next_auto_read = time.monotonic()
     next_reader_release = time.monotonic() + READINESS_SWEEP_SECONDS
+    # Held statements read from their page images: its own task, so a slow
+    # image reading never delays batch turns (vision_reader; switch
+    # LOUPE_FINANCIAL_VISION_FALLBACK).
+    vision_task = asyncio.create_task(_vision_forever(_resolve_stored_path))
     while True:
         try:
             factory=_get_session_local()

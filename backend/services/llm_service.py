@@ -147,6 +147,76 @@ class LLMExecutionContext:
             }
         return content
 
+    def call_vision_json(
+        self,
+        prompt: str,
+        images_png: list[bytes],
+        *,
+        schema: dict[str, Any],
+        schema_name: str,
+        timeout: int = 120,
+        detail: str = "high",
+        max_output_tokens: int = 8000,
+        image_labels: list[str] | None = None,
+    ) -> str:
+        """One page-image request with schema-enforced JSON output (OpenAI only).
+
+        Raises on any failure (no key, unsupported provider, API error, refusal,
+        truncated output) so callers fail closed. The images are never logged or
+        remembered; only their count and size are.
+        """
+        import base64
+
+        self.last_prompt = prompt
+        self.last_raw_response = None
+        self.last_usage = None
+        self.last_request_arguments = None
+        self.last_response_metadata = {}
+        if self.provider != "openai":
+            raise ValueError(f"Page-image reading is not available for provider {self.provider}")
+        openai_client = self._client or client
+        if not openai_client:
+            raise ValueError("OpenAI client not initialized. OPENAI_API_KEY not set.")
+        content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
+        for index, image in enumerate(images_png):
+            if image_labels:
+                content.append({"type": "text", "text": image_labels[index]})
+            content.append({"type": "image_url", "image_url": {
+                "url": "data:image/png;base64," + base64.b64encode(image).decode("ascii"), "detail": detail}})
+        kwargs: Dict[str, Any] = {
+            "model": self.model_id,
+            "messages": [{"role": "user", "content": content}],
+            "response_format": {"type": "json_schema", "json_schema": {
+                "name": schema_name, "strict": True, "schema": schema}},
+            "timeout": timeout,
+        }
+        if self.model_id.startswith(("o1", "o3", "gpt-5")):
+            kwargs["max_completion_tokens"] = max_output_tokens
+        else:
+            kwargs["temperature"] = 0
+            kwargs["max_tokens"] = max_output_tokens
+        self.last_request_arguments = {"model": self.model_id, "images": len(images_png),
+                                       "image_bytes": sum(len(i) for i in images_png), "schema": schema_name}
+        response = openai_client.chat.completions.create(**kwargs)
+        self._remember_response(response)
+        choice = response.choices[0]
+        usage = response.usage
+        if usage:
+            self.last_usage = {
+                "prompt_tokens": usage.prompt_tokens,
+                "completion_tokens": usage.completion_tokens,
+                "total_tokens": usage.total_tokens,
+            }
+        if getattr(choice.message, "refusal", None):
+            raise ValueError("The model declined to read the page image")
+        if choice.finish_reason != "stop":
+            raise ValueError(f"The page-image reading was incomplete ({choice.finish_reason})")
+        text = choice.message.content
+        if not text:
+            raise ValueError("LLM returned empty response")
+        self.last_raw_response = text
+        return text
+
     def _call_anthropic(
         self,
         prompt: str,
