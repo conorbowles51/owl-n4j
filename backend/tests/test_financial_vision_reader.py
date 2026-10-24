@@ -157,6 +157,13 @@ class ProofTest(unittest.TestCase):
         # The number printed only on the page images (the text read none): the same.
         with self.assertRaisesRegex(vr.NotProved, 'partial number'):
             _proved(pages=pages)
+        # Saved statements that record no holder or bank cannot confirm a partial number.
+        for field in ('holder', 'institution'):
+            unrecorded = _knowledge(account='****6789', **{field: ''})
+            unrecorded.accounts[0].digits, unrecorded.accounts[0].masked = '6789', True
+            unrecorded.accounts[0].institution = unrecorded.accounts[0].institution if field == 'holder' else ''
+            with self.assertRaisesRegex(vr.NotProved, 'do not record the holder and bank'):
+                _proved(knowledge=unrecorded)
         # A full number the text reading also read needs no printed holder (the saved one is used).
         self.assertEqual(len(_proved(_proposal(account_number='0123456789'), pages=pages)['rows']), 3)
 

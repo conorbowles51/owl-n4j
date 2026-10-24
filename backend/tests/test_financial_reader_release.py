@@ -270,13 +270,45 @@ class ReaderReleaseTests(TestCase):
         with self.f.SessionLocal() as db:
             self.assertEqual(vision_reader.pending(db), [])
 
+    def test_a_claim_left_by_a_stopped_worker_counts_as_a_failed_request(self):
+        from services.financial import vision_reader
+        with patch.object(vision_reader, 'ENABLED', True):
+            batch = self.prepare_with_old_reader()
+        held = self.item(batch)
+        calls = []
+        with patch.dict(vision_reader._spend, {}, clear=True):
+            first = self._read_from_images(0, read=lambda images: calls.append(1) or 1 / 0, batch=batch)[2]
+            self.assertEqual(first['failures'], 1)
+            long_ago = datetime(2020, 1, 1, tzinfo=timezone.utc).isoformat()
+            for _ in range(2):
+                # The worker stops mid-request: its claim stays 'reading' past its time.
+                with self.f.SessionLocal() as db:
+                    vision_reader._store(db, held.file_id, held.statement_key, dict(
+                        first, status='reading', at=long_ago, failures=self._stored(held)['failures']))
+                    db.commit()
+                outcome = self._read_from_images(0, read=lambda images: calls.append(1) or 1 / 0, batch=batch)[2]
+            # 1 failed request, then a stopped one (2), then a stopped one (3): given up, not sent again.
+            self.assertEqual((outcome['status'], outcome['reason'], len(calls)), ('failed', 'failed_repeatedly', 2))
+        after = self.item(batch)
+        self.assertEqual(after.summary['vision_reading']['message'], vision_reader.GAVE_UP)
+        with self.f.SessionLocal() as db:
+            self.assertEqual(vision_reader.pending(db), [])
+
+    def _stored(self, held):
+        from services.financial import vision_reader
+        from postgres.models.evidence import EvidenceFile
+        with self.f.SessionLocal() as db:
+            return db.get(EvidenceFile, held.file_id).metadata_[vision_reader.METADATA_KEY][held.statement_key or '']
+
     def test_no_request_beyond_the_case_budget(self):
         from services.financial import vision_reader
         calls = []
         with patch.dict(vision_reader._spend, {}, clear=True), patch.object(vision_reader, 'CASE_BUDGET_USD', 0.01):
             batch, held, outcome = self._read_from_images(0, read=lambda images: calls.append(1))
         self.assertEqual((outcome['status'], calls), ('budget', []))
-        self.assertEqual(self.item(batch).status, 'attention')
+        after = self.item(batch)
+        self.assertEqual(after.status, 'attention')
+        self.assertIn('budget', after.summary['vision_reading']['message'])
 
     def test_a_statement_claimed_by_another_worker_is_not_read_again(self):
         from services.financial import vision_reader

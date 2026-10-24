@@ -94,6 +94,7 @@ MAX_FAILURES = 3
 # Reserved before each request: an answer cut short, refused or timed out is still billed.
 RESERVE_TOKENS_PER_IMAGE = 1600
 RESERVE_OUTPUT_TOKENS = 16000
+GAVE_UP = 'The page images could not be read after several tries; the statement stays held.'
 # Outcomes not attempted again for the same reading (failed, budget and unavailable are retried later).
 FINAL = ('proved', 'not_proved', 'stale')
 # USD per million tokens (input, output). Unknown models use the most expensive line.
@@ -133,6 +134,15 @@ def spent(case_id):
 def _add_spend(case_id, amount):
     with _spend_lock:
         _spend[str(case_id)] = _spend.get(str(case_id), 0.0) + amount
+
+
+def _reserve(case_id, amount):
+    """Count ``amount`` against the case's budget; False (nothing counted) when it would pass the budget."""
+    with _spend_lock:
+        if _spend.get(str(case_id), 0.0) + amount > CASE_BUDGET_USD:
+            return False
+        _spend[str(case_id)] = _spend.get(str(case_id), 0.0) + amount
+        return True
 
 
 # ---------------------------------------------------------------------------
@@ -526,7 +536,8 @@ def prove(proposal, section, knowledge):
     candidates, matched = fp.matching_accounts(dict(account_number=account_text, institution=institution_printed), knowledge)
     if not candidates or 'ambiguous' in matched or 'account' not in matched:
         raise NotProved('This account has no saved statement in the case to confirm the page-image reading against.')
-    if ('masked' in matched or not rule['account_number']) and not holder_printed:
+    partial = 'masked' in matched or not rule['account_number']
+    if partial and not holder_printed:
         # Only some digits agree, or only the page images print the number: another account at the
         # bank could end the same way, so the printed holder must also agree (checked below).
         raise NotProved('The account holder is not printed, so the account could not be confirmed from a partial number.')
@@ -551,6 +562,10 @@ def prove(proposal, section, knowledge):
     saved_institutions = [i for k in candidates for i in k.values('institution')] or [k.institution for k in candidates if k.institution]
     holder = holder_printed or (saved_holders[-1] if saved_holders and len({fp.holder_key(h) for h in saved_holders}) == 1 else '')
     institution = institution_printed or (saved_institutions[-1] if saved_institutions else '')
+    if partial and not (saved_holders and saved_institutions and institution_printed):
+        # A partial number is confirmed only by a printed holder and bank the saved statements also record.
+        raise NotProved('The account could not be confirmed from a partial number: the saved statements of this '
+                        'account do not record the holder and bank to compare.')
     if not holder or (saved_holders and not any(fp.same_holder(holder, h) for h in saved_holders)):
         raise NotProved('The account holder could not be confirmed against the saved statements of this account.')
     if not institution or (saved_institutions and not all(fp.same_institution(institution, i) for i in saved_institutions)):
@@ -913,9 +928,20 @@ def reserve_usd(model_id, images):
                                    completion_tokens=RESERVE_OUTPUT_TOKENS))
 
 
+def failures(record, revision):
+    """Failed requests for this reading; a claim left 'reading' past its time (the worker stopped
+    mid-request, after the request was sent) counts as one more."""
+    if not record or record.get('version') != VERSION or record.get('revision') != revision:
+        return 0
+    if record.get('status') == 'failed':
+        return record.get('failures') or 0
+    if record.get('status') == 'reading' and not _being_read(record):
+        return (record.get('failures') or 0) + 1
+    return 0
+
+
 def gave_up(record, revision):
-    return bool(record and record.get('version') == VERSION and record.get('status') == 'failed'
-                and record.get('revision') == revision and (record.get('failures') or 0) >= MAX_FAILURES)
+    return failures(record, revision) >= MAX_FAILURES
 
 
 def _current(record, revision, model_id):
@@ -981,13 +1007,14 @@ def read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for
                 return dict(stored, reason='already_read')
             if _being_read(stored) and not force:
                 return dict(record, reason='being_read')
-            if gave_up(stored, proposal['revision']) and not force:
-                return dict(stored, reason='failed_repeatedly')
-            path = resolve_path(file.stored_path)
-            failures = (stored.get('failures') or 0) if stored and stored.get('status') == 'failed' \
-                and stored.get('revision') == proposal['revision'] else 0
             record.update(revision=proposal['revision'], model=model_id, pages=pages,
-                          text_reading=_rule_metadata(proposal), failures=failures)
+                          text_reading=_rule_metadata(proposal), failures=failures(stored, proposal['revision']))
+            if record['failures'] >= MAX_FAILURES and not force:
+                if stored.get('status') == 'failed':
+                    return dict(stored, reason='failed_repeatedly')
+                return _finish(factory, item_id, file_id, key, dict(record, status='failed', reason='failed_repeatedly',
+                               message=GAVE_UP), apply)
+            path = resolve_path(file.stored_path)
             if apply:
                 # The claim, checked again under the file's lock (another worker may hold it).
                 if not _store(db, file_id, key, dict(record, status='reading'), claim=(proposal['revision'], model_id)):
@@ -999,12 +1026,11 @@ def read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for
         # Outside any lock or transaction: render and read page by page.
         images = render_pages(path, pages)
         reserved = reserve_usd(record['model'], images)
-        if spent(case_id) + reserved > CASE_BUDGET_USD:
+        # The most it can cost is counted before the request is sent, and settled after.
+        if not _reserve(case_id, reserved):
             return _finish(factory, item_id, file_id, key, dict(record, status='budget',
                 message='Not read from the page images: the reading budget for this case is used for now.'), apply)
         started = time.monotonic()
-        # The most it can cost is counted before the request is sent, and settled after.
-        _add_spend(case_id, reserved)
         # One request with every page of the period, each image labelled with its page number.
         document, usage = read(images)
         cost = cost_usd(record['model'], usage)
@@ -1050,8 +1076,9 @@ def read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for
         return _save(factory, item_id, case_id, file_id, key, record, request)
     except Exception as error:  # noqa: BLE001 - fail closed: the statement stays held
         log.exception('Page-image reading failed; the statement stays held')
-        record.update(status='failed', message='The page images could not be read just now; the statement stays held.',
-                      error=type(error).__name__, failures=(record.get('failures') or 0) + 1)
+        record.update(status='failed', error=type(error).__name__, failures=(record.get('failures') or 0) + 1)
+        record['message'] = GAVE_UP if record['failures'] >= MAX_FAILURES else \
+            'The page images could not be read just now; the statement stays held.'
         try:
             if apply and file_id is not None:
                 return _finish(factory, item_id, file_id, key, record, apply)
@@ -1067,7 +1094,8 @@ def _finish(factory, item_id, file_id, key, record, apply):
     with factory() as db:
         _store(db, file_id, key, {k: v for k, v in record.items() if k != 'request'})
         item = db.scalar(select(Item).where(Item.id == item_id).with_for_update())
-        if item is not None and item.status == 'attention' and record.get('status') not in ('failed', 'reading'):
+        shown = record.get('status') not in ('failed', 'reading') or (record.get('failures') or 0) >= MAX_FAILURES
+        if item is not None and item.status == 'attention' and shown:
             _note(item, record)
         db.commit()
     return record
@@ -1099,14 +1127,17 @@ def _save(factory, item_id, case_id, file_id, key, record, request):
                 message='The page-image reading could not be recorded: ' + str(error)), True)
     stored = {k: v for k, v in record.items() if k != 'request'}
     stored['review_status'] = outcome.get('status')
-    with factory() as db:
-        _store(db, file_id, key, stored)
-        item = db.get(Item, item_id)
-        if item is not None:
-            _note(item, stored)
-        db.commit()
-        from services.financial.queue_save import auto_save_prepared
-        auto_save_prepared(db, case_id=case_id, batch_id=batch_id, file_id=file_id)
+    try:
+        with factory() as db:
+            _store(db, file_id, key, stored)
+            item = db.get(Item, item_id)
+            if item is not None:
+                _note(item, stored)
+            db.commit()
+            from services.financial.queue_save import auto_save_prepared
+            auto_save_prepared(db, case_id=case_id, batch_id=batch_id, file_id=file_id)
+    except Exception:  # noqa: BLE001 - the review is saved (the statement is ready); only this record or the automatic save failed
+        log.exception('Recording a saved page-image reading failed; its review is saved')
     log.info('Page-image reading proved statement %s of file %s (%s rows, $%.4f); saved as System review',
              str(item_id)[:8], str(file_id)[:8], record.get('rows'), record.get('cost_usd') or 0)
     return stored

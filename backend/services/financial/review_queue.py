@@ -321,7 +321,8 @@ def _entry(item, batch_id, describe_result=None):
             entry['choice'] = describe_result['choice']
         entry.update(issue_pages=describe_result.get('pages') or [], issue_messages=describe_result.get('messages') or [])
     vision = summary.get('vision_reading')
-    if vision and item.status == 'attention' and vision.get('status') == 'not_proved' and vision.get('message'):
+    if vision and item.status == 'attention' and vision.get('status') in ('not_proved', 'budget', 'failed') \
+            and vision.get('message'):
         # Why reading its page images did not settle it (vision_reader); the statement stays as it was.
         entry['vision_reading'] = dict(status=vision['status'], message=vision['message'])
         if describe_result and vision['message'] not in entry['issue_messages']:
