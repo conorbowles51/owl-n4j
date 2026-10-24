@@ -538,6 +538,30 @@ class UnprintedDateAndAuditTests(unittest.TestCase):
             self.assertEqual(audit.holder_outcome(live, truth), dict(holder=outcome, holder_source=source), live)
         self.assertEqual(audit.holder_outcome(dict(holder='X Y'), dict(holder=''))['holder'], 'not_printed')
 
+    def test_audit_tells_an_overlap_trim_from_missing_rows(self):
+        """A movement query whose first days a saved period of the same account counts: counted once, not missing."""
+        from benchmarks.statement_automation import real_ledger_audit as audit
+        truth = dict(period_start='2024-05-31', opening_minor=1000, closing_minor=1150, account='1234',
+                     rows=[dict(amount_minor=100, direction='credit', date='2024-06-03', balance_after=1100),
+                           dict(amount_minor=50, direction='debit', date='2024-06-07', balance_after=1050),
+                           dict(amount_minor=100, direction='credit', date='2024-06-19', balance_after=1150)])
+        live = dict(period_id='p2', period_start='2024-06-11', period_end='2024-07-08', opening_minor=1050,
+                    closing_minor=1150, account='1234', rows=[(100, 'credit', '2024-06-19')])
+        cover = dict(period_id='p1', period_start='2024-03-27', period_end='2024-06-10', closing_minor=1050,
+                     rows=[(7, 'debit', '2024-04-01'), (100, 'credit', '2024-06-03'), (50, 'debit', '2024-06-07')])
+        entry = audit.compare(live, truth)
+        self.assertEqual((entry['outcome'], entry['missing_rows'], entry['balances']), ('disagrees', 2, ['opening']))
+        self.assertEqual(audit.overlap_trimmed(live, truth, entry, [live, cover]), 'p1')
+        # Fails closed: no covering period, a cover missing a row, a cover ending another day, a wrong opening.
+        self.assertIsNone(audit.overlap_trimmed(live, truth, entry, [live]))
+        self.assertIsNone(audit.overlap_trimmed(live, truth, entry, [live, dict(cover, rows=cover['rows'][:2])]))
+        self.assertIsNone(audit.overlap_trimmed(live, truth, entry, [live, dict(cover, period_end='2024-06-09')]))
+        other = dict(live, opening_minor=1100)
+        self.assertIsNone(audit.overlap_trimmed(other, truth, audit.compare(other, truth), [other, cover]))
+        # A kept day's row missing as well is a disagreement, whatever covers the earlier days.
+        short = dict(live, rows=[])
+        self.assertIsNone(audit.overlap_trimmed(short, truth, audit.compare(short, truth), [short, cover]))
+
 
     def test_audit_counts_a_copy_saved_through_a_file_the_inventory_does_not_list(self):
         """r11-copy-audit: an upload of the same bytes after the inventory, saved to another ledger account."""

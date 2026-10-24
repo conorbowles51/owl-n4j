@@ -12,6 +12,8 @@ closing date:
   date column), or a balance kept with the opposite sign;
 * ``disagrees``: missing, extra or different rows, or different balances. This
   is a wrong admission, unless the truth itself is only ``ocr_reconciled``;
+* ``overlap_trimmed``: the period leaves out only the days a saved period of the same ledger account
+  covers, and that period holds those rows (the product's overlap trim: counted once, not missing);
 * ``must_be_held``: the truth period must not be in the ledger at all (printed
   pages missing, or contradicted by another printed statement), whatever its rows;
 * ``no_truth_period``: the document has truth, but no judged truth period matches;
@@ -165,6 +167,41 @@ def judge(live, truth):
     return entry
 
 
+def overlap_trimmed(live, truth, entry, account_periods):
+    """The saved period of another live period that counts the rows this one leaves out, or None.
+
+    The product trims the days of a movement query that a statement already saved for the same ledger
+    account covers (``statement_overlap_trim``): those movements are counted once, in the saved one. Against
+    per-document truth that reads as missing rows and a later opening. It is told apart only when the truth
+    and the ledger prove it: no extra rows and no closing difference; the missing rows are exactly the truth
+    rows dated before the live period's start; the live opening is the running balance the truth prints
+    after the last of them; and one admitted period of the same ledger account, ending the day before, holds
+    each of them (date, amount, direction)."""
+    from datetime import date, timedelta
+    if entry['outcome'] != 'disagrees' or entry['extra_rows'] or set(entry['balances']) - {'opening'}:
+        return None
+    if not live.get('period_start') or not truth.get('period_start') or live['period_start'] <= truth['period_start']:
+        return None
+    before = [r for r in truth['rows'] if r.get('date') and r['date'] < live['period_start']]
+    if not before or len(before) != entry['missing_rows']:
+        return None
+    if any(r.get('date_unprinted') for r in truth['rows']):
+        return None
+    kept = Counter((r['amount_minor'], r['direction'], r['date']) for r in truth['rows']
+                   if r.get('date') and r['date'] >= live['period_start'])
+    if kept != Counter(live['rows']):
+        return None
+    if before[-1].get('balance_after') is None or live['opening_minor'] != before[-1]['balance_after']:
+        return None
+    day_before = (date.fromisoformat(live['period_start']) - timedelta(days=1)).isoformat()
+    wanted = Counter((r['amount_minor'], r['direction'], r['date']) for r in before)
+    for other in account_periods:
+        if other['period_id'] != live['period_id'] and other['period_end'] == day_before \
+                and not wanted - Counter(other['rows']) and other['closing_minor'] == live['opening_minor']:
+            return other['period_id']
+    return None
+
+
 def _day_offsets(live_rows, truth_rows):
     """Live date minus printed date, in days, for rows paired by amount and direction (in order)."""
     from datetime import date
@@ -258,6 +295,10 @@ def audit(truth_dir, inventory, session, *, page_identities=None):
     files = [f for f, doc in by_file.items() if doc in truths]
     live = live_periods(session, files)
     detail, counts, details = [], defaultdict(Counter), defaultdict(Counter)
+    by_account = defaultdict(list)
+    for period in live:
+        if period.get('account_id'):
+            by_account[period['account_id']].append(period)
     for period in live:
         doc = by_file.get(period['evidence_file_id'])
         truth = best_truth(period, truths[doc]['periods'])
@@ -268,6 +309,11 @@ def audit(truth_dir, inventory, session, *, page_identities=None):
             entry = dict(outcome='no_truth_period', family=truths[doc]['family'])
         else:
             entry = judge(period, truth)
+            cover = overlap_trimmed(period, truth, entry, by_account.get(period.get('account_id'), []))
+            if cover:
+                # Counted once: the trimmed rows are in the saved period that covers those days.
+                entry.update(outcome='overlap_trimmed', counted_in_period_id=cover,
+                             rows_counted_in_covering_period=entry['missing_rows'])
         entry.update(doc=doc, live_period_id=period['period_id'], live_rows=len(period['rows']), case=period['case_id'],
                      account_id=period.get('account_id'),
                      live_rows_without_transaction_or_posted_date=sum(1 for r in period['rows'] if r[2] is None),
@@ -290,7 +336,10 @@ def audit(truth_dir, inventory, session, *, page_identities=None):
     for entry in detail:
         if entry['outcome'] not in ('no_truth_period', 'live_period_undated'):
             rows['live_rows'] += entry['live_rows']
-            rows['missing_rows'] += entry['missing_rows']
+            if entry['outcome'] == 'overlap_trimmed':
+                rows['rows_counted_in_covering_period'] += entry['missing_rows']
+            else:
+                rows['missing_rows'] += entry['missing_rows']
             rows['extra_rows'] += entry['extra_rows']
             rows['live_rows_without_transaction_or_posted_date'] += entry['live_rows_without_transaction_or_posted_date']
             rows['of_which_with_another_date'] += entry['of_which_with_another_date']
