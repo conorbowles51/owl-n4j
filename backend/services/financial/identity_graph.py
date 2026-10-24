@@ -329,14 +329,21 @@ def _case_claim(case_id):
         return
     key = "hashtextextended('loupe.financial.identity_graph:' || CAST(:case_id AS text), 0)"
     with engine.connect() as conn:
-        held = bool(conn.execute(text(f'SELECT pg_try_advisory_lock({key})'), dict(case_id=str(case_id))).scalar())
-        conn.commit()
+        held = False
         try:
+            held = bool(conn.execute(text(f'SELECT pg_try_advisory_lock({key})'), dict(case_id=str(case_id))).scalar())
+            conn.commit()
             yield held
         finally:
             if held:
-                conn.execute(text(f'SELECT pg_advisory_unlock({key})'), dict(case_id=str(case_id)))
-                conn.commit()
+                try:
+                    conn.execute(text(f'SELECT pg_advisory_unlock({key})'), dict(case_id=str(case_id)))
+                    conn.commit()
+                except Exception:
+                    # Never return a connection to the pool still holding the lock: drop it (Postgres
+                    # releases a session lock when its connection closes).
+                    conn.invalidate()
+                    raise
 
 
 def sync_saved_identities(stop=None):
