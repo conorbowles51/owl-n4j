@@ -2601,6 +2601,11 @@ async def run_batches_forever():
                 # or whose automatic save failed, are saved as at preparation.
                 from services.financial.queue_save import sweep_backlog, sweep_save
                 await _finish_atomic(sweep_save, factory)
+                # Held statements whose reading is current and whose only questions their account's saved
+                # statements answer are filled as System (autofill_reapply); the backlog round below saves
+                # those that then check out completely.
+                from services.financial.autofill_reapply import sweep as autofill_reapply_sweep
+                await _finish_atomic(autofill_reapply_sweep, factory)
                 # Statements ready from before automatic save (no preparation
                 # mark): saved under the same rule, a few per round.
                 await _finish_atomic(sweep_backlog, factory)

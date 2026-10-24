@@ -366,3 +366,98 @@ class AutofillIdentityTests(TestCase):
         # Proposals are applied in fill_missing mode only: a value a person entered is not empty, so not proposed.
         self.assertNotIn('institution', fp.propose(values(institution='Typed by a person', holder='', currency='MXN'),
                                                    knowledge(account(*MONTHS))))
+
+
+class AutomaticFillTests(TestCase):
+    """REAPPLY: the no-click fill of a current reading applies a stricter subset of the confirmed proposals.
+
+    Each limit is one the leave-one-out run on the saved statements and the truth set needed: a currency
+    section of another currency sharing the account number (balance chain), a bank renamed or a holder changed
+    outside the saved span (bracketing), another account sharing a masked number's visible digits (never an
+    account number), and the case's usual currency (never).
+    """
+
+    def ledger(self, *, currency='MXN', institution='BANCO SANTANDER', holder='ACME SA DE CV'):
+        from dataclasses import replace
+        march = replace(saved(currency=currency, start='2021-03-01', end='2021-03-31', institution=institution,
+                              holder=holder), opening_minor=500, closing_minor=1000)
+        september = replace(saved(currency=currency, start='2021-09-01', end='2021-09-30', institution=institution,
+                                  holder=holder), opening_minor=3000, closing_minor=3500)
+        return knowledge(account(march, september, currency=currency))
+
+    def fills(self, known, **overrides):
+        statement = values(**{**dict(opening_minor=1000, closing_minor=2000), **overrides})
+        return fp.automatic_fills(statement, fp.propose(statement, known), known)
+
+    def test_currency_when_the_balances_continue_the_account_ledger(self):
+        currency = self.fills(self.ledger())['currency']
+        self.assertEqual((currency['value'], currency['basis'], currency['confirmed']), ('MXN', 'account_ledger', True))
+        # The closing side alone is enough (its opening unread).
+        self.assertIn('currency', self.fills(self.ledger(), opening_minor=None, closing_minor=3000))
+
+    def test_no_currency_when_the_balances_do_not_chain(self):
+        self.assertNotIn('currency', self.fills(self.ledger(), opening_minor=999, closing_minor=2999))
+        self.assertNotIn('currency', self.fills(self.ledger(), opening_minor=None, closing_minor=None))
+
+    def test_a_zero_balance_proves_nothing(self):
+        from dataclasses import replace
+        known = self.ledger()
+        known.accounts[0].statements[0] = replace(known.accounts[0].statements[0], closing_minor=0)
+        self.assertNotIn('currency', self.fills(known, opening_minor=0, closing_minor=2999))
+
+    def test_a_mixed_currency_account_stays_held(self):
+        from dataclasses import replace
+        known = self.ledger()
+        known.accounts[0].statements.append(replace(known.accounts[0].statements[1], currency='USD',
+                                                    period_start='2021-11-01', period_end='2021-11-30'))
+        self.assertNotIn('currency', self.fills(known))
+
+    def test_never_the_case_usual_currency_nor_a_printed_one(self):
+        known = knowledge(default='MXN')
+        self.assertEqual(fp.propose(values(), known)['currency']['basis'], 'case_default')
+        self.assertEqual(self.fills(known), {})
+        printed = dict(value='USD', page_number=2, table_index=0, row_index=1, expected_text='USD')
+        self.assertNotIn('currency', self.fills(self.ledger(), printed_currency=printed))
+        self.assertEqual(self.fills(self.ledger(), currency='MXN', institution='', holder='').get('currency'), None)
+
+    def test_a_saved_statement_on_the_same_dates_stays_held(self):
+        from dataclasses import replace
+        known = self.ledger()
+        known.accounts[0].statements.append(replace(known.accounts[0].statements[0], period_start='2021-06-01',
+                                                    period_end='2021-06-30', opening_minor=7, closing_minor=8))
+        self.assertNotIn('currency', self.fills(known))
+
+    def test_bank_and_holder_only_inside_the_saved_span(self):
+        bank = self.fills(self.ledger(), currency='MXN', institution='')
+        holder = self.fills(self.ledger(), currency='MXN', holder='')
+        self.assertEqual((sorted(bank), sorted(holder)), (['institution'], ['holder']))
+        self.assertEqual(bank['institution']['basis'], 'same_account_bracketed')
+        later = dict(period_start='2022-01-01', period_end='2022-01-31')
+        self.assertTrue(fp.propose(values(currency='MXN', institution='', **later), self.ledger())['institution']['confirmed'])
+        self.assertEqual(self.fills(self.ledger(), currency='MXN', institution='', **later), {})
+        self.assertEqual(self.fills(self.ledger(), currency='MXN', holder='', **later), {})
+
+    def test_never_an_account_number(self):
+        known = self.ledger()
+        result = fp.propose(values(account_number='****345678', currency='MXN'), known)
+        self.assertTrue(result['account_number']['confirmed'])
+        self.assertNotIn('account_number', fp.automatic_fills(values(account_number='****345678', currency='MXN'),
+                                                              result, known))
+
+    def test_an_ambiguous_account_fills_nothing(self):
+        known = self.ledger()
+        known.accounts.append(account(saved(institution='BBVA'), institution='BBVA', key='a2'))
+        statement = values(institution='', holder='', opening_minor=1000)
+        self.assertEqual(fp.automatic_fills(statement, fp.propose(statement, known), known), {})
+
+    def test_switch_off_fills_nothing(self):
+        with patch.dict(os.environ, {'LOUPE_FINANCIAL_AUTOFILL_REAPPLY': '0'}):
+            self.assertFalse(fp.reapply_enabled())
+            self.assertEqual(self.fills(self.ledger()), {})
+        self.assertTrue(fp.reapply_enabled())
+
+    def test_summary_values_carry_the_printed_balances(self):
+        summary = dict(checks=[dict(kind='closing_balance', opening_minor='1000', printed_minor='2000')])
+        self.assertEqual((fp.summary_values(summary)['opening_minor'], fp.summary_values(summary)['closing_minor']),
+                         (1000, 2000))
+        self.assertEqual(fp.summary_values({})['opening_minor'], None)

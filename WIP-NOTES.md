@@ -1,3 +1,37 @@
+# Unit rd-autoapply: fill known answers by themselves once a held statement's reading is current
+
+Branch fin/rd-autoapply, from fin/rg-integrate aa14b1d3. Counts and opaque ids only. Finished by TAKEOVER RUN 1
+after the building agent was stopped with the coordinator.
+
+## Design
+- autofill_reapply.sweep (switch LOUPE_FINANCIAL_AUTOFILL_REAPPLY, default on, fails closed): background round in
+  run_batches_forever, between sweep_save and sweep_backlog. Only held statements whose batch file carries the
+  deployed reader's preparation stamp (or held_reprepare's 'unchanged' mark under it), with no investigator work,
+  and only when the automatic fills answer every question the statement asks. Writes through
+  queue_save.fill_confirmed (System actor, fill-missing mode, basis recorded, undoable). Saving stays with
+  sweep_backlog's normal gates.
+- field_proposals.automatic_fills: currency only on the account's own saved statements (never the case's usual
+  currency), all one currency, nothing printed, and the statement's printed balances continue that account's
+  ledger; bank/holder only when the account's saved statements bracket it; never an account number.
+- held_reprepare.exact_copies_rekeyed: a held copy with a stale statement key is prepared again when every current
+  statement matching a saved period agrees with it exactly (saved_copies.compare), so the copy rule can set it aside.
+
+## Measured (read only, BNB2 waiting 134, simulated with fresh keys)
+- Fresh reading alone (the rg-integrate reader + held_reprepare): 29 prepare ready, 18 ready after every case gate.
+- Automatic fills: 5 statements receive a value (2 bank, 2 holder, 1 holder on reviewed work); 0 of them become
+  ready (each still has unread balances or rows). Truth-checkable 2/2 correct.
+- Why the 27-35 target is not met: on the fresh reading the remaining currency questions (16) are all 'case usual
+  currency' proposals (weaker basis, kept as one-click confirms per Neil's rule); no same-account currency answer
+  remains open.
+- Leave-one-out, automatic fills: truth 3,367 fills, 0 wrong. Live 3,210 fills: 2 misses, neither a new wrong:
+  (1) one statement saved as MXN on an otherwise all-USD account whose balances continue the USD ledger (in
+  production that account is mixed and fails closed; the saved MXN period may itself be a wrong save: open item);
+  (2) a saved holder that is a misread line of text (the fill is the correct holder).
+
+## Tests
+- test_financial_autofill_reapply.py (new), field_proposals, held_reprepare: 88 pass. Wider targeted set (queue_save,
+  review_queue, import_batches, held_settlement, bulk details): 425 pass (building agent's run).
+
 # Unit rg-others: reader gaps, other named banks (Monex, Kapital, Intercam, Scotiabank)
 
 Branch fin/rg-others, base 68d95b20. Counts and opaque ids only. Targets: 32 held statements, 26 files.
