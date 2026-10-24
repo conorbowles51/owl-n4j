@@ -170,12 +170,17 @@ def _same_account(saved, read):
     return saved[-6:] == read[-6:]
 
 
-def copy_of_saved(session, case_id, source, held):
-    """True when a held statement's account and period are already admitted in the case. Read only."""
+def copy_of_saved(session, case_id, source, held, cache=None):
+    """True when a held statement's account and period are already admitted in the case. Read only.
+
+    A saved period of another Santander product sharing the last six digits (santander_subaccounts) is not a
+    copy of it.
+    """
     if not COPY_OF_SAVED_PROTECTS:
         return False
     from datetime import date
     from postgres.models.financial import FinancialAccount, FinancialStatementPeriod
+    from services.financial.santander_subaccounts import another_product
     wanted = {}
     for item in held:
         summary = item.summary or {}
@@ -184,18 +189,23 @@ def copy_of_saved(session, case_id, source, held):
         except (KeyError, TypeError, ValueError):
             continue
         if _digits(summary.get('account')):
-            wanted.setdefault((start, end), set()).add(_digits(summary.get('account')))
-    for (start, end), accounts in wanted.items():
-        rows = session.execute(select(FinancialAccount.identifier_normalised, FinancialAccount.identifier_as_printed,
-                EvidenceFile.sha256).select_from(FinancialStatementPeriod)
+            wanted.setdefault((start, end), []).append(item)
+    memo = {}
+    for (start, end), items in wanted.items():
+        rows = session.execute(select(FinancialStatementPeriod, FinancialAccount)
             .join(FinancialSourceDocument, FinancialSourceDocument.id == FinancialStatementPeriod.source_document_id)
             .join(FinancialAccount, FinancialAccount.id == FinancialStatementPeriod.account_id)
             .join(EvidenceFile, EvidenceFile.id == FinancialSourceDocument.evidence_file_id)
             .where(FinancialStatementPeriod.case_id == case_id, FinancialSourceDocument.status == 'admitted',
-                   FinancialStatementPeriod.period_start == start, FinancialStatementPeriod.period_end == end))
-        for normalised, printed, sha in rows:
-            if any(_same_account(_digits(saved), wanted_digits)
-                                            for saved in (normalised, printed) for wanted_digits in accounts):
+                   FinancialStatementPeriod.period_start == start, FinancialStatementPeriod.period_end == end)).all()
+        for period, account in rows:
+            for item in items:
+                wanted_digits = _digits((item.summary or {}).get('account'))
+                if not any(_same_account(_digits(saved), wanted_digits)
+                           for saved in (account.identifier_normalised, account.identifier_as_printed)):
+                    continue
+                if another_product(session, case_id, item, period, account, cache=cache, memo=memo):
+                    continue
                 return True
     return False
 

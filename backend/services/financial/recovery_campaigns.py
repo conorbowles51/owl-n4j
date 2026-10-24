@@ -212,7 +212,9 @@ def is_reader_release(release):
 # v3 (aq-copies-funds): before selecting, a held copy whose reading the saved ledger of its account and period
 # agrees with is set aside as a linked duplicate, and a held fund statement as not a payment statement
 # (held_settlement).
-READER_SELECTION = 'held-selection-v3'
+# v4: a held Santander product is no longer kept as a copy of the other product saved under the same last six
+# digits and dates (santander_subaccounts).
+READER_SELECTION = 'held-selection-v4'
 
 
 def reader_release_id(engine_digest):
