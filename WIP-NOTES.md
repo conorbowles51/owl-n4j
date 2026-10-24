@@ -69,3 +69,19 @@ Counts and opaque ids only. Scratch evidence (private, mode 700): /mnt/owl-data/
 - Case-wide live selection under head rules: eligible 111, copy_of_saved 97, saved_import 137.
 - Tests head: 18 targeted files + review_carry: 536 passed / 20 failed (same 20 fail on base);
   6 files touching review recovery: 210 passed.
+
+## Release untouched periods of a split file carrying her work (decision 2026-10-24)
+- Rule (review_recovery.recovery_state, switch LOUPE_FINANCIAL_RECOVERY_SPLIT_RELEASE): when every
+  uncarried earlier record that the new reading cannot place is file-level work, and the new reading names
+  several periods, a period proceeds through normal readiness/auto-save only if none of that work touches
+  it: no saved row of hers dated in its range (her date, else the earlier reading's date for that row id),
+  no overlap with her request's period or any period imported from her reading (no double count), no
+  shared row id and no shared page. Any row that cannot be dated, or any named-period work, keeps the whole
+  file held as before. Her records are not changed. Released periods record split_from_held_work (held
+  review ids, earlier readings, period) on the batch item summary and on the imported source document.
+- Measured on the 10 (9 files), read only: all 22 uncarried records are file-level full snapshots of an
+  old parse (mostly undated header rows; 21 file-level, 1 named); 0 can be dated, and on every file her
+  rows sit on every page of every period of today's reading. Released 0 of 10: all stay held correctly.
+- Counts unchanged: the 64 ready 8; the 50 ready 8 (sibling work not carried 10, now held by rule, not
+  by default). Wrong admissions 0, lost 0, no live writes.
+- Tests: 20 targeted files: 590 passed / 20 failed (the same 20 pre-existing failures); 5 new rule tests.

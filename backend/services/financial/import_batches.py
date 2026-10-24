@@ -222,6 +222,9 @@ def assess(proposal, request=None):
         # Which identity facts came from a person's layout confirmation (layout_memory), so a
         # withdrawal re-reads this period without them.
         summary['identity_memory'] = proposal['identity_memory']
+    if (recovery or {}).get('split_release'):
+        # Released from a split file whose other periods hold an investigator's uncarried work (audit).
+        summary['split_from_held_work'] = recovery['split_release']
     if proposal.get('period_dates'):
         summary['closing_only_period'] = True
     if proposal.get('printed_currency') and not proposal['currency']:
