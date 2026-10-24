@@ -418,6 +418,14 @@ def candidates(session, case_id, campaign, cutoff=None):
         reasons[reason] += len(members)
         if reason == ELIGIBLE:
             selected.append((*chosen[-1], chosen))
+    # Batch files under different source ids can resolve to one reading (one original in two batches through
+    # its lineage). One reading is one item, so such a reading is not chosen for either: it stays held.
+    readings = Counter(str(detail['reading'].id) for _, _, detail, _ in selected)
+    shared = [pick for pick in selected if readings[str(pick[2]['reading'].id)] > 1]
+    for pick in shared:
+        reasons[ELIGIBLE] -= len(pick[3])
+        reasons['several_batches'] += len(pick[3])
+    selected = [pick for pick in selected if readings[str(pick[2]['reading'].id)] == 1]
     return selected, reasons
 
 
