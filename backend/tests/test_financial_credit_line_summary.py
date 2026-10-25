@@ -20,7 +20,7 @@ def amount(text):
 
 
 def statement(*, closing='723.20', payments='300.00', movements=None, interest='20.00', tax='3.20',
-              tax_next=True, second_date=False):
+              tax_next=True, second_date=False, kinds=None):
     """Opening 1,000.00; one payment of 300.00; interest 20.00 and IVA 3.20 printed in the summary only."""
     summary_tax = [('I.V.A.', 200000, 240000), ('+$', 323000, 336000), amount(tax)]
     lines = [
@@ -52,8 +52,12 @@ def statement(*, closing='723.20', payments='300.00', movements=None, interest='
         [('FECHA', 30000, 60000)] + ([('FECHA', 90000, 120000)] if second_date else [])
         + [('CONCEPTO', 200000, 250000), ('IMPORTE', 500000, 550000)],
     ]
-    for day, text, value in movements or [('14/10/25', 'SU PAGO GRACIAS', '-300.00')]:
-        lines.append([(day, 30000, 70000)] + ([(day, 90000, 130000)] if second_date else [])
+    if kinds:
+        # The date columns' kind words on their own line under the date heading ('FECHA' / 'AUTORIZACION').
+        lines.append([(kinds[0], 25000, 80000), (kinds[1], 88000, 135000)])
+    for move in movements or [('14/10/25', 'SU PAGO GRACIAS', '-300.00')]:
+        day, second, text, value = move if len(move) == 4 else (move[0], move[0], *move[1:])
+        lines.append([(day, 30000, 70000)] + ([(second, 90000, 130000)] if second_date else [])
                      + [(text, 200000, 330000), (value, 560000 - 6000 * len(value), 560000)])
     return [page(1, lines)]
 
@@ -144,6 +148,45 @@ class CreditLineSummaryChargeTests(unittest.TestCase):
     def test_an_unnamed_second_movement_date_keeps_the_period_held_unchanged(self):
         st = read(statement(second_date=True))
         self.assertEqual((st['engine']['proved'], st['engine']['reason']), (False, 'not_reconciled'))
+        self.assertFalse(charges(st))
+
+    def moves(self, st):
+        return [(r['fields'].get('date'), r['fields'].get('authorization_date'), r['fields'].get('booking_date'),
+                 r['fields'].get('value_date')) for r in st['_rows']
+                if r['kind'] == 'transaction' and r['fields'].get('source_basis') != C.SOURCE_BASIS]
+
+    def test_application_date_under_an_authorisation_heading_is_the_date_of_record(self):
+        listed = [('13/10/25', '14/10/25', 'SU PAGO GRACIAS', '-300.00')]
+        st = read(statement(second_date=True, kinds=('AUTORIZACION', 'APLICACION'), movements=listed))
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual(st['engine']['basis'], C.BASIS)
+        self.assertEqual(self.moves(st), [('2025-10-14', '2025-10-13', None, None)])
+        self.assertEqual(len(charges(st)), 2)
+
+    def test_application_date_switch_off_keeps_the_period_held_as_before(self):
+        listed = [('13/10/25', '14/10/25', 'SU PAGO GRACIAS', '-300.00')]
+        with mock.patch.object(E, 'CREDIT_LINE_APPLICATION_DATE', False):
+            st = read(statement(second_date=True, kinds=('AUTORIZACION', 'APLICACION'), movements=listed))
+        self.assertEqual((st['engine']['proved'], st['engine']['reason']), (False, 'not_reconciled'))
+        self.assertFalse(charges(st))
+
+    def test_an_application_date_after_the_period_keeps_the_period_held(self):
+        listed = [('01/11/25', '04/11/25', 'SU PAGO GRACIAS', '-300.00')]
+        st = read(statement(second_date=True, kinds=('AUTORIZACION', 'APLICACION'), movements=listed))
+        self.assertFalse(st['engine']['proved'])
+        self.assertFalse(charges(st))
+        self.assertFalse(any(m[1] for m in self.moves(st)))
+
+    def test_an_application_date_before_its_authorisation_keeps_the_period_held(self):
+        listed = [('15/10/25', '14/10/25', 'SU PAGO GRACIAS', '-300.00')]
+        st = read(statement(second_date=True, kinds=('AUTORIZACION', 'APLICACION'), movements=listed))
+        self.assertFalse(st['engine']['proved'])
+        self.assertFalse(charges(st))
+
+    def test_kind_words_in_the_other_order_are_not_an_application_date(self):
+        listed = [('13/10/25', '14/10/25', 'SU PAGO GRACIAS', '-300.00')]
+        st = read(statement(second_date=True, kinds=('APLICACION', 'AUTORIZACION'), movements=listed))
+        self.assertFalse(st['engine']['proved'])
         self.assertFalse(charges(st))
 
     def test_zero_charges_add_nothing(self):
