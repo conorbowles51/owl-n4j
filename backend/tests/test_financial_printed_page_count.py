@@ -103,6 +103,27 @@ class BlockerTests(unittest.TestCase):
         noted = retained_issues(self.proposal(gap), self.request('Checked the original: page 1 is the cover only'))
         self.assertFalse(any(i['kind'] == 'printed_pages_missing' for i in noted))
 
+    def test_pages_printing_zero_movement_counts_need_no_note(self):
+        # 2026-10-25 fin-queue: BBVA one-page files of a "PAGINA 2/6" summary printing TOTAL MOVIMIENTOS 0 / 0.
+        from unittest import mock
+        from services.financial import import_issues
+        gap = dict(printed_total=6, missing=[1, 3, 4, 5, 6], held=1)
+        total = lambda direction, count: dict(id=direction, kind='statement_total', excluded=True, fields=dict(
+            total_direction=direction, printed_transaction_count=count, balance='0'))
+        balance = lambda name, value: dict(id=name, kind='balance', excluded=True, fields=dict(description=name, balance=value))
+        quiet = dict(self.proposal(gap), rows=[total('credit', '0'), total('debit', '0'),
+                     balance('Opening Balance', '6025'), balance('Closing Balance', '6025')])
+        held = lambda proposal: [i['kind'] for i in import_issues.retained_issues(proposal, self.request())
+                                 if i['kind'] == 'printed_pages_missing']
+        self.assertEqual(held(quiet), [])
+        with mock.patch.object(import_issues, 'PAGES_MISSING_PRINTED_QUIET', False):
+            self.assertEqual(held(quiet), ['printed_pages_missing'])
+        # A count that is not zero, a missing count, or balances that differ still hold.
+        for rows in ([total('credit', '0'), total('debit', '1'), *quiet['rows'][2:]],
+                     [total('credit', '0'), *quiet['rows'][2:]],
+                     [*quiet['rows'][:2], balance('Opening Balance', '6025'), balance('Closing Balance', '6000')]):
+            self.assertEqual(held(dict(quiet, rows=rows)), ['printed_pages_missing'])
+
     def test_queue_names_the_missing_pages(self):
         from services.financial.batch_review_summary import reason
         from services.financial.review_queue import issue_sentence

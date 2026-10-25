@@ -4,6 +4,7 @@ Incomplete records belong to the imported source, not to the numeric ledger.
 Their original fields survive unchanged until a correction supplies a usable
 reading. In particular, a missing amount is never manufactured as zero.
 """
+import os
 from datetime import date
 from pydantic import ValidationError
 from services.financial.money import get_currency, MoneyError
@@ -69,12 +70,37 @@ def incomplete_fields(row, request):
     return sorted(set(problems))
 
 
+# 2026-10-25 (fin-queue, Neil: build the queue's lessons in): a file holding only
+# some printed pages of a statement is still complete for the period when a page
+# it does hold carries the bank's own count of the period's movements as zero
+# deposits and zero withdrawals, with one opening and one closing balance, equal:
+# the missing pages cannot hold a movement the bank counted as none (BNB2 08 and
+# 09 BBVA 23 USD: one "PAGINA n/6" page printing TOTAL MOVIMIENTOS 0 / 0). Only
+# counts and balances the reader took from the page count; a person's entered
+# balance still needs their note. The same zero counts already prove no activity
+# at admission (statement_admission). Off: missing pages always hold.
+PAGES_MISSING_PRINTED_QUIET = os.environ.get('LOUPE_FINANCIAL_PAGES_MISSING_PRINTED_QUIET', '1') != '0'
+
+
+def printed_quiet(proposal, request):
+    """The pages held print the bank's own zero movement counts for this period and no payment is selected."""
+    if not PAGES_MISSING_PRINTED_QUIET or any(not row.excluded for row in request.rows):
+        return False
+    rows = proposal.get('rows') or []
+    counted = {row['fields'].get('total_direction') for row in rows if row['kind'] == 'statement_total'
+               and not row['fields'].get('total_scope') and row['fields'].get('printed_transaction_count') == '0'}
+    balances = [row['fields'].get('balance') for row in rows if row['kind'] == 'balance'
+                and row['fields'].get('description') in ('Opening Balance', 'Closing Balance')]
+    return (counted >= {'credit', 'debit'} and len(balances) == 2 and balances[0] not in (None, '')
+            and str(balances[0]) == str(balances[1]))
+
+
 def retained_issues(proposal, request, *, arithmetic=None, coverage=None):
     from services.financial.review_arithmetic import arithmetic_problems
     originals = {r['id']: r for r in proposal['rows']}
     issues = []
     gap = proposal.get('printed_pages_missing')
-    if gap and not (getattr(request, 'coverage_review_reason', None) or '').strip():
+    if gap and not (getattr(request, 'coverage_review_reason', None) or '').strip() and not printed_quiet(proposal, request):
         from services.financial.printed_page_count import message
         issues.append(dict(kind='printed_pages_missing', row_id=None, pages=gap['missing'], message=message(gap)))
     for original in proposal['rows']:

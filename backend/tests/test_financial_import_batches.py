@@ -775,6 +775,44 @@ class BatchImportTests(TestCase):
         self.assertFalse(saved['can_import'])
         self.assertEqual(saved['transaction_count'], 0)
 
+    def test_a_persons_save_answers_a_carried_question_even_when_it_keeps_the_reading(self):
+        # 2026-10-25 fin-queue: choosing the reading's value (already in the carried request) left
+        # "you entered X, the statement now reads Y" standing forever (BNB2 10 MONETA OCT 25 DOLARES).
+        from unittest.mock import patch
+        from services.financial.effective_statement_review import batch_review_revision
+        from services.financial.statement_progress import review_progress
+        def carried(batch):
+            raw = StatementReviewDraft.model_validate(service.initial_request(self.f.preview())).model_dump(mode='json')
+            with self.f.SessionLocal() as db:
+                item = db.scalar(select(Item).where(Item.batch_id == batch))
+                file = db.get(EvidenceFile, item.file_id)
+                record = dict(request=raw, review_revision=service._digest(raw), saved_by=dict(user_id=None, name='System'),
+                              carry_conflicts=dict(holder=dict(yours='Her earlier holder', reading=raw['holder'])))
+                file.metadata_ = {**(file.metadata_ or {}), 'financial_review_progress': {item.statement_key or '': record}}
+                item.review_request = raw
+                db.commit()
+                service.refresh_file_readiness(db, case_id=self.f.case.id, file_id=item.file_id, statement_key=item.statement_key)
+                return item.id, raw, batch_review_revision(raw, record)
+        asked = lambda batch: [p for p in self.status(batch)['items'][0]['problems'] if p.get('kind') == 'carry_conflict']
+        batch = self.create(); self.advance(batch)
+        item_id, raw, revision = carried(batch)
+        self.assertTrue(asked(batch))
+        with patch.object(service, 'PERSON_SAVE_ANSWERS_CARRY', False), self.f.SessionLocal() as db:
+            service.save_review(db, case_id=self.f.case.id, batch_id=batch, item_id=item_id,
+                request=StatementReviewDraft.model_validate(raw), expected_review_revision=revision, actor=self.f.actor)
+        self.assertTrue(asked(batch))
+        with self.f.SessionLocal() as db:
+            result = service.save_review(db, case_id=self.f.case.id, batch_id=batch, item_id=item_id,
+                request=StatementReviewDraft.model_validate(raw), expected_review_revision=revision, actor=self.f.actor)
+            file = db.get(EvidenceFile, db.get(Item, item_id).file_id)
+            saved = review_progress(file, db.get(Item, item_id).statement_key)
+            self.assertNotIn('carry_conflicts', saved)
+            self.assertEqual(saved['saved_by']['name'], self.f.actor.name)
+            # The carried question stays in the history.
+            self.assertTrue(any(h.get('carry_conflicts') for h in file.metadata_['financial_review_history']))
+        self.assertFalse(asked(batch))
+        self.assertEqual(result['status'], self.status(batch)['items'][0]['status'])
+
     def test_bulk_currency_uses_refreshed_reading_for_unreviewed_legacy_batch(self):
         from types import SimpleNamespace
         batch = self.create(); self.advance(batch)

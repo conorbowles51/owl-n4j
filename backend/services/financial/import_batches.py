@@ -2,6 +2,7 @@
 import asyncio
 import json
 import logging
+import os
 import time
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
@@ -515,6 +516,23 @@ def prepare_reviews(session, batch, file, *, lock_slice=None):
     from services.financial.pending_statement_duplicates import prepare_batch_dispositions
     prepare_batch_dispositions(session, batch, fid, cache=cache, review_lock=review_lock)
     session.commit()
+
+
+# 2026-10-25 (fin-queue, Neil: build the queue's lessons in): a question carried onto a
+# newer reading ("you entered X, the statement now reads Y: choose which is right")
+# is answered by the person's next save of that statement, whatever it keeps. Before,
+# only a save whose values differed from the carried ones answered it, and the save
+# kept the question, so choosing the reading's value (already in the carried
+# request) could never be confirmed (BNB2 10 MONETA SANTANDER OCT 25 DOLARES).
+# A System or batch save answers nothing. Off: only a changed save answers it.
+PERSON_SAVE_ANSWERS_CARRY = os.environ.get('LOUPE_FINANCIAL_PERSON_SAVE_ANSWERS_CARRY', '1') != '0'
+CARRIED_QUESTIONS = ('carry_conflicts', 'carry_row_conflicts')
+
+
+def _answers_carried_question(saved, actor):
+    from services.financial.field_proposals import SYSTEM_NAME
+    return bool(PERSON_SAVE_ANSWERS_CARRY and saved and actor is not None and actor.name != SYSTEM_NAME
+                and any(saved.get(key) for key in CARRIED_QUESTIONS))
 
 
 def import_available(item):
@@ -1628,12 +1646,17 @@ def save_review(session, *, case_id, batch_id, item_id, request, expected_review
     _, conflict = resolve_review(item.review_request, saved, baseline=initial_request(proposal))
     if conflict and request_signature(payload) != request_signature(saved['request']):
         raise PdfMappingError('The individual statement and batch have different saved edits. Load the saved individual review or explicitly compare both before saving.', 409)
+    answered = _answers_carried_question(saved, actor)
+    if answered:
+        # The person's save is the answer: the reading is assessed without the carried question.
+        proposal = {**proposal, 'saved_review': {k: v for k, v in (proposal.get('saved_review') or {}).items()
+                                                 if k not in CARRIED_QUESTIONS}}
     status,summary=assess(proposal,payload)
     summary.update(filename=item.summary['filename'],source_id=item.summary['source_id'])
     for key in ('import_decision','import_decision_history'):
         if key in item.summary: summary[key] = item.summary[key]
     item.status=status;item.summary=summary;item.review_request=payload
-    if not saved or payload != saved['request']:
+    if not saved or payload != saved['request'] or answered:
         metadata = deepcopy(file.metadata_ or {})
         if saved:
             metadata.setdefault('financial_review_history', []).append(saved)
@@ -1644,6 +1667,10 @@ def save_review(session, *, case_id, batch_id, item_id, request, expected_review
                 *([request_signature(saved['request'])] if saved else [])]))}
         updated['saved_by'] = (dict(user_id=str(actor.user_id), name=actor.name) if actor else
             dict(name='Batch review', batch_id=str(batch_id)))
+        if answered:
+            # The carried record with its question stays in the review history (appended above).
+            for key in CARRIED_QUESTIONS:
+                updated.pop(key, None)
         metadata.setdefault('financial_review_progress', {})[item.statement_key or ''] = updated
         file.metadata_ = metadata
         saved = updated
