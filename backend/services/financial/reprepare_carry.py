@@ -387,6 +387,15 @@ def saved_counterpart(session, case_id, key, new_key, request, proposal, decided
     if len(periods) != 1:
         raise NotCarried('saved_not_identified')
     period = periods[0]
+    return dict(source_document_id=str(document.id), statement_period_id=str(period.id),
+                **saved_statement_holds(session, request, period))
+
+
+def saved_statement_holds(session, request, period):
+    """dict(saved_payments, her_payments) when every value she entered is in the saved statement ``period``
+    (saved_counterpart's rules, below), else NotCarried('saved_statement_differs') with ``detail``. Read only."""
+    from postgres.models.financial import FinancialAccount, FinancialTransaction
+    from services.financial.reread_carry import NotCarried as RowsUnreadable, _amount, _row_day, payments
     account = session.get(FinancialAccount, period.account_id)
     def differs(what):
         error = NotCarried('saved_statement_differs')
@@ -464,8 +473,7 @@ def saved_counterpart(session, case_id, key, new_key, request, proposal, decided
         if match is None:
             raise differs('line_text')
         group.remove(match)
-    return dict(source_document_id=str(document.id), statement_period_id=str(period.id),
-                saved_payments=sum(ledger.values()), her_payments=sum(included.values()))
+    return dict(saved_payments=sum(ledger.values()), her_payments=sum(included.values()))
 
 
 def plan(session, case_id, reading, source, currency=None):
@@ -480,6 +488,8 @@ def plan(session, case_id, reading, source, currency=None):
     from services.financial.review_recovery import saved_ancestor_reviews
     records = saved_ancestor_reviews(session, reading)
     carried_here = set((reading.metadata_ or {}).get('financial_review_carried') or ())
+    from services.financial.review_recovery import settled_work
+    carried_here |= set(settled_work(session, reading, [r for r in records if r['id'] not in carried_here]))
     if any(record['id'] not in carried_here for record in records):
         raise NotCarried('work_on_another_reading')
     if source is not None and source.id != reading.id and not any(

@@ -222,15 +222,89 @@ def _split_release(session, file, unmatched, *, choices, statement_id, period, r
         held_readings=sorted({record['evidence_file_id'] for record in unmatched}))
 
 
+# Neil's decision (2026-10-25, BNB2 queue): work saved on an earlier reading of the file is settled, and no
+# longer asks for a comparison, when nothing in it is a person's undecided work: System saved it and no person
+# saved that statement of that reading (the 2026-10-24 System-only rule, now also for earlier readings), or
+# everything entered in it is in the one statement the case saved for its account, period and currency
+# (reprepare_carry.saved_statement_holds: payments one for one, no note, hand-added line or confirmation).
+# The records are never changed. Off: any such work holds the file, as before.
+SETTLED_WORK = os.environ.get('LOUPE_FINANCIAL_RECOVERY_SETTLED_WORK', '1').strip().lower() not in (
+    '0', 'false', 'no', 'off')
+
+
+def _saved_statement(session, case_id, request):
+    """The one admitted statement period of this case for the request's account, period and currency, else None."""
+    from postgres.models.financial import FinancialAccount, FinancialStatementPeriod
+    from services.financial.reprepare_carry import _digits
+    digits = _digits(request.get('account_number'))
+    start, end, currency = _iso(request.get('period_start')), _iso(request.get('period_end')), request.get('currency')
+    if len(digits) < 4 or not start or not end or not currency:
+        return None
+    found = []
+    for period, account in session.execute(
+            select(FinancialStatementPeriod, FinancialAccount)
+            .join(FinancialAccount, FinancialAccount.id == FinancialStatementPeriod.account_id)
+            .join(FinancialSourceDocument, FinancialSourceDocument.id == FinancialStatementPeriod.source_document_id)
+            .where(FinancialStatementPeriod.case_id == case_id, FinancialSourceDocument.status == 'admitted',
+                   FinancialStatementPeriod.currency == currency)):
+        document = session.get(FinancialSourceDocument, period.source_document_id)
+        if (document.metadata_ or {}).get('financial_import_removal'):
+            continue
+        if (_iso(period.period_start), _iso(period.period_end)) == (start, end) and digits in {
+                _digits(account.identifier_as_printed), _digits(account.identifier_normalised)}:
+            found.append(period)
+    return found[0] if len(found) == 1 else None
+
+
+def settled_work(session, file, records, cache=None):
+    """{record id: why it is settled} for earlier-reading records with no undecided person work. Read only."""
+    if not SETTLED_WORK or not records:
+        return {}
+    from services.financial.field_proposals import SYSTEM_NAME
+    from services.financial.reprepare_carry import NotCarried, saved_statement_holds
+    from services.financial.reread_carry import NOTES
+    cache = cache if cache is not None else {}
+    people = {(r['evidence_file_id'], r['statement_id']) for r in records
+              if (r.get('saved_by') or {}).get('name') != SYSTEM_NAME}
+    settled = {}
+    for record in records:
+        key = ('settled-work', record['id'])
+        if key not in cache:
+            request, why = record['request'], None
+            system = ((record.get('saved_by') or {}).get('name') == SYSTEM_NAME
+                      and (record['evidence_file_id'], record['statement_id']) not in people
+                      and not request.get('_saved_balance_corrections')
+                      and not any(str(request.get(field) or '').strip() for field in NOTES)
+                      and not any(str(row.get('id', '')).startswith('manual:') or row.get('manual_page')
+                                  or str(row.get('reason') or '').strip() for row in request.get('rows') or []))
+            if system:
+                why = 'system_only'
+            else:
+                case_id = getattr(file, 'case_id', None)
+                period = _saved_statement(session, case_id, request) if case_id else None
+                if period is not None:
+                    try:
+                        saved_statement_holds(session, request, period)
+                        why = f'in_saved_statement:{period.id}'
+                    except NotCarried:
+                        pass
+            cache[key] = why
+        if cache[key]:
+            settled[record['id']] = cache[key]
+    return settled
+
+
 def recovery_state(session, file, *, sources, choices, statement_id, revision, cache=None, period=None, row_ids=(), pages=()):
     cache = cache if cache is not None else {}
     key = ('previous-reviews', str(file.id))
     if key not in cache:
         cache[key] = saved_ancestor_reviews(session, file)
     # Work an engine re-read carried onto this reading (reread_carry) is its own saved review now; the
-    # earlier records stay listed in history but no longer ask for a comparison.
+    # earlier records stay listed in history but no longer ask for a comparison. Nor does settled work.
     carried = set((file.metadata_ or {}).get('financial_review_carried') or ())
     records = [record for record in cache[key] if record['id'] not in carried]
+    settled = settled_work(session, file, records, cache)
+    records = [record for record in records if record['id'] not in settled]
     if not records:
         return None, None
     reading_key = ('recovery-reading', str(file.id))

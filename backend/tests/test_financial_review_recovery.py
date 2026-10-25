@@ -298,3 +298,21 @@ class SplitReleaseTests(TestCase):
         self.assertIsNone(review_recovery._footprint(None, None, record))
         self.assertEqual(review_recovery._id_page('12:3'), 12)
         self.assertIsNone(review_recovery._id_page('manual:x'))
+
+
+class SettledWorkTests(TestCase):
+    """Earlier-reading work with no undecided person work no longer asks for a comparison."""
+
+    @staticmethod
+    def record(rid, name, **request):
+        return dict(id=rid, evidence_file_id='f0', statement_id='s1', saved_by=dict(name=name),
+                    request=dict(rows=[dict(id='1:0:0', excluded=False, amount_minor='100')], **request))
+
+    def test_system_only_work_is_settled_but_not_when_a_person_saved_that_statement_or_left_a_note(self):
+        from types import SimpleNamespace
+        from services.financial.review_recovery import settled_work
+        file = SimpleNamespace(id='f1')
+        system = self.record('a', 'System')
+        self.assertEqual(settled_work(None, file, [system]), {'a': 'system_only'})
+        self.assertEqual(settled_work(None, file, [system, self.record('b', 'Alexandra')]), {})
+        self.assertEqual(settled_work(None, file, [self.record('c', 'System', details_reason='checked')]), {})
