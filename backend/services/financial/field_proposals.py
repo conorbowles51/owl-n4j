@@ -423,7 +423,8 @@ def _bracketed(values, candidates):
 
 
 # Neil, 2026-10-25 (BNB2 queue): an account whose saved statements print two holders (the holder changed once)
-# proposed no holder at all. Its holder for a period is established when the account's saved statements nearest
+# proposed no holder at all. Only for an account its printed number names in full and alone (identity_proven,
+# never a masked number, which can join two accounts), whose dated saved statements switch holder once. Its holder for a period is established when the account's saved statements nearest
 # before and nearest after it (and any of its saved statements on the same dates) all print one holder, each
 # within NEAREST_HOLDER_DAYS: a change inside that span would show as a disagreement. Recorded with basis
 # NEAREST_HOLDER_BASIS. Reverse: LOUPE_FINANCIAL_AUTOFILL_HOLDER_NEIGHBOURS=0 (no holder proposed, as before).
@@ -441,8 +442,12 @@ def _nearest_holder(values, candidates):
         first, last = date.fromisoformat(start), date.fromisoformat(end)
     except ValueError:
         return ''
-    saved = [s for k in candidates for s in k.statements if s.period_start and s.period_end]
-    if not saved or any(not (s.holder or '').strip() for s in saved):
+    saved = [s for k in candidates for s in k.statements]
+    if not saved or any(not (s.holder or '').strip() or not s.period_start or not s.period_end for s in saved):
+        return ''
+    # The holder changed once: in date order the saved statements switch holder at most one time.
+    ordered = [holder_key(s.holder) for s in sorted(saved, key=lambda s: (s.period_start, s.period_end))]
+    if sum(1 for a, b in zip(ordered, ordered[1:]) if a != b) > 1:
         return ''
     before = [s for s in saved if s.period_end < start]
     after = [s for s in saved if s.period_start > end]
@@ -481,7 +486,8 @@ def _detail_proposal(name, candidates, matched, values):
         return None
     value = _agreed(found, fold)
     nearest = False
-    if not value and name == 'holder':
+    if not value and name == 'holder' and 'masked' not in matched and identity_proven(values, candidates, matched):
+        # Only an account its printed number names in full: a masked number can join two accounts.
         value = _nearest_holder(values, candidates)
         nearest = bool(value)
     if not value:

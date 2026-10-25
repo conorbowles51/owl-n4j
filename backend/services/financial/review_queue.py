@@ -902,7 +902,10 @@ def _ready_saved_elsewhere(session, case_id, entries):
             .where(Batch.case_id == case_id, Batch.status != 'removed', or_(*matching),
                    Item.status.in_(('pending_import', 'imported')))):
         saved.setdefault(key or '', {})[str(file.id)] = file
-    admitted = {str(file_id) for file_id in session.scalars(select(Source.evidence_file_id).where(
+    # (file, statement key) of admitted, not removed saved statements; a whole-file saved record (no key) stands
+    # for the file's statements as in _saved_scopes.
+    admitted = {(str(file_id), key or '') for file_id, key in session.execute(select(
+        Source.evidence_file_id, Source.metadata_['statement_import_statement_id'].as_string()).where(
         Source.case_id == case_id, Source.status == 'admitted', Source.document_type == 'statement_review',
         Source.metadata_['financial_import_removal'].as_string().is_(None),
         Source.evidence_file_id.in_([UUID(i) for files in saved.values() for i in files])))} if saved else set()
@@ -911,10 +914,13 @@ def _ready_saved_elsewhere(session, case_id, entries):
         if file is None:
             continue
         for other_id, other in sorted((saved.get(entry.get('statement_id') or '') or {}).items()):
-            if other_id == entry['file_id'] or other_id not in admitted:
+            if other_id == entry['file_id'] or not ({(other_id, entry.get('statement_id') or ''), (other_id, '')} & admitted):
                 continue
             same_bytes = bool(file.sha256 and other.sha256 == file.sha256)
-            if not same_bytes and not (pages(file) and pages(other) == pages(file)):
+            stored, other_stored = page_identity.stored(file) or {}, page_identity.stored(other) or {}
+            same_pages = bool(stored.get('identity') and (stored.get('identity'), stored.get('renderer'))
+                              == (other_stored.get('identity'), other_stored.get('renderer')))
+            if not same_bytes and not same_pages:
                 continue
             entry.update(bucket='copies', set_aside=True, copy_of=other.original_filename or None,
                          copy_reason='same_file_read' if same_bytes else 'same_pages_read', copy_file_id=other_id)

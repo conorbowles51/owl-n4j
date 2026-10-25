@@ -91,8 +91,12 @@ def held_candidates(session):
         .order_by(Batch.case_id, Item.id)).all()
 
 
-def entries_for_case(session, case_id, item_ids, stamp):
-    """Queue-like entries (with only their automatic fills as proposals) for the given held items. Read only."""
+def entries_for_case(session, case_id, item_ids, stamp, not_current=None):
+    """Queue-like entries (with only their automatic fills as proposals) for the given held items. Read only.
+
+    ``not_current`` (a set) gains the ids of items of a preparing batch skipped because their file's reading is
+    not current yet (its preparation may still finish).
+    """
     from services.financial import field_proposals as fp
     from services.financial.review_queue import actionable_problems
     items = list(session.scalars(select(Item).where(Item.id.in_(list(item_ids)), Item.status == HELD)))
@@ -106,7 +110,11 @@ def entries_for_case(session, case_id, item_ids, stamp):
     for item in items:
         batch = batches.get(item.batch_id)
         entry = next((e for e in (batch.files or []) if e.get('file_id') == str(item.file_id)), None) if batch else None
-        if not current_reading(entry, stamp) or not _untouched(item, files.get(item.file_id)):
+        if not current_reading(entry, stamp):
+            if not_current is not None and batch is not None and batch.status == 'preparing':
+                not_current.add(item.id)
+            continue
+        if not _untouched(item, files.get(item.file_id)):
             continue
         summary = item.summary or {}
         reasons = {p['review_reason'] for p in actionable_problems(summary)}
@@ -163,7 +171,8 @@ def sweep(factory, *, budget_seconds=20.0, max_items=MAX_PER_ROUND):
         report['considered'] += len(members)
         try:
             with factory() as db:
-                entries = entries_for_case(db, case_id, [i for i, _ in members], stamp)
+                waiting = set()
+                entries = entries_for_case(db, case_id, [i for i, _ in members], stamp, waiting)
                 db.rollback()
                 outcome = dict(saved=0, failed=0)
                 if entries:
@@ -178,6 +187,8 @@ def sweep(factory, *, budget_seconds=20.0, max_items=MAX_PER_ROUND):
         if not outcome.get('failed'):
             # Decided for this state; looked at again when the item or the case's saved statements change.
             for item_id, updated in members:
+                if INCLUDE_PREPARING and item_id in waiting:
+                    continue  # its file is still being prepared: looked at again when that is done
                 _remember(item_id, (updated, marks[case_id]))
     if report['filled']:
         log.info('Held statements filled from their accounts\' saved statements (System): %s', report)
