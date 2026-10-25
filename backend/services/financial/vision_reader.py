@@ -90,11 +90,12 @@ WORKLOAD = 'financial_vision'
 VERSION = 'vision-reader-v1'
 # The proof rules a stored outcome was judged under. A stored not-proved reading judged under
 # older rules is judged again from its stored page reading (no new request), once.
-PROOF_VERSION = 2
 REJUDGE = _switch('LOUPE_FINANCIAL_VISION_REJUDGE')
 # One account saved under two account records whose bank is spelled differently ("BBVA" and
 # "BBVA MEXICO"): the same full number and every spelling naming the same bank is one account.
 SPLIT_SPELLINGS = _switch('LOUPE_FINANCIAL_VISION_SPLIT_SPELLINGS')
+# Version 2 is SPLIT_SPELLINGS; with it off the rules are version 1's and nothing is judged again.
+PROOF_VERSION = 2 if SPLIT_SPELLINGS else 1
 METADATA_KEY = 'financial_vision_reading'
 MARK = 'vision_fallback'
 SYSTEM_NAME = 'System'
@@ -529,8 +530,9 @@ def one_account_spelled_apart(candidates, account_text, institution, holder):
     matching_accounts calls them ambiguous because their bank spellings differ. They are accepted
     as one only when: the switch is on, the bank is printed, the statement's number is printed in
     full, every candidate holds exactly that full number (none masked), every saved bank spelling
-    names the same bank as every other and as the printed one, and a printed holder agrees with
-    every saved holder. Anything else stays ambiguous (held)."""
+    names the same bank as every other and as the printed one, and the holder is printed, every
+    candidate records a holder, and the printed holder agrees with every saved one. Anything else
+    stays ambiguous (held)."""
     from services.financial import field_proposals as fp
     digits, masked = fp.account_identity(account_text)
     if not (SPLIT_SPELLINGS and candidates and digits and not masked and institution):
@@ -541,13 +543,11 @@ def one_account_spelled_apart(candidates, account_text, institution, holder):
     if not all(k.values('institution') or k.institution for k in candidates) or not all(fp.same_institution(a, b) for a in banks + [institution]
                                                 for b in banks + [institution]):
         return [], {'ambiguous'}
-    holders = [h for k in candidates for h in k.values('holder')]
-    if holder and holders and not all(fp.same_holder(holder, h) for h in holders):
+    if not (holder and all(k.values('holder') for k in candidates)):
         return [], {'ambiguous'}
-    matched = {'account', 'institution'}
-    if holder and holders:
-        matched.add('holder')
-    return candidates, matched
+    if not all(fp.same_holder(holder, h) for k in candidates for h in k.values('holder')):
+        return [], {'ambiguous'}
+    return candidates, {'account', 'institution', 'holder'}
 
 
 def prove(proposal, section, knowledge):
@@ -1098,7 +1098,7 @@ def read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for
             return case_knowledge(db, case_id)
     record = dict(version=VERSION, proof=PROOF_VERSION, status='skipped', message='', at=datetime.now(timezone.utc).isoformat())
     file_id, key = None, ''
-    again = False
+    again, stored = False, None
     try:
         with factory() as db:
             item = db.get(Item, item_id)
@@ -1145,14 +1145,22 @@ def read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for
             stored = _stored(file, key)
             again = not force and rejudgeable(stored, proposal['revision'], model_id, pages)
             if not again and not force and rejudgeable(stored):
-                # Judged again only from the same stored page reading; never requested anew for it.
+                # Judged again only from the same stored page reading; never requested anew for it. Marked
+                # judged under these rules, so it is not offered again (as before re-judging existed).
+                if apply:
+                    # Under the file's lock, only while it is still that outcome (rejudgeable, any reading).
+                    _store(db, file_id, key, dict(stored, proof=PROOF_VERSION), rejudge=(None, None, None))
+                    db.commit()
+                else:
+                    db.rollback()
                 return dict(stored, reason='already_read')
             if _current(stored, proposal['revision'], model_id) and not force and not again:
                 return dict(stored, reason='already_read')
             if _being_read(stored) and not force:
                 return dict(record, reason='being_read')
             record.update(revision=proposal['revision'], model=model_id, pages=pages,
-                          text_reading=_rule_metadata(proposal), failures=failures(stored, proposal['revision']))
+                          text_reading=_rule_metadata(proposal),
+                          failures=0 if again else failures(stored, proposal['revision']))
             if record['failures'] >= MAX_FAILURES and not force:
                 if stored.get('status') == 'failed':
                     return dict(stored, reason='failed_repeatedly')
@@ -1238,6 +1246,17 @@ def read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for
         return _save(factory, item_id, case_id, file_id, key, record, request)
     except Exception as error:  # noqa: BLE001 - fail closed: the statement stays held
         log.exception('Page-image reading failed; the statement stays held')
+        if again:
+            # Judging the stored reading again failed: its earlier outcome stands, marked judged under
+            # these rules, with its stored reading (final, so it is never requested anew).
+            try:
+                if apply and file_id is not None:
+                    with factory() as db:
+                        _store(db, file_id, key, dict(stored, proof=PROOF_VERSION, rejudge_error=type(error).__name__))
+                        db.commit()
+            except Exception:  # noqa: BLE001
+                log.exception('Recording a failed re-judging failed')
+            return dict(stored, reason='rejudge_failed', rejudged=True)
         record.update(status='failed', error=type(error).__name__, failures=(record.get('failures') or 0) + 1)
         record['message'] = GAVE_UP if record['failures'] >= MAX_FAILURES else \
             'The page images could not be read just now; the statement stays held.'
