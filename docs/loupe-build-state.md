@@ -1,3 +1,24 @@
+## 25 October fin-queue2: BNB2 queue worked through; empty legacy imports no longer block statements
+
+Head `ef4c7287` ("fin: an empty legacy import no longer stands as the saved copy of its file's statements"), live
+since 20:57 UTC. BNB2 queue: imported 2239 to 2282, waiting 37 to 1, ready 8 to 0, unreadable 4 to 1. Full record:
+`/mnt/owl-data/fin-wt/headless/FIN-QUEUE2-STATUS.md` and `fin-queue2-progress.md`.
+
+Established by reading source and live data: 65 BNB2 saved copies are "shells" (statement review with no statement
+key, every period undated, no transaction or incomplete record). A shell's empty key matched every statement of the
+same bytes in `statement_import._existing_statement`, so the writer refused them, `queue_save` held them as busy, and
+`read_statement_import` linked them as current_import (`assess` then says imported). `saved_reading_replacement`
+now has `is_shell` / `standing_shell` / `standing_shell_ids` / `shell_document_ids`; the writer saves the statement
+and sets the shell aside with `decide_duplicate(match='empty_shell')`; `_saved_scopes` and `queue_save` skip shells.
+Test: `tests/test_financial_shell_replacement.py`.
+
+Open, in order: (1) 393 batch items are stored "imported" pointing at a shell: 224 statements on the 65 files are not
+in the ledger (Monex 2836625 has no period before April 2024); re-prepare those files so the new reading offers them.
+(2) ECO 0118467374 July 2023 lacks bank page 13/18 in the production. (3) 83c275c1 Santander split gives page 3 to the
+66- statement only. (4) Reader fixes measured against the hand-entered specs in `headless/fq2-specs/`. (5) Monex
+2836625 EUR May/Aug 2025 saved as MXN by the previous run. Full backend suite: page_identity_copies two-edits test is
+flaky on base and head.
+
 ## 21 September live description suggestions verified
 
 Authenticated readback of build 0eeab81 in finance sunday confirms 672 identical transaction IDs and unchanged pre-existing non-label fields (including amounts, currency, running balances, dates and source references). It exposes 588 suggested categories, 423 suggested To names and 23 suggested From names; all suggested categories are available in the category filter. The live table displays the correct merchant/category suggestions, edit controls and Not printed card balances. Opening a category editor while scrolled down exposed a focus gap, corrected so the first editable field receives focus and scrolls into view.
