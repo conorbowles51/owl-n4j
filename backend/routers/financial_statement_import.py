@@ -164,6 +164,50 @@ def flip_account_rows(account_id: UUID, body: account_type_change.FlipRowsReques
         raise HTTPException(status_code=500, detail='The rows could not be flipped. Nothing was changed.')
 
 
+from services.financial import account_details_correction
+
+
+@router.get('/accounts/{account_id}/details')
+def account_details(account_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        return account_details_correction.account_details_state(db, case_id=case_id, account_id=account_id)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.post('/accounts/{account_id}/details/preview')
+def preview_account_details(account_id: UUID, body: account_details_correction.AccountDetailsRequest,
+        case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    try:
+        return account_details_correction.preview_account_details(db, case_id=case_id, account_id=account_id, request=body)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.post('/accounts/{account_id}/details', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+def save_account_details(account_id: UUID, body: account_details_correction.AccountDetailsRequest, case_id: UUID = Query(...),
+        user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    try:
+        return account_details_correction.save_account_details(db, case_id=case_id, account_id=account_id, request=body, actor=actor_from_user(user))
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception('Account details could not be corrected')
+        raise HTTPException(status_code=500, detail='The account could not be corrected. Nothing was changed.')
+
+
+@router.post('/accounts/{account_id}/details/undo', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+def undo_account_details(account_id: UUID, body: account_details_correction.UndoAccountDetailsRequest, case_id: UUID = Query(...),
+        user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    try:
+        return account_details_correction.undo_account_details(db, case_id=case_id, account_id=account_id, request=body, actor=actor_from_user(user))
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception('Account correction could not be undone')
+        raise HTTPException(status_code=500, detail='The correction could not be undone. Nothing was changed.')
+
+
 @router.get('/incomplete-records')
 def incomplete_records(account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None, case_id: UUID = Query(...), account_id: UUID | None = Query(None),
         source_document_id: UUID | None = None, evidence_file_id: Annotated[list[UUID] | None, Query()] = None,

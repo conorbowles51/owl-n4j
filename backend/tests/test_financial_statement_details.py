@@ -104,6 +104,8 @@ class StatementDetailsTests(TestCase):
         with self.f.SessionLocal() as db:
             rows = list(db.scalars(select(FinancialTransaction).where(FinancialTransaction.source_document_id == self.source_id)))
             self.assertTrue(rows and all(str(row.account_id) == first['account_id'] for row in rows))
+        # The number printed with other separators is the same account too.
+        self.assertEqual(self.save(self.request(account_number='000-123-456-789'))['account_id'], first['account_id'])
         # A real difference still keeps other statements' account untouched.
         moved = self.save(self.request(holder='Another Synthetic Holder SA'))
         self.assertNotEqual(moved['account_id'], first['account_id'])

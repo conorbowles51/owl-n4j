@@ -11,6 +11,7 @@ import { useFinancialDraft } from "../stores/financial-drafts"
 import { statementAssessment } from "../lib/statement-assessment"
 import { StatementReconciliationSummary } from "./StatementReconciliationSummary"
 import { AccountTypeEditor } from "./AccountTypeEditor"
+import { AccountDetailsCorrection } from "./AccountDetailsCorrection"
 
 const balance = z.object({
   amount_minor: z.string().nullable(),
@@ -563,6 +564,7 @@ function DetailsForm({
         </fieldset>
         {error && <p role="alert">{error} Your edits remain here.</p>}
       </form>
+      <AccountDetailsCorrection caseId={data.case_id} accountId={data.account_id} />
       <AccountTypeEditor caseId={data.case_id} accountIds={[data.account_id]} />
       </div>
     </div>
