@@ -993,7 +993,7 @@ def read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for
             if item is None or batch is None or file is None or batch.status == 'removed':
                 return dict(record, reason='gone')
             case_id, file_id, key = batch.case_id, item.file_id, item.statement_key or ''
-            if apply and not approved(case_id):
+            if not approved(case_id):  # measuring sends the images too
                 return dict(record, reason='case_not_approved')
             entry = next((e for e in batch.files or [] if e.get('file_id') == str(file_id)), {})
             proposal = read_statement_import(db, case_id=case_id, evidence_file_id=file_id,
