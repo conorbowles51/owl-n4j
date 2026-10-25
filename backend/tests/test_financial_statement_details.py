@@ -94,6 +94,20 @@ class StatementDetailsTests(TestCase):
                         self.assertEqual(db.get(FinancialAccount, UUID(before['account_id'])).holder_name, before['details']['holder'])
                 self.assertEqual(self.read()['details']['holder'], holder)
 
+    def test_holder_or_bank_in_another_letter_case_stays_on_the_identified_account(self):
+        first = self.save(self.request(account_number='000123456789', institution='Synthetic Bank Mexico', holder='Synthetic Holder SA'))
+        with self.f.SessionLocal() as db:
+            self.assertFalse(db.get(FinancialAccount, UUID(first['account_id'])).identity_key.startswith('unidentified'))
+        saved = self.save(self.request(institution='SYNTHETIC BANK  MEXICO', holder='synthetic holder sa '))
+        self.assertEqual(saved['account_id'], first['account_id'])
+        self.assertEqual(self.read()['details']['institution'], 'SYNTHETIC BANK  MEXICO')
+        with self.f.SessionLocal() as db:
+            rows = list(db.scalars(select(FinancialTransaction).where(FinancialTransaction.source_document_id == self.source_id)))
+            self.assertTrue(rows and all(str(row.account_id) == first['account_id'] for row in rows))
+        # A real difference still keeps other statements' account untouched.
+        moved = self.save(self.request(holder='Another Synthetic Holder SA'))
+        self.assertNotEqual(moved['account_id'], first['account_id'])
+
     def test_add_missing_balances_reconciles_with_page_citations(self):
         saved = self.save(self.request(opening=dict(amount_minor='1245000', page=1), closing=dict(amount_minor='4745000', page=1)))
         with self.f.SessionLocal() as db:

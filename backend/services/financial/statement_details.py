@@ -12,6 +12,9 @@ from services.financial.pdf_candidates import PdfMappingError, _digest
 from services.financial.currency_correction import CurrencyCode, rescale_minor
 
 DETAIL_KEYS = ('holder', 'account_number', 'institution')
+# A holder or bank printed in another letter case or spacing ('BBVA MEXICO' /
+# 'BBVA Mexico') is the same account: compared folded, as the identity key is.
+FOLDED_ACCOUNT_FIELDS = ('holder_name', 'institution_name')
 # An investigator's later decision on how this statement's printed balances
 # read (account type changed after import). The sealed reading is untouched;
 # this reviewed value, when present, is the one every saved-statement path uses.
@@ -188,7 +191,7 @@ def update_statement_details(session, *, case_id, source_id, request, actor, com
         reference_kind = (account.metadata_ or {}).get('account_reference_kind')
         compartment_currency_changed = reference_kind == 'multi_currency_contract' and request.currency and request.currency != before['currency']
         if any(details[key] != before['details'][key] for key in DETAIL_KEYS) or compartment_currency_changed:
-            from services.financial.accounts import AccountDraft, AccountIdentityError, record_account
+            from services.financial.accounts import AccountDraft, AccountIdentityError, _fold, record_account
             fields = dict(holder_name=details['holder'] or None, identifier_as_printed=details['account_number'] or None,
                 institution_name=details['institution'] or None, currency=(request.currency or before['currency']) if reference_kind == 'multi_currency_contract' else account.currency,
                 account_type=account.account_type, metadata=dict(display_label=' · '.join(filter(None,
@@ -200,8 +203,9 @@ def update_statement_details(session, *, case_id, source_id, request, actor, com
                 draft = AccountDraft.unidentified(distinguisher='statement-details:' + str(document.id) + ':' + _digest(fields), **fields)
             existing = session.scalar(select(FinancialAccount).where(
                 FinancialAccount.case_id == case_id, FinancialAccount.identity_key == draft.identity().key))
-            if existing is not None and any(getattr(existing, key) != getattr(draft, key)
-                    for key in ('holder_name', 'identifier_as_printed', 'institution_name', 'currency', 'account_type')):
+            if existing is not None and (any(_fold(getattr(existing, key)) != _fold(getattr(draft, key))
+                    for key in FOLDED_ACCOUNT_FIELDS) or any(getattr(existing, key) != getattr(draft, key)
+                    for key in ('identifier_as_printed', 'currency', 'account_type'))):
                 # The ingestion writer deliberately retains conflicting values.
                 # A reviewed correction must instead resolve to its exact saved
                 # details without overwriting other statements sharing an account.
