@@ -4766,6 +4766,7 @@ def _rows(rows, moves, resolved, chosen, controls, column_totals, statement, sty
                     # (B5) The application date is the line's date of record; the authorisation date is kept.
                     fields['date'] = printed[1].isoformat()
                     fields['authorization_date'] = printed[0].isoformat()
+                    fields['date_column'] = str(move['date_tokens'][1]['cell']['column_index'])
                 elif printed:
                     fields['date'] = printed[0].isoformat()
                     if len(printed) > 1:
