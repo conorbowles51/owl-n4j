@@ -473,6 +473,24 @@ class SupersededFileReadingTests(QueueReadTests):
         counts = self.queue()['counts']
         self.assertEqual((counts['unreadable'], counts['waiting']), (0, 1), counts)
 
+    def test_a_whole_file_entry_leaves_once_every_named_statement_of_the_file_is_imported(self):
+        import os
+        from unittest.mock import patch
+        batch = self.create(); self.advance(batch)
+        record = self.make_unreadable(batch)
+        with self.f.SessionLocal() as db:
+            whole = db.query(Item).filter(Item.batch_id == batch).one()
+            whole.summary = dict(whole.summary, transaction_count=3, record_count=3)
+            named = dict(record.summary, period_start='2020-01-01', period_end='2020-01-31', transaction_count=3,
+                         can_import=True, problems=[], problem_count=0)
+            db.add(Item(id=uuid4(), batch_id=batch, file_id=record.file_id, statement_key='a' * 64, status='imported',
+                        summary=named, review_request=record.review_request))
+            db.commit()
+        counts = self.queue()['counts']
+        self.assertEqual((counts['waiting'], counts['unreadable'], counts['imported']), (0, 0, 1), counts)
+        with patch.dict(os.environ, {'LOUPE_FINANCIAL_QUEUE_HIDE_SPLIT_DONE': '0'}):
+            self.assertEqual(self.queue()['counts']['waiting'], 1)
+
     def test_check_again_prepares_only_the_listed_files_from_their_saved_reading(self):
         batch = self.create(); self.advance(batch)
         self.make_unreadable(batch)

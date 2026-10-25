@@ -493,6 +493,18 @@ def _build(session, case_id):
                 # which applies the values and checks the statement again.
                 bucket = 'filled'
         rows.append((identity, bucket, current, detail, proposals))
+    # A whole-file entry prepared before its file was split into named statements stands for nothing once every
+    # one of those statements is imported, set aside as a copy, left out or not a payment statement: its own
+    # reading is older, and the work is done (BNB2 2026-10-25: 6 such entries counted as waiting). Nothing is
+    # deleted; the entry is only no longer listed. Reverse: LOUPE_FINANCIAL_QUEUE_HIDE_SPLIT_DONE=0.
+    if os.environ.get('LOUPE_FINANCIAL_QUEUE_HIDE_SPLIT_DONE', '1').strip().lower() not in ('0', 'false', 'off', 'no'):
+        named_buckets = {}
+        for identity, bucket, *_ in rows:
+            if identity[1]:
+                named_buckets.setdefault(identity[0], set()).add(bucket)
+        settled = {'imported', 'copies', 'not_payment', 'left_unimported'}
+        rows = [row for row in rows if row[0][1] or row[1] not in ('waiting', 'unreadable', 'ready', 'filled')
+                or not named_buckets.get(row[0][0]) or not named_buckets[row[0][0]] <= settled]
     items = light
     batch_of = {item.id: item.batch_id for item in items}
     result = []
