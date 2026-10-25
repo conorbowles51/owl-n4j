@@ -156,6 +156,25 @@ class ShellWriterTests(TestCase):
         self.assertEqual(self.document(shell_id).status, 'admitted')
         self.assertEqual(self.admitted_rows(), receipt['transaction_count'])
 
+    def test_a_shell_set_aside_for_one_statement_does_not_exclude_the_files_other_statements(self):
+        """fin-shells 2026-10-25: after one statement of a shell file was saved, the set-aside shell (naming no
+        statement) was found as the recorded exclusion of every other statement of the file: all read as copies."""
+        from services.financial.statement_import import _existing_statement
+        shell_id = make_shell(self.f, self.f.file)   # the shell is this file's own earlier import
+        receipt = self.f.confirm()
+        self.assertEqual(self.document(shell_id).superseded_by_id, UUID(receipt['source_document_id']))
+        with self.f.SessionLocal() as db:
+            file = db.get(type(self.f.file), self.f.file.id)
+            for other in ('another statement of the file', None):
+                self.assertIsNone(_existing_statement(db, self.case_id, file, other, [(1, 0)], excluded_duplicates=True))
+            # A real copy set aside as a duplicate still is one.
+            shell = db.get(FinancialSourceDocument, shell_id)
+            shell.metadata_ = {**shell.metadata_, 'statement_import_statement_id': 'a real statement'}
+            db.flush()
+            self.assertEqual(_existing_statement(db, self.case_id, file, 'a real statement', [(1, 0)],
+                                                 excluded_duplicates=True).id, shell_id)
+            db.rollback()
+
     def test_a_saved_copy_with_a_payment_is_not_a_shell_and_still_holds_the_statement(self):
         shell_id = make_shell(self.f, same_bytes_copy(self.f), keep_payment=True)
         with self.f.SessionLocal() as db:

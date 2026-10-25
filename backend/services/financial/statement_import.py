@@ -1,4 +1,5 @@
 """Case-scoped automatic statement review assembled from stored source tables."""
+import os
 import pickle
 import re
 import threading
@@ -83,7 +84,65 @@ def _existing_values(session, keys, conditions):
         FinancialSourceDocument.superseded_by_id), keys, conditions, order_by=FinancialSourceDocument.id)
 
 
-def _existing_statement(session, case_id, file, statement_id, addresses=(), row_addresses=None, source_regions=None, *, excluded_duplicates=False, memo=None):
+# A copy that names no statement (an early whole-file import) matched EVERY statement of its bytes, so
+# once one statement of a multi-statement file was saved or set aside against it, the file's other
+# statements read as already imported or "excluded as a duplicate" and the writer refused them (BNB2,
+# 2026-10-25: 17 empty imports and 2 dated ones, e.g. 04 ARRENDO MONEX MXN ABR 2022 and
+# 01 ARRENDO MONEX MXN ENE 2022). It now stands only for what it held. Off restores the old rule.
+KEYLESS_HOLDS_ONLY_ITS_OWN = os.getenv('LOUPE_FINANCIAL_KEYLESS_COPY_OWN_ONLY', '1') != '0'
+
+
+def _keyless_holds(session, item, statement_id, identity, *, excluded, retained):
+    """Whether the copy ``item``, which names no statement, holds the statement ``statement_id``: True, False,
+    or None when that cannot be told (the earlier whole-file rule then applies). ``identity`` is
+    (this statement's (currency, period_start, period_end), {the same for the reading's other statements}),
+    dates as ISO strings (``_reading_identity``).
+
+    - an empty import (saved_reading_replacement.is_shell) set aside holds no statement (a standing one is
+      matched as before: the reading and the writer then save the statement and set the shell aside);
+    - a copy set aside in favour of a copy that names a statement held that statement only;
+    - a copy whose saved periods are all dated holds the statement whose currency and dates equal one of
+      them, and does not hold this one when each of its periods is another statement of the reading.
+    """
+    from postgres.models.financial import FinancialSourceDocument, FinancialStatementPeriod
+    from services.financial.saved_reading_replacement import is_shell
+    document = session.get(FinancialSourceDocument, item.id)
+    if document is None:
+        return None
+    if is_shell(session, document):
+        return False if excluded else None
+    if retained is not None:
+        key = (retained.metadata_ or {}).get('statement_import_statement_id')
+        if key:
+            return key == statement_id
+    if identity is None:
+        return None
+    own, others = identity
+    periods = [(p.currency, p.period_start and p.period_start.isoformat(), p.period_end and p.period_end.isoformat())
+               for p in session.execute(select(FinancialStatementPeriod.currency, FinancialStatementPeriod.period_start,
+                   FinancialStatementPeriod.period_end).where(FinancialStatementPeriod.source_document_id == document.id))]
+    if not periods or not all(all(period) for period in periods):
+        return None
+    if own in periods:
+        return True
+    return False if all(period in others for period in periods) else None
+
+
+def _reading_identity(choices, statement_id, currency):
+    """For ``_keyless_holds``: the (currency, period_start, period_end) of the statement ``statement_id``
+    read in ``currency``, and those of the reading's other statements that print all three."""
+    own, others = None, set()
+    for choice in choices or ():
+        value = (choice.get('currency') or '', choice.get('period_start') or '', choice.get('period_end') or '')
+        if choice.get('id') == statement_id:
+            value = (currency or value[0],) + value[1:]
+            own = value if all(value) else None
+        elif all(value):
+            others.add(value)
+    return None if own is None else (own, others)
+
+
+def _existing_statement(session, case_id, file, statement_id, addresses=(), row_addresses=None, source_regions=None, *, excluded_duplicates=False, memo=None, identity=None):
     from postgres.models.financial import FinancialSourceDocument
     # Only the keys compared below are loaded. Every saved period of a
     # multi-statement file carries the file's whole statement catalogue
@@ -143,6 +202,15 @@ def _existing_statement(session, case_id, file, statement_id, addresses=(), row_
             if is_replacement_link(session, session.get(FinancialSourceDocument, item.id), retained):
                 # A reader replacement that was restored: the earlier reading counts again and the
                 # replacing one is kept, linked (saved_reading_replacement). Not a duplicate either.
+                continue
+        if not item.statement_id and KEYLESS_HOLDS_ONLY_ITS_OWN:
+            # A copy naming no statement (an early whole-file import) stands for, or was set aside as,
+            # only what it held, never every statement of its file (fin-queue3 R1).
+            held = _keyless_holds(session, item, statement_id, identity, excluded=excluded_duplicates,
+                                  retained=retained if excluded_duplicates else None)
+            if held is not None:
+                if held:
+                    matches.append(item)
                 continue
         if item.statement_id in (None, statement_id):
             matches.append(item)
@@ -466,11 +534,13 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
             for s in selected['section_sources'] for index in s['row_indices']]
         source_regions = andrews_source_regions(sources, dict(sources=selected['section_sources']))
     memo = cache if cache.get(READ_ONLY_LISTING) else None
+    identity = _reading_identity(choices, statement_id, chosen_currency)
     current = _existing_statement(session, case_id, file, statement_id,
-        ((source['page_number'], source['table_index']) for source in sources), row_addresses, source_regions, memo=memo)
+        ((source['page_number'], source['table_index']) for source in sources), row_addresses, source_regions, memo=memo,
+        identity=identity)
     excluded_copy = _existing_statement(session, case_id, file, statement_id,
         ((source['page_number'], source['table_index']) for source in sources), row_addresses, source_regions,
-        excluded_duplicates=True, memo=memo)
+        excluded_duplicates=True, memo=memo, identity=identity)
     if excluded_copy is not None:
         current = excluded_copy
     elif current is not None and current.evidence_file_id != file.id:
@@ -1231,7 +1301,8 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                         'This statement was excluded as a duplicate. Review or restore its recorded decision in Import review before importing again.', 409)
                 existing = _existing_statement(session, case_id, file, request.statement_id,
                     ((source['page_number'], source['table_index']) for source in proposal['sources']),
-                    proposal.get('statement_row_addresses'), proposal.get('statement_source_regions'))
+                    proposal.get('statement_row_addresses'), proposal.get('statement_source_regions'),
+                    identity=_reading_identity(proposal.get('statement_choices'), request.statement_id, request.currency))
                 if existing is not None:
                     existing = session.scalar(select(FinancialSourceDocument).where(
                         FinancialSourceDocument.id == existing.id, FinancialSourceDocument.status != 'superseded'
