@@ -53,8 +53,9 @@ Automatic fills (Neil, 2026-10-24; each behind a default-on switch
   whose number the statement prints (``identity_proven``). Basis
   ``account_currency``.
 * ``CASE_CURRENCY`` (Neil, 2026-10-25): no currency printed anywhere on the
-  statement (no holdings currency, and every currency marker it prints, such
-  as a bare '$', allows the case's usual currency), no account it could be
+  statement (no holdings currency, no currency word, label or symbol; only
+  markers such as a bare '$' that allow the case's usual currency among
+  others), no account it could be
   having any other currency, and the case's usual currency a clear majority of
   its saved statements: the case's usual currency, basis
   ``case_default_assumed``, labelled "currency assumed: case's usual (not
@@ -522,10 +523,12 @@ def case_currency_assumable(values, knowledge):
     Every condition must hold (fail closed): the switch is on; the statement has
     no currency and nothing in its holdings; its reading recorded the currency
     markers it prints (``currency_marks``; an older reading has none and is
-    refused) and each of them allows the case's usual currency (a bare '$' does);
-    that currency is a clear majority of the case's saved statements; and no
-    account the statement could be (matched in any way, ambiguous included) has
-    a saved statement or an account record in another currency.
+    refused) and none names one currency, not even the case's own (a bare '$'
+    allows several, including the case's usual one); that currency is a clear
+    majority of the case's saved statements; and no account the statement could
+    be (matched by identity, ambiguous included, or sharing its printed number's
+    digits whatever its bank or holder) has a saved statement or an account
+    record in another currency.
     """
     if not autofill_enabled('CASE_CURRENCY') or knowledge is None or not knowledge.default_currency:
         return False
@@ -533,12 +536,17 @@ def case_currency_assumable(values, knowledge):
     if str(values.get('currency') or '').strip() or values.get('printed_currency'):
         return False
     marks = values.get('currency_marks')
-    if not isinstance(marks, list) or any(default not in {str(c).upper() for c in mark} for mark in marks):
-        return False
+    if not isinstance(marks, list) or not all(
+            isinstance(mark, list) and len(mark) > 1 and all(isinstance(c, str) for c in mark)
+            and default in {c.upper() for c in mark} for mark in marks):
+        return False  # a marker naming one currency (even the case's own) is a printed currency
     if (knowledge.saved_total < CASE_CURRENCY_MIN_SAVED
             or knowledge.default_count <= CASE_CURRENCY_SHARE * knowledge.saved_total):
         return False
     candidates, _ = matching_accounts(dict(values, currency=''), knowledge)
+    # Any account sharing the printed number's digits too, whatever its bank or holder reads.
+    number = account_identity(values.get('account_number'))
+    candidates = list(candidates) + [k for k in knowledge.accounts if account_match(number, (k.digits, k.masked))]
     established = {c.upper() for k in candidates for c in [s.currency for s in k.statements] + [k.currency] if c}
     return established <= {default}
 

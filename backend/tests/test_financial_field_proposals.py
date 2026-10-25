@@ -487,6 +487,21 @@ class CaseCurrencyTests(TestCase):
         currency = fp.propose(dict(self.unmatched, currency_marks=[['MXN'], ['USD']]), self.case)['currency']
         self.assertEqual((currency['basis'], currency['confirmed']), ('case_default', False))
 
+    def test_the_case_currency_itself_printed_refuses(self):
+        # 'No currency printed': a statement naming pesos is left for a person, even in a pesos case.
+        self.assertFalse(fp.case_currency_assumable(dict(self.unmatched, currency_marks=[['MXN']]), self.case))
+        self.assertFalse(fp.case_currency_assumable(dict(self.unmatched, currency_marks=[['?']]), self.case))
+
+    def test_malformed_markers_refuse_without_raising(self):
+        for marks in ([1], [None], ['MXN'], [['MXN', 1]], 'MXN'):
+            self.assertFalse(fp.case_currency_assumable(dict(self.unmatched, currency_marks=marks), self.case), marks)
+
+    def test_an_account_sharing_the_number_in_another_currency_refuses_whatever_its_holder(self):
+        usd = account(saved(currency='USD', holder='JUAN PEREZ'), currency='USD', institution='BBVA')
+        case = knowledge(usd, default='MXN', default_count=714, total=1202)
+        stranger = values(holder='MARIA LOPEZ', institution='BANCO SANTANDER MEXICO', currency_marks=[])
+        self.assertFalse(fp.case_currency_assumable(stranger, case))
+
     def test_a_reading_without_recorded_markers_refuses(self):
         currency = fp.propose(values(account_number='', institution='', holder=''), self.case)['currency']
         self.assertEqual((currency['basis'], currency['confirmed']), ('case_default', False))
@@ -537,5 +552,10 @@ class CurrencyMarksTests(TestCase):
         self.assertEqual(currency_marks([], 'EUR 1,234.56'), [['EUR']])
         self.assertIn('MXN', currency_marks([], '$1,234.56')[0])
         self.assertEqual(currency_marks([], 'SALDO €1.234,56 a la fecha'), [['EUR']])
-        self.assertEqual(currency_marks([], 'pago US$ 10'), [['USD']])
+        self.assertEqual(currency_marks([], 'pago US$ 1,234.56'), [['USD']])
+        self.assertEqual(currency_marks([], 'USD/MES 10'), [['USD']])
+        self.assertEqual(currency_marks([], 'MONEDA: QUETZALES'), [['?']])
+        self.assertEqual(currency_marks([], 'CUENTA EN MONEDA NACIONAL'), [['MXN']])
+        self.assertEqual(currency_marks([], 'R$ 10,00'), [['BRL']])
+        self.assertEqual(currency_marks([{'page_number': 1, 'table_index': 0, 'rows': [{'cells': [{'expected_text': None}]}]}]), [])
         self.assertEqual(currency_marks([], 'REF 1,234.56'), [])
