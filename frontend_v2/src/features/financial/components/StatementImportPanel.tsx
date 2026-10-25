@@ -47,6 +47,8 @@ import {
   serverStatementDraft,
 } from "../lib/statement-review-draft"
 import { Button } from "@/components/ui/button"
+import { readerReplacementSchema } from "./readerReplacement"
+import { ReaderReplacementNotice } from "./ReaderReplacementNotice"
 import { ApiError, fetchAPI } from "@/lib/api-client"
 import { PdfReviewIntake } from "./PdfReviewIntake"
 import { TransactionSourceHighlight } from "./TransactionSourceHighlight"
@@ -261,6 +263,7 @@ const proposalSchema = z.object({
       retained_filename: z.string().nullable().optional(),
       duplicate_disposition: statementDuplicateDisposition.nullish(),
       duplicate_copies: z.array(retainedStatement).default([]),
+      reader_replacement: readerReplacementSchema.nullish(),
       details_reason: z.string().default(""),
       review_decisions: z
         .array(
@@ -920,6 +923,13 @@ function StatementReview({
                 !!query.data.current_import.incomplete_count &&
                 " The PDF is retained, but those readings are not payments in Transactions."}
             </p>
+            {query.data.current_import.reader_replacement && caseId && (
+              <ReaderReplacementNotice
+                caseId={caseId}
+                notice={query.data.current_import.reader_replacement}
+                canEdit={canEdit}
+              />
+            )}
             {query.data.current_import.duplicate_copies.length > 0 && (
               <div aria-label="Copies set aside as duplicates">
                 <p>

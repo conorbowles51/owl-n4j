@@ -74,6 +74,11 @@ PROFILE_COLUMN_ORDER = _switch('LOUPE_FINANCIAL_PROFILE_COLUMN_ORDER')
 # day, then the agreed day under a 'Fechas: Liquidacion (Pactada)' heading): the first date dates the line, and the
 # parenthesized one stays as printed text of the line. Off: the glued word is no date and the line no movement.
 PARENTHESIZED_SECOND_DATE = _switch('LOUPE_FINANCIAL_PARENTHESIZED_SECOND_DATE')
+# (B5) A credit line's movement lines printing two dates under 'FECHA / AUTORIZACION' and 'FECHA / APLICACION'
+# (BBVA credit line): the application date is the line's date of record (Neil, 2026-10-24), and the authorisation
+# date stays on the line as 'authorization_date'. Only when every application date lies in the printed period, on
+# or after its authorisation date. Off: the second date's heading is unnamed and the period is held, as before.
+CREDIT_LINE_APPLICATION_DATE = _switch('LOUPE_FINANCIAL_CREDIT_LINE_APPLICATION_DATE')
 MAX_ASSIGNMENTS = 4000
 MAX_PERIOD_DAYS = 95
 
@@ -4117,10 +4122,12 @@ def _reading(rows, statement, style, exponent, liability, period):
             else:
                 proof['reason'] = ('printed_total_differs' if any(c['totals_failed'] for c in near)
                                    else 'no_independent_control' if near else 'not_reconciled')
+    second_date = _second_date_field(rows, headers, dated, width or 1)
+    if second_date == 'application' and not _application_dates_fit(dated, resolved, date_problem, period):
+        second_date = None
     summary_charges = None
     if (not proof['proved'] and liability and proof['reason'] == 'not_reconciled'
-            and not (any(len(m['date_tokens']) > 1 for m in dated)
-                     and _second_date_field(rows, headers, dated, width or 1) is None)):
+            and not (any(len(m['date_tokens']) > 1 for m in dated) and second_date is None)):
         # A credit line whose period summary prints interest and IVA no movement line lists
         # (credit_line_summary, switch LOUPE_FINANCIAL_CREDIT_LINE_SUMMARY_CHARGES): proved only when those
         # charges reconcile the one reading of the movements exactly; otherwise held as before. A period the
@@ -4144,7 +4151,6 @@ def _reading(rows, statement, style, exponent, liability, period):
         if chosen is not None and not chosen.get('closing_ok'):
             chosen = dict(chosen, values=None)
     proof['assignment'] = chosen['assignment'] if chosen else None
-    second_date = _second_date_field(rows, headers, dated, width or 1)
     if second_date is None and any(len(m['date_tokens']) > 1 for m in dated):
         # (B5) A second printed date whose heading names neither a posting nor a value date: carrying it under
         # either name, or dropping it, would save a printed fact wrongly, so the period is not proved. The
@@ -4663,7 +4669,64 @@ def _second_date_field(rows, headers, moves, width):
         return 'booking_date'
     if words & _VALUE_DATE_WORDS:
         return 'value_date'
+    if CREDIT_LINE_APPLICATION_DATE and _application_date_heading(rows, moves, width):
+        return 'application'
     return None
+
+
+def _application_date_heading(rows, moves, width):
+    """(B5) True when, on every page with a two-date movement line, the lines just above its first such line
+    print 'AUTORIZACION' over the first date column and 'APLICACION' over the second (each over its own column
+    only), under a line printing 'FECHA' over both: the BBVA credit-line heading 'FECHA AUTORIZACION / FECHA
+    APLICACION' whose kind words sit on their own line below the date heading."""
+    def span(token):
+        w = token.get('_width') or width
+        return token['x0'] / w, token['x1'] / w
+
+    def over(token, column):
+        x0, x1 = span(token)
+        return x0 < column[1] and x1 > column[0]
+
+    firsts = {}
+    for move in moves:
+        if len(move['date_tokens']) > 1:
+            firsts.setdefault(move['row']['page'], move)
+    if not firsts:
+        return False
+    for page, move in firsts.items():
+        first, second = (span(t) for t in move['date_tokens'][:2])
+        kinds = None
+        for index in range(move['row']['_index'] - 1, max(-1, move['row']['_index'] - 1 - _DATE_HEADING_SPAN), -1):
+            row = rows[index]
+            if row['page'] != page:
+                break
+            on_first = {label(t['t']) for t in row['tokens'] if over(t, first) and not over(t, second)}
+            on_second = {label(t['t']) for t in row['tokens'] if over(t, second) and not over(t, first)}
+            if kinds is None:
+                if on_first == {'AUTORIZACION'} and on_second == {'APLICACION'}:
+                    kinds = index
+            elif on_first == {'FECHA'} and on_second == {'FECHA'}:
+                break
+        else:
+            return False
+        if kinds is None or rows[index]['page'] != page or index == kinds:
+            return False
+    return True
+
+
+def _application_dates_fit(moves, resolved, date_problem, period):
+    """(B5) Every two-date movement's application date lies in the printed period and not before its
+    authorisation date, and every dated movement prints both dates; otherwise the application date is not
+    taken as the date of record."""
+    if date_problem or not period or resolved is None or len(resolved) != len(moves):
+        return False
+    start, end = period
+    for move, dates in zip(moves, resolved):
+        if len(move['date_tokens']) != 2 or len(dates) != 2 or move.get('date_unread'):
+            return False
+        if not (start <= dates[1] <= end and dates[0] <= dates[1]):
+            return False
+    return True
 
 
 def _rows(rows, moves, resolved, chosen, controls, column_totals, statement, style, exponent, liability, proof, unplaced,
@@ -4699,6 +4762,11 @@ def _rows(rows, moves, resolved, chosen, controls, column_totals, statement, sty
                 if printed and move.get('date_unread'):
                     # (B5) The line's second date is unread ink: its first date is not taken either.
                     item['issues'].append('Check the printed date of this movement.')
+                elif printed and second_date == 'application' and len(printed) > 1:
+                    # (B5) The application date is the line's date of record; the authorisation date is kept.
+                    fields['date'] = printed[1].isoformat()
+                    fields['authorization_date'] = printed[0].isoformat()
+                    fields['date_column'] = str(move['date_tokens'][1]['cell']['column_index'])
                 elif printed:
                     fields['date'] = printed[0].isoformat()
                     if len(printed) > 1:
