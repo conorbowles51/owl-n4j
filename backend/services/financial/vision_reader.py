@@ -51,7 +51,7 @@ from copy import deepcopy
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 from types import SimpleNamespace
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import select
 
@@ -1005,6 +1005,12 @@ def rejudgeable(record, revision=None, model_id=None, pages=None):
     return True
 
 
+def _judged(stored, **extra):
+    """A stored not-proved outcome (or an abandoned re-judge claim of one) marked judged under these rules."""
+    record = {k: v for k, v in stored.items() if k not in ('rejudging', 'claim_id')}
+    return dict(record, status='not_proved', proof=PROOF_VERSION, **extra)
+
+
 def _stored(file, key):
     return ((file.metadata_ or {}).get(METADATA_KEY) or {}).get(key or '')
 
@@ -1016,11 +1022,12 @@ def _being_read(stored):
     return (datetime.now(timezone.utc) - started).total_seconds() < CLAIM_SECONDS
 
 
-def _store(db, file_id, key, record, claim=None, rejudge=None):
+def _store(db, file_id, key, record, claim=None, rejudge=None, owner=None):
     """Store the record under the file's lock. With ``claim=(revision, model)``: False, storing
     nothing, when the statement is being read, was read or was given up (checked under the lock).
     With ``rejudge=(revision, model, pages)``: False, storing nothing, unless the stored outcome is
-    still one to judge again from its stored page reading (rejudgeable)."""
+    still one to judge again from its stored page reading (rejudgeable). With ``owner``: False, storing
+    nothing, unless the stored record is this worker's re-judge claim or still rejudgeable."""
     from postgres.models.evidence import EvidenceFile
     file = db.scalar(select(EvidenceFile).where(EvidenceFile.id == file_id).with_for_update()
                      .execution_options(populate_existing=True))
@@ -1032,6 +1039,8 @@ def _store(db, file_id, key, record, claim=None, rejudge=None):
     if claim and (_being_read(previous) or _current(previous, *claim) or gave_up(previous, claim[0])):
         return False
     if rejudge and not rejudgeable(previous, *rejudge):
+        return False
+    if owner and not ((previous or {}).get('claim_id') == owner or rejudgeable(previous)):
         return False
     if previous and previous.get('status') not in ('reading',) and previous.get('revision') != record.get('revision'):
         metadata.setdefault(METADATA_KEY + '_history', []).append(previous)
@@ -1098,7 +1107,7 @@ def read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for
             return case_knowledge(db, case_id)
     record = dict(version=VERSION, proof=PROOF_VERSION, status='skipped', message='', at=datetime.now(timezone.utc).isoformat())
     file_id, key = None, ''
-    again, stored = False, None
+    again, stored, claim_id = False, None, 'none'
     try:
         with factory() as db:
             item = db.get(Item, item_id)
@@ -1149,7 +1158,7 @@ def read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for
                 # judged under these rules, so it is not offered again (as before re-judging existed).
                 if apply:
                     # Under the file's lock, only while it is still that outcome (rejudgeable, any reading).
-                    _store(db, file_id, key, dict(stored, proof=PROOF_VERSION), rejudge=(None, None, None))
+                    _store(db, file_id, key, _judged(stored), rejudge=(None, None, None))
                     db.commit()
                 else:
                     db.rollback()
@@ -1172,7 +1181,8 @@ def read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for
                               read_at=stored.get('read_at') or stored.get('at'), rejudged=True)
                 if apply:
                     # The claim keeps the stored reading (and is checked again under the file's lock).
-                    if not _store(db, file_id, key, dict(stored, status='reading', rejudging=True,
+                    claim_id = str(uuid4())
+                    if not _store(db, file_id, key, dict(stored, status='reading', rejudging=True, claim_id=claim_id,
                                   at=datetime.now(timezone.utc).isoformat()),
                                   rejudge=(proposal['revision'], model_id, pages)):
                         db.rollback()
@@ -1252,7 +1262,7 @@ def read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for
             try:
                 if apply and file_id is not None:
                     with factory() as db:
-                        _store(db, file_id, key, dict(stored, proof=PROOF_VERSION, rejudge_error=type(error).__name__))
+                        _store(db, file_id, key, _judged(stored, rejudge_error=type(error).__name__), owner=claim_id)
                         db.commit()
             except Exception:  # noqa: BLE001
                 log.exception('Recording a failed re-judging failed')
