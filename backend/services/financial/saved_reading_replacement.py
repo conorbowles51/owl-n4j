@@ -162,7 +162,8 @@ def saved_money(session, document, period):
     rows = Counter()
     for row in session.scalars(select(FinancialTransaction).where(
             FinancialTransaction.source_document_id == document.id, FinancialTransaction.ledger_status == 'admitted')):
-        when = row.transaction_date or row.posted_date
+        when = None if (row.provenance or {}).get('date_basis') == 'statement_end_ordering_only' else (
+            row.transaction_date or row.posted_date)
         rows[(int(row.amount_minor), row.direction, when.isoformat() if when else None)] += 1
     return dict(rows=rows, opening=period.opening_balance_minor, closing=period.closing_balance_minor)
 
@@ -181,15 +182,26 @@ def _typed(session, document):
         if initial is None:
             # A row the reading never had: a payment or balance a person typed.
             return 'typed_payments'
-        if row.get('excluded') and initial.get('excluded'):
-            continue
-        if kinds.get(row['id']) == 'balance':
-            continue  # a printed balance read as such; its value is a statement detail
-        if any(row.get(key) != initial.get(key) for key in ('amount_minor', 'direction', 'date', 'date_values', 'date_unprinted')
-               if key in row or key in initial):
-            return 'typed_payments'
+        if row.get('excluded') and initial.get('excluded') and kinds.get(row['id']) == 'balance':
+            continue  # a printed balance kept outside the payments; its value is a statement detail
         if bool(row.get('excluded')) != bool(initial.get('excluded')):
             return 'typed_payments'
+        if row.get('excluded') and initial.get('excluded'):
+            continue  # a line left outside the payments on both sides
+        # Every field of a payment row: amount, direction, dates, description, counterparty, its link, page, reason.
+        if any(_given(row.get(key)) != _given(initial.get(key)) for key in set(row) | set(initial) if key != 'id'):
+            return 'typed_payments'
+    return _rows_changed(session, document)
+
+
+def _given(value):
+    """A request field as given: an absent field and its empty default are the same decision."""
+    return None if value in (None, '', {}, [], False) else value
+
+
+def _rows_changed(session, document):
+    """Refusal code when saved payments of this copy were corrected, completed or decided after it was saved."""
+    metadata = document.metadata_ or {}
     if any(record.get('correction') or record.get('resolved_transaction_id')
            for record in metadata.get('statement_incomplete_records', [])):
         return 'corrected_payments'
@@ -454,7 +466,9 @@ def plan(session, *, case_ids=None, document_ids=None):
 # Writer hook -----------------------------------------------------------------
 
 def is_replacement(actor):
-    return getattr(actor, 'email', None) == ACTOR.email and getattr(actor, 'name', None) == ACTOR.name
+    # The system actor only: never a signed-in account, whatever it is called.
+    return (getattr(actor, 'user_id', None) is None and getattr(actor, 'email', None) == ACTOR.email
+            and getattr(actor, 'name', None) == ACTOR.name)
 
 
 def writer_refusal(session, existing, proposal, request):
@@ -597,9 +611,12 @@ def _log(session, case_id, document, message, **extra):
 
 
 def restore_replacement(*, session_factory, case_id, document_id, actor=ACTOR, reason=RESTORE_REASON):
-    """Undo a reader replacement: the set-aside copy counts again, the other is set aside, linked. One transaction.
+    """Swap which copy of a reader replacement counts: ``document_id`` names the copy that counts NOW (the one
+    the person is looking at); it is set aside and the other copy counts again, linked. One transaction.
 
-    ``document_id`` may name either copy of the pair. A repeat changes nothing.
+    Naming a copy that no longer counts changes nothing (a repeated or stale request): ``applied`` is False.
+    Refused when the copy to set aside holds payments corrected, completed or decided since it was saved:
+    those would stop counting silently.
     """
     from postgres.models.case import Case
     from services.financial.duplicate_decisions import decide_duplicate, duplicate_revision
@@ -625,6 +642,14 @@ def restore_replacement(*, session_factory, case_id, document_id, actor=ACTOR, r
                 back, aside = replacement, replaced
             else:
                 raise ReplacementError('The two copies changed since the replacement. Review their history first.', 409)
+            if aside.id != document.id:
+                # The named copy is already set aside: this was done already (or the page is stale).
+                session.rollback()
+                return dict(applied=False, counting_source_document_id=str(aside.id),
+                            set_aside_source_document_id=str(back.id))
+            if _rows_changed(session, aside):
+                raise ReplacementError('Payments of the statement in use were corrected or decided since it was saved. '
+                                       'Restoring the other version would set that work aside; nothing was changed.', 409)
             first = decide_duplicate(session, case_id=case_id, document_id=back.id, action='restore',
                 expected_revision=duplicate_revision(session, back), actor=actor, reason=reason,
                 match='reader_replacement', basis=RESTORED_BASIS, commit=False)

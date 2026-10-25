@@ -22,7 +22,7 @@ LOUPE_FINANCIAL_REPLACE_SAVED_READING=0 refuses it.
 
 --restore <source document id>: undoes one replacement exactly (either copy of
 the pair may be named): the earlier copy counts again and the replacing reading
-is set aside, linked. One transaction. A restored period is never replaced
+is set aside, linked. One transaction. Already restored: nothing changes. A restored period is never replaced
 again automatically.
 
 From ``backend/`` with the service environment loaded:
@@ -98,14 +98,18 @@ def main(argv=None):
             parser.error('--restore takes one source document and nothing else')
         from sqlalchemy import select
         from postgres.models.financial import FinancialSourceDocument
-        from services.financial.saved_reading_replacement import restore_replacement
+        from services.financial.saved_reading_replacement import replacement_pair, restore_replacement
         with factory() as session:
-            case_id = session.scalar(select(FinancialSourceDocument.case_id).where(
-                FinancialSourceDocument.id == UUID(args.restore)))
+            document = session.get(FinancialSourceDocument, UUID(args.restore))
+            pair = replacement_pair(session, document) if document is not None else None
+            # Either copy may be named; restore always brings the earlier saved copy back.
+            case_id, replacing = (document.case_id, pair[0].id) if pair else (None, None)
             session.rollback()
-        if case_id is None:
+        if document is None:
             raise SystemExit('Source document not found.')
-        print(json.dumps(restore_replacement(session_factory=factory, case_id=case_id, document_id=args.restore)))
+        if pair is None:
+            raise SystemExit('This statement was not replaced by a reading.')
+        print(json.dumps(restore_replacement(session_factory=factory, case_id=case_id, document_id=replacing)))
         return 0
     if not (args.case or args.document or args.period or args.all):
         parser.error('name --case, --document, --period or --all')

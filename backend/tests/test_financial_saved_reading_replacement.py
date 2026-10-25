@@ -152,6 +152,11 @@ class SavedReadingReplacementTests(TestCase):
         self.assertEqual(review['reader_replacement']['status'], 'restored')
         # Never replaced again automatically once restored.
         self.assertEqual(self.assess(old_id)['code'], 'restored_by_request')
+        # A repeated (or stale) restore of the same page changes nothing.
+        again = self.restore(new_id)
+        self.assertFalse(again['applied'])
+        self.assertEqual(self.admitted_rows(), saved_rows)
+        self.assertEqual((self.document(old_id).status, self.document(new_id).status), ('admitted', 'superseded'))
 
         # And back again on request (the notice's second button): still one count at a time.
         self.restore(old_id)
@@ -194,6 +199,35 @@ class SavedReadingReplacementTests(TestCase):
             row['amount_minor'] = str(int(row['amount_minor']) + 1)
         old_id = self.save_earlier_reading(typed)
         self.assertEqual(self.assess(old_id)['code'], 'typed_payments')
+
+    def test_a_description_or_counterparty_a_person_changed_is_never_replaced(self):
+        def described(request):
+            row = next(r for r in request['rows'] if not r['excluded'] and r['amount_minor'] not in ('', '0'))
+            row['description'] = (row.get('description') or '') + ' (checked)'
+        self.assertEqual(self.assess(self.save_earlier_reading(described))['code'], 'typed_payments')
+
+    def test_a_line_a_person_moved_into_or_out_of_the_payments_is_never_replaced(self):
+        def moved(request):
+            row = next(r for r in request['rows'] if not r['excluded'] and r['amount_minor'] not in ('', '0'))
+            row['excluded'] = True
+        self.assertEqual(self.assess(self.save_earlier_reading(moved))['code'], 'typed_payments')
+
+    def test_a_signed_in_account_named_like_the_system_is_not_the_reader_replacement(self):
+        from services.financial.decisions import Actor
+        self.assertTrue(replacement.is_replacement(replacement.ACTOR))
+        self.assertFalse(replacement.is_replacement(Actor(name=replacement.ACTOR.name, email=replacement.ACTOR.email,
+                                                          user_id=UUID(int=7))))
+
+    def test_restore_refuses_to_set_aside_payments_corrected_since(self):
+        old_id = self.save_earlier_reading()
+        new_id = UUID(self.replace(old_id)['receipt']['source_document_id'])
+        with self.f.SessionLocal() as db:
+            row = db.scalars(select(FinancialTransaction).where(FinancialTransaction.source_document_id == new_id)).first()
+            row.ledger_status, row.quarantine_reason = 'quarantined', 'adjudicated'  # a person's decision on a payment in use
+            db.commit()
+        with self.assertRaises(replacement.ReplacementError):
+            self.restore(new_id)
+        self.assertEqual((self.document(old_id).status, self.document(new_id).status), ('superseded', 'admitted'))
 
     def test_a_saved_period_equal_to_the_current_reading_is_left(self):
         receipt = self.f.confirm()
