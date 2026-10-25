@@ -70,6 +70,13 @@ def _number(name, default):
 
 
 ENABLED = _switch('LOUPE_FINANCIAL_VISION_FALLBACK')
+# Cases whose page images may be sent to the provider (comma-separated case ids). Sending a
+# case's images needs its owner's approval, so a case not listed is never read; unset reads none.
+APPROVED_CASES = frozenset(c.strip().lower() for c in os.environ.get('LOUPE_FINANCIAL_VISION_CASES', '').split(',') if c.strip())
+
+
+def approved(case_id):
+    return str(case_id).lower() in APPROVED_CASES
 # Spend cap per case for one worker run (process lifetime); readings already
 # stored are reused and cost nothing again.
 CASE_BUDGET_USD = _number('LOUPE_FINANCIAL_VISION_CASE_BUDGET_USD', 30)
@@ -986,6 +993,8 @@ def read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for
             if item is None or batch is None or file is None or batch.status == 'removed':
                 return dict(record, reason='gone')
             case_id, file_id, key = batch.case_id, item.file_id, item.statement_key or ''
+            if apply and not approved(case_id):
+                return dict(record, reason='case_not_approved')
             entry = next((e for e in batch.files or [] if e.get('file_id') == str(file_id)), {})
             proposal = read_statement_import(db, case_id=case_id, evidence_file_id=file_id,
                                              currency=entry.get('currency') or None, statement_id=key or None)
@@ -1174,8 +1183,10 @@ def pending(db, limit=50):
     from postgres.models.financial_import_batches import (FinancialImportBatch as Batch,
                                                           FinancialImportBatchItem as Item)
     marked = {}
-    for batch_id, files in db.execute(select(Batch.id, Batch.files).where(
+    for batch_id, case_id, files in db.execute(select(Batch.id, Batch.case_id, Batch.files).where(
             Batch.status.notin_(('removed', 'pausing', 'paused')))):
+        if not approved(case_id):
+            continue
         for entry in files or ():
             if entry.get(MARK) and entry.get('file_id'):
                 marked.setdefault(batch_id, set()).add(entry['file_id'])

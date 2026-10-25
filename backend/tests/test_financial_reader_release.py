@@ -46,6 +46,10 @@ class ReaderReleaseTests(TestCase):
         self.f = self.fixture.f
         self.auto_save = patch.object(queue_save, 'AUTO_SAVE_READY', False)
         self.auto_save.start()
+        from services.financial import vision_reader
+        self.vision_cases = patch.object(vision_reader, 'APPROVED_CASES', frozenset({str(self.f.case.id).lower()}))
+        self.vision_cases.start()
+        self.addCleanup(self.vision_cases.stop)
 
     def tearDown(self):
         self.auto_save.stop()
