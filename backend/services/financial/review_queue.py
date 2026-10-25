@@ -902,8 +902,8 @@ def _ready_saved_elsewhere(session, case_id, entries):
             .where(Batch.case_id == case_id, Batch.status != 'removed', or_(*matching),
                    Item.status.in_(('pending_import', 'imported')))):
         saved.setdefault(key or '', {})[str(file.id)] = file
-    # (file, statement key) of admitted, not removed saved statements; a whole-file saved record (no key) stands
-    # for the file's statements as in _saved_scopes.
+    # (file, statement key) of admitted, not removed saved statements (a keyless record matches only a keyless
+    # statement, as in _saved_scopes).
     admitted = {(str(file_id), key or '') for file_id, key in session.execute(select(
         Source.evidence_file_id, Source.metadata_['statement_import_statement_id'].as_string()).where(
         Source.case_id == case_id, Source.status == 'admitted', Source.document_type == 'statement_review',
@@ -914,7 +914,7 @@ def _ready_saved_elsewhere(session, case_id, entries):
         if file is None:
             continue
         for other_id, other in sorted((saved.get(entry.get('statement_id') or '') or {}).items()):
-            if other_id == entry['file_id'] or not ({(other_id, entry.get('statement_id') or ''), (other_id, '')} & admitted):
+            if other_id == entry['file_id'] or (other_id, entry.get('statement_id') or '') not in admitted:
                 continue
             same_bytes = bool(file.sha256 and other.sha256 == file.sha256)
             stored, other_stored = page_identity.stored(file) or {}, page_identity.stored(other) or {}

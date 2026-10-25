@@ -94,8 +94,8 @@ def held_candidates(session):
 def entries_for_case(session, case_id, item_ids, stamp, not_current=None):
     """Queue-like entries (with only their automatic fills as proposals) for the given held items. Read only.
 
-    ``not_current`` (a set) gains the ids of items of a preparing batch skipped because their file's reading is
-    not current yet (its preparation may still finish).
+    ``not_current`` (a set) gains the ids of items of a preparing batch skipped because their file's preparation
+    has not finished yet. A checked file left by held_reprepare is remembered as before.
     """
     from services.financial import field_proposals as fp
     from services.financial.review_queue import actionable_problems
@@ -111,7 +111,8 @@ def entries_for_case(session, case_id, item_ids, stamp, not_current=None):
         batch = batches.get(item.batch_id)
         entry = next((e for e in (batch.files or []) if e.get('file_id') == str(item.file_id)), None) if batch else None
         if not current_reading(entry, stamp):
-            if not_current is not None and batch is not None and batch.status == 'preparing':
+            if (not_current is not None and batch is not None and batch.status == 'preparing'
+                    and isinstance(entry, dict) and entry.get('status') != 'checked'):
                 not_current.add(item.id)
             continue
         if not _untouched(item, files.get(item.file_id)):
