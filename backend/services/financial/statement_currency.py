@@ -146,3 +146,54 @@ def printed_holdings_currency(sources):
     if not found or len({cell['value'] for cell in found}) != 1:
         return None
     return dict(found[0], basis='printed_holdings_currency', cells=len(found))
+
+
+# Words that name a currency wherever a statement prints them (LOUPE_FINANCIAL_AUTOFILL_CASE_CURRENCY). Broad on
+# purpose: a word read here only ever stops the case's usual currency from being assumed.
+_NAMED_CODES = {'MXN': 'MXN', 'PESOS': 'MXN', 'M.N.': 'MXN', 'USD': 'USD', 'DLLS': 'USD', 'DLS': 'USD',
+                'DOLAR': 'USD', 'DOLARES': 'USD', 'DOLLAR': 'USD', 'DOLLARS': 'USD', 'EUR': 'EUR', 'EURO': 'EUR',
+                'EUROS': 'EUR', 'CAD': 'CAD', 'GBP': 'GBP', 'JPY': 'JPY', 'YEN': 'JPY', 'YENES': 'JPY', 'CHF': 'CHF'}
+_NAMED = re.compile(r'(?<![A-Z.])(' + '|'.join(re.escape(w) for w in sorted(_NAMED_CODES, key=len, reverse=True))
+                    + r')(?![A-Z])')
+
+# An exchange rate quoted as a pair ('FX USD/MXN 18.57' among market indicators) names no currency of the
+# statement (as for the holdings above).
+# A prefixed dollar or a symbol other than a bare '$', anywhere in a line of text.
+_SYMBOL_ANYWHERE = re.compile(r'US\$|CA\$|AU\$|NZ\$|HK\$|[€£¥]')
+_PAIR = re.compile(r'(?<![A-Z])[A-Z]{3}\s*/\s*[A-Z]{3}(?![A-Z])')
+
+
+def currency_marks(sources, header_text=''):
+    """Every currency marker the statement prints: one sorted list of the currencies each allows.
+
+    For the case's usual currency (field_proposals): it is assumed only when every
+    marker allows it (a bare '$' allows pesos and dollars alike). Labels, money
+    markers beside an amount and currency words anywhere (descriptions and
+    holdings included) count; an exchange rate quoted as a currency pair does not.
+    """
+    rows = [[c['expected_text'].strip() for c in row['cells']] for source in sources for row in source['rows']]
+    rows.extend([[line.strip()] for line in header_text.splitlines()])
+    marks = set()
+    for cells in rows:
+        for candidate in [' '.join(cells), *cells]:
+            folded = ''.join(c for c in unicodedata.normalize('NFKD', candidate.upper()) if not unicodedata.combining(c))
+            label = _LABEL.fullmatch(folded)
+            value = ' '.join(label[1].split()) if label else ''
+            if value:
+                value = {'PESOS': 'MXN', 'MONEDA NACIONAL': 'MXN', 'NACIONAL': 'MXN', 'M.N.': 'MXN', 'MN': 'MXN',
+                         'M. N.': 'MXN', 'DOLAR': 'USD', 'DOLARES': 'USD'}.get(value, value)
+                code = _code(_CURRENCY_NAMES.get(value, value))
+                if code:
+                    marks.add((code,))
+            for word in _NAMED.findall(_PAIR.sub(' ', folded)):
+                marks.add((_NAMED_CODES[word],))
+            for symbol in _SYMBOL_ANYWHERE.findall(candidate.upper()):
+                marks.add(tuple(sorted({_PREFIXES[symbol]} if symbol in _PREFIXES else _SYMBOLS[symbol])))
+            match = _AMOUNT.fullmatch(candidate.strip()) or _SUFFIX.fullmatch(candidate.strip())
+            if match and _MONEY_FIGURE.search(candidate):
+                marker = match['marker']
+                possible = (_SYMBOLS.get(marker) or ({_PREFIXES[marker]} if marker in _PREFIXES else None)
+                            or ({marker} if _code(marker) else set()))
+                if possible:
+                    marks.add(tuple(sorted(possible)))
+    return sorted(list(mark) for mark in marks)

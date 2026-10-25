@@ -461,3 +461,81 @@ class AutomaticFillTests(TestCase):
         self.assertEqual((fp.summary_values(summary)['opening_minor'], fp.summary_values(summary)['closing_minor']),
                          (1000, 2000))
         self.assertEqual(fp.summary_values({})['opening_minor'], None)
+
+
+class CaseCurrencyTests(TestCase):
+    """LOUPE_FINANCIAL_AUTOFILL_CASE_CURRENCY: the case's usual currency when no currency is printed anywhere."""
+
+    def setUp(self):
+        self.case = knowledge(account(*MONTHS), default='MXN', default_count=714, total=1202)
+        self.unmatched = values(account_number='', institution='', holder='', currency_marks=[])
+
+    def test_nothing_printed_and_no_account_assumes_the_case_currency(self):
+        currency = fp.propose(self.unmatched, self.case)['currency']
+        self.assertEqual((currency['value'], currency['basis'], currency['confirmed']),
+                         ('MXN', 'case_default_assumed', True))
+        self.assertEqual(currency['label'], "currency assumed: case's usual (not printed)")
+        fills = fp.automatic_fills(self.unmatched, {'currency': currency}, self.case)
+        self.assertEqual(fills['currency']['basis'], 'case_default_assumed')
+        self.assertTrue(fp.resolves_all({'currency'}, fills))
+
+    def test_a_bare_dollar_sign_allows_the_case_currency(self):
+        marks = [['AUD', 'BBD', 'BMD', 'BSD', 'CAD', 'FJD', 'HKD', 'JMD', 'MXN', 'NZD', 'SGD', 'TTD', 'USD', 'XCD']]
+        self.assertTrue(fp.case_currency_assumable(dict(self.unmatched, currency_marks=marks), self.case))
+
+    def test_another_currency_printed_anywhere_refuses(self):
+        currency = fp.propose(dict(self.unmatched, currency_marks=[['MXN'], ['USD']]), self.case)['currency']
+        self.assertEqual((currency['basis'], currency['confirmed']), ('case_default', False))
+
+    def test_a_reading_without_recorded_markers_refuses(self):
+        currency = fp.propose(values(account_number='', institution='', holder=''), self.case)['currency']
+        self.assertEqual((currency['basis'], currency['confirmed']), ('case_default', False))
+
+    def test_a_holdings_currency_refuses(self):
+        printed = dict(value='MXN', page_number=2)
+        self.assertFalse(fp.case_currency_assumable(dict(self.unmatched, printed_currency=printed), self.case))
+
+    def test_a_matched_account_in_another_currency_refuses(self):
+        mixed = account(*MONTHS, saved(currency='USD', start='2021-11-01', end='2021-11-30'))
+        case = knowledge(mixed, default='MXN', default_count=714, total=1202)
+        currency = fp.propose(values(currency_marks=[]), case)['currency']
+        self.assertFalse(currency['confirmed'])
+        record = knowledge(account(*MONTHS, currency='USD'), default='MXN', default_count=714, total=1202)
+        self.assertFalse(fp.case_currency_assumable(values(currency_marks=[]), record))
+
+    def test_a_matched_account_all_in_the_case_currency_is_filled(self):
+        # One saved statement only: the account alone confirms nothing; the case's currency does.
+        with OLD:
+            case = knowledge(account(MONTHS[0]), default='MXN', default_count=714, total=1202)
+            currency = fp.propose(values(currency_marks=[]), case)['currency']
+        self.assertEqual((currency['basis'], currency['confirmed']), ('case_default_assumed', True))
+
+    def test_no_clear_majority_refuses(self):
+        for count, total in ((600, 1202), (15, 18)):
+            case = knowledge(default='MXN', default_count=count, total=total)
+            self.assertFalse(fp.case_currency_assumable(self.unmatched, case), (count, total))
+
+    def test_switch_off_restores_the_one_click_proposal(self):
+        with patch.dict(os.environ, {'LOUPE_FINANCIAL_AUTOFILL_CASE_CURRENCY': '0'}):
+            currency = fp.propose(self.unmatched, self.case)['currency']
+            self.assertEqual((currency['basis'], currency['confirmed']), ('case_default', False))
+            self.assertEqual(fp.automatic_fills(self.unmatched, {'currency': dict(currency, confirmed=True,
+                             basis='case_default_assumed')}, self.case), {})
+
+    def test_summary_values_carries_the_markers_only_as_a_list(self):
+        self.assertEqual(fp.summary_values({'currency_marks': [['MXN']]})['currency_marks'], [['MXN']])
+        self.assertIsNone(fp.summary_values({'currency_marks': 'MXN'})['currency_marks'])
+        self.assertIsNone(fp.summary_values({})['currency_marks'])
+
+
+class CurrencyMarksTests(TestCase):
+    def test_markers(self):
+        from services.financial.statement_currency import currency_marks
+        self.assertEqual(currency_marks([], 'IPC 62,769.18\nFX USD/MXN 18.57\nKPTLUSD HR AAA'), [])
+        self.assertEqual(currency_marks([], 'COMPRA DOLARES'), [['USD']])
+        self.assertEqual(currency_marks([], 'Moneda: Nacional'), [['MXN']])
+        self.assertEqual(currency_marks([], 'EUR 1,234.56'), [['EUR']])
+        self.assertIn('MXN', currency_marks([], '$1,234.56')[0])
+        self.assertEqual(currency_marks([], 'SALDO €1.234,56 a la fecha'), [['EUR']])
+        self.assertEqual(currency_marks([], 'pago US$ 10'), [['USD']])
+        self.assertEqual(currency_marks([], 'REF 1,234.56'), [])
