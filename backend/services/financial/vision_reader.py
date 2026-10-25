@@ -887,6 +887,29 @@ def eligible(item, file, proposal):
     return None
 
 
+def prepared_elsewhere(db, item, proposal):
+    """None when the held statement was prepared from the reading the current code makes, else why not.
+
+    The same test reader_release uses for 'unchanged': the item's revision and review model
+    are the current ones and the file still splits into the same statements. Otherwise the
+    file is due to be prepared again (which carries the investigator's work), and is read
+    from its page images after that.
+    """
+    from postgres.models.financial_import_batches import FinancialImportBatchItem as Item
+    from services.financial.import_batches import REVIEW_MODEL
+    summary = item.summary or {}
+    if summary.get('revision') != proposal.get('revision') or summary.get('review_model') != REVIEW_MODEL:
+        return 'prepared_by_older_reader'
+    keys = {choice['id'] for choice in proposal.get('statement_choices') or []}
+    if keys:
+        items = set(db.scalars(select(Item.statement_key).where(
+            Item.batch_id == item.batch_id, Item.file_id == item.file_id,
+            Item.status.notin_(('removed', 'superseded_reading')))))
+        if keys != {key or '' for key in items}:
+            return 'prepared_by_older_reader'
+    return None
+
+
 def statement_pages(proposal):
     pages = proposal.get('statement_page_numbers') or sorted({s['page_number'] for s in proposal.get('sources') or []
                                                              if type(s.get('page_number')) is int})
@@ -1004,6 +1027,9 @@ def read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for
             if why:
                 return dict(record, reason=why)
             if not force:
+                why = prepared_elsewhere(db, item, proposal)
+                if why:
+                    return dict(record, reason=why)
                 state, _ = assess(proposal, None)
                 if state != 'attention':
                     return dict(record, reason='not_held')
@@ -1174,21 +1200,32 @@ def _save(factory, item_id, case_id, file_id, key, record, request):
 
 
 # ---------------------------------------------------------------------------
-# Which statements: held ones of files prepared with the reader on
+# Which statements: held ones of prepared files
 # ---------------------------------------------------------------------------
 
 def pending(db, limit=50):
-    """Held, untouched statements of files whose preparation ran with this reader on (batch entry ``MARK``)."""
+    """Held, untouched statements of prepared files (batch entry ``MARK``, or finished preparing)."""
     from postgres.models.evidence import EvidenceFile
     from postgres.models.financial_import_batches import (FinancialImportBatch as Batch,
                                                           FinancialImportBatchItem as Item)
+    from services.financial import held_reprepare
+    stamp = held_reprepare.preparation_stamp()
     marked = {}
     for batch_id, case_id, files in db.execute(select(Batch.id, Batch.case_id, Batch.files).where(
             Batch.status.notin_(('removed', 'pausing', 'paused')))):
         if not approved(case_id):
             continue
         for entry in files or ():
-            if entry.get(MARK) and entry.get('file_id'):
+            # Marked when prepared with this reader on; a file prepared before it was switched on is
+            # read too once its preparation is finished ('checked'); read_item reads it only when it
+            # was prepared from the reading the current code makes (prepared_elsewhere).
+            # Not one queued to be prepared again, nor (unmarked) one the re-preparation has not
+            # judged yet (held_reprepare): that re-preparation carries her work and goes first.
+            queued = held_reprepare._mark(entry).get('state')
+            if not entry.get('file_id') or queued in ('pending', 'handed'):
+                continue
+            if entry.get(MARK) or (entry.get('status') == 'checked' and not (
+                    held_reprepare.ENABLED and held_reprepare.stale(entry, stamp))):
                 marked.setdefault(batch_id, set()).add(entry['file_id'])
     if not marked:
         return []
