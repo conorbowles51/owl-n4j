@@ -425,7 +425,10 @@ def saved_counterpart(session, case_id, key, new_key, request, proposal, decided
         included, excluded = payments(rows)
     except (RowsUnreadable, ValueError, TypeError):
         raise differs('unreadable_rows')
-    if included - ledger or (excluded & (ledger - included)):
+    # A line she left out must not be a saved payment: compared by amount alone, so a saved line read on
+    # another day or in the other direction still counts as one she left out.
+    unmatched = {amount for _, amount, _ in ledger - included}
+    if included - ledger or any(amount in unmatched for _, amount, _ in excluded):
         raise differs('payments')
     balances = {period.opening_balance_minor, period.closing_balance_minor} | {
         row.running_balance_minor for row in saved}
