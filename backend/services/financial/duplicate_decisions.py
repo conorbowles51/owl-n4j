@@ -94,8 +94,12 @@ def decide_duplicate(session, *, case_id, document_id, action, expected_revision
     another ledger account, accepted only when both files are one document.
     ``basis`` is recorded on the decision. ``commit=False`` leaves the commit
     to a caller combining several decisions; any failure still rolls back.
+    ``match="reader_replacement"`` sets aside one of two readings of the same
+    file linked by a reader replacement (``saved_reading_replacement``): their
+    money differs by design, the newer one proved under every admission check.
     """
-    if match not in ("identical_reading", "same_printed_statement", "same_document_across_accounts"):
+    if match not in ("identical_reading", "same_printed_statement", "same_document_across_accounts",
+                     "reader_replacement"):
         raise DuplicateDecisionError("Unknown duplicate comparison.", 422)
     try:
         return _decide(session, case_id=case_id, document_id=document_id,
@@ -169,7 +173,9 @@ def _decide(session, *, case_id, document_id, action, expected_revision,
         if document.superseded_by_id or primary.superseded_by_id:
             raise DuplicateDecisionError("An existing supersession must be reviewed first.")
         dependent = session.scalar(select(FinancialSourceDocument.id).where(
-            FinancialSourceDocument.superseded_by_id == document_id
+            FinancialSourceDocument.superseded_by_id == document_id,
+            # Copies already set aside for a replaced reading stay set aside, linked to it.
+            *((FinancialSourceDocument.status != "superseded",) if match == "reader_replacement" else ())
         ).limit(1))
         if dependent is not None:
             raise DuplicateDecisionError("Other documents depend on this primary. Restore them first.")
@@ -179,6 +185,11 @@ def _decide(session, *, case_id, document_id, action, expected_revision,
             from services.financial.admitted_statement_duplicates import same_admitted_statement
             refusal = same_admitted_statement(session, document, primary,
                                               across_accounts=match == "same_document_across_accounts")
+            if refusal:
+                raise DuplicateDecisionError(refusal)
+        elif match == "reader_replacement":
+            from services.financial.saved_reading_replacement import link_refusal
+            refusal = link_refusal(session, document, primary)
             if refusal:
                 raise DuplicateDecisionError(refusal)
         elif not source.content_fingerprint or source != retained:
@@ -225,6 +236,11 @@ def _decide(session, *, case_id, document_id, action, expected_revision,
             latest.decision != "supersede_duplicate" or not latest.after or
             latest.after.get("duplicate_review_version") != 1):
             raise DuplicateDecisionError("This exclusion has no current reversible row record; restoration was refused.")
+        from services.financial.saved_reading_replacement import BASIS as REPLACED, RESTORED_BASIS
+        if latest.after.get("basis") in (REPLACED, RESTORED_BASIS) and match != "reader_replacement":
+            # Restoring one reading of a reader replacement alone would count the period twice.
+            raise DuplicateDecisionError("This statement was replaced by another reading of it. Restore it from the "
+                                         "statement's replacement notice, which sets the other reading aside at the same time.")
         recorded = latest.after.get("rows")
         original = (latest.before or {}).get("rows")
         if (not isinstance(recorded, dict) or not isinstance(original, dict) or

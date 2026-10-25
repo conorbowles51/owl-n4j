@@ -387,6 +387,31 @@ async def keep_duplicate_copy(
         raise HTTPException(status_code=500, detail="The decision could not be confirmed. Refresh before trying again.")
 
 
+class RestoreReplacedStatementRequest(BaseModel):
+    reason: str = Field(default="", max_length=4000)
+
+
+@router.post("/documents/{document_id}/restore-replaced-statement")
+async def restore_replaced_statement(
+    document_id: UUID,
+    payload: RestoreReplacedStatementRequest,
+    case_id: UUID = Query(...),
+    current_user=Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    """Undo a reader replacement: the earlier saved version counts again; the other reading is kept, linked."""
+    from services.financial.saved_reading_replacement import RESTORE_REASON, ReplacementError, restore_replacement
+    try:
+        return restore_replacement(session_factory=sessionmaker(bind=db.get_bind()), case_id=case_id,
+                                   document_id=document_id, actor=actor_from_user(current_user),
+                                   reason=payload.reason.strip() or RESTORE_REASON)
+    except (ReplacementError, DuplicateDecisionError, ActorError) as exc:
+        raise HTTPException(status_code=getattr(exc, "status_code", 422), detail=str(exc))
+    except Exception:
+        logger.exception("Restoring a replaced statement failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="The restore could not be confirmed. Refresh before trying again.")
+
+
 @router.post("/candidates/{candidate_id}/provisional-account")
 async def record_candidate_account(candidate_id: UUID, body: CandidateAccountRequest,
                                    case_id: UUID = Query(...), current_user=Depends(get_current_db_user),

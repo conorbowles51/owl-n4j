@@ -139,6 +139,11 @@ def _existing_statement(session, case_id, file, statement_id, addresses=(), row_
                 # A confirmed reread replaces this reading within the same PDF
                 # history. That is not an investigator's duplicate exclusion.
                 continue
+            from services.financial.saved_reading_replacement import is_replacement_link
+            if is_replacement_link(session, session.get(FinancialSourceDocument, item.id), retained):
+                # A reader replacement that was restored: the earlier reading counts again and the
+                # replacing one is kept, linked (saved_reading_replacement). Not a duplicate either.
+                continue
         if item.statement_id in (None, statement_id):
             matches.append(item)
             continue
@@ -511,6 +516,10 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         else:
             from services.financial.admitted_statement_duplicates import duplicate_copies
             current_import['duplicate_copies'] = duplicate_copies(session, current)
+            from services.financial.saved_reading_replacement import notice
+            if (replacement := notice(session, current)) is not None:
+                # Saved statement replaced by a reading that balances (or restored); both are kept, linked.
+                current_import['reader_replacement'] = replacement
     # Opening an already saved statement must reach its correction controls even
     # when a newer currency detector is deliberately uncertain. Reuse only this
     # exact saved statement's denomination, never another account in the PDF.
@@ -1104,6 +1113,22 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
     return receipt
 
 
+def statement_account_draft(request, proposal, file):
+    """The ledger account a statement import is filed in (the writer's own rule)."""
+    from services.financial.accounts import AccountDraft, AccountIdentityError
+    account_fields = dict(institution_name=request.institution or None,
+        identifier_as_printed=request.account_number, holder_name=request.holder,
+        account_type=proposal['metadata'].get('account_type'),
+        currency=request.currency or None, metadata=dict(display_label=' · '.join(filter(None, [request.holder, request.account_number])) or file.original_filename,
+            statement_source_file_id=str(file.id),
+            account_reference_kind=proposal['metadata'].get('account_reference_kind')))
+    try:
+        return AccountDraft.observed(**account_fields)
+    except AccountIdentityError:
+        return AccountDraft.unidentified(distinguisher='statement:' + str(file.id) + ':' + request.currency
+            + (':' + request.statement_id if request.statement_id else ''), **account_fields)
+
+
 class _ConcurrentAdmission(RunAborted):
     """Another transaction committed an active copy of this statement first."""
 
@@ -1206,6 +1231,7 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                         raise PdfMappingError('The current statement changed. Reload the review.', 409)
                 lap('existing_check')
                 replacing = None
+                from services.financial import saved_reading_replacement
                 from services.financial.pending_statement_duplicates import apply_duplicate_disposition, ignored_receipt
                 # One snapshot of the case's statements for this write (it costs
                 # seconds on a large case and was built twice per import). Under
@@ -1250,7 +1276,9 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                     from services.financial.legacy_statement_refresh import refresh_available, refresh_currency_conflict
                     if conflict := refresh_currency_conflict(existing, proposal):
                         raise PdfMappingError(conflict['message'], 409)
-                    same_file_refresh = existing.evidence_file_id == file.id and refresh_available(session, existing, proposal)
+                    reader_replacement = saved_reading_replacement.is_replacement(actor)
+                    same_file_refresh = existing.evidence_file_id == file.id and (
+                        reader_replacement or refresh_available(session, existing, proposal))
                     if (not same_file_refresh and (not parent or root != current_root)) or request.replaces_source_document_id != existing.id:
                         raise PdfMappingError('This statement already has imported transactions. Open them to correct values, or reprocess a new version.', 409)
                     from postgres.models.financial import FinancialStatementPeriod
@@ -1258,9 +1286,17 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                     session.execute(select(FinancialTransaction).where(FinancialTransaction.source_document_id == existing.id).with_for_update()).all()
                     if request.replacement_revision != duplicate_revision(session, existing):
                         raise PdfMappingError('The current import was edited. Reload the comparison before replacing it.', 409)
+                    if reader_replacement:
+                        # The current reader proves this period wrong (saved_reading_replacement): proved
+                        # again here, under these locks, on exactly this reading.
+                        refusal = saved_reading_replacement.writer_refusal(session, existing, proposal, request)
+                        if refusal:
+                            raise PdfMappingError(refusal, 409)
                     replacing = existing
                 elif request.replaces_source_document_id is not None:
                     raise PdfMappingError('The import selected for replacement is no longer current.', 409)
+                elif saved_reading_replacement.is_replacement(actor):
+                    raise PdfMappingError('A reader replacement replaces a saved statement only.', 409)
                 originals = check_import_request(proposal, request)
                 if replacing is None:
                     disposition = apply_duplicate_disposition(session, case_id=case_id, file=file,
@@ -1309,18 +1345,7 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                         digest.update(chunk)
                 if digest.hexdigest() != file.sha256:
                     raise PdfMappingError('The source file changed. Reprocess it before importing.', 409)
-                from services.financial.accounts import AccountIdentityError
-                account_fields = dict(institution_name=request.institution or None,
-                    identifier_as_printed=request.account_number, holder_name=request.holder,
-                    account_type=proposal['metadata'].get('account_type'),
-                    currency=request.currency or None, metadata=dict(display_label=' · '.join(filter(None, [request.holder, request.account_number])) or file.original_filename,
-                        statement_source_file_id=str(evidence_file_id),
-                        account_reference_kind=proposal['metadata'].get('account_reference_kind')))
-                try:
-                    account_draft = AccountDraft.observed(**account_fields)
-                except AccountIdentityError:
-                    account_draft = AccountDraft.unidentified(distinguisher='statement:' + str(evidence_file_id) + ':' + request.currency
-                        + (':' + request.statement_id if request.statement_id else ''), **account_fields)
+                account_draft = statement_account_draft(request, proposal, file)
                 lap('checks')
                 account = record_account(session, run, account_draft)
                 lap('write_account')
@@ -1339,6 +1364,8 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                         statement_account_id=str(account.id), statement_import_issues=issues,
                         statement_incomplete_records=incomplete, statement_import_checks=arithmetic, statement_admission=admission,
                         whole_document_extraction_verified=False,
+                        **(saved_reading_replacement.writer_metadata(session, replacing)
+                           if replacing is not None and saved_reading_replacement.is_replacement(actor) else {}),
                         # A period released from a file whose other periods hold an investigator's work (audit).
                         **({'split_from_held_work': (proposal.get('review_recovery') or {})['split_release']}
                            if (proposal.get('review_recovery') or {}).get('split_release') else {}))))
@@ -1408,7 +1435,10 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                     from services.financial.statement_import_controls import retain_import_controls
                     retain_import_controls(document, period, request, originals, openings, closings,
                                            balance_convention=proposal['metadata'].get('balance_convention', 'asset_balance'))
-                if replacing is not None:
+                if replacing is not None and saved_reading_replacement.is_replacement(actor):
+                    # Reversible, with a row record: restore_replacement undoes it exactly.
+                    saved_reading_replacement.set_aside_replaced(session, case_id=case_id, existing=replacing, document=document)
+                elif replacing is not None:
                     from services.financial.duplicates import _supersede, store_fingerprint
                     from postgres.models.enums import DuplicateMatchRung
                     store_fingerprint(session, replacing)

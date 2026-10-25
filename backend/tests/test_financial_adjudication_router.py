@@ -134,6 +134,7 @@ class PermissionResolverTests(unittest.TestCase):
                 "/api/financial/files/{file_id}/admit": ["POST"],
                 "/api/financial/documents/{document_id}/duplicate-decision": ["POST"],
                 "/api/financial/documents/{document_id}/keep-duplicate-copy": ["POST"],
+                "/api/financial/documents/{document_id}/restore-replaced-statement": ["POST"],
                 "/api/financial/transactions/{transaction_id}/correction-preview": ["POST"],
                 "/api/financial/account-parties": ["POST"],
                 "/api/financial/counterparty-parties": ["POST"],
