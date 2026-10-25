@@ -90,7 +90,6 @@ WORKLOAD = 'financial_vision'
 VERSION = 'vision-reader-v1'
 METADATA_KEY = 'financial_vision_reading'
 MARK = 'vision_fallback'
-REPREPARE_MARK = 'held_reprepare'  # held_reprepare.MARK (not imported: that module imports this one's callers)
 SYSTEM_NAME = 'System'
 SYSTEM_EMAIL = 'vision-reader@system.local'
 ROW_REASON = 'Read from page image, page {page}.'
@@ -1209,6 +1208,8 @@ def pending(db, limit=50):
     from postgres.models.evidence import EvidenceFile
     from postgres.models.financial_import_batches import (FinancialImportBatch as Batch,
                                                           FinancialImportBatchItem as Item)
+    from services.financial import held_reprepare
+    stamp = held_reprepare.preparation_stamp()
     marked = {}
     for batch_id, case_id, files in db.execute(select(Batch.id, Batch.case_id, Batch.files).where(
             Batch.status.notin_(('removed', 'pausing', 'paused')))):
@@ -1216,12 +1217,15 @@ def pending(db, limit=50):
             continue
         for entry in files or ():
             # Marked when prepared with this reader on; a file prepared before it was switched on is
-            # read too once its preparation is finished ('checked'): read_item reads the statement
-            # again with the current code and proves it from scratch, so the mark is not needed.
-            # Not one queued to be prepared again (held_reprepare): that re-preparation goes first.
-            queued = ((entry.get(REPREPARE_MARK) or {}) if isinstance(entry.get(REPREPARE_MARK), dict) else {}).get('state')
-            if entry.get('file_id') and (entry.get(MARK) or (entry.get('status') == 'checked'
-                                                             and queued not in ('pending', 'handed'))):
+            # read too once its preparation is finished ('checked'); read_item reads it only when it
+            # was prepared from the reading the current code makes (prepared_elsewhere).
+            # Not one queued to be prepared again, nor (unmarked) one the re-preparation has not
+            # judged yet (held_reprepare): that re-preparation carries her work and goes first.
+            queued = held_reprepare._mark(entry).get('state')
+            if not entry.get('file_id') or queued in ('pending', 'handed'):
+                continue
+            if entry.get(MARK) or (entry.get('status') == 'checked' and not (
+                    held_reprepare.ENABLED and held_reprepare.stale(entry, stamp))):
                 marked.setdefault(batch_id, set()).add(entry['file_id'])
     if not marked:
         return []
