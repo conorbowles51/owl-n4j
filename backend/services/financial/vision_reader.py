@@ -51,7 +51,7 @@ from copy import deepcopy
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 from types import SimpleNamespace
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import select
 
@@ -88,6 +88,14 @@ STRIP_OVERLAP = 0.06
 SWEEP_SECONDS = _number('LOUPE_FINANCIAL_VISION_SWEEP_SECONDS', 240)
 WORKLOAD = 'financial_vision'
 VERSION = 'vision-reader-v1'
+# The proof rules a stored outcome was judged under. A stored not-proved reading judged under
+# older rules is judged again from its stored page reading (no new request), once.
+REJUDGE = _switch('LOUPE_FINANCIAL_VISION_REJUDGE')
+# One account saved under two account records whose bank is spelled differently ("BBVA" and
+# "BBVA MEXICO"): the same full number and every spelling naming the same bank is one account.
+SPLIT_SPELLINGS = _switch('LOUPE_FINANCIAL_VISION_SPLIT_SPELLINGS')
+# Version 2 is SPLIT_SPELLINGS; with it off the rules are version 1's and nothing is judged again.
+PROOF_VERSION = 2 if SPLIT_SPELLINGS else 1
 METADATA_KEY = 'financial_vision_reading'
 MARK = 'vision_fallback'
 SYSTEM_NAME = 'System'
@@ -515,6 +523,33 @@ def choose_section(sections, proposal):
     return candidates[0]
 
 
+def one_account_spelled_apart(candidates, account_text, institution, holder):
+    """(candidates, matched) when the saved accounts matching a full printed number are one account
+    saved twice under bank spellings that name the same bank, else ([], {'ambiguous'}).
+
+    matching_accounts calls them ambiguous because their bank spellings differ. They are accepted
+    as one only when: the switch is on, the bank is printed, the statement's number is printed in
+    full, every candidate holds exactly that full number (none masked), every saved bank spelling
+    names the same bank as every other and as the printed one, and the holder is printed, every
+    candidate records a holder, and the printed holder agrees with every saved one. Anything else
+    stays ambiguous (held)."""
+    from services.financial import field_proposals as fp
+    digits, masked = fp.account_identity(account_text)
+    if not (SPLIT_SPELLINGS and candidates and digits and not masked and institution):
+        return [], {'ambiguous'}
+    if any(k.masked or k.digits != digits for k in candidates):
+        return [], {'ambiguous'}
+    banks = [i for k in candidates for i in (k.values('institution') or ([k.institution] if k.institution else []))]
+    if not all(k.values('institution') or k.institution for k in candidates) or not all(fp.same_institution(a, b) for a in banks + [institution]
+                                                for b in banks + [institution]):
+        return [], {'ambiguous'}
+    if not (holder and all(k.values('holder') for k in candidates)):
+        return [], {'ambiguous'}
+    if not all(fp.same_holder(holder, h) for k in candidates for h in k.values('holder')):
+        return [], {'ambiguous'}
+    return candidates, {'account', 'institution', 'holder'}
+
+
 def prove(proposal, section, knowledge):
     """The proved reading {details, opening, closing, rows, pages} or NotProved with the reason."""
     from services.financial import field_proposals as fp
@@ -547,6 +582,8 @@ def prove(proposal, section, knowledge):
     holder_printed = header['holder'] or rule['holder']
     institution_printed = header['institution'] or rule['institution']
     candidates, matched = fp.matching_accounts(dict(account_number=account_text, institution=institution_printed), knowledge)
+    if matched == {'ambiguous'}:
+        candidates, matched = one_account_spelled_apart(candidates, account_text, institution_printed, holder_printed)
     if not candidates or 'ambiguous' in matched or 'account' not in matched:
         raise NotProved('This account has no saved statement in the case to confirm the page-image reading against.')
     partial = 'masked' in matched or not rule['account_number']
@@ -952,6 +989,28 @@ def statement_pages(proposal):
     return [p for p in pages if p in (proposal.get('page_numbers') or pages)]
 
 
+def rejudgeable(record, revision=None, model_id=None, pages=None):
+    """A stored not-proved outcome judged under older proof rules, whose stored page reading is judged
+    again under the current ones (no new request). With ``revision``: only for the same reading of
+    the file, the same model and the same pages the stored page reading covers."""
+    if not (REJUDGE and record and record.get('version') == VERSION and isinstance(record.get('raw'), dict)
+            and (record.get('proof') or 1) < PROOF_VERSION):
+        return False
+    status = record.get('status')
+    if status != 'not_proved' and not (status == 'reading' and record.get('rejudging') and not _being_read(record)):
+        return False
+    if revision is not None and (record.get('revision') != revision or record.get('model') != model_id
+                                 or list(record.get('pages') or []) != list(pages or [])):
+        return False
+    return True
+
+
+def _judged(stored, **extra):
+    """A stored not-proved outcome (or an abandoned re-judge claim of one) marked judged under these rules."""
+    record = {k: v for k, v in stored.items() if k not in ('rejudging', 'claim_id')}
+    return dict(record, status='not_proved', proof=PROOF_VERSION, **extra)
+
+
 def _stored(file, key):
     return ((file.metadata_ or {}).get(METADATA_KEY) or {}).get(key or '')
 
@@ -963,9 +1022,12 @@ def _being_read(stored):
     return (datetime.now(timezone.utc) - started).total_seconds() < CLAIM_SECONDS
 
 
-def _store(db, file_id, key, record, claim=None):
+def _store(db, file_id, key, record, claim=None, rejudge=None, owner=None):
     """Store the record under the file's lock. With ``claim=(revision, model)``: False, storing
-    nothing, when the statement is being read, was read or was given up (checked under the lock)."""
+    nothing, when the statement is being read, was read or was given up (checked under the lock).
+    With ``rejudge=(revision, model, pages)``: False, storing nothing, unless the stored outcome is
+    still one to judge again from its stored page reading (rejudgeable). With ``owner``: False, storing
+    nothing, unless the stored record is this worker's re-judge claim or still rejudgeable."""
     from postgres.models.evidence import EvidenceFile
     file = db.scalar(select(EvidenceFile).where(EvidenceFile.id == file_id).with_for_update()
                      .execution_options(populate_existing=True))
@@ -975,6 +1037,10 @@ def _store(db, file_id, key, record, claim=None):
     readings = metadata.setdefault(METADATA_KEY, {})
     previous = readings.get(key or '')
     if claim and (_being_read(previous) or _current(previous, *claim) or gave_up(previous, claim[0])):
+        return False
+    if rejudge and not rejudgeable(previous, *rejudge):
+        return False
+    if owner and not ((previous or {}).get('claim_id') == owner or rejudgeable(previous)):
         return False
     if previous and previous.get('status') not in ('reading',) and previous.get('revision') != record.get('revision'):
         metadata.setdefault(METADATA_KEY + '_history', []).append(previous)
@@ -1039,8 +1105,9 @@ def read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for
 
         def knowledge_for(db, case_id):
             return case_knowledge(db, case_id)
-    record = dict(version=VERSION, status='skipped', message='', at=datetime.now(timezone.utc).isoformat())
+    record = dict(version=VERSION, proof=PROOF_VERSION, status='skipped', message='', at=datetime.now(timezone.utc).isoformat())
     file_id, key = None, ''
+    again, stored, claim_id = False, None, 'none'
     try:
         with factory() as db:
             item = db.get(Item, item_id)
@@ -1085,19 +1152,45 @@ def read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for
             except Exception as error:  # noqa: BLE001 - fail closed
                 return dict(record, status='unavailable', reason='unavailable', message=str(error)[:300])
             stored = _stored(file, key)
-            if _current(stored, proposal['revision'], model_id) and not force:
+            again = not force and rejudgeable(stored, proposal['revision'], model_id, pages)
+            if not again and not force and rejudgeable(stored):
+                # Judged again only from the same stored page reading; never requested anew for it. Marked
+                # judged under these rules, so it is not offered again (as before re-judging existed).
+                if apply:
+                    # Under the file's lock, only while it is still that outcome (rejudgeable, any reading).
+                    _store(db, file_id, key, _judged(stored), rejudge=(None, None, None))
+                    db.commit()
+                else:
+                    db.rollback()
+                return dict(stored, reason='already_read')
+            if _current(stored, proposal['revision'], model_id) and not force and not again:
                 return dict(stored, reason='already_read')
             if _being_read(stored) and not force:
                 return dict(record, reason='being_read')
             record.update(revision=proposal['revision'], model=model_id, pages=pages,
-                          text_reading=_rule_metadata(proposal), failures=failures(stored, proposal['revision']))
+                          text_reading=_rule_metadata(proposal),
+                          failures=0 if again else failures(stored, proposal['revision']))
             if record['failures'] >= MAX_FAILURES and not force:
                 if stored.get('status') == 'failed':
                     return dict(stored, reason='failed_repeatedly')
                 return _finish(factory, item_id, file_id, key, dict(record, status='failed', reason='failed_repeatedly',
                                message=GAVE_UP), apply)
             path = resolve_path(file.stored_path)
-            if apply:
+            if again:
+                record.update(failures=0, cost_usd=stored.get('cost_usd'), page_costs=stored.get('page_costs'),
+                              read_at=stored.get('read_at') or stored.get('at'), rejudged=True)
+                if apply:
+                    # The claim keeps the stored reading (and is checked again under the file's lock).
+                    claim_id = str(uuid4())
+                    if not _store(db, file_id, key, dict(stored, status='reading', rejudging=True, claim_id=claim_id,
+                                  at=datetime.now(timezone.utc).isoformat()),
+                                  rejudge=(proposal['revision'], model_id, pages)):
+                        db.rollback()
+                        return dict(record, reason='being_read')
+                    db.commit()
+                else:
+                    db.rollback()
+            elif apply:
                 # The claim, checked again under the file's lock (another worker may hold it).
                 if not _store(db, file_id, key, dict(record, status='reading'), claim=(proposal['revision'], model_id)):
                     db.rollback()
@@ -1105,26 +1198,31 @@ def read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for
                 db.commit()
             else:
                 db.rollback()
-        # Outside any lock or transaction: render and read page by page.
-        images = render_pages(path, pages)
-        reserved = reserve_usd(record['model'], images)
-        # The most it can cost is counted before the request is sent, and settled after.
-        if not _reserve(case_id, reserved):
-            return _finish(factory, item_id, file_id, key, dict(record, status='budget',
-                message='Not read from the page images: the reading budget for this case is used for now.'), apply)
-        started = time.monotonic()
-        # One request with every page of the period, each image labelled with its page number.
-        document, usage = read(images)
-        cost = cost_usd(record['model'], usage)
-        _add_spend(case_id, cost - reserved)
-        page_costs = [dict(page=number, prompt_tokens=round((usage.get('prompt_tokens') or 0) / len(images)),
-                           completion_tokens=round((usage.get('completion_tokens') or 0) / len(images)),
-                           cost_usd=round(cost / len(images), 6)) for number, _ in images]
-        log.info('Page-image reading: case %s file %s, %s pages, cost $%.4f ($%.4f a page; %s tokens in, %s out)',
-                 str(case_id)[:8], str(file_id)[:8], len(images), cost, cost / len(images),
-                 usage.get('prompt_tokens'), usage.get('completion_tokens'))
-        record.update(page_costs=page_costs, cost_usd=round(sum(c['cost_usd'] for c in page_costs), 6),
-                      seconds=round(time.monotonic() - started, 1), raw=document)
+        if again:
+            # The page reading already stored, judged under the current proof rules: no request, no cost.
+            document = stored['raw']
+            record.update(raw=document, seconds=0)
+        else:
+            # Outside any lock or transaction: render and read page by page.
+            images = render_pages(path, pages)
+            reserved = reserve_usd(record['model'], images)
+            # The most it can cost is counted before the request is sent, and settled after.
+            if not _reserve(case_id, reserved):
+                return _finish(factory, item_id, file_id, key, dict(record, status='budget',
+                    message='Not read from the page images: the reading budget for this case is used for now.'), apply)
+            started = time.monotonic()
+            # One request with every page of the period, each image labelled with its page number.
+            document, usage = read(images)
+            cost = cost_usd(record['model'], usage)
+            _add_spend(case_id, cost - reserved)
+            page_costs = [dict(page=number, prompt_tokens=round((usage.get('prompt_tokens') or 0) / len(images)),
+                               completion_tokens=round((usage.get('completion_tokens') or 0) / len(images)),
+                               cost_usd=round(cost / len(images), 6)) for number, _ in images]
+            log.info('Page-image reading: case %s file %s, %s pages, cost $%.4f ($%.4f a page; %s tokens in, %s out)',
+                     str(case_id)[:8], str(file_id)[:8], len(images), cost, cost / len(images),
+                     usage.get('prompt_tokens'), usage.get('completion_tokens'))
+            record.update(page_costs=page_costs, cost_usd=round(sum(c['cost_usd'] for c in page_costs), 6),
+                          seconds=round(time.monotonic() - started, 1), raw=document)
         with factory() as db:
             item = db.get(Item, item_id)
             proposal = read_statement_import(db, case_id=case_id, evidence_file_id=file_id,
@@ -1158,6 +1256,17 @@ def read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for
         return _save(factory, item_id, case_id, file_id, key, record, request)
     except Exception as error:  # noqa: BLE001 - fail closed: the statement stays held
         log.exception('Page-image reading failed; the statement stays held')
+        if again:
+            # Judging the stored reading again failed: its earlier outcome stands, marked judged under
+            # these rules, with its stored reading (final, so it is never requested anew).
+            try:
+                if apply and file_id is not None:
+                    with factory() as db:
+                        _store(db, file_id, key, _judged(stored, rejudge_error=type(error).__name__), owner=claim_id)
+                        db.commit()
+            except Exception:  # noqa: BLE001
+                log.exception('Recording a failed re-judging failed')
+            return dict(stored, reason='rejudge_failed', rejudged=True)
         record.update(status='failed', error=type(error).__name__, failures=(record.get('failures') or 0) + 1)
         record['message'] = GAVE_UP if record['failures'] >= MAX_FAILURES else \
             'The page images could not be read just now; the statement stays held.'
@@ -1280,7 +1389,7 @@ def pending(db, limit=50):
         if draft or str(file_id) not in marked.get(batch_id, ()):
             continue
         stored = ((metadata or {}).get(METADATA_KEY) or {}).get(key or '')
-        if stored and stored.get('version') == VERSION and (stored.get('status') in FINAL or (
+        if stored and stored.get('version') == VERSION and not rejudgeable(stored) and (stored.get('status') in FINAL or (
                 stored.get('status') == 'failed' and (stored.get('failures') or 0) >= MAX_FAILURES)):
             # Read once per reading of the file (a new reading is a new file, with its own statements).
             continue
@@ -1325,7 +1434,8 @@ def sweep(factory, resolve_path, *, budget_seconds=SWEEP_SECONDS):
         if outcome.get('status') in ('proved', 'not_proved', 'failed'):
             report['read'] += 1
             report[outcome['status']] += 1
-            report['cost_usd'] = round(report['cost_usd'] + (outcome.get('cost_usd') or 0), 6)
+            if not outcome.get('rejudged'):
+                report['cost_usd'] = round(report['cost_usd'] + (outcome.get('cost_usd') or 0), 6)
         if outcome.get('status') == 'unavailable':
             break  # no key / provider: nothing else this round can be read either
     if report['read']:
