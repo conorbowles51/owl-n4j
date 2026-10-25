@@ -261,9 +261,13 @@ def _saved_scopes(session, case_id):
             *conditions, kind='saved_scopes')]
 
     rows = read(Source.case_id == case_id, Source.status == 'admitted', Source.document_type == 'statement_review')
+    # An empty legacy import (no statement, no dates, nothing paid) saved nothing of any statement of its
+    # bytes (saved_reading_replacement, lesson 13).
+    from services.financial.saved_reading_replacement import standing_shell_ids
+    shells = standing_shell_ids(session, case_id)
     current = {}
-    for _, sha, key, _, removed, file_id in rows:
-        if not removed:
+    for identifier, sha, key, _, removed, file_id in rows:
+        if not removed and str(identifier) not in shells:
             current.setdefault((sha, key or ''), file_id)
     scopes = set(current)
     parents, seen = {parent for _, _, _, parent, removed, _ in rows if parent and not removed}, set()

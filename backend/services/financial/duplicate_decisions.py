@@ -97,9 +97,12 @@ def decide_duplicate(session, *, case_id, document_id, action, expected_revision
     ``match="reader_replacement"`` sets aside one of two readings of the same
     file linked by a reader replacement (``saved_reading_replacement``): their
     money differs by design, the newer one proved under every admission check.
+    ``match="empty_shell"`` sets aside an empty legacy import (no statement
+    named, no dated period, no payment) for a statement of the same file bytes
+    saved after it (``saved_reading_replacement.set_aside_shell``).
     """
     if match not in ("identical_reading", "same_printed_statement", "same_document_across_accounts",
-                     "reader_replacement"):
+                     "reader_replacement", "empty_shell"):
         raise DuplicateDecisionError("Unknown duplicate comparison.", 422)
     try:
         return _decide(session, case_id=case_id, document_id=document_id,
@@ -190,6 +193,11 @@ def _decide(session, *, case_id, document_id, action, expected_revision,
         elif match == "reader_replacement":
             from services.financial.saved_reading_replacement import link_refusal
             refusal = link_refusal(session, document, primary)
+            if refusal:
+                raise DuplicateDecisionError(refusal)
+        elif match == "empty_shell":
+            from services.financial.saved_reading_replacement import shell_link_refusal
+            refusal = shell_link_refusal(session, document, primary)
             if refusal:
                 raise DuplicateDecisionError(refusal)
         elif not source.content_fingerprint or source != retained:

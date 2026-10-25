@@ -482,6 +482,12 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         current_file = session.get(EvidenceFile, current.evidence_file_id)
         if current_file is None or lineage_id(current_file) != lineage_id(file):
             current = None
+    if current is not None and excluded_copy is None:
+        # An empty legacy import (no statement, no dates, nothing paid) is not this statement's saved
+        # copy: the statement is read as not yet saved (saved_reading_replacement, lesson 13).
+        from services.financial import saved_reading_replacement
+        if saved_reading_replacement.standing_shell(session, current):
+            current = None
     current_import = None
     if current is not None:
         current_file = session.get(EvidenceFile, current.evidence_file_id)
@@ -1236,6 +1242,14 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                 replacing = None
                 from services.financial import saved_reading_replacement
                 from services.financial.pending_statement_duplicates import apply_duplicate_disposition, ignored_receipt
+                shell = None
+                if (existing is not None and not request.replaces_source_document_id
+                        and not saved_reading_replacement.is_replacement(actor)
+                        and saved_reading_replacement.standing_shell(session, existing)):
+                    # An empty legacy import of these bytes (no statement, no dates, nothing paid) is not
+                    # this statement's saved copy: this statement is saved fresh and the shell then set
+                    # aside, linked to it (saved_reading_replacement, lesson 13).
+                    shell, existing = existing, None
                 # One snapshot of the case's statements for this write (it costs
                 # seconds on a large case and was built twice per import). Under
                 # the case lock the only input that changes between its uses is
@@ -1448,6 +1462,8 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                     store_fingerprint(session, document)
                     _supersede(session, replacing, document.id, case_id=case_id, rung=DuplicateMatchRung.identical_bytes, actor=actor, ingestion_run_id=run.run_id,
                         reason="Statement reread replaces the prior import: " + request.details_reason)
+                if shell is not None:
+                    saved_reading_replacement.set_aside_shell(session, case_id=case_id, shell=shell, document=document)
                 lap('reconcile')
                 _commit_statement(session)
                 lap('commit')

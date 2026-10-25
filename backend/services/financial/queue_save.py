@@ -243,12 +243,22 @@ def save_statements(session, *, case_id, item_ids, actor, request_id=None, only_
     busy = set()
     if shas or identities:
         from sqlalchemy import or_
+        from services.financial import saved_reading_replacement
         matching = ([EvidenceFile.sha256.in_(shas)] if shas else []) + ([EvidenceFile.metadata_[
             page_identity.METADATA_KEY]['identity'].as_string().in_(identities)] if identities else [])
-        for file, key in session.execute(select(EvidenceFile, Item.statement_key)
+        found = list(session.execute(select(EvidenceFile, Item.statement_key, Item.status, Item.summary)
                 .join(Item, Item.file_id == EvidenceFile.id).join(Batch, Batch.id == Item.batch_id)
                 .where(Batch.case_id == case_id, Batch.status != 'removed', or_(*matching),
-                       Item.status.in_(('pending_import', 'imported')))):
+                       Item.status.in_(('pending_import', 'imported')))))
+        # An item imported as an empty legacy import (a "shell": no statement, no dates, nothing paid)
+        # saved nothing of this statement; the writer saves the statement and sets the shell aside
+        # (saved_reading_replacement). Off with the replacement switch.
+        shells = saved_reading_replacement.shell_document_ids(session, case_id, {
+            (summary or {}).get('source_document_id') for _, _, status, summary in found
+            if status == 'imported'} - {None}) if saved_reading_replacement.enabled() else set()
+        for file, key, status, summary in found:
+            if status == 'imported' and (summary or {}).get('source_document_id') in shells:
+                continue
             busy.add((file.sha256, key or ''))
             if pages_of(file):
                 busy.add((pages_of(file), key or ''))

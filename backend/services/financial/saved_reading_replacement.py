@@ -566,6 +566,141 @@ def is_replacement_link(session, superseded, retained):
                 and (_names(retained, superseded) or _names(superseded, retained)))
 
 
+# Empty legacy imports ("shells") ---------------------------------------------
+#
+# 2026-10-25 (fin-queue2, lesson 13): early imports saved a whole file as one
+# statement nobody could date: no statement of the reading named, no printed
+# dates on its period, no payment and no incomplete record (BNB2: 65 such
+# saved copies, e.g. "03 ECOTERRA KAPITAL MXN MZO 25", "09 ARRENDO MONEX MXN
+# SEPT 2023"). Holding nothing, they still stood as the saved copy of every
+# statement of the same bytes (their statement key is empty, which matches any
+# key), so the file's real statements, read and balancing today, could never be
+# saved and its periods stayed out of the ledger. A shell is not a reading of a
+# period, so it is not compared or proved like one: a statement of the same bytes
+# is imported as a fresh statement, and the shell is then set aside, linked to
+# it, reversibly (decide_duplicate, match ``empty_shell``). Details a person
+# saved on the shell (holder, account) stay on it, restorable. Off with the
+# replacement switch: shells stand as before.
+
+SHELL_BASIS = 'system_empty_shell_replacement'
+SHELL_REASON = ('An earlier import saved this file as one undated statement with no payments. A statement of the same '
+                'file was saved with its own dates and payments; this empty copy is kept, linked and restorable.')
+
+
+def is_shell(session, document):
+    """Whether this saved copy is an empty legacy import: no statement named, no dated period, nothing paid."""
+    metadata = document.metadata_ or {}
+    if (document.document_type != 'statement_review' or metadata.get('statement_import_statement_id')
+            or metadata.get('financial_import_removal') or metadata.get('statement_incomplete_records')):
+        return False
+    periods = list(session.execute(select(FinancialStatementPeriod.period_start, FinancialStatementPeriod.period_end)
+                                   .where(FinancialStatementPeriod.source_document_id == document.id)))
+    if not periods or any(start is not None or end is not None for start, end in periods):
+        return False
+    return session.scalar(select(func.count()).select_from(FinancialTransaction).where(
+        FinancialTransaction.source_document_id == document.id)) == 0
+
+
+def standing_shell(session, document):
+    """Whether this copy is a shell that still counts as saved and may give way to a statement of its bytes."""
+    from postgres.models.enums import ProofClass
+    from services.financial.proof_class import may_produce_ledger_rows
+    if not ENABLED or document is None or document.status != 'admitted' or document.superseded_by_id is not None:
+        return False
+    if not is_shell(session, document):  # first: on a saved statement it stops at its stored key or dates
+        return False
+    try:
+        if not may_produce_ledger_rows(ProofClass(document.proof_class)):
+            return False
+    except ValueError:
+        return False
+    # What the set-aside refuses on the shell's side, checked first: the writer never starts an import
+    # whose shell could not then be set aside.
+    if session.scalar(select(FinancialSourceDocument.id).where(
+            FinancialSourceDocument.superseded_by_id == document.id).limit(1)) is not None:
+        return False
+    file = session.get(EvidenceFile, document.evidence_file_id) if document.evidence_file_id else None
+    return file is not None and file.sha256 == document.sha256_at_ingestion
+
+
+def shell_link_refusal(session, document, primary):
+    """For ``decide_duplicate(match='empty_shell')``: why ``document`` is not a shell giving way to ``primary``."""
+    if document.case_id != primary.case_id or document.sha256_at_ingestion != primary.sha256_at_ingestion:
+        return 'An empty import gives way only to a statement of the same file bytes.'
+    if not is_shell(session, document):
+        return 'The copy to set aside is not an empty import.'
+    if is_shell(session, primary):
+        return 'The retained copy is itself an empty import.'
+    return None
+
+
+def set_aside_shell(session, *, case_id, shell, document):
+    """Within the writer's transaction: the shell is set aside, linked to the statement just admitted."""
+    from services.financial.duplicate_decisions import decide_duplicate, duplicate_revision
+    result = decide_duplicate(session, case_id=case_id, document_id=shell.id, action='exclude',
+        expected_revision=duplicate_revision(session, shell), primary_id=document.id,
+        expected_primary_revision=duplicate_revision(session, document), actor=ACTOR, reason=SHELL_REASON,
+        match='empty_shell', basis=SHELL_BASIS, commit=False)
+    _log(session, case_id, shell, 'Empty earlier import set aside: a statement of the same file was saved with its '
+         'own dates and payments. The empty copy is kept, linked and restorable.', action='financial_empty_shell_replaced',
+         replacement_source_document_id=str(document.id), adjudication_id=result['adjudication_id'])
+    return result
+
+
+def _shell_rows(session, *conditions):
+    """(id, proof class) of the saved statement reviews matching ``conditions`` that are shells (``is_shell``),
+    in one query reading only the fields it needs: a saved copy's stored reading is large."""
+    from sqlalchemy import exists, or_
+    D = FinancialSourceDocument
+    dated = exists().where(FinancialStatementPeriod.source_document_id == D.id,
+                           or_(FinancialStatementPeriod.period_start.is_not(None), FinancialStatementPeriod.period_end.is_not(None)))
+    has_period = exists().where(FinancialStatementPeriod.source_document_id == D.id)
+    paid = exists().where(FinancialTransaction.source_document_id == D.id)
+    rows = session.execute(select(D.id, D.proof_class, D.metadata_['statement_import_statement_id'].as_string(),
+                                  D.metadata_['financial_import_removal'].as_string(),
+                                  D.metadata_['statement_incomplete_records'].as_string())
+        .where(D.document_type == 'statement_review', has_period, ~dated, ~paid, *conditions)).all()
+    return [(document_id, proof_class) for document_id, proof_class, key, removal, incomplete in rows
+            if not key and not removal and incomplete in (None, '', '[]', 'null')]
+
+
+def standing_shell_ids(session, case_id):
+    """Ids (strings) of the case's shells that still count as saved (``standing_shell``), in two queries:
+    the queue asks this on every listing."""
+    if not ENABLED:
+        return set()
+    from postgres.models.enums import ProofClass
+    from services.financial.proof_class import may_produce_ledger_rows
+    D = FinancialSourceDocument
+    found = set()
+    for document_id, proof_class in _shell_rows(session, D.case_id == case_id, D.status == 'admitted',
+            D.superseded_by_id.is_(None), D.evidence_file_id.in_(select(EvidenceFile.id).where(
+                EvidenceFile.id == D.evidence_file_id, EvidenceFile.sha256 == D.sha256_at_ingestion))):
+        try:
+            if may_produce_ledger_rows(ProofClass(proof_class)):
+                found.add(document_id)
+        except ValueError:
+            continue
+    if found:
+        # Copies set aside for one of these depend on it: it is not set aside in turn (standing_shell).
+        found -= set(session.scalars(select(D.superseded_by_id).where(D.superseded_by_id.in_(found))).all())
+    return {str(document_id) for document_id in found}
+
+
+def shell_document_ids(session, case_id, document_ids):
+    """The ids among ``document_ids`` (strings or UUIDs) that are shells, whatever their status."""
+    ids = []
+    for value in document_ids:
+        try:
+            ids.append(uuid.UUID(str(value)))
+        except (TypeError, ValueError):
+            continue
+    if not ids:
+        return set()
+    D = FinancialSourceDocument
+    return {str(document_id) for document_id, _ in _shell_rows(session, D.case_id == case_id, D.id.in_(ids))}
+
+
 # Apply / restore -------------------------------------------------------------
 
 def replace_document(*, session_factory, case_id, document_id, resolve_path):
