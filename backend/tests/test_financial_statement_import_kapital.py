@@ -92,6 +92,16 @@ class KapitalProposalTests(TestCase):
         self.assertEqual(self.addressed(address+['Persona Moral']),['',''])
         self.assertEqual(self.addressed(address[1:]+['Persona Moral']),['',''])
 
+    def test_the_company_name_above_a_street_floor_district_and_postal_block_is_the_holder(self):
+        # The printed Kapital block (BNB2 ING R2, 2026): a name holding figures, the street with floor and
+        # unit, a district line in 'III SECCION, <borough>', the city, the postal line, the taxpayer type.
+        # The letters-only rule before 2a6df8be skipped the name and the street and took the district line.
+        block=['INGENIERIA EJEMPLO R2','MONTE EJEMPLO 124 PISO 2 INT 212 B','JARDINES DE EJEMPLO III SECCION, MIGUEL EJEMPLO',
+               'MEXICO, CIUDAD DE MEXICO','C.P. 11000','Persona Moral']
+        self.assertEqual(self.addressed(block),['INGENIERIA EJEMPLO R2']*2)
+        self.assertEqual(self.addressed(block[1:]),['',''])
+        self.assertEqual(self.addressed(block[2:]),['',''])
+
     def test_malformed_payment_remains_visible_and_does_not_become_balances_only(self):
         s=statement();s[0]['rows'][-3]['cells'][-2]['expected_text']='?.01'
         c=kapital_catalog(s)[0][0];rows=propose_kapital_statement(s,'MXN',c)['rows']

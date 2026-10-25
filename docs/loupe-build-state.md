@@ -1,3 +1,21 @@
+## 25 October fin-accounts: account-wide holder/bank correction; Kapital ING R2 holder corrected
+
+Live `9aa1bf01` (23:07 UTC). Full record: `/mnt/owl-data/fin-wt/headless/FIN-ACCOUNTS-STATUS.md`, `fin-accounts-progress.md`.
+
+- `statement_details.update_statement_details` compares the identified account's holder and bank folded
+  (`FOLDED_ACCOUNT_FIELDS`, `accounts._fold`) and the number by its digits, as the identity key does; a case or
+  separator difference no longer moves a period onto a `statement-details:` account. New kwarg `resolve_account`.
+- `account_details_correction` (routes `/statement-import/accounts/{id}/details`, `/preview`, `/undo`; UI
+  "Account holder and bank" in ImportedStatementDetails): a person with a reason, against the revision, corrects
+  the account record, records the corrected field on every statement through the statement edit, re-joins
+  `statement-details:` splits whose only difference was that field, keeps `account_details_history`; undo restores.
+- Established: the Kapital address holder came from the letters-only holder rule before `2a6df8be` (it skipped
+  "NAME R2" and the street line and took the district line). Readings since 21 October read the name; the account
+  record keeps its first holder (`_reconcile` records later ones as `identity_conflicts`), so stale holders need the
+  account-wide correction. BNB2: 0 of 1,304 saved statements and 0 accounts now hold an address-line holder.
+- Not done here (owned by fin-shells): 16 undated MONETA/ARRENDO KAPITAL legacy periods both given
+  `194-99208-001-8` by a bulk edit on 23 September; the 10 MONETA ones sit on their own split accounts.
+
 ## 25 October fin-queue2: BNB2 queue worked through; empty legacy imports no longer block statements
 
 Head `ef4c7287` ("fin: an empty legacy import no longer stands as the saved copy of its file's statements"), live
