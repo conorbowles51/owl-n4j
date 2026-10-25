@@ -15,7 +15,8 @@ This background round brings those statements in line, with no click:
 * Only a statement nobody worked on: held, no batch draft, no saved review, no person's duplicate decision,
   in a batch that is not removed, paused or preparing.
 * Only the answers ``field_proposals.automatic_fills`` allows (the account's saved statements, with the
-  balance-chain and bracketing rules; never the case's usual currency, never an account number), and only when
+  balance-chain and bracketing rules; the case's usual currency only under ``CASE_CURRENCY``; never an account
+  number), and only when
   they answer every question the statement asks: a statement still held by its reading or its balances is not
   filled, so it stays free to be prepared again by the next reader fix.
 * Through the same product path as preparation's fill (``queue_save.fill_confirmed``): the statement-details

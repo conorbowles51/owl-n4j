@@ -302,7 +302,7 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
     catalog_key = ('catalog', source_key)
     catalog = _shared_value(cache, shared, catalog_key, lambda: statement_catalog(all_sources))
     from services.financial.deposit_receipt_proposal import deposit_receipt_choices
-    from services.financial.statement_currency import currencies_by_statement, detect_statement_currency, printed_holdings_currency
+    from services.financial.statement_currency import currencies_by_statement, detect_statement_currency, printed_holdings_currency, currency_marks
     currencies_key = ('currencies', source_key)
     choices = _shared_value(cache, shared, currencies_key, lambda: currencies_by_statement(
         catalog['statements'] + deposit_receipt_choices(all_sources), all_sources))
@@ -536,6 +536,8 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                     # The case the holdings currency is for: cited for a person to confirm, never this reading's currency.
                     printed_currency=(printed_holdings_currency(all_sources if len(catalog['statements']) == 1 else sources)
                                       if selected else None),
+                    # Every currency marker the file prints, for the case's usual currency (field_proposals).
+                    currency_marks=currency_marks(all_sources, text.content or ''),
                     brokerage_cash_ledger=_brokerage_cash_ledger(selected),
                     transaction_count=0, needs_attention=1, revision=_digest(dict(file=str(file.id), text=text.content_sha256, version=VERSION)), applied=False,
                     review_recovery=recovery)
@@ -775,6 +777,7 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                 # to confirm (field_proposals); never this reading's currency.
                 printed_currency=(printed_holdings_currency(all_sources if len(catalog['statements']) == 1 else sources)
                                   if not chosen_currency and selected else None),
+                currency_marks=currency_marks(all_sources, text.content or '') if not chosen_currency else None,
                 metadata=metadata, currency=chosen_currency, detected_currency=detected_currency, rows=[] if reading_failure else rows, sources=sources, issues=issues,
                 saved_review=review_progress(file, statement_id),
                 previous_saved_review=previous_review, review_recovery=recovery,

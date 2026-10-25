@@ -31,9 +31,20 @@ one statement, or two of hers on one); a row of hers has no single counterpart; 
 or one of her hand-added payments is now read by the reader (it would count twice); the carried review is not a
 valid draft; or the reading the worker prepares is not the one the review was carried onto.
 
+A statement the case already saved from this file. When the current reader reads her statement as one the case
+already imported from this file in another batch, her work is never moved onto the saved statement. It is
+settled instead (kept verbatim in history and the carry log, her item retired with a message saying so; nothing
+saved or changed) only when everything she entered is in that saved statement (``saved_counterpart``: her
+payment lines one for one with their text and balances, her details, no note of hers); otherwise the file is
+left. A batch draft equal value for value to her saved progress, drafted on another preparation of the same
+reading, is the same work, not two drafts. Both: switch ``LOUPE_FINANCIAL_CARRY_EDITS`` (default on; '0' off).
+
 Switch ``LOUPE_FINANCIAL_REPREPARE_CARRY_EDITS`` (default on; needs ``LOUPE_FINANCIAL_AUTO_REPREPARE_HELD``).
 Off: investigator work protects the file, as before.
 """
+import os
+import re
+from collections import Counter
 from copy import deepcopy
 from datetime import datetime, timezone
 
@@ -45,6 +56,10 @@ from postgres.models.financial_import_batches import FinancialImportBatch as Bat
 REASON = 'held_reprepare'
 LOG = 'financial_reprepare_carry_log'
 OPEN = ('ready', 'attention')
+# LOUPE_FINANCIAL_CARRY_EDITS (default on; '0' off): her work on a statement the case already saved from this
+# file is settled when it agrees with the saved statement (saved_counterpart), and a batch draft equal to her
+# saved progress but for the reading revision is the same work (_values). Off: both leave the file, as before.
+SAME_VALUES = os.environ.get('LOUPE_FINANCIAL_CARRY_EDITS', '1').strip().lower() not in ('0', 'false', 'no', 'off')
 # Row fields a reader prints: a value of hers that differs is asked about. Other row fields (notes, page of a
 # hand-added row, links, placement anchors, extra dates) have no reading to differ from: hers are kept.
 ASKED_ROW_FIELDS = ('excluded', 'date', 'description', 'counterparty', 'amount_minor', 'direction', 'balance_minor')
@@ -135,13 +150,20 @@ def _effective(entries):
     drafts = [saved['request'] for kind, saved, _ in entries if kind == 'draft']
     if progress:
         for draft in drafts:
-            if resolve_review(draft, progress)[1]:
+            if resolve_review(draft, progress)[1] and not (SAME_VALUES and _values(draft) == _values(progress['request'])):
                 raise NotCarried('two_drafts')
         return progress['request'], progress
-    if len({_digest_request(draft) for draft in drafts}) != 1:
+    if len({_digest_request(_values(draft) if SAME_VALUES else draft) for draft in drafts}) != 1:
         raise NotCarried('two_drafts')
     saved = next(saved for kind, saved, _ in entries if kind == 'draft')
     return drafts[0], saved
+
+
+def _values(request):
+    """Her values in a request: everything but the reading revision it was drafted against. A batch draft that
+    equals her saved progress value for value, drafted on another preparation of the same reading, is the same
+    work (carrying replaces the revision with the current reading's in any case)."""
+    return {key: value for key, value in (request or {}).items() if key != 'expected_revision'}
 
 
 def _period(request, item):
@@ -283,10 +305,173 @@ def carry_request(request, proposal):
     return carried, audit, conflicts, row_conflicts
 
 
+def _minor(value):
+    try:
+        return int(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _text(value):
+    return re.sub(r'\s+', ' ', str(value or '')).strip()
+
+
+# Request values saved_counterpart compares with the saved statement (any other non-empty value leaves the file).
+COMPARED_DETAILS = ('expected_revision', 'statement_id', 'rows', 'currency', 'account_number', 'holder',
+                    'institution', 'period_start', 'period_end')
+UNCOMPARED_ROW_FIELDS = ('reason', 'manual_page', 'counterparty_link', 'source_order_anchor', 'date_values',
+                         'date_unprinted')
+
+
+def _same_name(field, mine, saved):
+    """Holder: the same words, company words aside (review_carry.same_value). Institution: the same words, bank
+    words aside; a name one is part of the other is not enough."""
+    from services.financial.review_carry import _BANK, _words, same_value
+    if field == 'institution':
+        mine, saved = [[w for w in _words(v) if w not in _BANK] for v in (mine, saved)]
+        return bool(mine) and mine == saved
+    return same_value(field, mine, saved)
+
+
+def saved_counterpart(session, case_id, key, new_key, request, proposal, decided):
+    """The saved statement her work on ``key`` already is, or NotCarried. Read only.
+
+    The current reader reads her statement as ``new_key``, which the case already imported from this file in
+    another batch (``decided``: its settled items). Her work is settled (kept verbatim in history, her item
+    retired, nothing saved or changed) only when every value she entered is the saved statement's:
+
+    * the current reading itself names that import as this statement's own (``current_import``), every settled
+      item of the statement is that import, and it holds exactly one admitted statement period;
+    * every payment line she includes has its own saved payment (date, amount, direction, one for one), with her
+      description, counterparty and running balance where she has one; no line she left out was saved; an
+      included line without an amount is a bare balance line printing the saved opening, closing or a saved
+      running balance; a line she left out without an amount is bare (no date, text or balance). The saved
+      statement may hold lines her work never had (the earlier reader did not read them): she decided nothing
+      about those. Work with no payment line (every line bare and left out) compares only her details;
+    * no row value with nothing saved to equal (a note, a hand-added line, a counterparty link, a placement,
+      other printed dates) and no statement value other than currency, account, period, holder and institution
+      (notes, confirmations, balance corrections, unprinted-period flags);
+    * her currency, account (as written, or the saved identifier's full digits), period, holder (the same words)
+      and institution (the same words, bank words aside), where she has one, are the saved ones.
+
+    Anything else leaves the file exactly as it is (fail closed)."""
+    from postgres.models.financial import (FinancialAccount, FinancialSourceDocument, FinancialStatementPeriod,
+                                           FinancialTransaction)
+    from services.financial.reread_carry import NotCarried as RowsUnreadable, _amount, _row_day, payments
+    from uuid import UUID
+    if not SAME_VALUES or key == new_key or any(item.status != 'imported' for item in decided):
+        raise NotCarried('statement_saved_or_decided')
+    current = proposal.get('current_import') or {}
+    documents = {str((item.summary or {}).get('source_document_id') or '') for item in decided}
+    if len(documents) != 1 or not next(iter(documents)) or (
+            current and documents != {str(current.get('source_document_id'))}):
+        raise NotCarried('saved_not_identified')
+    try:
+        document = session.get(FinancialSourceDocument, UUID(next(iter(documents))))
+    except ValueError:
+        raise NotCarried('saved_not_identified')
+    if document is None or document.case_id != case_id or document.status != 'admitted' or (
+            document.metadata_ or {}).get('financial_import_removal'):
+        raise NotCarried('saved_not_identified')
+    if not current:
+        # The batch item records an import of a separate upload of these exact bytes (an earlier rule took equal
+        # bytes for this file's own import). The same statement only when the saved one is this statement of a
+        # file with this file's bytes; preparing then holds this one as a copy of it, as for any copy.
+        evidence = session.get(EvidenceFile, document.evidence_file_id)
+        here = session.get(EvidenceFile, decided[0].file_id)
+        if (evidence is None or here is None or evidence.sha256 != here.sha256 or
+                ((document.metadata_ or {}).get('statement_import_statement_id') or '') != (new_key or '')):
+            raise NotCarried('saved_not_identified')
+    periods = list(session.scalars(select(FinancialStatementPeriod).where(
+        FinancialStatementPeriod.source_document_id == document.id)))
+    if len(periods) != 1:
+        raise NotCarried('saved_not_identified')
+    period = periods[0]
+    account = session.get(FinancialAccount, period.account_id)
+    def differs(what):
+        error = NotCarried('saved_statement_differs')
+        error.detail = what
+        return error
+    # Every value she can enter is compared below; a value of any other kind (a balance correction, an
+    # unprinted-period flag, a replacement, notes) has nothing in the saved statement to equal.
+    if any(not _empty(value) for name, value in request.items() if name not in COMPARED_DETAILS):
+        raise differs('other_value')
+    if request.get('currency') and request['currency'] != period.currency:
+        raise differs('currency')
+    if _text(request.get('account_number')):
+        # The same account: equal as written, or the same full digits as the saved identifier.
+        mine = _digits(request['account_number'])
+        printed = _text(account.identifier_as_printed if account else '')
+        stored = {_digits(account.identifier_as_printed), _digits(account.identifier_normalised)} if account else set()
+        if not (printed and _text(request['account_number']) == printed) and not (len(mine) >= 4 and mine in stored):
+            raise differs('account')
+    for name, value in (('period_start', period.period_start), ('period_end', period.period_end)):
+        if request.get(name) and str(request[name]) != str(value):
+            raise differs('period')
+    for name, value in (('holder', account.holder_name if account else None),
+                        ('institution', account.institution_name if account else None)):
+        if _text(request.get(name)) and not (_text(value) and _same_name(name, _text(request[name]), _text(value))):
+            raise differs('details')
+    saved = [row for row in session.scalars(select(FinancialTransaction).where(
+        FinancialTransaction.statement_period_id == period.id))
+        if row.ledger_status == 'admitted' and row.superseded_by_id is None]
+    groups = {}
+    for row in saved:
+        groups.setdefault((str(row.transaction_date or row.ordering_date), int(row.amount_minor), row.direction),
+                          []).append(row)
+    ledger = Counter({group: len(rows) for group, rows in groups.items()})
+    try:
+        rows = [_row(row) for row in request.get('rows') or []]
+        included, excluded = payments(rows)
+    except (RowsUnreadable, ValueError, TypeError):
+        raise differs('unreadable_rows')
+    # A line she left out must not be a saved payment: compared by amount alone, so a saved line read on
+    # another day or in the other direction still counts as one she left out.
+    unmatched = {amount for _, amount, _ in ledger - included}
+    if included - ledger or any(amount in unmatched for _, amount, _ in excluded):
+        raise differs('payments')
+    balances = {period.opening_balance_minor, period.closing_balance_minor} | {
+        row.running_balance_minor for row in saved}
+    balances.discard(None)
+    left = {group: list(rows) for group, rows in groups.items()}
+    for row in rows:
+        # A row value with nothing in the saved statement to equal (a note, a hand-added line, a link, a
+        # placement, other printed dates) is never settled away.
+        if any(not _empty(row.get(name)) for name in UNCOMPARED_ROW_FIELDS):
+            raise differs('row_value')
+        amount = _amount(row)
+        if row.get('excluded'):
+            # A line she leaves out: with an amount it is compared above (no saved payment is one she left out);
+            # without one it must be a bare line (no date, text or balance of hers).
+            if not amount and any(not _empty(row.get(name)) for name in ('date', 'description', 'counterparty',
+                                                                       'direction', 'balance_minor')):
+                raise differs('excluded_line')
+            continue
+        if not amount:
+            # An included line with no amount: only a bare balance line printing a saved balance.
+            if (any(not _empty(row.get(name)) for name in ('date', 'description', 'counterparty', 'direction')) or
+                    row.get('balance_minor') in (None, '') or _minor(row['balance_minor']) not in balances):
+                raise differs('balance_line')
+            continue
+        group = left.get((_row_day(row), amount, row.get('direction'))) or []
+        # Her line's own saved payment: the first one not yet paired whose text and balance are hers.
+        match = next((other for other in group if
+                      (not _text(row.get('description')) or _text(other.description) == _text(row['description'])) and
+                      (not _text(row.get('counterparty')) or _text(other.counterparty_raw) == _text(row['counterparty'])) and
+                      (row.get('balance_minor') in (None, '') or (other.running_balance_minor is not None and
+                                                                   _minor(row['balance_minor']) == int(other.running_balance_minor)))),
+                     None)
+        if match is None:
+            raise differs('line_text')
+        group.remove(match)
+    return dict(source_document_id=str(document.id), statement_period_id=str(period.id),
+                saved_payments=sum(ledger.values()), her_payments=sum(included.values()))
+
+
 def plan(session, case_id, reading, source, currency=None):
     """What carrying her work onto the current reading of ``reading`` does. Read only; raises NotCarried.
 
-    Returns dict(statements={her key: dict(kind 'carried'|'settled'|'current', new_key, request, record, ...)},
+    Returns dict(statements={her key: dict(kind 'carried'|'settled'|'saved'|'current', new_key, request, ...)},
     fresh=the current proposals)."""
     from services.financial.import_batches import initial_request
     from services.financial.reread_carry import DETAILS_CARRY, statement_history, system_only
@@ -313,9 +498,11 @@ def plan(session, case_id, reading, source, currency=None):
         return dict(statements={}, fresh={})
     fresh = read_fresh(session, case_id, reading, currency)
     # Statements of this reading saved, queued or decided in any batch: her work on them is never moved.
-    decided = {item.statement_key or '' for item in session.scalars(select(Item).join(Batch, Batch.id == Item.batch_id).where(
-        Batch.case_id == case_id, Batch.status != 'removed', Item.file_id == reading.id,
-        Item.status.notin_(OPEN + ('superseded_reading',))))}
+    decided = {}
+    for item in session.scalars(select(Item).join(Batch, Batch.id == Item.batch_id).where(
+            Batch.case_id == case_id, Batch.status != 'removed', Item.file_id == reading.id,
+            Item.status.notin_(OPEN + ('superseded_reading',)))):
+        decided.setdefault(item.statement_key or '', []).append(item)
     statements, targets = {}, {}
     meta = reading.metadata_ or {}
     for key, entries in sorted(found.items()):
@@ -329,12 +516,16 @@ def plan(session, case_id, reading, source, currency=None):
         request, saved = _effective(entries)
         item = next((item for _, _, item in entries if item is not None), None)
         new_key = match_statement(key, request, item, fresh)
-        if new_key in decided:
-            raise NotCarried('statement_saved_or_decided')
         if new_key in targets:
             raise NotCarried('statement_ambiguous')
         targets[new_key] = key
         proposal = fresh[new_key]
+        if new_key in decided:
+            # The current reader's statement was already saved from this file (another batch). Her work is
+            # never moved onto it; it is settled only when everything she entered is what the case saved.
+            saved_as = saved_counterpart(session, case_id, key, new_key, request, proposal, decided[new_key])
+            statements[key] = dict(kind='saved', new_key=new_key, entries=entries, saved_as=saved_as)
+            continue
         if request.get('expected_revision') == proposal['revision'] and new_key == key:
             statements[key] = dict(kind='current', new_key=key, entries=entries)  # already on this reading
             continue
@@ -350,7 +541,7 @@ def plan(session, case_id, reading, source, currency=None):
                                audit=audit, conflicts=conflicts, row_conflicts=row_conflicts, proposal=proposal,
                                initial=initial_request(proposal), read_currency=read_currency)
     for key in statements:
-        if statements[key]['kind'] == 'settled' and key in targets and targets[key] != key:
+        if statements[key]['kind'] in ('settled', 'saved') and key in targets and targets[key] != key:
             raise NotCarried('statement_ambiguous')  # a settled record on the statement hers moves onto
     return dict(statements=statements, fresh=fresh)
 
@@ -436,6 +627,8 @@ def apply(session, *, case_id, batch_id, file, fingerprint):
             moved[key] = new_key
             record_log.update(new_statement_id=new_key, conflicts=len(entry['conflicts']) + len(entry['row_conflicts']),
                               **{k: entry['audit'][k] for k in ('fields', 'rows_changed', 'added', 'new_lines')})
+        elif entry['kind'] == 'saved':
+            record_log.update(new_statement_id=entry['new_key'], saved_as=entry['saved_as'])
         log_entry['statements'][key] = record_log
     reading.metadata_ = metadata
     # Batch drafts follow: a draft of a statement whose key moved stays on its item, retired to history; a draft
@@ -450,6 +643,11 @@ def apply(session, *, case_id, batch_id, file, fingerprint):
             item.summary = {**item.summary, 'review_upgrade_history': [*item.summary.get('review_upgrade_history', []),
                 dict(request=item.review_request, at=_now(), reason='held_reprepare_settled')]}
             item.review_request = None
+        elif entry is not None and entry['kind'] == 'saved':
+            # Her draft stays on its item verbatim; the item is history (the statement counts once, as saved).
+            item.status = 'superseded_reading'
+            item.summary = {**item.summary, 'can_import': False, 'superseded_by_reading': str(reading.id),
+                            'saved_as': entry['saved_as'], 'recovery_message': SAVED_MESSAGE}
         elif key in moved and moved[key] != key:
             item.status = 'superseded_reading'
             item.summary = {**item.summary, 'can_import': False, 'superseded_by_reading': str(reading.id),
@@ -479,6 +677,8 @@ def apply(session, *, case_id, batch_id, file, fingerprint):
     return 'carried'
 
 
+SAVED_MESSAGE = ('This statement was already saved from this file in another batch, and everything in your saved '
+                 'work here is in that saved statement. Your work is kept in history; nothing was changed or saved.')
 MOVED_MESSAGE = ('The current reader names this statement differently. Your saved work was carried onto it; '
                  'this earlier preparation is kept in history.')
 

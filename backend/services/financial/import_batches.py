@@ -234,6 +234,9 @@ def assess(proposal, request=None):
     if proposal.get('printed_currency') and not proposal['currency']:
         # Cited for the currency proposal (field_proposals); the reading stays without a currency.
         summary['printed_currency'] = proposal['printed_currency']
+    if not proposal['currency'] and isinstance(proposal.get('currency_marks'), list):
+        # Every currency marker the file prints: the case's usual currency is assumed only when each allows it.
+        summary['currency_marks'] = proposal['currency_marks']
     if proposal.get('brokerage_cash_ledger'):
         # Its currency is printed only in its holdings, or taken from its account (field_proposals).
         summary['brokerage_cash_ledger'] = True

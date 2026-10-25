@@ -33,7 +33,8 @@ Currency, in order (Neil, 2026-10-13):
       currency keeps it; one that differs from its account's is held
       (``account_currency_conflict``).
   (c) the case's usual currency (the currency of most of its saved
-      statements). Always a proposal that needs one click.
+      statements). A proposal that needs one click, except under
+      ``CASE_CURRENCY`` below.
 
 Bank, holder, full account number: taken from the one known account whose
 identity matches the statement (full account number, or the visible digits of
@@ -51,6 +52,14 @@ Automatic fills (Neil, 2026-10-24; each behind a default-on switch
   statement prints no other currency (its holdings). The account is the one
   whose number the statement prints (``identity_proven``). Basis
   ``account_currency``.
+* ``CASE_CURRENCY`` (Neil, 2026-10-25): no currency printed anywhere on the
+  statement (no holdings currency, no currency word, label or symbol; only
+  markers such as a bare '$' that allow the case's usual currency among
+  others), no account it could be
+  having any other currency, and the case's usual currency a clear majority of
+  its saved statements: the case's usual currency, basis
+  ``case_default_assumed``, labelled "currency assumed: case's usual (not
+  printed)". A person changes it in the statement details like any value.
 * ``IDENTITY``: a missing bank (and the full number behind a masked one, as
   before) from the one account whose printed number the statement carries,
   when every saved statement of it gives the same value. The holder keeps its
@@ -68,8 +77,8 @@ Re-application with no click (``LOUPE_FINANCIAL_AUTOFILL_REAPPLY``, default on;
 itself only with ``automatic_fills``, a stricter subset of the confirmed
 proposals: currency only from the account's saved statements when the
 statement's printed balances continue that account's ledger, bank and holder
-only when saved statements of the account bracket it, never an account number
-and never the case's usual currency.
+only when saved statements of the account bracket it, never an account number;
+the case's usual currency only under ``CASE_CURRENCY`` (checked again).
 
 A field the statement prints is never replaced: only empty fields receive a
 proposal. Switches: ``LOUPE_FINANCIAL_CURRENCY_PROPOSALS`` and
@@ -97,8 +106,15 @@ MIN_MASKED_DIGITS = 4
 FULL_ACCOUNT_DIGITS = 6
 
 
-AUTOFILL_NAMES = ('CURRENCY', 'IDENTITY')
+AUTOFILL_NAMES = ('CURRENCY', 'IDENTITY', 'CASE_CURRENCY')
 AUTOFILL_CURRENCY_BASIS = 'account_currency'
+# Neil, 2026-10-25: a statement printing no currency anywhere takes the case's usual currency with no click
+# (LOUPE_FINANCIAL_AUTOFILL_CASE_CURRENCY). "Clear majority": more than CASE_CURRENCY_SHARE of the case's saved
+# statements, at least CASE_CURRENCY_MIN_SAVED of them.
+CASE_CURRENCY_BASIS = 'case_default_assumed'
+CASE_CURRENCY_LABEL = "currency assumed: case's usual (not printed)"
+CASE_CURRENCY_SHARE = 0.55
+CASE_CURRENCY_MIN_SAVED = 20
 
 
 def autofill_enabled(name):
@@ -453,6 +469,10 @@ def _currency_proposal(values, candidates, matched, knowledge):
     """
     printed = values.get('printed_currency') or {}
     other = _account_or_case_currency(values, candidates, matched, knowledge)
+    if (not printed and (other is None or not other['confirmed'])
+            and case_currency_assumable(values, knowledge)
+            and (other is None or str(other['value']).upper() == knowledge.default_currency.upper())):
+        return _case_currency(knowledge)
     if not printed.get('value') or (other and other['confirmed'] and other['value'] == printed['value']):
         return other
     return dict(value=printed['value'], basis='printed_on_statement', confirmed=False,
@@ -497,6 +517,45 @@ def _account_or_case_currency(values, candidates, matched, knowledge):
     return None
 
 
+def case_currency_assumable(values, knowledge):
+    """True when the case's usual currency may fill a statement's empty currency with no click.
+
+    Every condition must hold (fail closed): the switch is on; the statement has
+    no currency and nothing in its holdings; its reading recorded the currency
+    markers it prints (``currency_marks``; an older reading has none and is
+    refused) and none names one currency, not even the case's own (a bare '$'
+    allows several, including the case's usual one); that currency is a clear
+    majority of the case's saved statements; and no account the statement could
+    be (matched by identity, ambiguous included, or sharing its printed number's
+    digits whatever its bank or holder) has a saved statement or an account
+    record in another currency.
+    """
+    if not autofill_enabled('CASE_CURRENCY') or knowledge is None or not knowledge.default_currency:
+        return False
+    default = knowledge.default_currency.upper()
+    if str(values.get('currency') or '').strip() or values.get('printed_currency'):
+        return False
+    marks = values.get('currency_marks')
+    if not isinstance(marks, list) or not all(
+            isinstance(mark, list) and len(mark) > 1 and all(isinstance(c, str) for c in mark)
+            and default in {c.upper() for c in mark} for mark in marks):
+        return False  # a marker naming one currency (even the case's own) is a printed currency
+    if (knowledge.saved_total < CASE_CURRENCY_MIN_SAVED
+            or knowledge.default_count <= CASE_CURRENCY_SHARE * knowledge.saved_total):
+        return False
+    candidates, _ = matching_accounts(dict(values, currency=''), knowledge)
+    # Any account sharing the printed number's digits too, whatever its bank or holder reads.
+    number = account_identity(values.get('account_number'))
+    candidates = list(candidates) + [k for k in knowledge.accounts if account_match(number, (k.digits, k.masked))]
+    established = {c.upper() for k in candidates for c in [s.currency for s in k.statements] + [k.currency] if c}
+    return established <= {default}
+
+
+def _case_currency(knowledge):
+    return dict(value=knowledge.default_currency, basis=CASE_CURRENCY_BASIS, confirmed=True,
+                label=CASE_CURRENCY_LABEL, statements=knowledge.default_count, matched=[])
+
+
 def propose(values, knowledge, fields=None):
     """{field: proposal} for each empty field of a statement's details (``values`` keys as in FIELDS)."""
     fields = enabled_fields() if fields is None else fields
@@ -529,6 +588,7 @@ def summary_values(summary):
                 holder=summary.get('holder') or '', account_number=summary.get('account') or '',
                 period_start=summary.get('period_start') or '', period_end=summary.get('period_end') or '',
                 printed_currency=summary.get('printed_currency') or None,
+                currency_marks=summary.get('currency_marks') if isinstance(summary.get('currency_marks'), list) else None,
                 brokerage_cash_ledger=bool(summary.get('brokerage_cash_ledger')),
                 opening_minor=_minor(balances.get('opening_minor')), closing_minor=_minor(balances.get('printed_minor')))
 
@@ -549,7 +609,7 @@ def _minor(value):
 # (each found necessary by leave-one-out on the saved statements and the truth set):
 #
 # * currency: the same account's saved statements, all in one currency (basis same_account /
-#   account_currency, never the case's usual currency), nothing printed on the statement giving another, no
+#   account_currency; or the case's usual currency under CASE_CURRENCY, which needs no matched account), nothing printed on the statement giving another, no
 #   saved statement of the account on the same dates, AND the statement's printed balances continue the
 #   account's ledger: its opening equals the closing of the account's saved statement just before it, or its
 #   closing equals the opening of the one just after (a non-zero balance). Several currency sections can share
@@ -596,11 +656,18 @@ def automatic_fills(values, proposals, knowledge):
     """{field: proposal} of the confirmed proposals the no-click re-application may save. Fail closed."""
     if not reapply_enabled() or not proposals or knowledge is None:
         return {}
+    result = {}
+    currency = proposals.get('currency') or {}
+    if (currency.get('confirmed') and currency.get('basis') == CASE_CURRENCY_BASIS
+            and currency.get('value') == knowledge.default_currency and case_currency_assumable(values, knowledge)):
+        # The case's usual currency (checked again here): needs no matched account.
+        result['currency'] = dict(currency)
     candidates, matched = matching_accounts(values, knowledge)
     if not candidates or 'ambiguous' in matched:
-        return {}
-    result = {}
+        return result
     for name, proposal in proposals.items():
+        if name in result:
+            continue
         if not proposal.get('confirmed') or not proposal.get('value') or name not in REAPPLY_BASIS:
             continue
         if str(values.get(name) or '').strip():
