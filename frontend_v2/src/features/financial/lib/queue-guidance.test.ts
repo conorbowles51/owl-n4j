@@ -18,7 +18,7 @@ const entry = (over: Partial<QueueEntry> = {}): QueueEntry => ({
   holder: "Holder", account: "0001", institution: "Bank", currency: "", period_start: "2021-01-01",
   period_end: "2021-01-31", page: 3, can_import: false, status: "attention", bucket: "waiting", file_ids: ["f1"],
   file_position: 1, file_statements: 1, other_problems: 0, problem_total: 1, reasons: [], also: [],
-  fix_makes_ready: false, issue_pages: [], issue_messages: [], ...over,
+  fix_makes_ready: false, issue_pages: [], issue_messages: [], why: [], ...over,
 })
 const me = { id: "u1", name: "Maria Lopez" }
 

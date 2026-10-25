@@ -55,6 +55,8 @@ const entry = z.object({
   /** Every page the listed issue is on, and what the checks said about it (for plain instructions). */
   issue_pages: z.array(z.number()).default([]),
   issue_messages: z.array(z.string()).default([]),
+  /** Why Loupe could not settle it alone, in plain sentences (what the pages print, what the account holds). */
+  why: z.array(z.string()).default([]),
   /** Who saved the held work (their own corrections or added rows), when that is what is held. */
   worked_by: z.object({ user_id: z.string(), name: z.string() }).nullish(),
   /** Proposed values for missing details (value, its source, whether it is certain). */

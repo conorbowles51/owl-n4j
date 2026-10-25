@@ -1251,6 +1251,7 @@ function NeedsItem({
         <p className="text-base font-semibold" aria-label="What is wrong">
           {guide.title}
         </p>
+        <WhyItNeedsYou why={entry.why} />
         <ol className="list-decimal space-y-0.5 pl-5" aria-label="What to do">
           {guide.steps.map((text, index) => (
             <li key={index}>{text}</li>
@@ -1294,6 +1295,21 @@ function NeedsItem({
   )
 }
 
+/** Why Loupe could not settle an item alone: what it found and which check stopped it. */
+function WhyItNeedsYou({ why }: { why: string[] }) {
+  if (!why.length) return null
+  return (
+    <div className="rounded border border-amber-200 bg-amber-50 p-2 text-xs dark:border-amber-900 dark:bg-amber-950/40" aria-label="Why this needs you">
+      <p className="font-semibold">Why Loupe can't decide this</p>
+      <ul className="list-disc space-y-0.5 pl-4">
+        {why.map((text, index) => (
+          <li key={index}>{text}</li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 /** Several statements of one account answered at once: one item, one confirm. */
 function GroupItem({
   group,
@@ -1319,6 +1335,9 @@ function GroupItem({
       <p className="text-base font-semibold" aria-label="What is wrong">
         {guide.title}
       </p>
+      {group.entries.every((entry) => entry.why.join("\n") === group.entries[0].why.join("\n")) && (
+        <WhyItNeedsYou why={group.entries[0].why} />
+      )}
       <ol className="list-decimal space-y-0.5 pl-5" aria-label="What to do">
         {guide.steps.map((text, index) => (
           <li key={index}>{text}</li>

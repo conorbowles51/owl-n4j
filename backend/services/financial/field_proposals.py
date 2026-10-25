@@ -60,6 +60,29 @@ Automatic fills (Neil, 2026-10-24; each behind a default-on switch
   its saved statements: the case's usual currency, basis
   ``case_default_assumed``, labelled "currency assumed: case's usual (not
   printed)". A person changes it in the statement details like any value.
+* ``ACCOUNT_HISTORY`` (Neil, 2026-10-25): a statement whose reader found
+  several currencies (a glossary's 'Moneda nacional' beside 'MONEDA DOLARES',
+  an exchange rate, a description) takes its account's established currency
+  when the account is the one its printed number names (``identity_proven``),
+  at least 90% and at least five of the account's saved statements are in that
+  currency, the saved statements nearest before and after these dates are in
+  it, none covers the same dates, no account record gives another, and the
+  page itself names that currency. Basis ``account_history``; the label names
+  any saved statements of the account in another currency so a person can
+  check them. Balances are not required to chain: a statement held for its
+  currency has no amounts read yet. It saves only if every other check passes.
+* One-click proposals only, never confirmed (a person checks the page):
+  ``same_number_previous_bank`` (the same full number and holder saved at
+  another bank, every one of those statements earlier and in one currency: a
+  brokerage taken over by another, Intercam to Kapital in BNB2; two banks'
+  accounts are never assumed to be one), ``file_name`` (the file's name gives
+  one currency that the page and the account also give) and
+  ``only_printed_currency`` (the only currency the pages mention, not as a
+  label). The case's usual currency is no longer proposed against a matched
+  account that holds other currencies, or a page naming only others.
+* ``currency_why``: when the currency stays a person's question, plain
+  sentences saying what the page prints, what the account's saved statements
+  hold and which check stopped the automatic fill.
 * ``IDENTITY``: a missing bank (and the full number behind a masked one, as
   before) from the one account whose printed number the statement carries,
   when every saved statement of it gives the same value. The holder keeps its
@@ -106,7 +129,7 @@ MIN_MASKED_DIGITS = 4
 FULL_ACCOUNT_DIGITS = 6
 
 
-AUTOFILL_NAMES = ('CURRENCY', 'IDENTITY', 'CASE_CURRENCY', 'HOLDER_NEIGHBOURS')
+AUTOFILL_NAMES = ('CURRENCY', 'IDENTITY', 'CASE_CURRENCY', 'HOLDER_NEIGHBOURS', 'ACCOUNT_HISTORY')
 AUTOFILL_CURRENCY_BASIS = 'account_currency'
 # Neil, 2026-10-25: a statement printing no currency anywhere takes the case's usual currency with no click
 # (LOUPE_FINANCIAL_AUTOFILL_CASE_CURRENCY). "Clear majority": more than CASE_CURRENCY_SHARE of the case's saved
@@ -115,6 +138,15 @@ CASE_CURRENCY_BASIS = 'case_default_assumed'
 CASE_CURRENCY_LABEL = "currency assumed: case's usual (not printed)"
 CASE_CURRENCY_SHARE = 0.55
 CASE_CURRENCY_MIN_SAVED = 20
+# Neil, 2026-10-25: an account whose saved statements are all but a few in one currency, and whose statement prints
+# that currency among others (a glossary, an exchange rate, a description), takes it with no click
+# (LOUPE_FINANCIAL_AUTOFILL_ACCOUNT_HISTORY; see account_history_currency).
+ACCOUNT_HISTORY_BASIS = 'account_history'
+ACCOUNT_HISTORY_SHARE = 0.9
+ACCOUNT_HISTORY_MIN_SAVED = 5
+# Units a statement prints as reference values (the inflation-indexed UDI in a market-indicators table or a
+# deposit-insurance limit), never the currency an account's amounts are kept in.
+REFERENCE_UNITS = frozenset({'UDI'})
 
 
 def autofill_enabled(name):
@@ -564,12 +596,252 @@ def _account_or_case_currency(values, candidates, matched, knowledge):
                     label = 'account currency: ' + label
             return dict(value=value, basis=basis, confirmed=confirmed, label=label, statements=statements,
                         matched=sorted(matched), same_dates_saved=same_dates, account_key=_account_key(candidates))
-    if knowledge.default_currency:
+        history, _ = _account_history(values, candidates, matched)
+        if history:
+            return history
+        # The account holds several currencies: the case's usual one would contradict its own history.
+        return file_name_currency(values, candidates)
+    proposal = (previous_bank_currency(values, knowledge) or file_name_currency(values, [])
+                or only_printed_currency(values))
+    if proposal:
+        return proposal
+    named = _named(values) - REFERENCE_UNITS
+    if knowledge.default_currency and named <= {knowledge.default_currency.upper()}:
         return dict(value=knowledge.default_currency, basis='case_default', confirmed=False,
                     label=f"the case's usual currency ({knowledge.default_count} of "
                           f"{_plural(knowledge.saved_total, 'saved statement', 'saved statements')})",
                     statements=knowledge.default_count, matched=[])
     return None
+
+
+def _named(values):
+    """The currencies the statement's pages name on their own (a code, word or label naming one currency)."""
+    marks = values.get('currency_marks')
+    if not isinstance(marks, list):
+        return set()
+    return {str(mark[0]).upper() for mark in marks if isinstance(mark, list) and len(mark) == 1 and mark[0] != '?'}
+
+
+def _month(iso):
+    from datetime import date
+    try:
+        return date.fromisoformat(iso).strftime('%b %Y')
+    except (TypeError, ValueError):
+        return iso or '?'
+
+
+def _join(words):
+    words = list(words)
+    return words[0] if len(words) == 1 else ', '.join(words[:-1]) + ' and ' + words[-1]
+
+
+def _account_history(values, candidates, matched):
+    """(proposal, '') under ACCOUNT_HISTORY (module docstring), or (None, why not in plain words). Fail closed."""
+    if not autofill_enabled('ACCOUNT_HISTORY'):
+        return None, 'the automatic fill from the account history is switched off'
+    if str(values.get('currency') or '').strip() or values.get('printed_currency'):
+        return None, ''
+    if not candidates or 'ambiguous' in matched:
+        return None, 'the account is not identified'
+    if not identity_proven(values, candidates, matched):
+        return None, ('the printed account number is too short or masked to name one account for certain')
+    saved = [s for k in candidates for s in k.statements if (s.currency or '').strip()]
+    counts = Counter(s.currency.upper() for s in saved)
+    if not counts:
+        return None, 'none of its saved statements has a currency'
+    value, count = counts.most_common(1)[0]
+    if count < ACCOUNT_HISTORY_MIN_SAVED or count < ACCOUNT_HISTORY_SHARE * len(saved):
+        return None, (f'no currency holds at least {round(ACCOUNT_HISTORY_SHARE * 100)}% of them, so the history '
+                      'does not settle it' if len(counts) > 1
+                      else f'it has fewer than {ACCOUNT_HISTORY_MIN_SAVED} saved statements')
+    if any(k.currency and k.currency.upper() != value for k in candidates):
+        return None, f'the account itself is recorded in {", ".join(sorted({k.currency for k in candidates if k.currency}))}'
+    if value not in _named(values):
+        return None, f'the pages do not print {value} anywhere'
+    start, end = values.get('period_start') or '', values.get('period_end') or ''
+    if not start or not end:
+        return None, "this statement's dates were not read"
+    if any(_overlaps(start, end, s.period_start, s.period_end) for k in candidates for s in k.statements):
+        return None, ('a saved statement of the same account already covers these dates (another currency '
+                      'section can share one account number)')
+    dated = [s for s in saved if s.period_start and s.period_end]
+    before = [s for s in dated if s.period_end < start]
+    after = [s for s in dated if s.period_start > end]
+    if not before and not after:
+        return None, 'none of its saved statements is dated'
+    nearest = ([s for s in before if s.period_end == max(b.period_end for b in before)] if before else []) + (
+        [s for s in after if s.period_start == min(a.period_start for a in after)] if after else [])
+    odd = [s for s in nearest if s.currency.upper() != value]
+    if odd:
+        return None, (f'its saved statement next to these dates ({_month(odd[0].period_start)}) is in '
+                      f'{odd[0].currency}, not {value}')
+    others = sorted((s for s in saved if s.currency.upper() != value), key=lambda s: s.period_start)
+    label = (f"account currency: {count} of this account's {_plural(len(saved), 'saved statement', 'saved statements')}"
+             f' are {value}, including those just before and after these dates, and the page prints {value}')
+    if others:
+        label += ('; ' + _plural(len(others), 'statement', 'statements') + ' of it saved in another currency ('
+                  + ', '.join(f'{s.currency} {_month(s.period_start)}' for s in others[:3])
+                  + (', ...' if len(others) > 3 else '') + ') may need checking')
+    return dict(value=value, basis=ACCOUNT_HISTORY_BASIS, confirmed=True, label=label, statements=len(saved),
+                matched=sorted(matched), same_dates_saved=False, account_key=_account_key(candidates),
+                other_currency_saved=[dict(currency=s.currency, period_start=s.period_start, period_end=s.period_end)
+                                      for s in others]), ''
+
+
+def account_history_currency(values, knowledge):
+    """The ACCOUNT_HISTORY proposal for a statement's details, or None (checked again before a no-click fill)."""
+    if knowledge is None:
+        return None
+    candidates, matched = matching_accounts(dict(values, currency=''), knowledge)
+    return _account_history(values, candidates, matched)[0]
+
+
+def _previous_bank(values, knowledge):
+    """(accounts, currency) of the same full number and holder saved at another bank, all earlier, one currency."""
+    digits, masked = account_identity(values.get('account_number'))
+    start = values.get('period_start') or ''
+    if masked or len(digits) < FULL_ACCOUNT_DIGITS or not values.get('holder') or not values.get('institution') \
+            or not start or knowledge is None:
+        return [], ''
+    found = [k for k in knowledge.accounts if not k.masked and k.digits == digits]
+    if not found or any(same_institution(values['institution'], k.institution) for k in found):
+        return [], ''
+    if not all(k.values('holder') and _agrees(values['holder'], k.values('holder'), same_holder) for k in found):
+        return [], ''
+    saved = [s for k in found for s in k.statements]
+    if not saved or any(not s.period_end or s.period_end >= start for s in saved):
+        return [], ''
+    return found, _agreed([s.currency for s in saved] + [k.currency for k in found if k.currency], str.upper)
+
+
+def previous_bank_currency(values, knowledge):
+    """One-click proposal: the currency of the same number and holder at the bank before this one."""
+    found, value = _previous_bank(values, knowledge)
+    if not value:
+        return None
+    saved = [s for k in found for s in k.statements]
+    bank = _agreed([k.institution for k in found], institution_key) or found[0].institution
+    first, last = min(s.period_start for s in saved), max(s.period_end for s in saved)
+    return dict(value=value, basis='same_number_previous_bank', confirmed=False,
+                label=(f"the same account number and holder at {bank}: "
+                       f"{_plural(len(saved), 'saved statement', 'saved statements')}, {_month(first)} to "
+                       f"{_month(last)}, all {value}. Confirm only if this account moved from {bank} to "
+                       f"{values['institution']}"),
+                statements=len(saved), matched=['account', 'holder'])
+
+
+_FILE_CODE = re.compile(r'(?<![A-Z])(MXN|USD|EUR|CAD|GBP|JPY|CHF)(?![A-Z])')
+
+
+def file_name_currency(values, candidates):
+    """One-click proposal: the one currency the file's name gives, when the page (and the account) give it too."""
+    codes = set(_FILE_CODE.findall(str(values.get('filename') or '').upper()))
+    if len(codes) != 1:
+        return None
+    value = codes.pop()
+    if value not in _named(values):
+        return None
+    held = Counter(s.currency.upper() for k in candidates for s in k.statements if s.currency)
+    if candidates and not held.get(value):
+        return None
+    label = f'the file name says {value} and the page prints {value}'
+    if candidates:
+        label += f", and this account has {_plural(held[value], 'saved statement', 'saved statements')} in {value}"
+    return dict(value=value, basis='file_name', confirmed=False, label=label, statements=held.get(value, 0),
+                matched=sorted({'account'} if candidates else set()))
+
+
+def only_printed_currency(values):
+    """One-click proposal: the only currency the pages mention (every marker allows it), not as a label."""
+    marks = values.get('currency_marks')
+    named = _named(values) - REFERENCE_UNITS
+    if not isinstance(marks, list) or len(named) != 1:
+        return None
+    value = next(iter(named))
+    if not all(value in {str(c).upper() for c in mark} or set(mark) <= REFERENCE_UNITS for mark in marks):
+        return None
+    return dict(value=value, basis='only_printed_currency', confirmed=False,
+                label=f'the only currency these pages mention, though not as the statement\'s labelled currency',
+                statements=0, matched=[])
+
+
+def currency_why(values, knowledge, proposal=None):
+    """(headline, reasons): why the statement's currency stays a person's question, in plain words.
+
+    Says what the pages print, what the account's saved statements hold and
+    which check stopped an automatic fill, so the person knows what to look
+    for. ('', []) when the currency is settled automatically.
+    """
+    if proposal and proposal.get('confirmed'):
+        return '', []
+    marks = values.get('currency_marks') if isinstance(values.get('currency_marks'), list) else None
+    all_named = _named(values)
+    named = sorted(all_named - REFERENCE_UNITS)
+    reasons = []
+    own = "this statement's own currency (a 'Moneda' or 'Currency' label, or a code beside its balances)"
+    if len(named) > 1:
+        reasons.append(f'The pages mention {_join(named)}, but none of them is printed as {own}.')
+    elif named:
+        reasons.append(f'The pages mention {named[0]}, but not as {own}.')
+    elif marks is not None:
+        bare = any(len(mark) > 1 for mark in marks)
+        reasons.append(('Apart from UDI (below), the pages' if all_named & REFERENCE_UNITS else 'The pages')
+                       + ' print no currency' + (": only a bare '$', which is used for pesos and dollars alike"
+                                                 if bare else ' at all') + '.')
+    if all_named & REFERENCE_UNITS:
+        reasons.append('UDI also appears. It is an inflation-indexed reference unit (market indicators, the '
+                       'deposit-insurance limit), not a currency an account is kept in, so it is not counted.')
+    number = (values.get('account_number') or '').strip()
+    candidates, matched = matching_accounts(dict(values, currency=''), knowledge) if knowledge else ([], set())
+    if not number:
+        reasons.append("No account number was read, so the currency of the account's saved statements cannot "
+                       'be used.')
+    elif 'ambiguous' in matched:
+        reasons.append(f'Account number {number} matches {len(candidates)} different accounts of the case, so '
+                       "Loupe cannot tell whose saved statements to follow.")
+    elif candidates:
+        counts = Counter(s.currency.upper() for k in candidates for s in k.statements if s.currency)
+        total = sum(counts.values())
+        held = ', '.join(f'{n} {c}' for c, n in counts.most_common())
+        _, why_not = _account_history(values, candidates, matched)
+        if len(counts) > 1:
+            reasons.append(f"Account {number} has {_plural(total, 'saved statement', 'saved statements')} in "
+                           f'several currencies ({held}).'
+                           + (f' Its history is not used because {why_not}.' if why_not else ''))
+            if why_not.startswith('no currency holds'):
+                reasons.append('This bank keeps each currency as its own section under one account number, so the '
+                               'file can be any of those sections. Check which currency its opening and closing '
+                               'balances are in (usually named in the account summary on the first page).')
+        elif counts:
+            reasons.append(f"Account {number}'s {_plural(total, 'saved statement', 'saved statements')} are all "
+                           f'{next(iter(counts))}' + (f', but its history is not used because {why_not}.'
+                                                      if why_not else '.'))
+    else:
+        found, value = _previous_bank(values, knowledge)
+        if found:
+            bank = found[0].institution
+            saved = [s for k in found for s in k.statements]
+            reasons.append(f'No {values.get("institution") or "statement"} statement of account {number} is saved '
+                           f"yet. The same number and holder have {_plural(len(saved), 'saved statement', 'saved statements')}"
+                           f' at {bank} ({_month(min(s.period_start for s in saved))} to '
+                           f'{_month(max(s.period_end for s in saved))})'
+                           + (f', all in {value}' if value else ' in several currencies')
+                           + '. Loupe never assumes accounts at two banks are the same account (one bank taking over '
+                             'another), so a person confirms it.')
+        else:
+            reasons.append(f'No saved statement of the case has account number {number}, so there is no account '
+                           'history to go on.')
+    default = (knowledge.default_currency or '').upper() if knowledge else ''
+    if default and named and set(named) != {default} and not proposal:
+        reasons.append(f"The case's usual currency ({default}) is assumed only for a statement that prints no "
+                       'currency at all, so it is not assumed here.')
+    if proposal:
+        headline = f"Currency not printed as the statement's own: {proposal['value']} proposed, confirm it"
+    elif len(named) > 1:
+        headline = f'Currency unclear: the pages mention {_join(named)}'
+    else:
+        headline = 'Currency not printed: choose one'
+    return headline, reasons
 
 
 def case_currency_assumable(values, knowledge):
@@ -645,6 +917,7 @@ def summary_values(summary):
                 printed_currency=summary.get('printed_currency') or None,
                 currency_marks=summary.get('currency_marks') if isinstance(summary.get('currency_marks'), list) else None,
                 brokerage_cash_ledger=bool(summary.get('brokerage_cash_ledger')),
+                filename=summary.get('filename') or '',
                 opening_minor=_minor(balances.get('opening_minor')), closing_minor=_minor(balances.get('printed_minor')))
 
 
@@ -717,6 +990,13 @@ def automatic_fills(values, proposals, knowledge):
             and currency.get('value') == knowledge.default_currency and case_currency_assumable(values, knowledge)):
         # The case's usual currency (checked again here): needs no matched account.
         result['currency'] = dict(currency)
+    if (currency.get('confirmed') and currency.get('basis') == ACCOUNT_HISTORY_BASIS
+            and not str(values.get('currency') or '').strip()):
+        # The account's established currency (checked again here). No balance chain: a statement held for its
+        # currency has no amounts read yet; it saves only when every other check passes once they are.
+        again = account_history_currency(values, knowledge)
+        if again and again['value'] == currency.get('value'):
+            result['currency'] = dict(currency)
     candidates, matched = matching_accounts(values, knowledge)
     if not candidates or 'ambiguous' in matched:
         return result

@@ -287,12 +287,20 @@ def _saved_scopes(session, case_id):
 def _proposals(summary, knowledge, detail):
     """Proposals for a waiting statement's missing details; True when they resolve every problem."""
     from services.financial import field_proposals
-    proposals = field_proposals.propose(field_proposals.summary_values(summary), knowledge)
+    values = field_proposals.summary_values(summary)
+    proposals = field_proposals.propose(values, knowledge)
+    reasons = {p['review_reason'] for p in actionable_problems(summary)}
+    if detail is not None and 'currency' in reasons and 'currency' in field_proposals.enabled_fields():
+        # Why the currency stays a person's question, in plain words (empty once it is settled automatically).
+        headline, why = field_proposals.currency_why(values, knowledge, proposals.get('currency'))
+        if why:
+            detail['why'] = why
+            if detail.get('reason') == 'currency':
+                detail['sentence'] = headline
     if not proposals:
         return {}, False
-    reasons = {p['review_reason'] for p in actionable_problems(summary)}
     text = field_proposals.sentence(detail['reason'], proposals) if detail else None
-    if text:
+    if text and not (detail.get('reason') == 'currency' and detail.get('why')):
         detail['sentence'] = text
     return proposals, field_proposals.resolves_all(reasons, proposals)
 
@@ -322,6 +330,8 @@ def _entry(item, batch_id, describe_result=None):
             reasons=describe_result.get('reasons') or [describe_result['reason']], also=describe_result.get('also') or [])
         if describe_result.get('choice'):
             entry['choice'] = describe_result['choice']
+        if describe_result.get('why'):
+            entry['why'] = describe_result['why']
         entry.update(issue_pages=describe_result.get('pages') or [], issue_messages=describe_result.get('messages') or [])
     vision = summary.get('vision_reading')
     if vision and item.status == 'attention' and vision.get('status') in ('not_proved', 'budget', 'failed') \

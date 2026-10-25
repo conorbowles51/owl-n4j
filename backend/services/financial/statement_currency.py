@@ -21,6 +21,8 @@ _CURRENCY_NAMES = {'EURO': 'EUR', 'EUROS': 'EUR', 'PESOS MEXICANOS': 'MXN',
     'DOLARES AMERICANOS': 'USD', 'DOLARES ESTADOUNIDENSES': 'USD', 'US DOLLARS': 'USD',
     'U.S. DOLLARS': 'USD', 'MEXICAN PESOS': 'MXN'}
 _US_LAYOUTS = {'capital-one-card', 'merrick-card', 'credit-one-card', 'citi-card', 'andrews-share-statement'}
+# BBVA's 'Información Financiera' heading, with up to two letters of OCR noise where the accented 'ó' was.
+_BBVA_FINANCIAL = re.compile(r'INFORMACI[A-Z]{0,2}N FINANCIERA')
 
 
 def _code(text):
@@ -51,7 +53,9 @@ def detect_statement_currency(sources, *, layout_id=None, header_text=''):
         # not a second account currency and must not suppress a USD reading.
         def normal(value):
             return ''.join(c for c in unicodedata.normalize('NFKD', value.upper()) if not unicodedata.combining(c))
-        financial_rows = [cells for cells in rows if any(normal(c) == 'INFORMACION FINANCIERA' for c in cells)]
+        # A scan's text layer can garble the accented letter ('Informaciéon Financiera', BNB2 BBVA USD Jul 2025):
+        # missing the heading made every label of the file count, its glossary's 'Moneda nacional' included.
+        financial_rows = [cells for cells in rows if any(_BBVA_FINANCIAL.fullmatch(normal(c)) for c in cells)]
         if financial_rows:
             labelled_rows = financial_rows
     labelled = set()
