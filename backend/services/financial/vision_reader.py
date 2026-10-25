@@ -1019,8 +1019,14 @@ def read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for
             if not approved(case_id):  # measuring sends the images too
                 return dict(record, reason='case_not_approved')
             entry = next((e for e in batch.files or [] if e.get('file_id') == str(file_id)), {})
-            proposal = read_statement_import(db, case_id=case_id, evidence_file_id=file_id,
-                                             currency=entry.get('currency') or None, statement_id=key or None)
+            from services.financial.pdf_candidates import PdfMappingError
+            try:
+                proposal = read_statement_import(db, case_id=case_id, evidence_file_id=file_id,
+                                                 currency=entry.get('currency') or None, statement_id=key or None)
+            except PdfMappingError:
+                # The current reading no longer has this period: the file is due to be prepared
+                # again, and is read from its page images after that (not a failed reading).
+                return dict(record, reason='prepared_by_older_reader')
             why = eligible(item, file, proposal)
             if force and why in ('not_held', 'saved', 'investigator_work'):
                 why = None  # accuracy sampling of saved statements only (never applied)
