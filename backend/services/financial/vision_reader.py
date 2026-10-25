@@ -1178,7 +1178,7 @@ def _save(factory, item_id, case_id, file_id, key, record, request):
 # ---------------------------------------------------------------------------
 
 def pending(db, limit=50):
-    """Held, untouched statements of files whose preparation ran with this reader on (batch entry ``MARK``)."""
+    """Held, untouched statements of prepared files (batch entry ``MARK``, or finished preparing)."""
     from postgres.models.evidence import EvidenceFile
     from postgres.models.financial_import_batches import (FinancialImportBatch as Batch,
                                                           FinancialImportBatchItem as Item)
@@ -1188,7 +1188,10 @@ def pending(db, limit=50):
         if not approved(case_id):
             continue
         for entry in files or ():
-            if entry.get(MARK) and entry.get('file_id'):
+            # Marked when prepared with this reader on; a file prepared before it was switched on is
+            # read too once its preparation is finished ('checked'): read_item reads the statement
+            # again with the current code and proves it from scratch, so the mark is not needed.
+            if entry.get('file_id') and (entry.get(MARK) or entry.get('status') == 'checked'):
                 marked.setdefault(batch_id, set()).add(entry['file_id'])
     if not marked:
         return []
