@@ -611,6 +611,7 @@ def prove(proposal, section, knowledge):
     if not rows:
         raise NotProved('No payments were read from the page images; a period without payments needs its printed confirmation.')
     _not_summary_lines(section, rows, exponent)
+    _directions_from_running_balances(rows, opening, closing, liability)
     expected = opening + sum(_movement(r, liability) for r in rows)
     if expected != closing:
         raise NotProved('The page-image reading did not balance: the payments come to %s, the printed closing balance is %s (difference %s).'
@@ -680,6 +681,31 @@ def _show(minor, exponent):
     sign = '-' if minor < 0 else ''
     whole, part = divmod(abs(minor), 10 ** exponent)
     return f'{sign}{whole:,}' + (f'.{part:0{exponent}d}' if exponent else '')
+
+
+def _directions_from_running_balances(rows, opening, closing, liability):
+    """Each payment's direction from the printed running balances, when they settle every one.
+
+    Only when every row prints its balance after, each balance differs from the one before
+    (the opening for the first) by exactly the row's amount, and the last is the printed
+    closing balance: then the balances, not the column the model put the amount in, say
+    whether money came in or went out. Otherwise nothing changes (the checks below decide).
+    """
+    if not rows or any(r['balance_minor'] is None for r in rows) or rows[-1]['balance_minor'] != closing:
+        return 0
+    directions, before = [], opening
+    for row in rows:
+        change = (row['balance_minor'] - before) * (-1 if liability else 1)
+        if abs(change) != row['amount_minor']:
+            return 0
+        directions.append('credit' if change > 0 else 'debit')
+        before = row['balance_minor']
+    corrected = 0
+    for row, direction in zip(rows, directions):
+        if row['direction'] != direction:
+            row['direction'], row['direction_from_balance'] = direction, True
+            corrected += 1
+    return corrected
 
 
 def _running_ok(rows, opening, liability):
@@ -774,7 +800,8 @@ def build_request(proposal, reading):
                      date=row['date'], date_unprinted=False, date_values={}, description=row['description'],
                      counterparty='', amount_minor=str(row['amount_minor']), direction=row['direction'],
                      balance_minor=str(row['balance_minor']) if row['balance_minor'] is not None else None,
-                     reason=ROW_REASON.format(page=row['page']))
+                     reason=ROW_REASON.format(page=row['page']) + (
+                         ' In or out from the printed running balance.' if row.get('direction_from_balance') else ''))
         allowed = sorted(allowed_source_positions(originals, row['page'], pages))
         anchor = next((a for a in allowed if a[0] == 'after'), None) or (allowed[0] if allowed else None)
         if anchor:
@@ -1256,6 +1283,7 @@ def pending(db, limit=50):
 
 
 _skip_until = {}
+PENDING_LIMIT = 2000
 
 
 def sweep(factory, resolve_path, *, budget_seconds=SWEEP_SECONDS):
@@ -1266,16 +1294,18 @@ def sweep(factory, resolve_path, *, budget_seconds=SWEEP_SECONDS):
     started = time.monotonic()
     try:
         with factory() as db:
-            ids = pending(db)
+            # A statement not read (not eligible, skipped for now) stores nothing and stays listed:
+            # the whole list is taken and those skipped are passed over before any is read, so they
+            # never keep the others from their turn.
+            ids = pending(db, limit=PENDING_LIMIT)
     except Exception:
         log.exception('Finding statements to read from page images failed; the next round retries')
         return report
     now = time.monotonic()
+    ids = [item_id for item_id in ids if _skip_until.get(item_id, 0) <= now]
     for item_id in ids:
         if time.monotonic() - started >= budget_seconds:
             break
-        if _skip_until.get(item_id, 0) > now:
-            continue
         outcome = read_item(factory, item_id, resolve_path)
         reason = outcome.get('reason')
         if reason in ('already_read', 'being_read'):
