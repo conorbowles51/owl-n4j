@@ -352,6 +352,46 @@ class FailClosedTest(unittest.TestCase):
         with mock.patch.object(vr, 'ENABLED', False):
             self.assertEqual(vr.sweep(None, None)['read'], 0)
 
+    def test_only_approved_cases_are_read(self):
+        approved_case, other_case = 'D5B330D1-0000-0000-0000-000000000001', '49494305-0000-0000-0000-000000000002'
+        with mock.patch.object(vr, 'APPROVED_CASES', frozenset({approved_case.lower()})):
+            self.assertTrue(vr.approved(approved_case))
+            self.assertFalse(vr.approved(other_case))
+        with mock.patch.object(vr, 'APPROVED_CASES', frozenset()):
+            self.assertFalse(vr.approved(approved_case))  # unset: no case's images are sent
+
+    def test_pending_skips_cases_not_approved(self):
+        class Db:
+            def __init__(self):
+                self.calls = 0
+
+            def execute(self, statement):
+                self.calls += 1
+                return [('batch-1', 'other-case', [{vr.MARK: True, 'file_id': 'f1'}])]
+        db = Db()
+        with mock.patch.object(vr, 'APPROVED_CASES', frozenset({'bnb2'})):
+            self.assertEqual(vr.pending(db), [])
+        self.assertEqual(db.calls, 1)  # no item query: nothing of the unapproved case is looked at
+
+    def test_read_item_refuses_a_case_not_approved_before_any_request(self):
+        item = SimpleNamespace(batch_id='b', file_id='f', statement_key='k')
+        batch = SimpleNamespace(case_id='other-case', status='review', files=[])
+
+        class Db:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def get(self, model, key):
+                return {'b': batch, 'f': object()}.get(key, item)
+        reader = mock.Mock()
+        with mock.patch.object(vr, 'APPROVED_CASES', frozenset({'bnb2'})):
+            out = vr.read_item(lambda: Db(), 'item', None, page_reader=reader, knowledge_for=lambda *a: None)
+        self.assertEqual(out['reason'], 'case_not_approved')
+        reader.assert_not_called()
+
     def test_provider_without_page_images_or_key_is_unavailable(self):
         db = object()
         with mock.patch('services.ai_model_policy.get_workload_model', return_value=('anthropic', 'claude-sonnet-5')):
