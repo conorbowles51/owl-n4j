@@ -591,7 +591,9 @@ def duplicate_copies(session, document):
         FinancialSourceDocument.superseded_by_id == document.id,
         FinancialSourceDocument.status == 'superseded',
         FinancialSourceDocument.duplicate_match_rung.is_not(None)).order_by(FinancialSourceDocument.id))
-    return [_link(session, copy) for copy in copies]
+    from services.financial.saved_reading_replacement import is_replacement_link
+    # A reading replaced by a reader replacement is not a copy (it is shown in the replacement notice).
+    return [_link(session, copy) for copy in copies if not is_replacement_link(session, copy, document)]
 
 
 # Writes -------------------------------------------------------------------
