@@ -316,6 +316,23 @@ def _text(value):
     return re.sub(r'\s+', ' ', str(value or '')).strip()
 
 
+# Request values saved_counterpart compares with the saved statement (any other non-empty value leaves the file).
+COMPARED_DETAILS = ('expected_revision', 'statement_id', 'rows', 'currency', 'account_number', 'holder',
+                    'institution', 'period_start', 'period_end')
+UNCOMPARED_ROW_FIELDS = ('reason', 'manual_page', 'counterparty_link', 'source_order_anchor', 'date_values',
+                         'date_unprinted')
+
+
+def _same_name(field, mine, saved):
+    """Holder: the same words, company words aside (review_carry.same_value). Institution: the same words, bank
+    words aside; a name one is part of the other is not enough."""
+    from services.financial.review_carry import _BANK, _words, same_value
+    if field == 'institution':
+        mine, saved = [[w for w in _words(v) if w not in _BANK] for v in (mine, saved)]
+        return bool(mine) and mine == saved
+    return same_value(field, mine, saved)
+
+
 def saved_counterpart(session, case_id, key, new_key, request, proposal, decided):
     """The saved statement her work on ``key`` already is, or NotCarried. Read only.
 
@@ -325,21 +342,22 @@ def saved_counterpart(session, case_id, key, new_key, request, proposal, decided
 
     * the current reading itself names that import as this statement's own (``current_import``), every settled
       item of the statement is that import, and it holds exactly one admitted statement period;
-    * work with no payment line at all (every row of hers a line without an amount, left out; or no rows)
-      decided nothing about the saved payments: only her details below are compared;
     * every payment line she includes has its own saved payment (date, amount, direction, one for one), with her
-      description, counterparty and running balance where she has one; no line she left out was saved; a
-      balance-only line of hers prints the saved opening, closing or a saved running balance. The saved
+      description, counterparty and running balance where she has one; no line she left out was saved; an
+      included line without an amount is a bare balance line printing the saved opening, closing or a saved
+      running balance; a line she left out without an amount is bare (no date, text or balance). The saved
       statement may hold lines her work never had (the earlier reader did not read them): she decided nothing
-      about those;
-    * her currency, account (last six digits), period, holder and institution, where she has one, are the saved
-      ones; she wrote no note or reason (a note would only live in history).
+      about those. Work with no payment line (every line bare and left out) compares only her details;
+    * no row value with nothing saved to equal (a note, a hand-added line, a counterparty link, a placement,
+      other printed dates) and no statement value other than currency, account, period, holder and institution
+      (notes, confirmations, balance corrections, unprinted-period flags);
+    * her currency, account (as written, or the saved identifier's full digits), period, holder (the same words)
+      and institution (the same words, bank words aside), where she has one, are the saved ones.
 
     Anything else leaves the file exactly as it is (fail closed)."""
     from postgres.models.financial import (FinancialAccount, FinancialSourceDocument, FinancialStatementPeriod,
                                            FinancialTransaction)
     from services.financial.reread_carry import NotCarried as RowsUnreadable, _amount, _row_day, payments
-    from services.financial.review_carry import same_value
     from uuid import UUID
     if not SAME_VALUES or key == new_key or any(item.status != 'imported' for item in decided):
         raise NotCarried('statement_saved_or_decided')
@@ -374,24 +392,25 @@ def saved_counterpart(session, case_id, key, new_key, request, proposal, decided
         error = NotCarried('saved_statement_differs')
         error.detail = what
         return error
-    if any(_text(request.get(name)) for name in ('details_reason', 'balance_exception_reason',
-                                                 'coverage_review_reason')) or request.get('no_activity_confirmed'):
-        raise differs('notes')
+    # Every value she can enter is compared below; a value of any other kind (a balance correction, an
+    # unprinted-period flag, a replacement, notes) has nothing in the saved statement to equal.
+    if any(not _empty(value) for name, value in request.items() if name not in COMPARED_DETAILS):
+        raise differs('other_value')
     if request.get('currency') and request['currency'] != period.currency:
         raise differs('currency')
-    mine = _digits(request.get('account_number'))
-    theirs = _digits((account.identifier_normalised or account.identifier_as_printed) if account else '')
-    printed = _text(account.identifier_as_printed if account else '')
-    if _text(request.get('account_number')) and not (
-            (printed and same_value('account_number', _text(request['account_number']), printed)) or
-            (len(mine) >= 4 and mine[-6:] == theirs[-6:])):
-        raise differs('account')
+    if _text(request.get('account_number')):
+        # The same account: equal as written, or the same full digits as the saved identifier.
+        mine = _digits(request['account_number'])
+        printed = _text(account.identifier_as_printed if account else '')
+        stored = {_digits(account.identifier_as_printed), _digits(account.identifier_normalised)} if account else set()
+        if not (printed and _text(request['account_number']) == printed) and not (len(mine) >= 4 and mine in stored):
+            raise differs('account')
     for name, value in (('period_start', period.period_start), ('period_end', period.period_end)):
         if request.get(name) and str(request[name]) != str(value):
             raise differs('period')
     for name, value in (('holder', account.holder_name if account else None),
                         ('institution', account.institution_name if account else None)):
-        if _text(request.get(name)) and not (_text(value) and same_value(name, _text(request[name]), _text(value))):
+        if _text(request.get(name)) and not (_text(value) and _same_name(name, _text(request[name]), _text(value))):
             raise differs('details')
     saved = [row for row in session.scalars(select(FinancialTransaction).where(
         FinancialTransaction.statement_period_id == period.id))
@@ -401,30 +420,34 @@ def saved_counterpart(session, case_id, key, new_key, request, proposal, decided
         groups.setdefault((str(row.transaction_date or row.ordering_date), int(row.amount_minor), row.direction),
                           []).append(row)
     ledger = Counter({group: len(rows) for group, rows in groups.items()})
-    rows = [_row(row) for row in request.get('rows') or []]
     try:
+        rows = [_row(row) for row in request.get('rows') or []]
         included, excluded = payments(rows)
-    except RowsUnreadable:
+    except (RowsUnreadable, ValueError, TypeError):
         raise differs('unreadable_rows')
     if included - ledger or (excluded & (ledger - included)):
-        raise differs('payments')
-    if not sum(included.values()) and (sum(excluded.values()) or any(not row.get('excluded') and (
-            _amount(row) or row.get('balance_minor') not in (None, '')) for row in rows)):
-        # No payment of hers is included: settled only when her rows hold no payment at all (every row a line
-        # without an amount that she leaves out), so nothing about the saved payments was decided by her.
         raise differs('payments')
     balances = {period.opening_balance_minor, period.closing_balance_minor} | {
         row.running_balance_minor for row in saved}
     balances.discard(None)
     left = {group: list(rows) for group, rows in groups.items()}
     for row in rows:
-        if row.get('excluded'):
-            continue
-        if _text(row.get('reason')):
-            raise differs('row_note')
+        # A row value with nothing in the saved statement to equal (a note, a hand-added line, a link, a
+        # placement, other printed dates) is never settled away.
+        if any(not _empty(row.get(name)) for name in UNCOMPARED_ROW_FIELDS):
+            raise differs('row_value')
         amount = _amount(row)
+        if row.get('excluded'):
+            # A line she leaves out: with an amount it is compared above (no saved payment is one she left out);
+            # without one it must be a bare line (no date, text or balance of hers).
+            if not amount and any(not _empty(row.get(name)) for name in ('date', 'description', 'counterparty',
+                                                                       'direction', 'balance_minor')):
+                raise differs('excluded_line')
+            continue
         if not amount:
-            if row.get('balance_minor') not in (None, '') and _minor(row['balance_minor']) not in balances:
+            # An included line with no amount: only a bare balance line printing a saved balance.
+            if (any(not _empty(row.get(name)) for name in ('date', 'description', 'counterparty', 'direction')) or
+                    row.get('balance_minor') in (None, '') or _minor(row['balance_minor']) not in balances):
                 raise differs('balance_line')
             continue
         group = left.get((_row_day(row), amount, row.get('direction'))) or []
@@ -515,7 +538,7 @@ def plan(session, case_id, reading, source, currency=None):
                                audit=audit, conflicts=conflicts, row_conflicts=row_conflicts, proposal=proposal,
                                initial=initial_request(proposal), read_currency=read_currency)
     for key in statements:
-        if statements[key]['kind'] == 'settled' and key in targets and targets[key] != key:
+        if statements[key]['kind'] in ('settled', 'saved') and key in targets and targets[key] != key:
             raise NotCarried('statement_ambiguous')  # a settled record on the statement hers moves onto
     return dict(statements=statements, fresh=fresh)
 

@@ -441,6 +441,10 @@ class SavedCounterpartTests(TestCase):
             proposal = current_reader(db, case_id=self.f.case.id, evidence_file_id=self.o.primary.id,
                                       statement_id=new_key or None)
             request = batches.initial_request(proposal)
+            # Lines the reader leaves out without an amount (headings) as her saved work holds them: bare.
+            request['rows'] = [dict(id=row['id'], excluded=True, amount_minor='0')
+                               if row['excluded'] and str(row.get('amount_minor') or '0') == '0' else row
+                               for row in request['rows']]
             change(request)
             before = deepcopy(db.get(EvidenceFile, self.o.primary.id).metadata_)
             try:
@@ -478,11 +482,15 @@ class SavedCounterpartTests(TestCase):
         def balance_only(request):
             request['rows'] = [dict(id=row['id'], excluded=True, amount_minor='0') for row in request['rows']]
             request['rows'][0].update(excluded=False, balance_minor='123456789')
-        self.refused(balance_only, 'payments')
+        self.refused(balance_only, 'balance_line')
 
     def test_a_note_a_different_account_or_currency_or_line_text_is_not_settled(self):
-        self.refused(lambda request: request.update(details_reason='Checked.'), 'notes')
+        self.refused(lambda request: request.update(details_reason='Checked.'), 'other_value')
+        self.refused(lambda request: request.update(no_activity_confirmed=True), 'other_value')
+        self.refused(lambda request: request.update(_saved_balance_corrections=[dict(role='opening')]), 'other_value')
         self.refused(lambda request: request.update(account_number='99999999'), 'account')
+        self.refused(lambda request: request.update(account_number='TEST999123'), 'account')
+        self.refused(lambda request: request.update(institution='Synthetic'), 'details')
         self.refused(lambda request: request.update(currency='EUR' if request.get('currency') != 'EUR' else 'GBP'),
                      'currency')
 
@@ -498,3 +506,58 @@ class SavedCounterpartTests(TestCase):
         self.assertEqual(self.refused(lambda request: None, key=key), 'statement_saved_or_decided')
         with patch.object(carry, 'SAME_VALUES', False):
             self.assertEqual(self.refused(lambda request: None), 'statement_saved_or_decided')
+
+    def test_a_different_account_sharing_the_last_digits_is_not_settled(self):
+        from postgres.models.financial import FinancialAccount
+        with self.f.SessionLocal() as db:
+            for account in db.scalars(select(FinancialAccount)):
+                if account.identifier_as_printed == 'TEST123':
+                    account.identifier_as_printed, account.identifier_normalised = 'IE12BOFI90001712345678', 'IE12BOFI90001712345678'
+            db.commit()
+        self.refused(lambda request: request.update(account_number='IE12AIBK93001712345678'), 'account')
+        self.judge(lambda request: request.update(account_number='IE12BOFI90001712345678'))
+
+    def test_any_row_value_the_saved_statement_cannot_hold_is_not_settled(self):
+        def bare(request):
+            request['rows'] = [dict(id=row['id'], excluded=True, amount_minor='0') for row in request['rows']]
+            return request['rows']
+
+        def manual_without_amount(request):
+            bare(request).append(dict(id='manual:her-row', manual_page=1, date='2023-01-05', description='Cash',
+                                      direction='debit', amount_minor='', excluded=False))
+        self.refused(manual_without_amount, 'row_value')
+
+        def included_text_without_amount(request):
+            bare(request)[0].update(excluded=False, description='Her line')
+        self.refused(included_text_without_amount, 'balance_line')
+
+        def excluded_line_with_text(request):
+            bare(request)[0].update(date='2023-01-05', description='A line she left out')
+        self.refused(excluded_line_with_text, 'excluded_line')
+
+        def linked(request):
+            row = next(row for row in request['rows'] if not row['excluded'] and str(row.get('amount_minor')) not in ('', '0'))
+            row['counterparty_link'] = dict(kind='entity', id='x')
+        self.assertIn(self.refused(linked), ('saved_statement_differs',))
+
+        def noted(request):
+            row = next(row for row in request['rows'] if not row['excluded'] and str(row.get('amount_minor')) not in ('', '0'))
+            row['reason'] = 'Checked.'
+        self.refused(noted, 'row_value')
+
+    def test_a_bare_balance_line_printing_a_saved_balance_is_settled(self):
+        from postgres.models.financial import FinancialStatementPeriod
+        with self.f.SessionLocal() as db:
+            closing = db.scalar(select(FinancialStatementPeriod.closing_balance_minor))
+        if closing is None:
+            self.skipTest('fixture prints no closing balance')
+
+        def balance(request):
+            request['rows'] = [dict(id=row['id'], excluded=True, amount_minor='0') for row in request['rows']]
+            request['rows'][0].update(excluded=False, balance_minor=str(closing))
+        self.assertEqual(self.judge(balance)['her_payments'], 0)
+
+    def test_a_line_she_left_out_with_text_and_no_amount_is_not_settled(self):
+        def headings_with_text(request):
+            request['rows'][0] = dict(id=request['rows'][0]['id'], excluded=True, amount_minor='0', description='Heading')
+        self.refused(headings_with_text, 'excluded_line')
