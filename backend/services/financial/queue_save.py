@@ -553,6 +553,13 @@ BACKLOG_PER_ROUND = 30
 # bounded): a statement admission held is looked at again only after it changes.
 _BACKLOG_SEEN = OrderedDict()
 BACKLOG_SEEN_MAX = 100_000
+# Neil, 2026-10-25 (BNB2 queue): another case's backlog of statements the save holds (already saved through
+# another batch) took every round after each restart, so BNB2's ready statements were never reached. With this
+# switch each case with backlog gets its share of a round, starting after the case served last.
+# Reverse: LOUPE_FINANCIAL_BACKLOG_FAIR_CASES=0 (cases in id order, the first takes the round, as before).
+BACKLOG_FAIR_CASES = os.environ.get('LOUPE_FINANCIAL_BACKLOG_FAIR_CASES', '1').strip().lower() not in (
+    '0', 'false', 'off', 'no')
+_BACKLOG_LAST_CASE = ['']
 
 
 def backlog_choice(session, items):
@@ -633,11 +640,22 @@ def sweep_backlog(factory, *, budget_seconds=20.0, max_statements=BACKLOG_PER_RO
             by_case = {}
             for case_id, identity, _ in pending:
                 by_case.setdefault(case_id, []).append(identity)
+        share = None
+        if BACKLOG_FAIR_CASES and len(by_case) > 1:
+            # Each case gets its share of the round, and the case served first rotates, so one case's long
+            # backlog of statements the save holds cannot keep another case's ready statements waiting.
+            share = max(1, -(-max_statements // len(by_case)))
+            order = sorted(by_case, key=str)
+            start = next((i for i, case_id in enumerate(order) if str(case_id) > _BACKLOG_LAST_CASE[0]), 0)
+            by_case = OrderedDict((case_id, by_case[case_id]) for case_id in order[start:] + order[:start])
         for case_id, identities in by_case.items():
             if report['considered'] >= max_statements or (
                     budget_seconds is not None and time.monotonic() - started >= budget_seconds):
                 break
             identities = identities[:max_statements - report['considered']]
+            if share is not None:
+                identities = identities[:share]
+                _BACKLOG_LAST_CASE[0] = str(case_id)
             with factory() as db:
                 chosen = backlog_choice(db, list(db.scalars(select(Item).where(Item.id.in_(identities)))))
                 db.rollback()

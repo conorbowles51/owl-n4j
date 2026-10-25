@@ -106,7 +106,7 @@ MIN_MASKED_DIGITS = 4
 FULL_ACCOUNT_DIGITS = 6
 
 
-AUTOFILL_NAMES = ('CURRENCY', 'IDENTITY', 'CASE_CURRENCY')
+AUTOFILL_NAMES = ('CURRENCY', 'IDENTITY', 'CASE_CURRENCY', 'HOLDER_NEIGHBOURS')
 AUTOFILL_CURRENCY_BASIS = 'account_currency'
 # Neil, 2026-10-25: a statement printing no currency anywhere takes the case's usual currency with no click
 # (LOUPE_FINANCIAL_AUTOFILL_CASE_CURRENCY). "Clear majority": more than CASE_CURRENCY_SHARE of the case's saved
@@ -422,6 +422,45 @@ def _bracketed(values, candidates):
             and any(s.period_start and s.period_start > end for s in saved))
 
 
+# Neil, 2026-10-25 (BNB2 queue): an account whose saved statements print two holders (the holder changed once)
+# proposed no holder at all. Its holder for a period is established when the account's saved statements nearest
+# before and nearest after it (and any of its saved statements on the same dates) all print one holder, each
+# within NEAREST_HOLDER_DAYS: a change inside that span would show as a disagreement. Recorded with basis
+# NEAREST_HOLDER_BASIS. Reverse: LOUPE_FINANCIAL_AUTOFILL_HOLDER_NEIGHBOURS=0 (no holder proposed, as before).
+NEAREST_HOLDER_BASIS = 'same_account_nearest'
+NEAREST_HOLDER_DAYS = 186
+
+
+def _nearest_holder(values, candidates):
+    """The one holder the account's saved statements nearest on both sides of this period print, or ''."""
+    from datetime import date
+    if not autofill_enabled('HOLDER_NEIGHBOURS'):
+        return ''
+    start, end = values.get('period_start') or '', values.get('period_end') or ''
+    try:
+        first, last = date.fromisoformat(start), date.fromisoformat(end)
+    except ValueError:
+        return ''
+    saved = [s for k in candidates for s in k.statements if s.period_start and s.period_end]
+    if not saved or any(not (s.holder or '').strip() for s in saved):
+        return ''
+    before = [s for s in saved if s.period_end < start]
+    after = [s for s in saved if s.period_start > end]
+    if not before or not after:
+        return ''
+    latest = max(s.period_end for s in before)
+    earliest = min(s.period_start for s in after)
+    try:
+        if ((first - date.fromisoformat(latest)).days > NEAREST_HOLDER_DAYS
+                or (date.fromisoformat(earliest) - last).days > NEAREST_HOLDER_DAYS):
+            return ''
+    except ValueError:
+        return ''
+    neighbours = ([s for s in before if s.period_end == latest] + [s for s in after if s.period_start == earliest]
+                  + [s for s in saved if _overlaps(start, end, s.period_start, s.period_end)])
+    return _agreed([s.holder for s in neighbours], holder_key)
+
+
 def _account_key(candidates):
     """Opaque key of the matched account (its record ids), for grouping one account's proposals."""
     return ','.join(sorted(k.key for k in candidates))
@@ -441,6 +480,10 @@ def _detail_proposal(name, candidates, matched, values):
     if len(found) != _statement_count(candidates):
         return None
     value = _agreed(found, fold)
+    nearest = False
+    if not value and name == 'holder':
+        value = _nearest_holder(values, candidates)
+        nearest = bool(value)
     if not value:
         return None
     statements = _statement_count(candidates)
@@ -450,6 +493,12 @@ def _detail_proposal(name, candidates, matched, values):
     independent = len(matched - {'masked', 'ambiguous'})
     confirmed = independent >= 2 and (name != 'holder' or _bracketed(values, candidates))
     basis = 'same_account'
+    if nearest:
+        return dict(value=value, basis=NEAREST_HOLDER_BASIS, confirmed=independent >= 2,
+                    account_key=_account_key(candidates),
+                    label=f"same account's saved statements just before and after these dates ({exact} match); "
+                          'its holder changed at another time',
+                    statements=statements, matched=sorted(matched - {'ambiguous'}))
     if (not confirmed and name == 'institution' and autofill_enabled('IDENTITY')
             and identity_proven(values, candidates, matched)):
         # IDENTITY: the bank of the one account whose number the statement prints.
@@ -681,7 +730,8 @@ def automatic_fills(values, proposals, knowledge):
                 continue
         elif not _bracketed(values, candidates):
             continue
-        result[name] = dict(proposal, basis=REAPPLY_BASIS[name],
+        result[name] = dict(proposal, basis=(NEAREST_HOLDER_BASIS if proposal.get('basis') == NEAREST_HOLDER_BASIS
+                                             else REAPPLY_BASIS[name]),
                             label=proposal.get('label', '') + ('; balances continue its saved statements'
                                                                 if name == 'currency' else '; saved before and after it'))
     return result

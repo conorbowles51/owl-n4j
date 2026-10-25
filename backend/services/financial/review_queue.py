@@ -19,6 +19,7 @@ that every statement appears once:
 The per-case status line (imported, waiting, copies, couldn't read) is counted
 from the same classification, so it always agrees with the queue.
 """
+import os
 import threading
 import time
 from collections import OrderedDict
@@ -637,6 +638,7 @@ def _compute(session, case_id):
     set_aside = []
     entries, failed, copy_files = _set_aside_read_copies(session, case_id, entries,
         _failed_files(session, case_id, set(), set_aside))
+    _ready_saved_elsewhere(session, case_id, entries)
     _mark_read_afresh(session, case_id, failed)
     _worked_by(session, entries)
     from datetime import datetime, timezone
@@ -861,6 +863,63 @@ def _set_aside_read_copies(session, case_id, entries, failed):
         else:
             kept.append(file)
     return entries, kept, copies
+
+
+# Neil, 2026-10-25 (BNB2 queue): a "ready" statement that its save would hold as "Already saved through another
+# batch" is a copy, not work. Reverse: LOUPE_FINANCIAL_QUEUE_SAVED_ELSEWHERE=0 (it stays listed as ready).
+SAVED_ELSEWHERE = os.environ.get('LOUPE_FINANCIAL_QUEUE_SAVED_ELSEWHERE', '1').strip().lower() not in (
+    '0', 'false', 'off', 'no')
+
+
+def _ready_saved_elsewhere(session, case_id, entries):
+    """Move to copies the ready entries whose statement another upload of the same document already saved. In place.
+
+    The queue save's own rule (``queue_save.save_statements``): the same statement key in a file with the same
+    bytes or the same rendered pages (``page_identity``) is imported or being imported in a batch of the case
+    that is not removed. Only such an upload whose file also holds an admitted, not removed saved statement is
+    named as the original, so a removed import never makes a statement look saved. Nothing is written.
+    """
+    if not SAVED_ELSEWHERE:
+        return entries
+    from sqlalchemy import or_
+    from postgres.models.financial import FinancialSourceDocument as Source
+    from services.financial import page_identity
+    ready = [e for e in entries if e['bucket'] == 'ready' and _uuid(e['file_id'])]
+    if not ready:
+        return entries
+    own = {str(f.id): f for f in session.scalars(select(EvidenceFile).where(
+        EvidenceFile.case_id == case_id, EvidenceFile.id.in_({UUID(e['file_id']) for e in ready})))}
+    pages = lambda file: (page_identity.stored(file) or {}).get('identity')
+    shas = {f.sha256 for f in own.values() if f.sha256}
+    identities = {pages(f) for f in own.values() if pages(f)}
+    if not shas and not identities:
+        return entries
+    matching = ([EvidenceFile.sha256.in_(shas)] if shas else []) + ([EvidenceFile.metadata_[
+        page_identity.METADATA_KEY]['identity'].as_string().in_(identities)] if identities else [])
+    saved = {}
+    for file, key in session.execute(select(EvidenceFile, Item.statement_key)
+            .join(Item, Item.file_id == EvidenceFile.id).join(Batch, Batch.id == Item.batch_id)
+            .where(Batch.case_id == case_id, Batch.status != 'removed', or_(*matching),
+                   Item.status.in_(('pending_import', 'imported')))):
+        saved.setdefault(key or '', {})[str(file.id)] = file
+    admitted = {str(file_id) for file_id in session.scalars(select(Source.evidence_file_id).where(
+        Source.case_id == case_id, Source.status == 'admitted', Source.document_type == 'statement_review',
+        Source.metadata_['financial_import_removal'].as_string().is_(None),
+        Source.evidence_file_id.in_([UUID(i) for files in saved.values() for i in files])))} if saved else set()
+    for entry in ready:
+        file = own.get(entry['file_id'])
+        if file is None:
+            continue
+        for other_id, other in sorted((saved.get(entry.get('statement_id') or '') or {}).items()):
+            if other_id == entry['file_id'] or other_id not in admitted:
+                continue
+            same_bytes = bool(file.sha256 and other.sha256 == file.sha256)
+            if not same_bytes and not (pages(file) and pages(other) == pages(file)):
+                continue
+            entry.update(bucket='copies', set_aside=True, copy_of=other.original_filename or None,
+                         copy_reason='same_file_read' if same_bytes else 'same_pages_read', copy_file_id=other_id)
+            break
+    return entries
 
 
 def _mark_read_afresh(session, case_id, failed):

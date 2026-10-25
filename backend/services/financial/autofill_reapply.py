@@ -13,7 +13,7 @@ This background round brings those statements in line, with no click:
   'unchanged' mark under that stamp). A file prepared by an older reader is left to ``held_reprepare``, which
   prepares it again (re-keying it); preparation's own fill then runs.
 * Only a statement nobody worked on: held, no batch draft, no saved review, no person's duplicate decision,
-  in a batch that is not removed, paused or preparing.
+  in a batch that is not removed or paused (a preparing one only while no worker holds its lease).
 * Only the answers ``field_proposals.automatic_fills`` allows (the account's saved statements, with the
   balance-chain and bracketing rules; the case's usual currency only under ``CASE_CURRENCY``; never an account
   number), and only when
@@ -29,11 +29,12 @@ Switch ``LOUPE_FINANCIAL_AUTOFILL_REAPPLY`` (default on; with the proposal switc
 nothing is written and the next round tries again (fail closed).
 """
 import logging
+import os
 import time
 from collections import OrderedDict
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import and_, func, or_, select
 
 from postgres.models.evidence import EvidenceFile
 from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item
@@ -42,6 +43,12 @@ log = logging.getLogger(__name__)
 
 HELD = 'attention'
 SKIPPED_BATCHES = ('removed', 'paused', 'pausing', 'preparing')
+# Neil, 2026-10-25 (BNB2 queue): a case's automatic batch is 'preparing' nearly all the time (new files keep
+# joining it), so its held statements were never filled. A preparing batch is now included while no worker holds
+# its lease; only files whose own preparation finished qualify (``current_reading``), and the details save refuses
+# a batch whose lease is taken (retried next round). Reverse: LOUPE_FINANCIAL_AUTOFILL_REAPPLY_PREPARING=0.
+INCLUDE_PREPARING = os.environ.get('LOUPE_FINANCIAL_AUTOFILL_REAPPLY_PREPARING', '1').strip().lower() not in (
+    '0', 'false', 'off', 'no')
 MAX_PER_ROUND = 200
 # Item id -> (updated_at, the case's saved-state fingerprint) when last decided (per process, bounded).
 _SEEN = OrderedDict()
@@ -74,9 +81,13 @@ def held_candidates(session):
     A draft is excluded when the item is loaded (``entries_for_case``): a JSON column cleared to None can hold a
     JSON null rather than SQL NULL, so ``IS NULL`` would miss untouched statements.
     """
+    allowed = Batch.status.notin_(SKIPPED_BATCHES)
+    if INCLUDE_PREPARING:
+        allowed = or_(allowed, and_(Batch.status == 'preparing', or_(
+            Batch.worker_token.is_(None), Batch.lease_until.is_(None), Batch.lease_until < func.now())))
     return session.execute(select(Batch.case_id, Item.batch_id, Item.id, Item.updated_at)
         .join(Batch, Batch.id == Item.batch_id)
-        .where(Item.status == HELD, Batch.status.notin_(SKIPPED_BATCHES))
+        .where(Item.status == HELD, allowed)
         .order_by(Batch.case_id, Item.id)).all()
 
 
