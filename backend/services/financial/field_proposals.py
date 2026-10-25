@@ -635,6 +635,10 @@ def _join(words):
     return words[0] if len(words) == 1 else ', '.join(words[:-1]) + ' and ' + words[-1]
 
 
+NOT_RECORDED = ('this statement was prepared before Loupe recorded which currencies its pages print, so it cannot '
+                'yet check that the page shows it; it is checked again when the statement is read again')
+
+
 def _account_history(values, candidates, matched):
     """(proposal, '') under ACCOUNT_HISTORY (module docstring), or (None, why not in plain words). Fail closed."""
     if not autofill_enabled('ACCOUNT_HISTORY'):
@@ -656,6 +660,8 @@ def _account_history(values, candidates, matched):
                       else f'it has fewer than {ACCOUNT_HISTORY_MIN_SAVED} saved statements')
     if any(k.currency and k.currency.upper() != value for k in candidates):
         return None, f'the account itself is recorded in {", ".join(sorted({k.currency for k in candidates if k.currency}))}'
+    if not isinstance(values.get('currency_marks'), list):
+        return None, NOT_RECORDED
     if value not in _named(values):
         return None, f'the pages do not print {value} anywhere'
     start, end = values.get('period_start') or '', values.get('period_end') or ''
@@ -783,7 +789,10 @@ def currency_why(values, knowledge, proposal=None):
         reasons.append(f'The pages mention {_join(named)}, but none of them is printed as {own}.')
     elif named:
         reasons.append(f'The pages mention {named[0]}, but not as {own}.')
-    elif marks is not None:
+    elif marks is None:
+        reasons.append('Loupe has not yet recorded which currencies these pages print (the statement was prepared '
+                       'before that check existed). Reading it again records them.')
+    else:
         bare = any(len(mark) > 1 for mark in marks)
         reasons.append(('Apart from UDI (below), the pages' if all_named & REFERENCE_UNITS else 'The pages')
                        + ' print no currency' + (": only a bare '$', which is used for pesos and dollars alike"

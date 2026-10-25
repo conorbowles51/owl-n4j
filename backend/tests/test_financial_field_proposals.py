@@ -664,3 +664,14 @@ class OneClickCurrencyTests(TestCase):
         held = values(account_number='', institution='', holder='', currency_marks=[['MXN']])
         currency = fp.propose(held, knowledge(account(*MONTHS)))['currency']
         self.assertEqual((currency['value'], currency['basis'], currency['confirmed']), ('MXN', 'only_printed_currency', False))
+
+
+class NotRecordedMarksTests(TestCase):
+    def test_an_older_preparation_never_claims_the_page_lacks_a_currency(self):
+        usd = [saved(currency='USD', start=f'2024-{m:02d}-01', end=f'2024-{m:02d}-28') for m in range(1, 13)]
+        known = knowledge(account(*usd, currency=''))
+        held = values(period_start='2025-01-01', period_end='2025-01-31')  # no currency_marks: prepared earlier
+        self.assertIsNone(fp.account_history_currency(held, known))
+        _, why = fp.currency_why(held, known)
+        self.assertFalse(any('do not print' in w for w in why), why)
+        self.assertTrue(any('prepared before' in w for w in why), why)
