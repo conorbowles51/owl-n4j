@@ -90,6 +90,7 @@ WORKLOAD = 'financial_vision'
 VERSION = 'vision-reader-v1'
 METADATA_KEY = 'financial_vision_reading'
 MARK = 'vision_fallback'
+REPREPARE_MARK = 'held_reprepare'  # held_reprepare.MARK (not imported: that module imports this one's callers)
 SYSTEM_NAME = 'System'
 SYSTEM_EMAIL = 'vision-reader@system.local'
 ROW_REASON = 'Read from page image, page {page}.'
@@ -887,6 +888,29 @@ def eligible(item, file, proposal):
     return None
 
 
+def prepared_elsewhere(db, item, proposal):
+    """None when the held statement was prepared from the reading the current code makes, else why not.
+
+    The same test reader_release uses for 'unchanged': the item's revision and review model
+    are the current ones and the file still splits into the same statements. Otherwise the
+    file is due to be prepared again (which carries the investigator's work), and is read
+    from its page images after that.
+    """
+    from postgres.models.financial_import_batches import FinancialImportBatchItem as Item
+    from services.financial.import_batches import REVIEW_MODEL
+    summary = item.summary or {}
+    if summary.get('revision') != proposal.get('revision') or summary.get('review_model') != REVIEW_MODEL:
+        return 'prepared_by_older_reader'
+    keys = {choice['id'] for choice in proposal.get('statement_choices') or []}
+    if keys:
+        items = set(db.scalars(select(Item.statement_key).where(
+            Item.batch_id == item.batch_id, Item.file_id == item.file_id,
+            Item.status.notin_(('removed', 'superseded_reading')))))
+        if keys != {key or '' for key in items}:
+            return 'prepared_by_older_reader'
+    return None
+
+
 def statement_pages(proposal):
     pages = proposal.get('statement_page_numbers') or sorted({s['page_number'] for s in proposal.get('sources') or []
                                                              if type(s.get('page_number')) is int})
@@ -1004,6 +1028,9 @@ def read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for
             if why:
                 return dict(record, reason=why)
             if not force:
+                why = prepared_elsewhere(db, item, proposal)
+                if why:
+                    return dict(record, reason=why)
                 state, _ = assess(proposal, None)
                 if state != 'attention':
                     return dict(record, reason='not_held')
@@ -1174,7 +1201,7 @@ def _save(factory, item_id, case_id, file_id, key, record, request):
 
 
 # ---------------------------------------------------------------------------
-# Which statements: held ones of files prepared with the reader on
+# Which statements: held ones of prepared files
 # ---------------------------------------------------------------------------
 
 def pending(db, limit=50):
@@ -1191,7 +1218,10 @@ def pending(db, limit=50):
             # Marked when prepared with this reader on; a file prepared before it was switched on is
             # read too once its preparation is finished ('checked'): read_item reads the statement
             # again with the current code and proves it from scratch, so the mark is not needed.
-            if entry.get('file_id') and (entry.get(MARK) or entry.get('status') == 'checked'):
+            # Not one queued to be prepared again (held_reprepare): that re-preparation goes first.
+            queued = ((entry.get(REPREPARE_MARK) or {}) if isinstance(entry.get(REPREPARE_MARK), dict) else {}).get('state')
+            if entry.get('file_id') and (entry.get(MARK) or (entry.get('status') == 'checked'
+                                                             and queued not in ('pending', 'handed'))):
                 marked.setdefault(batch_id, set()).add(entry['file_id'])
     if not marked:
         return []
