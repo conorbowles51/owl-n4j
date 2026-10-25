@@ -700,6 +700,12 @@ def _directions_from_running_balances(rows, opening, closing, liability):
             return 0
         directions.append('credit' if change > 0 else 'debit')
         before = row['balance_minor']
+    disagree = sum(row['direction'] != direction for row, direction in zip(rows, directions))
+    # Only a slip on a few rows: the rows read the same way as the balances confirm the sign
+    # convention. Many disagreeing (a card read as an account, or every balance's sign lost)
+    # would flip the whole reading; then nothing changes and the checks below hold it.
+    if disagree == 0 or disagree > max(1, len(rows) // 10) or len(rows) - disagree < 3:
+        return 0
     corrected = 0
     for row, direction in zip(rows, directions):
         if row['direction'] != direction:
@@ -1050,7 +1056,9 @@ def read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for
             try:
                 proposal = read_statement_import(db, case_id=case_id, evidence_file_id=file_id,
                                                  currency=entry.get('currency') or None, statement_id=key or None)
-            except PdfMappingError:
+            except PdfMappingError as error:
+                if 'no longer available' not in str(error):
+                    raise
                 # The current reading no longer has this period: the file is due to be prepared
                 # again, and is read from its page images after that (not a failed reading).
                 return dict(record, reason='prepared_by_older_reader')
@@ -1309,6 +1317,7 @@ def sweep(factory, resolve_path, *, budget_seconds=SWEEP_SECONDS):
         outcome = read_item(factory, item_id, resolve_path)
         reason = outcome.get('reason')
         if reason in ('already_read', 'being_read'):
+            _skip_until[item_id] = now + 600
             continue
         if outcome.get('status') in ('proved', 'not_proved', 'failed', 'unavailable', 'stale', 'budget') or reason:
             # Not looked at again by this process for a while unless its reading changes.
