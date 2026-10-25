@@ -302,6 +302,39 @@ class ReprepareCarryTests(TestCase):
         self.assertEqual([(row['kind'], row['status'], row['new_lines']) for row in rows], [('carried', 'attention', 1)])
         self.assertEqual(self.snapshot(batch), before)
 
+    def test_work_the_saved_statement_already_holds_is_settled_kept_and_nothing_saved(self):
+        from postgres.models.financial import FinancialTransaction
+        from services.financial.reread_carry import work_fingerprint
+        batch = self.h.prepare(reader=missing_reader)
+        mine, file_id = self.her_work(batch, missing_reader, lambda request: request.update(holder='H'), progress=True)
+        saved_as = dict(source_document_id='doc', statement_period_id='period', saved_payments=3, her_payments=0)
+        def plan(session, case_id, reading, source, currency=None):
+            found = carry.work(session, case_id, reading)
+            (key, entries), = found.items()
+            return dict(statements={key: dict(kind='saved', new_key='other-key', entries=entries, saved_as=saved_as)},
+                        fresh={})
+        with self.f.SessionLocal() as db:
+            transactions = len(list(db.scalars(select(FinancialTransaction))))
+            fingerprint = work_fingerprint(db, self.f.case.id, [file_id])
+            file = dict(file_id=str(file_id), source_id=str(file_id))
+            with patch.object(carry, 'plan', plan):
+                self.assertEqual(carry.apply(db, case_id=self.f.case.id, batch_id=batch, file=file,
+                                             fingerprint=fingerprint), 'carried')
+        item, = self.h.items(batch)
+        self.assertEqual(item.status, 'superseded_reading')
+        self.assertEqual(item.review_request, mine)  # her draft stays on its item, verbatim
+        self.assertEqual((item.summary['saved_as'], item.summary['can_import']), (saved_as, False))
+        self.assertEqual(item.summary['recovery_message'], carry.SAVED_MESSAGE)
+        with self.f.SessionLocal() as db:
+            meta = db.get(EvidenceFile, file_id).metadata_
+            self.assertEqual(len(list(db.scalars(select(FinancialTransaction)))), transactions)
+        self.assertEqual(meta['financial_review_progress'], {})
+        self.assertEqual(meta['financial_review_history'][-1]['request'], mine)
+        logged, = meta[carry.LOG][-1]['statements'].values()
+        self.assertEqual((logged['kind'], logged['saved_as'], logged['original_progress']['request']),
+                         ('saved', saved_as, mine))
+        self.assertEqual(list(logged['original_drafts'].values()), [mine])
+
     def test_the_work_query_compiles_for_postgres(self):
         with self.f.SessionLocal() as db:
             statements = []
@@ -350,3 +383,181 @@ class RowMatchTests(TestCase):
         with self.assertRaises(carry.NotCarried) as raised:
             carry.match_rows(mine, [self.row('n1', '999')])
         self.assertEqual(raised.exception.reason, 'row_not_found')
+
+
+class SameWorkTests(TestCase):
+    """A batch draft equal to her saved progress but for the reading revision is one piece of work."""
+    def test_a_draft_differing_only_in_revision_is_her_progress(self):
+        progress = dict(request=dict(expected_revision='a', holder='H', rows=[]), saved_by=HER)
+        draft = dict(expected_revision='b', holder='H', rows=[])
+        entries = [('progress', progress, None), ('draft', dict(request=draft), None)]
+        self.assertEqual(carry._effective(entries)[0], progress['request'])
+        with patch.object(carry, 'SAME_VALUES', False), self.assertRaises(carry.NotCarried):
+            carry._effective(entries)
+        other = dict(draft, holder='Another')
+        with self.assertRaises(carry.NotCarried) as error:
+            carry._effective([('progress', progress, None), ('draft', dict(request=other), None)])
+        self.assertEqual(error.exception.reason, 'two_drafts')
+
+    def test_two_drafts_differing_only_in_revision_are_one(self):
+        one, two = dict(expected_revision='a', holder='H'), dict(expected_revision='b', holder='H')
+        entries = [('draft', dict(request=one), None), ('draft', dict(request=two), None)]
+        self.assertEqual(carry._effective(entries)[0], one)
+        with patch.object(carry, 'SAME_VALUES', False), self.assertRaises(carry.NotCarried):
+            carry._effective(entries)
+
+
+class SavedCounterpartTests(TestCase):
+    """Her work on a statement the case already saved from this file settles only when the saved one holds it."""
+    def setUp(self):
+        from tests import test_financial_statement_overlap as overlap_fixture
+        self.o = overlap_fixture.StatementOverlapTests('test_reason_bound_to_coverage_stays_valid_when_peer_imports')
+        self.o.setUp()
+        self.f = self.o.f
+        batch = self.o.create(self.o.primary)
+        status = self.o.b.status(batch)
+        if status['counts']['ready'] != 1:
+            from services.financial.statement_import import StatementReviewDraft
+            item = status['items'][0]
+            with self.f.SessionLocal() as db:
+                batches.save_review(db, case_id=self.f.case.id, batch_id=batch, item_id=UUID(item['id']),
+                                    request=StatementReviewDraft.model_validate(self.f.request()),
+                                    expected_review_revision=batches._digest({}))
+            status = self.o.b.status(batch)
+        self.assertEqual(status['counts']['ready'], 1, status)
+        with self.f.SessionLocal() as db:
+            batches.queue_import(db, case_id=self.f.case.id, batch_id=batch, expected_revision=status['ready_revision'],
+                                 actor=self.f.actor)
+        self.o.b.advance(batch)
+        self.assertEqual(self.o.b.status(batch)['counts']['imported'], 1)
+
+    def tearDown(self):
+        self.o.tearDown()
+
+    def judge(self, change=lambda request: None, key='stale-key'):
+        with self.f.SessionLocal() as db:
+            decided = list(db.scalars(select(Item).where(Item.file_id == self.o.primary.id, Item.status == 'imported')))
+            new_key = decided[0].statement_key or ''
+            proposal = current_reader(db, case_id=self.f.case.id, evidence_file_id=self.o.primary.id,
+                                      statement_id=new_key or None)
+            request = batches.initial_request(proposal)
+            # Lines the reader leaves out without an amount (headings) as her saved work holds them: bare.
+            request['rows'] = [dict(id=row['id'], excluded=True, amount_minor='0')
+                               if row['excluded'] and str(row.get('amount_minor') or '0') == '0' else row
+                               for row in request['rows']]
+            change(request)
+            before = deepcopy(db.get(EvidenceFile, self.o.primary.id).metadata_)
+            try:
+                return carry.saved_counterpart(db, self.f.case.id, key, new_key, request, proposal, decided)
+            finally:
+                self.assertFalse(db.dirty or db.new or db.deleted)
+                self.assertEqual(db.get(EvidenceFile, self.o.primary.id).metadata_, before)
+                db.rollback()
+
+    def refused(self, change, detail=None, key='stale-key'):
+        with self.assertRaises(carry.NotCarried) as error:
+            self.judge(change, key)
+        if detail:
+            self.assertEqual((error.exception.reason, getattr(error.exception, 'detail', None)),
+                             ('saved_statement_differs', detail))
+        return error.exception.reason
+
+    def test_work_the_saved_statement_holds_is_settled(self):
+        found = self.judge()
+        self.assertGreater(found['her_payments'], 0)
+        self.assertEqual(found['her_payments'], found['saved_payments'])
+
+    def test_work_with_no_payment_line_compares_only_her_details(self):
+        def blank(request):
+            request['rows'] = [dict(id=row['id'], excluded=True, amount_minor='0') for row in request['rows']]
+        self.assertEqual(self.judge(blank)['her_payments'], 0)
+        self.assertEqual(self.judge(lambda request: request.update(rows=[]))['her_payments'], 0)
+
+    def test_an_excluded_payment_the_case_saved_or_an_included_line_with_a_balance_is_not_settled(self):
+        def exclude_one_payment(request):
+            for row in request['rows']:
+                row['excluded'] = True
+        self.refused(exclude_one_payment, 'payments')
+
+        def balance_only(request):
+            request['rows'] = [dict(id=row['id'], excluded=True, amount_minor='0') for row in request['rows']]
+            request['rows'][0].update(excluded=False, balance_minor='123456789')
+        self.refused(balance_only, 'balance_line')
+
+    def test_a_note_a_different_account_or_currency_or_line_text_is_not_settled(self):
+        self.refused(lambda request: request.update(details_reason='Checked.'), 'other_value')
+        self.refused(lambda request: request.update(no_activity_confirmed=True), 'other_value')
+        self.refused(lambda request: request.update(_saved_balance_corrections=[dict(role='opening')]), 'other_value')
+        self.refused(lambda request: request.update(account_number='99999999'), 'account')
+        self.refused(lambda request: request.update(account_number='TEST999123'), 'account')
+        self.refused(lambda request: request.update(institution='Synthetic'), 'details')
+        self.refused(lambda request: request.update(currency='EUR' if request.get('currency') != 'EUR' else 'GBP'),
+                     'currency')
+
+        def retext(request):
+            row = next(row for row in request['rows'] if not row['excluded'] and str(row.get('amount_minor')) not in ('', '0'))
+            row['description'] = 'Not what was saved'
+        self.refused(retext, 'line_text')
+
+    def test_the_same_key_or_the_switch_off_leaves_the_file(self):
+        with self.f.SessionLocal() as db:
+            key = db.scalar(select(Item.statement_key).where(Item.file_id == self.o.primary.id,
+                                                             Item.status == 'imported')) or ''
+        self.assertEqual(self.refused(lambda request: None, key=key), 'statement_saved_or_decided')
+        with patch.object(carry, 'SAME_VALUES', False):
+            self.assertEqual(self.refused(lambda request: None), 'statement_saved_or_decided')
+
+    def test_a_different_account_sharing_the_last_digits_is_not_settled(self):
+        from postgres.models.financial import FinancialAccount
+        with self.f.SessionLocal() as db:
+            for account in db.scalars(select(FinancialAccount)):
+                if account.identifier_as_printed == 'TEST123':
+                    account.identifier_as_printed, account.identifier_normalised = 'IE12BOFI90001712345678', 'IE12BOFI90001712345678'
+            db.commit()
+        self.refused(lambda request: request.update(account_number='IE12AIBK93001712345678'), 'account')
+        self.judge(lambda request: request.update(account_number='IE12BOFI90001712345678'))
+
+    def test_any_row_value_the_saved_statement_cannot_hold_is_not_settled(self):
+        def bare(request):
+            request['rows'] = [dict(id=row['id'], excluded=True, amount_minor='0') for row in request['rows']]
+            return request['rows']
+
+        def manual_without_amount(request):
+            bare(request).append(dict(id='manual:her-row', manual_page=1, date='2023-01-05', description='Cash',
+                                      direction='debit', amount_minor='', excluded=False))
+        self.refused(manual_without_amount, 'row_value')
+
+        def included_text_without_amount(request):
+            bare(request)[0].update(excluded=False, description='Her line')
+        self.refused(included_text_without_amount, 'balance_line')
+
+        def excluded_line_with_text(request):
+            bare(request)[0].update(date='2023-01-05', description='A line she left out')
+        self.refused(excluded_line_with_text, 'excluded_line')
+
+        def linked(request):
+            row = next(row for row in request['rows'] if not row['excluded'] and str(row.get('amount_minor')) not in ('', '0'))
+            row['counterparty_link'] = dict(kind='entity', id='x')
+        self.assertIn(self.refused(linked), ('saved_statement_differs',))
+
+        def noted(request):
+            row = next(row for row in request['rows'] if not row['excluded'] and str(row.get('amount_minor')) not in ('', '0'))
+            row['reason'] = 'Checked.'
+        self.refused(noted, 'row_value')
+
+    def test_a_bare_balance_line_printing_a_saved_balance_is_settled(self):
+        from postgres.models.financial import FinancialStatementPeriod
+        with self.f.SessionLocal() as db:
+            closing = db.scalar(select(FinancialStatementPeriod.closing_balance_minor))
+        if closing is None:
+            self.skipTest('fixture prints no closing balance')
+
+        def balance(request):
+            request['rows'] = [dict(id=row['id'], excluded=True, amount_minor='0') for row in request['rows']]
+            request['rows'][0].update(excluded=False, balance_minor=str(closing))
+        self.assertEqual(self.judge(balance)['her_payments'], 0)
+
+    def test_a_line_she_left_out_with_text_and_no_amount_is_not_settled(self):
+        def headings_with_text(request):
+            request['rows'][0] = dict(id=request['rows'][0]['id'], excluded=True, amount_minor='0', description='Heading')
+        self.refused(headings_with_text, 'excluded_line')
