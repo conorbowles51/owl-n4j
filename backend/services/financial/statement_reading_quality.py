@@ -525,6 +525,11 @@ def _section_cells(rows):
             for cell in row['source_cells']}
 
 
+def one_payment(fixed):
+    from services.financial.statement_import_andrews import one_payment as one
+    return one(fixed)
+
+
 def _andrews_reading(text):
     """The amounts a candidate reading states: one, or two for a joined amount and balance cell.
 
@@ -666,6 +671,7 @@ def pinned_andrews_values(tables, candidates, confirmed=None, context=None):
             if key in pinned:
                 continue
             fixed = [(text, cells) for text in by_value.values() if (cells := pinning(key, text)) is not None]
+            fixed = one_payment(fixed)
             if len(fixed) == 1:
                 found_now[key] = dict(text=fixed[0][0], pinned_by=[list(cell) for cell in fixed[0][1]])
         pinned.update(found_now)

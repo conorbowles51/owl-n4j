@@ -81,7 +81,24 @@ _DAMAGED_DATE_PAYMENT = re.compile(r'^(.{1,12}?) ((?:' + _RECURRING +
 # printed facts agree. Anything unread or disagreeing stays held. Reverse: False.
 MISREAD_VERB_DIRECTION = True
 DIRECTION_FROM_SIGN_AND_BALANCES = 'printed_sign_and_balances'
+# The same three printed facts with the word read clearly and the sign lost or contradicting it (Erica Jun 2024:
+# 'Withdrawal ... 7.95' printed -7.95): the word decides the direction only when the previous and the new
+# printed balances agree with it exactly. Anything unread or disagreeing stays held. Reverse: switch off.
+DIRECTION_FROM_WORD = os.environ.get('LOUPE_FINANCIAL_ANDREWS_WORD_DIRECTION', '1') != '0'
+DIRECTION_FROM_WORD_AND_BALANCES = 'printed_word_and_balances'
 _VERBS = ('Withdrawal', 'Deposit')
+
+
+def one_payment(fixed):
+    """``fixed`` [(text, ...)] with a reading and the same reading without its leading minus taken as one.
+
+    With DIRECTION_FROM_WORD a Withdrawal's amount read without its minus is the same payment as with it, so
+    both readings of a cell hold; they state one value, kept in its signed form. Anything else is unchanged.
+    """
+    if DIRECTION_FROM_WORD and len(fixed) == 2 and fixed[0][0].lstrip('-') == fixed[1][0].lstrip('-') \
+            and fixed[0][0] != fixed[1][0]:
+        return [f for f in fixed if f[0].startswith('-')]
+    return fixed
 _DIRECTION_UNREAD = ('Check the amount and whether money entered or left the account. '
                      'The number or its minus sign may have been read incorrectly.')
 
@@ -1282,7 +1299,7 @@ def propose_andrews_statement(sources, currency, statement):
                     # fail parsing. Wrapped/merged cells are not crop targets.
                     fields['amount_column'] = str(money_cells[0]['column_index'])
                     fields['balance_column'] = str(money_cells[1]['column_index'])
-                misread_sign = None
+                misread_sign = word_sign = None
                 try:
                     amount = _amount(amount_text, currency, separate_cell=separate_cells)
                     fields['amount_minor'] = str(abs(amount))
@@ -1296,6 +1313,9 @@ def propose_andrews_statement(sources, currency, statement):
                     if not conflict and verb is None and misread and amount:
                         # Decided below, once both printed balances are known.
                         misread_sign = amount
+                    elif conflict and verb and DIRECTION_FROM_WORD and amount:
+                        # The printed word against the sign: decided below by both printed balances.
+                        word_sign = abs(amount) * (-1 if verb == 'Withdrawal' else 1)
                     elif conflict or verb is None:
                         item['issues'].append(_DIRECTION_UNREAD)
                     else:
@@ -1314,6 +1334,13 @@ def propose_andrews_statement(sources, currency, statement):
                         fields.update(direction='credit' if misread_sign > 0 else 'debit',
                                       direction_basis=DIRECTION_FROM_SIGN_AND_BALANCES)
                         item['kind'] = 'transaction'
+                    else:
+                        item['issues'].append(_DIRECTION_UNREAD)
+                if word_sign is not None:
+                    if (previous_balance is not None and 'balance' in fields
+                            and int(fields['balance']) - previous_balance == word_sign):
+                        fields.update(direction='credit' if word_sign > 0 else 'debit',
+                                      direction_basis=DIRECTION_FROM_WORD_AND_BALANCES)
                     else:
                         item['issues'].append(_DIRECTION_UNREAD)
                 if previous_balance is not None and all(k in fields for k in ('balance', 'amount_minor', 'direction')):

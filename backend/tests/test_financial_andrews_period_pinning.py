@@ -1,5 +1,6 @@
 """Whole-period pinned reading of held Andrews money cells (synthetic two-page sections only)."""
 import unittest
+from unittest import mock
 from copy import deepcopy
 
 from services.financial import andrews_period_pinning as period
@@ -407,7 +408,7 @@ class OneGlyphTests(unittest.TestCase):
                        dict(balance='??.00'),                         # two unread glyphs
                        dict(balance='76.00 x'),                       # no reading at all
                        dict(amount='-1?.00', ending='64.00')):        # the period does not reconcile
-            with self.subTest(**kwargs):
+            with self.subTest(**kwargs), mock.patch.object(period, 'BOTH_NEIGHBOURS', False):
                 proposal, result = read(self.sources(**kwargs), self.native())
                 self.assertIs(result, proposal)
 
@@ -415,7 +416,51 @@ class OneGlyphTests(unittest.TestCase):
         old = period.ONE_GLYPH
         period.ONE_GLYPH = False
         try:
-            proposal, result = read(self.sources(balance='7?.00'), self.native())
+            with mock.patch.object(period, 'BOTH_NEIGHBOURS', False):
+                proposal, result = read(self.sources(balance='7?.00'), self.native())
             self.assertIs(result, proposal)
         finally:
             period.ONE_GLYPH = old
+
+
+class BothNeighboursTests(unittest.TestCase):
+    """A balance the payment before and the payment after both fix (L19, Erica Andrews Jun 2020, Sep 2020, Apr 2021)."""
+
+    sources = OneGlyphTests.sources
+    native = OneGlyphTests.native
+    moves = OneGlyphTests.moves
+
+    def test_a_balance_no_glyph_reading_gives_is_the_value_both_payments_fix(self):
+        for balance in ('??.00', '~0.7Z', '76.00 x'):
+            with self.subTest(balance=balance):
+                proposal, result = read(self.sources(balance=balance), self.native())
+                self.assertIsNot(result, proposal)
+                self.assertEqual(self.moves(result)[1:], [('1000', 'debit', '7000'), ('500', 'debit', '6500')])
+                [repair] = payments(result)[1]['value_repairs']
+                self.assertEqual((repair['text'], repair['basis']), ('70.00', period.BOTH_NEIGHBOURS_BASIS))
+
+    def test_a_joined_balance_keeps_its_amount(self):
+        proposal, result = read(self.sources(amount='-10.00 ~7?.7Z', balance=None), self.native())
+        self.assertEqual(self.moves(result)[1], ('1000', 'debit', '7000'))
+        self.assertEqual(payments(result)[1]['value_repairs'][0]['text'], '-10.00 70.00')
+
+    def test_a_balance_read_cleanly_but_wrong_is_the_value_both_payments_fix(self):
+        proposal, result = read(self.sources(balance='40.00'), self.native())
+        self.assertIsNot(result, proposal)
+        self.assertEqual(self.moves(result)[1], ('1000', 'debit', '7000'))
+        self.assertFalse(any(r['issues'] for r in result['rows']))
+
+    def test_payments_that_disagree_leave_it_held(self):
+        for kwargs in (dict(balance='??.00', next_amount='-6.00'),   # the next payment gives 71.00
+                       dict(balance='40.00', next_amount='-6.00'),
+                       dict(balance='??.00', next_balance='6?.00'),  # two unknown balances next to each other
+                       dict(balance='140.00'),                       # read cleanly, a different printed length
+                       dict(amount='-1?.00', balance='??.00')):      # its own amount unknown: never an amount
+            with self.subTest(**kwargs):
+                proposal, result = read(self.sources(**kwargs), self.native())
+                self.assertIs(result, proposal)
+
+    def test_the_switch_turns_it_off(self):
+        with mock.patch.object(period, 'BOTH_NEIGHBOURS', False):
+            proposal, result = read(self.sources(balance='~0.7Z'), self.native())
+        self.assertIs(result, proposal)

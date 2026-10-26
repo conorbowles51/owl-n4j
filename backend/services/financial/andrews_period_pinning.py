@@ -100,6 +100,14 @@ NATIVE_BASIS = 'native_text_glyphs_pinned_by_printed_balances'
 # person, as before.
 ONE_GLYPH = os.environ.get('LOUPE_FINANCIAL_ANDREWS_ONE_GLYPH', '1') != '0'
 ONE_GLYPH_BASIS = 'one_unread_glyph_fixed_by_printed_balances'
+# A running balance that no glyph reading of its cell gives (two glyphs damaged: '~710.73' printed 4710.79), or
+# that the text layer read cleanly but wrong (3416.33 printed 3446.33, both its controls failing), is the one value
+# the payment before it and the payment after it both fix: previous balance + this payment = it, and it + the next
+# payment = the next balance, every other cell of both controls agreed. One unknown, two printed controls, which
+# must give the same value; then the whole period must reconcile (all or nothing). Never an amount; never two
+# unknown balances next to each other. Native text layers only.
+BOTH_NEIGHBOURS = os.environ.get('LOUPE_FINANCIAL_ANDREWS_BOTH_NEIGHBOURS', '1') != '0'
+BOTH_NEIGHBOURS_BASIS = 'balance_fixed_by_both_neighbouring_payments'
 REPAIRS = ('statement_money_pinned_reading', 'statement_money_pinned_repair', 'statement_money_second_reader_repair')
 
 
@@ -337,9 +345,88 @@ def _chain_cells(rows):
     return cells
 
 
+def _show_minor(value):
+    return ('-' if value < 0 else '') + '%d.%02d' % divmod(abs(value), 100)
+
+
+def neighbour_balances(rows, sources, unknown):
+    """``[(key, text, pinned_by)]``: payment balance cells both neighbouring controls fix (BOTH_NEIGHBOURS).
+
+    ``unknown`` are held cells no reading pinned; any other balance cell is a candidate only when both
+    its controls fail. Every other cell of both controls must parse and not be unknown.
+    """
+    from services.financial.statement_import_andrews import _heading, _money_cells
+    widths = {(s['page_number'], s['table_index']): _heading(s)['width'] for s in sources}
+    chain = []
+    for row in rows:
+        fields = row['fields']
+        if row['kind'] == 'balance':
+            name = fields.get('description')
+            if name not in ('Opening Balance', 'Closing Balance'):
+                continue
+            cell = ((row['page_number'], row['table_index'], row['row_index'], int(fields['balance_column']))
+                    if fields.get('balance_column') is not None else None)
+            value = int(fields['balance']) if 'balance' in fields and cell else None
+            chain.append(dict(kind=name, balance=value, balance_cell=cell, movement=None, amount_cell=None, row=row))
+            continue
+        if row['kind'] != 'transaction' or row['excluded'] or row.get('value_sources'):
+            if row['kind'] == 'unresolved' and not row['excluded']:
+                chain.append(dict(kind='unresolved', balance=None, balance_cell=None, movement=None, amount_cell=None, row=row))
+            continue
+        width = widths.get((row['page_number'], row['table_index']))
+        cells = _money_cells(dict(cells=row['source_cells']), width) if width is not None else []
+        if not cells:
+            chain.append(dict(kind='unresolved', balance=None, balance_cell=None, movement=None, amount_cell=None, row=row))
+            continue
+        keys = [(row['page_number'], row['table_index'], row['row_index'], c['column_index']) for c in cells]
+        movement = (int(fields['amount_minor']) * (1 if fields['direction'] == 'credit' else -1)
+                    if fields.get('amount_minor') is not None and fields.get('direction') in ('credit', 'debit') else None)
+        chain.append(dict(kind='payment', balance=int(fields['balance']) if fields.get('balance') is not None else None,
+                          balance_cell=keys[-1], amount_cell=keys[0], movement=movement, row=row, cells=cells, keys=keys))
+    found = []
+    for i, entry in enumerate(chain):
+        if entry['kind'] != 'payment' or i == 0 or i + 1 >= len(chain) or entry['movement'] is None:
+            continue
+        before, after = chain[i - 1], chain[i + 1]
+        if before['kind'] not in ('payment', 'Opening Balance') or before['balance'] is None or before['balance_cell'] in unknown:
+            continue
+        if after['kind'] == 'payment':
+            if after['movement'] is None or after['balance'] is None or {after['amount_cell'], after['balance_cell']} & unknown:
+                continue
+            fixed_after = after['balance'] - after['movement']
+        elif after['kind'] == 'Closing Balance' and after['balance'] is not None and after['balance_cell'] not in unknown:
+            fixed_after = after['balance']
+        else:
+            continue
+        if before['kind'] == 'payment' and before['amount_cell'] in unknown:
+            continue
+        value = before['balance'] + entry['movement']
+        if value != fixed_after:
+            continue
+        key = entry['balance_cell']
+        if key in unknown:
+            if entry['amount_cell'] in unknown and entry['amount_cell'] != key:
+                continue
+        elif entry['balance'] is None or entry['balance'] == value:
+            continue
+        else:
+            # Read cleanly but both its controls fail: only a misread of digits (the same printed length).
+            printed = entry['cells'][-1]['expected_text'].split()[-1] if entry['cells'][-1]['expected_text'].split() else ''
+            if len(printed) != len(_show_minor(entry['balance'])) or len(_show_minor(value)) != len(printed):
+                continue
+        if len(entry['cells']) == 1:
+            text = _show_minor(entry['movement']) + ' ' + _show_minor(value)
+        else:
+            text = _show_minor(value)
+        by = sorted({c for c in (before['balance_cell'], entry['amount_cell'], after['amount_cell'], after['balance_cell'])
+                     if c is not None and c != key})
+        found.append((key, text, [list(c) for c in by]))
+    return found
+
+
 def pin_period(proposal, sources, currency, statement, source_locations):
     """``proposal`` with the held money cells the period's agreed controls pin, or unchanged."""
-    from services.financial.statement_import_andrews import propose_andrews_statement
+    from services.financial.statement_import_andrews import one_payment, propose_andrews_statement
     from services.financial.statement_reading_quality import _andrews_reading
     if not PERIOD_PINNING:
         return proposal
@@ -351,8 +438,9 @@ def pin_period(proposal, sources, currency, statement, source_locations):
     if not held and NATIVE_TEXT_GLYPHS and native_text_pages(source_locations, pages):
         held, agreed_cells, parts = native_cells(proposal['rows'], sources)
         held = {key: cell for key, cell in held.items() if key in chain}
-        native = bool(held)
-    if not held:
+        # A native period whose cells all parse may still hold one balance read cleanly but wrong (BOTH_NEIGHBOURS).
+        native = bool(held) or (BOTH_NEIGHBOURS and not all(h for _, h in period_equations(proposal['rows'])))
+    if not held and not native:
         return proposal
     candidates, context = {}, {}
     for key, cell in held.items():
@@ -375,7 +463,7 @@ def pin_period(proposal, sources, currency, statement, source_locations):
         if cell.get('confirmed_parts') and cell.get('confirmed_parts_text'):
             context[key] = cell['confirmed_parts_text']
     if not all(readings or (native and ONE_GLYPH and one_glyph_readings(held[key].get('original_text')))
-               for key, readings in candidates.items()):
+               or (native and BOTH_NEIGHBOURS) for key, readings in candidates.items()):
         return proposal
     pinned = {}
     if GLYPH_AGREEMENT:
@@ -446,6 +534,7 @@ def pin_period(proposal, sources, currency, statement, source_locations):
             if key in pinned:
                 continue
             fixed = [(text, cells) for text in readings.values() if (cells := pinning(key, text)) is not None]
+            fixed = one_payment(fixed)
             if len(fixed) == 1:
                 found_now[key] = dict(text=fixed[0][0], pinned_by=[list(c) for c in fixed[0][1]])
         if not found_now and native and ONE_GLYPH:
@@ -468,7 +557,23 @@ def pin_period(proposal, sources, currency, statement, source_locations):
                 pinned[key] = dict(text=texts[key], basis=JOINT_BASIS, pinned_by=sorted(
                     {tuple(other) for cells, _ in standing if key in cells for other in cells if other != key}))
                 pinned[key]['pinned_by'] = [list(c) for c in pinned[key]['pinned_by']]
-    if pinned.keys() != held.keys():
+    if native and BOTH_NEIGHBOURS:
+        while True:
+            texts = {**context, **{cell: value['text'] for cell, value in pinned.items()}}
+            fixed = [f for f in neighbour_balances(rows_with(texts), _with_texts(sources, texts),
+                                                   set(held) - set(pinned)) if f[0] not in pinned]
+            if not fixed:
+                break
+            for key, text, by in fixed:
+                if key not in held:
+                    from services.financial.statement_import_andrews import _heading, _money_cells
+                    original = next((c['expected_text'] for s_ in sources if (s_['page_number'], s_['table_index']) == key[:2]
+                                     for r in s_['rows'] if r['row_index'] == key[2] for c in r['cells']
+                                     if c['column_index'] == key[3]), '')
+                    held[key] = dict(table_index=key[1], row_index=key[2], column_index=key[3], original_text=original,
+                                     status='read_cleanly_both_controls_fail', observations=[])
+                pinned[key] = dict(text=text, basis=BOTH_NEIGHBOURS_BASIS, pinned_by=by)
+    if not pinned or pinned.keys() != held.keys():
         return proposal
     if native:
         for value in pinned.values():
