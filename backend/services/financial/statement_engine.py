@@ -1214,7 +1214,7 @@ def page_facts(rows, style, exponent=2, order=None):
     """``order``: the document's day-month order ('dmy'/'mdy'), used only for a period whose printed dates
     read as a valid range in both orders (B3)."""
     facts = dict(periods=set(), labelled_periods=set(), accounts={}, numbering=set(), currencies=set(),
-                 liability=False, legal=set(), holders=set())
+                 liability=False, legal=set(), holders=set(), clients=set())
     for row in rows:
         if not row['tokens']:
             continue
@@ -1230,6 +1230,7 @@ def page_facts(rows, style, exponent=2, order=None):
                 facts['periods'].update(ranges)
                 if any(word in folded.split() or folded.startswith(word) for word in PERIOD_WORDS):
                     facts['labelled_periods'].update(ranges)
+        facts['clients'].update(m[1] for m in _CLIENT_CODE.finditer(folded))
         for m in PAGE_NUMBERING.finditer(folded):
             # A page number above the printed count ('HOJA 10DE 2' for 'HOJA 1 DE 2') is a misreading,
             # not a page number: the page counts as unnumbered (A3).
@@ -1250,6 +1251,8 @@ def page_facts(rows, style, exponent=2, order=None):
 
 
 _ACCRUAL_PERIOD = re.compile(r'\b(?:DIVIDEND|INTEREST)S?\s+(?:PERIOD|CYCLE)\b')
+# (L11) The bank's own number for the client, printed in a page heading ('CODIGO DE CLIENTE NO. 46533532').
+_CLIENT_CODE = re.compile(r'\b(?:(?:CODIGO|NUMERO|NO\.?) DE CLIENTE(?: NO\.?| NUM\.?)?|CLIENT (?:NUMBER|NO\.?|ID) ?#?) ?(\d{5,12})\b')
 
 
 def _stacked_period_label(rows, facts):
@@ -2410,6 +2413,10 @@ def _segments(pages, facts):
             period = next(iter(candidates))
         restart = any(n == 1 for n, _ in f['numbering'])
         current = segments[-1] if segments else None
+        if period and not f['labelled_periods'] and _inside_printed_run(page, current, ordered, facts):
+            # (L11) A range printed without a period word on an unnumbered page inside one printed run
+            # ('GTOS ALIMENTACION 3 AL 8 DE OCTUBRE' in a movement's concepto) dates that line, not a statement.
+            period = None
         # (A2, A3) A printed run that reached its last page ('Page 5 of 5') is complete: a following page that
         # carries only the production's own page stamp (no period, no statement page number: a record or
         # image the production appended) does not continue that statement.
@@ -2446,6 +2453,42 @@ def _segments(pages, facts):
         for member in run:
             member['numbering_pages'] = mailing
     return segments
+
+
+INSIDE_PRINTED_RUN = _switch('LOUPE_FINANCIAL_SPLIT_INSIDE_PRINTED_RUN')
+
+
+def _inside_printed_run(page, current, ordered, facts):
+    """(L11) The page sits inside one statement's printed run: it prints no page number of its own, the last
+    numbered page before it (in the current statement) is 'n of m' and the next numbered page after it is
+    'n+1 of m', both of them label exactly the current statement's period, both print the same client numbers
+    (or none), and every page from one to the other prints no other client number and no account under a
+    full account-number label other than the ones those two pages print."""
+    if not INSIDE_PRINTED_RUN or current is None or not current['pages'] or not current['period']:
+        return False
+    if facts[page]['numbering']:
+        return False
+    before = next((p for p in reversed(current['pages']) if facts[p]['numbering']), None)
+    after = next((q for q in ordered[ordered.index(page) + 1:] if facts[q]['numbering']), None)
+    if before is None or after is None:
+        return False
+    if len(facts[before]['numbering']) != 1 or len(facts[after]['numbering']) != 1:
+        return False
+    (number, count), = facts[before]['numbering']
+    (following, total), = facts[after]['numbering']
+    if total != count or following != number + 1:
+        return False
+    if not facts[before]['labelled_periods'] == facts[after]['labelled_periods'] == {current['period']}:
+        return False
+    clients = facts[before].get('clients', set())
+    if facts[after].get('clients', set()) != clients:
+        return False
+
+    def labelled(p):
+        return {re.sub(r'\D', '', value) for value, ranks in facts[p]['accounts'].items() if 3 in ranks} - {''}
+    accounts = labelled(before) | labelled(after)
+    between = [p for p in ordered if before < p < after]
+    return all(facts[p].get('clients', set()) <= clients and labelled(p) <= accounts for p in between)
 
 
 def _other_account_statement(f, current, facts):

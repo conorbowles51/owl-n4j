@@ -3808,3 +3808,34 @@ class DepositSummaryComponentTests(unittest.TestCase):
             st = self.one(deposit_summary_statement())
         self.assertFalse(st['engine']['proved'])
         self.assertEqual(st['engine']['reason'], 'no_independent_control')
+
+
+class InsidePrintedRunTests(unittest.TestCase):
+    """(L11, fin-queue2 A2) Santander PYME prints 'HOJA n DE m', the client number and the period only on the
+    odd pages: a range in a movement's concepto on an unnumbered page between 'HOJA 1' and 'HOJA 2' is not a
+    period, and the statement is not cut there."""
+
+    def segments(self, client='46533532', last_period='01 AL 31 DE OCTUBRE DE 2022', between_client=None):
+        def heading(number, period, code):
+            return [[('METALMEX ENERGIA Y SUSTENTO SA DE CV CODIGO DE CLIENTE NO. %s' % code, 20000, 400000)],
+                    [('PERIODO : %s' % period, 20000, 300000)], [('HOJA %d DE 2' % number, 400000, 500000)]]
+        middle = [[('F E C H A FOLIO DESCRIPCION DEPOSITOS RETIROS SALDO', 20000, 500000)],
+                  [('CONCEPTO GTOS ALIMENTACION 3 AL 8 DE OCTUBRE 2022', 20000, 300000)]]
+        if between_client:
+            middle.append([('CODIGO DE CLIENTE NO. %s' % between_client, 20000, 300000)])
+        pages = E._pages([page(1, heading(1, '01 AL 31 DE OCTUBRE DE 2022', '46533532')), page(2, middle),
+                          page(3, heading(2, last_period, client))])
+        facts = {p: E.page_facts(rows, 'dot') for p, rows in pages.items()}
+        return [s['pages'] for s in E._segments(pages, facts)]
+
+    def test_a_concepto_range_inside_a_printed_run_does_not_cut_the_statement(self):
+        self.assertEqual(self.segments(), [[1, 2, 3]])
+
+    def test_the_run_must_continue_with_the_same_client_and_period(self):
+        self.assertEqual(self.segments(client='11112222'), [[1], [2], [3]])
+        self.assertEqual(self.segments(last_period='01 AL 30 DE NOVIEMBRE DE 2022'), [[1], [2], [3]])
+        self.assertEqual(self.segments(between_client='11112222'), [[1], [2], [3]])
+
+    def test_switched_off_the_range_still_cuts(self):
+        with mock.patch.object(E, 'INSIDE_PRINTED_RUN', False):
+            self.assertEqual(self.segments(), [[1], [2], [3]])
