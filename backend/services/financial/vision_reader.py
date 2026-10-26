@@ -117,8 +117,35 @@ QUIET_PRINTED = _switch('LOUPE_FINANCIAL_VISION_QUIET_PRINTED')
 # statement's CLABE (112180000030419770) where the text reading has the contract number (3041977): a CLABE whose
 # check digit is right names the account its account digits hold, at least 6 digits without leading zeros.
 CLABE_ACCOUNT = _switch('LOUPE_FINANCIAL_VISION_CLABE_ACCOUNT')
-PROOF_VERSION = ((((((6 if CLABE_ACCOUNT else 5) if QUIET_PRINTED else 4) if PRINTED_COUNTS else 3) if SECTION_NUMBER else 2)
-                  if SPLIT_SPELLINGS else 1))
+# Andrews prints one member number over several share sections ("820433320": BASE SHARE SAVINGS, FREE CHECKING),
+# its share id ("ID 0040") on some pages only and no currency: the images give every section the member number,
+# or the share id, and no currency, while the text reading has "820433320 / Share 0040" in USD. Of the sections the
+# number names, the statement's is the one the text reading itself identifies: its read opening and closing balance
+# are the section's and every payment it read cleanly is in the section; exactly one section must agree, and a
+# section printing no currency stays a candidate when none prints one. One account saved under two bank spellings
+# is one account when every record's saved holders include the printed holder (a name the account holder later
+# changed is still saved beside it, on that record or one the printed holder is saved on). Off: such a statement matches no section, or two accounts (9 Erica periods).
+SECTION_BY_TEXT = _switch('LOUPE_FINANCIAL_VISION_SECTION_BY_TEXT')
+# The images give a withdrawal's amount with the minus the statement prints before it ('-15.89', direction debit;
+# Andrews prints every withdrawal so), though the reading asks for a positive amount: such an amount is the
+# withdrawal's when the minus agrees with its direction. A minus on a credit is refused as before. Off: every
+# such row is unreadable (Erica Andrews Dec 2020, 129 withdrawals).
+SIGNED_DEBITS = _switch('LOUPE_FINANCIAL_VISION_SIGNED_DEBITS')
+# A text reading complete in every amount and running balance, held only for row dates it could not read
+# ('12/lll' printed 12/18), takes each such date from the page images: the one image row on the same page with the
+# same amount, direction and running balance, dated inside the period and inside the text's own payment order (on
+# or after the dated row before it, on or before the one after it). The text reading is then recorded with those
+# dates (each citing its page image) and must check out with nothing left; it is used only when the image reading
+# does not prove the period itself. Off: such a period waits for a person (Erica Andrews Dec 2020).
+DATES_FROM_IMAGE = _switch('LOUPE_FINANCIAL_VISION_DATES_FROM_IMAGE')
+DATE_REASON = 'Date read from page image, page {page}; amount and running balance as read from the text.'
+PROOF_VERSION = 1
+for _switched in (SPLIT_SPELLINGS, SECTION_NUMBER, PRINTED_COUNTS, QUIET_PRINTED, CLABE_ACCOUNT, SECTION_BY_TEXT,
+                  SIGNED_DEBITS, DATES_FROM_IMAGE):
+    # Each switch on top of the one before; with one off, the rules are the version before it.
+    if not _switched:
+        break
+    PROOF_VERSION += 1
 METADATA_KEY = 'financial_vision_reading'
 MARK = 'vision_fallback'
 SYSTEM_NAME = 'System'
@@ -335,6 +362,14 @@ def to_minor(value, exponent, *, signed=False):
     except InvalidOperation:
         return None
     return int(amount) if amount == amount.to_integral_value() else None
+
+
+def row_amount(row, exponent):
+    """The row's positive amount in minor units, or None; '-15.89' only on a debit (SIGNED_DEBITS)."""
+    amount = row.get('amount')
+    if SIGNED_DEBITS and row.get('direction') == 'debit' and str(amount or '').strip().startswith('-'):
+        amount = str(amount).strip()[1:]
+    return to_minor(amount, exponent)
 
 
 def _digits(text):
@@ -574,12 +609,50 @@ def choose_section(sections, proposal):
     if rule['period_end'] and len(candidates) > 1:
         candidates = [s for s in candidates if _period_end(s) == rule['period_end']]
     if rule['currency'] and len(candidates) > 1:
-        candidates = [s for s in candidates if s['header']['currency'] == rule['currency']]
+        printed = [s for s in candidates if s['header']['currency'] == rule['currency']]
+        if not printed and SECTION_BY_TEXT:
+            printed = [s for s in candidates if not s['header']['currency']]
+        candidates = printed
+    if SECTION_BY_TEXT and len(candidates) > 1:
+        agreeing = [s for s in candidates if _identified_by_text(proposal, s)]
+        if len(agreeing) == 1:
+            candidates = agreeing
     if not candidates:
         raise NotProved('The page images show no account section matching this statement.')
     if len(candidates) > 1:
         raise NotProved('The page images show %s account sections; the statement could not be matched to one.' % len(candidates))
     return candidates[0]
+
+
+def _identified_by_text(proposal, section):
+    """The text reading read both balances, they are this section's, and every payment it read cleanly is in it."""
+    from services.financial.review_arithmetic import integer
+    exponent = _exponent(proposal.get('currency') or '')
+    if exponent is None:
+        return False
+    balances = {}
+    for row in proposal.get('rows') or []:
+        if row.get('kind') == 'balance':
+            role = ((row.get('fields') or {}).get('description') or '').strip().lower()
+            value = integer((row.get('fields') or {}).get('balance'))
+            if role in ('opening balance', 'closing balance') and value is not None:
+                balances[role.split()[0]] = value
+    if set(balances) != {'opening', 'closing'}:
+        return False
+    for which in ('opening', 'closing'):
+        if to_minor(section['values'].get(which + '_balance'), exponent, signed=True) != balances[which]:
+            return False
+    rows = []
+    for row in section['rows']:
+        amount = row_amount(row, exponent)
+        if amount is None or row.get('direction') not in ('credit', 'debit'):
+            return False
+        rows.append(dict(amount_minor=amount, direction=row['direction']))
+    try:
+        _agrees_with_rule_reading(proposal, rows, balances['opening'], balances['closing'])
+    except NotProved:
+        return False
+    return True
 
 
 def one_account_spelled_apart(candidates, account_text, institution, holder):
@@ -604,7 +677,13 @@ def one_account_spelled_apart(candidates, account_text, institution, holder):
         return [], {'ambiguous'}
     if not (holder and all(k.values('holder') for k in candidates)):
         return [], {'ambiguous'}
-    if not all(fp.same_holder(holder, h) for k in candidates for h in k.values('holder')):
+    if SECTION_BY_TEXT:
+        # The printed holder is saved on a record, and every record shares a holder with those records.
+        anchors = [k for k in candidates if any(fp.same_holder(holder, h) for h in k.values('holder'))]
+        names = [holder] + [h for k in anchors for h in k.values('holder')]
+        if not anchors or not all(any(fp.same_holder(h, n) for h in k.values('holder') for n in names) for k in candidates):
+            return [], {'ambiguous'}
+    elif not all(fp.same_holder(holder, h) for k in candidates for h in k.values('holder')):
         return [], {'ambiguous'}
     return candidates, {'account', 'institution', 'holder'}
 
@@ -690,7 +769,7 @@ def prove(proposal, section, knowledge):
     # Rows.
     rows = []
     for index, row in enumerate(section['rows']):
-        amount = to_minor(row.get('amount'), exponent)
+        amount = row_amount(row, exponent)
         when = _iso(row.get('date'))
         if row.get('unreadable') or not amount or not when or row.get('direction') not in ('credit', 'debit') \
                 or not str(row.get('description') or '').strip():
@@ -921,6 +1000,56 @@ def _agrees_with_rule_reading(proposal, rows, opening, closing):
 # ---------------------------------------------------------------------------
 # The review the proved reading becomes
 # ---------------------------------------------------------------------------
+
+_DATE_ISSUES = ('Check the full date in the PDF.', 'Check the additional date printed beside this payment.')
+
+
+def dates_request(proposal, readings):
+    """(DATES_FROM_IMAGE) The text reading's review with its unread row dates read from the page images, or NotProved."""
+    from services.financial.import_batches import assess, initial_request
+    from services.financial.review_arithmetic import integer
+    exponent = _exponent(proposal.get('currency') or '')
+    rule = _rule_metadata(proposal)
+    if exponent is None or not (rule['period_start'] and rule['period_end']):
+        raise NotProved('The period of the text reading is not complete.')
+    payments = [r for r in proposal['rows'] if not r.get('excluded') and r.get('kind') in ('transaction', 'unresolved')]
+    held = [r for r in proposal['rows'] if not r.get('excluded') and r.get('issues')]
+    if not held:
+        raise NotProved('The text reading holds no row for a date.')
+    image_rows = [dict(row, page=page) for page, document in readings for section in document.get('sections') or []
+                  for row in section.get('rows') or []]
+    dates = {}
+    for row in held:
+        fields = row.get('fields') or {}
+        if row.get('kind') != 'transaction' or fields.get('date') or not all(
+                any(issue.startswith(prefix) for prefix in _DATE_ISSUES) for issue in row['issues']):
+            raise NotProved('The text reading holds a row for more than its date.')
+        amount, balance = integer(fields.get('amount_minor')), integer(fields.get('balance'))
+        if not amount or balance is None or fields.get('direction') not in ('credit', 'debit'):
+            raise NotProved('A row held for its date has no amount or running balance.')
+        same = [r for r in image_rows if r['page'] == row.get('page_number') and not r.get('unreadable')
+                and r.get('direction') == fields['direction'] and row_amount(r, exponent) == amount
+                and to_minor(r.get('balance_after'), exponent, signed=True) == balance]
+        when = _iso(same[0].get('date')) if len(same) == 1 else ''
+        if not when or not rule['period_start'] <= when <= rule['period_end']:
+            raise NotProved('The page images do not give one date for the payment on page %s.' % row.get('page_number'))
+        index = payments.index(row)
+        before = [r['fields']['date'] for r in payments[:index] if (r.get('fields') or {}).get('date')]
+        after = [r['fields']['date'] for r in payments[index + 1:] if (r.get('fields') or {}).get('date')]
+        if (before and when < before[-1]) or (after and when > after[0]):
+            raise NotProved('The date read from the page images is outside the printed payment order on page %s.'
+                            % row.get('page_number'))
+        dates[row['id']] = (when, row.get('page_number'))
+    request = initial_request(proposal)
+    for entry in request['rows']:
+        if entry['id'] in dates:
+            entry.update(date=dates[entry['id']][0], reason=DATE_REASON.format(page=dates[entry['id']][1]))
+    state, summary = assess(proposal, request)
+    if state != 'ready' or summary.get('problems') or summary.get('problem_count'):
+        first = next((p.get('message') for p in summary.get('problems') or [] if p.get('message')), '')
+        raise NotProved('With the dates from the page images the statement still has a check: ' + (first or state))
+    return request
+
 
 def build_request(proposal, reading):
     """The statement review (as the batch save takes it) recording a proved reading."""
@@ -1388,8 +1517,25 @@ def read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for
                     first = next((p.get('message') for p in summary.get('problems') or [] if p.get('message')), '')
                     raise NotProved('The page-image reading reconciles, but the statement still has a check: ' + (first or state))
             except NotProved as reason:
+                request = None
+                if DATES_FROM_IMAGE and not force:
+                    try:
+                        request = dates_request(proposal, document_pages(document, pages))
+                    except NotProved:
+                        request = None
+                if request is None:
+                    db.rollback()
+                    return _finish(factory, item_id, file_id, key, dict(record, status='not_proved', message=str(reason)), apply)
+                filled = sum(1 for row in request['rows'] if str(row.get('reason') or '').startswith('Date read from page image'))
+                record.update(status='proved', basis='dates_from_page_images', rows=filled, request=request,
+                              message='The text reading, with %s date%s read from the page images; the period reconciles '
+                                      'exactly. (The page-image reading alone did not prove it: %s)' % (
+                                          filled, '' if filled == 1 else 's', reason))
+                if not apply:
+                    db.rollback()
+                    return record
                 db.rollback()
-                return _finish(factory, item_id, file_id, key, dict(record, status='not_proved', message=str(reason)), apply)
+                return _save(factory, item_id, case_id, file_id, key, record, request)
             record.update(status='proved', message='Read from the page images; the period reconciles exactly.',
                           rows=len(reading['rows']), request=request)
             if controls:
@@ -1470,6 +1616,7 @@ def _save(factory, item_id, case_id, file_id, key, record, request):
                 progress = review_progress(file, key) if file is not None else None
                 by = (progress or {}).get('saved_by') or {}
                 ours = any(str(row.get('id', '')).startswith('manual:vision-')
+                           or str(row.get('reason') or '').startswith('Date read from page image')
                            for row in ((progress or {}).get('request') or {}).get('rows') or [])
                 if not (by.get('name') == SYSTEM_NAME and by.get('user_id') == 'None' and ours):
                     raise  # this review was not saved: a failed reading (read_item)

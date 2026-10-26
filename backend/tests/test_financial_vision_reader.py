@@ -563,3 +563,141 @@ class FailClosedTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SectionByTextTest(unittest.TestCase):
+    """Andrews: one member number over several share sections, no currency printed (L17, Erica Jun 2020)."""
+
+    def _andrews(self):
+        rows = [dict(kind='balance', fields=dict(description='Opening Balance', balance='72486')),
+                dict(kind='balance', fields=dict(description='Closing Balance', balance='70161')),
+                dict(kind='transaction', fields=dict(amount_minor='2325', direction='debit', date='2020-06-01'))]
+        proposal = _proposal(rows, currency='USD', account_number='820433320 / Share 0040',
+                             institution='Andrews Federal Credit Union', holder='ERICA MCCAULEY / LASHIKA HOPPER',
+                             period_start='2020-06-01', period_end='2020-06-30')
+        header = dict(institution='Andrews', holder='ERICA MCCAULEY LASHIKA HOPPER', account_number='820433320',
+                      period_start='2020-06-01', period_end='2020-06-30')
+        pages = [(1, _page([_section([], section_name='BASE SHARE SAVINGS', opening_balance='0.00', closing_balance='0.00', **header),
+                            _section([_row('2020-06-01', '23.25', 'debit', '701.61')], section_name='FREE CHECKING',
+                                     opening_balance='724.86', closing_balance='701.61', **header)], 1, 1))]
+        return proposal, pages
+
+    def test_the_section_the_text_reading_identifies(self):
+        proposal, pages = self._andrews()
+        section = vr.choose_section(vr.combine(pages), proposal)
+        self.assertEqual(section['values']['opening_balance'], '724.86')
+
+    def test_off_matches_no_section(self):
+        proposal, pages = self._andrews()
+        with mock.patch.object(vr, 'SECTION_BY_TEXT', False):
+            with self.assertRaises(vr.NotProved):
+                vr.choose_section(vr.combine(pages), proposal)
+
+    def test_two_sections_agreeing_stay_unmatched(self):
+        proposal, pages = self._andrews()
+        pages[0][1]['sections'][0].update(opening_balance='724.86', closing_balance='701.61',
+                                          rows=[_row('2020-06-01', '23.25', 'debit', '701.61')])
+        with self.assertRaises(vr.NotProved):
+            vr.choose_section(vr.combine(pages), proposal)
+
+    def test_text_payment_missing_from_section_is_not_identified(self):
+        proposal, pages = self._andrews()
+        proposal['rows'].append(dict(kind='transaction', fields=dict(amount_minor='999', direction='debit')))
+        with self.assertRaises(vr.NotProved):
+            vr.choose_section(vr.combine(pages), proposal)
+
+    def _records(self, second_holders):
+        def known(key, institution, holders):
+            statements = [SavedStatement(currency='USD', period_start='2021-0%d-01' % (i + 1), period_end='2021-0%d-28' % (i + 1),
+                                         institution=institution, holder=h, account_number='8204333200040')
+                          for i, h in enumerate(holders)]
+            return KnownAccount(key=key, account='8204333200040', digits='8204333200040', masked=False,
+                                institution=institution, currency='USD', statements=statements)
+        return [known('a1', 'Andrews Federal Credit Union', ['ERICA HOPPER / LASHIKA HOPPER', 'ERICA MCCAULEY / LASHIKA HOPPER']),
+                known('a2', 'Andrews', second_holders)]
+
+    def test_spelled_apart_with_a_changed_holder_name_is_one_account(self):
+        candidates = self._records(['ERICA MCCAULEY\nLASHIKA HOPPER'])
+        found, matched = vr.one_account_spelled_apart(candidates, '820433320 / Share 0040', 'Andrews Federal Credit Union',
+                                                      'ERICA HOPPER / LASHIKA HOPPER')
+        self.assertEqual(len(found), 2)
+        with mock.patch.object(vr, 'SECTION_BY_TEXT', False):
+            self.assertEqual(vr.one_account_spelled_apart(candidates, '820433320 / Share 0040', 'Andrews Federal Credit Union',
+                                                           'ERICA HOPPER / LASHIKA HOPPER')[1], {'ambiguous'})
+
+    def test_spelled_apart_with_an_unrelated_holder_stays_ambiguous(self):
+        candidates = self._records(['JORDAN H HOPPER'])
+        self.assertEqual(vr.one_account_spelled_apart(candidates, '820433320 / Share 0040', 'Andrews Federal Credit Union',
+                                                      'ERICA HOPPER / LASHIKA HOPPER')[1], {'ambiguous'})
+
+
+class SignedDebitsTest(unittest.TestCase):
+    """The images give a withdrawal as printed, '-15.89' (L20, Erica Andrews Dec 2020)."""
+
+    def test_minus_on_a_debit_is_its_amount(self):
+        self.assertEqual(vr.row_amount(dict(amount='-15.89', direction='debit'), 2), 1589)
+        self.assertEqual(vr.row_amount(dict(amount='15.89', direction='debit'), 2), 1589)
+
+    def test_minus_on_a_credit_is_refused(self):
+        self.assertIsNone(vr.row_amount(dict(amount='-15.89', direction='credit'), 2))
+
+    def test_off_refuses_the_minus(self):
+        with mock.patch.object(vr, 'SIGNED_DEBITS', False):
+            self.assertIsNone(vr.row_amount(dict(amount='-15.89', direction='debit'), 2))
+
+    def test_a_signed_withdrawal_reading_proves(self):
+        pages = _balanced_pages()
+        pages[0][1]['sections'][0]['rows'][1]['amount'] = '-30.50'
+        self.assertEqual(_proved()['closing'], 100000)
+        self.assertEqual(len(_proved(pages=pages)['rows']), 3)
+
+
+class DatesFromImageTest(unittest.TestCase):
+    """A text reading held only for a row date takes it from the page image (L21, Erica Andrews Dec 2020)."""
+
+    def _proposal(self, date_issue=True):
+        def payment(id_, day, amount, balance, issues=()):
+            fields = dict(amount_minor=amount, direction='debit', balance=balance)
+            if day:
+                fields['date'] = day
+            return dict(id=id_, kind='transaction', excluded=False, page_number=35, issues=list(issues), fields=fields)
+        issues = ['Check the full date in the PDF. It could not be read within this statement period.'] if date_issue else \
+            ['Check the transaction amount in the PDF. Its digits, sign or decimal point could not be read.']
+        rows = [payment('a', '2020-12-17', '477', '83481'), payment('b', None, '5771', '77710', issues),
+                payment('c', '2020-12-18', '1175', '76535')]
+        return _proposal(rows, currency='USD', period_start='2020-12-01', period_end='2020-12-31')
+
+    def _readings(self, day='2020-12-18', balance='777.10'):
+        return [(35, dict(sections=[dict(rows=[_row('2020-12-17', '-4.77', 'debit', '834.81'),
+                                               _row(day, '-57.71', 'debit', balance),
+                                               _row('2020-12-18', '-11.75', 'debit', '765.35')])]))]
+
+    def _run(self, proposal, readings, state='ready'):
+        request = dict(rows=[dict(id=r['id'], date=r['fields'].get('date', ''), reason='') for r in proposal['rows']])
+        with mock.patch('services.financial.import_batches.initial_request', return_value=request), \
+                mock.patch('services.financial.import_batches.assess', return_value=(state, {})) as assess:
+            result = vr.dates_request(proposal, readings)
+        return result, assess
+
+    def test_the_one_matching_image_row_gives_the_date(self):
+        result, assess = self._run(self._proposal(), self._readings())
+        row = next(r for r in result['rows'] if r['id'] == 'b')
+        self.assertEqual(row['date'], '2020-12-18')
+        self.assertIn('page 35', row['reason'])
+        assess.assert_called_once()
+
+    def test_a_date_outside_the_payment_order_is_refused(self):
+        with self.assertRaises(vr.NotProved):
+            self._run(self._proposal(), self._readings(day='2020-12-19'))
+
+    def test_a_row_held_for_its_money_is_refused(self):
+        with self.assertRaises(vr.NotProved):
+            self._run(self._proposal(date_issue=False), self._readings())
+
+    def test_no_image_row_with_the_same_balance_is_refused(self):
+        with self.assertRaises(vr.NotProved):
+            self._run(self._proposal(), self._readings(balance='777.11'))
+
+    def test_a_statement_still_held_after_the_dates_is_refused(self):
+        with self.assertRaises(vr.NotProved):
+            self._run(self._proposal(), self._readings(), state='attention')
