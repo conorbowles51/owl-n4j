@@ -267,6 +267,16 @@ def assess(proposal, request=None):
                                       if type(source.get('page_number')) is int})
     if proposal['metadata'].get('account_reference_kind'):
         summary['account_reference_kind'] = proposal['metadata']['account_reference_kind']
+    from services.financial.auto_save_guard import section_currencies
+    sections = section_currencies(proposal.get('sources'))
+    if sections:
+        # The currencies this statement's own section headings print (auto_save_guard).
+        summary['section_currencies'] = sections
+    if proposal.get('currency') and not proposal.get('detected_currency') and proposal.get('sources'):
+        # A currency the reader did not find (a saved choice): what the pages name, for the guard.
+        from services.financial.statement_currency import currency_marks
+        summary['page_currencies'] = sorted({str(mark[0]).upper() for mark in currency_marks(proposal['sources'])
+                                             if isinstance(mark, list) and len(mark) == 1 and mark[0] != '?'})
     summary['unclassified_count'] = sum(row['kind'] == 'unclassified' and reviewed.get(row['id'], {}).get('excluded', row['excluded']) for row in rows)
     if admission is not None:
         from services.financial.import_issues import incomplete_records
@@ -1087,6 +1097,29 @@ def _account_currency_conflict(session, case_id, summary, raw, knowledge):
     return field_proposals.account_currency_conflict(values, knowledge['case'])
 
 
+def _auto_save_hold(session, case_id, item, summary, file, ledger):
+    """{reason, sentence} when the System may not save this ready statement on its own, else None.
+
+    Only statements the System would save (no person's review, or details the
+    System filled) are checked: a person's save stands on the person's look.
+    """
+    from services.financial import auto_save_guard
+    from services.financial.queue_save import system_filled_only
+    from services.financial.statement_progress import review_progress
+    if not auto_save_guard.enabled():
+        return None
+    untouched = not item.review_request and not (file is not None and review_progress(file, item.statement_key))
+    if not (untouched or system_filled_only(item, file)):
+        return None
+    if 'periods' not in ledger:
+        ledger['periods'] = auto_save_guard.load_ledger(session, case_id)
+    held = auto_save_guard.hold(summary, ledger=ledger['periods'],
+        currency_basis=auto_save_guard.system_currency_basis(file, item.statement_key, summary.get('currency')),
+        filename=file.original_filename if file is not None else '',
+        named_currencies=summary.get('page_currencies') or ())
+    return dict(reason=held[0], sentence=held[1]) if held else None
+
+
 def _finish_projection(session, case_id, projected, files):
     # A ready item may have been imported through its individual review. Resolve
     # all such receipts together rather than querying its saved rows per item.
@@ -1096,7 +1129,7 @@ def _finish_projection(session, case_id, projected, files):
     from services.financial.statement_progress import review_progress
     retained = current_imports(session, case_id, [UUID(summary['source_document_id'])
         for _, state, summary, _, _ in projected if state == 'imported' and summary.get('source_document_id')])
-    result = []
+    result, ledger = [], {}
     for item, state, summary, projected_request, _ in projected:
         if state == 'imported' and summary.get('source_document_id') in retained:
             current = retained[summary['source_document_id']]
@@ -1127,6 +1160,12 @@ def _finish_projection(session, case_id, projected, files):
         for key in ('currency', 'holder', 'account', 'institution', 'account_type', 'period_start', 'period_end'):
             if key in summary and summary[key] is None:
                 summary[key] = ''
+        summary.pop('auto_save_hold', None)
+        if state == 'ready' and summary.get('can_import'):
+            hold = _auto_save_hold(session, case_id, item, summary, files.get(item.file_id), ledger)
+            if hold:
+                # What the System could not prove: it does not save this statement on its own (auto_save_guard).
+                summary['auto_save_hold'] = hold
         result.append(SimpleNamespace(id=item.id, file_id=item.file_id, statement_key=item.statement_key,
             status=state, summary=summary, review_request=projected_request,
             review_revision=batch_review_revision(item.review_request,

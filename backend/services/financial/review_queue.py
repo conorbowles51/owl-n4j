@@ -173,7 +173,7 @@ def describe(summary):
     """(reason, sentence, target row, target field, page, other problem count) for an actionable item."""
     problems = actionable_problems(summary)
     if not problems:
-        return None
+        return _hold_detail(summary)
     by_reason = {}
     for problem in problems:
         by_reason.setdefault(problem['review_reason'], []).append(problem)
@@ -204,6 +204,17 @@ def describe(summary):
                 **(dict(choice=choice) if choice else {}))
 
 
+def _hold_detail(summary):
+    """The queue entry of a balanced statement the System would not save on its own (auto_save_guard)."""
+    hold = summary.get('auto_save_hold')
+    if not hold:
+        return None
+    field = DETAIL_FIELDS.get(hold.get('reason'))
+    return dict(reason='auto_save_check', sentence=hold['sentence'], row_id=None, field=field,
+                page=summary.get('page_number'), other_problems=0, problem_total=1, reasons=['auto_save_check'],
+                also=[], pages=[], messages=[hold['sentence']])
+
+
 def _empty_reading(summary):
     return not (summary.get('transaction_count') or summary.get('record_count') or summary.get('incomplete_count')
                 or summary.get('unclassified_count') or summary.get('period_start') or summary.get('period_end'))
@@ -230,6 +241,9 @@ def classify(item):
         return 'rechecking'
     if actionable_problems(summary):
         return 'unreadable' if _empty_reading(summary) and not summary.get('assignment_only') else 'waiting'
+    if summary.get('auto_save_hold'):
+        # Balanced, but a fact the balances cannot prove is not: a person checks it (auto_save_guard).
+        return 'waiting'
     if summary.get('can_import', item.status == 'ready'):
         return 'ready'
     if any(p.get('kind') in SYSTEM_KINDS for p in summary.get('problems') or []):
@@ -661,6 +675,7 @@ def _compute(session, case_id):
     """The whole-case view: entries, failed and set-aside files, unread count. Read only."""
     from services.financial.auto_read import unread_statement_files
     entries = _build(session, case_id)
+    _saved_checks(session, case_id, entries)
     set_aside = []
     entries, failed, copy_files = _set_aside_read_copies(session, case_id, entries,
         _failed_files(session, case_id, set(), set_aside))
@@ -671,6 +686,34 @@ def _compute(session, case_id):
     return dict(entries=entries, failed=failed, copy_files=copy_files, set_aside=set_aside,
                 unread=len(unread_statement_files(session, case_id=case_id)),
                 as_of=datetime.now(timezone.utc).isoformat(timespec='seconds'))
+
+
+# A saved statement a ledger check finds wrong or unproven is listed for a person with the plain reason instead of
+# counting as imported (auto_save_guard.saved_checks: holder an address line, a balance that does not carry, the
+# same account and period saved twice, a one-digit account misread). Nothing saved is changed. Reverse:
+# LOUPE_FINANCIAL_QUEUE_SAVED_CHECKS=0.
+SAVED_CHECKS = os.environ.get('LOUPE_FINANCIAL_QUEUE_SAVED_CHECKS', '1').strip().lower() not in ('0', 'false', 'off', 'no')
+
+
+def _saved_checks(session, case_id, entries):
+    if not SAVED_CHECKS:
+        return
+    from services.financial.auto_save_guard import saved_checks
+    found = saved_checks(session, case_id)
+    if not found:
+        return
+    imported = [entry for entry in entries if entry['bucket'] == 'imported']
+    ids = {UUID(entry['file_id']) for entry in imported if _uuid(entry['file_id'])}
+    shas = {str(file_id): sha for file_id, sha in session.execute(select(EvidenceFile.id, EvidenceFile.sha256)
+                                                                  .where(EvidenceFile.id.in_(ids)))} if ids else {}
+    for entry in imported:
+        check = found.get((shas.get(entry['file_id']), entry.get('statement_id') or ''))
+        if not check:
+            continue
+        reason, sentence = check
+        entry.update(bucket='waiting', issue=sentence, issue_reason='saved_check', saved_check=reason,
+                     field=DETAIL_FIELDS.get(reason), row_id=None, other_problems=0, problem_total=1,
+                     reasons=['saved_check'], also=[], issue_pages=[], issue_messages=[sentence])
 
 
 def _store(key, fingerprint, view):

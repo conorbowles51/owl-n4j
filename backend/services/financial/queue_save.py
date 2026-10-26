@@ -113,7 +113,8 @@ def fully_reconciled(item, projection, file):
     summary = projection.summary
     untouched = not item.review_request and not (file is not None and review_progress(file, item.statement_key))
     return (projection.status == 'ready' and import_available(projection) and not summary.get('problems')
-            and not summary.get('problem_count') and (untouched or system_filled_only(item, file)))
+            and not summary.get('problem_count') and not summary.get('auto_save_hold')
+            and (untouched or system_filled_only(item, file)))
 
 
 def fill_confirmed(session, *, case_id, entries, owned_batch_id=None):
@@ -286,6 +287,9 @@ def save_statements(session, *, case_id, item_ids, actor, request_id=None, only_
         if projection is None or not import_available(projection):
             held.append(_held(item, _not_ready_reason(projection) if projection is not None else
                               'No longer ready: open it in the queue'))
+        elif only_reconciled and projection.summary.get('auto_save_hold'):
+            # Balanced, but a fact the balances cannot prove is not proven (auto_save_guard).
+            held.append(_held(item, projection.summary['auto_save_hold']['sentence']))
         elif only_reconciled and not fully_reconciled(item, projection, files.get(item.file_id)):
             held.append(_held(item, 'Has a check or an edit: left for you'))
         else:

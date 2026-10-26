@@ -248,6 +248,30 @@ export function guidanceFor(entry: QueueEntry, user?: QueuePerson | null, bucket
         after: SAVES,
         action: "Open the statement",
       }
+    case "auto_save_check":
+      // It balances, but a fact the balances cannot prove is not proven: Loupe did not save it on its own.
+      return {
+        title: entry.issue || "Loupe could not prove every detail of this statement",
+        steps: [
+          openWhere,
+          "Check the detail named above against the page.",
+          "Correct it if it is wrong, then save the statement.",
+        ],
+        after: SAVES,
+        action,
+      }
+    case "saved_check":
+      // Already imported, but a check of the ledger finds a detail wrong or unproven: a person looks at the page.
+      return {
+        title: entry.issue || "A detail of this imported statement needs checking",
+        steps: [
+          "Open the statement and its PDF.",
+          "Check the detail named above against the page.",
+          "Correct the saved details, or set aside the statement if it is a copy.",
+        ],
+        after: "Once the saved statement is corrected or set aside, it leaves this list.",
+        action: "Open the statement",
+      }
     case "no_activity":
       return {
         title: "No payments were read: confirm the period had none",
@@ -312,6 +336,8 @@ export const ISSUE_LABELS: Record<string, string> = {
   count: "Missing payments",
   no_activity: "No payments",
   reading: "Rows to check",
+  auto_save_check: "Not proven by its balances",
+  saved_check: "Imported, needs a check",
 }
 
 /** A label for any reason, including one this screen does not know yet. */

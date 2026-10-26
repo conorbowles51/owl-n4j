@@ -26,7 +26,7 @@ const me = { id: "u1", name: "Maria Lopez" }
 const JARGON = /copy_of_saved|not_all_held|issue_reason|_|\bbatch\b|\breading\b|lineage/i
 const every = [
   "import_failed", "saved_review", "reprint", "assignment", "principal_only", "currency", "institution", "holder",
-  "account", "dates", "balance", "incomplete", "count", "no_activity", "reading", "some_new_reason",
+  "account", "dates", "balance", "incomplete", "count", "no_activity", "reading", "auto_save_check", "saved_check", "some_new_reason",
 ]
 
 it("gives every reason a plain title, numbered steps that say where to look, one action and what happens next", () => {
@@ -120,4 +120,20 @@ it("splits the counts into what needs a person and what Loupe handles", () => {
     unexplained: 0, not_payment: 0 } satisfies QueueCounts
   expect(needsCount(counts)).toBe(7)
   expect(handledCount(counts)).toBe(24)
+})
+
+it("shows what Loupe could not prove about a balanced statement it did not save on its own", () => {
+  const issue = 'The account holder read, "LOMAS DE CHAPULTEPEC III SECCION", is an address line: check the holder printed on the page'
+  const guide = guidanceFor(entry({ issue_reason: "auto_save_check", issue }), me)
+  expect(guide.title).toBe(issue)
+  expect(guide.steps[0]).toBe("Open the PDF at page 3.")
+  expect(issueLabel("auto_save_check")).toBe("Not proven by its balances")
+})
+
+it("lists an imported statement a ledger check finds wrong, with the check's own sentence", () => {
+  const issue = "This account, currency and period (Nov 2025) is saved more than once: check whether one is a copy of the other or belongs to another currency"
+  const guide = guidanceFor(entry({ issue_reason: "saved_check", issue }), me)
+  expect(guide.title).toBe(issue)
+  expect(guide.action).toBe("Open the statement")
+  expect(issueLabel("saved_check")).toBe("Imported, needs a check")
 })

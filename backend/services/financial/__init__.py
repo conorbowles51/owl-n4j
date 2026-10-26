@@ -2247,3 +2247,5 @@ from services.financial.vision_reader import (
     ENABLED as VISION_FALLBACK, check_page_numbering, openai_page_reader, sweep as read_held_page_images,
 )
 __all__ += ["VISION_FALLBACK", "check_page_numbering", "openai_page_reader", "read_held_page_images"]
+from services.financial.auto_save_guard import holder_is_address, saved_checks, section_currencies
+__all__ += ["holder_is_address", "saved_checks", "section_currencies"]
