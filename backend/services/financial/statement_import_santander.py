@@ -40,6 +40,13 @@ CURRENCY_RULE_MARKS = _switch('LOUPE_FINANCIAL_SANTANDER_CURRENCY_RULE_MARKS')
 #   heading cells (column_index). A SALDO cell holding several stacked balances gives its row only its first line.
 #   The order is kept in 'table_order_rect' beside the cell; the printed locator is never invented.
 UNPLACED_TABLE = _switch('LOUPE_FINANCIAL_SANTANDER_UNPLACED_TABLE')
+# * LOUPE_FINANCIAL_SANTANDER_CONTINUED_UNPLACED_TABLE: such a table on a page with no open movement heading (06-JUN25
+#   SANTANDER MPA MXP page 3: the rest of the CUENTA SANTANDER PYME movements, ending with its SALDO FINAL DEL PERIODO)
+#   continues the movement section of the page before. It is read directly under the page's header (the one row
+#   printing PERIODO DEL), only when the next positioned row is a movement heading, the page footer or nothing, so
+#   nothing printed lies between them. Whether it joins a section is still decided by the page before: an open
+#   section of the same customer and period, as for any continuation page.
+CONTINUED_UNPLACED_TABLE = _switch('LOUPE_FINANCIAL_SANTANDER_CONTINUED_UNPLACED_TABLE')
 ACCOUNT = re.compile(r'(?P<product>CUENTA SANTANDER [A-Z ]+?|INVERSION CRECIENTE|SUPER CUENTA [A-Z ]+?)\s*(?P<number>\d{2}-\d{8}-\d)\b')
 DATE = r'\d{2}-[A-Z]{3}-\d{4}'
 # Marks a printed column rule between the date and folio columns is read as: '|' and '/', and on
@@ -91,6 +98,14 @@ def _unplaced_tables(items):
         if not any('FECHA' in norm(text(x)) and 'SALDO' in norm(text(x)) for x in after):
             bottom = max(_printed_box(c)[3] for c in r['cells'] if _printed_box(c))
             open_headings.append((bottom, top(after[0]) if after else None))
+    if CONTINUED_UNPLACED_TABLE and len(tables) == 1 and not open_headings:
+        headers = [i for i, (_, r) in enumerate(placed) if re.search(r'PERIODO DEL', norm(text(r)))]
+        if len(headers) == 1:
+            header = placed[headers[0]][1]
+            following = placed[headers[0]+1][1] if headers[0]+1 < len(placed) else None
+            if following is None or re.search(r'DETALLES? DE MOVIMIENTOS|^PAGINA \d', norm(text(following))):
+                open_headings.append((max(_printed_box(c)[3] for c in header['cells'] if _printed_box(c)),
+                                      top(following) if following is not None else None))
     if len(tables) != 1 or len(open_headings) != 1:
         return items
     (table, columns), (bottom, limit) = tables[0], open_headings[0]

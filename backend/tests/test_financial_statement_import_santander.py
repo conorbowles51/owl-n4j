@@ -209,6 +209,37 @@ class SantanderTests(TestCase):
             rows=propose_santander_statement(deepcopy(sources),'MXN',savings)['rows']
         self.assertFalse([r for r in rows if not r['excluded']])
 
+    def test_an_unpositioned_continuation_table_continues_the_page_before(self):
+        # Live: 06-JUN25 SANTANDER MPA MXP page 3, the rest of the cheques movements (8 of 15) kept as ruled cells with
+        # no position, under the page header and above the Dinero Creciente heading.
+        from unittest import mock
+        from services.financial import statement_import_santander as S
+        rows=statement()[0]['rows']
+        layout=lambda r:[(c['locator']['rect'][0],c['locator']['rect'][1],c['locator']['rect'][2]-c['locator']['rect'][0],c['expected_text']) for c in r['cells']]
+        first=source(1,[layout(r) for r in rows[:9]])
+        second=source(2,[layout(r) for r in rows[:3]]+[layout(r) for r in rows[12:18]])
+        table=dict(page_number=2,table_index=1,source_revision='c'*64,table_source='text_alignment',
+            rows=[dict(row_index=i,cells=[dict(column_index=j,expected_text=v) for j,v in cells]) for i,cells in enumerate([
+                [(0,'FECHA'),(1,'FOLIO'),(2,'DESCRIPCION'),(3,'DEPOSITO'),(4,'RETIRO'),(5,'SALDO')],
+                [(0,'03-SEP-2024'),(1,'0000002'),(2,'EXAMPLE PAYMENT'),(4,'50.00'),(5,'75.00')],
+                [(2,'TOTAL'),(3,'25.00'),(4,'50.00')],
+                [(0,'SALDO FINAL DEL PERIODO:'),(5,'$75.00')]])])
+        sources=[first,second,table]
+        def checking():
+            choices,_=santander_catalog(deepcopy(sources))
+            choice=next(c for c in choices if c['account_reference']=='65-00001234-0')
+            return propose_santander_statement(deepcopy(sources),'MXN',choice)['rows']
+        rows=checking()
+        self.assertEqual([(r['fields']['direction'],r['fields']['amount_minor']) for r in rows if r['kind']=='transaction'],
+                         [('credit','2500'),('debit','5000')])
+        self.assertEqual(check_statement_rows(rows)['balance_status'],'matches')
+        # Something printed between the page header and the table: its place is not known, so it is not read.
+        second['rows'].insert(3,source(2,[[(30000,90000,200000,'AVISO IMPORTANTE')]])['rows'][0])
+        self.assertEqual(len([r for r in checking() if r['kind']=='transaction']),1)
+        del second['rows'][3]
+        with mock.patch.object(S,'CONTINUED_UNPLACED_TABLE',False):
+            self.assertEqual(len([r for r in checking() if r['kind']=='transaction']),1)
+
     def test_conflicting_period_or_unbranded_copy_is_not_accepted(self):
         for change in ['period','bank']:
             ss=statement()
