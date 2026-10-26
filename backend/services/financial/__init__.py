@@ -2249,3 +2249,5 @@ from services.financial.vision_reader import (
 __all__ += ["VISION_FALLBACK", "check_page_numbering", "openai_page_reader", "read_held_page_images"]
 from services.financial.auto_save_guard import holder_is_address, saved_checks, section_currencies
 __all__ += ["holder_is_address", "saved_checks", "section_currencies"]
+from services.financial.receipt_settlement import receipt_payment, settle_receipts
+__all__ += ["receipt_payment", "settle_receipts"]

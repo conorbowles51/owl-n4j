@@ -378,6 +378,9 @@ def _auto_save_once(session, *, case_id, batch_id, file_id, stored_checks=False)
     if entries:
         fill_confirmed(session, case_id=case_id, entries=entries, owned_batch_id=batch_id)
     file = session.get(EvidenceFile, file_id)
+    # A teller receipt whose deposit a saved statement already records is not a statement (receipt_settlement).
+    from services.financial.receipt_settlement import settle_receipts
+    settle_receipts(session, case_id=case_id, batch_id=batch_id, file_id=file_id, actor=SYSTEM_ACTOR)
     ids = [item.id for item in session.scalars(select(Item).where(Item.batch_id == batch_id,
            Item.file_id == file_id, Item.status == 'ready'))
            if (not item.review_request or system_filled_only(item, file))

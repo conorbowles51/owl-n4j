@@ -136,3 +136,38 @@ class ReceiptSaveTests(PaymentDocumentReviewTests):
         self.assertNotIn('document_review',statement)
         self.assertEqual(statement['transaction_count'],1)
         self.assertTrue(all(r['page_number']==1 for r in statement['rows']))
+
+
+class ReceiptSettlementTests(ReceiptSaveTests):
+    """A receipt whose deposit a saved statement records (receipt_settlement)."""
+
+    def receipt_document(self):
+        identifier = self.add_receipt()
+        return read_payment_document(self.db, case_id=self.case.id, evidence_file_id=self.wire.id, document_id=identifier)
+
+    def statement_payment(self, balance=13000, identifier='123456780040', **changes):
+        row = self.payment(**changes)
+        row.running_balance_minor = balance
+        self.acct.identifier_normalised = identifier
+        self.db.commit()
+        return row
+
+    def test_the_one_statement_payment_with_the_receipts_account_amount_and_balances_is_found(self):
+        from services.financial.receipt_settlement import receipt_payment
+        row = self.statement_payment()
+        self.assertEqual(receipt_payment(self.db, case_id=self.case.id, document=self.receipt_document()).id, row.id)
+
+    def test_anything_short_of_one_exact_payment_leaves_the_receipt_for_a_person(self):
+        from services.financial.receipt_settlement import receipt_payment
+        from postgres.models.enums import TransactionDirection
+        from datetime import date
+        for changes in (dict(balance=13100), dict(identifier='123499990040'), dict(identifier='123456780000'),
+                        dict(direction=TransactionDirection.debit), dict(transaction_date=date(2021, 3, 30)),
+                        dict(amount_minor=12100)):
+            with self.subTest(changes=changes):
+                self.tearDown(); self.setUp()
+                self.statement_payment(**changes)
+                self.assertIsNone(receipt_payment(self.db, case_id=self.case.id, document=self.receipt_document()))
+        self.tearDown(); self.setUp()
+        self.statement_payment(); self.statement_payment(description='SYNTHETIC PAYMENT TWO')
+        self.assertIsNone(receipt_payment(self.db, case_id=self.case.id, document=self.receipt_document()))
