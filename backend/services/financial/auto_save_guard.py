@@ -34,6 +34,7 @@ from dataclasses import dataclass
 from datetime import date
 
 ENABLED = os.environ.get('LOUPE_FINANCIAL_AUTO_SAVE_GUARD', '1').strip().lower() not in ('0', 'false', 'off', 'no')
+LEDGER_SIGN = os.environ.get('LOUPE_FINANCIAL_GUARD_LEDGER_SIGN', '1') != '0'
 SAVED_TWICE_BY_TYPE = os.environ.get('LOUPE_FINANCIAL_SAVED_TWICE_BY_TYPE', '1') != '0'
 CHAIN_DAYS = 5
 
@@ -270,9 +271,14 @@ def statement_of(summary, source_document_id=''):
     closing = calculation.get('printed_closing_minor')
     if closing is None:
         closing = calculation.get('calculated_closing_minor')
+    # A card prints the amount owed; the ledger stores it negative (asset arithmetic). Compared as printed, every
+    # card statement looked like the opposite sign of its saved neighbours (Credit One 1930, 18 periods held).
+    sign = -1 if LEDGER_SIGN and calculation.get('balance_convention') == 'liability_owed' else 1
+    opening, closing = _int(calculation.get('opening_minor')), _int(closing)
     return SavedPeriod(account_digits(summary.get('account')), summary.get('institution') or '',
-                       (summary.get('currency') or '').upper(), start, end, _int(calculation.get('opening_minor')),
-                       _int(closing), source_document_id)
+                       (summary.get('currency') or '').upper(), start, end,
+                       None if opening is None else sign * opening, None if closing is None else sign * closing,
+                       source_document_id)
 
 
 def _account_history(summary, ledger):

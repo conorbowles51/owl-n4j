@@ -269,3 +269,28 @@ class SavedTwiceByTypeTests(TestCase):
     def test_switched_off_compares_without_the_type(self):
         with patch.object(guard, 'SAVED_TWICE_BY_TYPE', False):
             self.assertIn('copy', {reason for reason, _ in guard.ledger_checks(self.rows()).values()})
+
+
+class CardLedgerSignTests(TestCase):
+    """Credit One 1930: a card statement prints the amount owed (75.00); the ledger stores its saved neighbours'
+    owed balances negative (-75.00). Compared as printed, every such statement was held as 'the opposite sign'."""
+
+    ledger = [period('1930', '2020-10-04', '2020-10-15', 0, -7500, currency='USD', bank='CREDIT ONE BANK'),
+              period('1930', '2020-11-16', '2020-12-15', -256, -37188, currency='USD', bank='CREDIT ONE BANK')]
+
+    def card(self, opening, closing, convention='liability_owed'):
+        return summary(account='1930', currency='USD', institution='CREDIT ONE BANK', period_start='2020-10-16',
+                       period_end='2020-11-15', admission=dict(calculation=dict(
+                           opening_minor=str(opening), printed_closing_minor=str(closing), balance_convention=convention)))
+
+    def test_a_card_statement_that_continues_its_neighbours_in_the_ledger_convention_saves(self):
+        self.assertIsNone(guard.hold(self.card(7500, 256), ledger=self.ledger))
+
+    def test_a_real_break_or_sign_is_still_held(self):
+        self.assertEqual(guard.hold(self.card(7600, 256), ledger=self.ledger)[0], 'balance')
+        positive = [period('1930', '2020-10-04', '2020-10-15', 0, 7500, currency='USD', bank='CREDIT ONE BANK')]
+        self.assertEqual(guard.hold(self.card(7500, 256), ledger=positive)[0], 'sign')
+
+    def test_switched_off_compares_as_printed(self):
+        with patch.object(guard, 'LEDGER_SIGN', False):
+            self.assertEqual(guard.hold(self.card(7500, 256), ledger=self.ledger)[0], 'sign')
