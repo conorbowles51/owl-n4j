@@ -128,7 +128,10 @@ def complete_currency_records(session, *, document, period, metadata, currency, 
             # Withdrawn by the investigator: outside totals, never drafted. A
             # withdrawn correction leaves the printed row's own reading open.
             item.pop('hold_reason', None); item.pop('hold_blockers', None); item.pop('hold_repeat_of', None)
-            if item['original'].get('kind') != 'manual_entry':
+            from services.financial.record_withdrawal import printed_zero
+            if printed_zero(item):
+                item['missing_fields'] = []  # a printed line of no money, left out
+            elif item['original'].get('kind') != 'manual_entry':
                 item['missing_fields'] = incomplete_fields(DraftImportRow.model_validate(item['fields']), request)
             continue
         fields = deepcopy(item.get('correction') or item['fields'])

@@ -68,7 +68,7 @@ def imported_records(session, *, case_id, account_id=None, start_date=None, end_
         for item in items or []:
             if item.get('resolved_transaction_id'):
                 continue
-            from services.financial.record_withdrawal import entered_by_investigator, is_open
+            from services.financial.record_withdrawal import can_withdraw, is_open
             manual = item['original'].get('kind') == 'manual_entry'
             # A withdrawn correction leaves the printed row on its own reading.
             fields = item['fields'] if item.get('withdrawn') else item.get('correction') or item['fields']
@@ -95,9 +95,9 @@ def imported_records(session, *, case_id, account_id=None, start_date=None, end_
                 can_enter_now=item['id'] in admit,
                 # Rows the investigator entered can be withdrawn (and restored).
                 kind='added' if manual else 'printed',
-                can_withdraw=entered_by_investigator(item) and not item.get('withdrawn'),
+                can_withdraw=can_withdraw(item) and not item.get('withdrawn'),
                 withdrawn=item.get('withdrawn'),
-                has_withdrawn_correction=bool(item.get('withdrawn')) and not manual,
+                has_withdrawn_correction=bool(item.get('withdrawn')) and not manual and bool(item.get('correction')),
                 repeat_of=plan['repeats'].get(item['id']) or (None if item['id'] in held else item.get('hold_repeat_of')),
                 without_this=(plan['effects'] or {}).get('without_each', {}).get(item['id']),
                 # A late-posted card charge's printed date, proposed by the

@@ -15,7 +15,16 @@ that is already on the statement). Nothing is deleted:
   (``quarantine_case_row``), and restored by releasing it.
 
 Restoring reverses either step and is recorded the same way.
+
+A printed line whose printed amount is exactly zero (``Interest Charge on Cash
+Advances 0.00`` read without its date) moves no money, yet a held record of it
+could never be completed (a payment needs a positive amount) and so held its
+statement forever. Such a line can be withdrawn too (``printed_zero``): it then
+takes no part in the statement, like a withdrawn addition, and Restore puts it
+back. Switch: LOUPE_FINANCIAL_WITHDRAW_PRINTED_ZERO (default on).
 """
+import os
+import re
 from copy import deepcopy
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -26,6 +35,9 @@ from postgres.models.financial import FinancialSourceDocument
 from services.financial.pdf_candidates import PdfMappingError
 
 WITHDRAW_REASON = 'Withdrawn by the investigator.'
+PRINTED_ZERO = os.environ.get('LOUPE_FINANCIAL_WITHDRAW_PRINTED_ZERO', '1') != '0'
+_MONEY = re.compile(r'-?\$?\d[\d,]*\.\d{2}-?')
+_ZERO = re.compile(r'-?\$?0\.00-?')
 
 
 class RecordWithdrawal(BaseModel):
@@ -40,10 +52,30 @@ def entered_by_investigator(record):
     return record['original'].get('kind') == 'manual_entry' or bool(record.get('correction'))
 
 
+def printed_zero(record):
+    """A printed row, uncorrected, whose only printed money is exactly zero and whose reading has no
+    other amount: a line of no money (a zero interest or fee line), not a payment to complete."""
+    original = record.get('original') or {}
+    if not PRINTED_ZERO or original.get('kind') == 'manual_entry' or record.get('correction'):
+        return False
+    texts = [(cell.get('expected_text') or '').strip() for cell in original.get('source_cells') or []]
+    money = [text for text in texts if _MONEY.fullmatch(text)]
+    return (len(money) == 1 and bool(texts) and texts[-1] == money[0] and bool(_ZERO.fullmatch(money[0]))
+            and str((original.get('fields') or {}).get('amount_minor') or '0') == '0')
+
+
+def can_withdraw(record):
+    return entered_by_investigator(record) or printed_zero(record)
+
+
+def left_out(record):
+    """A withdrawn row that takes no part in its statement: an addition, or a printed line of no money."""
+    return bool(record.get('withdrawn')) and (record['original'].get('kind') == 'manual_entry' or printed_zero(record))
+
+
 def is_open(record):
-    """Still to deal with: not in Transactions and not a withdrawn addition."""
-    return not record.get('resolved_transaction_id') and not (
-        record.get('withdrawn') and record['original'].get('kind') == 'manual_entry')
+    """Still to deal with: not in Transactions and not a withdrawn addition (or zero line)."""
+    return not record.get('resolved_transaction_id') and not left_out(record)
 
 
 def change(*, session_factory, case_id, source_id, request, actor, restore=False):
@@ -68,7 +100,7 @@ def change(*, session_factory, case_id, source_id, request, actor, restore=False
                            if item['id'] == request.record_id), None)
             if record is None:
                 raise PdfMappingError('The record was not found on this statement.', 404)
-            if not entered_by_investigator(record):
+            if not can_withdraw(record):
                 raise PdfMappingError('Only a row you added or corrected can be withdrawn. '
                                       'Correct this printed row instead.', 422)
             reason = request.reason.strip() or WITHDRAW_REASON
@@ -85,7 +117,7 @@ def change(*, session_factory, case_id, source_id, request, actor, restore=False
             record.setdefault('withdrawal_history', []).append(entry)
             if restore:
                 record.pop('withdrawn', None)
-                if record['original'].get('kind') != 'manual_entry':
+                if record['original'].get('kind') != 'manual_entry' and not printed_zero(record):
                     record['missing_fields'] = []
             else:
                 record['withdrawn'] = entry
