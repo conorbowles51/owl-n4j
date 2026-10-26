@@ -294,3 +294,49 @@ class CardLedgerSignTests(TestCase):
     def test_switched_off_compares_as_printed(self):
         with patch.object(guard, 'LEDGER_SIGN', False):
             self.assertEqual(guard.hold(self.card(7500, 256), ledger=self.ledger)[0], 'sign')
+
+
+class ChainByTypeTests(TestCase):
+    """Navy Federal 3701: a checking account and a checking line of credit print the same last digits and are saved
+    as two accounts (checking, credit_card). The line of credit's periods were held as not continuing the checking
+    account's balances."""
+
+    SAVED = [dict(identifier_normalised='3701', institution_name='Navy Federal Credit Union', currency='USD',
+                  period_start=date(2020, 7, 17), period_end=date(2020, 8, 16), opening_balance_minor=122772,
+                  closing_balance_minor=98000, source_document_id=uuid4(), account_type='checking'),
+             dict(identifier_normalised='3701', institution_name='Navy Federal Credit Union', currency='USD',
+                  period_start=date(2020, 5, 17), period_end=date(2020, 6, 16), opening_balance_minor=-323627,
+                  closing_balance_minor=-327450, source_document_id=uuid4(), account_type='credit_card')]
+
+    def ledger(self, saved=None):
+        """``load_ledger`` over saved rows: each selected column is read from the row by its name."""
+        rows = saved or self.SAVED
+
+        class Session:
+            def execute(self, statement):
+                names = [column.key for column in statement.selected_columns]
+                return NS(all=lambda: [tuple(row[name] for name in names) for row in rows])
+        return guard.load_ledger(Session(), uuid4())
+
+    def line_of_credit(self, opening=327450, closing=326253):
+        return summary(account='Checking Line of Credit 3701', account_type='credit_card', currency='USD',
+                       institution='Navy Federal Credit Union', period_start='2020-06-17', period_end='2020-07-16',
+                       admission=dict(calculation=dict(opening_minor=str(opening), printed_closing_minor=str(closing),
+                                                       balance_convention='liability_owed')))
+
+    def test_the_line_of_credit_is_not_compared_with_the_checking_account(self):
+        self.assertIsNone(guard.hold(self.line_of_credit(), ledger=self.ledger()))
+
+    def test_a_break_with_its_own_type_is_still_held(self):
+        held = guard.hold(self.line_of_credit(opening=327451), ledger=self.ledger())
+        self.assertEqual(held[0], 'balance')
+        self.assertIn('May 2020', held[1])
+
+    def test_switched_off_compares_every_type(self):
+        with patch.object(guard, 'CHAIN_BY_TYPE', False):
+            self.assertEqual(guard.hold(self.line_of_credit(), ledger=self.ledger())[0], 'balance')
+
+    def test_a_type_never_saved_under_the_number_compares_with_every_type(self):
+        # BNB2: a savings statement read with its checking account's number; only the checking is saved under it.
+        checking_only = [row for row in self.SAVED if row['account_type'] == 'checking']
+        self.assertEqual(guard.hold(self.line_of_credit(), ledger=self.ledger(checking_only))[0], 'balance')

@@ -30,12 +30,18 @@ reconciliation, as before).
 import os
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 
 ENABLED = os.environ.get('LOUPE_FINANCIAL_AUTO_SAVE_GUARD', '1').strip().lower() not in ('0', 'false', 'off', 'no')
 LEDGER_SIGN = os.environ.get('LOUPE_FINANCIAL_GUARD_LEDGER_SIGN', '1') != '0'
 SAVED_TWICE_BY_TYPE = os.environ.get('LOUPE_FINANCIAL_SAVED_TWICE_BY_TYPE', '1') != '0'
+# The chain compares a statement with saved neighbours of its own account type only, when the ledger already
+# holds that type under its number: a checking account and a checking line of credit printing the same last
+# digits ('3701') are two saved accounts, and the line of credit's periods were held as not continuing the
+# checking account's balances (Navy Federal, 11 periods). A type the number has never been saved as compares
+# with every type, as before (a savings statement read with its checking account's number stays held).
+CHAIN_BY_TYPE = os.environ.get('LOUPE_FINANCIAL_GUARD_CHAIN_BY_TYPE', '1') != '0'
 CHAIN_DAYS = 5
 
 
@@ -152,12 +158,13 @@ def load_ledger(session, case_id):
                                            FinancialStatementPeriod as Period)
     rows = session.execute(select(Account.identifier_normalised, Account.institution_name, Period.currency,
                                   Period.period_start, Period.period_end, Period.opening_balance_minor,
-                                  Period.closing_balance_minor, Period.source_document_id)
+                                  Period.closing_balance_minor, Period.source_document_id, Account.account_type)
                            .join(Account, Account.id == Period.account_id)
                            .join(Source, Source.id == Period.source_document_id)
                            .where(Period.case_id == case_id, Source.status == 'admitted')).all()
-    return [SavedPeriod(account_digits(a), i or '', (c or '').upper(), s, e, o, cl, str(d))
-            for a, i, c, s, e, o, cl, d in rows if s and e]
+    return [SavedPeriod(account_digits(a), i or '', (c or '').upper(), s, e, o, cl, str(d),
+                        (kind or '') if CHAIN_BY_TYPE else '')
+            for a, i, c, s, e, o, cl, d, kind in rows if s and e]
 
 
 def _seam(prior_closing, next_opening):
@@ -278,7 +285,7 @@ def statement_of(summary, source_document_id=''):
     return SavedPeriod(account_digits(summary.get('account')), summary.get('institution') or '',
                        (summary.get('currency') or '').upper(), start, end,
                        None if opening is None else sign * opening, None if closing is None else sign * closing,
-                       source_document_id)
+                       source_document_id, (summary.get('account_type') or '') if CHAIN_BY_TYPE else '')
 
 
 def _account_history(summary, ledger):
@@ -320,6 +327,10 @@ def hold(summary, *, ledger, currency_basis='', filename='', named_currencies=()
     statement = statement_of(summary)
     if statement is None or not statement.account:
         return None
+    if statement.kind and not any(p.kind == statement.kind and p.account == statement.account
+                                  and p.currency == statement.currency
+                                  and _bank(p.institution) == _bank(statement.institution) for p in ledger):
+        statement = replace(statement, kind='')
     problem = chain_problem(statement, ledger)
     if problem:
         return problem
