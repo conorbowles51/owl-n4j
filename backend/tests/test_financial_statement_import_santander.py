@@ -160,6 +160,21 @@ class SantanderTests(TestCase):
                 c['expected_text']=c['expected_text'].replace('MONEDA NACIONAL','UNREADABLE')
         self.assertTrue(all(c['currency']=='' for c in currencies_by_statement(santander_catalog(ss)[0],ss)))
 
+    def test_the_box_rule_read_before_the_printed_currency_name_does_not_hide_it(self):
+        # Live: 04 ING. R2 SANTANDER MXN ABR 26 page 1 reads 'MONEDA' | '—- MONEDA NACIONAL' (scan).
+        from unittest import mock
+        from services.financial import statement_import_santander as S
+        ss=statement()
+        for r in ss[0]['rows']:
+            for c in r['cells']:
+                if c['expected_text']=='MONEDA NACIONAL':c['expected_text']='—- MONEDA NACIONAL'
+        self.assertEqual({c['currency'] for c in currencies_by_statement(santander_catalog(deepcopy(ss))[0],ss)},{'MXN'})
+        with mock.patch.object(S,'CURRENCY_RULE_MARKS',False):
+            self.assertEqual({c['currency'] for c in currencies_by_statement(santander_catalog(deepcopy(ss))[0],ss)},{''})
+        for c in ss[0]['rows'][3]['cells']:
+            if 'NACIONAL' in c['expected_text']:c['expected_text']='—- MONEDA NACIONALX'
+        self.assertEqual({c['currency'] for c in currencies_by_statement(santander_catalog(deepcopy(ss))[0],ss)},{''})
+
     def test_conflicting_period_or_unbranded_copy_is_not_accepted(self):
         for change in ['period','bank']:
             ss=statement()

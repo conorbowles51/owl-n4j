@@ -29,6 +29,10 @@ def _switch(name):
 RULE_APOSTROPHE = _switch('LOUPE_FINANCIAL_SANTANDER_RULE_APOSTROPHE')
 COVER_SPACED_ACCOUNT = _switch('LOUPE_FINANCIAL_SANTANDER_COVER_SPACED_ACCOUNT')
 QUIET_COVER_CLOSING = _switch('LOUPE_FINANCIAL_SANTANDER_QUIET_COVER_CLOSING')
+# * LOUPE_FINANCIAL_SANTANDER_CURRENCY_RULE_MARKS: the cover's MONEDA value read with the box rule in front of it
+#   ('—- MONEDA NACIONAL', scans) is that value; only marks that are not letters or digits are dropped, and the
+#   rest must still be one of the printed currency names exactly.
+CURRENCY_RULE_MARKS = _switch('LOUPE_FINANCIAL_SANTANDER_CURRENCY_RULE_MARKS')
 ACCOUNT = re.compile(r'(?P<product>CUENTA SANTANDER [A-Z ]+?|INVERSION CRECIENTE|SUPER CUENTA [A-Z ]+?)\s*(?P<number>\d{2}-\d{8}-\d)\b')
 DATE = r'\d{2}-[A-Z]{3}-\d{4}'
 # Marks a printed column rule between the date and folio columns is read as: '|' and '/', and on
@@ -83,6 +87,8 @@ def santander_catalog(sources):
                 for i,c in enumerate(cells):
                     if norm(c['expected_text']) == 'MONEDA' and i+1 < len(cells):
                         value = norm(cells[i+1]['expected_text'])
+                        if CURRENCY_RULE_MARKS:
+                            value = re.sub(r'^[^A-Z0-9]+|[^A-Z0-9]+$', '', value).strip()
                         code = {'MONEDA NACIONAL':'MXN','PESOS':'MXN','DOLARES':'USD','DOLARES AMERICANOS':'USD','USD':'USD','MXN':'MXN'}.get(value)
                         if code:meta['currencies'].add(code)
                     if 'CODIGO DE CLIENTE NO' in norm(c['expected_text']) and i > 0:
