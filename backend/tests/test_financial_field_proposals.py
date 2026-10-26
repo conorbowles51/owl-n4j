@@ -675,3 +675,40 @@ class NotRecordedMarksTests(TestCase):
         _, why = fp.currency_why(held, known)
         self.assertFalse(any('do not print' in w for w in why), why)
         self.assertTrue(any('prepared before' in w for w in why), why)
+
+
+class FileAndPageCurrencyTests(TestCase):
+    """LOUPE_FINANCIAL_AUTOFILL_FILE_AND_PAGE (fin-queue3 L4, 2026-10-26): a statement of no saved account whose file
+    name gives one currency, the only real currency its pages print, takes it with no click."""
+    held = values(institution='Kapital Mexico Casa de Bolsa', holder='EMPRESA DE PRUEBA', account_number='00099001',
+                  period_start='2026-06-01', period_end='2026-06-30', filename='06 EMPRESA KAPITAL MXN JUN 26.pdf',
+                  currency_marks=[['MXN'], ['UDI'], ['MXN', 'USD']])
+
+    def test_the_file_name_and_the_pages_only_currency_fill_it(self):
+        known = knowledge(account(*MONTHS))
+        currency = fp.propose(self.held, known)['currency']
+        self.assertEqual((currency['value'], currency['basis'], currency['confirmed']),
+                         ('MXN', fp.FILE_AND_PAGE_BASIS, True))
+        fills = fp.automatic_fills(self.held, {'currency': currency}, known)
+        self.assertEqual(fills['currency']['value'], 'MXN')
+        with patch.dict(os.environ, {'LOUPE_FINANCIAL_AUTOFILL_FILE_AND_PAGE': '0'}):
+            self.assertFalse(fp.propose(self.held, known)['currency']['confirmed'])
+            self.assertEqual(fp.automatic_fills(self.held, {'currency': currency}, known), {})
+
+    def test_any_disagreeing_signal_leaves_it_a_question(self):
+        known = knowledge(account(*MONTHS))
+        refused = dict(
+            other_name=dict(self.held, filename='06 EMPRESA KAPITAL USD JUN 26.pdf'),
+            two_names=dict(self.held, filename='06 EMPRESA MXN USD.pdf'),
+            no_name=dict(self.held, filename='06 EMPRESA KAPITAL JUN 26.pdf'),
+            page_names_another=dict(self.held, currency_marks=[['MXN'], ['USD']]),
+            marker_excludes_it=dict(self.held, currency_marks=[['MXN'], ['EUR', 'GBP']]),
+            nothing_recorded=dict(self.held, currency_marks=None),
+            printed_in_holdings=dict(self.held, printed_currency=dict(value='MXN', page_number=2)))
+        for name, held in refused.items():
+            currency = fp.propose(held, known).get('currency') or {}
+            self.assertNotEqual(currency.get('basis'), fp.FILE_AND_PAGE_BASIS, name)
+        # The same digits at another bank, saved in another currency.
+        elsewhere = account(saved(currency='USD', account='00099001'), number='00099001', institution='Intercam',
+                            currency='USD', key='a2')
+        self.assertIsNone(fp.file_and_page_currency(self.held, knowledge(elsewhere)))

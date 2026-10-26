@@ -129,7 +129,11 @@ MIN_MASKED_DIGITS = 4
 FULL_ACCOUNT_DIGITS = 6
 
 
-AUTOFILL_NAMES = ('CURRENCY', 'IDENTITY', 'CASE_CURRENCY', 'HOLDER_NEIGHBOURS', 'ACCOUNT_HISTORY')
+AUTOFILL_NAMES = ('CURRENCY', 'IDENTITY', 'CASE_CURRENCY', 'HOLDER_NEIGHBOURS', 'ACCOUNT_HISTORY', 'FILE_AND_PAGE')
+# fin-queue lesson 3 / fin-queue3 L4 (2026-10-26): a statement of an account the case has no saved statement of
+# (a Kapital peso account printing no currency label), whose pages' only real currency is the one its file name
+# gives, takes it with no click (LOUPE_FINANCIAL_AUTOFILL_FILE_AND_PAGE; see file_and_page_currency).
+FILE_AND_PAGE_BASIS = 'file_name_and_only_printed_currency'
 AUTOFILL_CURRENCY_BASIS = 'account_currency'
 # Neil, 2026-10-25: a statement printing no currency anywhere takes the case's usual currency with no click
 # (LOUPE_FINANCIAL_AUTOFILL_CASE_CURRENCY). "Clear majority": more than CASE_CURRENCY_SHARE of the case's saved
@@ -601,6 +605,9 @@ def _account_or_case_currency(values, candidates, matched, knowledge):
             return history
         # The account holds several currencies: the case's usual one would contradict its own history.
         return file_name_currency(values, candidates)
+    agreed = file_and_page_currency(values, knowledge)
+    if agreed:
+        return agreed
     proposal = (previous_bank_currency(values, knowledge) or file_name_currency(values, [])
                 or only_printed_currency(values))
     if proposal:
@@ -768,6 +775,33 @@ def only_printed_currency(values):
         return None
     return dict(value=value, basis='only_printed_currency', confirmed=False,
                 label=f'the only currency these pages mention, though not as the statement\'s labelled currency',
+                statements=0, matched=[])
+
+
+def file_and_page_currency(values, knowledge):
+    """(FILE_AND_PAGE) The currency two independent signals give a statement of no saved account: its file
+    name gives exactly one currency, and it is the only real currency the pages name, every printed marker allowing
+    it (``only_printed_currency``; a reference unit such as UDI is not a currency). Fail closed: the switch is on;
+    the statement has no currency and nothing in its holdings; no account of the case matches it, shares its
+    printed number's digits at any bank, or was the same number and holder at a previous bank, in any currency
+    other than this one. None otherwise."""
+    if not autofill_enabled('FILE_AND_PAGE') or knowledge is None:
+        return None
+    if str(values.get('currency') or '').strip() or values.get('printed_currency'):
+        return None
+    named, printed = file_name_currency(values, []), only_printed_currency(values)
+    if not named or not printed or named['value'] != printed['value']:
+        return None
+    value = named['value']
+    candidates, _ = matching_accounts(dict(values, currency=''), knowledge)
+    number = account_identity(values.get('account_number'))
+    candidates = list(candidates) + [k for k in knowledge.accounts if account_match(number, (k.digits, k.masked))]
+    established = {c.upper() for k in candidates for c in [s.currency for s in k.statements] + [k.currency] if c}
+    previous = previous_bank_currency(values, knowledge)
+    if established - {value} or (previous and previous['value'] != value):
+        return None
+    return dict(value=value, basis=FILE_AND_PAGE_BASIS, confirmed=True,
+                label=f'the file name says {value} and {value} is the only currency the pages print',
                 statements=0, matched=[])
 
 
@@ -952,6 +986,8 @@ def _minor(value):
 #   closing equals the opening of the one just after (a non-zero balance). Several currency sections can share
 #   one account number (a section of another currency arriving first among an all-one-currency account): the
 #   balance chain is what proves this statement is that ledger.
+# * currency of a statement of no saved account (FILE_AND_PAGE): its file name gives one currency and it is the
+#   only real currency its pages print (file_and_page_currency, checked again).
 # * bank and holder: confirmed from the account's agreeing saved statements AND bracketed by them (saved
 #   statements both before and after its dates): a bank renamed, or a holder changed, after the last saved
 #   statement is not carried onto a statement outside the saved span.
@@ -1004,6 +1040,12 @@ def automatic_fills(values, proposals, knowledge):
         # The account's established currency (checked again here). No balance chain: a statement held for its
         # currency has no amounts read yet; it saves only when every other check passes once they are.
         again = account_history_currency(values, knowledge)
+        if again and again['value'] == currency.get('value'):
+            result['currency'] = dict(currency)
+    if (currency.get('confirmed') and currency.get('basis') == FILE_AND_PAGE_BASIS
+            and not str(values.get('currency') or '').strip()):
+        # The file name and the pages' only currency (checked again here): needs no matched account.
+        again = file_and_page_currency(values, knowledge)
         if again and again['value'] == currency.get('value'):
             result['currency'] = dict(currency)
     candidates, matched = matching_accounts(values, knowledge)
