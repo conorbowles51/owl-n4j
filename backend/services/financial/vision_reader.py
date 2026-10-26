@@ -1867,10 +1867,11 @@ def _saved_target(db, document):
     return document.case_id, file, key, currency, proposal
 
 
-def read_saved(factory, document_id, resolve_path, *, page_reader=None, knowledge_for=None):
+def read_saved(factory, document_id, resolve_path, *, page_reader=None, knowledge_for=None, stored_only=False):
     """Read a saved statement's pages from their images once per reading of the file and model (SAVED_KEY), judge
     the reading as if the statement were not saved yet, and store the outcome (never applied). Returns the record.
-    Never raises; fails closed like read_item."""
+    ``stored_only``: judge the stored reading again under the current rules and store that outcome, sending no
+    request (STORED_REJUDGE). Never raises; fails closed like read_item."""
     from postgres.models.financial import FinancialSourceDocument
     if knowledge_for is None:
         from services.financial.field_proposals import case_knowledge
@@ -1893,8 +1894,11 @@ def read_saved(factory, document_id, resolve_path, *, page_reader=None, knowledg
             pages = statement_pages(proposal)
             if not pages or len(pages) > MAX_PAGES:
                 return dict(record, reason='pages')
-            model_id, read = page_reader(db, case_id)
             stored = ((file.metadata_ or {}).get(SAVED_KEY) or {}).get(key)
+            if stored_only:
+                model_id, read = (stored or {}).get('model'), None
+            else:
+                model_id, read = page_reader(db, case_id)
             if (stored and stored.get('version') == VERSION and stored.get('revision') == proposal['revision']
                     and stored.get('model') == model_id and list(stored.get('pages') or []) == pages
                     and isinstance(stored.get('raw'), dict)):
@@ -1905,6 +1909,8 @@ def read_saved(factory, document_id, resolve_path, *, page_reader=None, knowledg
             file_id = file.id
             db.rollback()
         record.update(revision=proposal['revision'], model=model_id, pages=pages, document_id=str(document_id))
+        if raw is None and stored_only:
+            return dict(record, reason='no_image_reading')
         if raw is None:
             images = render_pages(path, pages)
             reserved = reserve_usd(model_id, images)

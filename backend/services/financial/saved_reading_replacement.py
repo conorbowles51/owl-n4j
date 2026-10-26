@@ -101,6 +101,12 @@ UNDATED = os.environ.get('LOUPE_FINANCIAL_REPLACE_UNDATED', '1').strip().lower()
 # check a text reading meets (admission as a fresh statement, same account, coverage), when that proves. Off: only
 # text readings replace.
 FROM_IMAGES = os.environ.get('LOUPE_FINANCIAL_REPLACE_FROM_IMAGES', '1').strip().lower() not in ('0', 'false', 'off', 'no')
+# The stored page reading is judged now (saved_image_request), but the writer reads the proved printed totals from the
+# stored record (vision_reader.stored_image_evidence), which a reading stored as not proved under earlier rules lacks:
+# 8 Erica Merrick periods proved under L24's rules were refused 'Check the printed fee total'. Before writing, the
+# stored record is judged again under the current rules (read_saved stored_only, no request). Off: the record is used
+# as stored.
+STORED_REJUDGE = os.environ.get('LOUPE_FINANCIAL_REPLACE_STORED_REJUDGE', '1').strip().lower() not in ('0', 'false', 'off', 'no')
 IMAGE_BASIS = 'page_image'
 IMAGE_REASON = ('The page images of this statement period were read and the reading balances under every admission '
                 'check; the saved copy was incomplete (no dates or a balance missing). The saved copy is kept, linked '
@@ -888,6 +894,9 @@ def replace_document(*, session_factory, case_id, document_id, resolve_path):
         session.rollback()
     if verdict['outcome'] != 'replace':
         return verdict
+    if verdict.get('basis') == IMAGE_BASIS and STORED_REJUDGE:
+        from services.financial import vision_reader
+        vision_reader.read_saved(session_factory, document_id, resolve_path, stored_only=True)
     receipt = confirm_statement_import(session_factory=session_factory, case_id=uuid.UUID(str(case_id)),
         evidence_file_id=file_id, request=StatementImportRequest.model_validate(verdict['request']),
         actor=ACTOR, resolve_path=resolve_path)

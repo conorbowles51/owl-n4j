@@ -507,6 +507,43 @@ class ImageReplacementTests(TestCase):
         self.assertEqual(self.t.admitted_rows(), rows, 'restore is the exact reversal')
         self.assertEqual(self.t.document(old_id).status, 'admitted')
 
+    def test_a_page_reading_stored_as_not_proved_is_judged_again_before_the_writer_reads_it(self):
+        from services.financial import vision_reader
+        old_id = self._save()
+        self._incomplete(old_id)
+        self._broken_text()
+
+        def target(db, document):
+            # This fixture's file holds one statement (key ''); a Merrick file's statements each have a key.
+            file = db.get(EvidenceFile, document.evidence_file_id)
+            return document.case_id, file, '', 'EUR', read_statement_import(db, case_id=document.case_id,
+                                                                            evidence_file_id=file.id, currency='EUR')
+        with self.f.SessionLocal() as db:
+            _, file, key, _, proposal = target(db, db.get(FinancialSourceDocument, old_id))
+            metadata = deepcopy(file.metadata_ or {})
+            # Read before the current rules: stored as not proved, without the proved printed totals.
+            metadata.setdefault(vision_reader.SAVED_KEY, {})[key] = dict(
+                version=vision_reader.VERSION, proof=vision_reader.PROOF_VERSION - 1, status='not_proved',
+                revision=proposal['revision'], model='m', pages=vision_reader.statement_pages(proposal), raw={'stored': 1})
+            file.metadata_ = metadata
+            db.commit()
+        reading = self._reading()
+        reading['charge_totals'] = dict(fee=0)
+
+        def judge(db, case_id, proposal, raw, pages, knowledge, saved=False):
+            self.assertEqual(raw, {'stored': 1}, 'the stored reading is judged again')
+            return reading, None, None, dict(proposal)
+        with self._image(), patch.object(vision_reader, '_saved_target', side_effect=target), \
+                patch.object(vision_reader, 'judge', side_effect=judge), \
+                patch.object(vision_reader, 'openai_page_reader', side_effect=AssertionError('no request is sent')):
+            result = self.t.replace(old_id)
+        self.assertTrue(result['applied'], result)
+        with self.f.SessionLocal() as db:
+            record = db.get(EvidenceFile, self.f.file.id).metadata_[vision_reader.SAVED_KEY][key]
+        self.assertEqual((record['status'], record['proof'], record['charge_totals']),
+                         ('proved', vision_reader.PROOF_VERSION, dict(fee=0)))
+        self.assertEqual(record['raw'], {'stored': 1})
+
     def test_a_complete_period_is_not_replaced_from_images(self):
         old_id = self._save()
         self._broken_text()
