@@ -169,9 +169,20 @@ MAX_CYCLE_DAYS = 95
 # charge line's kind and the printed fee and interest totals: a printed total must equal the lines of its kind read
 # (and the text's reading of the same total wherever that read one), and is then the checked control for those rows
 # (statement_admission). A charge line printed as 0.00 moves nothing and is not a payment. Rides on CLOSING_DAYS.
+# A damaged text layer reads some payments 'cleanly' but wrongly (Erica Merrick: a payment's trailing minus lost,
+# 'MOBILE PAYMENT 150.00' read as a charge; one glyph misread, '15.35' printed 15.85): the image reading, which proves
+# the period on its own, was refused as dropping a payment the text shows. Now a text payment is found in the image
+# reading when an image row on the same date has its amount in the other direction, or its direction and an amount
+# of the same digits but one. Each image row answers one text payment. Off: only the same amount and direction.
+TEXT_MISREADS = _switch('LOUPE_FINANCIAL_VISION_TEXT_MISREADS')
+# A card statement lists each purchase by its transaction date, which can fall a few days before the billing cycle
+# it is posted in ('06/24' on the statement for 06/26 to 07/26/21). On a card statement whose period is its printed
+# closing date and days (CLOSING_DAYS), a row dated up to POSTING_DAYS before the start is a posting of this cycle.
+# Off: such a row is 'dated outside the statement period'. Rides on TEXT_MISREADS.
+POSTING_DAYS = 5
 PROOF_VERSION = 1
 for _switched in (SPLIT_SPELLINGS, SECTION_NUMBER, PRINTED_COUNTS, QUIET_PRINTED, CLABE_ACCOUNT, SECTION_BY_TEXT,
-                  SIGNED_DEBITS, DATES_FROM_IMAGE, OPENING_FROM_PREVIOUS, IMAGE_TOTALS, CLOSING_DAYS):
+                  SIGNED_DEBITS, DATES_FROM_IMAGE, OPENING_FROM_PREVIOUS, IMAGE_TOTALS, CLOSING_DAYS, TEXT_MISREADS):
     # Each switch on top of the one before; with one off, the rules are the version before it.
     if not _switched:
         break
@@ -762,12 +773,15 @@ def prove(proposal, section, knowledge):
     if not end:
         end = _period_end(section)
         start = _iso(section['header'].get('period_start'))
+    earliest = None
     if not start and end and CLOSING_DAYS:
         days = closing_days(section)
         if days:
             # Only the closing date and the days in the billing cycle are printed: two printed facts (B1); a start
             # the text reading has must be this one (checked below).
             start = (date.fromisoformat(end) - timedelta(days=days - 1)).isoformat()
+            if TEXT_MISREADS and liability:
+                earliest = (date.fromisoformat(start) - timedelta(days=POSTING_DAYS)).isoformat()
     if not start and end and rule['period_start'] and rule['period_end'] == end:
         # Only the end is printed with this section; the start is the text reading's for the same period.
         start = rule['period_start']
@@ -837,7 +851,7 @@ def prove(proposal, section, knowledge):
         if row.get('unreadable') or not amount or not when or row.get('direction') not in ('credit', 'debit') \
                 or not str(row.get('description') or '').strip():
             raise NotProved('A payment on page %s could not be read with certainty from the page image.' % row['page'])
-        if not start <= when <= end:
+        if not (earliest or start) <= when <= end:
             raise NotProved('A payment on page %s is dated outside the statement period.' % row['page'])
         balance = None
         if row.get('balance_after') not in (None, ''):
@@ -1110,11 +1124,21 @@ def _running_ok(rows, opening, liability):
     return False
 
 
+def _misread_of(amount, direction, row):
+    """Whether a text payment (amount, direction) is a misreading of this image row (TEXT_MISREADS): the same
+    amount the other way, or the same way with the same number of digits and exactly one digit different."""
+    if amount == row['amount_minor']:
+        return direction != row['direction']
+    a, b = str(amount), str(row['amount_minor'])
+    return direction == row['direction'] and len(a) == len(b) and sum(x != y for x, y in zip(a, b)) == 1
+
+
 def _agrees_with_rule_reading(proposal, rows, opening, closing):
     """Every cleanly read text payment is in the image reading; every read text balance is the same."""
     from collections import Counter
     from services.financial.review_arithmetic import integer
     available = Counter((r['amount_minor'], r['direction']) for r in rows)
+    misread = []  # text payments not found as read, kept for the misreading rule
     missing = 0
     for row in proposal['rows']:
         fields = row.get('fields') or {}
@@ -1134,7 +1158,22 @@ def _agrees_with_rule_reading(proposal, rows, opening, closing):
         if available[key]:
             available[key] -= 1
         else:
-            missing += 1
+            misread.append((amount, fields['direction'], fields.get('date')))
+    if misread and TEXT_MISREADS:
+        # Image rows no text payment took as read, by date (TEXT_MISREADS).
+        left = []
+        for r in rows:
+            if available[(r['amount_minor'], r['direction'])]:
+                available[(r['amount_minor'], r['direction'])] -= 1
+                left.append(r)
+        for amount, direction, when in misread:
+            match = next((r for r in left if when and r.get('date') == when and _misread_of(amount, direction, r)), None)
+            if match is None:
+                missing += 1
+            else:
+                left.remove(match)
+    else:
+        missing = len(misread)
     if missing:
         raise NotProved('%s payment%s read from the text %s not found in the page-image reading.' % (
             missing, '' if missing == 1 else 's', 'was' if missing == 1 else 'were'))

@@ -860,3 +860,45 @@ class ClosingDaysTest(unittest.TestCase):
         self.assertEqual(vr.stored_image_evidence(file, dict(statement_id='k', revision='r')),
                          dict(image_charge_totals=dict(fee=0)))
         self.assertEqual(vr.stored_image_evidence(file, dict(statement_id='k', revision='other')), {})
+
+
+class TextMisreadsTest(ClosingDaysTest):
+    """A damaged text layer's clean-looking misreadings, and card postings dated before the cycle (L24, Merrick)."""
+
+    def _text_row(self, amount, direction, day):
+        return dict(id='t' + amount, kind='transaction', excluded=False, issues=[], page_number=19,
+                    fields=dict(amount_minor=amount, direction=direction, date=day, description='X'))
+
+    def test_a_payment_whose_minus_the_text_lost_is_found(self):
+        self.assertEqual(len(self._prove(proposal=self._proposal([self._text_row('25000', 'debit', '2022-03-31')]))['rows']), 2)
+
+    def test_one_misread_digit_is_found(self):
+        self.assertEqual(len(self._prove(proposal=self._proposal([self._text_row('3999', 'debit', '2022-04-25')]))['rows']), 2)
+
+    def test_another_date_or_two_digits_is_missing(self):
+        for row in (self._text_row('3999', 'debit', '2022-04-24'), self._text_row('3888', 'debit', '2022-04-25'),
+                    self._text_row('399', 'debit', '2022-04-25')):
+            with self.subTest(row=row['fields']):
+                with self.assertRaisesRegex(vr.NotProved, 'not found in the page-image reading'):
+                    self._prove(proposal=self._proposal([row]))
+
+    def test_one_image_row_answers_one_text_payment(self):
+        rows = [self._text_row('25000', 'debit', '2022-03-31'), self._text_row('25000', 'credit', '2022-03-31')]
+        with self.assertRaisesRegex(vr.NotProved, 'not found'):
+            self._prove(proposal=self._proposal(rows))
+
+    def test_off_a_misreading_is_missing(self):
+        with mock.patch.object(vr, 'TEXT_MISREADS', False):
+            with self.assertRaisesRegex(vr.NotProved, 'not found'):
+                self._prove(proposal=self._proposal([self._text_row('25000', 'debit', '2022-03-31')]))
+
+    def test_a_card_posting_dated_days_before_the_cycle_is_this_cycles(self):
+        early = dict(_row('2022-03-22', '10.00', 'debit', description='SBARRO'), charge_kind='')
+        pages = self._pages(extra=[early])
+        pages[0][1]['sections'][0]['closing_balance'] = '1823.11'
+        self.assertEqual(len(self._prove(pages)['rows']), 3)
+        too_early = dict(early, date='2022-03-20')
+        pages = self._pages(extra=[too_early])
+        pages[0][1]['sections'][0]['closing_balance'] = '1823.11'
+        with self.assertRaisesRegex(vr.NotProved, 'outside the statement period'):
+            self._prove(pages)
