@@ -9,6 +9,9 @@ import copy
 import json
 import unittest
 from pathlib import Path
+from unittest import mock
+
+from services.financial import statement_import_andrews as andrews
 
 from services.financial.statement_reading_quality import pinned_andrews_values
 from tests.test_financial_generic_reading_quality import statement
@@ -46,8 +49,12 @@ class PinnedAndrewsValuesTests(unittest.TestCase):
     def test_a_withdrawal_whose_sign_glyph_no_reader_named_takes_the_sign_its_balances_fix(self):
         result = pinned_andrews_values(page(COMBINED), {(0, 15, 2): ['61.31', '-61.31']})
         self.assertEqual(result['values'][(0, 15, 2)]['text'], '-61.31')
-        # Without the minus the printed verb contradicts the amount: no equation, nothing accepted.
-        self.assertEqual(pinned_andrews_values(page(COMBINED), {(0, 15, 2): ['61.31']}), {})
+        # Without the minus the printed verb contradicts the amount: no equation, nothing accepted ...
+        with mock.patch.object(andrews, 'DIRECTION_FROM_WORD', False):
+            self.assertEqual(pinned_andrews_values(page(COMBINED), {(0, 15, 2): ['61.31']}), {})
+        # ... unless the word and both printed balances agree (DIRECTION_FROM_WORD): the same withdrawal.
+        result = pinned_andrews_values(page(COMBINED), {(0, 15, 2): ['61.31']})
+        self.assertEqual(result['values'][(0, 15, 2)]['text'], '61.31')
 
     def test_compensating_misreads_that_share_their_equations_stay_held(self):
         # Amount, running balance and ending balance disputed together: no
