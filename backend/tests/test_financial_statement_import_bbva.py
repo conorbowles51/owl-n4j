@@ -178,6 +178,59 @@ class BbvaProposalTests(TestCase):
         self.assertNotIn('434,908.22', payment['fields']['description'])
         self.assertFalse(payment['issues'])
 
+    def test_a_scan_space_before_a_thousands_comma_or_one_stray_mark_keeps_the_amount_in_its_column(self):
+        # Live: 07 ARRENDO BBVA MXN JUL 2025 page 11 ('1,031 ,472.00' read into the description; '591,276.11?').
+        from services.financial import statement_import_bbva as B
+        sources = statement()
+        for table in sources:
+            for row in table['rows']:
+                for cell in row['cells']:
+                    if cell['expected_text'] == '30.00':
+                        cell['expected_text'] = '1,031 ,472.00'
+                        cell['locator']['rect'][0] = 330000
+                    if cell['expected_text'] == '25.20' and cell['locator']['rect'][0] == 505000:
+                        cell['expected_text'] = '25.20?'
+        _, p = self.proposal(deepcopy(sources))
+        fee = next(row for row in p['rows'] if row['fields'].get('description', '').startswith('C49'))
+        self.assertEqual(fee['fields']['amount_minor'], '103147200')
+        self.assertNotIn('1,031', fee['fields']['description'])
+        iva = next(row for row in p['rows'] if row['fields'].get('description', '').startswith('C50'))
+        self.assertEqual(iva['fields']['balance'], '2520')
+        with patch_env.object(B, 'SCAN_AMOUNT_MARKS', False):
+            _, old = self.proposal(deepcopy(sources))
+        fee = next(row for row in old['rows'] if 'C49' in row['fields'].get('description', ''))
+        self.assertNotIn('amount_minor', fee['fields'])
+        self.assertTrue(B.scan_amount_text('1,03 ,472.00') == '1,03 ,472.00')
+
+    def test_one_unread_date_of_the_two_printed_does_not_hold_the_line(self):
+        # Live: 07 ARRENDO BBVA MXN JUL 2025, 19 lines with only one of OPER/LIQ read (both printed and equal).
+        from services.financial import statement_import_bbva as B
+        def damaged(oper, liq):
+            sources = statement()
+            for table in sources:
+                for row in table['rows']:
+                    for cell in row['cells']:
+                        if cell['expected_text'] == '02/SEP' and any('C50' in c['expected_text'] for c in row['cells']):
+                            cell['expected_text'] = oper
+                        if cell['expected_text'] == '01/SEP C50 IVA ACCOUNT FEE':
+                            cell['expected_text'] = liq + ' C50 IVA ACCOUNT FEE'
+            return sources
+        iva = lambda p: next(r for r in p['rows'] if 'C50' in r['fields'].get('description', ''))
+        _, p = self.proposal(damaged('02/SEP', '0I/SEP'))
+        self.assertEqual((iva(p)['fields']['date'], iva(p)['fields'].get('value_date')), ('2024-09-02', None))
+        self.assertFalse([i for i in iva(p)['issues'] if 'date' in i])
+        _, p = self.proposal(damaged('O2/SEP', '02/SEP'))
+        self.assertEqual(iva(p)['fields']['date'], '2024-09-02')
+        self.assertEqual(iva(p)['fields']['date_basis'], B.LIQUIDATION_FOR_OPERATION)
+        self.assertFalse([i for i in iva(p)['issues'] if 'date' in i])
+        # A liquidation date before the line above it is not taken for the operation date.
+        _, p = self.proposal(damaged('O2/SEP', '01/SEP'))
+        self.assertNotIn('date', iva(p)['fields'])
+        self.assertIn('Check the printed operation date.', iva(p)['issues'])
+        with patch_env.object(B, 'ONE_DATE_PRINTED', False):
+            _, p = self.proposal(damaged('02/SEP', '0I/SEP'))
+        self.assertIn('Check the printed liquidation date.', iva(p)['issues'])
+
     def test_bancomer_footer_is_not_a_payment_and_continuation_keeps_its_parent(self):
         sources = statement()
         body = sources[1]
