@@ -79,6 +79,27 @@ class ValuesTest(unittest.TestCase):
 
 
 class ProofTest(unittest.TestCase):
+    def test_a_section_heading_number_printed_beside_the_statement_clabe_is_its_account(self):
+        # Live: 07 ARRENDO KAPITAL MXN JUL 26 and 8 other Kapital statements, the images give the heading's
+        # '194-99292-001-6', the text reading the CLABE printed on the same line; every one matched no section.
+        clabe = '128180000000109664'
+        heading = dict(kind='header', fields={}, source_cells=[
+            dict(expected_text='SERVICIO EMPRESARIAL FX KAPITAL 194-99292-001-6'), dict(expected_text='CLABE ' + clabe)])
+        pages = _balanced_pages()
+        pages[0][1]['sections'][0]['account_number'] = '194-99292-001-6'
+        proposal = _proposal([heading], account_number=clabe)
+        reading = _proved(proposal, _knowledge(account=clabe), pages)
+        self.assertEqual((reading['account_number'], len(reading['rows'])), (clabe, 3))
+        with mock.patch.object(vr, 'SECTION_NUMBER', False):
+            with self.assertRaisesRegex(vr.NotProved, 'no account section matching'):
+                _proved(proposal, _knowledge(account=clabe), pages)
+        # A line printing another number as well names no one section number; a payment line is never a heading.
+        for cells, kind in (([heading['source_cells'][0], dict(expected_text='CLABE %s 012790001102745939' % clabe)], 'header'),
+                            (heading['source_cells'], 'transaction')):
+            with self.assertRaisesRegex(vr.NotProved, 'no account section matching'):
+                _proved(_proposal([dict(kind=kind, fields={}, source_cells=cells)], account_number=clabe),
+                        _knowledge(account=clabe), pages)
+
     def test_balanced_reading_proves_with_pages_on_every_row(self):
         reading = _proved()
         self.assertEqual((reading['opening'], reading['closing']), (100000, 100000))

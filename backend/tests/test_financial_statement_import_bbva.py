@@ -230,6 +230,13 @@ class BbvaProposalTests(TestCase):
         with patch_env.object(B, 'ONE_DATE_PRINTED', False):
             _, p = self.proposal(damaged('02/SEP', '0I/SEP'))
         self.assertIn('Check the printed liquidation date.', iva(p)['issues'])
+        # Live: 07 ARRENDO BBVA USD JUL 2025 page 2, '14/JUL' read for the printed 11/JUL and the liquidation date
+        # read '41\JUL', between lines of 07/JUL and 11/JUL: an operation date before the line above it holds.
+        _, p = self.proposal(damaged('01/SEP', '0I/SEP'))
+        self.assertIn('Check the printed liquidation date.', iva(p)['issues'])
+        with patch_env.object(B, 'ONE_DATE_BRACKET', False):
+            _, p = self.proposal(damaged('01/SEP', '0I/SEP'))
+        self.assertFalse([i for i in iva(p)['issues'] if 'date' in i])
 
     def test_a_scanned_letter_o_in_the_day_is_its_zero(self):
         # Live: 01 NOVAC BBVA ENE 26, both dates of both lines scanned O7/ENE; every printed control agrees.

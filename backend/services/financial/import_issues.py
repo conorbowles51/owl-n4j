@@ -95,12 +95,47 @@ def printed_quiet(proposal, request):
             and str(balances[0]) == str(balances[1]))
 
 
+# 2026-10-26 (fin-queue3 L7, Neil: every lesson into the processor): the same for a period with movements. A file
+# holding some printed pages of a statement is complete for the period when a page it holds prints the bank's own
+# count and total of the period's deposits and of its withdrawals, and the payments selected match all four: one more
+# movement on a missing page would change a count the bank printed (BNB2 ECO 2023 MN and 06/09 BBVA 23 MXN: one
+# "PAGINA n/N" production of the movement pages only). Only counts and totals read from the page count; a payment
+# entered by a person does not settle it (the image reading's rows do: they are proved against the same counts).
+# Off: missing pages with movements always hold.
+PAGES_MISSING_PRINTED_COUNTS = os.environ.get('LOUPE_FINANCIAL_PAGES_MISSING_PRINTED_COUNTS', '1') != '0'
+
+
+def printed_complete(proposal, request):
+    """The pages held print the period's deposit and withdrawal counts and totals, and the payments selected match them."""
+    from services.financial.review_arithmetic import integer
+    if not PAGES_MISSING_PRINTED_COUNTS:
+        return False
+    selected = [row for row in request.rows if not row.excluded]
+    if not selected:
+        return False
+    rows = proposal.get('rows') or []
+    for direction in ('credit', 'debit'):
+        printed = {(row['fields'].get('printed_transaction_count'), row['fields'].get('balance')) for row in rows
+                   if row['kind'] == 'statement_total' and not row['fields'].get('total_scope')
+                   and row['fields'].get('total_direction') == direction}
+        if len(printed) != 1:
+            return False
+        count, total = next(iter(printed))
+        if not (isinstance(count, str) and count.isdigit()) or integer(total) is None:
+            return False
+        mine = [row for row in selected if row.direction == direction]
+        if len(mine) != int(count) or sum(integer(row.amount_minor) or 0 for row in mine) != integer(total):
+            return False
+    return True
+
+
 def retained_issues(proposal, request, *, arithmetic=None, coverage=None):
     from services.financial.review_arithmetic import arithmetic_problems
     originals = {r['id']: r for r in proposal['rows']}
     issues = []
     gap = proposal.get('printed_pages_missing')
-    if gap and not (getattr(request, 'coverage_review_reason', None) or '').strip() and not printed_quiet(proposal, request):
+    if gap and not (getattr(request, 'coverage_review_reason', None) or '').strip() and not printed_quiet(proposal, request) \
+            and not printed_complete(proposal, request):
         from services.financial.printed_page_count import message
         issues.append(dict(kind='printed_pages_missing', row_id=None, pages=gap['missing'], message=message(gap)))
     for original in proposal['rows']:
