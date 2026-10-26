@@ -72,7 +72,7 @@ def previous_period(total='$3,274.50', available='$725.50'):
 class CreditLineTotalOwedTests(unittest.TestCase):
     def read(self, this=None, before=None):
         this = this or held_period()
-        return owed.recover_rows(this, [before or previous_period(), this], 'USD')
+        return owed.total_owed_rows(this, [before or previous_period(), this], 'USD')
 
     def test_the_period_is_read_in_amounts_owed_when_every_printed_figure_agrees(self):
         rows = self.read()
@@ -111,7 +111,7 @@ class CreditLineTotalOwedTests(unittest.TestCase):
 
     def test_the_period_stays_held_without_the_statement_before(self):
         this = held_period()
-        self.assertIsNone(owed.recover_rows(this, [this], 'USD'))
+        self.assertIsNone(owed.total_owed_rows(this, [this], 'USD'))
         self.assertEqual(owed.LAST_REFUSAL['step'], 'previous_statement')
 
     def test_a_principal_part_that_does_not_chain_holds_the_period(self):

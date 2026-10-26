@@ -2251,3 +2251,5 @@ from services.financial.auto_save_guard import holder_is_address, saved_checks, 
 __all__ += ["holder_is_address", "saved_checks", "section_currencies"]
 from services.financial.receipt_settlement import receipt_payment, settle_receipts
 __all__ += ["receipt_payment", "settle_receipts"]
+from services.financial.credit_line_total_owed import total_owed_rows
+__all__ += ["total_owed_rows"]

@@ -238,7 +238,7 @@ def _effect(values):
     return None
 
 
-def recover_rows(statement, reading, currency):
+def total_owed_rows(statement, reading, currency):
     """The rows of a held period of this layout in amounts owed, or None (the held reading stands)."""
     if not ENABLED:
         return _refuse('switch_off')
@@ -342,5 +342,5 @@ def recover_rows(statement, reading, currency):
 
 
 def recover_held(statement, reading, sources, currency):
-    """``recover_rows`` for one period the general reader held as printing its principal balance only."""
-    return recover_rows(statement, reading, currency)
+    """``total_owed_rows`` for one period the general reader held as printing its principal balance only."""
+    return total_owed_rows(statement, reading, currency)
