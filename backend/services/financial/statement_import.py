@@ -704,6 +704,12 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
             from services.financial.statement_printed_no_activity import printed_line_evidence
             no_activity_evidence = (printed_line_evidence(proposed, selected, chosen_currency, all_sources, family='generic')
                                     or no_activity_evidence)
+        if not (no_activity_evidence or {}).get('verified'):
+            # The account summary prints zero deposits and zero withdrawals as components (D7), where the
+            # reader proved the period from them.
+            from services.financial.statement_printed_no_activity import summary_components_evidence
+            no_activity_evidence = (summary_components_evidence(proposed, selected, chosen_currency, all_sources,
+                                                                family='generic') or no_activity_evidence)
         _check_review_size(rows)
     if selected and selected.get('layout_id') == 'santander-mexico-movements':
         from services.financial.statement_import_santander import propose_santander_statement, santander_no_activity_evidence

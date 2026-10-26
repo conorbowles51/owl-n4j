@@ -44,7 +44,7 @@ from itertools import product
 
 from services.financial.pdf_candidates import _digest
 from services.financial.statement_engine_vocabulary import (
-    ACCOUNT_LABELS, ADDRESS_WORDS, CLOSING_DATE_LABELS, CONTINUATION_NOTICES, CURRENCY_LABELS, CURRENCY_NAMES, COLUMN_INDEX,
+    ACCOUNT_LABELS, ADDRESS_WORDS, ASSET_COMPONENTS, CLOSING_DATE_LABELS, CONTINUATION_NOTICES, CURRENCY_LABELS, CURRENCY_NAMES, COLUMN_INDEX,
     CYCLE_DAYS_LABELS, HOLDER_LABELS, INDEX, INSTITUTION_WORDS, LIABILITY_EVIDENCE, MONTHS, NOT_A_NAME, PAGE_NUMBERING,
     PAYMENT_BOX_HEADINGS, PERIOD_WORDS, SECTION_HEADINGS, SECTION_SCOPE, TAXPAYER_TYPES, UNDATED_CHARGES, YEAR_TO_DATE, FUZZY_INDEX, fold, label)
 
@@ -1132,6 +1132,16 @@ def column_role(text):
     return role
 
 
+# (D7, deposit accounts) A deposit account summary's printed credit and debit components ("DEPOSITS &
+# CREDITS", "LESS CHECKS & DEBITS", "LESS SERVICE CHARGES") are the independent control of a period that has no
+# other (no running balance, no printed total): every component of both directions must agree with the one
+# reading. They never hold a period another control proves (the layout prints its interest outside them).
+# Reverse: False (those lines are then read as nothing, as before).
+SUMMARY_COMPONENTS_BASIS = 'printed_summary_components'
+ASSET_SUMMARY_COMPONENTS = os.environ.get('LOUPE_FINANCIAL_ASSET_SUMMARY_COMPONENTS', '1').strip().lower() not in (
+    '0', 'false', 'off', 'no')
+
+
 def _role_of(text, liability):
     extra = _profile_role(text, liability)
     if extra:
@@ -1146,6 +1156,11 @@ def _role_of(text, liability):
             return 'net_component'
         if text in INDEX['section_total']:
             return 'section_total'
+    elif ASSET_SUMMARY_COMPONENTS:
+        # A deposit account summary printing its credits and debits as components (D7 for deposit accounts).
+        for role in ('credit_component', 'debit_component'):
+            if text in ASSET_COMPONENTS[role]:
+                return 'asset_' + role
     for role in ('opening', 'closing', 'subtotal', 'column_total', 'credit_total', 'debit_total'):
         if text in INDEX[role]:
             return role
@@ -3805,7 +3820,8 @@ def _reading(rows, statement, style, exponent, liability, period):
     if any(not r['located'] and _unlocated_matters(r, style or 'dot', exponent) for r in rows):
         proof['reason'] = proof['reason'] or 'no_geometry'
     controls = dict(opening=[], closing=[], credit_total=[], debit_total=[], credit_component=[], debit_component=[],
-                    net_component=[], section_total=[], day_opening=[])
+                    net_component=[], section_total=[], day_opening=[], asset_credit_component=[],
+                    asset_debit_component=[])
     # (profile) Movement lines print the operation day then the settlement day (``settlement_days``).
     settlement = _DAY_COLUMN.get() and _settlement_words() is not None
     movements, headers, labels_seen, unplaced, continuation_of, column_totals = [], [], set(), [], {}, []
@@ -3942,6 +3958,12 @@ def _reading(rows, statement, style, exponent, liability, period):
                 if role in ('credit_total', 'debit_total') and money_values and movements:
                     # The movement table printing its own totals after its last movement (E9).
                     table_totals = index
+                continue
+            if role in ('asset_credit_component', 'asset_debit_component'):
+                if money_values and in_summary:
+                    controls[role].append(dict(row=row, value_token=_control_value(money_values), count=None))
+                    labels_seen.add(text)
+                    handled = True
                 continue
             if role == 'day_balance' and money_values:
                 # (profile) The balance at the end of a day, printed after that day's movements: the running
@@ -4138,6 +4160,21 @@ def _reading(rows, statement, style, exponent, liability, period):
             else:
                 proof['reason'] = ('printed_total_differs' if any(c['totals_failed'] for c in near)
                                    else 'no_independent_control' if near else 'not_reconciled')
+    if (not proof['proved'] and proof['reason'] == 'no_independent_control' and not liability
+            and controls['asset_credit_component'] and controls['asset_debit_component']):
+        # (D7, deposit accounts) The summary's components, both directions, are the period's control.
+        summary_controls = dict(controls, credit_component=controls['asset_credit_component'],
+                                debit_component=controls['asset_debit_component'])
+        summary_readings = {}
+        for candidate in _search(all_moves, columns, hints, summary_controls, column_totals, style or 'dot', exponent,
+                                 liability):
+            if candidate['proved']:
+                summary_readings.setdefault(candidate['key'], candidate)
+        if len(summary_readings) == 1:
+            chosen = next(iter(summary_readings.values()))
+            proof.update(proved=True, reason='proved', basis=SUMMARY_COMPONENTS_BASIS, summary_component_rows=[
+                (item['row']['page'], item['row']['source']['table_index'], item['row']['raw']['row_index'])
+                for role in ('asset_credit_component', 'asset_debit_component') for item in controls[role]])
     second_date = _second_date_field(rows, headers, dated, width or 1)
     if second_date == 'application' and not _application_dates_fit(dated, resolved, date_problem, period):
         second_date = None

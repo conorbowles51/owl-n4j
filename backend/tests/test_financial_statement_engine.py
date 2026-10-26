@@ -3701,3 +3701,96 @@ class SectionHeadingBeforeSectionTests(unittest.TestCase):
 
     def test_the_switch_off_leaves_that_section_without_a_currency(self):
         self.assertEqual(self.currencies(False)[-1], ('', [3, 4]))
+
+
+def deposit_summary_statement(moves=(), deposits='0.00', checks='0.00', charges='0.00', closing='$4.36'):
+    """An invented US deposit layout whose summary prints its credits and debits as components between the
+    beginning and the ending balance, then the movement table without running balances."""
+    lines = [
+        [('Example Savings Bank', 20000, 300000)],
+        [('JANE Q SAMPLE', 20000, 150000), ('Statement Period 02/16/24 - 03/15/24', 330000, 590000)],
+        [('100 MAIN ST APT 1', 20000, 150000), ('Account number 0012345678', 330000, 590000)],
+        [('SPRINGFIELD, IL 62701', 20000, 170000)],
+        [('BEGINNING BALANCE', 330000, 450000), ('$4.36', 520000, 560000)],
+        [('DEPOSITS & CREDITS', 330000, 450000), (deposits, 520000, 560000)],
+        [('LESS CHECKS & DEBITS', 330000, 450000), (checks, 520000, 560000)],
+        [('LESS SERVICE CHARGES', 330000, 450000), (charges, 520000, 560000)],
+        [('ENDING BALANCE', 330000, 450000), (closing, 520000, 560000)],
+        [('Date', 20000, 50000), ('Description', 80000, 160000), ('Credits', 330000, 380000),
+         ('Debits', 410000, 460000)],
+    ]
+    for day, text, credit, debit in moves:
+        line = [(day, 20000, 60000), (text, 80000, 300000)]
+        if credit:
+            line.append((credit, 380000 - 6000 * len(credit), 380000))
+        if debit:
+            line.append((debit, 460000 - 6000 * len(debit), 460000))
+        lines.append(line)
+    return [page(1, lines)]
+
+
+class DepositSummaryComponentTests(unittest.TestCase):
+    """(D7, deposit accounts) 'DEPOSITS & CREDITS', 'LESS CHECKS & DEBITS', 'LESS SERVICE CHARGES' are controls."""
+    MOVES = [('02/20', 'DEPOSIT', '10.00', None), ('03/01', 'CHECK 101', None, '3.00'),
+             ('03/15', 'SERVICE CHARGE', None, '1.00')]
+
+    def one(self, sources):
+        statements = read_statements(sources)
+        self.assertEqual(len(statements), 1, [s['engine'] for s in statements])
+        return statements[0]
+
+    def test_a_quiet_period_whose_printed_components_are_zero_is_proved(self):
+        st = self.one(deposit_summary_statement())
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertFalse(any(not r['excluded'] for r in st['_rows']))
+
+    def test_components_that_agree_with_the_movements_prove_a_table_without_running_balance(self):
+        st = self.one(deposit_summary_statement(self.MOVES, deposits='10.00', checks='3.00', charges='1.00',
+                                                closing='$10.36'))
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual(st['engine']['basis'], 'printed_summary_components')
+
+    def test_components_that_differ_from_the_movements_hold(self):
+        st = self.one(deposit_summary_statement(self.MOVES, deposits='10.00', checks='4.00', charges='1.00',
+                                                closing='$10.36'))
+        self.assertFalse(st['engine']['proved'])
+        self.assertEqual(st['engine']['reason'], 'no_independent_control')
+
+    def test_components_never_hold_a_period_its_running_balance_proves(self):
+        # The layout prints interest earned outside its components: a period the running balance proves stays
+        # proved when the components leave something out.
+        sources = deposit_summary_statement(self.MOVES, deposits='9.00', checks='3.00', charges='1.00', closing='$10.36')
+        rows = sources[0]['rows']
+        heading = next(r for r in rows if r['cells'][0]['expected_text'] == 'Date')
+        y = heading['cells'][0]['locator']['rect'][1]
+        heading['cells'].append(cell('Balance', 520000, 560000, y, len(heading['cells'])))
+        for row, balance in zip(rows[-3:], ('14.36', '11.36', '10.36')):
+            y = row['cells'][0]['locator']['rect'][1]
+            row['cells'].append(cell(balance, 560000 - 6000 * len(balance), 560000, y, len(row['cells'])))
+        st = self.one(sources)
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual(st['engine']['basis'], 'running_balance')
+
+    def test_zero_components_are_the_source_proof_that_nothing_moved(self):
+        from services.financial.statement_printed_no_activity import summary_components_evidence
+        sources = deposit_summary_statement()
+        st = self.one(sources)
+        rows = E.propose_engine_statement(sources, 'USD', dict(id=st['id']))['rows']
+        evidence = summary_components_evidence(rows, st, 'USD', sources, family='generic')
+        self.assertTrue(evidence['verified'], evidence)
+        self.assertEqual(evidence['balance_minor'], '436')
+        self.assertEqual(len(evidence['cited']), 5)
+        changed = deepcopy(sources)
+        line = next(r for r in changed[0]['rows'] if r['cells'][0]['expected_text'] == 'LESS SERVICE CHARGES')
+        line['cells'][1]['expected_text'] = '1.00'
+        self.assertEqual(summary_components_evidence(rows, st, 'USD', changed, family='generic')['reason'],
+                         'totals_not_zero')
+        self.assertEqual(summary_components_evidence(rows, st, 'MXN', sources, family='generic')['reason'],
+                         'currency_differs')
+
+    def test_switched_off_the_components_are_not_read(self):
+        with mock.patch.object(E, 'ASSET_SUMMARY_COMPONENTS', False), \
+                mock.patch.object(E, '_READINGS', E.OrderedDict()), mock.patch.object(E, '_LIVE_READINGS', E.OrderedDict()):
+            st = self.one(deposit_summary_statement())
+        self.assertFalse(st['engine']['proved'])
+        self.assertEqual(st['engine']['reason'], 'no_independent_control')

@@ -81,6 +81,11 @@ LIABILITY_DEBIT_COMPONENTS = ('TRANSACTIONS', 'PURCHASES', 'CASH ADVANCES', 'FEE
                               'FEES', 'INTEREST', 'BALANCE TRANSFERS', 'PURCHASES AND ADJUSTMENTS',
                               'PURCHASES AND OTHER CHARGES', 'CARGOS', 'COMPRAS', 'COMISIONES', 'INTERESES',
                               'NEW PURCHASES', 'LOANS & DEBITS', 'LOANS AND DEBITS')
+# A deposit account summary printing its credits and its debits as components between the beginning and the
+# ending balance (M&T: "DEPOSITS & CREDITS", "LESS CHECKS & DEBITS", "LESS SERVICE CHARGES"): their sum per
+# direction must equal what was read (D7 for deposit accounts). Switch: ASSET_SUMMARY_COMPONENTS (engine).
+ASSET_CREDIT_COMPONENTS = ('DEPOSITS & CREDITS',)
+ASSET_DEBIT_COMPONENTS = ('LESS CHECKS & DEBITS', 'LESS SERVICE CHARGES')
 # Summary lines printed as a NET of charges and credits ("+/- Interest Charge (net)"): signed as printed
 # (a credit balance in parentheses), they join the debit components' sum (D7). The printed '+/-' before
 # the label is a sign mark, not part of it.
@@ -215,6 +220,7 @@ INDEX = dict(
     credit_component=_index(LIABILITY_CREDIT_COMPONENTS), debit_component=_index(LIABILITY_DEBIT_COMPONENTS),
     net_component=_index(LIABILITY_NET_COMPONENTS), section_total=_index(SECTION_TOTALS),
 )
+ASSET_COMPONENTS = dict(credit_component=_index(ASSET_CREDIT_COMPONENTS), debit_component=_index(ASSET_DEBIT_COMPONENTS))
 SECTION_HEADINGS = {label(total): {label(heading) for heading in headings} for total, headings in SECTION_TOTALS.items()}
 SECTION_SCOPE = {label(total): scope for total, scope in SECTION_SCOPES.items()}
 COLUMN_INDEX = {label(word): role for role, words in COLUMN_WORDS.items() for word in words}
