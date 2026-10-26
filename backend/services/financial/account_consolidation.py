@@ -15,9 +15,12 @@ from services.financial.decisions import record
 
 
 def bank_key(value):
+    # 2026-10-26 fin-queue3 L30c: 'BANCO MONEX' (the generic reading of the cover's legal name) and 'Monex'
+    # (the contract reader) name one bank.
     token = ' '.join((value or '').split()).casefold()
     return {'bbva mexico': 'bbva', 'bbva méxico': 'bbva', 'bbva bancomer': 'bbva',
-            'banco santander mexico': 'santander', 'banco santander méxico': 'santander'}.get(token, token)
+            'banco santander mexico': 'santander', 'banco santander méxico': 'santander',
+            'banco monex': 'monex'}.get(token, token)
 
 
 def canonical_map(session, case_id):

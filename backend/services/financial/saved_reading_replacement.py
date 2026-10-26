@@ -83,6 +83,14 @@ RESTORED_BASIS = 'reader_replacement_restored'
 METADATA_KEY = 'reader_replacement'
 TYPED_MIRROR = os.environ.get('LOUPE_FINANCIAL_REPLACE_TYPED_MIRROR', '1').strip().lower() not in ('0', 'false', 'off', 'no')
 MIRROR_CODE = 'typed_mirror_only'
+# 2026-10-26 fin-queue3 L30c: a period saved with the right money in a contract's old single account
+# (Monex 2836625: 'institution_account' records holding MXN, USD and EUR periods) is refiled when the
+# current reading files the same money in the contract's own currency account, which already holds that
+# contract's statements. Switch LOUPE_FINANCIAL_REPLACE_REFILED_ACCOUNT (default on; off: such periods stay 'same').
+REFILED_ACCOUNT = os.environ.get('LOUPE_FINANCIAL_REPLACE_REFILED_ACCOUNT', '1').strip().lower() not in ('0', 'false', 'off', 'no')
+REFILED_REASON = ('The current reader files this statement period in the contract account of its currency, which holds '
+                  'the contract\'s other statements of that currency; its payments and balances are the saved ones. '
+                  'The saved copy is kept, linked and restorable.')
 REASON = ('The current reader read this statement period again and its reading balances under every admission check; '
           'it differs from the saved copy. The saved copy is kept, linked and restorable.')
 RESTORE_REASON = 'Restored on request: the earlier saved copy counts again; the replacing reading is kept, linked.'
@@ -382,6 +390,16 @@ def target_account(session, document, period, request, proposal, *, typed=False)
     return (None, account) if others else ('other_account', None)
 
 
+def refiled(session, account, period):
+    """Whether ``account`` (``target_account``'s) is the contract's own currency account and this period sits in
+    an account of the contract that is not: the same money then belongs in ``account``."""
+    from services.financial.accounts import TIER_CONTRACT_CURRENCY, read_identity_tier
+    saved = session.get(FinancialAccount, period.account_id)
+    return (account is not None and saved is not None and account.id != saved.id
+            and read_identity_tier(account) == TIER_CONTRACT_CURRENCY and account.currency == period.currency
+            and read_identity_tier(saved) != TIER_CONTRACT_CURRENCY)
+
+
 def build_request(document, proposal):
     """The request a fresh untouched statement is saved with, naming the saved copy it replaces."""
     from services.financial.import_batches import initial_request
@@ -473,16 +491,21 @@ def assess_document(session, document, *, cache=None, reading=None):
             return {**result, 'code': 'no_matching_period'}
         fresh = fresh_money(proposal, raw)
         result.update(statement_id=statement_id, fresh_payments=sum(fresh['rows'].values()))
-        if fresh == saved:
+        same = fresh == saved
+        if same and (mirror_only or not REFILED_ACCOUNT):
             return {**result, 'outcome': 'same', 'code': 'same'}
         if mirror_only and not mirrored(saved, fresh):
             return {**result, 'code': 'typed_payments'}
         from services.financial.statement_import import StatementImportRequest
         code, account = target_account(session, document, period, StatementImportRequest.model_validate(raw), proposal,
                                        typed=mirror_only)
+        if same and (code or not refiled(session, account, period)):
+            return {**result, 'outcome': 'same', 'code': 'same'}
         if code:
             return {**result, 'code': code}
         result['account_moved'] = account.id != period.account_id
+        if same:
+            raw['details_reason'] = REFILED_REASON
         code = prove(session, document, proposal, raw)
         if code:
             return {**result, 'code': code}
@@ -491,6 +514,8 @@ def assess_document(session, document, *, cache=None, reading=None):
     differs = [name for name in ('opening', 'closing') if fresh[name] != saved[name]]
     if fresh['rows'] != saved['rows']:
         differs.insert(0, 'payments')
+    if result['account_moved']:
+        differs.append('account')
     return {**result, 'outcome': 'replace', 'code': None, 'request': raw, 'differs': differs,
             **({'basis': 'typed_mirror'} if mirror_only else {}),
             'investigator_work': investigator_work(session, document),

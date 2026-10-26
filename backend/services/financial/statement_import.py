@@ -128,6 +128,36 @@ def _keyless_holds(session, item, statement_id, identity, *, excluded, retained)
     return False if all(period in others for period in periods) else None
 
 
+# 2026-10-26 fin-queue3 L30c: a file saved on an earlier reading that split its statements differently
+# (Monex contract pages turned sideways: the generic reading cut the peso and euro sections at another line)
+# overlaps several saved copies. The copy whose saved period is this statement's currency and printed dates is
+# this statement when every other overlapping copy is another statement of the reading. Off: refused as before.
+REKEYED_OWN_PERIOD = os.getenv('LOUPE_FINANCIAL_REKEYED_OWN_PERIOD', '1') != '0'
+
+
+def _saved_periods(session, ids):
+    """{source document id: [(currency, period_start, period_end)]}, dates as ISO strings."""
+    from postgres.models.financial import FinancialStatementPeriod
+    found = {id: [] for id in ids}
+    for document_id, currency, start, end in session.execute(select(
+            FinancialStatementPeriod.source_document_id, FinancialStatementPeriod.currency, FinancialStatementPeriod.period_start,
+            FinancialStatementPeriod.period_end).where(FinancialStatementPeriod.source_document_id.in_(list(ids)))):
+        found[document_id].append((currency, start and start.isoformat(), end and end.isoformat()))
+    return found
+
+
+def _own_period(matches, identity, periods):
+    """The one overlapping saved copy that is this statement (``identity`` from ``_reading_identity``), when each
+    other overlapping copy is another statement of the reading; else ``matches`` unchanged."""
+    own, others = identity
+    if any(len(periods.get(item.id) or []) != 1 or not all(periods[item.id][0]) for item in matches):
+        return matches
+    mine = [item for item in matches if periods[item.id][0] == own]
+    if len(mine) == 1 and all(periods[item.id][0] in others for item in matches if item is not mine[0]):
+        return mine
+    return matches
+
+
 def _reading_identity(choices, statement_id, currency):
     """For ``_keyless_holds``: the (currency, period_start, period_end) of the statement ``statement_id``
     read in ``currency``, and those of the reading's other statements that print all three."""
@@ -238,6 +268,8 @@ def _existing_statement(session, case_id, file, statement_id, addresses=(), row_
         # tables still require replacement rather than being counted again.
         if addresses & previous_addresses:
             matches.append(item)
+    if len(matches) > 1 and REKEYED_OWN_PERIOD and identity is not None:
+        matches = _own_period(matches, identity, _saved_periods(session, [item.id for item in matches]))
     if len(matches) > 1:
         raise PdfMappingError(
             'This reading overlaps more than one imported statement. No imports were changed. '

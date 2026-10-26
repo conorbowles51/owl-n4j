@@ -101,6 +101,11 @@ IDENTITY = ('institution', 'account_reference', 'holder', 'currency')
 # Monex zero section took another section's currency). Switch off to keep the library period as read.
 AGREEMENT_FILLS_IDENTITY = True
 AGREEMENT_FILLS = ('institution', 'holder')
+# 2026-10-26 fin-queue3 L30c: the engine serving a library period under its id keeps the account the library
+# established for it (statement_import_monex: one currency account of a multi-currency contract, the CLABE naming
+# the contract). The engine reads money, not that structure; without it the period was filed in the contract's
+# single legacy account (Monex 2836625 USD/EUR 2021-2022). Switch LOUPE_FINANCIAL_ROUTING_KEEPS_ACCOUNT_KIND.
+KEEPS_ACCOUNT_KIND = os.environ.get('LOUPE_FINANCIAL_ROUTING_KEEPS_ACCOUNT_KIND', '1').strip() != '0'
 
 
 def proved_rows(rows, liability):
@@ -439,6 +444,8 @@ def route_catalog(sources, library_catalog):
                 replaced[field] = group[field]
                 if field == 'currency':
                     replaced['currency_source'] = 'printed_account_section'
+        if KEEPS_ACCOUNT_KIND and group.get('account_reference_kind') and not replaced.get('account_reference_kind'):
+            replaced['account_reference_kind'] = group['account_reference_kind']
         if library_proved:
             # (Reached only through AGREEMENT_PREFERS_ENGINE.) An agreed period served by the engine only for the fact it alone establishes (AGREEMENT_PREFERS_
             # ENGINE): the facts both read alike keep the library's printing of them (the same name or account

@@ -454,6 +454,67 @@ class MonexMovementTests(TestCase):
         self.assertEqual(groups[0]['page_numbers'], list(range(1, 11)))
 
 
+class MonexImageReadingTests(TestCase):
+    """2026-10-26 fin-queue3 L30c: older Monex productions store each landscape page turned a quarter and are
+    read from the page image (06 ARRENDO MONEX MXN JUN 26, 05 ARRENDO MONEX MXN MAY 2024)."""
+
+    @staticmethod
+    def turned(sources):
+        """The landscape pages as stored portrait, text reading a quarter turn (``reading_rotation`` 90)."""
+        turned = deepcopy(sources)
+        for page in turned:
+            page['reading_rotation'] = 90
+            for row in page['rows']:
+                for cell in row['cells']:
+                    u0, v0, u1, v1 = cell['locator']['rect']
+                    width, height = cell['locator']['page_size']
+                    cell['locator'].update(rect=[v0, width - u1, v1, width - u0], page_size=[height, width])
+        return turned
+
+    def test_a_production_turned_a_quarter_reads_in_its_upright_frame(self):
+        from unittest import mock
+        from services.financial import statement_import_monex as monex
+        upright = landscape()
+        expected = [(c['currency'], c['holder'], summary(payments(upright, c)[1])) for c in choices_of(upright)]
+        sources = self.turned(upright); before = deepcopy(sources)
+        choices = choices_of(sources)
+        self.assertEqual([(c['currency'], c['holder'], summary(payments(sources, c)[1])) for c in choices], expected)
+        self.assertEqual({c['account_reference_kind'] for c in choices}, {'multi_currency_contract'})
+        # The rows cite the stored page positions, never the upright ones the reading used.
+        rows, paid = payments(sources, choices[0])
+        stored = {(s['page_number'], r['row_index']): r['cells'] for s in before for r in s['rows']}
+        self.assertTrue(all(row['source_cells'] == stored[(row['page_number'], row['row_index'])] for row in rows))
+        self.assertEqual(sources, before)
+        with mock.patch.object(monex, 'UPRIGHT', False):
+            self.assertEqual(monex_catalog(sources), ([], set()))
+
+    def test_page_numbers_and_postal_label_damaged_by_the_page_image_reading_still_read(self):
+        from unittest import mock
+        from services.financial import statement_import_monex as monex
+        expected = [(c['currency'], c['holder'], summary(payments(landscape(), c)[1])) for c in choices_of(landscape())]
+
+        def damaged():
+            s = landscape()
+            replace_text(s, 3, 'Hoja 3 de 9', 'HOJA 3 DE9')                 # the space lost
+            replace_text(s, 4, 'Hoja 4 de 9', 'Hoja 4 deG')                 # the total misread
+            replace_text(s, 5, 'Hoja 5 de 9', '| TIENE CONTACTE HOJA')      # the number lost
+            replace_text(s, 1, 'C.P.', 'CAP,')                              # the postal label misread
+            return s
+        s = damaged()
+        self.assertEqual([(c['currency'], c['holder'], summary(payments(s, c)[1])) for c in choices_of(s)], expected)
+        s = damaged()
+        s[0]['rows'][5]['cells'] = [dict(s[0]['rows'][5]['cells'][0], expected_text='CP. 00000')]
+        self.assertEqual([c['holder'] for c in choices_of(s)], [HOLDER] * 3)
+        with mock.patch.object(monex, 'IMAGE_READING', False):
+            self.assertEqual(monex_catalog(damaged()), ([], set()))
+        # A lost number is the page between only when the next numbered page prints the index its place gives it.
+        s = damaged(); replace_text(s, 6, 'Hoja 6 de 9', 'Hoja 7 de 9')
+        self.assertEqual(monex_catalog(s), ([], set()))
+        # A postal label without its five-digit code is not the address block's end.
+        s = damaged(); s[0]['rows'][5]['cells'].pop()
+        self.assertEqual({c['holder'] for c in choices_of(s)}, {''})
+
+
 class MonexImportTests(TestCase):
     def setUp(self):
         from tests.test_financial_statement_import import StatementImportTests

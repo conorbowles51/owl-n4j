@@ -498,6 +498,20 @@ class EngineRoutingTests(unittest.TestCase):
         self.assertEqual((served['id'], served['layout_id'], served['replaced_layout']), ('LIB', 'generic', 'fake-library'))
         self.assertEqual(catalog['engine_routing']['replaced'], ['LIB'])
 
+    def test_the_engine_serving_a_library_period_keeps_the_account_the_library_established(self):
+        # 2026-10-26 fin-queue3 L30c: one currency account of a Monex multi-currency contract, served by the engine.
+        from services.financial import statement_engine_routing as R
+        sources = mx_statement(MOVES, closing='1,250.00')
+        rows = [dict(r, fields=dict(r['fields'])) for r in read_statements(sources)[0]['_rows']]
+        [r for r in rows if not r['excluded']][0]['fields']['amount_minor'] = '1'
+        for keeps, expected in ((True, 'multi_currency_contract'), (False, None)):
+            group, library = self._library(sources, rows)
+            group['account_reference_kind'] = 'multi_currency_contract'
+            with mock.patch.dict(os.environ, {'LOUPE_FINANCIAL_GENERIC_READER': '1'}), mock.patch.object(R, 'KEEPS_ACCOUNT_KIND', keeps), \
+                    mock.patch('services.financial.statement_review_checks.statement_rows', return_value=rows):
+                served = R.route_catalog(sources, library)['statements'][0]
+            self.assertEqual((served['id'], served.get('account_reference_kind')), ('LIB', expected))
+
     def test_a_library_reading_that_reconciles_is_never_replaced(self):
         sources = mx_statement(MOVES, closing='1,250.00')
         rows = [dict(r, fields=dict(r['fields'])) for r in read_statements(sources)[0]['_rows']]

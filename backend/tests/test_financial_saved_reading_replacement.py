@@ -277,6 +277,36 @@ class SavedReadingReplacementTests(TestCase):
         receipt = self.f.confirm()
         self.assertEqual(self.assess(UUID(receipt['source_document_id']))['outcome'], 'same')
 
+    def test_the_same_money_read_into_its_contract_currency_account_is_refiled(self):
+        # 2026-10-26 fin-queue3 L30c: Monex 2836625 periods saved in the contract's old single account while the
+        # current reader files the same money in the contract's account of that currency.
+        from postgres.models.financial import FinancialAccount, FinancialStatementPeriod
+        from services.financial.accounts import TIER_CONTRACT_CURRENCY, TIER_INSTITUTION_ACCOUNT
+        old_id = UUID(self.f.confirm()['source_document_id'])
+        with self.f.SessionLocal() as db:
+            period = db.scalar(select(FinancialStatementPeriod).where(FinancialStatementPeriod.source_document_id == old_id))
+            saved = db.get(FinancialAccount, period.account_id)
+            contract = FinancialAccount(case_id=saved.case_id, identity_key=saved.identity_key + '\x1f' + period.currency,
+                institution_name=saved.institution_name, identifier_as_printed=saved.identifier_as_printed,
+                identifier_normalised=saved.identifier_normalised, holder_name=saved.holder_name, currency=period.currency,
+                first_seen_run_id=saved.first_seen_run_id, metadata_=dict(identity_tier=TIER_CONTRACT_CURRENCY,
+                                                                          account_reference_kind='multi_currency_contract'))
+            db.add(contract)
+            db.commit()
+            contract_id = contract.id
+        target = lambda session, *args, **kwargs: (None, session.get(FinancialAccount, contract_id))
+        with patch.object(replacement, 'target_account', side_effect=target):
+            verdict = self.assess(old_id)
+            self.assertEqual((verdict['outcome'], verdict['differs'], verdict['account_moved']), ('replace', ['account'], True), verdict)
+            self.assertEqual((verdict['missing_payments'], verdict['extra_payments']), (0, 0))
+            self.assertEqual(verdict['request']['details_reason'], replacement.REFILED_REASON)
+            with patch.object(replacement, 'REFILED_ACCOUNT', False):
+                self.assertEqual(self.assess(old_id)['outcome'], 'same')
+            with self.f.SessionLocal() as db:
+                db.get(FinancialAccount, contract_id).metadata_ = dict(identity_tier=TIER_INSTITUTION_ACCOUNT)
+                db.commit()
+            self.assertEqual(self.assess(old_id)['outcome'], 'same', 'only the contract\'s currency account takes it')
+
     def test_switch_off_replaces_nothing_and_the_writer_refuses(self):
         old_id = self.save_earlier_reading()
         with self.f.SessionLocal() as db:

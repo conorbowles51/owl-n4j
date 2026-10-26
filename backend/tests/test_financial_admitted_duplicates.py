@@ -574,3 +574,29 @@ class ReaderIndependentRuleTests(TestCase):
     def test_split_account_is_decided_last(self):
         left = self.copy()
         self.assertEqual(admitted._compare(self.copy(sha='s2', account='b', account_type='savings'), left), 'account_differs')
+
+
+class ContractAccountCopyTests(TestCase):
+    """2026-10-26 fin-queue3 L30c: Monex 2836625 reprints filed in the contract's old single account, their bank
+    originals in the contract's account of each currency (no payments, the same printed period and balances)."""
+
+    def pair(self, *, number='2836625', currency='MXN'):
+        from services.financial.accounts import TIER_CONTRACT_CURRENCY, TIER_INSTITUTION_ACCOUNT
+        stub = ReaderIndependentRuleTests().copy
+        original = stub(payments=(), account='compartment', identity='institution_contract_currency|monex|2836625|MXN')
+        reprint = stub(payments=(), account='legacy', sha='s2', identity='institution_account|banco monex|2836625')
+        for stub_copy, saved in ((original, '2026-01-02'), (reprint, '2026-01-01')):  # the reprint saved first
+            stub_copy.document.created_at = saved
+        original.account = (TIER_CONTRACT_CURRENCY, 'monex', '2836625', currency)
+        reprint.account = (TIER_INSTITUTION_ACCOUNT, 'monex', number, None)
+        return reprint, original
+
+    def test_a_copy_in_the_contract_s_old_account_is_set_aside_for_the_copy_in_its_currency_account(self):
+        reprint, original = self.pair()
+        self.assertIsNone(admitted._compare(reprint, original))
+        self.assertEqual(sorted([reprint, original], key=admitted._rank)[0], original, 'the currency account copy is kept')
+        self.assertIsNotNone(admitted._compare(original, reprint), 'never the other way round')
+        with patch.object(admitted, 'CONTRACT_ACCOUNT', False):
+            self.assertEqual(admitted._compare(reprint, original), 'other_bank_without_payments')
+        for reprint, original in (self.pair(number='2836626'), self.pair(currency='USD')):
+            self.assertIsNotNone(admitted._compare(reprint, original))

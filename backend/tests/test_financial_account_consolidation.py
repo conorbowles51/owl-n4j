@@ -89,3 +89,12 @@ class ConsolidationTests(unittest.TestCase):
         self.assertFalse(undone['account_links'])
         self.assertEqual(before['payment_links'], undone['payment_links'])
         self.assertEqual(stored, self.a.metadata_)
+
+
+class BankKeyTests(unittest.TestCase):
+    def test_one_bank_printed_under_its_legal_and_short_names_is_one_bank(self):
+        # 2026-10-26 fin-queue3 L30c: the generic reading of a Monex cover reads 'BANCO MONEX'; the contract reader 'Monex'.
+        from services.financial.account_consolidation import bank_key
+        self.assertEqual(bank_key('BANCO MONEX'), bank_key('Monex'))
+        self.assertEqual(bank_key('Banco  Monex'), 'monex')
+        self.assertNotEqual(bank_key('Banco Monex Casa de Bolsa'), bank_key('Monex'))

@@ -1341,3 +1341,35 @@ class StatementImportTests(TransactionPersistenceTestCase):
         from services.financial.statement_import import check_import_request
         with self.assertRaisesRegex(PdfMappingError, 'several Capital One statements'):
             check_import_request(result, None)
+
+
+class RekeyedOwnPeriodTests(__import__('unittest').TestCase):
+    """2026-10-26 fin-queue3 L30c: a file saved on an earlier reading that cut its statements at other lines (a Monex
+    contract stored turned a quarter: the peso and euro sections) overlaps several saved copies."""
+
+    def existing(self, periods, identity, *, switch=True):
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock
+        from services.financial import statement_import as SI
+        candidates = [SimpleNamespace(id=key, removal=None, statement_id='earlier-' + key, assigned_period_ids=None,
+                                      sources=[dict(page_number=2, table_index=0)], statement_row_addresses=None,
+                                      statement_source_regions=None, evidence_file_id='file') for key in periods]
+        session = MagicMock()
+        session.get.side_effect = lambda model, key: key
+        with patch.object(SI, '_existing_values', return_value=candidates), patch.object(SI, 'REKEYED_OWN_PERIOD', switch), \
+                patch.object(SI, '_saved_periods', side_effect=lambda s, ids: {key: periods[key] for key in ids}):
+            return SI._existing_statement(session, 'case', __import__('types').SimpleNamespace(sha256='x', id='file'), 'new-mxn',
+                                          [(1, 0), (2, 0)], identity=identity)
+
+    def test_the_saved_copy_of_this_period_is_this_statement_when_the_others_are_the_reading_s_other_statements(self):
+        mxn, eur = ('MXN', '2026-06-01', '2026-06-30'), ('EUR', '2026-06-01', '2026-06-30')
+        identity = (mxn, {eur})
+        self.assertEqual(self.existing(dict(a=[mxn], b=[eur]), identity), 'a')
+        for periods, why in ((dict(a=[mxn], b=[('USD', '2026-06-01', '2026-06-30')]), 'another copy is no statement of the reading'),
+                             (dict(a=[mxn], b=[mxn]), 'two copies of this period'),
+                             (dict(a=[mxn, eur], b=[eur]), 'a copy holding two periods'),
+                             (dict(a=[('MXN', None, '2026-06-30')], b=[eur]), 'an undated copy')):
+            with self.subTest(why), self.assertRaises(PdfMappingError):
+                self.existing(periods, identity)
+        with self.assertRaises(PdfMappingError):
+            self.existing(dict(a=[mxn], b=[eur]), identity, switch=False)

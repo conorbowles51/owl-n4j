@@ -76,7 +76,7 @@ from sqlalchemy import func, select
 from postgres.models.case import Case
 from postgres.models.evidence import EvidenceFile, IngestionLog
 from postgres.models.financial import (
-    AdjudicationEvent, FinancialSourceDocument, FinancialStatementPeriod, FinancialTransaction,
+    AdjudicationEvent, FinancialAccount, FinancialSourceDocument, FinancialStatementPeriod, FinancialTransaction,
 )
 from services.financial.decisions import Actor
 from services.financial.pdf_candidates import _digest
@@ -97,6 +97,12 @@ SAME_DOCUMENT = ('identical_bytes', 'identical_pages')
 # A copy is compared as its statement now stands: the holder, number, bank and currency a person corrected in the
 # statement details, not the values first read. Reverse: LOUPE_FINANCIAL_DUPLICATE_CORRECTED_DETAILS=0.
 CORRECTED_DETAILS = os.environ.get('LOUPE_FINANCIAL_DUPLICATE_CORRECTED_DETAILS', '1').strip().lower() not in (
+    '0', 'false', 'off', 'no')
+# 2026-10-26 fin-queue3 L30c: a copy filed in a multi-currency contract's old single account (Monex 2836625,
+# 'institution_account' records holding every currency) is in the same account as a copy filed in that contract's
+# account of the period's currency (same bank, number and currency), and that copy is the one kept. Reverse:
+# LOUPE_FINANCIAL_DUPLICATE_CONTRACT_ACCOUNT=0.
+CONTRACT_ACCOUNT = os.environ.get('LOUPE_FINANCIAL_DUPLICATE_CONTRACT_ACCOUNT', '1').strip().lower() not in (
     '0', 'false', 'off', 'no')
 
 # Why a matching pair is not set aside. Codes are reported; messages refuse.
@@ -149,6 +155,7 @@ class _Copy:
     pages: dict | None = None
     section: frozenset = frozenset()
     raw_accounts: frozenset = frozenset()
+    account: tuple | None = None  # (identity tier, bank, number, currency) of its one ledger account
 
 
 def _natural(name):
@@ -249,6 +256,10 @@ def _load(session, case_id, *, document_ids=None, identities=None):
     for period in session.scalars(select(FinancialStatementPeriod).where(
             FinancialStatementPeriod.case_id == case_id, FinancialStatementPeriod.source_document_id.in_(ids))):
         periods_by[period.source_document_id].append(period)
+    ledger_accounts = {a.id: a for a in session.scalars(select(FinancialAccount).where(
+        FinancialAccount.case_id == case_id, FinancialAccount.id.in_(
+            {p.account_id for periods in periods_by.values() for p in periods}
+            | {r.account_id for rows in rows_by.values() for r in rows})))} if CONTRACT_ACCOUNT else {}
     latest = {}
     for event in session.scalars(select(AdjudicationEvent).where(
             AdjudicationEvent.case_id == case_id, AdjudicationEvent.subject_type == 'source_document',
@@ -296,6 +307,13 @@ def _load(session, case_id, *, document_ids=None, identities=None):
             periods=sorted([str(p.period_start), str(p.period_end), p.currency,
                             str(p.opening_balance_minor), str(p.closing_balance_minor)] for p in periods)))
         copy.raw_accounts = frozenset({r.account_id for r in admitted} | {p.account_id for p in periods})
+        if CONTRACT_ACCOUNT and len(copy.raw_accounts) == 1:
+            account = ledger_accounts.get(next(iter(copy.raw_accounts)))
+            if account is not None:
+                from services.financial.account_consolidation import bank_key
+                from services.financial.accounts import read_identity_tier
+                copy.account = (read_identity_tier(account), bank_key(account.institution_name or ''),
+                                account.identifier_normalised or '', account.currency)
         copy.accounts = frozenset(canonical.get(a, a) for a in copy.raw_accounts)
         copy.rows_clean = all(r.ledger_status == 'admitted' and r.superseded_by_id is None for r in rows)
         copy.corrected = any(r.superseded_by_id is not None for r in rows)
@@ -305,7 +323,21 @@ def _load(session, case_id, *, document_ids=None, identities=None):
 
 
 def _rank(copy):
-    return (not copy.work, copy.received, copy.first_page, str(copy.document.created_at), str(copy.document.id))
+    return (not copy.work, not _in_contract_account(copy), copy.received, copy.first_page, str(copy.document.created_at),
+            str(copy.document.id))
+
+
+def _in_contract_account(copy):
+    from services.financial.accounts import TIER_CONTRACT_CURRENCY
+    return bool(CONTRACT_ACCOUNT and copy.account and copy.account[0] == TIER_CONTRACT_CURRENCY)
+
+
+def _contract_account_copy(copy, retained):
+    """Whether ``copy`` sits in the contract's old single account and ``retained`` in its account of this currency."""
+    return bool(_in_contract_account(retained) and copy.account and not _in_contract_account(copy)
+                and copy.scope and retained.scope and copy.scope['currency'] == retained.scope['currency']
+                and copy.account[1:3] == retained.account[1:3] and all(copy.account[1:3])
+                and retained.account[3] == retained.scope['currency'])
 
 
 def _kept_reason(copy):
@@ -381,7 +413,7 @@ def _compare(copy, retained):
         return 'reading_not_comparable'
     code = None
     if basis == 'same_printed_period':
-        if copy.scope['identity'] != retained.scope['identity'] and not copy.payments:
+        if copy.scope['identity'] != retained.scope['identity'] and not copy.payments and not _contract_account_copy(copy, retained):
             code = 'other_bank_without_payments'
         elif copy.content != retained.content and not _reviewed_to_same_ledger(copy, retained):
             code = 'money_differs'
@@ -402,7 +434,7 @@ def _compare(copy, retained):
         return 'rows_corrected'
     if not retained.rows_clean:
         return 'retained_rows_set_aside'
-    if copy.accounts != retained.accounts:
+    if copy.accounts != retained.accounts and not _contract_account_copy(copy, retained):
         return 'account_differs'
     return None
 
