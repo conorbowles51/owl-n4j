@@ -2253,3 +2253,5 @@ from services.financial.receipt_settlement import receipt_payment, settle_receip
 __all__ += ["receipt_payment", "settle_receipts"]
 from services.financial.credit_line_total_owed import total_owed_rows
 __all__ += ["total_owed_rows"]
+from services.financial.scan_daily_balance import scan_rows
+__all__ += ["scan_rows"]

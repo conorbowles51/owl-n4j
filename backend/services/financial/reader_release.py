@@ -65,7 +65,7 @@ READER_MODULES = (
     'pdf_tables.py', 'pdf_geometry_candidates.py', 'table_geometry.py', 'card_*.py', 'andrews_period_pinning.py',
     'late_posted_card_dates.py', 'closing_only_period.py', 'layout_memory.py', 'text_rows.py', 'printed_totals.py',
     'money.py', 'dates.py', 'source_dates.py', 'import_issues.py', 'review_arithmetic.py', 'payment_inference.py',
-    'spei_description.py', 'deposit_receipt_proposal.py', 'payment_document_proposal.py', 'credit_line_total_owed.py',
+    'spei_description.py', 'deposit_receipt_proposal.py', 'payment_document_proposal.py', 'credit_line_total_owed.py', 'scan_daily_balance.py',
     # The page-image reader of held statements: a release of it re-checks prepared files, and a file
     # whose text reading is unchanged but still holds statements is marked for it (_store).
     'vision_reader.py',
