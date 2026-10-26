@@ -65,6 +65,7 @@ deleted. Batch items of the copy show "Duplicate - Ignored by system".
 """
 from __future__ import annotations
 
+import os
 import re
 import uuid
 from collections import Counter, defaultdict
@@ -93,6 +94,10 @@ READER_INDEPENDENT = True
 # The proof a copy filed in another ledger account may be set aside with: the
 # files are one document, as the pre-admission rule requires across readers.
 SAME_DOCUMENT = ('identical_bytes', 'identical_pages')
+# A copy is compared as its statement now stands: the holder, number, bank and currency a person corrected in the
+# statement details, not the values first read. Reverse: LOUPE_FINANCIAL_DUPLICATE_CORRECTED_DETAILS=0.
+CORRECTED_DETAILS = os.environ.get('LOUPE_FINANCIAL_DUPLICATE_CORRECTED_DETAILS', '1').strip().lower() not in (
+    '0', 'false', 'off', 'no')
 
 # Why a matching pair is not set aside. Codes are reported; messages refuse.
 HELD = {
@@ -222,6 +227,7 @@ def _load(session, case_id, *, document_ids=None, identities=None):
     from services.financial.pending_statement_duplicates import (
         _initial, _printed_key, _review_shape, _section_pages, statement_content)
     from services.financial.statement_import_overlap import scope
+    from services.financial.statement_details import saved_currency, saved_details
     query = select(FinancialSourceDocument).where(
         FinancialSourceDocument.case_id == case_id,
         FinancialSourceDocument.document_type == 'statement_review',
@@ -267,7 +273,9 @@ def _load(session, case_id, *, document_ids=None, identities=None):
             first_page=_first_page(original) if original else 1, latest=latest.get(document.id), verified=verified,
             scope=None)
         if verified and not request.get('period_start_unprinted'):
-            copy.scope = scope({**request, 'account_type': (original.get('metadata') or {}).get('account_type') or ''})
+            stands = {**request, **saved_details(document), 'currency': saved_currency(document) or request.get('currency')} \
+                if CORRECTED_DETAILS else request
+            copy.scope = scope({**stands, 'account_type': (original.get('metadata') or {}).get('account_type') or ''})
             copy.key = _printed_key(copy.scope)
             copy.section = _section_pages(original)
         if file is not None and READER_INDEPENDENT:

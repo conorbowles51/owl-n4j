@@ -483,6 +483,32 @@ class ReaderIndependentCopyTests(TestCase):
         self.assertEqual((plan['set_aside'], plan['split_across_accounts']), ([], []))
         self.assertEqual([e['code'] for e in plan['held']], ['money_differs'])
 
+    def correct_bank(self, file, institution):
+        from services.financial.statement_details import StatementDetailsRequest, read_statement_details, update_statement_details
+        with self.f.SessionLocal() as db:
+            source = self.source_of(file)
+            before = read_statement_details(db, case_id=self.case_id, source_id=source.id)
+            details = before['details']
+            update_statement_details(db, case_id=self.case_id, source_id=source.id, actor=self.f.actor,
+                request=StatementDetailsRequest(expected_revision=before['revision'], holder=details['holder'],
+                    account_number=details['account_number'], institution=institution, currency=before['currency']))
+
+    def identities(self):
+        with self.f.SessionLocal() as db:
+            return {copy.document.evidence_file_id: copy.scope['identity'] for copy in admitted._load(db, self.case_id)}
+
+    def test_a_copy_is_compared_with_the_bank_a_person_corrected(self):
+        """BNB2 Monex 2836625 Nov/Dec 2025: the reprints were saved as 'BANCO MONEX', the bank originals as 'Monex';
+        with no payments, differing bank names refuse the set-aside even after a person corrected the reprints' bank."""
+        other, _ = self.save_twice(batch=False, second_request=lambda request: {**request, 'institution': 'Synthetic Bank Wording SA'})
+        self.assertNotEqual(self.identities()[other.id], self.identities()[self.primary.id])
+        self.correct_bank(other, self.f.request()['institution'])
+        self.assertEqual(self.identities()[other.id], self.identities()[self.primary.id])
+        plan = self.plan()
+        self.assertEqual((len(plan['set_aside']), plan['split_across_accounts'], plan['held']), (1, [], []), plan)
+        with patch.object(admitted, 'CORRECTED_DETAILS', False):
+            self.assertNotEqual(self.identities()[other.id], self.identities()[self.primary.id])
+
     def test_switch_off_is_the_r2_rule(self):
         self.save_split()
         with patch.object(admitted, 'READER_INDEPENDENT', False):
