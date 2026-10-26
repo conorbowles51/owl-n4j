@@ -1654,6 +1654,24 @@ def _batch_view(session, case_id, batch_id, batch, items, *, offset, limit, only
         items=[dict(id=str(i.id),file_id=str(i.file_id),statement_id=i.statement_key or None,status=i.status,**i.summary) for i in shown[offset:offset+limit]])
 
 
+# Neil's decision (2026-10-26, fin-queue3 L24): the first save of the current reading over a review saved on an
+# older reading is assessed as it stands once saved (it is then the statement's saved review), not against the
+# review it replaces, which import admission refuses as an older reading. Off: that first save is held
+# ('attention') and only a second save reaches the reading's real state, as before.
+SAVE_OVER_OLDER = os.environ.get('LOUPE_FINANCIAL_SAVE_OVER_OLDER_READING', '1').strip().lower() not in (
+    '0', 'false', 'no', 'off')
+
+
+def _assessed_against(proposal, saved, payload):
+    """The reading save_review assesses ``payload`` against: when the saved review it replaces belongs to an older
+    reading and the draft is on the current one, the draft is that statement's saved review."""
+    if not (SAVE_OVER_OLDER and saved and saved['request'].get('expected_revision') != proposal['revision']
+            and payload.get('expected_revision') == proposal['revision']):
+        return proposal
+    replaced = {key: value for key, value in saved.items() if key not in CARRIED_QUESTIONS}
+    return {**proposal, 'saved_review': {**replaced, 'request': payload}}
+
+
 def save_review(session, *, case_id, batch_id, item_id, request, expected_review_revision, actor=None):
     """Persist the selected draft and return its local assessment.
 
@@ -1700,7 +1718,7 @@ def save_review(session, *, case_id, batch_id, item_id, request, expected_review
         # The person's save is the answer: the reading is assessed without the carried question.
         proposal = {**proposal, 'saved_review': {k: v for k, v in (proposal.get('saved_review') or {}).items()
                                                  if k not in CARRIED_QUESTIONS}}
-    status,summary=assess(proposal,payload)
+    status,summary=assess(_assessed_against(proposal, saved, payload),payload)
     summary.update(filename=item.summary['filename'],source_id=item.summary['source_id'])
     for key in ('import_decision','import_decision_history'):
         if key in item.summary: summary[key] = item.summary[key]

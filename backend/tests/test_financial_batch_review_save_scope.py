@@ -129,3 +129,47 @@ class BatchReviewSaveScopeTests(TestCase):
             self.assertEqual(list(db.scalars(select(FinancialTransaction))), [])
             self.assertEqual(db.get(Item, UUID(item['id'])).review_request, request.model_dump(mode='json'))
             self.assertIsNotNone(db.get(EvidenceFile, other.id))
+
+
+class SaveOverOlderReadingTests(TestCase):
+    """L24 (BNB2 02 ING R2 SANTANDER MXN FEB 26, 03 ARRENDO BBVA MXN MZO 2026): the first save of the current
+    reading over a review saved on an older reading is assessed as saved, not as the older reading."""
+
+    def setUp(self):
+        self.fixture = fixtures.StatementOverlapTests()
+        self.fixture.setUp()
+        self.f = self.fixture.f
+
+    def tearDown(self):
+        self.fixture.tearDown()
+
+    def save_over_older(self):
+        f = self.f
+        batch = self.fixture.create(self.fixture.primary)
+        older = {**f.request(), 'expected_revision': 'an-older-reading'}
+        older_saved = dict(request=older, review_revision=batches._digest(older), saved_at='2026-09-30T16:43:04+00:00',
+                           saved_by=dict(user_id=str(uuid4()), name='Alexandra'))
+        with f.SessionLocal() as db:
+            item = db.scalar(select(Item).where(Item.batch_id == batch))
+            item_id, key = item.id, item.statement_key or ''
+            file = db.get(EvidenceFile, item.file_id)
+            file.metadata_ = {**(file.metadata_ or {}), 'financial_review_progress': {key: older_saved}}
+            db.commit()
+        with f.SessionLocal() as db:
+            result = batches.save_review(db, case_id=f.case.id, batch_id=batch, item_id=item_id,
+                request=StatementReviewDraft.model_validate(f.request()),
+                expected_review_revision=batch_review_revision(None, older_saved))
+        with f.SessionLocal() as db:
+            file = db.get(EvidenceFile, self.f.file.id)
+            history = (file.metadata_ or {}).get('financial_review_history') or []
+        return result, history, older_saved
+
+    def test_the_first_save_over_an_older_reading_review_is_assessed_as_saved(self):
+        result, history, older_saved = self.save_over_older()
+        self.assertEqual(result['status'], 'ready')
+        self.assertIn(older_saved, history)  # The older review stays in history.
+
+    def test_off_holds_the_first_save_as_before(self):
+        with patch.object(batches, 'SAVE_OVER_OLDER', False):
+            result, _, _ = self.save_over_older()
+        self.assertEqual(result['status'], 'attention')
