@@ -3880,3 +3880,43 @@ class RunningBalanceDigitsTests(unittest.TestCase):
     def test_switched_off_the_line_is_not_read(self):
         with mock.patch.object(E, 'BALANCE_DIGITS', False):
             self.assertFalse(self.read()['engine']['proved'])
+
+
+class MixedMarkWordsTests(unittest.TestCase):
+    """(L14, 12 ARRENDO SANTANDER MXN DIC 2021) A Santander scan printing some amounts with a comma for the
+    point ('104,00', '8,414,445,73') or a space ('SALDO ACTUAL 9,773,293 53'): those texts are words, not
+    amounts, so a line kept no amount or no balance and the closing was not found. Read from their digits,
+    they are taken only when every balance chains from the opening to the closing."""
+
+    def setUp(self):
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+
+    def read(self, debit='200,00', balance='1,400,00', closing='1,350 00'):
+        # As many worn marks as the scan printed: the document's convention is not decided (mixed).
+        moves = [('05/MAR', 'TRANSFERENCIA RECIBIDA', '500,00', None, '1,500.00'),
+                 ('10/MAR', 'PAGO DE SERVICIO', None, debit, '1,300.00'),
+                 ('15/MAR', 'ABONO RECIBIDO', '100.00', None, balance),
+                 ('20/MAR', 'COMISION', None, '50,00', '1,350.00')]
+        sources = mx_statement(moves, closing=closing)
+        self.assertIsNone(E.separator_style(E._pages(sources)))
+        return read_statements(sources)[0]
+
+    def test_amounts_balances_and_a_closing_with_a_worn_mark_are_read_when_the_balances_chain(self):
+        st = self.read()
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual(sorted((r['printed'], r['read']) for r in st['engine']['digit_repairs']),
+                         # The closing's two words in their own cell are joined as one amount ('1,350,00').
+                         [('1,350,00', '1,350.00'), ('1,400,00', '1,400.00'), ('200,00', '200.00'),
+                          ('50,00', '50.00'), ('500,00', '500.00')])
+        moves = [r for r in st['_rows'] if r['kind'] == 'transaction']
+        self.assertEqual([(r['fields']['amount_minor'], r['fields']['direction'], r['fields']['balance']) for r in moves],
+                         [('50000', 'credit', '150000'), ('20000', 'debit', '130000'), ('10000', 'credit', '140000'),
+                          ('5000', 'debit', '135000')])
+
+    def test_a_worn_balance_that_does_not_chain_is_not_taken(self):
+        self.assertFalse(self.read(balance='1,410,00')['engine']['proved'])
+
+    def test_switched_off_the_worn_words_are_not_read(self):
+        with mock.patch.object(E, 'MIXED_MARK_WORDS', False):
+            self.assertFalse(self.read()['engine']['proved'])

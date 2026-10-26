@@ -4190,8 +4190,8 @@ def _reading(rows, statement, style, exponent, liability, period):
     if BALANCE_DIGITS and not readings and proof['reason'] in ('', 'separators_mixed') and all_moves:
         # (L12, L14) A scan whose amounts lost or changed their decimal mark: read again from their digits,
         # taken only when every line's running balance then chains from the opening to the closing.
-        repaired = _digit_repaired_reading(all_moves, headers, width or 1, controls, column_totals, style or 'dot',
-                                           exponent, liability)
+        repaired = _digit_repaired_reading(all_moves, rows, headers, width or 1, controls, column_totals,
+                                           style or 'dot', exponent, liability)
         if repaired is not None:
             all_moves, controls, candidates, repairs = repaired
             readings = {candidates[0]['key']: candidates[0]}
@@ -4739,9 +4739,11 @@ def _digit_token(token, minor, style, printed, x1=None):
     return dict(token, t=text, f=fold(text), printed=printed, x1=token['x1'] if x1 is None else x1)
 
 
-def _digit_repairs(moves, controls, style, exponent):
+def _digit_repairs(moves, controls, style, exponent, rows=(), liability=False):
     """(moves, controls, repairs): copies with every amount whose mark is lost or changed read from its digits;
-    None when there is none."""
+    None when there is none. (L14) Such a text is also read where the mark made it a word: a balance printed
+    after the line's amount (a stray word), a line's last description word before its balance ('104,00'), and
+    an opening or closing balance after its label ('SALDO ACTUAL 9,773,293 53')."""
     repairs = []
 
     def cite(row, token, printed, minor):
@@ -4773,17 +4775,67 @@ def _digit_repairs(moves, controls, style, exponent):
                 cite(move['row'], whole, printed, minor)
                 amounts.insert(0, _digit_token(whole, minor, style, printed, x1=cents['x1']))
                 description = [t for t in description if t is not whole and t is not cents]
+        if MIXED_MARK_WORDS:
+            words = sorted(description, key=lambda t: (t['line'], t['x0']))
+            last = words[-1] if words else None
+            if (len(amounts) == 1 and last is not None and money(last['t'], style, exponent) is None
+                    and _cents_text(last['t']) is not None and last['x1'] <= amounts[0]['x0']):
+                amounts.insert(0, again(move['row'], last))
+                description = [t for t in description if t is not last]
+            stray = []
+            for token in move.get('stray', ()):
+                read = again(move['row'], token)
+                (amounts if read is not token else stray).append(read)
+            move = dict(move, stray=stray)
         out.append(dict(move, money=amounts, description=description))
     fixed = {role: [dict(item, value_token=again(item['row'], item['value_token'])) if item.get('value_token') else item
                     for item in items] for role, items in controls.items()}
+    if MIXED_MARK_WORDS:
+        _worn_balance_controls(rows, moves, fixed, style, exponent, liability, cite)
     return (out, fixed, repairs) if repairs else None
 
 
-def _digit_repaired_reading(moves, headers, width, controls, column_totals, style, exponent, liability):
+# (L14) Off: only amounts already read as amounts are read again (L12 alone).
+MIXED_MARK_WORDS = _switch('LOUPE_FINANCIAL_MIXED_MARK_WORDS')
+
+
+def _worn_balance_controls(rows, moves, controls, style, exponent, liability, cite):
+    """(L14) An opening or closing balance printed after its label with its mark lost or changed
+    ('SALDO FINAL DEL PERIODO ANTERIOR 8,414,445,73', 'SALDO ACTUAL 9,773,293 53'), read as a control of that
+    role unless one of the same value is already read. The label is the words right before the value."""
+    moving = {id(move['row']) for move in moves}
+    for row in rows:
+        if id(row) in moving or not row['tokens']:
+            continue
+        tokens = sorted(row['tokens'], key=lambda t: (t['line'], t['x0']))
+        for index, token in enumerate(tokens):
+            if money(token['t'], style, exponent) is not None:
+                continue
+            minor, end, printed = _cents_text(token['t']), token, token['t']
+            following = tokens[index + 1] if index + 1 < len(tokens) else None
+            if (minor is None and following is not None and following['line'] == token['line']
+                    and _WHOLE_UNITS.match(token['t']) and re.search(r'[.,]', token['t'])
+                    and re.fullmatch(r'\d{2}', following['t'])):
+                minor = int(re.sub(r'\D', '', token['t']) + following['t'])
+                end, printed = following, token['t'] + ' ' + following['t']
+            if minor is None:
+                continue
+            words = [t['t'] for t in tokens[max(0, index - 6):index] if label(t['t'])]
+            role = next((found for size in range(1, len(words) + 1)
+                         for found in (_role_of(label(' '.join(words[-size:])), liability),)
+                         if found in ('opening', 'closing')), None)
+            if role is None or any(money(item['value_token']['t'], style, exponent) == minor for item in controls[role]):
+                continue
+            cite(row, token, printed, minor)
+            controls[role].append(dict(row=row, value_token=_digit_token(token, minor, style, printed, x1=end['x1']),
+                                       count=None))
+
+
+def _digit_repaired_reading(moves, rows, headers, width, controls, column_totals, style, exponent, liability):
     """(moves, controls, [candidate], repairs) of the one reading the repaired texts prove with every movement
     line's printed balance chaining, or None. The columns are found again from the repaired amounts (a column
     whose only amount lost its mark is found only then)."""
-    repaired = _digit_repairs(moves, controls, style, exponent)
+    repaired = _digit_repairs(moves, controls, style, exponent, rows, liability)
     if repaired is None:
         return None
     moves, controls, repairs = repaired
