@@ -316,3 +316,85 @@ class SettledWorkTests(TestCase):
         self.assertEqual(settled_work(None, file, [system]), {'a': 'system_only'})
         self.assertEqual(settled_work(None, file, [system, self.record('b', 'Alexandra')]), {})
         self.assertEqual(settled_work(None, file, [self.record('c', 'System', details_reason='checked')]), {})
+
+
+class EqualWorkTests(TestCase):
+    """L23 (BNB2 03 ARRENDO BBVA MXN MZO 2026): earlier work identical to the current reading, or a draft its own
+    author saved again on the same reading, no longer holds the statement."""
+
+    @staticmethod
+    def row(rid, day, amount, direction='debit', **extra):
+        return dict(id=rid, excluded=False, date=day, amount_minor=str(amount), direction=direction, **extra)
+
+    def reading(self, **changes):
+        reading = dict(expected_revision='now', statement_id='s1', currency='MXN', holder='ARRENDO SERV SA DE CV',
+                       account_number='0110274593', institution='BBVA MEXICO', period_start='2026-03-01',
+                       period_end='2026-03-31',
+                       rows=[self.row('2:0:0', '2026-03-02', 1000, 'credit'), self.row('2:0:1', '2026-03-31', 3220160)])
+        reading.update(changes)
+        return reading
+
+    def record(self, rid='b', name='Alexandra', revision='old', saved_at='2026-09-30T16:43:04+00:00', rows=None, **request):
+        rows = rows if rows is not None else [
+            self.row('1:0:0', '2026-03-02', 1000, 'credit'),
+            # Added by hand on the earlier reading; the current reader reads it itself.
+            self.row('manual:x', '2026-03-31', 3220160, manual_page=3, description='COMISION')]
+        values = dict(expected_revision=revision, statement_id='s1', currency='MXN', holder='ARRENDO SERV',
+                      account_number='0110274593', institution='BBVA Mexico', period_start='2026-03-01',
+                      period_end='2026-03-31', rows=rows)
+        values.update(request)
+        return dict(id=rid, evidence_file_id='f0', filename='03 ARRENDO BBVA MXN MZO 2026.pdf', origin='Earlier statement review',
+                    statement_id=values['statement_id'], saved_at=saved_at,
+                    saved_by=dict(user_id='u-alex', name=name), request=values)
+
+    def settled(self, records, reading=None):
+        from types import SimpleNamespace
+        from services.financial.review_recovery import settled_work
+        return settled_work(None, SimpleNamespace(id='f1'), records, {}, reading=reading)
+
+    def test_work_equal_to_the_current_reading_is_settled(self):
+        self.assertEqual(self.settled([self.record()], self.reading()), {'b': 'equal_to_reading'})
+
+    def test_work_that_differs_from_the_current_reading_still_holds(self):
+        reading = self.reading()
+        missing = self.record(rows=[self.row('1:0:0', '2026-03-02', 1000, 'credit')])
+        left_out = self.record(rows=[self.row('1:0:0', '2026-03-02', 1000, 'credit'),
+                                     dict(self.row('1:0:1', '2026-03-31', 3220160), excluded=True)])
+        noted = self.record(rows=[self.row('1:0:0', '2026-03-02', 1000, 'credit', reason='checked'),
+                                  self.row('1:0:1', '2026-03-31', 3220160)])
+        for record in (missing, left_out, noted, self.record(holder='OTRA EMPRESA'), self.record(currency='USD'),
+                       self.record(details_reason='seen'), self.record(no_activity_confirmed=True),
+                       self.record(period_end='2026-03-30'), self.record(statement_id='s2')):
+            self.assertEqual(self.settled([record], reading), {}, record['request'])
+        # A value of hers the current reading lacks is work still to carry, not equal.
+        self.assertEqual(self.settled([self.record()], self.reading(holder='')), {})
+        self.assertEqual(self.settled([self.record()]), {})  # No current reading: nothing to compare.
+
+    def test_a_draft_its_author_saved_again_on_the_same_reading_is_replaced(self):
+        noted = [self.row('1:0:0', '2026-03-02', 1000, 'credit', reason='afd')]
+        earlier = self.record('a', saved_at='2026-09-30T16:37:54+00:00', rows=noted)
+        later = self.record('b', rows=noted)
+        self.assertEqual(self.settled([earlier, later]), {'a': 'replaced_by_own_save:b'})
+        # Another reading, another person, or the later one itself: not replaced.
+        self.assertEqual(self.settled([earlier, self.record('b', revision='newer', rows=noted)]), {})
+        other = self.record('b', rows=noted)
+        other['saved_by'] = dict(user_id='u-neil', name='Neil')
+        self.assertEqual(self.settled([earlier, other]), {})
+
+    def test_off_holds_as_before(self):
+        from unittest import mock
+        with mock.patch.object(review_recovery, 'EQUAL_WORK', False):
+            self.assertEqual(self.settled([self.record()], self.reading()), {})
+            self.assertEqual(self.settled([self.record('a', saved_at='2026-09-30T16:00:00+00:00'), self.record('b')]), {})
+
+    def test_the_statement_no_longer_asks_for_a_comparison(self):
+        from types import SimpleNamespace
+        file = SimpleNamespace(id='f1', sha256='x', metadata_={})
+        drafts = [self.record('a', saved_at='2026-09-30T16:33:53+00:00',
+                              rows=[self.row('1:0:0', '2026-03-02', 1000, 'credit')]), self.record('b')]
+        state = lambda reading: review_recovery.recovery_state(
+            None, file, sources=[], choices=[dict(id='s1')], statement_id='s1', revision='now',
+            cache={('previous-reviews', 'f1'): drafts}, reading=reading)
+        self.assertEqual(state(self.reading()), (None, None))
+        held, _ = state(self.reading(rows=self.reading()['rows'][:1]))
+        self.assertTrue(held['required'])

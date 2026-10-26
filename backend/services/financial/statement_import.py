@@ -353,6 +353,16 @@ def _brokerage_cash_ledger(selected):
     return bool(selected and brokerage_cash_ledger(selected.get('engine_profile')))
 
 
+def _recovery_reading(metadata, revision, statement_id, currency, rows, period_dates):
+    """The current reading as a request, for earlier work equal to it (review_recovery.EQUAL_WORK)."""
+    from services.financial.import_batches import initial_request
+    try:
+        return initial_request(dict(metadata=metadata, revision=revision, statement_id=statement_id,
+                                    currency=currency, rows=rows, period_dates=period_dates))
+    except (KeyError, TypeError, AttributeError):
+        return None
+
+
 def read_statement_import(session, *, case_id, evidence_file_id, currency=None, statement_id=None, _cache=None, _include_period_checks=True, _apply_assignments=True, _include_duplicate_disposition=True, _compare_printings=True):
     # The identity map already holds the row after the first read in a request;
     # re-querying decoded its whole metadata again for every statement.
@@ -879,7 +889,8 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         statement_id=statement_id, revision=revision, cache=cache,
         period=(metadata.get('period_start') or (period_dates or {}).get('period_start') or '',
                 metadata.get('period_end') or (period_dates or {}).get('period_end') or ''),
-        row_ids=[row['id'] for row in rows], pages=[row.get('page_number') for row in rows])
+        row_ids=[row['id'] for row in rows], pages=[row.get('page_number') for row in rows],
+        reading=_recovery_reading(metadata, revision, statement_id, chosen_currency, rows, period_dates))
     result = dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id), filename=file.original_filename,
                 # Derived from the same source reading; keep historical review
                 # revisions stable while exposing this date to grouped decisions.
