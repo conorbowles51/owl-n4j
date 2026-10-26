@@ -721,7 +721,8 @@ def _saved_checks(session, case_id, entries):
 # aside for, or held against, each other (BNB2: CAAL BBVA 0119200843 Aug 2025 and BBVA 0125701104 USD Sep 2025 were
 # absent from the ledger with all their items under copies). When no saved period of the same account (its printed
 # digits equal or one inside the other, as an account inside its CLABE), currency and overlapping dates exists, and
-# no entry of that statement is imported or saving, one of its copies (the one the copy rule keeps, else the first)
+# no entry of that statement is imported, saving or left unimported (a copy left unimported always carries the
+# reason a person gave, e.g. that its payments are already saved from other statements), one of its copies (the one the copy rule keeps, else the first)
 # is listed under 'waiting' with the plain reason. Nothing is changed. Reverse: LOUPE_FINANCIAL_QUEUE_COPIES_NONE_SAVED=0.
 COPIES_NONE_SAVED = os.environ.get('LOUPE_FINANCIAL_QUEUE_COPIES_NONE_SAVED', '1').strip().lower() not in ('0', 'false', 'off', 'no')
 COPIES_NONE_SAVED_SENTENCE = ('Every copy of this statement was set aside as a copy of another, and none of them is '
@@ -743,7 +744,8 @@ def _copies_none_saved(session, case_id, entries):
             copies.setdefault(key, []).append(entry)
     if not copies:
         return
-    busy = {scope(e) for e in entries if e['bucket'] in ('imported', 'saving', 'waiting', 'ready', 'filled', 'rechecking', 'reader_fix')}
+    busy = {scope(e) for e in entries if e['bucket'] in ('imported', 'saving', 'waiting', 'ready', 'filled', 'rechecking',
+                                                        'reader_fix', 'left_unimported')}
     from postgres.models.financial import FinancialAccount, FinancialSourceDocument, FinancialStatementPeriod
     saved = session.execute(select(FinancialAccount.identifier_as_printed, FinancialStatementPeriod.currency,
                                    FinancialStatementPeriod.period_start, FinancialStatementPeriod.period_end)

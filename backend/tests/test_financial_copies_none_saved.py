@@ -43,6 +43,11 @@ class CopiesNoneSavedTests(TestCase):
         entries = [entry('a'), entry('s', bucket='imported')]
         rq._copies_none_saved(_Ledger([]), 'case', entries)
         self.assertEqual(entries[0]['bucket'], 'copies')
+        # A copy left unimported carries a person's reason (live: a Santander movement extract whose 5 movements are
+        # all saved from the monthly statements); the statement is decided, not forgotten.
+        entries = [entry('a'), entry('l', bucket='left_unimported')]
+        rq._copies_none_saved(_Ledger([]), 'case', entries)
+        self.assertEqual(entries[0]['bucket'], 'copies')
         other_currency = ('0119200843', 'USD', date(2025, 8, 1), date(2025, 8, 31))
         entries = [entry('a')]
         rq._copies_none_saved(_Ledger([other_currency]), 'case', entries)
