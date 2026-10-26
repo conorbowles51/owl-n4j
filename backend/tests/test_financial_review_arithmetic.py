@@ -297,3 +297,35 @@ class ManualSourcePlacementTests(unittest.TestCase):
         ordered = place_manual_rows(original + entries, originals, statement_pages=[1, 2, 3, 4])
         self.assertEqual([row['id'] for row in ordered],
                          ['first', 'last', 'manual:page2-a', 'manual:page2-b', 'manual:page3', 'next', 'later'])
+
+
+class ZeroGlyphChargeTotalTests(unittest.TestCase):
+    """A printed charge total read as zero glyphs (``O.DO``) in an empty charge section reads 0.00."""
+
+    def statement(self, total_text, *extra):
+        proposed = rows()
+        fee_total = dict(id='fee-total', kind='statement_total', excluded=True, issues=[], page_number=1,
+                         fields=dict(description='Printed fee total', total_scope='fee', balance=None),
+                         source_cells=[dict(expected_text='TOTAL FEES FOR THIS PERIOD'), dict(expected_text=total_text)])
+        return proposed + list(extra) + [fee_total]
+
+    def fee(self, proposed):
+        return next(c for c in arithmetic_checks(proposed) if c['kind'] == 'fee_total')
+
+    def test_zero_glyphs_in_an_empty_fee_section_read_zero_and_match(self):
+        for text in ('O.DO', '0.0O', '$0.00', 'D.OO'):
+            check = self.fee(self.statement(text))
+            self.assertEqual((check['status'], check['printed_minor']), ('matches', '0'), text)
+
+    def test_a_charge_line_in_the_section_or_other_glyphs_leave_it_unread(self):
+        unread_fee = dict(id='fee-line', kind='unresolved', excluded=False, issues=['unreadable'], page_number=1,
+                          fields=dict(charge_group='fee', description='Late fee'))
+        self.assertEqual(self.fee(self.statement('O.DO', unread_fee))['status'], 'unavailable')
+        for text in ('6.DO', 'O.D', '8.00x', ''):
+            self.assertEqual(self.fee(self.statement(text))['status'], 'unavailable', text)
+
+    def test_switched_off_leaves_it_unread(self):
+        from unittest.mock import patch
+        from services.financial import review_arithmetic
+        with patch.object(review_arithmetic, 'ZERO_GLYPH_TOTALS', False):
+            self.assertEqual(self.fee(self.statement('O.DO'))['status'], 'unavailable')

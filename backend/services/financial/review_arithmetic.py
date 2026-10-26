@@ -3,8 +3,27 @@
 All callers pass rows from one account and period in source order. A missing
 control is not a zero balance. No comparison establishes complete extraction.
 """
+import os
 import re
 from datetime import date
+
+# A printed fee or interest total whose characters are all zero look-alikes (``O.DO``, ``0.0O``) reads 0.00
+# only when its section holds no charge line at all, read or unread: the reading can then only agree with
+# the section, never disagree. Switch: LOUPE_FINANCIAL_ZERO_GLYPH_TOTALS (default on).
+ZERO_GLYPH_TOTALS = os.environ.get('LOUPE_FINANCIAL_ZERO_GLYPH_TOTALS', '1') != '0'
+_ZERO_GLYPHS = re.compile(r'\$?[0OoD]\s?[.,]\s?[0OoD]{2}')
+
+
+def zero_glyph_total(control, rows, scope):
+    """0 for an unread printed charge total of an empty charge section printed as zero glyphs, else None."""
+    if not ZERO_GLYPH_TOTALS or control['fields'].get('balance') not in (None, ''):
+        return None
+    if any(r['fields'].get('charge_group') == scope and r.get('kind') not in ('statement_total', 'zero_charge')
+           for r in rows):
+        return None
+    cells = control.get('source_cells') or []
+    text = (cells[-1].get('expected_text') or '').strip() if cells else ''
+    return 0 if _ZERO_GLYPHS.fullmatch(text) else None
 
 
 def integer(value):
@@ -142,9 +161,11 @@ def arithmetic_checks(rows, *, liability=False):
             continue
         charges = [r for r in included if r['fields'].get('charge_group') == scope]
         movements = [movement(r, True) for r in charges]
-        if (len(controls) == 1 and not manual and all(m is not None for m in movements)
-                and integer(controls[0]['fields'].get('balance')) is not None):
-            checks.append(comparison(scope + '_total', sum(movements), integer(controls[0]['fields']['balance']),
+        printed = integer(controls[0]['fields'].get('balance')) if len(controls) == 1 else None
+        if printed is None and len(controls) == 1:
+            printed = zero_glyph_total(controls[0], rows, scope)
+        if len(controls) == 1 and not manual and all(m is not None for m in movements) and printed is not None:
+            checks.append(comparison(scope + '_total', sum(movements), printed,
                                      controls[0], contributing_row_ids=[r['id'] for r in charges]))
         else:
             checks.append(dict(kind=scope + '_total', status='unavailable',
