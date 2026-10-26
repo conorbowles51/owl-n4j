@@ -323,7 +323,9 @@ def exact_copies_rekeyed(session, case_id, source, reading, current, proposals, 
                 return False
             result = compare(session, case_id, proposal, initial_request(proposal), statement.summary,
                              own={(str(reading.id), statement.statement_key or '')})
-            if result.get('outcome') != 'match':
+            # Exactly: a copy agreeing only through its printed balances or as part of the saved statement
+            # (saved_copies UNREADABLE_COPIES / PART_OF_SAVED) is set aside by held_settlement, never re-keyed.
+            if result.get('outcome') != 'match' or result.get('basis'):
                 return False
     except Exception:  # noqa: BLE001 - fail closed: the copy stays left
         log.exception('Comparing a held copy with its saved statement failed; it is left as it is')

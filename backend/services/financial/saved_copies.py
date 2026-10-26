@@ -31,6 +31,7 @@ recorded earlier remains an ordinary System duplicate decision that a person can
 import os
 from collections import Counter
 from datetime import date
+from uuid import UUID
 
 from sqlalchemy import select
 
@@ -183,6 +184,64 @@ def _unreadable_copy(facts, compared):
     return agreeing[0] if len(agreeing) == 1 else None
 
 
+# Neil's decision (2026-10-26, fin-queue3 L20; fin-queue2 A4): a held statement that is a leftover split of a
+# statement the case saved from the same file (or identical bytes) is part of that saved statement: same account
+# and dates, its pages all among the saved statement's pages and fewer of them, its currency (where read) equal,
+# every payment it reads among the saved payments, and every balance it prints (opening, closing) one the saved
+# statement prints (its opening, closing or a running balance). Off: such a split waits for a person, as before.
+PART_OF_SAVED = os.environ.get('LOUPE_FINANCIAL_SAVED_COPY_PART_OF_SAVED', '1').strip().lower() not in (
+    '0', 'false', 'no', 'off')
+PART_BASIS = 'part_of_saved_statement'
+PART_REASON = ('This is part of a statement the case already saved from the same file: the same account and dates, '
+               'printed on pages that statement already covers, and every payment and balance it reads is in the saved '
+               'statement. It is set aside as a linked duplicate; the saved statement counts once. Restore it to '
+               'review it again.')
+PART_MATCHED_FIELDS = ['source_sha256', 'account_reference_last_six', 'period_start', 'period_end',
+                       'pages_inside_saved_statement', 'payments_read_in_saved', 'printed_balances_in_saved']
+
+
+def _running_balances(session, period):
+    from postgres.models.financial import FinancialTransaction
+    return {row.running_balance_minor for row in session.scalars(select(FinancialTransaction).where(
+        FinancialTransaction.statement_period_id == period.id))
+        if row.ledger_status == 'admitted' and row.superseded_by_id is None and row.running_balance_minor is not None}
+
+
+def _part_of_saved(session, proposal, facts, compared, own):
+    """The one compared saved statement of the same bytes this held split is part of, else None."""
+    from postgres.models.evidence import EvidenceFile
+    from services.financial.pending_statement_duplicates import _section_pages
+    if not PART_OF_SAVED or not own or session is None:
+        return None
+    file_ids = {str(file_id) for file_id, _ in own}
+    if len(file_ids) != 1:
+        return None
+    try:
+        identifier = UUID(next(iter(file_ids)))
+    except ValueError:
+        identifier = next(iter(file_ids))
+    owner = session.get(EvidenceFile, identifier)
+    pages = _section_pages(proposal)
+    if owner is None or not owner.sha256 or not pages:
+        return None
+    found = []
+    for entry in compared:
+        _, period, document, file, _, ledger = entry
+        original = (document.metadata_ or {}).get('statement_import_original') or {}
+        saved_pages = _section_pages(original)
+        if not (file.sha256 == owner.sha256 and saved_pages and pages < saved_pages):
+            continue
+        if facts['currency'] and period.currency != facts['currency']:
+            continue
+        if facts['payments'] - ledger:
+            continue
+        printed = {value for value in (facts['opening'], facts['closing']) if value is not None}
+        if printed - ({period.opening_balance_minor, period.closing_balance_minor} | _running_balances(session, period)):
+            continue
+        found.append(entry)
+    return found[0] if len(found) == 1 else None
+
+
 def compare(session, case_id, proposal, request, summary=None, own=()):
     """{'outcome': 'match'|'differs'|'not_comparable'|'no_saved', ...}. Read only."""
     facts = copy_facts(proposal, request, summary)
@@ -198,6 +257,14 @@ def compare(session, case_id, proposal, request, summary=None, own=()):
     if not sum(facts['payments'].values()):
         holds.append('no_payments')
     unreadable = _unreadable_copy(facts, compared) if holds else None
+    if unreadable is None and len(agreeing) != 1:
+        part = _part_of_saved(session, proposal, facts, compared, own)
+        if part is not None:
+            _, period, document, file, key, ledger = part
+            return dict(outcome='match', basis=PART_BASIS, saved=_link(document, file, key, period),
+                        saved_statements=len(candidates), payments=sum(ledger.values()),
+                        opening=facts['opening'] is not None, closing=facts['closing'] is not None,
+                        unread=holds, differences=[])
     if unreadable is not None:
         _, period, document, file, key, ledger = unreadable
         return dict(outcome='match', basis=UNREADABLE_BASIS, saved=_link(document, file, key, period),
@@ -295,13 +362,14 @@ def settle_item(session, case_id, item, *, cache=None, apply=True):
     saved = result['saved']
     retained = {name: saved[name] for name in ('evidence_file_id', 'statement_id', 'source_document_id', 'filename',
                                                'page_number')}
-    unreadable = result.get('basis') == UNREADABLE_BASIS
+    agreement = result.get('basis')
+    reason, fields = {UNREADABLE_BASIS: (UNREADABLE_REASON, UNREADABLE_MATCHED_FIELDS),
+                      PART_BASIS: (PART_REASON, PART_MATCHED_FIELDS)}.get(agreement, (REASON, MATCHED_FIELDS))
     decision = _persist(file, proposal, request, dict(status='ignored', label=LABEL, basis=BASIS, retained=retained,
-        reason=UNREADABLE_REASON if unreadable else REASON, saved_ledger_match=dict(
+        reason=reason, saved_ledger_match=dict(
             statement_period_id=saved['statement_period_id'], payments=result['payments'], opening=result['opening'],
-            closing=result['closing'], **({'agreement': UNREADABLE_BASIS, 'unread': result['unread']}
-                                          if unreadable else {}))),
-        None, matched_fields=UNREADABLE_MATCHED_FIELDS if unreadable else MATCHED_FIELDS)
+            closing=result['closing'], **({'agreement': agreement, 'unread': result['unread']} if agreement else {}))),
+        None, matched_fields=fields)
     item.status = 'duplicate_ignored'
     item.summary = {**(item.summary or {}), 'duplicate_disposition': decision, 'can_import': False, 'problems': [],
                     'problem_count': 0, 'saved_copy_check': check}

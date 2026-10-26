@@ -250,6 +250,64 @@ def test_an_unreadable_copy_is_set_aside_with_its_own_reason(f, monkeypatch):
         assert decision['retained']['source_document_id'] == str(document_id)
 
 
+def _split_compare(monkeypatch, *, pages=(2,), saved_pages=(1, 2, 3, 4), sha='b' * 64, payments=None,
+                   opening=None, closing=118716550, running=(118716550,), currency='MXN', saved_currency='MXN'):
+    """L20 (fin-queue2 A4; BNB2 09 ARRENDO SANTANDER MXN SEP 2022): compare() of a held split of a statement the
+    case saved from the same file."""
+    from collections import Counter
+    owner = SimpleNamespace(id='own-file', sha256='b' * 64)
+    original = dict(statement_id='saved', statement_choices=[dict(id='saved', page_numbers=list(saved_pages))])
+    period = SimpleNamespace(id='p0', currency=saved_currency, opening_balance_minor=1269805805,
+                             closing_balance_minor=148716550)
+    monkeypatch.setattr(saved_copies, 'saved_periods', lambda *a, **k: [(
+        period, SimpleNamespace(metadata_=dict(statement_import_original=original)),
+        SimpleNamespace(id='own-file', sha256=sha), 'saved')])
+    monkeypatch.setattr(saved_copies, '_ledger', lambda session, p: Counter(
+        {('2022-09-01', 500, 'debit'): 1, ('2022-09-02', 700, 'credit'): 1}))
+    monkeypatch.setattr(saved_copies, '_running_balances', lambda session, p: set(running))
+    monkeypatch.setattr(saved_copies, '_link', lambda document, file, key, p: dict(statement_period_id=p.id))
+    rows = [dict(id=f'r{n}', kind='transaction', excluded=False, fields=dict(date=d, amount_minor=str(a), direction=w))
+            for n, (d, a, w) in enumerate(payments if payments is not None else [('2022-09-02', 700, 'credit')])]
+    proposal = dict(currency=currency, statement_id='split', statement_page_numbers=list(pages), rows=rows)
+    summary = dict(checks=[dict(kind='closing_balance', opening_minor=opening, printed_minor=closing)])
+    request = dict(account_number='65-50462403-4', period_start='2022-09-01', period_end='2022-09-30',
+                   currency=currency, rows=[])
+    return saved_copies.compare(SimpleNamespace(get=lambda model, key: owner), None, proposal, request, summary,
+                                own={('own-file', 'split')})
+
+
+def test_a_split_inside_a_statement_saved_from_the_same_file_is_part_of_it(monkeypatch):
+    result = _split_compare(monkeypatch)
+    assert result['outcome'] == 'match' and result['basis'] == saved_copies.PART_BASIS
+    assert result['saved'] == dict(statement_period_id='p0')
+
+
+@pytest.mark.parametrize('change', ['other_bytes', 'same_pages', 'page_outside', 'payment_not_saved',
+                                    'balance_not_printed_there', 'currency', 'off'])
+def test_a_split_stays_held_unless_it_lies_inside_the_saved_statement(monkeypatch, change):
+    values = dict(other_bytes=dict(sha='c' * 64), same_pages=dict(pages=(1, 2, 3, 4)), page_outside=dict(pages=(2, 5)),
+                  payment_not_saved=dict(payments=[('2022-09-03', 900, 'debit')]),
+                  balance_not_printed_there=dict(closing=111), currency=dict(saved_currency='USD'), off={})[change]
+    if change == 'off':
+        monkeypatch.setattr(saved_copies, 'PART_OF_SAVED', False)
+    assert _split_compare(monkeypatch, **values)['outcome'] != 'match'
+
+
+def test_held_copies_are_re_keyed_only_on_an_exact_agreement(monkeypatch):
+    from services.financial import field_proposals, held_reprepare, recovery_readers
+    monkeypatch.setattr(field_proposals, 'reapply_enabled', lambda: True)
+    monkeypatch.setattr(recovery_readers, 'copy_of_saved', lambda *a, **k: True)
+    statement = SimpleNamespace(statement_key='k', summary={})
+    reading = SimpleNamespace(id='r')
+    def rekeyed(result):
+        monkeypatch.setattr(saved_copies, 'compare', lambda *a, **k: result)
+        return held_reprepare.exact_copies_rekeyed(None, None, None, reading, [statement],
+                                                   {'k': dict(revision='x', currency='MXN', metadata={}, rows=[])}, {})
+    assert rekeyed(dict(outcome='match')) is True
+    assert rekeyed(dict(outcome='match', basis=saved_copies.UNREADABLE_BASIS)) is False
+    assert rekeyed(dict(outcome='match', basis=saved_copies.PART_BASIS)) is False
+
+
 def _vanished_item(f, *, saved=True, review_request=None):
     """L22 (fin-queue2 A13): f.file's only statement saved; an item of an earlier reading of it holds a key the
     current reading no longer lists ("This statement period is no longer available")."""
