@@ -70,13 +70,14 @@ def _number(name, default):
 
 
 ENABLED = _switch('LOUPE_FINANCIAL_VISION_FALLBACK')
-# Cases whose page images may be sent to the provider (comma-separated case ids). Sending a
-# case's images needs its owner's approval, so a case not listed is never read; unset reads none.
+# Cases whose page images may be sent to the provider (comma-separated case ids, or '*' for every
+# case). A case not listed is never read; unset reads none.
 APPROVED_CASES = frozenset(c.strip().lower() for c in os.environ.get('LOUPE_FINANCIAL_VISION_CASES', '').split(',') if c.strip())
+EVERY_CASE = '*'
 
 
 def approved(case_id):
-    return str(case_id).lower() in APPROVED_CASES
+    return EVERY_CASE in APPROVED_CASES or str(case_id).lower() in APPROVED_CASES
 # Spend cap per case for one worker run (process lifetime); readings already
 # stored are reused and cost nothing again.
 CASE_BUDGET_USD = _number('LOUPE_FINANCIAL_VISION_CASE_BUDGET_USD', 30)

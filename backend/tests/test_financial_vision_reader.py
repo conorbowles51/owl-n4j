@@ -360,6 +360,11 @@ class FailClosedTest(unittest.TestCase):
         with mock.patch.object(vr, 'APPROVED_CASES', frozenset()):
             self.assertFalse(vr.approved(approved_case))  # unset: no case's images are sent
 
+    def test_star_approves_every_case(self):
+        with mock.patch.object(vr, 'APPROVED_CASES', frozenset({vr.EVERY_CASE})):
+            self.assertTrue(vr.approved('D5B330D1-0000-0000-0000-000000000001'))
+            self.assertTrue(vr.approved('49494305-0000-0000-0000-000000000002'))
+
     def test_pending_skips_cases_not_approved(self):
         class Db:
             def __init__(self):
