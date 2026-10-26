@@ -219,17 +219,40 @@ class BbvaProposalTests(TestCase):
         _, p = self.proposal(damaged('02/SEP', '0I/SEP'))
         self.assertEqual((iva(p)['fields']['date'], iva(p)['fields'].get('value_date')), ('2024-09-02', None))
         self.assertFalse([i for i in iva(p)['issues'] if 'date' in i])
-        _, p = self.proposal(damaged('O2/SEP', '02/SEP'))
+        _, p = self.proposal(damaged('?2/SEP', '02/SEP'))
         self.assertEqual(iva(p)['fields']['date'], '2024-09-02')
         self.assertEqual(iva(p)['fields']['date_basis'], B.LIQUIDATION_FOR_OPERATION)
         self.assertFalse([i for i in iva(p)['issues'] if 'date' in i])
         # A liquidation date before the line above it is not taken for the operation date.
-        _, p = self.proposal(damaged('O2/SEP', '01/SEP'))
+        _, p = self.proposal(damaged('?2/SEP', '01/SEP'))
         self.assertNotIn('date', iva(p)['fields'])
         self.assertIn('Check the printed operation date.', iva(p)['issues'])
         with patch_env.object(B, 'ONE_DATE_PRINTED', False):
             _, p = self.proposal(damaged('02/SEP', '0I/SEP'))
         self.assertIn('Check the printed liquidation date.', iva(p)['issues'])
+
+    def test_a_scanned_letter_o_in_the_day_is_its_zero(self):
+        # Live: 01 NOVAC BBVA ENE 26, both dates of both lines scanned O7/ENE; every printed control agrees.
+        from services.financial import statement_import_bbva as B
+        sources = statement()
+        for table in sources:
+            for row in table['rows']:
+                for cell in row['cells']:
+                    if cell['expected_text'] == '02/SEP' and any('C50' in c['expected_text'] for c in row['cells']):
+                        cell['expected_text'] = 'O2/SEP'
+                    if cell['expected_text'] == '01/SEP C50 IVA ACCOUNT FEE':
+                        cell['expected_text'] = 'O1/SEP C50 IVA ACCOUNT FEE'
+        iva = lambda p: next(r for r in p['rows'] if 'C50' in r['fields'].get('description', ''))
+        _, p = self.proposal(sources)
+        self.assertEqual((iva(p)['fields']['date'], iva(p)['fields']['value_date']), ('2024-09-02', '2024-09-01'))
+        self.assertNotIn('date_basis', iva(p)['fields'])
+        self.assertFalse([i for i in iva(p)['issues'] if 'date' in i])
+        choice = dict(period_start='2024-09-01', period_end='2024-09-30')
+        self.assertIsNone(B.short_date('OO/SEP', choice))
+        self.assertIsNone(B.short_date('O2/OCT', choice))
+        with patch_env.object(B, 'SCAN_DAY_ZERO', False):
+            _, p = self.proposal(sources)
+        self.assertIn('Check the printed operation date.', iva(p)['issues'])
 
     def test_bancomer_footer_is_not_a_payment_and_continuation_keeps_its_parent(self):
         sources = statement()

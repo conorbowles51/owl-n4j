@@ -26,6 +26,10 @@ SCAN_AMOUNT_MARKS = os.environ.get('LOUPE_FINANCIAL_BBVA_SCAN_AMOUNT_MARKS', '1'
 # Off: either unread date holds the line for a person.
 ONE_DATE_PRINTED = os.environ.get('LOUPE_FINANCIAL_BBVA_ONE_DATE_PRINTED', '1').strip().lower() not in ('0', 'false', 'no', 'off')
 LIQUIDATION_FOR_OPERATION = 'liquidation_date_operation_unread'
+# On scanned pages OCR reads the zero of a two-digit day as the letter O (O7/ENE). In the day of a short printed date
+# (DD/MMM) a letter O is that zero: no BBVA day is written with a letter, and the date still has to be a real day of
+# the statement's own period. Off: the date is left unreadable and the line is held.
+SCAN_DAY_ZERO = os.environ.get('LOUPE_FINANCIAL_BBVA_SCAN_DAY_ZERO', '1').strip().lower() not in ('0', 'false', 'no', 'off')
 _WHOLE_AMOUNT = re.compile(r'(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)\.[0-9]{2}')
 
 
@@ -215,14 +219,14 @@ def box(cell):
 
 
 def short_date(value, choice):
-    match = re.fullmatch(r'(\d{1,2})/([A-Z]{3})', norm(value))
-    if not match or match[2] not in MONTHS:
+    match = re.fullmatch(r'([0-9O]{1,2})/([A-Z]{3})' if SCAN_DAY_ZERO else r'(\d{1,2})/([A-Z]{3})', norm(value))
+    if not match or match[2] not in MONTHS or not re.search(r'\d', match[1]):
         return None
     start, end = date.fromisoformat(choice['period_start']), date.fromisoformat(choice['period_end'])
     candidates = []
     for year in range(start.year, end.year+1):
         try:
-            parsed = date(year, MONTHS[match[2]], int(match[1]))
+            parsed = date(year, MONTHS[match[2]], int(match[1].replace('O', '0')))
             if start <= parsed <= end:
                 candidates.append(parsed.isoformat())
         except ValueError:
