@@ -175,6 +175,40 @@ class SantanderTests(TestCase):
             if 'NACIONAL' in c['expected_text']:c['expected_text']='—- MONEDA NACIONALX'
         self.assertEqual({c['currency'] for c in currencies_by_statement(santander_catalog(deepcopy(ss))[0],ss)},{''})
 
+    def test_a_movement_table_the_reading_could_not_position_is_read_under_its_heading(self):
+        # Live: 09 NOVAC SANTANDER SEP 25 page 6, the Dinero Creciente table kept as ruled cells with no position.
+        from unittest import mock
+        from services.financial import statement_import_santander as S
+        from services.financial.statement_import_andrews import andrews_source_regions
+        positioned=statement()[0]
+        positioned['rows']=positioned['rows'][:14]
+        def unplaced(rows):
+            return dict(page_number=1,table_index=1,source_revision='b'*64,table_source='text_alignment',
+                rows=[dict(row_index=i,cells=[dict(column_index=j,expected_text=t) for j,t in cells]) for i,cells in enumerate(rows)])
+        table=unplaced([[(0,'SALDO FINAL DEL PERIODO ANTERIOR:'),(3,'0.00')],
+            [(0,'FECHA'),(1,'FOLIO'),(2,'DESCRIPCION'),(4,'DEPOSITO'),(5,'RETIRO'),(6,'SALDO')],
+            [(0,'02-SEP-2024'),(1,'0000000'),(2,'ABO POR INTERESES'),(4,'10.00'),(6,'10.00')],
+            [(0,'03-SEP-2024'),(1,'0000000'),(2,'RETENCION I S R'),(5,'4.00'),(6,'6.00\n9.99')],
+            [(2,'TOTAL'),(4,'10.00'),(5,'4.00')],
+            [(0,'SALDO FINAL DEL PERIODO:'),(6,'$6.00')]])
+        sources=[positioned,table]
+        choices,_=santander_catalog(deepcopy(sources))
+        savings=next(c for c in choices if c['account_reference']=='66-00001234-0')
+        rows=propose_santander_statement(deepcopy(sources),'MXN',savings)['rows']
+        moved=[r for r in rows if not r['excluded']]
+        self.assertEqual([(r['fields']['direction'],r['fields']['amount_minor'],r['fields'].get('balance')) for r in moved],
+                         [('credit','1000','1000'),('debit','400','600')])
+        self.assertEqual(check_statement_rows(rows)['balance_status'],'matches')
+        self.assertEqual(savings['unplaced_tables'],[[1,1]])
+        self.assertTrue(all('locator' not in c for r in moved for c in r['source_cells']))
+        regions=andrews_source_regions(sources,dict(sources=savings['section_sources'],unplaced_tables=savings['unplaced_tables']))
+        self.assertTrue(regions and all(r['table_index']==0 for r in regions))
+        with mock.patch.object(S,'UNPLACED_TABLE',False):
+            choices,_=santander_catalog(deepcopy(sources))
+            savings=next(c for c in choices if c['account_reference']=='66-00001234-0')
+            rows=propose_santander_statement(deepcopy(sources),'MXN',savings)['rows']
+        self.assertFalse([r for r in rows if not r['excluded']])
+
     def test_conflicting_period_or_unbranded_copy_is_not_accepted(self):
         for change in ['period','bank']:
             ss=statement()

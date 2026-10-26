@@ -6,7 +6,7 @@ summary totals, advertisements and fiscal lines never create payments.
 import re
 from datetime import date
 from services.financial.pdf_candidates import _digest
-from services.financial.statement_import_bbva import box, norm, text, MONTHS
+from services.financial.statement_import_bbva import box as _printed_box, norm, text, MONTHS
 from services.financial.statement_import_proposal import exact_amount
 
 import os
@@ -33,6 +33,13 @@ QUIET_COVER_CLOSING = _switch('LOUPE_FINANCIAL_SANTANDER_QUIET_COVER_CLOSING')
 #   ('—- MONEDA NACIONAL', scans) is that value; only marks that are not letters or digits are dropped, and the
 #   rest must still be one of the printed currency names exactly.
 CURRENCY_RULE_MARKS = _switch('LOUPE_FINANCIAL_SANTANDER_CURRENCY_RULE_MARKS')
+# * LOUPE_FINANCIAL_SANTANDER_UNPLACED_TABLE: a movement table the PDF reading kept as ruled cells but could not
+#   position on the page (no rectangle on any cell; 09 NOVAC SANTANDER SEP 25 page 6, the start of 'Detalles de
+#   movimientos Dinero Creciente') is read in its own row order directly under the one movement heading of its page
+#   that has no positioned table under it, its columns taken from the table's own FECHA/DEPOSITO/RETIRO/SALDO
+#   heading cells (column_index). A SALDO cell holding several stacked balances gives its row only its first line.
+#   The order is kept in 'table_order_rect' beside the cell; the printed locator is never invented.
+UNPLACED_TABLE = _switch('LOUPE_FINANCIAL_SANTANDER_UNPLACED_TABLE')
 ACCOUNT = re.compile(r'(?P<product>CUENTA SANTANDER [A-Z ]+?|INVERSION CRECIENTE|SUPER CUENTA [A-Z ]+?)\s*(?P<number>\d{2}-\d{8}-\d)\b')
 DATE = r'\d{2}-[A-Z]{3}-\d{4}'
 # Marks a printed column rule between the date and folio columns is read as: '|' and '/', and on
@@ -50,7 +57,64 @@ def printed_date(value):
         return None
 
 
+def box(cell):
+    return _printed_box(cell) or cell.get('table_order_rect')
+
+
+_COLUMN_STEP, _COLUMN_WIDTH = 60000, 50000
+_STACKED_MONEY = re.compile(r'\$?\s*\d{1,3}(?:,\d{3})*\.\d{2}')
+
+
+def _unplaced_tables(items):
+    """``items`` with each wholly unpositioned movement table placed under its page's open movement heading."""
+    unplaced = [s for s in items if s['rows'] and not any(_printed_box(c) for r in s['rows'] for c in r['cells'])]
+    if not unplaced:
+        return items
+    tables = []
+    for s in unplaced:
+        heading = next((r for r in s['rows'] if all(n in {norm(c['expected_text']) for c in r['cells']}
+                        for n in ('FECHA', 'DEPOSITO', 'RETIRO', 'SALDO'))), None)
+        if heading is not None:
+            tables.append((s, {norm(c['expected_text']): c['column_index'] for c in heading['cells']}))
+    placed = sorted([(s, r) for s in items for r in s['rows'] if any(_printed_box(c) for c in r['cells'])],
+                    key=lambda pair: min(_printed_box(c)[1] for c in pair[1]['cells'] if _printed_box(c)))
+    top = lambda r: min(_printed_box(c)[1] for c in r['cells'] if _printed_box(c))
+    open_headings = []
+    for i, (_, r) in enumerate(placed):
+        if not re.search(r'DETALLES? DE MOVIMIENTOS', norm(text(r))):
+            continue
+        after = []
+        for _, later in placed[i+1:]:
+            if re.search(r'DETALLES? DE MOVIMIENTOS', norm(text(later))):
+                break
+            after.append(later)
+        if not any('FECHA' in norm(text(x)) and 'SALDO' in norm(text(x)) for x in after):
+            bottom = max(_printed_box(c)[3] for c in r['cells'] if _printed_box(c))
+            open_headings.append((bottom, top(after[0]) if after else None))
+    if len(tables) != 1 or len(open_headings) != 1:
+        return items
+    (table, columns), (bottom, limit) = tables[0], open_headings[0]
+    if limit is not None and bottom + 2 * len(table['rows']) + 2 >= limit:
+        return items
+    saldo = columns['SALDO']
+    rows = []
+    for r in table['rows']:
+        y = bottom + 1 + 2 * r['row_index']
+        cells = []
+        for c in r['cells']:
+            c = dict(c, table_order_rect=[100000 + c['column_index'] * _COLUMN_STEP, y,
+                                          100000 + c['column_index'] * _COLUMN_STEP + _COLUMN_WIDTH, y + 1])
+            lines = [line.strip() for line in c['expected_text'].split('\n')]
+            if c['column_index'] == saldo and len(lines) > 1 and all(_STACKED_MONEY.fullmatch(line) for line in lines):
+                c['expected_text'] = lines[0]
+            cells.append(c)
+        rows.append(dict(r, cells=cells))
+    return [dict(s, rows=rows) if s is table else s for s in items]
+
+
 def located_rows(items):
+    if UNPLACED_TABLE:
+        items = _unplaced_tables(items)
     return sorted([(s, r) for s in items for r in s['rows'] if any(box(c) for c in r['cells'])],
         key=lambda pair: (min(box(c)[1] for c in pair[1]['cells'] if box(c)), pair[0]['table_index'], pair[1]['row_index']))
 
@@ -100,10 +164,15 @@ def santander_catalog(sources):
 
     def attach(group, section, page, meta):
         for source in pages[page]:
-            indices = [row['row_index'] for origin, row in section if origin is source]
+            # By table address: a placed unpositioned table (_unplaced_tables) is a copy of its source.
+            indices = [row['row_index'] for origin, row in section if origin['table_index'] == source['table_index']]
             if indices:
                 group['section_sources'].append(dict(page_number=page,
                     table_index=source['table_index'], row_indices=indices))
+                if any(origin['table_index'] == source['table_index'] and 'table_order_rect' in row['cells'][0]
+                       for origin, row in section if row['cells']):
+                    # No printed position to compare with another reading's sections (source regions).
+                    group.setdefault('unplaced_tables', []).append([page, source['table_index']])
         # Cover supplies identity and currency. Only the bounded movement
         # sections above participate in this account's payments.
         for number in sorted({page, meta['pages'][0]}):

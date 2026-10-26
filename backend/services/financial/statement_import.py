@@ -532,7 +532,8 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         from services.financial.statement_import_andrews import andrews_source_regions
         row_addresses = [[s['page_number'], s['table_index'], index]
             for s in selected['section_sources'] for index in s['row_indices']]
-        source_regions = andrews_source_regions(sources, dict(sources=selected['section_sources']))
+        source_regions = andrews_source_regions(sources, dict(sources=selected['section_sources'],
+                                                              unplaced_tables=selected.get('unplaced_tables') or []))
     memo = cache if cache.get(READ_ONLY_LISTING) else None
     identity = _reading_identity(choices, statement_id, chosen_currency)
     current = _existing_statement(session, case_id, file, statement_id,

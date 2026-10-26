@@ -868,8 +868,13 @@ def andrews_source_regions(sources, statement):
     """
     from services.financial.statement_engine import _rect
     lookup = {(s['page_number'], s['table_index']): s for s in sources}
+    # Tables a reader placed in row order because the PDF reading kept no position for them
+    # (statement_import_santander UNPLACED_TABLE): the section's positioned parts are its regions.
+    unplaced = {tuple(address) for address in statement.get('unplaced_tables') or []}
     result = []
     for scope in statement['sources']:
+        if (scope['page_number'], scope['table_index']) in unplaced:
+            continue
         source = lookup[(scope['page_number'], scope['table_index'])]
         rotation = source.get('reading_rotation') or 0
         cells = [c for r in source['rows'] if r['row_index'] in scope['row_indices'] for c in r['cells']]
@@ -888,7 +893,7 @@ def andrews_source_regions(sources, statement):
         result.append(dict(page_number=scope['page_number'], table_index=scope['table_index'],
             page_size=page_size, space=locator['space'] + (f'_upright_{rotation}' if rotation else ''),
             top=min(box[1] for box in boxes), bottom=max(box[3] for box in boxes)))
-    return result
+    return result or None
 
 
 def source_regions_overlap(current, previous):
