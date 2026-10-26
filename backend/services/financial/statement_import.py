@@ -790,9 +790,12 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
     rows = apply_opening_agreement(rows, period_dates)
     # A movement query whose dates a saved statement of its account partly covers counts those days once
     # (statement_overlap_trim, Neil 2026-10-24). Part of the revision when it trims.
-    from services.financial.statement_overlap_trim import overlap_trim
+    from services.financial.statement_overlap_trim import overlap_trim, remainder_evidence
     rows, trim = overlap_trim(session, case_id=case_id, file=file, selected=selected, rows=rows, metadata=metadata,
                               currency=chosen_currency, statement_id=statement_id, current=current)
+    if not (no_activity_evidence or {}).get('verified'):
+        # Trimmed to dates without movement: the query's own proof of the remaining dates (fin-queue3 L21).
+        no_activity_evidence = remainder_evidence(rows, trim, chosen_currency) or no_activity_evidence
     if selected and selected.get('layout_id') in ('merrick-card', 'credit-one-card'):
         # Fail closed on the printed account summary: its payment and charge
         # totals must equal the card lines read for this period.
