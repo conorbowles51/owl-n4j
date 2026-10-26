@@ -4912,6 +4912,12 @@ def propose_engine_statement(sources, currency, choice):
                 recovered = recover_held(statement, reading, sources, currency)
                 if recovered is not None:
                     return dict(rows=recovered, issues=[])
+                # A credit line printing its principal balance only, read in amounts owed when the
+                # summary, the principal chain and the statement before it agree (credit_line_total_owed).
+                from services.financial.credit_line_total_owed import recover_held as recover_owed
+                recovered = recover_owed(statement, reading, sources, currency)
+                if recovered is not None:
+                    return dict(rows=recovered, issues=[])
             rows = _copy_rows(statement['_rows'])
             reason = (choice.get('engine') or {}).get('reason')
             if reason == 'route_library_first' and rows and not any(r.get('engine_hold') for r in rows):
