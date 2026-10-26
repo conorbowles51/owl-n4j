@@ -243,6 +243,46 @@ class ReaderReleaseTests(TestCase):
         with self.f.SessionLocal() as db:
             self.assertEqual(vision_reader.pending(db), [])
 
+    def test_absent_printed_pages_are_settled_by_the_printed_counts_and_totals_the_payments_match(self):
+        # 2026-10-26 fin-queue3 L7: ECO Mar 2023 MN, 8 of 12 printed pages; the images print the period's deposit and
+        # withdrawal counts and totals, and the 89 payments read match all four.
+        from decimal import Decimal
+        from services.financial import vision_reader
+        with patch.object(vision_reader, 'ENABLED', True):
+            batch = self.prepare_with_old_reader()
+        held = self.item(batch)
+        document, _ = self._image_reading(held, nudge=0)
+        account = document['accounts'][0]
+        for number, page in enumerate(document['pages'], 1):
+            page.update(printed_page_number=number, printed_page_total=len(document['pages']) + 2)
+
+        def counted(**values):
+            def read(images):
+                for direction in ('credit', 'debit'):
+                    mine = [Decimal(r['amount']) for r in account['rows'] if r['direction'] == direction]
+                    account['count_%ss' % direction] = len(mine)
+                    account['total_%ss' % direction] = '%.2f' % sum(mine, Decimal(0))
+                account.update(values)
+                return document, dict(prompt_tokens=1000, completion_tokens=100)
+            return read
+        _, _, outcome = self._read_from_images(0, read=counted(count_debits=None), batch=batch)
+        self.assertEqual(outcome['status'], 'not_proved')
+        self.assertIn('pages may be missing', outcome['message'])
+        with self.f.SessionLocal() as db:  # read again: the stored outcome is judged under these rules once more
+            from postgres.models.evidence import EvidenceFile
+            file = db.get(EvidenceFile, held.file_id)
+            file.metadata_ = {k: v for k, v in file.metadata_.items() if k != vision_reader.METADATA_KEY}
+            db.commit()
+        with patch.object(vision_reader, 'PRINTED_COUNTS', False):
+            _, _, outcome = self._read_from_images(0, read=counted(), batch=batch)
+        self.assertEqual(outcome['status'], 'not_proved')
+        with self.f.SessionLocal() as db:
+            file = db.get(EvidenceFile, held.file_id)
+            file.metadata_ = {k: v for k, v in file.metadata_.items() if k != vision_reader.METADATA_KEY}
+            db.commit()
+        _, _, outcome = self._read_from_images(0, read=counted(), batch=batch)
+        self.assertEqual(outcome['status'], 'proved', msg=outcome.get('message'))
+
     def test_a_failure_after_the_review_is_saved_is_not_recorded_as_a_failed_reading(self):
         from services.financial import vision_reader
 

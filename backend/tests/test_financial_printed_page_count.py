@@ -124,6 +124,30 @@ class BlockerTests(unittest.TestCase):
                      [*quiet['rows'][:2], balance('Opening Balance', '6025'), balance('Closing Balance', '6000')]):
             self.assertEqual(held(dict(quiet, rows=rows)), ['printed_pages_missing'])
 
+    def test_pages_printing_the_counts_and_totals_the_payments_match_need_no_note(self):
+        # 2026-10-26 fin-queue3 L7: 08 ARRENDO BBVA MXN AGO 2023, pages 1 and 15 of 15 absent, 134 payments read
+        # matching the printed TOTAL MOVIMIENTOS counts and amounts.
+        from unittest import mock
+        from services.financial import import_issues
+        from services.financial.statement_import import DraftImportRow
+        gap = dict(printed_total=15, missing=[1, 15], held=13)
+        total = lambda direction, count, amount: dict(id=direction, kind='statement_total', excluded=True, fields=dict(
+            total_direction=direction, printed_transaction_count=count, balance=amount))
+        payment = lambda i, direction, amount: DraftImportRow(id=f'p{i}', date='2023-08-0%s' % (i + 1), description='PAGO',
+                                                              amount_minor=amount, direction=direction)
+        proposal = dict(self.proposal(gap), rows=[total('credit', '1', '5000'), total('debit', '2', '700')])
+        request = lambda rows: self.request().model_copy(update=dict(rows=rows))
+        paid = [payment(0, 'credit', '5000'), payment(1, 'debit', '300'), payment(2, 'debit', '400')]
+        held = lambda proposal, rows: [i['kind'] for i in import_issues.retained_issues(proposal, request(rows))
+                                       if i['kind'] == 'printed_pages_missing']
+        self.assertEqual(held(proposal, paid), [])
+        with mock.patch.object(import_issues, 'PAGES_MISSING_PRINTED_COUNTS', False):
+            self.assertEqual(held(proposal, paid), ['printed_pages_missing'])
+        # One payment fewer than printed, a different total, or a direction with no printed count still holds.
+        self.assertEqual(held(proposal, paid[:2]), ['printed_pages_missing'])
+        self.assertEqual(held(proposal, [*paid[:2], payment(2, 'debit', '401')]), ['printed_pages_missing'])
+        self.assertEqual(held(dict(proposal, rows=proposal['rows'][:1]), paid), ['printed_pages_missing'])
+
     def test_queue_names_the_missing_pages(self):
         from services.financial.batch_review_summary import reason
         from services.financial.review_queue import issue_sentence

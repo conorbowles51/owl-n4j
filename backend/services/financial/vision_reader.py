@@ -95,8 +95,20 @@ REJUDGE = _switch('LOUPE_FINANCIAL_VISION_REJUDGE')
 # One account saved under two account records whose bank is spelled differently ("BBVA" and
 # "BBVA MEXICO"): the same full number and every spelling naming the same bank is one account.
 SPLIT_SPELLINGS = _switch('LOUPE_FINANCIAL_VISION_SPLIT_SPELLINGS')
-# Version 2 is SPLIT_SPELLINGS; with it off the rules are version 1's and nothing is judged again.
-PROOF_VERSION = 2 if SPLIT_SPELLINGS else 1
+# A product section heading printing its own number on the same line as the statement's CLABE ("SERVICIO
+# EMPRESARIAL FX KAPITAL 194-99292-001-6  CLABE 128180000000109664", Kapital and Intercam): the page images give
+# the heading's number as the account number, the text reading the CLABE. The image number is this statement's
+# account when the text reading shows it printed on that one line beside "CLABE <the statement's CLABE>".
+# Off: such a reading matches no section and the statement waits for a person (10 BNB2 Kapital statements).
+SECTION_NUMBER = _switch('LOUPE_FINANCIAL_VISION_SECTION_NUMBER')
+# A file holding only some printed pages of a statement (BNB2 ECO 2023 MN, BBVA 23: the movement pages of a "PAGINA
+# n/N" printing) is complete when a page it holds prints the period's deposit and withdrawal counts and totals and
+# the payments read match all four: another movement on a missing page would change a printed count. Off: the
+# printed page numbering alone holds the reading.
+PRINTED_COUNTS = _switch('LOUPE_FINANCIAL_VISION_PRINTED_COUNTS')
+# Version 2 is SPLIT_SPELLINGS, 3 SECTION_NUMBER, 4 PRINTED_COUNTS, each on top of the one before; with a switch off
+# the rules are the version before it and nothing is judged again for it.
+PROOF_VERSION = (((4 if PRINTED_COUNTS else 3) if SECTION_NUMBER else 2) if SPLIT_SPELLINGS else 1)
 METADATA_KEY = 'financial_vision_reading'
 MARK = 'vision_fallback'
 SYSTEM_NAME = 'System'
@@ -500,6 +512,32 @@ def same_number(a, b):
     return (len(shorter) >= 8 and shorter in longer) or (len(shorter) == 4 and longer.endswith(shorter))
 
 
+def _heading_numbers(proposal):
+    """Numbers printed on a non-payment line of the text reading beside "CLABE <the statement's account>"."""
+    account = _digits(_rule_metadata(proposal)['account_number'])
+    if not SECTION_NUMBER or len(account) != 18:
+        return set()
+    numbers = set()
+    for row in proposal.get('rows') or []:
+        if row.get('kind') == 'transaction':
+            continue
+        line = ' '.join(str(c.get('expected_text') or '') for c in row.get('source_cells') or [])
+        if not re.search(r'\bCLABE\s*' + account + r'\b', line, re.I):
+            continue
+        others = [n for n in re.findall(r'\d[\d-]*\d', re.sub(r'\bCLABE\s*' + account + r'\b', ' ', line, flags=re.I))
+                  if len(_digits(n)) >= 8]
+        if len(others) == 1:
+            numbers.add(_digits(others[0]))
+    return numbers
+
+
+def same_account(number, proposal):
+    """The number read from the page images names the statement's account: the same number, or the
+    section heading's own number printed beside the statement's CLABE."""
+    account = _rule_metadata(proposal)['account_number']
+    return same_number(number, account) or (_digits(number) and _digits(number) in _heading_numbers(proposal))
+
+
 def _period_end(section):
     return section['period'][1] or _iso(section['header'].get('period_end'))
 
@@ -509,7 +547,7 @@ def choose_section(sections, proposal):
     account = _digits(rule['account_number'])
     candidates = [s for s in sections if s['rows'] or s['values']]
     if account and len(account) >= 4:
-        numbered = [s for s in candidates if s['digits'] and same_number(s['digits'], account)]
+        numbered = [s for s in candidates if s['digits'] and same_account(s['digits'], proposal)]
         # Sections printing no number (it is printed in the page header only) remain candidates
         # when no section prints this account's number.
         candidates = numbered or [s for s in candidates if not s['digits']]
@@ -561,7 +599,7 @@ def prove(proposal, section, knowledge):
     account_text = rule['account_number'] or header['account_number']
     if not _digits(account_text):
         raise NotProved('The account number could not be read from the page images.')
-    if rule['account_number'] and header['account_number'] and not same_number(header['account_number'], rule['account_number']):
+    if rule['account_number'] and header['account_number'] and not same_account(header['account_number'], proposal):
         raise NotProved('The account number read from the page images differs from the one read from the text.')
     for field, same in (('holder', fp.same_holder), ('institution', fp.same_institution)):
         if rule[field] and header[field] and not same(rule[field], header[field]):
@@ -1234,14 +1272,30 @@ def read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for
                     message='The statement was read again while its page images were read.'), apply)
             try:
                 readings = document_pages(document, pages)
-                check_page_numbering(readings, proposal.get('page_numbers'))
+                page_gap = None
+                try:
+                    check_page_numbering(readings, proposal.get('page_numbers'))
+                except NotProved as gap:
+                    if not PRINTED_COUNTS:
+                        raise
+                    # A page gap is settled by the bank's own printed counts and totals of the period's
+                    # deposits and withdrawals on a page held, as the batch's page gate settles it
+                    # (import_issues.printed_complete): decided below.
+                    page_gap = gap
                 section = choose_section(combine(readings), proposal)
+                if page_gap is not None and not proposal.get('printed_pages_missing') and any(
+                        section['values'].get(k) is None for k in ('count_credits', 'count_debits', 'total_credits', 'total_debits')):
+                    # The text reading does not see the gap, so the page gate cannot weigh it: only all four
+                    # printed on the images (each proved equal to the payments read, in prove) settle it.
+                    raise page_gap
                 reading = prove(proposal, section, knowledge_for(db, case_id))
                 if not force:
                     check_neighbours(db, case_id, reading)
                 request = build_request(proposal, reading)
                 # Sampling a saved statement: judged as if it were not saved yet.
                 state, summary = assess(dict(proposal, current_import=None) if force else proposal, request)
+                if page_gap is not None and state != 'ready':
+                    raise page_gap
                 if state != 'ready' or summary.get('problems') or summary.get('problem_count'):
                     first = next((p.get('message') for p in summary.get('problems') or [] if p.get('message')), '')
                     raise NotProved('The page-image reading reconciles, but the statement still has a check: ' + (first or state))
