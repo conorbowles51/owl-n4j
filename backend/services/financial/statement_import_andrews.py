@@ -1037,7 +1037,15 @@ _ADDITIONAL_UNREAD = ('Check the additional date printed beside this payment. It
 ORDERED_DAMAGED_DATES = True
 DATE_READ_IN_ORDER = 'printed_date_marks_ignored_in_payment_order'
 ENDING_DATE_IS_PERIOD_END = 'printed_date_marks_ignored_period_end'
-_DATE_DIGIT_LOOKALIKES = str.maketrans({'O': '0', 'o': '0', 'l': '1', 'I': '1'})
+_DATE_DIGIT_LOOKALIKES = str.maketrans({'O': '0', 'o': '0', 'l': '1', 'I': '1',
+                                        **({'i': '1'} if os.environ.get('LOUPE_FINANCIAL_ANDREWS_DATE_I', '1') != '0' else {})})
+# A payment's row date the scan damaged beyond its marks ('01/0;' printed 07/01) is the date of the payments
+# before and after it when both carry the same cleanly read date inside the period: the payment order alone
+# fixes it (see ORDERED_DAMAGED_DATES). Only a first token of at most six glyphs holding a slash and a digit.
+# Reverse: LOUPE_FINANCIAL_ANDREWS_ORDER_FIXED_DATES=0 (such a payment waits for a person, as before).
+ORDER_FIXED_DATES = os.environ.get('LOUPE_FINANCIAL_ANDREWS_ORDER_FIXED_DATES', '1') != '0'
+DATE_FIXED_BY_ORDER = 'printed_date_fixed_by_equal_neighbouring_dates'
+_DAMAGED_DATE_TOKEN = re.compile(r'(?=.*/)(?=.*\d)\S{3,6}')
 # The Ending Balance date must equal the printed period end, so the wider set
 # measured in Andrews money cells may stand for its digits.
 _ENDING_DATE_LOOKALIKES = str.maketrans({'O': '0', 'o': '0', 'D': '0', 'l': '1', 'I': '1', 'B': '8', 'S': '5', 'Z': '2'})
@@ -1080,11 +1088,16 @@ def _date_damaged_rows_in_order(rows, damaged, statement):
         found = _damaged_date(damaged[row['id']], statement)
         before = clean[index - 1] if index else None
         after = clean[index + 1] if index + 1 < len(chain) else None
+        basis = DATE_READ_IN_ORDER
+        if (not found and ORDER_FIXED_DATES and before and before == after
+                and _period_date(before[5:7] + '/' + before[8:10], statement) == before
+                and _DAMAGED_DATE_TOKEN.fullmatch(damaged[row['id']].split()[0] if damaged[row['id']].split() else '')):
+            found, basis = (before, None), DATE_FIXED_BY_ORDER
         if not found or not before or not after or not before <= found[0] <= after:
             continue
         fields = row['fields']
         fields['date'] = found[0]
-        fields['date_reading'] = DATE_READ_IN_ORDER
+        fields['date_reading'] = basis
         row['issues'] = [issue for issue in row['issues'] if issue != _DATE_UNREAD]
         if found[1] is not None:
             fields['additional_printed_date'] = found[1]

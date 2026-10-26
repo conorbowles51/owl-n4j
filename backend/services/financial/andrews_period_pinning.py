@@ -89,6 +89,17 @@ METHOD = 'andrews_period_pinned_reading'
 VERIFICATION = 'tesseract_money_cell_verification'
 NATIVE_TEXT_GLYPHS = os.environ.get('LOUPE_FINANCIAL_ANDREWS_NATIVE_GLYPHS', '1') != '0'
 NATIVE_BASIS = 'native_text_glyphs_pinned_by_printed_balances'
+# ``ONE_GLYPH``: on a native text layer, a damaged money cell none of whose glyph readings is pinned (a speck,
+# '?' or a letter printed where a digit stands: '~293.42' for 2293.42, '20?2. 82' for 2072.82, '-43.0'Z' for
+# -43.07) offers its readings with that one glyph read as each digit (``one_glyph_readings``); every other glyph
+# stays as printed, so arithmetic fixes one digit and never a whole value. Exactly one such reading may be
+# accepted, only when every printed control holding the cell holds with it and every other cell of those
+# controls is agreed, and only when it is fixed twice: a balance by the payment before it and the payment
+# after it; an amount by its own control, both of whose balances hold in another control. The period must then
+# reconcile from its opening to its ending balance as for any pinned reading. Off: such a period waits for a
+# person, as before.
+ONE_GLYPH = os.environ.get('LOUPE_FINANCIAL_ANDREWS_ONE_GLYPH', '1') != '0'
+ONE_GLYPH_BASIS = 'one_unread_glyph_fixed_by_printed_balances'
 REPAIRS = ('statement_money_pinned_reading', 'statement_money_pinned_repair', 'statement_money_second_reader_repair')
 
 
@@ -183,6 +194,38 @@ def glyph_readings(text):
         for reading in readings:
             if reading not in found:
                 found.append(reading)
+    return found
+
+
+def one_glyph_readings(text):
+    """``[(reading, part)]``: the readings of ``text`` with one glyph that is no digit read as each digit.
+
+    The glyph is a look-alike letter, a speck or ``?`` printed where a digit
+    stands (``~293.42``, ``-43.0'Z``, ``20?2. 82``); every other glyph is read
+    as ``glyph_readings`` reads it. ``part`` names the value of a joined
+    amount-and-balance cell the glyph is in ('amount' or 'balance'), or None
+    for a cell of one value. Only candidates: ``pin_period`` accepts one only
+    as ONE_GLYPH describes.
+    """
+    text = text or ''
+    found = []
+    for i, ch in enumerate(text):
+        if not (ch in _SPECKS or ch == '?' or ord(ch) in _DIGIT_LOOKALIKES):
+            continue
+        by_digit = [glyph_readings(text[:i] + d + text[i + 1:]) for d in '0123456789']
+        if len({len(readings) for readings in by_digit}) != 1:
+            continue  # the digit changes how the rest of the cell reads
+        for position in range(len(by_digit[0])):
+            values = [readings[position].split() for readings in by_digit]
+            if len({len(v) for v in values}) != 1:
+                continue
+            changed = {j for j in range(len(values[0])) if len({v[j] for v in values}) > 1}
+            if len(changed) != 1:
+                continue
+            part = None if len(values[0]) == 1 else ('amount', 'balance')[changed.pop()]
+            for readings in by_digit:
+                if readings[position] not in [r for r, _ in found]:
+                    found.append((readings[position], part))
     return found
 
 
@@ -331,7 +374,8 @@ def pin_period(proposal, sources, currency, statement, source_locations):
         candidates[key] = readings
         if cell.get('confirmed_parts') and cell.get('confirmed_parts_text'):
             context[key] = cell['confirmed_parts_text']
-    if not all(candidates.values()):
+    if not all(readings or (native and ONE_GLYPH and one_glyph_readings(held[key].get('original_text')))
+               for key, readings in candidates.items()):
         return proposal
     pinned = {}
     if GLYPH_AGREEMENT:
@@ -374,6 +418,28 @@ def pin_period(proposal, sources, currency, statement, source_locations):
             return None
         return sorted({tuple(other) for other in found[0] if other != key})
 
+    def one_glyph(key):
+        """(ONE_GLYPH) The one reading with one unread glyph that the printed controls fix, else None."""
+        found = []
+        for text, part in one_glyph_readings(held[key].get('original_text')):
+            texts = {**context, **{cell: value['text'] for cell, value in pinned.items()}, key: text}
+            equations = period_equations(rows_with(texts))
+            standing = [cells for cells, _ in equations if key in cells]
+            if not standing or not all(holds for cells, holds in equations if key in cells) or not all(
+                    agreed(other, role) for cells in standing for other, role in zip(cells, roles(cells)) if other != key):
+                continue
+            own = [cells for cells in standing if len(cells) == 3 and cells[1] == key]
+            if (part or ('amount' if own else 'balance')) == 'balance':
+                # Fixed twice: by the payment before it and by the payment after it.
+                ok = any(cells[-1] == key for cells in standing) and any(cells[0] == key for cells in standing)
+            else:
+                # Fixed by its own control, whose two balances each hold in another control.
+                ok = len(own) == 1 and all(any(holds and cells != own[0] and cells[end] == own[0][side]
+                                               for cells, holds in equations) for side, end in ((0, -1), (2, 0)))
+            if ok:
+                found.append((text, sorted({tuple(other) for cells in standing for other in cells if other != key})))
+        return found[0] if len(found) == 1 else None
+
     while True:
         found_now = {}
         for key, readings in candidates.items():
@@ -382,6 +448,11 @@ def pin_period(proposal, sources, currency, statement, source_locations):
             fixed = [(text, cells) for text in readings.values() if (cells := pinning(key, text)) is not None]
             if len(fixed) == 1:
                 found_now[key] = dict(text=fixed[0][0], pinned_by=[list(c) for c in fixed[0][1]])
+        if not found_now and native and ONE_GLYPH:
+            for key in held:
+                if key not in pinned and (fixed := one_glyph(key)) is not None:
+                    found_now[key] = dict(text=fixed[0], basis=ONE_GLYPH_BASIS, pinned_by=[list(c) for c in fixed[1]])
+                    break
         pinned.update(found_now)
         if not found_now:
             break

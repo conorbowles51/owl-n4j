@@ -291,7 +291,8 @@ class NativeTextLayerTests(unittest.TestCase):
                          ('500', 'debit', '6500'))
 
     def test_a_reading_the_balances_do_not_pin_is_left_held(self):
-        for damaged, ending in (('-1O,00', '64.00'), ('-1?,00', '65.00'), ('-16,00', '65.00')):
+        # ('-1?,00', '65.00') is read since ONE_GLYPH: see OneGlyphTests.
+        for damaged, ending in (('-1O,00', '64.00'), ('-16,00', '65.00')):
             with self.subTest(damaged=damaged, ending=ending):
                 proposal, result = read(self.sources(damaged=damaged, ending=ending), self.native())
                 self.assertIs(result, proposal)
@@ -352,3 +353,69 @@ class JointGlyphTests(unittest.TestCase):
             self.assertIs(result, proposal)
         finally:
             period.JOINT_GLYPHS = old
+
+
+class OneGlyphTests(unittest.TestCase):
+    """A native text cell with one glyph that is no digit, the digit fixed twice by printed balances."""
+
+    def sources(self, amount='-10.00', balance='70.00', next_amount='-5.00', next_balance='65.00', ending='65.00'):
+        return pages(
+            [[(15, '06/03'), (75, 'Withdrawal Debit Card'), (310, '-20.00'), (350, '80.00')]],
+            [[(15, '06/05'), (75, 'Withdrawal Debit Card'), (310, amount), *([(350, balance)] if balance else [])],
+             [(15, '06/06'), (75, 'Withdrawal Debit Card'), (310, next_amount), (350, next_balance)],
+             [(15, '06/30'), (75, 'Ending Balance'), (350, ending)]])
+
+    def native(self):
+        return [dict(kind='page', page_number=p, extraction_method='native', ocr_refinements=[]) for p in (1, 2)]
+
+    def moves(self, result):
+        return [(r['fields']['amount_minor'], r['fields']['direction'], r['fields']['balance']) for r in payments(result)]
+
+    def test_one_glyph_readings(self):
+        self.assertEqual([r for r, _ in period.one_glyph_readings('~293.42')][:3], ['0293.42', '1293.42', '2293.42'])
+        self.assertEqual({part for _, part in period.one_glyph_readings('-60.00 20?2. 82')}, {'balance'})
+        self.assertIn(('-43.07 1346.69', 'amount'), period.one_glyph_readings("-43.0'Z 1346.69"))
+        self.assertEqual(period.one_glyph_readings('-66.00 1052.69'), [])   # a digit read wrongly is no glyph
+        self.assertEqual(period.one_glyph_readings('??.00'), [])            # two unread glyphs
+
+    def test_a_balance_with_one_unread_glyph_is_the_digit_both_payments_fix(self):
+        proposal, result = read(self.sources(balance='7?.00'), self.native())
+        self.assertIsNot(result, proposal)
+        self.assertEqual(self.moves(result)[1:], [('1000', 'debit', '7000'), ('500', 'debit', '6500')])
+        [repair] = payments(result)[1]['value_repairs']
+        self.assertEqual((repair['page_reading'], repair['text'], repair['basis']), ('7?.00', '70.00', period.ONE_GLYPH_BASIS))
+        self.assertFalse(any(r['issues'] for r in result['rows']))
+
+    def test_a_speck_for_a_digit_of_a_joined_balance_is_read(self):
+        proposal, result = read(self.sources(amount='-10.00 ~0.00', balance=None), self.native())
+        self.assertEqual(self.moves(result)[1], ('1000', 'debit', '7000'))
+
+    def test_an_amount_with_one_unread_glyph_needs_both_its_balances_confirmed(self):
+        for amount in ('-1?,00', '-1Z.00'):
+            with self.subTest(amount=amount):
+                proposal, result = read(self.sources(amount=amount), self.native())
+                self.assertEqual(self.moves(result)[1], ('1000', 'debit', '7000'))
+        # The first payment after the opening balance: no other control confirms the balance before it.
+        sources = pages([[(15, '06/03'), (75, 'Withdrawal Debit Card'), (310, '-2?.00'), (350, '80.00')]],
+                        [[(15, '06/06'), (75, 'Withdrawal Debit Card'), (310, '-5.00'), (350, '75.00')],
+                         [(15, '06/30'), (75, 'Ending Balance'), (350, '75.00')]])
+        proposal, result = read(sources, self.native())
+        self.assertIs(result, proposal)
+
+    def test_a_digit_the_balances_do_not_fix_twice_is_left_held(self):
+        for kwargs in (dict(balance='7?.00', next_amount='-6.00'),    # the payment after it disagrees
+                       dict(balance='??.00'),                         # two unread glyphs
+                       dict(balance='76.00 x'),                       # no reading at all
+                       dict(amount='-1?.00', ending='64.00')):        # the period does not reconcile
+            with self.subTest(**kwargs):
+                proposal, result = read(self.sources(**kwargs), self.native())
+                self.assertIs(result, proposal)
+
+    def test_the_switch_turns_it_off(self):
+        old = period.ONE_GLYPH
+        period.ONE_GLYPH = False
+        try:
+            proposal, result = read(self.sources(balance='7?.00'), self.native())
+            self.assertIs(result, proposal)
+        finally:
+            period.ONE_GLYPH = old
