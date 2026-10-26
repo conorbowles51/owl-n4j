@@ -310,3 +310,45 @@ class NativeTextLayerTests(unittest.TestCase):
             self.assertIs(result, proposal)
         finally:
             period.NATIVE_TEXT_GLYPHS = old
+
+
+class JointGlyphTests(unittest.TestCase):
+    """Damaged cells next to one another, each with one reading of its own glyphs, taken together."""
+
+    def sources(self, amount='-1O,00', balance='7O.OO', next_amount='-S.OO', ending='65.00'):
+        return pages(
+            [[(15, '06/03'), (75, 'Withdrawal Debit Card'), (310, '-20.00'), (350, '80.00')]],
+            [[(15, '06/05'), (75, 'Withdrawal Debit Card'), (310, amount), (350, balance)],
+             [(15, '06/06'), (75, 'Withdrawal Debit Card'), (310, next_amount), (350, '65.00')],
+             [(15, '06/30'), (75, 'Ending Balance'), (350, ending)]])
+
+    def native(self):
+        return [dict(kind='page', page_number=p, extraction_method='native', ocr_refinements=[]) for p in (1, 2)]
+
+    def test_adjacent_damaged_cells_are_taken_together_when_every_control_holds(self):
+        proposal, result = read(self.sources(), self.native())
+        self.assertIsNot(result, proposal)
+        moves = [(r['fields']['amount_minor'], r['fields']['direction'], r['fields']['balance']) for r in payments(result)]
+        self.assertEqual(moves[1:], [('1000', 'debit', '7000'), ('500', 'debit', '6500')])
+        bases = {repair['basis'] for row in payments(result) for repair in row.get('value_repairs') or []}
+        self.assertEqual(bases, {period.JOINT_BASIS})
+        self.assertFalse(any(r['issues'] for r in result['rows']))
+
+    def test_a_colon_printed_for_the_point_is_a_reading(self):
+        self.assertEqual(period.glyph_readings('1055:74'), ['1055.74'])
+        self.assertEqual(period.glyph_readings('20.00 1055:74'), ['20.00 1055.74'])
+
+    def test_readings_that_do_not_hold_together_are_left_held(self):
+        for kwargs in (dict(next_amount='-6.OO'), dict(balance='7l.OO'), dict(ending='64.00')):
+            with self.subTest(**kwargs):
+                proposal, result = read(self.sources(**kwargs), self.native())
+                self.assertIs(result, proposal)
+
+    def test_the_switch_turns_it_off(self):
+        old = period.JOINT_GLYPHS
+        period.JOINT_GLYPHS = False
+        try:
+            proposal, result = read(self.sources(), self.native())
+            self.assertIs(result, proposal)
+        finally:
+            period.JOINT_GLYPHS = old

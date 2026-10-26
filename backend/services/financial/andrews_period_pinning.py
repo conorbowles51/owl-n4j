@@ -77,6 +77,14 @@ PERIOD_PINNING = True
 RECOGNISED_READINGS = True
 DAMAGED_CELLS = True
 GLYPH_AGREEMENT = True
+# ``JOINT_GLYPHS``: damaged cells printed next to one another (a payment's amount and its balance, or two
+# payments in a row) can never be pinned one at a time, since every control holding one holds another
+# unagreed cell. When the cells left unpinned each offer exactly one reading of their own glyphs, they are
+# taken together only if, with all of them in place, every printed control they stand in holds; the period
+# must then reconcile from its opening to its ending balance as for any pinned reading. Off: such a period
+# waits for a person, as before.
+JOINT_GLYPHS = os.environ.get('LOUPE_FINANCIAL_ANDREWS_JOINT_GLYPHS', '1') != '0'
+JOINT_BASIS = 'single_glyph_readings_jointly_pinned_by_printed_balances'
 METHOD = 'andrews_period_pinned_reading'
 VERIFICATION = 'tesseract_money_cell_verification'
 NATIVE_TEXT_GLYPHS = os.environ.get('LOUPE_FINANCIAL_ANDREWS_NATIVE_GLYPHS', '1') != '0'
@@ -123,7 +131,7 @@ def stored_cells(source_locations, pages):
 # a decimal point or a minus sign. Only money cells are read this way.
 _DIGIT_LOOKALIKES = str.maketrans({'O': '0', 'o': '0', 'D': '0', 'l': '1', 'I': '1', '|': '1', 'i': '1', '!': '1',
                                    'B': '8', 'S': '5', 's': '5', 'Z': '2', 'z': '2'})
-_SPECKS = '·•_\'’‘`"“”~^*°'
+_SPECKS = '·•_\'’‘`"“”~^*°' + (':;' if os.environ.get('LOUPE_FINANCIAL_ANDREWS_COLON_POINT', '1') != '0' else '')
 _MAX_MARKS = 4
 _PRINTED_AMOUNT = re.compile(r'[+-]?(?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2}')
 _MONEY_ISSUES = ('Check the transaction amount in the PDF. Its digits, sign or decimal point could not be read.',
@@ -377,6 +385,18 @@ def pin_period(proposal, sources, currency, statement, source_locations):
         pinned.update(found_now)
         if not found_now:
             break
+    left = [key for key in held if key not in pinned]
+    if left and JOINT_GLYPHS and all(len(candidates[key]) == 1 for key in left):
+        texts = {**context, **{cell: value['text'] for cell, value in pinned.items()},
+                 **{key: next(iter(candidates[key].values())) for key in left}}
+        standing = [(cells, holds) for cells, holds in period_equations(rows_with(texts))
+                    if any(key in cells for key in left)]
+        if (all(holds for _, holds in standing)
+                and all(any(key in cells for cells, _ in standing) for key in left)):
+            for key in left:
+                pinned[key] = dict(text=texts[key], basis=JOINT_BASIS, pinned_by=sorted(
+                    {tuple(other) for cells, _ in standing if key in cells for other in cells if other != key}))
+                pinned[key]['pinned_by'] = [list(c) for c in pinned[key]['pinned_by']]
     if pinned.keys() != held.keys():
         return proposal
     if native:
