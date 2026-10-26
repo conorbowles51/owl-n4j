@@ -27,6 +27,11 @@ def _switch(name):
 # Off: such a value is unreadable and the period waits for a person.
 AMOUNT_NOISE = _switch('LOUPE_FINANCIAL_KAPITAL_AMOUNT_NOISE')
 _NOISE_TAIL = re.compile(r'^(\d{1,3}(?:,\d{3})*\.\d{2}-?)[),;?|]$')
+# The scan can also set a space before a thousands comma ('2,506 ,338.78)', '7,531 ,506.44)', '2,921 ,063.67;').
+# A space between a digit and a comma that three digits follow is that comma; the whole amount pattern above must
+# still match. Off: such a value is unreadable and the period waits for a person.
+AMOUNT_GROUP_SPACE = _switch('LOUPE_FINANCIAL_KAPITAL_AMOUNT_GROUP_SPACE')
+_GROUP_SPACE = re.compile(r'(?<=\d)\s+,(?=\d{3}(?:[,.]|$))')
 # A movement heading read only in part on one page (the scan lost some of its words at the foot of the cover
 # page: 'CONCEPTO DEPOSITOS' alone) takes the missing columns from the complete heading the same product section
 # prints on its other pages, when every heading word read on this page sits where that complete heading prints
@@ -176,6 +181,8 @@ def kapital_catalog(sources, *, institution='Kapital', product=PRODUCT, layout=L
 
 def _amount(value,currency):
     value=value.strip()
+    if AMOUNT_GROUP_SPACE:
+        value=_GROUP_SPACE.sub(',',value)
     if AMOUNT_NOISE and (noise:=_NOISE_TAIL.fullmatch(value)):
         value=noise[1]
     # MN is an explicit peso marker in this recognised Mexican product.

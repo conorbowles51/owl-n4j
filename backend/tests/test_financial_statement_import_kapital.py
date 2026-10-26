@@ -245,6 +245,20 @@ class KapitalHeadingFromSectionTests(TestCase):
 
 
 class KapitalAmountNoiseTests(TestCase):
+    def test_a_space_the_scan_sets_before_a_thousands_comma_is_that_comma(self):
+        # Live scans: 01 MONETA KAPITAL MXN ENE 26 Hoja 2-3, MONETA KAPITAL MXN NOV 25 Hoja 2, 03 MZO 26 Hoja 2.
+        from unittest import mock
+        from services.financial import statement_import_kapital as K
+        for noisy, plain in (('2,506 ,338.78)', '2,506,338.78'), ('7,531 ,506.44)', '7,531,506.44'),
+                             ('2,921 ,063.67;', '2,921,063.67'), ('1,031 ,472.00', '1,031,472.00')):
+            self.assertEqual(K._amount(noisy, 'MXN'), K._amount(plain, 'MXN'), noisy)
+        for value in ('2,506 ,33.78)', '2,506 , 338.78))'):
+            with self.assertRaises(ValueError, msg=value):
+                K._amount(value, 'MXN')
+        with mock.patch.object(K, 'AMOUNT_GROUP_SPACE', False):
+            with self.assertRaises(ValueError):
+                K._amount('2,506 ,338.78)', 'MXN')
+
     def test_one_mark_read_after_a_whole_amount_is_that_amount(self):
         from services.financial.statement_import_kapital import _amount
         for noisy, plain in (('6,300,000.00)', '6,300,000.00'), ('6,616,985.42,', '6,616,985.42'),
