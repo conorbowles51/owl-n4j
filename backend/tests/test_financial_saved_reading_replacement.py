@@ -200,6 +200,50 @@ class SavedReadingReplacementTests(TestCase):
         old_id = self.save_earlier_reading(typed)
         self.assertEqual(self.assess(old_id)['code'], 'typed_payments')
 
+    def save_typed_mirror(self, change=None):
+        """A person typed the whole statement in the other sign convention (a card typed as a deposit
+        account): every payment's direction flipped and every printed balance negated."""
+        def mirror(request):
+            for row in request['rows']:
+                if not row['excluded']:
+                    row['direction'] = {'debit': 'credit', 'credit': 'debit'}[row['direction']]
+                if row.get('balance_minor') not in (None, ''):
+                    row['balance_minor'] = str(-int(row['balance_minor']))
+            if change:
+                change(request)
+        request = self.f.request()
+        mirror(request)
+        return UUID(self.f.confirm_legacy(request)['source_document_id'])
+
+    def test_a_typed_period_that_is_the_proving_reading_in_the_other_sign_is_replaced_and_restores(self):
+        old_id = self.save_typed_mirror()
+        rows = self.admitted_rows()
+        verdict = self.assess(old_id)
+        self.assertEqual((verdict['outcome'], verdict.get('basis')), ('replace', 'typed_mirror'), verdict)
+        result = self.replace(old_id)
+        self.assertTrue(result['applied'], result)
+        new_id = UUID(result['receipt']['source_document_id'])
+        self.assertEqual((self.admitted_rows(), self.document(old_id).status), (rows, 'superseded'))
+        with self.f.SessionLocal() as db:
+            directions = lambda doc: sorted((t.amount_minor, t.direction) for t in db.scalars(select(FinancialTransaction)
+                                            .where(FinancialTransaction.source_document_id == doc)))
+            flip = {'debit': 'credit', 'credit': 'debit'}
+            self.assertEqual(directions(new_id), sorted((a, flip[d]) for a, d in directions(old_id)))
+        self.assertEqual(self.assess(new_id)['outcome'], 'same')
+        self.assertEqual(self.restore(new_id)['counting_source_document_id'], str(old_id))
+        self.assertEqual((self.admitted_rows(), self.document(old_id).status), (rows, 'admitted'))
+
+    def test_a_typed_period_that_is_not_an_exact_mirror_is_never_replaced(self):
+        def one_more_cent(request):
+            row = next(r for r in request['rows'] if not r['excluded'] and r['amount_minor'] not in ('', '0'))
+            row['amount_minor'] = str(int(row['amount_minor']) + 1)
+        self.assertEqual(self.assess(self.save_typed_mirror(one_more_cent))['code'], 'typed_payments')
+
+    def test_the_typed_mirror_rule_switched_off_refuses_typed_periods(self):
+        old_id = self.save_typed_mirror()
+        with patch.object(replacement, 'TYPED_MIRROR', False):
+            self.assertEqual(self.assess(old_id)['code'], 'typed_payments')
+
     def test_a_description_or_counterparty_a_person_changed_is_never_replaced(self):
         def described(request):
             row = next(r for r in request['rows'] if not r['excluded'] and r['amount_minor'] not in ('', '0'))
@@ -265,6 +309,24 @@ class SavedReadingReplacementTests(TestCase):
                 evidence_file_id=self.f.file.id, request=StatementImportRequest.model_validate(request),
                 actor=replacement.ACTOR, resolve_path=Path)
         self.assertEqual(self.admitted_rows(), 0)
+
+
+class TypedMirrorTests(TestCase):
+    def money(self, rows, opening, closing):
+        from collections import Counter
+        return dict(rows=Counter(rows), opening=opening, closing=closing)
+
+    def test_mirrored_needs_every_payment_flipped_and_both_balances_negated(self):
+        fresh = self.money([(500, 'debit', '2024-03-02'), (900, 'credit', '2024-03-05')], -1000, -1400)
+        self.assertTrue(replacement.mirrored(
+            self.money([(500, 'credit', '2024-03-02'), (900, 'debit', '2024-03-05')], 1000, 1400), fresh))
+        for saved in (self.money([(500, 'credit', '2024-03-02')], 1000, 1400),
+                      self.money([(500, 'credit', '2024-03-02'), (900, 'debit', '2024-03-06')], 1000, 1400),
+                      self.money([(500, 'debit', '2024-03-02'), (900, 'credit', '2024-03-05')], 1000, 1400),
+                      self.money([(500, 'credit', '2024-03-02'), (900, 'debit', '2024-03-05')], 1000, None),
+                      self.money([], 0, 0)):
+            self.assertFalse(replacement.mirrored(saved, fresh), saved)
+        self.assertFalse(replacement.mirrored(self.money([], 0, 0), self.money([], 0, 0)))
 
 
 class PartialFileTests(TestCase):

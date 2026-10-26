@@ -28,6 +28,16 @@ A saved period is replaced only when all of these hold:
 * and its money differs from what is saved (payments by amount, direction and
   date; opening and closing balances).
 
+``TYPED_MIRROR`` (switch LOUPE_FINANCIAL_REPLACE_TYPED_MIRROR): a period a person
+typed is replaced only when what was typed is exactly the proving reading in
+the other sign convention: every typed payment is a payment of the reading with
+the same amount and date and the opposite direction, nothing more or less, and
+the typed opening and closing balances are the reading's with the opposite
+sign (a card typed as a deposit account: payments as money out, charges as
+money in). Nothing the person decided is lost; the version is kept, linked and
+restorable, with the notice. Payments corrected or decided after the save still
+refuse it.
+
 Mechanism: the new reading is admitted through the strict import writer
 (``statement_import.confirm_statement_import``), the path every import takes,
 as a replacement of the saved copy (``replaces_source_document_id``). Under
@@ -71,6 +81,8 @@ ACTOR = Actor(name='system: reader replacement', email='reader-replacement@syste
 BASIS = 'system_reader_replacement'
 RESTORED_BASIS = 'reader_replacement_restored'
 METADATA_KEY = 'reader_replacement'
+TYPED_MIRROR = os.environ.get('LOUPE_FINANCIAL_REPLACE_TYPED_MIRROR', '1').strip().lower() not in ('0', 'false', 'off', 'no')
+MIRROR_CODE = 'typed_mirror_only'
 REASON = ('The current reader read this statement period again and its reading balances under every admission check; '
           'it differs from the saved copy. The saved copy is kept, linked and restorable.')
 RESTORE_REASON = 'Restored on request: the earlier saved copy counts again; the replacing reading is kept, linked.'
@@ -263,13 +275,29 @@ def _saved_state(session, document):
     if _restored_before(session, document):
         return 'restored_by_request', periods[0]
     code = _typed(session, document)
-    if code:
+    if code and not (code == 'typed_payments' and TYPED_MIRROR):
         return code, periods[0]
     if session.scalar(select(FinancialSourceDocument.id).where(
             FinancialSourceDocument.superseded_by_id == document.id,
             FinancialSourceDocument.status != 'superseded').limit(1)) is not None:
         return 'other_copies_linked', periods[0]
+    if code:
+        # Typed: replaced only if the typed money mirrors the proving reading (assess_document).
+        return MIRROR_CODE, periods[0]
     return None, periods[0]
+
+
+def mirrored(saved, fresh):
+    """Whether the saved money is exactly the fresh money in the other sign convention."""
+    flip = {'debit': 'credit', 'credit': 'debit'}
+    rows = Counter()
+    for (amount, direction, when), count in saved['rows'].items():
+        if direction not in flip:
+            return False
+        rows[(amount, flip[direction], when)] += count
+    return (bool(rows) and rows == fresh['rows']
+            and all(saved[name] is not None and fresh[name] is not None and saved[name] == -fresh[name]
+                    for name in ('opening', 'closing')))
 
 
 def _candidates(document, choices, currency):
@@ -285,7 +313,7 @@ def _candidates(document, choices, currency):
             and (not saved_pages or saved_pages & set(choice.get('page_numbers') or []))]
 
 
-def _same_period(raw, period, saved_request, *, same_key=False):
+def _same_period(raw, period, saved_request, *, same_key=False, end_only=False):
     """Whether a reading is this saved period. ``same_key``: it is the statement the copy was saved from; a
     reading that cannot date it is still that statement (and cannot prove: admission needs its dates)."""
     if raw.get('currency') != period.currency:
@@ -293,7 +321,10 @@ def _same_period(raw, period, saved_request, *, same_key=False):
     end, start = _calendar(raw.get('period_end')), _calendar(raw.get('period_start'))
     if same_key and end is None and start is None:
         pass
-    elif end != period.period_end or (period.period_start is not None and start != period.period_start):
+    elif end != period.period_end or (period.period_start is not None and start != period.period_start
+                                      and not end_only):
+        # end_only (typed mirror): the start a person typed is not compared; a card prints its closing
+        # date, and the reading's start comes from the previous statement's close.
         return False
     saved_reference = _digits((saved_request or {}).get('account_number'))
     return not saved_reference or _digits(raw.get('account_number')) == saved_reference
@@ -303,7 +334,21 @@ def _account_digits(account):
     return _digits(account.identifier_normalised or account.identifier_as_printed)
 
 
-def target_account(session, document, period, request, proposal):
+def _typed_bank_name(session, account, saved, period):
+    """A person typed the bank's name differently (``SYNCHRONY BANK CARD``) and so filed this period alone
+    in an account of its own: same printed number and holder, and that account holds nothing else."""
+    if (saved is None or not _account_digits(account) or _account_digits(account) != _account_digits(saved)
+            or (account.holder_name or '').strip().lower() != (saved.holder_name or '').strip().lower()
+            or not (saved.holder_name or '').strip()):
+        return False
+    alone = session.scalar(select(func.count()).select_from(FinancialStatementPeriod).join(
+        FinancialSourceDocument, FinancialSourceDocument.id == FinancialStatementPeriod.source_document_id).where(
+        FinancialStatementPeriod.account_id == saved.id, FinancialSourceDocument.status == 'admitted',
+        FinancialStatementPeriod.id != period.id))
+    return alone == 0
+
+
+def target_account(session, document, period, request, proposal, *, typed=False):
     """(code, account): the ledger account the writer would file this reading in, when it is this saved
     period's account.
 
@@ -325,7 +370,9 @@ def target_account(session, document, period, request, proposal):
             expand_account_ids(session, document.case_id, [period.account_id])):
         return None, account
     saved = session.get(FinancialAccount, period.account_id)
-    if (saved is None or bank_key(account.institution_name or '') != bank_key(saved.institution_name or '')
+    if typed and _typed_bank_name(session, account, saved, period):
+        pass
+    elif (saved is None or bank_key(account.institution_name or '') != bank_key(saved.institution_name or '')
             or not _account_digits(account) or _account_digits(account) != _account_digits(saved)
             or account.currency not in (None, period.currency)):
         return 'other_account', None
@@ -381,6 +428,9 @@ def assess_document(session, document, *, cache=None, reading=None):
     code, period = _saved_state(session, document)
     if period is not None:
         result.update(period_id=str(period.id), currency=period.currency)
+    mirror_only = code == MIRROR_CODE
+    if mirror_only:
+        code = None
     if code:
         return {**result, 'code': code}
     saved = saved_money(session, document, period)
@@ -404,7 +454,8 @@ def assess_document(session, document, *, cache=None, reading=None):
                     continue
                 from services.financial.import_batches import initial_request
                 same_key = statement_id == (document.metadata_ or {}).get('statement_import_statement_id')
-                if _same_period(initial_request(proposal), period, saved_request, same_key=same_key):
+                if _same_period(initial_request(proposal), period, saved_request, same_key=same_key,
+                                end_only=mirror_only):
                     matches.append((statement_id, proposal))
         if not matches:
             return {**result, 'code': 'no_matching_period'}
@@ -418,14 +469,17 @@ def assess_document(session, document, *, cache=None, reading=None):
         raw = build_request(document, proposal)
         raw['replacement_revision'] = duplicate_revision(session, document)
         if not _same_period(raw, period, saved_request, same_key=statement_id == (
-                (document.metadata_ or {}).get('statement_import_statement_id'))):
+                (document.metadata_ or {}).get('statement_import_statement_id')), end_only=mirror_only):
             return {**result, 'code': 'no_matching_period'}
         fresh = fresh_money(proposal, raw)
         result.update(statement_id=statement_id, fresh_payments=sum(fresh['rows'].values()))
         if fresh == saved:
             return {**result, 'outcome': 'same', 'code': 'same'}
+        if mirror_only and not mirrored(saved, fresh):
+            return {**result, 'code': 'typed_payments'}
         from services.financial.statement_import import StatementImportRequest
-        code, account = target_account(session, document, period, StatementImportRequest.model_validate(raw), proposal)
+        code, account = target_account(session, document, period, StatementImportRequest.model_validate(raw), proposal,
+                                       typed=mirror_only)
         if code:
             return {**result, 'code': code}
         result['account_moved'] = account.id != period.account_id
@@ -438,6 +492,7 @@ def assess_document(session, document, *, cache=None, reading=None):
     if fresh['rows'] != saved['rows']:
         differs.insert(0, 'payments')
     return {**result, 'outcome': 'replace', 'code': None, 'request': raw, 'differs': differs,
+            **({'basis': 'typed_mirror'} if mirror_only else {}),
             'investigator_work': investigator_work(session, document),
             'missing_payments': sum((fresh['rows'] - saved['rows']).values()),
             'extra_payments': sum((saved['rows'] - fresh['rows']).values())}
