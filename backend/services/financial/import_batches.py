@@ -434,6 +434,13 @@ VANISHED_PERIOD_MESSAGE = ('This file was read again and the statement periods w
                            'preparation is retained in history; review the periods listed now.')
 
 
+# A statement already in the ledger whose saved review was made on an earlier reading no longer stops its whole
+# file from being prepared again: the review cannot feed an import (the period is imported), it stays recorded and
+# listed in the recovery panel, and this batch's item follows the new reading. Not yet imported: refused as before.
+# Switch: LOUPE_FINANCIAL_IMPORTED_STALE_REVIEW (default on).
+IMPORTED_STALE_REVIEW_FOLLOWS_READING = os.environ.get('LOUPE_FINANCIAL_IMPORTED_STALE_REVIEW', '1') != '0'
+
+
 CARRIED_REVIEW_MESSAGE = ('This file was read again and its statement period is now named. Your saved corrections '
                           'were carried to that statement, which is listed now.')
 
@@ -481,7 +488,7 @@ def prepare_reviews(session, batch, file, *, lock_slice=None):
         if existing:
             draft, conflict = resolve_review(existing.review_request, progress, baseline=initial_request(proposal))
         if draft and draft.get('expected_revision') != proposal['revision']:
-            if proposal.get('saved_review'):
+            if proposal.get('saved_review') and not (IMPORTED_STALE_REVIEW_FOLLOWS_READING and proposal.get('current_import')):
                 raise PdfMappingError('This file has saved corrections from an earlier reading. Open its individual statement review, compare them and save progress before adding it to bulk import.', 409)
             # Keep the new reading editable while earlier values stay in the
             # recovery panel. Assessment holds import until comparison is saved.

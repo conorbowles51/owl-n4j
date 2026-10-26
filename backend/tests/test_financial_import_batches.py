@@ -1170,6 +1170,33 @@ class BatchImportTests(TestCase):
         # A request on the current reading is unaffected.
         self.assertEqual(service.assess(proposal, service.initial_request(proposal))[0], 'ready')
 
+    def test_a_stale_saved_review_of_an_imported_statement_does_not_stop_its_file(self):
+        """Andrews 820433320 Pt 1 2021-10: imported, its saved review made on the reading before a reader change.
+        The whole file then failed to prepare again in 4 batches. Not imported: still refused."""
+        from unittest.mock import patch
+        real = service.read_statement_import
+
+        def reading(imported):
+            def read(*args, **kwargs):
+                proposal = real(*args, **kwargs)
+                request = dict(service.initial_request(proposal), expected_revision='an-earlier-reading')
+                extra = dict(saved_review=dict(request=request, saved_by=dict(name='System')))
+                extra['current_import'] = dict(source_document_id=str(uuid4()), account_id=str(uuid4()),
+                                               transaction_count=0, details={}, issues=[]) if imported else None
+                return {**proposal, **extra}
+            return read
+
+        def prepare(imported, switch=True):
+            batch = self.create(); self.advance(batch)
+            with self.f.SessionLocal() as db, patch.object(service, 'read_statement_import', side_effect=reading(imported)), \
+                    patch.object(service, 'IMPORTED_STALE_REVIEW_FOLLOWS_READING', switch):
+                owner = db.get(Batch, batch)
+                service.prepare_reviews(db, owner, owner.files[0])
+        for imported, switch in ((False, True), (True, False)):
+            with self.assertRaisesRegex(PdfMappingError, 'saved corrections from an earlier reading'):
+                prepare(imported, switch)
+        prepare(imported=True)
+
     def test_a_page_kept_unread_after_an_ocr_timeout_holds_the_statement(self):
         from postgres.models.evidence import EvidenceDocumentText
         self.assertEqual(service.assess(self.f.preview())[0], 'ready')
