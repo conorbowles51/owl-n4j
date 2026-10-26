@@ -34,6 +34,7 @@ from dataclasses import dataclass
 from datetime import date
 
 ENABLED = os.environ.get('LOUPE_FINANCIAL_AUTO_SAVE_GUARD', '1').strip().lower() not in ('0', 'false', 'off', 'no')
+SAVED_TWICE_BY_TYPE = os.environ.get('LOUPE_FINANCIAL_SAVED_TWICE_BY_TYPE', '1') != '0'
 CHAIN_DAYS = 5
 
 
@@ -103,6 +104,7 @@ class SavedPeriod:
     opening: int | None
     closing: int | None
     source_document_id: str = ''
+    kind: str = ''  # the account type, when known (saved ledger); '' compares with every type
 
 
 def account_digits(text):
@@ -168,7 +170,8 @@ def _seam(prior_closing, next_opening):
 def chain_problem(statement, ledger):
     """A sentence when a saved neighbour of the same account and currency does not continue into this statement."""
     near = [p for p in ledger if p.account == statement.account and p.currency == statement.currency
-            and _bank(p.institution) == _bank(statement.institution) and p.source_document_id != statement.source_document_id]
+            and _bank(p.institution) == _bank(statement.institution) and p.source_document_id != statement.source_document_id
+            and (not p.kind or not statement.kind or p.kind == statement.kind)]
     before = [p for p in near if 0 <= (statement.start - p.end).days <= CHAIN_DAYS]
     after = [p for p in near if 0 <= (p.start - statement.end).days <= CHAIN_DAYS]
     for prior in sorted(before, key=lambda p: p.end, reverse=True)[:1]:
@@ -335,7 +338,7 @@ def saved_checks(session, case_id):
     from sqlalchemy import select
     from postgres.models.financial import (FinancialAccount as Account, FinancialSourceDocument as Source,
                                            FinancialStatementPeriod as Period)
-    rows = session.execute(select(Account.identifier_normalised, Account.institution_name, Account.holder_name,
+    rows = session.execute(select(Account.account_type, Account.identifier_normalised, Account.institution_name, Account.holder_name,
                                   Period.currency, Period.period_start, Period.period_end, Period.opening_balance_minor,
                                   Period.closing_balance_minor, Period.source_document_id, Source.sha256_at_ingestion,
                                   Source.metadata_['statement_import_statement_id'].as_string())
@@ -343,25 +346,37 @@ def saved_checks(session, case_id):
                            .join(Source, Source.id == Period.source_document_id)
                            .where(Period.case_id == case_id, Source.status == 'admitted',
                                   Source.metadata_['financial_import_removal'].as_string().is_(None))).all()
-    ledger, scope, holders = [], {}, {}
-    for number, institution, holder, currency, start, end, opening, closing, document, sha, key in rows:
+    return ledger_checks(rows)
+
+
+def ledger_checks(rows):
+    """``saved_checks`` on its rows: (account type, number, bank, holder, currency, start, end, opening, closing,
+    document, file sha256, statement key). Saved twice means the same account, of the same type, currency and
+    dates: one statement can print two products whose numbers end alike (Navy Federal 'EveryDay Checking 3701'
+    and 'Checking Line of Credit 3701'), saved as two accounts, a deposit account and a card; they are not copies.
+    Switch: LOUPE_FINANCIAL_SAVED_TWICE_BY_TYPE (default on)."""
+    from collections import defaultdict
+    ledger, scope, holders, types = [], {}, {}, {}
+    for kind, number, institution, holder, currency, start, end, opening, closing, document, sha, key in rows:
         if not (start and end):
             continue
         period = SavedPeriod(account_digits(number), institution or '', (currency or '').upper(), start, end,
-                             opening, closing, str(document))
+                             opening, closing, str(document), (kind or '') if SAVED_TWICE_BY_TYPE else '')
         ledger.append(period)
         scope[period] = (sha, key or '')
         holders[period] = holder or ''
+        types[period] = period.kind
     twice = defaultdict(set)
+    same = lambda period: (period.account, types[period], _bank(period.institution), period.currency, period.start,
+                           period.end)
     for period in ledger:
-        twice[(period.account, _bank(period.institution), period.currency, period.start, period.end)].add(period.source_document_id)
+        twice[same(period)].add(period.source_document_id)
     found = {}
     for period in ledger:
         if holder_is_address(holders[period]):
             result = ('holder', f'The account holder saved, "{holders[period]}", is an address line: check the holder '
                       'printed on the page')
-        elif period.account and len(twice[(period.account, _bank(period.institution), period.currency, period.start,
-                                           period.end)]) > 1:
+        elif period.account and len(twice[same(period)]) > 1:
             result = ('copy', f'This account, currency and period ({_month(period.start)}) is saved more than once: '
                       'check whether one is a copy of the other or belongs to another currency')
         else:

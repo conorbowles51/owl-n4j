@@ -243,3 +243,29 @@ class SavedLedgerTests(TestCase):
         self.assertEqual(guard.hold(statement, ledger=history, currency_basis=basis, filename='12 ARRENDO DIC 2021.pdf')[0], 'currency')
         usd = [period('65504624034', '2021-11-01', '2021-11-30', None, None, currency='USD', bank='Santander')]
         self.assertEqual(guard.hold(statement, ledger=history + usd, currency_basis=basis, filename=name)[0], 'currency')
+
+
+class SavedTwiceByTypeTests(TestCase):
+    """One Navy Federal statement prints 'EveryDay Checking 3701' and 'Checking Line of Credit 3701': saved as a
+    deposit account and a card, same last digits and dates. They are neither copies nor one balance chain."""
+
+    def row(self, kind, start, end, opening, closing, doc, key):
+        return (kind, '3701', 'Navy Federal Credit Union', 'G DORSEY', 'USD', date.fromisoformat(start),
+                date.fromisoformat(end), opening, closing, doc, 'sha', key)
+
+    def rows(self, loc_kind='credit_card'):
+        return [self.row('checking', '2021-04-17', '2021-05-16', 25000000, 29061346, 'c1', 'k1'),
+                self.row('checking', '2021-05-17', '2021-06-16', 29061346, 28000000, 'c2', 'k2'),
+                self.row(loc_kind, '2021-04-17', '2021-05-16', 0, 0, 'l1', 'k3'),
+                self.row(loc_kind, '2021-05-17', '2021-06-16', 0, 0, 'l2', 'k4')]
+
+    def test_two_products_of_one_statement_are_not_copies_nor_one_chain(self):
+        self.assertEqual(guard.ledger_checks(self.rows()), {})
+
+    def test_the_same_type_saved_twice_is_still_a_copy(self):
+        found = guard.ledger_checks(self.rows(loc_kind='checking'))
+        self.assertIn('copy', {reason for reason, _ in found.values()})
+
+    def test_switched_off_compares_without_the_type(self):
+        with patch.object(guard, 'SAVED_TWICE_BY_TYPE', False):
+            self.assertIn('copy', {reason for reason, _ in guard.ledger_checks(self.rows()).values()})
