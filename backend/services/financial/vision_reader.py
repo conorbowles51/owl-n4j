@@ -108,7 +108,17 @@ SECTION_NUMBER = _switch('LOUPE_FINANCIAL_VISION_SECTION_NUMBER')
 PRINTED_COUNTS = _switch('LOUPE_FINANCIAL_VISION_PRINTED_COUNTS')
 # Version 2 is SPLIT_SPELLINGS, 3 SECTION_NUMBER, 4 PRINTED_COUNTS, each on top of the one before; with a switch off
 # the rules are the version before it and nothing is judged again for it.
-PROOF_VERSION = (((4 if PRINTED_COUNTS else 3) if SECTION_NUMBER else 2) if SPLIT_SPELLINGS else 1)
+# A section the images show printing 0 deposits and 0 withdrawals, totals 0.00 and 0.00, and one balance at both
+# ends (BNB2 ECO 2023 DOLARES, BBVA 23 USD: one page of a "PAGINA n/N" printing) proves the period had no
+# movement from its own printed controls, as the text readers' printed zero totals do (printed-zero-totals-v1);
+# admission records the basis 'page_image_zero_counts'. Off: such a period waits for a person's confirmation.
+QUIET_PRINTED = _switch('LOUPE_FINANCIAL_VISION_QUIET_PRINTED')
+# A CLABE names its account in digits 7 to 17 (bank 3, branch 3, account 11, check digit 1). The images give a Monex
+# statement's CLABE (112180000030419770) where the text reading has the contract number (3041977): a CLABE whose
+# check digit is right names the account its account digits hold, at least 6 digits without leading zeros.
+CLABE_ACCOUNT = _switch('LOUPE_FINANCIAL_VISION_CLABE_ACCOUNT')
+PROOF_VERSION = ((((((6 if CLABE_ACCOUNT else 5) if QUIET_PRINTED else 4) if PRINTED_COUNTS else 3) if SECTION_NUMBER else 2)
+                  if SPLIT_SPELLINGS else 1))
 METADATA_KEY = 'financial_vision_reading'
 MARK = 'vision_fallback'
 SYSTEM_NAME = 'System'
@@ -509,7 +519,17 @@ def same_number(a, b):
     if fp.account_match(fp.account_identity(a), fp.account_identity(b)) or a == b:
         return True
     shorter, longer = sorted((a, b), key=len)
+    if CLABE_ACCOUNT and len(shorter.lstrip('0')) >= 6 and _clabe_account(longer).lstrip('0') == shorter.lstrip('0'):
+        return True
     return (len(shorter) >= 8 and shorter in longer) or (len(shorter) == 4 and longer.endswith(shorter))
+
+
+def _clabe_account(digits):
+    """The 11 account digits of an 18-digit CLABE whose check digit (weights 3, 7, 1) is right, else ''."""
+    if len(digits) != 18 or not digits.isdigit():
+        return ''
+    check = (10 - sum(int(d) * w % 10 for d, w in zip(digits[:17], (3, 7, 1) * 6)) % 10) % 10
+    return digits[6:17] if check == int(digits[17]) else ''
 
 
 def _heading_numbers(proposal):
@@ -684,7 +704,7 @@ def prove(proposal, section, knowledge):
                 raise NotProved('A running balance on page %s could not be read.' % row['page'])
         rows.append(dict(index=index, date=when, description=' '.join(str(row['description']).split())[:4000],
                          amount_minor=amount, direction=row['direction'], balance_minor=balance, page=row['page']))
-    if not rows:
+    if not rows and not _printed_quiet(section, opening, closing, exponent):
         raise NotProved('No payments were read from the page images; a period without payments needs its printed confirmation.')
     _not_summary_lines(section, rows, exponent)
     _directions_from_running_balances(rows, opening, closing, liability)
@@ -710,6 +730,68 @@ def prove(proposal, section, knowledge):
                 period_start=start, period_end=end, opening=opening, closing=closing, rows=rows,
                 opening_page=section['balance_pages'].get('opening_balance'),
                 closing_page=section['balance_pages'].get('closing_balance'))
+
+
+def _printed_quiet(section, opening, closing, exponent):
+    """The images print this section's deposit and withdrawal counts as 0, both totals as zero and equal balances."""
+    values = section['values']
+    return bool(QUIET_PRINTED and opening == closing
+                and all(str(values.get('count_%ss' % d)) == '0' and to_minor(values.get('total_%ss' % d), exponent) == 0
+                        for d in ('credit', 'debit')))
+
+
+def printed_controls(proposal, section, reading, request):
+    """The period's deposit and withdrawal counts and totals printed on the images, when all four are printed (each
+    already proved equal to the payments read), with the balance rows of the review they belong to; else None."""
+    values = section['values']
+    exponent = _exponent(reading['currency'])
+    controls = {}
+    for direction in ('credit', 'debit'):
+        count, total = values.get('count_%ss' % direction), to_minor(values.get('total_%ss' % direction), exponent)
+        if not str(count).isdigit() or total is None:
+            return None
+        controls['count_%ss' % direction], controls['total_%ss_minor' % direction] = int(str(count)), total
+    originals = {row['id']: row for row in proposal['rows']}
+    ends = {}
+    for row in request['rows']:
+        if row['id'] in ('manual:opening-balance', 'manual:closing-balance'):
+            ends[row['id'][len('manual:'):].split('-')[0]] = row['id']
+        elif originals.get(row['id'], {}).get('kind') == 'balance':
+            role = (originals[row['id']]['fields'].get('description') or '').strip().lower()
+            if role in ('opening balance', 'closing balance'):
+                ends.setdefault(role.split()[0], row['id'])
+    return dict(controls, opening_minor=reading['opening'], closing_minor=reading['closing'], currency=reading['currency'],
+                period_start=reading['period_start'], period_end=reading['period_end'], balance_rows=ends)
+
+
+def image_evidence(proposal, controls):
+    """What a proved page-image reading adds to the statement's reading: its printed controls, and for a quiet
+    period the source proof of no activity (statement_admission.source_proves_no_activity checks it against the
+    review's balance rows and period)."""
+    if not controls:
+        return {}
+    extra = dict(image_printed_controls=controls)
+    quiet = (QUIET_PRINTED and controls['count_credits'] == 0 and controls['count_debits'] == 0
+             and controls['total_credits_minor'] == 0 and controls['total_debits_minor'] == 0
+             and controls['opening_minor'] == controls['closing_minor'])
+    ends = controls.get('balance_rows') or {}
+    if quiet and set(ends) == {'opening', 'closing'} and not (proposal.get('no_activity_evidence') or {}).get('verified'):
+        extra['no_activity_evidence'] = dict(verified=True, method='page-image-zero-counts-v1', basis='page_image_zero_counts',
+            family='page_image', opening_row_id=ends['opening'], closing_row_id=ends['closing'],
+            balance_minor=str(controls['opening_minor']), currency=controls['currency'],
+            period_start=controls['period_start'], period_end=controls['period_end'])
+    return extra
+
+
+def stored_image_evidence(file, result):
+    """image_evidence of the proved page-image reading stored for this same reading of the statement (outside the
+    reading revision, like the page gap it settles)."""
+    if not (PRINTED_COUNTS or QUIET_PRINTED):
+        return {}
+    record = _stored(file, result.get('statement_id') or '')
+    if not record or record.get('status') != 'proved' or record.get('revision') != result.get('revision'):
+        return {}
+    return image_evidence(result, record.get('printed_controls'))
 
 
 def _not_summary_lines(section, rows, exponent):
@@ -1159,6 +1241,10 @@ def read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for
                 return dict(record, reason='case_not_approved')
             entry = next((e for e in batch.files or [] if e.get('file_id') == str(file_id)), {})
             from services.financial.pdf_candidates import PdfMappingError
+            from services.financial.file_visibility import financial_file_visibility
+            if financial_file_visibility(file)['financial_removed']:
+                # Removed from Financial: nothing to read until a person restores it (not a failed reading).
+                return dict(record, reason='file_removed')
             try:
                 proposal = read_statement_import(db, case_id=case_id, evidence_file_id=file_id,
                                                  currency=entry.get('currency') or None, statement_id=key or None)
@@ -1292,8 +1378,10 @@ def read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for
                 if not force:
                     check_neighbours(db, case_id, reading)
                 request = build_request(proposal, reading)
+                controls = printed_controls(proposal, section, reading, request) if (PRINTED_COUNTS or QUIET_PRINTED) else None
+                judged = dict(proposal, **image_evidence(proposal, controls))
                 # Sampling a saved statement: judged as if it were not saved yet.
-                state, summary = assess(dict(proposal, current_import=None) if force else proposal, request)
+                state, summary = assess(dict(judged, current_import=None) if force else judged, request)
                 if page_gap is not None and state != 'ready':
                     raise page_gap
                 if state != 'ready' or summary.get('problems') or summary.get('problem_count'):
@@ -1304,6 +1392,8 @@ def read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for
                 return _finish(factory, item_id, file_id, key, dict(record, status='not_proved', message=str(reason)), apply)
             record.update(status='proved', message='Read from the page images; the period reconciles exactly.',
                           rows=len(reading['rows']), request=request)
+            if controls:
+                record['printed_controls'] = controls
             if not apply:
                 db.rollback()
                 return record

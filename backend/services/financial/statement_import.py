@@ -940,6 +940,10 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                         result.get('statement_page_numbers') or [])
     if gap and not result.get('reading_failure'):
         result['printed_pages_missing'] = gap
+    # Outside the revision: the printed controls of a proved page-image reading of this same reading
+    # (vision_reader): they settle the page gap and prove a quiet period as printed controls do.
+    from services.financial.vision_reader import stored_image_evidence
+    result.update(stored_image_evidence(file, result))
     from services.financial.not_payment_statements import classify as not_payment_statement
     not_payment = not_payment_statement(file, text, result)
     if not_payment:

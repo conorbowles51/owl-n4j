@@ -72,6 +72,14 @@ class ValuesTest(unittest.TestCase):
         for bad in ('1.234,56', '36033,789.24', '12,34.00', '12.345', '-5.10', '', None, '1.2.3', 'abc'):
             self.assertIsNone(vr.to_minor(bad, 2), bad)
 
+    def test_a_clabe_names_the_account_its_account_digits_hold(self):
+        # Live: 06 ING. R2 MONEX MXN JUN 24, the images print CLABE 112180000030419770, the text the contract 3041977.
+        self.assertTrue(vr.same_number('3041977', '112180000030419770'))
+        self.assertFalse(vr.same_number('3041977', '112180000030419771'))  # check digit wrong: not a CLABE
+        self.assertFalse(vr.same_number('3041978', '112180000030419770'))
+        with mock.patch.object(vr, 'CLABE_ACCOUNT', False):
+            self.assertFalse(vr.same_number('3041977', '112180000030419770'))
+
     def test_cost_per_page(self):
         self.assertAlmostEqual(vr.cost_usd('gpt-4o', dict(prompt_tokens=1_000_000, completion_tokens=0)), 2.5)
         self.assertAlmostEqual(vr.cost_usd('gpt-4o-2024-08-06', dict(prompt_tokens=0, completion_tokens=1_000_000)), 10.0)
@@ -99,6 +107,65 @@ class ProofTest(unittest.TestCase):
             with self.assertRaisesRegex(vr.NotProved, 'no account section matching'):
                 _proved(_proposal([dict(kind=kind, fields={}, source_cells=cells)], account_number=clabe),
                         _knowledge(account=clabe), pages)
+
+    def test_a_section_printing_zero_counts_and_totals_proves_a_quiet_period(self):
+        # Live: ECO Feb..Nov 2023 DOLARES and BBVA 23 USD, one page of a "PAGINA n/5" printing: 0 deposits,
+        # 0 withdrawals, totals 0.00, 60.25 at both ends.
+        from services.financial.statement_admission import source_proves_no_activity
+        quiet = dict(HEADER, opening_balance='60.25', closing_balance='60.25', count_credits=0, count_debits=0,
+                     total_credits='0.00', total_debits='0.00')
+        pages = [(1, _page([_section([], **quiet)], 2, 5))]
+        proposal = _proposal(account_number='0123456789', currency='MXN', period_start='2025-12-01', period_end='2025-12-31')
+        section = vr.choose_section(vr.combine(pages), proposal)
+        reading = vr.prove(proposal, section, _knowledge())
+        self.assertEqual((reading['rows'], reading['opening'], reading['closing']), ([], 6025, 6025))
+        request = vr.build_request(proposal, reading)
+        controls = vr.printed_controls(proposal, section, reading, request)
+        evidence = vr.image_evidence(proposal, controls)['no_activity_evidence']
+        self.assertEqual(evidence['basis'], 'page_image_zero_counts')
+        self.assertTrue(source_proves_no_activity(evidence, request))
+        edited = dict(request, rows=[dict(r, balance_minor='6000') if r['id'] == evidence['closing_row_id'] else r
+                                     for r in request['rows']])
+        self.assertFalse(source_proves_no_activity(evidence, edited))
+        # A count not printed as zero, a non-zero total or balances that differ prove nothing.
+        for change in (dict(count_debits=1), dict(total_credits='0.01'), dict(closing_balance='60.00')):
+            pages = [(1, _page([_section([], **dict(quiet, **change))], 2, 5))]
+            with self.assertRaises(vr.NotProved):
+                vr.prove(proposal, vr.choose_section(vr.combine(pages), proposal), _knowledge())
+        with mock.patch.object(vr, 'QUIET_PRINTED', False):
+            pages = [(1, _page([_section([], **quiet)], 2, 5))]
+            with self.assertRaisesRegex(vr.NotProved, 'No payments were read'):
+                vr.prove(proposal, vr.choose_section(vr.combine(pages), proposal), _knowledge())
+
+    def test_a_proved_reading_s_printed_counts_reach_later_readings_and_settle_the_page_gap(self):
+        # Live: ECO Jun 2023 MN, 15 of 20 printed pages; the text reading sees the gap and reads no totals, the images
+        # print 3 deposits / 203 withdrawals and their totals, and the 206 payments read match all four.
+        from services.financial import import_issues
+        from services.financial.statement_import import StatementReviewDraft
+        proposal = _proposal(account_number='0123456789', currency='MXN', period_start='2025-12-01', period_end='2025-12-31')
+        pages = _balanced_pages()
+        pages[0][1]['sections'][0].update(count_credits=1, count_debits=2, total_credits='100.00', total_debits='100.00')
+        section = vr.choose_section(vr.combine(pages), proposal)
+        reading = vr.prove(proposal, section, _knowledge())
+        request = vr.build_request(proposal, reading)
+        controls = vr.printed_controls(proposal, section, reading, request)
+        self.assertEqual((controls['count_debits'], controls['total_debits_minor']), (2, 10000))
+        file = SimpleNamespace(metadata_={vr.METADATA_KEY: {'b' * 64: dict(status='proved', revision='a' * 64,
+                                                                          printed_controls=controls)}})
+        stored = vr.stored_image_evidence(file, dict(proposal, statement_id='b' * 64))
+        self.assertEqual(stored['image_printed_controls'], controls)
+        self.assertEqual(vr.stored_image_evidence(file, dict(proposal, statement_id='b' * 64, revision='c' * 64)), {})
+        draft = StatementReviewDraft.model_validate(dict(request, holder='ACME SA DE CV', account_number='0123456789',
+                                                         institution='BBVA MEXICO'))
+        gap = dict(printed_total=20, missing=[8, 9], held=18)
+        held = lambda proposal, draft: [i['kind'] for i in import_issues.retained_issues(dict(proposal, printed_pages_missing=gap), draft)
+                                        if i['kind'] == 'printed_pages_missing']
+        self.assertEqual(held(dict(proposal, **stored), draft), [])
+        self.assertEqual(held(proposal, draft), ['printed_pages_missing'])
+        # A payment a person typed in is not one the images' counts were proved against.
+        typed = draft.model_copy(update=dict(rows=[r.model_copy(update=dict(id='manual:typed')) if r.id.startswith('manual:vision-')
+                                                   and r.direction == 'credit' else r for r in draft.rows]))
+        self.assertEqual(held(dict(proposal, **stored), typed), ['printed_pages_missing'])
 
     def test_balanced_reading_proves_with_pages_on_every_row(self):
         reading = _proved()
@@ -416,6 +483,29 @@ class FailClosedTest(unittest.TestCase):
         with mock.patch.object(vr, 'APPROVED_CASES', frozenset({'bnb2'})):
             out = vr.read_item(lambda: Db(), 'item', None, page_reader=reader, knowledge_for=lambda *a: None)
         self.assertEqual(out['reason'], 'case_not_approved')
+        reader.assert_not_called()
+
+    def test_read_item_leaves_a_file_removed_from_financial_without_reading_it(self):
+        # Live 10-26 10:18: the sweep read held items of removed files and logged a failure for each.
+        item = SimpleNamespace(batch_id='b', file_id='f', statement_key='k')
+        batch = SimpleNamespace(case_id='bnb2', status='review', files=[])
+        removed = SimpleNamespace(metadata_={'financial_file_visibility': {'removed': True}})
+
+        class Db:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def get(self, model, key):
+                return {'b': batch, 'f': removed}.get(key, item)
+        reader = mock.Mock()
+        with mock.patch.object(vr, 'APPROVED_CASES', frozenset({'bnb2'})), \
+                mock.patch('services.financial.statement_import.read_statement_import') as read:
+            out = vr.read_item(lambda: Db(), 'item', None, page_reader=reader, knowledge_for=lambda *a: None)
+        self.assertEqual(out['reason'], 'file_removed')
+        read.assert_not_called()
         reader.assert_not_called()
 
     def test_provider_without_page_images_or_key_is_unavailable(self):

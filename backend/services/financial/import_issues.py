@@ -91,8 +91,15 @@ def printed_quiet(proposal, request):
                and not row['fields'].get('total_scope') and row['fields'].get('printed_transaction_count') == '0'}
     balances = [row['fields'].get('balance') for row in rows if row['kind'] == 'balance'
                 and row['fields'].get('description') in ('Opening Balance', 'Closing Balance')]
-    return (counted >= {'credit', 'debit'} and len(balances) == 2 and balances[0] not in (None, '')
-            and str(balances[0]) == str(balances[1]))
+    if (counted >= {'credit', 'debit'} and len(balances) == 2 and balances[0] not in (None, '')
+            and str(balances[0]) == str(balances[1])):
+        return True
+    # The same counts printed on the page images (a proved quiet image reading: its source proof names the balances).
+    evidence = proposal.get('no_activity_evidence') or {}
+    if evidence.get('basis') != 'page_image_zero_counts':
+        return False
+    from services.financial.statement_admission import source_proves_no_activity
+    return source_proves_no_activity(evidence, request.model_dump(mode='json'))
 
 
 # 2026-10-26 (fin-queue3 L7, Neil: every lesson into the processor): the same for a period with movements. A file
@@ -114,13 +121,19 @@ def printed_complete(proposal, request):
     if not selected:
         return False
     rows = proposal.get('rows') or []
+    printed = {direction: {(row['fields'].get('printed_transaction_count'), row['fields'].get('balance')) for row in rows
+                           if row['kind'] == 'statement_total' and not row['fields'].get('total_scope')
+                           and row['fields'].get('total_direction') == direction} for direction in ('credit', 'debit')}
+    image = proposal.get('image_printed_controls') or {}
+    if any(len(found) != 1 for found in printed.values()) and image \
+            and all(str(row.id).startswith('manual:vision-') for row in selected):
+        # Counts and totals the page images print (vision_reader.printed_controls), for the payments read from them.
+        printed = {direction: {(str(image['count_%ss' % direction]), str(image['total_%ss_minor' % direction]))}
+                   for direction in ('credit', 'debit')}
     for direction in ('credit', 'debit'):
-        printed = {(row['fields'].get('printed_transaction_count'), row['fields'].get('balance')) for row in rows
-                   if row['kind'] == 'statement_total' and not row['fields'].get('total_scope')
-                   and row['fields'].get('total_direction') == direction}
-        if len(printed) != 1:
+        if len(printed[direction]) != 1:
             return False
-        count, total = next(iter(printed))
+        count, total = next(iter(printed[direction]))
         if not (isinstance(count, str) and count.isdigit()) or integer(total) is None:
             return False
         mine = [row for row in selected if row.direction == direction]
