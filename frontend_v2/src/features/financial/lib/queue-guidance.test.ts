@@ -26,7 +26,7 @@ const me = { id: "u1", name: "Maria Lopez" }
 const JARGON = /copy_of_saved|not_all_held|issue_reason|_|\bbatch\b|\breading\b|lineage/i
 const every = [
   "import_failed", "saved_review", "reprint", "assignment", "principal_only", "currency", "institution", "holder",
-  "account", "dates", "balance", "incomplete", "count", "no_activity", "reading", "auto_save_check", "saved_check", "some_new_reason",
+  "account", "dates", "balance", "incomplete", "count", "no_activity", "reading", "auto_save_check", "saved_check", "copies_none_saved", "some_new_reason",
 ]
 
 it("gives every reason a plain title, numbered steps that say where to look, one action and what happens next", () => {
@@ -136,4 +136,11 @@ it("lists an imported statement a ledger check finds wrong, with the check's own
   expect(guide.title).toBe(issue)
   expect(guide.action).toBe("Open the statement")
   expect(issueLabel("saved_check")).toBe("Imported, needs a check")
+})
+
+it("asks a person to save one copy of a statement whose copies were all set aside and none saved", () => {
+  const issue = "Every copy of this statement was set aside as a copy of another, and none of them is saved. Check this one against the PDF and save it."
+  const guide = guidanceFor(entry({ issue_reason: "copies_none_saved", issue }), me)
+  expect(guide.title).toBe(issue)
+  expect(issueLabel("copies_none_saved")).toBe("No copy saved yet")
 })

@@ -1042,6 +1042,9 @@ def _checked_batch_items(session, case_id, items, *, validate_reviews=False, rea
                 # Where the statement starts in its file: a second printed statement
                 # for the same account and dates in the same file is compared.
                 'page_number': summary.get('page_number') or item.summary.get('page_number')}
+            if (summary.get('duplicate_disposition') or {}).get('status'):
+                # The copy rule's decision for this projection (statement_import_overlap._copy_of_retained).
+                raw['_copy_rule_status'] = summary['duplicate_disposition']['status']
             if not projected_request and _ProjectionInputs._trims(summary):
                 # The dates of this projection's own reading (a trimmed query's kept dates), not the stored ones.
                 raw.update(period_start=summary.get('period_start', ''), period_end=summary.get('period_end', ''))

@@ -272,6 +272,18 @@ export function guidanceFor(entry: QueueEntry, user?: QueuePerson | null, bucket
         after: "Once the saved statement is corrected or set aside, it leaves this list.",
         action: "Open the statement",
       }
+    case "copies_none_saved":
+      // Every upload of this statement was set aside as a copy of another one, and none of them was saved.
+      return {
+        title: entry.issue || "No copy of this statement is saved yet",
+        steps: [
+          openWhere,
+          "Check the statement against the page.",
+          "Save it. Its other copies then stay set aside.",
+        ],
+        after: SAVES,
+        action,
+      }
     case "no_activity":
       return {
         title: "No payments were read: confirm the period had none",
@@ -338,6 +350,7 @@ export const ISSUE_LABELS: Record<string, string> = {
   reading: "Rows to check",
   auto_save_check: "Not proven by its balances",
   saved_check: "Imported, needs a check",
+  copies_none_saved: "No copy saved yet",
 }
 
 /** A label for any reason, including one this screen does not know yet. */

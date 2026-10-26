@@ -351,6 +351,39 @@ def comparison_sources(session, case_id, pending=None, *, read_pending=None, dup
 SAVED_PRINTED_PERIOD_ACROSS_BANKS = os.environ.get('LOUPE_FINANCIAL_SAVED_PRINTED_PERIOD_ACROSS_BANKS', '1') != '0'
 
 
+# An unsaved upload of the very same bytes and statement (another evidence file of one PDF) is not a separate
+# statement to compare with the copy the copy rule keeps (pending_statement_duplicates: its own decision is a
+# current 'retained', the other's is not). Held against each other, two such uploads were never saved, and the
+# copies set aside in their favour left the statement out of the ledger with no item asking for it (BNB2: CAAL
+# BBVA 0119200843 Aug 2025, BBVA 0125701104 USD Sep 2025; fin-queue lessons 5 and 12). Only the retained copy is
+# released, so no import path finds two of them ready; once it is saved the other is held by a saved copy. A saved
+# copy and any upload with other bytes are still compared. Off: every unsaved upload is compared.
+IDENTICAL_UNSAVED_TO_RETAINED = os.environ.get('LOUPE_FINANCIAL_COVERAGE_IDENTICAL_UNSAVED_TO_RETAINED', '1') != '0'
+
+
+def _copy_of_retained(session, file, files, other, request):
+    """`other` is an unsaved upload of `file`'s bytes and statement, and `file` holds the current retained decision."""
+    key = request.get('statement_id') or ''
+    if other['status'] != 'awaiting_import' or (other.get('statement_id') or '') != key or other['file_id'] == str(file.id):
+        return False
+    from uuid import UUID
+    other_file = (files or {}).get(other['file_id']) or session.get(EvidenceFile, UUID(other['file_id']))
+    if other_file is None or not file.sha256 or other_file.sha256 != file.sha256:
+        return False
+    from services.financial.pending_statement_duplicates import METADATA_KEY
+    stored = lambda f: ((f.metadata_ or {}).get(METADATA_KEY) or {}).get(key) or {}
+    own = stored(file)
+    if stored(other_file).get('status') == 'retained':
+        return False
+    if '_copy_rule_status' in request:
+        # A batch projection passes the copy rule's decision for its own projected reading and review.
+        return request['_copy_rule_status'] == 'retained'
+    if own.get('status') != 'retained':
+        return False
+    # Decided on this very reading (the writer decides it just before this check; a batch projection reads it).
+    return bool(request.get('expected_revision') and own.get('reading_revision') == request['expected_revision'])
+
+
 def coverage_review(session, *, case_id, file_id, request, sources=None):
     # Batch comparison already loaded the case's source lineage. Reuse that
     # request-local snapshot instead of repeating a SQL read for every period.
@@ -384,6 +417,8 @@ def coverage_review(session, *, case_id, file_id, request, sources=None):
         # Periods that do not share a date are never candidates (both branches
         # below end in this test); skip the printed-reference comparison.
         if own['start'] > other['period_end'] or other['period_start'] > own['end']:
+            continue
+        if IDENTICAL_UNSAVED_TO_RETAINED and _copy_of_retained(session, file, files, other, request):
             continue
         # A masked card reference cannot meet ``same_statement``. The same bank,
         # reference and exact printed period is still another copy of this

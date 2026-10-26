@@ -676,6 +676,7 @@ def _compute(session, case_id):
     from services.financial.auto_read import unread_statement_files
     entries = _build(session, case_id)
     _saved_checks(session, case_id, entries)
+    _copies_none_saved(session, case_id, entries)
     set_aside = []
     entries, failed, copy_files = _set_aside_read_copies(session, case_id, entries,
         _failed_files(session, case_id, set(), set_aside))
@@ -714,6 +715,53 @@ def _saved_checks(session, case_id, entries):
         entry.update(bucket='waiting', issue=sentence, issue_reason='saved_check', saved_check=reason,
                      field=DETAIL_FIELDS.get(reason), row_id=None, other_problems=0, problem_total=1,
                      reasons=['saved_check'], also=[], issue_pages=[], issue_messages=[sentence])
+
+
+# A statement whose every upload sits in 'copies' while none of them is saved is not settled: the copies were set
+# aside for, or held against, each other (BNB2: CAAL BBVA 0119200843 Aug 2025 and BBVA 0125701104 USD Sep 2025 were
+# absent from the ledger with all their items under copies). When no saved period of the same account (its printed
+# digits equal or one inside the other, as an account inside its CLABE), currency and overlapping dates exists, and
+# no entry of that statement is imported or saving, one of its copies (the one the copy rule keeps, else the first)
+# is listed under 'waiting' with the plain reason. Nothing is changed. Reverse: LOUPE_FINANCIAL_QUEUE_COPIES_NONE_SAVED=0.
+COPIES_NONE_SAVED = os.environ.get('LOUPE_FINANCIAL_QUEUE_COPIES_NONE_SAVED', '1').strip().lower() not in ('0', 'false', 'off', 'no')
+COPIES_NONE_SAVED_SENTENCE = ('Every copy of this statement was set aside as a copy of another, and none of them is '
+                              'saved. Check this one against the PDF and save it.')
+
+
+def _digits(value):
+    return ''.join(ch for ch in str(value or '') if ch.isdigit())
+
+
+def _copies_none_saved(session, case_id, entries):
+    if not COPIES_NONE_SAVED:
+        return
+    scope = lambda e: (_digits(e.get('account')), e.get('currency') or '', e.get('period_start') or '', e.get('period_end') or '')
+    copies = {}
+    for entry in entries:
+        key = scope(entry)
+        if entry['bucket'] == 'copies' and len(key[0]) >= 6 and all(key[1:]):
+            copies.setdefault(key, []).append(entry)
+    if not copies:
+        return
+    busy = {scope(e) for e in entries if e['bucket'] in ('imported', 'saving', 'waiting', 'ready', 'filled', 'rechecking', 'reader_fix')}
+    from postgres.models.financial import FinancialAccount, FinancialSourceDocument, FinancialStatementPeriod
+    saved = session.execute(select(FinancialAccount.identifier_as_printed, FinancialStatementPeriod.currency,
+                                   FinancialStatementPeriod.period_start, FinancialStatementPeriod.period_end)
+        .join(FinancialStatementPeriod, FinancialStatementPeriod.account_id == FinancialAccount.id)
+        .join(FinancialSourceDocument, FinancialSourceDocument.id == FinancialStatementPeriod.source_document_id)
+        .where(FinancialStatementPeriod.case_id == case_id, FinancialSourceDocument.status == 'admitted',
+               FinancialStatementPeriod.period_start.is_not(None), FinancialStatementPeriod.period_end.is_not(None))).all()
+    saved = [(_digits(a), c, str(s0), str(e0)) for a, c, s0, e0 in saved]
+    for key, group in copies.items():
+        digits, currency, start, end = key
+        if key in busy or any(c == currency and d and (d in digits or digits in d) and s0 <= end and e0 >= start
+                              for d, c, s0, e0 in saved):
+            continue
+        keeps = [e for e in group if not e.get('set_aside')]
+        entry = sorted(keeps or group, key=lambda e: e['id'])[0]
+        entry.update(bucket='waiting', issue=COPIES_NONE_SAVED_SENTENCE, issue_reason='copies_none_saved', row_id=None,
+                     other_problems=0, problem_total=1, reasons=['copies_none_saved'], also=[], issue_pages=[],
+                     issue_messages=[COPIES_NONE_SAVED_SENTENCE])
 
 
 def _store(key, fingerprint, view):
