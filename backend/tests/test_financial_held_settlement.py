@@ -250,6 +250,59 @@ def test_an_unreadable_copy_is_set_aside_with_its_own_reason(f, monkeypatch):
         assert decision['retained']['source_document_id'] == str(document_id)
 
 
+def _vanished_item(f, *, saved=True, review_request=None):
+    """L22 (fin-queue2 A13): f.file's only statement saved; an item of an earlier reading of it holds a key the
+    current reading no longer lists ("This statement period is no longer available")."""
+    if saved:
+        f.confirm_legacy()
+    batch = Batch(id=uuid4(), case_id=f.case.id, created_by=f.user.id, status='review',
+        actor=dict(name=f.actor.name, email=f.actor.email, user_id=str(f.actor.user_id)),
+        files=[dict(source_id=str(f.file.id), file_id=str(f.file.id), filename=f.file.original_filename,
+            expected_revision='initial', status='checked')])
+    f.db.add(batch)
+    f.db.flush()
+    item = BatchItem(id=uuid5(batch.id, 'vanished'), batch_id=batch.id, file_id=f.file.id,
+        statement_key='an-earlier-readings-key', status='attention', review_request=review_request,
+        summary=dict(source_id=str(f.file.id), can_import=False, problem_count=1, problems=[dict(
+            row_id=None, message='This statement period is no longer available. Reload the document.')]))
+    f.db.add(item)
+    f.db.commit()
+    return item.id
+
+
+def test_an_item_whose_key_vanished_while_the_files_only_statement_is_saved_is_retired(f):
+    item_id = _vanished_item(f)
+    before = _ledger(f)
+    assert _settle(f, apply=False)['vanished_key:superseded'] == 1  # the estimate writes nothing
+    with f.SessionLocal() as db:
+        assert db.get(BatchItem, item_id).status == 'attention'
+    assert _settle(f)['vanished_key:superseded'] == 1
+    with f.SessionLocal() as db:
+        item = db.get(BatchItem, item_id)
+        assert item.status == 'superseded_reading'
+        assert item.summary['recovery_message'] == held_settlement.VANISHED_KEY_MESSAGE
+        assert item.summary['saved_source_document_id'] in {str(d) for d in before[1]}
+    assert _ledger(f) == before  # nothing saved, nothing removed
+
+
+def test_a_vanished_key_item_stays_when_the_statement_is_not_saved_or_a_person_worked_on_it(f, monkeypatch):
+    item_id = _vanished_item(f, saved=False)
+    assert _settle(f)['vanished_key:kept:not_saved'] == 1
+    with f.SessionLocal() as db:
+        assert db.get(BatchItem, item_id).status == 'attention'
+        db.get(BatchItem, item_id).review_request = dict(expected_revision='x', rows=[])
+        db.commit()
+    f.confirm_legacy()
+    assert _settle(f)['vanished_key:skipped:person_work'] == 1
+    with f.SessionLocal() as db:
+        db.get(BatchItem, item_id).review_request = None
+        db.commit()
+    monkeypatch.setattr(held_settlement, 'VANISHED_KEY', False)
+    assert 'vanished_key:superseded' not in _settle(f)
+    with f.SessionLocal() as db:
+        assert db.get(BatchItem, item_id).status == 'attention'
+
+
 # Fund statements ------------------------------------------------------------------------------------------
 
 FUND_PAGE = ('ESTADO DE CUENTA \nFONDOS DE INVERSIÓN\nPÁGINA 2 /3\nNUMERO DE\nTITULOS\nPRECIO AL\nCIERRE\n'
