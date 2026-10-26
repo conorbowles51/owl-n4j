@@ -192,6 +192,64 @@ def test_compare_holds_without_payments_unread_lines_or_several_agreeing_stateme
     assert [d['field'] for d in saved_copies._differences(facts, period, facts['payments'])] == ['closing']
 
 
+def _unreadable_compare(monkeypatch, *, rows=None, opening=1269805805, closing=148716550, currency='MXN',
+                        saved=(('MXN', 1269805805, 148716550),), ledger=None):
+    """L19 (BNB2 09 ECOTERRA BBVA MXN SEP 22): compare() of a copy whose scan lines are not all read."""
+    from collections import Counter
+    periods = [(SimpleNamespace(id=f'p{n}', currency=cur, opening_balance_minor=o, closing_balance_minor=c),
+                SimpleNamespace(), SimpleNamespace(), '') for n, (cur, o, c) in enumerate(saved)]
+    monkeypatch.setattr(saved_copies, 'saved_periods', lambda *a, **k: periods)
+    monkeypatch.setattr(saved_copies, '_ledger', lambda session, period: Counter(
+        ledger if ledger is not None else {('2022-09-01', 500, 'debit'): 1, ('2022-09-02', 700, 'credit'): 1}))
+    monkeypatch.setattr(saved_copies, '_link', lambda document, file, key, period: dict(statement_period_id=period.id))
+    proposal = dict(currency=currency, rows=rows if rows is not None else [
+        dict(id='a', kind='transaction', excluded=False, fields=dict(date='2022-09-01', amount_minor='500', direction='debit')),
+        dict(id='b', kind='unresolved', excluded=False, fields=dict(description='unread scan line'))])
+    summary = dict(checks=[dict(kind='closing_balance', opening_minor=opening, printed_minor=closing)])
+    request = dict(account_number='0118467374', period_start='2022-09-01', period_end='2022-09-30', currency=currency,
+                   rows=[])
+    return saved_copies.compare(None, None, proposal, request, summary)
+
+
+def test_an_unreadable_copy_whose_printed_balances_equal_the_saved_statement_is_a_copy(monkeypatch):
+    result = _unreadable_compare(monkeypatch)
+    assert result['outcome'] == 'match' and result['basis'] == saved_copies.UNREADABLE_BASIS
+    assert result['saved'] == dict(statement_period_id='p0') and result['unread'] == ['unread_rows']
+    # No payment placed at all (the scan's amounts unread): the printed balances still identify it.
+    nothing = [dict(id='b', kind='unresolved', excluded=False, fields=dict(description='unread scan line'))]
+    assert _unreadable_compare(monkeypatch, rows=nothing)['outcome'] == 'match'
+
+
+@pytest.mark.parametrize('change', ['closing', 'opening_unread', 'payment_not_saved', 'currency_unread',
+                                    'currency_differs', 'two_saved', 'off'])
+def test_an_unreadable_copy_stays_held_unless_everything_it_reads_agrees(monkeypatch, change):
+    values = dict(closing=dict(closing=148716551), opening_unread=dict(opening=None),
+                  payment_not_saved=dict(rows=[dict(id='a', kind='transaction', excluded=False, fields=dict(
+                      date='2022-09-03', amount_minor='900', direction='debit')),
+                      dict(id='b', kind='unresolved', excluded=False, fields=dict(description='x'))]),
+                  currency_unread=dict(currency=''), currency_differs=dict(saved=(('USD', 1269805805, 148716550),)),
+                  two_saved=dict(saved=(('MXN', 1269805805, 148716550), ('MXN', 1269805805, 148716550))),
+                  off={})[change]
+    if change == 'off':
+        monkeypatch.setattr(saved_copies, 'UNREADABLE_COPIES', False)
+    assert _unreadable_compare(monkeypatch, **values)['outcome'] == 'not_comparable'
+
+
+def test_an_unreadable_copy_is_set_aside_with_its_own_reason(f, monkeypatch):
+    _, document_id, item_id = _held_copy(f)
+    facts = saved_copies.copy_facts
+    monkeypatch.setattr(saved_copies, 'copy_facts', lambda *a, **k: {**facts(*a, **k), 'holds': ['unread_rows']})
+    assert _settle(f) == {'saved_copy:set_aside': 1}
+    with f.SessionLocal() as db:
+        item = db.get(BatchItem, item_id)
+        decision = item.summary['duplicate_disposition']
+        assert item.status == 'duplicate_ignored' and decision['basis'] == saved_copies.BASIS
+        assert decision['reason'] == saved_copies.UNREADABLE_REASON
+        assert decision['matched_fields'] == saved_copies.UNREADABLE_MATCHED_FIELDS
+        assert decision['saved_ledger_match']['agreement'] == saved_copies.UNREADABLE_BASIS
+        assert decision['retained']['source_document_id'] == str(document_id)
+
+
 # Fund statements ------------------------------------------------------------------------------------------
 
 FUND_PAGE = ('ESTADO DE CUENTA \nFONDOS DE INVERSIÓN\nPÁGINA 2 /3\nNUMERO DE\nTITULOS\nPRECIO AL\nCIERRE\n'

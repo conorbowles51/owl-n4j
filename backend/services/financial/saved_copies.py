@@ -154,6 +154,35 @@ def _link(document, file, key, period):
     return dict(link, statement_period_id=str(period.id))
 
 
+# Neil's decision (2026-10-26, fin-queue3 L19): a copy whose scan the reader cannot read line by line (lines
+# unread, payments incomplete or none placed) is still a copy of the saved statement when what it does read
+# agrees: its printed opening and closing balances both read and both equal to exactly one saved period of the
+# same account and dates, its currency read and equal, and every payment it did read is among that saved
+# statement's payments. Off: such a copy waits for a person, as before.
+UNREADABLE_COPIES = os.environ.get('LOUPE_FINANCIAL_SAVED_COPY_UNREADABLE', '1').strip().lower() not in (
+    '0', 'false', 'no', 'off')
+UNREADABLE_BASIS = 'printed_balances_of_saved_statement'
+UNREADABLE_REASON = ('The case already saved this account and period. This copy\'s lines could not all be read, but '
+                     'its printed opening and closing balances equal the saved statement\'s, and every payment it '
+                     'does read is in the saved statement. It is set aside as a linked duplicate; the saved '
+                     'statement counts once. Restore it to review it again.')
+UNREADABLE_MATCHED_FIELDS = ['account_reference_last_six', 'period_start', 'period_end', 'currency',
+                             'printed_opening_and_closing', 'payments_read_in_saved']
+
+
+def _unreadable_copy(facts, compared):
+    """The one compared saved period an unreadable copy agrees with (printed balances, currency, its read
+    payments among the saved ones), else None."""
+    if not UNREADABLE_COPIES or facts['opening'] is None or facts['closing'] is None or not facts['currency']:
+        return None
+    agreeing = [entry for entry in compared
+                if entry[1].currency == facts['currency']
+                and entry[1].opening_balance_minor == facts['opening']
+                and entry[1].closing_balance_minor == facts['closing']
+                and not (facts['payments'] - entry[5])]
+    return agreeing[0] if len(agreeing) == 1 else None
+
+
 def compare(session, case_id, proposal, request, summary=None, own=()):
     """{'outcome': 'match'|'differs'|'not_comparable'|'no_saved', ...}. Read only."""
     facts = copy_facts(proposal, request, summary)
@@ -168,6 +197,12 @@ def compare(session, case_id, proposal, request, summary=None, own=()):
     holds = sorted(set(facts['holds']))
     if not sum(facts['payments'].values()):
         holds.append('no_payments')
+    unreadable = _unreadable_copy(facts, compared) if holds else None
+    if unreadable is not None:
+        _, period, document, file, key, ledger = unreadable
+        return dict(outcome='match', basis=UNREADABLE_BASIS, saved=_link(document, file, key, period),
+                    saved_statements=len(candidates), payments=sum(ledger.values()), opening=True, closing=True,
+                    unread=holds, differences=[])
     if holds or len(agreeing) != 1:
         best = min(compared, key=lambda entry: (len(entry[0]), str(entry[1].id)))
         differences = [dict(field=hold) for hold in holds] + best[0]
@@ -260,10 +295,13 @@ def settle_item(session, case_id, item, *, cache=None, apply=True):
     saved = result['saved']
     retained = {name: saved[name] for name in ('evidence_file_id', 'statement_id', 'source_document_id', 'filename',
                                                'page_number')}
+    unreadable = result.get('basis') == UNREADABLE_BASIS
     decision = _persist(file, proposal, request, dict(status='ignored', label=LABEL, basis=BASIS, retained=retained,
-        reason=REASON, saved_ledger_match=dict(statement_period_id=saved['statement_period_id'],
-            payments=result['payments'], opening=result['opening'], closing=result['closing'])),
-        None, matched_fields=MATCHED_FIELDS)
+        reason=UNREADABLE_REASON if unreadable else REASON, saved_ledger_match=dict(
+            statement_period_id=saved['statement_period_id'], payments=result['payments'], opening=result['opening'],
+            closing=result['closing'], **({'agreement': UNREADABLE_BASIS, 'unread': result['unread']}
+                                          if unreadable else {}))),
+        None, matched_fields=UNREADABLE_MATCHED_FIELDS if unreadable else MATCHED_FIELDS)
     item.status = 'duplicate_ignored'
     item.summary = {**(item.summary or {}), 'duplicate_disposition': decision, 'can_import': False, 'problems': [],
                     'problem_count': 0, 'saved_copy_check': check}
