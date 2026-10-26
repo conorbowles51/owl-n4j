@@ -21,7 +21,9 @@ Profile format (every key optional except ``name`` and ``match``):
                  credit_component, debit_component, column_total, and
                  day_balance: a line printing the balance at the end of a day
                  after that day's movements ('Saldo al final del dia 25 98.01'),
-                 checked as the running balance after the movement line above it
+                 checked as the running balance after the movement line above it;
+                 and ignore: a label the layout prints beside the period's controls
+                 that is none of them (a payment's allocation box), read as nothing
     columns      {role: [printed column words]} added to the movement headings;
                  roles are date, description, credit, debit, balance, amount, and
                  ignore: an amount column that is not the movement's effect on the
@@ -54,6 +56,10 @@ Profile format (every key optional except ``name`` and ``match``):
     column_order  [role, ...]: the layout's amount columns, left to right (roles credit, debit, balance, amount,
                  ignore); used only for a section printing exactly that many amount columns whose heading did not
                  give every role, and only where each role read from the heading agrees
+    blank_closing_quiet  [closing labels]: a month with no activity prints its closing
+                 label with no amount; the closing is then the zero opening when the
+                 movement table prints no line and every amount printed between the
+                 opening and that label is zero (statement_engine._blank_closing_quiet)
     prior_period_block  {'start': [...], 'end': [...]}: a line starting with a
                  ``start`` phrase opens a block of earlier periods' operations
                  repeated to explain a balance (E7); its lines are not this
@@ -65,6 +71,7 @@ M&T, Scotiabank and Kapital supply only their institution. Facts a person confir
 are not profiles: they are case data (``layout_memory``).
 """
 
+import os
 import re
 
 PROFILES = (
@@ -92,6 +99,27 @@ PROFILES = (
         # The BBVA reader's rule: operations booked in an earlier period, repeated to explain the settlement
         # balance, outside this period's printed counts and totals.
         prior_period_block=dict(start=['MOVIMIENTOS DE PERIODOS ANTERIORES'], end=['TOTAL DE MOVIMIENTOS']),
+    ),
+    # BBVA Mexico's revolving credit line for businesses ("Linea Credito Digital PyME", fin-queue3 L5/L18,
+    # 2026-10-26) also prints the bank's legal name and "Estado de Cuenta", so the cash-management profile
+    # matched it and read the line as a deposit account. Its summary prints the amount owed ("Saldo
+    # Inicial del Periodo", "+ Disposiciones", "- Pagos", "Saldo al Corte", a balance in the holder's favour
+    # with a trailing minus). Measured on every stored file of all cases (3736): the two phrases occur
+    # together in the 40 MIDA BBVA CREDITO files and in no other. A profile of 'all' phrases outranks the
+    # cash-management profile's single phrase (matching_profile).
+    dict(
+        name='bbva-mexico-credit-line',
+        match=dict(all=['digital pyme', 'saldo al corte']),
+        institution='BBVA Mexico',
+        convention='liability_owed',
+        date_order='dmy',
+        # Beside the period summary, the boxes 'Saldo a Favor' and 'Pago para no generar intereses' / 'Pago
+        # Minimo' print a bare 'Intereses' and 'Comisiones' (the interest and fees a payment covers, 100.54 and
+        # 10.17 in ENE 26, which the movement line repeats as its own allocation). They are not the period's
+        # charges: the summary prints those as 'Comisiones Cobradas', 'Intereses Ordinarios (sin IVA)' and 'I.V.A.'.
+        labels=dict(ignore=['INTERESES', 'COMISIONES']),
+        # A month with no activity prints 'Saldo al Corte $' with no amount (09 MIDA BBVA CREDITO SEP 25).
+        blank_closing_quiet=['SALDO AL CORTE'],
     ),
     # Institution-only profiles (r3): these layouts do not always print their legal name on the pages
     # the engine reads it from. Each match phrase is printed by every statement of its family in the
@@ -181,9 +209,9 @@ PROFILES += (
 
 _KEYS = {'name', 'match', 'institution', 'currency', 'convention', 'date_order', 'labels', 'columns', 'account_heading',
          'statement_account', 'prior_period_block', 'account_suffix_heading', 'holder_heading', 'settlement_days',
-         'client_line', 'rule_mark', 'holdings_currency', 'column_order'}
+         'client_line', 'rule_mark', 'holdings_currency', 'column_order', 'blank_closing_quiet'}
 _LABEL_ROLES = {'opening', 'closing', 'subtotal', 'credit_total', 'debit_total', 'credit_component',
-                'debit_component', 'column_total', 'day_balance'}
+                'debit_component', 'column_total', 'day_balance', 'ignore'}
 _COLUMN_ROLES = {'date', 'description', 'credit', 'debit', 'balance', 'amount', 'ignore'}
 
 
@@ -220,6 +248,9 @@ def validate(profile):
     if order is not None and (not isinstance(order, list) or not order
                               or not set(order) <= {'credit', 'debit', 'balance', 'amount', 'ignore'}):
         raise ValueError('Invalid profile column order.')
+    quiet = profile.get('blank_closing_quiet')
+    if quiet is not None and not (isinstance(quiet, list) and quiet and all(isinstance(w, str) and w.strip() for w in quiet)):
+        raise ValueError('Invalid profile blank closing labels.')
     mark = profile.get('rule_mark')
     if mark is not None and not (isinstance(mark, str) and len(mark) == 1 and not mark.isalnum() and not mark.isspace()):
         raise ValueError('Invalid profile rule mark.')
@@ -238,10 +269,17 @@ for _profile in PROFILES:
     validate(_profile)
 
 
+# Profiles turned off by name (comma separated): the reading is exactly as if the profile were absent. The
+# BBVA credit-line profile (2026-10-26) is reversed with LOUPE_FINANCIAL_PROFILES_OFF=bbva-mexico-credit-line.
+PROFILES_OFF = {name.strip() for name in os.environ.get('LOUPE_FINANCIAL_PROFILES_OFF', '').split(',') if name.strip()}
+
+
 def _matching(text):
     lowered = ' '.join(text.lower().split())
     found = []
     for profile in PROFILES:
+        if profile['name'] in PROFILES_OFF:
+            continue
         rule = profile['match']
         if all(p in lowered for p in rule.get('all', [])) and (not rule.get('any') or any(p in lowered for p in rule['any'])):
             found.append(profile)

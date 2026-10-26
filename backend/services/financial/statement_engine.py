@@ -79,6 +79,17 @@ PARENTHESIZED_SECOND_DATE = _switch('LOUPE_FINANCIAL_PARENTHESIZED_SECOND_DATE')
 # date stays on the line as 'authorization_date'. Only when every application date lies in the printed period, on
 # or after its authorisation date. Off: the second date's heading is unnamed and the period is held, as before.
 CREDIT_LINE_APPLICATION_DATE = _switch('LOUPE_FINANCIAL_CREDIT_LINE_APPLICATION_DATE')
+# (B5) A continuation page of that credit line prints its two-date movement lines under the page header only, with no
+# date heading of its own (BBVA "Linea Credito Digital PyME" page 3, fin-queue3 L18, 2026-10-26): it takes the heading
+# a previous page proved, only when its first two-date line's dates sit in that page's two date columns and nothing on
+# the page above that line prints a date-column word. Off: every page must print the heading itself, as before.
+CREDIT_LINE_CONTINUED_HEADING = _switch('LOUPE_FINANCIAL_CREDIT_LINE_CONTINUED_HEADING')
+# (profile ``blank_closing_quiet``) A credit line's month with no activity prints its closing label with no amount
+# ('Saldo al Corte $', BBVA "Linea Credito Digital PyME" SEP 25, fin-queue3 L5, 2026-10-26): the closing is the zero
+# opening, only when the movement table prints no line and every amount printed between the opening and that label
+# (the period summary and its side boxes) is zero (``_blank_closing_quiet``). Off: the period is held 'no_closing'.
+BLANK_CLOSING_QUIET = _switch('LOUPE_FINANCIAL_BLANK_CLOSING_QUIET')
+BLANK_CLOSING_BASIS = 'blank_closing_quiet_summary'
 MAX_ASSIGNMENTS = 4000
 MAX_PERIOD_DAYS = 95
 
@@ -1144,6 +1155,9 @@ ASSET_SUMMARY_COMPONENTS = os.environ.get('LOUPE_FINANCIAL_ASSET_SUMMARY_COMPONE
 
 def _role_of(text, liability):
     extra = _profile_role(text, liability)
+    if extra == 'ignore':
+        # A label the profile names as none of the period's controls (statement_engine_profiles 'ignore').
+        return None
     if extra:
         return extra
     if liability:
@@ -4117,6 +4131,12 @@ def _reading(rows, statement, style, exponent, liability, period):
                         day_differs.append(other)
                 group = []
         day_differs.extend(group)
+    quiet_labels = (_PROFILE.get() or {}).get('blank_closing_quiet')
+    if (BLANK_CLOSING_QUIET and quiet_labels and not all_moves and not controls['closing'] and not column_totals
+            and not unplaced and not blank_dated and headers):
+        quiet = _blank_closing_quiet(rows, controls, quiet_labels, style or 'dot', exponent)
+        if quiet is not None:
+            controls['closing'].append(quiet)
     candidates = _search(all_moves, columns, hints, controls, column_totals, style or 'dot', exponent, liability)
     # Among readings with the same money, keep one whose running balance chains (its balances are printed values).
     proving = sorted((c for c in candidates if c['proved']), key=lambda c: not c.get('chain_ok'))
@@ -4731,7 +4751,8 @@ def _application_date_heading(rows, moves, width):
     """(B5) True when, on every page with a two-date movement line, the lines just above its first such line
     print 'AUTORIZACION' over the first date column and 'APLICACION' over the second (each over its own column
     only), under a line printing 'FECHA' over both: the BBVA credit-line heading 'FECHA AUTORIZACION / FECHA
-    APLICACION' whose kind words sit on their own line below the date heading."""
+    APLICACION' whose kind words sit on their own line below the date heading. A continuation page printing no date
+    heading of its own takes a previous page's (CREDIT_LINE_CONTINUED_HEADING, ``_continued_date_heading``)."""
     def span(token):
         w = token.get('_width') or width
         return token['x0'] / w, token['x1'] / w
@@ -4746,8 +4767,12 @@ def _application_date_heading(rows, moves, width):
             firsts.setdefault(move['row']['page'], move)
     if not firsts:
         return False
-    for page, move in firsts.items():
+    proved = None
+    for page, move in sorted(firsts.items()):
         first, second = (span(t) for t in move['date_tokens'][:2])
+        if proved is not None and CREDIT_LINE_CONTINUED_HEADING and _continued_date_heading(rows, move, first, second,
+                                                                                              proved):
+            continue
         kinds = None
         for index in range(move['row']['_index'] - 1, max(-1, move['row']['_index'] - 1 - _DATE_HEADING_SPAN), -1):
             row = rows[index]
@@ -4764,7 +4789,66 @@ def _application_date_heading(rows, moves, width):
             return False
         if kinds is None or rows[index]['page'] != page or index == kinds:
             return False
+        proved = (first, second)
     return True
+
+
+# Words of a movement table's date-column heading: a continuation page printing any of them above its first movement
+# line prints a heading of its own, which must then be read as such (B5).
+_DATE_HEADING_WORDS = {'FECHA', 'AUTORIZACION', 'APLICACION', 'OPER', 'DATE'} | _POSTING_WORDS | _VALUE_DATE_WORDS
+
+
+def _continued_date_heading(rows, move, first, second, proved):
+    """(B5) A continuation page's first two-date line under a heading a previous page proved: each of each of its two dates
+    overlaps the date the proved page printed in the same column, the first left of the second, and no line of the
+    page above it prints a date-column word."""
+    for mine, theirs in ((first, proved[0]), (second, proved[1])):
+        if not (mine[0] < theirs[1] and mine[1] > theirs[0]):
+            return False
+    if not (first[1] <= second[0]):
+        return False
+    index = move['row']['_index'] - 1
+    while index >= 0 and rows[index]['page'] == move['row']['page']:
+        if any(label(t['t']) in _DATE_HEADING_WORDS for t in rows[index]['tokens']):
+            return False
+        index -= 1
+    return True
+
+
+# A printed amount with two decimals ('0.00', '+$0.00', '1,234.56-'): what the quiet-month rule counts. Scan
+# fragments of a currency sign ('5', 'S') and rates ('0.00%') are not amounts.
+_PRINTED_AMOUNT = re.compile(r'^[+-]?[$§]?\d{1,3}(?:[,.]\d{3})*[.,]\d{2}-?$')
+# The fewest amounts the period summary must print, all zero, for its blank closing to be the opening.
+_QUIET_SUMMARY_AMOUNTS = 8
+
+
+def _blank_closing_quiet(rows, controls, labels, style, exponent):
+    """(profile ``blank_closing_quiet``) The closing control of a month with no activity whose closing label is
+    printed with no amount: the label printed exactly once in the section, on a line printing no amount; an opening
+    read (every reading of it the same) as zero; and at least ``_QUIET_SUMMARY_AMOUNTS`` amounts printed on the lines
+    between the opening line and that label, every one of them zero. The caller requires that the movement table is
+    printed and holds no line. The control cites the blank label's line; its value is the opening, and it carries
+    the basis and the figures it rests on. None otherwise (the period stays held 'no_closing')."""
+    openings = {money(e['value_token']['t'], style, exponent) for e in controls['opening']}
+    if len(openings) != 1 or openings != {0}:
+        return None
+    wanted = {label(text) for text in labels}
+    blank = [row for row in rows if row['tokens']
+             and any(text in wanted for text, _ in label_pairs(row, style, exponent))]
+    if len(blank) != 1:
+        return None
+    closing = blank[0]
+    if any(_PRINTED_AMOUNT.match(t['t']) for t in closing['tokens']):
+        return None
+    first = min(e['row']['_index'] for e in controls['opening'])
+    if closing['_index'] <= first:
+        return None
+    amounts = [t['t'] for row in rows[first + 1:closing['_index']] for t in row['tokens'] if _PRINTED_AMOUNT.match(t['t'])]
+    if len(amounts) < _QUIET_SUMMARY_AMOUNTS or any(money(a.lstrip('+$§'), style, exponent) != 0 for a in amounts):
+        return None
+    anchor = closing['tokens'][-1]
+    return dict(row=closing, value_token=dict(anchor, t='0.00'), count=None, basis=BLANK_CLOSING_BASIS,
+                derivation=dict(opening_minor='0', zero_amounts_printed=str(len(amounts)), movement_lines='0'))
 
 
 def _application_dates_fit(moves, resolved, date_problem, period):
@@ -4860,6 +4944,9 @@ def _rows(rows, moves, resolved, chosen, controls, column_totals, statement, sty
         item.update(kind=extra.pop('kind', 'balance'), excluded=True)
         item['fields'].update(description=description, balance=str(money(token['t'], style, exponent)),
                               balance_column=str(token['cell']['column_index']), **extra)
+        if entry.get('basis'):
+            # A balance the section proves without printing it (``_blank_closing_quiet``): its basis and figures.
+            item['fields'].update(balance_basis=entry['basis'], balance_derivation=entry['derivation'])
         return item
 
     if chosen and chosen.get('opening_item') is not None and chosen.get('values') is not None:
