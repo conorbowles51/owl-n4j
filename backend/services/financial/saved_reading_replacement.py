@@ -91,6 +91,20 @@ REFILED_ACCOUNT = os.environ.get('LOUPE_FINANCIAL_REPLACE_REFILED_ACCOUNT', '1')
 REFILED_REASON = ('The current reader files this statement period in the contract account of its currency, which holds '
                   'the contract\'s other statements of that currency; its payments and balances are the saved ones. '
                   'The saved copy is kept, linked and restorable.')
+# A period saved with no printed dates (a damaged scan the reader of the day could not date: the Merrick file of the
+# Erica Hopper case, 41 periods saved by a person with their payments but no dates or balances) is the statement it
+# was saved from (its statement key) and is replaced like any other when a reading of that statement proves with its
+# dates, under every check above. Off: such a period is refused ('no_single_period') and stays undated.
+UNDATED = os.environ.get('LOUPE_FINANCIAL_REPLACE_UNDATED', '1').strip().lower() not in ('0', 'false', 'off', 'no')
+# An incomplete saved period (no dates, or a balance missing) whose text reading does not prove is replaced by the
+# reading of its page images stored for it (vision_reader.read_saved), judged now with no request sent, under every
+# check a text reading meets (admission as a fresh statement, same account, coverage), when that proves. Off: only
+# text readings replace.
+FROM_IMAGES = os.environ.get('LOUPE_FINANCIAL_REPLACE_FROM_IMAGES', '1').strip().lower() not in ('0', 'false', 'off', 'no')
+IMAGE_BASIS = 'page_image'
+IMAGE_REASON = ('The page images of this statement period were read and the reading balances under every admission '
+                'check; the saved copy was incomplete (no dates or a balance missing). The saved copy is kept, linked '
+                'and restorable.')
 REASON = ('The current reader read this statement period again and its reading balances under every admission check; '
           'it differs from the saved copy. The saved copy is kept, linked and restorable.')
 RESTORE_REASON = 'Restored on request: the earlier saved copy counts again; the replacing reading is kept, linked.'
@@ -278,7 +292,9 @@ def _saved_state(session, document):
         return 'source_changed', None
     periods = list(session.scalars(select(FinancialStatementPeriod).where(
         FinancialStatementPeriod.source_document_id == document.id)))
-    if len(periods) != 1 or not periods[0].currency or periods[0].period_end is None or periods[0].account_id is None:
+    if len(periods) != 1 or not periods[0].currency or periods[0].account_id is None:
+        return 'no_single_period', None
+    if periods[0].period_end is None and not (UNDATED and metadata.get('statement_import_statement_id')):
         return 'no_single_period', None
     if _restored_before(session, document):
         return 'restored_by_request', periods[0]
@@ -327,7 +343,11 @@ def _same_period(raw, period, saved_request, *, same_key=False, end_only=False):
     if raw.get('currency') != period.currency:
         return False
     end, start = _calendar(raw.get('period_end')), _calendar(raw.get('period_start'))
-    if same_key and end is None and start is None:
+    if period.period_end is None:
+        # Saved undated (UNDATED): only the statement it was saved from is this period.
+        if not (UNDATED and same_key):
+            return False
+    elif same_key and end is None and start is None:
         pass
     elif end != period.period_end or (period.period_start is not None and start != period.period_start
                                       and not end_only):
@@ -408,14 +428,15 @@ def build_request(document, proposal):
     return raw
 
 
-def prove(session, document, proposal, raw):
-    """Refusal code, or None when this reading proves exactly as a fresh untouched statement would."""
+def prove(session, document, proposal, raw, request=None):
+    """Refusal code, or None when this reading proves exactly as a fresh untouched statement would. ``request``: the
+    review the reading is (a page-image reading's), judged with it; else the untouched reading."""
     from services.financial.import_batches import assess
     from services.financial.statement_import import StatementImportRequest
     from services.financial.statement_import_overlap import (coverage_review, duplicate_hold, later_queries_trim_themselves,
                                                              requires_decision)
     fresh = {**proposal, 'current_import': None, 'saved_review': None}
-    state, summary = assess(fresh, None)
+    state, summary = assess(fresh, request)
     admission = summary.get('admission') or {}
     if (state != 'ready' or not summary.get('can_import') or summary.get('problems') or summary.get('problem_count')
             or not admission.get('can_import') or admission.get('blockers') or summary.get('balance_status') != 'matches'):
@@ -431,8 +452,71 @@ def prove(session, document, proposal, raw):
     return None
 
 
+def incomplete(period):
+    """A saved period without its dates or a balance."""
+    return period is not None and (period.period_end is None or period.period_start is None
+                                   or period.opening_balance_minor is None or period.closing_balance_minor is None)
+
+
 def assess_document(session, document, *, cache=None, reading=None):
-    """What replacing this saved copy would do. Reads only.
+    """What replacing this saved copy would do (assess_reading); an incomplete saved period its text reading does not
+    replace is assessed from the page reading stored for it (FROM_IMAGES). Reads only."""
+    seen = {}
+    verdict = assess_reading(session, document, cache=cache, reading=reading, seen=seen)
+    if verdict['outcome'] == 'replace' or not FROM_IMAGES or verdict.get('code') not in ('not_proved', 'same') \
+            or 'match' not in seen or not incomplete(seen.get('period')):
+        return verdict
+    image = assess_image(session, document, seen['period'], *seen['match'], dict(verdict))
+    return image or verdict
+
+
+def assess_image(session, document, period, statement_id, proposal, result):
+    """The replacement of an incomplete saved period by its stored page reading, or None (the text verdict stands)."""
+    from services.financial import vision_reader
+    from services.financial.duplicate_decisions import duplicate_revision
+    from services.financial.statement_import import StatementImportRequest
+    current = proposal.get('current_import') or {}
+    if current.get('source_document_id') not in (None, str(document.id)) or (document.metadata_ or {}).get(
+            'statement_import_statement_id') != statement_id:
+        return None
+    image, _ = vision_reader.saved_image_request(session, document, statement_id, proposal)
+    if image is None:
+        return None
+    request, judged, reading = image
+    raw = dict(request, replaces_source_document_id=str(document.id), details_reason=IMAGE_REASON,
+               replacement_revision=duplicate_revision(session, document))
+    if not _same_period(raw, period, (document.metadata_ or {}).get('statement_import_request') or {}, same_key=True):
+        return None
+    sign = -1 if (proposal.get('metadata') or {}).get('balance_convention') == 'liability_owed' else 1
+    fresh = dict(rows=Counter((int(row['amount_minor']), row['direction'], row.get('date') or None)
+                              for row in raw['rows'] if not row.get('excluded')),
+                 opening=sign * reading['opening'], closing=sign * reading['closing'])
+    saved = saved_money(session, document, period)
+    try:
+        code, account = target_account(session, document, period, StatementImportRequest.model_validate(raw), judged)
+        if code is None:
+            code = prove(session, document, judged, raw, request=request)
+    except (PdfMappingError, ValueError):
+        return None
+    if code:
+        return None
+    differs = [name for name in ('opening', 'closing') if fresh[name] != saved[name]]
+    if fresh['rows'] != saved['rows']:
+        differs.insert(0, 'payments')
+    if period.period_end is None or period.period_start is None:
+        differs.append('period')
+    if account.id != period.account_id:
+        differs.append('account')
+    return {**result, 'outcome': 'replace', 'code': None, 'request': raw, 'differs': differs, 'basis': IMAGE_BASIS,
+            'statement_id': statement_id, 'fresh_payments': sum(fresh['rows'].values()),
+            'account_moved': account.id != period.account_id,
+            'investigator_work': investigator_work(session, document),
+            'missing_payments': sum((fresh['rows'] - saved['rows']).values()),
+            'extra_payments': sum((saved['rows'] - fresh['rows']).values())}
+
+
+def assess_reading(session, document, *, cache=None, reading=None, seen=None):
+    """What replacing this saved copy with its text reading would do. Reads only.
 
     ``reading``: (statement id, proposal) the writer read under its locks; the
     proof is then made on exactly that reading. Returns a dict with
@@ -444,6 +528,8 @@ def assess_document(session, document, *, cache=None, reading=None):
     result = dict(document_id=str(document.id), evidence_file_id=str(document.evidence_file_id),
                   case_id=str(document.case_id), outcome='refused', code=None)
     code, period = _saved_state(session, document)
+    seen = {} if seen is None else seen
+    seen['period'] = period
     if period is not None:
         result.update(period_id=str(period.id), currency=period.currency)
     mirror_only = code == MIRROR_CODE
@@ -480,6 +566,7 @@ def assess_document(session, document, *, cache=None, reading=None):
         if len(matches) > 1:
             return {**result, 'code': 'several_matching_periods'}
         statement_id, proposal = matches[0]
+        seen['match'] = (statement_id, proposal)
         current = proposal.get('current_import') or {}
         if current.get('source_document_id') not in (None, str(document.id)):
             # The writer would replace another saved copy, not this one.
@@ -491,7 +578,8 @@ def assess_document(session, document, *, cache=None, reading=None):
             return {**result, 'code': 'no_matching_period'}
         fresh = fresh_money(proposal, raw)
         result.update(statement_id=statement_id, fresh_payments=sum(fresh['rows'].values()))
-        same = fresh == saved
+        # A reading that dates an undated saved period is not the same (UNDATED).
+        same = fresh == saved and not (period.period_end is None and _calendar(raw.get('period_end')))
         if same and (mirror_only or not REFILED_ACCOUNT):
             return {**result, 'outcome': 'same', 'code': 'same'}
         if mirror_only and not mirrored(saved, fresh):

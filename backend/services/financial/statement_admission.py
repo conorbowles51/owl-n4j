@@ -93,6 +93,15 @@ def source_proves_no_activity(evidence, raw):
         and not raw.get('period_start_unprinted'))
 
 
+def image_charge_total(proposal, request, scope):
+    """Whether the page-image reading the payments were all read from proved this printed fee or interest total
+    against its charge lines (vision_reader.charge_totals): the control the added rows are checked by."""
+    if scope not in ('fee', 'interest') or scope not in (proposal.get('image_charge_totals') or {}):
+        return False
+    selected = [row for row in request.rows if not row.excluded]
+    return bool(selected) and all(str(row.id).startswith('manual:vision-') for row in selected)
+
+
 def assess_admission(proposal, request, arithmetic=None):
     raw = request.model_dump(mode='json')
     arithmetic = arithmetic or check_proposed_rows(proposal, raw['rows'])
@@ -151,7 +160,7 @@ def assess_admission(proposal, request, arithmetic=None):
         controls = [r for r in proposal['rows'] if r['kind'] == 'statement_total' and
             ((role in ('credit', 'debit') and not r['fields'].get('total_scope') and r['fields'].get('total_direction') == role)
              or r['fields'].get('total_scope') == role)]
-        if controls:
+        if controls and not image_charge_total(proposal, request, role):
             blockers.append(dict(kind='arithmetic', check=check['kind'], row_id=controls[0]['id'], page=controls[0].get('page_number'),
                 message=f'Check the printed {role} total. It could not be compared with the selected payments.'))
     # A missed payment cannot be used to waive known printed running controls.

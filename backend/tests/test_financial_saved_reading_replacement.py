@@ -421,3 +421,135 @@ class PartialFileTests(TestCase):
                 first_rows)
             self.assertEqual(db.get(FinancialSourceDocument, second).status, 'superseded')
             self.assertIsNone(db.scalar(select(AdjudicationEvent.id).where(AdjudicationEvent.subject_id == first)))
+
+
+class ImageReplacementTests(TestCase):
+    """An incomplete saved period its text reading does not prove is replaced by its stored page reading (L22)."""
+
+    def setUp(self):
+        self.t = SavedReadingReplacementTests('test_a_reading_that_does_not_prove_is_left_and_nothing_is_written')
+        self.t.setUp()
+        self.f = self.t.f
+        self.truth = self.t.review()
+
+    def tearDown(self):
+        self.t.tearDown()
+
+    def _reading(self):
+        """The page reading: every printed payment and both balances of the period, as the true statement prints them."""
+        from services.financial.review_arithmetic import integer
+        rows, balances = [], {}
+        for row in self.truth['rows']:
+            fields = row['fields']
+            if row['kind'] == 'balance':
+                balances[(fields.get('description') or '').strip().lower()] = (integer(fields.get('balance')), row['page_number'])
+            elif row['kind'] == 'transaction' and not row['excluded']:
+                rows.append(dict(index=len(rows), date=fields['date'], description=fields.get('description') or 'PAYMENT',
+                                 amount_minor=int(fields['amount_minor']), direction=fields['direction'],
+                                 balance_minor=integer(fields.get('balance')), page=row['page_number']))
+        meta = self.truth['metadata']
+        return dict(currency='EUR', holder='Test Company', account_number='TEST123', institution=meta['institution'],
+                    period_start=meta['period_start'], period_end=meta['period_end'], rows=rows,
+                    opening=balances['opening balance'][0], closing=balances['closing balance'][0],
+                    opening_page=balances['opening balance'][1], closing_page=balances['closing balance'][1],
+                    charge_totals={})
+
+    def _save(self):
+        """Saved from the statement it was read from (its statement key), as every batch save is."""
+        return self.t.save_earlier_reading(lambda request: request.update(statement_id=self.truth['statement_id']))
+
+    def _broken_text(self):
+        payload = deepcopy(self.t.full)
+        for value in payload[0]['table']['values']:
+            if value['text'] == '€47,450':
+                value['text'] = '€47,451'  # the current text reading no longer reconciles
+        self.t.set_payload(payload)
+
+    def _incomplete(self, document_id):
+        from postgres.models.financial import FinancialStatementPeriod
+        with self.f.SessionLocal() as db:
+            period = db.scalar(select(FinancialStatementPeriod).where(FinancialStatementPeriod.source_document_id == document_id))
+            # As Merrick was saved from a damaged reading: no closing balance.
+            period.closing_balance_minor = None
+            period.closing_balance_source = 'absent'
+            db.commit()
+
+    def _image(self):
+        reading = self._reading()
+
+        def stored(db, document, statement_id, proposal):
+            from services.financial import vision_reader
+            return (vision_reader.build_request(proposal, reading), dict(proposal), reading), None
+        return patch('services.financial.vision_reader.saved_image_request', side_effect=stored)
+
+    def test_an_incomplete_period_is_replaced_by_its_page_reading_and_restores(self):
+        old_id = self._save()
+        self._incomplete(old_id)
+        self._broken_text()
+        rows = self.t.admitted_rows()
+        with patch.object(replacement, 'FROM_IMAGES', False):
+            self.assertEqual(self.t.assess(old_id)['code'], 'not_proved')
+        with self._image():
+            verdict = self.t.assess(old_id)
+            self.assertEqual((verdict['outcome'], verdict.get('basis')), ('replace', replacement.IMAGE_BASIS), verdict)
+            self.assertIn('payments', verdict['differs'])
+            result = self.t.replace(old_id)
+        self.assertTrue(result['applied'], result)
+        new_id = UUID(result['receipt']['source_document_id'])
+        self.assertEqual(self.t.admitted_rows(), rows + 1, 'the period counts once, from the page reading')
+        with self.f.SessionLocal() as db:
+            new = db.get(FinancialSourceDocument, new_id)
+            self.assertEqual(new.metadata_['statement_import_request']['details_reason'], replacement.IMAGE_REASON)
+            self.assertTrue(all(r['id'].startswith('manual:vision-') for r in new.metadata_['statement_import_request']['rows']
+                                if not r['excluded']))
+        self.assertEqual(self.t.document(old_id).status, 'superseded')
+        self.t.restore(new_id)
+        self.assertEqual(self.t.admitted_rows(), rows, 'restore is the exact reversal')
+        self.assertEqual(self.t.document(old_id).status, 'admitted')
+
+    def test_a_complete_period_is_not_replaced_from_images(self):
+        old_id = self._save()
+        self._broken_text()
+        with self._image():
+            self.assertEqual(self.t.assess(old_id)['code'], 'not_proved')
+
+    def test_without_a_stored_page_reading_the_text_verdict_stands(self):
+        old_id = self._save()
+        self._incomplete(old_id)
+        self._broken_text()
+        self.assertEqual(self.t.assess(old_id)['code'], 'not_proved')
+
+    def test_the_writer_refuses_when_the_page_reading_is_gone(self):
+        old_id = self._save()
+        self._incomplete(old_id)
+        self._broken_text()
+        with self._image():
+            verdict = self.t.assess(old_id)
+        self.assertEqual(verdict['outcome'], 'replace')
+        with self.assertRaises(PdfMappingError):
+            confirm_statement_import(session_factory=self.f.SessionLocal, case_id=self.f.case.id,
+                                     evidence_file_id=self.f.file.id, request=StatementImportRequest.model_validate(verdict['request']),
+                                     actor=replacement.ACTOR, resolve_path=Path)
+        self.assertEqual(self.t.document(old_id).status, 'admitted')
+
+
+class UndatedPeriodTests(TestCase):
+    """A period saved with no dates is the statement it was saved from (L22, 41 Erica Merrick periods)."""
+
+    def test_only_the_statement_it_was_saved_from_is_an_undated_period(self):
+        from types import SimpleNamespace
+        period = SimpleNamespace(currency='USD', period_end=None, period_start=None)
+        raw = dict(currency='USD', period_start='2022-03-26', period_end='2022-04-25', account_number='4120 6180 6507 0753')
+        saved = dict(account_number='4120618065070753')
+        self.assertTrue(replacement._same_period(raw, period, saved, same_key=True))
+        self.assertFalse(replacement._same_period(raw, period, saved, same_key=False))
+        self.assertFalse(replacement._same_period(dict(raw, account_number='999'), period, saved, same_key=True))
+        with patch.object(replacement, 'UNDATED', False):
+            self.assertFalse(replacement._same_period(raw, period, saved, same_key=True))
+
+    def test_incomplete_means_no_dates_or_a_balance_missing(self):
+        from types import SimpleNamespace
+        whole = dict(period_end=1, period_start=1, opening_balance_minor=0, closing_balance_minor=5)
+        self.assertFalse(replacement.incomplete(SimpleNamespace(**whole)))
+        for key in whole:
+            self.assertTrue(replacement.incomplete(SimpleNamespace(**dict(whole, **{key: None}))))

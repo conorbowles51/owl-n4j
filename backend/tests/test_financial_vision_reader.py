@@ -765,3 +765,98 @@ class DatesFromImageTest(unittest.TestCase):
     def test_a_statement_still_held_after_the_dates_is_refused(self):
         with self.assertRaises(vr.NotProved):
             self._run(self._proposal(), self._readings(), state='attention')
+
+
+class ClosingDaysTest(unittest.TestCase):
+    """A card statement printing only its statement date and the days in its billing cycle (L22, Erica Merrick)."""
+
+    CARD = dict(institution='Merrick Bank', holder='LASHIKA M HOPPER', account_number='4120 6180 6507 0753',
+                currency='', period_start='', period_end='2022-04-25')
+
+    def _pages(self, interest='39.59', total_interest='39.59', total_fees='0.00', days=31, extra=()):
+        rows = [dict(_row('2022-03-31', '250.00', 'credit', description='MOBILE PAYMENT-THANK YOU'), charge_kind=''),
+                dict(_row('2022-04-25', interest, 'debit', description='Interest Charge on Purchases'), charge_kind='interest'),
+                *extra]
+        section = _section(rows, opening_balance='2023.52', closing_balance='1813.11', **self.CARD)
+        section.update(days_in_period=days, total_fees=total_fees, total_interest=total_interest)
+        return [(19, _page([section], 1, 1))]
+
+    def _proposal(self, rows=()):
+        proposal = _proposal(rows, currency='USD', balance_convention='liability_owed', account_number='4120 6180 6507 0753',
+                             period_end='2022-04-25')
+        proposal.update(page_numbers=[19], statement_page_numbers=[19], sources=[dict(page_number=19, table_index=0)])
+        return proposal
+
+    def _knowledge(self):
+        return _knowledge(currency='USD', holder='LASHIKA M HOPPER', institution='Merrick Bank', account='4120618065070753')
+
+    def _prove(self, pages=None, proposal=None):
+        pages = pages or self._pages()
+        proposal = proposal or self._proposal()
+        return vr.prove(proposal, vr.choose_section(vr.combine(pages), proposal), self._knowledge())
+
+    def test_the_start_is_the_closing_date_less_the_printed_days(self):
+        reading = self._prove()
+        self.assertEqual((reading['period_start'], reading['period_end']), ('2022-03-26', '2022-04-25'))
+        self.assertEqual((reading['opening'], reading['closing']), (202352, 181311))
+        self.assertEqual(reading['charge_totals'], dict(fee=0, interest=3959))
+
+    def test_off_the_period_is_not_read(self):
+        with mock.patch.object(vr, 'CLOSING_DAYS', False):
+            with self.assertRaisesRegex(vr.NotProved, 'period could not be read'):
+                self._prove()
+
+    def test_no_printed_days_reads_no_period(self):
+        with self.assertRaisesRegex(vr.NotProved, 'period could not be read'):
+            self._prove(self._pages(days=None))
+        with self.assertRaisesRegex(vr.NotProved, 'period could not be read'):
+            self._prove(self._pages(days=400))
+
+    def test_a_start_the_text_read_differently_holds(self):
+        proposal = self._proposal()
+        proposal['metadata']['period_start'] = '2022-03-27'
+        with self.assertRaisesRegex(vr.NotProved, 'differs from the one read from the text'):
+            self._prove(proposal=proposal)
+
+    def test_a_printed_interest_total_must_equal_its_lines(self):
+        with self.assertRaisesRegex(vr.NotProved, 'interest charges read do not add up'):
+            self._prove(self._pages(total_interest='39.60'))
+
+    def test_a_text_total_read_differently_holds(self):
+        control = dict(id='t9', kind='statement_total', excluded=True, issues=[], page_number=19,
+                       fields=dict(total_scope='interest', balance='3960', description='TOTAL INTEREST'))
+        with self.assertRaisesRegex(vr.NotProved, 'interest total read from the page images differs'):
+            self._prove(proposal=self._proposal([control]))
+
+    def test_a_charge_line_printed_as_zero_is_not_a_payment(self):
+        zero = dict(_row('2022-04-25', '0.00', 'debit', description='Interest Charge on Cash Advances'), charge_kind='interest')
+        reading = self._prove(self._pages(extra=[zero]))
+        self.assertEqual(len(reading['rows']), 2)
+
+    def test_the_document_reading_carries_the_days_and_charge_totals(self):
+        account = dict(_section(**self.CARD), opening_balance='2023.52', opening_balance_page=19, closing_balance='1813.11',
+                       closing_balance_page=19, days_in_period=31, total_fees='0.00', total_interest='39.59',
+                       rows=[dict(_row('2022-03-31', '250.00', 'credit'), page=19, charge_kind=''),
+                             dict(_row('2022-04-25', '39.59', 'debit'), page=19, charge_kind='interest')])
+        document = dict(pages=[dict(page=19, printed_page_number=1, printed_page_total=1, is_statement_page=True)],
+                        accounts=[account])
+        section = vr.combine(vr.document_pages(document, [19]))[0]
+        self.assertEqual(vr.closing_days(section), 31)
+        self.assertEqual((section['values']['total_fees'], section['values']['total_interest']), ('0.00', '39.59'))
+        self.assertIn('days_in_period', vr.DOCUMENT_SCHEMA['properties']['accounts']['items']['required'])
+
+    def test_admission_takes_the_proved_total_only_for_rows_read_from_the_images(self):
+        from services.financial.statement_admission import image_charge_total
+        proposal = dict(image_charge_totals=dict(interest=3959))
+        image = SimpleNamespace(rows=[SimpleNamespace(id='manual:vision-p19-0', excluded=False)])
+        text = SimpleNamespace(rows=[SimpleNamespace(id='t1', excluded=False)])
+        self.assertTrue(image_charge_total(proposal, image, 'interest'))
+        self.assertFalse(image_charge_total(proposal, image, 'fee'))
+        self.assertFalse(image_charge_total(proposal, text, 'interest'))
+        self.assertFalse(image_charge_total({}, image, 'interest'))
+
+    def test_stored_evidence_of_a_saved_statement_reading(self):
+        file = SimpleNamespace(metadata_={vr.SAVED_KEY: {'k': dict(status='proved', revision='r', charge_totals=dict(fee=0))}})
+        self.assertEqual(vr.stored_image_evidence(file, dict(statement_id='k', revision='r')),
+                         dict(image_charge_totals=dict(fee=0)))
+        self.assertEqual(vr.stored_image_evidence(file, dict(statement_id='k', revision='other')), {})

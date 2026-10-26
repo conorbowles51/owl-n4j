@@ -48,7 +48,7 @@ import re
 import threading
 import time
 from copy import deepcopy
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from types import SimpleNamespace
 from uuid import UUID, uuid4
@@ -155,14 +155,34 @@ OPENING_REASON = ('Opening balance not printed in these pages: the closing balan
 # image, as it takes the image's opening and closing. Off: the text's total stays and holds the period.
 IMAGE_TOTALS = _switch('LOUPE_FINANCIAL_VISION_IMAGE_TOTALS')
 TOTAL_REASON = 'Printed total read from page image, page {page}; it agrees with the payments read.'
+# A card statement prints one date, its statement (billing-cycle closing) date, and the days in its billing cycle
+# ('Statement Date: 04/25/22', 'Days in Billing Cycle 31'; Merrick), but no period: the images gave no period and
+# the reading could not prove. The images now give that closing date as the period end and the printed days
+# (``days_in_period``); the start is the closing date less those days plus one, two printed facts (as the text
+# engine's closing-only rule, statement_engine B1), and must agree with the text reading wherever that read a
+# start or end. Off: such a statement is 'The statement period could not be read' (Erica Merrick, 42 statements).
+CLOSING_DAYS = _switch('LOUPE_FINANCIAL_VISION_CLOSING_DAYS')
+MAX_CYCLE_DAYS = 95
+# A card statement prints its fee and interest totals ('TOTAL FEES FOR THIS PERIOD 0.00', 'TOTAL INTEREST FOR THIS
+# PERIOD 39.59'); payments read from the page images are added rows, which the text controls cannot be compared with,
+# so every such statement read from its images stayed held ('Check the printed fee total'). The images now give each
+# charge line's kind and the printed fee and interest totals: a printed total must equal the lines of its kind read
+# (and the text's reading of the same total wherever that read one), and is then the checked control for those rows
+# (statement_admission). A charge line printed as 0.00 moves nothing and is not a payment. Rides on CLOSING_DAYS.
 PROOF_VERSION = 1
 for _switched in (SPLIT_SPELLINGS, SECTION_NUMBER, PRINTED_COUNTS, QUIET_PRINTED, CLABE_ACCOUNT, SECTION_BY_TEXT,
-                  SIGNED_DEBITS, DATES_FROM_IMAGE, OPENING_FROM_PREVIOUS, IMAGE_TOTALS):
+                  SIGNED_DEBITS, DATES_FROM_IMAGE, OPENING_FROM_PREVIOUS, IMAGE_TOTALS, CLOSING_DAYS):
     # Each switch on top of the one before; with one off, the rules are the version before it.
     if not _switched:
         break
     PROOF_VERSION += 1
 METADATA_KEY = 'financial_vision_reading'
+# A saved statement period that is incomplete (no dates, or a balance missing: Alex saved 41 Erica Merrick periods with
+# their payments only, from a damaged text reading) is read from its page images once (read_saved), stored on the
+# file under SAVED_KEY, never applied here: the reader replacement (saved_reading_replacement) judges it like any
+# reading and replaces the saved copy, linked and restorable, only when it proves. Off: nothing is read or used.
+SAVED_KEY = 'financial_vision_saved_reading'
+SAVED_READING = _switch('LOUPE_FINANCIAL_VISION_SAVED_READING')
 MARK = 'vision_fallback'
 SYSTEM_NAME = 'System'
 SYSTEM_EMAIL = 'vision-reader@system.local'
@@ -266,10 +286,15 @@ PAGE_SCHEMA = {'type': 'object', 'additionalProperties': False,
                               'sections': {'type': 'array', 'items': _SECTION}}}
 
 # One request per statement: every page image, labelled with its page number; each row cites its page.
-_DOC_ROW = dict(_ROW, required=_ROW['required'] + ['page'], properties=dict(_ROW['properties'], page={'type': 'integer'}))
-_ACCOUNT = dict(_SECTION, required=_SECTION['required'] + ['opening_balance_page', 'closing_balance_page'],
+_DOC_ROW = dict(_ROW, required=_ROW['required'] + ['page', 'charge_kind'],
+                properties=dict(_ROW['properties'], page={'type': 'integer'},
+                                charge_kind={'type': 'string', 'enum': ['', 'fee', 'interest']}))
+_ACCOUNT = dict(_SECTION, required=_SECTION['required'] + ['opening_balance_page', 'closing_balance_page', 'days_in_period',
+                                                           'total_fees', 'total_interest'],
                 properties=dict(_SECTION['properties'], rows={'type': 'array', 'items': _DOC_ROW},
-                                opening_balance_page=_nullable('integer'), closing_balance_page=_nullable('integer')))
+                                opening_balance_page=_nullable('integer'), closing_balance_page=_nullable('integer'),
+                                days_in_period=_nullable('integer'), total_fees=_nullable('string'),
+                                total_interest=_nullable('string')))
 DOCUMENT_SCHEMA = {'type': 'object', 'additionalProperties': False, 'required': ['pages', 'accounts'],
                    'properties': {
                        'pages': {'type': 'array', 'items': {'type': 'object', 'additionalProperties': False,
@@ -286,10 +311,11 @@ pages: one entry per labelled page: page (N from its label), printed_page_number
 
 accounts: one entry per account or sub-account whose statement is printed (a product, currency sub-account or share with its own balances is its own entry), in printed order:
 - section_name: the printed product, sub-account or share heading; institution; holder (account holder name); account_number (the account number as printed, including masks; not a CLABE, client or contract number when an account number is printed); currency (ISO code only when the statement prints the currency or its name; never guess from a "$" sign) and currency_as_printed (the literal text).
-- period_start, period_end as YYYY-MM-DD: the statement period printed for this account.
+- period_start, period_end as YYYY-MM-DD: the statement period printed for this account. A card statement that prints only its statement date (billing-cycle closing date) and no period: period_end is that date and period_start is empty. days_in_period: the number of days in the period or billing cycle as printed (e.g. "Days in Billing Cycle 31"); null when not printed.
 - opening_balance (balance at the start of the period, e.g. "Saldo anterior", "Saldo inicial", "Previous balance") and closing_balance (e.g. "Saldo final", "Saldo al corte", "New balance"), with the page each is printed on (opening_balance_page, closing_balance_page). Negative only when printed negative.
 - total_credits / total_debits: printed totals of deposits/credits and of withdrawals/charges for the period; count_credits / count_debits: printed numbers of them. null when not printed.
-- rows: every movement line of this account in printed order, across all its pages: page (the label N of the page it is printed on); date as YYYY-MM-DD (the operation date; take the year from the statement period); description as printed (one line is enough); amount positive; direction credit (money in, deposit, abono) or debit (money out, charge, cargo, retiro); balance_after = the running balance printed on that line, or null. Never list opening or closing balance lines, totals, subtotals or summary lines as rows. Set unreadable true for a row whose date or amount you cannot read with certainty.
+- total_fees / total_interest: the printed totals of fees and of interest charged for the period (e.g. "TOTAL FEES FOR THIS PERIOD", "TOTAL INTEREST FOR THIS PERIOD"); null when not printed.
+- rows: every movement line of this account in printed order, across all its pages: page (the label N of the page it is printed on); date as YYYY-MM-DD (the operation date; take the year from the statement period); description as printed (one line is enough); amount positive; direction credit (money in, deposit, abono) or debit (money out, charge, cargo, retiro); balance_after = the running balance printed on that line, or null; charge_kind "fee" for a fee charged, "interest" for an interest charge, else empty. Never list opening or closing balance lines, totals, subtotals or summary lines as rows. Set unreadable true for a row whose date or amount you cannot read with certainty.
 - no_transactions_printed: true only when the statement states there were no movements for this account.
 All amounts use a dot as decimal separator, no thousands separators, a leading "-" only when printed negative. Empty string or null for anything not printed."""
 
@@ -329,6 +355,9 @@ def document_pages(document, sent_pages):
             if page == first:
                 section.update({key: account.get(key) for key in ('institution', 'holder', 'currency', 'currency_as_printed',
                                 'period_start', 'period_end', 'total_credits', 'total_debits', 'count_credits', 'count_debits')})
+                for key in ('days_in_period', 'total_fees', 'total_interest'):
+                    if account.get(key) is not None:
+                        section[key] = account[key]
             if page == (account.get('opening_balance_page') or first):
                 section['opening_balance'] = account.get('opening_balance')
             if page == (account.get('closing_balance_page') or last):
@@ -472,7 +501,8 @@ def combine(pages):
                 value = str(section.get(key) or '').strip()
                 if value and not target['header'][key]:
                     target['header'][key] = value
-            for key in ('opening_balance', 'closing_balance', 'total_credits', 'total_debits', 'count_credits', 'count_debits'):
+            for key in ('opening_balance', 'closing_balance', 'total_credits', 'total_debits', 'count_credits', 'count_debits',
+                        'days_in_period', 'total_fees', 'total_interest'):
                 value = section.get(key)
                 if value in (None, ''):
                     continue
@@ -613,6 +643,14 @@ def _period_end(section):
     return section['period'][1] or _iso(section['header'].get('period_end'))
 
 
+def closing_days(section):
+    """The printed days in the billing cycle of a section printing only its closing date (CLOSING_DAYS), else None."""
+    value = str(section['values'].get('days_in_period') if section['values'].get('days_in_period') is not None else '').strip()
+    if not value.isdigit() or not 1 <= int(value) <= MAX_CYCLE_DAYS:
+        return None
+    return int(value)
+
+
 def choose_section(sections, proposal):
     rule = _rule_metadata(proposal)
     account = _digits(rule['account_number'])
@@ -724,6 +762,12 @@ def prove(proposal, section, knowledge):
     if not end:
         end = _period_end(section)
         start = _iso(section['header'].get('period_start'))
+    if not start and end and CLOSING_DAYS:
+        days = closing_days(section)
+        if days:
+            # Only the closing date and the days in the billing cycle are printed: two printed facts (B1); a start
+            # the text reading has must be this one (checked below).
+            start = (date.fromisoformat(end) - timedelta(days=days - 1)).isoformat()
     if not start and end and rule['period_start'] and rule['period_end'] == end:
         # Only the end is printed with this section; the start is the text reading's for the same period.
         start = rule['period_start']
@@ -787,6 +831,8 @@ def prove(proposal, section, knowledge):
     rows = []
     for index, row in enumerate(section['rows']):
         amount = row_amount(row, exponent)
+        if CLOSING_DAYS and amount == 0 and not row.get('unreadable') and row.get('charge_kind') in ('fee', 'interest'):
+            continue  # a charge line printed as 0.00 moves nothing
         when = _iso(row.get('date'))
         if row.get('unreadable') or not amount or not when or row.get('direction') not in ('credit', 'debit') \
                 or not str(row.get('description') or '').strip():
@@ -799,7 +845,8 @@ def prove(proposal, section, knowledge):
             if balance is None:
                 raise NotProved('A running balance on page %s could not be read.' % row['page'])
         rows.append(dict(index=index, date=when, description=' '.join(str(row['description']).split())[:4000],
-                         amount_minor=amount, direction=row['direction'], balance_minor=balance, page=row['page']))
+                         amount_minor=amount, direction=row['direction'], balance_minor=balance, page=row['page'],
+                         charge_kind=row.get('charge_kind') or ''))
     previous_end = None
     if derive_opening:
         opening, previous_end = _opening_from_previous(section, rows, closing, candidates, currency, start, end,
@@ -825,8 +872,9 @@ def prove(proposal, section, knowledge):
             if not str(count).isdigit() or int(count) != sum(r['direction'] == direction for r in rows):
                 raise NotProved('The number of %s read differs from the printed count.' % ('credits' if direction == 'credit' else 'charges'))
     _agrees_with_rule_reading(proposal, rows, opening, closing)
+    charges = charge_totals(proposal, section, rows, exponent) if CLOSING_DAYS else {}
     return dict(account_keys=[k.key for k in candidates], currency=currency, holder=holder, institution=institution,
-                account_number=account_text,
+                account_number=account_text, charge_totals=charges,
                 period_start=start, period_end=end, opening=opening, closing=closing, rows=rows,
                 opening_page=section['balance_pages'].get('opening_balance') if previous_end is None else rows[0]['page'],
                 closing_page=section['balance_pages'].get('closing_balance'),
@@ -876,6 +924,32 @@ def _opening_from_previous(section, rows, closing, candidates, currency, start, 
                      ('the next saved statement, from ' + first))
 
 
+def charge_totals(proposal, section, rows, exponent):
+    """{scope: printed total} for each fee/interest total the images print, proved equal to the charge lines of
+    its kind read and to the text's reading of that total where the text read it; NotProved otherwise."""
+    from services.financial.review_arithmetic import integer
+    proved = {}
+    for scope, key in (('fee', 'total_fees'), ('interest', 'total_interest')):
+        printed = section['values'].get(key)
+        if printed in (None, ''):
+            continue
+        total = to_minor(printed, exponent)
+        if total is None:
+            raise NotProved('The printed %s total could not be read from the page images.' % scope)
+        # A charge is money out; a refunded charge of the kind counts against it.
+        lines = sum(r['amount_minor'] * (1 if r['direction'] == 'debit' else -1) for r in rows if r.get('charge_kind') == scope)
+        if lines != total:
+            raise NotProved('The %s charges read do not add up to the printed %s total.' % (scope, scope))
+        for control in proposal['rows']:
+            fields = control.get('fields') or {}
+            if control.get('kind') == 'statement_total' and fields.get('total_scope') == scope:
+                text = integer(fields.get('balance'))
+                if text is not None and text != total:
+                    raise NotProved('The printed %s total read from the page images differs from the one read from the text.' % scope)
+        proved[scope] = total
+    return proved
+
+
 def _printed_quiet(section, opening, closing, exponent):
     """The images print this section's deposit and withdrawal counts as 0, both totals as zero and equal balances."""
     values = section['values']
@@ -908,13 +982,14 @@ def printed_controls(proposal, section, reading, request):
                 period_start=reading['period_start'], period_end=reading['period_end'], balance_rows=ends)
 
 
-def image_evidence(proposal, controls):
-    """What a proved page-image reading adds to the statement's reading: its printed controls, and for a quiet
-    period the source proof of no activity (statement_admission.source_proves_no_activity checks it against the
-    review's balance rows and period)."""
+def image_evidence(proposal, controls, charges=None):
+    """What a proved page-image reading adds to the statement's reading: its printed controls, its proved fee and
+    interest totals (CLOSING_DAYS), and for a quiet period the source proof of no activity
+    (statement_admission.source_proves_no_activity checks it against the review's balance rows and period)."""
+    extra = dict(image_charge_totals=charges) if charges and CLOSING_DAYS else {}
     if not controls:
-        return {}
-    extra = dict(image_printed_controls=controls)
+        return extra
+    extra.update(image_printed_controls=controls)
     quiet = (QUIET_PRINTED and controls['count_credits'] == 0 and controls['count_debits'] == 0
              and controls['total_credits_minor'] == 0 and controls['total_debits_minor'] == 0
              and controls['opening_minor'] == controls['closing_minor'])
@@ -934,8 +1009,11 @@ def stored_image_evidence(file, result):
         return {}
     record = _stored(file, result.get('statement_id') or '')
     if not record or record.get('status') != 'proved' or record.get('revision') != result.get('revision'):
+        # A saved statement's page reading (read_saved), proved for this same reading.
+        record = ((file.metadata_ or {}).get(SAVED_KEY) or {}).get(result.get('statement_id') or '') if SAVED_READING else None
+    if not record or record.get('status') != 'proved' or record.get('revision') != result.get('revision'):
         return {}
-    return image_evidence(result, record.get('printed_controls'))
+    return image_evidence(result, record.get('printed_controls'), record.get('charge_totals'))
 
 
 def _not_summary_lines(section, rows, exponent):
@@ -1561,36 +1639,8 @@ def read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for
                 return _finish(factory, item_id, file_id, key, dict(record, status='stale',
                     message='The statement was read again while its page images were read.'), apply)
             try:
-                readings = document_pages(document, pages)
-                page_gap = None
-                try:
-                    check_page_numbering(readings, proposal.get('page_numbers'))
-                except NotProved as gap:
-                    if not PRINTED_COUNTS:
-                        raise
-                    # A page gap is settled by the bank's own printed counts and totals of the period's
-                    # deposits and withdrawals on a page held, as the batch's page gate settles it
-                    # (import_issues.printed_complete): decided below.
-                    page_gap = gap
-                section = choose_section(combine(readings), proposal)
-                if page_gap is not None and not proposal.get('printed_pages_missing') and any(
-                        section['values'].get(k) is None for k in ('count_credits', 'count_debits', 'total_credits', 'total_debits')):
-                    # The text reading does not see the gap, so the page gate cannot weigh it: only all four
-                    # printed on the images (each proved equal to the payments read, in prove) settle it.
-                    raise page_gap
-                reading = prove(proposal, section, knowledge_for(db, case_id))
-                if not force:
-                    check_neighbours(db, case_id, reading)
-                request = build_request(proposal, reading)
-                controls = printed_controls(proposal, section, reading, request) if (PRINTED_COUNTS or QUIET_PRINTED) else None
-                judged = dict(proposal, **image_evidence(proposal, controls))
-                # Sampling a saved statement: judged as if it were not saved yet.
-                state, summary = assess(dict(judged, current_import=None) if force else judged, request)
-                if page_gap is not None and state != 'ready':
-                    raise page_gap
-                if state != 'ready' or summary.get('problems') or summary.get('problem_count'):
-                    first = next((p.get('message') for p in summary.get('problems') or [] if p.get('message')), '')
-                    raise NotProved('The page-image reading reconciles, but the statement still has a check: ' + (first or state))
+                reading, request, controls, _ = judge(db, case_id, proposal, document, pages, knowledge_for(db, case_id),
+                                                      saved=force)
             except NotProved as reason:
                 request = None
                 if DATES_FROM_IMAGE and not force:
@@ -1615,6 +1665,8 @@ def read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for
                           rows=len(reading['rows']), request=request)
             if controls:
                 record['printed_controls'] = controls
+            if reading.get('charge_totals') and CLOSING_DAYS:
+                record['charge_totals'] = reading['charge_totals']
             if not apply:
                 db.rollback()
                 return record
@@ -1642,6 +1694,43 @@ def read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for
         except Exception:  # noqa: BLE001
             log.exception('Recording a failed page-image reading failed')
         return record
+
+
+def judge(db, case_id, proposal, document, pages, knowledge, *, saved=False):
+    """(reading, request, printed controls, judged proposal) of a page reading that proves this statement; NotProved
+    otherwise. ``saved``: a saved statement, judged as if it were not saved yet (no neighbour check: the reader
+    replacement weighs its coverage)."""
+    from services.financial.import_batches import assess
+    readings = document_pages(document, pages)
+    page_gap = None
+    try:
+        check_page_numbering(readings, proposal.get('page_numbers'))
+    except NotProved as gap:
+        if not PRINTED_COUNTS:
+            raise
+        # A page gap is settled by the bank's own printed counts and totals of the period's
+        # deposits and withdrawals on a page held, as the batch's page gate settles it
+        # (import_issues.printed_complete): decided below.
+        page_gap = gap
+    section = choose_section(combine(readings), proposal)
+    if page_gap is not None and not proposal.get('printed_pages_missing') and any(
+            section['values'].get(k) is None for k in ('count_credits', 'count_debits', 'total_credits', 'total_debits')):
+        # The text reading does not see the gap, so the page gate cannot weigh it: only all four
+        # printed on the images (each proved equal to the payments read, in prove) settle it.
+        raise page_gap
+    reading = prove(proposal, section, knowledge)
+    if not saved:
+        check_neighbours(db, case_id, reading)
+    request = build_request(proposal, reading)
+    controls = printed_controls(proposal, section, reading, request) if (PRINTED_COUNTS or QUIET_PRINTED) else None
+    judged = dict(proposal, **image_evidence(proposal, controls, reading.get('charge_totals')))
+    state, summary = assess(dict(judged, current_import=None) if saved else judged, request)
+    if page_gap is not None and state != 'ready':
+        raise page_gap
+    if state != 'ready' or summary.get('problems') or summary.get('problem_count'):
+        first = next((p.get('message') for p in summary.get('problems') or [] if p.get('message')), '')
+        raise NotProved('The page-image reading reconciles, but the statement still has a check: ' + (first or state))
+    return reading, request, controls, judged
 
 
 def _finish(factory, item_id, file_id, key, record, apply):
@@ -1714,6 +1803,122 @@ def _save(factory, item_id, case_id, file_id, key, record, request):
     log.info('Page-image reading proved statement %s of file %s (%s rows, $%.4f); saved as System review',
              str(item_id)[:8], str(file_id)[:8], record.get('rows'), record.get('cost_usd') or 0)
     return stored
+
+
+# ---------------------------------------------------------------------------
+# A saved statement (reader replacement of an incomplete saved period)
+# ---------------------------------------------------------------------------
+
+def _saved_target(db, document):
+    """(case id, file, statement key, currency, proposal) of a saved statement review, or a reason string."""
+    from postgres.models.evidence import EvidenceFile
+    from postgres.models.financial import FinancialStatementPeriod
+    from services.financial.statement_import import read_statement_import
+    metadata = document.metadata_ or {}
+    key = metadata.get('statement_import_statement_id') or ''
+    file = db.get(EvidenceFile, document.evidence_file_id) if document.evidence_file_id else None
+    if not key or file is None:
+        return 'no_statement'
+    if not approved(document.case_id):
+        return 'case_not_approved'
+    period = db.scalar(select(FinancialStatementPeriod).where(FinancialStatementPeriod.source_document_id == document.id))
+    currency = (period.currency if period is not None else None) or None
+    proposal = read_statement_import(db, case_id=document.case_id, evidence_file_id=file.id, currency=currency,
+                                     statement_id=key)
+    return document.case_id, file, key, currency, proposal
+
+
+def read_saved(factory, document_id, resolve_path, *, page_reader=None, knowledge_for=None):
+    """Read a saved statement's pages from their images once per reading of the file and model (SAVED_KEY), judge
+    the reading as if the statement were not saved yet, and store the outcome (never applied). Returns the record.
+    Never raises; fails closed like read_item."""
+    from postgres.models.financial import FinancialSourceDocument
+    if knowledge_for is None:
+        from services.financial.field_proposals import case_knowledge
+
+        def knowledge_for(db, case_id):
+            return case_knowledge(db, case_id)
+    page_reader = page_reader or openai_page_reader
+    record = dict(version=VERSION, proof=PROOF_VERSION, status='skipped', at=datetime.now(timezone.utc).isoformat())
+    if not SAVED_READING:
+        return dict(record, reason='disabled')
+    try:
+        with factory() as db:
+            document = db.get(FinancialSourceDocument, UUID(str(document_id)))
+            if document is None or document.status != 'admitted':
+                return dict(record, reason='not_saved')
+            target = _saved_target(db, document)
+            if isinstance(target, str):
+                return dict(record, reason=target)
+            case_id, file, key, currency, proposal = target
+            pages = statement_pages(proposal)
+            if not pages or len(pages) > MAX_PAGES:
+                return dict(record, reason='pages')
+            model_id, read = page_reader(db, case_id)
+            stored = ((file.metadata_ or {}).get(SAVED_KEY) or {}).get(key)
+            if (stored and stored.get('version') == VERSION and stored.get('revision') == proposal['revision']
+                    and stored.get('model') == model_id and list(stored.get('pages') or []) == pages
+                    and isinstance(stored.get('raw'), dict)):
+                raw, cost = stored['raw'], stored.get('cost_usd')
+            else:
+                raw = None
+            path = resolve_path(file.stored_path)
+            file_id = file.id
+            db.rollback()
+        record.update(revision=proposal['revision'], model=model_id, pages=pages, document_id=str(document_id))
+        if raw is None:
+            images = render_pages(path, pages)
+            reserved = reserve_usd(model_id, images)
+            if not _reserve(case_id, reserved):
+                return dict(record, status='budget', reason='budget')
+            raw, usage = read(images)
+            cost = cost_usd(model_id, usage)
+            _add_spend(case_id, cost - reserved)
+            log.info('Page-image reading of saved statement: case %s file %s, %s pages, cost $%.4f',
+                     str(case_id)[:8], str(file_id)[:8], len(pages), cost)
+        record.update(raw=raw, cost_usd=cost)
+        with factory() as db:
+            try:
+                reading, request, controls, _ = judge(db, case_id, proposal, raw, pages, knowledge_for(db, case_id), saved=True)
+                record.update(status='proved', rows=len(reading['rows']), message='Read from the page images; the period reconciles exactly.')
+                if controls:
+                    record['printed_controls'] = controls
+                if reading.get('charge_totals'):
+                    record['charge_totals'] = reading['charge_totals']
+            except NotProved as reason:
+                record.update(status='not_proved', message=str(reason))
+            from postgres.models.evidence import EvidenceFile
+            locked = db.scalar(select(EvidenceFile).where(EvidenceFile.id == file_id).with_for_update()
+                               .execution_options(populate_existing=True))
+            metadata = deepcopy(locked.metadata_ or {})
+            metadata.setdefault(SAVED_KEY, {})[key] = record
+            locked.metadata_ = metadata
+            db.commit()
+        return record
+    except Exception as error:  # noqa: BLE001 - fail closed: nothing is replaced
+        log.exception('Page-image reading of a saved statement failed')
+        return dict(record, status='failed', reason=type(error).__name__, message=str(error)[:300])
+
+
+def saved_image_request(db, document, statement_id, proposal):
+    """(request, judged proposal, reading) from the page reading stored for this saved statement (read_saved), judged
+    now under the current rules with no request sent; or (None, reason code). Reads only."""
+    from postgres.models.evidence import EvidenceFile
+    if not SAVED_READING:
+        return None, 'disabled'
+    file = db.get(EvidenceFile, document.evidence_file_id)
+    stored = (((file.metadata_ or {}).get(SAVED_KEY) or {}).get(statement_id or '') if file is not None else None)
+    if not stored or not isinstance(stored.get('raw'), dict) or stored.get('version') != VERSION:
+        return None, 'no_image_reading'
+    if stored.get('revision') != proposal.get('revision') or list(stored.get('pages') or []) != statement_pages(proposal):
+        return None, 'image_reading_stale'
+    from services.financial.field_proposals import case_knowledge
+    try:
+        reading, request, _, judged = judge(db, document.case_id, proposal, stored['raw'], stored['pages'],
+                                            case_knowledge(db, document.case_id), saved=True)
+    except NotProved:
+        return None, 'image_not_proved'
+    return (request, judged, reading), None
 
 
 # ---------------------------------------------------------------------------
