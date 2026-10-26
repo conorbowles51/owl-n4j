@@ -33,6 +33,22 @@ offers no candidate and is left as it is.
 
 ``PERIOD_PINNING = False`` turns the pass off in one place.
 
+``NATIVE_TEXT_GLYPHS``: a scan the producer already recognised (a native text
+layer, e.g. Adobe Paper Capture) has no engine crop records, so its damaged
+money cells had no candidate and every period with one waited for a person.
+On such pages (every page of the period ``extraction_method == 'native'`` and
+no engine verification record) the cells the reader could not parse are the
+held cells, every money cell it did parse is the agreed page reading the
+reader uses anyway, and each held cell offers the readings of its own printed
+glyphs (``glyph_readings``: look-alike letters read as the digits they stand
+for, a speck (or a dash/slash between digits) read as nothing, a point or a
+minus, a comma before the cents read as the decimal point, one of several
+points kept, spaces between digits ignored; each amount must print two
+decimals). They are accepted exactly as above: pinned by a printed
+control, exactly one reading per cell, all or nothing for the period, which
+must then reconcile from its opening to its ending balance. Measured on the
+five Andrews files of the Erica Hopper case (headless/FIN-ERICA-LESSONS.md).
+
 Three wider sources of readings, each a fact the engine stored and each still
 accepted only as above (switches in one place each):
 
@@ -52,6 +68,9 @@ accepted only as above (switches in one place each):
   is agreed with that reading: two recognisers state the same amount, which
   is what confirms any other cell. It still has to reconcile with the period.
 """
+import itertools
+import os
+import re
 from copy import deepcopy
 
 PERIOD_PINNING = True
@@ -60,6 +79,8 @@ DAMAGED_CELLS = True
 GLYPH_AGREEMENT = True
 METHOD = 'andrews_period_pinned_reading'
 VERIFICATION = 'tesseract_money_cell_verification'
+NATIVE_TEXT_GLYPHS = os.environ.get('LOUPE_FINANCIAL_ANDREWS_NATIVE_GLYPHS', '1') != '0'
+NATIVE_BASIS = 'native_text_glyphs_pinned_by_printed_balances'
 REPAIRS = ('statement_money_pinned_reading', 'statement_money_pinned_repair', 'statement_money_second_reader_repair')
 
 
@@ -96,6 +117,108 @@ def stored_cells(source_locations, pages):
                 held[key] = cell
                 parts.update(key + (name,) for name in cell.get('confirmed_parts') or ())
     return held, agreed, parts
+
+
+# Glyphs a recogniser prints for a digit, and specks it prints for nothing,
+# a decimal point or a minus sign. Only money cells are read this way.
+_DIGIT_LOOKALIKES = str.maketrans({'O': '0', 'o': '0', 'D': '0', 'l': '1', 'I': '1', '|': '1', 'i': '1', '!': '1',
+                                   'B': '8', 'S': '5', 's': '5', 'Z': '2', 'z': '2'})
+_SPECKS = '·•_\'’‘`"“”~^*°'
+_MAX_MARKS = 4
+_PRINTED_AMOUNT = re.compile(r'[+-]?(?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2}')
+_MONEY_ISSUES = ('Check the transaction amount in the PDF. Its digits, sign or decimal point could not be read.',
+                 'Check the running balance in the PDF. It could not be read separately from the transaction amount.',
+                 'Check this balance in the PDF. Its digits or decimal point could not be read.')
+
+
+def _one_point(part):
+    """A part printing several points (``1.171.75``, ``3207.6.8``): each way of keeping one of them."""
+    if part.count('.') < 2:
+        return [part]
+    points = [i for i, ch in enumerate(part) if ch == '.']
+    return [''.join(ch for i, ch in enumerate(part) if ch != '.' or i == keep) for keep in points]
+
+
+def glyph_readings(text):
+    """The clean readings a damaged text-layer money cell's own glyphs allow (one or two amounts each).
+
+    ``-16,30`` -> ``-16.30``; ``479·_54`` -> ``479.54``; ``·ll . 20`` -> ``11.20`` and
+    ``-11.20``; ``-22 .6 8 1351 . 77`` -> ``-22.68 1351.77``; ``BOO.OD`` -> ``800.00``;
+    ``819-82`` -> ``819.82``. A reading is only ever a candidate: the period's
+    printed controls must pin it, exactly one reading per cell.
+    """
+    base = re.sub(r'\.(?:\s*\.)+', '.', (text or '').translate(_DIGIT_LOOKALIKES))
+    base = re.sub(r'\s*,\s*(\d{2})(?!\d)', r',\1', base)
+    # A speck, or a dash or slash printed between two digits (``819-82``, ``6673 /50``).
+    marks = [i for i, ch in enumerate(base) if ch in _SPECKS
+             or ch in '-/' and re.search(r'\d\s*$', base[:i]) and re.match(r'\s*\d', base[i + 1:])]
+    if len(marks) > _MAX_MARKS:
+        return []
+    found = []
+    for choice in itertools.product(('', '.', '-'), repeat=len(marks)):
+        chars = list(base)
+        for i, value in zip(marks, choice):
+            chars[i] = value
+        candidate = re.sub(r',(\d{2})(?!\d)', r'.\1', ''.join(chars).strip(' .,'))
+        candidate = re.sub(r'(?<=[+-])\s+', '', candidate)
+        if re.search(r'\d-', candidate):
+            continue
+        parts = candidate.split()
+        readings = []
+        for i in range(0, len(parts)):
+            if i == 0 and sum('.' in part for part in parts) > 1:
+                continue  # two printed amounts are never one
+            sides = [''.join(parts)] if i == 0 else [''.join(parts[:i]), ''.join(parts[i:])]
+            for chosen in itertools.product(*[_one_point(side) for side in sides]):
+                if all(_PRINTED_AMOUNT.fullmatch(side) for side in chosen):
+                    readings.append(' '.join(chosen))
+        for reading in readings:
+            if reading not in found:
+                found.append(reading)
+    return found
+
+
+def native_text_pages(source_locations, pages):
+    """Whether every page is a native text layer with no engine verification record."""
+    by_page = {l.get('page_number'): l for l in source_locations or [] if isinstance(l, dict)}
+    return bool(pages) and all(
+        by_page.get(page, {}).get('extraction_method') == 'native'
+        and not any(isinstance(r, dict) and r.get('method') == VERIFICATION
+                    for r in by_page[page].get('ocr_refinements') or [])
+        for page in pages)
+
+
+def native_cells(rows, sources):
+    """``(held, agreed, parts)`` for a native text layer: the money cells the reader could not parse are held."""
+    from services.financial.statement_import_andrews import _heading, _money_cells
+    widths = {(s['page_number'], s['table_index']): _heading(s)['width'] for s in sources}
+    held, money, parts = {}, set(), set()
+    for row in rows:
+        if not (row['kind'] == 'balance' or (not row['excluded'] and row['kind'] in ('transaction', 'unresolved'))):
+            continue
+        width = widths.get((row['page_number'], row['table_index']))
+        if width is None:
+            continue
+        cells = _money_cells(dict(cells=row['source_cells']), width)
+        keys = [(row['page_number'], row['table_index'], row['row_index'], c['column_index']) for c in cells]
+        money.update(keys)
+        failed = [m for m in row.get('issues') or [] if m in _MONEY_ISSUES]
+        if not failed or row.get('value_sources'):
+            continue
+        fields = row['fields']
+        if len(cells) == 2 and row['kind'] != 'balance':
+            targets = [i for i, name in ((0, 'amount_minor'), (1, 'balance')) if name not in fields]
+        else:
+            targets = list(range(len(cells)))
+        for i in targets:
+            key = keys[i]
+            held[key] = dict(table_index=key[1], row_index=key[2], column_index=key[3],
+                             original_text=cells[i]['expected_text'], status='unconfirmed', observations=[],
+                             printed_readings=[[t, 'native_text_glyphs'] for t in glyph_readings(cells[i]['expected_text'])])
+            if len(cells) == 1 and row['kind'] != 'balance':
+                parts.update(key + (name,) for name, field in (('amount', 'amount_minor'), ('balance', 'balance'))
+                             if field in fields)
+    return held, money - set(held), parts
 
 
 def _with_texts(sources, texts):
@@ -173,6 +296,11 @@ def pin_period(proposal, sources, currency, statement, source_locations):
     held, agreed_cells, parts = stored_cells(source_locations, pages)
     chain = _chain_cells(proposal['rows'])
     held = {key: cell for key, cell in held.items() if key in chain}
+    native = False
+    if not held and NATIVE_TEXT_GLYPHS and native_text_pages(source_locations, pages):
+        held, agreed_cells, parts = native_cells(proposal['rows'], sources)
+        held = {key: cell for key, cell in held.items() if key in chain}
+        native = bool(held)
     if not held:
         return proposal
     candidates, context = {}, {}
@@ -251,6 +379,9 @@ def pin_period(proposal, sources, currency, statement, source_locations):
             break
     if pinned.keys() != held.keys():
         return proposal
+    if native:
+        for value in pinned.values():
+            value.setdefault('basis', NATIVE_BASIS)
     texts = {key: value['text'] for key, value in pinned.items()}
     repaired = propose_andrews_statement(_with_texts(sources, texts), currency, statement)
     equations = period_equations(repaired['rows'])
@@ -274,5 +405,6 @@ def pin_period(proposal, sources, currency, statement, source_locations):
         repairs = by_row.get((row['page_number'], row['table_index'], row['row_index']))
         if repairs:
             row['value_repairs'] = repairs
-    result['period_pinned'] = dict(method=METHOD, cells=len(pinned), equations=len(equations), reconciles=True)
+    result['period_pinned'] = dict(method=METHOD, cells=len(pinned), equations=len(equations), reconciles=True,
+                                   **({'basis': NATIVE_BASIS} if native else {}))
     return result

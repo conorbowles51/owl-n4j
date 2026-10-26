@@ -245,3 +245,68 @@ class PeriodPinningTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class NativeTextLayerTests(unittest.TestCase):
+    """A scan recognised by its producer (native text layer, no engine crop records)."""
+
+    def sources(self, damaged='-1O,00', joined_balance=None, ending='65.00'):
+        return pages(
+            [[(15, '06/03'), (75, 'Withdrawal Debit Card'), (310, '-20.00'), (350, '80.00')]],
+            [[(15, '06/05'), (75, 'Withdrawal Debit Card'), (310, damaged), (350, '70.00')],
+             ([(15, '06/06'), (75, 'Withdrawal Debit Card'), (310, joined_balance)] if joined_balance else
+              [(15, '06/06'), (75, 'Withdrawal Debit Card'), (310, '-5.00'), (350, '65.00')]),
+             [(15, '06/30'), (75, 'Ending Balance'), (350, ending)]])
+
+    def native(self, extraction='native'):
+        return [dict(kind='page', page_number=p, extraction_method=extraction, ocr_refinements=[]) for p in (1, 2)]
+
+    def test_glyph_readings(self):
+        for text, expected in (('-16,30', ['-16.30']), ('479·_54', ['479.54']), ('·ll . 20', ['11.20', '-11.20']),
+                               ('-22 .6 8 1351 . 77', ['-22.68 1351.77']), ('56 .. 35', ['56.35']),
+                               ('-78.4 7 1096.32', ['-78.47 1096.32']), ('abc', []), ('1,234.56', ['1,234.56']),
+                               ('BOO.OD', ['800.00']), ('-SO.OD', ['-50.00']), ('l.171.75', ['1171.75']),
+                               ('819-82', ['819.82']), ('3207.6.8', ['3207.68']), ('1200 , 00 1437.97', ['1200.00 1437.97']),
+                               ('-1000.00 l.89l..70', ['-1000.00 1891.70']), ('20?2. 82', [])):
+            with self.subTest(text=text):
+                self.assertEqual(period.glyph_readings(text), expected)
+
+    def test_a_damaged_amount_on_a_native_text_page_is_pinned_by_the_printed_balances(self):
+        proposal, result = read(self.sources(), self.native())
+        self.assertTrue(payments(proposal)[1]['issues'])
+        self.assertIsNot(result, proposal)
+        row = payments(result)[1]
+        self.assertEqual((row['fields']['amount_minor'], row['fields']['direction'], row['fields']['balance']),
+                         ('1000', 'debit', '7000'))
+        [repair] = row['value_repairs']
+        self.assertEqual((repair['page_reading'], repair['text'], repair['basis']), ('-1O,00', '-10.00', period.NATIVE_BASIS))
+        self.assertEqual(result['period_pinned']['basis'], period.NATIVE_BASIS)
+        self.assertFalse(any(r['issues'] for r in result['rows']))
+
+    def test_a_joined_cell_with_a_speck_for_the_minus_is_pinned(self):
+        proposal, result = read(self.sources(damaged='-10.00', joined_balance='·5 . 00 65,00'), self.native())
+        self.assertTrue(payments(proposal)[2]['issues'])
+        row = payments(result)[2]
+        self.assertEqual((row['fields']['amount_minor'], row['fields']['direction'], row['fields']['balance']),
+                         ('500', 'debit', '6500'))
+
+    def test_a_reading_the_balances_do_not_pin_is_left_held(self):
+        for damaged, ending in (('-1O,00', '64.00'), ('-1?,00', '65.00'), ('-16,00', '65.00')):
+            with self.subTest(damaged=damaged, ending=ending):
+                proposal, result = read(self.sources(damaged=damaged, ending=ending), self.native())
+                self.assertIs(result, proposal)
+
+    def test_engine_ocr_pages_and_unknown_pages_are_left_as_they_are(self):
+        for locations in (self.native('tesseract_ocr'), [], None, self.native()[:1]):
+            with self.subTest(locations=locations):
+                proposal, result = read(self.sources(), locations)
+                self.assertIs(result, proposal)
+
+    def test_the_switch_turns_it_off(self):
+        old = period.NATIVE_TEXT_GLYPHS
+        period.NATIVE_TEXT_GLYPHS = False
+        try:
+            proposal, result = read(self.sources(), self.native())
+            self.assertIs(result, proposal)
+        finally:
+            period.NATIVE_TEXT_GLYPHS = old
