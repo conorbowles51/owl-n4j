@@ -4187,6 +4187,15 @@ def _reading(rows, statement, style, exponent, liability, period):
     for candidate in proving:
         readings.setdefault(candidate['key'], candidate)
     chosen = None
+    if BALANCE_DIGITS and not readings and proof['reason'] in ('', 'separators_mixed') and all_moves:
+        # (L12, L14) A scan whose amounts lost or changed their decimal mark: read again from their digits,
+        # taken only when every line's running balance then chains from the opening to the closing.
+        repaired = _digit_repaired_reading(all_moves, headers, width or 1, controls, column_totals, style or 'dot',
+                                           exponent, liability)
+        if repaired is not None:
+            all_moves, controls, candidates, repairs = repaired
+            readings = {candidates[0]['key']: candidates[0]}
+            proof.update(reason='', amount_basis=DIGITS_BASIS, digit_repairs=repairs)
     if not proof['reason']:
         if not all_moves and not controls['opening'] and not controls['closing']:
             proof['reason'] = 'no_movements_or_controls'
@@ -4698,6 +4707,99 @@ def _search(moves, columns, hints, controls, column_totals, style, exponent, lia
                                 key=key, assignment=assignment, values=values, opening=opening, closing=closing,
                                 basis=basis, opening_item=openings[opening], closing_item=here_closings[closing]))
     return results
+
+
+# (L12, L14) Santander PYME scans print each movement's running SALDO, but the scan drops or changes the
+# decimal mark of some amounts: '111,84' and '8,529,709,18' (a comma for the point), '1,838,929 44' (a space,
+# so the amount is read as two words of the description). Such a text is read from its digits, its last two
+# being the cents, only when the reading that results is the one reading of the period, every movement line's
+# printed balance chains from the opening to the closing, and the reading is proved as any other. No digit is
+# changed, guessed or derived: only the mark between the whole units and the cents is read again.
+BALANCE_DIGITS = _switch('LOUPE_FINANCIAL_RUNNING_BALANCE_DIGITS')
+DIGITS_BASIS = 'printed_digits_confirmed_by_running_balance'
+_CENTS_LAST = re.compile(r'^\$?(\d{1,3}(?:[.,]\d{3})*)[.,](\d{2})$')
+_WHOLE_UNITS = re.compile(r'^\d{1,3}(?:[.,]\d{3})*$')
+
+
+def _cents_text(text):
+    """Minor units of an amount printed with its last two digits after a mark, the marks before them
+    grouping thousands in threes ('6,063,346,19', '104,00'), else None."""
+    found = _CENTS_LAST.match(text.strip())
+    return int(re.sub(r'\D', '', found[1]) + found[2]) if found else None
+
+
+def _canonical_amount(minor, style):
+    whole, cents = divmod(minor, 100)
+    text = '{:,}'.format(whole) + '.%02d' % cents
+    return text.translate(str.maketrans(',.', '.,')) if style == 'comma' else text
+
+
+def _digit_token(token, minor, style, printed, x1=None):
+    text = _canonical_amount(minor, style)
+    return dict(token, t=text, f=fold(text), printed=printed, x1=token['x1'] if x1 is None else x1)
+
+
+def _digit_repairs(moves, controls, style, exponent):
+    """(moves, controls, repairs): copies with every amount whose mark is lost or changed read from its digits;
+    None when there is none."""
+    repairs = []
+
+    def cite(row, token, printed, minor):
+        repairs.append(dict(page=row['page'], table_index=row['source']['table_index'], row_index=row['raw']['row_index'],
+                            column_index=(token.get('cell') or {}).get('column_index'), printed=printed,
+                            read=_canonical_amount(minor, style)))
+
+    def again(row, token):
+        if money(token['t'], style, exponent) is not None:
+            return token
+        minor = _cents_text(token['t'])
+        if minor is None:
+            return token
+        cite(row, token, token['t'], minor)
+        return _digit_token(token, minor, style, token['t'])
+
+    out = []
+    for move in moves:
+        amounts = [again(move['row'], token) for token in move['money']]
+        description = list(move['description'])
+        words = sorted(description, key=lambda t: (t['line'], t['x0']))
+        if len(amounts) == 1 and len(words) >= 2:
+            whole, cents = words[-2], words[-1]
+            if (whole['line'] == cents['line'] and _WHOLE_UNITS.match(whole['t']) and re.fullmatch(r'\d{2}', cents['t'])
+                    and cents['x1'] <= amounts[0]['x0']):
+                # The amount printed with a space for its point: the line's last two words, before its balance.
+                minor = int(re.sub(r'\D', '', whole['t']) + cents['t'])
+                printed = whole['t'] + ' ' + cents['t']
+                cite(move['row'], whole, printed, minor)
+                amounts.insert(0, _digit_token(whole, minor, style, printed, x1=cents['x1']))
+                description = [t for t in description if t is not whole and t is not cents]
+        out.append(dict(move, money=amounts, description=description))
+    fixed = {role: [dict(item, value_token=again(item['row'], item['value_token'])) if item.get('value_token') else item
+                    for item in items] for role, items in controls.items()}
+    return (out, fixed, repairs) if repairs else None
+
+
+def _digit_repaired_reading(moves, headers, width, controls, column_totals, style, exponent, liability):
+    """(moves, controls, [candidate], repairs) of the one reading the repaired texts prove with every movement
+    line's printed balance chaining, or None. The columns are found again from the repaired amounts (a column
+    whose only amount lost its mark is found only then)."""
+    repaired = _digit_repairs(moves, controls, style, exponent)
+    if repaired is None:
+        return None
+    moves, controls, repairs = repaired
+    tokens = [t for move in moves for t in move['money']]
+    columns = _columns(tokens, width) if tokens else []
+    if not columns:
+        return None
+    hints = _profile_column_order(_hints(headers, columns, width), columns)
+    found = {}
+    for candidate in _search(moves, columns, hints, controls, column_totals, style, exponent, liability):
+        if (candidate['proved'] and candidate.get('chain_ok') and candidate.get('values')
+                and all(v['balance'] is not None for v in candidate['values'])):
+            found.setdefault(candidate['key'], candidate)
+    if len(found) != 1:
+        return None
+    return moves, controls, list(found.values()), repairs
 
 
 def _best_effort(candidates, hints):

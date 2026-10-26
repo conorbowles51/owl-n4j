@@ -3839,3 +3839,44 @@ class InsidePrintedRunTests(unittest.TestCase):
     def test_switched_off_the_range_still_cuts(self):
         with mock.patch.object(E, 'INSIDE_PRINTED_RUN', False):
             self.assertEqual(self.segments(), [[1], [2], [3]])
+
+
+class RunningBalanceDigitsTests(unittest.TestCase):
+    """(L12, fin-queue2 A2b; 09 ARRENDO SANTANDER MXN SEP 2022) A scan printed an amount with a space for its
+    point ('1,838,929 44'): read as two words of the description, the line kept only its balance and the
+    period was not reconciled. Read from its digits, it is taken only when every balance chains."""
+
+    def setUp(self):
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+
+    def read(self, credit='500 00', closing='1,350.00'):
+        moves = [('05/MAR', 'TRANSFERENCIA RECIBIDA', None, None, '1,500.00'),
+                 ('10/MAR', 'PAGO DE SERVICIO', None, '200.00', '1,300.00'),
+                 ('15/MAR', 'ABONO RECIBIDO', '100.00', None, '1,400.00'),
+                 ('20/MAR', 'COMISION', None, '50.00', '1,350.00')]
+        sources = mx_statement(moves, closing=closing)
+        # The scan read the amount into the description's cell, which reaches the credit column.
+        described = next(c for r in sources[0]['rows'] for c in r['cells'] if c['expected_text'] == 'TRANSFERENCIA RECIBIDA')
+        described['expected_text'] = 'TRANSFERENCIA RECIBIDA ' + credit
+        described['locator']['rect'][2] = 380000
+        return read_statements(sources)[0]
+
+    def test_an_amount_printed_with_a_space_for_its_point_is_read_when_the_balances_chain(self):
+        st = self.read()
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual(st['engine']['amount_basis'], E.DIGITS_BASIS)
+        self.assertEqual([(r['printed'], r['read']) for r in st['engine']['digit_repairs']], [('500 00', '500.00')])
+        moves = [r for r in st['_rows'] if r['kind'] == 'transaction']
+        self.assertEqual([(r['fields']['amount_minor'], r['fields']['direction']) for r in moves],
+                         [('50000', 'credit'), ('20000', 'debit'), ('10000', 'credit'), ('5000', 'debit')])
+        self.assertNotIn('500', moves[0]['fields']['description'])
+
+    def test_digits_the_balances_do_not_confirm_are_not_taken(self):
+        st = self.read(credit='500 01')
+        self.assertFalse(st['engine']['proved'])
+        self.assertNotIn('digit_repairs', st['engine'])
+
+    def test_switched_off_the_line_is_not_read(self):
+        with mock.patch.object(E, 'BALANCE_DIGITS', False):
+            self.assertFalse(self.read()['engine']['proved'])
