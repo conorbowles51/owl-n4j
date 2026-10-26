@@ -145,6 +145,33 @@ class KapitalProposalTests(TestCase):
         self.assertEqual(check_statement_rows(propose_kapital_statement(s,'USD',c[1])['rows'])['transaction_count'],0)
 
 
+class KapitalMissingDayCellTests(TestCase):
+    def test_an_unread_day_does_not_shift_the_folio_and_concepto(self):
+        # Live: 05 ECOTERRA KAPITAL MXN MAY 24 page 1 (folio in the day's place, concepto's first line taken as the
+        # reference); 01 MONETA KAPITAL MXN ENE 26 page 1 (concepto in the day's place, description emptied).
+        from unittest import mock
+        from services.financial import statement_import_kapital as K
+        def rows(change):
+            s=statement()
+            for r in s[0]['rows']:
+                if any(c['expected_text']=='COMISION POR TIMBRADO FISCAL' for c in r['cells']):change(r)
+            choice=currencies_by_statement(kapital_catalog(s)[0],s)[0]
+            return [r for r in propose_kapital_statement(s,'MXN',choice)['rows'] if not r['excluded']]
+        no_day=lambda r:r.update(cells=r['cells'][1:])
+        no_day_or_folio=lambda r:r.update(cells=r['cells'][2:])
+        fee=rows(no_day)[0]['fields']
+        self.assertEqual((fee['description'],fee['bank_reference'],fee.get('amount_minor')),('COMISION POR TIMBRADO FISCAL','12345678','1'))
+        self.assertNotIn('date',fee)
+        fee=rows(no_day_or_folio)[0]
+        self.assertEqual(fee['fields']['description'],'COMISION POR TIMBRADO FISCAL')
+        self.assertIn('Check the printed day against this statement period.',fee['issues'])
+        noisy=rows(lambda r:r['cells'][0].update(expected_text='2.'))[0]['fields']
+        self.assertEqual((noisy['description'],noisy['bank_reference']),('COMISION POR TIMBRADO FISCAL','12345678'))
+        with mock.patch.object(K,'MISSING_DAY_CELL',False):
+            fee=rows(no_day)[0]['fields']
+        self.assertEqual(fee['bank_reference'],'COMISION POR TIMBRADO FISCAL')
+
+
 class KapitalImportTests(TestCase):
     def setUp(self):
         from tests.test_financial_statement_import import StatementImportTests

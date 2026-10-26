@@ -40,6 +40,12 @@ HEADING_FROM_SECTION = _switch('LOUPE_FINANCIAL_KAPITAL_HEADING_FROM_SECTION')
 # Millipoints a heading word may sit from the complete heading's printed position (3 points).
 _HEADING_TOLERANCE = 3000
 _HEADING_NAMES = ('CONCEPTO', 'DEPOSITOS', 'RETIROS', 'SALDO')
+# A movement line whose DIA cell the scan did not read (fin-queue lesson 15, 05 ECOTERRA KAPITAL MAY 24; 01 MONETA
+# KAPITAL ENE 26) has its folio, or its concepto, in the day's place: the folio became the day and the concepto's
+# first line the bank reference, so the concepto kept only its wrapped lines. Each slot now takes only a cell of
+# its own shape (day: 1-2 digits, folio: 4+ digits, the rest the concepto); the day stays unread and the line still
+# waits for it. Off: cells are taken by position.
+MISSING_DAY_CELL = _switch('LOUPE_FINANCIAL_KAPITAL_MISSING_DAY_CELL')
 
 
 def kapital_information_kind(source, *, institution='Kapital', product=PRODUCT):
@@ -332,10 +338,18 @@ def propose_kapital_statement(sources,currency,choice):
                 item['fields']['parent_transaction_id']=last['id']
             continue
         item.update(kind='transaction',excluded=False);fields=item['fields'];last=item
-        fields['description']=' '.join(c['expected_text'].strip() for c in other[2:])
-        if other:fields['date_column']=str(other[0]['column_index'])
-        if len(other)>1:fields['bank_reference']=other[1]['expected_text'].strip()
-        if len(other)>2:fields['description_column']=str(other[2]['column_index'])
+        if MISSING_DAY_CELL and other and not dated and (re.fullmatch(r'\d{4,}',day) or re.search(r'[A-Z]{3}',norm(day))):
+            rest=list(other)
+            folio=rest.pop(0) if re.fullmatch(r'\d{4,}',rest[0]['expected_text'].strip()) else None
+            fields['description']=' '.join(c['expected_text'].strip() for c in rest)
+            if folio:fields['bank_reference']=folio['expected_text'].strip()
+            if rest:fields['description_column']=str(rest[0]['column_index'])
+            day=''
+        else:
+            fields['description']=' '.join(c['expected_text'].strip() for c in other[2:])
+            if other:fields['date_column']=str(other[0]['column_index'])
+            if len(other)>1:fields['bank_reference']=other[1]['expected_text'].strip()
+            if len(other)>2:fields['description_column']=str(other[2]['column_index'])
         parsed=_day(day,choice)
         if parsed:fields['date']=parsed
         else:item['issues'].append('Check the printed day against this statement period.')
