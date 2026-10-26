@@ -13,6 +13,13 @@ def _control(role, row, original):
     if len(cells) != 1:
         raise ValueError('The balance source cell is ambiguous.')
     cell = cells[0]
+    unlocated = (cell.get('locator') or {}).get('kind', 'unlocated') == 'unlocated'
+    if cell.get('table_order_rect') and unlocated and (cell.get('locator') or {}).get('page', original['page_number']) == original['page_number']:
+        # A balance in a table the PDF reading kept as cells on this page but could not position (Santander
+        # UNPLACED_TABLE, 06-JUN25 SANTANDER MPA MXP page 3): its page is known and its position is not, so it
+        # cites the page with its printed text, as a hand-entered balance does. The position is never invented.
+        return dict(role=role, row_id=row['id'], original_text=cell['expected_text'], reviewed_value=row['balance_minor'],
+                    locator=dict(kind='page_only', page=original['page_number']), reason=row['reason'])
     locator = Locator.from_json(cell['locator'])
     if locator.rectangle is None or locator.page != original['page_number']:
         raise ValueError('The balance source position is missing.')

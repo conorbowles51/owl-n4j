@@ -233,6 +233,16 @@ class SantanderTests(TestCase):
         self.assertEqual([(r['fields']['direction'],r['fields']['amount_minor']) for r in rows if r['kind']=='transaction'],
                          [('credit','2500'),('debit','5000')])
         self.assertEqual(check_statement_rows(rows)['balance_status'],'matches')
+        # The writer retains the closing balance with its page and printed text (live, the import failed with 'The
+        # balance source position is missing.'): no position is invented.
+        from services.financial.statement_import_controls import _control
+        closing=next(r for r in rows if r['kind']=='balance' and r['fields']['description']=='Closing Balance')
+        control=_control('closing',dict(id='c',balance_minor='7500',reason=''),closing)
+        self.assertEqual((control['original_text'],control['locator']),('$75.00',dict(kind='page_only',page=2)))
+        unread=deepcopy(closing)
+        for c in unread['source_cells']:c.pop('table_order_rect',None)
+        with self.assertRaisesRegex((ValueError,KeyError),'position|locator'):
+            _control('closing',dict(id='c',balance_minor='7500',reason=''),unread)
         # Something printed between the page header and the table: its place is not known, so it is not read.
         second['rows'].insert(3,source(2,[[(30000,90000,200000,'AVISO IMPORTANTE')]])['rows'][0])
         self.assertEqual(len([r for r in checking() if r['kind']=='transaction']),1)
