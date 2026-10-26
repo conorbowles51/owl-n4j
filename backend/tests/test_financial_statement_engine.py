@@ -3619,3 +3619,85 @@ class ScotiabankLegalNameTests(unittest.TestCase):
         from services.financial.statement_engine_profiles import matching_profile
         for text in ('Scotiabank Inverlat, S.A.', 'SCOTIABANK INVERLAT S.A. INSTITUCION DE BANCA MULTIPLE'):
             self.assertEqual((matching_profile(text) or {}).get('name'), 'scotiabank-mexico', text)
+
+
+class SectionHeadingBeforeSectionTests(unittest.TestCase):
+    """A14: an account-summary layout where each currency's heading ('euro al 31 Marzo 2024') is printed on the
+    page where the previous currency's movements end, so the section splitter hands the heading to the section
+    before. The section after it names no currency of its own and must take the heading just above it."""
+    L, M, R = 20000, 330000, 520000
+    HEAD = [[('Movimientos', 20000, 120000)],
+            [('Fechas', 20000, 60000), ('Descripcion', 80000, 200000), ('Referencia', 210000, 260000),
+             ('Abonos', 280000, 320000), ('Cargos', 340000, 380000), ('Saldo disponible', 450000, 500000),
+             ('Saldo total', 520000, 560000)]]
+
+    EURO = [[('BANCO EJEMPLO Estado de Cuenta', L, 300000)], [('CONTRATO: 7654321', L, 200000)], [('Cuenta Vista', L, 150000)],
+            [('Resumen cuenta', L, 150000)], [('euro al 31 Marzo 2024', L, 250000)],
+            [('Concepto', L, 80000), ('Del periodo', 150000, 200000), ('Acumulado', 210000, 260000), ('Comisiones', M, 400000),
+             ('15.00', 450000, 500000)],
+            [('Saldo ae inicial:', L, 120000), ('1.14', 200000, 260000)],
+            [('Saldo promedio (intereses):', L, 120000), ('0.84', 200000, 260000)],
+            [('+ Total abonos:', L, 120000), ('297,050.00', 200000, 260000), ('Intereses pagados vista', M, 450000),
+             ('0.00', 460000, 500000)],
+            [('ISR Intereses por saldo: 0.00 0.00', L, 260000)],
+            [('- Total cargos:', L, 120000), ('297,050.35', 200000, 260000), ('Tasa aplicable a depositos', M, 450000),
+             ('0.00%', 460000, 500000)],
+            [('ISR Operaciones derivados: 0.00 0.00', L, 260000)],
+            [('GAT nominal (antes de impuestos)', M, 450000), ('0.00%', 460000, 500000)],
+            [('Saldo vista:', L, 120000), ('0.79', 200000, 260000)],
+            [('ISR Operaciones de dinero: 0.00 0.00', L, 260000)],
+            [('GAT real (Rendimiento que se obtendria', M, 500000)],
+            [('Saldo en garantia derivados:', L, 120000), ('0.00', 200000, 260000)],
+            [('Saldo en inversiones:', L, 120000), ('0.00', 200000, 260000)],
+            [('Intereses cobrados:', L, 120000), ('0.00', 200000, 260000)],
+            [('Saldo total:', L, 120000), ('0.79', 200000, 260000)],
+            [('IVA/Comisiones e intereses:', L, 120000), ('2.40', 200000, 260000)]]
+
+    def summary(self, name, opening, credits, debits, closing):
+        L, M = self.L, self.M
+        return [[('BANCO EJEMPLO Estado de Cuenta', L, 300000)], [('CONTRATO: 7654321', L, 200000)],
+                [('Cuenta Vista', L, 150000)], [('Resumen cuenta', L, 150000)], [(name + ' al 31 Marzo 2024', L, 250000)],
+                [('Saldo inicial:', L, 120000), (opening, 200000, 260000)],
+                [('+ Total abonos:', L, 120000), (credits, 200000, 260000), ('Intereses pagados vista 0.00', M, 500000)],
+                [('- Total cargos:', L, 120000), (debits, 200000, 260000)],
+                [('Saldo vista:', L, 120000), (closing, 200000, 260000)],
+                [('Saldo total:', L, 120000), (closing, 200000, 260000)]]
+
+    def balance(self, label, value):
+        return [[(label, 80000, 200000), (value, 450000, 500000), (value, self.R, 560000)]]
+
+    def move(self, day, text, credit, debit, bal):
+        return [[(day, self.L, 60000), (text, 80000, 200000), ('123', 210000, 260000), (credit, 280000, 320000),
+                 (debit, 340000, 380000), (bal, 450000, 500000), (bal, self.R, 560000)]]
+
+    def sources(self):
+        L = self.L
+        p1 = ([[('PERIODO DEL 01/03/2024 AL 31/03/2024', self.M, 590000)]]
+              + self.summary('peso mexicano', '100.00', '0.00', '0.00', '100.00') + self.HEAD
+              + self.balance('Saldo inicial:', '100.00') + self.balance('Saldo final:', '100.00') + [[('Hoja 1 de 4', L, 100000)]])
+        p2 = (self.summary('dolar americano', '50.00', '10.00', '0.00', '60.00') + self.HEAD
+              + self.balance('Saldo inicial:', '50.00') + self.move('05/Mar', 'Deposito', '10.00', '0.00', '60.00')
+              + [[('Hoja 2 de 4', L, 100000)]])
+        # The dollar section's last line, then the euro heading and summary on the same page.
+        p3 = (self.balance('Saldo final:', '60.00') + self.EURO + self.HEAD + self.balance('Saldo inicial:', '1.14')
+              + self.move('05/Mar', 'Compra de divisas', '297,050.00', '0.00', '297,051.14')
+              + self.move('05/Mar', 'Retiro', '0.00', '297,050.35', '0.79') + [[('Hoja 3 de 4', L, 100000)]])
+        p4 = ([[('Movimientos de marzo', L, 250000)]] + self.balance('Saldo final:', '0.79')
+              + [[('Referencias bancarias', L, 200000)], [('PESO MEXICANO', L, 200000)],
+                 [('DOLAR AMERICANO SOBRE CUENTAS EN E.U.A.', L, 300000)], [('EURO', L, 100000)], [('Hoja 4 de 4', L, 100000)]])
+        return [page(1, p1), page(2, p2), page(3, p3), page(4, p4)]
+
+    def currencies(self, enabled):
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+        with mock.patch.object(E, 'HEADING_BEFORE_SECTION', enabled):
+            statements = read_statements(self.sources())
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+        return [(st['currency'], st.get('page_numbers')) for st in statements]
+
+    def test_the_section_after_a_heading_printed_above_it_takes_that_heading_currency(self):
+        self.assertEqual(self.currencies(True), [('MXN', [1]), ('USD', [1, 2, 3]), ('EUR', [3, 4])])
+
+    def test_the_switch_off_leaves_that_section_without_a_currency(self):
+        self.assertEqual(self.currencies(False)[-1], ('', [3, 4]))

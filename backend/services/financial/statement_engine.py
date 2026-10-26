@@ -3235,6 +3235,11 @@ def _prints_liability(rows):
     return any(phrase in fold(row['text']) for row in rows if row['tokens'] for phrase in phrases)
 
 
+# A section whose own lines name no currency takes the one its heading names just above its first row (A14).
+# Reverse: LOUPE_FINANCIAL_SECTION_HEADING_BEFORE=0.
+HEADING_BEFORE_SECTION = os.environ.get('LOUPE_FINANCIAL_SECTION_HEADING_BEFORE', '1').strip().lower() not in ('0', 'false', 'off', 'no')
+
+
 def _read_section(rows, segment, pages, facts, style, sources, profile, shared=False, several=False):
     """One account section. ``shared``: another section is printed on one of its pages, so
     page-level facts (account, currency) cannot be attributed to it; only facts printed
@@ -3446,6 +3451,17 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
         anchor = rows_by_id.get(opening['id'].split(':opening')[0]) if opening else None
         start, stop = rows[0]['_seg'], (anchor['_seg'] if anchor else rows[-1]['_seg'])
         own = [code for position, code in segment['currency_mentions'] if start <= position <= stop]
+        if not own and HEADING_BEFORE_SECTION:
+            # The section's own heading can sit just above its first row, on the same page, after the previous
+            # section's last movement: the splitter gave it to the section before (Monex Cuenta Vista, BNB2
+            # 05/08 ARRENDO MONEX MAY/AGO 2025: 'Resumen cuenta / euro al 31 Mayo 2025' closed the dollar
+            # section, so the euro section read no currency and was saved in pesos; lesson A14).
+            lead = set()
+            for row in reversed([r for page in segment['pages'] for r in pages[page] if r.get('_seg', start) < start]):
+                if row['page'] != rows[0]['page'] or (row['tokens'] and _row_is_movement(row, style or 'dot', 2)):
+                    break
+                lead.add(row['_seg'])
+            own = [code for position, code in segment['currency_mentions'] if position in lead]
         attributed = own[-1] if own and len(set(own[-1:])) == 1 else ''
         if attributed != currency:
             statement.update(currency=attributed, currency_source='printed_account_section')
