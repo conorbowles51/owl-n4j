@@ -137,6 +137,49 @@ class ProofTest(unittest.TestCase):
             with self.assertRaisesRegex(vr.NotProved, 'No payments were read'):
                 vr.prove(proposal, vr.choose_section(vr.combine(pages), proposal), _knowledge())
 
+    def test_an_opening_the_pages_do_not_print_is_the_closing_less_the_payments_when_a_neighbour_confirms_it(self):
+        # fin-queue3 L8 (BNB2 ECO Ago 2023 MN): bank pages 2-16 of 20, the summary page with the opening balance is not
+        # in the production; 180 payments, their printed counts and totals, and the closing are read.
+        from dataclasses import replace
+        pages = _balanced_pages()
+        pages[0][1]['sections'][0].update(opening_balance=None, count_debits=2, total_debits='100.00')
+        proposal = _proposal(account_number='0123456789', currency='MXN', period_start='2025-12-01', period_end='2025-12-31')
+
+        def knowledge(*statements):
+            known = _knowledge()
+            known.accounts[0].statements[:] = list(statements)
+            return known
+        before = replace(_knowledge().accounts[0].statements[0], closing_minor=100000)
+        after = replace(before, period_start='2026-01-01', period_end='2026-01-31', opening_minor=100000, closing_minor=None)
+        for neighbours, confirmed in (((before,), 'the previous saved statement, to 2025-11-30'),
+                                      ((after,), 'the next saved statement, from 2026-01-01')):
+            reading = vr.prove(proposal, vr.choose_section(vr.combine(pages), proposal), knowledge(*neighbours))
+            self.assertEqual((reading['opening'], reading['closing'], reading['opening_previous_end']),
+                             (100000, 100000, confirmed))
+            request = vr.build_request(proposal, reading)
+            opening = next(r for r in request['rows'] if r['id'] == 'manual:opening-balance')
+            self.assertEqual((opening['balance_minor'], opening['manual_page']), ('100000', 1))
+            self.assertIn('Opening balance not printed in these pages', opening['reason'])
+            self.assertIn(confirmed, opening['reason'])
+        refused = dict(
+            previous_differs=knowledge(replace(before, closing_minor=99900)),
+            next_differs=knowledge(before, replace(after, opening_minor=99900)),
+            no_neighbour=knowledge(replace(before, period_start='2025-10-01', period_end='2025-10-27')),
+            no_balances=knowledge(replace(before, closing_minor=None)))
+        for name, known in refused.items():
+            with self.assertRaisesRegex(vr.NotProved, 'opening balance is not printed', msg=name):
+                vr.prove(proposal, vr.choose_section(vr.combine(pages), proposal), known)
+        # A printed count or total missing, or disagreeing with the payments read, fixes nothing.
+        for change in (dict(count_credits=None), dict(total_debits='100.01'), dict(count_debits=3)):
+            changed = _balanced_pages()
+            changed[0][1]['sections'][0].update(dict(dict(opening_balance=None, count_debits=2, total_debits='100.00'),
+                                                     **change))
+            with self.assertRaises(vr.NotProved, msg=str(change)):
+                vr.prove(proposal, vr.choose_section(vr.combine(changed), proposal), knowledge(before))
+        with mock.patch.object(vr, 'OPENING_FROM_PREVIOUS', False):
+            with self.assertRaisesRegex(vr.NotProved, 'opening or closing balance could not be read'):
+                vr.prove(proposal, vr.choose_section(vr.combine(pages), proposal), knowledge(before))
+
     def test_a_proved_reading_s_printed_counts_reach_later_readings_and_settle_the_page_gap(self):
         # Live: ECO Jun 2023 MN, 15 of 20 printed pages; the text reading sees the gap and reads no totals, the images
         # print 3 deposits / 203 withdrawals and their totals, and the 206 payments read match all four.
@@ -409,6 +452,27 @@ class RequestTest(unittest.TestCase):
         self.assertTrue(all(r['reason'] == f'Read from page image, page {r["manual_page"]}.' for r in added))
         self.assertEqual(added[0]['source_order_anchor'], dict(relation='after', row_id='t1'))
         self.assertEqual((request['holder'], request['currency'], request['period_end']), ('ACME SA DE CV', 'MXN', '2025-12-31'))
+
+    def test_a_text_total_the_scan_misread_takes_the_total_the_images_read_and_checked(self):
+        # fin-queue3 L8 (BNB2 09 BBVA 23 MXN): the text reading's deposit total is 3,428,314.57, the images print
+        # 3,129,314.57, the one deposit read; the text's total held the period the images prove.
+        from services.financial.review_arithmetic import arithmetic_problems, check_proposed_rows
+        misread = dict(id='s1', kind='statement_total', excluded=True, issues=[], page_number=1,
+                       fields=dict(description='Total credit', balance='10100', total_direction='credit',
+                                   printed_transaction_count='1'))
+        proposal = _proposal([misread])
+        reading = _proved(proposal)
+        self.assertEqual(reading['printed_totals'], dict(credit=10000, debit=10000))
+        request = vr.build_request(proposal, reading)
+        total = next(r for r in request['rows'] if r['id'] == 's1')
+        self.assertEqual((total['balance_minor'], total['excluded']), ('10000', True))
+        self.assertEqual(total['reason'], vr.TOTAL_REASON.format(page=1))
+        self.assertFalse(arithmetic_problems(check_proposed_rows(proposal, request['rows'])))
+        with mock.patch.object(vr, 'IMAGE_TOTALS', False):
+            request = vr.build_request(proposal, reading)
+        self.assertEqual(next(r for r in request['rows'] if r['id'] == 's1')['balance_minor'], '10100')
+        self.assertEqual([p['check'] for p in arithmetic_problems(check_proposed_rows(proposal, request['rows']))],
+                         ['credit_total'])
 
     def test_review_arithmetic_reconciles(self):
         from services.financial.review_arithmetic import check_proposed_rows

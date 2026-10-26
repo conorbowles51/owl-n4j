@@ -139,9 +139,25 @@ SIGNED_DEBITS = _switch('LOUPE_FINANCIAL_VISION_SIGNED_DEBITS')
 # does not prove the period itself. Off: such a period waits for a person (Erica Andrews Dec 2020).
 DATES_FROM_IMAGE = _switch('LOUPE_FINANCIAL_VISION_DATES_FROM_IMAGE')
 DATE_REASON = 'Date read from page image, page {page}; amount and running balance as read from the text.'
+# A production missing the statement's summary page (BNB2 ECO Ago 2023 MN: bank pages 2-16 of 20; page 1, which prints
+# the opening balance, is not in the file): every movement is read, the deposit and withdrawal counts and totals the
+# images show agree with them, and the closing balance is read, so the opening is the closing less the movements. It
+# is taken only when a saved statement next to the period confirms it (the previous one closing at it, or the next one
+# opening at the closing read; none disagreeing) and the printed running balances chain from it, and is recorded with
+# that basis (``_opening_from_previous``). Off: such a period waits for a person (fin-queue3 L8, 2026-10-26).
+OPENING_FROM_PREVIOUS = _switch('LOUPE_FINANCIAL_VISION_OPENING_FROM_PREVIOUS')
+OPENING_REASON = ('Opening balance not printed in these pages: the closing balance read less the payments read, '
+                  'which agree with the printed counts and totals; confirmed by {previous}.')
+# The text reading's printed deposit or withdrawal total of a period the images prove is the scan's misreading when the
+# images read the same printed total otherwise (BNB2 09 BBVA 23 MXN: text 3,428,314.57, image 3,129,314.57 = the one
+# deposit, the ledger and opening + deposits - withdrawals = the printed closing). The proof already checked the
+# image's printed total against every payment read, so the recorded review takes it for that total, citing the page
+# image, as it takes the image's opening and closing. Off: the text's total stays and holds the period.
+IMAGE_TOTALS = _switch('LOUPE_FINANCIAL_VISION_IMAGE_TOTALS')
+TOTAL_REASON = 'Printed total read from page image, page {page}; it agrees with the payments read.'
 PROOF_VERSION = 1
 for _switched in (SPLIT_SPELLINGS, SECTION_NUMBER, PRINTED_COUNTS, QUIET_PRINTED, CLABE_ACCOUNT, SECTION_BY_TEXT,
-                  SIGNED_DEBITS, DATES_FROM_IMAGE):
+                  SIGNED_DEBITS, DATES_FROM_IMAGE, OPENING_FROM_PREVIOUS, IMAGE_TOTALS):
     # Each switch on top of the one before; with one off, the rules are the version before it.
     if not _switched:
         break
@@ -764,7 +780,8 @@ def prove(proposal, section, knowledge):
     # Balances.
     opening = to_minor(section['values'].get('opening_balance'), exponent, signed=True)
     closing = to_minor(section['values'].get('closing_balance'), exponent, signed=True)
-    if opening is None or closing is None:
+    derive_opening = OPENING_FROM_PREVIOUS and opening is None and closing is not None and not liability
+    if (opening is None and not derive_opening) or closing is None:
         raise NotProved('The opening or closing balance could not be read from the page images.')
     # Rows.
     rows = []
@@ -783,6 +800,10 @@ def prove(proposal, section, knowledge):
                 raise NotProved('A running balance on page %s could not be read.' % row['page'])
         rows.append(dict(index=index, date=when, description=' '.join(str(row['description']).split())[:4000],
                          amount_minor=amount, direction=row['direction'], balance_minor=balance, page=row['page']))
+    previous_end = None
+    if derive_opening:
+        opening, previous_end = _opening_from_previous(section, rows, closing, candidates, currency, start, end,
+                                                       exponent)
     if not rows and not _printed_quiet(section, opening, closing, exponent):
         raise NotProved('No payments were read from the page images; a period without payments needs its printed confirmation.')
     _not_summary_lines(section, rows, exponent)
@@ -807,8 +828,52 @@ def prove(proposal, section, knowledge):
     return dict(account_keys=[k.key for k in candidates], currency=currency, holder=holder, institution=institution,
                 account_number=account_text,
                 period_start=start, period_end=end, opening=opening, closing=closing, rows=rows,
-                opening_page=section['balance_pages'].get('opening_balance'),
-                closing_page=section['balance_pages'].get('closing_balance'))
+                opening_page=section['balance_pages'].get('opening_balance') if previous_end is None else rows[0]['page'],
+                closing_page=section['balance_pages'].get('closing_balance'),
+                # The printed totals the proof checked against the payments read (IMAGE_TOTALS).
+                printed_totals={d: to_minor(section['values']['total_%ss' % d], exponent) for d in ('credit', 'debit')
+                                if section['values'].get('total_%ss' % d) is not None},
+                **({} if previous_end is None else dict(opening_previous_end=previous_end)))
+
+
+def _opening_from_previous(section, rows, closing, candidates, currency, start, end, exponent):
+    """(OPENING_FROM_PREVIOUS) (opening, previous period end) of an asset account section whose opening balance the
+    pages do not print. Every payment is read and the images show both directions' counts and totals, each agreeing
+    with the payments; the opening is the closing less the payments. A saved statement of the account in this currency
+    next to the period (at most ADJACENT_DAYS apart) must confirm it: the latest before it closing at that opening, or
+    the first after it opening at the closing read; none of them may disagree. Returns which one confirmed it.
+    NotProved otherwise."""
+    from datetime import timedelta
+    values = section['values']
+    for direction in ('credit', 'debit'):
+        total, count = values.get('total_%ss' % direction), values.get('count_%ss' % direction)
+        mine = [r for r in rows if r['direction'] == direction]
+        if (total is None or count is None or to_minor(total, exponent) != sum(r['amount_minor'] for r in mine)
+                or not str(count).isdigit() or int(count) != len(mine)):
+            raise NotProved('The opening balance is not printed in these pages, and the printed counts and totals '
+                            'that would fix it were not all read in agreement with the payments.')
+    if not rows:
+        raise NotProved('The opening balance is not printed in these pages.')
+    opening = closing - sum(_movement(r, False) for r in rows)
+    begins, ends = date.fromisoformat(start), date.fromisoformat(end)
+    statements = [s for k in candidates for s in k.statements if (s.currency or '').upper() == currency
+                  and s.period_start and s.period_end]
+    before = [s for s in statements if s.period_end < start
+              and begins - date.fromisoformat(s.period_end) <= timedelta(days=ADJACENT_DAYS)]
+    after = [s for s in statements if s.period_start > end
+             and date.fromisoformat(s.period_start) - ends <= timedelta(days=ADJACENT_DAYS)]
+    last = max((s.period_end for s in before), default=None)
+    first = min((s.period_start for s in after), default=None)
+    previous = [s.closing_minor for s in before if s.period_end == last and s.closing_minor is not None]
+    following = [s.opening_minor for s in after if s.period_start == first and s.opening_minor is not None]
+    if any(value != opening for value in previous) or any(value != closing for value in following):
+        raise NotProved('The opening balance is not printed in these pages, and the payments read do not lead back '
+                        'to the balances of the saved statements next to this period.')
+    if not previous and not following:
+        raise NotProved('The opening balance is not printed in these pages, and the account has no saved statement '
+                        'next to this period to confirm it.')
+    return opening, (('the previous saved statement, to ' + last) if previous else
+                     ('the next saved statement, from ' + first))
 
 
 def _printed_quiet(section, opening, closing, exponent):
@@ -1061,8 +1126,14 @@ def build_request(proposal, reading):
                    period_end=reading['period_end'])
     originals = {row['id']: row for row in proposal['rows']}
     roles = {}
+    totals = reading.get('printed_totals') or {} if IMAGE_TOTALS else {}
     for row in request['rows']:
         original = originals[row['id']]
+        direction = original['fields'].get('total_direction')
+        if original['kind'] == 'statement_total' and direction in totals:
+            if str(totals[direction]) != str(row.get('balance_minor')):
+                row.update(balance_minor=str(totals[direction]),
+                           reason=TOTAL_REASON.format(page=original.get('page_number') or ''))
         if original['kind'] == 'balance':
             role = (original['fields'].get('description') or '').strip().lower()
             if role in ('opening balance', 'closing balance'):
@@ -1077,15 +1148,19 @@ def build_request(proposal, reading):
         existing = roles.get(role) or []
         if len(existing) > 1:
             raise NotProved('The text reading has more than one %s for this period.' % role)
+        derived = role == 'opening balance' and reading.get('opening_previous_end')
+        reason = OPENING_REASON.format(previous=derived) if derived else ROW_REASON.format(page=page)
         if existing:
             existing[0]['balance_minor'] = str(value)
+            if derived:
+                existing[0]['reason'] = reason
             continue
         if page not in pages:
             raise NotProved('The %s was read from a page outside this statement.' % role)
         request['rows'].append(dict(id=f'manual:{role.split()[0]}-balance', excluded=True, manual_page=page,
                                     date='', date_unprinted=False, date_values={}, description=role.title(),
                                     counterparty='', amount_minor='0', direction=None, balance_minor=str(value),
-                                    reason=ROW_REASON.format(page=page)))
+                                    reason=reason))
     for row in reading['rows']:
         if row['page'] not in (proposal.get('page_numbers') or []):
             raise NotProved('A payment was read from a page outside this file.')
