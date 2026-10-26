@@ -4,6 +4,7 @@ One PDF may contain unrelated banks, cards, accounts and cycles. Only an exact
 issuer heading, account number and complete cycle establish this reader. The
 original cells are retained; ambiguous OCR digits are never guessed from totals.
 """
+import os
 import re
 from datetime import datetime, date
 
@@ -13,6 +14,31 @@ from services.financial.statement_import_card_balances import balance_control
 from services.financial.statement_layout_context import card_row_dates
 
 LAYOUT = 'credit-one-card'
+# Printed-format glyph rules (switch LOUPE_FINANCIAL_CREDIT_ONE_PRINTED_FORMAT):
+# the Trans/Post Date columns print MM/DD, so a five-digit cell whose third
+# glyph is a 1 (``11124``) is the slash read as a 1, never a digit; the
+# summary prints ``$`` before every balance, so an ``S`` there is that ``$``;
+# a comma before exactly two final digits is the decimal point. The period
+# must still reconcile and every date must fall in the billing period.
+PRINTED_FORMAT = os.environ.get('LOUPE_FINANCIAL_CREDIT_ONE_PRINTED_FORMAT', '1') != '0'
+
+
+def printed_date(value):
+    """``MM/DD`` from a date cell whose slash OCR read as ``1`` (or ``l``/``I``/``|``)."""
+    if PRINTED_FORMAT and re.fullmatch(r'\d{2}[1lI|]\d{2}', value):
+        return value[:2] + '/' + value[3:]
+    return value
+
+
+def printed_amount(value, *, zero_charge=False):
+    """A money cell with its decimal comma read as the point; a zero charge with O/D for 0."""
+    if not PRINTED_FORMAT:
+        return value
+    if re.fullmatch(r'-?\$?\d+,\d{2}-?', value):
+        return value.replace(',', '.')
+    if zero_charge and re.fullmatch(r'[0OoD]\.[0OoD]{2}', value):
+        return '0.00'
+    return value
 HEADING = 'CREDIT ONE BANK CREDIT CARD STATEMENT'
 
 
@@ -134,6 +160,8 @@ def _balances(source, currency):
         if values:
             value = values[0]
             raw = value['expected_text'].strip(' |[]')
+            if PRINTED_FORMAT and re.fullmatch(r'S\d[\d,]*\.\d{2}-?', raw):
+                raw = '$' + raw[1:]
             # A trailing minus is this layout's printed credit-balance sign.
             # No letters or digits are changed; keep the original source cell.
             if re.fullmatch(r'\$?\d[\d,]*\.\d{2}-', raw):
@@ -216,7 +244,7 @@ def propose_credit_one_table(source, currency, statement):
             post_text = joined_post[1]
             description_text = joined_post[2] + ' ' + description_text
         def date_text(value):
-            return value.rstrip('.,') if re.fullmatch(r'\d{2}/\d{2}[.,]', value) else value
+            return value.rstrip('.,') if re.fullmatch(r'\d{2}/\d{2}[.,]', value) else printed_date(value)
         fields = item['fields']
         fields.update(description=description_text,
             counterparty='', printed_section=section, card_ending=statement['account_reference'][-4:],
@@ -236,7 +264,8 @@ def propose_credit_one_table(source, currency, statement):
         else:
             item['issues'].append('Check the posting date against this card billing period.')
         try:
-            amount = int(exact_amount(values[0]['expected_text'], currency))
+            amount = int(exact_amount(printed_amount(values[0]['expected_text'].strip(),
+                                                     zero_charge=section == 'Interest Charged'), currency))
             fields.update(amount_minor=str(abs(amount)), direction='credit' if amount < 0 else 'debit')
             if amount == 0 and section == 'Interest Charged':
                 item.update(excluded=True, kind='zero_charge', issues=[])
