@@ -30,6 +30,9 @@ from sqlalchemy import select
 log = logging.getLogger(__name__)
 
 ENABLED = os.environ.get('LOUPE_FINANCIAL_RECEIPT_SETTLEMENT', '1') != '0'
+# A receipt printing several deposits (deposit_receipt_proposal.SEVERAL) settles when every deposit ties, by the same
+# rule, to its own admitted payment. Switch LOUPE_FINANCIAL_RECEIPT_SETTLE_SEVERAL (default on).
+SEVERAL = os.environ.get('LOUPE_FINANCIAL_RECEIPT_SETTLE_SEVERAL', '1') != '0'
 BASIS = 'receipt_deposit_on_saved_statement'
 DOCUMENT_REVIEW = 'This is a receipt or payment document. Open its document review.'
 _NEEDED = ('payment_amount', 'account_reference', 'deposit_account', 'previous_balance', 'new_balance')
@@ -51,10 +54,34 @@ def _minor(value):
 
 def receipt_payment(session, *, case_id, document):
     """The one admitted statement payment this receipt's printed facts tie it to, or None."""
-    from postgres.models.financial import FinancialTransaction as T, FinancialSourceDocument as D, FinancialAccount as A
     if not document or document.get('kind') != 'deposit_receipt' or not document.get('supported'):
         return None
     fields = {f['key']: f for f in document.get('fields') or []}
+    return _payment(session, case_id, fields)
+
+
+def receipt_payments(session, *, case_id, document):
+    """The admitted statement payments a receipt's printed facts tie it to: [the one payment] of a receipt of one
+    deposit, or one distinct payment for every deposit of a receipt printing several (SEVERAL, all or nothing);
+    else []."""
+    one = receipt_payment(session, case_id=case_id, document=document)
+    if one is not None:
+        return [one]
+    several = (document or {}).get('deposits') if SEVERAL else None
+    if not several or document.get('kind') != 'deposit_receipt' or len(several.get('items') or []) < 2:
+        return []
+    found = []
+    for block in several['items']:
+        payment = _payment(session, case_id, dict(block, effective_date=several['effective_date'],
+                                                  account_reference=several['account_reference']))
+        if payment is None or any(p.id == payment.id for p in found):
+            return []
+        found.append(payment)
+    return found
+
+
+def _payment(session, case_id, fields):
+    from postgres.models.financial import FinancialTransaction as T, FinancialSourceDocument as D, FinancialAccount as A
     if any(not (fields.get(key) or {}).get('value') or fields[key].get('issues') for key in _NEEDED):
         return None
     try:
@@ -94,15 +121,24 @@ def settle_receipts(session, *, case_id, batch_id, file_id, actor):
                                              statement_id=item.statement_key or None)
         except Exception:
             continue
-        payment = receipt_payment(session, case_id=case_id, document=proposal.get('document_review'))
-        if payment is None:
+        payments = receipt_payments(session, case_id=case_id, document=proposal.get('document_review'))
+        if not payments:
             continue
+        payment = payments[0]
         record = dict(basis=BASIS, transaction_id=str(payment.id), ref_id=payment.ref_id,
                       transaction_date=payment.transaction_date.isoformat(), amount_minor=str(payment.amount_minor),
                       currency=payment.currency, running_balance_minor=str(payment.running_balance_minor))
         reason = (f'Teller deposit receipt, not a statement: its deposit is already recorded once from the statement '
                   f'(payment {payment.ref_id}, {payment.transaction_date.isoformat()}, same account, amount and '
                   f'balances before and after). Nothing was added to the ledger.')
+        if len(payments) > 1:
+            record['payments'] = [dict(transaction_id=str(p.id), ref_id=p.ref_id, transaction_date=p.transaction_date.isoformat(),
+                                       amount_minor=str(p.amount_minor), running_balance_minor=str(p.running_balance_minor))
+                                  for p in payments]
+            reason = (f'Teller deposit receipt of {len(payments)} deposits, not a statement: each deposit is already '
+                      f'recorded once from the statement (payments ' + ', '.join(f'{p.ref_id} ({p.transaction_date.isoformat()})'
+                                                                               for p in payments)
+                      + ', same accounts, amounts and balances before and after). Nothing was added to the ledger.')
         revision = ib._digest(dict(status=item.status, request=item.review_request,
                                    decision=(item.summary or {}).get('import_decision')))
         item.summary = {**(item.summary or {}), 'receipt_settlement': record}
