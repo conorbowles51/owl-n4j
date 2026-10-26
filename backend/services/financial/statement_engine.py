@@ -4955,6 +4955,12 @@ def propose_engine_statement(sources, currency, choice):
                 recovered = recover_owed(statement, reading, sources, currency)
                 if recovered is not None:
                     return dict(rows=recovered, issues=[])
+                # A scanned M&T period whose scan misread a month's figure or lost an amount's figure, read
+                # from its printed columns when every daily balance and the summary agree (scan_daily_balance).
+                from services.financial.scan_daily_balance import recover_held as recover_scan
+                recovered = recover_scan(statement, reading, sources, currency)
+                if recovered is not None:
+                    return dict(rows=recovered, issues=[])
             rows = _copy_rows(statement['_rows'])
             reason = (choice.get('engine') or {}).get('reason')
             if reason == 'route_library_first' and rows and not any(r.get('engine_hold') for r in rows):
