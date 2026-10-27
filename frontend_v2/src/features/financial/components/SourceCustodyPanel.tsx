@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { randomRequestId } from "@/lib/browser-crypto"
 import { evidenceAPI } from "@/features/evidence/api"
@@ -205,8 +206,7 @@ function CustodyEditor({ caseId, fileId }: { caseId: string; fileId: string }) {
       </Button>
       {query.data && (
         <>
-          <details>
-            <summary>How to read this history</summary>
+          <Disclosure label="How to read this history">
             <p>
               Each entry records what the named person reported. The reported
               event time may differ from the time they added it to Loupe.
@@ -214,7 +214,7 @@ function CustodyEditor({ caseId, fileId }: { caseId: string; fileId: string }) {
               registered documents; they do not verify earlier handling or
               authenticity.
             </p>
-          </details>
+          </Disclosure>
           {!query.data.events.length && (
             <p>No custody reports recorded. Earlier custody is unknown.</p>
           )}
