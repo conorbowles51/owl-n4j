@@ -1,4 +1,7 @@
 import { MoneyFlowExplorer } from "./MoneyFlowExplorer"
+import { CategoryFlowDiagram } from "./CategoryFlowDiagram"
+import { Disclosure } from "./Disclosure"
+import { InfoTip } from "./InfoTip"
 import { ReviewedMoneyTrails } from "./ReviewedMoneyTrails"
 import { useInvestigatorPayments } from "../hooks/use-investigator-payments"
 import { useMemo, useState } from "react"
@@ -372,6 +375,7 @@ export function InvestigatorFollowMoney({ caseId }: { caseId: string }) {
   const [open, setOpen] = useState<{ ids: string[]; title: string } | null>(
     null
   )
+  const setMainView = useFinancialStore((state) => state.setMainView)
   const page = Math.min(
     view.page,
     Math.max(0, Math.ceil(comparisons.length / 20) - 1)
@@ -385,6 +389,13 @@ export function InvestigatorFollowMoney({ caseId }: { caseId: string }) {
       <WorkspaceScope caseId={caseId} />
       <MoneyTrailReview caseId={caseId} />
       <InvestigationReadState data={data}>
+        <CategoryFlowDiagram
+          caseId={caseId}
+          rows={data.rows}
+          onOpen={(ids, title) => setOpen({ ids, title })}
+          onTrace={() => setMainView("tracing")}
+        />
+        <div id="follow-money-tables" className="scroll-mt-4" />
         <ReviewedMoneyTrails caseId={caseId} rows={data.rows} />
         <MoneyFlowExplorer
           caseId={caseId}
@@ -397,10 +408,7 @@ export function InvestigatorFollowMoney({ caseId }: { caseId: string }) {
             />
           }
         />
-        <details>
-          <summary className="cursor-pointer font-medium">
-            Adjacent payments · timing comparisons
-          </summary>
+        <Disclosure label={`Adjacent payments · timing comparisons (${comparisons.length})`}>
           <section className="rounded-xl border bg-card p-5 space-y-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -430,11 +438,8 @@ export function InvestigatorFollowMoney({ caseId }: { caseId: string }) {
               </label>
             </div>
             <p className="text-sm">
-              Each comparison uses adjacent dated payments in the same bank
-              account and currency. A receipt is followed by a payment within{" "}
-              {view.days} days. This is a starting point for review, not a
-              confirmed transfer. Credit card entries and unknown payment dates
-              are not compared.
+              A starting point for review, not a confirmed transfer.
+              <InfoTip text={`Each comparison uses adjacent dated payments in the same bank account and currency. A receipt is followed by a payment within ${view.days} days. This is a starting point for review, not a confirmed transfer. Credit card entries and unknown payment dates are not compared.`} />
             </p>
             {!!comparisons.length && (
               <Button
@@ -581,7 +586,7 @@ export function InvestigatorFollowMoney({ caseId }: { caseId: string }) {
               </div>
             )}
           </section>
-        </details>
+        </Disclosure>
       </InvestigationReadState>
       <section className="space-y-3">
         <h3 className="text-lg font-semibold">Continue the investigation</h3>
