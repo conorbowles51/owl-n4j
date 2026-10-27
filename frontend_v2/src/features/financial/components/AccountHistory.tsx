@@ -33,7 +33,7 @@ import { currencyMinorUnits, formatLedgerAmount } from "../lib/ledger-format"
 import { useInvestigationScope } from "../stores/investigation-scope"
 import { useLedgerTransactions } from "../hooks/use-ledger-transactions"
 import { StatementSourceButton } from "./StatementSourceButton"
-import { PaymentSet } from "./InvestigationWorkspaceParts"
+import { PaymentSet } from "./PaymentSet"
 
 export function AccountHistory({
   caseId,

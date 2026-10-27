@@ -11,6 +11,7 @@ import {
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 import { page } from "vitest/browser"
 import { fetchAPI } from "@/lib/api-client"
+import { importJobs } from "@/test/statement-import-jobs"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { useStatementWorkspace } from "../stores/statement-workspace"
 import { useStatementCoverageReview } from "../hooks/use-statement-coverage-review"
@@ -154,7 +155,7 @@ beforeEach(async () => {
     duplicate_disposition: ignored,
   })
   vi.mocked(fetchAPI).mockReset()
-  vi.mocked(fetchAPI).mockImplementation(async (url) => {
+  vi.mocked(fetchAPI).mockImplementation(importJobs(async (url) => {
     if (url.startsWith("/api/evidence-upload-")) return [] as never
     if (url.startsWith("/api/evidence?"))
       return {
@@ -197,7 +198,7 @@ beforeEach(async () => {
           }
         : {}),
     } as never
-  })
+  }))
   client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
@@ -408,7 +409,7 @@ it("keeps manual position through checks and import, with an explicit neighbouri
   )
   await waitFor(() =>
     expect(fetchAPI).toHaveBeenCalledWith(
-      expect.stringContaining("/confirm?"),
+      expect.stringContaining("/queue-import?"),
       expect.objectContaining({
         body: expect.objectContaining({
           rows: expect.arrayContaining([
@@ -469,7 +470,7 @@ it.each([
 it("replaces an empty earlier import from a batch with one statement decision and no row edits", async () => {
   const { BatchReviewContext } = await import("../lib/batch-review-context")
   const base = vi.mocked(fetchAPI).getMockImplementation()!
-  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+  vi.mocked(fetchAPI).mockImplementation(importJobs(async (url, options) => {
     if (url.includes("/statement-import/") && !options?.method)
       return {
         ...reading,
@@ -481,7 +482,7 @@ it("replaces an empty earlier import from a batch with one statement decision an
         },
       } as never
     return base(url, options)
-  })
+  }))
   const confirm = vi
     .fn()
     .mockResolvedValue({

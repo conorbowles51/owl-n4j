@@ -14,7 +14,10 @@ export function usePaymentCategoryLibrary(caseId: string) {
       )
       if (result.case_id !== caseId)
         throw Error("Categories came from a different case.")
-      return result.categories
+      // A malformed answer must not take the ledger down: keep named entries only.
+      return (Array.isArray(result.categories) ? result.categories : []).filter(
+        (item) => typeof item?.name === "string"
+      )
     },
     enabled: caseId !== "none",
   })

@@ -11,6 +11,7 @@ import {
 } from "@testing-library/react"
 import { expect, it, vi } from "vitest"
 import { fetchAPI } from "@/lib/api-client"
+import { importJobs } from "@/test/statement-import-jobs"
 import { StatementImportPanel } from "./StatementImportPanel"
 import { useStatementWorkspace } from "../stores/statement-workspace"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
@@ -30,6 +31,12 @@ vi.mock("../hooks/use-financial-access", () => ({
 vi.mock("../hooks/use-statement-checks", async (original) => ({
   ...(await original<typeof import("../hooks/use-statement-checks")>()),
   useStatementChecks: () => ({
+    admission: {
+      can_import: true,
+      status: "reconciled",
+      revision: "c".repeat(64),
+      blockers: [],
+    },
     checks: [],
     pending: false,
     revision: "c".repeat(64),
@@ -81,7 +88,7 @@ it("chooses the currency account, saves balances, switches accounts and reopens 
   }))
   const saved = new Set<string>()
   const requests: Record<string, unknown>[] = []
-  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+  vi.mocked(fetchAPI).mockImplementation(importJobs(async (url, options) => {
     if (url.startsWith("/api/evidence?"))
       return {
         files: [
@@ -193,7 +200,7 @@ it("chooses the currency account, saves balances, switches accounts and reopens 
           }
         : null,
     } as never
-  })
+  }))
   const mount = () =>
     render(
       <QueryClientProvider

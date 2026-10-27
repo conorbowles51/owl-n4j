@@ -4,7 +4,7 @@ import type { LedgerTransaction } from "../api"
 import { usePaymentCategory } from "../hooks/use-payment-categories"
 import { chartRatio } from "../lib/investigator-workspace"
 import { formatLedgerAmount } from "../lib/ledger-format"
-import { PaymentSet } from "./InvestigationWorkspaceParts"
+import { PaymentSet } from "./PaymentSet"
 import { Button } from "@/components/ui/button"
 
 export function CategoryMoneyChart({

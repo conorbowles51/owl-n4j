@@ -252,8 +252,8 @@ it("applies native date inputs alongside bank, account, category and currency, r
   })
   await act(async () => {
     await page
-      .getByRole("combobox", { name: "Filter financial payments by category" })
-      .selectOptions("Transfers")
+      .getByRole("button", { name: /^Transfers, \d+ payments$/ })
+      .click()
   })
   fireEvent.click(screen.getByText("Filters (1)", { exact: true }))
   await act(async () => {
@@ -308,10 +308,8 @@ it("applies native date inputs alongside bank, account, category and currency, r
   expect(screen.getByLabelText("Transactions from")).toHaveValue("2021-01-01")
   expect(screen.getByLabelText("Transactions to")).toHaveValue("2021-01-31")
   expect(
-    screen.getByRole("combobox", {
-      name: "Filter financial payments by category",
-    })
-  ).toHaveValue("Transfers")
+    screen.getByRole("button", { name: /^Transfers, \d+ payments$/ })
+  ).toHaveAttribute("aria-pressed", "true")
   expect(
     screen.getByRole("combobox", { name: "Currency", hidden: true })
   ).toHaveValue("MXN")
@@ -322,10 +320,8 @@ it("applies native date inputs alongside bank, account, category and currency, r
   expect(screen.getByLabelText("Transactions from")).toHaveValue("")
   expect(screen.getByLabelText("Transactions to")).toHaveValue("")
   expect(
-    screen.getByRole("combobox", {
-      name: "Filter financial payments by category",
-    })
-  ).toHaveValue("Transfers")
+    screen.getByRole("button", { name: /^Transfers, \d+ payments$/ })
+  ).toHaveAttribute("aria-pressed", "true")
   fireEvent.click(
     screen.getByLabelText("Bank filter").querySelector("summary")!
   )

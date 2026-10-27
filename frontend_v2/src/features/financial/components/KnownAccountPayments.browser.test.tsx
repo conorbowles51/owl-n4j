@@ -68,7 +68,8 @@ function Workspace() {
   </main>
 }
 async function openCurrencyFilters() {
-  if (!screen.getByLabelText("Currency").closest("details")?.open)
+  // The filters panel is a labelled button (not <details>): open it only when hidden.
+  if (!screen.getByLabelText("Currency").checkVisibility())
     await page.getByText(/^Filters/).click()
 }
 

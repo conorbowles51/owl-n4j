@@ -208,7 +208,7 @@ export function TransactionsOverview({
               <title>Tiles are sized by money in and out under the current filters. Click a tile to show its payments; click again to clear.</title>
             </Info>
           </h2>
-          <div role="group" aria-label="Break down by" className="inline-flex rounded-lg bg-muted p-[3px]">
+          <div role="group" aria-label="Break down by" className="inline-flex max-w-full flex-wrap rounded-lg bg-muted p-[3px]">
             {GROUPS.map(([key, label]) => (
               <button
                 key={key}

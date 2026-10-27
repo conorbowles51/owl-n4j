@@ -12,6 +12,7 @@ import {
 import { MemoryRouter } from "react-router-dom"
 import { afterEach, expect, it, vi } from "vitest"
 import { fetchAPI } from "@/lib/api-client"
+import { importJobs } from "@/test/statement-import-jobs"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { useFinancialDraftStore } from "../stores/financial-drafts"
 import { useStatementWorkspace } from "../stores/statement-workspace"
@@ -127,7 +128,7 @@ it.each([1280, 390])(
     const requests: Request[] = [],
       unexpected: string[] = []
     vi.mocked(fetchAPI).mockReset()
-    vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    vi.mocked(fetchAPI).mockImplementation(importJobs(async (url, options) => {
       if (url.startsWith("/api/evidence?"))
         return {
           files: [
@@ -208,7 +209,7 @@ it.each([1280, 390])(
       }
       unexpected.push(`${options?.method || "GET"} ${url}`)
       throw Error(`Unexpected request ${url}`)
-    })
+    }))
     const mount = () => {
       client = new QueryClient({
         defaultOptions: {

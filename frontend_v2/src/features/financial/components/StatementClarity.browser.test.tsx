@@ -119,6 +119,9 @@ it.each([1280, 390])(
     vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
       if (options?.method === "POST") {
         writes.push(options.body)
+        // The start check (fca92081): nothing open holds these files, no copies.
+        if (url.includes("/batches/preview?"))
+          return { case_id: "case", open_batches: [], copies: [] }
         return { id: "group", case_id: "case" }
       }
       if (url.includes("statement-import/files"))
@@ -170,7 +173,13 @@ it.each([1280, 390])(
       )
     )
     expect(writes).toEqual([
-      { request_id: expect.any(String), file_ids: ["ready"], folder_ids: [] },
+      { file_ids: ["ready"] },
+      {
+        request_id: expect.any(String),
+        file_ids: ["ready"],
+        folder_ids: [],
+        start_new: false,
+      },
     ])
   }
 )
