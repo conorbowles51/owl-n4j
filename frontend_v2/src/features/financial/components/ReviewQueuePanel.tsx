@@ -29,10 +29,12 @@ import {
 } from "../lib/review-queue"
 import { ReadingProgress } from "./ReadingProgress"
 import { BulkStatementDetails } from "./BulkStatementDetails"
-import { QueueRowDetails, needsRowDetails } from "./QueueRowDetails"
+import { QueueRowDetails } from "./QueueRowDetails"
+import { hasRowDetails } from "../lib/queue-row-fields"
 import { QueueNoActivityConfirm } from "./QueueNoActivityConfirm"
 import { QueueAnswerOnce } from "./QueueAnswerOnce"
 import { LEFT_OUT_MESSAGE, QueueNotStatement } from "./QueueNotStatement"
+import { QueuePreview } from "./QueuePreview"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import {
   HANDLED_PARTS,
@@ -174,11 +176,24 @@ export function ReviewStatusLine({
   )
 }
 
-function EntryLine({ entry }: { entry: QueueEntry }) {
+function EntryLine({ entry, onPreview }: { entry: QueueEntry; onPreview?: () => void }) {
   return (
     <>
       <p className="font-medium">
-        {entry.filename}
+        {onPreview ? (
+          <button
+            type="button"
+            className="text-left font-medium underline decoration-dotted underline-offset-2 hover:decoration-solid"
+            title="Preview this statement's page beside its fields"
+            aria-haspopup="dialog"
+            data-queue-preview={entry.id}
+            onClick={onPreview}
+          >
+            {entry.filename}
+          </button>
+        ) : (
+          entry.filename
+        )}
         {entry.file_statements > 1 &&
           ` · statement ${entry.file_position} of ${entry.file_statements} in this file`}
       </p>
@@ -359,6 +374,48 @@ export function ReviewQueuePanel({
       return next
     })
   const orderKey = `${list}:${fileIds.join(",")}:${issue}:${offset}`
+  // The items on screen, statements of a shared answer listed with it, and the
+  // one shown in the quick preview (J/K move through them in this order).
+  const shown = useMemo(
+    () =>
+      list === "waiting" || list === "unreadable"
+        ? groupEntries(current, bulkIssue === "no_activity" ? ["no_activity"] : [])
+        : [],
+    [current, list, bulkIssue]
+  )
+  const previewable = useMemo(
+    () => shown.flatMap((item) => (isGroup(item) ? item.entries : [item])).filter((entry) => entry.batch_id),
+    [shown]
+  )
+  // The previewed item and where it was in the list, so a fixed item that
+  // leaves the list is followed by the one that took its place.
+  const [preview, setPreview] = useState<{ id: string; at: number } | null>(null)
+  const previewTrigger = useRef<HTMLElement | null>(null)
+  const found = preview ? previewable.findIndex((entry) => entry.id === preview.id) : -1
+  const previewIndex =
+    found >= 0 ? found : preview && previewable.length ? Math.min(preview.at, previewable.length - 1) : -1
+  const previewEntry = previewIndex >= 0 ? previewable[previewIndex] : undefined
+  const openPreview = (entry: QueueEntry) => {
+    previewTrigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    setPreview({ id: entry.id, at: Math.max(0, previewable.findIndex((candidate) => candidate.id === entry.id)) })
+  }
+  const movePreview = (step: 1 | -1) => {
+    const next = previewable[previewIndex + step]
+    if (next) setPreview({ id: next.id, at: previewIndex + step })
+  }
+  const closePreview = () => {
+    const id = previewEntry?.id
+    setPreview(null)
+    // Focus returns to the item shown last: the control that opened it, or its preview controls.
+    requestAnimationFrame(() => {
+      const trigger = previewTrigger.current
+      const target =
+        trigger?.isConnected && trigger.dataset.queuePreview === id
+          ? trigger
+          : document.querySelector<HTMLElement>(`[data-queue-preview="${id}"]`)
+      target?.focus()
+    })
+  }
   const appliedOrder = useRef("")
   useEffect(() => {
     if (!query.data || query.isPlaceholderData) return
@@ -798,10 +855,8 @@ export function ReviewQueuePanel({
               className={`divide-y rounded border ${HANDLED_LISTS.has(list) ? "border-dashed bg-muted/30 text-muted-foreground" : ""}`}
               aria-label="Statements to review"
             >
-              {(list === "waiting" || list === "unreadable") && groupEntries(
-                // Chosen together with the no-payments confirmation above, one tick each.
-                current, bulkIssue === "no_activity" ? ["no_activity"] : []
-              ).map((item, position) => {
+              {/* Chosen together with the no-payments confirmation above, one tick each. */}
+              {shown.map((item, position) => {
                 const openEntry = (entry: QueueEntry) => {
                   setOrder(current)
                   appliedOrder.current = orderKey
@@ -815,6 +870,7 @@ export function ReviewQueuePanel({
                     caseId={caseId}
                     canEdit={canEdit}
                     onOpen={openEntry}
+                    onPreview={openPreview}
                     onSaved={(entries, line) => reportShared(entries, line)}
                   />
                 ) : (
@@ -832,6 +888,7 @@ export function ReviewQueuePanel({
                       setOutcome({ entry: left, held: false, message: LEFT_OUT_MESSAGE })
                       void refresh(left, true)
                     }}
+                    onPreview={item.batch_id ? () => openPreview(item) : undefined}
                     noActivityPick={
                       canEdit && bulkIssue === "no_activity" && item.issue_reason === "no_activity"
                         ? {
@@ -925,6 +982,40 @@ export function ReviewQueuePanel({
                 </li>
               ))}
             </ol>
+          )}
+          {previewEntry && (
+            <QueuePreview
+              key="queue-preview"
+              caseId={caseId}
+              entry={previewEntry}
+              guide={guidanceFor(previewEntry, user, list === "unreadable" ? "unreadable" : previewEntry.bucket)}
+              position={previewIndex + 1}
+              total={previewable.length}
+              onNext={() => movePreview(1)}
+              onPrevious={() => movePreview(-1)}
+              onClose={closePreview}
+              onOpen={() => {
+                setPreview(null)
+                setOrder(current)
+                appliedOrder.current = orderKey
+                open(previewEntry)
+              }}
+            >
+              <ItemFixes
+                inPreview
+                key={previewEntry.id}
+                entry={previewEntry}
+                user={user}
+                caseId={caseId}
+                canEdit={canEdit}
+                bucket={list === "unreadable" ? "unreadable" : previewEntry.bucket}
+                onSaved={(saved) => void refresh(saved)}
+                onLeftOut={(left) => {
+                  setOutcome({ entry: left, held: false, message: LEFT_OUT_MESSAGE })
+                  void refresh(left, true)
+                }}
+              />
+            </QueuePreview>
           )}
           {shownTotal > QUEUE_PAGE_SIZE || offset > 0 ? (
             <nav aria-label="Pages of this list" className="flex flex-wrap items-center gap-2 text-sm">
@@ -1266,6 +1357,7 @@ function NeedsItem({
   onOpen,
   onSaved,
   onLeftOut,
+  onPreview,
   noActivityPick,
 }: {
   entry: QueueEntry
@@ -1277,20 +1369,11 @@ function NeedsItem({
   onOpen: () => void
   onSaved: (entry: QueueEntry) => void
   onLeftOut?: (entry: QueueEntry) => void
+  onPreview?: () => void
   noActivityPick?: { checked: boolean; onChange: (checked: boolean) => void }
 }) {
   const guide = guidanceFor(entry, user, bucket)
-  const reason = entry.issue_reason || ""
-  const proposal = reasonProposal(entry, reason)
-  // One press (or one typed value) when that answer is all the identity lacks;
-  // otherwise the row's detail fields, which take several values at once.
-  const othersKnown = (["currency", "institution", "holder"] as const).every(
-    (field) => field === reason || !!entry[field]
-  )
-  const answerHere =
-    canEdit && bucket === "waiting" && ANSWER_ONCE.has(reason) && reason !== "no_activity" && othersKnown &&
-    (reason === "account" || (!!proposal && !proposal.confirmed))
-  const rowDetails = canEdit && bucket === "waiting" && !!entry.batch_id && !answerHere && needsRowDetails(entry)
+  const { answerHere } = itemFixPlan(entry, canEdit, bucket)
   return (
     <li className="flex flex-wrap items-start justify-between gap-3 border-l-4 border-l-amber-500 p-3 text-sm">
       {noActivityPick && (
@@ -1329,31 +1412,100 @@ function NeedsItem({
           </p>
         )}
         <div className="rounded bg-muted/40 p-2 text-xs">
-          <EntryLine entry={entry} />
+          <EntryLine entry={entry} onPreview={onPreview} />
         </div>
-        {bucket === "waiting" && <StatementNeedsList entry={entry} />}
-        <FilledMarks caseId={caseId} entry={entry} canEdit={canEdit} onSaved={onSaved} />
-        {answerHere && (
-          <QueueAnswerOnce
-            caseId={caseId}
-            reason={reason}
-            entries={[entry]}
-            proposal={proposal && !proposal.confirmed ? { value: proposal.value, label: proposal.label } : undefined}
-            actionLabel={guide.action}
-            onSaved={() => onSaved(entry)}
-          />
+        <ItemFixes entry={entry} user={user} caseId={caseId} canEdit={canEdit} bucket={bucket} onSaved={onSaved} onLeftOut={onLeftOut} />
+      </div>
+      {entry.batch_id && (
+        <div className="flex flex-wrap items-center gap-2">
+          {onPreview && (
+            <Button
+              size="sm"
+              variant="outline"
+              data-queue-preview={entry.id}
+              aria-haspopup="dialog"
+              title="See the page and its problem beside the fields it needs, without leaving the list (J/K next/previous, Esc closes)"
+              onClick={onPreview}
+            >
+              Preview
+            </Button>
+          )}
+          <Button size="sm" variant={first && !answerHere ? "primary" : "outline"} onClick={onOpen}>
+            {answerHere ? "Open the PDF" : guide.action}
+          </Button>
+        </div>
+      )}
+    </li>
+  )
+}
+
+/** Which of the item's fix forms it shows: one answer, or the row's detail fields. */
+function itemFixPlan(entry: QueueEntry, canEdit: boolean, bucket: string) {
+  const reason = entry.issue_reason || ""
+  const proposal = reasonProposal(entry, reason)
+  // One press (or one typed value) when that answer is all the identity lacks;
+  // otherwise the row's detail fields, which take several values at once.
+  const othersKnown = (["currency", "institution", "holder"] as const).every(
+    (field) => field === reason || !!entry[field]
+  )
+  const answerHere =
+    canEdit && bucket === "waiting" && ANSWER_ONCE.has(reason) && reason !== "no_activity" && othersKnown &&
+    (reason === "account" || (!!proposal && !proposal.confirmed))
+  const rowDetails = canEdit && bucket === "waiting" && !!entry.batch_id && !answerHere && hasRowDetails(entry)
+  return { reason, proposal, answerHere, rowDetails }
+}
+
+/**
+ * The item's own fixes, the same on the list and in its preview: what it still
+ * needs, values found elsewhere, one answer or the detail fields, and the exit
+ * for a document that is not a statement. Each saves through its usual call.
+ */
+export function ItemFixes({
+  entry,
+  user,
+  caseId,
+  canEdit,
+  bucket,
+  onSaved,
+  onLeftOut,
+  inPreview = false,
+}: {
+  entry: QueueEntry
+  user: QueuePerson | null
+  caseId: string
+  canEdit: boolean
+  bucket: string
+  onSaved: (entry: QueueEntry) => void
+  onLeftOut?: (entry: QueueEntry) => void
+  /** In the quick preview the detail fields open at once. */
+  inPreview?: boolean
+}) {
+  const guide = guidanceFor(entry, user, bucket)
+  const { reason, proposal, answerHere, rowDetails } = itemFixPlan(entry, canEdit, bucket)
+  return (
+    <>
+      {bucket === "waiting" && <StatementNeedsList entry={entry} />}
+      <FilledMarks caseId={caseId} entry={entry} canEdit={canEdit} onSaved={onSaved} />
+      {answerHere && (
+        <QueueAnswerOnce
+          caseId={caseId}
+          reason={reason}
+          entries={[entry]}
+          proposal={proposal && !proposal.confirmed ? { value: proposal.value, label: proposal.label } : undefined}
+          actionLabel={guide.action}
+          onSaved={() => onSaved(entry)}
+        />
+      )}
+      {/* Side by side while closed: one row of offers, each opening its own form. */}
+      <div className="flex flex-wrap items-start gap-x-3">
+        {rowDetails && (
+          <QueueRowDetails key={entry.id} caseId={caseId} entry={entry} startOpen={inPreview} onSaved={(saved) => onSaved(saved)} />
         )}
-        {rowDetails && <QueueRowDetails key={entry.id} caseId={caseId} entry={entry} onSaved={(saved) => onSaved(saved)} />}
         {canEdit && onLeftOut && entry.batch_id && (bucket === "waiting" || bucket === "unreadable") && (
           <QueueNotStatement key={`not:${entry.id}`} caseId={caseId} entry={entry} onLeftOut={onLeftOut} />
         )}
       </div>
-      {entry.batch_id && (
-        <Button size="sm" variant={first && !answerHere ? "primary" : "outline"} onClick={onOpen}>
-          {answerHere ? "Open the PDF" : guide.action}
-        </Button>
-      )}
-    </li>
+    </>
   )
 }
 
@@ -1370,8 +1522,8 @@ export function StatementNeedsList({ entry }: { entry: QueueEntry }) {
   const optional = needs.filter((need) => !need.required)
   return (
     <div aria-label="Before it can be imported" className="space-y-1 rounded border border-amber-500/40 p-2 text-xs">
-      <p className="font-medium">Still needed before it can be imported:</p>
-      <ul className="flex flex-wrap gap-1.5" aria-label="Required details still missing">
+      <ul className="flex flex-wrap items-center gap-1.5" aria-label="Required details still missing">
+        <li className="font-medium" aria-hidden="true">Still needed before it can be imported:</li>
         {missing.map((need) => (
           <li
             key={need.key}
@@ -1417,6 +1569,7 @@ function GroupItem({
   caseId,
   canEdit,
   onOpen,
+  onPreview,
   onSaved,
 }: {
   group: QueueGroup
@@ -1424,6 +1577,7 @@ function GroupItem({
   caseId: string
   canEdit: boolean
   onOpen: (entry: QueueEntry) => void
+  onPreview?: (entry: QueueEntry) => void
   onSaved: (entries: QueueEntry[], line: string) => void
 }) {
   const guide = groupGuidance(group)
@@ -1461,7 +1615,7 @@ function GroupItem({
           {group.entries.map((entry) => (
             <li key={entry.id} className="flex flex-wrap items-center justify-between gap-2 p-2">
               <div className="min-w-0 flex-1">
-                <EntryLine entry={entry} />
+                <EntryLine entry={entry} onPreview={onPreview && entry.batch_id ? () => onPreview(entry) : undefined} />
               </div>
               {entry.batch_id && (
                 <Button size="sm" variant="outline" onClick={() => onOpen(entry)}>

@@ -93,8 +93,16 @@ for (const [width, height] of [[1280, 720], [1440, 900]] as const) {
     expect(glance).toHaveTextContent("0 of 7 statements are done. 7 need your eyes.")
     expect(within(glance).getByRole("button", { name: /7 need you/ })).toBeVisible()
     expect(card.height).toBeLessThan(70)
-    // The whole first item is on screen (it started at 741 and 697 before; the card was 209 tall).
-    expect(item.bottom).toBeLessThanOrEqual(height)
+    // The first item is on screen (it started at 741 and 697 before; the card was 209 tall): what is
+    // wrong, what to do, and its actions (Preview, Open page 1). Its fields follow below at 1280x720.
+    for (const part of [
+      within(first).getByLabelText("What is wrong"),
+      within(first).getByRole("list", { name: "What to do" }),
+      within(first).getByRole("button", { name: "Preview" }),
+      within(first).getByRole("button", { name: "Open page 1" }),
+    ])
+      expect(part.getBoundingClientRect().bottom, part.textContent ?? "").toBeLessThanOrEqual(height)
+    if (height >= 900) expect(item.bottom).toBeLessThanOrEqual(height)
     // No band of its own for "Reset view": it sits in the tab bar.
     const reset = screen.getByRole("button", { name: "Reset view" })
     expect(reset.parentElement?.parentElement).toContainElement(screen.getByRole("tablist", { name: "Financial" }))
@@ -148,3 +156,32 @@ it("leaves no empty band under the tab bar on any Financial tab", async () => {
   }
   console.info(`first content under the tab bar: ${gaps.join(", ")}`)
 }, 60_000)
+
+// The quick preview at 1280 wide: page and fields side by side, inside the window, keys move it.
+it("fits the quick preview, its page and its fields in a 1280x720 window", async () => {
+  await page.viewport(1280, 720)
+  mount(720)
+  const list = await screen.findByRole("list", { name: "Statements to review" })
+  within(list).getAllByRole("button", { name: "Preview" })[0].click()
+  const panel = await screen.findByRole("dialog", { name: "Preview of CommitmentLetter (1).pdf" })
+  const box = panel.getBoundingClientRect()
+  const pageBox = within(panel).getByRole("region", { name: /^Page 1 of/ }).getBoundingClientRect()
+  const fields = within(panel).getByRole("region", { name: "What it needs" }).getBoundingClientRect()
+  console.info(`preview 1280x720: panel ${Math.round(box.left)}-${Math.round(box.right)}, page ${Math.round(pageBox.width)} wide, fields ${Math.round(fields.left)}-${Math.round(fields.right)} top ${Math.round(fields.top)}`)
+  expect(box.left).toBeGreaterThanOrEqual(0)
+  expect(box.right).toBeLessThanOrEqual(1280)
+  // Side by side: the page beside the fields, both starting at the top of the panel.
+  expect(fields.left).toBeGreaterThanOrEqual(pageBox.right - 1)
+  expect(fields.right).toBeLessThanOrEqual(1280)
+  expect(pageBox.width).toBeGreaterThan(500)
+  expect(within(panel).getByLabelText("Before it can be imported")).toBeVisible()
+  await userKey("j")
+  expect(await screen.findByRole("dialog", { name: "Preview of CommitmentLetter (2).pdf" })).toBeVisible()
+  await userKey("Escape")
+  await vi.waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+})
+
+async function userKey(key: string) {
+  window.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }))
+  await new Promise((resolve) => setTimeout(resolve, 50))
+}

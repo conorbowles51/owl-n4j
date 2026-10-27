@@ -21,7 +21,7 @@ import {
   StatementSectionPicker,
 } from "./StatementSectionPicker"
 import { useFinancialAccess } from "../hooks/use-financial-access"
-import { statementRowLocator } from "../lib/statement-row-locator"
+import { balanceCellLocator, statementRowLocator } from "../lib/statement-row-locator"
 import { useStatementChecks } from "../hooks/use-statement-checks"
 import { StatementArithmeticChecks } from "./StatementArithmeticChecks"
 import { StatementReconciliationSummary } from "./StatementReconciliationSummary"
@@ -2405,10 +2405,7 @@ function EditableStatement({
     )
   }
   const balanceLocator = (original: z.infer<typeof row>) =>
-    original.value_sources?.balance?.source_cell.locator ??
-    original.source_cells.find(
-      (cell) => String(cell.column_index) === original.fields.balance_column
-    )?.locator ?? { kind: "page_only", page: original.page_number }
+    balanceCellLocator(original)
   const editBalance = (id: string) => {
     const original = originals.get(id)
     if (!original) return
