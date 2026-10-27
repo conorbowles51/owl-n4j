@@ -721,10 +721,7 @@ export function LedgerRowBrowser({
                 )}
               </fieldset>
             )}
-            <details>
-              <summary className="text-sm cursor-pointer">
-                Technical filter
-              </summary>
+            <Disclosure label="Technical filter">
               <label>
                 Evidence classification
                 <select
@@ -743,7 +740,7 @@ export function LedgerRowBrowser({
                     ))}
                 </select>
               </label>
-            </details>
+            </Disclosure>
             <p className="basis-full text-xs text-muted-foreground">
               Choose a currency to filter by amount.
             </p>
@@ -1264,10 +1261,7 @@ export function LedgerRowBrowser({
                     onClose={() => setFinding(null)}
                   />
                 )}
-                <details className="text-sm">
-                  <summary className="cursor-pointer">
-                    Selected amounts and saved selections
-                  </summary>
+                <Disclosure className="text-sm" label="Selected amounts and saved selections">
                   <div className="space-y-3 pt-2">
                     <PaymentTotals
                       rows={selectedHere}
@@ -1279,7 +1273,7 @@ export function LedgerRowBrowser({
                       ids={selection}
                     />
                   </div>
-                </details>
+                </Disclosure>
                 {selection.length >
                   rows.filter((row) => selectedIds.has(row.key)).length && (
                   <p className="text-sm rounded border p-2">

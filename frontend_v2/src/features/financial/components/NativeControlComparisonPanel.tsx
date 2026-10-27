@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import type {
   NativeControlComparison,
   CurrentNativeControls,
@@ -56,11 +57,8 @@ export function NativeControlComparisonPanel({
         <div key={title} className="space-y-2">
           <h5 className="font-medium">{title}</h5>
           {calculation.checks.map((check, index) => (
-            <details key={index} className="rounded border p-2">
-              <summary>
-                {check.scope} · {label(check.kind)}:{" "}
-                {label(check.result.status)}
-              </summary>
+            <Disclosure key={index} className="rounded border p-2" label={<>{check.scope} · {label(check.kind)}:{" "}
+                {label(check.result.status)}</>}>
               <dl className="mt-2 grid grid-cols-1 gap-1 break-words text-xs sm:grid-cols-2">
                 {Object.entries(check.result)
                   .filter(([key]) => key !== "status")
@@ -71,12 +69,11 @@ export function NativeControlComparisonPanel({
                     </div>
                   ))}
               </dl>
-            </details>
+            </Disclosure>
           ))}
         </div>
       ))}
-      <details>
-        <summary>Source and calculation context</summary>
+      <Disclosure label="Source and calculation context">
         <p className="break-all">SHA-256: {comparison.sha256}</p>
         <p>
           {comparison.parser_name} · {comparison.parser_version}
@@ -86,7 +83,7 @@ export function NativeControlComparisonPanel({
           {comparison.date_context.basis}
         </p>
         <p>{comparison.current.basis}</p>
-      </details>
+      </Disclosure>
     </section>
   )
 }

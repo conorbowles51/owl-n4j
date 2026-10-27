@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { useState } from "react"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { z } from "zod"
@@ -127,10 +128,7 @@ export function PreviousStatementReviews({
           corrections belong before importing.
         </p>
       )}
-      <details>
-        <summary className="cursor-pointer font-medium">
-          Compare earlier values
-        </summary>
+      <Disclosure label="Compare earlier values">
         <div className="space-y-3 pt-3">
           {recovery.reviews.length > 10 && (
             <label className="block">
@@ -261,7 +259,7 @@ export function PreviousStatementReviews({
             </>
           )}
         </div>
-      </details>
+      </Disclosure>
       {recovery.acknowledged ? (
         <p role="status">
           Comparison saved for this file. Your current edits remain in this

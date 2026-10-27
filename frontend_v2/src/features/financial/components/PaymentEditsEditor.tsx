@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { PaymentCounterpartyPicker } from "./PaymentCounterpartyPicker"
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -369,11 +370,8 @@ export function PaymentEditsEditor({
                 Only these fields will change. Corrections to amounts and dates
                 also update transaction totals and statement balance checks.
               </p>
-              <details>
-                <summary className="cursor-pointer">
-                  Compare current and new values ({Math.min(preview.count, 50)}{" "}
-                  shown)
-                </summary>
+              <Disclosure label={<>Compare current and new values ({Math.min(preview.count, 50)}{" "}
+                  shown)</>}>
                 {preview.examples.map((example) => (
                   <div
                     className="mt-2 rounded border p-2 text-sm"
@@ -400,7 +398,7 @@ export function PaymentEditsEditor({
                     ))}
                   </div>
                 ))}
-              </details>
+              </Disclosure>
             </section>
           )}
         </div>

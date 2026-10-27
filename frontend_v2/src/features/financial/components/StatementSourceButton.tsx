@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { ImportedStatementDetails } from "./ImportedStatementDetails"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { SourceCustodyPanel } from "./SourceCustodyPanel"
@@ -163,14 +164,13 @@ export function StatementSourceButton({
                 fileId={query.data.evidence_file_id}
               />
               <p>{query.data.filename}</p>
-              <details className="text-sm text-muted-foreground">
-                <summary>Source verification details</summary>
+              <Disclosure className="text-sm text-muted-foreground" label="Source verification details">
                 <p>{query.data.limitation}</p>
                 <p>
                   Recorded file digests agree. Opening this citation does not
                   freshly verify the file bytes or its financial readings.
                 </p>
-              </details>
+              </Disclosure>
               {canEdit && query.data.can_edit_import_details && (
                 <ImportedStatementDetails
                   caseId={caseId}
@@ -193,11 +193,10 @@ export function StatementSourceButton({
                       ? "These are amounts owed on the card. Payments reduce them; charges increase them."
                       : "Printed balances represent money held in the account."}
                   </p>
-                  <details className="text-sm">
-                    <summary>Review reason and scope</summary>
+                  <Disclosure className="text-sm" label="Review reason and scope">
                     <p>{query.data.reviewed_controls.reason}</p>
                     <p>{query.data.reviewed_controls.scope}</p>
-                  </details>
+                  </Disclosure>
                   {query.data.reviewed_controls.account_closure && (
                     <div className="space-y-2">
                       <p>

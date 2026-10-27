@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { useContext, useMemo, useState, type ReactNode } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { judgementKeys, useJudgementCounts, useJudgementRowMap, useJudgements } from "../hooks/use-judgements"
@@ -489,11 +490,8 @@ export function ReadingJudgements({
   if (!items.length) return null
   const inferred = items.filter((item) => item.strength === "inferred").length
   return (
-    <details className="rounded border p-3 text-sm" aria-label="Judgement calls in this reading">
-      <summary className="cursor-pointer font-medium">
-        <Lightbulb aria-hidden="true" className="mr-1 inline size-3" />
-        {countLine({ total: items.length, inferred })} in this reading
-      </summary>
+    <Disclosure className="rounded border p-3 text-sm" label={<><Lightbulb aria-hidden="true" className="mr-1 inline size-3" />
+        {countLine({ total: items.length, inferred })} in this reading</>}>
       <p className="mt-2 text-muted-foreground">
         Values the reader chose that the page does not print outright. Check any of them on the page before you
         save; nothing is held for them. Once saved, each can be marked Looks right or corrected.
@@ -513,6 +511,6 @@ export function ReadingJudgements({
           </li>
         ))}
       </ul>
-    </details>
+    </Disclosure>
   )
 }

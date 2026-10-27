@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { useEffect, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { z } from "zod"
@@ -228,15 +229,14 @@ export function StatementRecoveryPanel({
         </Button>
       )}
       {data.scope && (
-        <details className="text-sm text-muted-foreground">
-          <summary className="cursor-pointer">What this check included</summary>
+        <Disclosure className="text-sm text-muted-foreground" label="What this check included">
           <p>
             {data.scope.scheduled} of {data.scope.considered} uploaded files
             were selected for another check. {data.scope.protected} files were
             left unchanged to preserve earlier decisions. These are historical
             counts, not your current to-do list.
           </p>
-        </details>
+        </Disclosure>
       )}
       {error && <p role="alert">{error}</p>}
       {recovered > 0 && (
@@ -246,10 +246,7 @@ export function StatementRecoveryPanel({
           Transactions.
         </p>
       )}
-      <details>
-        <summary className="cursor-pointer text-sm font-medium">
-          Review recovery results
-        </summary>
+      <Disclosure label="Review recovery results">
         <ul className="divide-y mt-2">
           {data.items.map((item) => (
             <li key={item.id} className="py-3 space-y-2">
@@ -318,7 +315,7 @@ export function StatementRecoveryPanel({
             </Button>
           </div>
         )}
-      </details>
+      </Disclosure>
     </section>
   )
 }

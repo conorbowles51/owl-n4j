@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import type { QueueEntry } from "../lib/review-queue"
@@ -174,10 +175,7 @@ export function QueueNoActivityConfirm({
               ` ${plan.unlisted.length} could not be listed now (their file is being read again); open them from the queue.`}
           </p>
           {plan.excluded.length > 0 && (
-            <details>
-              <summary className="cursor-pointer">
-                Which {plan.excluded.length} cannot be confirmed (all {plan.excluded.length} listed)
-              </summary>
+            <Disclosure label={<>Which {plan.excluded.length} cannot be confirmed (all {plan.excluded.length} listed)</>}>
               <ul className="mt-1 list-disc pl-5">
                 {plan.excluded.map((item, index) => (
                   <li key={index}>
@@ -185,7 +183,7 @@ export function QueueNoActivityConfirm({
                   </li>
                 ))}
               </ul>
-            </details>
+            </Disclosure>
           )}
           <div className="flex flex-wrap gap-2">
             <Button size="sm" disabled={!plan.confirmable || !!busy} onClick={() => void confirm()}>

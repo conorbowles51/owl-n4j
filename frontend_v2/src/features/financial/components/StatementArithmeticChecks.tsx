@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { z } from "zod"
 import { Button } from "@/components/ui/button"
 import { arithmeticCheck } from "../hooks/use-statement-checks"
@@ -136,10 +137,7 @@ export function StatementArithmeticChecks({
         ))
       )}
       {unavailable.length > 0 && (
-        <details className="text-muted-foreground">
-          <summary className="cursor-pointer">
-            {unavailable.length} checks unavailable
-          </summary>
+        <Disclosure className="text-muted-foreground" label={<>{unavailable.length} checks unavailable</>}>
           <ul className="list-disc pl-5 mt-2">
             {unavailable.map((check) => (
               <li key={check.kind}>
@@ -152,7 +150,7 @@ export function StatementArithmeticChecks({
             conflicting printed control still needs review. Follow the current
             reconciliation result before importing.
           </p>
-        </details>
+        </Disclosure>
       )}
     </div>
   )

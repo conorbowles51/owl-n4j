@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import {
   useInvestigationScope,
   useAnalysisPopulation,
@@ -43,10 +44,7 @@ function CaseAnalysis({ caseId }: { caseId: string }) {
         params={params}
         population={population}
       />
-      <details className="rounded border p-3 space-y-3">
-        <summary className="cursor-pointer font-medium">
-          Analysis settings, statement coverage and downloads
-        </summary>
+      <Disclosure className="rounded border p-3 space-y-3" label="Analysis settings, statement coverage and downloads">
         <label className="flex items-center gap-2">
           Payments to include
           <select
@@ -63,7 +61,7 @@ function CaseAnalysis({ caseId }: { caseId: string }) {
         </label>
         <RequestedCoveragePanel caseId={caseId} params={params} />
         <LedgerExportButton caseId={caseId} params={params} />
-      </details>
+      </Disclosure>
     </section>
   )
 }
