@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { useFinancialStore } from "../stores/financial.store"
 import { useLedgerAccountDirectory } from "../hooks/use-ledger-account-directory"
 import { holderKey } from "../lib/account-holder"
@@ -130,8 +131,7 @@ export function TransactionAccountFilters({
         />
       </div>
       {!!unresolved.size && (
-        <details>
-          <summary>{unresolved.size} accounts need identifying</summary>
+        <Disclosure label={<>{unresolved.size} accounts need identifying</>}>
           <p className="text-xs">
             These records do not yet have a confirmed account number. Review
             their statement details before merging.
@@ -156,7 +156,7 @@ export function TransactionAccountFilters({
               })
             }
           />
-        </details>
+        </Disclosure>
       )}
       {!!query.data?.pending.length && (
         <p className="text-xs text-muted-foreground">

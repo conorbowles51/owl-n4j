@@ -56,3 +56,14 @@ it("opts into path screening and clears captured results when criteria change", 
   fireEvent.click(screen.getByLabelText("Screen paths between accounts"))
   expect(screen.queryByText("Captured path criteria")).not.toBeInTheDocument()
 })
+it("says why Find patterns is unavailable when the days are not a whole number from 0 to 30", () => {
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <FinancialPatternReview caseId="case" />
+    </QueryClientProvider>
+  )
+  expect(screen.queryByText(/Enter a whole number of days/)).toBeNull()
+  fireEvent.change(screen.getByLabelText("Screening window days"), { target: { value: "31" } })
+  expect(screen.getByRole("button", { name: "Find patterns" })).toBeDisabled()
+  expect(screen.getByRole("alert")).toHaveTextContent("Enter a whole number of days from 0 to 30 to find patterns.")
+})

@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { appendAccountSelection } from "../lib/account-selection"
 import {
   usePaymentCategory,
@@ -193,12 +194,9 @@ function GraphScope({
             {query.data.edges.length} payments · {query.data.excluded_rows}{" "}
             excluded
           </p>
-          <details>
-            <summary className="cursor-pointer">
-              How these connections were drawn
-            </summary>
+          <Disclosure label="How these connections were drawn">
             <p>{query.data.limitation}</p>
-          </details>
+          </Disclosure>
           {!query.data.edges.length ? (
             <p>
               No payments match these filters. Change the account or dates, or

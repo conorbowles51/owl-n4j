@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { ConditionalTransferGraph } from "./ConditionalTransferGraph"
 import { AccountPartyDirectory } from "./AccountPartyDirectory"
 import { useAccountPerspective } from "../stores/account-perspective"
@@ -197,11 +198,8 @@ export function AccountFlowPerspective({
             onSource={onSource}
             explanation="Outgoing movements extend left and incoming movements right. Selected internal pairs are excluded from this chart. Unpaired source-label groups remain local to their account; equal labels do not establish the same party. Groups are ordered by net within each currency."
           />
-          <details>
-            <summary>
-              Internal movements and their sources (
-              {result.movements.filter((m) => m.kind === "internal").length})
-            </summary>
+          <Disclosure label={<>Internal movements and their sources (
+              {result.movements.filter((m) => m.kind === "internal").length})</>}>
             {result.movements
               .filter((m) => m.kind === "internal")
               .map((m, i) => (
@@ -224,7 +222,7 @@ export function AccountFlowPerspective({
                   ))}
                 </div>
               ))}
-          </details>
+          </Disclosure>
           <Button onClick={download}>
             Download account perspective and assumptions
           </Button>

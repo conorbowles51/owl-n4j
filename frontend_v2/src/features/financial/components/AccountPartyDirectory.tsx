@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { useFinancialDraft } from "../stores/financial-drafts"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -153,7 +154,7 @@ export function AccountPartyDirectory({
               <p>{suggestion.reason}</p>
               {suggestion.has_conflicting_links && <p role="alert">These accounts have different saved links. Check those decisions before changing them.</p>}
               <ul>{suggestion.account_ids.map((id) => { const account = state.accounts.find((a) => a.id === id); return <li key={id}>{account?.institution} · {account?.identifier_as_printed} · {account?.currency}</li> })}</ul>
-              <details><summary>Supporting statement headers</summary>{suggestion.evidence.map((entry, index) => <p key={index}>{entry.holder_as_recorded} · {entry.printed_label} {entry.printed_value} · page {entry.page_number}{entry.evidence_file_id && <> · <a className="underline" href={`/api/evidence/${entry.evidence_file_id}/file`} target="_blank" rel="noreferrer">Open original statement</a></>}</p>)}</details>
+              <Disclosure label="Supporting statement headers">{suggestion.evidence.map((entry, index) => <p key={index}>{entry.holder_as_recorded} · {entry.printed_label} {entry.printed_value} · page {entry.page_number}{entry.evidence_file_id && <> · <a className="underline" href={`/api/evidence/${entry.evidence_file_id}/file`} target="_blank" rel="noreferrer">Open original statement</a></>}</p>)}</Disclosure>
               <Button disabled={!canEdit || save.isPending} onClick={() => updateReview({selected:suggestion.account_ids, party:suggestion.existing_party_id || "new", name:suggestion.suggested_name, reason:suggestion.reason + "\n" + suggestion.evidence.map((entry) => `Source ${entry.source_document_id}, page ${entry.page_number}: ${entry.printed_label} ${entry.printed_value}`).join("\n")})}>Review these account links</Button>
             </div>)}
           </section>}
@@ -325,10 +326,7 @@ export function AccountPartyDirectory({
               Account links saved with their decision history.
             </p>
           )}
-          <details>
-            <summary>
-              Account link decision history ({state.history.length})
-            </summary>
+          <Disclosure label={<>Account link decision history ({state.history.length})</>}>
             {state.history.map((h) => (
               <div key={h.id} className="my-2 rounded border p-2 break-words">
                 <p>
@@ -342,7 +340,7 @@ export function AccountPartyDirectory({
                 </p>
               </div>
             ))}
-          </details>
+          </Disclosure>
         </>
       )}
     </section>

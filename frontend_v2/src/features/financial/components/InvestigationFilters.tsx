@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { TransactionAccountFilters } from "./TransactionAccountFilters"
@@ -79,16 +80,13 @@ export function InvestigationFilters({
       >
         Reset
       </Button>
-      <details className="basis-full text-xs">
-        <summary className="cursor-pointer">
-          {accountSelection ? "Which dates are used" : "Which dates are used"}
-        </summary>
+      <Disclosure className="basis-full text-xs" label={<>{accountSelection ? "Which dates are used" : "Which dates are used"}</>}>
         <p>
           The start and end dates are included. Payments without a transaction
           date are marked in the table. Check Statements for gaps in the
           documents supplied.
         </p>
-      </details>
+      </Disclosure>
       {invalid && (
         <p role="alert">The start date must be on or before the end date.</p>
       )}

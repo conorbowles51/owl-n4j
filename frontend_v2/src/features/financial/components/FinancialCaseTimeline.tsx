@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { appendAccountSelection } from "../lib/account-selection"
 import { SavePaymentSelection } from "./SavePaymentSelection"
 import { useState } from "react"
@@ -203,12 +204,9 @@ function TimelineScope({
       {load.isError && <p role="alert">{load.error.message}</p>}
       {data && (
         <>
-          <details>
-            <summary className="cursor-pointer">
-              How the timeline was assembled
-            </summary>
+          <Disclosure label="How the timeline was assembled">
             <p>{data.ledger.limitation}</p>
-          </details>
+          </Disclosure>
           <p>
             {data.ledger.rows.length} payments; {data.ledger.excluded_rows}{" "}
             excluded. The account filter applies to payments. Case events use

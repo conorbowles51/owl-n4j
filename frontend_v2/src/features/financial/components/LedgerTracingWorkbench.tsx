@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import {
   useFinancialDraft,
   useFinancialOrderDraft,
@@ -506,12 +507,11 @@ function ScenarioForm({ inputs }: { inputs: TraceInputs }) {
       {result && (
         <section aria-label="Conditional tracing results" className="space-y-3">
           <h3 className="font-semibold">Results using your assumptions</h3>
-          <details>
-            <summary>Limits of this calculation</summary>
+          <Disclosure label="Limits of this calculation">
             {result.value.limitations.map((note) => (
               <p key={note}>{note}</p>
             ))}
-          </details>
+          </Disclosure>
           {Object.entries(result.value.comparison.results).map(
             ([method, output]) => (
               <div className="border p-3" key={method}>

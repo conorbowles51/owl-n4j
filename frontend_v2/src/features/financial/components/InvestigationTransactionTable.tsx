@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { paymentInventory } from "../lib/payment-inventory"
 import { knownAccountGroup, type KnownPaymentAccount } from "../lib/known-payment-accounts"
 import { openPaymentParty } from "../lib/payment-party-navigation"
@@ -110,11 +111,8 @@ export function PaymentTotals({
         </p>
       )}
       {expandAccounts && inventory.accounts.length > 0 && (
-        <details className="text-xs">
-          <summary className="cursor-pointer">
-            View all {inventory.accounts.length} accounts and{" "}
-            {inventory.banks.length} banks
-          </summary>
+        <Disclosure className="text-xs" label={<>View all {inventory.accounts.length} accounts and{" "}
+            {inventory.banks.length} banks</>}>
           <p className="mt-2">
             Banks: {inventory.banks.join(", ") || "Not identified"}
           </p>
@@ -128,7 +126,7 @@ export function PaymentTotals({
               </li>
             ))}
           </ul>
-        </details>
+        </Disclosure>
       )}
       {[...totals].map(([group, total]) => {
         const [currency, kind] = group.split(":")

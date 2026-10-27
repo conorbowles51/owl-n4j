@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { TransferPartsEditor, type TransferParts } from "./TransferPartsEditor"
 import { useState } from "react"
 import { randomRequestId } from "@/lib/browser-crypto"
@@ -442,14 +443,11 @@ function TrailEditor({
         </Button>
       ))}
       {trail.matching_entries.length > 0 && (
-        <details className="rounded border p-3">
-          <summary>
-            Possible missing-side entries now in this case (
+        <Disclosure className="rounded border p-3" label={<>Possible missing-side entries now in this case (
             {trail.matching_entries_truncated
               ? "first 50"
               : trail.matching_entries.length}
-            )
-          </summary>
+            )</>}>
           <p>
             The account identifier matches. Check amount, dates and references
             before linking; these are suggestions, not confirmed transfers. The
@@ -478,7 +476,7 @@ function TrailEditor({
               Review match: {paymentLabel(p)}
             </Button>
           ))}
-        </details>
+        </Disclosure>
       )}
       {trail.details.implied_exchange_rate && (
         <p>
@@ -941,11 +939,8 @@ function TrailEditor({
                 </p>
               )}
               {preview.account_context && (
-                <details>
-                  <summary>
-                    Opening balance and surrounding payments (
-                    {preview.account_context.payment_count})
-                  </summary>
+                <Disclosure label={<>Opening balance and surrounding payments (
+                    {preview.account_context.payment_count})</>}>
                   <p>
                     Statement opening balance{" "}
                     {preview.account_context.period_start ||
@@ -992,7 +987,7 @@ function TrailEditor({
                       in Transactions.
                     </p>
                   )}
-                </details>
+                </Disclosure>
               )}
               {preview.warnings.map((w) => (
                 <p key={w}>{w}</p>
@@ -1058,11 +1053,8 @@ function TrailEditor({
         {trails.data && !trails.data.trails.some((t) => t.active) && (
           <p>No links have been saved yet.</p>
         )}
-        <details>
-          <summary>
-            Removed links (
-            {trails.data?.trails.filter((t) => !t.active).length ?? 0})
-          </summary>
+        <Disclosure label={<>Removed links (
+            {trails.data?.trails.filter((t) => !t.active).length ?? 0})</>}>
           {trails.data?.trails
             .filter((t) => !t.active)
             .map((t) => (
@@ -1071,7 +1063,7 @@ function TrailEditor({
                 history entries
               </p>
             ))}
-        </details>
+        </Disclosure>
       </section>
       {source && (
         <LedgerSourceDialog

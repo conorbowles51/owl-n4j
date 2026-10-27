@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { appendAccountSelection } from "../lib/account-selection"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { RetainedFinancialTool } from "./FinancialNavigation"
@@ -225,6 +226,11 @@ function PatternScope({
       >
         {load.isPending ? "Checking payments…" : "Find patterns"}
       </Button>
+      {(!/^\d+$/.test(days) || Number(days) > 30) && (
+        <p role="alert" className="text-sm">
+          Enter a whole number of days from 0 to 30 to find patterns.
+        </p>
+      )}
       {load.isError && <p role="alert">{load.error.message}</p>}
       {freshness.stale && (
         <p role="status">
@@ -234,12 +240,9 @@ function PatternScope({
       )}
       {load.data && !load.isPending && !freshness.stale && (
         <>
-          <details className="text-sm">
-            <summary className="cursor-pointer">
-              What these checks cover
-            </summary>
+          <Disclosure className="text-sm" label="What these checks cover">
             <p>{load.data.limitation}</p>
-          </details>
+          </Disclosure>
           <p>
             {load.data.reviewed_rows} payments checked;{" "}
             {load.data.date_unavailable_ids.length} payments need a date checked
