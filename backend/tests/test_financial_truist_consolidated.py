@@ -45,8 +45,10 @@ class ConsolidatedStatementTests(unittest.TestCase):
         self.assertEqual(set(self.statements), {'9990001112223', '9990004445556'})
         for statement in self.statements.values():
             self.assertTrue(statement['engine']['proved'], statement['engine'])
-            # The period is the two balances' printed dates; the production stamp '03/17/2025' on every page is not.
-            self.assertEqual((statement['period_start'], statement['period_end']), ('2024-04-11', '2024-05-13'))
+            # The period is dated by the two balances' printed dates; the production stamp '03/17/2025' on every page
+            # is not. 'Your previous balance as of 04/11/2024' is the previous statement's closing balance: the period
+            # starts the day after, where the previous statement (2024-03-13..2024-04-11) ends.
+            self.assertEqual((statement['period_start'], statement['period_end']), ('2024-04-12', '2024-05-13'))
             self.assertEqual((statement['currency'], statement['institution']), ('USD', 'Truist Bank'))
             self.assertEqual(statement['holder'], 'JANE Q EXAMPLE PERSON')
 
@@ -96,11 +98,31 @@ class ConsolidatedStatementTests(unittest.TestCase):
         statements, _ = reading(sources)
         checking = statements['9990001112223']
         self.assertTrue(checking['engine']['proved'], checking['engine'])
-        self.assertEqual((checking['period_start'], checking['period_end']), ('2023-12-11', '2024-01-13'))
+        self.assertEqual((checking['period_start'], checking['period_end']), ('2023-12-12', '2024-01-13'))
         dates = {r['fields']['date'] for r in checking['_rows'] if r['kind'] == 'transaction'}
         self.assertIn('2023-12-12', dates)
         self.assertIn('2024-01-07', dates)
-        self.assertTrue(all('2023-12-11' <= d <= '2024-01-13' for d in dates))
+        self.assertTrue(all('2023-12-12' <= d <= '2024-01-13' for d in dates))
+
+    def test_previous_balance_date_is_the_previous_statements_last_day(self):
+        # OPDMD66 CommitmentLetter (0)-(6): each 'previous balance as of' date is the previous statement's 'new
+        # balance as of' date and no line is dated on it. Read as the start, consecutive statements shared a day and
+        # the queue held them as overlapping. A dated opening that is not the previous balance ('Beginning balance
+        # on 04/11/2024') is the balance on the period's first day: the period starts on it.
+        for label, start in (('Your previous balance as of', '2024-04-12'), ('Beginning balance on', '2024-04-11')):
+            sources = deepcopy(fixture('financial_truist_consolidated_fixture.json'))
+            for source in sources:
+                for row in source['rows']:
+                    for cell in row['cells']:
+                        cell['expected_text'] = cell['expected_text'].replace('Your previous balance as of', label)
+            profile = dict(_truist(), labels=dict(_truist()['labels'], opening=[label]))
+            E._READINGS.clear()
+            E._LIVE_READINGS.clear()
+            statements = read_statements(sources, profile=profile)
+            E._READINGS.clear()
+            E._LIVE_READINGS.clear()
+            self.assertEqual({(st['period_start'], st['period_end']) for st in statements}, {(start, '2024-05-13')},
+                             label)
 
     def test_balance_dates_rule_switch(self):
         with mock.patch.object(E, 'BALANCE_DATES_PERIOD', False):
@@ -125,7 +147,7 @@ class ChecksTableAndQuietSavingsTests(unittest.TestCase):
     def test_checks_table_has_its_own_amount_column_and_total(self):
         checking = self.statements['9990001112223']
         self.assertTrue(checking['engine']['proved'], checking['engine'])
-        self.assertEqual((checking['period_start'], checking['period_end']), ('2023-10-13', '2023-11-10'))
+        self.assertEqual((checking['period_start'], checking['period_end']), ('2023-10-14', '2023-11-10'))
         self.assertEqual(control(checking, 'Opening Balance'), '180043')
         self.assertEqual(control(checking, 'Closing Balance'), '-47685')
         count, credit, debit = sums(checking)
@@ -195,7 +217,8 @@ class BusinessStatementTests(unittest.TestCase):
         statement = self.statements[account]
         self.assertEqual(account, '9990007778889')
         self.assertTrue(statement['engine']['proved'], statement['engine'])
-        self.assertEqual((statement['period_start'], statement['period_end']), ('2023-09-29', '2023-10-31'))
+        # 'Your previous balance as of 09/29/2023' is September's last statement day: October starts the day after.
+        self.assertEqual((statement['period_start'], statement['period_end']), ('2023-09-30', '2023-10-31'))
         self.assertEqual((control(statement, 'Opening Balance'), control(statement, 'Closing Balance')),
                          ('5162173', '5122744'))
         count, credit, debit = sums(statement)

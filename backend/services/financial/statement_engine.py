@@ -1422,7 +1422,11 @@ def page_facts(rows, style, exponent=2, order=None):
 
 # (B1) A statement printing no period line dates its two balances instead, inside their labels ('Your previous
 # balance as of 04/11/2024 $333.65', 'Your new balance as of 05/13/2024 = $-629.81', Truist consolidated
-# statements): the period runs from the opening balance's date to the closing balance's. Only on a page printing
+# statements): the period runs from the opening balance's date to the closing balance's. A previous balance
+# ('Your previous balance as of 04/11/2024') is the previous statement's closing balance, dated that statement's
+# last day: the period starts the day after (measured on 30 Truist periods: no line is dated on the previous
+# balance's day, and each previous balance's day is the previous statement's last). Any other dated opening
+# ('Beginning balance on 3/1') is the balance on the period's first day: the period starts on it. Only on a page printing
 # no period of its own (labelled or derived), exactly one full date inside an opening label and one inside a
 # closing label, the closing date after the opening date within MAX_PERIOD_DAYS. A date printed anywhere else on
 # the page (a production stamp '03/17/2025', a 'For 05/13/2024' heading) is never read for it. Recorded as
@@ -1431,6 +1435,8 @@ def page_facts(rows, style, exponent=2, order=None):
 BALANCE_DATES_PERIOD = os.environ.get('LOUPE_FINANCIAL_BALANCE_DATES_PERIOD', '1').strip().lower() not in (
     '0', 'false', 'off', 'no')
 BALANCE_DATES_BASIS = 'printed_balance_dates'
+# The words naming an opening as the previous statement's closing balance ('Your previous balance as of ...').
+PREVIOUS_BALANCE_WORDS = {'PREVIOUS', 'ANTERIOR'}
 
 
 def _balance_dates_period(rows, style, exponent, facts, order):
@@ -1440,14 +1446,19 @@ def _balance_dates_period(rows, style, exponent, facts, order):
     for row in rows:
         if not row['tokens'] or _row_is_movement(row, style, exponent):
             continue
-        roles = {_role_of(text, False) for text, values in label_pairs(row, style, exponent)
-                 if any(kind == 'money' for kind, _ in values)} & set(dated)
+        labels = {(_role_of(text, False), text) for text, values in label_pairs(row, style, exponent)
+                  if any(kind == 'money' for kind, _ in values)}
+        roles = {role for role, _ in labels} & set(dated)
         if len(roles) != 1:
             continue
         found = {_full_date(t['t'], order) for t in merged_dates(row['tokens'])
                  if _value_kind(t, style, exponent) == 'date' and re.search(r'\d{4}$', t['t'])}
         if len(found) == 1 and None not in found:
-            dated[roles.pop()].add(found.pop())
+            role, day = roles.pop(), found.pop()
+            if role == 'opening' and any(set(fold(text).split()) & PREVIOUS_BALANCE_WORDS
+                                         for kind, text in labels if kind == role):
+                day += timedelta(days=1)
+            dated[role].add(day)
     if len(dated['opening']) != 1 or len(dated['closing']) != 1:
         return
     start, end = next(iter(dated['opening'])), next(iter(dated['closing']))

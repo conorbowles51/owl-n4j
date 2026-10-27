@@ -2094,7 +2094,8 @@ def _nfcu_run(run):
 # one business account). Each account prints '<PRODUCT NAME> <account number>' over its 'Account summary' (previous
 # and new balance 'as of <date>', checks / other withdrawals / deposits components) and its movement tables, one per
 # direction, each under a heading and closed by its own 'Total ... = $x' line; the amount column is unsigned. The
-# pages print no period line: the period runs from the previous balance's date to the new balance's.
+# pages print no period line: the period runs from the day after the previous balance's date (the previous statement's
+# last day; no line is printed on it) to the new balance's date.
 TRUIST_PAGE = r'Page\s+(\d+)\s+of\s+(\d+)'
 TRUIST_HEADING = re.compile(r'^([A-Z][A-Z0-9 &/.-]{2,60}?) (\d{8,17})(?: \(continued\))?$')
 TRUIST_BALANCE = re.compile(r'^Your (previous|new) balance as of (\d{2})/(\d{2})/(\d{4}) =? ?(\$ ?-?[\d,]+\.\d{2})')
@@ -2148,7 +2149,10 @@ def _truist_run(run):
                 which, month, day, year, amount = balance.groups()
                 key = 'opening' if which == 'previous' else 'closing'
                 current[key] = money_minor(amount.replace(' ', ''))
-                current['start' if key == 'opening' else 'end'] = iso(int(year), int(month), int(day))
+                when = iso(int(year), int(month), int(day))
+                if when and key == 'opening':
+                    when = (date.fromisoformat(when) + timedelta(days=1)).isoformat()
+                current['start' if key == 'opening' else 'end'] = when
                 continue
             component = TRUIST_COMPONENT.match(t)
             if component and current['closing'] is None:

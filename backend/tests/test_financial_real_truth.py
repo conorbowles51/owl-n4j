@@ -915,7 +915,8 @@ class TruistTruthTests(unittest.TestCase):
         pages = self.pages()
         self.assertEqual(rt.detect_issuer(pages), 'truist')
         checking, savings = rt.parse_truist(pages)
-        self.assertEqual((checking.account, checking.period_start, checking.period_end), ('9990001112223', '2024-01-12', '2024-02-12'))
+        # 'Your previous balance as of 01/12/2024' is the previous statement's last day: the period starts the day after.
+        self.assertEqual((checking.account, checking.period_start, checking.period_end), ('9990001112223', '2024-01-13', '2024-02-12'))
         self.assertEqual((checking.opening_minor, checking.closing_minor), (10000, -4500))
         self.assertEqual(checking.holder, 'JANE Q EXAMPLE')
         # Two checks printed side by side on one line; the 0.00 line is not a movement.
