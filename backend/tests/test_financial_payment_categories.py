@@ -107,3 +107,18 @@ class PaymentCategoryTests(LedgerQueryTestCase):
         self.rows('XYZZY 2')
         pc.classify_with_model(self.db, self.case.id, reader=lambda p: self.fail('cached'), model_id='m')
         self.assertEqual(pc.coverage(self.db, self.case.id), {'model': 2})
+
+    def test_breakdown_sums_money_per_category_under_filters_and_groups(self):
+        from services.financial.category_breakdown import BreakdownFilters, breakdown
+        fee, check, unknown = self.rows('0000000 COM MEMBRESIA CUENTA E PYME', 'Check 2320', '105413834')
+        update_payment_labels(self.db, case_id=self.case.id, actor=ACTOR, request=PaymentLabelsRequest(
+            transactions=[dict(id=check.id, version=0)], category='Rent and leases'))
+        rows = breakdown(self.db, self.case.id, BreakdownFilters())
+        got = {row['category']: (row['money_out_minor'], row['count']) for row in rows}
+        self.assertEqual(got, {'Bank fees': ('100', 1), 'Rent and leases': ('101', 1), 'Uncategorized': ('102', 1)})
+        only = breakdown(self.db, self.case.id, BreakdownFilters(categories=['Uncategorized', 'Bank fees'],
+                                                                   group_by='month'))
+        self.assertEqual({(row['category'], row['group_key']) for row in only},
+                         {('Bank fees', '2024-01'), ('Uncategorized', '2024-01')})
+        self.assertEqual(breakdown(self.db, self.case.id, BreakdownFilters(direction='credit')), [])
+        self.assertEqual(len(breakdown(self.db, self.case.id, BreakdownFilters(search='membresia', group_by='account'))), 1)

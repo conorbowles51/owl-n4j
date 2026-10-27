@@ -1391,6 +1391,19 @@ def get_ledger_categories(case_id: UUID = Query(...), db: Session = Depends(get_
     return dict(case_id=str(case_id), categories=sorted(values))
 
 
+@router.post("/ledger/category-breakdown")
+def post_category_breakdown(body: dict, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    """Money in / out / net and count per category under the given ledger filters, optionally per holder, account,
+    statement or month."""
+    from pydantic import ValidationError
+    from services.financial.category_breakdown import BreakdownFilters, breakdown
+    try:
+        filters = BreakdownFilters.model_validate(body)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return dict(case_id=str(case_id), group_by=filters.group_by, rows=breakdown(db, case_id, filters))
+
+
 @router.get('/ledger/category-library')
 def get_payment_category_library(case_id: UUID = Query(...), db: Session = Depends(get_db)):
     from services.financial.category_library import category_library
