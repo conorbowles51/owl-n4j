@@ -369,12 +369,12 @@ def coverage(session, case_id):
     from postgres.models.financial import FinancialTransaction as T
     from postgres.models.financial_payment_category import FinancialPaymentCategory as C
     result = {}
-    for origin, blank, count in session.execute(
-            select(C.origin, C.category == '', func.count()).select_from(T).outerjoin(C, C.transaction_id == T.id)
+    for origin, category, count in session.execute(
+            select(C.origin, C.category, func.count()).select_from(T).outerjoin(C, C.transaction_id == T.id)
             .where(T.case_id == case_id, T.ledger_status == 'admitted', T.superseded_by_id.is_(None))
-            .group_by(C.origin, C.category == '')):
+            .group_by(C.origin, C.category)):
         key = origin or 'none'
-        if blank and origin:
+        if origin and not category:
             key = f'{origin}:uncategorized'
         result[key] = result.get(key, 0) + count
     return result
