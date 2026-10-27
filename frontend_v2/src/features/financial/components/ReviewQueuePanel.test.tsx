@@ -353,6 +353,31 @@ it("collapses a file the reader cannot handle yet into one line outside the wait
   expect(screen.getByText("Show their 2 statements")).toBeVisible()
 })
 
+it("lists a statement the reader got nothing out of under the reader fix, with its actions and the page-image outcome", async () => {
+  const gap = {
+    ...queue,
+    counts: { ...queue.counts, reader_fix: 1 },
+    reader_fix: [{ ...base, id: "g1", batch_id: "b1", filename: "CommitmentLetter (3).pdf", bucket: "reader_fix",
+      period_start: "", period_end: "", issue: "Enter a printed balance", reader_gap: true, held_bucket: "waiting",
+      reader_gap_line: "Loupe could not read this statement's layout yet: nothing was read from its pages. It has been reported.",
+      vision_reading: { status: "skipped", reason: "investigator_work", message: "",
+        line: "Not read from page images: you have saved work on it." } }],
+    reader_files: [{ file_id: "f1", filename: "CommitmentLetter (3).pdf", batch_id: "b1", statements: 1, file_statements: 1,
+      item_ids: ["g1"], message: "Loupe could not read this layout yet (1 statement): it has been reported so the reader can be taught it." }],
+  }
+  vi.mocked(fetchAPI).mockImplementation(async (url: string) => {
+    if (url.includes("/review/queue")) return gap as never
+    throw Error(`unexpected ${url}`)
+  })
+  mount("/cases/case/financial?view=statements&queue=1")
+  fireEvent.click(await screen.findByRole("button", { name: "Waiting for a reader fix 1" }))
+  expect(await screen.findByText(/could not read this layout yet \(1 statement\): it has been reported/)).toBeVisible()
+  fireEvent.click(screen.getByText("Show their 1 statements"))
+  expect(await screen.findByLabelText("Page images")).toHaveTextContent("Not read from page images: you have saved work on it.")
+  expect(screen.getByLabelText("Reader problem")).toHaveTextContent("It has been reported.")
+  expect(screen.getByRole("button", { name: "This isn't a statement" })).toBeVisible()
+})
+
 it("never counts files removed from Financial as couldn't read, and says what they are", async () => {
   const removed = {
     ...queue,
