@@ -884,5 +884,53 @@ class SyntheticCorpusTruthTests(unittest.TestCase):
                 self.assertEqual(result['status'], 'needs_visual', record['filename'])
 
 
+class TruistTruthTests(unittest.TestCase):
+    """Truist consolidated statement (synthetic text): one period per account, from the dated balances."""
+
+    def pages(self, checks_total='= $ 30.00'):
+        return [page(1, [
+            '111-22-33-44 55555 0 C 001 07 S 66 002', 'JANE Q EXAMPLE', '100 MAIN ST', 'SPRING MD 2 0 9 9 9',
+            'Your consolidated statement Contact us', 'For 02/12/2024 Truist.com',
+            'TRUIST STUDENT CHECKING 9990001112223',
+            'Your previous balance as of 01/12/2024 $100.00', 'Checks - 30.00',
+            'Other withdrawals, debits and service charges - 20.00', 'Deposits, credits and interest + 5.00',
+            'Your new balance as of 02/12/2024 = $-45.00',
+            'Checks', 'DATE CHECK # AMOUNT($)', '01/20 1001 10.00 01/22 * 1003 20.00',
+            'Total checks ' + checks_total,
+            'Other withdrawals, debits and service charges', 'DATE DESCRIPTION AMOUNT($)',
+            '01/13 OVERDRAFT FEE NOT CHARGED 36 0.00', '02/01 DEBIT CARD PURCHASE STORE 20.00', 'continued',
+            '00-0000000_Truist_0000_000001 03/17/2025']),
+            page(2, ['TRUIST STUDENT CHECKING 9990001112223 (continued)',
+                     'Total other withdrawals, debits and service charges = $20.00',
+                     'Deposits, credits and interest', 'DATE DESCRIPTION AMOUNT($)', '12/31 NOT IN PERIOD 1.00',
+                     'Total deposits, credits and interest = $5.00',
+                     'TRUIST ONLINE SAVINGS 9990004445556',
+                     'Your previous balance as of 01/12/2024 $2.50 Interest paid this statement period $0.00',
+                     'Other withdrawals, debits and service charges - 0.00 2024 interest paid year-to-date $0.00',
+                     'Deposits, credits and interest + 0.00 Interest rate 0.01%',
+                     'Your new balance as of 02/12/2024 = $2.50',
+                     '00-0000000_Truist_0000_000002 03/17/2025'])]
+
+    def test_issuer_and_periods(self):
+        pages = self.pages()
+        self.assertEqual(rt.detect_issuer(pages), 'truist')
+        checking, savings = rt.parse_truist(pages)
+        self.assertEqual((checking.account, checking.period_start, checking.period_end), ('9990001112223', '2024-01-12', '2024-02-12'))
+        self.assertEqual((checking.opening_minor, checking.closing_minor), (10000, -4500))
+        self.assertEqual(checking.holder, 'JANE Q EXAMPLE')
+        # Two checks printed side by side on one line; the 0.00 line is not a movement.
+        self.assertEqual([r['amount_minor'] for r in checking.rows if r['table'] == 'Checks'], [1000, 2000])
+        self.assertEqual(checking.controls['debits_total'], 5000)
+        self.assertEqual((savings.opening_minor, savings.closing_minor, savings.rows), (250, 250, []))
+        self.assertEqual(rt.reconcile(savings), ('verified', []))
+
+    def test_misread_lines_do_not_verify(self):
+        checking = rt.parse_truist(self.pages())[0]
+        # The deposit dated 12/31 falls outside the printed period: the reading is not verified.
+        self.assertEqual(rt.reconcile(checking)[0], 'unverified')
+        checking = rt.parse_truist(self.pages(checks_total='= $ 31.00'))[0]
+        self.assertIn('checks lines differ from their printed total', rt.reconcile(checking)[1])
+
+
 if __name__ == '__main__':
     unittest.main()

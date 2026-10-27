@@ -84,6 +84,9 @@ ISSUER_MARKS = (
     ('synchrony-card', r'SYNCHRONY\s+BANK|\bsynchrony\.com|\bsyf\.com'),
     # Printed in the footer of every page of the credit union's statements (and its record productions).
     ('navy-federal', r'^Navy\s+Federal\s+Credit\s+Union\b'),
+    # The production stamp of every Truist page in the real collection ('<case>_Truist_<acct>_<n>'), and the
+    # contact box's 'Truist.com' on statement first pages.
+    ('truist', r'_Truist_\d{4}_\d{6}|^For \d{2}/\d{2}/\d{4} Truist\.com'),
 )
 
 
@@ -2087,7 +2090,140 @@ def _nfcu_run(run):
     return periods
 
 
+# Truist deposit statements ('Your consolidated statement': every account of the customer; 'Your account statement':
+# one business account). Each account prints '<PRODUCT NAME> <account number>' over its 'Account summary' (previous
+# and new balance 'as of <date>', checks / other withdrawals / deposits components) and its movement tables, one per
+# direction, each under a heading and closed by its own 'Total ... = $x' line; the amount column is unsigned. The
+# pages print no period line: the period runs from the previous balance's date to the new balance's.
+TRUIST_PAGE = r'Page\s+(\d+)\s+of\s+(\d+)'
+TRUIST_HEADING = re.compile(r'^([A-Z][A-Z0-9 &/.-]{2,60}?) (\d{8,17})(?: \(continued\))?$')
+TRUIST_BALANCE = re.compile(r'^Your (previous|new) balance as of (\d{2})/(\d{2})/(\d{4}) =? ?(\$ ?-?[\d,]+\.\d{2})')
+TRUIST_COMPONENT = re.compile(r'^(Checks|Other withdrawals, debits and service charges|Deposits, credits and interest) '
+                              r'([-+]) ([\d,]+\.\d{2})(?: |$)')
+TRUIST_TABLES = {'Checks': 'debit', 'Other withdrawals, debits and service charges': 'debit',
+                 'Deposits, credits and interest': 'credit'}
+TRUIST_TOTAL = re.compile(r'(?:^|\. |item )Total (checks|other withdrawals, debits and service charges|deposits, credits and interest) '
+                          r'= \$ ?([\d,]+\.\d{2})')
+TRUIST_DATE = re.compile(r'^(\d{2})/(\d{2})$')
+
+
+def parse_truist(pages):
+    numbered = [p for p in pages if re.search(TRUIST_PAGE, p.text)]
+    runs = split_runs(pages, TRUIST_PAGE) if numbered else [dict(pages=pages, seq={}, total=None)]
+    return [period for run in runs for period in _truist_run(run)]
+
+
+def _truist_holder(page):
+    """The addressee: the line above the street line of the mailing block at the top of the first page."""
+    lines = [l.text for l in page.lines[:8]]
+    for index, text in enumerate(lines[1:5], start=1):
+        if re.match(r'^\d+[A-Z]? ', text) and re.match(r'^[A-Z][A-Z .,&\'-]+$', lines[index - 1]):
+            return lines[index - 1]
+    return None
+
+
+def _truist_run(run):
+    pages = run['pages']
+    holder = _truist_holder(pages[0]) if pages else None
+    sections, current, table = [], None, None
+    for page in pages:
+        for line in page.lines:
+            t = line.text.strip()
+            heading = TRUIST_HEADING.match(t)
+            if heading and not t.startswith(('Total', 'Your ')):
+                if current is None or current['account'] != heading.group(2):
+                    current = dict(product=heading.group(1), account=heading.group(2), rows=[], problems=[], pages=[],
+                                   opening=None, closing=None, start=None, end=None, components={}, totals={})
+                    sections.append(current)
+                    table = None
+                if page.number not in current['pages']:
+                    current['pages'].append(page.number)
+                continue
+            if current is None:
+                continue
+            if page.number not in current['pages']:
+                current['pages'].append(page.number)
+            balance = TRUIST_BALANCE.match(t)
+            if balance:
+                which, month, day, year, amount = balance.groups()
+                key = 'opening' if which == 'previous' else 'closing'
+                current[key] = money_minor(amount.replace(' ', ''))
+                current['start' if key == 'opening' else 'end'] = iso(int(year), int(month), int(day))
+                continue
+            component = TRUIST_COMPONENT.match(t)
+            if component and current['closing'] is None:
+                current['components'][component.group(1)] = money_minor(component.group(3))
+                continue
+            if t in TRUIST_TABLES:
+                table = t
+                continue
+            total = TRUIST_TOTAL.search(t)
+            if total:
+                current['totals'][total.group(1)] = money_minor(total.group(2))
+                table = None
+                continue
+            words = [w['text'] for w in line.words]
+            if table is None or not words or not TRUIST_DATE.match(words[0]):
+                continue
+            if current['start'] is None or current['end'] is None:
+                current['problems'].append('dated line before the account summary')
+                continue
+            # One line prints one movement, or (checks) up to three 'date [*] check# amount' groups side by side.
+            groups, group = [], []
+            for word in words:
+                if TRUIST_DATE.match(word) and (not group or is_money(group[-1])):
+                    if group:
+                        groups.append(group)
+                    group = [word]
+                else:
+                    group.append(word)
+            if group:
+                groups.append(group)
+            if table != 'Checks':
+                groups = [words]
+            for parts in groups:
+                if not is_money(parts[-1]):
+                    current['problems'].append('dated line without an amount')
+                    continue
+                amount = money_minor(parts[-1])
+                month, day = map(int, TRUIST_DATE.match(parts[0]).groups())
+                when = iso(year_for(month, current['start'], current['end']), month, day)
+                current['rows'].append(dict(date=when, description=' '.join(parts[1:-1]) or 'Check',
+                                            amount_minor=amount, direction=TRUIST_TABLES[table], balance_after=None,
+                                            table=table, zero=amount == 0))
+    periods = []
+    for section in sections:
+        rows = [r for r in section['rows'] if not r.pop('zero')]
+        period = Period(family='truist', institution='Truist Bank', currency='USD', holder=holder,
+                        account=section['account'], period_start=section['start'], period_end=section['end'],
+                        opening_minor=section['opening'], closing_minor=section['closing'], rows=rows,
+                        pages=section['pages'], page_sequence=run['seq'], page_total=run['total'],
+                        problems=list(dict.fromkeys(section['problems'])), share=section['product'])
+        components = section['components']
+        if set(components) >= {'Other withdrawals, debits and service charges', 'Deposits, credits and interest'}:
+            period.controls['credits_total'] = components['Deposits, credits and interest']
+            period.controls['debits_total'] = components['Other withdrawals, debits and service charges'] + \
+                components.get('Checks', 0)
+        else:
+            period.problems.append('account summary components not read')
+        checks = []
+        for name, printed in section['totals'].items():
+            # Each table's printed total: its own lines add up to it, and the account summary prints the same figure.
+            table_name = next(k for k in TRUIST_TABLES if k.lower() == name)
+            read = sum(r['amount_minor'] for r in section['rows'] if r['table'] == table_name)
+            checks.append(dict(ok=printed == read, reason=f'{name} lines differ from their printed total'))
+            checks.append(dict(ok=printed == components.get(table_name),
+                               reason=f'{name} total differs from the account summary'))
+        for name in TRUIST_TABLES:
+            if components.get(name) and name.lower() not in section['totals']:
+                checks.append(dict(ok=False, reason=f'{name} table total not read'))
+        period.controls['other_checks'] = checks
+        periods.append(period)
+    return periods
+
+
 PARSERS = {
+    'truist': parse_truist,
     'bbva-mexico': parse_bbva,
     'monex-mexico': parse_monex,
     'santander-mexico': parse_santander,
