@@ -118,6 +118,8 @@ class PermissionResolverTests(unittest.TestCase):
                 "/api/financial/candidates/{candidate_id}/review": ["POST"],
                 "/api/financial/ledger/payment-labels": ["PUT"],
                 "/api/financial/ledger/payment-categories/apply-like": ["POST"],
+                "/api/financial/ledger/payment-categories/rules": ["POST"],
+                "/api/financial/ledger/payment-categories/rules/{rule_id}/retire": ["POST"],
                 "/api/financial/ledger/payment-edits/preview": ["POST"],
                 "/api/financial/ledger/payment-edits/confirm": ["POST"],
                 "/api/financial/ledger/category-library": ["POST"],
