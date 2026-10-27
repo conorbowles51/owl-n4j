@@ -1,3 +1,4 @@
+import { ScopedCategoryBreakdown } from "./ScopedCategoryBreakdown"
 import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import type { LedgerTransaction } from "../api"
@@ -64,6 +65,11 @@ export function SavedStatementPayments({
       )}
       {open && (
         <div className="space-y-3">
+          <ScopedCategoryBreakdown
+            caseId={caseId}
+            title="Categories in this statement"
+            scope={{ source_document_ids: [sourceId] }}
+          />
           {hasIncomplete && (
             <ImportedRecordsPanel
               caseId={caseId}

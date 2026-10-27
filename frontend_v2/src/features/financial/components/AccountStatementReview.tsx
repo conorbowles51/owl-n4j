@@ -1,3 +1,4 @@
+import { ScopedCategoryBreakdown } from "./ScopedCategoryBreakdown"
 import { AccountJudgements } from "./JudgementCalls"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
@@ -96,6 +97,11 @@ export function AccountStatementReview({
         </p>
       </header>
       <AccountHistory caseId={caseId} accountId={account.id} />
+      <ScopedCategoryBreakdown
+        caseId={caseId}
+        title="Categories in this account"
+        scope={{ account_ids: [account.id] }}
+      />
       {!datesFirst && balanceChecks}
       <StatementCoveragePanel
         caseId={caseId}

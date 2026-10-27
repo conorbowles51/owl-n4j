@@ -233,8 +233,13 @@ def render_ledger_report(snapshot):
 
     def payment_label(row, field):
         value = row.get(field) or ('Uncategorized' if field == 'category' else '')
-        if (row.get('label_sources') or {}).get(field, {}).get('source') == 'description':
+        source = (row.get('label_sources') or {}).get(field, {}).get('source')
+        if source == 'description':
             value += ' (suggested)'
+        elif source == 'model':
+            value += ' (model guess)'
+        elif source == 'learned':
+            value += ' (applied from a similar payment)'
         return value
 
     def absent_balance(row):
@@ -300,7 +305,7 @@ def render_ledger_report(snapshot):
         '<p>' + text(ledger['limitation']) + '</p>',
         '<p>The transaction table shows currency amounts. Detailed readings retain exact integer minor units in brackets. '
         'Unsupported values remain explicitly unscaled. No exchange-rate conversion or transfer matching is applied.</p>',
-        '<p>Names and categories marked “suggested” are inferred from transaction descriptions; they are not confirmed identities or printed categories. Original readings and label origins are retained in the captured data.</p>',
+        '<p>Names and categories marked “suggested” are inferred from transaction descriptions; categories marked “model guess” were chosen by a model from the description, and “applied from a similar payment” were copied from a payment an investigator categorised. None of these are confirmed identities or printed categories. Original readings and label origins are retained in the captured data.</p>',
         ]
     verification_parts = [
         '<p>Rows in verified totals: ' + text(ledger['included_rows']) + '; other captured readings: ' + text(ledger['excluded_rows']) + '.</p>',

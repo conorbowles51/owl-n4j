@@ -1,3 +1,5 @@
+import { CategoryBreakdownTable } from "./ScopedCategoryBreakdown"
+import { categoryTotals } from "../lib/category-totals"
 import { Disclosure } from "./Disclosure"
 import { paymentInventory } from "../lib/payment-inventory"
 import { ProfileStatementSummary } from "./ProfileStatementSummary"
@@ -409,6 +411,12 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
                     </dd>
                   </div>
                 </dl>
+                {activeRows.length > 0 && (
+                  <CategoryBreakdownTable
+                    title="Categories in these payments"
+                    rows={categoryTotals(activeRows)}
+                  />
+                )}
                 <AccountOwnershipReview
                   caseId={caseId}
                   accountIds={
