@@ -1192,6 +1192,107 @@ def _role_of(text, liability):
 # Page facts: period, account, numbering, currency, institution, holder
 # ---------------------------------------------------------------------------
 
+# (L15, fin-queue2 A6/A7: Monex Cuenta Vista) Off: a line whose date the scan could not read is not a movement,
+# and an amount printed inside a movement's description is read as one of its amounts.
+VISTA_BLOCK_LINES = _switch('LOUPE_FINANCIAL_VISTA_BLOCK_LINES')
+_REFERENCE = re.compile(r'^\d{6,}$')
+
+
+def _full_column_amounts(tokens, columns, width):
+    """At least three amounts, each in its own column of the table."""
+    bands = [_band(t, columns, width) for t in tokens]
+    return len(tokens) >= 3 and None not in bands and len(set(bands)) == len(bands)
+
+
+def _without_description_amounts(money_tokens, tokens, columns, width):
+    """(L15) An amount printed inside a movement's description ('Compra de divisas 123,100.00 USD a un ...'):
+    in no column of the table, followed on its line by a word and then by the line's amounts, which are at least
+    three and each in its own column. It is part of the description, not one of the line's amounts."""
+    inside = []
+    for token in money_tokens:
+        if _band(token, columns, width) is not None:
+            continue
+        rest = [t for t in money_tokens if t is not token and t not in inside]
+        word = any(t['line'] == token['line'] and t not in money_tokens and t['x0'] >= token['x1']
+                   and re.search(r'[A-Za-z]', t['t']) and all(t['x1'] <= m['x0'] for m in rest) for t in tokens)
+        if word and _full_column_amounts(rest, columns, width):
+            inside.append(token)
+    return [t for t in money_tokens if t not in inside]
+
+
+def _same_reference_line(row, previous, columns, width, style, exponent):
+    """(L15) A line of a movement block whose date the scan could not read ('nea 118423618 0.00 123,094.20 ...'
+    for '11/Jul 118423618 ...'): it prints no date, a full set of the table's amounts (at least three, each in
+    its own column, as many as the dated line before it), and the same operation reference as that dated line,
+    which is the same operation's other movement. It is a movement of that line's printed date (cited:
+    date_basis). Anything else is not."""
+    if not previous.get('date_tokens') or previous.get('undated') or previous['row'] is row:
+        return None
+    tokens = sorted(row['tokens'], key=lambda t: (t['line'], t['x0']))
+    if any(is_date_token(t['t'].rstrip('.,')) or _leading_date(t['t'].rstrip('.,')) for t in tokens[:2]):
+        return None
+    amounts = [t for t in tokens if _value_kind(t, style, exponent) == 'money']
+    if len(amounts) != len(previous['money']) or not _full_column_amounts(amounts, columns, width):
+        return None
+    references = {t['t'] for t in tokens if _REFERENCE.match(t['t']) and all(t['x1'] <= m['x0'] for m in amounts)}
+    theirs = {t['t'] for t in previous['row']['tokens'] if _REFERENCE.match(t['t'])}
+    if len(references) != 1 or not references <= theirs:
+        return None
+    words = [t for t in tokens if t not in amounts]
+    return dict(row=row, date_tokens=[dict(t) for t in previous['date_tokens']], money=amounts, description=words, stray=[],
+                continuation=[], section=previous.get('section'), date_basis=SAME_REFERENCE_DATE_BASIS)
+
+
+SAME_REFERENCE_DATE_BASIS = 'date_of_the_same_reference_line_before'
+DATE_BELOW_BASIS = 'date_printed_on_the_line_below'
+
+
+def _date_below_line(rows, index, columns, width, style, exponent):
+    """(L15, A6) A movement block printing its date on its last line, below the amounts ('. 82426096 0.00
+    6,960.00 0.00 0.00 0.00 0.00' over '17/Dic RFC:NOPE690125E97 ...'): a line with no date and a full set of the
+    table's amounts (at least three, each in its own column) whose next line on the page starts with a date and
+    prints no amount is one movement of that date (the mirror of E4)."""
+    row = rows[index]
+    tokens = sorted(row['tokens'], key=lambda t: (t['line'], t['x0']))
+    if any(is_date_token(t['t'].rstrip('.,')) or _leading_date(t['t'].rstrip('.,')) for t in tokens[:2]):
+        return None
+    amounts = [t for t in tokens if _value_kind(t, style, exponent) == 'money']
+    if not _full_column_amounts(amounts, columns, width):
+        return None
+    below = next((r for r in rows[index + 1:] if r['tokens']), None)
+    if below is None or below['page'] != row['page']:
+        return None
+    following = sorted(below['tokens'], key=lambda t: (t['line'], t['x0']))
+    if (not _leading_date(following[0]['t'].rstrip('.,'))
+            or any(_value_kind(t, style, exponent) == 'money' for t in following)):
+        return None
+    return dict(row=row, date_tokens=[following[0]], money=amounts, description=[t for t in tokens if t not in amounts],
+                stray=[], continuation=[below], section=None, date_basis=DATE_BELOW_BASIS)
+
+
+def _without_contradicted_totals(readings):
+    """(L15) A reading proved only by the printed totals is contradicted by the printed running balance another
+    proved reading chains on: under its directions those printed balances would not chain. With credits and
+    debits totalling the same (a currency bought and paid out in one period), swapping the two columns keeps the
+    totals and the closing; the running balance tells them apart."""
+    chained = [c for c in readings.values() if c.get('chain_ok')]
+    if not chained:
+        return readings
+    balances = [v.get('balance') for v in chained[0]['values']]
+    if not any(b is not None for b in balances):
+        return readings
+
+    def chains(candidate):
+        previous = candidate['opening']
+        for value, balance in zip(candidate['values'], balances):
+            if not value['zero']:
+                previous += value['effect']
+            if balance is not None and previous != balance:
+                return False
+        return True
+    return {key: c for key, c in readings.items() if c.get('chain_ok') or chains(c)}
+
+
 def _row_is_movement(row, style, exponent):
     tokens = merged_dates(row['tokens'])
     if not tokens:
@@ -3959,6 +4060,20 @@ def _reading(rows, statement, style, exponent, liability, period):
             labels_seen.add(section)
             last_move = None
             continue
+        if VISTA_BLOCK_LINES and early_columns and not _row_is_movement(row, style or 'dot', exponent):
+            # The block's text lines (beneficiary, tracking key) stand between the dated line and this one.
+            same = (_same_reference_line(row, movements[-1], early_columns, width or 1, style or 'dot', exponent)
+                    if movements else None)
+            if same is None:
+                same = _date_below_line(rows, index, early_columns, width or 1, style or 'dot', exponent)
+                for below in (same or {}).get('continuation', ()):
+                    consumed.add(below['_index'])
+                    continuation_of[below['_index']] = same
+            if same is not None:
+                movements.append(same)
+                last_move = same
+                region = True
+                continue
         if _row_is_movement(row, style or 'dot', exponent):
             tokens = merged_dates(row['tokens'])
             date_tokens = []
@@ -3977,6 +4092,8 @@ def _reading(rows, statement, style, exponent, liability, period):
                 else:
                     settlement_unread = True
             money_tokens = [t for t in rest if _value_kind(t, style or 'dot', exponent) == 'money']
+            if VISTA_BLOCK_LINES and early_columns:
+                money_tokens = _without_description_amounts(money_tokens, rest, early_columns, width or 1)
             words_only = [t for t in rest if t not in money_tokens]
             # Under settlement days the line also prints figures between its days and its label (a folio,
             # titles, a price): only words carry the label of an opening or closing line.
@@ -4186,6 +4303,8 @@ def _reading(rows, statement, style, exponent, liability, period):
     readings = {}
     for candidate in proving:
         readings.setdefault(candidate['key'], candidate)
+    if VISTA_BLOCK_LINES and len(readings) > 1:
+        readings = _without_contradicted_totals(readings)
     chosen = None
     if BALANCE_DIGITS and not readings and proof['reason'] in ('', 'separators_mixed') and all_moves:
         # (L12, L14) A scan whose amounts lost or changed their decimal mark: read again from their digits,
@@ -5090,6 +5209,9 @@ def _rows(rows, moves, resolved, chosen, controls, column_totals, statement, sty
             if move.get('undated'):
                 fields['date_basis'] = 'statement_end_ordering_only'
             else:
+                if move.get('date_basis'):
+                    # (L15) The date printed on the same operation's line before this one.
+                    fields['date_basis'] = move['date_basis']
                 printed = next(dates, None) if resolved is not None else None
                 if move['date_tokens']:
                     fields['date_column'] = str(move['date_tokens'][0]['cell']['column_index'])

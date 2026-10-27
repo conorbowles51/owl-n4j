@@ -3920,3 +3920,85 @@ class MixedMarkWordsTests(unittest.TestCase):
     def test_switched_off_the_worn_words_are_not_read(self):
         with mock.patch.object(E, 'MIXED_MARK_WORDS', False):
             self.assertFalse(self.read()['engine']['proved'])
+
+
+def vista_statement(lines, *, opening='1,000.00', closing='1,000.00', deposits=None, withdrawals=None):
+    """An invented Monex 'Cuenta Vista' layout: each movement line prints Abonos, Cargos, Saldo disponible and
+    Saldo total; a line is (date or other first word, description, reference, four amounts) or a text line."""
+    head = [[('BANCO EJEMPLO DEL NORTE, S.A., INSTITUCION DE BANCA MULTIPLE', 20000, 400000)],
+            [('EMPRESA DE PRUEBA SA DE CV', 20000, 200000), ('PERIODO', 330000, 380000),
+             ('DEL 01/03/2024 AL 31/03/2024', 390000, 590000)],
+            [('CALLE FALSA 123', 20000, 150000), ('NO. DE CUENTA', 330000, 400000), ('0012345678', 410000, 500000)],
+            [('COL CENTRO', 20000, 120000), ('MONEDA', 330000, 380000), ('PESOS', 390000, 450000)],
+            [('CIUDAD DE MEXICO C.P. 06000', 20000, 220000)],
+            [('SALDO ANTERIOR', 330000, 430000), (opening, 500000, 560000)]]
+    if deposits is not None:
+        head.append([('DEPOSITOS', 330000, 400000), (deposits, 500000, 560000)])
+    if withdrawals is not None:
+        head.append([('RETIROS', 330000, 400000), (withdrawals, 500000, 560000)])
+    head.append([('SALDO FINAL', 330000, 400000), (closing, 500000, 560000)])
+    head.append([('FECHA', 20000, 60000), ('CONCEPTO', 80000, 160000), ('REFERENCIA', 220000, 280000),
+                 ('ABONOS', 340000, 380000), ('CARGOS', 410000, 450000), ('DISPONIBLE', 470000, 520000),
+                 ('TOTAL', 550000, 590000)])
+    for line in lines:
+        if isinstance(line, str):
+            head.append([(line, 80000, 300000)])
+            continue
+        first, text, reference, amounts = line
+        cells = ([(first, 20000, 60000)] if first else []) + [(text, 80000, 210000), (reference, 220000, 280000)]
+        cells += [(a, x1 - 6000 * len(a), x1) for a, x1 in zip(amounts, (380000, 450000, 520000, 590000))]
+        head.append(cells)
+    return [page(1, head)]
+
+
+class VistaBlockLineTests(unittest.TestCase):
+    """(L15, fin-queue2 A6/A7: Monex Cuenta Vista, 07 ARRENDO MONEX MXN JUL 2025 and 12 ING. R2 MONEX MXN DIC 21)."""
+
+    def setUp(self):
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+
+    def moves(self, st):
+        return [(r['fields'].get('date'), r['fields']['amount_minor'], r['fields']['direction'], r['fields'].get('date_basis'))
+                for r in st['_rows'] if r['kind'] == 'transaction']
+
+    def same_reference(self):
+        return read_statements(vista_statement([
+            ('05/MAR', 'DEPOSITO', '70000001', ('500.00', '0.00', '1,500.00', '1,500.00')),
+            ('07/MAR', 'COMISION', '80000002', ('0.00', '5.80', '1,494.20', '1,494.20')),
+            'Cuenta beneficiaria: 012790001102800382',
+            ('nea', 'RETIRO', '80000002', ('0.00', '494.20', '1,000.00', '1,000.00'))]))[0]
+
+    def test_a_line_whose_date_the_scan_lost_takes_the_date_of_the_same_operation_line(self):
+        st = self.same_reference()
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual(self.moves(st), [('2024-03-05', '50000', 'credit', None), ('2024-03-07', '580', 'debit', None),
+                                          ('2024-03-07', '49420', 'debit', E.SAME_REFERENCE_DATE_BASIS)])
+
+    def test_a_line_with_another_reference_is_not_given_a_date(self):
+        st = read_statements(vista_statement([
+            ('05/MAR', 'DEPOSITO', '70000001', ('500.00', '0.00', '1,500.00', '1,500.00')),
+            ('07/MAR', 'COMISION', '80000002', ('0.00', '5.80', '1,494.20', '1,494.20')),
+            ('nea', 'RETIRO', '80000003', ('0.00', '494.20', '1,000.00', '1,000.00'))]))[0]
+        self.assertFalse(st['engine']['proved'])
+
+    def test_a_block_printing_its_date_on_its_last_line_is_one_movement_of_that_date(self):
+        st = read_statements(vista_statement([
+            ('05/MAR', 'DEPOSITO', '70000001', ('500.00', '0.00', '1,500.00', '1,500.00')),
+            ('.', 'Retiro de Efectivo', '82426096', ('0.00', '500.00', '1,000.00', '1,000.00')),
+            '09/MAR RFC:NOPE690125E97 BANCO']))[0]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual(self.moves(st), [('2024-03-05', '50000', 'credit', None),
+                                          ('2024-03-09', '50000', 'debit', E.DATE_BELOW_BASIS)])
+
+    def test_an_amount_in_the_description_and_equal_totals_leave_one_reading(self):
+        st = read_statements(vista_statement([
+            ('05/MAR', 'Compra de divisas 500.00 USD a un', '70000001', ('500.00', '0.00', '500.00', '500.00')),
+            ('07/MAR', 'RETIRO', '80000002', ('0.00', '500.00', '0.00', '0.00'))],
+            opening='0.00', closing='0.00', deposits='500.00', withdrawals='500.00'))[0]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual([m[:3] for m in self.moves(st)], [('2024-03-05', '50000', 'credit'), ('2024-03-07', '50000', 'debit')])
+
+    def test_switched_off_none_of_these_is_read(self):
+        with mock.patch.object(E, 'VISTA_BLOCK_LINES', False):
+            self.assertFalse(self.same_reference()['engine']['proved'])
