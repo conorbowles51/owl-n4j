@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { statementAssessment } from "../lib/statement-assessment"
 import { statementDuplicateDisposition } from "../lib/statement-duplicate"
 import { StatementReconciliationSummary } from "./StatementReconciliationSummary"
@@ -1053,19 +1054,12 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
             the batch when you leave this page.
           </p>
           {batch.operations.map((operation, index) => (
-            <details
-              key={operation.id}
-              open={index === 0}
-              className="rounded border p-3"
-            >
-              <summary className="cursor-pointer font-medium">
-                {operation.status === "in_progress"
+            <Disclosure key={operation.id} className="rounded border p-3" defaultOpen={index === 0} label={<>{operation.status === "in_progress"
                   ? "Import accepted — still running"
                   : operation.status === "needs_review"
                     ? "Import finished with statements to review"
                     : "Import complete"}{" "}
-                · {new Date(operation.created_at).toLocaleString()}
-              </summary>
+                · {new Date(operation.created_at).toLocaleString()}</>}>
               <p
                 role={operation.pending ? "status" : undefined}
                 className="my-2 text-sm"
@@ -1121,7 +1115,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
                   </li>
                 ))}
               </ul>
-            </details>
+            </Disclosure>
           ))}
         </section>
       )}
@@ -1176,13 +1170,12 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
           statements.
         </p>
       )}
-      <details
-        open={batch.files.some((f) => f.status !== "checked")}
+      <Disclosure
+        key={`file-processing:${batch.files.some((f) => f.status !== "checked")}`}
+        defaultOpen={batch.files.some((f) => f.status !== "checked")}
         className="rounded border p-3"
+        label={`File processing (${batch.files.length})`}
       >
-        <summary className="cursor-pointer font-medium">
-          File processing ({batch.files.length})
-        </summary>
         <ul className="max-h-52 overflow-auto divide-y">
           {batch.files.map((file) => (
             <li key={file.source_id} className="py-2 text-sm">
@@ -1290,7 +1283,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
         {paused && (
           <p className="text-sm">Resume PDF reading before retrying a file.</p>
         )}
-      </details>
+      </Disclosure>
       <div className="flex flex-wrap items-center gap-3">
         <label className="text-sm">
           <input
@@ -1567,16 +1560,13 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
                 {item.problems.length > 3 && (
                   <p className="text-sm">{item.problems[0].message}</p>
                 )}
-                <details open={item.problems.length <= 3} className="text-sm">
-                  <summary className="cursor-pointer font-medium">
-                    {item.problems.every(
+                <Disclosure className="text-sm" defaultOpen={item.problems.length <= 3} label={<>{item.problems.every(
                       (problem) => problem.kind === "statement_detail"
                     ) && item.problems.length
                       ? "Missing account details — statement can still be imported"
                       : !item.currency
                         ? "Choose currency to prepare this statement"
-                        : `${item.problem_count ?? item.problems.length} checks · ${item.can_import ? "import is available" : "open review for the next step"}`}
-                  </summary>
+                        : `${item.problem_count ?? item.problems.length} checks · ${item.can_import ? "import is available" : "open review for the next step"}`}</>}>
                   {item.problems.map((problem, index) => (
                     <div
                       className="flex flex-wrap items-center gap-2 text-sm"
@@ -1619,7 +1609,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
                   {(item.problem_count ?? 0) > item.problems.length && (
                     <p>Open the statement to review the remaining checks.</p>
                   )}
-                </details>
+                </Disclosure>
               </>
             )}
           </article>

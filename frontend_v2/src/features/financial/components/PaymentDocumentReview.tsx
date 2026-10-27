@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
@@ -583,10 +584,7 @@ export function SavedPaymentDocument({
           : "Saved wire details"
       }
     >
-      <details>
-        <summary className="cursor-pointer">
-          Compare the saved values with their original readings
-        </summary>
+      <Disclosure label="Compare the saved values with their original readings">
         <dl className="space-y-3 mt-2">
           {saved.original.fields.map((field) => (
             <div key={field.key} className="rounded border p-3">
@@ -622,7 +620,7 @@ export function SavedPaymentDocument({
             </div>
           ))}
         </dl>
-      </details>
+      </Disclosure>
       <Button
         variant="outline"
         onClick={() => {

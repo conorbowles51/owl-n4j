@@ -52,6 +52,20 @@ export function BatchProgressSummary({
             finish
             {unread > 0 && ` · ${unread} files still need reading`}
           </p>
+          <ProgressBar
+            parts={[
+              ["Saved to Financial", summary.imported, "#2f9353"],
+              ["Ready to save", summary.available, "#3a6fd8"],
+              ["Need corrections or a decision", summary.blocked, "#c67a10"],
+              ["Saves in progress", summary.pending_import, "#9bb8f0"],
+              [
+                "Left unimported or ignored",
+                summary.skipped + summary.duplicate_ignored,
+                "#8060a9",
+              ],
+              ["Assigned elsewhere", summary.assigned, "#8a8d96"],
+            ]}
+          />
           <p className="text-sm text-muted-foreground">
             {summary.available} ready to save · {summary.blocked} need
             corrections or a decision. {summary.pending_import} saves in
@@ -139,5 +153,40 @@ export function BatchProgressSummary({
         add reason counts to the status counts.
       </p>
     </section>
+  )
+}
+
+/** One bar for the batch: each part's share, with a legend that carries every count as text. */
+function ProgressBar({ parts }: { parts: [string, number, string][] }) {
+  const shown = parts.filter(([, count]) => count > 0)
+  const total = shown.reduce((sum, [, count]) => sum + count, 0)
+  if (!total) return null
+  return (
+    <div className="space-y-1.5">
+      <div
+        aria-hidden="true"
+        className="flex h-3 w-full gap-0.5 overflow-hidden rounded-sm"
+      >
+        {shown.map(([label, count, colour]) => (
+          <span
+            key={label}
+            title={`${label}: ${count}`}
+            style={{ flexGrow: count, background: colour }}
+          />
+        ))}
+      </div>
+      <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs" aria-label="Batch progress by state">
+        {shown.map(([label, count, colour]) => (
+          <li key={label} className="inline-flex items-center gap-1.5">
+            <span
+              aria-hidden="true"
+              className="size-2.5 rounded-sm"
+              style={{ background: colour }}
+            />
+            {label}: {count}
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }

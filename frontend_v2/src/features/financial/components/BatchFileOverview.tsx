@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { z } from "zod"
 import { copyLine } from "../lib/statement-copies"
 
@@ -66,12 +67,9 @@ export function BatchFileOverview({
         </ul>
       )}
       {onlyCopies.length > 0 && (
-        <details className="text-sm">
-          <summary className="cursor-pointer font-medium">
-            {onlyCopies.length === 1
+        <Disclosure className="text-sm" label={<>{onlyCopies.length === 1
               ? `1 file is only copies (${copyStatements} statements) — nothing to review`
-              : `${onlyCopies.length} files are only copies (${copyStatements} statements) — nothing to review`}
-          </summary>
+              : `${onlyCopies.length} files are only copies (${copyStatements} statements) — nothing to review`}</>}>
           <ul
             className="mt-2 space-y-1"
             aria-label="Files that are only copies"
@@ -83,7 +81,7 @@ export function BatchFileOverview({
               </li>
             ))}
           </ul>
-        </details>
+        </Disclosure>
       )}
     </section>
   )

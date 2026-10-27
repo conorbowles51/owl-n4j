@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import {
   PaymentCounterpartyPicker,
   type PaymentCounterpartyLink,
@@ -1030,11 +1031,8 @@ function StatementReview({
               </p>
             )}
             {query.data.current_import.review_decisions.length > 0 && (
-              <details>
-                <summary>
-                  Recorded import decisions (
-                  {query.data.current_import.review_decisions.length})
-                </summary>
+              <Disclosure label={<>Recorded import decisions (
+                  {query.data.current_import.review_decisions.length})</>}>
                 <ul className="space-y-3 mt-3">
                   {query.data.current_import.review_decisions.map(
                     (decision, index) => (
@@ -1053,7 +1051,7 @@ function StatementReview({
                     )
                   )}
                 </ul>
-              </details>
+              </Disclosure>
             )}
           </section>
         )}
@@ -4581,16 +4579,13 @@ function EditableStatement({
           </div>
         )}
         {statementNotes.length > 0 && (
-          <details className="rounded border p-3 text-sm">
-            <summary className="cursor-pointer font-medium">
-              About this statement
-            </summary>
+          <Disclosure className="rounded border p-3 text-sm" label="About this statement">
             {statementNotes.map((message) => (
               <p key={message} className="mt-2">
                 {message}
               </p>
             ))}
-          </details>
+          </Disclosure>
         )}
         <div className="flex flex-wrap gap-5 text-sm">
           <span>
@@ -4840,13 +4835,10 @@ function EditableStatement({
             : "Select an opening or closing amount to check its source."}
         </p>
 
-        <details className="border rounded p-3 text-sm">
-          <summary className="cursor-pointer">
-            Inspect another page of the original PDF
+        <Disclosure className="border rounded p-3 text-sm" label={<>Inspect another page of the original PDF
             {data.unassigned_page_numbers.length
               ? ` (${data.unassigned_page_numbers.length} pages need a coverage check)`
-              : ""}
-          </summary>
+              : ""}</>}>
           {data.unassigned_page_numbers.length > 0 && (
             <p>
               These pages were not assigned to a statement or recognised as
@@ -4911,7 +4903,7 @@ function EditableStatement({
           >
             Show selected page
           </Button>
-        </details>
+        </Disclosure>
         {!excludedCopy &&
           !importedHere &&
           !data.assignment_only &&

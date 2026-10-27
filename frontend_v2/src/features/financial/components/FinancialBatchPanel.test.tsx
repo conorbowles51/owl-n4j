@@ -1045,7 +1045,7 @@ it("shows a reading Retry error beside its control and refreshes a possibly save
   })
   fireEvent.click(within(reading).getByRole("button", { name: "Retry" }))
   expect(
-    await within(summary.closest("details")!).findByRole("alert")
+    await within(summary.closest("button")!.parentElement!).findByRole("alert")
   ).toHaveTextContent("Retry outcome could not be confirmed")
   await waitFor(() => {
     expect(jobReads).toBeGreaterThan(1)

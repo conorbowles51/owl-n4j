@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { useJobs } from "@/features/evidence/hooks/use-jobs"
 import { JobCard } from "@/features/evidence/components/JobCard"
@@ -49,8 +50,7 @@ export function BatchReadingJobs({
       (job) => jobIds.includes(job.id) && job.job_type === "pdf_review"
     ) ?? []
   return (
-    <details className="rounded border p-3">
-      <summary>PDF reading jobs · pause or resume a reading</summary>
+    <Disclosure className="rounded border p-3" label={<>PDF reading jobs · pause or resume a reading</>}>
       <p className="my-2 text-sm text-muted-foreground">
         These readings have their own saved progress. Pausing batch preparation
         stops new statements and imports after the current statement finishes.
@@ -122,6 +122,6 @@ export function BatchReadingJobs({
           general evidence processing is shown in Evidence.
         </p>
       )}
-    </details>
+    </Disclosure>
   )
 }
