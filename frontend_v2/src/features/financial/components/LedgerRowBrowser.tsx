@@ -17,6 +17,9 @@ import {
   TransactionAnalysisPanels,
 } from "./TransactionAnalysisPanels"
 import { TransactionExplorerTable } from "./TransactionExplorerTable"
+import { PaymentCardList } from "./PaymentCardList"
+import { TransactionsOverview } from "./TransactionsOverview"
+import { Disclosure } from "./Disclosure"
 import {
   analysisTableView,
   filterAnalysis,
@@ -26,7 +29,10 @@ import { PaymentEditsEditor } from "./PaymentEditsEditor"
 import { PaymentCategoryManager } from "./PaymentCategoryManager"
 import { TransactionAccountFilters } from "./TransactionAccountFilters"
 import { useLedgerAccountDirectory } from "../hooks/use-ledger-account-directory"
-import { knownAccountGroup, knownPaymentAccounts } from "../lib/known-payment-accounts"
+import {
+  knownAccountGroup,
+  knownPaymentAccounts,
+} from "../lib/known-payment-accounts"
 import {
   usePaymentCategory,
   matchesCategories,
@@ -48,12 +54,33 @@ import { correctionMinor } from "../lib/correction-contract"
 import { LedgerExportButton } from "./LedgerExportButton"
 import { useRowJudgementLookup } from "../hooks/use-judgement-rows"
 import { useJudgementRowMap } from "../hooks/use-judgements"
-import { STATUS_LABELS, STRENGTH_LABELS, ORIGIN_LABELS, type Judgement } from "../lib/judgements"
+import {
+  STATUS_LABELS,
+  STRENGTH_LABELS,
+  ORIGIN_LABELS,
+  type Judgement,
+} from "../lib/judgements"
 import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
 import { useState, type ComponentProps } from "react"
 import { Button } from "@/components/ui/button"
 import { LedgerTable } from "./LedgerTable"
 import type { LedgerTransaction } from "../api"
+const TABLE_VIEW_KEY = "financial-transactions-table-view"
+function readTableView() {
+  try {
+    return localStorage.getItem(TABLE_VIEW_KEY) === "1"
+  } catch {
+    return false
+  }
+}
+function storeTableView(on: boolean) {
+  try {
+    localStorage.setItem(TABLE_VIEW_KEY, on ? "1" : "0")
+  } catch {
+    // The choice still applies for this visit.
+  }
+}
+
 function exactAmount(row: LedgerTransaction) {
   const value = row.amount_minor
   if (typeof value === "number" && !Number.isSafeInteger(value)) return null
@@ -82,9 +109,15 @@ export function LedgerRowBrowser({
   const [sharedAccountScope, applySharedAccountScope] = useInvestigationScope(
     exportContext?.caseId
   )
-  const [localAccountScope, applyLocalAccountScope] = useState<typeof sharedAccountScope>({})
-  const accountScope = independentFilters ? localAccountScope : sharedAccountScope
-  const applyAccountScope = independentFilters ? applyLocalAccountScope : applySharedAccountScope
+  const [localAccountScope, applyLocalAccountScope] = useState<
+    typeof sharedAccountScope
+  >({})
+  const accountScope = independentFilters
+    ? localAccountScope
+    : sharedAccountScope
+  const applyAccountScope = independentFilters
+    ? applyLocalAccountScope
+    : applySharedAccountScope
   const { canEdit } = useFinancialAccess()
   const accountDirectory = useLedgerAccountDirectory(
     investigation && !exportContext?.profile ? exportContext?.caseId : undefined
@@ -109,6 +142,7 @@ export function LedgerRowBrowser({
     investigation ? exportContext?.caseId : undefined
   )
   const [timeline, setTimeline] = useState(false)
+  const [tableView, setTableView] = useState(readTableView)
   const [compare, setCompare] = useState(false)
   const [finding, setFinding] = useState<"question" | "observation" | null>(
     null
@@ -170,38 +204,65 @@ export function LedgerRowBrowser({
   const knownScope = knownPaymentAccounts(
     accountDirectory.isError ? [] : (accountDirectory.data?.items ?? []),
     { ...exportContext?.params, ...accountScope },
-    sourceDocumentId ? [sourceDocumentId] : importBatchId ? importSourceIds : undefined
+    sourceDocumentId
+      ? [sourceDocumentId]
+      : importBatchId
+        ? importSourceIds
+        : undefined
   )
-  const knownAccounts = knownScope.accounts.filter((account) =>
-    (!currency || account.currency === currency) &&
-    (!view.analysisGroup || knownAccountGroup(account) === view.analysisGroup) &&
-    (!view.analysisPeriod || (view.analysisPeriod !== "undated" && account.periods.some((period) =>
-      period.start && period.end && period.start.slice(0, 7) <= view.analysisPeriod && period.end.slice(0, 7) >= view.analysisPeriod
-    )))
+  const knownAccounts = knownScope.accounts.filter(
+    (account) =>
+      (!currency || account.currency === currency) &&
+      (!view.analysisGroup ||
+        knownAccountGroup(account) === view.analysisGroup) &&
+      (!view.analysisPeriod ||
+        (view.analysisPeriod !== "undated" &&
+          account.periods.some(
+            (period) =>
+              period.start &&
+              period.end &&
+              period.start.slice(0, 7) <= view.analysisPeriod &&
+              period.end.slice(0, 7) >= view.analysisPeriod
+          )))
   )
-  const currencyOptions = [...new Set([
-    ...transactions.map((row) => row.currency),
-    ...knownScope.accounts.map((account) => account.currency),
-  ].filter(Boolean))].sort()
-  const unknownDateCount = knownScope.unknownDateAccounts.filter((account) => !currency || account.currencies.includes(currency)).length
+  const currencyOptions = [
+    ...new Set(
+      [
+        ...transactions.map((row) => row.currency),
+        ...knownScope.accounts.map((account) => account.currency),
+      ].filter(Boolean)
+    ),
+  ].sort()
+  const unknownDateCount = knownScope.unknownDateAccounts.filter(
+    (account) => !currency || account.currencies.includes(currency)
+  ).length
   const internal = internalActivity(
     transactions.filter((row) => matchesAccountSelection(row, accountScope)),
     trails.data?.trails ?? []
   )
   const judgementsOf = useRowJudgementLookup()
-  const judgementMap = useJudgementRowMap(judgementsOf ? exportContext?.caseId : undefined)
+  const judgementMap = useJudgementRowMap(
+    judgementsOf ? exportContext?.caseId : undefined
+  )
   const judgementFilter = {
     category: view.judgementCategory,
     strength: view.judgementStrength,
     origin: view.judgementOrigin,
     status: view.judgementStatus,
   }
-  const judgementSubFilters = Object.values(judgementFilter).filter(Boolean).length
+  const judgementSubFilters =
+    Object.values(judgementFilter).filter(Boolean).length
   const judgementWanted = view.judgement || (judgementSubFilters ? "any" : "")
-  const matchingCalls = (row: LedgerTransaction, except?: keyof typeof judgementFilter) =>
+  const matchingCalls = (
+    row: LedgerTransaction,
+    except?: keyof typeof judgementFilter
+  ) =>
     (judgementsOf?.(row) || []).filter((judgement: Judgement) =>
       (Object.keys(judgementFilter) as (keyof typeof judgementFilter)[]).every(
-        (key) => key === except || !judgementFilter[key] || judgement[key] === judgementFilter[key]
+        (key) =>
+          key === except ||
+          !judgementFilter[key] ||
+          judgement[key] === judgementFilter[key]
       )
     )
   const judgementMatches = (row: LedgerTransaction) =>
@@ -240,23 +301,32 @@ export function LedgerRowBrowser({
       onManage={canEdit ? () => setManageCategories(true) : undefined}
     />
   )
-  const categoryRows = preRows.filter((row) => matchesCategories(row, categories))
+  const categoryRows = preRows.filter((row) =>
+    matchesCategories(row, categories)
+  )
   // Payments per choice of each judgement sub-filter, under the other active filters (as the queue counts issues).
   const judgementCounts = (key: keyof typeof judgementFilter) => {
     const counts = new Map<string, number>()
     for (const row of categoryRows) {
-      const values = new Set(matchingCalls(row, key).map((judgement) => judgement[key]))
-      for (const value of values) counts.set(value, (counts.get(value) || 0) + 1)
+      const values = new Set(
+        matchingCalls(row, key).map((judgement) => judgement[key])
+      )
+      for (const value of values)
+        counts.set(value, (counts.get(value) || 0) + 1)
     }
     return counts
   }
-  const touchedRows = categoryRows.filter((row) => (judgementsOf?.(row) || []).length > 0).length
+  const touchedRows = categoryRows.filter(
+    (row) => (judgementsOf?.(row) || []).length > 0
+  ).length
   const judgementsLink = exportContext
     ? `/cases/${exportContext.caseId}/financial?${new URLSearchParams({
         view: "statements",
         judgements: "1",
         ...(view.judgementCategory ? { jType: view.judgementCategory } : {}),
-        ...(view.judgementStrength ? { jStrength: view.judgementStrength } : {}),
+        ...(view.judgementStrength
+          ? { jStrength: view.judgementStrength }
+          : {}),
         ...(view.judgementOrigin ? { jBy: view.judgementOrigin } : {}),
         jStatus: view.judgementStatus || "all",
       })}`
@@ -411,16 +481,25 @@ export function LedgerRowBrowser({
             )}
           </>
         )}
-        <details className="rounded border p-2 text-sm">
-          <summary className="cursor-pointer">
-            Filters
-            {[currency, minimum, maximum, direction, proof, judgementWanted].filter(
-              Boolean
-            ).length +
-              categories.length >
-              0 &&
-              ` (${[currency, minimum, maximum, direction, proof, judgementWanted].filter(Boolean).length + categories.length})`}
-          </summary>
+        <Disclosure
+          className="rounded border p-2 text-sm"
+          label={
+            <>
+              Filters
+              {[
+                currency,
+                minimum,
+                maximum,
+                direction,
+                proof,
+                judgementWanted,
+              ].filter(Boolean).length +
+                categories.length >
+                0 &&
+                ` (${[currency, minimum, maximum, direction, proof, judgementWanted].filter(Boolean).length + categories.length})`}
+            </>
+          }
+        >
           <div className="flex flex-wrap gap-3 pt-3">
             <label>
               Currency
@@ -437,15 +516,14 @@ export function LedgerRowBrowser({
                 }}
               >
                 <option value="">All currencies</option>
-                {currency &&
-                  !currencyOptions.includes(currency) && (
-                    <option value={currency}>
-                      {currency} · not in current account/date scope
-                    </option>
-                  )}
+                {currency && !currencyOptions.includes(currency) && (
+                  <option value={currency}>
+                    {currency} · not in current account/date scope
+                  </option>
+                )}
                 {currencyOptions.map((c) => (
-                    <option key={c}>{c}</option>
-                  ))}
+                  <option key={c}>{c}</option>
+                ))}
               </select>
             </label>
             <label>
@@ -530,7 +608,9 @@ export function LedgerRowBrowser({
                 className="flex basis-full flex-wrap items-end gap-3 rounded border p-2"
                 aria-label="Judgement calls filter"
               >
-                <legend className="px-1 text-sm font-medium">Judgement calls</legend>
+                <legend className="px-1 text-sm font-medium">
+                  Judgement calls
+                </legend>
                 <label>
                   Payments
                   <select
@@ -541,24 +621,61 @@ export function LedgerRowBrowser({
                       changeView({
                         judgement: e.target.value,
                         ...(e.target.value === "none"
-                          ? { judgementCategory: "", judgementStrength: "", judgementOrigin: "", judgementStatus: "" }
+                          ? {
+                              judgementCategory: "",
+                              judgementStrength: "",
+                              judgementOrigin: "",
+                              judgementStatus: "",
+                            }
                           : {}),
                         page: 0,
                       })
                     }
                   >
                     <option value="">All payments</option>
-                    <option value="any">With a judgement call ({touchedRows})</option>
-                    <option value="none">Without a judgement call ({preRows.length - touchedRows})</option>
+                    <option value="any">
+                      With a judgement call ({touchedRows})
+                    </option>
+                    <option value="none">
+                      Without a judgement call ({preRows.length - touchedRows})
+                    </option>
                   </select>
                 </label>
                 {(
                   [
-                    ["judgementCategory", "category", "Type", "All types",
-                      Object.fromEntries((judgementMap.data?.categories || []).map((c) => [c.key, c.label]))],
-                    ["judgementStrength", "strength", "Strength", "Inferred and checked guesses", STRENGTH_LABELS],
-                    ["judgementOrigin", "origin", "Made by", "Agent and processor", ORIGIN_LABELS],
-                    ["judgementStatus", "status", "Checked", "Checked or not", STATUS_LABELS],
+                    [
+                      "judgementCategory",
+                      "category",
+                      "Type",
+                      "All types",
+                      Object.fromEntries(
+                        (judgementMap.data?.categories || []).map((c) => [
+                          c.key,
+                          c.label,
+                        ])
+                      ),
+                    ],
+                    [
+                      "judgementStrength",
+                      "strength",
+                      "Strength",
+                      "Inferred and checked guesses",
+                      STRENGTH_LABELS,
+                    ],
+                    [
+                      "judgementOrigin",
+                      "origin",
+                      "Made by",
+                      "Agent and processor",
+                      ORIGIN_LABELS,
+                    ],
+                    [
+                      "judgementStatus",
+                      "status",
+                      "Checked",
+                      "Checked or not",
+                      STATUS_LABELS,
+                    ],
                   ] as const
                 ).map(([field, key, label, allLabel, labels]) => {
                   const counts = judgementCounts(key)
@@ -570,14 +687,18 @@ export function LedgerRowBrowser({
                         className="block rounded border bg-background p-2"
                         disabled={view.judgement === "none"}
                         value={view[field]}
-                        onChange={(e) => changeView({ [field]: e.target.value, page: 0 })}
+                        onChange={(e) =>
+                          changeView({ [field]: e.target.value, page: 0 })
+                        }
                       >
                         <option value="">{allLabel}</option>
-                        {Object.entries(labels as Record<string, string>).map(([value, text]) => (
-                          <option key={value} value={value}>
-                            {text} ({counts.get(value) || 0})
-                          </option>
-                        ))}
+                        {Object.entries(labels as Record<string, string>).map(
+                          ([value, text]) => (
+                            <option key={value} value={value}>
+                              {text} ({counts.get(value) || 0})
+                            </option>
+                          )
+                        )}
                       </select>
                     </label>
                   )
@@ -616,7 +737,7 @@ export function LedgerRowBrowser({
               Choose a currency to filter by amount.
             </p>
           </div>
-        </details>
+        </Disclosure>
       </div>
       {searchMode === "boolean" && (
         <p className="mt-2 text-xs text-muted-foreground">
@@ -782,22 +903,72 @@ export function LedgerRowBrowser({
           {rows.length} payments match your filters.
         </p>
       )}
-      {judgementsOf && !judgementWanted && rows.some((row) => (judgementsOf(row) || []).length) && (
-        <p className="text-xs text-muted-foreground" data-testid="ledger-judgement-line">
-          Includes{" "}
-          {rows.filter((row) => (judgementsOf(row) || []).length).length.toLocaleString()} payments touched by
-          judgement calls.{" "}
-          <button
-            type="button"
-            className="underline"
-            onClick={() => changeView({ judgement: "any", page: 0 })}
+      {judgementsOf &&
+        !judgementWanted &&
+        rows.some((row) => (judgementsOf(row) || []).length) && (
+          <p
+            className="text-xs text-muted-foreground"
+            data-testid="ledger-judgement-line"
           >
-            Show only them
-          </button>
-        </p>
-      )}
+            Includes{" "}
+            {rows
+              .filter((row) => (judgementsOf(row) || []).length)
+              .length.toLocaleString()}{" "}
+            payments touched by judgement calls.{" "}
+            <button
+              type="button"
+              className="underline"
+              onClick={() => changeView({ judgement: "any", page: 0 })}
+            >
+              Show only them
+            </button>
+          </p>
+        )}
       {investigation && exportContext && (
         <>
+          <TransactionsOverview
+            caseId={exportContext.caseId}
+            rows={analysisAmounts(rows)}
+            monthRows={analysisAmounts(
+              filterAnalysis(baseRows, { ...view, analysisPeriod: "" })
+            )}
+            tileRows={analysisAmounts(filterAnalysis(scopeRows, view))}
+            colors={categoryColors}
+            categories={categories}
+            onCategories={setCategories}
+            activeMonth={view.analysisPeriod}
+            onMonth={(analysisPeriod) => changeView({ analysisPeriod })}
+            onGroup={(kind, group) => {
+              if (kind === "statement")
+                changeView({
+                  sourceDocumentId: group.key,
+                  sourceFilename: group.label,
+                })
+              else {
+                const next =
+                  kind === "holder"
+                    ? {
+                        ...accountScope,
+                        accountHolders: group.key ? [group.key] : [],
+                      }
+                    : {
+                        ...accountScope,
+                        accountId: undefined,
+                        accountIds: [group.key],
+                      }
+                retainPaymentTableView(exportContext.caseId, accountScope, next)
+                applyAccountScope(next)
+              }
+            }}
+            onCategorise={
+              canEdit
+                ? (pending) => {
+                    setEditNames(false)
+                    setLabelIds(pending.map((row) => row.key))
+                  }
+                : undefined
+            }
+          />
           <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
             <strong>
               <span>
@@ -831,12 +1002,15 @@ export function LedgerRowBrowser({
           />
           {accountDirectory.isError && !exportContext.profile && (
             <p role="alert" className="text-xs">
-              Known account details could not be loaded. These totals currently show accounts with matching imported payments only.
+              Known account details could not be loaded. These totals currently
+              show accounts with matching imported payments only.
             </p>
           )}
           {unknownDateCount > 0 && (
             <p className="text-xs text-muted-foreground">
-              {unknownDateCount} known accounts have no usable saved statement dates for this range. Their matching payments, if any, are still counted. Clear the date range to include their account context.
+              {unknownDateCount} known accounts have no usable saved statement
+              dates for this range. Their matching payments, if any, are still
+              counted. Clear the date range to include their account context.
             </p>
           )}
           {view.activity !== "all" && (
@@ -870,6 +1044,31 @@ export function LedgerRowBrowser({
                   ? `${selection.length} payments selected`
                   : `${rows.length} matching payments`}
               </span>
+              <div
+                role="group"
+                aria-label="Show payments as"
+                className="inline-flex rounded-lg bg-muted p-[3px] text-[13px]"
+              >
+                {(
+                  [
+                    [false, "Cards"],
+                    [true, "Table view"],
+                  ] as const
+                ).map(([on, name]) => (
+                  <button
+                    key={name}
+                    type="button"
+                    aria-pressed={tableView === on}
+                    onClick={() => {
+                      setTableView(on)
+                      storeTableView(on)
+                    }}
+                    className={`rounded-md px-3 py-1 ${tableView === on ? "bg-background font-semibold shadow-sm" : "font-medium text-muted-foreground hover:text-foreground"}`}
+                  >
+                    {name}
+                  </button>
+                ))}
+              </div>
               <Button
                 variant="outline"
                 disabled={
@@ -1065,6 +1264,44 @@ export function LedgerRowBrowser({
           No payments match these filters. Clear the filters or choose another
           account/date range.
         </p>
+      ) : investigation && exportContext && !tableView ? (
+        <PaymentCardList
+          findings={findings.data}
+          categoryColors={categoryColors}
+          rows={rows.slice(index * pageSize, (index + 1) * pageSize)}
+          selected={selection}
+          expanded={view.expandedRows}
+          onExpand={(expandedRows) =>
+            setView((previous) => ({ ...previous, expandedRows }))
+          }
+          onToggle={toggle}
+          onOpen={actions.onSource}
+          onNote={actions.onNote}
+          onEdit={
+            canEdit
+              ? (row) => {
+                  setEditNames(true)
+                  setLabelIds([row.key])
+                }
+              : undefined
+          }
+          onCategory={
+            canEdit
+              ? (row) => {
+                  setEditNames(false)
+                  setLabelIds([row.key])
+                }
+              : undefined
+          }
+          onParty={(side, key) => {
+            const field = side === "from" ? "fromNames" : "toNames"
+            changeView({
+              [field]: view[field].includes(key)
+                ? view[field].filter((n) => n !== key)
+                : [...view[field], key],
+            })
+          }}
+        />
       ) : investigation && exportContext ? (
         <TransactionExplorerTable
           findings={findings.data}
@@ -1112,10 +1349,10 @@ export function LedgerRowBrowser({
         />
       )}
       {exportContext && !invalidRange && (
-        <details className="rounded border p-3">
-          <summary className="cursor-pointer font-medium">
-            Download these transactions
-          </summary>
+        <Disclosure
+          className="rounded border p-3"
+          label={<>Download these transactions</>}
+        >
           <LedgerExportButton
             caseId={exportContext.caseId}
             params={{ ...exportContext.params, ...accountScope }}
@@ -1154,7 +1391,7 @@ export function LedgerRowBrowser({
               sort,
             }}
           />
-        </details>
+        </Disclosure>
       )}
       <div className="flex flex-wrap items-center gap-3 text-sm">
         <label>

@@ -48,3 +48,23 @@ export function usePaymentCategories(caseId: string) {
     enabled: caseId !== "none",
   })
 }
+
+/** Statement file names by saved source document, for the "Statement" breakdown. */
+export function useStatementNames(caseId: string) {
+  return useQuery({
+    queryKey: ["financial-ledger", caseId, "statement-names"],
+    queryFn: async () => {
+      const result = await fetchAPI<{
+        case_id: string
+        rows: { group_key: string; group_label: string }[]
+      }>(`/api/financial/ledger/category-breakdown?${new URLSearchParams({ case_id: caseId })}`, {
+        method: "POST",
+        body: { group_by: "statement" },
+      })
+      if (result.case_id !== caseId) throw Error("Statements came from a different case.")
+      return new Map(result.rows.map((row) => [row.group_key, row.group_label]))
+    },
+    enabled: caseId !== "none",
+    staleTime: 5 * 60_000,
+  })
+}

@@ -9,12 +9,15 @@ import {
   within,
   cleanup,
 } from "@testing-library/react"
-import { afterEach, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, expect, it, vi } from "vitest"
 import { page } from "vitest/browser"
 import { LedgerRowBrowser } from "./LedgerRowBrowser"
 import { paymentFixture } from "../lib/payment-fixture.test-support"
 import { useFinancialDraftStore } from "../stores/financial-drafts"
 import type { LedgerTransaction } from "../api"
+
+// These tests read the dense table view of Transactions.
+beforeEach(() => localStorage.setItem("financial-transactions-table-view", "1"))
 vi.mock("../hooks/use-financial-access", () => ({
   useFinancialAccess: () => ({ canEdit: true }),
 }))

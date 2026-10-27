@@ -10,6 +10,7 @@ import {
   render as originalRender,
   screen,
   fireEvent,
+  within,
 } from "@testing-library/react"
 import { beforeEach, expect, it, vi } from "vitest"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
@@ -198,6 +199,8 @@ const user = (id: string) =>
     ReturnType<typeof useAuthStore.getState>["user"]
   >
 beforeEach(() => {
+  // These tests read the dense table; the card rows have their own test below.
+  localStorage.setItem("financial-transactions-table-view", "1")
   useFinancialDraftStore.setState({ drafts: {} })
   useInvestigationScopeStore.getState().reset()
   useAuthStore.setState({ user: user("reviewer-a") })
@@ -475,4 +478,36 @@ it("loads every account then filters one holder across banks, preserving paginat
   expect(screen.getByText("51–65 of 65 matching rows")).toBeVisible()
   act(() => useInvestigationScopeStore.getState().apply("case", {}))
   expect(screen.getByText("51–100 of 125 matching rows")).toBeVisible()
+})
+
+it("shows roomy cards by default with totals and category tiles that filter, and remembers Table view", () => {
+  localStorage.removeItem("financial-transactions-table-view")
+  render(
+    <LedgerRowBrowser
+      investigation
+      exportContext={{ caseId: "case", params: {} }}
+      transactions={[
+        row("rent", { category: "Rent and leases", amount_minor: "50000", ordering_date: "2026-01-03" }),
+        row("fee", { category: "Bank fees", amount_minor: "200", ordering_date: "2026-03-04" }),
+        row("pay", { direction: "credit", amount_minor: "90000", ordering_date: "2026-03-05", description: "Salary" }),
+      ]}
+    />
+  )
+  const list = screen.getByRole("list", { name: "Investigation transactions" })
+  expect(within(list).getAllByRole("checkbox")).toHaveLength(3)
+  expect(screen.queryByRole("table", { name: "Investigation transactions" })).not.toBeInTheDocument()
+  const glance = screen.getByRole("region", { name: "This view at a glance" })
+  expect(glance).toHaveTextContent("+900")
+  expect(glance).toHaveTextContent("−502")
+  // February had no payments read: shown as a gap, never skipped.
+  expect(within(glance).getByTitle("2026-02: no payments read")).toBeInTheDocument()
+  const where = screen.getByRole("region", { name: "Where the money went" })
+  expect(within(where).getByText(/Needs a category · 1/)).toBeInTheDocument()
+  fireEvent.click(within(where).getByRole("button", { name: /^Rent and leases · 1/ }))
+  expect(within(list).getAllByRole("checkbox")).toHaveLength(1)
+  fireEvent.click(within(where).getByRole("button", { name: /^Rent and leases · 1/ }))
+  expect(within(list).getAllByRole("checkbox")).toHaveLength(3)
+  fireEvent.click(screen.getByRole("button", { name: "Table view" }))
+  expect(screen.getByRole("table", { name: "Investigation transactions" })).toBeInTheDocument()
+  expect(localStorage.getItem("financial-transactions-table-view")).toBe("1")
 })

@@ -9,7 +9,7 @@ import {
   cleanup,
   within,
 } from "@testing-library/react"
-import { afterEach, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, expect, it, vi } from "vitest"
 import { page } from "vitest/browser"
 import { LedgerRowBrowser } from "./LedgerRowBrowser"
 import { WorkspaceScope } from "./InvestigationWorkspaceParts"
@@ -26,6 +26,9 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { RetainedFinancialTab } from "./FinancialNavigation"
 import { Button } from "@/components/ui/button"
 import type { LedgerTransaction } from "../api"
+
+// These tests read the dense table view of Transactions.
+beforeEach(() => localStorage.setItem("financial-transactions-table-view", "1"))
 vi.mock("@/lib/api-client", async (original) => ({
   ...(await original<typeof import("@/lib/api-client")>()),
   fetchAPI: vi.fn(async () => ({
