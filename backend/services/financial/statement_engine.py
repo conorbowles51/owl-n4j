@@ -4601,6 +4601,18 @@ def _section_direction(section):
     return None
 
 
+def _section_label(section):
+    """The profile's printed wording of a direction table heading (``_section_direction``)."""
+    labels = (_PROFILE.get() or {}).get('labels') or {}
+    return next(p for role in ('credit_component', 'debit_component') for p in labels.get(role, ()) if label(p) == section)
+
+
+# A movement line under a direction table's heading that prints no description (a check with no number) is described
+# by that heading. Off: it is held as a movement without a description, as before.
+HEADING_DESCRIBES_ROW = os.environ.get('LOUPE_FINANCIAL_HEADING_DESCRIBES_ROW', '1').strip().lower() not in (
+    '0', 'false', 'off', 'no')
+
+
 def _heading_direction(row, style, exponent):
     """(profile, asset) A line printing only a direction heading of the active profile: no amount, no date."""
     return (_section_direction(label(row['text'])) is not None
@@ -5481,6 +5493,11 @@ def _rows(rows, moves, resolved, chosen, controls, column_totals, statement, sty
             if value['balance'] is not None:
                 fields['balance'] = str(value['balance'])
                 fields['balance_column'] = str(value['balance_token']['cell']['column_index'])
+            if not fields['description'] and HEADING_DESCRIBES_ROW and _section_direction(move.get('section')):
+                # (profile, asset) A line printing only a date and an amount under a direction table's heading (a
+                # check paid with no check number printed, 'Checks'): the printed heading is all that describes it.
+                fields['description'] = _section_label(move['section'])
+                fields['description_basis'] = 'table_heading'
             if not fields['description']:
                 item['issues'].append('The transaction description is missing.')
     else:

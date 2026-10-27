@@ -137,12 +137,48 @@ class ChecksTableAndQuietSavingsTests(unittest.TestCase):
         checks = [r for r in checking['_rows'] if r['kind'] == 'transaction' and r['fields'].get('debit') in ('450000', '200000')]
         self.assertEqual(len(checks), 2)
 
+    def test_a_check_printed_without_its_number_is_described_by_its_table_heading(self):
+        # (2) prints '01/05 | 210.00' under 'Checks' with no check number: a real check, not an unreadable line.
+        sources = fixture('financial_truist_checks_fixture.json')
+        for source in sources:
+            for row in source['rows']:
+                if [c['expected_text'] for c in row['cells']] == ['10/30', 'MERCHANT1', '4,500.00']:
+                    row['cells'] = [c for c in row['cells'] if c['expected_text'] != 'MERCHANT1']
+        checking = reading(sources)[0]['9990001112223']
+        self.assertTrue(checking['engine']['proved'], checking['engine'])
+        [check] = [r for r in checking['_rows'] if r['kind'] == 'transaction' and r['fields'].get('debit') == '450000']
+        self.assertEqual((check['fields']['description'], check['fields']['description_basis']), ('Checks', 'table_heading'))
+        self.assertNotIn('The transaction description is missing.', check['issues'])
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+        with mock.patch.object(E, 'HEADING_DESCRIBES_ROW', False):
+            checking = reading(sources)[0]['9990001112223']
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+        [check] = [r for r in checking['_rows'] if r['kind'] == 'transaction' and r['fields'].get('debit') == '450000']
+        self.assertIn('The transaction description is missing.', check['issues'])
+
     def test_quiet_savings_is_proved_by_its_printed_zero_components(self):
         savings = self.statements['9990004445556']
         self.assertTrue(savings['engine']['proved'], savings['engine'])
         self.assertEqual(savings['engine'].get('basis'), E.SUMMARY_COMPONENTS_BASIS)
         self.assertEqual(sums(savings), (0, 0, 0))
         self.assertEqual((control(savings, 'Opening Balance'), control(savings, 'Closing Balance')), ('250', '250'))
+
+
+    def test_quiet_savings_zero_lines_are_found_again_for_the_no_activity_proof(self):
+        # The summary prints the interest block beside its components, in the profile's own words: before, the
+        # proof could not find the lines again and every quiet month waited for a person ('line_missing').
+        from services.financial import statement_printed_no_activity as N
+        sources = fixture('financial_truist_checks_fixture.json')
+        savings = self.statements['9990004445556']
+        evidence = N.summary_components_evidence(savings['_rows'], savings, 'USD', sources, family='generic')
+        self.assertTrue(evidence['verified'], evidence)
+        self.assertEqual(sorted(line['text'].split(' + ')[0].split(' - ')[0] for line in evidence['cited'][2:]),
+                         ['Deposits, credits and interest', 'Other withdrawals, debits and service charges'])
+        with mock.patch.object(N, 'PROFILE_COMPONENT_LINES', False):
+            evidence = N.summary_components_evidence(savings['_rows'], savings, 'USD', sources, family='generic')
+        self.assertEqual(evidence['reason'], 'line_missing')
 
 
 class HolderBlockRuleTests(unittest.TestCase):
