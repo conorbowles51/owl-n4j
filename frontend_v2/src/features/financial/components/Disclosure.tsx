@@ -20,7 +20,7 @@ export function Disclosure({
         className="inline-flex items-center gap-1.5 rounded-md border bg-background px-3 py-1.5 text-sm font-semibold hover:bg-muted"
       >
         <span aria-hidden="true">{open ? "▾" : "▸"}</span>
-        {label}
+        <span>{label}</span>
       </button>
       <div className={open ? "" : "hidden"}>{children}</div>
     </div>

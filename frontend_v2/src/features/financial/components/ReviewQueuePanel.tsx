@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
+import { Disclosure } from "./Disclosure"
+import { InfoTip } from "./InfoTip"
 import { useSearchParams } from "react-router-dom"
 import { useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
@@ -536,7 +538,18 @@ export function ReviewQueuePanel({
               : needsLabel(user)}
         </h3>
         <p className="text-sm text-muted-foreground">
-          {list === "reader"
+          {{
+            reader: "Read again automatically when the reader improves.",
+            filled: "Filled from the same account's saved statements; imported when you press Import.",
+            copies: "Finished: copies kept, counting nothing.",
+            not_payment: "Finished: fund statements have no payments to import.",
+            unreadable: "Each item says which pages to look at and what to do.",
+            ready: "Every check passes. Press Import above.",
+            handled: "Nothing here needs you and nothing here is blocked.",
+          }[list as string] ?? "Only what needs a person."}
+          <InfoTip
+            text={
+          list === "reader"
             ? "Loupe cannot read these files reliably yet. Nothing needs doing by hand: they are read again when the reader improves. You can still open their statements below."
             : list === "filled"
             ? "The missing details were found in the same account's saved statements. Each value says where it came from. They are filled and imported when you press Import; change any value that is not right."
@@ -550,7 +563,9 @@ export function ReviewQueuePanel({
                 ? "Every check passes. Press Import above to add them to the ledger; open one to look at it first."
               : list === "handled"
                 ? "Nothing here needs you and nothing here is blocked. Statements set aside on purpose are finished; anything still in progress is moved on by Loupe."
-              : "Only what needs a person. Each item says what is wrong, where to look in the PDF and what to enter. It saves by itself once it checks out."}
+              : "Only what needs a person. Each item says what is wrong, where to look in the PDF and what to enter. It saves by itself once it checks out."
+            }
+          />
         </p>
       </header>
       {fileIds.length > 0 && (
@@ -578,6 +593,7 @@ export function ReviewQueuePanel({
         <p role="status">Loading the review queue…</p>
       ) : (
         <>
+          <StatementsAtAGlance counts={query.data.counts} onOpen={showList} />
           <QueueSplit
             counts={query.data.counts}
             user={user}
@@ -613,10 +629,7 @@ export function ReviewQueuePanel({
             >
               <p className="font-medium">{saveResult.message}</p>
               {saveResult.held.length > 0 && (
-                <details>
-                  <summary className="cursor-pointer">
-                    Which {saveResult.held.length} {saveResult.held.length === 1 ? "statement was" : "statements were"} held
-                  </summary>
+                <Disclosure label={<>Which {saveResult.held.length} {saveResult.held.length === 1 ? "statement was" : "statements were"} held</>}>
                   <ul className="mt-1 space-y-1">
                     {saveResult.held
                       .filter((entry) => entry.filename)
@@ -633,13 +646,10 @@ export function ReviewQueuePanel({
                       </li>
                     )}
                   </ul>
-                </details>
+                </Disclosure>
               )}
               {!!saveResult.notReady?.length && (
-                <details>
-                  <summary className="cursor-pointer">
-                    Which {saveResult.notReady.length} were not imported after filling their details
-                  </summary>
+                <Disclosure label={<>Which {saveResult.notReady.length} were not imported after filling their details</>}>
                   <ul className="mt-1 space-y-1" aria-label="Not ready after filling">
                     {saveResult.notReady.map((entry) => {
                       // Where it stands now, from the refreshed queue.
@@ -652,7 +662,7 @@ export function ReviewQueuePanel({
                       )
                     })}
                   </ul>
-                </details>
+                </Disclosure>
               )}
               <Button size="sm" variant="ghost" onClick={() => setSaveResult(null)}>
                 Dismiss
@@ -747,10 +757,7 @@ export function ReviewQueuePanel({
             </ul>
           )}
           {list === "handled" ? null : list === "reader" ? (
-            <details>
-              <summary className="cursor-pointer text-sm">
-                Show their {shownTotal} statements
-              </summary>
+            <Disclosure label={<>Show their {shownTotal} statements</>}>
               <ol className="divide-y rounded border" aria-label="Statements waiting for a reader fix">
                 {current.map((entry) => (
                   <li key={entry.id} className="flex flex-wrap items-center justify-between gap-3 p-3 text-sm">
@@ -771,7 +778,7 @@ export function ReviewQueuePanel({
                   </li>
                 ))}
               </ol>
-            </details>
+            </Disclosure>
           ) : current.length === 0 ? (
             <p role="status" className="rounded border p-3">
               {list === "waiting"
@@ -1009,13 +1016,10 @@ export function ReviewQueuePanel({
             </div>
           )}
           {list === "unreadable" && query.data.set_aside_files.length > 0 && (
-            <details className="rounded border p-3 text-sm">
-              <summary className="cursor-pointer">
-                {query.data.set_aside_files.length}{" "}
+            <Disclosure className="rounded border p-3 text-sm" label={<>{query.data.set_aside_files.length}{" "}
                 {query.data.set_aside_files.length === 1 ? "file is" : "files are"} not counted as
                 {" "}couldn't read: removed from Financial, no longer in the case, or already read from an
-                identical copy
-              </summary>
+                identical copy</>}>
               <ul className="mt-2 divide-y" aria-label="Files not counted as couldn't read">
                 {query.data.set_aside_files.map((file) => (
                   <li key={`${file.batch_id}:${file.source_id}`} className="py-2">
@@ -1023,7 +1027,7 @@ export function ReviewQueuePanel({
                   </li>
                 ))}
               </ul>
-            </details>
+            </Disclosure>
           )}
         </>
       )}
@@ -1402,8 +1406,7 @@ function GroupItem({
           onSaved={(entries, line) => onSaved(entries, line)}
         />
       )}
-      <details className="text-xs">
-        <summary className="cursor-pointer">Which {group.entries.length} statements</summary>
+      <Disclosure className="text-xs" label={<>Which {group.entries.length} statements</>}>
         <ul className="mt-1 divide-y rounded border">
           {group.entries.map((entry) => (
             <li key={entry.id} className="flex flex-wrap items-center justify-between gap-2 p-2">
@@ -1418,7 +1421,90 @@ function GroupItem({
             </li>
           ))}
         </ul>
-      </details>
+      </Disclosure>
     </li>
+  )
+}
+
+/**
+ * The headline of the queue: how many statements are done and how many need a
+ * person, with every state as a block of the bar and a count that opens its list.
+ */
+function StatementsAtAGlance({
+  counts: c,
+  onOpen,
+}: {
+  counts: ReviewQueue["counts"]
+  onOpen: (list: ListName) => void
+}) {
+  const unreadable = c.unreadable + c.unreadable_files
+  const setAside = c.copies + (c.not_payment ?? 0)
+  const moving = c.filled + c.ready + c.saving + c.rechecking + (c.reader_fix ?? 0)
+  const parts: { label: string; value: number; color: string; text: string; list?: ListName }[] = [
+    { label: "imported", value: c.imported, color: "#2f9353", text: "#15653f" },
+    { label: "set aside on purpose (copies, fund statements)", value: setAside, color: "#7b52c7", text: "#573199", list: c.copies ? "copies" : "not_payment" },
+    { label: "left out by you", value: c.left_unimported, color: "#9a9da5", text: "#3d4250" },
+    { label: "in progress (filled, ready, importing, rechecking, waiting for a reader fix)", value: moving, color: "#3a6fd8", text: "#1f4fa8", list: c.ready ? "ready" : c.filled ? "filled" : c.reader_fix ? "reader" : undefined },
+    { label: "couldn't be read", value: unreadable, color: "#c4253a", text: "#a3142a", list: "unreadable" },
+    { label: "need you", value: c.waiting, color: "#d99a2b", text: "#8a5300", list: "waiting" },
+  ]
+  const total = parts.reduce((sum, part) => sum + part.value, 0)
+  if (!total) return null
+  const done = c.imported + setAside + c.left_unimported
+  const heading = { fontFamily: "'Space Grotesk', ui-sans-serif, system-ui, sans-serif", letterSpacing: "-0.025em" }
+  return (
+    <section
+      aria-label="Statements at a glance"
+      className="space-y-4 rounded-2xl p-5 text-[#f7f7f8] sm:p-7"
+      style={{ background: "radial-gradient(1100px 420px at 90% -20%, #3a1319 0%, #0b0c0f 62%)" }}
+    >
+      <h4 className="text-2xl font-semibold leading-tight sm:text-[34px]" style={heading}>
+        {done.toLocaleString()} of {total.toLocaleString()} statements are done.
+        <span className="block text-[#9a9da5]">
+          {c.waiting + unreadable
+            ? `${(c.waiting + unreadable).toLocaleString()} need your eyes.`
+            : moving
+              ? "Nothing needs you; Loupe is moving the rest on."
+              : "Nothing needs you."}
+        </span>
+      </h4>
+      <div aria-hidden="true" className="flex h-4 overflow-hidden rounded-full bg-[#292b32]">
+        {parts
+          .filter((part) => part.value)
+          .map((part) => (
+            <span
+              key={part.label}
+              title={`${part.value.toLocaleString()} ${part.label}`}
+              style={{ width: `${(part.value / total) * 100}%`, minWidth: 6, background: part.color }}
+            />
+          ))}
+      </div>
+      <ul className="flex flex-wrap gap-x-5 gap-y-2 text-sm" aria-label={`All ${total} statements`}>
+        {parts
+          .filter((part) => part.value)
+          .map((part) => {
+            const body = (
+              <>
+                <span aria-hidden="true" className="mr-1.5 inline-block size-2.5 rounded-sm" style={{ background: part.color }} />
+                <strong className="tabular-nums">{part.value.toLocaleString()}</strong> {part.label}
+              </>
+            )
+            return (
+              <li key={part.label} className="text-[#bfc1c8]">
+                {part.list ? (
+                  <button type="button" className="hover:text-white hover:underline" onClick={() => onOpen(part.list!)}>
+                    {body}
+                  </button>
+                ) : (
+                  body
+                )}
+              </li>
+            )
+          })}
+        {!c.saving && !c.rechecking && !c.waiting && !unreadable && (
+          <li className="text-[#9a9da5]">Nothing is blocked or still running.</li>
+        )}
+      </ul>
+    </section>
   )
 }
