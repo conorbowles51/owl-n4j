@@ -365,11 +365,11 @@ export function AccountHistory({
               })}
             </div>
           )}
-          <details key={selected || "all"} open={!!active}>
-            <summary className="cursor-pointer font-semibold">
+          <section key={selected || "all"} className="space-y-2">
+            <h4 className="font-semibold">
               Statement periods and exact balances (
               {groups.reduce((n, g) => n + g.periods.length, 0)})
-            </summary>
+            </h4>
             <div className="overflow-auto max-h-[55vh]">
               <table className="text-sm w-full">
                 <thead className="sticky top-0 bg-background">
@@ -462,7 +462,7 @@ export function AccountHistory({
                 </tbody>
               </table>
             </div>
-          </details>
+          </section>
         </>
       )}
       <Dialog

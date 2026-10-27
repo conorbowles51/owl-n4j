@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { StatementSourceButton } from "./StatementSourceButton"
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
@@ -203,11 +204,8 @@ function CoverageResult({
                 </div>
               ))
             )}
-            <details>
-              <summary>
-                Open the statements used in this check (
-                {query.data.periods.length})
-              </summary>
+            <Disclosure label={<>Open the statements used in this check (
+                {query.data.periods.length})</>}>
               {query.data.periods.map((period) => (
                 <div key={period.period_id} className="space-y-2 border-t py-2">
                   <p>
@@ -225,13 +223,10 @@ function CoverageResult({
                   />
                 </div>
               ))}
-            </details>
-            <details className="text-sm">
-              <summary className="cursor-pointer">
-                How dates are checked
-              </summary>
+            </Disclosure>
+            <Disclosure className="text-sm" label="How dates are checked">
               <p>{query.data.limitation}</p>
-            </details>
+            </Disclosure>
           </>
         ))}
     </section>

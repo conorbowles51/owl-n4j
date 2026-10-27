@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { StatementSourceButton } from "./StatementSourceButton"
 import { StatementTimeline } from "./StatementTimeline"
 import { useState } from "react"
@@ -76,12 +77,9 @@ export function StatementCoveragePanel({
           <p role="alert">Coverage unavailable. {query.error.message}</p>
         ) : (
           <>
-            <details className="text-sm">
-              <summary className="cursor-pointer">
-                How dates are checked
-              </summary>
+            <Disclosure className="text-sm" label="How dates are checked">
               <p>{query.data.limitation}</p>
-            </details>
+            </Disclosure>
             {query.data.items.length === 0 && (
               <p>No accounts were found on this page.</p>
             )}
@@ -171,11 +169,8 @@ export function StatementCoveragePanel({
                           }
                         />
                       ))}
-                    <details>
-                      <summary>
-                        Statements included or left out (
-                        {account.periods.length})
-                      </summary>
+                    <Disclosure label={<>Statements included or left out (
+                        {account.periods.length})</>}>
                       {account.periods.map((period) => (
                         <div
                           key={period.period_id}
@@ -202,7 +197,7 @@ export function StatementCoveragePanel({
                           />
                         </div>
                       ))}
-                    </details>
+                    </Disclosure>
                   </>
                 )}
               </div>

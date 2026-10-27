@@ -1,3 +1,5 @@
+import { OverviewStatementCoverage } from "./OverviewStatementCoverage"
+import { Disclosure } from "./Disclosure"
 import { BatchSavedAccounts } from "./BatchSavedAccounts"
 import { ActiveCategoryNotice } from "./PaymentCategoryFilter"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
@@ -963,10 +965,13 @@ function FinancialPageContent() {
                   }}
                 />
               )}
-              <details className="rounded border p-3 my-3">
-                <summary className="cursor-pointer font-medium">
+              <section
+                className="rounded-lg border p-3 my-3 space-y-2"
+                aria-label="Find an account by name, number or bank"
+              >
+                <h3 className="font-semibold">
                   Find an account by name, number or bank
-                </summary>
+                </h3>
                 <ErrorBoundary level="section">
                   <FinancialAccounts
                     active={store.mainView === "statements" && reviewingAccounts && !savedBatchAccounts}
@@ -982,7 +987,7 @@ function FinancialPageContent() {
                     }}
                   />
                 </ErrorBoundary>
-              </details>
+              </section>
             </div>
             {section === "queue" && caseId && (
               <ErrorBoundary level="section">
@@ -1048,28 +1053,39 @@ function FinancialPageContent() {
               />
             )}
             {reviewingAccounts && !savedBatchAccounts && (
-              <details className="rounded border p-3 space-y-3">
-                <summary className="cursor-pointer font-medium">
-                  Account checks
-                </summary>
+              <section
+                className="rounded-lg border p-3 space-y-3"
+                aria-label="Account checks"
+              >
+                <h3 className="font-semibold">Account checks</h3>
                 <p className="text-sm text-muted-foreground">
                   Check balances and missing statement periods across this case.
                   To review one statement, open it from Statement files.
                 </p>
-                <ErrorBoundary level="section">
-                  <StatementChecksPanel
-                    onReviewStatement={reviewStatement}
-                    key={`checks:${caseId}`}
-                    caseId={caseId}
-                  />
-                </ErrorBoundary>
+                {caseId && (
+                  <ErrorBoundary level="section">
+                    <OverviewStatementCoverage
+                      caseId={caseId}
+                      active={store.mainView === "statements" && reviewingAccounts}
+                    />
+                  </ErrorBoundary>
+                )}
                 <ErrorBoundary level="section">
                   <StatementCoveragePanel
                     key={`coverage:${caseId}`}
                     caseId={caseId}
                   />
                 </ErrorBoundary>
-              </details>
+                <Disclosure label="Balance checks for all accounts">
+                  <ErrorBoundary level="section">
+                    <StatementChecksPanel
+                      onReviewStatement={reviewStatement}
+                      key={`checks:${caseId}`}
+                      caseId={caseId}
+                    />
+                  </ErrorBoundary>
+                </Disclosure>
+              </section>
             )}
           </div>
         </RetainedFinancialTab>
