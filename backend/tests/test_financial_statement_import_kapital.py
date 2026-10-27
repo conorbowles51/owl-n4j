@@ -337,3 +337,31 @@ class KapitalHeadingWordMarksTests(TestCase):
         with mock.patch.object(K, 'HEADING_WORD_MARKS', False):
             rows = self.rows(self.statement())
         self.assertTrue(rows and all(r['fields'].get('amount_minor') is None for r in rows))
+
+
+class KapitalClientOneDigitTests(TestCase):
+    """(fin-queue3 K6) 06 MONETA KAPITAL MXN JUN 25: Hoja 2-3 read the client '49499208' as '19499208'; the same
+    statement number, R.F.C. and period are printed on every page, so the movement table continued there."""
+
+    def statement(self, client):
+        second = header()
+        second[3] = [(360000, 80000, 35000, 'Cliente'), (410000, 80000, 100000, client)]
+        return [source(1, header() + [[(30000,120000,160000,'EXAMPLE SERVICES')],[(30000,150000,160000,'Persona Moral')]]
+                       + product() + table()), source(2, second + table(200000))]
+
+    def pages(self, client):
+        return [c['page_numbers'] for c in kapital_catalog(self.statement(client))[0]]
+
+    def test_a_page_whose_client_number_is_read_one_digit_apart_continues_the_statement(self):
+        self.assertEqual(self.pages('12345679'), [[1, 2]])
+        self.assertEqual(self.pages('12345678'), [[1, 2]])
+
+    def test_two_digits_apart_or_another_length_is_another_header(self):
+        self.assertEqual(self.pages('12345699'), [[1]])
+        self.assertEqual(self.pages('123456789'), [[1]])
+
+    def test_switched_off_the_page_stays_unassigned(self):
+        from unittest import mock
+        from services.financial import statement_import_kapital as K
+        with mock.patch.object(K, 'CLIENT_ONE_DIGIT', False):
+            self.assertEqual(self.pages('12345679'), [[1]])

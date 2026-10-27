@@ -51,6 +51,12 @@ MISSING_DAY_CELL = _switch('LOUPE_FINANCIAL_KAPITAL_MISSING_DAY_CELL')
 # located, in the printed order (CONCEPTO, DEPOSITOS, RETIROS, SALDO left to right). Off: the section's lines wait
 # for a person as payments whose headings were not read.
 HEADING_WORD_MARKS = _switch('LOUPE_FINANCIAL_KAPITAL_HEADING_WORD_MARKS')
+# (fin-queue3 K6, 06 MONETA KAPITAL MXN JUN 25) The scan read the client number '49499208' as '19499208' on Hoja
+# 2-3, so those pages printed another statement's header and the movement table on them was assigned to no
+# statement. Pages printing the same statement number (Numero), R.F.C. and period are one statement's pages when
+# their client numbers differ in exactly one digit (same length); they take the first such page's header. Off:
+# the pages stay unassigned and the period waits for a person.
+CLIENT_ONE_DIGIT = _switch('LOUPE_FINANCIAL_KAPITAL_CLIENT_ONE_DIGIT')
 
 
 def kapital_information_kind(source, *, institution='Kapital', product=PRODUCT):
@@ -86,10 +92,29 @@ def _context(items, *, institution='Kapital'):
     return (next(iter(numbers)),next(iter(clients)),next(iter(rfcs)),start,end)
 
 
+def _one_digit_apart(a, b):
+    return len(a) == len(b) and sum(x != y for x, y in zip(a, b)) == 1
+
+
+def _client_misreads(contexts):
+    """Each page's header, a client number read one digit apart from the first page printing the same statement
+    number, R.F.C. and period taking that page's header."""
+    first = {}
+    for page in sorted(p for p, c in contexts.items() if c):
+        first.setdefault((contexts[page][0],) + contexts[page][2:], contexts[page])
+    out = {}
+    for page, context in contexts.items():
+        base = first.get((context[0],) + context[2:]) if context else None
+        out[page] = base if base and base != context and _one_digit_apart(base[1], context[1]) else context
+    return out
+
+
 def kapital_catalog(sources, *, institution='Kapital', product=PRODUCT, layout=LAYOUT):
     pages={}
     for s in sources: pages.setdefault(s['page_number'],[]).append(s)
     contexts={p:_context(items, institution=institution) for p,items in pages.items()}
+    if CLIENT_ONE_DIGIT:
+        contexts=_client_misreads(contexts)
     if institution == 'Intercam':
         # Only a printed Intercam product/CLABE establishes issuer identity.
         # Counterparty mentions of a bank cannot identify the statement bank.
