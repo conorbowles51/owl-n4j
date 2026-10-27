@@ -52,6 +52,7 @@ export function WorkspaceScope({
   datesOnly?: boolean
 }) {
   const [params, setParams] = useInvestigationScope(caseId)
+  const [open, setOpen] = useState(false)
   const accountRows = useLedgerTransactions(
     params.accountId ? caseId : undefined,
     params
@@ -60,13 +61,18 @@ export function WorkspaceScope({
     (row) => row.account_id === params.accountId
   )?.account_label
   return (
-    <details
+    <div
       className="finance-tint rounded-lg border px-4 py-3 text-sm"
       data-finance-tone="info"
     >
-      <summary className="cursor-pointer font-medium">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        className="inline-flex max-w-full flex-wrap items-center gap-x-2 rounded-md border bg-background px-3 py-1.5 text-left font-semibold hover:bg-muted"
+      >
         {datesOnly ? "Date range" : "Accounts and dates"}{" "}
-        <span className="ml-2 font-normal text-muted-foreground">
+        <span className="font-normal text-muted-foreground">
           {params.accountId &&
           !params.accountIds?.length &&
           !params.accountHolders?.length
@@ -75,8 +81,9 @@ export function WorkspaceScope({
           · {params.startDate || "First available date"} to{" "}
           {params.endDate || "latest available date"}
         </span>
-      </summary>
-      <div className="pt-3">
+        <span aria-hidden="true" className="text-muted-foreground">{open ? "▴ Close" : "▾ Change"}</span>
+      </button>
+      <div className={open ? "pt-3" : "hidden"}>
         <InvestigationFilters
           key={JSON.stringify(params)}
           caseId={caseId}
@@ -88,7 +95,7 @@ export function WorkspaceScope({
           }}
         />
       </div>
-    </details>
+    </div>
   )
 }
 export function WorkspaceHeading({
