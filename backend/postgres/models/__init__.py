@@ -146,5 +146,5 @@ from postgres.models.financial_judgements import FinancialJudgement
 __all__ += ["FinancialMoneyTrail"]
 from postgres.models.financial_recovery import FinancialRecoveryRelease, FinancialRecoveryRun, FinancialRecoveryItem
 __all__ += ['FinancialRecoveryRelease', 'FinancialRecoveryRun', 'FinancialRecoveryItem']
-from postgres.models.financial_payment_category import FinancialPaymentCategory, FinancialCategoryModelCache
-__all__ += ["FinancialPaymentCategory", "FinancialCategoryModelCache"]
+from postgres.models.financial_payment_category import FinancialPaymentCategory, FinancialCategoryModelCache, FinancialCategoryRule
+__all__ += ["FinancialPaymentCategory", "FinancialCategoryModelCache", "FinancialCategoryRule"]

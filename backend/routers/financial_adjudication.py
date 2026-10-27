@@ -629,6 +629,51 @@ def apply_category_to_like(body: ApplyLikeRequest, case_id: UUID = Query(...), d
         raise HTTPException(status_code=500, detail='The category could not be applied to the similar payments.')
 
 
+class CategoryRuleRequest(BaseModel):
+    transaction_id: UUID
+    category: str = Field(max_length=120)
+
+
+@router.post('/ledger/payment-categories/rules')
+def make_category_rule(body: CategoryRuleRequest, case_id: UUID = Query(...), db: Session = Depends(get_db),
+                       current_user=Depends(get_current_db_user)):
+    """"Make this a rule for future statements": payments like this one saved from now on get this category."""
+    from services.financial.payment_categories import CategoryRuleError, save_rule
+    try:
+        category = ' '.join(body.category.split())
+        if category == 'Uncategorized':
+            category = ''
+        rule = save_rule(db, case_id, body.transaction_id, category, actor_from_user(current_user))
+        db.commit()
+        return dict(case_id=str(case_id), rule=rule)
+    except (CategoryRuleError, ActorError) as exc:
+        db.rollback()
+        raise HTTPException(status_code=getattr(exc, 'status_code', 422), detail=str(exc)) from exc
+    except Exception:
+        db.rollback()
+        logger.exception('Saving a category rule failed for case %s', case_id)
+        raise HTTPException(status_code=500, detail='The rule could not be saved. The category you chose is kept.')
+
+
+@router.post('/ledger/payment-categories/rules/{rule_id}/retire')
+def retire_category_rule(rule_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db),
+                         current_user=Depends(get_current_db_user)):
+    """Stop a rule placing future payments; the rule and the payments it placed are kept."""
+    from services.financial.payment_categories import CategoryRuleError, retire_rule
+    try:
+        actor_from_user(current_user)
+        rule = retire_rule(db, case_id, rule_id)
+        db.commit()
+        return dict(case_id=str(case_id), rule=rule)
+    except (CategoryRuleError, ActorError) as exc:
+        db.rollback()
+        raise HTTPException(status_code=getattr(exc, 'status_code', 422), detail=str(exc)) from exc
+    except Exception:
+        db.rollback()
+        logger.exception('Retiring a category rule failed for case %s', case_id)
+        raise HTTPException(status_code=500, detail='The rule could not be stopped. Reload and try again.')
+
+
 from services.financial.payment_edits import PaymentEditRequest, preview_payment_edits, save_payment_edits
 
 

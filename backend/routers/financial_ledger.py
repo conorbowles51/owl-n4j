@@ -1405,6 +1405,14 @@ def get_payments_like(transaction_id: UUID, case_id: UUID = Query(...), db: Sess
                           for row in dated[:8]])
 
 
+@router.get('/ledger/payment-categories/rules')
+def get_category_rules(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    """The case's category rules people made, each with how many payments it placed and how often a person chose
+    differently on payments it matches."""
+    from services.financial.payment_categories import rule_track_record
+    return dict(case_id=str(case_id), rules=rule_track_record(db, case_id))
+
+
 @router.get('/ledger/payment-categories/coverage')
 def get_category_coverage(case_id: UUID = Query(...), db: Session = Depends(get_db)):
     from services.financial.payment_categories import coverage

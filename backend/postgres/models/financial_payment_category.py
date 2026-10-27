@@ -11,7 +11,7 @@ already classified is not sent again.
 """
 import uuid
 from datetime import datetime
-from sqlalchemy import CheckConstraint, DateTime, Float, ForeignKey, Index, String, Text, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Float, ForeignKey, Index, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from postgres.base import Base
@@ -51,4 +51,30 @@ class FinancialCategoryModelCache(Base):
     why: Mapped[str] = mapped_column(Text, nullable=False, default='')
     model: Mapped[str] = mapped_column(String(120), nullable=False, default='')
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(),
+                                                 default=func.now())
+
+
+class FinancialCategoryRule(Base):
+    """A person's rule: payments in this case described like ``match_value`` (its description stem) or with this
+    printed counterparty get ``category``, as 'learned', when they are saved. A person's own choice on a payment still
+    wins. Retiring a rule keeps it (``active`` False) and leaves the payments it placed as they are."""
+    __tablename__ = 'financial_category_rules'
+    __table_args__ = (
+        CheckConstraint("match_kind IN ('description', 'counterparty')", name='ck_financial_category_rules_kind'),
+        Index('ix_financial_category_rules_case_match', 'case_id', 'match_kind', 'match_value', unique=True),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    case_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey('cases.id', ondelete='CASCADE'),
+                                               nullable=False)
+    match_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    match_value: Mapped[str] = mapped_column(String(200), nullable=False)
+    # What the person saw when they made it: the description or counterparty as printed.
+    example: Mapped[str] = mapped_column(Text, nullable=False, default='')
+    category: Mapped[str] = mapped_column(String(120), nullable=False)
+    from_transaction_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(),
+                                                 default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(),
                                                  default=func.now())

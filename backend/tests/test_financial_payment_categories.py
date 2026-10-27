@@ -7,7 +7,8 @@ from types import SimpleNamespace
 from postgres.models.financial import FinancialTransaction
 from postgres.models.financial_category import FinancialCategory
 from postgres.models.financial_judgements import FinancialJudgement
-from postgres.models.financial_payment_category import FinancialCategoryModelCache, FinancialPaymentCategory
+from postgres.models.financial_payment_category import (FinancialCategoryModelCache, FinancialCategoryRule,
+                                                        FinancialPaymentCategory)
 from postgres.base import Base
 from services.financial import payment_categories as pc
 from services.financial.payment_labels import PaymentLabelsRequest, update_payment_labels
@@ -15,6 +16,11 @@ from services.financial.transaction_query import list_transactions, to_view
 from tests.test_financial_transaction_query import LedgerQueryTestCase, reading
 
 ACTOR = SimpleNamespace(name='Investigator', email='investigator@example.test', user_id=None)
+
+
+def rule_uuid(rule):
+    import uuid
+    return uuid.UUID(rule['id'])
 
 
 class PaymentCategoryTests(LedgerQueryTestCase):
@@ -32,6 +38,7 @@ class PaymentCategoryTests(LedgerQueryTestCase):
         self.addCleanup(patcher.stop)
         Base.metadata.create_all(self.engine, tables=[FinancialPaymentCategory.__table__,
                                                       FinancialCategoryModelCache.__table__,
+                                                      FinancialCategoryRule.__table__,
                                                       FinancialJudgement.__table__, FinancialCategory.__table__])
 
     def rows(self, *descriptions):
@@ -72,6 +79,34 @@ class PaymentCategoryTests(LedgerQueryTestCase):
         self.assertEqual((self.stored(like).category, self.stored(like).origin), ('Personal care', 'learned'))
         self.assertEqual(self.stored(chosen).origin, 'person')
         self.assertEqual(self.stored(other).category, 'Checks')
+
+    def test_a_rule_a_person_makes_places_future_payments_like_it_but_never_over_a_person(self):
+        (source,) = self.rows('COM MEMBRESIA CUENTA E PYME 01')
+        rule = pc.save_rule(self.db, self.case.id, source.id, 'Rent and leases', ACTOR)
+        self.db.commit()
+        self.assertEqual((rule['match_kind'], rule['match_value']), ('description', 'COM MEMBRESIA CUENTA E PYME #'))
+        later, unrelated = self.write([self.draft(row_index=10 + index, reading=reading(description=text,
+                                                                                         amount_minor=500 + index))
+                                       for index, text in enumerate(('COM MEMBRESIA CUENTA E PYME 02', 'Check 2320'))])
+        self.db.commit()
+        self.assertEqual((self.stored(later).category, self.stored(later).origin, self.stored(later).basis),
+                         ('Rent and leases', 'learned', f"rule:{rule['id']}"))
+        self.assertEqual(self.stored(unrelated).category, 'Checks')
+        view = {row.id: to_view(row).to_json() for row in list_transactions(self.db, self.case.id)}[later.id]
+        self.assertEqual(view['label_sources']['category']['source'], 'learned')
+        update_payment_labels(self.db, case_id=self.case.id, actor=ACTOR, request=PaymentLabelsRequest(
+            transactions=[dict(id=later.id, version=0)], category='Bank fees'))
+        pc.backfill(self.db, self.case.id)
+        self.assertEqual((self.stored(later).category, self.stored(later).origin), ('Bank fees', 'person'))
+        (record,) = pc.rule_track_record(self.db, self.case.id)
+        self.assertEqual((record['placed'], record['person_chose_differently']), (0, 1))
+        pc.retire_rule(self.db, self.case.id, rule['id'])
+        self.db.commit()
+        (after,) = self.write([self.draft(row_index=20, reading=reading(description='COM MEMBRESIA CUENTA E PYME 03',
+                                                                        amount_minor=900))])
+        self.db.commit()
+        self.assertEqual((self.stored(after).category, self.stored(after).origin), ('Bank fees', 'rule'))
+        self.assertEqual(self.db.get(FinancialCategoryRule, rule_uuid(rule)).active, False)
 
     def test_the_model_places_the_rest_once_per_description_and_doubtful_answers_become_judgement_calls(self):
         first, second = self.rows('105413834', '105413834')

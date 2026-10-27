@@ -79,6 +79,7 @@ export function CategorisePaymentDialog({
   const [typed, setTyped] = useState("")
   const [creating, setCreating] = useState(false)
   const [applyLike, setApplyLike] = useState(true)
+  const [makeRule, setMakeRule] = useState(false)
   const [andNext, setAndNext] = useState(false)
   const single = ids.length === 1
   const query = useQuery({
@@ -160,9 +161,23 @@ export function CategorisePaymentDialog({
           toast.error("The category was saved, but could not be applied to the similar payments.")
         }
       }
-      return { result, learned, category }
+      let ruled = false
+      if (single && makeRule) {
+        try {
+          await fetchAPI(
+            `/api/financial/ledger/payment-categories/rules?${new URLSearchParams({ case_id: caseId })}`,
+            { method: "POST", body: { transaction_id: result.replacements[0].id, category } }
+          )
+          ruled = true
+        } catch (error) {
+          toast.error(
+            `The category was saved, but the rule for future statements was not: ${error instanceof Error ? error.message : "try again"}.`
+          )
+        }
+      }
+      return { result, learned, category, ruled }
     },
-    onSuccess: async ({ result, learned, category }) => {
+    onSuccess: async ({ result, learned, category, ruled }) => {
       await client.invalidateQueries({
         predicate: (item) =>
           /financial|ledger|payment|statement-import/.test(String(item.queryKey[0])) &&
@@ -170,7 +185,7 @@ export function CategorisePaymentDialog({
       })
       onSaved(result.replacements)
       toast.success(
-        `${category} saved for ${result.updated + learned} ${result.updated + learned === 1 ? "payment" : "payments"}${learned ? ` (${learned} similar)` : ""}.`
+        `${category} saved for ${result.updated + learned} ${result.updated + learned === 1 ? "payment" : "payments"}${learned ? ` (${learned} similar)` : ""}.${ruled ? " Future statements will use it for payments like this." : ""}`
       )
       if (andNext && onNext) onNext()
       else onClose()
@@ -391,6 +406,24 @@ export function CategorisePaymentDialog({
                 </ul>
               )}
             </section>
+          )}
+          {single && like.isSuccess && (
+            <label className="flex items-start gap-3 rounded-xl border p-3 text-sm">
+              <input
+                type="checkbox"
+                className="mt-1 size-4"
+                checked={makeRule}
+                disabled={busy}
+                onChange={(event) => setMakeRule(event.target.checked)}
+              />
+              <span>
+                <strong className="block">Make this a rule for future statements too</strong>
+                <span className="text-[13px] text-muted-foreground">
+                  Payments {like.data.basis === "same counterparty" ? "with this counterparty" : "described like this"} in
+                  statements read later get this category · a person's own choices still win
+                </span>
+              </span>
+            </label>
           )}
           {like.isError && single && (
             <p className="text-[13px] text-muted-foreground">Similar payments could not be checked; this payment can still be saved.</p>

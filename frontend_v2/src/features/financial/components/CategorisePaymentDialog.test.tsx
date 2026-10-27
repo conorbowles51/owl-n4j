@@ -13,7 +13,7 @@ vi.mock("../lib/selected-payment-source", () => ({ readSelectedPayments: vi.fn()
 vi.mock("../hooks/use-financial-access", () => ({ useFinancialAccess: () => ({ canEdit: true }) }))
 afterEach(cleanup)
 
-it("suggests Loupe's category, picks by key, and applies the choice to the similar payments with the saved id", async () => {
+it("suggests Loupe's category, picks by key, applies the choice to the similar payments and makes a rule, with the saved id", async () => {
   const calls: { url: string; body: unknown }[] = []
   vi.mocked(readSelectedPayments).mockResolvedValue([
     {
@@ -40,6 +40,7 @@ it("suggests Loupe's category, picks by key, and applies the choice to the simil
     if (url.includes("preview")) return { case_id: "case", revision: "b".repeat(64), count: 1 }
     if (url.includes("confirm")) return { case_id: "case", updated: 1, replacements: [{ previous_id: "t1", id: "t1-new" }] }
     if (url.includes("apply-like")) return { case_id: "case", updated: 14 }
+    if (url.includes("/payment-categories/rules?")) return { case_id: "case", rule: { id: "r1" } }
     throw Error(url)
   })
   const onSaved = vi.fn()
@@ -56,9 +57,11 @@ it("suggests Loupe's category, picks by key, and applies the choice to the simil
   expect(screen.getByRole("button", { name: /^Payments/ }).getAttribute("aria-pressed")).toBe("true")
   fireEvent.keyDown(window, { key: "2" })
   expect(screen.getByRole("button", { name: /^Transfers/ }).getAttribute("aria-pressed")).toBe("true")
+  fireEvent.click(screen.getByRole("checkbox", { name: /Make this a rule for future statements too/ }))
   fireEvent.click(screen.getByRole("button", { name: "Save 15 payments" }))
   await waitFor(() => expect(onClose).toHaveBeenCalled())
   expect(calls.find((c) => c.url.includes("confirm"))?.body).toMatchObject({ changes: { category: "Transfers" }, transactions: [{ id: "t1", version: 2 }] })
   expect(calls.find((c) => c.url.includes("apply-like"))?.body).toEqual({ transaction_id: "t1-new", category: "Transfers", transaction_ids: ["l1", "l2"] })
+  expect(calls.find((c) => c.url.includes("/payment-categories/rules?"))?.body).toEqual({ transaction_id: "t1-new", category: "Transfers" })
   expect(onSaved).toHaveBeenCalledWith([{ previous_id: "t1", id: "t1-new" }])
 })

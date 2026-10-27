@@ -16,6 +16,7 @@ import { useJudgementCounts, useJudgementSearch } from "../hooks/use-judgements"
 import { ImportedStatementDetails } from "./ImportedStatementDetails"
 import { SavedStatementPayments } from "./SavedStatementPayments"
 import { InfoTip } from "./InfoTip"
+import { CategoryRulesTable } from "./CategoryRules"
 
 const heading = { fontFamily: "'Space Grotesk', ui-sans-serif, system-ui, sans-serif", letterSpacing: "-0.025em" }
 
@@ -373,6 +374,8 @@ export function ProcessorRulesPanel({ caseId }: { caseId: string }) {
             </tbody>
           </table>
         )}
+        <h4 className="pt-2 font-semibold">Category rules people made</h4>
+        <CategoryRulesTable caseId={caseId} />
       </div>
     </div>
   )

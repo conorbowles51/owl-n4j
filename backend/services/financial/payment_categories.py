@@ -5,7 +5,8 @@ Who decides, in order of precedence:
 1. ``person``  - an investigator chose it (also kept in ``metadata.investigation_labels``, as before). Never replaced
    by any automatic pass.
 2. ``learned`` - an investigator applied their choice to the payments like it (same description stem or the same
-   printed counterparty, in the same case). Never replaced by an automatic pass either.
+   printed counterparty, in the same case), or a rule an investigator made ("Make this a rule for future
+   statements") placed a newly saved payment. Never replaced by an automatic pass either.
 3. ``rule``    - the description rules in :mod:`services.financial.payment_inference`.
 4. ``model``   - the model classifier, for descriptions the rules cannot place. Batched by distinct description stem
    and cached across cases by stem. Below :data:`MODEL_THRESHOLD` the category is still assigned, and a judgement call
@@ -65,6 +66,9 @@ def label_source(record):
     if record.origin == 'person':
         return dict(source='investigator', explanation='Saved by an investigator.')
     if record.origin == 'learned':
+        if (record.basis or '').startswith('rule:'):
+            return dict(source='learned', explanation=record.why or 'Placed by a rule an investigator made.',
+                        rule=record.basis)
         return dict(source='learned', explanation='Applied by an investigator from a payment like this one.',
                     learned_from=record.basis)
     if record.origin == 'model':
@@ -120,6 +124,7 @@ def categorise(session, rows, *, existing=None):
     :func:`classify_with_model`.
     """
     existing = stored_for(session, [row.id for row in rows]) if existing is None else existing
+    rules = active_rules(session.connection(), {row.case_id for row in rows}) if rows else {}
     written = {}
     for row in rows:
         current = existing.get(row.id)
@@ -131,6 +136,13 @@ def categorise(session, rows, *, existing=None):
                 written['person'] = written.get('person', 0) + 1
             continue
         if current is not None and current.origin in ('person', 'learned'):
+            continue
+        # A person's rule is for payments saved after it: one the save hook missed has no stored category yet.
+        hit = match_rule(rules.get(row.case_id), row) if current is None else None
+        if hit is not None:
+            _upsert(session, row, category=hit['category'], origin='learned', basis=hit['basis'], confidence=None,
+                    why=hit['why'], set_by=None)
+            written['learned'] = written.get('learned', 0) + 1
             continue
         found = rule_category(row, row.account if row.account is not None and row.account.id == row.account_id else None)
         if found is None:
@@ -225,6 +237,145 @@ def apply_learned(session, case_id, transaction_id, category, actor, *, expected
         changed += 1
     session.flush()
     return changed
+
+
+# ---------------------------------------------------------------------------
+# People's rules for future statements
+# ---------------------------------------------------------------------------
+
+class CategoryRuleError(ValueError):
+    def __init__(self, message, status_code=422):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+def _counterparty(row):
+    return ' '.join((row.counterparty_raw or '').split()).casefold()
+
+
+def rule_key(row):
+    """What a rule made from this payment matches: its description stem, or failing that its printed counterparty
+    (the same test as 'payments like this')."""
+    key = stem(row.description)
+    if key:
+        return 'description', key
+    counterparty = _counterparty(row)
+    return ('counterparty', counterparty[:200]) if counterparty else (None, '')
+
+
+def _rule_why(kind, example, category):
+    shown = ' '.join((example or '').split())[:80]
+    what = 'described like' if kind == 'description' else 'with the counterparty'
+    return f'An investigator\'s rule: payments {what} "{shown}" are {category or "Uncategorized"}.'
+
+
+def active_rules(connection, case_ids):
+    """{case id: {(kind, value): {category, basis, why}}} for the active rules of these cases."""
+    from postgres.models.financial_payment_category import FinancialCategoryRule as R
+    case_ids = {case_id for case_id in case_ids if case_id is not None}
+    if not case_ids or not _table_ready(connection, 'financial_category_rules'):
+        return {}
+    found = {}
+    for case_id, rule_id, kind, value, example, category in connection.execute(
+            select(R.case_id, R.id, R.match_kind, R.match_value, R.example, R.category)
+            .where(R.case_id.in_(case_ids), R.active.is_(True))):
+        found.setdefault(case_id, {})[(kind, value)] = dict(
+            category=category, basis=f'rule:{rule_id}', why=_rule_why(kind, example, category))
+    return found
+
+
+def match_rule(rules, row):
+    """The case's rule for this payment, or None. A description rule is tried before a counterparty rule."""
+    if not rules:
+        return None
+    key = stem(row.description)
+    hit = rules.get(('description', key)) if key else None
+    if hit is None:
+        counterparty = _counterparty(row)
+        hit = rules.get(('counterparty', counterparty[:200])) if counterparty else None
+    return hit
+
+
+def rule_dict(record):
+    return dict(id=str(record.id), case_id=str(record.case_id), match_kind=record.match_kind,
+                match_value=record.match_value, example=record.example, category=record.category,
+                active=record.active, created_by=record.created_by,
+                from_transaction_id=str(record.from_transaction_id) if record.from_transaction_id else None,
+                created_at=record.created_at.isoformat() if record.created_at else None,
+                updated_at=record.updated_at.isoformat() if record.updated_at else None)
+
+
+def save_rule(session, case_id, transaction_id, category, actor):
+    """Make (or update) the case's rule from this payment: future payments like it get ``category``."""
+    from postgres.models.financial import FinancialTransaction as T
+    from postgres.models.financial_payment_category import FinancialCategoryRule as R
+    if not _table_ready(session.connection(), 'financial_category_rules'):
+        raise CategoryRuleError('Category rules are not available until the database is updated.', 503)
+    source = session.get(T, transaction_id)
+    if source is None or source.case_id != case_id:
+        raise CategoryRuleError('That payment is not in this case.', 404)
+    kind, value = rule_key(source)
+    if kind is None:
+        raise CategoryRuleError('This payment has no description or counterparty a rule could match.')
+    record = session.scalar(select(R).where(R.case_id == case_id, R.match_kind == kind, R.match_value == value)
+                            .with_for_update())
+    now = datetime.now(timezone.utc)
+    who = getattr(actor, 'email', None) or getattr(actor, 'name', None)
+    if record is None:
+        record = R(case_id=case_id, match_kind=kind, match_value=value, created_by=who, created_at=now)
+        session.add(record)
+    record.category = category
+    record.example = (source.description if kind == 'description' else source.counterparty_raw) or ''
+    record.from_transaction_id = source.id
+    record.active = True
+    record.updated_at = now
+    session.flush()
+    return rule_dict(record)
+
+
+def retire_rule(session, case_id, rule_id):
+    """Stop a rule placing future payments. The rule and the payments it placed are kept."""
+    from postgres.models.financial_payment_category import FinancialCategoryRule as R
+    import uuid
+    try:
+        rule_id = rule_id if isinstance(rule_id, uuid.UUID) else uuid.UUID(str(rule_id))
+    except ValueError:
+        raise CategoryRuleError('That rule is not in this case.', 404) from None
+    record = session.scalar(select(R).where(R.id == rule_id, R.case_id == case_id).with_for_update())
+    if record is None:
+        raise CategoryRuleError('That rule is not in this case.', 404)
+    record.active = False
+    record.updated_at = datetime.now(timezone.utc)
+    session.flush()
+    return rule_dict(record)
+
+
+def rule_track_record(session, case_id):
+    """Each rule of the case: how many payments it placed, and on how many payments it matches a person chose
+    another category."""
+    from sqlalchemy import func
+    from postgres.models.financial import FinancialTransaction as T
+    from postgres.models.financial_payment_category import FinancialCategoryRule as R, FinancialPaymentCategory as C
+    if not _table_ready(session.connection(), 'financial_category_rules'):
+        return []
+    rules = list(session.scalars(select(R).where(R.case_id == case_id).order_by(R.created_at)))
+    if not rules:
+        return []
+    placed = dict(session.execute(
+        select(C.basis, func.count()).where(C.case_id == case_id, C.origin == 'learned',
+                                            C.basis.in_([f'rule:{rule.id}' for rule in rules])).group_by(C.basis)).all())
+    out = []
+    for rule in rules:
+        differ = select(func.count()).select_from(C).where(C.case_id == case_id, C.origin == 'person',
+                                                           C.category != rule.category)
+        if rule.match_kind == 'description':
+            differ = differ.where(C.stem == rule.match_value)
+        else:
+            differ = differ.join(T, T.id == C.transaction_id).where(
+                func.lower(func.trim(T.counterparty_raw)) == rule.match_value)
+        out.append(dict(rule_dict(rule), placed=placed.get(f'rule:{rule.id}', 0),
+                        person_chose_differently=session.scalar(differ) or 0))
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -402,10 +553,10 @@ def backfill(session, case_id):
 _HAS_TABLE = {}
 
 
-def _table_ready(connection):
-    key = (id(connection.engine), str(connection.engine.url))
+def _table_ready(connection, name='financial_payment_categories'):
+    key = (id(connection.engine), str(connection.engine.url), name)
     if key not in _HAS_TABLE:
-        _HAS_TABLE[key] = inspect(connection).has_table('financial_payment_categories')
+        _HAS_TABLE[key] = inspect(connection).has_table(name)
     return _HAS_TABLE[key]
 
 
@@ -440,11 +591,18 @@ def _categorise_new_payments(session, flush_context):
                         .where(FinancialAccount.id.in_(account_ids))):
                     accounts[account_id] = (account_type, institution)
             values = []
+            rules = active_rules(connection, {row.case_id for row in new})
             for row in new:
                 person = person_label(row)
                 if person is not None:
                     values.append(dict(transaction_id=row.id, case_id=row.case_id, category=person, origin='person',
-                                       basis='investigation_labels', stem=stem(row.description)))
+                                       basis='investigation_labels', why=None, stem=stem(row.description)))
+                    continue
+                hit = match_rule(rules.get(row.case_id), row)
+                if hit is not None:
+                    values.append(dict(transaction_id=row.id, case_id=row.case_id, category=hit['category'],
+                                       origin='learned', basis=hit['basis'], why=hit['why'],
+                                       stem=stem(row.description)))
                     continue
                 account_type, institution = accounts.get(row.account_id, (None, None))
                 found = rule_category(row, account_type=account_type, institution=institution)
