@@ -128,17 +128,30 @@ export function JudgementMarker({
     },
   })
   const settled = judgement.status !== "open"
+  // State colours follow the review queue's badges (spec tokens); the glyph carries the type without colour.
   const tone =
     judgement.status === "corrected"
-      ? "border-red-500/50 text-red-700 dark:text-red-400"
+      ? "border-transparent bg-[#fde6e8] text-[#a3142a]"
       : judgement.status === "confirmed"
-        ? "border-emerald-500/50 text-emerald-700 dark:text-emerald-400"
+        ? "border-transparent bg-[#e3f4ea] text-[#15653f]"
         : judgement.origin === "agent"
-          ? "border-slate-500/50 text-slate-700 dark:text-slate-300"
+          ? "border-transparent bg-[#f1eefb] text-[#573199]"
           : judgement.strength === "inferred"
-            ? "border-yellow-500/60 text-yellow-800 dark:text-yellow-400"
-            : "border-blue-500/50 text-blue-700 dark:text-blue-400"
+            ? "border-transparent bg-[#fdf0d5] text-[#8a5300]"
+            : "border-transparent bg-[#e6efff] text-[#1f4fa8]"
   const word = settled ? statusLabel(judgement) : strengthLabel(judgement)
+  const glyph =
+    judgement.status === "corrected"
+      ? "✕"
+      : judgement.status === "confirmed"
+        ? "✓"
+        : judgement.origin === "agent"
+          ? "✎"
+          : judgement.strength === "inferred"
+            ? "◐"
+            : "●"
+  const [notes, setNotes] = useState(false)
+  const [technical, setTechnical] = useState(false)
   return (
     <div
       className={compact && !open ? "inline-block text-xs" : "text-xs"}
@@ -148,7 +161,7 @@ export function JudgementMarker({
       <button
         type="button"
         className={cn(
-          "inline-flex max-w-full cursor-pointer items-center gap-1 rounded-md border bg-background px-2 py-0.5 text-left font-medium",
+          "inline-flex max-w-full cursor-pointer items-center gap-1 rounded-md border px-2 py-0.5 text-left font-semibold",
           "hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
           tone
         )}
@@ -156,12 +169,12 @@ export function JudgementMarker({
         title={`${judgement.rule_label}. ${strengthHelp(judgement)} Click for why.`}
         onClick={() => setOpen(!open)}
       >
-        <Lightbulb aria-hidden="true" className="size-3 shrink-0" />
+        <span aria-hidden="true" className="shrink-0">{glyph}</span>
         <span>{word}</span>
         {!compact && (
           <span className="truncate font-normal text-muted-foreground">· {judgement.rule_label}</span>
         )}
-        <span className="font-normal underline underline-offset-2">Why?</span>
+        <span className="font-normal">· <span className="underline underline-offset-2">Why?</span></span>
         <ChevronRight
           aria-hidden="true"
           className={cn("size-3 shrink-0 transition-transform", open && "rotate-90")}
@@ -171,10 +184,23 @@ export function JudgementMarker({
         <div
           role="region"
           aria-label="Judgement call"
-          className="mt-1 max-w-xl space-y-2 rounded border bg-background p-2"
+          className="mt-1 max-w-xl space-y-2.5 rounded-xl bg-card p-3 text-[13px] shadow-[0_1px_0_#e4e3df,0_8px_24px_rgba(20,22,27,.08)] dark:border"
         >
-          <p className="text-sm">{judgement.summary}</p>
-          <p className="text-muted-foreground">{strengthHelp(judgement)}</p>
+          <div className="flex flex-wrap gap-1.5">
+            <span className={cn("rounded-md px-2 py-0.5 font-semibold", tone)}>
+              <span aria-hidden="true">{glyph} </span>
+              {word}
+            </span>
+            <span className="rounded-md bg-muted px-2 py-0.5 font-medium">{judgement.category_label || judgement.rule_label}</span>
+          </div>
+          <div>
+            <span className="block font-mono text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Why Loupe did it</span>
+            <p className="text-sm">{judgement.summary}</p>
+          </div>
+          <div>
+            <span className="block font-mono text-[11px] uppercase tracking-[0.12em] text-muted-foreground">How sure</span>
+            <p>{strengthHelp(judgement)}</p>
+          </div>
           {settled && (
             <p>
               {statusLabel(judgement)}
@@ -191,11 +217,11 @@ export function JudgementMarker({
             {canEdit && judgement.status === "open" && (
               <Button
                 size="sm"
-                variant="outline"
+                className="bg-[#15653f] text-white hover:bg-[#0f5133]"
                 disabled={confirm.isPending}
                 onClick={() => confirm.mutate()}
               >
-                Looks right
+                <span aria-hidden="true">✓</span>Looks right
               </Button>
             )}
             {canEdit && judgement.status !== "corrected" && (
@@ -255,17 +281,43 @@ export function JudgementMarker({
             <p role="alert">{(confirm.error || correct.error)?.message}</p>
           )}
           {judgement.working_notes && (
-            <details>
-              <summary className="cursor-pointer text-muted-foreground">Working notes</summary>
-              <p className="mt-1 whitespace-pre-wrap break-words text-muted-foreground">
-                {judgement.working_notes}
-              </p>
-            </details>
+            <div>
+              <button
+                type="button"
+                aria-expanded={notes}
+                className="font-medium text-muted-foreground hover:text-foreground"
+                onClick={() => setNotes(!notes)}
+              >
+                <span aria-hidden="true">{notes ? "▾ " : "▸ "}</span><span>Working notes</span>
+              </button>
+              {notes && (
+                <p className="mt-1 whitespace-pre-wrap break-words text-muted-foreground">
+                  {judgement.working_notes}
+                </p>
+              )}
+            </div>
           )}
           <p className="text-muted-foreground" title={`${judgement.rule_id} · ${judgement.rule_source}`}>
             {judgement.filename ? `${judgement.filename} · ` : ""}
             {judgement.category_label || judgement.rule_label}
           </p>
+          <div>
+            <button
+              type="button"
+              aria-expanded={technical}
+              className="font-medium text-muted-foreground hover:text-foreground"
+              onClick={() => setTechnical(!technical)}
+            >
+              <span aria-hidden="true">{technical ? "▾ " : "▸ "}</span>
+              <span>Technical details</span>
+            </button>
+            {technical && (
+              <p className="mt-1 font-mono text-[12px] text-muted-foreground">
+                Rule {judgement.rule_id}
+                {judgement.rule_source ? ` · ${judgement.rule_source}` : ""}
+              </p>
+            )}
+          </div>
         </div>
       )}
     </div>

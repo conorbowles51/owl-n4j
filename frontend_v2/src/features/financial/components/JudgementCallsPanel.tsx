@@ -15,6 +15,9 @@ import { JudgementMarker } from "./JudgementCalls"
 import { useJudgementCounts, useJudgementSearch } from "../hooks/use-judgements"
 import { ImportedStatementDetails } from "./ImportedStatementDetails"
 import { SavedStatementPayments } from "./SavedStatementPayments"
+import { InfoTip } from "./InfoTip"
+
+const heading = { fontFamily: "'Space Grotesk', ui-sans-serif, system-ui, sans-serif", letterSpacing: "-0.025em" }
 
 const PAGE_SIZE = 50
 const STATUSES = ["open", "confirmed", "corrected"] as const
@@ -32,28 +35,29 @@ function ChipRow({
   label: string
   allLabel: string
   value: string
-  choices: { value: string; label: string; title?: string }[]
+  choices: { value: string; label: string; title?: string; glyph?: string }[]
   counts: Record<string, number> | undefined
   onChoose: (value: string) => void
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 text-sm" role="group" aria-label={label}>
-      <span>{label}:</span>
-      <Button size="sm" variant={value ? "outline" : "primary"} aria-pressed={!value} onClick={() => onChoose("")}>
-        {allLabel} ({counts?.all || 0})
-      </Button>
-      {choices.map((choice) => (
-        <Button
-          key={choice.value}
-          size="sm"
-          title={choice.title}
-          variant={value === choice.value ? "primary" : "outline"}
-          aria-pressed={value === choice.value}
-          onClick={() => onChoose(value === choice.value ? "" : choice.value)}
-        >
-          {choice.label} ({counts?.[choice.value] || 0})
-        </Button>
-      ))}
+    <div className="flex flex-wrap items-center gap-1.5 text-sm" role="group" aria-label={label}>
+      <span className="w-20 shrink-0 font-mono text-[11px] uppercase tracking-[0.12em] text-muted-foreground">{label}</span>
+      {[{ value: "", label: allLabel, glyph: "" } as { value: string; label: string; title?: string; glyph?: string }, ...choices].map((choice) => {
+        const on = choice.value ? value === choice.value : !value
+        return (
+          <button
+            key={choice.value || "all"}
+            type="button"
+            title={choice.title}
+            aria-pressed={on}
+            onClick={() => onChoose(choice.value && value !== choice.value ? choice.value : "")}
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-semibold transition-colors ${on ? "bg-[#14161b] text-white dark:bg-[#f7f7f8] dark:text-[#0b0c0f]" : "bg-card text-foreground shadow-[0_1px_0_#e4e3df] hover:bg-muted dark:border"}`}
+          >
+            {choice.glyph && <span aria-hidden="true">{choice.glyph}</span>}
+            {choice.label} ({(choice.value ? counts?.[choice.value] : counts?.all) || 0})
+          </button>
+        )
+      })}
     </div>
   )
 }
@@ -117,28 +121,48 @@ export function JudgementCallsPanel({ caseId }: { caseId: string }) {
     return [...byStatement.entries()]
   }, [page?.items])
   const facets = page?.facets
+  const caseTotal = Number(counts.data?.case.total || 0)
+  const checked = Number(counts.data?.case.confirmed || 0) + Number(counts.data?.case.corrected || 0)
+  const openGuesses = Number(counts.data?.case.inferred || 0) > 0 && Number(counts.data?.case.open || 0) > 0
+  // The rule types inside the chosen type, with their case-wide counts.
+  const typeRules = type
+    ? (page?.rules || [])
+        .filter(([, , kind]) => kind === type)
+        .map(([rule, label]) => ({ rule, label, total: counts.data?.rules.find((item) => item.rule_id === rule)?.total ?? 0 }))
+    : []
   const total = page?.total || 0
   const shown = page?.items.length || 0
   return (
-    <section aria-label="Judgement calls" className="space-y-3">
-      <header className="space-y-1">
-        <h3 className="text-base font-semibold">Judgement calls</h3>
-        <p className="text-sm text-muted-foreground">
-          Places where the processor chose a value the page does not print outright, or chose between two
-          readings. Nothing is held for these. Check any of them in the flow of work: Looks right keeps the rule as
-          it is; a correction with its reason is sent back as a proposed improvement to the processor.
-        </p>
-        <p className="text-sm font-medium" role="status">
-          {counts.data ? countLine(counts.data.case) || "No judgement calls recorded in this case." : ""}
-        </p>
+    <section aria-label="Judgement calls" className="space-y-4">
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div className="space-y-1">
+          <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-[#b41624] dark:text-[#e33b4c]">Spot-check Loupe</span>
+          <h3 className="text-2xl font-semibold leading-tight sm:text-[30px]" style={heading}>
+            Judgement calls
+            {caseTotal ? ` · ${caseTotal.toLocaleString()} on this case.` : ""}
+            {caseTotal ? (
+              <span className="block text-muted-foreground">
+                You've checked {checked.toLocaleString()}.{openGuesses ? " Start with the guesses." : ""}
+              </span>
+            ) : null}
+            <InfoTip text="Places where the processor chose a value the page does not print outright, or chose between two readings. Nothing is held for these. Check any of them in the flow of work: Looks right keeps the rule as it is; a correction with its reason is sent back as a proposed improvement to the processor." />
+          </h3>
+          <p className="text-sm font-medium" role="status">
+            {counts.data ? countLine(counts.data.case) || "No judgement calls recorded in this case." : ""}
+          </p>
+        </div>
+        <label className="flex w-full items-center gap-2 rounded-lg border bg-card px-3 sm:w-[380px]">
+          <span aria-hidden="true" className="text-muted-foreground">⌕</span>
+          <input
+            type="search"
+            aria-label="Search judgement calls"
+            placeholder="Search file names, accounts, periods, payments or the call itself"
+            className="w-full bg-transparent py-2 outline-none"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        </label>
       </header>
-      <input
-        aria-label="Search judgement calls"
-        placeholder="Search file names, accounts, periods, payments or the call itself"
-        className="w-full rounded border bg-background p-2"
-        value={search}
-        onChange={(event) => setSearch(event.target.value)}
-      />
       {fileIds.length > 0 && (
         <div role="status" className="flex flex-wrap items-center gap-2 rounded border p-2 text-sm">
           <span>
@@ -163,7 +187,7 @@ export function JudgementCallsPanel({ caseId }: { caseId: string }) {
         label="Show"
         allLabel="All"
         value={status}
-        choices={STATUSES.map((value) => ({ value, label: STATUS_LABELS[value] }))}
+        choices={STATUSES.map((value) => ({ value, label: STATUS_LABELS[value], glyph: { open: "○", confirmed: "✓", corrected: "✕" }[value] }))}
         counts={facets?.status}
         onChoose={(value) => update({ jStatus: value || "all" })}
       />
@@ -182,11 +206,19 @@ export function JudgementCallsPanel({ caseId }: { caseId: string }) {
         counts={facets?.category}
         onChoose={(value) => update({ jType: value })}
       />
+      {type && (
+        <p className="pl-[5.5rem] text-[13px] text-muted-foreground" aria-label="Rule types in this type">
+          In this type (whole case):{" "}
+          {typeRules.length
+            ? typeRules.map((item) => `${item.label} ${item.total}`).join(" · ")
+            : "no rule types listed"}
+        </p>
+      )}
       <ChipRow
         label="Strength"
         allLabel="Both"
         value={strength}
-        choices={STRENGTHS.map((value) => ({ value, label: STRENGTH_LABELS[value] }))}
+        choices={STRENGTHS.map((value) => ({ value, label: STRENGTH_LABELS[value], glyph: value === "inferred" ? "◐" : "●" }))}
         counts={facets?.strength}
         onChoose={(value) => update({ jStrength: value })}
       />
@@ -207,9 +239,9 @@ export function JudgementCallsPanel({ caseId }: { caseId: string }) {
       ) : (
         <ul className="space-y-3" aria-busy={query.isFetching}>
           {groups.map(([documentId, items]) => (
-            <li key={documentId} className="rounded border p-3 space-y-2">
+            <li key={documentId} className="space-y-2 rounded-[14px] bg-card p-4 shadow-[0_1px_0_#e4e3df,0_8px_24px_rgba(20,22,27,.05)] dark:border">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-sm font-medium">
+                <p className="text-[15px] font-semibold" style={heading}>
                   {items[0].filename || "Saved statement"}
                   {items[0].period_start ? ` · ${items[0].period_start} to ${items[0].period_end || "?"}` : ""}
                   {items[0].account_label ? ` · ${items[0].account_label}` : ""}{" "}
@@ -292,10 +324,19 @@ export function ProcessorRulesPanel({ caseId }: { caseId: string }) {
     refetchOnWindowFocus: false,
   })
   const rows = (query.data?.[scope] || []).filter((rule) => rule.total > 0)
+  const [open, setOpen] = useState(false)
   return (
-    <details className="rounded border p-3 text-sm" aria-label="Processor rules">
-      <summary className="cursor-pointer font-medium">Processor rules</summary>
-      <div className="mt-2 space-y-2">
+    <div className="rounded-[14px] bg-card p-3 text-sm dark:border" aria-label="Processor rules" role="group">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        className="inline-flex items-center gap-1.5 rounded-md border bg-background px-3 py-1.5 font-semibold hover:bg-muted"
+      >
+        <span aria-hidden="true">{open ? "▾" : "▸"}</span>
+        Processor rules{query.data ? ` (${rows.length})` : ""}
+      </button>
+      <div className={open ? "mt-2 space-y-2" : "hidden"}>
         <p className="text-muted-foreground">
           How each rule's calls were answered. A correction proposes a change; the rule changes only after it is
           built, measured and released.
@@ -333,6 +374,6 @@ export function ProcessorRulesPanel({ caseId }: { caseId: string }) {
           </table>
         )}
       </div>
-    </details>
+    </div>
   )
 }
