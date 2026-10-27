@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { NativeControlComparisonPanel } from "./NativeControlComparisonPanel"
 import { nativeControlComparison } from "../lib/native-control-contract"
 import { PrintedTotalChecks } from "./PrintedTotalChecks"
@@ -60,8 +61,7 @@ export function CorrectionHistory({
       (comparison.data.currency === old.data.row.currency &&
         comparison.data.currency === replacement.data.row.currency))
   return (
-    <details className="text-xs">
-      <summary>Original and replacement readings</summary>
+    <Disclosure className="text-xs" label="Original and replacement readings">
       <p>
         Original {old.data.row.ref_id}:{" "}
         {correctionMoney(old.data.row.amount_minor, old.data.row.currency)}{" "}
@@ -166,6 +166,6 @@ export function CorrectionHistory({
           onClose={() => setSource(null)}
         />
       )}
-    </details>
+    </Disclosure>
   )
 }

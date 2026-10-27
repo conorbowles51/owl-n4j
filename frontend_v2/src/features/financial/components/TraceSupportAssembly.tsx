@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { sha256Hex as sha } from "@/lib/browser-crypto"
 import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
@@ -140,10 +141,7 @@ export function TraceSupportAssembly({ caseId }: { caseId: string }) {
     }
   }
   return (
-    <details className="rounded border p-3">
-      <summary className="cursor-pointer text-sm font-medium">
-        Assemble a review package
-      </summary>
+    <Disclosure className="rounded border p-3" label="Assemble a review package">
       <div className="mt-3 space-y-3 text-sm">
         <p>
           Share a saved transaction export, tracing calculations, or both in one
@@ -178,10 +176,7 @@ export function TraceSupportAssembly({ caseId }: { caseId: string }) {
           {scenarios.length} of 8 scenarios selected. Optional when you attach a
           ledger export. Save scenarios from the conditional tracing workbench.
         </p>
-        <details>
-          <summary className="cursor-pointer">
-            Attach reviewed extraction validation (optional)
-          </summary>
+        <Disclosure label={<>Attach reviewed extraction validation (optional)</>}>
           <div className="mt-2 space-y-2">
             <p>
               Use a reconciled two-reader record and its extraction predictions.
@@ -211,7 +206,7 @@ export function TraceSupportAssembly({ caseId }: { caseId: string }) {
               }}
             />
           </div>
-        </details>
+        </Disclosure>
         <label className="block">
           Review package marking
           <select
@@ -247,6 +242,6 @@ export function TraceSupportAssembly({ caseId }: { caseId: string }) {
         {error && <p role="alert">{error}</p>}
         {message && <p role="status">{message}</p>}
       </div>
-    </details>
+    </Disclosure>
   )
 }

@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { useMediaQuery } from "@/hooks/use-media-query"
 import { useFinancialDraft } from "../stores/financial-drafts"
 import { WorkspaceScope } from "./InvestigationWorkspaceParts"
@@ -147,10 +148,7 @@ function CorrectableLedgerContent({
         )}
       </div>
       {caseId && !heldOut && (
-        <details className="rounded border p-3">
-          <summary className="cursor-pointer font-medium">
-            Reports, balance coverage and verification details
-          </summary>
+        <Disclosure className="rounded border p-3" label="Reports, balance coverage and verification details">
           <div className="space-y-3 pt-3">
             <LedgerExportButton caseId={caseId} params={params} />
             <RequestedCoveragePanel caseId={caseId} params={params} />
@@ -161,7 +159,7 @@ function CorrectableLedgerContent({
               population="working"
             />
           </div>
-        </details>
+        </Disclosure>
       )}
     </div>
   )

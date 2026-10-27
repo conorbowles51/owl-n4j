@@ -138,7 +138,7 @@ for (const width of [1280, 390]) {
     await act(async () => {
       groupSummary.click()
     })
-    const group = groupSummary.closest("details")!
+    const group = groupSummary.closest("button")!.parentElement!
     expect(
       within(group).getByText("Saved statement · no transactions")
     ).toBeVisible()
@@ -195,7 +195,7 @@ for (const width of [1280, 390]) {
         .click()
     })
     await waitFor(() => expect(trigger).toHaveFocus())
-    expect(group).toHaveAttribute("open")
+    expect(group.querySelector(":scope > button")).toHaveAttribute("aria-expanded", "true")
     expect(screen.getByText("Reading groups 11–12 of 12")).toBeVisible()
     expect(Math.abs(window.scrollY - before)).toBeLessThan(50)
     expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width)
@@ -249,7 +249,7 @@ it("opens an exact whole-file fallback without inventing a statement period, the
   await act(async () => {
     summary.click()
   })
-  const copy = within(summary.closest("details")!).getByRole("listitem", {
+  const copy = within(summary.closest("button")!.parentElement!).getByRole("listitem", {
     name: "Copy 2: Monthly statements.txt",
   })
   expect(copy).toHaveTextContent(
@@ -273,7 +273,7 @@ it("opens an exact whole-file fallback without inventing a statement period, the
       .click()
   })
   await waitFor(() => expect(trigger).toHaveFocus())
-  expect(summary.closest("details")).toHaveAttribute("open")
+  expect(summary.closest("button")).toHaveAttribute("aria-expanded", "true")
   expect(
     paths.some(
       (path) =>
@@ -332,7 +332,7 @@ for (const action of ["exclude", "restore"] as const) {
     await act(async () => {
       summary.click()
     })
-    const group = summary.closest("details")!
+    const group = summary.closest("button")!.parentElement!
     const copy =
       action === "exclude"
         ? within(group).getByRole("listitem", {
@@ -383,7 +383,7 @@ for (const action of ["exclude", "restore"] as const) {
     await waitFor(() => expect(trigger).toHaveFocus())
     expect(trigger.getBoundingClientRect().top).toBeGreaterThanOrEqual(0)
     expect(trigger.getBoundingClientRect().bottom).toBeLessThanOrEqual(900)
-    expect(group).toHaveAttribute("open")
+    expect(group.querySelector(":scope > button")).toHaveAttribute("aria-expanded", "true")
     expect(screen.getByText("Reading groups 11–12 of 12")).toBeVisible()
     expect(requests).toHaveBeenCalledTimes(1)
     view.unmount()
@@ -533,7 +533,7 @@ for (const width of [1280, 390]) {
         .click()
     })
     await waitFor(() => expect(trigger).toHaveFocus())
-    expect(summary.closest("details")).toHaveAttribute("open")
+    expect(summary.closest("button")).toHaveAttribute("aria-expanded", "true")
     expect(reads).toEqual([
       "/api/financial/duplicates?case_id=case-1",
       `/api/financial/statement-periods/${last.period_id}/source?case_id=case-1`,

@@ -16,7 +16,7 @@ export function Disclosure({
 }) {
   const [open, setOpen] = useState(defaultOpen)
   return (
-    <div className={className}>
+    <div className={className} data-disclosure="">
       <button
         type="button"
         aria-expanded={open}

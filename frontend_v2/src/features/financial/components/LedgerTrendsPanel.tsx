@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { appendAccountSelection } from "../lib/account-selection"
 import { LinkedPayments } from "./LinkedPayments"
 import { LedgerFlowChart } from "./LedgerFlowChart"
@@ -230,12 +231,9 @@ function TrendScope({
           <p role="alert">Date totals unavailable. {query.error.message}</p>
         ) : (
           <>
-            <details className="text-sm">
-              <summary className="cursor-pointer">
-                How these totals were calculated
-              </summary>
+            <Disclosure className="text-sm" label="How these totals were calculated">
               <p>{query.data.limitation}</p>
-            </details>
+            </Disclosure>
             {!query.data.available ? (
               <p>Date totals unavailable. {query.data.reason}</p>
             ) : (

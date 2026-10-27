@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { sha256Hex } from "@/lib/browser-crypto"
 import { useEffect, useRef, useState } from "react"
 import { z } from "zod"
@@ -133,10 +134,7 @@ export function TraceSupportVerification({ caseId }: { caseId: string }) {
     setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
   return (
-    <details className="rounded border p-3">
-      <summary className="cursor-pointer text-sm font-medium">
-        Check a saved review package
-      </summary>
+    <Disclosure className="rounded border p-3" label="Check a saved review package">
       <div className="mt-3 space-y-3 text-sm">
         <p>
           Check the saved files and rerun their recorded calculations. This does
@@ -207,18 +205,15 @@ export function TraceSupportVerification({ caseId }: { caseId: string }) {
                 ))}
               </ul>
             )}
-            <details>
-              <summary className="cursor-pointer">
-                What this check establishes
-              </summary>
+            <Disclosure label="What this check establishes">
               <p className="mt-2">{result.limitation}</p>
-            </details>
+            </Disclosure>
             <Button type="button" variant="outline" onClick={save}>
               Download verification
             </Button>
           </section>
         )}
       </div>
-    </details>
+    </Disclosure>
   )
 }

@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { appendAccountSelection } from "../lib/account-selection"
 import { formatLedgerAmount } from "../lib/ledger-format"
 import { useState } from "react"
@@ -268,10 +269,7 @@ export function LedgerSummaryPanel({
                   onClose={() => setSelection(null)}
                 />
               )}
-            <details className="text-xs">
-              <summary className="cursor-pointer">
-                What these totals include
-              </summary>
+            <Disclosure className="text-xs" label="What these totals include">
               <p>{query.data.limitation}</p>
               <p>
                 Classes: {query.data.included_classes.join(", ")}.{" "}
@@ -284,7 +282,7 @@ export function LedgerSummaryPanel({
                   .join("; ") || "none"}
                 .
               </p>
-            </details>
+            </Disclosure>
           </>
         )}
       </section>
@@ -324,8 +322,7 @@ export function LedgerSummaryPanel({
         <p role="alert">Summary unavailable. {query.error.message}</p>
       ) : (
         <>
-          <details>
-            <summary>How these totals are calculated</summary>
+          <Disclosure label="How these totals are calculated">
             <p>{query.data.limitation}</p>
             <p>
               Included classifications:{" "}
@@ -334,7 +331,7 @@ export function LedgerSummaryPanel({
                 .join(", ")}
               .
             </p>
-          </details>
+          </Disclosure>
           {working && query.data.available && (
             <p>
               {query.data.outside_verified_rows} of these rows remain outside
@@ -432,8 +429,7 @@ export function LedgerSummaryPanel({
                     onClose={() => setSelection(null)}
                   />
                 )}
-              <details>
-                <summary>Excluded rows ({query.data.excluded_rows})</summary>
+              <Disclosure label={<>Excluded rows ({query.data.excluded_rows})</>}>
                 <p>
                   Each row is counted once: row status first, then source
                   status, then classification.
@@ -443,7 +439,7 @@ export function LedgerSummaryPanel({
                     {labels[key as keyof typeof labels]}: {value}
                   </p>
                 ))}
-              </details>
+              </Disclosure>
             </>
           )}
         </>
