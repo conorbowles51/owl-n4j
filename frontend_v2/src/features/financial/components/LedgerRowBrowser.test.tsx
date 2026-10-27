@@ -511,3 +511,28 @@ it("shows roomy cards by default with totals and category tiles that filter, and
   expect(screen.getByRole("table", { name: "Investigation transactions" })).toBeInTheDocument()
   expect(localStorage.getItem("financial-transactions-table-view")).toBe("1")
 })
+
+it("shows every set filter as a removable chip and removing one clears only it", () => {
+  render(
+    <LedgerRowBrowser
+      investigation
+      exportContext={{ caseId: "chips-case", params: {} }}
+      transactions={[
+        row("in", { direction: "credit", case_id: "chips-case" }),
+        row("out", { case_id: "chips-case" }),
+      ]}
+    />
+  )
+  expect(screen.queryByRole("group", { name: "Active filters" })).toBeNull()
+  fireEvent.change(screen.getByLabelText("Currency"), { target: { value: "GBP" } })
+  fireEvent.change(screen.getByLabelText("Money in or out"), { target: { value: "credit" } })
+  fireEvent.change(screen.getByLabelText("Search payments"), { target: { value: "Payment" } })
+  const chips = screen.getByRole("group", { name: "Active filters" })
+  expect(within(chips).getByText("3 active")).toBeInTheDocument()
+  fireEvent.click(within(chips).getByRole("button", { name: "Remove filter Incoming" }))
+  expect(screen.getByLabelText("Money in or out")).toHaveValue("")
+  expect(screen.getByLabelText("Currency")).toHaveValue("GBP")
+  expect(within(screen.getByRole("group", { name: "Active filters" })).getByText("2 active")).toBeInTheDocument()
+  fireEvent.click(screen.getByRole("button", { name: "Remove filter GBP" }))
+  expect(screen.getByLabelText("Currency")).toHaveValue("")
+})

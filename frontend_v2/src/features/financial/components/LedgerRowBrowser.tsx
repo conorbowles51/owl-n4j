@@ -17,6 +17,7 @@ import {
   TransactionAnalysisPanels,
 } from "./TransactionAnalysisPanels"
 import { TableColumnPicker, TransactionExplorerTable } from "./TransactionExplorerTable"
+import { readProofClass } from "../lib/ledger-format"
 import { readTableColumns, storeTableColumns } from "../lib/table-columns"
 import { PaymentCardList } from "./PaymentCardList"
 import { TransactionsOverview } from "./TransactionsOverview"
@@ -1000,6 +1001,76 @@ export function LedgerRowBrowser({
               pages.
             </span>
           </div>
+          {(() => {
+            // Every set filter as a removable chip: a filter behind "Filters" is never invisible.
+            const judgementNames: Record<string, Record<string, string>> = {
+              judgementCategory: Object.fromEntries((judgementMap.data?.categories || []).map((c) => [c.key, c.label])),
+              judgementStrength: STRENGTH_LABELS,
+              judgementOrigin: ORIGIN_LABELS,
+              judgementStatus: STATUS_LABELS,
+            }
+            const accountName = (id: string) =>
+              transactions.find((row) => row.account_id === id)?.account_label || `Account ${id.slice(0, 8)}`
+            const chips: [string, string, () => void][] = [
+              ...(accountScope.accountHolders || []).map((holder): [string, string, () => void] => [
+                `holder:${holder}`,
+                `Person: ${holder.replace(/^party:/, "")}`,
+                () => applyAccountScope({ ...accountScope, accountHolders: (accountScope.accountHolders || []).filter((h) => h !== holder) }),
+              ]),
+              ...(accountScope.accountIds || []).map((id): [string, string, () => void] => [
+                `account:${id}`,
+                `Account: ${accountName(id)}`,
+                () => applyAccountScope({ ...accountScope, accountIds: (accountScope.accountIds || []).filter((a) => a !== id) }),
+              ]),
+              ...(accountScope.accountId && !accountScope.accountIds?.length
+                ? [["account-one", `Account: ${accountName(accountScope.accountId)}`, () => applyAccountScope({ ...accountScope, accountId: undefined })] as [string, string, () => void]]
+                : []),
+              ...(accountScope.startDate ? [["from", `From ${accountScope.startDate}`, () => applyAccountScope({ ...accountScope, startDate: undefined })] as [string, string, () => void]] : []),
+              ...(accountScope.endDate ? [["to", `To ${accountScope.endDate}`, () => applyAccountScope({ ...accountScope, endDate: undefined })] as [string, string, () => void]] : []),
+              ...(sourceDocumentId ? [["statement", `Statement: ${sourceFilename || sourceDocumentId.slice(0, 8)}`, () => changeView({ sourceDocumentId: "", sourceFilename: "" })] as [string, string, () => void]] : []),
+              ...(importBatchId
+                ? [["batch", `Import batch · ${importStatementCount} statements`, () => changeView({ importBatchId: "", importBatchRevision: "", importSourceIds: [], importStatementCount: 0 })] as [string, string, () => void]]
+                : []),
+              ...(search ? [["search", `${searchMode === "boolean" ? "Boolean search" : "Search"}: “${search.length > 30 ? `${search.slice(0, 29)}…` : search}”`, () => changeView({ search: "" })] as [string, string, () => void]] : []),
+              ...(view.activity && view.activity !== "all"
+                ? [["activity", view.activity === "internal" ? "Reviewed internal transfers" : "External activity", () => changeView({ activity: "all" })] as [string, string, () => void]]
+                : []),
+              ...(currency ? [["currency", currency, () => changeView({ currency: "", minimum: "", maximum: "" })] as [string, string, () => void]] : []),
+              ...(minimum ? [["min", `At least ${minimum}${currency ? ` ${currency}` : ""}`, () => changeView({ minimum: "" })] as [string, string, () => void]] : []),
+              ...(maximum ? [["max", `At most ${maximum}${currency ? ` ${currency}` : ""}`, () => changeView({ maximum: "" })] as [string, string, () => void]] : []),
+              ...(direction ? [["direction", direction === "credit" ? "Incoming" : "Outgoing", () => changeView({ direction: "" })] as [string, string, () => void]] : []),
+              ...(proof ? [["proof", `How it was read: ${readProofClass(proof).label}`, () => changeView({ proof: "" })] as [string, string, () => void]] : []),
+              ...(view.judgement
+                ? [["judgement", view.judgement === "none" ? "Without a judgement call" : "With a judgement call", () => changeView({ judgement: "", judgementCategory: "", judgementStrength: "", judgementOrigin: "", judgementStatus: "" })] as [string, string, () => void]]
+                : []),
+              ...(["judgementCategory", "judgementStrength", "judgementOrigin", "judgementStatus"] as const)
+                .filter((field) => view[field])
+                .map((field): [string, string, () => void] => [
+                  field,
+                  `Judgement call: ${judgementNames[field][view[field]] || view[field]}`,
+                  () => changeView({ [field]: "" }),
+                ]),
+            ]
+            if (!chips.length) return null
+            return (
+              <div className="flex flex-wrap items-center gap-1.5 text-[13px]" role="group" aria-label="Active filters">
+                <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+                  {chips.length} active
+                </span>
+                {chips.map(([key, label, clear]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={clear}
+                    aria-label={`Remove filter ${label}`}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-[#14161b] px-3 py-1 font-medium text-white hover:bg-[#2a2d35] dark:bg-[#f7f7f8] dark:text-[#0b0c0f]"
+                  >
+                    {label} <span aria-hidden="true">×</span>
+                  </button>
+                ))}
+              </div>
+            )
+          })()}
           {categoryBar}
           <AnalysisFilterChips filters={view} onChange={changeView} />
           <PaymentTotals
