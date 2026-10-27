@@ -118,3 +118,23 @@ it("shows coverage failures and refuses overlapping or unloaded periods", () => 
   )
   expect(screen.getByRole("alert")).toHaveTextContent("loaded date filter")
 })
+it("draws a diverging bar beside each driver's signed difference and keeps coverage by account one labelled click away", () => {
+  render(
+    <TrendComparisonWorkspace caseId="case" rows={trendRows} coverage={trendCoverage} onCoverageRetry={vi.fn()} />
+  )
+  const table = screen.getByRole("table", { name: "Change drivers" })
+  const rows = within(table).getAllByRole("row").slice(1)
+  expect(rows.length).toBeGreaterThan(0)
+  expect(table.querySelectorAll('td > [aria-hidden="true"]').length).toBeGreaterThan(0)
+  for (const row of rows) {
+    const cell = row.querySelectorAll("td")[2]
+    const bar = cell.querySelector('[aria-hidden="true"] > span:last-child') as HTMLElement | null
+    // Zero differences have no bar; every other difference has one, pointing the way of its sign.
+    if (cell.textContent?.startsWith("+")) expect(bar?.style.left).toBe("50%")
+    else if (bar) expect(bar.style.right).toBe("50%")
+  }
+  const coverage = screen.getByRole("button", { name: /^Coverage by account \(\d+\)/ })
+  expect(coverage).toHaveAttribute("aria-expanded", "false")
+  fireEvent.click(coverage)
+  expect(coverage).toHaveAttribute("aria-expanded", "true")
+})

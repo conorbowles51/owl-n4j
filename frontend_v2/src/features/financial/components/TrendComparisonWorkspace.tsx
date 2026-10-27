@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import type { LedgerTransaction } from "../api"
@@ -128,6 +129,12 @@ export function TrendComparisonWorkspace({
         : [],
     [result, view.direction, view.by]
   )
+  const largestShownDelta = drivers
+    .slice(0, view.driverCount)
+    .reduce((m, d) => {
+      const size = d.delta < 0n ? -d.delta : d.delta
+      return size > m ? size : m
+    }, 0n)
   const currency = group.split(":")[0],
     card = group.endsWith(":card")
   const money = (value: bigint) =>
@@ -403,10 +410,7 @@ export function TrendComparisonWorkspace({
                 established.
               </p>
             )}
-            <details>
-              <summary className="cursor-pointer text-sm font-medium">
-                Coverage by account ({result.accounts.length})
-              </summary>
+            <Disclosure label={<>Coverage by account ({result.accounts.length})</>}>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left mt-2">
                   <thead>
@@ -440,7 +444,7 @@ export function TrendComparisonWorkspace({
                   </tbody>
                 </table>
               </div>
-            </details>
+            </Disclosure>
             {result.unknownDates.length > 0 && (
               <Button
                 variant="outline"
@@ -624,6 +628,10 @@ export function TrendComparisonWorkspace({
                           </td>
                           <td className="p-2 whitespace-nowrap font-semibold">
                             {signed(driver.delta)}
+                            <DriverBar
+                              delta={driver.delta}
+                              max={largestShownDelta}
+                            />
                           </td>
                           <td className="p-2">
                             {actions(
@@ -746,5 +754,31 @@ export function TrendComparisonWorkspace({
         />
       )}
     </div>
+  )
+}
+
+/**
+ * A diverging bar under a driver's difference: right and blue for an increase, left and amber for a decrease, scaled
+ * to the largest difference shown. The signed amount beside it carries the value, so the bar is decoration.
+ */
+function DriverBar({ delta, max }: { delta: bigint; max: bigint }) {
+  if (max === 0n || delta === 0n) return null
+  const size = Number(((delta < 0n ? -delta : delta) * 1000n) / max) / 20
+  return (
+    <span
+      aria-hidden="true"
+      className="relative mt-1 block h-2 w-[120px] rounded-sm bg-muted"
+    >
+      <span className="absolute inset-y-0 left-1/2 w-px bg-foreground/40" />
+      <span
+        className="absolute inset-y-0 rounded-sm"
+        style={{
+          width: `${size}%`,
+          ...(delta > 0n
+            ? { left: "50%", background: "#3a6fd8" }
+            : { right: "50%", background: "#c67a10" }),
+        }}
+      />
+    </span>
   )
 }
