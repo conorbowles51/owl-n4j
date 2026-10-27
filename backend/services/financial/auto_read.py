@@ -21,6 +21,8 @@ Which files enter
   Such a file keeps its ordinary Evidence processing (search, entities): the
   statement reading runs on an internal copy of the same bytes (a statement
   version), never on the original (``prepare_detected``).
+* Evidence PDFs registered before detection existed get the same check from the
+  sweep (``_backfill_marks``, ``LOUPE_FINANCIAL_AUTO_DETECT_BACKFILL``).
 * Files already in Financial that were never read or prepared enter only through
   the explicit "Read N unread statement files" action (or its CLI), never on
   deploy.
@@ -65,6 +67,8 @@ IN_FLIGHT = 2
 # file list stays small enough to rewrite on every worker step.
 MAX_FILES_PER_BATCH = 300
 SWEEP_LIMIT = 20
+# Unmarked older PDFs given a mark per sweep (no file I/O; detection stays at SWEEP_LIMIT).
+BACKFILL_LIMIT = 200
 SWEEP_BUDGET_SECONDS = 8.0
 LOCK_TIMEOUT = '2s'
 ACTIVE_STATES = ('preparing', 'pausing', 'paused')
@@ -72,6 +76,11 @@ ACTIVE_STATES = ('preparing', 'pausing', 'paused')
 
 def enabled():
     return os.environ.get('LOUPE_FINANCIAL_AUTO_READ_STATEMENTS', '1').strip() != '0'
+
+
+def backfill_enabled():
+    """PDFs registered before automatic detection get the same statement check."""
+    return detect_enabled() and os.environ.get('LOUPE_FINANCIAL_AUTO_DETECT_BACKFILL', '1').strip() != '0'
 
 
 def detect_enabled():
@@ -102,7 +111,8 @@ def mark_registered(file_record):
     """Called when Evidence registers a file: a PDF waits for the statement check.
 
     Only a marker is written (no I/O); the worker's sweep does the check. Files
-    registered before this existed carry no marker and are never swept.
+    registered before this existed get the same marker from the sweep
+    (``_backfill_marks``).
     """
     if not detect_enabled() or not _is_pdf(file_record.original_filename) or file_record.source_type == 'cellebrite':
         return
@@ -355,6 +365,40 @@ def _marked(session, states, limit, extra=()):
     return list(session.scalars(query))
 
 
+def _backfill_marks(session):
+    """Mark PDFs registered before automatic detection, as ``mark_registered`` would have.
+
+    Evidence uploaded before detection existed carried no mark, so a statement
+    in it was never read unless someone ran the evidence CLI. Such a PDF that is
+    not in Financial waits for the statement check like a new upload; one that
+    is already in Financial is left to the explicit "Read unread" action.
+    """
+    from services.financial.file_scope import financial_file_ids
+    files = _marked_none(session)
+    by_case = {}
+    for file in files:
+        by_case.setdefault(file.case_id, []).append(file)
+    for case_id, group in by_case.items():
+        library = financial_file_ids(session, case_id=case_id)
+        for file in group:
+            if file.id in library:
+                _set_mark(file, state='in_financial', reason='evidence_backfill')
+            else:
+                _set_mark(file, state='pending', reason='evidence_backfill')
+    session.commit()
+    return len(files)
+
+
+def _marked_none(session):
+    query = (select(EvidenceFile).where(EvidenceFile.metadata_[MARK]['state'].as_string().is_(None),
+             func.lower(EvidenceFile.original_filename).like('%.pdf'),
+             func.coalesce(EvidenceFile.source_type, '') != 'cellebrite')
+             .order_by(EvidenceFile.created_at, EvidenceFile.id).limit(BACKFILL_LIMIT))
+    if session.get_bind().dialect.name == 'postgresql':
+        query = query.with_for_update(skip_locked=True)
+    return list(session.scalars(query))
+
+
 def _detect_pending(session, resolve_path, deadline):
     from services.financial.statement_detection import detect
     checked = 0
@@ -409,6 +453,8 @@ def sweep(factory, resolve_path=None):
     deadline = time.monotonic() + SWEEP_BUDGET_SECONDS
     checked = 0
     with factory() as session:
+        if backfill_enabled():
+            _backfill_marks(session)
         if detect_enabled():
             checked = _detect_pending(session, resolve_path, deadline)
         added = _enroll_marked(session, deadline)

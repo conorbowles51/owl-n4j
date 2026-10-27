@@ -196,12 +196,51 @@ class AutoReadTests(AutoReadBase):
             self.assertEqual([(row.metadata_ or {}).get(auto_read.MARK, {}).get('state') for row in rows],
                              ['pending', 'pending', None])
             result = auto_read.sweep(self.f.SessionLocal, Path)
-        self.assertEqual(result, dict(checked=2, added=1))
+        # The fixture's older unmarked PDF (not on disk) is checked too: the evidence backfill.
+        self.assertEqual(result, dict(checked=3, added=1))
         with self.f.SessionLocal() as db:
             states = [db.get(EvidenceFile, i).metadata_.get(auto_read.MARK, {}).get('state') for i in ids]
         self.assertEqual(states, ['enrolled', 'not_statement', None])
         [batch] = self.batches()
         self.assertEqual([f['file_id'] for f in batch.files], [str(ids[0])])
+
+    def test_evidence_pdfs_uploaded_before_detection_are_checked_too(self):
+        """Files registered before automatic detection had no mark and were never checked (OPDMD66).
+
+        The sweep gives them the same statement check as a new upload; a PDF
+        already in Financial is still left to the explicit action.
+        """
+        import fitz
+        from services.financial.file_scope import mark_financial_workspace
+        paths = []
+        for name, text in (('old-statement.pdf', STATEMENT_TEXT), ('old-letter.pdf', BILLING_TEXT),
+                           ('old-financial.pdf', STATEMENT_TEXT + 'kept')):
+            path = Path(self.f._directory) / name
+            with fitz.open() as document:
+                document.new_page().insert_text((40, 60), text, fontsize=8)
+                document.save(path)
+            paths.append(path)
+        with self.f.SessionLocal() as db:
+            rows = [EvidenceFile(id=uuid4(), case_id=self.f.case.id, original_filename=path.name, stored_path=str(path),
+                                 sha256=str(i) * 64, status='unprocessed') for i, path in enumerate(paths)]
+            db.add_all(rows)
+            mark_financial_workspace(rows[2], user_id=self.f.user.id)
+            db.commit()
+            ids = [row.id for row in rows]
+        with patch('services.financial.auto_read.detect_enabled', return_value=True):
+            result = auto_read.sweep(self.f.SessionLocal, Path)
+        # Also the fixture's own older PDFs: the saved one is in Financial, the other is checked.
+        self.assertEqual(result, dict(checked=3, added=1))
+        with self.f.SessionLocal() as db:
+            states = [db.get(EvidenceFile, i).metadata_.get(auto_read.MARK, {}).get('state') for i in ids]
+            fixture = {f.original_filename: (f.metadata_ or {}).get(auto_read.MARK, {}).get('state')
+                       for f in db.query(EvidenceFile) if f.id not in ids}
+        self.assertEqual(states, ['enrolled', 'not_statement', 'in_financial'])
+        self.assertEqual(fixture, {'january-statement.pdf': 'in_financial', 'statement-1.pdf': 'not_statement'})
+        [batch] = self.batches()
+        self.assertEqual([(f['source_id'], f['auto_read']['reason']) for f in batch.files], [(str(ids[0]), 'detected')])
+        with patch.dict(os.environ, {'LOUPE_FINANCIAL_AUTO_DETECT_BACKFILL': '0'}):
+            self.assertFalse(auto_read.backfill_enabled())
 
 
 class EvidenceProcessingTests(AutoReadBase):
