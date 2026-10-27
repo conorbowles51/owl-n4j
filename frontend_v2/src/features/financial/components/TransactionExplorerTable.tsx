@@ -21,6 +21,7 @@ export function TransactionExplorerTable({
   onNote,
   onEdit,
   onCategory,
+  categoryColors,
   onParty,
   findings = [],
   amountAllowed = true,
@@ -37,6 +38,7 @@ export function TransactionExplorerTable({
   onNote?: (row: LedgerTransaction) => void
   onEdit?: (row: LedgerTransaction) => void
   onCategory?: (row: LedgerTransaction) => void
+  categoryColors?: Map<string, string>
   onParty: (side: PartySide, key: string) => void
   findings?: { title?: string | null; tags: string[]; payment_ids: string[] }[]
 }) {
@@ -199,13 +201,27 @@ export function TransactionExplorerTable({
                   </td>
                   <td className="p-2 break-words">
                     <button
-                      className="rounded border bg-primary/5 px-1.5 py-0.5 text-left hover:bg-primary/10"
+                      className={`inline-flex max-w-full items-center gap-1.5 rounded-full border px-2 py-0.5 text-left font-medium hover:bg-muted ${row.category ? "bg-background" : "border-dashed text-muted-foreground"}`}
                       aria-label={`Change category for ${row.description || row.ref_id}`}
                       onClick={() =>
                         onCategory ? onCategory(row) : onOpen?.(row)
                       }
                     >
-                      {row.category || "Uncategorized"}
+                      {row.category &&
+                        categoryColors?.get(row.category.toLowerCase()) && (
+                          <span
+                            aria-hidden="true"
+                            className="size-2 shrink-0 rounded-full"
+                            style={{
+                              backgroundColor: categoryColors.get(
+                                row.category.toLowerCase()
+                              ),
+                            }}
+                          />
+                        )}
+                      <span className="truncate">
+                        {row.category || "Uncategorized"}
+                      </span>
                     </button>
                     <PaymentLabelOrigin row={row} field="category" />
                   </td>

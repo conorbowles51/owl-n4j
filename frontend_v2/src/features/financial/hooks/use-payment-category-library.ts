@@ -16,6 +16,7 @@ export function usePaymentCategoryLibrary(caseId: string) {
         throw Error("Categories came from a different case.")
       return result.categories
     },
+    enabled: caseId !== "none",
   })
 }
 
@@ -36,4 +37,12 @@ export function useCreatePaymentCategory(caseId: string) {
     await client.invalidateQueries({ queryKey: ["financial-category-library"] })
     return result.category
   }
+}
+
+/** Colours people gave their categories, by lower-cased name. */
+export function useCategoryColors(caseId: string) {
+  const library = usePaymentCategoryLibrary(caseId)
+  return new Map(
+    (library.data ?? []).map((item) => [item.name.toLowerCase(), item.color])
+  )
 }

@@ -15,7 +15,7 @@ export function CategoryMoneyChart({
   rows: LedgerTransaction[]
 }) {
   const groups = categoryAmounts(rows)
-  const [, setCategory] = usePaymentCategory(caseId)
+  const [, setCategories] = usePaymentCategory(caseId)
   const [selected, setSelected] = useFinancialDraft<string | null>(
     caseId,
     "category-chart-selection",
@@ -138,7 +138,7 @@ export function CategoryMoneyChart({
           <div className="flex gap-3">
             <Button
               variant="outline"
-              onClick={() => setCategory(selectedGroup.category)}
+              onClick={() => setCategories([selectedGroup.category])}
             >
               Use this category across financial views
             </Button>

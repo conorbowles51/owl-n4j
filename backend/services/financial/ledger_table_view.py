@@ -13,6 +13,7 @@ class LedgerTableView(BaseModel):
     profile_group: Annotated[str, Field(pattern=r'^$|^[A-Z]{3}:(card|bank)$')] = ''
     profile_scope: Literal['', 'owned_accounts', 'counterparty_payments'] = ''
     category: Annotated[str, Field(max_length=120)] = ''
+    categories: list[Annotated[str, Field(max_length=120)]] = Field(default_factory=list, max_length=1000)
     account_id: Annotated[str, Field(pattern=r'^$|^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')] = ''
     account_holder: Annotated[str, Field(max_length=512)] = ''
     source_document_id: Annotated[str, Field(pattern=r'^$|^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')] = ''
@@ -162,6 +163,8 @@ def capture_table_view(ledger, request, *, batch_scope=None):
             continue
         if view.category and (row.get('category') or 'Uncategorized') != view.category:
             continue
+        if view.categories and (row.get('category') or 'Uncategorized') not in view.categories:
+            continue
         if view.currency and row['currency'] != view.currency or view.direction and row['direction'] != view.direction or view.proof and row['proof_class'] != view.proof:
             continue
         if view.minimum_minor and int(row['amount_minor']) < int(view.minimum_minor) or view.maximum_minor and int(row['amount_minor']) > int(view.maximum_minor):
@@ -186,7 +189,7 @@ def capture_table_view(ledger, request, *, batch_scope=None):
                 return (unquote(key.split(':', 3)[3]) if key.startswith('identity:') else key[5:] if key.startswith('name:') else 'Not identified').lower()
             return (row.get(field) or ('Uncategorized' if field == 'category' else '')).lower()
         rows.sort(key=lambda row: label(row).encode('utf-16-be', errors='surrogatepass'), reverse=direction == 'desc')
-    result = dict(schema='loupe.financial.ledger_table_view/1',filters=view.model_dump(exclude={key for key in ('profile_id', 'profile_group', 'profile_scope', 'category', 'account_id', 'account_holder', 'source_document_id', 'import_batch_id', 'import_batch_revision', 'from_names', 'to_names', 'perspective_names', 'analysis_group', 'analysis_period', 'analysis_direction', 'analysis_categories', 'flow_party', 'flow_kind') if not getattr(view, key)}),
+    result = dict(schema='loupe.financial.ledger_table_view/1',filters=view.model_dump(exclude={key for key in ('profile_id', 'profile_group', 'profile_scope', 'category', 'categories', 'account_id', 'account_holder', 'source_document_id', 'import_batch_id', 'import_batch_revision', 'from_names', 'to_names', 'perspective_names', 'analysis_group', 'analysis_period', 'analysis_direction', 'analysis_categories', 'flow_party', 'flow_kind') if not getattr(view, key)}),
         row_ids=[r['key'] for r in rows],matching_rows=len(rows),
         limitation='Admitted ledger rows matching the recorded table filters, in display order, captured at export time. Display order does not establish bank sequence. The enclosing snapshot retains the full applied account/date scope and its history; its totals apply to that full scope. Source eligibility and proof classes are unchanged. All matching rows are included, not just the visible page.')
     if batch_sources is not None:

@@ -12,6 +12,7 @@ export interface LedgerTableView {
   flow_party?: string
   flow_kind?: string
   category?: string
+  categories?: string[]
   account_id?: string
   account_holder?: string
   source_document_id?: string

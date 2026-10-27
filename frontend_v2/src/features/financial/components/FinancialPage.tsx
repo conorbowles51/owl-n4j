@@ -96,6 +96,7 @@ import { StatementCoveragePanel } from "./StatementCoveragePanel"
 import { PdfCandidatesPanel } from "./PdfCandidatesPanel"
 import { ProofStandingPanel } from "./ProofStandingPanel"
 import { CorrectableLedger } from "./CorrectableLedger"
+import { RecordsModeSwitch } from "./RecordsModeSwitch"
 import { RowAdjudicationDialog } from "./RowAdjudicationDialog"
 import { IngestionRunNotice } from "./IngestionRunNotice"
 import { IngestionRunsPanel } from "./IngestionRunsPanel"
@@ -1165,27 +1166,10 @@ function FinancialPageContent() {
           className="flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden"
           active={store.mainView === "transactions"}
         >
-          <details className="px-4 py-1 border-b text-xs">
-            <summary className="cursor-pointer text-muted-foreground">
-              {isTransactionsMode
-                ? "Viewing imported statement payments"
-                : "Viewing other financial records"}
-            </summary>
-            <div className="flex items-center gap-2 py-2">
-              <Button
-                variant={isTransactionsMode ? "secondary" : "outline"}
-                onClick={() => handleModeChange("transactions")}
-              >
-                Imported statement payments
-              </Button>
-              <Button
-                variant={!isTransactionsMode ? "secondary" : "outline"}
-                onClick={() => handleModeChange("intelligence")}
-              >
-                Other financial records
-              </Button>
-            </div>
-          </details>
+          <RecordsModeSwitch
+            transactionsMode={isTransactionsMode}
+            onChange={handleModeChange}
+          />
           <div
             className="min-h-0 flex-1 space-y-4 overflow-auto p-4"
             style={!isTransactionsMode ? { display: "none" } : undefined}
@@ -1329,27 +1313,10 @@ function FinancialPageContent() {
           className="flex min-h-0 flex-1 flex-col"
           active={store.mainView === "counterparties"}
         >
-          <details className="px-4 py-1 border-b text-xs">
-            <summary className="cursor-pointer text-muted-foreground">
-              {isTransactionsMode
-                ? "Viewing imported statement payments"
-                : "Viewing other financial records"}
-            </summary>
-            <div className="flex items-center gap-2 py-2">
-              <Button
-                variant={isTransactionsMode ? "secondary" : "outline"}
-                onClick={() => handleModeChange("transactions")}
-              >
-                Imported statement payments
-              </Button>
-              <Button
-                variant={!isTransactionsMode ? "secondary" : "outline"}
-                onClick={() => handleModeChange("intelligence")}
-              >
-                Other financial records
-              </Button>
-            </div>
-          </details>
+          <RecordsModeSwitch
+            transactionsMode={isTransactionsMode}
+            onChange={handleModeChange}
+          />
           {isTransactionsMode ? (
             <div className="min-h-0 flex-1 overflow-auto">
               <ErrorBoundary level="section">
@@ -1369,7 +1336,7 @@ function FinancialPageContent() {
                     <EmptyState
                       icon={Users}
                       title="Counterparty analysis is only available for transactions"
-                      description="Select Imported statement payments above to examine who paid or received money."
+                      description="Select Statement payments above to examine who paid or received money."
                     />
                   </div>
                 ) : baseFilteredTransactions.length === 0 ? (
@@ -1433,27 +1400,10 @@ function FinancialPageContent() {
           className="flex min-h-0 flex-1 flex-col"
           active={store.mainView === "trends"}
         >
-          <details className="px-4 py-1 border-b text-xs">
-            <summary className="cursor-pointer text-muted-foreground">
-              {isTransactionsMode
-                ? "Viewing imported statement payments"
-                : "Viewing other financial records"}
-            </summary>
-            <div className="flex items-center gap-2 py-2">
-              <Button
-                variant={isTransactionsMode ? "secondary" : "outline"}
-                onClick={() => handleModeChange("transactions")}
-              >
-                Imported statement payments
-              </Button>
-              <Button
-                variant={!isTransactionsMode ? "secondary" : "outline"}
-                onClick={() => handleModeChange("intelligence")}
-              >
-                Other financial records
-              </Button>
-            </div>
-          </details>
+          <RecordsModeSwitch
+            transactionsMode={isTransactionsMode}
+            onChange={handleModeChange}
+          />
           {isTransactionsMode ? (
             <div className="min-h-0 flex-1 overflow-auto">
               <ErrorBoundary level="section">

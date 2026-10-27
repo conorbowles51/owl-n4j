@@ -165,7 +165,7 @@ it("creates reusable categories, changes an automatic category, and recategorize
       .selectOptions("25")
   })
   await act(async () => {
-    await page.getByRole("button", { name: "Manage categories" }).click()
+    await page.getByRole("button", { name: "New or manage categories" }).click()
   })
   await act(async () => {
     await page
@@ -282,7 +282,7 @@ it("creates reusable categories, changes an automatic category, and recategorize
   reloaded.unmount()
   show("another-case")
   await act(async () => {
-    await page.getByRole("button", { name: "Manage categories" }).click()
+    await page.getByRole("button", { name: "New or manage categories" }).click()
   })
   expect(
     await within(screen.getByRole("dialog")).findByText("Due diligence", {

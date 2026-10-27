@@ -9,6 +9,7 @@ import { TransactionAnalysisControls } from "./TransactionAnalysisPanels"
 import { useInvestigationScope } from "../stores/investigation-scope"
 import { retainPaymentTableView } from "../lib/payment-table-draft"
 import { PaymentCategoryFilter } from "./PaymentCategoryFilter"
+import { useCategoryColors } from "../hooks/use-payment-category-library"
 import { TransactionNotesCsv } from "./TransactionNotesCsv"
 import { downloadCsv, transactionCsv } from "../lib/transaction-csv"
 import {
@@ -28,7 +29,7 @@ import { useLedgerAccountDirectory } from "../hooks/use-ledger-account-directory
 import { knownAccountGroup, knownPaymentAccounts } from "../lib/known-payment-accounts"
 import {
   usePaymentCategory,
-  categoryName,
+  matchesCategories,
 } from "../hooks/use-payment-categories"
 import { useFinancialFindingIndex } from "../hooks/use-financial-finding-index"
 import { ExportSelectedPayments } from "./ExportSelectedPayments"
@@ -91,12 +92,15 @@ export function LedgerRowBrowser({
   const trails = useMoneyTrails(
     investigation ? exportContext?.caseId : undefined
   )
-  const [sharedCategory, setSharedCategory] = usePaymentCategory(
+  const [sharedCategories, setSharedCategories] = usePaymentCategory(
     exportContext?.caseId ?? "none"
   )
-  const [localCategory, setLocalCategory] = useState("")
-  const category = independentFilters ? localCategory : sharedCategory
-  const setCategory = independentFilters ? setLocalCategory : setSharedCategory
+  const [localCategories, setLocalCategories] = useState<string[]>([])
+  const categoryColors = useCategoryColors(exportContext?.caseId ?? "none")
+  const categories = independentFilters ? localCategories : sharedCategories
+  const setCategories = independentFilters
+    ? setLocalCategories
+    : setSharedCategories
   const [notesCsv, setNotesCsv] = useState(false)
   const [manageCategories, setManageCategories] = useState(false)
   const [editNames, setEditNames] = useState(false)
@@ -214,7 +218,6 @@ export function LedgerRowBrowser({
           !trails.error &&
           activityAmount(row, view.activity, internal) > 0n)) &&
       matchesAccountSelection(row, accountScope) &&
-      (!category || categoryName(row) === category) &&
       (!sourceDocumentId || row.source_document_id === sourceDocumentId) &&
       (!importBatchId || batchSources.has(row.source_document_id)) &&
       (!minMinor ||
@@ -226,17 +229,28 @@ export function LedgerRowBrowser({
       (!proof || row.proof_class === proof) &&
       searchResult.matches(row)
   )
-  const baseRows = preRows.filter(judgementMatches)
+  const scopeRows = preRows.filter(judgementMatches)
+  const baseRows = scopeRows.filter((row) => matchesCategories(row, categories))
+  const categoryBar = exportContext && (
+    <PaymentCategoryFilter
+      caseId={exportContext.caseId}
+      rows={investigation ? filterAnalysis(scopeRows, view) : scopeRows}
+      value={categories}
+      onChange={setCategories}
+      onManage={canEdit ? () => setManageCategories(true) : undefined}
+    />
+  )
+  const categoryRows = preRows.filter((row) => matchesCategories(row, categories))
   // Payments per choice of each judgement sub-filter, under the other active filters (as the queue counts issues).
   const judgementCounts = (key: keyof typeof judgementFilter) => {
     const counts = new Map<string, number>()
-    for (const row of preRows) {
+    for (const row of categoryRows) {
       const values = new Set(matchingCalls(row, key).map((judgement) => judgement[key]))
       for (const value of values) counts.set(value, (counts.get(value) || 0) + 1)
     }
     return counts
   }
-  const touchedRows = preRows.filter((row) => (judgementsOf?.(row) || []).length > 0).length
+  const touchedRows = categoryRows.filter((row) => (judgementsOf?.(row) || []).length > 0).length
   const judgementsLink = exportContext
     ? `/cases/${exportContext.caseId}/financial?${new URLSearchParams({
         view: "statements",
@@ -290,11 +304,6 @@ export function LedgerRowBrowser({
               <option value="internal">Reviewed internal transfers</option>
             </select>
           </label>
-        )}
-        {investigation && exportContext && canEdit && (
-          <Button variant="outline" onClick={() => setManageCategories(true)}>
-            Manage categories
-          </Button>
         )}
         <label>
           Search payments
@@ -376,9 +385,6 @@ export function LedgerRowBrowser({
             )}
           </div>
         )}
-        {exportContext && (
-          <PaymentCategoryFilter caseId={exportContext.caseId} />
-        )}
         {investigation && (
           <>
             <Button
@@ -408,10 +414,12 @@ export function LedgerRowBrowser({
         <details className="rounded border p-2 text-sm">
           <summary className="cursor-pointer">
             Filters
-            {[currency, category, minimum, maximum, direction, proof, judgementWanted].filter(
+            {[currency, minimum, maximum, direction, proof, judgementWanted].filter(
               Boolean
-            ).length > 0 &&
-              ` (${[currency, category, minimum, maximum, direction, proof, judgementWanted].filter(Boolean).length})`}
+            ).length +
+              categories.length >
+              0 &&
+              ` (${[currency, minimum, maximum, direction, proof, judgementWanted].filter(Boolean).length + categories.length})`}
           </summary>
           <div className="flex flex-wrap gap-3 pt-3">
             <label>
@@ -469,7 +477,7 @@ export function LedgerRowBrowser({
               variant="outline"
               onClick={() => {
                 setView(emptyView)
-                setCategory("")
+                setCategories([])
               }}
             >
               Clear payment filters
@@ -707,6 +715,7 @@ export function LedgerRowBrowser({
         />
       )}
       {!investigation && transactionToolbar}
+      {!investigation && categoryBar}
       <div
         className="flex flex-wrap gap-2 text-xs"
         aria-label="Applied payment filters"
@@ -722,11 +731,18 @@ export function LedgerRowBrowser({
             {currency} ×
           </Button>
         )}
-        {category && (
-          <Button size="sm" variant="outline" onClick={() => setCategory("")}>
-            {category} ×
+        {categories.map((name) => (
+          <Button
+            key={name}
+            size="sm"
+            variant="outline"
+            onClick={() =>
+              setCategories(categories.filter((other) => other !== name))
+            }
+          >
+            {name} ×
           </Button>
-        )}
+        ))}
         {direction && (
           <Button
             size="sm"
@@ -801,6 +817,7 @@ export function LedgerRowBrowser({
               pages.
             </span>
           </div>
+          {categoryBar}
           <AnalysisFilterChips filters={view} onChange={changeView} />
           <PaymentTotals
             rows={analysisAmounts(rows)}
@@ -1051,6 +1068,7 @@ export function LedgerRowBrowser({
       ) : investigation && exportContext ? (
         <TransactionExplorerTable
           findings={findings.data}
+          categoryColors={categoryColors}
           rows={rows.slice(index * pageSize, (index + 1) * pageSize)}
           selected={selection}
           expanded={view.expandedRows}
@@ -1114,7 +1132,11 @@ export function LedgerRowBrowser({
                 : {}),
               search,
               search_mode: searchMode as "text" | "boolean",
-              ...(category ? { category } : {}),
+              ...(categories.length === 1
+                ? { category: categories[0] }
+                : categories.length
+                  ? { categories }
+                  : {}),
               ...(sourceDocumentId
                 ? { source_document_id: sourceDocumentId }
                 : {}),

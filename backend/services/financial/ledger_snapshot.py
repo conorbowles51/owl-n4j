@@ -351,7 +351,7 @@ def render_ledger_report(snapshot):
             ('<h3>Active analysis filters</h3>' + table(['Filter', 'Selection'], analysis_labels) + '<p>Selections on the same side are alternatives; From, To, perspective and chart filters apply together. Card entries represent charges and credits. Internal entries have both names in the selected group and are counted once per ledger row.</p>') if analysis_labels else '',
 
             table(['Search', 'Category', 'Currency', 'Direction', 'Proof class', 'Display order', 'Matching rows'], [[
-                view['filters']['search'] or 'None', view['filters'].get('category') or 'All', view['filters']['currency'] or 'All',
+                view['filters']['search'] or 'None', view['filters'].get('category') or ', '.join(view['filters'].get('categories') or []) or 'All', view['filters']['currency'] or 'All',
                 view['filters']['direction'] or 'Both', view['filters']['proof'] or 'All',
                 view['filters']['sort'], view['matching_rows']]]),
             table(['Date', 'Description', 'From', 'To', 'Category', 'Credit', 'Debit', 'Printed balance', 'Source reference'], [[
