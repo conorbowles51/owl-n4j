@@ -167,7 +167,7 @@ export function ActiveCategoryNotice({
   const [categories, setCategories] = usePaymentCategory(caseId)
   if (!categories.length) return null
   return (
-    <p role="status" aria-label="Category filter" className="flex items-center gap-2 text-sm">
+    <p role="status" aria-label="Category filter" className="flex flex-wrap items-center gap-2 border-b bg-[#e8effd] px-4 py-1.5 text-sm text-[#1d4aa6] dark:bg-[#1d2a44] dark:text-[#cfe0ff]">
       <span>
         Showing {categories.length === 1 ? "category" : "categories"}:{" "}
         <strong>{categories.join(", ")}</strong>

@@ -709,9 +709,17 @@ function FinancialPageContent() {
 
   return (
     <div className="flex h-full flex-col bg-background">
-      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-card px-4 py-2">
+      <div className="flex shrink-0 items-center gap-3 bg-[#0b0c0f] px-4 pt-2.5 text-[#f7f7f8]">
+        <span
+          aria-hidden="true"
+          className="inline-flex items-center gap-2 text-[17px] font-bold"
+          style={{ fontFamily: "'Space Grotesk', ui-sans-serif, system-ui, sans-serif" }}
+        >
+          <span className="size-2 rounded-full bg-[#e33b4c] shadow-[0_0_0_5px_rgba(227,59,76,.15)]" />
+          Loupe
+        </span>
         <p
-          className="min-w-0 truncate text-sm font-medium"
+          className="min-w-0 flex-1 truncate text-sm font-semibold"
           title={
             currentCase.data && currentCase.data.id === caseId
               ? currentCase.data.title
@@ -725,6 +733,19 @@ function FinancialPageContent() {
               ? "Loading case…"
               : (caseId ?? "Choose a case")}
         </p>
+        <FinancialGuide />
+      </div>
+      <Tabs
+        key={`financial-tabs:${caseId}`}
+        value={store.mainView}
+        onValueChange={(value) => navigateFinancial(value as FinancialMainView)}
+        className="flex min-h-0 flex-1 flex-col"
+      >
+        <FinancialNavigation
+          value={store.mainView}
+          onChange={navigateFinancial}
+        />
+        <FinancialAccessNotice />
         {/* Categories are chosen and managed under Transactions (Alex: not at
             the top of every view). A category chosen there still narrows the
             analysis views, so they say so instead of filtering silently. */}
@@ -742,19 +763,6 @@ function FinancialPageContent() {
               onChange={() => navigateFinancial("transactions")}
             />
           )}
-        <FinancialGuide />
-      </div>
-      <Tabs
-        key={`financial-tabs:${caseId}`}
-        value={store.mainView}
-        onValueChange={(value) => navigateFinancial(value as FinancialMainView)}
-        className="flex min-h-0 flex-1 flex-col"
-      >
-        <FinancialAccessNotice />
-        <FinancialNavigation
-          value={store.mainView}
-          onChange={navigateFinancial}
-        />
 
         <RetainedFinancialTab
           value="overview"

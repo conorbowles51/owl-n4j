@@ -45,41 +45,54 @@ export function FinancialNavigation({
   onChange: (value: FinancialMainView) => void
 }) {
   const extra = [...analysis, ...history].find(([key]) => key === value)
+  // Dark Loupe bar: the white pill marks where you are; a More destination joins the bar while open.
+  const trigger =
+    "h-9 flex-none rounded-md px-3 text-[14px] font-medium text-[#bfc1c8] hover:bg-[#202126] hover:text-white data-[state=active]:!bg-[#25272d] data-[state=active]:!text-white dark:text-[#bfc1c8] after:hidden focus-visible:ring-[#e33b4c]/60"
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-card px-3">
+    <div className="flex shrink-0 flex-wrap items-center gap-2 bg-[#0b0c0f] px-3 pb-2 pt-1.5 text-[#f7f7f8]">
       <TabsList
         variant="line"
-        className="group-data-[orientation=horizontal]/tabs:h-auto min-h-10 flex-wrap justify-start"
+        aria-label="Financial"
+        className="group-data-[orientation=horizontal]/tabs:h-auto min-h-10 flex-wrap justify-start gap-0.5"
       >
         {primary.map(([key, label]) => (
-          <TabsTrigger key={key} value={key} className="h-10">
+          <TabsTrigger key={key} value={key} className={trigger}>
             {label}
           </TabsTrigger>
         ))}
         {extra && (
-          <TabsTrigger value={extra[0]} className="h-10">
-            {extra[1]}
-          </TabsTrigger>
+          <>
+            <span aria-hidden="true" className="mx-1 h-5 w-px bg-[#3a3d45]" />
+            <TabsTrigger value={extra[0]} className={`${trigger} data-[state=active]:!shadow-[inset_0_-2px_0_#e33b4c]`}>
+              {extra[1]}
+            </TabsTrigger>
+          </>
         )}
       </TabsList>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm">
-            More financial tools
-          </Button>
+          <button
+            type="button"
+            className="inline-flex h-9 items-center gap-1 rounded-md px-3 text-[14px] font-medium text-[#bfc1c8] hover:bg-[#202126] hover:text-white data-[state=open]:bg-[#25272d] data-[state=open]:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e33b4c]/60"
+          >
+            More financial tools ({analysis.length + history.length})
+            <span aria-hidden="true">▾</span>
+          </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuLabel>Further analysis</DropdownMenuLabel>
+        <DropdownMenuContent align="end" className="min-w-64">
+          <DropdownMenuLabel className="font-mono text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Further analysis</DropdownMenuLabel>
           {analysis.map(([key, label]) => (
-            <DropdownMenuItem key={key} onSelect={() => onChange(key)}>
+            <DropdownMenuItem key={key} onSelect={() => onChange(key)} className={key === value ? "font-semibold" : undefined}>
               {label}
+              {key === value && <span className="ml-auto text-xs text-muted-foreground">open</span>}
             </DropdownMenuItem>
           ))}
           <DropdownMenuSeparator />
-          <DropdownMenuLabel>Import and review history</DropdownMenuLabel>
+          <DropdownMenuLabel className="font-mono text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Import and review history</DropdownMenuLabel>
           {history.map(([key, label]) => (
-            <DropdownMenuItem key={key} onSelect={() => onChange(key)}>
+            <DropdownMenuItem key={key} onSelect={() => onChange(key)} className={key === value ? "font-semibold" : undefined}>
               {label}
+              {key === value && <span className="ml-auto text-xs text-muted-foreground">open</span>}
             </DropdownMenuItem>
           ))}
         </DropdownMenuContent>

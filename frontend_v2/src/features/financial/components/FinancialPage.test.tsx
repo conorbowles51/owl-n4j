@@ -290,7 +290,7 @@ function selectTab(name: string) {
   if (tab) fireEvent.mouseDown(tab)
   else {
     fireEvent.pointerDown(
-      screen.getByRole("button", { name: "More financial tools" }),
+      screen.getByRole("button", { name: /^More financial tools/ }),
       { button: 0, ctrlKey: false }
     )
     fireEvent.click(screen.getByRole("menuitem", { name }))
