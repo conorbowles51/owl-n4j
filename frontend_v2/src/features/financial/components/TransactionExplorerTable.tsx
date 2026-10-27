@@ -1,4 +1,6 @@
-import { Fragment } from "react"
+import { Fragment, useState } from "react"
+import { readProofClass } from "../lib/ledger-format"
+import { OPTIONAL_COLUMNS, type OptionalColumn } from "../lib/table-columns"
 import type { LedgerTransaction } from "../api"
 import { formatLedgerAmount } from "../lib/ledger-format"
 import { party, type PartySide } from "../lib/transaction-analysis"
@@ -8,6 +10,52 @@ import {
   absentPaymentBalance,
   paymentBalanceExplanation,
 } from "../lib/payment-balance"
+
+/** "Columns (8 of 15) ▾": a checkbox per optional column and Reset to default. */
+export function TableColumnPicker({
+  columns,
+  onChange,
+}: {
+  columns: OptionalColumn[]
+  onChange: (columns: OptionalColumn[]) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const fixed = 6
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        className="inline-flex items-center gap-1.5 rounded-md border bg-background px-3 py-1.5 text-[13px] font-semibold hover:bg-muted"
+      >
+        Columns ({fixed + columns.length} of {fixed + OPTIONAL_COLUMNS.length}) <span aria-hidden="true">{open ? "▴" : "▾"}</span>
+      </button>
+      {open && (
+        <div role="group" aria-label="Table columns" className="absolute right-0 z-20 mt-1 w-60 space-y-1 rounded-xl border bg-card p-3 text-sm shadow-lg">
+          <p className="text-[12px] text-muted-foreground">Always shown: select, date, description, from → to, category, amount</p>
+          {OPTIONAL_COLUMNS.map(([key, label]) => (
+            <label key={key} className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={columns.includes(key)}
+                onChange={(event) =>
+                  onChange(
+                    OPTIONAL_COLUMNS.map(([k]) => k).filter((k) => (k === key ? event.target.checked : columns.includes(k)))
+                  )
+                }
+              />
+              {label}
+            </label>
+          ))}
+          <button type="button" className="mt-1 text-[13px] font-semibold text-[#1d4aa6] hover:underline dark:text-[#9bb8f0]" onClick={() => onChange([])}>
+            Reset to default
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
 
 export function TransactionExplorerTable({
   rows,
@@ -25,7 +73,11 @@ export function TransactionExplorerTable({
   onParty,
   findings = [],
   amountAllowed = true,
+  columns = [],
+  statementNames,
 }: {
+  columns?: OptionalColumn[]
+  statementNames?: Map<string, string>
   amountAllowed?: boolean
   rows: LedgerTransaction[]
   selected: string[]
@@ -65,7 +117,7 @@ export function TransactionExplorerTable({
     <div className="min-w-0 max-h-[65vh] overflow-auto rounded border">
       <table
         className="w-full table-fixed text-xs"
-        style={{ minWidth: 640 }}
+        style={{ minWidth: 640 + columns.length * 120 }}
         aria-label="Investigation transactions"
       >
         <colgroup>
@@ -75,6 +127,9 @@ export function TransactionExplorerTable({
           <col style={{ width: "24%" }} />
           <col style={{ width: "17%" }} />
           <col style={{ width: 136 }} />
+          {columns.map((key) => (
+            <col key={key} style={{ width: 120 }} />
+          ))}
         </colgroup>
         <thead className="sticky top-0 z-10 bg-muted text-left">
           <tr>
@@ -94,7 +149,15 @@ export function TransactionExplorerTable({
             </th>
             <th className="p-2 text-right">
               {header("Amount", "amount-asc", "amount-desc", amountAllowed)}
+              {!amountAllowed && (
+                <span className="block text-[12px] font-normal text-muted-foreground">Choose one currency to sort amounts</span>
+              )}
             </th>
+            {columns.map((key) => (
+              <th key={key} className="p-2">
+                {OPTIONAL_COLUMNS.find(([k]) => k === key)?.[1]}
+              </th>
+            ))}
           </tr>
         </thead>
         <tbody>
@@ -248,10 +311,32 @@ export function TransactionExplorerTable({
                           : "Money in"}
                     </span>
                   </td>
+                  {columns.map((key) => (
+                    <td key={key} className="p-2 break-words">
+                      {key === "reference"
+                        ? row.ref_id || row.key
+                        : key === "bank_reference"
+                          ? row.bank_reference || "Not recorded"
+                          : key === "account"
+                            ? row.account_label || row.account_id
+                            : key === "balance"
+                              ? row.running_balance_minor == null
+                                ? absentPaymentBalance(row)
+                                : money(row.running_balance_minor, row.currency)
+                              : key === "statement"
+                                ? statementNames?.get(row.source_document_id) || `Statement ${row.source_document_id.slice(0, 8)}`
+                                : key === "proof"
+                                  ? (() => {
+                                      const term = readProofClass(row.proof_class)
+                                      return <span title={term.description}>{term.label}</span>
+                                    })()
+                                  : row.currency}
+                    </td>
+                  ))}
                 </tr>
                 {open && (
                   <tr className="border-t bg-muted/30">
-                    <td colSpan={6} className="p-3">
+                    <td colSpan={6 + columns.length} className="p-3">
                       <div className="space-y-2 text-xs">
                         <p>{row.description}</p>
                         <dl className="flex flex-wrap gap-x-6 gap-y-2">

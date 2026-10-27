@@ -16,7 +16,8 @@ import {
   AnalysisFilterChips,
   TransactionAnalysisPanels,
 } from "./TransactionAnalysisPanels"
-import { TransactionExplorerTable } from "./TransactionExplorerTable"
+import { TableColumnPicker, TransactionExplorerTable } from "./TransactionExplorerTable"
+import { readTableColumns, storeTableColumns } from "../lib/table-columns"
 import { PaymentCardList } from "./PaymentCardList"
 import { TransactionsOverview } from "./TransactionsOverview"
 import { Disclosure } from "./Disclosure"
@@ -37,6 +38,7 @@ import {
 import {
   usePaymentCategory,
   matchesCategories,
+  useStatementNames,
 } from "../hooks/use-payment-categories"
 import { useFinancialFindingIndex } from "../hooks/use-financial-finding-index"
 import { ExportSelectedPayments } from "./ExportSelectedPayments"
@@ -148,6 +150,9 @@ export function LedgerRowBrowser({
   )
   const [timeline, setTimeline] = useState(false)
   const [tableView, setTableView] = useState(readTableView)
+  const [tableColumns, setTableColumns] = useState(readTableColumns)
+  const tableStatementNames =
+    useStatementNames(tableView && tableColumns.includes("statement") && exportContext ? exportContext.caseId : "none").data
   const [compare, setCompare] = useState(false)
   const [finding, setFinding] = useState<"question" | "observation" | null>(
     null
@@ -1076,6 +1081,15 @@ export function LedgerRowBrowser({
                   </button>
                 ))}
               </div>
+              {tableView && (
+                <TableColumnPicker
+                  columns={tableColumns}
+                  onChange={(next) => {
+                    setTableColumns(next)
+                    storeTableColumns(next)
+                  }}
+                />
+              )}
               <Button
                 variant="outline"
                 disabled={
@@ -1358,6 +1372,8 @@ export function LedgerRowBrowser({
         />
       ) : investigation && exportContext ? (
         <TransactionExplorerTable
+          columns={tableColumns}
+          statementNames={tableStatementNames}
           findings={findings.data}
           categoryColors={categoryColors}
           rows={rows.slice(index * pageSize, (index + 1) * pageSize)}
