@@ -1,4 +1,5 @@
-import { Fragment } from "react"
+import { Fragment, createContext, useContext } from "react"
+import { createPortal } from "react-dom"
 import { useParams } from "react-router-dom"
 import { resetFinancialView } from "../lib/reset-financial-view"
 import { toast } from "sonner"
@@ -37,6 +38,20 @@ const history: [FinancialMainView, string][] = [
   ["runs", "Processing history"],
   ["decisions", "Change history"],
 ]
+// The tab bar's right end, where the open tab puts its "Reset view". Without it (a tab
+// rendered on its own) the button keeps its own strip above the tab.
+const ResetSlot = createContext<HTMLElement | null>(null)
+const SetResetSlot = createContext<((slot: HTMLElement | null) => void) | null>(null)
+
+export function FinancialResetSlotProvider({ children }: { children: ReactNode }) {
+  const [slot, setSlot] = useState<HTMLElement | null>(null)
+  return (
+    <SetResetSlot.Provider value={setSlot}>
+      <ResetSlot.Provider value={slot}>{children}</ResetSlot.Provider>
+    </SetResetSlot.Provider>
+  )
+}
+
 export function FinancialNavigation({
   value,
   onChange,
@@ -48,6 +63,7 @@ export function FinancialNavigation({
   // Dark Loupe bar: the white pill marks where you are; a More destination joins the bar while open.
   const trigger =
     "h-9 flex-none rounded-md px-3 text-[14px] font-medium text-[#bfc1c8] hover:bg-[#202126] hover:text-white data-[state=active]:!bg-[#25272d] data-[state=active]:!text-white dark:text-[#bfc1c8] after:hidden focus-visible:ring-[#e33b4c]/60"
+  const setResetSlot = useContext(SetResetSlot)
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-2 bg-[#0b0c0f] px-3 pb-2 pt-1.5 text-[#f7f7f8]">
       <TabsList
@@ -97,6 +113,7 @@ export function FinancialNavigation({
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
+      {setResetSlot && <div ref={setResetSlot} className="ml-auto flex items-center" />}
     </div>
   )
 }
@@ -118,28 +135,37 @@ export function RetainedFinancialTab({
   useEffect(() => {
     if (active) setOpened(true)
   }, [active])
+  const resetSlot = useContext(ResetSlot)
+  // Only the open tab shows its button; in the bar it is styled for the dark bar.
+  const resetButton = active ? (
+    <Button
+      type="button"
+      size="sm"
+      variant="ghost"
+      className={resetSlot ? "text-[#bfc1c8] hover:bg-[#202126] hover:text-white" : undefined}
+      title="Reset this tab’s filters and layout. Saved casework stays unchanged."
+      onClick={() => {
+        if (caseId) resetFinancialView(caseId, props.value)
+        onReset?.()
+        setResetVersion((version) => version + 1)
+        toast.success("View reset. Saved casework is unchanged.")
+      }}
+    >
+      Reset view
+    </Button>
+  ) : null
   return (
     <TabsContent
       {...props}
       forceMount={active || opened ? true : undefined}
       style={!active ? { display: "none" } : undefined}
     >
-      <div className="flex shrink-0 justify-end border-b bg-background px-4 py-1">
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          title="Reset this tab’s filters and layout. Saved casework stays unchanged."
-          onClick={() => {
-            if (caseId) resetFinancialView(caseId, props.value)
-            onReset?.()
-            setResetVersion((version) => version + 1)
-            toast.success("View reset. Saved casework is unchanged.")
-          }}
-        >
-          Reset view
-        </Button>
-      </div>
+      {resetButton &&
+        (resetSlot ? (
+          createPortal(resetButton, resetSlot)
+        ) : (
+          <div className="flex shrink-0 justify-end border-b bg-background px-4 py-1">{resetButton}</div>
+        ))}
       <Fragment key={resetVersion}>{children}</Fragment>
     </TabsContent>
   )

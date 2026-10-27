@@ -21,15 +21,15 @@ export type QueuePerson = { id?: string | null; name?: string | null }
 const firstName = (name?: string | null) => (name || "").trim().split(/\s+/)[0] || ""
 
 /**
- * "Needs Maria": the person an item waits for. Held work someone saved
- * themselves (their corrections, rows they added) names them when they are
- * not the person looking; otherwise the signed-in user, or "you".
+ * "Needs you" when the item waits for the person looking; "Needs Sam" only when
+ * it waits on someone else: held work another person saved (their corrections,
+ * rows they added). Cases have no assigned reviewer (only owners and
+ * collaborators), so an item nobody has worked waits for whoever is looking.
  */
 export function needsLabel(user?: QueuePerson | null, entry?: Pick<QueueEntry, "worked_by">) {
   const worker = entry?.worked_by
   if (worker && worker.user_id !== (user?.id ?? "") && firstName(worker.name)) return `Needs ${firstName(worker.name)}`
-  const mine = firstName(user?.name)
-  return mine ? `Needs ${mine}` : "Needs you"
+  return "Needs you"
 }
 
 /** "Maria's" when someone else saved the held work, else "Your". */

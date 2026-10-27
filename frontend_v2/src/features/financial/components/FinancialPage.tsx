@@ -22,6 +22,7 @@ import {
 import { useCase } from "@/features/cases/hooks/use-cases"
 import {
   FinancialNavigation,
+  FinancialResetSlotProvider,
   RetainedFinancialTab,
 } from "./FinancialNavigation"
 import { FinancialFindings } from "./FinancialFindings"
@@ -737,6 +738,8 @@ function FinancialPageContent() {
         </p>
         <FinancialGuide />
       </div>
+      {/* "Reset view" sits at the right end of the tab bar, not in a band of its own. */}
+      <FinancialResetSlotProvider>
       <Tabs
         key={`financial-tabs:${caseId}`}
         value={store.mainView}
@@ -1498,6 +1501,7 @@ function FinancialPageContent() {
           )}
         </RetainedFinancialTab>
       </Tabs>
+      </FinancialResetSlotProvider>
 
       <BulkCategorizeDialog
         open={bulkCategorizeOpen}

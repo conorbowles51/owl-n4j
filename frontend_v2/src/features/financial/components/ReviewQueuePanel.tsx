@@ -518,8 +518,8 @@ export function ReviewQueuePanel({
     )
 
   return (
-    <section aria-label="Review queue" className="space-y-4">
-      <header className="space-y-1">
+    <section aria-label="Review queue" className="space-y-3">
+      <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <h3 className="text-lg font-semibold">
           {list === "copies"
             ? "Copies set aside"
@@ -1119,7 +1119,7 @@ function QueueSplit({
         role="tab"
         aria-selected={!handling}
         onClick={onNeeds}
-        className={`rounded-md border-2 p-3 text-left ${!handling ? "border-amber-500 bg-amber-50 dark:bg-amber-950/30" : "border-border"}`}
+        className={`rounded-md border-2 px-3 py-2 text-left ${!handling ? "border-amber-500 bg-amber-50 dark:bg-amber-950/30" : "border-border"}`}
       >
         <span className="block text-base font-semibold">
           {needsLabel(user)} ({needs})
@@ -1133,7 +1133,7 @@ function QueueSplit({
         role="tab"
         aria-selected={handling}
         onClick={onHandled}
-        className={`rounded-md border p-3 text-left text-muted-foreground ${handling ? "border-foreground/40 bg-muted" : "border-dashed bg-muted/30"}`}
+        className={`rounded-md border px-3 py-2 text-left text-muted-foreground ${handling ? "border-foreground/40 bg-muted" : "border-dashed bg-muted/30"}`}
       >
         <span className="block text-base font-semibold">Not waiting on you ({handled})</span>
         <span className="block text-xs">
@@ -1440,71 +1440,73 @@ function StatementsAtAGlance({
   const unreadable = c.unreadable + c.unreadable_files
   const setAside = c.copies + (c.not_payment ?? 0)
   const moving = c.filled + c.ready + c.saving + c.rechecking + (c.reader_fix ?? 0)
-  const parts: { label: string; value: number; color: string; text: string; list?: ListName }[] = [
-    { label: "imported", value: c.imported, color: "#2f9353", text: "#15653f" },
-    { label: "set aside on purpose (copies, fund statements)", value: setAside, color: "#7b52c7", text: "#573199", list: c.copies ? "copies" : "not_payment" },
-    { label: "left out by you", value: c.left_unimported, color: "#9a9da5", text: "#3d4250" },
-    { label: "in progress (filled, ready, importing, rechecking, waiting for a reader fix)", value: moving, color: "#3a6fd8", text: "#1f4fa8", list: c.ready ? "ready" : c.filled ? "filled" : c.reader_fix ? "reader" : undefined },
-    { label: "couldn't be read", value: unreadable, color: "#c4253a", text: "#a3142a", list: "unreadable" },
-    { label: "need you", value: c.waiting, color: "#d99a2b", text: "#8a5300", list: "waiting" },
+  // label: the full legend meaning (tooltip and accessible name); short: what the line shows.
+  const parts: { label: string; short: string; value: number; color: string; text: string; list?: ListName }[] = [
+    { label: "imported", short: "imported", value: c.imported, color: "#2f9353", text: "#15653f" },
+    { label: "set aside on purpose (copies, fund statements)", short: "set aside", value: setAside, color: "#7b52c7", text: "#573199", list: c.copies ? "copies" : "not_payment" },
+    { label: "left out by you", short: "left out", value: c.left_unimported, color: "#9a9da5", text: "#3d4250" },
+    { label: "in progress (filled, ready, importing, rechecking, waiting for a reader fix)", short: "in progress", value: moving, color: "#3a6fd8", text: "#1f4fa8", list: c.ready ? "ready" : c.filled ? "filled" : c.reader_fix ? "reader" : undefined },
+    { label: "couldn't be read", short: "couldn't be read", value: unreadable, color: "#c4253a", text: "#a3142a", list: "unreadable" },
+    { label: "need you", short: "need you", value: c.waiting, color: "#d99a2b", text: "#8a5300", list: "waiting" },
   ]
   const total = parts.reduce((sum, part) => sum + part.value, 0)
   if (!total) return null
   const done = c.imported + setAside + c.left_unimported
-  const heading = { fontFamily: "'Space Grotesk', ui-sans-serif, system-ui, sans-serif", letterSpacing: "-0.025em" }
+  // One compact line (Alex: the card pushed the first item below the fold): headline,
+  // what needs a person, then every count with its legend colour; a thin bar under it.
   return (
-    <section
-      aria-label="Statements at a glance"
-      className="space-y-4 rounded-2xl p-5 text-[#f7f7f8] sm:p-7"
-      style={{ background: "radial-gradient(1100px 420px at 90% -20%, #3a1319 0%, #0b0c0f 62%)" }}
-    >
-      <h4 className="text-2xl font-semibold leading-tight sm:text-[34px]" style={heading}>
-        {done.toLocaleString()} of {total.toLocaleString()} statements are done.
-        <span className="block text-[#9a9da5]">
-          {c.waiting + unreadable
-            ? `${(c.waiting + unreadable).toLocaleString()} need your eyes.`
-            : moving
-              ? "Nothing needs you; Loupe is moving the rest on."
-              : "Nothing needs you."}
-        </span>
-      </h4>
-      <div aria-hidden="true" className="flex h-4 overflow-hidden rounded-full bg-[#292b32]">
+    <section aria-label="Statements at a glance" className="space-y-1.5 rounded-lg bg-[#0b0c0f] px-3 py-2 text-[#f7f7f8]">
+      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+        <h4 className="text-sm font-semibold">
+          {done.toLocaleString()} of {total.toLocaleString()} statements are done.{" "}
+          <span className="font-normal text-[#bfc1c8]">
+            {c.waiting + unreadable
+              ? `${(c.waiting + unreadable).toLocaleString()} need your eyes.`
+              : moving
+                ? "Nothing needs you; Loupe is moving the rest on."
+                : "Nothing needs you."}
+          </span>
+        </h4>
+        <ul className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs" aria-label={`All ${total} statements`}>
+          {parts
+            .filter((part) => part.value)
+            .map((part) => {
+              const body = (
+                <>
+                  <span aria-hidden="true" className="mr-1 inline-block size-2 rounded-sm" style={{ background: part.color }} />
+                  <strong className="tabular-nums">{part.value.toLocaleString()}</strong> {part.short}
+                  {part.short !== part.label && <span className="sr-only"> ({part.label})</span>}
+                </>
+              )
+              const title = `${part.value.toLocaleString()} ${part.label}`
+              return (
+                <li key={part.label} className="text-[#bfc1c8]" title={title}>
+                  {part.list ? (
+                    <button type="button" className="hover:text-white hover:underline" onClick={() => onOpen(part.list!)}>
+                      {body}
+                    </button>
+                  ) : (
+                    body
+                  )}
+                </li>
+              )
+            })}
+          {!c.saving && !c.rechecking && !c.waiting && !unreadable && (
+            <li className="text-[#9a9da5]">Nothing is blocked or still running.</li>
+          )}
+        </ul>
+      </div>
+      <div aria-hidden="true" className="flex h-1.5 overflow-hidden rounded-full bg-[#292b32]">
         {parts
           .filter((part) => part.value)
           .map((part) => (
             <span
               key={part.label}
               title={`${part.value.toLocaleString()} ${part.label}`}
-              style={{ width: `${(part.value / total) * 100}%`, minWidth: 6, background: part.color }}
+              style={{ width: `${(part.value / total) * 100}%`, minWidth: 4, background: part.color }}
             />
           ))}
       </div>
-      <ul className="flex flex-wrap gap-x-5 gap-y-2 text-sm" aria-label={`All ${total} statements`}>
-        {parts
-          .filter((part) => part.value)
-          .map((part) => {
-            const body = (
-              <>
-                <span aria-hidden="true" className="mr-1.5 inline-block size-2.5 rounded-sm" style={{ background: part.color }} />
-                <strong className="tabular-nums">{part.value.toLocaleString()}</strong> {part.label}
-              </>
-            )
-            return (
-              <li key={part.label} className="text-[#bfc1c8]">
-                {part.list ? (
-                  <button type="button" className="hover:text-white hover:underline" onClick={() => onOpen(part.list!)}>
-                    {body}
-                  </button>
-                ) : (
-                  body
-                )}
-              </li>
-            )
-          })}
-        {!c.saving && !c.rechecking && !c.waiting && !unreadable && (
-          <li className="text-[#9a9da5]">Nothing is blocked or still running.</li>
-        )}
-      </ul>
     </section>
   )
 }

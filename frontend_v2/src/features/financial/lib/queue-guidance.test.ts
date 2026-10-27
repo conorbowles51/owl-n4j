@@ -78,12 +78,12 @@ it("tells her about a row added by hand that needs its page, naming who added it
   expect(guidanceFor(manual, me).action).toBe("Choose the page")
 })
 
-it("labels what needs a person with the signed-in user's first name, or the colleague whose work is held", () => {
-  expect(needsLabel(me)).toBe("Needs Maria")
+it("says Needs you for what waits on the viewer and names only the colleague whose work is held", () => {
+  expect(needsLabel(me)).toBe("Needs you")
   expect(needsLabel(null)).toBe("Needs you")
   expect(needsLabel({ id: "u1", name: "" })).toBe("Needs you")
   expect(needsLabel(me, { worked_by: { user_id: "u2", name: "Sam Diaz" } })).toBe("Needs Sam")
-  expect(needsLabel(me, { worked_by: { user_id: "u1", name: "Maria Lopez" } })).toBe("Needs Maria")
+  expect(needsLabel(me, { worked_by: { user_id: "u1", name: "Maria Lopez" } })).toBe("Needs you")
   const saved = entry({ issue_reason: "saved_review", worked_by: { user_id: "u2", name: "Sam Diaz" } })
   expect(guidanceFor(saved, me).title).toBe("Sam's saved corrections were made before Loupe read the PDF again")
 })
