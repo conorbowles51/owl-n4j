@@ -528,3 +528,67 @@ class SantanderBalanceStepAmountTests(TestCase):
             self.assertNotIn('amount_minor', payment['fields'])
         finally:
             santander.BALANCE_STEP_AMOUNT=True
+
+
+class SantanderLostOpeningTests(TestCase):
+    """(fin-queue3) 05 MONETA SANTANDER MXN MAY 26, INVERSION CRECIENTE 66-50958129-0: the scan lost the value after
+    SALDO FINAL DEL PERIODO ANTERIOR and the SALDO word of the movement heading; the cover's balance summary prints
+    the account's previous and current month (0.00 / 0.00), the TOTAL line 0.00 / 0.00 and SALDO FINAL $0.00."""
+
+    def section(self, *, previous='0.00', current='0.00', closing='$0.00', heading_saldo=False):
+        ss = statement()
+        rows = ss[0]['rows']
+        for r in rows:
+            texts = [c['expected_text'] for c in r['cells']]
+            if texts == ['SALDO FINAL DEL PERIODO ANTERIOR:', '0.00']:
+                r['cells'] = r['cells'][:1]
+            if texts[:1] == ['FECHA'] and r['cells'][0]['locator']['rect'][1] > 380000 and not heading_saldo:
+                r['cells'] = r['cells'][:-1]
+            if texts == ['SALDO FINAL DEL PERIODO:', '$0.00']:
+                r['cells'][-1]['expected_text'] = closing
+        summary = source(1, [[(30000, 100000, 150000, 'INVERSION CRECIENTE'), (200000, 100000, 60000, '66-00001234-0'),
+            (280000, 100000, 40000, previous), (330000, 100000, 40000, '0.00%'), (400000, 100000, 40000, current),
+            (460000, 100000, 40000, '0.00%')]])['rows'][0]
+        rows.append(summary | {'row_index': 99})
+        choice = next(c for c in santander_catalog(ss)[0] if c['account_type'] == 'savings')
+        return ss, choice, propose_santander_statement(ss, 'MXN', choice)['rows']
+
+    def test_a_lost_opening_is_the_covers_previous_month_when_closing_and_totals_agree(self):
+        from services.financial.statement_import_santander import santander_no_activity_evidence
+        ss, choice, rows = self.section()
+        openings = [r for r in rows if r['kind'] == 'balance' and r['fields']['description'] == 'Opening Balance']
+        self.assertEqual([(r['fields']['balance'], r['fields']['balance_basis'], r['row_index']) for r in openings],
+                         [('0', 'cover_balance_summary', 99)])
+        totals = sorted((r['fields']['total_direction'], r['fields']['balance']) for r in rows if r['kind'] == 'statement_total'
+                        and r['page_number'] == 1 and r['fields'].get('balance') == '0')
+        self.assertEqual(totals, [('credit', '0'), ('debit', '0')])
+        self.assertTrue(santander_no_activity_evidence(ss, choice, rows, 'MXN')['verified'])
+
+    def test_a_cover_that_disagrees_with_the_closing_or_the_totals_gives_no_opening(self):
+        for kwargs in (dict(previous='5.00'), dict(current='5.00'), dict(closing='$5.00')):
+            with self.subTest(**kwargs):
+                rows = self.section(**kwargs)[2]
+                self.assertFalse(any(r['fields'].get('balance_basis') for r in rows))
+
+    def test_switched_off_the_opening_and_the_quiet_heading_stay_unread(self):
+        from unittest import mock
+        import services.financial.statement_import_santander as S
+        with mock.patch.object(S, 'COVER_OPENING', False):
+            self.assertFalse(any(r['fields'].get('balance_basis') for r in self.section()[2]))
+        with mock.patch.object(S, 'QUIET_HEADING', False):
+            rows = self.section()[2]
+            self.assertFalse(any(r['kind'] == 'statement_total' and r['row_index'] > 15 for r in rows))
+            self.assertFalse(any(r['fields'].get('balance_basis') for r in rows))
+
+    def test_the_currency_label_rule_and_value_read_as_one_cell(self):
+        from unittest import mock
+        import services.financial.statement_import_santander as S
+        ss = statement()
+        row = ss[0]['rows'][3]
+        row['cells'] = [dict(row['cells'][0], expected_text='MONEDA — MONEDA NACIONAL')]
+        self.assertEqual({c['currency'] for c in currencies_by_statement(santander_catalog(deepcopy(ss))[0], ss)}, {'MXN'})
+        with mock.patch.object(S, 'CURRENCY_ONE_CELL', False):
+            self.assertEqual({c['currency'] for c in currencies_by_statement(santander_catalog(deepcopy(ss))[0], ss)}, {''})
+        row['cells'][0]['expected_text'] = 'MONEDA NACIONAL'
+        self.assertEqual({c['currency'] for c in currencies_by_statement(santander_catalog(deepcopy(ss))[0], ss)}, {''},
+                         'no rule mark between label and value: not this rule')

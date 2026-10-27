@@ -33,6 +33,11 @@ QUIET_COVER_CLOSING = _switch('LOUPE_FINANCIAL_SANTANDER_QUIET_COVER_CLOSING')
 #   ('—- MONEDA NACIONAL', scans) is that value; only marks that are not letters or digits are dropped, and the
 #   rest must still be one of the printed currency names exactly.
 CURRENCY_RULE_MARKS = _switch('LOUPE_FINANCIAL_SANTANDER_CURRENCY_RULE_MARKS')
+# * LOUPE_FINANCIAL_SANTANDER_CURRENCY_ONE_CELL (fin-queue3, 05 MONETA SANTANDER MXN MAY 26): the scan read the label,
+#   the box rule and the value as one cell ('MONEDA — MONEDA NACIONAL'). A cell that is the label, then at least one
+#   mark that is not a letter or digit, then one of the printed currency names exactly, is that value.
+CURRENCY_ONE_CELL = _switch('LOUPE_FINANCIAL_SANTANDER_CURRENCY_ONE_CELL')
+_CURRENCY_NAMES = {'MONEDA NACIONAL':'MXN','PESOS':'MXN','DOLARES':'USD','DOLARES AMERICANOS':'USD','USD':'USD','MXN':'MXN'}
 # * LOUPE_FINANCIAL_SANTANDER_UNPLACED_TABLE: a movement table the PDF reading kept as ruled cells but could not
 #   position on the page (no rectangle on any cell; 09 NOVAC SANTANDER SEP 25 page 6, the start of 'Detalles de
 #   movimientos Dinero Creciente') is read in its own row order directly under the one movement heading of its page
@@ -47,6 +52,14 @@ UNPLACED_TABLE = _switch('LOUPE_FINANCIAL_SANTANDER_UNPLACED_TABLE')
 #   nothing printed lies between them. Whether it joins a section is still decided by the page before: an open
 #   section of the same customer and period, as for any continuation page.
 CONTINUED_UNPLACED_TABLE = _switch('LOUPE_FINANCIAL_SANTANDER_CONTINUED_UNPLACED_TABLE')
+# * LOUPE_FINANCIAL_SANTANDER_QUIET_HEADING (fin-queue3, 05 MONETA SANTANDER MXN MAY 26 INVERSION CRECIENTE): a movement
+#   heading read without its SALDO word ('FECHA FOLIO DESCRIPCION DEPOSITO RETIRO'; 4 of 71 Dinero Creciente headings
+#   of all cases, each directly over a TOTAL line) gives its DEPOSITO and RETIRO columns to the TOTAL line printed
+#   directly under it, and to nothing else; that pair is the section's column heading for the quiet-section check.
+QUIET_HEADING = _switch('LOUPE_FINANCIAL_SANTANDER_QUIET_HEADING')
+# * LOUPE_FINANCIAL_SANTANDER_COVER_OPENING: a section whose SALDO FINAL DEL PERIODO ANTERIOR value the scan lost
+#   takes its opening from the cover's balance summary (_cover_opening), the mirror of _cover_closing.
+COVER_OPENING = _switch('LOUPE_FINANCIAL_SANTANDER_COVER_OPENING')
 ACCOUNT = re.compile(r'(?P<product>CUENTA SANTANDER [A-Z ]+?|INVERSION CRECIENTE|SUPER CUENTA [A-Z ]+?)\s*(?P<number>\d{2}-\d{8}-\d)\b')
 DATE = r'\d{2}-[A-Z]{3}-\d{4}'
 # Marks a printed column rule between the date and folio columns is read as: '|' and '/', and on
@@ -168,7 +181,10 @@ def santander_catalog(sources):
                         value = norm(cells[i+1]['expected_text'])
                         if CURRENCY_RULE_MARKS:
                             value = re.sub(r'^[^A-Z0-9]+|[^A-Z0-9]+$', '', value).strip()
-                        code = {'MONEDA NACIONAL':'MXN','PESOS':'MXN','DOLARES':'USD','DOLARES AMERICANOS':'USD','USD':'USD','MXN':'MXN'}.get(value)
+                        code = _CURRENCY_NAMES.get(value)
+                        if code:meta['currencies'].add(code)
+                    elif CURRENCY_ONE_CELL and (one := re.fullmatch(r'MONEDA\s*[^A-Z0-9\s]+\s*(.+?)\s*', norm(c['expected_text']))):
+                        code = _CURRENCY_NAMES.get(one[1])
                         if code:meta['currencies'].add(code)
                     if 'CODIGO DE CLIENTE NO' in norm(c['expected_text']) and i > 0:
                         holder = cells[i-1]['expected_text'].strip()
@@ -254,7 +270,7 @@ def propose_santander_statement(sources,currency,choice):
     if choice.get('form') == FORM:
         return propose_santander_query(sources, currency, choice)
     scopes={(s['page_number'],s['table_index']):set(s['row_indices']) for s in choice['section_sources']}
-    result=[];columns=None;last=None;active_page=None;previous_balance=None
+    result=[];columns=None;last=None;active_page=None;previous_balance=None;quiet_heading=None
     for page in sorted({s['page_number'] for s in sources}):
         for s,raw in located_rows([s for s in sources if s['page_number']==page]):
             cells=raw['cells'];joined=norm(text(raw))
@@ -262,6 +278,8 @@ def propose_santander_statement(sources,currency,choice):
             result.append(item)
             if page!=active_page:columns=None;last=None;active_page=page
             if raw['row_index'] not in scopes.get((page,s['table_index']),set()):continue
+            # A heading read without SALDO serves only the very next line of its section (QUIET_HEADING).
+            heading_before,quiet_heading=(quiet_heading if quiet_heading and quiet_heading[0]==page else None),None
             labels={norm(c['expected_text']):c for c in cells}
             if 'SALDO FINAL DEL PERIODO' in joined:
                 opening='ANTERIOR' in joined
@@ -276,6 +294,12 @@ def propose_santander_statement(sources,currency,choice):
             money_names=('DEPOSITO','RETIRO','SALDO')
             if 'FECHA' in joined and all(n in labels and box(labels[n]) for n in money_names):
                 columns={n:labels[n] for n in money_names};last=None;continue
+            if (QUIET_HEADING and columns is None and 'FECHA' in joined and 'SALDO' not in joined
+                    and all(n in labels and box(labels[n]) for n in ('DEPOSITO','RETIRO'))):
+                quiet_heading=(page,{n:labels[n] for n in ('DEPOSITO','RETIRO')});continue
+            if columns is None and heading_before and joined.startswith('TOTAL'):
+                _quiet_totals(item,cells,heading_before[1],result,currency)
+                continue
             if columns is None:
                 # A recognizable payment under an unreadable column heading
                 # is an incomplete reading, never evidence of no activity.
@@ -357,9 +381,34 @@ def propose_santander_statement(sources,currency,choice):
                 except ValueError as exc:item['issues'].append(str(exc))
             if BALANCE_STEP_AMOUNT and 'amount_minor' not in fields and fields.get('direction'):
                 _balance_step_amount(item, previous_balance, money, currency)
+    if COVER_OPENING:
+        _cover_opening(result, choice, currency)
     if COVER_CLOSING:
         _cover_closing(result, choice, currency)
     return dict(rows=result,issues=[])
+
+
+def _quiet_totals(item, cells, heading, result, currency):
+    """The TOTAL line under a heading read without SALDO: one printed amount under each of DEPOSITO and RETIRO
+    (nearest right edge, never left of the DEPOSITO heading), or nothing."""
+    money = {n: [] for n in heading}
+    for c in cells:
+        rect = box(c)
+        if rect and rect[0] >= box(heading['DEPOSITO'])[0] and re.fullmatch(r'\$?\s*[\d,.]+\.\d{2}-?', c['expected_text'].strip()):
+            money[min(heading, key=lambda n: abs(rect[2] - box(heading[n])[2]))].append(c)
+    if any(len(found) != 1 for found in money.values()):
+        return
+    for name, direction in (('DEPOSITO', 'credit'), ('RETIRO', 'debit')):
+        total = item if not item['fields'] else dict(item, id=item['id'] + ':' + direction, fields={}, issues=[])
+        if total is not item:
+            result.append(total)
+        total['kind'] = 'statement_total'
+        total['fields'].update(description='Total ' + direction, total_direction=direction,
+                               balance_column=str(money[name][0]['column_index']))
+        try:
+            total['fields']['balance'] = exact_amount(money[name][0]['expected_text'], currency)
+        except ValueError as exc:
+            total['issues'].append(str(exc))
 
 
 # LOUPE_FINANCIAL_SANTANDER_BALANCE_STEP_AMOUNT: a payment amount printed with a misread separator
@@ -521,6 +570,58 @@ def _cover_closing(rows, choice, currency):
                          balance_basis='cover_balance_summary')
 
 
+def _cover_opening(rows, choice, currency):
+    """(fin-queue3) The section's opening from the cover's balance summary when the value of its SALDO FINAL DEL
+    PERIODO ANTERIOR line was not read (05 MONETA SANTANDER MXN MAY 26, INVERSION CRECIENTE 66-50958129-0).
+
+    The mirror of ``_cover_closing``: the cover line naming this section's account number exactly, printing
+    exactly two money values and two percentages, whose current month's balance equals the section's printed
+    closing and whose previous month's balance equals that closing less the section's printed deposit total plus
+    its printed withdrawal total. Three printed facts agree; the value is cited to its own cover cell, and the
+    unread label line stays as read (a heading line).
+    """
+    balances = [row for row in rows if row['kind'] == 'balance']
+    openings = [row for row in balances if row['fields'].get('description') == 'Opening Balance']
+    closings = [row for row in balances if row['fields'].get('description') == 'Closing Balance']
+    if len(openings) != 1 or len(closings) != 1 or openings[0]['fields'].get('balance') is not None:
+        return
+    if closings[0]['issues'] or closings[0]['fields'].get('balance') is None:
+        return
+    totals = {d: [row for row in rows if row['kind'] == 'statement_total' and row['fields'].get('total_direction') == d]
+              for d in ('credit', 'debit')}
+    if any(len(found) != 1 or found[0]['issues'] or found[0]['fields'].get('balance') is None for found in totals.values()):
+        return
+    closing = int(closings[0]['fields']['balance'])
+    previous = str(closing - int(totals['credit'][0]['fields']['balance']) + int(totals['debit'][0]['fields']['balance']))
+    account = choice.get('account_reference') or ''
+    found = []
+    for row in rows:
+        if row['kind'] != 'header' or not account:
+            continue
+        cells = row['source_cells']
+        if not any(_names_account(c['expected_text'], account) for c in cells):
+            continue
+        money = [c for c in cells if _MONEY_CELL.fullmatch(c['expected_text'].strip())]
+        shares = [c for c in cells if _PERCENT_CELL.fullmatch(c['expected_text'].strip())]
+        if len(money) != 2 or len(shares) != 2 or not all(box(c) for c in money):
+            continue
+        try:
+            values = [exact_amount(c['expected_text'].replace('$', '').strip(), currency) for c in money]
+        except ValueError:
+            continue
+        if values == [previous, str(closing)]:
+            found.append((row, money[0]))
+    if len(found) != 1:
+        return
+    row, cell = found[0]
+    label = openings[0]
+    label.update(kind='header', excluded=True, issues=[])
+    label['fields'] = dict(description=label['fields'].get('description'), balance_read_from=row['id'])
+    row.update(kind='balance', excluded=True)
+    row['fields'].update(description='Opening Balance', balance=previous, balance_column=str(cell['column_index']),
+                         balance_basis='cover_balance_summary')
+
+
 def _names_account(value, account):
     """A cover cell prints this account number: inside its text, or (OCR split it with a space) as the
     whole cell once its spaces are removed. Never a longer number containing it."""
@@ -554,6 +655,8 @@ def santander_no_activity_evidence(sources, choice, rows, currency):
                 roles.append(('opening' if 'ANTERIOR' in joined else 'closing', page))
             elif 'FECHA' in joined and all(label in joined for label in ('DEPOSITO', 'RETIRO', 'SALDO')):
                 roles.append(('columns', page))
+            elif QUIET_HEADING and 'FECHA' in joined and all(label in joined for label in ('DEPOSITO', 'RETIRO')):
+                roles.append(('columns', page))  # read without SALDO; only the TOTAL line may follow it
             elif joined.startswith('TOTAL'):
                 roles.append(('total', page))
             elif roles and roles[-1][0] == 'columns':
