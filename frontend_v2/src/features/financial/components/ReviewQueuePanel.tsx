@@ -827,8 +827,24 @@ export function ReviewQueuePanel({
                   <li key={entry.id} className="flex flex-wrap items-center justify-between gap-3 p-3 text-sm">
                     <div className="min-w-0 flex-1 basis-72">
                       <EntryLine entry={entry} />
+                      {entry.reader_gap_line && <p className="mt-1" aria-label="Reader problem">{entry.reader_gap_line}</p>}
                       {entry.issue && <p className="mt-1">{entry.issue}</p>}
                       {entry.also.length > 0 && <p>also: {entry.also.join("; ")}</p>}
+                      {entry.reader_gap && (
+                        // Every action it had where it was held ("Needs you"), including "This isn't a statement".
+                        <ItemFixes
+                          entry={entry}
+                          user={user}
+                          caseId={caseId}
+                          canEdit={canEdit}
+                          bucket={entry.held_bucket ?? "waiting"}
+                          onSaved={(saved) => void refresh(saved)}
+                          onLeftOut={(left) => {
+                            setOutcome({ entry: left, held: false, message: LEFT_OUT_MESSAGE })
+                            void refresh(left, true)
+                          }}
+                        />
+                      )}
                     </div>
                     {entry.batch_id && (
                       <Button size="sm" variant="outline" onClick={() => {

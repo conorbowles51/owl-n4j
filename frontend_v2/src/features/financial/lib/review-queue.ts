@@ -41,6 +41,10 @@ const entry = z.object({
   /** True only when the proposed one-click fix leaves nothing else to fix. */
   fix_makes_ready: z.boolean().default(false),
   reader_file: z.boolean().optional(),
+  /** Nothing was read from pages that carry text: a reader problem, reported; `held_bucket` is the list it had its actions in. */
+  reader_gap: z.boolean().optional(),
+  reader_gap_line: z.string().optional(),
+  held_bucket: z.string().optional(),
   copy_of: z.string().nullish(),
   set_aside: z.boolean().optional(),
   /** "same_file_read": this upload's reading failed; the same bytes were read through another upload.

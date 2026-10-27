@@ -47,6 +47,7 @@ from routers import (
     setup_router,
     cost_ledger_router,
     admin_ai_costs_router,
+    admin_reader_gaps_router,
     admin_update_router,
     financial_router,
     financial_ledger_router,
@@ -236,6 +237,7 @@ app.include_router(users_router)
 app.include_router(setup_router)
 app.include_router(cost_ledger_router)
 app.include_router(admin_ai_costs_router)
+app.include_router(admin_reader_gaps_router)
 app.include_router(admin_update_router)
 app.include_router(financial_router)
 app.include_router(financial_ledger_router)

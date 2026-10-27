@@ -2667,6 +2667,7 @@ async def run_batches_forever():
     next_sweep = time.monotonic() + READINESS_SWEEP_SECONDS
     next_auto_read = time.monotonic()
     next_reader_release = time.monotonic() + READINESS_SWEEP_SECONDS
+    next_reader_gaps = time.monotonic() + READINESS_SWEEP_SECONDS
     # Held statements read from their page images: its own task, so a slow
     # image reading never delays batch turns (vision_reader; switch
     # LOUPE_FINANCIAL_VISION_FALLBACK).
@@ -2733,6 +2734,17 @@ async def run_batches_forever():
                     raise
                 except Exception:
                     log.exception('Preparing held statements again after a reader change failed; it will retry')
+            if time.monotonic() >= next_reader_gaps:
+                # Held statements the reader got nothing out of (pages with text): registered and reported to us
+                # (reader_gaps; journal WARNING for each newly seen one).
+                from services.financial import reader_gaps
+                next_reader_gaps = time.monotonic() + reader_gaps.SWEEP_SECONDS
+                try:
+                    await _finish_atomic(reader_gaps.sweep, factory)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    log.exception('Reader-gap round failed; it will retry')
             if time.monotonic() >= next_sweep:
                 # Batch reads never re-read PDFs. Inputs changed by paths
                 # without their own refresh are brought current here.

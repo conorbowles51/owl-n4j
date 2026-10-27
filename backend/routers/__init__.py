@@ -31,6 +31,7 @@ from routers.users import router as users_router
 from routers.setup import router as setup_router
 from routers.cost_ledger import router as cost_ledger_router
 from routers.admin_ai_costs import router as admin_ai_costs_router
+from routers.admin_reader_gaps import router as admin_reader_gaps_router
 from routers.admin_update import router as admin_update_router
 from routers.financial import router as financial_router
 from routers.financial_ledger import router as financial_ledger_router
@@ -77,6 +78,7 @@ __all__ = [
     "setup_router",
     "cost_ledger_router",
     "admin_ai_costs_router",
+    "admin_reader_gaps_router",
     "admin_update_router",
     "financial_router",
     "financial_ledger_router",

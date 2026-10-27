@@ -30,6 +30,7 @@ from sqlalchemy import select
 
 from postgres.models.evidence import EvidenceFile
 from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item
+from services.financial import reader_gaps
 
 # Review reasons that never ask the investigator for anything.
 NOTE_REASONS = frozenset({'overlap', 'balance_unavailable', 'readiness_update', 'duplicate'})
@@ -550,6 +551,11 @@ def _build(session, case_id):
                 field_proposals.REASONS.get(name) == single[0] for name in proposals)
         entry.update(bucket=bucket, root=identity[0], file_ids=sorted({str(i.file_id) for i in identities[identity]}
             | {source for i in identities[identity] for source in sources.get(str(i.file_id), ())}))
+        if bucket in ('waiting', 'filled') and reader_gaps.reader_gap(item.summary, item.status):
+            # Nothing was read from pages that carry text: a reader problem, reported to us (reader_gaps), not a
+            # person's task. Listed under the reader fix with every action it has where it was (held_bucket).
+            entry.update(bucket='reader_fix', held_bucket=bucket, reader_gap=True, reader_file=True,
+                         reader_gap_line=reader_gaps.SENTENCE)
         if bucket == 'copies':
             disposition = item.summary.get('duplicate_disposition') or {}
             retained = disposition.get('retained') or {}
@@ -617,8 +623,13 @@ def reader_files(entries):
             batch_id=entry['batch_id'], statements=0, file_statements=entry.get('file_statements', 0), item_ids=[]))
         line['statements'] += 1
         line['item_ids'].append(entry['id'])
-    for line in files.values():
+    gaps = {entry['root'] for entry in entries if entry['bucket'] == 'reader_fix' and entry.get('reader_gap')}
+    for root, line in files.items():
         n = line['statements']
+        if root in gaps:
+            line['reader_gap'] = True
+            line['message'] = reader_gaps.FILE_MESSAGE.format(n=n, s='s' if n != 1 else '')
+            continue
         line['message'] = (f"Loupe can't read this file reliably yet ({n} statement{'s' if n != 1 else ''}). No need to "
                            "review it by hand; it will be re-read when the reader is fixed.")
     return list(files.values())
@@ -1080,7 +1091,7 @@ OWN_WORK_MESSAGE = 'manually added transaction'
 
 
 def _own_work(entry):
-    return entry['bucket'] in ('waiting', 'unreadable') and (
+    return entry.get('held_bucket', entry['bucket']) in ('waiting', 'unreadable') and (
         bool(OWN_WORK_REASONS & set(entry.get('reasons') or [entry.get('issue_reason')]))
         or any(OWN_WORK_MESSAGE in (m or '').lower() for m in entry.get('issue_messages') or []))
 
