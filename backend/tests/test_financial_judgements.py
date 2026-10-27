@@ -101,7 +101,7 @@ class DetectionTests(unittest.TestCase):
             statement_import_original=dict(rows=[])))
         glyph = SimpleNamespace(id=uuid.uuid4(), amount_minor=229342, transaction_date=date(2023, 8, 3), provenance=dict(
             confirmed_by=dict(name='System'),
-            statement_import_original=dict(page_number=4, fields=dict(date_column=0, credit_column=2), source_cells=[
+            statement_import_original=dict(page_number=4, fields=dict(date_column='0', credit_column='2'), source_cells=[
                 dict(column_index=0, expected_text='O3/AGO', locator=dict(page=4)),
                 dict(column_index=2, expected_text='2,293.42?', locator=dict(page=4))], value_repairs=[dict(
                 page_number=4, held_text='~293.42', text='2293.42', basis='one_unread_glyph_fixed_by_printed_balances')]),

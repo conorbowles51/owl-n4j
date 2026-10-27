@@ -283,10 +283,11 @@ def detect(document, period, transactions, *, file=None):
             if before is not None and _digits(before) != _digits(after):
                 direction = (first.get('fields') or {}).get('total_direction') or ''
                 page = _page_of(reason)
+                shown_before = money(before, currency) if re.fullmatch(r'-?\d+', str(before)) else before
                 add(*period_subject, 'image.printed_total',
                     f"The printed {'deposits' if direction == 'credit' else 'withdrawals'} total is "
                     f"{money(after, currency)} as the page image of page {page} reads it (the text read "
-                    f"{before}); it agrees with the payments read.",
+                    f"{shown_before}); it agrees with the payments read.",
                     target_key=f'total_{direction or "printed"}',
                     evidence=dict(page=page, before=before, chosen=after, reason=reason))
     if image_rows:
@@ -383,18 +384,24 @@ _DAY_LETTER = re.compile(r'(?=[0-9OolI|]{2}[/-])(?=.{0,1}[OolI|])[0-9OolI|]{2}[/
 def _cell_marks(first, fields, label, page):
     """(rule, cell, sentence) for the printed cells of a saved row the reader read past a scan mark (L9) or a
     letter standing for a day digit (L31); from the row's own stored cell text, nothing re-read."""
-    money_columns = {fields.get(k) for k in ('credit_column', 'debit_column', 'amount_column', 'balance_column')
-                     if fields.get(k) is not None}
-    date_columns = {fields.get(k) for k in ('date_column', 'operation_date_column', 'liquidation_date_column')
-                    if fields.get(k) is not None}
+    def columns(*names):
+        return {str(fields.get(k)) for k in names if fields.get(k) not in (None, '')}
+    money_columns = columns('credit_column', 'debit_column', 'amount_column', 'balance_column')
+    date_columns = columns('date_column', 'operation_date_column', 'liquidation_date_column')
+    balance_columns, amount_columns = columns('balance_column'), columns('credit_column', 'debit_column', 'amount_column')
     for cell in first.get('source_cells') or []:
         if not isinstance(cell, dict):
             continue
         text = str(cell.get('expected_text') or '').strip()
-        column = cell.get('column_index')
+        column = str(cell.get('column_index'))
         where = (cell.get('locator') or {}).get('page') or page
         if column in money_columns and _SPACED.search(text):
-            target = 'balance' if column == fields.get('balance_column') else 'amount'
+            if column in balance_columns and column not in amount_columns:
+                target = 'balance'
+            elif column in amount_columns and column not in balance_columns:
+                target = 'amount'
+            else:  # one cell printing the amount and the balance
+                target = 'amount' if _SPACED.search(text.split()[0] if text.split() else '') else 'balance'
             yield ('L9.scan_amount_marks', dict(target=target, text=text, column=column, page=where),
                    f"{label}: the {target} on page {where} is printed '{text}' in the scan; the space or mark is read "
                    f"past, and the printed balances agree with the value read.")
