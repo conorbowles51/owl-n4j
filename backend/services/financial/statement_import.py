@@ -1592,6 +1592,9 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                         reason="Statement reread replaces the prior import: " + request.details_reason)
                 if shell is not None:
                     saved_reading_replacement.set_aside_shell(session, case_id=case_id, shell=shell, document=document)
+                # The processor's judgement calls in this statement (fin-judgements): shown, never held; never raises.
+                from services.financial.judgements import record_saved
+                record_saved(session, document, period=period, transactions=transactions, file=file)
                 lap('reconcile')
                 _commit_statement(session)
                 lap('commit')

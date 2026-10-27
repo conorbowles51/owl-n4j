@@ -8,6 +8,7 @@ import { ImportedRecordsPanel } from "./ImportedRecordsPanel"
 import { LedgerSourceDialog } from "./LedgerSourceDialog"
 import { SavedStatementRecovery } from "./SavedStatementRecovery"
 import { AddSavedStatementPayment } from "./AddSavedStatementPayment"
+import { JudgementRowProvider } from "./JudgementCalls"
 
 /** The saved-record recovery path lives inside the statement's review. */
 export function SavedStatementPayments({
@@ -85,14 +86,20 @@ export function SavedStatementPayments({
               />
             </div>
           )}
-          <LedgerPanel
-            independentFilters
+          <JudgementRowProvider
             caseId={caseId}
-            params={{ sourceDocumentId: sourceId }}
-            onCorrect={canEdit ? setCorrecting : undefined}
-            onSource={(row) => setSource(row.key)}
-            splitAmounts
-          />
+            sourceDocumentId={sourceId}
+            onCorrect={canEdit ? (_, row) => setCorrecting(row) : undefined}
+          >
+            <LedgerPanel
+              independentFilters
+              caseId={caseId}
+              params={{ sourceDocumentId: sourceId }}
+              onCorrect={canEdit ? setCorrecting : undefined}
+              onSource={(row) => setSource(row.key)}
+              splitAmounts
+            />
+          </JudgementRowProvider>
           {source && (
             <LedgerSourceDialog
               caseId={caseId}

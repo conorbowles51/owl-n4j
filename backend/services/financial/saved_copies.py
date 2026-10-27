@@ -374,4 +374,8 @@ def settle_item(session, case_id, item, *, cache=None, apply=True):
     item.summary = {**(item.summary or {}), 'duplicate_disposition': decision, 'can_import': False, 'problems': [],
                     'problem_count': 0, 'saved_copy_check': check}
     session.flush()
+    from services.financial.judgements import record_held_copy
+    record_held_copy(session, case_id=case_id, file=file, statement_key=key, saved=saved, agreement=agreement,
+                     reading=str(proposal.get('revision') or ''), evidence=dict(opening=result.get('opening'),
+                     closing=result.get('closing'), payments=result.get('payments'), unread=result.get('unread')))
     return {**result, 'outcome': 'set_aside'}

@@ -54,6 +54,7 @@ from routers import (
     financial_ingest_router,
     financial_adjudication_router,
     financial_reconciliation_router,
+    financial_judgements_router,
     maintenance_router,
     case_deadlines_router,
     notebook_router,
@@ -241,6 +242,7 @@ app.include_router(financial_source_audit_router)
 app.include_router(financial_ingest_router)
 app.include_router(financial_adjudication_router)
 app.include_router(financial_reconciliation_router)
+app.include_router(financial_judgements_router)
 app.include_router(maintenance_router)
 app.include_router(case_deadlines_router)
 app.include_router(notebook_router)

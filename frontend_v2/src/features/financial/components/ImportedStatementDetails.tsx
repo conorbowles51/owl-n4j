@@ -1,4 +1,6 @@
 import { CurrencyOptions } from "./CurrencyOptions"
+import { StatementJudgements } from "./JudgementCalls"
+import { correctionPath } from "../lib/judgements"
 import { useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { z } from "zod"
@@ -58,6 +60,8 @@ export function ImportedStatementDetails({
 }) {
   const [open, setOpen] = useState(initiallyOpen)
   const [saved, setSaved] = useState(false)
+  // A judgement call's Correct it opens this form on the value it touched.
+  const [judgementFocus, setJudgementFocus] = useState<{ field: string; request: number }>({ field: "", request: 0 })
   useEffect(() => {
     if (editRequest) {
       setOpen(true)
@@ -85,6 +89,17 @@ export function ImportedStatementDetails({
       aria-label="Saved account details and balances"
       className="rounded border p-3 space-y-3"
     >
+      <StatementJudgements
+        caseId={caseId}
+        sourceDocumentId={sourceId}
+        onCorrect={(judgement) => {
+          const path = correctionPath(judgement)
+          if (path === "payment" || path === "statement") return
+          setJudgementFocus((current) => ({ field: path, request: current.request + 1 }))
+          setOpen(true)
+          setSaved(false)
+        }}
+      />
       {!open ? (
         <>
           {query.data && (
@@ -181,8 +196,8 @@ export function ImportedStatementDetails({
           key={query.data.revision}
           data={query.data}
           withSource={withSource}
-          focusField={focusField}
-          focusRequest={editRequest}
+          focusField={judgementFocus.field || focusField}
+          focusRequest={editRequest + judgementFocus.request}
           onCancel={() => setOpen(false)}
           onSaved={() => {
             setSaved(true)

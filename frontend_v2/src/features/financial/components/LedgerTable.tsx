@@ -61,6 +61,7 @@
  */
 
 import { CircleHelp, TriangleAlert } from "lucide-react"
+import { RowJudgementMarkers } from "./JudgementCalls"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -358,6 +359,7 @@ function LedgerRow({
         ) : (
           <span className="text-sm">{transaction.description}</span>
         )}
+        <RowJudgementMarkers transaction={transaction} />
         {transaction.counterparty_raw !== null && (
           <div
             className="text-xs text-muted-foreground"

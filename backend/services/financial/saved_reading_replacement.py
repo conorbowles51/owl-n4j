@@ -678,6 +678,8 @@ def set_aside_replaced(session, *, case_id, existing, document, run_id=None):
     _log(session, case_id, existing, 'Saved statement period replaced by the current reading, which balances. '
          'The earlier saved copy is kept, linked and restorable.', action='financial_reader_replacement',
          replacement_source_document_id=str(document.id), adjudication_id=result['adjudication_id'])
+    from services.financial.judgements import record_replacement
+    record_replacement(session, existing, document, adjudication_id=result.get('adjudication_id'))
     return result
 
 

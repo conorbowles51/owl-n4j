@@ -38,6 +38,7 @@ from routers.financial_statement_import import router as financial_statement_imp
 from routers.financial_ingest import router as financial_ingest_router
 from routers.financial_adjudication import router as financial_adjudication_router
 from routers.financial_reconciliation import router as financial_reconciliation_router
+from routers.financial_judgements import router as financial_judgements_router
 from routers.maintenance import router as maintenance_router
 from routers.case_deadlines import router as case_deadlines_router
 from routers.notebook import router as notebook_router
@@ -83,6 +84,7 @@ __all__ = [
     "financial_ingest_router",
     "financial_adjudication_router",
     "financial_reconciliation_router",
+    "financial_judgements_router",
     "maintenance_router",
     "case_deadlines_router",
     "notebook_router",

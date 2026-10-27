@@ -718,6 +718,9 @@ def _exclude(session, case_id, document, primary, actor, reason, basis, touched,
     _log(session, case_id, document, 'Statement period set aside as a duplicate of another saved copy. '
          'Original PDF and saved review retained.', action='financial_duplicate_set_aside',
          retained_source_document_id=str(primary.id), adjudication_id=result['adjudication_id'], basis=basis)
+    if actor.email == SYSTEM_ACTOR.email:
+        from services.financial.judgements import record_set_aside
+        record_set_aside(session, document, primary, basis=basis, reason=reason, adjudication_id=result.get('adjudication_id'))
     return result
 
 

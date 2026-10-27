@@ -142,6 +142,7 @@ __all__ += ["TimelineEntry"]
 from postgres.models.evidence_upload import EvidenceUploadSession, EvidenceUploadGroup
 __all__ += ["EvidenceUploadSession"]
 from postgres.models.financial_money_trails import FinancialMoneyTrail
+from postgres.models.financial_judgements import FinancialJudgement
 __all__ += ["FinancialMoneyTrail"]
 from postgres.models.financial_recovery import FinancialRecoveryRelease, FinancialRecoveryRun, FinancialRecoveryItem
 __all__ += ['FinancialRecoveryRelease', 'FinancialRecoveryRun', 'FinancialRecoveryItem']
