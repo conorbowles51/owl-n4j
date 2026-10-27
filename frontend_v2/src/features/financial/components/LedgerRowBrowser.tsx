@@ -26,6 +26,7 @@ import {
   sortAnalysisRows,
 } from "../lib/transaction-analysis"
 import { PaymentEditsEditor } from "./PaymentEditsEditor"
+import { CategorisePaymentDialog } from "./CategorisePaymentDialog"
 import { PaymentCategoryManager } from "./PaymentCategoryManager"
 import { TransactionAccountFilters } from "./TransactionAccountFilters"
 import { useLedgerAccountDirectory } from "../hooks/use-ledger-account-directory"
@@ -138,6 +139,10 @@ export function LedgerRowBrowser({
   const [manageCategories, setManageCategories] = useState(false)
   const [editNames, setEditNames] = useState(false)
   const [labelIds, setLabelIds] = useState<string[] | null>(null)
+  // The quick Categorise dialog; "Edit other fields…" swaps in the full editor.
+  const [fullEditor, setFullEditor] = useState(false)
+  // Walking the current list one payment at a time from a row's category chip.
+  const [walk, setWalk] = useState<{ queue: string[]; done: number } | null>(null)
   const findings = useFinancialFindingIndex(
     investigation ? exportContext?.caseId : undefined
   )
@@ -964,6 +969,8 @@ export function LedgerRowBrowser({
               canEdit
                 ? (pending) => {
                     setEditNames(false)
+                    setFullEditor(false)
+                    setWalk(null)
                     setLabelIds(pending.map((row) => row.key))
                   }
                 : undefined
@@ -1119,6 +1126,8 @@ export function LedgerRowBrowser({
                         variant="outline"
                         onClick={() => {
                           setEditNames(false)
+                          setFullEditor(false)
+                          setWalk(null)
                           setLabelIds(selection)
                         }}
                       >
@@ -1228,7 +1237,46 @@ export function LedgerRowBrowser({
           </div>
         </>
       )}
-      {labelIds && exportContext && (
+      {labelIds && exportContext && !editNames && !fullEditor && (
+        <CategorisePaymentDialog
+          key={labelIds.join(",")}
+          caseId={exportContext.caseId}
+          ids={labelIds}
+          progress={walk && labelIds.length === 1 ? { done: walk.done, total: walk.queue.length } : undefined}
+          onNext={walk && labelIds.length === 1 ? () => {
+            const next = walk.queue[walk.queue.indexOf(labelIds[0]) + 1]
+            setWalk({ ...walk, done: walk.done + 1 })
+            if (next) setLabelIds([next])
+            else {
+              setLabelIds(null)
+              setWalk(null)
+            }
+          } : undefined}
+          onSkip={walk && labelIds.length === 1 ? () => {
+            const next = walk.queue[walk.queue.indexOf(labelIds[0]) + 1]
+            if (next) setLabelIds([next])
+            else {
+              setLabelIds(null)
+              setWalk(null)
+            }
+          } : undefined}
+          onMoreFields={() => setFullEditor(true)}
+          onManage={() => setManageCategories(true)}
+          onSaved={(replacements) => {
+            const mapping = new Map(
+              replacements.map((row) => [row.previous_id, row.id])
+            )
+            setSelection((previous) =>
+              previous.map((id) => mapping.get(id) ?? id)
+            )
+          }}
+          onClose={() => {
+            setLabelIds(null)
+            setWalk(null)
+          }}
+        />
+      )}
+      {labelIds && exportContext && (editNames || fullEditor) && (
         <PaymentEditsEditor
           key={labelIds.join(",")}
           caseId={exportContext.caseId}
@@ -1242,7 +1290,11 @@ export function LedgerRowBrowser({
               previous.map((id) => mapping.get(id) ?? id)
             )
           }}
-          onClose={() => setLabelIds(null)}
+          onClose={() => {
+            setLabelIds(null)
+            setFullEditor(false)
+            setWalk(null)
+          }}
         />
       )}
       {manageCategories && exportContext && (
@@ -1289,6 +1341,8 @@ export function LedgerRowBrowser({
             canEdit
               ? (row) => {
                   setEditNames(false)
+                  setFullEditor(false)
+                  setWalk({ queue: rows.map((item) => item.key), done: 0 })
                   setLabelIds([row.key])
                 }
               : undefined
@@ -1329,6 +1383,8 @@ export function LedgerRowBrowser({
             canEdit
               ? (row) => {
                   setEditNames(false)
+                  setFullEditor(false)
+                  setWalk({ queue: rows.map((item) => item.key), done: 0 })
                   setLabelIds([row.key])
                 }
               : undefined

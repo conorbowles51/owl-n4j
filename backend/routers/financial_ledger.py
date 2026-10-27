@@ -1396,8 +1396,13 @@ def get_payments_like(transaction_id: UUID, case_id: UUID = Query(...), db: Sess
     """The other payments like this one (same description or counterparty) whose category no person has chosen."""
     from services.financial.payment_categories import like_payments
     rows, basis = like_payments(db, case_id, transaction_id)
+    dated = sorted(rows, key=lambda row: (row.ordering_date, str(row.id)))
     return dict(case_id=str(case_id), transaction_id=str(transaction_id), basis=basis, count=len(rows),
-                transaction_ids=[str(row.id) for row in rows])
+                transaction_ids=[str(row.id) for row in rows],
+                first_date=dated[0].ordering_date.isoformat() if dated else None,
+                last_date=dated[-1].ordering_date.isoformat() if dated else None,
+                examples=[dict(id=str(row.id), date=row.ordering_date.isoformat(), description=row.description or '')
+                          for row in dated[:8]])
 
 
 @router.get('/ledger/payment-categories/coverage')
