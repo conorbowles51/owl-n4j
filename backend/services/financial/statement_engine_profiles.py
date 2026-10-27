@@ -47,6 +47,13 @@ Profile format (every key optional except ``name`` and ``match``):
     statement_account  True: a section sharing pages with another section and
                  printing no account of its own takes the statement's single
                  top-ranked heading account (one contract, several currencies)
+    account_number_heading  True: each section's account is the full number printed after its product name on
+                 a heading line of its own ('<PRODUCT NAME> 1470015292431', '... (continued)' on later pages): one
+                 consolidated statement printing several accounts, each with its own summary and movements
+    direction_headings  True (deposit accounts): the layout prints its movements in one unsigned amount column,
+                 one table per direction, each under a heading printing a credit_component or debit_component label
+                 alone ('Deposits, credits and interest'); an amount under such a heading moves that way, up to the
+                 next one (statement_engine._section_direction)
     account_suffix_heading  True: each section's account is the number printed after
                  its product name in the section's own heading ('<product> - 1234'),
                  never a number from the statement's other pages; one or none
@@ -170,6 +177,25 @@ PROFILES = (
     # its line of credit, savings), each in a section headed '<product name> - <last four digits>'; the
     # holder is printed under the title on every continuation page ('Statement of Account' / 'For <name>');
     # amounts carry a bare '$' (a US credit union) and no page names a currency.
+    # Truist consolidated statements ('Your consolidated statement'): one statement prints every account of the
+    # customer (checking, savings), each under '<PRODUCT NAME> <account number>' with its own 'Account summary'
+    # ('Your previous balance as of <date>', 'Your new balance as of <date>', negative balances as '= $-629.81')
+    # and its movements in tables of one unsigned AMOUNT($) column, the direction printed as the table's heading
+    # ('Other withdrawals, debits and service charges', 'Checks', 'Deposits, credits and interest') and each
+    # table's total line ('Total other withdrawals, debits and service charges = $4,751.04'). The pages print no
+    # period line: the two balances' dates are the period (statement_engine._balance_dates_period). A US bank:
+    # a bare '$' is US dollars, numeric dates month first.
+    # The business accounts' statements print the same layout titled 'Your account statement' (one account each).
+    dict(name='truist-consolidated', match=dict(all=['truist.com', 'your previous balance as of'],
+                                                any=['your consolidated statement', 'your account statement']),
+         institution='Truist Bank', currency='USD', convention='asset_balance', date_order='mdy',
+         account_number_heading=True, direction_headings=True,
+         labels=dict(opening=['Your previous balance as of'], closing=['Your new balance as of'],
+                     debit_total=['Total other withdrawals, debits and service charges', 'Total checks'],
+                     credit_total=['Total deposits, credits and interest'],
+                     debit_component=['Other withdrawals, debits and service charges', 'Checks'],
+                     credit_component=['Deposits, credits and interest']),
+         columns=dict(amount=['AMOUNT($)', 'AMOUNT'])),
     dict(name='navy-federal', match=dict(all=['navy federal credit union', 'statement of account', 'access no.']),
          institution='Navy Federal Credit Union', currency='USD', account_suffix_heading=True,
          holder_heading=dict(title=['STATEMENT OF ACCOUNT'], prefix='FOR')),
@@ -212,7 +238,8 @@ PROFILES += (
 
 _KEYS = {'name', 'match', 'institution', 'currency', 'convention', 'date_order', 'labels', 'columns', 'account_heading',
          'statement_account', 'prior_period_block', 'account_suffix_heading', 'holder_heading', 'settlement_days',
-         'client_line', 'rule_mark', 'holdings_currency', 'column_order', 'blank_closing_quiet', 'opening_from_first_day'}
+         'client_line', 'rule_mark', 'holdings_currency', 'column_order', 'blank_closing_quiet', 'opening_from_first_day',
+         'account_number_heading', 'direction_headings'}
 _LABEL_ROLES = {'opening', 'closing', 'subtotal', 'credit_total', 'debit_total', 'credit_component',
                 'debit_component', 'column_total', 'day_balance', 'ignore'}
 _COLUMN_ROLES = {'date', 'description', 'credit', 'debit', 'balance', 'amount', 'ignore'}
@@ -236,7 +263,9 @@ def validate(profile):
     if set(profile.get('labels') or {}) - _LABEL_ROLES or set(profile.get('columns') or {}) - _COLUMN_ROLES:
         raise ValueError('Invalid profile label or column role.')
     if (profile.get('account_heading') not in (None, True) or profile.get('statement_account') not in (None, True)
-            or profile.get('account_suffix_heading') not in (None, True) or profile.get('client_line') not in (None, True)):
+            or profile.get('account_suffix_heading') not in (None, True) or profile.get('client_line') not in (None, True)
+            or profile.get('account_number_heading') not in (None, True)
+            or profile.get('direction_headings') not in (None, True)):
         raise ValueError('Invalid profile account heading flag.')
     titled = profile.get('holder_heading')
     if titled is not None and (not isinstance(titled, dict) or set(titled) != {'title', 'prefix'}

@@ -103,7 +103,9 @@ SECTION_SCOPES = {'TOTAL FEES FOR THIS PERIOD': 'fee', 'TOTAL INTEREST FOR THIS 
 # interest totals for the calendar year): not this period's movements, nor its controls.
 YEAR_TO_DATE = re.compile(r'^(?:\d{4} )?TOTALS YEAR TO DATE$')
 # A table's continuation notice: never part of a movement's description.
-CONTINUATION_NOTICES = ('CONTINUED ON NEXT PAGE', 'CONTINUED ON THE NEXT PAGE', 'CONTINUED ON REVERSE SIDE')
+# 'continued' printed alone under a page's last movement (Truist) ends that movement's description: the page
+# furniture under it (the production stamp) is no description either.
+CONTINUATION_NOTICES = ('CONTINUED ON NEXT PAGE', 'CONTINUED ON THE NEXT PAGE', 'CONTINUED ON REVERSE SIDE', 'CONTINUED')
 # The heading of the remittance box printed beside a card's account summary. It repeats the new balance
 # and prints the payment due; its lines are never the summary's controls (D7).
 PAYMENT_BOX_HEADINGS = ('PAYMENT INFORMATION',)

@@ -1124,6 +1124,10 @@ def _profile_role(text, liability):
         return None
     for role, phrases in (profile.get('labels') or {}).items():
         if role.endswith('_component') and not liability:
+            if profile.get('direction_headings') and text in {label(p) for p in phrases}:
+                # (D7, deposit accounts) The summary's printed components ('Other withdrawals, debits and service
+                # charges - 4,751.04'), the same words as the direction tables' headings.
+                return 'asset_' + role
             continue
         if text in {label(p) for p in phrases}:
             return role
@@ -1348,7 +1352,49 @@ def page_facts(rows, style, exponent=2, order=None):
     _two_line_period(rows, facts)
     _stacked_period_label(rows, facts)
     _derived_period(rows, style, exponent, facts)
+    if BALANCE_DATES_PERIOD:
+        _balance_dates_period(rows, style, exponent, facts, order)
     return facts
+
+
+# (B1) A statement printing no period line dates its two balances instead, inside their labels ('Your previous
+# balance as of 04/11/2024 $333.65', 'Your new balance as of 05/13/2024 = $-629.81', Truist consolidated
+# statements): the period runs from the opening balance's date to the closing balance's. Only on a page printing
+# no period of its own (labelled or derived), exactly one full date inside an opening label and one inside a
+# closing label, the closing date after the opening date within MAX_PERIOD_DAYS. A date printed anywhere else on
+# the page (a production stamp '03/17/2025', a 'For 05/13/2024' heading) is never read for it. Recorded as
+# labelled (two printed facts) and as derived: a printed period line in the same page run wins over it.
+# Off: such a page prints no period, as before.
+BALANCE_DATES_PERIOD = os.environ.get('LOUPE_FINANCIAL_BALANCE_DATES_PERIOD', '1').strip().lower() not in (
+    '0', 'false', 'off', 'no')
+BALANCE_DATES_BASIS = 'printed_balance_dates'
+
+
+def _balance_dates_period(rows, style, exponent, facts, order):
+    if facts['labelled_periods']:
+        return
+    dated = dict(opening=set(), closing=set())
+    for row in rows:
+        if not row['tokens'] or _row_is_movement(row, style, exponent):
+            continue
+        roles = {_role_of(text, False) for text, values in label_pairs(row, style, exponent)
+                 if any(kind == 'money' for kind, _ in values)} & set(dated)
+        if len(roles) != 1:
+            continue
+        found = {_full_date(t['t'], order) for t in merged_dates(row['tokens'])
+                 if _value_kind(t, style, exponent) == 'date' and re.search(r'\d{4}$', t['t'])}
+        if len(found) == 1 and None not in found:
+            dated[roles.pop()].add(found.pop())
+    if len(dated['opening']) != 1 or len(dated['closing']) != 1:
+        return
+    start, end = next(iter(dated['opening'])), next(iter(dated['closing']))
+    if not start < end or (end - start).days > MAX_PERIOD_DAYS:
+        return
+    period = (start, end)
+    facts['periods'].add(period)
+    facts['labelled_periods'].add(period)
+    facts['derived_periods'] = {period}
+    facts.setdefault('balance_dates', set()).add(period)
 
 
 _ACCRUAL_PERIOD = re.compile(r'\b(?:DIVIDEND|INTEREST)S?\s+(?:PERIOD|CYCLE)\b')
@@ -2052,8 +2098,17 @@ def _holder_label(row, found):
     for index, cell in enumerate(cells[:-1]):
         if label(cell['expected_text']) in {label(n) for n in HOLDER_LABELS}:
             value = ' '.join(cells[index + 1]['expected_text'].split())
+            if HEADING_IS_NO_HOLDER and label(value) in _PRINTED_LABELS:
+                # A table heading ('ACCOUNT NAME | ACCOUNT NUMBER | BALANCE($)'): the next cell is another label.
+                continue
             if 3 <= len(value) <= 120 and re.search(r'[A-Za-z]', value):
                 found.add(value)
+
+
+# (A8) A holder label followed by another printed label is a table's column heading, never a name. Off: as before.
+HEADING_IS_NO_HOLDER = os.environ.get('LOUPE_FINANCIAL_HEADING_IS_NO_HOLDER', '1').strip().lower() not in (
+    '0', 'false', 'off', 'no')
+_PRINTED_LABELS = frozenset(label(n) for n in HOLDER_LABELS) | frozenset(label(n) for n, _ in ACCOUNT_LABELS)
 
 
 # A postal-code line (A8): a labelled code ('C.P. 01234', 'CODIGO POSTAL 01234', 'ZIP 12345'), a code
@@ -2070,8 +2125,17 @@ _POSTAL_PLACE = re.compile(r'[A-Z]{2,}\.?\s*,\s*[A-Z][A-Z. ]*?\s\d{5}(?:[- ]\d{4
 
 def _postal(text):
     """Whether a folded line reads as the postal-code line of an address."""
+    if SPACED_ZIP and _SPACED_ZIP.search(text):
+        # A mailing font printing the ZIP code's digits apart ('TEMPLE HILLS MD 2 0 7 4 8 - 4 5 2 9').
+        text = _SPACED_ZIP.sub(lambda m: m[1].replace(' ', '') + (' ' + m[2].replace(' ', '') if m[2] else ''), text)
     return bool(_POSTAL_LABELLED.search(text) or _POSTAL_LEADING.search(text) or _POSTAL_PLACE.search(text)
                 or _US_ADDRESS.search(text) and re.search(r'\d{5}(?:[- ]\d{4})?\s*$', text))
+
+
+# (A8) A US postal line whose ZIP code is printed digit by digit, spaced, at the end of the line. Off: such a
+# line is not read as a postal line, as before.
+SPACED_ZIP = os.environ.get('LOUPE_FINANCIAL_SPACED_ZIP', '1').strip().lower() not in ('0', 'false', 'off', 'no')
+_SPACED_ZIP = re.compile(r'(?<=[A-Z] )(\d(?: \d){4})(?:\s*-?\s*(\d(?: \d){3}))?\s*$')
 
 
 def _not_address(row, x, style):
@@ -2196,6 +2260,10 @@ def _grow_block(located, index, x, style):
             continue
         if _not_address(earlier, x, style):
             break
+        if PRESORT_LINE_ENDS_BLOCK and _presort_line(earlier):
+            # The mail presort line printed over the addressee ('467-11-01-00 60309 0 C 001 07 S 66 002'): figures
+            # and single letters only, never the name.
+            break
         # The issuer's own legal-name or heading line above is not part of the addressee block.
         # Only the cells aligned with the block's left edge count (the issuer's name can share the row).
         first_words = _aligned_text(earlier, x)
@@ -2213,6 +2281,17 @@ def _grow_block(located, index, x, style):
         if len(block) >= 7:
             break
     return block
+
+
+# (A8) Off: a presort line above an addressee joins the block (its top line, which is then no name), as before.
+PRESORT_LINE_ENDS_BLOCK = os.environ.get('LOUPE_FINANCIAL_PRESORT_LINE', '1').strip().lower() not in (
+    '0', 'false', 'off', 'no')
+
+
+def _presort_line(row):
+    words = fold(row['text']).replace('-', ' ').split()
+    figures = [w for w in words if w.isdigit()]
+    return len(words) >= 5 and len(figures) >= 4 and all(w.isdigit() or (len(w) == 1 and w.isalpha()) for w in words)
 
 
 _STREET = re.compile(r'^(?:\d+[A-Z]?|P\.?\s?O\.?\s?BOX|PO BOX)\b')
@@ -2315,10 +2394,22 @@ def _aligned_text(row, x):
     return fold(' '.join(t['t'] for t in _aligned_tokens(row, x)))
 
 
+# (A8) Off: only the cell at the block's edge names the holder, as before.
+WORD_CELLS_NAME = os.environ.get('LOUPE_FINANCIAL_WORD_CELLS_NAME', '1').strip().lower() not in ('0', 'false', 'off', 'no')
+
+
 def _block_top(block, x):
     """(y0, name, accepted) of a block's top line, or None."""
     top = block[-1]
-    name = ' '.join(t['t'] for t in _aligned_tokens(top, x) if t['line'] == 0)
+    aligned = [t for t in _aligned_tokens(top, x) if t['line'] == 0]
+    if WORD_CELLS_NAME and len(aligned) == 1:
+        # (A8) A scan storing each word of the name as a cell of its own ('KENY | V | ALVARADO | GOMEZ'): the
+        # cells following the aligned one on its line, each a word space after the last, are the same printed name.
+        tolerance = top['width'] * 0.015
+        for token in sorted((t for t in top['tokens'] if t['line'] == 0), key=lambda t: t['x0']):
+            if token['x0'] > aligned[-1]['x1'] and token['x0'] - aligned[-1]['x1'] <= tolerance:
+                aligned.append(token)
+    name = ' '.join(t['t'] for t in aligned)
     # An address line at the top means the scan lost the name line above it.
     accepted = _name_like(name) and not address_line(name)
     if not accepted:
@@ -3299,6 +3390,18 @@ def _suffix_heading_account(row):
     return (printed[1].strip() + ' ' + m[2]) if printed and printed[1].strip() else m[2]
 
 
+_NUMBER_HEADING = re.compile(r'^([A-Z][A-Z .&/]{2,60}?)\s+(\d{8,17})(?:\s+\(CONTINUED[A-Z ]*\))?$')
+
+
+def _number_heading_account(row):
+    """The full account number from a whole heading line '<product name> 1470015292431' (optionally
+    '(continued)'), or ''. A line naming a telephone, client or other reference word is no account heading."""
+    m = _NUMBER_HEADING.match(' '.join(_dnorm(row['text']).split()))
+    if not m or any(w.strip('.:') in _HEADING_ACCOUNT_NOT for w in m[1].split()):
+        return ''
+    return m[2]
+
+
 def _titled_holder(segment_pages, pages, rule):
     """Library profile (data): the holder printed under the statement's title on its pages ('Statement of
     Account' then 'For <name>'). Every page printing the pair must name the same person, or none."""
@@ -3479,6 +3582,22 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
         found = {_suffix_heading_account(row) for row in own_head if row['tokens']} - {''}
         account = found.pop() if len(found) == 1 else ''
         account_basis = 'section_heading_suffix' if account else ''
+    elif profile and profile.get('account_number_heading'):
+        # Library profile (data): each section names its own full account number on a heading line of its own,
+        # after the product name ('TRUIST ONLINE SAVINGS 4470005569061'), one consolidated statement printing
+        # several accounts. The section's heading lines are its own lines before its first movement and, on the
+        # page where it starts, the lines printed above it after the previous section's last movement line
+        # (the splitter leaves them with the section before). One distinct number there, or none.
+        lead = []
+        if rows and rows[0].get('_seg') is not None:
+            for row in reversed([r for page in segment['pages'] for r in pages[page]
+                                 if r.get('_seg', rows[0]['_seg']) < rows[0]['_seg']]):
+                if row['page'] != rows[0]['page'] or (row['tokens'] and _row_is_movement(row, style or 'dot', 2)):
+                    break
+                lead.append(row)
+        found = {_number_heading_account(row) for row in lead + own_head if row['tokens']} - {''}
+        account = found.pop() if len(found) == 1 else ''
+        account_basis = 'section_heading_number' if account else ''
     elif account:
         scope = head if shared else [row for page in _heading_pages(segment['pages'], facts) for row in pages[page]]
         account, account_basis = _printed_over_interbank(account, scope)
@@ -3522,7 +3641,8 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
     if profile and profile.get('convention'):
         liability = profile['convention'] == 'liability_owed'
     if profile and profile.get('currency') and not currency and (
-            not shared or (profile.get('account_suffix_heading') and not segment.get('currency_mentions'))):
+            not shared or ((profile.get('account_suffix_heading') or profile.get('account_number_heading'))
+                           and not segment.get('currency_mentions'))):
         # A section sharing its pages takes the profile's currency only in a layout whose sections each
         # name their own account (account_suffix_heading), and only when the statement names no currency.
         currency, currency_basis = profile['currency'], 'library_profile'
@@ -3979,7 +4099,7 @@ def _reading(rows, statement, style, exponent, liability, period):
         proof['reason'] = proof['reason'] or 'no_geometry'
     controls = dict(opening=[], closing=[], credit_total=[], debit_total=[], credit_component=[], debit_component=[],
                     net_component=[], section_total=[], day_opening=[], asset_credit_component=[],
-                    asset_debit_component=[])
+                    asset_debit_component=[], table_total=[])
     # (profile) Movement lines print the operation day then the settlement day (``settlement_days``).
     settlement = _DAY_COLUMN.get() and _settlement_words() is not None
     movements, headers, labels_seen, unplaced, continuation_of, column_totals = [], [], set(), [], {}, []
@@ -4055,6 +4175,14 @@ def _reading(rows, statement, style, exponent, liability, period):
             last_move = None
             ends.append(index)
             continue
+        if not liability and _heading_direction(row, style or 'dot', exponent):
+            # (profile, asset) The table's printed direction heading ('Other withdrawals, debits and service
+            # charges', 'Deposits, credits and interest'): the unsigned amounts below it move that way, up to the
+            # next such heading, across pages ('<ACCOUNT> (continued)' repeats only the column heading).
+            section = label(row['text'])
+            labels_seen.add(section)
+            last_move = None
+            continue
         if region and liability and _section_heading(row, style or 'dot', exponent):
             section = label(row['text'])
             labels_seen.add(section)
@@ -4127,6 +4255,18 @@ def _reading(rows, statement, style, exponent, liability, period):
             counts = [t for kind, t in values if kind == 'count']
             if role == 'opening' and money_values:
                 in_summary = not region
+            if (role in ('credit_total', 'debit_total') and money_values and not in_summary and section
+                    and _section_direction(section) == role.split('_')[0]
+                    and any(m.get('section') == section for m in movements)):
+                # (profile, asset) A direction table's own total line after its movements ('Total deposits, credits
+                # and interest = $3,787.58' under 'Deposits, credits and interest'): the lines under that heading
+                # must add up to it.
+                controls['table_total'].append(dict(row=row, value_token=_control_value(money_values), count=None,
+                                                    direction=role.split('_')[0], headings={section}))
+                labels_seen.add(text)
+                handled = True
+                table_totals = index
+                continue
             if role in ('credit_total', 'debit_total', 'credit_component', 'debit_component', 'net_component') and not in_summary:
                 handled = handled or bool(money_values)
                 if role in ('credit_total', 'debit_total') and money_values and movements:
@@ -4447,6 +4587,26 @@ def _unlocated_matters(row, style, exponent):
     return False
 
 
+def _section_direction(section):
+    """'credit' or 'debit' for a movement-table heading the active profile names as one direction's table
+    (``direction_headings``: its credit_component / debit_component labels printed alone as a table heading), else
+    None."""
+    profile = _PROFILE.get()
+    if not section or not profile or not profile.get('direction_headings'):
+        return None
+    labels = profile.get('labels') or {}
+    for role, direction in (('credit_component', 'credit'), ('debit_component', 'debit')):
+        if section in {label(p) for p in labels.get(role, ())}:
+            return direction
+    return None
+
+
+def _heading_direction(row, style, exponent):
+    """(profile, asset) A line printing only a direction heading of the active profile: no amount, no date."""
+    return (_section_direction(label(row['text'])) is not None
+            and not any(_value_kind(t, style, exponent) in ('money', 'date') for t in row['tokens']))
+
+
 def _section_heading(row, style, exponent):
     """A card movement table's section heading ('FEES', 'INTEREST CHARGED'): a line printing only a summary
     component's words, no amount and no date (D4, D7)."""
@@ -4608,7 +4768,15 @@ def _continues(row, move, text_only=False):
             return False
     elif first < start - 0.02 * width:
         return False
-    return not _is_header(row) and not any(_role_of(text, False) for text, _ in label_pairs(row, 'dot', 2))
+    return (not _is_header(row) and not any(_role_of(text, False) for text, _ in label_pairs(row, 'dot', 2))
+            and not (NOTICE_ENDS_DESCRIPTION and label(row['text']) in _NOTICES))
+
+
+# A page's continuation notice ('continued', 'Continued on next page') printed under its last movement is no part of
+# that movement's description, and ends it. Off: such a line continues the description, as before.
+NOTICE_ENDS_DESCRIPTION = os.environ.get('LOUPE_FINANCIAL_NOTICE_ENDS_DESCRIPTION', '1').strip().lower() not in (
+    '0', 'false', 'off', 'no')
+_NOTICES = frozenset(label(n) for n in CONTINUATION_NOTICES)
 
 
 def _profile_column_order(hints, columns):
@@ -4639,7 +4807,10 @@ def _domains(columns, hints):
 
 def _valid(assignment):
     roles = [r for r in assignment]
-    if any(roles.count(r) > 1 for r in ('credit', 'debit', 'amount', 'balance')):
+    # (profile ``direction_headings``) Each direction table prints its own amount column ('Checks' narrower than
+    # 'Other withdrawals'): several amount columns, each line still printing one amount under its table's heading.
+    several = ('amount',) if (_PROFILE.get() or {}).get('direction_headings') else ()
+    if any(roles.count(r) > 1 for r in ('credit', 'debit', 'amount', 'balance') if r not in several):
         return False
     if 'amount' in roles and ({'credit', 'debit'} & set(roles)):
         return False
@@ -4702,7 +4873,13 @@ def _movement_value(move, assignment, columns, width, style, exponent, liability
     if not amounts:
         return dict(zero=True, balance=balance, balance_token=balance_token) if zero else None
     role, value, token = amounts[0]
-    if role in ('credit', 'debit'):
+    heading = _section_direction(move.get('section')) if role == 'amount' and not liability else None
+    if heading:
+        # (profile, asset) An unsigned amount under a printed direction heading moves the heading's way.
+        if value < 0:
+            return None
+        direction = heading
+    elif role in ('credit', 'debit'):
         if value < 0:
             return None
         direction = role
@@ -4773,6 +4950,14 @@ def _search(moves, columns, hints, controls, column_totals, style, exponent, lia
             net = sum(v['effect'] for m, v in zip(moves, values) if not v['zero'] and m.get('section') in item['headings'])
             totals_found += 1
             if printed is None or printed != net:
+                totals_ok, totals_failed = False, True
+        for item in controls['table_total']:
+            # (profile, asset) A direction table's printed total: the lines under its heading, all that direction.
+            printed = money(item['value_token']['t'], style, exponent)
+            under = [v for m, v in zip(moves, values) if not v['zero'] and m.get('section') in item['headings']]
+            totals_found += 1
+            if (printed is None or any(v['direction'] != item['direction'] for v in under)
+                    or abs(printed) != sum(v['amount'] for v in under)):
                 totals_ok, totals_failed = False, True
         for role, expected in (('credit_total', credits), ('debit_total', debits)):
             for item in controls[role]:
@@ -5341,6 +5526,20 @@ def _rows(rows, moves, resolved, chosen, controls, column_totals, statement, sty
             item = control(entry, 'Total ' + direction, role, **extra)
             item['fields']['balance'] = str(abs(int(item['fields']['balance'])))
     if chosen and chosen.get('values') is not None:
+        for entry in controls['table_total']:
+            # A direction table's printed total. The only table of its direction totals the statement's movements of
+            # that direction (the statement's credit or debit total); one of several is scoped to its heading.
+            direction = entry['direction']
+            alone = (len([e for e in controls['table_total'] if e['direction'] == direction]) == 1
+                     and not controls[direction + '_total']
+                     and all(m.get('section') in entry['headings'] for m, v in zip(moves, chosen['values'])
+                             if not v['zero'] and v['direction'] == direction))
+            extra = dict(kind='statement_total', total_direction=direction)
+            if not alone:
+                extra['total_scope'] = next(iter(entry['headings'])).lower()
+            item = control(entry, 'Total ' + direction if alone else 'Printed %s total' % extra['total_scope'],
+                           direction + '_total' if alone else 'table_' + extra['total_scope'], **extra)
+            item['fields']['balance'] = str(abs(int(item['fields']['balance'])))
         for entry in controls['section_total']:
             # A section's printed total (D4) as the review's scoped control, with the lines it totals.
             scope = entry['scope']
