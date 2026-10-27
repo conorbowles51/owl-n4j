@@ -177,24 +177,26 @@ it("lists only statements with something to fix, each saying what before it is o
   expect(screen.getByText("After that, the statement shows 1 more check.")).toBeVisible()
   // The split: what needs a person first, named for the signed-in person (no name here: "you").
   expect(screen.getByRole("tab", { name: /Needs you \(3\)/ })).toHaveAttribute("aria-selected", "true")
-  expect(screen.getByRole("tab", { name: /Loupe is handling \(4\)/ })).toBeVisible()
+  expect(screen.getByRole("tab", { name: /Not waiting on you \(4\)/ })).toBeVisible()
   expect(screen.getByText(/statement 7 of 54 in this file/)).toBeVisible()
   // Each row shows its period and printed balances, checkable against the PDF without opening it.
   expect(list.querySelectorAll('[aria-label="Period and printed balances"]')[1]).toHaveTextContent(
     "2021-01-01 to 2021-01-31 · opening 2,500.00 USD · closing 2,612.40 USD · 4 payments read"
   )
   expect(screen.getByLabelText("Statement status")).toHaveTextContent(
-    "Imported 49 · Waiting for you 2 · Ready to import 3 · Copies set aside 1 · Couldn't read 1"
+    "Imported 49 · Waiting for you 2 · Couldn't be read 1 · Ready to import 3 · Copies set aside 1"
   )
-  expect(screen.getByLabelText("Statement status")).toHaveTextContent(/^Total \d+: Imported 49/)
+  expect(screen.getByLabelText("Statement status")).toHaveTextContent(/^\d+ statements: Imported 49/)
   // Copies are behind their own entry, not in the queue.
   expect(screen.queryByText("Copy.pdf")).toBeNull()
-  fireEvent.click(screen.getByRole("tab", { name: /Loupe is handling/ }))
-  const handled = await screen.findByRole("list", { name: "What Loupe is handling" })
+  fireEvent.click(screen.getByRole("tab", { name: /Not waiting on you/ }))
+  // Ready (in progress) and copies (finished, set aside on purpose) are never one pile of pending work.
+  expect(await screen.findByRole("region", { name: "In progress" })).toHaveTextContent("Ready to import (3)")
+  const handled = await screen.findByRole("region", { name: "Set aside on purpose" })
   expect(handled).toHaveTextContent("Copies set aside (1)")
   fireEvent.click(within(handled).getAllByRole("button", { name: "Show them" }).at(-1)!)
   expect(await screen.findByText(/Set aside as a copy of Card statements.pdf/)).toBeVisible()
-  expect(screen.getByRole("note")).toHaveTextContent("Loupe is handling these. Nothing here needs you.")
+  expect(screen.getByRole("note")).toHaveTextContent("Nothing here needs you or is blocked.")
 })
 
 it("opens the statement itself at its problem, and Next moves to the next one with issues without reloading", async () => {
@@ -367,7 +369,7 @@ it("never counts files removed from Financial as couldn't read, and says what th
   })
   mount("/cases/case/financial?view=statements&queue=1&queueList=unreadable")
   const status = await screen.findByLabelText("Statement status")
-  expect(status).toHaveTextContent("Couldn't read 1")
+  expect(status).toHaveTextContent("Couldn't be read 1")
   expect(status).toHaveTextContent("Files removed from Financial 2")
   expect(await screen.findByText(/Scan.pdf: PDF source preparation failed/)).toBeVisible()
   expect(screen.getByText(/2 files are not counted as couldn't read/)).toBeVisible()

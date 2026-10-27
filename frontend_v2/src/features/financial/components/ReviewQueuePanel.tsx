@@ -39,10 +39,12 @@ import {
   groupGuidance,
   guidanceFor,
   handledCount,
+  inProgressCount,
   isGroup,
   issueLabel,
   needsCount,
   needsLabel,
+  setAsideCount,
   reasonProposal,
   type QueueGroup,
   type QueuePerson,
@@ -117,19 +119,22 @@ export function ReviewStatusLine({
   const total =
     c.imported + c.waiting + (c.reader_fix ?? 0) + c.filled + c.ready + c.copies +
     c.unreadable + c.unreadable_files + c.saving + c.rechecking + c.left_unimported + (c.not_payment ?? 0)
+  // Imported first: it is the finished state. Set-aside statements are finished too, never pending.
   const parts = [
-    <span key="total">Total {total}:</span>,
+    <span key="total">{total} statements:</span>,
     part("Imported", c.imported),
-    part("Waiting for you", c.waiting, "waiting"),
+    ...(c.waiting ? [part("Waiting for you", c.waiting, "waiting")] : []),
+    ...(c.unreadable + c.unreadable_files
+      ? [part("Couldn't be read", c.unreadable + c.unreadable_files, "unreadable")]
+      : []),
     ...(c.reader_fix ? [part("Waiting for a reader fix", c.reader_fix, "reader")] : []),
     ...(c.filled ? [part("Details filled automatically", c.filled, "filled")] : []),
     ...(c.ready ? [part("Ready to import", c.ready, "ready")] : []),
-    part("Copies set aside", c.copies, "copies"),
-    part("Couldn't read", c.unreadable + c.unreadable_files, "unreadable"),
     ...(c.saving ? [part("Importing now", c.saving)] : []),
     ...(c.rechecking ? [part("Being rechecked", c.rechecking)] : []),
+    ...(c.copies ? [part("Copies set aside", c.copies, "copies")] : []),
+    ...(c.not_payment ? [part("Fund statements set aside", c.not_payment, "not_payment")] : []),
     ...(c.left_unimported ? [part("Left out by you", c.left_unimported)] : []),
-    ...(c.not_payment ? [part("Not payment statements", c.not_payment, "not_payment")] : []),
     ...(c.removed_files ? [part("Files removed from Financial", c.removed_files, "unreadable")] : []),
   ]
   return (
@@ -517,7 +522,7 @@ export function ReviewQueuePanel({
           {list === "copies"
             ? "Copies set aside"
             : list === "not_payment"
-              ? "Not payment statements"
+              ? "Fund statements set aside"
             : list === "filled"
               ? "Details filled by Loupe"
               : list === "reader"
@@ -527,7 +532,7 @@ export function ReviewQueuePanel({
               : list === "ready"
                 ? "Ready to import"
               : list === "handled"
-                ? "Loupe is handling"
+                ? "Not waiting on you"
               : needsLabel(user)}
         </h3>
         <p className="text-sm text-muted-foreground">
@@ -536,15 +541,15 @@ export function ReviewQueuePanel({
             : list === "filled"
             ? "The missing details were found in the same account's saved statements. Each value says where it came from. They are filled and imported when you press Import; change any value that is not right."
             : list === "copies"
-            ? "Copies of statements already in the case. Copies set aside count nothing. A possible copy says so and asks you to compare it."
+            ? "Finished, not blocked. These are copies of statements already imported; importing them would count the same money twice, so they are kept but count nothing. A possible copy says so and asks you to compare it."
             : list === "not_payment"
-            ? "Fund statements: they list fund units, prices and market value, not payments in and out of an account. They are set aside and count nothing; the PDF and its reading are kept. Put one back to review it as a payment statement."
+            ? "Finished, not blocked. Fund statements list fund units, prices and market value, not payments in and out of an account, so there is nothing to import. They are set aside and count nothing; the PDF and its reading are kept. Put one back to review it as a payment statement."
             : list === "unreadable"
               ? "Each item says which pages to look at and what to do."
               : list === "ready"
                 ? "Every check passes. Press Import above to add them to the ledger; open one to look at it first."
               : list === "handled"
-                ? "Nothing here needs you. Loupe moves these on by itself."
+                ? "Nothing here needs you and nothing here is blocked. Statements set aside on purpose are finished; anything still in progress is moved on by Loupe."
               : "Only what needs a person. Each item says what is wrong, where to look in the PDF and what to enter. It saves by itself once it checks out."}
         </p>
       </header>
@@ -582,7 +587,7 @@ export function ReviewQueuePanel({
           />
           {HANDLED_LISTS.has(list) && (
             <p role="note" className="rounded border border-dashed bg-muted/40 p-2 text-sm text-muted-foreground">
-              Loupe is handling these. Nothing here needs you.
+              Nothing here needs you or is blocked.
             </p>
           )}
           {list === "handled" && <HandledOverview counts={query.data.counts} onOpen={showList} />}
@@ -656,7 +661,7 @@ export function ReviewQueuePanel({
           )}
           {list !== "waiting" && list !== "handled" && (
             <Button variant="outline" size="sm" onClick={() => showList(HANDLED_LISTS.has(list) ? "handled" : "waiting")}>
-              {HANDLED_LISTS.has(list) ? "Back to Loupe is handling" : `Back to ${needsLabel(user)} (${query.data.counts.waiting})`}
+              {HANDLED_LISTS.has(list) ? "Back to Not waiting on you" : `Back to ${needsLabel(user)} (${query.data.counts.waiting})`}
             </Button>
           )}
           {list === "waiting" && query.data.counts.unreadable + query.data.counts.unreadable_files > 0 && (
@@ -770,7 +775,7 @@ export function ReviewQueuePanel({
           ) : current.length === 0 ? (
             <p role="status" className="rounded border p-3">
               {list === "waiting"
-                ? "Nothing needs you. Loupe is handling the rest."
+                ? "Nothing needs you."
                 : list === "copies"
                   ? query.data.copy_files.length > 0
                     ? "No statement is a copy; the files below are."
@@ -1073,7 +1078,19 @@ function OutcomeNote({
   )
 }
 
-/** The two halves of the queue: what needs a person, and what Loupe moves on by itself. */
+/** "3 waiting · 2 couldn't be read": what the needs count is made of, in the status line's words. */
+function needsParts(counts: ReviewQueue["counts"]) {
+  const unread = counts.unreadable + counts.unreadable_files
+  return [
+    ...(counts.waiting ? [`${counts.waiting} to check`] : []),
+    ...(unread ? [`${unread} couldn't be read`] : []),
+  ].join(" · ")
+}
+
+/**
+ * The two halves of the queue: what needs a person, and what does not. The second half says plainly whether
+ * anything is still in progress, and that statements set aside on purpose are finished, not blocked.
+ */
 function QueueSplit({
   counts,
   user,
@@ -1089,6 +1106,8 @@ function QueueSplit({
 }) {
   const needs = needsCount(counts)
   const handled = handledCount(counts)
+  const inProgress = inProgressCount(counts)
+  const setAside = setAsideCount(counts)
   return (
     <div role="tablist" aria-label="Queue" className="grid gap-2 sm:grid-cols-2">
       <button
@@ -1102,7 +1121,7 @@ function QueueSplit({
           {needsLabel(user)} ({needs})
         </span>
         <span className="block text-xs text-muted-foreground">
-          {needs ? "Each one says what to do and where to look." : "Nothing needs you right now."}
+          {needs ? `${needsParts(counts)}. Each one says what to do and where to look.` : "Nothing needs you right now."}
         </span>
       </button>
       <button
@@ -1112,8 +1131,15 @@ function QueueSplit({
         onClick={onHandled}
         className={`rounded-md border p-3 text-left text-muted-foreground ${handling ? "border-foreground/40 bg-muted" : "border-dashed bg-muted/30"}`}
       >
-        <span className="block text-base font-semibold">Loupe is handling ({handled})</span>
-        <span className="block text-xs">Filled, checked again, ready to import or set aside. You can ignore these.</span>
+        <span className="block text-base font-semibold">Not waiting on you ({handled})</span>
+        <span className="block text-xs">
+          {inProgress
+            ? `${inProgress} on the way into the ledger, moved on by Loupe without you.`
+            : "Nothing in progress, nothing blocked."}
+          {setAside
+            ? ` ${setAside} set aside on purpose: copies and fund statements, finished and not imported.`
+            : ""}
+        </span>
       </button>
     </div>
   )
@@ -1126,29 +1152,49 @@ function HandledOverview({
   counts: ReviewQueue["counts"]
   onOpen: (list: ListName) => void
 }) {
+  const row = (part: (typeof HANDLED_PARTS)[number]) => {
+    const n = part.count(counts)
+    const canList = part.list !== "rechecking" && part.list !== "saving"
+    return (
+      <li key={part.list} className="flex flex-wrap items-center justify-between gap-2 p-3">
+        <span>
+          <span className="font-medium text-foreground">
+            {part.label} ({n})
+          </span>
+          {" · "}
+          {part.line}
+        </span>
+        {canList && n > 0 && (
+          <Button size="sm" variant="ghost" onClick={() => onOpen(part.list as ListName)}>
+            Show them
+          </Button>
+        )}
+      </li>
+    )
+  }
+  const shown = HANDLED_PARTS.filter((part) => part.count(counts) > 0)
+  const moving = shown.filter((part) => !part.settled)
+  const settled = shown.filter((part) => part.settled)
   return (
-    <ul className="divide-y rounded border bg-muted/30 text-sm text-muted-foreground" aria-label="What Loupe is handling">
-      {HANDLED_PARTS.filter((part) => part.count(counts) > 0).map((part) => {
-        const n = part.count(counts)
-        const canList = part.list !== "rechecking" && part.list !== "saving"
-        return (
-          <li key={part.list} className="flex flex-wrap items-center justify-between gap-2 p-3">
-            <span>
-              <span className="font-medium text-foreground">
-                {part.label} ({n})
-              </span>
-              {" · "}
-              {part.line}
-            </span>
-            {canList && n > 0 && (
-              <Button size="sm" variant="ghost" onClick={() => onOpen(part.list as ListName)}>
-                Show them
-              </Button>
-            )}
-          </li>
-        )
-      })}
-    </ul>
+    <div className="space-y-3">
+      <section aria-label="In progress" className="space-y-1">
+        <h4 className="text-sm font-semibold">In progress ({inProgressCount(counts)})</h4>
+        {moving.length ? (
+          <ul className="divide-y rounded border bg-muted/30 text-sm text-muted-foreground">{moving.map(row)}</ul>
+        ) : (
+          <p className="text-sm text-muted-foreground">Nothing in progress. Every statement that can be imported is imported.</p>
+        )}
+      </section>
+      {settled.length > 0 && (
+        <section aria-label="Set aside on purpose" className="space-y-1">
+          <h4 className="text-sm font-semibold">Set aside on purpose ({setAsideCount(counts)})</h4>
+          <p className="text-sm text-muted-foreground">
+            Finished. These are not imported on purpose and count nothing; nothing about them is pending.
+          </p>
+          <ul className="divide-y rounded border bg-muted/30 text-sm text-muted-foreground">{settled.map(row)}</ul>
+        </section>
+      )}
+    </div>
   )
 }
 

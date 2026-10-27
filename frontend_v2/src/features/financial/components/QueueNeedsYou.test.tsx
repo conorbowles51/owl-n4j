@@ -73,7 +73,7 @@ const mount = () =>
 it("names the signed-in investigator, keeps what Loupe handles apart, and answers one account's statements with one confirm", async () => {
   mount()
   expect(await screen.findByRole("tab", { name: /Needs Maria \(4\)/ })).toHaveAttribute("aria-selected", "true")
-  expect(screen.getByRole("tab", { name: /Loupe is handling \(8\)/ })).toHaveAttribute("aria-selected", "false")
+  expect(screen.getByRole("tab", { name: /Not waiting on you \(8\)/ })).toHaveAttribute("aria-selected", "false")
   expect(screen.getByRole("heading", { name: "Needs Maria" })).toBeVisible()
   const list = screen.getByRole("list", { name: "Statements to review" })
   // Three statements of one account, one proposal: one item, not three rows.

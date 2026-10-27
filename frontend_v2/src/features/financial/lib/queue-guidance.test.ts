@@ -5,10 +5,12 @@ import {
   groupGuidance,
   guidanceFor,
   handledCount,
+  inProgressCount,
   isGroup,
   issueLabel,
   needsCount,
   needsLabel,
+  setAsideCount,
   type QueueGroup,
 } from "./queue-guidance"
 import type { QueueCounts, QueueEntry } from "./review-queue"
@@ -120,6 +122,10 @@ it("splits the counts into what needs a person and what Loupe handles", () => {
     unexplained: 0, not_payment: 0 } satisfies QueueCounts
   expect(needsCount(counts)).toBe(7)
   expect(handledCount(counts)).toBe(24)
+  // Set aside on purpose is finished, never in progress: the two never read as one pile of pending work.
+  expect(inProgressCount(counts)).toBe(18)
+  expect(setAsideCount({ ...counts, not_payment: 13 })).toBe(19)
+  expect(inProgressCount({ ...counts, saving: 0, filled: 0, reader_fix: 0, ready: 0, rechecking: 0 })).toBe(0)
 })
 
 it("shows what Loupe could not prove about a balanced statement it did not save on its own", () => {

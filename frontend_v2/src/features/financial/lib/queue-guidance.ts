@@ -471,12 +471,16 @@ export function needsCount(counts: QueueCounts) {
   return counts.waiting + counts.unreadable + counts.unreadable_files
 }
 
-/** Everything Loupe moves on by itself; none of it needs her. */
+/**
+ * Everything that does not need her. ``settled`` parts are finished for good (set aside on purpose, never
+ * imported); the rest are still on their way into the ledger. The two must never read as one pile of pending work.
+ */
 export const HANDLED_PARTS: {
   list: "ready" | "filled" | "reader" | "copies" | "rechecking" | "saving" | "not_payment"
   count: (c: QueueCounts) => number
   label: string
   line: string
+  settled?: boolean
 }[] = [
   {
     list: "filled",
@@ -512,16 +516,28 @@ export const HANDLED_PARTS: {
     list: "copies",
     count: (c) => c.copies,
     label: "Copies set aside",
-    line: "Copies of statements already in the case. They count nothing.",
+    line: "Copies of statements already imported. Importing them would count the same money twice, so they are kept but count nothing.",
+    settled: true,
   },
   {
     list: "not_payment",
     count: (c) => c.not_payment ?? 0,
-    label: "Not payment statements",
-    line: "Fund statements: they list holdings, not payments. Set aside, counting nothing. Put one back if it is wrong.",
+    label: "Fund statements set aside",
+    line: "They list holdings, not payments in and out, so there is nothing to import. Put one back if it is wrong.",
+    settled: true,
   },
 ]
 
 export function handledCount(counts: QueueCounts) {
   return HANDLED_PARTS.reduce((sum, part) => sum + part.count(counts), 0)
+}
+
+/** Still on its way into the ledger, moved on by Loupe without her. */
+export function inProgressCount(counts: QueueCounts) {
+  return HANDLED_PARTS.filter((part) => !part.settled).reduce((sum, part) => sum + part.count(counts), 0)
+}
+
+/** Finished: set aside on purpose, never imported, counting nothing. Nothing about them is pending. */
+export function setAsideCount(counts: QueueCounts) {
+  return HANDLED_PARTS.filter((part) => part.settled).reduce((sum, part) => sum + part.count(counts), 0)
 }
