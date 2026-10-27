@@ -196,6 +196,9 @@ _BROKERAGE_CASH = dict(
     date_order='dmy',
     # Neil, 2026-10-23: the currency the holdings table prints is the statement's (statement_engine.HOLDINGS_CURRENCY).
     holdings_currency=True,
+    # (L17) The month the account opened prints no opening: zero, when its first end-of-day balance is that day's
+    # lines from zero and the position summary's cash line prints only the closing (statement_engine._first_day_opening).
+    opening_from_first_day=dict(cash_line=['EFECTIVO']),
 )
 PROFILES += (
     dict(name='kapital-mexico-brokerage',
@@ -209,7 +212,7 @@ PROFILES += (
 
 _KEYS = {'name', 'match', 'institution', 'currency', 'convention', 'date_order', 'labels', 'columns', 'account_heading',
          'statement_account', 'prior_period_block', 'account_suffix_heading', 'holder_heading', 'settlement_days',
-         'client_line', 'rule_mark', 'holdings_currency', 'column_order', 'blank_closing_quiet'}
+         'client_line', 'rule_mark', 'holdings_currency', 'column_order', 'blank_closing_quiet', 'opening_from_first_day'}
 _LABEL_ROLES = {'opening', 'closing', 'subtotal', 'credit_total', 'debit_total', 'credit_component',
                 'debit_component', 'column_total', 'day_balance', 'ignore'}
 _COLUMN_ROLES = {'date', 'description', 'credit', 'debit', 'balance', 'amount', 'ignore'}

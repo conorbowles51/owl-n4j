@@ -292,8 +292,27 @@ def _profiled(sources, engine):
     identity_held = {(st['period_start'], st['period_end'], reading_key([r for r in st['_rows'] if r['kind'] != 'unresolved']))
                      for st in profiled if not st['engine']['proved'] and st['engine'].get('reason') in IDENTITY_HOLDS}
     if plain_keys <= profiled_keys | identity_held and profiled_keys:
-        return profiled, profile['name']
+        return _ids_kept(profiled, engine), profile['name']
     return engine, None
+
+
+def _ids_kept(profiled, engine):
+    """(L17) A profile chosen only because a period now proves from its first end-of-day balance (the profile
+    proves nothing else) serves every period under the id the plain reading gave it (same period, same first
+    page), its own id kept as ``engine_id``: work saved under the plain reading stays attached. A profile chosen
+    without that rule is served exactly as before."""
+    from services.financial.statement_engine import FIRST_DAY_OPENING_BASIS
+    first_day = lambda st: any(r['fields'].get('balance_basis') == FIRST_DAY_OPENING_BASIS for r in st['_rows'])
+    if any(st['engine']['proved'] and not first_day(st) for st in profiled):
+        return profiled
+    kept = []
+    for statement in profiled:
+        plain = [st for st in engine if st['period_start'] == statement['period_start']
+                 and st['period_end'] == statement['period_end'] and st['page_numbers'][:1] == statement['page_numbers'][:1]]
+        if len(plain) == 1 and plain[0]['id'] != statement['id']:
+            statement = dict(statement, id=plain[0]['id'], engine_id=statement['id'])
+        kept.append(statement)
+    return kept
 
 
 IDENTITY_HOLDS = ('account_shared',)

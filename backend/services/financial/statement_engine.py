@@ -4297,6 +4297,11 @@ def _reading(rows, statement, style, exponent, liability, period):
         quiet = _blank_closing_quiet(rows, controls, quiet_labels, style or 'dot', exponent)
         if quiet is not None:
             controls['closing'].append(quiet)
+    if FIRST_DAY_OPENING and not controls['opening'] and all_moves:
+        opening = _first_day_opening(rows, all_moves, columns, hints, controls, style or 'dot', exponent, liability,
+                                     width or 1)
+        if opening is not None:
+            controls['opening'].append(opening)
     candidates = _search(all_moves, columns, hints, controls, column_totals, style or 'dot', exponent, liability)
     # Among readings with the same money, keep one whose running balance chains (its balances are printed values).
     proving = sorted((c for c in candidates if c['proved']), key=lambda c: not c.get('chain_ok'))
@@ -5165,6 +5170,56 @@ def _blank_closing_quiet(rows, controls, labels, style, exponent):
     anchor = closing['tokens'][-1]
     return dict(row=closing, value_token=dict(anchor, t='0.00'), count=None, basis=BLANK_CLOSING_BASIS,
                 derivation=dict(opening_minor='0', zero_amounts_printed=str(len(amounts)), movement_lines='0'))
+
+
+# (L17, fin-queue2 A12: 09 ARRENDO INTERCAM INVERSION SEP 2022) A brokerage cash ledger's first month prints no
+# opening ('Saldo Inicial del Mes'): the account opened with the month's first deposit.
+FIRST_DAY_OPENING = _switch('LOUPE_FINANCIAL_OPENING_FROM_FIRST_DAY')
+FIRST_DAY_OPENING_BASIS = 'zero_opening_from_first_day_balance_and_blank_prior_cash'
+
+
+def _first_day_opening(rows, moves, columns, hints, controls, style, exponent, liability, width):
+    """(profile ``opening_from_first_day``) The opening of a cash ledger that prints none, read as zero only when
+    two printed facts say so: the first printed end-of-day balance equals that day's printed lines from zero, and
+    the statement's cash position line (``cash_line``) prints one amount, the closing (no previous month's cash).
+    At least two more end-of-day balances must follow, so the chain still checks lines the opening does not
+    explain. The control cites the first end-of-day balance and carries the figures it rests on; None otherwise
+    (the period stays held 'no_opening')."""
+    rule = (_PROFILE.get() or {}).get('opening_from_first_day')
+    if not rule or not columns or set(hints) != set(range(len(columns))):
+        return None
+    closings = {money(e['value_token']['t'], style, exponent) for e in controls['closing']} - {None}
+    if len(closings) != 1:
+        return None
+    closing = closings.pop()
+    days = [i for i, move in enumerate(moves) if move.get('day_balances')]
+    if len(days) < 3:
+        return None
+    assignment = tuple(hints[i] for i in range(len(columns)))
+    net = 0
+    for move in moves[:days[0] + 1]:
+        value = _movement_value(move, assignment, columns, width, style, exponent, liability)
+        if value is None:
+            return None
+        net += 0 if value['zero'] else value['effect']
+    anchor = moves[days[0]]['day_balances'][-1]
+    first = money(anchor['t'], style, exponent)
+    if first is None or first != net:
+        return None
+    words = [label(w) for w in rule['cash_line']]
+    cash = [row for row in rows if row['tokens'] and any(label(row['text']).startswith(w) for w in words)]
+    if len(cash) != 1:
+        return None
+    amounts = [money(t['t'], style, exponent) for t in cash[0]['tokens'] if _value_kind(t, style, exponent) == 'money']
+    if amounts != [closing]:
+        return None
+    printed = next((row for row in rows if any(t is anchor for t in row['tokens'])), None)
+    if printed is None:
+        return None
+    return dict(row=printed, value_token=dict(anchor, t=_canonical_amount(0, style)), count=None,
+                basis=FIRST_DAY_OPENING_BASIS, derivation=dict(first_day_balance_minor=str(first),
+                                                               first_day_lines_net_minor=str(net),
+                                                               cash_line_amounts=str(len(amounts))))
 
 
 def _application_dates_fit(moves, resolved, date_problem, period):

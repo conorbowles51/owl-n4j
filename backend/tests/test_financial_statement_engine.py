@@ -4002,3 +4002,59 @@ class VistaBlockLineTests(unittest.TestCase):
     def test_switched_off_none_of_these_is_read(self):
         with mock.patch.object(E, 'VISTA_BLOCK_LINES', False):
             self.assertFalse(self.same_reference()['engine']['proved'])
+
+
+class FirstDayOpeningTests(unittest.TestCase):
+    """(L17, fin-queue2 A12: 09 ARRENDO INTERCAM INVERSION SEP 2022) The month a brokerage cash account opened
+    prints no opening line. Zero is read only when the first end-of-day balance is that day's lines from zero and
+    the position summary's cash line prints only the closing (no previous month's cash)."""
+
+    def setUp(self):
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+
+    def read(self, cash=('260.00',), first_day='10.00'):
+        moves = [
+            _broker_line('04', '04', '11', 'Deposito', '1,000.00', '1,000.00'),
+            _broker_line('04', '04', '12', 'Compra de Reporto', '(990.00)', '(990.00)', titulos='1,000', emisora='BONOEJ9'),
+            _day_balance('04', first_day),
+            _broker_line('12', '12', '13', 'Deposito', '300.00', '300.00'),
+            _broker_line('12', '12', '14', 'Retiro', '50.00', '(50.00)'),
+            _day_balance('12', '260.00'),
+        ]
+        sources = broker_statement(moves=moves)
+        for row in sources[1]['rows']:
+            for c in row['cells']:
+                if c['expected_text'] == '360.00':
+                    c['expected_text'] = '260.00'
+        summary = [('EFECTIVO', 20000, 100000)] + [(a, 200000 + 60000 * i, 240000 + 60000 * i) for i, a in enumerate(cash)]
+        first = sources[0]['rows']
+        y = first[3]['cells'][0]['locator']['rect'][1] + 4000
+        first.insert(4, dict(row_index=950, cells=[cell(t, x0, x1, y, i) for i, (t, x0, x1) in enumerate(summary)]))
+        return [st for st in read_statements(sources, profile=broker_profile()) if st['period_start']][0]
+
+    def test_a_first_month_with_no_opening_line_opens_at_zero_when_both_printed_facts_agree(self):
+        st = self.read()
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        opening = next(r for r in st['_rows'] if r['fields'].get('description') == 'Opening Balance')
+        self.assertEqual((opening['fields']['balance'], opening['fields']['balance_basis']), ('0', E.FIRST_DAY_OPENING_BASIS))
+        self.assertEqual(len([r for r in st['_rows'] if r['kind'] == 'transaction']), 6)
+
+    def test_a_cash_line_printing_a_previous_month_or_a_first_day_not_from_zero_holds(self):
+        self.assertFalse(self.read(cash=('5.00', '260.00'))['engine']['proved'])
+        self.assertFalse(self.read(first_day='15.00')['engine']['proved'])
+
+    def test_switched_off_the_period_holds(self):
+        with mock.patch.object(E, 'FIRST_DAY_OPENING', False):
+            self.assertEqual(self.read()['engine']['reason'], 'no_opening')
+
+    def test_a_profile_chosen_only_by_this_rule_keeps_the_plain_reading_ids(self):
+        from services.financial import statement_engine_routing as R
+        row = lambda basis: dict(fields=dict(balance_basis=basis))
+        profiled = [dict(id='new', period_start='a', period_end='b', page_numbers=[1], engine=dict(proved=True),
+                         _rows=[row(E.FIRST_DAY_OPENING_BASIS)])]
+        plain = [dict(id='old', period_start='a', period_end='b', page_numbers=[1], engine=dict(proved=False), _rows=[])]
+        kept, = R._ids_kept(profiled, plain)
+        self.assertEqual((kept['id'], kept['engine_id']), ('old', 'new'))
+        profiled[0]['_rows'] = [row(None)]
+        self.assertEqual(R._ids_kept(profiled, plain)[0]['id'], 'new')
