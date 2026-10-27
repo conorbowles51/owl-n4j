@@ -163,7 +163,7 @@ it("keeps a large group's printed names behind paged details without dropping it
   })
   fireEvent.click(screen.getByRole("button", { name: "Show totals" }))
   const summary = await screen.findByText("Names printed on statements (26)")
-  expect(summary.closest("details")).not.toHaveAttribute("open")
+  expect(summary.closest("button")).toHaveAttribute("aria-expanded", "false")
   fireEvent.click(summary)
   expect(screen.getByText('"Printed name 1"')).toBeInTheDocument()
   expect(screen.queryByText('"Printed name 26"')).not.toBeInTheDocument()

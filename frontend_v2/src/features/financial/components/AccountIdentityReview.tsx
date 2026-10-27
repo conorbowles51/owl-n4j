@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { z } from "zod"
@@ -442,10 +443,7 @@ function IdentityEditor({ caseId }: { caseId: string }) {
             Add identifier
           </Button>
         </fieldset>
-        <details className="rounded border p-3">
-          <summary>
-            Connect a reviewed person or business to another case entity
-          </summary>
+        <Disclosure className="rounded border p-3" label="Connect a reviewed person or business to another case entity">
           <p>
             This records an explicit identity connection. It does not merge or
             overwrite graph entities.
@@ -518,7 +516,7 @@ function IdentityEditor({ caseId }: { caseId: string }) {
                 {n.name || n.label || n.key} · {n.type}
               </Button>
             ))}
-        </details>
+        </Disclosure>
         <label className="block">
           Basis
           <select
@@ -611,16 +609,13 @@ function IdentityEditor({ caseId }: { caseId: string }) {
         {save.error && <p role="alert">{save.error.message}</p>}
       </fieldset>
       {state && (
-        <details>
-          <summary>
-            Identity decision history (
+        <Disclosure label={<>Identity decision history (
             {
               state.identity_history.filter(
                 (h) => h.account_id === draft.account
               ).length
             }
-            )
-          </summary>
+            )</>}>
           {state.identity_history
             .filter((h) => h.account_id === draft.account)
             .map((h, i) => (
@@ -628,7 +623,7 @@ function IdentityEditor({ caseId }: { caseId: string }) {
                 {h.recorded_at} · {h.actor} · {h.reason}
               </p>
             ))}
-        </details>
+        </Disclosure>
       )}
     </div>
   )

@@ -1,4 +1,5 @@
-import { FileSpreadsheet, FileSearch, Info } from "lucide-react"
+import { InfoTip } from "./InfoTip"
+import { FileSpreadsheet, FileSearch } from "lucide-react"
 
 /**
  * Statement payments and other financial records are two separate sets. This
@@ -49,17 +50,7 @@ export function RecordsModeSwitch({
           </button>
         ))}
       </div>
-      <Info
-        className="size-4 text-muted-foreground"
-        aria-label="Statement payments come from imported bank and card statements. Other financial records are amounts found elsewhere in case evidence; correcting a statement payment does not change them."
-        role="img"
-      >
-        <title>
-          Statement payments come from imported bank and card statements. Other
-          financial records are amounts found elsewhere in case evidence;
-          correcting a statement payment does not change them.
-        </title>
-      </Info>
+      <InfoTip text="Statement payments come from imported bank and card statements. Other financial records are amounts found elsewhere in case evidence; correcting a statement payment does not change them." />
     </div>
   )
 }

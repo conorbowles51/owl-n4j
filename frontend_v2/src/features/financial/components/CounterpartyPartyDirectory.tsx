@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { useFinancialDraft } from "../stores/financial-drafts"
 import { PaymentIdentitySuggestions } from "./PaymentIdentitySuggestions"
@@ -190,15 +191,14 @@ export function CounterpartyPartyDirectory({ caseId }: { caseId: string }) {
           {query.error && <p role="alert">{query.error.message}</p>}
           {state && !query.isError && (
             <>
-              <details>
-                <summary>What linking payments changes</summary>
+              <Disclosure label="What linking payments changes">
                 <p>
                   Links apply to the selected payments. The printed names and
                   amounts stay unchanged. Future imports are not linked
                   automatically, and linking a name does not add excluded
                   payments to totals.
                 </p>
-              </details>
+              </Disclosure>
               {changedSinceDraft && (
                 <div role="alert" className="rounded border p-3 space-y-2">
                   <p>
@@ -483,10 +483,7 @@ export function CounterpartyPartyDirectory({ caseId }: { caseId: string }) {
                   Payment identity links saved with decision history.
                 </p>
               )}
-              <details>
-                <summary>
-                  Payment identity decision history ({state.history.length})
-                </summary>
+              <Disclosure label={<>Payment identity decision history ({state.history.length})</>}>
                 <div className="max-h-80 space-y-2 overflow-auto">
                   <p>
                     History is ordered per reading. Page {safeHistoryPage + 1}{" "}
@@ -541,7 +538,7 @@ export function CounterpartyPartyDirectory({ caseId }: { caseId: string }) {
                 >
                   Next identity decisions
                 </Button>
-              </details>
+              </Disclosure>
             </>
           )}
         </>

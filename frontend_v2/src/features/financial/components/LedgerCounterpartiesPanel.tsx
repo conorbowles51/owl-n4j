@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { appendAccountSelection } from "../lib/account-selection"
 import { sha256Hex } from "@/lib/browser-crypto"
 import { LinkedPayments } from "./LinkedPayments"
@@ -288,18 +289,12 @@ function CounterpartyScope({
           </p>
         ) : (
           <>
-            <details className="text-sm">
-              <summary className="cursor-pointer">
-                How these totals were calculated
-              </summary>
+            <Disclosure className="text-sm" label="How these totals were calculated">
               <p>{query.data.limitation}</p>
-            </details>
-            <details className="text-sm">
-              <summary className="cursor-pointer">
-                How names were grouped
-              </summary>
+            </Disclosure>
+            <Disclosure className="text-sm" label="How names were grouped">
               <p>{query.data.counterparty_limitation}</p>
-            </details>
+            </Disclosure>
             {identities && (
               <Button
                 variant="outline"
@@ -420,8 +415,7 @@ function Point({
         Difference: {correctionMoney(point.net_minor, point.currency)}
       </p>
       {point.raw_labels && (
-        <details className="rounded border p-2">
-          <summary>Names printed on statements ({names.length})</summary>
+        <Disclosure className="rounded border p-2" label={<>Names printed on statements ({names.length})</>}>
           <ul className="my-2 max-h-56 overflow-auto break-words list-disc pl-5">
             {names.slice(page * 25, (page + 1) * 25).map((label, index) => (
               <li key={index}>
@@ -451,7 +445,7 @@ function Point({
               </Button>
             </div>
           )}
-        </details>
+        </Disclosure>
       )}
       <LinkedPayments caseId={caseId} ids={point.transaction_ids} />
     </div>

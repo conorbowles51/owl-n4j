@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { paymentInventory } from "../lib/payment-inventory"
 import { ProfileStatementSummary } from "./ProfileStatementSummary"
 import { useQuery } from "@tanstack/react-query"
@@ -264,7 +265,13 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
                   selected.kind === "account" ? "info" : "work"
                 }
               >
-                <div className="flex flex-wrap items-start justify-between gap-3">
+                <div
+                  className="-mx-5 -mt-5 flex flex-wrap items-start justify-between gap-3 rounded-t-xl p-5 text-white"
+                  style={{
+                    background:
+                      "radial-gradient(1100px 420px at 90% -20%, #3a1319 0%, #0b0c0f 62%)",
+                  }}
+                >
                   <div>
                     <p className="finance-badge">
                       {selected.kind === "account"
@@ -486,10 +493,7 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
                     ))}
                   </section>
                 )}
-                <details className="text-sm">
-                  <summary className="cursor-pointer font-medium">
-                    Accounts where these payments were recorded
-                  </summary>
+                <Disclosure className="text-sm" label={`Accounts where these payments were recorded (${new Set(activeRows.map((row) => row.canonical_account_id || row.account_id)).size})`}>
                   <ul className="space-y-2 pt-2">
                     {[
                       ...new Set(
@@ -512,7 +516,7 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
                       grouping.
                     </p>
                   )}
-                </details>
+                </Disclosure>
                 {recentFindings.isError && (
                   <p role="alert" className="text-sm">
                     Saved finding links could not be loaded.{" "}
@@ -800,16 +804,13 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
               )}
             </>
           )}
-          <details className="rounded border bg-card p-4">
-            <summary className="cursor-pointer font-medium">
-              Link recorded names to a person or business
-            </summary>
+          <Disclosure className="rounded border bg-card p-4" label="Link recorded names to a person or business">
             <p className="mt-2 text-sm">
               Use the identity tools below when you have evidence that different
               names refer to the same person or business.
             </p>
             <LedgerCounterpartiesAnalysis caseId={caseId} />
-          </details>
+          </Disclosure>
         </InvestigationReadState>
       )}
     </div>
