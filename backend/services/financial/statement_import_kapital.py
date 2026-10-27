@@ -46,6 +46,11 @@ _HEADING_NAMES = ('CONCEPTO', 'DEPOSITOS', 'RETIROS', 'SALDO')
 # its own shape (day: 1-2 digits, folio: 4+ digits, the rest the concepto); the day stays unread and the line still
 # waits for it. Off: cells are taken by position.
 MISSING_DAY_CELL = _switch('LOUPE_FINANCIAL_KAPITAL_MISSING_DAY_CELL')
+# (fin-queue3 K3, 06 ARRENDO KAPITAL JUN 26 USD) A section's only movement heading read with a word cut short or
+# carrying a mark ('CONCEPTO DEPOSITOS RETIRO. SALDO') is that heading when all four words are read on the line,
+# located, in the printed order (CONCEPTO, DEPOSITOS, RETIROS, SALDO left to right). Off: the section's lines wait
+# for a person as payments whose headings were not read.
+HEADING_WORD_MARKS = _switch('LOUPE_FINANCIAL_KAPITAL_HEADING_WORD_MARKS')
 
 
 def kapital_information_kind(source, *, institution='Kapital', product=PRODUCT):
@@ -241,6 +246,23 @@ def _section_heading(ordered, scopes):
 _HEADING_SHORT = {'RETIRO': 'RETIROS', 'DEPOSITO': 'DEPOSITOS'}
 
 
+def _heading_words(cells):
+    """{heading word: cell} of a line printing all four movement heading words in order, each read whole, cut
+    short by its final letter or followed by one mark; None otherwise."""
+    read = {}
+    for cell in cells:
+        word = norm(cell['expected_text']).rstrip('.,;:')
+        name = _HEADING_SHORT.get(word, word)
+        if name in _HEADING_NAMES and box(cell):
+            if name in read:
+                return None
+            read[name] = cell
+    if len(read) != len(_HEADING_NAMES):
+        return None
+    lefts = [box(read[n])[0] for n in _HEADING_NAMES]
+    return read if lefts == sorted(lefts) and len(set(lefts)) == len(lefts) else None
+
+
 def _completed_heading(labels, template):
     """A partly read movement heading completed from the section's complete heading, or None: it must read
     CONCEPTO and at least one amount heading, each at the complete heading's printed position, on a page of
@@ -291,6 +313,8 @@ def propose_kapital_statement(sources,currency,choice):
         names=('CONCEPTO','DEPOSITOS','RETIROS','SALDO')
         if all(n in labels and box(labels[n]) for n in names):
             columns={n:labels[n] for n in names};last=None;continue
+        if HEADING_WORD_MARKS and (marked:=_heading_words(cells)):
+            columns=marked;last=None;continue
         if HEADING_FROM_SECTION and (completed:=_completed_heading(labels,template)):
             columns=completed;last=None;continue
         if columns is None:

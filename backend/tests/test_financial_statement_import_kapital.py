@@ -302,3 +302,38 @@ class KapitalAmountNoiseTests(TestCase):
         with mock.patch.object(K, 'AMOUNT_NOISE', False):
             with self.assertRaises(ValueError):
                 K._amount('6,300,000.00)', 'MXN')
+
+
+class KapitalHeadingWordMarksTests(TestCase):
+    """(fin-queue3 K3) 06 ARRENDO KAPITAL JUN 26 USD: the section's only movement heading read
+    'CONCEPTO | DEPOSITOS | RETIRO. | SALDO'; its two movements (09/06 803,556.00 in, 10/06 out) were held as
+    payments whose headings were not read."""
+
+    def statement(self, words=('CONCEPTO', 'DEPOSITOS', 'RETIRO.', 'SALDO'), lefts=(245000, 400000, 467000, 529000)):
+        movements = table()
+        movements[0] = [(left, 430000, 35000, word) for left, word in zip(lefts, words)]
+        return [source(1, header() + [[(30000,120000,160000,'EXAMPLE SERVICES')],[(30000,150000,160000,'Persona Moral')]]
+                       + product() + movements)]
+
+    def rows(self, s):
+        choice = currencies_by_statement(kapital_catalog(s)[0], s)[0]
+        return [r for r in propose_kapital_statement(s, 'MXN', choice)['rows'] if not r['excluded']]
+
+    def test_a_heading_word_with_a_mark_or_cut_short_is_that_heading_when_all_four_are_read_in_order(self):
+        for word in ('RETIRO.', 'RETIRO', 'RETIROS.'):
+            rows = self.rows(self.statement(words=('CONCEPTO', 'DEPOSITOS', word, 'SALDO')))
+            self.assertEqual([(r['kind'], r['fields'].get('amount_minor'), r['fields'].get('direction')) for r in rows],
+                             [('transaction', '1', 'debit'), ('transaction', '1', 'credit')], word)
+
+    def test_three_words_or_words_out_of_order_stay_for_a_person(self):
+        for words, lefts in ((('CONCEPTO', 'DEPOSITOS', 'SALDO'), (245000, 400000, 529000)),
+                             (('CONCEPTO', 'RETIRO.', 'DEPOSITOS', 'SALDO'), (245000, 400000, 467000, 529000))):
+            rows = self.rows(self.statement(words=words, lefts=lefts))
+            self.assertTrue(rows and all(r['fields'].get('amount_minor') is None for r in rows), words)
+
+    def test_switched_off_the_lines_stay_for_a_person(self):
+        from unittest import mock
+        from services.financial import statement_import_kapital as K
+        with mock.patch.object(K, 'HEADING_WORD_MARKS', False):
+            rows = self.rows(self.statement())
+        self.assertTrue(rows and all(r['fields'].get('amount_minor') is None for r in rows))
