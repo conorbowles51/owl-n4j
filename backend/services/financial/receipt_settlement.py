@@ -144,6 +144,15 @@ def settle_receipts(session, *, case_id, batch_id, file_id, actor):
         item.summary = {**(item.summary or {}), 'receipt_settlement': record}
         ib.leave_unimported(session, case_id=case_id, batch_id=item.batch_id, item_id=item.id, action='skip',
                             reason=reason, expected_revision=revision, actor=actor)
+        from services.financial.judgements import record_judgement
+        for paid in payments:
+            record_judgement(session, case_id=case_id, subject_type='transaction', subject_id=paid.id,
+                             rule_id='erica.receipt_settled', target_key='receipt', reading=str(item.id),
+                             source_document_id=paid.source_document_id, statement_period_id=paid.statement_period_id,
+                             summary=(f"A teller deposit receipt (page {proposal.get('page_numbers', [''])[0] if proposal.get('page_numbers') else ''}) "
+                                      f"is left unimported: this payment already records its deposit (same account, "
+                                      f"amount and balances before and after)."),
+                             evidence=dict(item_id=str(item.id), evidence_file_id=str(file_id), **record))
         settled.append(str(item.id))
         log.info('Receipt %s settled against payment %s', str(item.id)[:8], payment.ref_id)
     return settled

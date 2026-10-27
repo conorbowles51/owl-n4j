@@ -114,6 +114,12 @@ def settle_vanished_key(session, case_id, item, *, cache=None, apply=True):
                         'superseded_by_statement': keys[0], 'saved_source_document_id': str(document.id),
                         'recovery_message': VANISHED_KEY_MESSAGE}
         session.flush()
+        from services.financial.judgements import record_on_document
+        record_on_document(session, document, 'L22.vanished_key',
+            f"A held earlier reading of {file.original_filename or 'this file'} is retired: its statement no longer "
+            f"appears in the current reading, and the file's only current statement is this saved one.",
+            target_key=('held:' + (item.statement_key or ''))[:48], reading=str(item.id),
+            evidence=dict(item_id=str(item.id), statement_key=item.statement_key, evidence_file_id=str(file.id)))
     return dict(outcome='superseded', saved_source_document_id=str(document.id))
 
 

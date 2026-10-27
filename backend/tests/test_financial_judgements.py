@@ -101,7 +101,9 @@ class DetectionTests(unittest.TestCase):
             statement_import_original=dict(rows=[])))
         glyph = SimpleNamespace(id=uuid.uuid4(), amount_minor=229342, transaction_date=date(2023, 8, 3), provenance=dict(
             confirmed_by=dict(name='System'),
-            statement_import_original=dict(page_number=4, fields={}, value_repairs=[dict(
+            statement_import_original=dict(page_number=4, fields=dict(date_column=0, credit_column=2), source_cells=[
+                dict(column_index=0, expected_text='O3/AGO', locator=dict(page=4)),
+                dict(column_index=2, expected_text='2,293.42?', locator=dict(page=4))], value_repairs=[dict(
                 page_number=4, held_text='~293.42', text='2293.42', basis='one_unread_glyph_fixed_by_printed_balances')]),
             statement_import_review=dict(reason='')))
         file = SimpleNamespace(metadata_=dict(financial_account_detail_history=[dict(
@@ -113,6 +115,8 @@ class DetectionTests(unittest.TestCase):
         self.assertIn(('image.page_reading', 'payments'), found)
         self.assertEqual(found[('L16.one_glyph', 'amount')]['subject_id'], glyph.id)
         self.assertIn(('L4.currency_from_name', 'currency'), found)
+        self.assertIn(('L9.scan_amount_marks', 'amount'), found)
+        self.assertIn(('L31.scan_day_letter', 'date'), found)
         self.assertNotIn('L8', ' '.join(f['summary'] for f in found.values()))
 
 

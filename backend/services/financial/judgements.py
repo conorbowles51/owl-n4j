@@ -73,10 +73,15 @@ RULES = {
     'period.start_derived': ('Period start not printed; taken from the previous statement', 'card periods', 'inferred'),
     'L26.duplicate_set_aside': ('Saved twice: one copy set aside', 'fin-queue3 L26 / r2', 'proved'),
     'L19.unreadable_copy': ('Unreadable copy matched to a saved statement', 'fin-queue3 L19', 'proved'),
+    'copies.held_copy': ('Held copy matched to a saved statement', 'saved_copies (fin-queue2)', 'proved'),
     'L20.part_of_saved': ('Leftover split inside a saved statement', 'fin-queue3 L20', 'proved'),
     'reader.replacement': ('Saved copy replaced by a reading that balances', 'saved_reading_replacement', 'proved'),
     'L30c.contract_refile': ("Filed in the contract's currency account", 'fin-queue3 L30c', 'inferred'),
     'guard.neighbour_check': ('Auto-save passed on the saved statements next to it', 'fin-queue3 L1/L28', 'proved'),
+    'L9.scan_amount_marks': ('Scan mark or space inside an amount read past', 'fin-queue3 L9', 'proved'),
+    'L31.scan_day_letter': ('Letter in a printed day read as a digit', 'fin-queue3 L31 / fin-erica L1', 'proved'),
+    'L22.vanished_key': ('Held earlier reading retired; the statement is saved', 'fin-queue3 L22', 'proved'),
+    'erica.receipt_settled': ('Deposit receipt matched to a saved payment', 'fin-erica L3/L23', 'proved'),
     'agent.page_entry': ('Entered by hand from the page (agent)', 'fin-queue*/fin-erica hand work', 'proved'),
     'agent.correction': ('Corrected by hand (agent)', 'fin-queue*/fin-erica hand work', 'proved'),
     'agent.refile': ('Refiled by hand (agent)', 'fin-accounts / fin-queue3 L30c', 'inferred'),
@@ -338,6 +343,9 @@ def detect(document, period, transactions, *, file=None):
                 add('transaction', txn.id, rule,
                     f"{label} (page {page}): " + ROW_SENTENCES.get(rule, RULES[rule][0].lower() + '.'),
                     target_key=word, evidence=dict(page=page, basis=fields.get(field), field=word))
+        for rule, cell, summary in _cell_marks(first, fields, label, page):
+            add('transaction', txn.id, rule, summary, target_key=cell['target'],
+                evidence=dict(page=cell['page'], before=cell['text'], column=cell['column']))
         if str(review.get('reason') or '').startswith(DATE_REASON_START):
             add('transaction', txn.id, 'image.date',
                 f"{label}: the date is read from the page image of page {_page_of(review['reason'])}; "
@@ -366,6 +374,34 @@ def detect(document, period, transactions, *, file=None):
                     add(*period_subject, rule, f"{name.strip()} is not printed as the statement's own: {why.strip()}.",
                         target_key=target, evidence=dict(basis=part.strip(), at=entry.get('at')))
     return found
+
+
+_SPACED = re.compile(r'\d ,\d|\d, \d{3}|\d \.\d\d|\d\?$')
+_DAY_LETTER = re.compile(r'(?=[0-9OolI|]{2}[/-])(?=.{0,1}[OolI|])[0-9OolI|]{2}[/-](?:\d\d|[A-Za-z]{3})')
+
+
+def _cell_marks(first, fields, label, page):
+    """(rule, cell, sentence) for the printed cells of a saved row the reader read past a scan mark (L9) or a
+    letter standing for a day digit (L31); from the row's own stored cell text, nothing re-read."""
+    money_columns = {fields.get(k) for k in ('credit_column', 'debit_column', 'amount_column', 'balance_column')
+                     if fields.get(k) is not None}
+    date_columns = {fields.get(k) for k in ('date_column', 'operation_date_column', 'liquidation_date_column')
+                    if fields.get(k) is not None}
+    for cell in first.get('source_cells') or []:
+        if not isinstance(cell, dict):
+            continue
+        text = str(cell.get('expected_text') or '').strip()
+        column = cell.get('column_index')
+        where = (cell.get('locator') or {}).get('page') or page
+        if column in money_columns and _SPACED.search(text):
+            target = 'balance' if column == fields.get('balance_column') else 'amount'
+            yield ('L9.scan_amount_marks', dict(target=target, text=text, column=column, page=where),
+                   f"{label}: the {target} on page {where} is printed '{text}' in the scan; the space or mark is read "
+                   f"past, and the printed balances agree with the value read.")
+        elif column in date_columns and _DAY_LETTER.fullmatch(text):
+            yield ('L31.scan_day_letter', dict(target='date', text=text, column=column, page=where),
+                   f"{label}: the date on page {where} is printed '{text}' in the scan; the letter is read as the "
+                   f"digit it stands for.")
 
 
 def _page_of(reason):
@@ -687,15 +723,19 @@ def record_set_aside(session, document, primary, *, basis='', reason='', adjudic
 def record_held_copy(session, *, case_id, file, statement_key, saved, agreement, reading='', evidence=None):
     """A held copy (never saved) set aside because a saved statement prints the same account, period and balances."""
     try:
-        rule = {'part_of_saved_statement': 'L20.part_of_saved'}.get(agreement, 'L19.unreadable_copy')
+        rule = {'part_of_saved_statement': 'L20.part_of_saved',
+                'printed_balances_of_saved_statement': 'L19.unreadable_copy'}.get(agreement, 'copies.held_copy')
         name = getattr(file, 'original_filename', '') or 'a held file'
         if rule == 'L20.part_of_saved':
             summary = (f"A leftover part of this statement in {name} is set aside: its pages are inside this saved "
                        f"statement and every payment and balance it reads is here.")
-        else:
+        elif rule == 'L19.unreadable_copy':
             summary = (f"A copy of this statement in {name} is set aside as already saved: its lines could not all be "
                        f"read, but its printed opening and closing equal this statement's and every payment it reads "
                        f"is here.")
+        else:
+            summary = (f"A held copy of this statement in {name} is set aside as already saved: the same account, dates, "
+                       f"printed balances and payments as this saved statement.")
         document_id = saved.get('source_document_id')
         period_id = saved.get('statement_period_id')
         return record_judgement(session, case_id=case_id, subject_type='evidence_file', subject_id=file.id,
