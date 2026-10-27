@@ -4,6 +4,7 @@ import { z } from "zod"
 import { fetchAPI } from "@/lib/api-client"
 import { randomRequestId } from "@/lib/browser-crypto"
 import { formatLedgerAmount } from "./ledger-format"
+import { filledBySave, listWords, missingRequired } from "./statement-needs"
 import type { StatementImportReceipt } from "../components/StatementImportPanel"
 
 const entry = z.object({
@@ -457,17 +458,31 @@ export function importOutcome(receipt?: StatementImportReceipt) {
   }
 }
 
-/** Where a statement stands after a save, from the refreshed queue: one short line. */
+/**
+ * Where a statement stands after a save, from the refreshed queue: what the
+ * save filled, and when it still waits, exactly what is still needed and why.
+ */
 export function savedOutcome(data: ReviewQueue, entry: QueueEntry) {
   const same = (candidate: QueueEntry) => candidate.id === entry.id
   const waiting = data.items.find(same)
-  if (waiting)
-    return { held: true, message: `Saved. Still needs: ${waiting.issue || "a check"}.` }
+  const after = waiting ?? [...data.ready, ...data.filled, ...data.unreadable].find(same)
+  const filled = after ? filledBySave(entry, after) : []
+  const saved = filled.length ? `Saved your ${listWords(filled.map((need) => need.label))}.` : "Saved."
+  if (waiting) {
+    const missing = missingRequired(waiting)
+    const why = waiting.issue ? ` Why it is held: ${waiting.issue.replace(/\.?$/, ".")}` : ""
+    return {
+      held: true,
+      message: missing.length
+        ? `${saved} Still needed before it can be imported: ${listWords(missing.map((need) => need.label))}.${why}`
+        : `${saved} Still needed before it can be imported: ${waiting.issue || "a check"}.`,
+    }
+  }
   if (data.ready.some(same) || data.filled.some(same))
-    return { held: false, message: "Saved. Ready to import: use Import at the top of the queue." }
+    return { held: false, message: `${saved} Ready to import: use Import at the top of the queue.` }
   if (data.unreadable.some(same))
-    return { held: true, message: "Saved. Nothing could be read from it yet: open it to check its pages." }
-  return { held: false, message: "Saved. Nothing more is needed from you here." }
+    return { held: true, message: `${saved} Nothing could be read from it yet: open it to check its pages.` }
+  return { held: false, message: `${saved} Nothing more is needed from you here.` }
 }
 
 /** "opening 1,000.00 USD · closing 950.50 USD · 12 payments read": as printed, never a guessed zero. */

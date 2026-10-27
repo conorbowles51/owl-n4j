@@ -94,7 +94,7 @@ export function guidanceFor(entry: QueueEntry, user?: QueuePerson | null, bucket
       steps: [
         openWhere,
         "Check that it is a bank or card statement and that the pages are legible.",
-        "If it is not a statement, choose Leave out. If it is, enter its opening and closing balances and its payments.",
+        "If it is not a statement, choose This isn't a statement. If it is, enter its opening and closing balances and its payments.",
       ],
       after: SAVES,
       action,
@@ -306,6 +306,19 @@ export function guidanceFor(entry: QueueEntry, user?: QueuePerson | null, bucket
       ],
       after: SAVES,
       action: "Choose the page",
+    }
+  // No payments and no printed balance were read (the server cannot save a
+  // statement with neither): say what to check first and what it needs.
+  if (reason === "reading" && /statement without transactions/i.test(entry.issue || ""))
+    return {
+      title: "No payments and no balances were read from this statement",
+      steps: [
+        openWhere,
+        "Check that it is a bank or card statement. If it is not, choose This isn't a statement.",
+        "If it is, enter the details listed below as Required and save. If it prints payments, add them in the statement.",
+      ],
+      after: SAVES,
+      action,
     }
   if (reason === "reading" && /unreadable/i.test(entry.issue || ""))
     return {

@@ -32,6 +32,7 @@ import { BulkStatementDetails } from "./BulkStatementDetails"
 import { QueueRowDetails, needsRowDetails } from "./QueueRowDetails"
 import { QueueNoActivityConfirm } from "./QueueNoActivityConfirm"
 import { QueueAnswerOnce } from "./QueueAnswerOnce"
+import { LEFT_OUT_MESSAGE, QueueNotStatement } from "./QueueNotStatement"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import {
   HANDLED_PARTS,
@@ -51,6 +52,7 @@ import {
   type QueueGroup,
   type QueuePerson,
 } from "../lib/queue-guidance"
+import { listWords, statementNeeds } from "../lib/statement-needs"
 
 type ListName = "waiting" | "ready" | "filled" | "reader" | "copies" | "unreadable" | "not_payment" | "handled"
 const PAGE_LISTS: Record<ListName, QueuePageList> = {
@@ -826,6 +828,10 @@ export function ReviewQueuePanel({
                     bucket={list === "unreadable" ? "unreadable" : item.bucket}
                     onOpen={() => openEntry(item)}
                     onSaved={(saved) => void refresh(saved)}
+                    onLeftOut={(left) => {
+                      setOutcome({ entry: left, held: false, message: LEFT_OUT_MESSAGE })
+                      void refresh(left, true)
+                    }}
                     noActivityPick={
                       canEdit && bulkIssue === "no_activity" && item.issue_reason === "no_activity"
                         ? {
@@ -1259,6 +1265,7 @@ function NeedsItem({
   bucket,
   onOpen,
   onSaved,
+  onLeftOut,
   noActivityPick,
 }: {
   entry: QueueEntry
@@ -1269,6 +1276,7 @@ function NeedsItem({
   bucket: string
   onOpen: () => void
   onSaved: (entry: QueueEntry) => void
+  onLeftOut?: (entry: QueueEntry) => void
   noActivityPick?: { checked: boolean; onChange: (checked: boolean) => void }
 }) {
   const guide = guidanceFor(entry, user, bucket)
@@ -1323,6 +1331,7 @@ function NeedsItem({
         <div className="rounded bg-muted/40 p-2 text-xs">
           <EntryLine entry={entry} />
         </div>
+        {bucket === "waiting" && <StatementNeedsList entry={entry} />}
         <FilledMarks caseId={caseId} entry={entry} canEdit={canEdit} onSaved={onSaved} />
         {answerHere && (
           <QueueAnswerOnce
@@ -1335,6 +1344,9 @@ function NeedsItem({
           />
         )}
         {rowDetails && <QueueRowDetails key={entry.id} caseId={caseId} entry={entry} onSaved={(saved) => onSaved(saved)} />}
+        {canEdit && onLeftOut && entry.batch_id && (bucket === "waiting" || bucket === "unreadable") && (
+          <QueueNotStatement key={`not:${entry.id}`} caseId={caseId} entry={entry} onLeftOut={onLeftOut} />
+        )}
       </div>
       {entry.batch_id && (
         <Button size="sm" variant={first && !answerHere ? "primary" : "outline"} onClick={onOpen}>
@@ -1342,6 +1354,44 @@ function NeedsItem({
         </Button>
       )}
     </li>
+  )
+}
+
+/**
+ * Every detail import needs, at once (Alex: "Saved" then "Still needs" one at a
+ * time): each missing one marked Required with why, what is already there, and
+ * what is optional. Shown only while a required detail is missing.
+ */
+export function StatementNeedsList({ entry }: { entry: QueueEntry }) {
+  const needs = statementNeeds(entry)
+  const missing = needs.filter((need) => need.required && !need.have)
+  if (!missing.length) return null
+  const have = needs.filter((need) => need.have)
+  const optional = needs.filter((need) => !need.required)
+  return (
+    <div aria-label="Before it can be imported" className="space-y-1 rounded border border-amber-500/40 p-2 text-xs">
+      <p className="font-medium">Still needed before it can be imported:</p>
+      <ul className="flex flex-wrap gap-1.5" aria-label="Required details still missing">
+        {missing.map((need) => (
+          <li
+            key={need.key}
+            title={`Required ${need.why}`}
+            className="rounded border border-amber-500/60 bg-amber-50 px-1.5 py-0.5 dark:bg-amber-950/30"
+          >
+            {need.label} <span className="font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300">Required</span>
+            <span className="sr-only">: {need.why}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="text-muted-foreground">
+        {have.length > 0 && <>Already there: {listWords(have.map((need) => need.label))}. </>}
+        {optional.map((need) => (
+          <span key={need.key}>
+            Optional: {need.label} ({need.why}).{" "}
+          </span>
+        ))}
+      </p>
+    </div>
   )
 }
 

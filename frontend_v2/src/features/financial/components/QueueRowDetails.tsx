@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { CurrencyOptions } from "./CurrencyOptions"
+import { FieldNeed } from "./FieldNeed"
 import type { QueueEntry } from "../lib/review-queue"
 import {
   changeLine,
@@ -121,6 +122,7 @@ export function QueueRowDetails({
         <label key={field} className="flex flex-col gap-1">
           <span>
             {label}
+            <FieldNeed required />
             {!entry[field] && proposal(field) && values[field] === proposal(field)!.value && (
               <span className="text-muted-foreground"> (proposed: {proposal(field)!.label})</span>
             )}

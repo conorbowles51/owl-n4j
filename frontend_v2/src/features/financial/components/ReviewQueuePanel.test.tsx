@@ -391,7 +391,7 @@ it("after a fix inside a statement, refreshes the queue and its totals and says 
   fireEvent.click(await screen.findByRole("button", { name: "Save a field fix" }))
   const before = queueCalls()
   expect(await screen.findByLabelText("Result of your last save")).toHaveTextContent(
-    "Card statements.pdf (2020-10-08 to 2020-11-09): Saved. Still needs: 3 rows unreadable on page 7."
+    "Card statements.pdf (2020-10-08 to 2020-11-09): Saved. Still needed before it can be imported: opening balance, closing balance, account number, account holder and bank. Why it is held: 3 rows unreadable on page 7."
   )
   expect(queueCalls()).toBeGreaterThanOrEqual(before)
   expect(vi.mocked(fetchAPI).mock.calls.filter(([url]) => String(url).includes("/review/queue")).length).toBeGreaterThan(1)

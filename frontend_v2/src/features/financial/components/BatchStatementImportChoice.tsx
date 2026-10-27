@@ -10,6 +10,10 @@ export function BatchStatementImportChoice({
   revision,
   skipped,
   refresh,
+  skipLabel = "Leave unimported",
+  skipText = "Leave this statement out of this batch's import. Its PDF and saved corrections remain available.",
+  startOpen = false,
+  onCancel,
 }: {
   caseId: string
   batchId: string
@@ -17,8 +21,13 @@ export function BatchStatementImportChoice({
   revision: string
   skipped: boolean
   refresh: () => void
+  /** The queue's "This isn't a statement" uses the same choice in its own words. */
+  skipLabel?: string
+  skipText?: string
+  startOpen?: boolean
+  onCancel?: () => void
 }) {
-  const [open, setOpen] = useState(false),
+  const [open, setOpen] = useState(startOpen),
     [reason, setReason] = useState("")
   const action = skipped ? "restore" : "skip"
   const save = useMutation({
@@ -37,7 +46,7 @@ export function BatchStatementImportChoice({
       refresh()
     },
   })
-  const label = skipped ? "Restore to review" : "Leave unimported"
+  const label = skipped ? "Restore to review" : skipLabel
   return (
     <div className="text-sm space-y-2">
       {!open ? (
@@ -49,7 +58,7 @@ export function BatchStatementImportChoice({
           <p>
             {skipped
               ? "Return this statement to review. Current values and checks will determine whether it is ready."
-              : "Leave this statement out of this batch's import. Its PDF and saved corrections remain available."}
+              : skipText}
           </p>
           <label className="block">
             Reason
@@ -73,7 +82,10 @@ export function BatchStatementImportChoice({
               size="sm"
               variant="outline"
               disabled={save.isPending}
-              onClick={() => setOpen(false)}
+              onClick={() => {
+                setOpen(false)
+                onCancel?.()
+              }}
             >
               Cancel
             </Button>

@@ -4,6 +4,7 @@ import {
   type PaymentCounterpartyLink,
 } from "./PaymentCounterpartyPicker"
 import { CurrencyOptions } from "./CurrencyOptions"
+import { FieldNeed } from "./FieldNeed"
 import { currencyMinorUnits } from "../lib/ledger-format"
 import { ImportedStatementDetails } from "./ImportedStatementDetails"
 import { SavedStatementPayments } from "./SavedStatementPayments"
@@ -2933,6 +2934,7 @@ function EditableStatement({
       >
         <label>
           Account holder
+          <FieldNeed required />
           <input
             aria-label="Account holder"
             readOnly={!canEdit}
@@ -2943,6 +2945,7 @@ function EditableStatement({
         </label>
         <label>
           Account number
+          <FieldNeed required />
           <input
             aria-label="Account number"
             readOnly={!canEdit}
@@ -2970,6 +2973,7 @@ function EditableStatement({
       >
         <label>
           Bank
+          <FieldNeed required />
           <input
             aria-label="Bank"
             readOnly={!canEdit}
@@ -2980,6 +2984,7 @@ function EditableStatement({
         </label>
         <label>
           Period start
+          <FieldNeed required />
           <input
             type="date"
             aria-label="Period start"
@@ -2991,6 +2996,7 @@ function EditableStatement({
         </label>
         <label>
           Period end
+          <FieldNeed required />
           <input
             type="date"
             aria-label="Period end"
@@ -4698,7 +4704,7 @@ function EditableStatement({
                   {data.metadata.balance_convention === "liability_owed"
                     ? "amount owed"
                     : "balance"}
-                  :{" "}
+                  <FieldNeed required />:{" "}
                 </span>
                 {controls.length > 1 && (
                   <p className="text-amber-700 dark:text-amber-400">
