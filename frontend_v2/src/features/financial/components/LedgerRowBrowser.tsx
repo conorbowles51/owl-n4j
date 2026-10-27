@@ -45,6 +45,9 @@ import { SavePaymentSelection } from "./SavePaymentSelection"
 import { useFinancialDraft } from "../stores/financial-drafts"
 import { correctionMinor } from "../lib/correction-contract"
 import { LedgerExportButton } from "./LedgerExportButton"
+import { useRowJudgementLookup } from "../hooks/use-judgement-rows"
+import { useJudgementRowMap } from "../hooks/use-judgements"
+import { STATUS_LABELS, STRENGTH_LABELS, ORIGIN_LABELS, type Judgement } from "../lib/judgements"
 import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
 import { useState, type ComponentProps } from "react"
 import { Button } from "@/components/ui/button"
@@ -181,7 +184,29 @@ export function LedgerRowBrowser({
     transactions.filter((row) => matchesAccountSelection(row, accountScope)),
     trails.data?.trails ?? []
   )
-  const baseRows = transactions.filter(
+  const judgementsOf = useRowJudgementLookup()
+  const judgementMap = useJudgementRowMap(judgementsOf ? exportContext?.caseId : undefined)
+  const judgementFilter = {
+    category: view.judgementCategory,
+    strength: view.judgementStrength,
+    origin: view.judgementOrigin,
+    status: view.judgementStatus,
+  }
+  const judgementSubFilters = Object.values(judgementFilter).filter(Boolean).length
+  const judgementWanted = view.judgement || (judgementSubFilters ? "any" : "")
+  const matchingCalls = (row: LedgerTransaction, except?: keyof typeof judgementFilter) =>
+    (judgementsOf?.(row) || []).filter((judgement: Judgement) =>
+      (Object.keys(judgementFilter) as (keyof typeof judgementFilter)[]).every(
+        (key) => key === except || !judgementFilter[key] || judgement[key] === judgementFilter[key]
+      )
+    )
+  const judgementMatches = (row: LedgerTransaction) =>
+    !judgementsOf ||
+    !judgementWanted ||
+    (judgementWanted === "none"
+      ? !(judgementsOf(row) || []).length
+      : matchingCalls(row).length > 0)
+  const preRows = transactions.filter(
     (row) =>
       !invalidRange &&
       (view.activity === "all" ||
@@ -201,6 +226,27 @@ export function LedgerRowBrowser({
       (!proof || row.proof_class === proof) &&
       searchResult.matches(row)
   )
+  const baseRows = preRows.filter(judgementMatches)
+  // Payments per choice of each judgement sub-filter, under the other active filters (as the queue counts issues).
+  const judgementCounts = (key: keyof typeof judgementFilter) => {
+    const counts = new Map<string, number>()
+    for (const row of preRows) {
+      const values = new Set(matchingCalls(row, key).map((judgement) => judgement[key]))
+      for (const value of values) counts.set(value, (counts.get(value) || 0) + 1)
+    }
+    return counts
+  }
+  const touchedRows = preRows.filter((row) => (judgementsOf?.(row) || []).length > 0).length
+  const judgementsLink = exportContext
+    ? `/cases/${exportContext.caseId}/financial?${new URLSearchParams({
+        view: "statements",
+        judgements: "1",
+        ...(view.judgementCategory ? { jType: view.judgementCategory } : {}),
+        ...(view.judgementStrength ? { jStrength: view.judgementStrength } : {}),
+        ...(view.judgementOrigin ? { jBy: view.judgementOrigin } : {}),
+        jStatus: view.judgementStatus || "all",
+      })}`
+    : undefined
   const analysisAmounts = (entries: LedgerTransaction[]) =>
     entries.map((row) => ({
       ...row,
@@ -362,10 +408,10 @@ export function LedgerRowBrowser({
         <details className="rounded border p-2 text-sm">
           <summary className="cursor-pointer">
             Filters
-            {[currency, category, minimum, maximum, direction, proof].filter(
+            {[currency, category, minimum, maximum, direction, proof, judgementWanted].filter(
               Boolean
             ).length > 0 &&
-              ` (${[currency, category, minimum, maximum, direction, proof].filter(Boolean).length})`}
+              ` (${[currency, category, minimum, maximum, direction, proof, judgementWanted].filter(Boolean).length})`}
           </summary>
           <div className="flex flex-wrap gap-3 pt-3">
             <label>
@@ -471,6 +517,70 @@ export function LedgerRowBrowser({
                 <option value="debit">Outgoing</option>
               </select>
             </label>
+            {judgementsOf && (
+              <fieldset
+                className="flex basis-full flex-wrap items-end gap-3 rounded border p-2"
+                aria-label="Judgement calls filter"
+              >
+                <legend className="px-1 text-sm font-medium">Judgement calls</legend>
+                <label>
+                  Payments
+                  <select
+                    aria-label="Judgement calls"
+                    className="block rounded border bg-background p-2"
+                    value={view.judgement}
+                    onChange={(e) =>
+                      changeView({
+                        judgement: e.target.value,
+                        ...(e.target.value === "none"
+                          ? { judgementCategory: "", judgementStrength: "", judgementOrigin: "", judgementStatus: "" }
+                          : {}),
+                        page: 0,
+                      })
+                    }
+                  >
+                    <option value="">All payments</option>
+                    <option value="any">With a judgement call ({touchedRows})</option>
+                    <option value="none">Without a judgement call ({preRows.length - touchedRows})</option>
+                  </select>
+                </label>
+                {(
+                  [
+                    ["judgementCategory", "category", "Type", "All types",
+                      Object.fromEntries((judgementMap.data?.categories || []).map((c) => [c.key, c.label]))],
+                    ["judgementStrength", "strength", "Strength", "Inferred and checked guesses", STRENGTH_LABELS],
+                    ["judgementOrigin", "origin", "Made by", "Agent and processor", ORIGIN_LABELS],
+                    ["judgementStatus", "status", "Checked", "Checked or not", STATUS_LABELS],
+                  ] as const
+                ).map(([field, key, label, allLabel, labels]) => {
+                  const counts = judgementCounts(key)
+                  return (
+                    <label key={field}>
+                      {label}
+                      <select
+                        aria-label={`Judgement ${label.toLowerCase()}`}
+                        className="block rounded border bg-background p-2"
+                        disabled={view.judgement === "none"}
+                        value={view[field]}
+                        onChange={(e) => changeView({ [field]: e.target.value, page: 0 })}
+                      >
+                        <option value="">{allLabel}</option>
+                        {Object.entries(labels as Record<string, string>).map(([value, text]) => (
+                          <option key={value} value={value}>
+                            {text} ({counts.get(value) || 0})
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )
+                })}
+                {judgementsLink && (
+                  <a className="text-sm underline" href={judgementsLink}>
+                    See all judgement calls
+                  </a>
+                )}
+              </fieldset>
+            )}
             <details>
               <summary className="text-sm cursor-pointer">
                 Technical filter
@@ -654,6 +764,20 @@ export function LedgerRowBrowser({
       {!investigation && (
         <p className="text-sm text-muted-foreground">
           {rows.length} payments match your filters.
+        </p>
+      )}
+      {judgementsOf && !judgementWanted && rows.some((row) => (judgementsOf(row) || []).length) && (
+        <p className="text-xs text-muted-foreground" data-testid="ledger-judgement-line">
+          Includes{" "}
+          {rows.filter((row) => (judgementsOf(row) || []).length).length.toLocaleString()} payments touched by
+          judgement calls.{" "}
+          <button
+            type="button"
+            className="underline"
+            onClick={() => changeView({ judgement: "any", page: 0 })}
+          >
+            Show only them
+          </button>
         </p>
       )}
       {investigation && exportContext && (

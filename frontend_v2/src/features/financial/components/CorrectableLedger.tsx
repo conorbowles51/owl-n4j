@@ -15,6 +15,7 @@ import { LedgerPanel } from "./LedgerPanel"
 import { QuarantinePanel } from "./QuarantinePanel"
 import { LedgerSourceDialog } from "./LedgerSourceDialog"
 import { ImportedRecordsPanel } from "./ImportedRecordsPanel"
+import { CaseJudgementProvider } from "./JudgementCalls"
 
 export function CorrectableLedger(props: {
   caseId: string | undefined
@@ -109,6 +110,10 @@ function CorrectableLedgerContent({
         }
       >
         <div className="min-w-0">
+          <CaseJudgementProvider
+            caseId={heldOut ? undefined : caseId}
+            onCorrect={canEdit && !selected ? (_judgement, row) => setSelected(row) : undefined}
+          >
           <Panel
             splitAmounts
             investigation={investigation}
@@ -127,6 +132,7 @@ function CorrectableLedgerContent({
               caseId && setSource({ caseId, transactionId: row.key })
             }
           />
+          </CaseJudgementProvider>
         </div>
         {source && source.caseId === caseId && (
           <LedgerSourceDialog

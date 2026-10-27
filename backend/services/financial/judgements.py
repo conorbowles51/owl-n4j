@@ -155,6 +155,46 @@ CONTROL_SENTENCES = {
 FIELD_WORDS = {'date_basis': 'date', 'direction_basis': 'direction', 'amount_basis': 'amount',
                'balance_basis': 'balance', 'total_basis': 'total'}
 
+# Plain-language types of judgement call: the sub-filters of the ledger's "Judgement calls" filter and of the
+# Judgement calls page. One table, so the two never disagree. Rule ids stay in tooltips.
+CATEGORIES = {
+    'hand_entry': 'Entered by hand by the processing agent',
+    'damaged_scan': 'Damaged scan reading',
+    'page_image': 'Value read from the page image',
+    'balance': 'Balance or opening worked out',
+    'date_sign': 'Date or sign worked out',
+    'currency_account': 'Currency or account assigned',
+    'copies': 'Copies, duplicates and replacements',
+}
+_CATEGORY_RULES = {
+    'hand_entry': ('agent.page_entry', 'agent.correction'),
+    'damaged_scan': ('L1.glyph_cell', 'L12.adjacent_cells', 'L16.one_glyph', 'L19.both_neighbours',
+                     'L12.balance_digits', 'L9.scan_amount_marks', 'L31.scan_day_letter', 'amount.daily_balance',
+                     'amount.balance_step', 'merrick.summary_order'),
+    'page_image': ('image.page_reading', 'image.printed_total', 'image.date'),
+    'balance': ('L8.unprinted_opening', 'IC.cover_opening', 'opening.after_first_movement',
+                'opening.before_kept_dates', 'closing.last_kept_movement', 'L17.zero_opening', 'credit_line.opening',
+                'L5.blank_closing', 'total.less_covered', 'santander.integral_balance', 'guard.neighbour_check'),
+    'date_sign': ('L10.one_date', 'erica.date_month', 'erica.date_ordering', 'date.from_neighbour_line',
+                  'merrick.date_glyphs', 'merrick.interest_date', 'L18.direction_from_balances', 'card.payment_sign',
+                  'period.start_derived'),
+    'currency_account': ('L4.currency_from_name', 'autofill.currency_account', 'autofill.currency_case',
+                         'autofill.detail', 'L30c.contract_refile', 'agent.refile', 'agent.currency_refile'),
+    'copies': ('L26.duplicate_set_aside', 'L19.unreadable_copy', 'copies.held_copy', 'L20.part_of_saved',
+               'reader.replacement', 'L22.vanished_key', 'erica.receipt_settled'),
+}
+RULE_CATEGORY = {rule: key for key, rules in _CATEGORY_RULES.items() for rule in rules}
+# Calls about a whole statement that touch every one of its payments (who entered them, which reading, which
+# account or currency they are filed in). A balance or a set-aside copy does not touch the payments themselves.
+STATEMENT_ROW_RULES = frozenset({'agent.page_entry', 'image.page_reading', 'reader.replacement',
+                                 'L30c.contract_refile', 'agent.refile', 'agent.currency_refile',
+                                 'L4.currency_from_name', 'autofill.currency_account', 'autofill.currency_case'})
+
+
+def category(rule_id):
+    return RULE_CATEGORY.get(rule_id, 'balance' if rule_id.startswith(('opening', 'closing')) else 'damaged_scan')
+
+
 OPENING_REASON_START = 'Opening balance not printed in these pages'
 TOTAL_REASON_START = 'Printed total read from page image'
 DATE_REASON_START = 'Date read from page image'
@@ -381,6 +421,45 @@ _SPACED = re.compile(r'\d ,\d|\d, \d{3}|\d \.\d\d|\d\?$')
 _DAY_LETTER = re.compile(r'(?=[0-9OolI|]{2}[/-])(?=.{0,1}[OolI|])[0-9OolI|]{2}[/-](?:\d\d|[A-Za-z]{3})')
 
 
+def preview(reading_rows, review_rows=(), *, currency='', statement_id=''):
+    """The calls the rules make on one statement reading before anyone saves it (the review queue): the same
+    detection as a saved statement, over the reading's rows and the review's draft. Pure; nothing is stored.
+    Returns judgement dicts whose subject is the reading row id (``row_id``) or the statement."""
+    from types import SimpleNamespace
+    from datetime import date as _date
+    reading_rows = [r for r in reading_rows or () if isinstance(r, dict)]
+    review = {str(r.get('id')): r for r in review_rows or () if isinstance(r, dict)}
+    document = SimpleNamespace(id='statement', metadata_=dict(
+        statement_import_statement_id=statement_id, statement_import_original=dict(rows=reading_rows),
+        statement_import_request=dict(rows=list(review.values()), currency=currency)))
+    transactions = []
+    for row in reading_rows:
+        draft = review.get(str(row.get('id')), {})
+        if row.get('kind') != 'transaction' or row.get('excluded') or draft.get('excluded'):
+            continue
+        fields = row.get('fields') or {}
+        amount = draft.get('amount_minor') or fields.get('amount_minor') or fields.get('credit') or fields.get('debit')
+        when = draft.get('date') or fields.get('date') or ''
+        try:
+            when = _date.fromisoformat(str(when)[:10]) if when else None
+        except ValueError:
+            when = None
+        transactions.append(SimpleNamespace(id=str(row.get('id')), amount_minor=amount, transaction_date=when,
+                                            provenance=dict(statement_import_original=row,
+                                                            statement_import_review=draft)))
+    period = SimpleNamespace(id='statement', currency=currency, opening_balance_minor=None, closing_balance_minor=None,
+                             period_start_source='', period_start=None)
+    out = []
+    for found in detect(document, period, transactions):
+        rule = RULES.get(found['rule_id'], (found['rule_id'], '', 'inferred'))
+        out.append(dict(found, subject_id=str(found['subject_id']),
+                        row_id=str(found['subject_id']) if found['subject_type'] == 'transaction' else None,
+                        strength=found.get('strength') or rule[2], rule_label=rule[0], rule_source=rule[1],
+                        category=category(found['rule_id']), category_label=CATEGORIES[category(found['rule_id'])],
+                        page=(found.get('evidence') or {}).get('page')))
+    return out
+
+
 def _cell_marks(first, fields, label, page):
     """(rule, cell, sentence) for the printed cells of a saved row the reader read past a scan mark (L9) or a
     letter standing for a day digit (L31); from the row's own stored cell text, nothing re-read."""
@@ -485,6 +564,122 @@ def record_on_document(session, document, rule_id, summary, *, target_key='', ev
 
 
 # ---------------------------------------------------------------------------
+# Hand work by the processing agent, said plainly
+# ---------------------------------------------------------------------------
+
+# What the agent's working notes say about why the processor could not save the statement itself -> plain words.
+_WHY = (
+    (re.compile(r'tesseract draft rejected|pen ticks', re.I),
+     'pen marks beside the amounts were read as digits'),
+    (re.compile(r'read nothing', re.I), 'Loupe could not read any payments from this scan'),
+    (re.compile(r'pages? missing', re.I),
+     'it was held as having pages missing, but its payment table ends on the pages held'),
+    (re.compile(r'without amounts|amounts? blank|without columns|left both amounts blank', re.I),
+     'Loupe found the lines but not all of their amounts'),
+    (re.compile(r'\bMISSED\b|\bmissed the\b', re.I), 'Loupe missed a line of this statement'),
+    (re.compile(r'misread|\bOCR\b', re.I), 'Loupe misread some figures in this scan'),
+    (re.compile(r'table not read|not read\)', re.I), "Loupe did not read one of the statement's payment tables"),
+    (re.compile(r'System draft|old(?:er)? reading', re.I), 'an earlier automatic draft of it was out of date'),
+    (re.compile(r'lost its day|date \(', re.I), 'Loupe could not read a date on the page'),
+)
+_ENTERED = re.compile(r'from (?:the )?page images|transcribed|entered (?:\d+ rows|from|amounts)|entered by hand', re.I)
+_SAVED_CURRENT = re.compile(r'saved current|== current reading|current reads', re.I)
+_SALDOS = re.compile(r'every printed (?:daily )?saldo (?:\((\d+)\) )?agrees', re.I)
+_TOTALS = re.compile(r'= ?(?:the )?printed (?:totals|total de movimientos|credit/debit totals|total)|printed credit/debit '
+                     r'totals match|Total de Movimientos', re.I)
+
+
+def statement_log_line(line, keys):
+    """The agent's working-notes line when it is about this statement (it starts with the statement's id or names
+    its file), else None: a line that merely mentions the id in a list explains nothing."""
+    if not line:
+        return None
+    head = re.sub(r'^[-*\s]*', '', line)
+    parts = [p.strip() for p in head.split('|')]
+    if len(parts) >= 3 and re.fullmatch(r'[0-9a-f]{8}', parts[0]) and re.fullmatch(r'[0-9a-f]{8}', parts[1]):
+        return None  # a listing (document | file | name | count), not reasoning
+    if any(head.startswith(k) for k in keys if k) and len(parts) >= 3:
+        return line
+    return None
+
+
+def agent_entry_summary(*, rows, period=None, line=None, previous_closing=None, next_opening=None):
+    """Two or three short sentences an investigator reads at a glance: what was entered, why the processor could
+    not, how it was checked. No ids, bank page codes, column names or job names."""
+    line = line or ''
+    currency = getattr(period, 'currency', '') or ''
+    whys = []
+    for pattern, words in _WHY:
+        if pattern.search(line) and words not in whys:
+            whys.append(words)
+    if whys and 'right edge' in line.lower() and whys[0].startswith('Loupe could not read'):
+        whys[0] = 'Loupe could not read this scan (the right edge of the pages is cut off)'
+    why = '; '.join(whys[:2])
+    payments = f"{rows} payment{'s' if rows != 1 else ''}"
+    were, them = ('were', 'them') if rows != 1 else ('was', 'it')
+    if _SAVED_CURRENT.search(line) and not _ENTERED.search(line):
+        first = f"The processing agent checked Loupe's current reading of this statement's {payments} and saved it"
+        first += f", because {why}." if why else '.'
+    elif _ENTERED.search(line) or 'read nothing' in line.lower():
+        first = (f"{why[:1].upper() + why[1:]}, so its {payments} {were} entered by hand from the page images."
+                 if why else f"Its {payments} {were} entered by hand from the page images.")
+    else:
+        first = (f"Loupe held this statement for review ({why}); the processing agent checked its {payments} against "
+                 f"the pages and saved {them}." if why else
+                 f"Loupe held this statement for review; the processing agent checked its {payments} against the "
+                 f"pages and saved {them}.")
+    if re.search(r'saved account as printed|set holder', line, re.I):
+        first += ' The account details are taken from the page header.'
+    checks = []
+    saldos = _SALDOS.search(line)
+    if saldos:
+        checks.append(f"all {saldos.group(1)} printed daily balances agree" if saldos.group(1)
+                      else 'every printed running balance agrees')
+    credit, debit = getattr(period, 'credit_total_minor', None), getattr(period, 'debit_total_minor', None)
+    if _TOTALS.search(line) and credit is not None and debit is not None:
+        checks.append(f"the printed totals agree (money in {money(credit, currency)}, money out "
+                      f"{money(debit, currency)})")
+    opening, closing = getattr(period, 'opening_balance_minor', None), getattr(period, 'closing_balance_minor', None)
+    balanced = period is not None and getattr(period, 'reconciliation_status', '') == 'balanced'
+    if balanced and opening is not None and closing is not None and not checks:
+        printed = 'printed ' if (getattr(period, 'opening_balance_source', '') == 'printed'
+                                 and getattr(period, 'closing_balance_source', '') == 'printed') else ''
+        checks.append(f"the payments take the {printed}opening {money(opening, currency)} to the {printed}closing "
+                      f"{money(closing, currency)}")
+    chain = []
+    if previous_closing is not None and opening is not None and previous_closing == opening:
+        chain.append("the opening is the previous statement's closing")
+    if next_opening is not None and closing is not None and next_opening == closing:
+        chain.append("the closing is the next statement's opening")
+    if chain:
+        checks.append(' and '.join(chain))
+    if checks:
+        second = 'Checked: ' + '; '.join(checks) + '.'
+    elif not balanced:
+        second = 'The printed balances alone do not prove it; check it against the page.'
+    else:
+        second = ''
+    return ' '.join(x for x in (first, second) if x)
+
+
+def agent_correction_summary(reason):
+    found = re.search(r'currency corrected from ([A-Z]{3}) to ([A-Z]{3})', reason or '')
+    if found:
+        return (f"The processing agent changed this statement's currency by hand from {found.group(1)} to "
+                f"{found.group(2)}, because the statement is in {found.group(2)}. The printed amounts are unchanged; "
+                f"only the currency they count in changed.")
+    return f"The processing agent corrected this by hand. Its reason: {reason}"
+
+
+def agent_refile_summary(reason, account=''):
+    contract = re.search(r'contract (\d+)', reason or '')
+    where = f" for contract {contract.group(1)}" if contract else ''
+    return (f"The processing agent filed this statement by hand in the {account + ' ' if account else ''}account"
+            f"{where} that holds the contract's statements in this currency; it had been saved in an older account "
+            f"of the same contract. Its payments and balances are unchanged.")
+
+
+# ---------------------------------------------------------------------------
 # What a person sees and answers
 # ---------------------------------------------------------------------------
 
@@ -492,19 +687,25 @@ def label(rule_id):
     return RULES.get(rule_id, (rule_id, '', ''))[0]
 
 
-def as_dict(row, *, file_id=None, filename=None):
+def as_dict(row, *, file_id=None, filename=None, extra=None):
     rule = RULES.get(row.rule_id, (row.rule_id, '', row.strength))
-    return dict(id=str(row.id), case_id=str(row.case_id), subject_type=row.subject_type, subject_id=str(row.subject_id),
-                source_document_id=str(row.source_document_id) if row.source_document_id else None,
-                statement_period_id=str(row.statement_period_id) if row.statement_period_id else None,
-                evidence_file_id=str(file_id) if file_id else None, filename=filename,
-                rule_id=row.rule_id, rule_label=rule[0], rule_source=rule[1], target_key=row.target_key,
-                origin=row.origin, strength=row.strength, summary=row.summary, evidence=row.evidence or {},
-                page=(row.evidence or {}).get('page'), status=row.status, resolved_by=row.resolved_by,
-                resolved_at=row.resolved_at.isoformat() if row.resolved_at else None,
-                resolution_reason=row.resolution_reason,
-                adjudication_id=str(row.adjudication_id) if row.adjudication_id else None,
-                created_at=row.created_at.isoformat() if row.created_at else None)
+    evidence = row.evidence or {}
+    out = dict(id=str(row.id), case_id=str(row.case_id), subject_type=row.subject_type, subject_id=str(row.subject_id),
+               source_document_id=str(row.source_document_id) if row.source_document_id else None,
+               statement_period_id=str(row.statement_period_id) if row.statement_period_id else None,
+               evidence_file_id=str(file_id) if file_id else (evidence.get('evidence_file_id') or None),
+               filename=filename or evidence.get('filename'),
+               rule_id=row.rule_id, rule_label=rule[0], rule_source=rule[1], target_key=row.target_key,
+               category=category(row.rule_id), category_label=CATEGORIES[category(row.rule_id)],
+               origin=row.origin, strength=row.strength, summary=row.summary, evidence=evidence,
+               page=evidence.get('page') or evidence.get('first_page'),
+               working_notes=evidence.get('log_line') or None, status=row.status, resolved_by=row.resolved_by,
+               resolved_at=row.resolved_at.isoformat() if row.resolved_at else None,
+               resolution_reason=row.resolution_reason,
+               adjudication_id=str(row.adjudication_id) if row.adjudication_id else None,
+               created_at=row.created_at.isoformat() if row.created_at else None)
+    out.update(extra or {})
+    return out
 
 
 ORIGIN_ORDER = {'agent': 0, 'processor': 1}
@@ -520,37 +721,148 @@ def _current(query):
         (J.source_document_id.is_(None)) | (D.status != 'superseded'))
 
 
-def list_judgements(session, case_id, *, source_document_id=None, statement_period_id=None, subject_ids=None,
-                    status=None, strength=None, rule_id=None, origin=None, limit=500):
+FACETS = ('status', 'category', 'strength', 'origin')
+
+
+def _search_rows(session, case_id, *, source_document_id=None, statement_period_id=None, subject_ids=None):
+    """Every current judgement of the case with what a person searches it by (file, account, period, payment)."""
     from postgres.models.evidence import EvidenceFile as F
-    from postgres.models.financial import FinancialSourceDocument as D
+    from postgres.models.financial import (FinancialAccount as A, FinancialSourceDocument as D,
+                                           FinancialStatementPeriod as P, FinancialTransaction as T)
     from postgres.models.financial_judgements import FinancialJudgement as J
-    query = _current(select(J, D.evidence_file_id, F.original_filename).where(J.case_id == case_id))
-    query = query.outerjoin(F, F.id == D.evidence_file_id)
+    query = _current(select(J, D.evidence_file_id, F.original_filename, P.period_start, P.period_end, P.account_id,
+                            A.holder_name, A.identifier_as_printed, A.identifier_normalised, A.institution_name,
+                            T.description, T.amount_minor, T.counterparty_raw).where(J.case_id == case_id))
+    query = (query.outerjoin(F, F.id == D.evidence_file_id).outerjoin(P, P.id == J.statement_period_id)
+             .outerjoin(A, A.id == P.account_id)
+             .outerjoin(T, (J.subject_type == 'transaction') & (T.id == J.subject_id)))
     if source_document_id:
         query = query.where(J.source_document_id == source_document_id)
     if statement_period_id:
         query = query.where(J.statement_period_id == statement_period_id)
     if subject_ids:
         query = query.where(J.subject_id.in_(subject_ids))
-    for column, value in ((J.status, status), (J.strength, strength), (J.rule_id, rule_id), (J.origin, origin)):
-        if value:
-            query = query.where(column == value)
-    rows = session.execute(query.limit(max(1, min(int(limit or 500), 5000)))).all()
-    rows.sort(key=lambda r: (STATUS_ORDER.get(r[0].status, 3), ORIGIN_ORDER.get(r[0].origin, 2),
-                             STRENGTH_ORDER.get(r[0].strength, 2), r[0].created_at or datetime.min.replace(tzinfo=timezone.utc)))
-    return [as_dict(row, file_id=file_id, filename=name) for row, file_id, name in rows]
+    out = []
+    for (row, file_id, filename, start, end, account_id, holder, printed, normalised, bank, description, amount,
+         counterparty) in session.execute(query):
+        if row.subject_type == 'account' and account_id is None:
+            account_id = row.subject_id
+        account_label = ' · '.join(x for x in (holder, printed or normalised, bank) if x)
+        file_id = file_id or (row.evidence or {}).get('evidence_file_id')
+        filename = filename or (row.evidence or {}).get('filename')
+        extra = dict(period_start=str(start) if start else None, period_end=str(end) if end else None,
+                     account_id=str(account_id) if account_id else None, account_label=account_label or None,
+                     payment_description=description, payment_amount_minor=str(amount) if amount is not None else None)
+        months = ' '.join(d.strftime('%b %B %Y') for d in (start, end) if d)
+        text = ' '.join(str(x) for x in (filename, holder, printed, normalised, bank, start, end, months, description,
+                                         counterparty, row.summary, RULES.get(row.rule_id, ('',))[0],
+                                         CATEGORIES[category(row.rule_id)]) if x).lower()
+        if amount is not None:
+            text += f' {money(amount)} {abs(int(amount)) / 100:.2f} {abs(int(amount))}'
+        out.append((row, file_id, filename, extra, text))
+    return out
+
+
+def _sort_key(entry):
+    row, _, filename, extra, _ = entry
+    return (ORIGIN_ORDER.get(row.origin, 2), STRENGTH_ORDER.get(row.strength, 2), (filename or '').lower(),
+            extra.get('period_start') or '', row.created_at or datetime.min.replace(tzinfo=timezone.utc))
+
+
+def search(session, case_id, *, q='', statuses=(), categories=(), strengths=(), origins=(), rule_ids=(),
+           file_ids=(), account_ids=(), source_document_id=None, statement_period_id=None, subject_ids=None,
+           offset=0, limit=50):
+    """One page of a case's judgement calls, with counts per status, type, strength and maker; each facet counts
+    the calls matching every other active filter, as the review queue's issue counts do. Sorted: hand entries,
+    then inferred, then checked guesses; within that by file, then period."""
+    entries = _search_rows(session, case_id, source_document_id=source_document_id,
+                           statement_period_id=statement_period_id, subject_ids=subject_ids)
+    words = [w for w in str(q or '').lower().split() if w]
+    files = {str(f) for f in file_ids or ()}
+    accounts = {str(a) for a in account_ids or ()}
+    rules = set(rule_ids or ())
+    wanted = dict(status=set(statuses or ()), category=set(categories or ()), strength=set(strengths or ()),
+                  origin=set(origins or ()))
+
+    def value(row, facet):
+        return category(row.rule_id) if facet == 'category' else getattr(row, facet)
+
+    scoped = [e for e in entries
+              if all(w in e[4] for w in words)
+              and (not files or str(e[1] or '') in files)
+              and (not accounts or (e[3].get('account_id') or '') in accounts)
+              and (not rules or e[0].rule_id in rules)]
+    facets = {}
+    for facet in FACETS:
+        tally = Counter()
+        for entry in scoped:
+            if all(not chosen or value(entry[0], other) in chosen
+                   for other, chosen in wanted.items() if other != facet):
+                tally[value(entry[0], facet)] += 1
+                tally['all'] += 1
+        facets[facet] = dict(tally)
+    matched = [e for e in scoped if all(not chosen or value(e[0], facet) in chosen for facet, chosen in wanted.items())]
+    matched.sort(key=_sort_key)
+    offset, limit = max(0, int(offset or 0)), max(1, min(int(limit or 50), 5000))
+    return dict(items=[as_dict(row, file_id=file_id, filename=filename, extra=extra)
+                       for row, file_id, filename, extra, _ in matched[offset:offset + limit]],
+                total=len(matched), offset=offset, limit=limit, facets=facets,
+                categories=[dict(key=k, label=v) for k, v in CATEGORIES.items()],
+                rules=sorted({(e[0].rule_id, RULES.get(e[0].rule_id, (e[0].rule_id,))[0], category(e[0].rule_id))
+                               for e in entries}),
+                accounts=sorted(({'value': a, 'label': l} for a, l in {(e[3]['account_id'], e[3]['account_label'] or 'Account')
+                                                                      for e in entries if e[3].get('account_id')}),
+                                key=lambda o: o['label'].lower()),
+                files=sorted(({'value': str(f), 'label': n or 'File'} for f, n in {(e[1], e[2]) for e in entries
+                                                                                   if str(e[1] or '') in files}),
+                             key=lambda o: o['label'].lower()))
+
+
+def row_map(session, case_id):
+    """Which ledger payments each current call touches, for the whole case in one read: calls on a payment, and
+    calls about a whole statement that touch all its payments (hand entry, page-image reading, refile, currency).
+    The ledger marks and filters its rows from this."""
+    from postgres.models.evidence import EvidenceFile as F
+    from postgres.models.financial import FinancialSourceDocument as D
+    from postgres.models.financial_judgements import FinancialJudgement as J
+    query = _current(select(J, D.evidence_file_id, F.original_filename).where(J.case_id == case_id)).outerjoin(
+        F, F.id == D.evidence_file_id)
+    judgements, transactions, documents = [], {}, {}
+    for row, file_id, filename in session.execute(query):
+        evidence = row.evidence or {}
+        if row.subject_type == 'transaction':
+            transactions.setdefault(str(row.subject_id), []).append(str(row.id))
+        elif row.rule_id == 'agent.correction' and evidence.get('transaction_id'):
+            transactions.setdefault(str(evidence['transaction_id']), []).append(str(row.id))
+        elif row.rule_id in STATEMENT_ROW_RULES and row.source_document_id:
+            documents.setdefault(str(row.source_document_id), []).append(str(row.id))
+        else:
+            continue
+        item = as_dict(row, file_id=file_id, filename=filename)
+        item['evidence'] = {}  # the ledger needs the sentence and the page, not the working evidence
+        judgements.append(item)
+    return dict(judgements=judgements, transactions=transactions, documents=documents,
+                categories=[dict(key=k, label=v) for k, v in CATEGORIES.items()])
 
 
 def counts(session, case_id):
-    """{case: {total, inferred, open, ...}, statements: {document id: {...}}, rules: [...]} for one case."""
+    """{case, statements: {document id}, periods: {period id}, accounts: {account id}, rules: [...]} for one case."""
     from postgres.models.financial_judgements import FinancialJudgement as J
-    from postgres.models.financial import FinancialSourceDocument as D
+    from postgres.models.financial import FinancialSourceDocument as D, FinancialStatementPeriod as P
     rows = session.execute(_current(select(J.source_document_id, J.rule_id, J.strength, J.status, J.origin,
-                                           D.evidence_file_id).where(J.case_id == case_id))).all()
-    case, statements, rules = Counter(), {}, {}
-    for document_id, rule_id, strength, status, origin, file_id in rows:
-        for bucket in (case, statements.setdefault(str(document_id), Counter())):
+                                           D.evidence_file_id, J.statement_period_id, P.account_id, J.subject_type,
+                                           J.subject_id).where(J.case_id == case_id))
+                           .outerjoin(P, P.id == J.statement_period_id)).all()
+    case, statements, periods, accounts, rules = Counter(), {}, {}, {}, {}
+    for document_id, rule_id, strength, status, origin, file_id, period_id, account_id, subject_type, subject_id in rows:
+        if subject_type == 'account':
+            account_id = subject_id
+        buckets = [case, statements.setdefault(str(document_id), Counter())]
+        if period_id:
+            buckets.append(periods.setdefault(str(period_id), Counter()))
+        if account_id:
+            buckets.append(accounts.setdefault(str(account_id), Counter()))
+        for bucket in buckets:
             bucket['total'] += 1
             bucket[strength] += 1
             bucket[status] += 1
@@ -560,6 +872,7 @@ def counts(session, case_id):
         rule[status] += 1
         rule['total'] += 1
     return dict(case=dict(case), statements={k: dict(v) for k, v in statements.items()},
+                periods={k: dict(v) for k, v in periods.items()}, accounts={k: dict(v) for k, v in accounts.items()},
                 rules=[dict(rule_id=k, label=label(k), source=RULES.get(k, ('', '', ''))[1], **v)
                        for k, v in sorted(rules.items(), key=lambda kv: -kv[1]['total'])])
 

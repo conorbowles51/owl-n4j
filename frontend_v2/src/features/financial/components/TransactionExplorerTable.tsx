@@ -3,6 +3,7 @@ import type { LedgerTransaction } from "../api"
 import { formatLedgerAmount } from "../lib/ledger-format"
 import { party, type PartySide } from "../lib/transaction-analysis"
 import { PaymentLabelOrigin } from "./PaymentLabelOrigin"
+import { RowJudgementMarkers } from "./JudgementCalls"
 import {
   absentPaymentBalance,
   paymentBalanceExplanation,
@@ -151,6 +152,7 @@ export function TransactionExplorerTable({
                         row.account_holder ||
                         row.account_id}
                     </span>
+                    <RowJudgementMarkers transaction={row} />
                     {onEdit && (
                       <button
                         className="mt-1 rounded border px-2 py-1 text-xs font-medium hover:bg-muted"

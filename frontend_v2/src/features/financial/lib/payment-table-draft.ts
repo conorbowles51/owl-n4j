@@ -31,6 +31,12 @@ export const emptyPaymentTableView = {
   importBatchRevision: "",
   importSourceIds: [] as string[],
   importStatementCount: 0,
+  // Judgement calls: "any" or "none"; the sub-filters narrow "any".
+  judgement: "",
+  judgementCategory: "",
+  judgementStrength: "",
+  judgementOrigin: "",
+  judgementStatus: "",
 }
 
 export function showAllImportedPayments(caseId: string) {

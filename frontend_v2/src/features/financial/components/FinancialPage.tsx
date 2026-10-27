@@ -45,6 +45,7 @@ import { InvestigatorTrends } from "./InvestigatorTrends"
 import { StatementRegister } from "./StatementRegister"
 import { ReviewQueuePanel } from "./ReviewQueuePanel"
 import { JudgementCallsLabel, JudgementCallsPanel } from "./JudgementCallsPanel"
+import { JUDGEMENT_KEYS } from "../lib/judgements"
 import { CaseReviewStatus } from "./CaseReviewStatus"
 import {
   useCallback,
@@ -219,6 +220,7 @@ function FinancialPageContent() {
       for (const key of [
         "batch", "batchItem", "batchRow", "batchCheck", "files", "accounts", "savedBatch", "savedOperation",
         "reviewFile", "returnBatch", "returnBatchCheck", "queue", "queueItem", "queueList", "queueFiles", "judgements",
+        ...JUDGEMENT_KEYS,
       ])
         updated.delete(key)
       if (next === "queue") updated.set("queue", "1")

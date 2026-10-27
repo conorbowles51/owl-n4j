@@ -1,3 +1,4 @@
+import { AccountJudgements, PeriodJudgements } from "./JudgementCalls"
 import { useMemo, useState, useRef } from "react"
 import { useQuery } from "@tanstack/react-query"
 import {
@@ -130,6 +131,16 @@ export function AccountHistory({
             Compare activity with the balance left in each account, including
             periods with no transactions. {accountIds ? "Only the selected saved accounts are shown; all their recorded periods are included." : "Accounts and dates above apply here."}
           </p>
+          {!accountId &&
+            groups.length <= 5 &&
+            groups.map((group) => (
+              <AccountJudgements
+                key={group.account_id}
+                caseId={caseId}
+                accountId={group.account_id}
+                label={groups.length > 1 ? group.label : undefined}
+              />
+            ))}
         </div>
         <Button
           variant="outline"
@@ -419,6 +430,7 @@ export function AccountHistory({
                               : p.status === "confirmed_no_activity"
                                 ? "Confirmed quiet period"
                                 : "Reconciled"}
+                            <PeriodJudgements caseId={caseId} periodId={p.id} />
                             {!!p.blockers?.length && (
                               <ul className="mt-1 text-xs list-disc pl-4">
                                 {p.blockers.map((reason, index) => (

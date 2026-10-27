@@ -27,6 +27,8 @@ const judgement: Judgement = {
   strength: "inferred",
   summary: "Opening 12,340.00 is not printed in these pages: it is the closing 15,000.00 less this period's payments.",
   page: 2,
+  category: "balance",
+  category_label: "Balance or opening worked out",
   status: "open",
   resolved_by: null,
   resolved_at: null,
@@ -69,4 +71,29 @@ it("shows the call in plain words and answers it at the right endpoints", async 
       body: { reason: "The July statement prints 12,430.00" },
     })
   )
+})
+
+it("shows a hand entry as its own button, with its own help and the working notes behind a toggle", () => {
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <JudgementMarker
+        caseId="case-a"
+        judgement={{
+          ...judgement,
+          origin: "agent",
+          strength: "proved",
+          rule_id: "agent.page_entry",
+          summary: "Its 156 payments were entered by hand from the page images.",
+          working_notes: "156 movements from page images",
+        }}
+      />
+    </QueryClientProvider>
+  )
+  const marker = screen.getByRole("button", { name: /Hand entry.*Why\?/ })
+  expect(marker).toHaveAttribute("aria-expanded", "false")
+  fireEvent.click(marker)
+  expect(marker).toHaveAttribute("aria-expanded", "true")
+  expect(screen.getByText(/checked against the printed balances and totals/)).toBeVisible()
+  expect(screen.queryByText(/Checked guess/)).toBeNull()
+  expect(screen.getByText("Working notes")).toBeVisible()
 })

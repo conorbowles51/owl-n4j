@@ -1,3 +1,4 @@
+import { AccountJudgements } from "./JudgementCalls"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { StatementChecksPanel } from "./StatementChecksPanel"
@@ -76,6 +77,7 @@ export function AccountStatementReview({
           {account.institution || "Bank not recorded"} ·{" "}
           {account.currency || "Currency not recorded"}
         </p>
+        <AccountJudgements caseId={caseId} accountId={account.id} />
         <p className="mt-2 text-sm">
           Review this account’s statements below. A balance difference needs
           investigation; missing dates show where another statement may be

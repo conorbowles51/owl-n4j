@@ -84,6 +84,7 @@ import {
 } from "../lib/statement-date-fields"
 import { useStatementWorkspace } from "../stores/statement-workspace"
 import { useFinancialDraft } from "../stores/financial-drafts"
+import { ReadingJudgements } from "./JudgementCalls"
 
 const cell = z.object({
   column_index: z.number(),
@@ -108,6 +109,8 @@ const row = z.object({
     )
     .optional(),
   fields: z.record(z.string(), z.string()),
+  // How a reading rule repaired a damaged cell: shown as a judgement call before the statement is saved.
+  value_repairs: z.array(z.record(z.string(), z.unknown())).optional(),
   issues: z.array(z.string()),
   excluded: z.boolean(),
   kind: z.string(),
@@ -3297,6 +3300,16 @@ function EditableStatement({
             </p>
           )}
         </section>
+      )}
+      {!data.assignment_only && (!data.current_import || replacePrevious) && (
+        <ReadingJudgements
+          caseId={caseId}
+          statementId={data.statement_id || ""}
+          revision={data.revision}
+          currency={data.currency}
+          readingRows={data.rows}
+          reviewRows={rows}
+        />
       )}
       {!data.assignment_only && (!data.current_import || replacePrevious) && (
         <section

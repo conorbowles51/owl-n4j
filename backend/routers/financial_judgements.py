@@ -21,7 +21,10 @@ logger = logging.getLogger(__name__)
 
 
 def _permission(request: Request, payload: dict):
-    return ("case", "view") if request.method == "GET" else ("case", "edit")
+    # The preview only reads what the reviewer already has open.
+    if request.method == "GET" or request.url.path.endswith("/preview"):
+        return ("case", "view")
+    return ("case", "edit")
 
 
 router = APIRouter(prefix="/api/financial/judgements", tags=["financial"],
@@ -30,6 +33,13 @@ router = APIRouter(prefix="/api/financial/judgements", tags=["financial"],
 
 class Confirm(BaseModel):
     reason: str = Field(default='', max_length=2000)
+
+
+class Preview(BaseModel):
+    statement_id: str = Field(default='', max_length=200)
+    currency: str = Field(default='', max_length=3)
+    reading_rows: list[dict] = Field(default_factory=list, max_length=20000)
+    review_rows: list[dict] = Field(default_factory=list, max_length=20000)
 
 
 class Correct(BaseModel):
@@ -47,11 +57,32 @@ def _actor(user):
 @router.get("")
 async def list_judgement_calls(case_id: UUID = Query(...), source_document_id: UUID | None = None,
                                statement_period_id: UUID | None = None, subject_id: list[UUID] | None = Query(None),
-                               status: str | None = None, strength: str | None = None, rule_id: str | None = None,
-                               origin: str | None = None, limit: int = 500, db: Session = Depends(get_db)):
-    return dict(items=judgements.list_judgements(
-        db, case_id, source_document_id=source_document_id, statement_period_id=statement_period_id,
-        subject_ids=subject_id, status=status, strength=strength, rule_id=rule_id, origin=origin, limit=limit))
+                               q: str = Query('', max_length=256), status: list[str] | None = Query(None),
+                               strength: list[str] | None = Query(None), origin: list[str] | None = Query(None),
+                               category: list[str] | None = Query(None), rule_id: list[str] | None = Query(None),
+                               file_id: list[UUID] | None = Query(None), account_id: list[UUID] | None = Query(None),
+                               offset: int = Query(0, ge=0), limit: int = Query(500, ge=1, le=5000),
+                               db: Session = Depends(get_db)):
+    """One page of the case's judgement calls with counts per status, type, strength and maker (each counted
+    under every other active filter). Searches file name, account, period, payment and the call's sentence."""
+    return judgements.search(db, case_id, q=q, statuses=status or (), strengths=strength or (),
+                             origins=origin or (), categories=category or (), rule_ids=rule_id or (),
+                             file_ids=file_id or (), account_ids=account_id or (),
+                             source_document_id=source_document_id, statement_period_id=statement_period_id,
+                             subject_ids=subject_id, offset=offset, limit=limit)
+
+
+@router.get("/rows")
+async def judgement_rows(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    """Which ledger payments each call touches, for the whole case in one read (the ledger's marks and filter)."""
+    return judgements.row_map(db, case_id)
+
+
+@router.post("/preview")
+async def preview_judgement_calls(body: Preview, case_id: UUID = Query(...)):
+    """The calls the rules make on a statement reading before it is saved (review queue). Stores nothing."""
+    return dict(items=judgements.preview(body.reading_rows, body.review_rows, currency=body.currency,
+                                         statement_id=body.statement_id))
 
 
 @router.get("/counts")
