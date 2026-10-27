@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { Button } from "@/components/ui/button"
 import {
@@ -35,10 +36,7 @@ export function FinancialReportDocument({
           <strong>{report.data.notes.length} saved notes</strong> in the order
           shown below. Their saved payment values and calculations are included.
         </p>
-        <details>
-          <summary className="cursor-pointer">
-            Included findings ({report.data.notes.length})
-          </summary>
+        <Disclosure defaultOpen label={<>Included findings ({report.data.notes.length})</>}>
           <ol className="list-decimal pl-5 max-h-60 overflow-auto">
             {report.data.notes.map((note) => (
               <li key={note.id}>
@@ -46,21 +44,18 @@ export function FinancialReportDocument({
               </li>
             ))}
           </ol>
-        </details>
+        </Disclosure>
         <p>
           A payment can appear in more than one note. Totals are provided per
           note, with accounts and currencies kept separate.
         </p>
-        <details>
-          <summary className="cursor-pointer">
-            Supporting file references ({report.files.length})
-          </summary>
+        <Disclosure defaultOpen label={<>Supporting file references ({report.files.length})</>}>
           <ul className="list-disc pl-5">
             {report.files.map((file) => (
               <li key={file.id}>{file.label}</li>
             ))}
           </ul>
-        </details>
+        </Disclosure>
         <label className="flex gap-2 items-start">
           <input
             type="checkbox"

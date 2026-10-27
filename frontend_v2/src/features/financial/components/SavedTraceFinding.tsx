@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { useState } from "react"
 import { useMutation } from "@tanstack/react-query"
@@ -46,10 +47,7 @@ function SaveTraceFindingForm({ trace }: { trace: VerifiedTrace }) {
     onSuccess: () => clear(),
   })
   return (
-    <details className="rounded border p-3">
-      <summary className="cursor-pointer font-medium">
-        Save this calculation in Findings
-      </summary>
+    <Disclosure className="rounded border p-3" label="Save this calculation in Findings">
       <p className="my-2">
         Keep this calculation, its assumptions and source references with your
         note. Reopening it shows these saved results, even if transactions are
@@ -97,7 +95,7 @@ function SaveTraceFindingForm({ trace }: { trace: VerifiedTrace }) {
           )}
         </fieldset>
       )}
-    </details>
+    </Disclosure>
   )
 }
 
