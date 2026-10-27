@@ -487,3 +487,45 @@ class ReproducedStatementTests(TestCase):
             with self.subTest(key=key):
                 self.assertFalse(same_printed_period(base, {**base, key: value}))
         self.assertFalse(same_printed_period({**base, 'account_reference': 'n/a'}, {**base, 'account_reference': 'n/a'}))
+
+
+
+class PrintedFolioCopyTests(TestCase):
+    """(fin-queue3 L26) BNB2 Monex 2836625 Nov/Dec 2025: the 'Print To PDF' reprints and the bank's own files print
+    the same document folio (D-4836586 / D-4903559), with no payments in a quiet section and the bank worded
+    differently by their readers. The folio, with the statement the only one of its printed period in each file,
+    makes them one printed statement."""
+    setUp = PendingDuplicateTests.setUp
+    tearDown = PendingDuplicateTests.tearDown
+    decision = PendingDuplicateTests.decision
+    reread_copy = ReproducedStatementTests.reread_copy
+
+    def quiet_copy(self, folio_of, switch=True):
+        """A saved statement and another file of it read with another bank wording, neither with a payment."""
+        from unittest.mock import patch
+        from services.financial import pending_statement_duplicates as PS
+        first = self.f.confirm()
+        other = self.fixture.copy_file()
+        self.reread_copy(other, 'Bank: Synthetic Bank', 'Bank: Synthetic Bank NA')
+        content = PS.statement_content
+        files = {self.primary.id: 'first', other.id: 'other'}
+        folio = lambda session, *, case_id, evidence_file_id: folio_of(files[evidence_file_id])
+        with patch.object(PS, 'statement_content', lambda proposal: (content(proposal)[0], 0)), \
+                patch('services.financial.candidate_sources.printed_folio', folio), \
+                patch('services.financial.candidate_sources.PRINTED_FOLIO', switch):
+            return first, self.decision(other)
+
+    def test_the_same_printed_folio_proves_a_quiet_copy_under_another_bank_wording(self):
+        first, decision = self.quiet_copy(lambda file: 'D-4836586')
+        self.assertEqual(decision['status'], 'ignored', decision)
+        self.assertEqual(decision['retained']['source_document_id'], first['source_document_id'])
+        self.assertIn('printed_folio', decision['matched_fields'])
+
+    def test_no_folio_or_another_folio_is_no_proof_without_payments(self):
+        for folio_of in (lambda file: None, lambda file: 'D-4836586' if file == 'first' else 'D-4903559'):
+            with self.subTest():
+                self.tearDown(); self.setUp()
+                self.assertNotEqual(self.quiet_copy(folio_of)[1]['status'], 'ignored')
+
+    def test_switched_off_the_folio_is_not_compared(self):
+        self.assertNotEqual(self.quiet_copy(lambda file: 'D-4836586', switch=False)[1]['status'], 'ignored')

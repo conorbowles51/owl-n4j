@@ -156,6 +156,7 @@ class _Copy:
     section: frozenset = frozenset()
     raw_accounts: frozenset = frozenset()
     account: tuple | None = None  # (identity tier, bank, number, currency) of its one ledger account
+    folio: str | None = None  # the document folio its file's first page prints (read only for copies without payments)
 
 
 def _natural(name):
@@ -319,6 +320,14 @@ def _load(session, case_id, *, document_ids=None, identities=None):
         copy.corrected = any(r.superseded_by_id is not None for r in rows)
         copy.work = bool(copy.edited or copy.corrected or any(r.id in decided_rows for r in rows))
         copies.append(copy)
+    from services.financial.candidate_sources import PRINTED_FOLIO, printed_folio
+    if PRINTED_FOLIO:
+        folios = {}
+        for copy in copies:
+            if copy.verified and copy.scope and not copy.payments and copy.file is not None:
+                if copy.file.id not in folios:
+                    folios[copy.file.id] = printed_folio(session, case_id=case_id, evidence_file_id=copy.file.id)
+                copy.folio = folios[copy.file.id]
     return copies
 
 
@@ -387,6 +396,17 @@ def _match(left, right):
     return 'printed_reference' if same_key and left.payments and right.payments else None
 
 
+def _same_printed_folio(copy, retained):
+    """(fin-queue3 L26) Two files printing the same bank document folio, the statement the only one of its account
+    reference, currency and dates in each file's reading: one printed statement however its readers named the bank
+    or grouped its pages, even with no payment to compare (Monex 'Print To PDF' reprints of the bank's own files,
+    read by section in one and over every page in the other). Its money is still compared after this."""
+    from services.financial.pending_statement_duplicates import only_section_of_its_period
+    return bool(copy.folio and copy.folio == retained.folio and copy.file is not None and retained.file is not None
+                and copy.file.id != retained.file.id and only_section_of_its_period(copy.original)
+                and only_section_of_its_period(retained.original))
+
+
 def _reviewed_to_same_ledger(copy, retained):
     """A person completed one copy's reading in review, and both saved the same money.
 
@@ -413,7 +433,8 @@ def _compare(copy, retained):
         return 'reading_not_comparable'
     code = None
     if basis == 'same_printed_period':
-        if copy.scope['identity'] != retained.scope['identity'] and not copy.payments and not _contract_account_copy(copy, retained):
+        if (copy.scope['identity'] != retained.scope['identity'] and not copy.payments
+                and not _contract_account_copy(copy, retained) and not _same_printed_folio(copy, retained)):
             code = 'other_bank_without_payments'
         elif copy.content != retained.content and not _reviewed_to_same_ledger(copy, retained):
             code = 'money_differs'
@@ -477,7 +498,8 @@ def _entry(copy, retained, code=None):
         retained_evidence_file_id=str(retained.document.evidence_file_id) if retained else None,
         retained_file_sha256=(retained.file.sha256 if retained and retained.file else None),
         retained_saved_first=bool(retained and str(retained.document.created_at) <= str(copy.document.created_at)),
-        basis=basis, code=code, reason=HELD.get(code) if code else None)
+        basis=basis, code=code, reason=HELD.get(code) if code else None,
+        **(dict(printed_folio=copy.folio) if retained is not None and _same_printed_folio(copy, retained) else {}))
 
 
 def _account_merge(session, copy, retained):

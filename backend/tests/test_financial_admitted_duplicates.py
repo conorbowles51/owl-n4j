@@ -600,3 +600,55 @@ class ContractAccountCopyTests(TestCase):
             self.assertEqual(admitted._compare(reprint, original), 'other_bank_without_payments')
         for reprint, original in (self.pair(number='2836626'), self.pair(currency='USD')):
             self.assertIsNotNone(admitted._compare(reprint, original))
+
+
+class PrintedFolioTests(TestCase):
+    """(fin-queue3 L26) Two saved copies with no payments whose readers worded the bank differently are one printed
+    statement when both files' first pages print the same bank document folio and each file's reading lists only this
+    statement for its account, currency and dates (BNB2 Monex 2836625 Nov/Dec 2025 reprints: FOLIO D-4836586 /
+    D-4903559; the reprints were read by section, the bank's files over every page)."""
+
+    def pair(self, folios=('D-4836586', 'D-4836586'), sections=(1, 1)):
+        """``sections``: how many statements of this account, currency and dates each file's reading lists."""
+        stub = ReaderIndependentRuleTests().copy
+        original = stub(payments=(), identity='monex', section=(1, 2, 3, 4, 5, 6, 7))
+        reprint = stub(payments=(), identity='banco monex', sha='s2', section=(3, 4, 5, 6, 7))
+        for copy, count in ((original, sections[0]), (reprint, sections[1])):
+            listed = dict(account_reference='123', currency='MXN', period_start='2024-01-01', period_end='2024-01-31')
+            copy.original.update(statement_id='x', statement_choices=[dict(listed, id='x')] + [
+                dict(listed, id=f'other{i}') for i in range(count - 1)] + [dict(listed, id='usd', currency='USD')])
+        original.folio, reprint.folio = folios
+        return reprint, original
+
+    def test_the_same_printed_folio_proves_a_copy_without_payments(self):
+        reprint, original = self.pair()
+        self.assertIsNone(admitted._compare(reprint, original))
+        self.assertTrue(admitted._same_printed_folio(reprint, original))
+
+    def test_another_folio_two_sections_of_the_period_or_the_same_file_hold(self):
+        for reprint, original in (self.pair(folios=('D-4836586', 'D-4903559')), self.pair(folios=(None, None)),
+                                  self.pair(sections=(1, 2)), self.pair(sections=(2, 1))):
+            self.assertEqual(admitted._compare(reprint, original), 'other_bank_without_payments')
+        reprint, original = self.pair()
+        reprint.file = original.file
+        self.assertEqual(admitted._compare(reprint, original), 'other_bank_without_payments')
+
+    def test_the_money_is_still_compared(self):
+        reprint, original = self.pair()
+        reprint.content = 'other balances'
+        self.assertEqual(admitted._compare(reprint, original), 'money_differs')
+
+    def test_the_folio_is_read_from_a_line_of_its_own_on_the_first_page(self):
+        from services.financial import candidate_sources as CS
+
+        def read(*lines):
+            cells = {(row, column): (text, None) for row, line in enumerate(lines) for column, text in enumerate(line)}
+            with patch.object(CS, '_snapshot', lambda *a: (None, None, None, None, [{}], None, None)), \
+                    patch.object(CS, '_table', lambda payload, index, page: (None, None, None, cells)):
+                return CS.printed_folio(None, case_id=None, evidence_file_id=None)
+        self.assertEqual(read(['FOLIO:', 'D-4836586'], ['CONTRATO:', '2836625']), 'D-4836586')
+        self.assertEqual(read(['Folio', '3202506022008)']), '3202506022008', 'Intercam: the closing mark is not part of it')
+        self.assertIsNone(read(['FOLIO', 'DESCRIPCION', 'DEPOSITOS']), 'a movement heading')
+        self.assertIsNone(read(['FOLIO', 'DESCRIPCION']), 'a heading, not a number')
+        self.assertIsNone(read(['FOLIO:', 'D-4836586'], ['FOLIO:', 'D-4903559']), 'two folios: none is the document')
+        self.assertIsNone(read(['FOLIO:', '1234']), 'too short to be a document number')

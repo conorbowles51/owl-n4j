@@ -3,6 +3,9 @@
 No detection, normalization or ledger writes happen here. A table may contain a
 letter or disclosure; its presence is never a transaction classification.
 """
+import os
+import re
+
 from sqlalchemy import select
 from postgres.models.evidence import EvidenceFile, EvidenceDocumentText, EvidenceTableGeometry
 from services.financial.pdf_candidates import PdfMappingError
@@ -117,6 +120,40 @@ def read_candidate_source(session, *, case_id, evidence_file_id, page_number, ta
         columns=sorted(columns), rows=source_rows,
         layout_context=statement_layout_context(source_rows),
         processing_manifest=manifest, applied=False)
+
+
+# (fin-queue3 L26) The bank's own number for one printed statement document: Monex 'FOLIO: D-4836586', Intercam
+# 'Folio 3202506022008)'. Measured on the first page of every stored file of all cases: 289 files print a labelled
+# Monex folio (114 values) and 159 an Intercam one (26 values); every value printed by more than one file is the
+# same contract, period and document serial (copies of one statement), never two statements. A column heading
+# 'FOLIO' above movements is followed by another heading, not a document number, and is not read. Reverse:
+# LOUPE_FINANCIAL_DUPLICATE_PRINTED_FOLIO=0.
+PRINTED_FOLIO = os.environ.get('LOUPE_FINANCIAL_DUPLICATE_PRINTED_FOLIO', '1').strip().lower() not in (
+    '0', 'false', 'off', 'no')
+_FOLIO_LABEL = re.compile(r'FOLIO\s*:?', re.I)
+_FOLIO_VALUE = re.compile(r'(?:[A-Z]{1,3}-?)?\d{6,}')
+
+
+def printed_folio(session, *, case_id, evidence_file_id):
+    """The one document folio the file's first page prints on a line of its own (its label, then the number),
+    or None: none printed, more than one, or the stored page unreadable."""
+    try:
+        _, _, _, _, payload, _, _ = _snapshot(session, case_id, evidence_file_id, 1)
+        found = set()
+        for index in range(len(payload)):
+            cells = _table(payload, index, 1)[3]
+            rows = {}
+            for (row, column), (text, _) in sorted(cells.items()):
+                if text and text.strip():
+                    rows.setdefault(row, []).append(text.strip())
+            for texts in rows.values():
+                if len(texts) == 2 and _FOLIO_LABEL.fullmatch(texts[0]):
+                    value = texts[1].rstrip(') ').upper()
+                    if _FOLIO_VALUE.fullmatch(value):
+                        found.add(value)
+    except PdfMappingError:
+        return None
+    return next(iter(found)) if len(found) == 1 else None
 
 
 def suggest_candidate_rows(session, *, case_id, evidence_file_id, page_number,

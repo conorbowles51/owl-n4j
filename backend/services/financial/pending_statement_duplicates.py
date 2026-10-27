@@ -293,6 +293,30 @@ def _page_copy(left, right):
     return True
 
 
+def only_section_of_its_period(proposal):
+    """This statement is the only one its file's reading lists with its account reference, currency and dates
+    (one document's sections of one currency cannot then be told apart by the document's folio). A reading with no
+    statement list is the file's one statement."""
+    choices = proposal.get('statement_choices') or []
+    if not choices and not proposal.get('statement_id'):
+        return True
+    own = next((c for c in choices if c.get('id') == proposal.get('statement_id')), None)
+    fields = ('account_reference', 'currency', 'period_start', 'period_end')
+    return bool(own and all(own.get(k) for k in fields)
+                and sum(all(c.get(k) == own[k] for k in fields) for c in choices) == 1)
+
+
+def _same_folio(session, case_id, file, other_file, proposal, other_proposal):
+    """Two files printing the same bank document folio on their first pages, the statement the only one of its
+    printed period in each."""
+    from services.financial.candidate_sources import PRINTED_FOLIO, printed_folio
+    if (not PRINTED_FOLIO or file.id == other_file.id or not only_section_of_its_period(proposal)
+            or not only_section_of_its_period(other_proposal)):
+        return False
+    folio = printed_folio(session, case_id=case_id, evidence_file_id=file.id)
+    return bool(folio and folio == printed_folio(session, case_id=case_id, evidence_file_id=other_file.id))
+
+
 def _money_conflicts(left, right):
     """Two readings whose money cannot both be right: different payments, or a printed
     balance read in both with different values. One reading capturing more printed
@@ -595,7 +619,11 @@ def apply_duplicate_disposition(session, *, case_id, file, proposal, request=Non
         # Decision (r1-reproduced): equal money is a copy even when descriptions
         # or the holder were read differently. Reverse: require same_reading.
         same_money = same_reading or statement_content(other_proposal)[0] == own_content
-        if other_bank and not (same_money and own_usable and usable and own_payments):
+        # (fin-queue3 L26) With no payment to compare, the same bank document folio on both files' first pages,
+        # the statement the only one of its printed period in each, makes another bank wording the same statement.
+        folio_copy = bool(other_bank and not own_payments and printed_copy and same_money and own_usable and usable
+                          and _same_folio(session, case_id, file, other_file, proposal, other_proposal))
+        if other_bank and not (same_money and own_usable and usable and own_payments) and not folio_copy:
             if (PRINTED_FACTS_COPIES and printed_copy and entry['status'] == 'imported' and own_payments
                     and statement_content(other_proposal)[1]):
                 # The same printed account reference, product, currency and
@@ -615,7 +643,7 @@ def apply_duplicate_disposition(session, *, case_id, file, proposal, request=Non
             conflicts.append(entry)
             continue
         peers.append((entry, other_file, reviewed, 'identical_bytes' if byte_copy else 'identical_financial_reading', other_proposal['revision'],
-            None if byte_copy or strong_identity else _printed_copy_fields(own, other_scope),
+            None if byte_copy or strong_identity else _printed_copy_fields(own, other_scope) + (['printed_folio'] if folio_copy else []),
             _edited(other_proposal, other_request), _proved(other_proposal, other_request)))
     # Never hide a revised/conflicting copy merely because another copy matches.
     if request.get('coverage_review_reason', '').strip():
