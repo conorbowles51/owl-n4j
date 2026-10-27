@@ -1391,6 +1391,21 @@ def get_ledger_categories(case_id: UUID = Query(...), db: Session = Depends(get_
     return dict(case_id=str(case_id), categories=sorted(values))
 
 
+@router.get('/ledger/payment-categories/like')
+def get_payments_like(transaction_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    """The other payments like this one (same description or counterparty) whose category no person has chosen."""
+    from services.financial.payment_categories import like_payments
+    rows, basis = like_payments(db, case_id, transaction_id)
+    return dict(case_id=str(case_id), transaction_id=str(transaction_id), basis=basis, count=len(rows),
+                transaction_ids=[str(row.id) for row in rows])
+
+
+@router.get('/ledger/payment-categories/coverage')
+def get_category_coverage(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    from services.financial.payment_categories import coverage
+    return dict(case_id=str(case_id), coverage=coverage(db, case_id))
+
+
 @router.post("/ledger/category-breakdown")
 def post_category_breakdown(body: dict, case_id: UUID = Query(...), db: Session = Depends(get_db)):
     """Money in / out / net and count per category under the given ledger filters, optionally per holder, account,
