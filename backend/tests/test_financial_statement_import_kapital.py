@@ -236,11 +236,12 @@ class KapitalProductScopeTests(TestCase):
         self.assertEqual(kapital_no_activity_evidence(s, dollar, rows, 'USD')['reason'], 'printed_zero_totals')
 
 
-def _partial_heading_statement(shift=0):
-    """Page 1 reads only 'CONCEPTO DEPOSITOS' over its movements; page 2 prints the complete heading."""
+def _partial_heading_statement(shift=0, retiro=None):
+    """Page 1 reads only 'CONCEPTO DEPOSITOS' (and, given, its RETIROS word as read) over its movements; page 2
+    prints the complete heading."""
     first = table()
-    concepto, depositos = first[0][0], first[0][1]
-    first[0] = [concepto, (depositos[0] + shift,) + depositos[1:]]
+    concepto, depositos, retiros = first[0][0], first[0][1], first[0][2]
+    first[0] = [concepto, (depositos[0] + shift,) + depositos[1:]] + ([retiros[:3] + (retiro,)] if retiro else [])
     return [source(1, header() + [[(30000,120000,160000,'EXAMPLE SERVICES')],[(30000,150000,160000,'Persona Moral')]]
                    + product() + first), source(2, header() + table(200000))]
 
@@ -256,6 +257,21 @@ class KapitalHeadingFromSectionTests(TestCase):
         self.assertEqual([r['fields'].get('amount_minor') for r in tx], ['1', '1', '1', '1'])
         self.assertEqual([r['fields'].get('direction') for r in tx], ['debit', 'credit'] * 2)
         self.assertEqual(check_statement_rows(rows)['flagged_rows'], 0)
+
+    def test_a_partly_read_heading_word_with_a_mark_is_completed_too(self):
+        # MONETA KAPITAL MXN NOV 25 Hoja 1 read 'CONCEPTO DEPOSITOS RETIRO:' over its one movement (04/11 SPEI
+        # 50,000.00 out); the colon made 'RETIRO:' another word in the amount columns and the line was dropped.
+        from unittest import mock
+        from services.financial import statement_import_kapital as K
+        s = _partial_heading_statement(retiro='RETIRO:')
+        rows = self.proposal(s)
+        tx = [r for r in rows if not r['excluded']]
+        self.assertEqual([r['fields'].get('amount_minor') for r in tx], ['1', '1', '1', '1'])
+        self.assertEqual(check_statement_rows(rows)['flagged_rows'], 0)
+        with mock.patch.object(K, 'HEADING_WORD_MARKS', False):
+            rows = self.proposal(_partial_heading_statement(retiro='RETIRO:'))
+        page_one = [r for r in rows if not r['excluded'] and r['id'].startswith('1:')]
+        self.assertTrue(page_one and all(r['fields'].get('amount_minor') is None for r in page_one))
 
     def test_a_heading_word_away_from_the_complete_headings_position_is_not_completed(self):
         rows = self.proposal(_partial_heading_statement(shift=20000))

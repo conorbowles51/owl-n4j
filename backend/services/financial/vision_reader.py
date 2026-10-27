@@ -1183,7 +1183,10 @@ def _agrees_with_rule_reading(proposal, rows, opening, closing):
 # The review the proved reading becomes
 # ---------------------------------------------------------------------------
 
-_DATE_ISSUES = ('Check the full date in the PDF.', 'Check the additional date printed beside this payment.')
+# The Kapital/Intercam reader holds a line whose DIA cell the scan lost with its own wording (fin-queue3 re-run of
+# 10 ARRENDO INTERCAM OCT 2022: the image read the day, but the row counted as held for more than its date).
+_DATE_ISSUES = ('Check the full date in the PDF.', 'Check the additional date printed beside this payment.',
+                'Check the printed day against this statement period.')
 
 
 def dates_request(proposal, readings):

@@ -719,13 +719,13 @@ class SignedDebitsTest(unittest.TestCase):
 class DatesFromImageTest(unittest.TestCase):
     """A text reading held only for a row date takes it from the page image (L21, Erica Andrews Dec 2020)."""
 
-    def _proposal(self, date_issue=True):
+    def _proposal(self, date_issue=True, day_issue='Check the full date in the PDF. It could not be read within this statement period.'):
         def payment(id_, day, amount, balance, issues=()):
             fields = dict(amount_minor=amount, direction='debit', balance=balance)
             if day:
                 fields['date'] = day
             return dict(id=id_, kind='transaction', excluded=False, page_number=35, issues=list(issues), fields=fields)
-        issues = ['Check the full date in the PDF. It could not be read within this statement period.'] if date_issue else \
+        issues = [day_issue] if date_issue else \
             ['Check the transaction amount in the PDF. Its digits, sign or decimal point could not be read.']
         rows = [payment('a', '2020-12-17', '477', '83481'), payment('b', None, '5771', '77710', issues),
                 payment('c', '2020-12-18', '1175', '76535')]
@@ -749,6 +749,13 @@ class DatesFromImageTest(unittest.TestCase):
         self.assertEqual(row['date'], '2020-12-18')
         self.assertIn('page 35', row['reason'])
         assess.assert_called_once()
+
+    def test_a_kapital_line_whose_day_the_scan_lost_takes_the_image_date(self):
+        # 10 ARRENDO INTERCAM OCT 2022 Hoja 1: '320637478 CARGO A CUENTA DE CHEQUES 462,300.00' read with no DIA cell
+        # (between days 5 and 10); the page image reads 05/10 with the same amount and running balance.
+        proposal = self._proposal(day_issue='Check the printed day against this statement period.')
+        result, _ = self._run(proposal, self._readings())
+        self.assertEqual(next(r for r in result['rows'] if r['id'] == 'b')['date'], '2020-12-18')
 
     def test_a_date_outside_the_payment_order_is_refused(self):
         with self.assertRaises(vr.NotProved):

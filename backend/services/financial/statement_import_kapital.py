@@ -296,7 +296,10 @@ def _completed_heading(labels, template):
         return None
     read = {}
     for word, cell in labels.items():
-        name = _HEADING_SHORT.get(word, word)
+        # (K3 extended, fin-queue3 re-run of MONETA KAPITAL MXN NOV 25) a partly read heading word may carry one
+        # mark too ('CONCEPTO DEPOSITOS RETIRO:'); without this it counted as another word in the amount columns.
+        bare = word.rstrip('.,;:') if HEADING_WORD_MARKS else word
+        name = _HEADING_SHORT.get(bare, bare)
         if name in _HEADING_NAMES and box(cell):
             read[name] = cell
         elif box(cell) and box(cell)[0] >= box(template['DEPOSITOS'])[0] - _HEADING_TOLERANCE:
