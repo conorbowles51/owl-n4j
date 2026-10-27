@@ -2,6 +2,7 @@ import { PaymentCounterpartyPicker } from "./PaymentCounterpartyPicker"
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
+import { offerApplyLike } from "../lib/apply-like"
 import { ApiError, fetchAPI } from "@/lib/api-client"
 import { Button } from "@/components/ui/button"
 import {
@@ -189,6 +190,13 @@ export function PaymentEditsEditor({
             query.queryKey[0] === "financial-category-library"),
       })
       onSaved(result.replacements)
+      if (ids.length === 1 && enabled.includes("category"))
+        void offerApplyLike(
+          client,
+          caseId,
+          result.replacements[0].id,
+          value("category")
+        )
       toast.success(
         `Saved changes to ${result.updated} ${result.updated === 1 ? "transaction" : "transactions"}.`
       )

@@ -600,6 +600,50 @@ def put_payment_labels(body: PaymentLabelsRequest, case_id: UUID = Query(...),
         raise HTTPException(status_code=500, detail="The categories and names could not be saved. Reload before retrying.")
 
 
+class ApplyLikeRequest(BaseModel):
+    transaction_id: UUID
+    category: str = Field(max_length=120)
+    # The payments the person was shown; payments that became like it since are left for another look.
+    transaction_ids: list[UUID] = Field(default_factory=list, max_length=50000)
+
+
+@router.get('/ledger/payment-categories/like')
+def get_payments_like(transaction_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    """The other payments like this one (same description or counterparty) whose category no person has chosen."""
+    from services.financial.payment_categories import like_payments
+    rows, basis = like_payments(db, case_id, transaction_id)
+    return dict(case_id=str(case_id), transaction_id=str(transaction_id), basis=basis, count=len(rows),
+                transaction_ids=[str(row.id) for row in rows])
+
+
+@router.post('/ledger/payment-categories/apply-like')
+def apply_category_to_like(body: ApplyLikeRequest, case_id: UUID = Query(...), db: Session = Depends(get_db),
+                           current_user=Depends(get_current_db_user)):
+    """Give the payments like this one the person's category, recorded as learned from it."""
+    from services.financial.payment_categories import apply_learned
+    try:
+        category = ' '.join(body.category.split())
+        if category == 'Uncategorized':
+            category = ''
+        updated = apply_learned(db, case_id, body.transaction_id, category, actor_from_user(current_user),
+                                expected_ids=body.transaction_ids or None)
+        db.commit()
+        return dict(case_id=str(case_id), updated=updated)
+    except ActorError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        db.rollback()
+        logger.exception('Applying a category to similar payments failed for case %s', case_id)
+        raise HTTPException(status_code=500, detail='The category could not be applied to the similar payments.')
+
+
+@router.get('/ledger/payment-categories/coverage')
+def get_category_coverage(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    from services.financial.payment_categories import coverage
+    return dict(case_id=str(case_id), coverage=coverage(db, case_id))
+
+
 from services.financial.payment_edits import PaymentEditRequest, preview_payment_edits, save_payment_edits
 
 

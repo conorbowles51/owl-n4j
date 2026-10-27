@@ -220,10 +220,14 @@ export interface LedgerTransaction {
           | "account"
           | "investigator"
           | "missing"
+          | "model"
+          | "learned"
         explanation?: string
         rule?: string
         version?: string
         value?: string
+        confidence?: number | null
+        judgement?: boolean
       }
     >
   >

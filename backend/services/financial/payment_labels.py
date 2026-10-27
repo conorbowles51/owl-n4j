@@ -95,6 +95,9 @@ def update_payment_labels(session, *, case_id, request, actor, commit=True):
                 from services.financial.payment_counterparty_link import record_link
                 record_link(session, row=row, link=row_changes['counterparty_link'], actor=actor, reason='Counterparty edited from the investigator transaction table.')
             metadata['investigation_labels'] = current
+            if 'category' in row_changes:
+                from services.financial.payment_categories import record_person_choice
+                record_person_choice(session, row, row_changes['category'], actor)
             metadata['investigation_label_history'] = [*metadata.get('investigation_label_history', []), dict(
                 at=datetime.now(timezone.utc).isoformat(), actor_name=actor.name,
                 actor_email=actor.email, actor_id=str(actor.user_id) if actor.user_id else None,
@@ -111,14 +114,24 @@ def update_payment_labels(session, *, case_id, request, actor, commit=True):
         raise
 
 
-def payment_label_view(row, account=None):
+_LOOKUP = object()
+
+
+def payment_label_view(row, account=None, stored=_LOOKUP):
+    """``stored``: the row's stored category (services.financial.payment_categories), None when it has none, or
+    left out to look it up. A stored category replaces the per-read description guess; a person's label wins."""
     from services.financial.payment_inference import infer_payment_labels
     if account is not None and (account.id != row.account_id or account.case_id != row.case_id):
         account = None
     labels = (row.metadata_ or {}).get('investigation_labels', {})
+    if stored is _LOOKUP:
+        stored = _stored_category(row)
     inferred = infer_payment_labels(row.description, direction=row.direction,
         account_type=account.account_type if account is not None else None,
         institution=account.institution_name if account is not None else None)
+    if stored is not None and 'category' not in labels:
+        from services.financial.payment_categories import label_source
+        inferred = {**inferred, 'category': dict(value=stored.category, **label_source(stored))}
     own = (account.holder_name or account.identifier_as_printed) if account is not None else None
     own = own or 'Account ' + str(row.account_id)[:8]
     other = row.counterparty_raw or inferred.get('counterparty', {}).get('value', '')
@@ -143,3 +156,25 @@ def payment_label_view(row, account=None):
         values[side] = link['label']
         sources[side] = dict(source='investigator', explanation='Linked by an investigator to an existing ' + link['kind'] + '.', identity_kind=link['kind'], identity_id=link['id'])
     return dict(**values, counterparty_link=link, label_sources=sources, label_version=labels.get('version', 0))
+
+
+def _stored_category(row):
+    if '_category_record' in vars(row):
+        return row._category_record
+    from sqlalchemy.orm import object_session
+    from sqlalchemy.orm.exc import UnmappedInstanceError
+    try:
+        session = object_session(row)
+    except UnmappedInstanceError:
+        return None
+    if session is None or row.id is None:
+        return None
+    try:
+        from postgres.models.financial_payment_category import FinancialPaymentCategory
+        from services.financial.payment_categories import table_ready
+        with session.no_autoflush:
+            if not table_ready(session):
+                return None
+            return session.get(FinancialPaymentCategory, row.id)
+    except Exception:  # noqa: BLE001 - a database without the table yet reads the description guess, as before
+        return None

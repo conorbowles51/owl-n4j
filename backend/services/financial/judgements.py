@@ -82,6 +82,7 @@ RULES = {
     'L31.scan_day_letter': ('Letter in a printed day read as a digit', 'fin-queue3 L31 / fin-erica L1', 'proved'),
     'L22.vanished_key': ('Held earlier reading retired; the statement is saved', 'fin-queue3 L22', 'proved'),
     'erica.receipt_settled': ('Deposit receipt matched to a saved payment', 'fin-erica L3/L23', 'proved'),
+    'category.model': ('Category suggested by the model', 'fin-categories', 'inferred'),
     'agent.page_entry': ('Entered by hand from the page (agent)', 'fin-queue*/fin-erica hand work', 'proved'),
     'agent.correction': ('Corrected by hand (agent)', 'fin-queue*/fin-erica hand work', 'proved'),
     'agent.refile': ('Refiled by hand (agent)', 'fin-accounts / fin-queue3 L30c', 'inferred'),
@@ -165,6 +166,7 @@ CATEGORIES = {
     'date_sign': 'Date or sign worked out',
     'currency_account': 'Currency or account assigned',
     'copies': 'Copies, duplicates and replacements',
+    'payment_category': 'Category suggested by the model',
 }
 _CATEGORY_RULES = {
     'hand_entry': ('agent.page_entry', 'agent.correction'),
@@ -180,6 +182,7 @@ _CATEGORY_RULES = {
                   'period.start_derived'),
     'currency_account': ('L4.currency_from_name', 'autofill.currency_account', 'autofill.currency_case',
                          'autofill.detail', 'L30c.contract_refile', 'agent.refile', 'agent.currency_refile'),
+    'payment_category': ('category.model',),
     'copies': ('L26.duplicate_set_aside', 'L19.unreadable_copy', 'copies.held_copy', 'L20.part_of_saved',
                'reader.replacement', 'L22.vanished_key', 'erica.receipt_settled'),
 }

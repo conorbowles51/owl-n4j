@@ -2101,6 +2101,7 @@ from services.financial.manual_balances import manual_balance
 from services.financial.payment_edits import preview_payment_edits, save_payment_edits
 from services.financial.payment_inference import infer_payment_labels
 from services.financial.payment_labels import update_payment_labels
+from services.financial.payment_categories import classify_with_model, like_payments, apply_learned, record_person_choice
 from services.financial.review_upgrade import upgrade_request
 from services.financial.statement_currency import detect_statement_currency
 from services.financial.statement_currency_edit import change_currency
@@ -2113,6 +2114,7 @@ __all__ += [
     "apply_account_selection", "current_imports", "category_library", "rescale_minor", "retained_issues",
     "preview_removal", "remove_imports", "complete_record", "refresh_legacy_import", "manual_balance",
     "preview_payment_edits", "save_payment_edits", "infer_payment_labels", "update_payment_labels",
+    "classify_with_model", "like_payments", "apply_learned", "record_person_choice",
     "upgrade_request", "detect_statement_currency", "change_currency", "update_statement_details",
     "bbva_catalog", "scotiabank_catalog", "transaction_search",
     "ownership_suggestions", "AccountRelationshipInput", "TrailRequest", "preview_trail", "save_trail", "list_trails",

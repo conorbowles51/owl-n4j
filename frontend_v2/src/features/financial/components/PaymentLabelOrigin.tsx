@@ -1,5 +1,12 @@
 import type { LedgerTransaction } from "../api"
 
+const SHORT: Record<string, string> = {
+  description: "Auto",
+  model: "Model guess",
+  learned: "Learned",
+}
+
+/** A quiet note of who set an automatic label: rules, the model, or a person's choice applied to similar payments. */
 export function PaymentLabelOrigin({
   row,
   field,
@@ -10,7 +17,11 @@ export function PaymentLabelOrigin({
   detail?: boolean
 }) {
   const origin = row.label_sources?.[field]
-  if (origin?.source !== "description") return null
+  if (!origin || !SHORT[origin.source]) return null
+  const short =
+    origin.source === "description" && field !== "category"
+      ? "Suggested"
+      : SHORT[origin.source]
   return (
     <span
       className="block text-xs font-normal text-muted-foreground"
@@ -18,7 +29,7 @@ export function PaymentLabelOrigin({
     >
       {detail
         ? origin.explanation || "Suggested from the description."
-        : "Suggested"}
+        : short}
     </span>
   )
 }

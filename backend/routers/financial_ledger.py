@@ -1360,19 +1360,32 @@ def get_ledger_categories(case_id: UUID = Query(...), db: Session = Depends(get_
     from sqlalchemy import select
     from postgres.models.financial import FinancialTransaction, FinancialAccount
     from services.financial.payment_inference import infer_payment_labels
-    # Select only the fields needed for labels, not PDF provenance or source
-    # proposals. Include inferred categories so filters match the ledger view.
-    query = select(FinancialTransaction.metadata_, FinancialTransaction.description,
-        FinancialTransaction.direction, FinancialAccount.account_type, FinancialAccount.institution_name).outerjoin(
+    from services.financial.payment_categories import table_ready
+    # Select only the fields needed for labels, not PDF provenance or source proposals. A person's label wins, then
+    # the stored category; a payment not yet categorised reads its description guess, as the ledger view does.
+    stored = table_ready(db)
+    columns = [FinancialTransaction.metadata_, FinancialTransaction.description, FinancialTransaction.direction,
+               FinancialAccount.account_type, FinancialAccount.institution_name]
+    if stored:
+        from postgres.models.financial_payment_category import FinancialPaymentCategory
+        columns.append(FinancialPaymentCategory.category)
+    query = select(*columns).outerjoin(
             FinancialAccount, (FinancialAccount.id == FinancialTransaction.account_id) &
-            (FinancialAccount.case_id == FinancialTransaction.case_id)).where(
-                FinancialTransaction.case_id == case_id, FinancialTransaction.ledger_status == 'admitted',
-                FinancialTransaction.superseded_by_id.is_(None)).distinct()
+            (FinancialAccount.case_id == FinancialTransaction.case_id))
+    if stored:
+        query = query.outerjoin(FinancialPaymentCategory, FinancialPaymentCategory.transaction_id == FinancialTransaction.id)
+    query = query.where(FinancialTransaction.case_id == case_id, FinancialTransaction.ledger_status == 'admitted',
+                        FinancialTransaction.superseded_by_id.is_(None)).distinct()
     values = set()
-    for metadata, description, direction, account_type, institution in db.execute(query):
+    for metadata, description, direction, account_type, institution, *saved in db.execute(query):
         labels = (metadata or {}).get('investigation_labels', {})
-        value = labels.get('category') if 'category' in labels else infer_payment_labels(
-            description, direction=direction, account_type=account_type, institution=institution).get('category', {}).get('value')
+        if 'category' in labels:
+            value = labels.get('category')
+        elif saved and saved[0] is not None:
+            value = saved[0]
+        else:
+            value = infer_payment_labels(description, direction=direction, account_type=account_type,
+                                         institution=institution).get('category', {}).get('value')
         if value:
             values.add(value)
     return dict(case_id=str(case_id), categories=sorted(values))

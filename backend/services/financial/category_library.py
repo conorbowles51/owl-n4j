@@ -13,7 +13,9 @@ DEFAULT_NAMES = sorted({kind for _, _, kind in MERCHANTS} | {
     'Payroll', 'Returned transfers', 'Deposits', 'Payments', 'Parking and tolls',
     'Health and pharmacy', 'Personal care', 'Storage', 'Transport', 'Entertainment',
     'Government payments', 'Vehicle care', 'Insurance', 'Groceries',
-    'Subscriptions', 'Uncategorized',
+    'Subscriptions', 'Uncategorized', 'Investments', 'Social security',
+    'Loans and leasing', 'Utilities and telecom', 'Employee benefits', 'Peer-to-peer payments',
+    'Checks', 'Refunds and adjustments', 'Card purchases', 'Incoming payments', 'Currency exchange',
 })
 
 

@@ -102,7 +102,11 @@ def list_transactions(
         FinancialTransaction.row_index.asc(),
         FinancialTransaction.id.asc(),
     )
-    return list(session.scalars(stmt).all())
+    rows = list(session.scalars(stmt).all())
+    # Load the stored categories in bounded queries so each row's label view finds its own without a query.
+    from services.financial.payment_categories import attach_stored
+    attach_stored(session, rows)
+    return rows
 
 
 
