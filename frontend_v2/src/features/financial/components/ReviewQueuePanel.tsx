@@ -211,6 +211,11 @@ function EntryLine({ entry, onPreview }: { entry: QueueEntry; onPreview?: () => 
       <p className="text-xs tabular-nums" aria-label="Period and printed balances">
         <span className="font-medium">{entryPeriod(entry)}</span> · {entryBalances(entry)}
       </p>
+      {entry.vision_reading?.line && (
+        <p className="text-xs text-muted-foreground" aria-label="Page images">
+          {entry.vision_reading.line}
+        </p>
+      )}
     </>
   )
 }

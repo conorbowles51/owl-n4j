@@ -55,7 +55,10 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import select
 
-log = logging.getLogger(__name__)
+from services.financial.journal import journal
+
+# Every outcome is a journal line (journal: INFO lines reach the service journal under uvicorn).
+log = journal(__name__)
 
 
 def _switch(name, default='1'):
@@ -1497,8 +1500,134 @@ def _store(db, file_id, key, record, claim=None, rejudge=None, owner=None):
 
 def _note(item, record):
     """The outcome beside the held statement, shown in the queue (summary key survives readiness refreshes)."""
-    item.summary = {**(item.summary or {}), 'vision_reading': {k: record.get(k) for k in
-                    ('status', 'message', 'pages', 'cost_usd', 'model', 'at')}}
+    item.summary = {**(item.summary or {}), 'vision_reading': dict(
+        {k: record.get(k) for k in ('status', 'reason', 'message', 'pages', 'cost_usd', 'model', 'at')},
+        line=outcome_line(record))}
+
+
+# ---------------------------------------------------------------------------
+# Every outcome, recorded (decision logging, fin-holes A)
+# ---------------------------------------------------------------------------
+
+# Each statement's outcomes, newest last, beside METADATA_KEY on its file: one entry per distinct outcome (the same
+# outcome again only counts up and moves its last time), the last OUTCOME_HISTORY kept. Nothing is overwritten.
+OUTCOMES_KEY = METADATA_KEY + '_outcomes'
+OUTCOME_HISTORY = 30
+# Why a statement was not read from its page images, in plain words ("Not read from page images: ...").
+SKIP_WORDS = {
+    'investigator_work': 'you have saved work on it',
+    'prepared_by_older_reader': 'it is first being prepared again with the current reader',
+    'not_held': 'it is not held',
+    'case_not_approved': 'page-image reading is not switched on for this case',
+    'file_removed': 'the file is removed from Financial',
+    'document': 'it is a document review',
+    'not_payment': 'it is set aside as not a payment statement',
+    'assignment': 'it is assigned to an account without reading',
+    'saved': 'it is already saved',
+    'reading_failure': 'the file itself could not be read',
+    'file_level': 'its file holds several statements that are not separated yet',
+    'recovery_review': 'it waits for its recovery review',
+    'printed_copies': 'its file prints differing copies of it',
+    'duplicate': 'it was set aside as a copy',
+    'no_pages': 'no page of it was found in its file',
+    'unavailable': 'the page-image reader is not available just now',
+    'failed_repeatedly': 'its page images could not be read after several tries',
+    'gone': 'it is no longer in its batch',
+}
+# Outcomes of the moment (another worker has it, or it was decided before): logged at debug, not recorded.
+PASSING = ('already_read', 'being_read')
+
+
+def outcome_line(record):
+    """The outcome in plain words, for the queue and the journal."""
+    status, reason, message = record.get('status'), record.get('reason'), str(record.get('message') or '').strip()
+    if status == 'proved':
+        return 'Read from page images: accepted. ' + (message or 'The period reconciles exactly.')
+    if status == 'not_proved':
+        return 'Read from page images: not accepted, because ' + (message[:1].lower() + message[1:] if message else 'it did not prove.')
+    if status == 'offered':
+        return 'Read from page images: ' + (message or 'a reading that checks out is offered beside your saved work.')
+    if status == 'failed':
+        return 'Not read from page images: ' + (message or 'the reading failed; it is tried again later.')
+    if status == 'budget':
+        return 'Not read from page images: the reading budget for this case is used for now.'
+    if status == 'stale':
+        return 'Not read from page images: ' + (message or 'the statement changed while it was read.')
+    words = SKIP_WORDS.get(reason) or (reason or 'not read').replace('_', ' ')
+    return 'Not read from page images: %s.' % words
+
+
+def _history_entry(record):
+    entry = {k: record.get(k) for k in ('at', 'status', 'reason', 'message', 'model', 'cost_usd', 'pages', 'revision',
+                                        'proof', 'rejudged', 'basis') if record.get(k) not in (None, '', [])}
+    entry['line'] = outcome_line(record)
+    return entry
+
+
+def _same_outcome(a, b):
+    return all((a or {}).get(k) == (b or {}).get(k) for k in ('status', 'reason', 'message', 'revision', 'model'))
+
+
+def _record_outcome(db, file_id, key, record):
+    """Append the outcome to the statement's history under the file's lock; False when it repeats the last one."""
+    from postgres.models.evidence import EvidenceFile
+    file = db.scalar(select(EvidenceFile).where(EvidenceFile.id == file_id).with_for_update()
+                     .execution_options(populate_existing=True))
+    if file is None:
+        return False
+    metadata = deepcopy(file.metadata_ or {})
+    history = list((metadata.get(OUTCOMES_KEY) or {}).get(key or '') or [])
+    entry = _history_entry(record)
+    if history and _same_outcome(history[-1], entry):
+        last = dict(history[-1])
+        last.update(times=(last.get('times') or 1) + 1, last_at=entry.get('at'))
+        history[-1] = last
+        changed = False
+    else:
+        history.append(dict(entry, times=1))
+        changed = True
+    metadata.setdefault(OUTCOMES_KEY, {})[key or ''] = history[-OUTCOME_HISTORY:]
+    file.metadata_ = metadata
+    return changed
+
+
+def outcomes(file, key):
+    """A statement's recorded outcomes, oldest first."""
+    return list(((getattr(file, 'metadata_', None) or {}).get(OUTCOMES_KEY) or {}).get(key or '') or [])
+
+
+def _decided(factory, item_id, record):
+    """Every outcome of read_item: a journal line, the statement's outcome history, and (a skip) the queue note."""
+    from postgres.models.financial_import_batches import (FinancialImportBatch as Batch,
+                                                          FinancialImportBatchItem as Item)
+    reason = record.get('reason')
+    if reason in PASSING:
+        log.debug('Page-image reader: item %s %s', str(item_id)[:8], reason)
+        return
+    try:
+        with factory() as db:
+            item = db.scalar(select(Item).where(Item.id == item_id).with_for_update())
+            batch = db.get(Batch, item.batch_id) if item is not None else None
+            where = 'item %s' % str(item_id)[:8]
+            if item is not None:
+                where = 'case %s file %s statement %s' % (str(batch.case_id)[:8] if batch else '?', str(item.file_id)[:8],
+                                                          (item.statement_key or '-')[:8])
+            line = outcome_line(record)
+            level = logging.WARNING if record.get('status') in ('failed', 'unavailable') else logging.INFO
+            log.log(level, 'Page-image reader: %s: %s%s', where, line,
+                    ' (%s)' % reason if reason and record.get('status') == 'skipped' else '')
+            if item is None:
+                db.rollback()
+                return
+            changed = _record_outcome(db, item.file_id, item.statement_key or '', record)
+            shown = (item.summary or {}).get('vision_reading') or {}
+            if (record.get('status') == 'skipped' and item.status == 'attention' and reason in SKIP_WORDS
+                    and (changed or shown.get('reason') != reason or shown.get('status') != 'skipped')):
+                # Why it was not read, beside the held statement (a final outcome is noted by _finish/_save).
+                _note(item, record)
+            db.commit()
+    except Exception:  # noqa: BLE001 - recording never changes the outcome
+        log.exception('Recording a page-image reading outcome failed')
 
 
 def reserve_usd(model_id, images):
@@ -1530,6 +1659,16 @@ def _current(record, revision, model_id):
 
 
 def read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for=None, apply=True, force=False):
+    """Read one held statement from its page images (_read_item) and record the outcome, whatever it is (_decided):
+    a journal line, the statement's outcome history and, a skip, its queue note. Measuring records nothing."""
+    record = _read_item(factory, item_id, resolve_path, page_reader=page_reader, knowledge_for=knowledge_for,
+                        apply=apply, force=force)
+    if apply and not force:
+        _decided(factory, item_id, record)
+    return record
+
+
+def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for=None, apply=True, force=False):
     """Read one held statement from its page images. Returns the outcome record. Never raises.
 
     ``page_reader(db, case_id) -> (model_id, read)`` and ``knowledge_for(db, case_id)``
@@ -2005,8 +2144,9 @@ def pending(db, limit=50):
             .join(EvidenceFile, EvidenceFile.id == Item.file_id)
             .where(Item.batch_id.in_(list(marked)), Item.status == 'attention')
             .order_by(Item.updated_at, Item.id)):
-        # An untouched draft is stored as JSON null, which SQL "IS NULL" does not match: checked here.
-        if draft or str(file_id) not in marked.get(batch_id, ()):
+        # An untouched draft is stored as JSON null, which SQL "IS NULL" does not match. A statement with a person's
+        # draft is listed too: read_item decides it ('investigator_work') and the outcome is recorded beside it.
+        if str(file_id) not in marked.get(batch_id, ()):
             continue
         stored = ((metadata or {}).get(METADATA_KEY) or {}).get(key or '')
         if stored and stored.get('version') == VERSION and not rejudgeable(stored) and (stored.get('status') in FINAL or (
@@ -2026,6 +2166,7 @@ PENDING_LIMIT = 2000
 def sweep(factory, resolve_path, *, budget_seconds=SWEEP_SECONDS):
     """Background round: read held statements from their page images, a few per round. Never raises."""
     report = dict(read=0, proved=0, not_proved=0, failed=0, cost_usd=0.0)
+    skipped = {}
     if not ENABLED:
         return report
     started = time.monotonic()
@@ -2056,8 +2197,14 @@ def sweep(factory, resolve_path, *, budget_seconds=SWEEP_SECONDS):
             report[outcome['status']] += 1
             if not outcome.get('rejudged'):
                 report['cost_usd'] = round(report['cost_usd'] + (outcome.get('cost_usd') or 0), 6)
+        elif reason or outcome.get('status') in ('budget', 'stale', 'unavailable'):
+            why = reason or outcome['status']
+            skipped[why] = skipped.get(why, 0) + 1
         if outcome.get('status') == 'unavailable':
             break  # no key / provider: nothing else this round can be read either
-    if report['read']:
+    if skipped:
+        report['skipped'] = skipped
+    if report['read'] or skipped:
+        # Every round that decided anything (each statement's own line is logged by read_item).
         log.info('Page-image reading round: %s', report)
     return report

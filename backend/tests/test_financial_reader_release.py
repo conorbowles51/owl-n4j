@@ -12,7 +12,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest import TestCase
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 from uuid import uuid4
 
 from sqlalchemy import select
@@ -161,9 +161,17 @@ class ReaderReleaseTests(TestCase):
         with self.f.SessionLocal() as db:
             self.assertEqual(vision_reader.pending(db), [held.id])
             record = db.get(Item, held.id)
-            record.review_request = dict(rows=[])  # investigator work: never read
+            record.review_request = dict(rows=[])  # investigator work: listed, decided, never read
             db.commit()
-            self.assertEqual(vision_reader.pending(db), [])
+            self.assertEqual(vision_reader.pending(db), [held.id])
+        reader = Mock()
+        with patch.object(vision_reader, 'APPROVED_CASES', frozenset({vision_reader.EVERY_CASE})):
+            outcome = vision_reader.read_item(self.f.SessionLocal, held.id, lambda p: p, page_reader=reader)
+        self.assertEqual(outcome['reason'], 'investigator_work')
+        reader.assert_not_called()
+        with self.f.SessionLocal() as db:
+            self.assertEqual(db.get(Item, held.id).summary['vision_reading']['line'],
+                             'Not read from page images: you have saved work on it.')
 
     def _image_reading(self, held, *, nudge=0):
         """A page-image reading of the held statement as printed (the current reader's reading), optionally wrong by a cent."""

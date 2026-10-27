@@ -58,6 +58,10 @@ const entry = z.object({
   issue_messages: z.array(z.string()).default([]),
   /** Why Loupe could not settle it alone, in plain sentences (what the pages print, what the account holds). */
   why: z.array(z.string()).default([]),
+  /** The latest outcome of reading its page images, in plain words (why it did not settle it, or why it was not read). */
+  vision_reading: z
+    .object({ status: z.string().nullish(), reason: z.string().nullish(), message: z.string().default(""), line: z.string().default("") })
+    .nullish(),
   /** Who saved the held work (their own corrections or added rows), when that is what is held. */
   worked_by: z.object({ user_id: z.string(), name: z.string() }).nullish(),
   /** Proposed values for missing details (value, its source, whether it is certain). */

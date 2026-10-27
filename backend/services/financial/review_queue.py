@@ -352,11 +352,14 @@ def _entry(item, batch_id, describe_result=None):
             entry['why'] = describe_result['why']
         entry.update(issue_pages=describe_result.get('pages') or [], issue_messages=describe_result.get('messages') or [])
     vision = summary.get('vision_reading')
-    if vision and item.status == 'attention' and vision.get('status') in ('not_proved', 'budget', 'failed') \
-            and vision.get('message'):
-        # Why reading its page images did not settle it (vision_reader); the statement stays as it was.
-        entry['vision_reading'] = dict(status=vision['status'], message=vision['message'])
-        if describe_result and vision['message'] not in entry['issue_messages']:
+    if vision and item.status == 'attention' and (vision.get('message') or vision.get('line')):
+        # The latest outcome of reading its page images (vision_reader), in plain words: why it did not settle it,
+        # or why it was not read. The statement stays as it was.
+        from services.financial.vision_reader import outcome_line
+        entry['vision_reading'] = dict(status=vision.get('status'), reason=vision.get('reason'),
+                                       message=vision.get('message') or '', line=vision.get('line') or outcome_line(vision))
+        if describe_result and vision.get('status') in ('not_proved', 'budget', 'failed') and vision.get('message') \
+                and vision['message'] not in entry['issue_messages']:
             entry['issue_messages'] = [*entry['issue_messages'], 'Page images: ' + vision['message']]
     not_payment = summary.get('not_payment_statement')
     if not_payment:
