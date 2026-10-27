@@ -1305,6 +1305,20 @@ async def upload_evidence(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _record_financial_read(db, user, case_id, file_ids, copies):
+    """Activity trail: a person asked Financial to read these files (never blocks the request)."""
+    from services import activity_trail
+    from postgres.models.evidence import EvidenceFile as AuditFile
+    try:
+        sent = list(db.scalars(select(AuditFile).where(AuditFile.case_id == UUID(str(case_id)),
+            AuditFile.id.in_([UUID(str(i)) for i in file_ids]))))
+    except Exception:
+        sent = []
+    activity_trail.record('financial_send', db=db, commit=True, user=user, case_id=case_id,
+        details=dict(how='read_in_financial', file_count=len(sent), copies=len(copies),
+                     files=activity_trail.file_entries(sent)))
+
+
 @router.post("/process/background")
 async def process_evidence_background(
     request: ProcessRequest,
@@ -1348,6 +1362,7 @@ async def process_evidence_background(
             db_backed_ids, copies = intake_pdf_review(db, case_id=UUID(request.case_id), file_ids=db_backed_ids)
             if copies:
                 messages.append(f"{len(copies)} file(s) already in Financial; not read again")
+            _record_financial_read(db, current_user, request.case_id, list(db_backed_ids) + [c['file_id'] for c in copies], copies)
 
         if db_backed_ids:
             if not request.case_id:

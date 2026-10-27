@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from config import AUTH_TOKEN_EXPIRE_MINUTES
 from postgres.session import get_db
 from services.auth_service import auth_service
+from services import activity_trail
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 security = HTTPBearer(auto_error=False)
@@ -86,11 +87,15 @@ async def login(request: LoginRequest, response: Response, db: Session = Depends
         # username field is actually the email
         user = auth_service["authenticate_from_db"](db, request.username, request.password)
         if not user:
+            # The address and the name typed are kept; never the password.
+            activity_trail.record('login_failure', db=db, commit=True, user_email=(request.username or '')[:255],
+                                  details=dict(reason='invalid_credentials_or_inactive'))
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
         # Use email as the subject in the token
         token = auth_service["create_access_token"]({"sub": user.email})
         _set_access_cookie(response, token)
+        activity_trail.record('login_success', db=db, commit=True, user=user, session=activity_trail.token_ref(token))
 
         return TokenResponse(access_token=token, username=user.email, name=user.name, role=user.global_role.value)
     except HTTPException:
@@ -103,7 +108,15 @@ async def login(request: LoginRequest, response: Response, db: Session = Depends
 
 
 @router.post("/logout")
-def logout(response: Response):
+def logout(response: Response, token: str | None = Depends(_extract_token), db: Session = Depends(get_db)):
+    person = None
+    if token:
+        try:
+            person = auth_service["verify_access_token"](token)
+        except Exception:
+            person = None
+    activity_trail.record('logout', db=db, commit=True, user_email=(person or {}).get('username'),
+                          details={} if person else dict(signed_in=False))
     response.delete_cookie("access_token")
     return {"status": "ok"}
 

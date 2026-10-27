@@ -202,6 +202,9 @@ app.add_middleware(
 # Correlation id and per-stage Server-Timing on financial batch endpoints.
 from services.financial.request_timing import FinancialTimingMiddleware
 app.add_middleware(FinancialTimingMiddleware)
+# Source address, user agent and screen of every request, for the activity trail.
+from services.activity_trail import ActivityContextMiddleware
+app.add_middleware(ActivityContextMiddleware)
 
 # Include routers
 app.include_router(graph_router)
@@ -256,6 +259,8 @@ app.include_router(cellebrite_router)
 app.include_router(triage_router)
 app.include_router(significant_router)
 app.include_router(evidence_ws_router)
+from routers.activity import router as activity_router
+app.include_router(activity_router)
 
 
 @app.get("/")

@@ -293,9 +293,23 @@ def enroll(session, *, case_id, files, reason, requested_by=None, commit=True):
         _set_mark(file, state='enrolled', batch_id=str(batch.id), reason=_reason(file, reason))
         _history(session, file, 'Added to automatic statement reading; its statements will appear in the review queue.',
                  batch_id=str(batch.id), reason=reason, requested_by=requested_by)
+    _record_auto_add(session, case_id, batch, fresh, reason, requested_by)
     if commit:
         session.commit()
     return batch.id
+
+
+def _record_auto_add(session, case_id, batch, files, reason, requested_by):
+    """Activity trail: one System event per reason, in this transaction (never blocks the step)."""
+    from services import activity_trail
+    by_reason = {}
+    for file in files:
+        by_reason.setdefault(_reason(file, reason), []).append(file)
+    for why, group in by_reason.items():
+        activity_trail.record('financial_auto_add', db=session, system=True, case_id=case_id,
+            user=dict(name=SYSTEM_NAME, email=SYSTEM_EMAIL),
+            details=dict(reason=why, batch_id=str(batch.id), requested_by=requested_by,
+                         file_count=len(group), files=activity_trail.file_entries(group)))
 
 
 # Reasons a file reached the automatic batch without a person putting it in Financial.

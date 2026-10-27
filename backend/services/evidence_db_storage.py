@@ -103,6 +103,18 @@ class EvidenceMoveError(ValueError):
 # Folder operations
 # ---------------------------------------------------------------------------
 
+def _record_upload(db, case_id, folder_id, created_by_id, files, kind=None):
+    """One activity-trail event per registration, in the same transaction (every upload path ends here)."""
+    if not files:
+        return
+    from services import activity_trail
+    from postgres.models.user import User
+    user = db.get(User, created_by_id) if created_by_id else None
+    activity_trail.record('evidence_upload', db=db, user=user, case_id=case_id,
+        details=dict(folder_id=str(folder_id) if folder_id else None, kind=kind,
+                     file_count=len(files), files=activity_trail.file_entries(files)))
+
+
 class EvidenceDBStorage:
     """Postgres-backed evidence storage service. All methods require a db session."""
 
@@ -567,6 +579,7 @@ class EvidenceDBStorage:
             created.append(ef)
 
         db.flush()
+        _record_upload(db, case_id, folder_id, created_by_id, created)
         return created
 
     @staticmethod
@@ -588,6 +601,7 @@ class EvidenceDBStorage:
         """
         EvidenceDBStorage._lock_case(db, case_id)
         created: List[EvidenceFile] = []
+        fresh: List[EvidenceFile] = []
         for fd in files_data:
             sha256 = fd["sha256"]
             if fd.get('cellebrite_report_key') and fd.get('cellebrite_file_id'):
@@ -635,9 +649,11 @@ class EvidenceDBStorage:
                 metadata_=fd.get("metadata") or {},
             )
             db.add(ef)
+            fresh.append(ef)
             created.append(ef)
 
         db.flush()
+        _record_upload(db, case_id, folder_id, created_by_id, fresh, kind='cellebrite')
         return created
 
     @staticmethod

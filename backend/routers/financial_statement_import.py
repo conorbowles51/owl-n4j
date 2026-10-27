@@ -30,6 +30,38 @@ router = APIRouter(prefix='/api/financial/statement-import', tags=['financial'],
 from services.financial import bulk_statement_details
 
 
+def _batch_added(db, case_id, batch_id):
+    """Who started this batch, when, and from where (activity trail when it has it). Never fails the read."""
+    try:
+        from services.activity_trail import batch_sources
+        from postgres.models.financial_import_batches import FinancialImportBatch
+        batch = db.get(FinancialImportBatch, batch_id)
+        if batch is None or batch.case_id != case_id:
+            return None
+        actor = batch.actor or {}
+        return dict(by=None if actor.get('auto_read') else actor.get('name'), automatic=bool(actor.get('auto_read')),
+                    at=batch.created_at.isoformat() if batch.created_at else None,
+                    sent_from=batch_sources(db, case_id=case_id, batch_ids=[batch_id]).get(str(batch_id)))
+    except Exception:
+        logger.exception('Batch provenance unavailable')
+        return None
+
+
+def _record_send(db, *, case_id, user, how, file_ids=(), batch_id=None, extra=None):
+    """Activity trail: a person put files in Financial (who, from where, which screen, which files)."""
+    from sqlalchemy import select
+    from postgres.models.evidence import EvidenceFile
+    from services import activity_trail
+    try:
+        ids = [UUID(str(i)) for i in file_ids]
+        files = list(db.scalars(select(EvidenceFile).where(EvidenceFile.case_id == case_id, EvidenceFile.id.in_(ids)))) if ids else []
+    except Exception:
+        files = []
+    activity_trail.record('financial_send', db=db, commit=True, user=user, case_id=case_id,
+        details=dict(how=how, batch_id=str(batch_id) if batch_id else None, file_count=len(file_ids),
+                     files=activity_trail.file_entries(files), **(extra or {})))
+
+
 @router.post('/account-details/statements')
 def account_detail_selection(body: bulk_statement_details.Selection, case_id: UUID = Query(...), db: Session = Depends(get_db)):
     try:
@@ -636,7 +668,10 @@ def include_sources(body: FinancialSourcesRequest, case_id: UUID = Query(...),
                     user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     from services.financial.evidence_intake import include_financial_sources
     try:
-        return include_financial_sources(db, case_id=case_id, selections=body.files, actor=actor_from_user(user))
+        result = include_financial_sources(db, case_id=case_id, selections=body.files, actor=actor_from_user(user))
+        _record_send(db, case_id=case_id, user=user, how='include_other_formats',
+                     file_ids=[f.evidence_file_id for f in body.files])
+        return result
     except PdfMappingError as exc:
         db.rollback()
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
@@ -652,9 +687,11 @@ def include_sources(body: FinancialSourcesRequest, case_id: UUID = Query(...),
 async def prepare_existing(evidence_file_id: UUID, body: EvidencePreparationRequest, case_id: UUID = Query(...),
                            user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     try:
-        return await prepare_existing_financial_file(db, case_id=case_id, evidence_file_id=evidence_file_id,
+        result = await prepare_existing_financial_file(db, case_id=case_id, evidence_file_id=evidence_file_id,
             expected_revision=body.expected_revision, actor=actor_from_user(user), resolve_path=_resolve_stored_path,
             process_files=process_db_files)
+        _record_send(db, case_id=case_id, user=user, how='prepare_existing', file_ids=[evidence_file_id])
+        return result
     except PdfMappingError as exc:
         db.rollback()
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
@@ -810,6 +847,10 @@ def withdraw_layout_memory(confirmation_id: UUID, body: LayoutMemoryWithdrawal, 
 def create_financial_batch(body: CreateFinancialBatch, case_id: UUID = Query(...), user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     try:
         identifier=import_batches.create_batch(db,case_id=case_id,request_id=body.request_id,file_ids=body.file_ids,folder_ids=body.folder_ids,actor=actor_from_user(user),start_new=body.start_new)
+        batch = db.get(import_batches.Batch, identifier)
+        _record_send(db, case_id=case_id, user=user, how='batch', batch_id=identifier,
+            file_ids=[f['source_id'] for f in (batch.files if batch is not None else [])] or body.file_ids,
+            extra=dict(continued=identifier != body.request_id, folder_ids=[str(f) for f in body.folder_ids]))
         return dict(id=str(identifier),case_id=str(case_id),continued=identifier!=body.request_id)
     except PdfMappingError as exc:
         db.rollback();raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc
@@ -889,7 +930,10 @@ def financial_read_unread(case_id: UUID = Query(...), user=Depends(get_current_d
     """Read the case's statement files that were never read or prepared (one explicit action)."""
     from services.financial.auto_read import read_unread
     try:
-        return read_unread(db, case_id=case_id, actor=actor_from_user(user))
+        result = read_unread(db, case_id=case_id, actor=actor_from_user(user))
+        _record_send(db, case_id=case_id, user=user, how='read_unread',
+                     extra=dict(result={k: v for k, v in (result or {}).items() if isinstance(v, (int, str, bool))}))
+        return result
     except PdfMappingError as exc:
         db.rollback()
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
@@ -1002,8 +1046,15 @@ def list_financial_batches(case_id: UUID = Query(...), db: Session = Depends(get
         complete = bool(items) and all(f['status'] == 'checked' for f in files_by_batch[batch.id]) and all(i.status in ('imported', 'skipped', 'assigned', 'duplicate_ignored', 'superseded_reading') for i in items)
         return dict(completed=complete, available_statements=ready, statements_with_checks=checks,
                     statement_summary=statement_summary(items))
+    from services.activity_trail import batch_sources
+    try:
+        sources = batch_sources(db, case_id=case_id, batch_ids=[b.id for b in batches])
+    except Exception:
+        logger.exception('Batch send sources unavailable; the list is shown without them')
+        sources = {}
     return dict(case_id=str(case_id),batches=[dict(id=str(b.id),status=b.status,created_at=b.created_at.isoformat(),file_count=len(b.files), **counts(b),
         created_by=(b.actor or {}).get('name', ''), filenames=[f['filename'] for f in b.files[:3]],
+        automatic=bool((b.actor or {}).get('auto_read')), sent_from=sources.get(str(b.id)),
         superseded=bool(superseded.get(b.id)),
         checked_files=sum(f['status'] == 'checked' for f in files_by_batch[b.id]),
         failed_files=sum(f['status'] == 'error' for f in files_by_batch[b.id])) for b in batches])
@@ -1012,7 +1063,8 @@ def list_financial_batches(case_id: UUID = Query(...), db: Session = Depends(get
 @router.get('/batches/{batch_id}')
 def get_financial_batch(batch_id: UUID, case_id: UUID = Query(...), offset: int = Query(0,ge=0), limit: int = Query(100,ge=1,le=500),only_problems: bool = Query(False),review_group: str | None = Query(None),db: Session = Depends(get_db)):
     try:
-        return import_batches.batch_status(db,case_id=case_id,batch_id=batch_id,offset=offset,limit=limit,only_problems=only_problems,review_group=review_group)
+        view = import_batches.batch_status(db,case_id=case_id,batch_id=batch_id,offset=offset,limit=limit,only_problems=only_problems,review_group=review_group)
+        return {**view, 'added': _batch_added(db, case_id, batch_id)} if isinstance(view, dict) else view
     except PdfMappingError as exc:
         raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc
 
