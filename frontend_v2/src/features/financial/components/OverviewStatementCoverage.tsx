@@ -6,8 +6,18 @@ import { fetchAPI } from "@/lib/api-client"
 import { candidateUrl, assertCandidateScope } from "../lib/candidate-contract"
 import { statementCoverage } from "../lib/statement-coverage"
 import { coverageMonths } from "../lib/coverage-months"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Disclosure } from "./Disclosure"
 import { InfoTip } from "./InfoTip"
+import { RequestedCoveragePanel } from "./RequestedCoveragePanel"
+import { StatementSourceButton } from "./StatementSourceButton"
+import type { StatementCoverageAccount } from "../lib/statement-coverage"
 
 const displayMonth = (month: string) =>
   new Date(`${month}-01T00:00:00Z`).toLocaleDateString("en-GB", {
@@ -23,6 +33,33 @@ const displayDate = (day: string) =>
     timeZone: "UTC",
   })
 
+const monthEnd = (month: string) => {
+  const day = new Date(`${month}-01T00:00:00Z`)
+  day.setUTCMonth(day.getUTCMonth() + 1)
+  day.setUTCDate(0)
+  return day.toISOString().slice(0, 10)
+}
+
+type OpenedMonth = {
+  account: StatementCoverageAccount
+  label: string
+  currency: string
+  month: string
+  status: "covered" | "partial" | "missing"
+}
+
+/** Saved statements of this account and currency whose dates reach into the month. */
+const periodsInMonth = (opened: Omit<OpenedMonth, "label" | "status">) =>
+  opened.account.periods.filter(
+    (period) =>
+      period.included &&
+      period.currency === opened.currency &&
+      !!period.start &&
+      !!period.end &&
+      period.start <= monthEnd(opened.month) &&
+      period.end >= `${opened.month}-01`
+  )
+
 export function OverviewStatementCoverage({
   caseId,
   active,
@@ -31,7 +68,19 @@ export function OverviewStatementCoverage({
   active: boolean
 }) {
   const [offset, setOffset] = useState(0)
+  const [opened, setOpened] = useState<OpenedMonth | null>(null)
   const navigate = useNavigate()
+  const reviewFile = (fileId: string) =>
+    navigate(
+      `/cases/${caseId}/financial?view=statements&files=1&reviewFile=${encodeURIComponent(fileId)}`
+    )
+  // A month with one statement opens it; several, or a missing month, open a short list or the dates check.
+  const openMonth = (month: OpenedMonth) => {
+    const periods = month.status === "missing" ? [] : periodsInMonth(month)
+    if (periods.length === 1 && periods[0].evidence_file_id)
+      reviewFile(periods[0].evidence_file_id)
+    else setOpened(month)
+  }
   const query = useQuery({
     queryKey: ["financial-ledger", caseId, "coverage", undefined, offset],
     enabled: active,
@@ -159,13 +208,29 @@ export function OverviewStatementCoverage({
                               : "Missing"
                         }`
                         return (
-                          <li
-                            key={month.month}
-                            title={text}
-                            className="h-[22px] rounded"
-                            style={cell(month.status)}
-                          >
-                            <span className="sr-only">{text}</span>
+                          <li key={month.month} className="h-[22px]">
+                            <button
+                              type="button"
+                              title={`${text}. ${month.status === "missing" ? "Click to check these dates" : "Click to open the statement"}`}
+                              aria-label={text}
+                              className="block size-full rounded hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring"
+                              style={cell(month.status)}
+                              onClick={() =>
+                                openMonth({
+                                  account,
+                                  label:
+                                    [account.holder, account.identifier]
+                                      .filter(Boolean)
+                                      .join(" · ") ||
+                                    "Account details not recorded",
+                                  currency: group.currency,
+                                  month: month.month,
+                                  status: month.status,
+                                })
+                              }
+                            >
+                              <span className="sr-only">{text}</span>
+                            </button>
                           </li>
                         )
                       })}
@@ -285,6 +350,64 @@ export function OverviewStatementCoverage({
       >
         Check dates and missing statements
       </Button>
+      <Dialog open={!!opened} onOpenChange={(open) => !open && setOpened(null)}>
+        {opened && (
+          <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>
+                {opened.label} · {opened.currency} ·{" "}
+                {displayMonth(opened.month)}
+              </DialogTitle>
+              <DialogDescription>
+                {opened.status === "missing"
+                  ? "No saved statement covers this month."
+                  : opened.status === "partial"
+                    ? "Saved statements cover part of this month."
+                    : "Saved statements that cover this month."}
+              </DialogDescription>
+            </DialogHeader>
+            {opened.status === "missing" ? (
+              <RequestedCoveragePanel
+                caseId={caseId}
+                params={{
+                  accountId: opened.account.account_id,
+                  startDate: `${opened.month}-01`,
+                  endDate: monthEnd(opened.month),
+                }}
+                accountLabel={opened.label}
+                autoLoad
+              />
+            ) : (
+              <ul className="space-y-3 text-sm">
+                {periodsInMonth(opened).map((period) => (
+                  <li key={period.period_id} className="space-y-1.5 rounded-lg border p-3">
+                    <p className="font-medium break-words">
+                      {period.filename || "Saved statement"}
+                    </p>
+                    <p className="text-muted-foreground">
+                      {displayDate(period.start!)} to {displayDate(period.end!)}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {period.evidence_file_id && (
+                        <Button onClick={() => reviewFile(period.evidence_file_id!)}>
+                          Open statement
+                        </Button>
+                      )}
+                      <StatementSourceButton
+                        caseId={caseId}
+                        periodId={period.period_id}
+                        sourceDocumentId={period.source_document_id}
+                        label="Open statement and dates"
+                        onReviewStatement={reviewFile}
+                      />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </DialogContent>
+        )}
+      </Dialog>
     </section>
   )
 }
