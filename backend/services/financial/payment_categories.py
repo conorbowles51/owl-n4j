@@ -20,6 +20,7 @@ import asyncio
 import json
 import logging
 import re
+from contextlib import nullcontext
 from datetime import datetime, timezone
 
 from sqlalchemy import event, inspect, select, delete, insert
@@ -428,7 +429,9 @@ def _categorise_new_payments(session, flush_context):
         connection = session.connection()
         if not _table_ready(connection):
             return
-        with connection.begin_nested():
+        # A savepoint keeps a failed statement from aborting the payment's Postgres transaction. pysqlite's savepoint
+        # can commit the surrounding transaction early, and SQLite survives a failed statement anyway, so skip it there.
+        with connection.begin_nested() if connection.dialect.name != 'sqlite' else nullcontext():
             accounts = {}
             account_ids = {row.account_id for row in new}
             if account_ids:
