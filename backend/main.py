@@ -192,6 +192,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# JSON responses are gzipped for browsers that accept it (services.json_gzip). Added first, so it is the
+# innermost layer: the timing middlewares below record the bytes actually sent and the compression time.
+from services.json_gzip import JSONGZipMiddleware
+app.add_middleware(JSONGZipMiddleware)
 # CORS middleware for React frontend
 app.add_middleware(
     CORSMiddleware,

@@ -552,6 +552,7 @@ def get_statement_checks(case_id: UUID = Query(...), offset: int = Query(0, ge=0
 
 
 @router.get("/account-references")
+@cached_view('account-references')
 def get_account_references(case_id: UUID = Query(...), offset: int = Query(0, ge=0),
                                  search: str = Query('', max_length=128), show: Literal['missing','all'] = Query('missing'),
                                  db: Session = Depends(get_db)):
@@ -564,6 +565,7 @@ def get_account_references(case_id: UUID = Query(...), offset: int = Query(0, ge
 
 
 @router.get("/statement-coverage")
+@cached_view('statement-coverage')
 def get_statement_coverage(case_id: UUID = Query(...), offset: int = Query(0, ge=0), db: Session = Depends(get_db), account_id: UUID | None = None):
     try:
         return list_statement_coverage(db, case_id=case_id, offset=offset,
@@ -590,6 +592,7 @@ def get_account_history(case_id: UUID = Query(...), account_id: UUID | None = Qu
 
 
 @router.get("/ledger-accounts")
+@cached_view('ledger-accounts')
 def get_candidate_accounts(case_id: UUID = Query(...), search: str = Query("", max_length=128), offset: int = 0,
                                   db: Session = Depends(get_db)):
     try:
@@ -711,6 +714,7 @@ async def assess_evidence_amount(
 
 
 @router.get("/ledger")
+@cached_view('ledger')
 def get_ledger_transactions(
     case_id: UUID = Query(..., description="REQUIRED: Case ID"),
     source_document_id: UUID | None = None,
@@ -1489,6 +1493,7 @@ def get_ledger_graph_status(case_id: UUID = Query(...), db: Session = Depends(ge
 
 
 @router.get('/account-consolidations')
+@cached_view('account-consolidations')
 def get_account_consolidations(case_id: UUID = Query(...), db: Session = Depends(get_db)):
     from services.financial.account_consolidation import consolidation_state
     try:
