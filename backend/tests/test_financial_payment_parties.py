@@ -354,6 +354,9 @@ class PhaseTwoPartyTests(unittest.TestCase):
         for description, direction, kind, rule in [
             ('CAPITAL ONE MOBILE PYMTAuthDate 30-Sep', 'credit', 'credit_card', 'card-payment-source'),
             ('ONLINE PAYMENT, THANK YOU', 'credit', 'credit_card', 'card-payment-source'),
+            # A card line that opens with the issuer's posting reference (invented reference).
+            ('1234567AB00CDEFGH MOBILE PAYMENT - THANK YOU', 'credit', 'credit_card', 'card-payment-source'),
+            ('1234567AB00CDEFGH PAYMENT - THANK YOU', 'credit', 'credit_card', 'card-payment-source'),
             ('W01 TRASPASO A TERCEROS PAGO EJEMPLO BMRCASH Ref. REFBNTC00000001', 'debit', 'checking', 'bbva-batch-payment'),
             ('_WO01 TRASPASO A TERCEROS ABONO PROYECTO EJEMPLO BMRCASH Ref. REFBNTC00000001', 'debit', 'checking', 'bbva-batch-payment'),
             ('W02 DEPOSITO DE TERCERO 20000001 BMRCASH Ref. REFBNTC00000002', 'credit', 'checking', 'bbva-batch-payment'),

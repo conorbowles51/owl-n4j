@@ -7,7 +7,7 @@ payment. Explicit investigator labels always take precedence in payment_labels.
 import re
 import unicodedata
 
-VERSION = 'description-labels/8'
+VERSION = 'description-labels/9'
 
 
 def normalized(value):
@@ -115,6 +115,8 @@ MERCHANTS = [
 MERCHANTS = [(re.compile(pattern), name, category) for pattern, name, category in MERCHANTS]
 
 
+_CARD_POSTING_REFERENCE = re.compile(r'^(?=\S*\d)(?=\S*[A-Z])[0-9A-Z]{16,18}\s+(?=\S)')
+
 _CASH_RULES = {'cash-deposit': ' The other side is shown as Cash.', 'cash-withdrawal': ' The other side is shown as Cash.'}
 
 
@@ -133,6 +135,10 @@ def infer_payment_labels(description, *, direction, account_type=None, instituti
     if 'counterparty' not in result:
         from services.financial.payment_party_reasons import unnamed_reason
         reason = unnamed_reason(value, direction=direction, account_type=account_type)
+        if not reason and account_type == 'credit_card' and _CARD_POSTING_REFERENCE.match(raw):
+            # Some card issuers print the line's posting reference first (16-18 digits and capitals, e.g. Merrick,
+            # Synchrony). It names nobody, so the reason is read from the wording after it.
+            reason = unnamed_reason(normalized(_CARD_POSTING_REFERENCE.sub('', raw, count=1)), direction=direction, account_type=account_type)
         if reason:
             text, rule, explanation = reason
             # A mixed ATM deposit can hold cheques as well as cash, so it keeps the reason.
