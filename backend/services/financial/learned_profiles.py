@@ -53,7 +53,13 @@ def rules_hash(rules):
 # unbounded list makes a matching file slow to read (measured: 2,000 column words, 28 s for a 6-page Truist
 # file read in 0.5 s plainly). The written profiles' longest list has 12 phrases, the longest phrase 51 characters.
 MAX_PHRASES = 40
-MAX_PHRASE_CHARS = 200
+MAX_PHRASE_CHARS = 120
+# All the reading phrases of one entry together (labels, columns, settlement days, blank closings): the written
+# profiles' largest is 18. Measured with every list full (40 phrases of 190 characters in every role): a Truist
+# file read in 6.3 s against 0.45 s.
+MAX_READING_PHRASES = 40
+# A match needs one phrase of at least this length, so a one-letter phrase cannot send every file through it.
+MIN_MATCH_CHARS = 8
 # The registry's states (layout_learning.STATES and 'retired'); live and retired are served, the others are
 # recorded only. Any other state is a malformed entry (refused with an ERROR).
 STATES = ('unread', 'learning', 'draft_failed', 'gates_failed', 'passed', 'live', 'read', 'retired')
@@ -83,6 +89,10 @@ def _typed(rules):
         raise bad('currency must be a three-letter code in capitals (the engine records it as given)')
     if len(rules.get('labels') or {}) > 12 or len(rules.get('columns') or {}) > 12:
         raise bad('too many label or column roles')
+    match = rules.get('match')
+    if isinstance(match, dict) and isinstance(match.get('all'), list) and not any(
+            isinstance(p, str) and len(p.strip()) >= MIN_MATCH_CHARS for p in match['all']):
+        raise bad('its match needs a printed phrase of at least %s characters' % MIN_MATCH_CHARS)
     for key in ('account_heading', 'statement_account', 'account_suffix_heading', 'client_line',
                 'account_number_heading', 'direction_headings', 'repeated_column_groups', 'holdings_currency'):
         if key in rules and rules[key] is not True:
@@ -102,6 +112,10 @@ def _typed(rules):
         raise bad('settlement_days needs lists of printed words')
     if 'blank_closing_quiet' in rules and not _phrases(rules['blank_closing_quiet']):
         raise bad('blank_closing_quiet needs a list of printed labels')
+    lists = [v for k in ('labels', 'columns', 'settlement_days') for v in (rules.get(k) or {}).values()
+             if isinstance(rules.get(k), dict)] + [rules.get('blank_closing_quiet') or []]
+    if sum(len(v) for v in lists if isinstance(v, list)) > MAX_READING_PHRASES:
+        raise bad('more than %s reading phrases in all' % MAX_READING_PHRASES)
     first = rules.get('opening_from_first_day')
     if 'opening_from_first_day' in rules and not (isinstance(first, dict) and set(first) == {'cash_line'}
                                                   and _phrases(first['cash_line'])):

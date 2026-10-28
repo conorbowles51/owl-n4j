@@ -687,16 +687,24 @@ def with_profiles(profiles):
         sep.PROFILES, lp._OVERRIDE = saved, saved_learned
 
 
+def draft_fingerprint(name):
+    """The layout a draft is for, from its name ('learned-<fingerprint>', '~<hash>' added by ``keyed``)."""
+    base = str(name or '').split('~')[0]
+    return base[len('learned-'):] if base.startswith('learned-') else base
+
+
 def written_profiles(excluding=None):
     """The profiles live now: the engine's written profiles and the registry's live learned ones (as learned).
-    ``excluding``: a draft's name; the learned versions it replaces (same layout name) are left out."""
+    ``excluding``: a draft's name; the live learned version of its layout (the one release retires for it,
+    matched by the fingerprint the entry records) is left out."""
     from services.financial import learned_profiles as lp, statement_engine_profiles as sep
     found = tuple(p for p in sep.PROFILES if not p.get('learned')) + tuple(
         p for p in lp.live() if p['name'] not in lp.LEARNED_OFF)
     if not excluding:
         return found
-    layout = excluding.split('~')[0]
-    return tuple(p for p in found if not (p.get('learned') and p['name'].startswith(layout)))
+    layout = draft_fingerprint(excluding)
+    return tuple(p for p in found if not (isinstance(p.get('learned'), dict)
+                                          and p['learned'].get('fingerprint') == layout))
 
 
 def live_and_draft(profile):
@@ -1104,7 +1112,9 @@ def gates(profile, corpus, sources_of, truth_dir, inventory, out=None):
     corpus_result = corpus_gate(profile, corpus, out)
     corpus_result['routing'] = dict(generic_only=bool(routing.generic_only()), generic_enabled=bool(routing.generic_enabled()))
     # What the pass is for: exactly these rules, with these profiles switched off (a release needs none off).
-    conditions = dict(rules_hash=lp.rules_hash(profile), profiles_off=sorted(sep.PROFILES_OFF | lp.LEARNED_OFF))
+    conditions = dict(rules_hash=lp.rules_hash(profile), profiles_off=sorted(sep.PROFILES_OFF | lp.LEARNED_OFF),
+                      fingerprint=draft_fingerprint(profile['name']),
+                      replaced=sorted(p['name'] for p in before if p not in after and p.get('learned')))
     truth_result = truth_gate(corpus_result['rematched'], sources_of, truth_dir, inventory)
     return dict(corpus=corpus_result, truth=truth_result, conditions=conditions,
                 passed=corpus_result['passed'] and truth_result['passed'])
@@ -1290,7 +1300,9 @@ def registry_entry(profile, fingerprint, gate_result, review, examples=(), today
         raise ValueError('The independent review did not pass.')
     if not (isinstance(fingerprint, str) and fingerprint.strip()):
         raise ValueError('No layout fingerprint.')
-    name = 'learned-%s-%s' % (fingerprint[:8], digest[:12])
+    if conditions.get('fingerprint') != fingerprint:
+        raise ValueError('The gate result is for another layout.')
+    name = 'learned-%s-%s' % (fingerprint, digest[:12])
     gates = dict(corpus_passed=True, truth_passed=True, rules_hash=digest, profiles_off=[],
                  corpus_dumped_at=conditions['corpus_dumped_at'],
                  rematched=len(gate_result['corpus'].get('rematched') or []),
@@ -1298,7 +1310,8 @@ def registry_entry(profile, fingerprint, gate_result, review, examples=(), today
                  truth_judged=len(gate_result['truth'].get('judged') or []))
     entry = dict(rules, name=name, learned=dict(
         state='live', fingerprint=fingerprint, version=VERSION, rules_hash=digest, review='PASS', gates=gates,
-        examples=list(examples), live_since=str(today or date.today())))
+        examples=list(examples), replaces=list(conditions.get('replaced') or []),
+        live_since=str(today or date.today())))
     lp._servable(entry)
     lp._validated(entry)
     return entry
@@ -1321,8 +1334,26 @@ def release(entry, path=None):
             old = dict(old, learned=dict(learned, state='retired', retired_for=entry['name']))
         entries.append(old)
     data = dict(version=int(data.get('version') or 0) + 1, profiles=entries + [entry])
+    retired = sorted(e['name'] for e in entries if (e.get('learned') or {}).get('retired_for') == entry['name']
+                     and (e.get('learned') or {}).get('state') == 'retired')
+    replaced = entry['learned'].get('replaces')
+    if replaced is not None and sorted(replaced) != retired:
+        return [('(release)', 'the gates replaced %s but the registry retires %s' % (replaced, retired))]
     handle, temporary = tempfile.mkstemp(dir=str(path.parent), prefix='.learned-', suffix='.json')
-    with os.fdopen(handle, 'w') as stream:
-        stream.write(json.dumps(data, indent=1, sort_keys=True) + '\n')
-    os.replace(temporary, path)
-    return lp.problems(path)
+    try:
+        with os.fdopen(handle, 'w') as stream:
+            stream.write(json.dumps(data, indent=1, sort_keys=True) + '\n')
+        os.chmod(temporary, 0o644)  # the server reads it as another user
+        # Checked as the engine will load it (each entry, and one live version per layout) before it replaces
+        # the registry: a release that would leave any problem writes nothing.
+        found = lp.problems(temporary)
+        layouts = Counter((e.get('learned') or {}).get('fingerprint') for e in data['profiles']
+                          if isinstance(e, dict) and (e.get('learned') or {}).get('state') == 'live')
+        found += [('(registry)', 'two live versions of layout %s' % f) for f, n in layouts.items() if n > 1]
+        if found:
+            return found
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+    return []

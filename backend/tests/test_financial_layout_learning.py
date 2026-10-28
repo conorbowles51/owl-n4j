@@ -319,8 +319,8 @@ class LlmDraftTests(unittest.TestCase):
                                                   opening_minor=0, closing_minor=0, holder='', institution='',
                                                   currency='USD', rows=[]))])]
         prompts = []
-        answers = iter([{'profile': {'match': {'all': ['a']}, 'nonsense_key': 1}},
-                        {'profile': {'match': {'all': ['a']}, 'currency': None, 'account_heading': None}}])
+        answers = iter([{'profile': {'match': {'all': ['aaaa layout']}, 'nonsense_key': 1}},
+                        {'profile': {'match': {'all': ['aaaa layout']}, 'currency': None, 'account_heading': None}}])
 
         def ask(provider, model, prompt, api_key):
             prompts.append(prompt)
@@ -341,7 +341,7 @@ class RegistryTests(unittest.TestCase):
     def test_live_entries_only_and_validated(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'learned_profiles.json'
-            a = dict(name='learned-a-' + lp.rules_hash(dict(match=dict(all=['a'])))[:12], match=dict(all=['a']))
+            a = dict(name='learned-a-' + lp.rules_hash(dict(match=dict(all=['aaaa layout'])))[:12], match=dict(all=['aaaa layout']))
             passed = dict(gates=dict(corpus_passed=True, truth_passed=True, rules_hash=lp.rules_hash(a), profiles_off=[],
                                      corpus_dumped_at='2026-10-28T00:00:00+00:00'), review='PASS', fingerprint='fa')
             path.write_text(json.dumps(dict(version=2, profiles=[
@@ -382,7 +382,7 @@ class RegistryTests(unittest.TestCase):
                 rules_hash=lp.rules_hash(empty)))])))
             self.assertIn('non-empty list', lp.problems(path)[0][1])
             # Two live versions of one layout: neither is served.
-            b = dict(name='learned-b-' + lp.rules_hash(dict(match=dict(all=['b'])))[:12], match=dict(all=['b']))
+            b = dict(name='learned-b-' + lp.rules_hash(dict(match=dict(all=['bbbb layout'])))[:12], match=dict(all=['bbbb layout']))
             entry = lambda x: dict(x, learned=dict(passed, gates=dict(passed['gates'], rules_hash=lp.rules_hash(x)),
                                                    state='live', rules_hash=lp.rules_hash(x)))
             path.write_text(json.dumps(dict(profiles=[entry(a), entry(b)])))
@@ -567,17 +567,18 @@ class EngineHookTests(unittest.TestCase):
             routing._profiled([], plain)  # a written profile's fault is never hidden
 
     def test_release_writes_only_a_gated_reviewed_draft_and_retires_the_old_version(self):
-        draft = dict(name='learned-zz~abc', match=dict(all=['zz released layout']), currency='USD')
+        draft = dict(name='learned-zzfinger', match=dict(all=['zz released layout']), currency='USD')
 
         def passed(profile, **conditions):
             return dict(passed=True, corpus=dict(passed=True, rematched=['f'], gained=[1]), truth=dict(passed=True, judged=['f']),
-                        conditions=dict(dict(rules_hash=lp.rules_hash(profile), profiles_off=[],
+                        conditions=dict(dict(rules_hash=lp.rules_hash(profile), profiles_off=[], fingerprint='zzfinger',
                                              corpus_dumped_at='2026-10-28T03:26:00+00:00'), **conditions))
         for gates, review, why in ((dict(passed(draft), passed=False), 'PASS', 'did not pass'),
                                    (passed(draft, rules_hash='x'), 'PASS', 'other rules'),
                                    (passed(draft, profiles_off=['truist-consolidated']), 'PASS', 'backtest'),
                                    (passed(draft, off_for_this_run=['truist-consolidated']), 'PASS', 'backtest'),
                                    (passed(draft, corpus_dumped_at=None), 'PASS', 'corpus copy'),
+                                   (passed(draft, fingerprint='other'), 'PASS', 'another layout'),
                                    (passed(draft), 'FAIL', 'review')):
             with self.assertRaisesRegex(ValueError, why):
                 ll.registry_entry(draft, 'zzfinger', gates, review)
@@ -586,24 +587,42 @@ class EngineHookTests(unittest.TestCase):
         lp.reset()
         self.assertEqual(sep.matching_profile('zz released layout page 1')['name'], first['name'])
         revised = dict(draft, institution='ZZ Bank')
-        second = ll.registry_entry(revised, 'zzfinger', passed(revised), 'PASS')
+        # The gates read the revision in place of the layout's live version, exactly the state release writes.
+        before, after = ll.live_and_draft(revised)
+        self.assertIn(first['name'], [p['name'] for p in before])
+        self.assertEqual([p['name'] for p in after if p.get('learned')], [ll.keyed(revised)['name']])
+        stale = passed(revised)  # gates that did not replace the live version
+        self.assertTrue(ll.release(ll.registry_entry(revised, 'zzfinger', stale, 'PASS'), self.path))
+        self.assertEqual(lp.registry(self.path)['profiles'][0]['name'], first['name'])  # nothing was written
+        self.assertEqual(len(lp.registry(self.path)['profiles']), 1)
+        second = ll.registry_entry(revised, 'zzfinger', passed(revised, replaced=[first['name']]), 'PASS')
         self.assertEqual(ll.release(second, self.path), [])
         lp.reset()
         self.assertEqual(sep.matching_profile('zz released layout page 1')['name'], second['name'])
         self.assertEqual(sep.profile_named(first['name'])['learned']['state'], 'retired')  # saved choices resolve
         self.assertEqual([p['learned']['state'] for p in lp.registry(self.path)['profiles']], ['retired', 'live'])
+        self.assertEqual(self.path.stat().st_mode & 0o777, 0o644)
+        # A registry holding a bad entry is never replaced by a release.
+        data = lp.registry(self.path)
+        self.path.write_text(json.dumps(dict(data, profiles=data['profiles'] + [dict(name='broken', learned=dict(state='live'))])))
+        written = self.path.read_text()
+        third = dict(revised, institution='ZZ Bank NA')
+        problems = ll.release(ll.registry_entry(third, 'zzfinger', passed(third, replaced=[second['name']]), 'PASS'), self.path)
+        self.assertTrue(problems)
+        self.assertEqual(self.path.read_text(), written)
+        self.assertEqual([p.name for p in self.path.parent.iterdir()], [self.path.name])  # no temporary left
 
     def test_drafts_are_checked_as_the_registry_checks_them(self):
-        draft = dict(name='learned-zz', match=dict(all=['zz']), settlement_days=dict(operation=['w'] * 50000,
+        draft = dict(name='learned-zz', match=dict(all=['zz layout']), settlement_days=dict(operation=['w'] * 50000,
                                                                                     settlement=['LIQ']))
         with self.assertRaisesRegex(ValueError, 'settlement_days'):
             lp.check_rules(draft)
         with self.assertRaisesRegex(ValueError, 'settlement_days'), ll.candidate(draft):
             pass
         with self.assertRaises(ValueError):
-            lp.check_rules(dict(name='learned-zz', match=dict(all=['zz']), currency=None))
+            lp.check_rules(dict(name='learned-zz', match=dict(all=['zz layout']), currency=None))
         with self.assertRaisesRegex(ValueError, 'blank_closing_quiet'):
-            lp.check_rules(dict(name='learned-zz', match=dict(all=['zz']), blank_closing_quiet=['x'] * 41))
+            lp.check_rules(dict(name='learned-zz', match=dict(all=['zz layout']), blank_closing_quiet=['x'] * 41))
 
     def test_an_unreadable_registry_file_leaves_the_written_profiles_reading(self):
         sources = fixture('financial_truist_consolidated_fixture.json')
