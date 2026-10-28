@@ -192,8 +192,8 @@ def summary_components_evidence(rows, statement, currency, sources, *, family):
     if PROFILE_COMPONENT_LINES and statement.get('engine_profile'):
         # The reader proved the period from the component labels of the library profile it read the statement
         # with ('Deposits, credits and interest' on Truist): the same printed labels are looked for again.
-        from services.financial.statement_engine_profiles import PROFILES
-        profile = next((p for p in PROFILES if p['name'] == statement['engine_profile']), None)
+        from services.financial.statement_engine_profiles import profile_named
+        profile = profile_named(statement['engine_profile'])
         for role in components:
             components[role] |= {label(p) for p in ((profile or {}).get('labels') or {}).get(role, ())}
     directions, lines = set(), []

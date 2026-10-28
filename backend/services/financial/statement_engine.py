@@ -5707,8 +5707,8 @@ def propose_engine_statement(sources, currency, choice):
     same library profile when one served it)."""
     profile = None
     if choice.get('engine_profile'):
-        from services.financial.statement_engine_profiles import PROFILES
-        profile = next((p for p in PROFILES if p['name'] == choice['engine_profile']), None)
+        from services.financial.statement_engine_profiles import profile_named
+        profile = profile_named(choice['engine_profile'])
         if profile is None:
             raise ValueError('The reading profile of this statement period is no longer available. Reload the document.')
     reading = read_statements(sources, profile=profile)

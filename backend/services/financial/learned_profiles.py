@@ -145,8 +145,14 @@ def everything():
     return _LOADED.get('all', ())
 
 
+# The gates' exact learned set (layout_learning.with_profiles, the command-line tool only; never set in the server).
+_OVERRIDE = None
+
+
 def profiles():
     """Every learned profile the engine may use now: the live ones, then any draft under test."""
+    if _OVERRIDE is not None:
+        return tuple(p for p in _OVERRIDE if p['name'] not in LEARNED_OFF)
     found = [p for p in live() if p['name'] not in LEARNED_OFF]
     names = {p['name'] for p in _CANDIDATES}
     return tuple(p for p in found if p['name'] not in names) + tuple(_CANDIDATES)

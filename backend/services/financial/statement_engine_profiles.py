@@ -251,7 +251,15 @@ _COLUMN_ROLES = {'date', 'description', 'credit', 'debit', 'balance', 'amount', 
 def brokerage_cash_ledger(name):
     """A statement read with a brokerage cash-ledger profile (``holdings_currency``): its own currency, if any,
     is printed only in its holdings, and one printing none takes its account's (field_proposals)."""
-    return bool(name) and any(p['name'] == name and p.get('holdings_currency') for p in PROFILES)
+    profile = profile_named(name) if name else None
+    return bool(profile and profile.get('holdings_currency'))
+
+
+def profile_named(name):
+    """The profile a statement was read with, by its recorded name: a written profile, else a learned one from
+    the registry (services/financial/learned_profiles; a refused or unknown name finds none)."""
+    from services.financial import learned_profiles
+    return next((p for p in PROFILES if p['name'] == name), None) or learned_profiles.named(name)
 
 
 def validate(profile):
@@ -323,6 +331,15 @@ def _matching(text):
 
 
 def matching_profile(text, furniture=None):
+    """The profile the router reads ``text`` with: the written profiles' rule (``written_matching_profile``)
+    with the registry's learned profiles beside them, a learned one never displacing a written profile the
+    document prints (learned_profiles.pick: pure, safe on the server's threads). With no learned profile live
+    this is exactly ``written_matching_profile``."""
+    from services.financial import learned_profiles
+    return learned_profiles.pick(text, furniture, PROFILES, learned_profiles.profiles())
+
+
+def written_matching_profile(text, furniture=None):
     """The one profile whose printed phrases occur in ``text``; None if none or several match.
 
     When several match and ``furniture`` (the same document without its dated lines, see

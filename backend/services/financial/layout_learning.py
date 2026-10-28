@@ -678,19 +678,13 @@ def with_profiles(profiles):
     router picking as it does live: a written profile first, a learned one only for a file no written one reads
     (learned_profiles.pick). Until the engine consults the registry itself, the router's pick is wrapped here."""
     from services.financial import learned_profiles as lp, statement_engine_profiles as sep
-    saved, saved_match = sep.PROFILES, sep.matching_profile
-    original = getattr(saved_match, '__wrapped__', saved_match)
-
-    def matching_profile(text, furniture=None):
-        return lp.pick(text, furniture, [p for p in sep.PROFILES if not p.get('learned')],
-                       [p for p in sep.PROFILES if p.get('learned')])
-    matching_profile.__wrapped__ = original
-    sep.PROFILES = tuple(profiles)
-    sep.matching_profile = matching_profile
+    saved, saved_learned = sep.PROFILES, lp._OVERRIDE
+    sep.PROFILES = tuple(p for p in profiles if not p.get('learned'))
+    lp._OVERRIDE = tuple(p for p in profiles if p.get('learned'))
     try:
-        yield
+        yield  # read through the engine's own hook (statement_engine_profiles.matching_profile, profile_named)
     finally:
-        sep.PROFILES, sep.matching_profile = saved, saved_match
+        sep.PROFILES, lp._OVERRIDE = saved, saved_learned
 
 
 def written_profiles(excluding=None):

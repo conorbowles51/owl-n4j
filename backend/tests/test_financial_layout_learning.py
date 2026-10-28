@@ -401,3 +401,83 @@ class RegistryTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class EngineHookTests(unittest.TestCase):
+    """The engine consults the registry through statement_engine_profiles.matching_profile and profile_named."""
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.path = Path(self.directory.name) / 'learned_profiles.json'
+        patcher = mock.patch.object(lp, 'REGISTRY', self.path)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        lp._LOADED.clear()
+        self.addCleanup(lp._LOADED.clear)
+
+    def entry(self, phrase, state='live', fingerprint='f1'):
+        rules = dict(match=dict(all=[phrase]), currency='USD')
+        name = 'learned-%s-%s' % (fingerprint, lp.rules_hash(rules)[:12])
+        rules = dict(rules, name=name)
+        return dict(rules, learned=dict(state=state, fingerprint=fingerprint, rules_hash=lp.rules_hash(rules), review='PASS',
+                                        gates=dict(corpus_passed=True, truth_passed=True, rules_hash=lp.rules_hash(rules),
+                                                   profiles_off=[], corpus_dumped_at='2026-10-28T00:00:00+00:00')))
+
+    def write(self, *entries):
+        self.path.write_text(json.dumps(dict(version=1, profiles=list(entries))))
+        lp._LOADED.clear()
+
+    def test_without_learned_profiles_the_pick_is_the_written_rule(self):
+        for path in sorted(FIXTURES.glob('financial_*fixture*.json')):
+            sources = json.loads(path.read_text())
+            if not (isinstance(sources, list) and sources and isinstance(sources[0], dict) and 'rows' in sources[0]):
+                continue
+            text, furniture = sep.profile_text(sources), sep.furniture_text(sources)
+            self.assertEqual(sep.matching_profile(text, furniture), sep.written_matching_profile(text, furniture), path.name)
+
+    def test_a_live_learned_profile_reads_and_resolves_by_name(self):
+        live = self.entry('zz learned bank statement')
+        self.write(live)
+        self.assertEqual(sep.matching_profile('zz learned bank statement page 1')['name'], live['name'])
+        self.assertEqual(sep.profile_named(live['name'])['name'], live['name'])
+        self.assertIsNone(sep.written_matching_profile('zz learned bank statement page 1'))
+
+    def test_retired_or_switched_off_profiles_no_longer_match(self):
+        retired = self.entry('zz retired layout', state='retired')
+        self.write(retired)
+        self.assertIsNone(sep.matching_profile('zz retired layout'))
+        self.assertEqual(sep.profile_named(retired['name'])['name'], retired['name'])  # saved choices still resolve
+        live = self.entry('zz switched layout', fingerprint='f2')
+        self.write(live)
+        with mock.patch.object(lp, 'LEARNED_OFF', {live['name']}):
+            self.assertIsNone(sep.matching_profile('zz switched layout'))
+
+    def test_a_malformed_registry_leaves_the_written_profiles_reading(self):
+        sources = fixture('financial_truist_consolidated_fixture.json')
+        text, furniture = sep.profile_text(sources), sep.furniture_text(sources)
+        self.path.write_text('{"profiles": [ {"name": 1}, ')
+        lp._LOADED.clear()
+        with self.assertLogs('services.financial.learned_profiles', 'ERROR'):
+            self.assertEqual(sep.matching_profile(text, furniture)['name'], 'truist-consolidated')
+
+    def test_concurrent_matching_never_changes_the_written_profiles(self):
+        import threading
+        self.write(self.entry('zz concurrent layout'))
+        written, results, errors = sep.PROFILES, [], []
+
+        def work():
+            try:
+                for _ in range(200):
+                    results.append(sep.matching_profile('zz concurrent layout')['name'])
+                    lp._LOADED.clear() if len(results) % 50 == 0 else None
+            except Exception as error:  # noqa: BLE001
+                errors.append(error)
+        threads = [threading.Thread(target=work) for _ in range(4)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(errors, [])
+        self.assertEqual(len(set(results)), 1)
+        self.assertIs(sep.PROFILES, written)
