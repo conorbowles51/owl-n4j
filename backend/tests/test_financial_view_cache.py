@@ -244,3 +244,117 @@ def test_off_without_postgresql():
         assert view(case_id=str(uuid.uuid4()), db=db) == dict(total=0)
         assert view(case_id=str(uuid.uuid4()), db=db) == dict(total=0)
     assert counter.calls == 2
+
+
+def test_rewrites_whose_xmin_would_balance_out_still_recompute(engine):
+    """Two rows whose old xmins average to the rewriting transaction's xid (a sum would not change)."""
+    case, counter = uuid.uuid4(), Counter()
+
+    def xid(connection):
+        return int(connection.execute(text('SELECT txid_current()')).scalar()) & 0xFFFFFFFF
+
+    def next_xid():
+        with engine.connect() as connection:
+            return int(connection.execute(text('SELECT txid_snapshot_xmax(txid_current_snapshot())')).scalar()) & 0xFFFFFFFF
+
+    with engine.begin() as connection:
+        first = xid(connection)
+        connection.execute(text('INSERT INTO payments (case_id, amount) VALUES (:c, 1)'), dict(c=case))
+    for _ in range(5):
+        with engine.begin() as connection:
+            xid(connection)
+    rewriting = engine.connect()
+    transaction = rewriting.begin()
+    rewriter = xid(rewriting)
+    while next_xid() < 2 * rewriter - first:
+        with engine.begin() as connection:
+            xid(connection)
+    with engine.begin() as connection:
+        second = xid(connection)
+        connection.execute(text('INSERT INTO payments (case_id, amount) VALUES (:c, 2)'), dict(c=case))
+    assert first + second == 2 * rewriter
+    view = payments_view(counter)
+    assert call(engine, view, case).body == b'{"total":3}'
+    rewriting.execute(text('UPDATE payments SET amount = amount + 100 WHERE case_id = :c'), dict(c=case))
+    transaction.commit(); rewriting.close()
+    assert call(engine, view, case).body == b'{"total":203}'
+
+
+def test_one_pooled_connection_is_enough(engine):
+    """The request's own connection is returned before the view takes the one it works in."""
+    from sqlalchemy.pool import QueuePool
+    with engine.connect() as connection:
+        schema = connection.execute(text('SELECT current_schema()')).scalar()
+    small = create_engine(engine.url.render_as_string(hide_password=False), poolclass=QueuePool, pool_size=1, max_overflow=0,
+                          pool_timeout=2, connect_args={'options': f'-csearch_path={schema}'})
+    case, counter = uuid.uuid4(), Counter()
+    write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 4)', c=case)
+    try:
+        view = payments_view(counter)
+        assert call(small, view, case).body == b'{"total":4}'
+        assert call(small, view, case).body == b'{"total":4}'
+        assert counter.calls == 1
+    finally:
+        small.dispose()
+
+
+def test_a_burst_of_the_same_view_needs_no_more_connections_than_requests(engine):
+    from sqlalchemy.pool import QueuePool
+    with engine.connect() as connection:
+        schema = connection.execute(text('SELECT current_schema()')).scalar()
+    small = create_engine(engine.url.render_as_string(hide_password=False), poolclass=QueuePool, pool_size=4, max_overflow=0,
+                          pool_timeout=5, connect_args={'options': f'-csearch_path={schema}'})
+    case, counter, errors, bodies = uuid.uuid4(), Counter(), [], []
+    write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 6)', c=case)
+    view = payments_view(counter)
+    barrier = threading.Barrier(4)
+
+    def one():
+        try:
+            with Session(small) as db:
+                db.execute(text('SELECT 1'))
+                barrier.wait()
+                bodies.append(view(case_id=case, db=db).body)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(repr(exc))
+
+    try:
+        threads = [threading.Thread(target=one) for _ in range(4)]
+        [thread.start() for thread in threads]; [thread.join() for thread in threads]
+    finally:
+        small.dispose()
+    assert errors == []
+    assert bodies == [b'{"total":6}'] * 4
+    assert counter.calls == 1
+    assert view_cache._key_locks == {}
+
+
+def test_keys_fastapi_would_drop_are_dropped_the_same_way(engine):
+    from fastapi.encoders import jsonable_encoder
+    from fastapi.responses import JSONResponse
+    case = uuid.uuid4()
+    payload = {'_saved': 1, 'x': {'_same': 3, 'kept': 2}}
+
+    @view_cache.cached_view('sa-keys')
+    def handler(case_id, db):
+        db.execute(text('SELECT count(*) FROM payments WHERE case_id = :c'), dict(c=case_id))
+        return payload
+
+    assert call(engine, handler, case).body == JSONResponse(content=jsonable_encoder(payload)).body == b'{"x":{"kept":2}}'
+
+
+def test_a_table_whose_case_id_is_text_is_checked(engine):
+    case, counter = uuid.uuid4(), Counter()
+    write(engine, 'CREATE TABLE notes (id serial PRIMARY KEY, case_id varchar(64), body text)')
+    view_cache._tables_cache.clear()
+
+    @view_cache.cached_view('text-case')
+    def handler(case_id, db):
+        counter.calls += 1
+        return dict(n=db.execute(text('SELECT count(*) FROM notes WHERE case_id = :c'), dict(c=str(case_id))).scalar())
+
+    assert call(engine, handler, case).body == b'{"n":0}'
+    write(engine, 'INSERT INTO notes (case_id, body) VALUES (:c, :b)', c=str(case), b='x')
+    assert call(engine, handler, case).body == b'{"n":1}'
+    assert call(engine, handler, case).body == b'{"n":1}'
+    assert counter.calls == 2

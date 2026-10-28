@@ -12,9 +12,10 @@ How a stored response is known to be current:
   snapshot, so the whole view (including reads on connections the view opens itself) sees one state.
 * Every table the view reads is recorded from the SQL it runs, by name, against all tables in the database.
 * In the same snapshot, a fingerprint of those tables is taken: for a table with ``case_id``, the count and
-  the sum of ``xmin`` of this case's rows; for any other table, the same over the whole table. Any insert,
-  update or delete of a row in scope changes the count or brings a newer ``xmin``, so it changes the
-  fingerprint. Freezing keeps ``xmin``, so vacuum does not.
+  an md5 of the sorted ``xmin`` of this case's rows; for any other table, the same over the whole table.
+  Any insert or update of a row in scope adds the ``xmin`` of a transaction that was not visible before,
+  and a delete changes the count, so either changes the fingerprint. Freezing keeps ``xmin``, so vacuum
+  does not.
 * A later request takes the fingerprint of the same tables in its own snapshot; only an equal fingerprint
   returns the stored bytes. Otherwise the view is computed again. Nothing is ever invalidated by hand, so
   no write path (imports, labels, categories, identities, notes) can be forgotten.
@@ -42,7 +43,7 @@ from sqlalchemy.engine import Engine
 logger = logging.getLogger(__name__)
 
 MAX_ENTRY_BYTES = 96 * 1024 * 1024
-MAX_TOTAL_BYTES = 640 * 1024 * 1024
+MAX_TOTAL_BYTES = 384 * 1024 * 1024
 # A table without case_id is fingerprinted whole; above this size a view reading it is not stored.
 MAX_UNSCOPED_BYTES = 64 * 1024 * 1024
 
@@ -60,6 +61,7 @@ class _Recording:
     owner: object
     snapshot: str
     tables: set = field(default_factory=set)
+    paused: bool = False
 
 
 @dataclass(frozen=True)
@@ -72,17 +74,19 @@ class _Entry:
 
 
 _TOKEN = re.compile(r'[a-z_][a-z0-9_]*')
+# table name -> data type of its case_id column, or None when it has none
 _tables_cache: dict = {}
 
 
 def _load_tables(connection):
-    """Every base table in the database (mapped or not), and whether it has case_id. Read once per process."""
+    """Every base table in the database (mapped or not) and its case_id type. Read once per process."""
     if not _tables_cache:
         rows = connection.execute(text(
-            "SELECT t.table_name, bool_or(c.column_name = 'case_id') FROM information_schema.tables t "
-            "JOIN information_schema.columns c ON c.table_schema = t.table_schema AND c.table_name = t.table_name "
+            "SELECT t.table_name, max(CASE WHEN c.column_name = 'case_id' THEN c.data_type END) "
+            "FROM information_schema.tables t JOIN information_schema.columns c "
+            "ON c.table_schema = t.table_schema AND c.table_name = t.table_name "
             "WHERE t.table_schema = current_schema() AND t.table_type = 'BASE TABLE' GROUP BY t.table_name")).all()
-        _tables_cache.update((name, bool(scoped)) for name, scoped in rows)
+        _tables_cache.update(rows)
     return _tables_cache
 
 
@@ -100,7 +104,7 @@ def _dbapi(connection):
 @event.listens_for(Engine, 'before_cursor_execute')
 def _record_tables(conn, cursor, statement, parameters, context, executemany):
     recording = _recording.get()
-    if recording is None or _dbapi(conn) is recording.owner:
+    if recording is None or recording.paused:
         return
     known = _mapped_tables()
     recording.tables.update(token for token in _TOKEN.findall(statement.lower()) if token in known)
@@ -117,27 +121,58 @@ def _join_snapshot(conn):
 
 
 def fingerprint(connection, tables, case_id):
-    """(table, rows, sum of xmin) per table, or None when a table is too large to check without case_id."""
+    """(table, rows, md5 of the sorted xmin of those rows) per table; None when a table cannot be checked.
+
+    Rows are the case's rows (case_id), or the whole table when it has no case_id and is small. A row
+    inserted or updated since the last fingerprint carries the xid of a transaction that had not committed
+    then, so the sorted xmin list differs; a delete changes the count. (A sum of xmin could balance out.)
+    """
     known = _mapped_tables()
     result = []
-    for table in sorted(tables):
-        if known.get(table):
-            rows, total = connection.execute(text(
-                f'SELECT count(*), coalesce(sum(xmin::text::bigint), 0) FROM "{table}" WHERE case_id = :case_id'),
-                dict(case_id=case_id)).one()
-        else:
-            size = connection.execute(text("SELECT pg_relation_size(to_regclass(:name))"), dict(name=table)).scalar()
-            if size is None or size > MAX_UNSCOPED_BYTES:
-                return None
-            rows, total = connection.execute(text(
-                f'SELECT count(*), coalesce(sum(xmin::text::bigint), 0) FROM "{table}"')).one()
-        result.append((table, int(rows), int(total)))
+    try:
+        with connection.begin_nested():
+            for table in sorted(tables):
+                case_type = known.get(table)
+                if case_type is not None:
+                    parameter = case_id if case_type == 'uuid' else str(case_id)
+                    rows, digest = connection.execute(text(
+                        f'SELECT count(*), md5(coalesce(string_agg(xmin::text, \',\' ORDER BY xmin::text::bigint), \'\')) '
+                        f'FROM "{table}" WHERE case_id = :case_id'), dict(case_id=parameter)).one()
+                else:
+                    size = connection.execute(text("SELECT pg_relation_size(to_regclass(:name))"), dict(name=table)).scalar()
+                    if size is None or size > MAX_UNSCOPED_BYTES:
+                        return None
+                    rows, digest = connection.execute(text(
+                        f'SELECT count(*), md5(coalesce(string_agg(xmin::text, \',\' ORDER BY xmin::text::bigint), \'\')) '
+                        f'FROM "{table}"')).one()
+                result.append((table, int(rows), digest))
+    except Exception:  # noqa: BLE001 - a table that cannot be checked means the view is simply not reused
+        logger.warning('Financial view fingerprint unavailable for %s', ', '.join(sorted(tables)), exc_info=True)
+        return None
     return tuple(result)
 
 
-def _key_lock(key):
-    with _lock:
-        return _key_locks.setdefault(key, threading.Lock())
+class _KeyLock:
+    """One computation per view key at a time; the entry is dropped once nobody holds or waits for it."""
+
+    def __init__(self, key):
+        self.key = key
+
+    def __enter__(self):
+        with _lock:
+            lock, users = _key_locks.get(self.key, (threading.Lock(), 0))
+            _key_locks[self.key] = (lock, users + 1)
+        lock.acquire()
+        self.lock = lock
+
+    def __exit__(self, *exc):
+        self.lock.release()
+        with _lock:
+            lock, users = _key_locks[self.key]
+            if users <= 1:
+                del _key_locks[self.key]
+            else:
+                _key_locks[self.key] = (lock, users - 1)
 
 
 def _store(key, entry):
@@ -204,6 +239,9 @@ def _json_response(result):
         body = json.dumps(result, ensure_ascii=False, allow_nan=False, indent=None, separators=(',', ':')).encode('utf-8')
     except TypeError:
         return JSONResponse(content=jsonable_encoder(result))
+    if b'"_sa' in body:
+        # jsonable_encoder drops dict keys starting with "_sa" (SQLAlchemy state); keep its exact output.
+        return JSONResponse(content=jsonable_encoder(result))
     global _Encoded
     if _Encoded is None:
         _Encoded = _encoded_class()
@@ -222,24 +260,27 @@ def cached_view(name):
             if getattr(getattr(engine, 'dialect', None), 'name', None) != 'postgresql':
                 return handler(*args, **kwargs)
             key = (name, json.dumps({k: _parameter(v) for k, v in kwargs.items() if k != 'db'}, sort_keys=True))
-            with _key_lock(key):
-                return _serve(handler, key, engine, db, case_id, kwargs)
+            # The access check ran in the session's own transaction. End it, which returns its connection to
+            # the pool, before waiting: a request waiting for the same view holds no connection.
+            db.rollback()
+            with _KeyLock(key):
+                return _serve(handler, key, engine, case_id, kwargs)
         return wrapper
     return decorate
 
 
-def _serve(handler, key, engine, db, case_id, kwargs):
+def _serve(handler, key, engine, case_id, kwargs):
     from fastapi.responses import Response
-    # The access check ran in the session's own transaction; end it so this view's reads begin in the snapshot.
-    db.rollback()
+    from sqlalchemy.orm import Session
     started = time.perf_counter()
+    # One connection for the whole view, as before: the snapshot owner is also the handler's session
+    # connection (the session works in a savepoint of the owner's transaction).
     with engine.connect() as owner:
         owner = owner.execution_options(isolation_level='REPEATABLE READ')
         with owner.begin():
             owner.exec_driver_sql('SET TRANSACTION READ ONLY')
             snapshot = owner.exec_driver_sql('SELECT pg_export_snapshot()').scalar()
-            if not _load_tables(owner):
-                return handler(**kwargs)
+            _load_tables(owner)
             entry = _lookup(key)
             if entry is not None and fingerprint(owner, entry.tables, case_id) == entry.fingerprint:
                 stats['hits'] += 1
@@ -248,13 +289,15 @@ def _serve(handler, key, engine, db, case_id, kwargs):
             stats['misses'] += 1
             recording = _Recording(owner=_dbapi(owner), snapshot=snapshot)
             token = _recording.set(recording)
+            session = Session(bind=owner, autoflush=False, join_transaction_mode='create_savepoint')
             try:
-                result = handler(**kwargs)
-                # Lazy loads after the handler returns still belong to this snapshot.
+                result = handler(**{**kwargs, 'db': session})
+                # Lazy loads while encoding still belong to this snapshot and are recorded.
                 response = result if isinstance(result, Response) else _json_response(result)
             finally:
+                recording.paused = True
                 _recording.reset(token)
-                db.rollback()
+                session.close()
             # Only plain results encoded here are kept: a handler's own Response may carry headers of its own.
             if isinstance(result, Response) or response.status_code != 200:
                 stats['not_stored'] += 1
