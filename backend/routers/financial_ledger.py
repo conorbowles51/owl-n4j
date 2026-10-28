@@ -93,6 +93,8 @@ def _ledger_case_permission(request: Request, payload: dict) -> tuple[str, str] 
 _require_ledger_case_access = case_access_dependency(_ledger_case_permission)
 
 
+from services.financial.view_cache import cached_view
+
 router = APIRouter(
     prefix="/api/financial",
     tags=["financial"],
@@ -415,6 +417,7 @@ async def assemble_saved_trace_support(case_id: UUID = Query(...), scenarios: Op
 
 
 @router.get("/ledger-counterparties")
+@cached_view('ledger-counterparties')
 def get_ledger_counterparties(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
         start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None), db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
     from services.financial.ledger_summary import ledger_counterparties
@@ -429,6 +432,7 @@ def get_ledger_counterparties(case_id: UUID = Query(...), account_id: Optional[U
 
 
 @router.get("/ledger-trends")
+@cached_view('ledger-trends')
 def get_ledger_trends(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
         start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
         grouping: Literal["daily", "monthly"] = Query("monthly"), db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
@@ -444,6 +448,7 @@ def get_ledger_trends(case_id: UUID = Query(...), account_id: Optional[UUID] = Q
 
 
 @router.get("/ledger-working-analysis")
+@cached_view('ledger-working-analysis')
 def get_working_ledger_analysis(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
         start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
         grouping: Literal["daily", "monthly", "counterparty"] = Query("monthly"), db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
@@ -460,6 +465,7 @@ def get_working_ledger_analysis(case_id: UUID = Query(...), account_id: Optional
 
 
 @router.get("/ledger-working-summary")
+@cached_view('ledger-working-summary')
 def get_working_ledger_summary(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
         start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
         db: Session = Depends(get_db), include_contributions: bool = False, account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
@@ -479,6 +485,7 @@ def get_working_ledger_summary(case_id: UUID = Query(...), account_id: Optional[
 
 
 @router.get("/ledger-summary")
+@cached_view('ledger-summary')
 def get_ledger_summary(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
         start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
         db: Session = Depends(get_db), include_contributions: bool = False, account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
@@ -569,6 +576,7 @@ def get_statement_coverage(case_id: UUID = Query(...), offset: int = Query(0, ge
 
 
 @router.get('/account-history')
+@cached_view('account-history')
 def get_account_history(case_id: UUID = Query(...), account_id: UUID | None = Query(None),
         account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None,
         start_date: date | None = Query(None), end_date: date | None = Query(None), db: Session = Depends(get_db)):
@@ -1106,6 +1114,7 @@ def get_statement_review_draft(evidence_file_id: UUID, case_id: UUID = Query(...
 from services.financial.ledger_transfers import ledger_transfer_candidates, evaluate_transfer_scenario, LedgerTransferScenario
 
 @router.get('/ledger-transfer-candidates')
+@cached_view('ledger-transfer-candidates')
 def get_ledger_transfer_candidates(case_id: UUID = Query(...), start_date: Optional[date] = Query(None),
         end_date: Optional[date] = Query(None), population: Literal['working', 'verified'] = Query('working'),
         tolerance_days: int = Query(3, ge=0, le=7), db: Session = Depends(get_db)):
@@ -1132,6 +1141,7 @@ def calculate_ledger_transfer_scenario(body: LedgerTransferScenario, case_id: UU
 
 
 @router.get('/ledger-posting-graph')
+@cached_view('ledger-posting-graph')
 def get_ledger_posting_graph(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
         start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
         population: Literal['working', 'verified'] = Query('working'), db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
@@ -1207,6 +1217,7 @@ def run_network_trace(body: NetworkTraceInput,case_id: UUID = Query(...),db: Ses
 
 
 @router.get('/ledger-timeline')
+@cached_view('ledger-timeline')
 def get_ledger_timeline(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
         start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
         population: Literal['working', 'verified'] = Query('working'), db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
@@ -1223,6 +1234,7 @@ def get_ledger_timeline(case_id: UUID = Query(...), account_id: Optional[UUID] =
 
 
 @router.get('/pattern-review')
+@cached_view('pattern-review')
 def get_pattern_review(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
         start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
         population: Literal['working', 'verified'] = Query('working'), window_days: int = Query(3,ge=0,le=30),
@@ -1263,6 +1275,7 @@ def run_claim_comparison(body: ClaimComparisonInput,case_id: UUID = Query(...),d
 from services.financial.account_parties import AccountPartyError, account_parties
 
 @router.get("/account-parties")
+@cached_view('account-parties')
 def get_account_parties(case_id: UUID = Query(...), db: Session = Depends(get_db)):
     try:
         return account_parties(db, case_id=case_id)
@@ -1272,6 +1285,7 @@ def get_account_parties(case_id: UUID = Query(...), db: Session = Depends(get_db
 from services.financial.counterparty_parties import counterparty_parties
 
 @router.get('/counterparty-parties')
+@cached_view('counterparty-parties')
 def get_counterparty_parties(case_id: UUID = Query(...), db: Session = Depends(get_db)):
     try:
         return counterparty_parties(db, case_id=case_id)
@@ -1283,6 +1297,7 @@ def get_counterparty_parties(case_id: UUID = Query(...), db: Session = Depends(g
 
 
 @router.get('/counterparty-party-analysis')
+@cached_view('counterparty-party-analysis')
 def get_counterparty_party_analysis(case_id: UUID = Query(...),account_id: Optional[UUID] = Query(None),
         start_date: Optional[date] = Query(None),end_date: Optional[date] = Query(None),
         population: Literal['working','verified'] = Query('working'),db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):

@@ -2262,3 +2262,5 @@ from services.financial.learned_profiles import match_among, rules_hash
 __all__ += ["match_among", "rules_hash"]
 from services.financial.layout_learning import corpus_gate, prove_example, truth_gate
 __all__ += ["corpus_gate", "prove_example", "truth_gate"]
+from services.financial.view_cache import cached_view
+__all__ += ["cached_view"]
