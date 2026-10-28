@@ -93,6 +93,7 @@ function labelOrigin() {
       "missing",
     ]),
     explanation: z.string().optional(),
+    reason: z.string().optional(),
     rule: z.string().optional(),
     version: z.string().optional(),
     value: z.string().optional(),

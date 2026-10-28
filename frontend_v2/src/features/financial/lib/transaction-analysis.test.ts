@@ -10,6 +10,7 @@ import {
   partySummaries,
   perspectiveSummary,
   sortAnalysisRows,
+  unnamedParty,
 } from "./transaction-analysis"
 import { sameTableView } from "./ledger-table-view"
 const row = (key: string, values: Partial<LedgerTransaction> = {}) =>
@@ -209,4 +210,18 @@ it("keeps a linked counterparty distinct from an identical printed name and expo
     filterAnalysis([linked, unlinked], filters).map((row) => row.key)
   ).toEqual(["linked"])
   expect(analysisTableView(filters).to_names).toEqual([key])
+})
+
+describe("unnamedParty", () => {
+  it("shows the stated reason for a side the statement does not name, else Not identified", () => {
+    const withReason = row("batch", {
+      to_name: null,
+      label_sources: {
+        to_name: { source: "missing", reason: "Payroll batch — the statement doesn’t list the employees" },
+      },
+    } as unknown as Partial<LedgerTransaction>)
+    expect(unnamedParty(withReason, "to_name")).toBe("Payroll batch — the statement doesn’t list the employees")
+    expect(party(withReason, "to").name).toBe("Payroll batch — the statement doesn’t list the employees")
+    expect(unnamedParty(row("plain", { to_name: null } as Partial<LedgerTransaction>), "to_name")).toBe("Not identified")
+  })
 })

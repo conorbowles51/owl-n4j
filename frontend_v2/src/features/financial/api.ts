@@ -223,6 +223,8 @@ export interface LedgerTransaction {
           | "model"
           | "learned"
         explanation?: string
+        /** Why no name is shown, when the statement's layout is known to print none. */
+        reason?: string
         rule?: string
         version?: string
         value?: string

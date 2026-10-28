@@ -25,6 +25,13 @@ export const emptyAnalysisFilters: AnalysisFilters = {
   flowParty: "",
   flowKind: "",
 }
+/** What an empty From or To shows: why no name is printed when that is known, else "Not identified". */
+export function unnamedParty(
+  row: Pick<LedgerTransaction, "label_sources">,
+  field: "from_name" | "to_name"
+) {
+  return row.label_sources?.[field]?.reason || "Not identified"
+}
 export function party(row: LedgerTransaction, side: PartySide) {
   const own =
     side === "from" ? row.direction === "debit" : row.direction === "credit"
@@ -41,7 +48,7 @@ export function party(row: LedgerTransaction, side: PartySide) {
       : name
         ? `name:${name}`
         : `unknown:${side}`,
-    name: name || "Not identified",
+    name: name || unnamedParty(row, side === "from" ? "from_name" : "to_name"),
     suggested:
       row.label_sources?.[side === "from" ? "from_name" : "to_name"]?.source ===
       "description",

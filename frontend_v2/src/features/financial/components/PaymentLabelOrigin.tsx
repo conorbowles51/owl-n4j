@@ -17,6 +17,12 @@ export function PaymentLabelOrigin({
   detail?: boolean
 }) {
   const origin = row.label_sources?.[field]
+  if (origin?.source === "missing" && origin.reason && detail)
+    return (
+      <span className="block text-xs font-normal text-muted-foreground">
+        {origin.explanation}
+      </span>
+    )
   if (!origin || !SHORT[origin.source]) return null
   const short =
     origin.source === "description" && field !== "category"

@@ -34,13 +34,13 @@ class PrintedPartyTests(unittest.TestCase):
                'CLIENTE JORGE EJEMPLO PRUEBA (1) (1) DATO NO VERIFICADO POR ESTA INSTITUCION CLAVE DE RASTREO 2025010140014')
         self.assertEqual(party(tef)[0], 'JORGE EJEMPLO PRUEBA')
         torn = ('1000003 PAGO TRANSFERENCIA SPEI HORA 10:00:05 ENVIADO A BBVA MEXICO A LA CUENTA 0121800000000 00000 AL CLIENTE '
-                'EJEMPLO SERV (1 (1) DATO NO VERIFICADO POR ESTA INSTITUCION CLAVE DE RASTREO 2025010140014 BETO000000000001')
-        self.assertEqual(party(torn)[0], 'EJEMPLO SERV')
+                'EJEMPLO SERVICIOS (1 (1) DATO NO VERIFICADO POR ESTA INSTITUCION CLAVE DE RASTREO 2025010140014 BETO000000000001')
+        self.assertEqual(party(torn)[0], 'EJEMPLO SERVICIOS')
 
     def test_delimited_spei_takes_the_name_field_without_the_qualification(self):
-        sent = ('ENVIO SPEI BBVA MEXICO | EJEMPLO SERV AMB DATO NO VERIFICADO POR ESTA INSTITUCION | 012180001100000000 | '
+        sent = ('ENVIO SPEI BBVA MEXICO | EJEMPLO SERVICIOS AMB DATO NO VERIFICADO POR ESTA INSTITUCION | 012180001100000000 | '
                 '136- 01/01/2025/01-1900000001 | 0000001 | TRASPASO CTAS PROPIAS | INTERCAM BANCO | EJEMPLO SERVICIOS S.A. DE C')
-        self.assertEqual(party(sent), ('EJEMPLO SERV AMB', 'spei-delimited-party'))
+        self.assertEqual(party(sent), ('EJEMPLO SERVICIOS AMB', 'spei-delimited-party'))
         got = ('RECEPCION SPEI | BBVA MEXICO | EJEMPLO SERVICIOS A MBIENTALES SA DE CV DATO NO VERIFICADO POR ESTA '
                'INSTITUCION | 012180001100000000 | BNET01002501010000000005 | 0010125 |')
         self.assertEqual(party(got, 'credit')[0], 'EJEMPLO SERVICIOS A MBIENTALES SA DE CV')
@@ -53,26 +53,27 @@ class PrintedPartyTests(unittest.TestCase):
 
     def test_monex_beneficiary_and_ordering_party_fields_not_the_bank(self):
         self.assertEqual(party('RETIRO Nombre Receptor: BBVA BANCOMER Monto Pago: 100000 Cuenta beneficiaria: 012180000000000000 '
-                               'Nombre Beneficiario: EJEMPLO SERV SA DE CV Clave de Rastreo: 10000001 Referencia Numerica: 1'),
-                         ('EJEMPLO SERV SA DE CV', 'monex-named-party'))
+                               'Nombre Beneficiario: EJEMPLO SERVICIOS SA DE CV Clave de Rastreo: 10000001 Referencia Numerica: 1'),
+                         ('EJEMPLO SERVICIOS SA DE CV', 'monex-named-party'))
         self.assertEqual(party('Depósito Emisor: BBVA BANCOMER ] Fecha Confirmacion de liquidacion:01-01-2019 12:00:00 ] Monto :100000 ] '
-                               'Cuenta ordenante:012180000000000000 ] Nombre del Ordenante:EJEMPLO SERV SA DE C V ] Clave de Rastreo:0026',
-                               'credit')[0], 'EJEMPLO SERV SA DE C V')
+                               'Cuenta ordenante:012180000000000000 ] Nombre del Ordenante:EJEMPLO SERVICIOS SA DE C V ] Clave de Rastreo:0026',
+                               'credit')[0], 'EJEMPLO SERVICIOS SA DE C V')
         self.assertEqual(party('RETIRO BENEFICIARIO KEN EJEMPLO BANCO MIZUHO BANK, LTD. CUENTA 1300000000')[0], 'KEN EJEMPLO')
-        self.assertEqual(party('RETIRO BENEFICIARIO EJEMPLO SERV SA DE CV RFC:ASE000000AA0 BANCO BBVA BANCOMER CUENTA 0110000000 Texto:eur')[0],
-                         'EJEMPLO SERV SA DE CV')
-        self.assertEqual(party('RETIRO Receptor BBVA MEXICO, Cuenta beneficiaria 012180000000000000, Beneficiario EJEMPLO SERV SA DE CV, '
-                               'Concepto TRASPASO CUENTAS PROPIAS, Ref 100000002')[0], 'EJEMPLO SERV SA DE CV')
-        # On a deposit the printed beneficiary is the account holder, so no other side is taken from it.
-        self.assertIsNone(party('Depósito En Cta De Captación Con Origen En Cta De Captación BENEFICIARIO EJEMPLO SERV SA DE CV '
-                                'RFC:ASE000000AA0 BANCO BANCO MONEX CUENTA 2800000 traspaso de fondos del contrato 3000000', 'credit'))
+        self.assertEqual(party('RETIRO BENEFICIARIO EJEMPLO SERVICIOS SA DE CV RFC:ASE000000AA0 BANCO BBVA BANCOMER CUENTA 0110000000 Texto:eur')[0],
+                         'EJEMPLO SERVICIOS SA DE CV')
+        self.assertEqual(party('RETIRO Receptor BBVA MEXICO, Cuenta beneficiaria 012180000000000000, Beneficiario EJEMPLO SERVICIOS SA DE CV, '
+                               'Concepto TRASPASO CUENTAS PROPIAS, Ref 100000002')[0], 'EJEMPLO SERVICIOS SA DE CV')
+        # On a deposit the printed beneficiary is the account holder, so the other side is the contract it came from.
+        self.assertEqual(party('Depósito En Cta De Captación Con Origen En Cta De Captación BENEFICIARIO EJEMPLO SERVICIOS SA DE CV '
+                               'RFC:ASE000000AA0 BANCO BANCO MONEX CUENTA 2800000 traspaso de fondos del contrato 3000000', 'credit'),
+                         ('Account 3000000 (no name printed)', 'third-party-account'))
 
     def test_bbva_spei_name_follows_the_references(self):
         self.assertEqual(party('T20 SPEI RECIBIDOSANTANDER 10000000000000001 Ref. 0100000001 014 0001400000001 1000001 '
                                '20250101400140ABC0000000000001 EJEMPLO GERENCIA DE TESORERI', 'credit'),
                          ('EJEMPLO GERENCIA DE TESORERI', 'bbva-transfer-party'))
         self.assertEqual(party('117 SPE] ENVIADO KAPITAL 0010125TRASPASO CUENTAS PROPIAS Ref. 0000000001 128 00128180000000000000 '
-                               '002601002501010000000001 EJEMPLO SERV')[0], 'EJEMPLO SERV')
+                               '002601002501010000000001 EJEMPLO SERVICIOS')[0], 'EJEMPLO SERVICIOS')
         self.assertEqual(party('T20 SPEI RECIBIDOKUSPIT 0000001PRESTAMO Ref. 0100000002 653 00653180000000000000 EXAMPLEPAY '
                                '0100000003 EJEMPLO IMPULSORA SA DE CV', 'credit')[0], 'EJEMPLO IMPULSORA SA DE CV')
         self.assertEqual(party('T17 SPEI ENVIADO AZTECA 0010125NOMINA 010125 Ref. 0000000002 127 CARLOS EJEMPLO PRUEBA')[0], 'CARLOS EJEMPLO PRUEBA')
@@ -102,8 +103,9 @@ class PrintedPartyTests(unittest.TestCase):
         self.assertEqual(party('(BE) PAGO: PAGO REFERENCIADO SAT'), ('SAT', 'tax-authority-payee'))
         self.assertEqual(party('X01 IMSS/INF/AFORE VIA ELECT. PAGO SIPARE E1000000001 202501 100001 Ref. 100N000001'),
                          ('IMSS/INF/AFORE', 'social-security-payee'))
-        # A federal tax payment names no payee; it is not the bank's.
-        self.assertIsNone(party('0000000 CGO IMPTO FED TRANSF ELECT 01011XA0000000000001'))
+        # A federal tax payment is paid to the tax authority, not to the bank.
+        self.assertEqual(party('0000000 CGO IMPTO FED TRANSF ELECT 01011XA0000000000001'),
+                         ('SAT (Servicio de Administración Tributaria)', 'tax-authority-payee'))
 
     def test_the_statement_bank_is_the_other_side_of_its_own_services(self):
         for description, direction, rule in [
@@ -125,7 +127,7 @@ class PrintedPartyTests(unittest.TestCase):
                 self.assertEqual(party(description, direction), ('Example Bank', rule))
         # A fee for a transfer is the bank's even though the transfer's beneficiary is printed in it.
         fee = ('Comision Por Transferencia Retiro de Comision e IVA (Comision $5.00, IVA $.80), Receptor BBVA MEXICO, '
-               'Cuenta beneficiaria 012180000000000000, Beneficiario EJEMPLO SERV SA DE CV, Ref 100000003')
+               'Cuenta beneficiaria 012180000000000000, Beneficiario EJEMPLO SERVICIOS SA DE CV, Ref 100000003')
         self.assertEqual(party(fee), ('Example Bank', 'bank-charge'))
         self.assertIsNone(party('0000000 ABO POR INTERESES DEL PERIODO 01-07-2021', 'credit', institution=None))
         # A card issuer's interest charge is the issuer's.
@@ -140,9 +142,11 @@ class PrintedPartyTests(unittest.TestCase):
                          ('EXAMPLE,JANE Q', 'credit-union-transfer-party'))
         self.assertEqual(party('Deposit Online Banking Transfer January From EXAMPLE,JANE Q xxxxxxxxxx Share 0001', 'credit')[0],
                          'EXAMPLE,JANE Q')
-        # The member's own share or loan is not another party.
-        self.assertIsNone(party('Withdrawal Online Banking Transfer To Share 0001 Funds Transfer via Mobile'))
-        self.assertIsNone(party('Withdrawal Online Banking Transfer To Loan ############0001 Funds Transfer via Mobile'))
+        # The member's own share or loan is not another party: it is shown as the member's own account.
+        self.assertEqual(party('Withdrawal Online Banking Transfer To Share 0001 Funds Transfer via Mobile'),
+                         ('Own share account 0001', 'own-account-transfer'))
+        self.assertEqual(party('Withdrawal Online Banking Transfer To Loan ############0001 Funds Transfer via Mobile'),
+                         ('Own loan account …0001', 'own-account-transfer'))
         self.assertEqual(party('Withdrawal Bill Payment Bill Paid-AMERICAN EDUCATION SE Conf #01'), ('AMERICAN EDUCATION SE', 'bill-payee'))
         self.assertEqual(party('Paid To - Pepco Paymentus Billpay'), ('Pepco Paymentus Billpay', 'named-payment-party'))
         self.assertEqual(party('Paid To - Capital One Mobile Pmt Chk 1000001')[0], 'Capital One')
@@ -187,7 +191,7 @@ class PrintedPartyTests(unittest.TestCase):
     def test_nothing_is_invented_where_no_party_is_printed(self):
         for description, direction in [('DEPOSIT', 'credit'), ('ABONO A CUENTA DE CHEQUES', 'credit'), ('W01 TRASPASO A TERCEROS', 'debit'),
                                        ('G30 RECIBO NO. Ref. A0BCDE100FGH', 'debit'), ('CARGO A CUENTA DE CHEQUES', 'debit'),
-                                       ('Check 1001', 'debit'), ('R01 PAGO DE NOMINA EJEMPLO SERV SA DE CV Ref. BC 1000000001', 'debit')]:
+                                       ('Check 1001', 'debit'), ('R01 PAGO DE NOMINA EJEMPLO SERVICIOS SA DE CV Ref. BC 1000000001', 'debit')]:
             with self.subTest(description=description):
                 self.assertIsNone(party(description, direction))
 
@@ -197,7 +201,7 @@ class PrintedPartyTests(unittest.TestCase):
         self.assertEqual(party('~Wi thdrawal Debit Card 01/01 0 0000000001 0 EJEMPLO CAFE MD')[0], 'EJEMPLO CAFE')
         # A bank service on an account with no bank recorded names nobody, not the name printed in it.
         for description in ['Comision Por Transferencia Retiro de Comision e IVA (Comision $5.00, IVA $.80), Receptor BBVA MEXICO, '
-                            'Cuenta beneficiaria 012180000000000000, Beneficiario EJEMPLO SERV SA DE CV, Ref 100000003',
+                            'Cuenta beneficiaria 012180000000000000, Beneficiario EJEMPLO SERVICIOS SA DE CV, Ref 100000003',
                             'Withdrawal Debit Card Fee\nINTERNATIONAL FEE\nDate 01/01/23', '| SERVICE CHARGE']:
             with self.subTest(description=description):
                 self.assertIsNone(party(description, institution=None))
@@ -236,6 +240,174 @@ class PrintedPartyTests(unittest.TestCase):
                                'EJEMPLO SA DE CV {1} DATO NO VERIFICADO POR ESTA INSTITUCION')[0], 'EJEMPLO SA DE CV')
         self.assertEqual(party('ENVIO SPEI HSBC MEXICO JUAN EJEMPLO 021180000000000000 PAGO 1')[0], 'JUAN EJEMPLO')
         self.assertEqual(party('ENVIO SPEI BBVA MEXICO | EJEMPLO SA DAT0 NO VERIFICADO | 012180001100000000 |')[0], 'EJEMPLO SA')
+
+
+def reason(description, direction='debit', kind='checking', institution='Example Bank'):
+    found = infer_payment_labels(description, direction=direction, account_type=kind, institution=institution)
+    assert 'counterparty' not in found or 'counterparty_reason' not in found
+    found = found.get('counterparty_reason')
+    if found:
+        assert found['source'] == 'description' and found['version'] == VERSION and found['explanation'] and found['value']
+    return found['rule'] if found else None
+
+
+class PhaseTwoPartyTests(unittest.TestCase):
+    def test_own_account_transfers(self):
+        for description, direction, expected in [
+            ('3000001 CARGO TRANSFERENCIA ENLACE TRASPASO CUENTAS PROPIAS', 'debit', 'Own account (number not printed)'),
+            ('AB TRANSF SPEI TRASPASO CTAS PROPIAS 1 012790000000001239', 'credit', 'Own account …1239'),
+            ('N03 TRASPASO CUENTAS PROPIAS CUENTA: 0100000077 BNET Ref. 0040000007', 'credit', 'Own account …0077'),
+            ('Withdrawal Online Banking Transfer To Loan ############0067 Funds Transfer via Mobile', 'debit', 'Own loan account …0067'),
+            ('Deposit Transfer From Share 0000', 'credit', 'Own share account 0000'),
+            ('TRUIST ONLINE TRANSFER ONLINE TO ****0014-', 'debit', 'Own account ****0014'),
+            ('AUTO OVERDRAFT TRANSFER ACCOUNT NUMBER 1000000000123', 'credit', 'Own account …0123'),
+            ('E57 TRASPASO ENTRE CUENTAS FOLIO: 0010000001 250.00MXP Ref. 1000001.1002.01', 'credit', 'Own account (number not printed)'),
+        ]:
+            with self.subTest(description=description):
+                self.assertEqual(party(description, direction), (expected, 'own-account-transfer'))
+        # A name printed in the transfer's own field wins over the own-account wording.
+        self.assertEqual(party('ENVIO SPEI BBVA MEXICO | EJEMPLO SA DE CV DATO NO VERIFICADO POR ESTA INSTITUCION | '
+                               '012180000000001234 | TRASPASO CTAS PROPIAS |')[0], 'EJEMPLO SA DE CV')
+        # The wrong direction is not read as the holder's own transfer.
+        self.assertIsNone(party('Deposit Transfer From Share 0000', 'debit'))
+
+    def test_fixed_place_mexican_lines(self):
+        self.assertEqual(party('0000000 CGO IMPTO FED TRANSF ELECT 04200AB1000000000001')[1], 'tax-authority-payee')
+        self.assertEqual(party('PAGO CUOTAS PATRONALES Y00AAAA00A0000000000000000AAA000000N000N00Z000000010LA')[1], 'social-security-payee')
+        self.assertEqual(party('C61 COMPRA CHEQUE DE CAJA JUAN EJEMPLO PEREZ Ref. 1001'), ('JUAN EJEMPLO PEREZ', 'cashier-cheque-payee'))
+        self.assertEqual(party('TJ3 SITH200100001 EJEMPLO GAS S DE RL DE CV 1000001 Ref. 100000000000001', 'credit'),
+                         ('EJEMPLO GAS S DE RL DE CV', 'bbva-sit-payer'))
+        self.assertEqual(party('Z32 BBVA LEASING PAGO FACTURA FE000000000001 Ref. 200001'), ('BBVA LEASING', 'bbva-cie-payee'))
+        self.assertEqual(party('Z3 CARGO COBRANZA EJEMPLOLEASIN Ref. 0000200001'), ('EJEMPLOLEASIN', 'bbva-direct-debit-payee'))
+        self.assertEqual(party('RECEPCION SPEI | CB INTERCAM | DATO NO VERIFICADO POR ESTA INSTITUCION | | INTERCACB20220101-1 | 1 | '
+                               'ABONO INTERCAM CTO 1 FOL 1 | INTERCAM BANCO | EJEMPLO SERVICIOS | 136180000000000001 |', 'credit')[1], 'brokerage-party')
+        self.assertEqual(party('P14 PODER EJECUTIVO DEL 1000001 Ref. GUIA:1000001'), ('PODER EJECUTIVO DEL', 'bbva-cie-payee'))
+        self.assertEqual(party('618000001 PAGO SERVICIO GOBIERNO DE EJEMPLO'), ('GOBIERNO DE EJEMPLO', 'service-payee'))
+        self.assertEqual(party('0000000 DOMICILIACION PAGO SERVICIO 0000001 RFC EJE010101AB1 240301 0,000,048.48 EJEMPLO FINANCIAL SERVICES'),
+                         ('EJEMPLO FINANCIAL SERVICES', 'direct-debit-payee'))
+        self.assertEqual(party('DOMICILIACION PAGO SERVICIO 0250115 RFC EJE010101AB1'), ('RFC EJE010101AB1 (no name printed)', 'third-party-account'))
+        self.assertEqual(party('ABONO POR DEVOLUCIONES SPEI HORA 10:00:00 DEVUELTO POR EJEMPLO BANK CUENTA 021180000000000001 '
+                               'CLIENTE EJEMPLO SEGUROS SA CLAVE DE RASTREO 20250101400140BET0000000000001 CAUSA DEVOLUCION 02 Cuenta bloqueada',
+                               'credit'), ('EJEMPLO SEGUROS SA', 'returned-transfer-party'))
+        self.assertEqual(party('7000001 PAGO TRANSFERENCIA SPEI HORA 14:00:00 ENVIADO A BANAMEX A LA CUENTA 002000000000000001 —_— AL CLIENTE '
+                               'MARIA EJEMPLO (1) (1) DATO NO VERIFICADO POR ESTA INSTITUCION')[0], 'MARIA EJEMPLO')
+        self.assertEqual(party('ABONO TRANSFERENCIA TEF RECIBIDO DE BBVA MEXICO DE LA CUENTA 012180000000000001 DEL CLIENTE ANA EJEMPLO '
+                               'CLAVE DE RASTREO SU0000000000 01 1000000001 REF 1', 'credit')[0], 'ANA EJEMPLO')
+        for description, direction in [('(BE)TRASPASO A CUENTA: 001900000028', 'debit'),
+                                       ('N06 PAGO CUENTA DE TERCERO CUENTA: 1500000088 BNET Ref. 0000600047', 'debit'),
+                                       ('15/DIC_NO6 PAGO CUENTA DE TERCERO BNET 1100000086 NOMINA 1ER QNA DIC Ref. 0010000016', 'debit'),
+                                       ('E17 ORDEN DE PAGO EXTRANJERO ORDENANTE: /04400000020 Ref. 3800006.0173.01', 'credit')]:
+            with self.subTest(description=description):
+                self.assertEqual(party(description, direction)[1], 'third-party-account')
+
+    def test_bbva_concept_and_name_typed_together(self):
+        self.assertEqual(party('T17 SPEI ENVIADO MIFEL 0310125NOMINA 2A QNA ENE25 JUAN EJEMPLO PEREZ'), ('JUAN EJEMPLO PEREZ', 'bbva-transfer-party'))
+        self.assertEqual(party('T17 SPEI ENVIADO SANTANDER 0310125FINIQUITO ANA EJEMPLO GARCIA'), ('ANA EJEMPLO GARCIA', 'bbva-transfer-party'))
+        self.assertEqual(party('T17 SPEI ENVIADO BANAMEX 0280225GTOS A COMPROBAR LUIS EJEMPLO DIAZ')[0], 'LUIS EJEMPLO DIAZ')
+        self.assertEqual(party('T17 SPEI ENVIADO BANAMEX 0140325PAGO COT C10001 EJEMPLO EMPRESA SA DE CV')[0], 'EJEMPLO EMPRESA SA DE CV')
+        # A concept with no name after it names nobody.
+        self.assertIsNone(party('T17 SPEI ENVIADO BANAMEX 0000001NOMINA 2A QNA ENE21 Ref. 0000500001 002'))
+        self.assertIsNone(party('T17 SPEI ENVIADO SANTANDER'))
+
+    def test_us_layouts(self):
+        self.assertEqual(party('DEBIT CARD PURCHASE DD/BR #300001 Q35 11-15 EXAMPLETOWN MD 7000'), ('DD/BR', 'debit-card-descriptor'))
+        self.assertEqual(party('ACH CORP DEBIT EJEMPLOMS PYMT EJEMPLOMS EXAMPLE SHOP CUSTOMER ID 000-0000001-000')[0], 'EJEMPLOMS')
+        self.assertEqual(party('ACH CORP DEBIT DISCOUNT TRUIST MERCH SVC EXAMPLESHOP CUSTOMER ID 1')[0], 'TRUIST MERCH SVC')
+        self.assertEqual(party('Recurring Withdrawal Bill Payment #000060000001 EXAMPLE LEASING 200 WEST DATA DR EXAMPLE UT'),
+                         ('EXAMPLE LEASING', 'bill-payee'))
+        self.assertEqual(party('Deposit Debit Card CASH APP*JANE*CASH OUT San Francisco CA Date 12/30/23 o 0000800001 O 4000', 'credit'),
+                         ('Cash App (JANE)', 'card-push-payment-source'))
+        self.assertEqual(party('POS Credit Adjustment 2000 Transaction 10-25-21 Example Seniorcare', 'credit')[0], 'Example Seniorcare')
+        self.assertEqual(party('VISA MONEY TRANSFER CREDIT 04-16-24 NEW YORK NY 7000 EXAMPLEPAY', 'credit')[0], 'EXAMPLEPAY')
+        self.assertEqual(party('Wi thdrawal ACH EXAMPLE POWER TYPE: BILLPAY ID: 0000000001 CO: EXAMPLE POWER NAME: JANE DOE ACH Trace Number: 1')[0],
+                         'EXAMPLE POWER')
+        self.assertEqual(party('Withdrawal Debit Card 11/30 ~ 0000040001 0 EXAMPLE PARKING LOC 600 WASHINGTON DC')[1], 'debit-card-descriptor')
+
+    def test_card_statement_lines(self):
+        card = dict(kind='credit_card')
+        for description, expected in [('EXAMPLE STEAK 0100001 FALLS CHURCH VA', 'EXAMPLE STEAK'),
+                                      ('F200000JP000ABCDE EXAMPLE NAIL BAR WASHINGTON DC', 'EXAMPLE NAIL BAR'),
+                                      ('EXAMPLEAIR0010000000001 FORT WORTH TX NAME: DOE/JANE DEPART: 08/31/23', 'EXAMPLEAIR')]:
+            with self.subTest(description=description):
+                self.assertEqual(party(description, **card), (expected, 'card-line-merchant'))
+        # Places, addresses and the issuer's own entries are not merchants.
+        self.assertIsNone(party('COLUMBIA HEIGHTS', **card))
+        self.assertIsNone(party('60001 - 1000 Q STEXAMPLETOWNDC', **card))
+        self.assertIsNone(party('OFFER 04 MOVED TO STANDARD PURCH Promo Purchase-Offer 4', **card))
+        self.assertEqual(party('tnl.e.resl Charge on Purchases', **card), ('Example Bank', 'bank-charge'))
+        self.assertEqual(party('PYMT CARD SECURITY 800-0000001', **card), ('Example Bank', 'bank-charge'))
+
+    def test_more_bank_services(self):
+        for description, direction, rule in [('F04 VENTA FONDOS DE INVERSION OPERADO EN CANAL BNET Ref. EJEMPLO B-5 00', 'credit', 'bank-investment'),
+                                             ('Y45 COMPENSACI N POR RETRASO Ref. COMP SPEI', 'credit', 'bank-charge'),
+                                             ('C201.S.R. RETENIDO', 'debit', 'bank-tax-withheld'),
+                                             ('M50 CAMBIOS/DERIVADOS/VOSTRO 100002 EJEMPLO SA DE CV Ref. 9990000001', 'credit', 'bank-currency-exchange'),
+                                             ('CARGO A CUENTA|CLIENTE COMPRA|DEAL: 10000001|MEX|INTERCAM PAGA 1000.00 MXP|TC 20.2010', 'debit', 'bank-currency-exchange'),
+                                             ('Deposit Dividend 0.050% Annual Percentage Yield Earned 0.05% from 07/01/22 through 09/30/22', 'credit', 'bank-interest'),
+                                             ('| LINE OF CREDIT PAYMENT 200000000000001', 'debit', 'bank-credit-line'),
+                                             ('NO CHARGE POSITIVE AVAIL BAL 36', 'credit', 'bank-charge')]:
+            with self.subTest(description=description):
+                self.assertEqual(party(description, direction), ('Example Bank', rule))
+
+    def test_reasons_where_no_name_is_printed(self):
+        for description, direction, kind, rule in [
+            ('CAPITAL ONE MOBILE PYMTAuthDate 30-Sep', 'credit', 'credit_card', 'card-payment-source'),
+            ('ONLINE PAYMENT, THANK YOU', 'credit', 'credit_card', 'card-payment-source'),
+            ('W01 TRASPASO A TERCEROS PAGO EJEMPLO BMRCASH Ref. REFBNTC00000001', 'debit', 'checking', 'bbva-batch-payment'),
+            ('_WO01 TRASPASO A TERCEROS ABONO PROYECTO EJEMPLO BMRCASH Ref. REFBNTC00000001', 'debit', 'checking', 'bbva-batch-payment'),
+            ('W02 DEPOSITO DE TERCERO 20000001 BMRCASH Ref. REFBNTC00000002', 'credit', 'checking', 'bbva-batch-payment'),
+            ('R01 PAGO DE NOMINA EJEMPLO SERVICIOS SA DE CV Ref. BC 4200000001', 'debit', 'checking', 'payroll-batch'),
+            ('BT3 TRANSF SPEI BANAMEX NC0000004 NOMINA 1A QNA MAR25 Ref. 0000000001 002', 'debit', 'checking', 'payroll-batch'),
+            ('E01 ORDEN DE PAGO EXTRANJERO INTERNET 0000000001000000030000.00USD Ref. 4000001.0177.01', 'debit', 'checking', 'foreign-payment-order'),
+            ('3481', 'debit', 'checking', 'cheque-number-only'),
+            ('| CHECK NUMBER 9001', 'debit', 'checking', 'cheque-number-only'),
+            ('M97 DEPOSITO CHEQUE BBVA', 'credit', 'checking', 'cheque-deposit'),
+            ('C02 DEPOSITO EN EFECTIVO Ref. 10001', 'credit', 'checking', 'cash-deposit'),
+            ('Withdrawal at ATM #000000000001 1000 EXAMPLE ST NE WASHINGTON DC PX0001', 'debit', 'checking', 'cash-withdrawal'),
+            ('G30 RECIBO NO. Ref. P0QAAA0000AA', 'debit', 'checking', 'bank-collected-premium'),
+            ('0000000 APORT LINEA CAPTURA INTERNET 060000000001', 'debit', 'checking', 'capture-line-payment'),
+            ('T22 SPEI DEVUELTOBANAMEX', 'credit', 'checking', 'returned-transfer'),
+            ('CARGO A CUENTA DE CHEQUES', 'debit', 'checking', 'type-only'),
+            ('BUS ONLINE ACH SETTLEMENT', 'debit', 'checking', 'ach-batch'),
+            ('T17 SPEI ENVIADO SANTANDER', 'debit', 'checking', 'bbva-transfer-no-name'),
+            ('11000001 Retiro 0 0 1.00000000 0 0.000000', 'debit', 'checking', 'brokerage-cash-movement'),
+        ]:
+            with self.subTest(description=description):
+                self.assertIsNone(party(description, direction, kind))
+                self.assertEqual(reason(description, direction, kind), rule)
+        # A printed name is never replaced by a reason, and an unknown layout gets neither.
+        self.assertIsNone(reason('T17 SPEI ENVIADO MIFEL 0310125NOMINA 2A QNA ENE25 JUAN EJEMPLO PEREZ'))
+        self.assertIsNone(reason('SOMETHING UNREADABLE 1A2B'))
+
+    def test_precision_review_fixes(self):
+        # An account number is taken only when it is a valid CLABE (bank code and control digit) and printed
+        # before the fiscal block; otherwise the own account is shown without a number.
+        self.assertEqual(party('AB TRANSF SPEI TRASPASO CTAS PROPIAS 012180000000000125', 'credit'),
+                         ('Own account …0125', 'own-account-transfer'))
+        self.assertEqual(party('AB TRANSF SPEI TRASPASO CTAS PROPIAS 012180000000000126', 'credit'),
+                         ('Own account (number not printed)', 'own-account-transfer'))
+        self.assertEqual(party('ABONO TRANSFERENCIA ENLACE TRASPASO CUENTAS PROPIAS Informacion fiscal UUID 012345678901234567', 'credit'),
+                         ('Own account (number not printed)', 'own-account-transfer'))
+        for description, name in [
+            ('Withdrawal Bill Payment #000000000001 EXAMPLE STREAM 800-555-0100 CA', 'EXAMPLE STREAM'),
+            ('Withdrawal Bill Payment #000000000002 EXAMPLE PAY* LOAN 1A2B3C4D 800-555-0101 CA', 'EXAMPLE PAY'),
+            ('Withdrawal Bill Payment #000000000003 Example Club•AB12CD34E Example.com/bill WA', 'Example Club'),
+            ('Withdrawal Bill Payment #000000000004 EXAMPLE LEASING12345 HTTPSEXAMPLE.COM UT', 'EXAMPLE LEASING'),
+        ]:
+            with self.subTest(description=description):
+                self.assertEqual(party(description), (name, 'bill-payee'))
+        self.assertIsNone(party('ACH CORP DEBIT PYMT'))
+        self.assertEqual(party('ACH CORP DEBIT EXAMPLE UTILITY PYMT'), ('EXAMPLE UTILITY', 'ach-company'))
+        self.assertEqual(party('T17 SPEI ENVIADO BANCOPPEL 0300425PRESTAMO PERSONAL JUAN EJEMPLO PEREZ'),
+                         ('JUAN EJEMPLO PEREZ', 'bbva-transfer-party'))
+        for description, name in [
+            ('24000000AAAAAAAA1 TSTº EXAMPLE CAFE WASHINGTON DC', 'EXAMPLE CAFE'),
+            ('sa "EXAMPLE APPAREL TOWNSVILLE MD', 'EXAMPLE APPAREL TOWNSVILLE'),
+            ('24000000AAAAAAAA2 EXAMPLE STORE • 800-555-0102 MN', 'EXAMPLE STORE'),
+            ('TM ·EXAMPLETIX S0S-555-0103 CA', 'TM ·EXAMPLETIX'),
+        ]:
+            with self.subTest(description=description):
+                self.assertEqual(party(description, 'debit', 'credit_card'), (name, 'card-line-merchant'))
 
 
 if __name__ == '__main__':

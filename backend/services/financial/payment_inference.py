@@ -7,7 +7,7 @@ payment. Explicit investigator labels always take precedence in payment_labels.
 import re
 import unicodedata
 
-VERSION = 'description-labels/6'
+VERSION = 'description-labels/7'
 
 
 def normalized(value):
@@ -116,13 +116,27 @@ MERCHANTS = [(re.compile(pattern), name, category) for pattern, name, category i
 
 
 def infer_payment_labels(description, *, direction, account_type=None, institution=None):
-    """Return label values with the rule and explanation used for each one."""
+    """Return label values with the rule and explanation used for each one.
+
+    With no name for the other side, 'counterparty_reason' says why when the layout is
+    known to print none (services.financial.payment_party_reasons)."""
     if direction not in ('credit', 'debit'):
         return {}
     raw = ' '.join((description or '').split())
     value = normalized(raw)
     if not value:
         return {}
+    result = _infer(raw, value, direction=direction, account_type=account_type, institution=institution)
+    if 'counterparty' not in result:
+        from services.financial.payment_party_reasons import unnamed_reason
+        reason = unnamed_reason(value, direction=direction, account_type=account_type)
+        if reason:
+            text, rule, explanation = reason
+            result['counterparty_reason'] = dict(value=text, source='description', rule=rule, version=VERSION, explanation=explanation)
+    return result
+
+
+def _infer(raw, value, *, direction, account_type, institution):
     result = {}
 
     def suggest(field, label, rule, explanation):
@@ -139,7 +153,11 @@ def infer_payment_labels(description, *, direction, account_type=None, instituti
         category('Card payments', 'card-payment', 'the card payment wording')
         return result
 
-    if account_type == 'credit_card' and direction == 'credit' and re.search(r'\b(?:CASH BACK REWARD|REWARD REDEMPTION)\b', value):
+    # Card security / payment protection products are the issuer's own charge.
+    if account_type == 'credit_card' and institution and re.match(r'PYMT CARD SECURITY\b', value):
+        suggest('counterparty', institution, 'bank-charge', 'The description names the card issuer’s payment-protection product; the issuer name comes from the statement account.')
+
+    if account_type == 'credit_card' and direction == 'credit' and re.search(r'\b(?:CASH BACK REWARD|REWARD REDEMPTION|REWARD CREDIT)\b', value):
         category('Card rewards', 'card-reward', 'the reward credit wording')
         if institution:
             suggest('counterparty', institution, 'issuer-reward', 'The statement describes a reward credit from the card issuer.')
@@ -254,6 +272,11 @@ def infer_payment_labels(description, *, direction, account_type=None, instituti
             'The original description remains available; a processor prefix does not establish the ultimate recipient.')
         if direction == 'credit' and 'category' not in result:
             category('Merchant credits', 'merchant-credit-descriptor', 'the merchant descriptor on this card credit')
+    if account_type == 'credit_card' and 'counterparty' not in result:
+        from services.financial.payment_parties import card_line_merchant
+        found = card_line_merchant(raw, institution=institution)
+        if found:
+            suggest('counterparty', *found)
     if 'category' not in result:
         found = bank_wording_category(value, direction=direction, account_type=account_type)
         if found:
@@ -265,7 +288,7 @@ def infer_payment_labels(description, *, direction, account_type=None, instituti
 # the card's date and the authorisation numbers. OCR splits words ("Wi t
 # hdrawal"), so the prefix is recognised with spaces removed.
 _DEBIT_CARD_PREFIXES = ('WITHDRAWALDEBITCARD', 'RECURRINGWITHDRAWALDEBITCARD', 'ITHDRAWALDEBITCARD', 'IITHDRAWALDEBITCARD',
-                        'WITHDRAWALADJUSTMENTDEBITCARD', 'RECURRINGWITHDRAWALADJUSTMENTDEBITCARD', 'WITHDRAWALPOS', 'WITHDRAWALPCS',
+                        'WITHDRAWALADJUSTMENTDEBITCARD', 'WITHDRAWALADJUSTMENTPOS', 'RECURRINGWITHDRAWALADJUSTMENTDEBITCARD', 'WITHDRAWALPOS', 'WITHDRAWALPCS',
                         'POSDEBIT', 'PURCHASEON', 'PURCHASEWITHCASHBACKON', 'POSPURCHASE', 'DEBITCARDPURCHASE', 'CHECKCARD')
 
 
@@ -273,7 +296,7 @@ def _card_tail(value, direction):
     """The merchant part of a debit card line, or None when it is not one."""
     squashed = re.sub(r'[^A-Z]', '', value[:60])
     if squashed.startswith(_DEBIT_CARD_PREFIXES):
-        for pattern in (r'\b[0O]\s+\d{5,}\s+[0O]?\s*', r'#\d{6,}\s+', r'\bTRANSACTION\s+[\d\-]+\s+', r'\bCARD\s+\d{4}\s+[\d\-]{8}\s+', r'\bON\s+\d{2}/\d{2}\s+'):
+        for pattern in (r'(?:\b[0O]|~|_[0O])\s+\d{5,}\s+[0O]?\s*', r'#\d{6,}\s+', r'\bTRANSACTION\s+[\d\-]+\s+', r'\bCARD\s+\d{4}\s+[\d\-]{8}\s+', r'\bON\s+\d{2}/\d{2}\s+'):
             found = re.search(pattern, value)
             if found:
                 return value[found.end():]

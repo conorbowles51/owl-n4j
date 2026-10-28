@@ -3,7 +3,7 @@ import { paymentInventory } from "../lib/payment-inventory"
 import { knownAccountGroup, type KnownPaymentAccount } from "../lib/known-payment-accounts"
 import { openPaymentParty } from "../lib/payment-party-navigation"
 import { paymentGroup } from "../lib/investigator-workspace"
-import { amountGroupName, amountOf } from "../lib/transaction-analysis"
+import { amountGroupName, amountOf, unnamedParty } from "../lib/transaction-analysis"
 import type { LedgerTransaction } from "../api"
 import { formatLedgerAmount } from "../lib/ledger-format"
 import { Button } from "@/components/ui/button"
@@ -383,7 +383,7 @@ export function InvestigationTransactionTable({
                     (row.direction === "debit"
                       ? row.account_label
                       : row.counterparty_raw)) ||
-                    "Not identified"}
+                    unnamedParty(row, "from_name")}
                 </button>
                 <PaymentLabelOrigin row={row} field="from_name" />
               </td>
@@ -396,7 +396,7 @@ export function InvestigationTransactionTable({
                     (row.direction === "credit"
                       ? row.account_label
                       : row.counterparty_raw)) ||
-                    "Not identified"}
+                    unnamedParty(row, "to_name")}
                 </button>
                 <PaymentLabelOrigin row={row} field="to_name" />
               </td>

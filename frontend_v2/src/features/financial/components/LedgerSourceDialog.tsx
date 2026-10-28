@@ -1,5 +1,6 @@
 import { PaymentLabelsEditor } from "./PaymentLabelsEditor"
 import { PaymentLabelOrigin } from "./PaymentLabelOrigin"
+import { unnamedParty } from "../lib/transaction-analysis"
 import { Disclosure } from "./Disclosure"
 import { InfoTip } from "./InfoTip"
 import { RowJudgementMarkers } from "./JudgementCalls"
@@ -218,7 +219,8 @@ export function LedgerSourceDialog({
                         From
                       </dt>
                       <dd>
-                        {data.transaction.from_name || "Not identified"}
+                        {data.transaction.from_name ||
+                          unnamedParty(data.transaction, "from_name")}
                         <PaymentLabelOrigin
                           row={data.transaction}
                           field="from_name"
@@ -231,7 +233,8 @@ export function LedgerSourceDialog({
                         To
                       </dt>
                       <dd>
-                        {data.transaction.to_name || "Not identified"}
+                        {data.transaction.to_name ||
+                          unnamedParty(data.transaction, "to_name")}
                         <PaymentLabelOrigin
                           row={data.transaction}
                           field="to_name"

@@ -39,7 +39,7 @@ class PaymentInferenceTests(unittest.TestCase):
             ('E18 COMISION ORDEN DE PAGO Ref. 1000000.0001.01', 'debit', 'Bank fees', 'BBVA'),
             ('W01 TRASPASO A TERCEROS RENTA 21 DE 30 BMRCASH Ref. REFBNTC00000001', 'debit', 'Rent and leases', None),
             ('W02 DEPOSITO DE TERCERO EJEMPLOTECNIA BMRCASH Ref. REFBNTC00000002', 'credit', 'Deposits', 'EJEMPLOTECNIA'),
-            ('E17 ORDEN DE PAGO EXTRANJERO ORDENANTE: /1000000001 Ref. 1000000.0001.01', 'credit', 'Transfers', None),
+            ('E17 ORDEN DE PAGO EXTRANJERO ORDENANTE: /1000000001 Ref. 1000000.0001.01', 'credit', 'Transfers', 'Account 1000000001 (no name printed)'),
         ]:
             with self.subTest(description=description):
                 result = self.infer(description, direction, 'checking')

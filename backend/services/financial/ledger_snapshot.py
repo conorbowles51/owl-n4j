@@ -233,7 +233,11 @@ def render_ledger_report(snapshot):
 
     def payment_label(row, field):
         value = row.get(field) or ('Uncategorized' if field == 'category' else '')
-        source = (row.get('label_sources') or {}).get(field, {}).get('source')
+        origin = (row.get('label_sources') or {}).get(field, {})
+        source = origin.get('source')
+        if not value and origin.get('reason'):
+            # The statement's layout prints no name for the other side; say why rather than leave it blank.
+            value = origin['reason']
         if source == 'description':
             value += ' (suggested)'
         elif source == 'model':

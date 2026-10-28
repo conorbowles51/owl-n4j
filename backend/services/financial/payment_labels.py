@@ -138,7 +138,7 @@ def payment_label_view(row, account=None, stored=_LOOKUP):
     sender, recipient = (other, own) if row.direction == 'credit' else (own, other)
     own_source = dict(source='account', explanation='From the saved statement account details.')
     other_source = (dict(source='statement', explanation='From the recorded counterparty field.')
-                    if row.counterparty_raw else inferred.get('counterparty', dict(source='missing')))
+                    if row.counterparty_raw else inferred.get('counterparty') or _missing(inferred.get('counterparty_reason')))
     sources = dict(category=inferred.get('category', dict(source='missing')),
                    from_name=other_source if row.direction == 'credit' else own_source,
                    to_name=own_source if row.direction == 'credit' else other_source)
@@ -156,6 +156,14 @@ def payment_label_view(row, account=None, stored=_LOOKUP):
         values[side] = link['label']
         sources[side] = dict(source='investigator', explanation='Linked by an investigator to an existing ' + link['kind'] + '.', identity_kind=link['kind'], identity_id=link['id'])
     return dict(**values, counterparty_link=link, label_sources=sources, label_version=labels.get('version', 0))
+
+
+def _missing(reason):
+    """No name for the other side; with the reason when the statement's layout is known to print none."""
+    if not reason:
+        return dict(source='missing')
+    return dict(source='missing', reason=reason['value'], rule=reason['rule'], version=reason['version'],
+                explanation=reason['explanation'])
 
 
 def _stored_category(row):
