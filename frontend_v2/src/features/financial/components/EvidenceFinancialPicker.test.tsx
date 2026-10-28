@@ -88,13 +88,17 @@ it("browses folders, retains overlapping selections and sends existing PDFs with
     folder_ids: ["folder"],
     include_other_formats: true,
   })
-  fireEvent.click(screen.getByRole("button", { name: /Send .* to Financial/ }))
+  fireEvent.click(screen.getByRole("button", { name: /Add .* to Financial review/ }))
   await waitFor(() =>
     expect(screen.getByTestId("location")).toHaveTextContent(
       "/cases/case/financial?view=statements&batch=batch"
     )
   )
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+  // The screen it came from is recorded with the send (activity trail).
+  expect(vi.mocked(fetchAPI).mock.calls[2][1]?.headers).toEqual({
+    "X-Loupe-Origin": "financial_statement_files",
+  })
   expect(vi.mocked(fetchAPI).mock.calls[2][1]?.body).toEqual({
     request_id: expect.any(String),
     file_ids: ["pdf"],
@@ -176,9 +180,9 @@ it("saves mixed financial sources and sends only PDFs to statement preparation",
   fireEvent.click(screen.getByRole("button", { name: "Choose from Evidence" }))
   await screen.findByLabelText("Select file payments.csv")
   fireEvent.click(screen.getByRole("button", { name: "Review selected files" }))
-  await screen.findByRole("heading", { name: "6 files to send to Financial" })
+  await screen.findByRole("heading", { name: "6 files to add to Financial review" })
   fireEvent.click(
-    screen.getByRole("button", { name: "Send 6 files to Financial" })
+    screen.getByRole("button", { name: "Add 6 files to Financial review" })
   )
   await waitFor(() =>
     expect(screen.getByTestId("location")).toHaveTextContent(
@@ -283,7 +287,7 @@ it("says before sending that the files are already in an open batch and names co
   ).toBeInTheDocument()
   // Continuing is the default; a fresh batch is a separate, explicit button.
   expect(
-    screen.queryByRole("button", { name: /Send .* to Financial/ })
+    screen.queryByRole("button", { name: /Add .* to Financial review/ })
   ).not.toBeInTheDocument()
   expect(
     screen.getByRole("button", { name: "Start a fresh batch with all 2 files" })
@@ -345,7 +349,7 @@ it("says how many files in the selected folders were left out because they were 
   fireEvent.click(screen.getByRole("button", { name: "Choose from Evidence" }))
   await screen.findByLabelText("Select file kept.pdf")
   fireEvent.click(screen.getByRole("button", { name: "Review selected files" }))
-  await screen.findByRole("heading", { name: "1 files to send to Financial" })
+  await screen.findByRole("heading", { name: "1 file to add to Financial review" })
   expect(
     screen.getByText(
       /3 files in the selected folders were removed from Financial and are left out/

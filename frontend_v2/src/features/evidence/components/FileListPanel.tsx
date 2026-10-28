@@ -29,6 +29,7 @@ import {
 import { useEvidenceStore } from "../evidence.store"
 import { useGuardedProcess } from "../hooks/use-guarded-process"
 import { useRouteChecks } from "../hooks/use-route-checks"
+import { useFileProvenance } from "../hooks/use-file-provenance"
 import { toast } from "sonner"
 import { FolderBreadcrumbs } from "./FolderBreadcrumbs"
 import { FileListToolbar } from "./FileListToolbar"
@@ -195,6 +196,8 @@ export function FileListPanel({
   // One check for the page, not one per row. The hook splits it into as many
   // requests as the fifty-id server limit needs, and answers for a page of 250.
   const { routes } = useRouteChecks(caseId, allFileIds)
+  // Uploaded by / in Financial (added by whom, when): one request for the page.
+  const provenance = useFileProvenance(caseId, allFileIds)
 
   const allSelected = allFileIds.length > 0 && selectedFileIds.size === allFileIds.length
   const someSelected = selectedFileIds.size > 0 && !allSelected
@@ -408,6 +411,7 @@ export function FileListPanel({
                   }}
                   caseId={caseId}
                   route={routes.get(file.id)}
+                  provenance={provenance.data?.[file.id]}
                   onDelete={onDeleteFile}
                   onAddToDossier={
                     canEdit

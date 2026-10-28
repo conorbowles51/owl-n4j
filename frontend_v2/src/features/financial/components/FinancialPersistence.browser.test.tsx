@@ -738,7 +738,7 @@ run(
     fireEvent.click(
       screen.getByRole("button", { name: "Review selected files" })
     )
-    await screen.findByText("1 files to send to Financial")
+    await screen.findByText("1 file to add to Financial review")
     fireEvent.click(screen.getByRole("button", { name: /Send .*Financial/ }))
     await screen.findByLabelText("Select Unsent statement.pdf")
     expect(screen.queryByText("Interview transcript.pdf")).toBeNull()
@@ -798,9 +798,9 @@ run(
     fireEvent.click(
       screen.getByRole("button", { name: "Review selected files" })
     )
-    await screen.findByRole("heading", { name: "5 files to send to Financial" })
+    await screen.findByRole("heading", { name: "5 files to add to Financial review" })
     fireEvent.click(
-      screen.getByRole("button", { name: "Send 5 files to Financial" })
+      screen.getByRole("button", { name: "Add 5 files to Financial review" })
     )
     await screen.findByRole("article", {
       name: "Financial source Payments.csv",

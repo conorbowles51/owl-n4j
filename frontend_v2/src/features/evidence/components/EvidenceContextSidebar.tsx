@@ -46,6 +46,7 @@ import { ChatSidePanel } from "@/features/chat/components/ChatSidePanel"
 import { NotebookPanel } from "@/features/notebook/components/NotebookPanel"
 import { evidenceAPI } from "../api"
 import { useGuardedProcess } from "../hooks/use-guarded-process"
+import { financialLine, uploadLine, useFileProvenance } from "../hooks/use-file-provenance"
 import { ProcessHoldDialog } from "./ProcessHoldDialog"
 import { useEvidenceFile } from "../hooks/use-evidence-detail"
 import { useFileEntities, useFileRelationships } from "../hooks/use-file-entities"
@@ -466,6 +467,7 @@ function DetailsPanelContent({
   // Kept whole as well as destructured, because the dialog takes the gate
   // rather than its pieces. See `ProcessGate`.
   const gate = useGuardedProcess(caseId)
+  const provenance = useFileProvenance(caseId, [file.id]).data?.[file.id]
   const {
     start: startProcess,
     isChecking,
@@ -663,8 +665,21 @@ function DetailsPanelContent({
             <DetailRow
               icon={Calendar}
               label="Uploaded"
-              value={file.created_at ? new Date(file.created_at).toLocaleString() : "---"}
+              value={uploadLine(provenance, file.created_at)}
             />
+            {financialLine(provenance) && (
+              <DetailRow
+                icon={Calendar}
+                label="Financial"
+                value={[
+                  financialLine(provenance),
+                  provenance?.added_from ? `from ${provenance.added_from}` : "",
+                  provenance?.added_via ? `via ${provenance.added_via}` : "",
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              />
+            )}
             {file.processed_at && (
               <DetailRow
                 icon={Calendar}

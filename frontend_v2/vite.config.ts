@@ -1,4 +1,4 @@
-import { defineConfig } from "vite"
+import { defineConfig, type ProxyOptions } from "vite"
 import react from "@vitejs/plugin-react"
 import tailwindcss from "@tailwindcss/vite"
 import path from "path"
@@ -8,13 +8,30 @@ const buildInfo = generateBuildName()
 const frontendPort = Number(process.env.FRONTEND_PORT || "5174")
 const apiProxyTarget = process.env.VITE_API_PROXY_TARGET || "http://0.0.0.0:8002"
 const apiProxyTimeout = Number(process.env.VITE_API_PROXY_TIMEOUT_MS || "3600000")
-const apiProxy = {
+// The browser's address for the activity trail. The backend sees only this
+// proxy (127.0.0.1), so the proxy states the client socket's address:
+// X-Real-IP is overwritten (a browser cannot supply its own) and
+// X-Forwarded-For gets the socket address appended (xfwd). The backend
+// believes them only from loopback.
+const setRealIp = (
+  proxyReq: { setHeader(name: string, value: string): void },
+  req: { socket?: { remoteAddress?: string } }
+) => {
+  const address = req.socket?.remoteAddress
+  if (address) proxyReq.setHeader("x-real-ip", address)
+}
+const apiProxy: Record<string, ProxyOptions> = {
   "/api": {
     target: apiProxyTarget,
     changeOrigin: true,
     ws: true,
+    xfwd: true,
     timeout: apiProxyTimeout,
     proxyTimeout: apiProxyTimeout,
+    configure: (proxy) => {
+      proxy.on("proxyReq", setRealIp)
+      proxy.on("proxyReqWs", setRealIp)
+    },
   },
 }
 console.log(`\n  🦉 Build: ${buildInfo.full}\n`)

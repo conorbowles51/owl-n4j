@@ -63,6 +63,7 @@ async function prepareRetainedPdfs(
       `/api/financial/statement-import/batches?case_id=${caseId}`,
       {
         method: "POST",
+        headers: { "X-Loupe-Origin": "financial_statement_files" },
         body: { request_id: requestId, file_ids: fileIds, folder_ids: [] },
       }
     )

@@ -221,7 +221,7 @@ export function FileListToolbar({
 
       {/* Action buttons */}
       <FinancialAccessProvider caseId={caseId} quietFailure>
-        <EvidenceFinancialPicker caseId={caseId} initialFileIds={Array.from(selectedFileIds)} initialFolderId={currentFolderId} label="Send to Financial" />
+        <EvidenceFinancialPicker caseId={caseId} initialFileIds={Array.from(selectedFileIds)} initialFolderId={currentFolderId} label="Send to Financial review" origin="evidence_toolbar" />
       </FinancialAccessProvider>
       <Tooltip>
         <TooltipTrigger asChild>

@@ -454,6 +454,7 @@ export function StatementFilesPanel({
         requestId: batchRequest.current.id,
         preview,
         choice,
+        origin: "financial_statement_files",
       })
       setStartChoice(null)
       void client.invalidateQueries({ queryKey: ["financial-batches", caseId] })

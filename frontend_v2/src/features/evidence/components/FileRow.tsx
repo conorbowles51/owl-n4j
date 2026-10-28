@@ -37,6 +37,11 @@ import { ProcessHoldDialog } from "./ProcessHoldDialog"
 import { toast } from "sonner"
 import type { FileRoute } from "../hooks/use-route-checks"
 import type { EvidenceFileRecord, EvidenceFile } from "@/types/evidence.types"
+import {
+  financialLine,
+  uploadLine,
+  type FileProvenance,
+} from "../hooks/use-file-provenance"
 
 interface FileRowProps {
   dragSource?: MoveSource
@@ -49,6 +54,8 @@ interface FileRowProps {
    * renders the list. A row that asked for itself would be one request per row.
    */
   route?: FileRoute
+  /** Uploaded by / added to Financial by (batch call by the list, like ``route``). */
+  provenance?: FileProvenance
   onDelete?: (file: EvidenceFile) => void
   onAddToDossier?: (file: EvidenceFile) => void
   isPinned?: boolean
@@ -94,6 +101,7 @@ const STATUS_STYLES: Record<string, string> = {
 export function FileRow({
   dragSource,
   route,
+  provenance,
   file,
   caseId,
   onDelete,
@@ -171,6 +179,20 @@ export function FileRow({
           </TooltipTrigger>
           <TooltipContent>{file.original_filename}</TooltipContent>
         </Tooltip>
+        {financialLine(provenance) && (
+          <div
+            className="mt-1 truncate text-xs text-emerald-700 dark:text-emerald-400"
+            title={[
+              financialLine(provenance),
+              provenance?.added_from ? `from ${provenance.added_from}` : "",
+              provenance?.added_via ? `via ${provenance.added_via}` : "",
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          >
+            {financialLine(provenance)}
+          </div>
+        )}
         {!!file.reading_versions?.length && <button className="block mt-1 text-xs text-muted-foreground underline"
           onClick={() => openDetail(file.id)}>One PDF · {file.reading_versions.length} additional reading {file.reading_versions.length === 1 ? "version" : "versions"}</button>}
         {file.folder_path && (
@@ -232,7 +254,9 @@ export function FileRow({
 
       {/* Date */}
       <TableCell className="text-xs text-muted-foreground">
-        {formatRelativeTime(file.created_at)}
+        <span title={uploadLine(provenance, file.created_at)}>
+          {formatRelativeTime(file.created_at)}
+        </span>
       </TableCell>
 
       {/* Actions */}

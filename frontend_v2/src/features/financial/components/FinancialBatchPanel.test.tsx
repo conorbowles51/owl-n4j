@@ -530,7 +530,7 @@ it("distinguishes repeated file runs and opens the selected saved batch", async 
   })
   mount("/cases/case/financial?view=statements")
   expect(await screen.findByText("Latest batch")).toBeVisible()
-  expect(screen.getByText(/Started by Alex/)).toBeVisible()
+  expect(screen.getByText(/Added by Alex/)).toBeVisible()
   expect(
     screen.getByText(/587 of 588 files checked.*1 file needs reading or preparation recovery/)
   ).toBeVisible()

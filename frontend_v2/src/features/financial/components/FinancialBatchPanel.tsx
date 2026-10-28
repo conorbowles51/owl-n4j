@@ -137,6 +137,41 @@ function batchWorkLine(batch: {
   return "Files are being prepared. This page updates by itself. No action is needed."
 }
 
+const sentFrom = z
+  .object({
+    source_address: z.string().nullish(),
+    origin: z.string().nullish(),
+    origin_label: z.string().nullish(),
+    user_name: z.string().nullish(),
+    at: z.string().nullish(),
+  })
+  .nullish()
+type SentFrom = z.infer<typeof sentFrom>
+
+/** "Added by Alex, 27 Oct 2026 18:02 · from 203.0.113.7 via Evidence toolbar (Send to Financial)". */
+function addedLine(
+  by: string | null | undefined,
+  automatic: boolean,
+  at: string | null | undefined,
+  from: SentFrom
+) {
+  const when = at ? new Date(at).toLocaleString() : ""
+  const who = automatic
+    ? "Added automatically (statement detection)"
+    : by
+      ? `Added by ${by}`
+      : "Added (person not recorded)"
+  const where = [
+    from?.source_address && from.source_address !== "system"
+      ? `from ${from.source_address}`
+      : "",
+    from?.origin_label && !automatic ? `via ${from.origin_label}` : "",
+  ]
+    .filter(Boolean)
+    .join(" ")
+  return [`${who}${when ? `, ${when}` : ""}`, where].filter(Boolean).join(" · ")
+}
+
 const batchSchema = z.object({
   id: z.string(),
   case_id: z.string(),
@@ -173,6 +208,14 @@ const batchSchema = z.object({
   ready_revision: z.string(),
   total: z.number(),
   items: z.array(itemSchema),
+  added: z
+    .object({
+      by: z.string().nullish(),
+      automatic: z.boolean().default(false),
+      at: z.string().nullish(),
+      sent_from: sentFrom,
+    })
+    .nullish(),
 })
 const listSchema = z.object({
   case_id: z.string(),
@@ -183,6 +226,8 @@ const listSchema = z.object({
       created_at: z.string(),
       file_count: z.number(),
       created_by: z.string().optional(),
+      automatic: z.boolean().default(false),
+      sent_from: sentFrom,
       filenames: z.array(z.string()).optional(),
       checked_files: z.number().optional(),
       failed_files: z.number().optional(),
@@ -719,10 +764,14 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
                 )}
               </p>
               <p className="text-sm text-muted-foreground">
-                Batch {batch.id.slice(0, 8)}
-                {batch.created_by
-                  ? ` · Started by ${batch.created_by}`
-                  : ""} ·{" "}
+                Batch {batch.id.slice(0, 8)} ·{" "}
+                {addedLine(
+                  batch.automatic ? null : batch.created_by,
+                  batch.automatic,
+                  batch.created_at,
+                  batch.sent_from
+                )}{" "}
+                ·{" "}
                 {batch.status === "preparing"
                   ? "Processing continues"
                   : batch.status === "paused"
@@ -870,6 +919,16 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
                 ? "Pausing after the current statement finishes. No further statements or imports will start."
                 : "Preparation and imports continue on the server. You can leave this page and return to the batch."}
           </p>
+          {batch.added && (
+            <p className="text-sm text-muted-foreground">
+              {addedLine(
+                batch.added.by,
+                batch.added.automatic,
+                batch.added.at,
+                batch.added.sent_from
+              )}
+            </p>
+          )}
           {batchWorkLine(batch) && (
             <p role="status" className="text-sm">
               {batchWorkLine(batch)}
