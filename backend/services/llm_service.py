@@ -278,6 +278,14 @@ class LLMExecutionContext:
 
         def expire():
             expired.set()
+            # Shut the socket down first: that wakes a read already blocked on it (a bare close may not).
+            sock = getattr(getattr(response.raw, "_connection", None), "sock", None)
+            try:
+                if sock is not None:
+                    import socket
+                    sock.shutdown(socket.SHUT_RDWR)
+            except Exception:  # noqa: BLE001 - already closed
+                pass
             response.close()
         watchdog = threading.Timer(max(deadline - time.monotonic(), 0), expire)
         watchdog.daemon = True

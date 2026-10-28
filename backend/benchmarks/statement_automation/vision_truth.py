@@ -78,6 +78,8 @@ def main(argv=None):
     parser.add_argument('--key-from-live', action='store_true')
     parser.add_argument('--raw', action='store_true', help='keep the page readings (server-side diagnosis only)')
     parser.add_argument('--items', default='', help='comma-separated item ids')
+    parser.add_argument('--ignore-switch', action='store_true',
+                        help='send to OpenAI although "DeepSeek only" is ON in the live policy (a deliberate measurement)')
     parser.add_argument('--readers', default='',
                         help='the reader chain, e.g. "deepseek" (DeepSeek only: OpenAI switched off), "openai", '
                              '"deepseek,openai"; keys from the live store (read only). Default: OpenAI alone, '
@@ -89,6 +91,16 @@ def main(argv=None):
     from services.financial import vision_reader
     from config import OPENAI_API_KEY
     keys = {}
+    named = [r.strip() for r in args.readers.split(',') if r.strip()] if args.readers else ['openai']
+    if 'openai' in named and not args.ignore_switch:
+        # "DeepSeek only" is honoured here too: nothing goes to OpenAI unless asked for explicitly.
+        from postgres.session import _get_session_local
+        from services.ai_model_policy import deepseek_only
+        with _get_session_local()() as live:
+            if deepseek_only(live):
+                raise SystemExit('"DeepSeek only" is ON: OpenAI is not sent page images (pass --ignore-switch to '
+                                 'measure OpenAI deliberately).')
+            live.rollback()
     if args.key_from_live or args.readers:
         # The application's stored keys (read only), as the product uses them.
         from sqlalchemy import text
@@ -117,7 +129,7 @@ def main(argv=None):
         chosen = chosen[:args.limit]
     saved_truth = {p['truth_id'] for p in periods if p['status'] == 'imported' and p.get('truth_id')}
     from services.ai_model_policy import FINANCIAL_VISION_OPENAI
-    # Without --readers: OpenAI alone, unnamed (as before the chain). Only when asked for: it ignores "DeepSeek only".
+    # Without --readers: OpenAI alone, unnamed (as before the chain); refused while "DeepSeek only" is ON unless --ignore-switch.
     model_id = os.environ.get('VISION_TRUTH_MODEL') or FINANCIAL_VISION_OPENAI['model_id']
 
     def page_reader(db, case_id):
@@ -128,7 +140,6 @@ def main(argv=None):
     if args.readers:
         from services.ai_model_policy import FINANCIAL_VISION_DEEPSEEK, FINANCIAL_VISION_OPENAI
         models = {'deepseek': FINANCIAL_VISION_DEEPSEEK['model_id'], 'openai': FINANCIAL_VISION_OPENAI['model_id']}
-        named = [r.strip() for r in args.readers.split(',') if r.strip()]
 
         def page_reader(db, case_id):  # noqa: F811 - the chain, built as chain_page_reader builds it
             chain = [vision_reader.keyed_page_reader(p, models[p], keys.get(p), context='truth') for p in named]
