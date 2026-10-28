@@ -440,6 +440,13 @@ PAGES_NOTE = """
 This statement has {pages} page(s), each given as {count} overlapping strip(s)."""
 
 
+def page_instructions(pages, strips):
+    """(instruction text, PROMPT_VERSION) for reading a statement's page images: the ONE builder of that text, used
+    for every provider and every path (Neil, 2026-10-28). Providers differ only in transport (OpenAI's enforced
+    response format; the schema after this text for DeepSeek) and in strips per page."""
+    return PROMPT + PAGES_NOTE.format(pages=pages, count=strips), PROMPT_VERSION
+
+
 def document_pages(document, sent_pages):
     """The document reading as [(page, page json)] in the per-page form ``combine`` takes.
 
@@ -1740,7 +1747,7 @@ def document_request(model_id, api_key, provider='openai'):
             for index, image in enumerate(parts):
                 labels.append(f'Page {number}' if len(parts) == 1 else f'Page {number}, part {index + 1} of {len(parts)}')
                 images.append(image)
-        prompt = PROMPT + PAGES_NOTE.format(pages=len(pages), count=strips)
+        prompt, _ = page_instructions(len(pages), strips)
         for attempt in range(settings['retries'] + 1):
             context = LLMExecutionContext(provider, model_id, api_key=api_key)
             try:
