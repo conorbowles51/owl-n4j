@@ -223,6 +223,7 @@ export interface LedgerTransaction {
           | "model"
           | "learned"
           | "matched_payment"
+          | "printed_account"
         explanation?: string
         /** For a name taken from the matching payment in another account of the case. */
         matched_transaction_id?: string

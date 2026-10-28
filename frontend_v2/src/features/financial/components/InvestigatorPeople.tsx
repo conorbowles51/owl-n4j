@@ -11,6 +11,7 @@ import { AccountConsolidation } from "./AccountConsolidation"
 import { useInvestigatorPayments } from "../hooks/use-investigator-payments"
 import { useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
+import { downloadProtectedFile } from "@/lib/protected-file"
 import { useFinancialDraft } from "../stores/financial-drafts"
 import {
   paymentProfiles,
@@ -36,10 +37,13 @@ import type { LedgerTransaction } from "../api"
 function UnidentifiedBreakdown({
   rows,
   detail = false,
+  caseId,
 }: {
   rows: LedgerTransaction[]
   detail?: boolean
+  caseId?: string
 }) {
+  const [downloadError, setDownloadError] = useState<string | null>(null)
   const groups = new Map<
     string,
     { label: string; reason: string; count: number }
@@ -72,6 +76,30 @@ function UnidentifiedBreakdown({
       <p className="text-xs text-muted-foreground">
         These payments do not represent one person or business.
       </p>
+      {caseId && (
+        <div className="space-y-1">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setDownloadError(null)
+              void downloadProtectedFile(
+                `/api/financial/ask-the-bank?${new URLSearchParams({ case_id: caseId })}`,
+                `ask-the-bank-${caseId.slice(0, 8)}.csv`
+              ).catch(() =>
+                setDownloadError("The list could not be prepared. Try again.")
+              )
+            }}
+          >
+            Download what to ask the bank for
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            Every payment in this case with no name for the other side, with the line as printed and what the bank holds
+            that the statement does not show.
+          </p>
+          {downloadError && <p className="text-xs text-destructive">{downloadError}</p>}
+        </div>
+      )}
     </div>
   )
 }
@@ -437,7 +465,7 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
                   </p>
                 )}
                 {selected.unidentified && (
-                  <UnidentifiedBreakdown rows={selected.rows} detail />
+                  <UnidentifiedBreakdown rows={selected.rows} detail caseId={caseId} />
                 )}
                 {selected.kind === "name" && (
                   <p className="rounded border bg-muted/20 p-3 text-sm">

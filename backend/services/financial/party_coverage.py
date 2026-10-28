@@ -116,3 +116,37 @@ def matched_ids(session, case_ids):
     for case_id in sorted({str(c) for c in case_ids}):
         found.update(case_party_matches(session, case_id))
     return found
+
+
+_ADMIN_CACHE = {}
+
+
+def _fingerprint(session):
+    """Changes whenever a payment or an account is written (xmin is the writing transaction)."""
+    from sqlalchemy import text
+    return tuple(session.execute(text(
+        "select (select count(*) || ':' || coalesce(sum(xmin::text::bigint), 0) from financial_transactions), "
+        "(select count(*) || ':' || coalesce(sum(xmin::text::bigint), 0) from financial_accounts)")).one())
+
+
+def cases_for_admin(session, now=None):
+    """Per case: how many payments are named, unnamed with a stated reason, and bare, as the release gate counts them.
+    Worst unnamed share first. Recounted only when a payment or account has been written since the last count."""
+    from datetime import datetime, timezone
+    from sqlalchemy import text
+    key = _fingerprint(session)
+    if key in _ADMIN_CACHE:
+        return _ADMIN_CACHE[key]
+    rows = list(load_rows(session))
+    counted = tally(rows, matched_ids(session, {row['case_id'] for row in rows}))
+    titles = {str(case_id): title for case_id, title in session.execute(text('select id, title from cases'))}
+
+    def shares(counts):
+        rows_ = counts['rows'] or 1
+        return dict(counts, unnamed_share=(counts[REASON] + counts[BARE]) / rows_, bare_share=counts[BARE] / rows_)
+    cases = [dict(shares(counts), case_id=case_id, title=titles.get(case_id, case_id)) for case_id, counts in counted['cases'].items()]
+    cases.sort(key=lambda c: (-c['unnamed_share'], -c['rows']))
+    result = dict(measured_at=(now or datetime.now(timezone.utc)).isoformat(), total=shares(counted['total']), cases=cases)
+    _ADMIN_CACHE.clear()
+    _ADMIN_CACHE[key] = result
+    return result

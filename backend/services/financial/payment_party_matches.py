@@ -14,7 +14,7 @@ import re
 from datetime import date
 from uuid import UUID
 
-VERSION = 'matched-payment/1'
+VERSION = 'matched-payment/2'
 RULE = 'matched-payment'
 TOLERANCE_DAYS = 3
 
@@ -301,6 +301,52 @@ def case_rows(session, case_id):
     return rows
 
 
+_PRINTED_ACCOUNT = re.compile(r'CUENTA:\s*(\d{10,18})(?!\d)')
+
+
+def printed_accounts(rows, named=frozenset()):
+    """Row id -> other side, for unnamed rows whose line prints "CUENTA: <number>" where the number is another
+    account of the case (all of its digits, as the case's statements print the account). Rows in ``named`` are
+    skipped. When the accounts with that number carry different holders, the account is shown without a holder."""
+    accounts = {}
+    for row in rows:
+        digits = re.sub(r'\D', '', row.get('identifier') or '')
+        if len(digits) >= 10:
+            accounts.setdefault(digits, {})[row['account_id']] = row
+    found = {}
+    for row in rows:
+        if row.get('name') or row['id'] in named:
+            continue
+        numbers = set(_PRINTED_ACCOUNT.findall((row.get('description') or '').upper()))
+        hits = [accounts[n] for n in numbers if n in accounts]
+        if len(hits) != 1 or row['account_id'] in hits[0]:
+            continue
+        others = list(hits[0].values())
+        holders = sorted({' '.join((o.get('holder') or '').split()) for o in others} - {''})
+        disputed = sorted({h for o in others for h in o.get('other_holders') or []} - set(holders[:1]))
+        first = others[0]
+        account = ' '.join(' '.join(str(v).split()) for v in (first['institution'], first['identifier']) if v)
+        number = next(n for n in numbers if n in accounts)
+        if len(holders) == 1 and not disputed:
+            value = holders[0] + ' · ' + account
+            note = ''
+        else:
+            value = account
+            note = (' The case holds more than one holder name for that account (' + ', '.join(holders + disputed)
+                    + '), so the holder is not shown.')
+        own = len(holders) == 1 and not disputed and _related_holders(holders[0], row['holder'])
+        found[row['id']] = dict(
+            value=value, source='printed_account', rule='printed-account', version=VERSION, own_account=own,
+            matched_account_id=str(first['account_id']),
+            explanation=f'The line prints account {number}, which is the account {account} in this case.' + note
+                        + (' The two accounts share a holder.' if own else ''))
+    return found
+
+
 def case_party_matches(session, case_id):
-    """Row id -> matched other side for every unnamed payment of the case (see match_parties)."""
-    return match_parties(case_rows(session, case_id))
+    """Row id -> other side for every unnamed payment of the case: its matching payment in another account
+    (match_parties), else an account of the case its line prints (printed_accounts)."""
+    rows = case_rows(session, case_id)
+    found = match_parties(rows)
+    found.update(printed_accounts(rows, frozenset(found)))
+    return found

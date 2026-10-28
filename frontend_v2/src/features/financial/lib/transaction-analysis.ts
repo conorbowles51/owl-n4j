@@ -55,7 +55,7 @@ export function party(row: LedgerTransaction, side: PartySide) {
           ? `unknown:${side}:${encodeURIComponent(reason)}`
           : `unknown:${side}`,
     name: name || reason || "Not identified",
-    suggested: ["description", "matched_payment"].includes(
+    suggested: ["description", "matched_payment", "printed_account"].includes(
       row.label_sources?.[side === "from" ? "from_name" : "to_name"]?.source ??
         "",
     ),

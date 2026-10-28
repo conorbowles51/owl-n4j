@@ -39,6 +39,10 @@ class GetLedgerTransactionsTests(unittest.IsolatedAsyncioTestCase):
         directory = patch.object(financial_ledger, '_account_party_state', return_value={'accounts': []})
         directory.start()
         self.addCleanup(directory.stop)
+        # Names from matching payments in other accounts of the case read the database; none here.
+        matches = patch('services.financial.payment_party_matches.case_party_matches', return_value={})
+        matches.start()
+        self.addCleanup(matches.stop)
 
     async def test_uses_the_query_service_and_shapes_the_response(self):
         case_id = uuid.uuid4()
@@ -81,7 +85,7 @@ class GetLedgerTransactionsTests(unittest.IsolatedAsyncioTestCase):
             end_date=None,
         )
         to_view_call.assert_called_once_with(fake_row, account=fake_row.account,
-            account_parties={}, canonical_account_labels={})
+            account_parties={}, canonical_account_labels={}, party_matches={})
 
     async def test_an_explicit_ledger_status_is_parsed_and_passed_through(self):
         case_id = uuid.uuid4()

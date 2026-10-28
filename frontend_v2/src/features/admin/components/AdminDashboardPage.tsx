@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { authAPI } from "@/features/auth/api"
-import { platformUpdateAPI, profilesAPI, readerGapsAPI } from "../api"
+import { partyCoverageAPI, platformUpdateAPI, profilesAPI, readerGapsAPI } from "../api"
 import { getPlatformUpdatePresentation } from "../platform-update-status"
 
 export function AdminDashboardPage() {
@@ -23,6 +23,10 @@ export function AdminDashboardPage() {
   const { data: readerGaps } = useQuery({
     queryKey: ["admin", "reader-gaps"],
     queryFn: readerGapsAPI.get,
+  })
+  const { data: partyCoverage } = useQuery({
+    queryKey: ["admin", "party-coverage"],
+    queryFn: partyCoverageAPI.get,
   })
   const { data: updateStatus } = useQuery({
     queryKey: ["admin", "platform-update", "status"],
@@ -202,6 +206,40 @@ export function AdminDashboardPage() {
           )}
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between gap-2 text-sm">
+            <span>Payments without the other side named</span>
+            {partyCoverage && (
+              <Badge variant={partyCoverage.total.bare ? "destructive" : "secondary"}>
+                {percent(partyCoverage.total.unnamed_share)} unnamed · {partyCoverage.total.bare} with no reason
+              </Badge>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-xs">
+          <p className="text-muted-foreground">
+            Per case, the share of payments whose From or To names nobody: with a stated reason (the statement prints no
+            name), or with no reason at all. Counted from the stored payments now; a rise shows here the day it happens.
+          </p>
+          {(partyCoverage?.cases ?? []).length > 0 && (
+            <ul className="space-y-0.5" aria-label="Unnamed payments per case">
+              {partyCoverage?.cases.map((entry) => (
+                <li key={entry.case_id}>
+                  <span className="font-medium">{entry.title}</span>
+                  {` · ${entry.rows} payments · ${percent(entry.unnamed_share)} unnamed (${entry.reason} with a reason, ${entry.bare} with none)`}
+                </li>
+              ))}
+            </ul>
+          )}
+          {partyCoverage && <p className="text-muted-foreground">Counted {partyCoverage.measured_at.slice(0, 16).replace("T", " ")} UTC.</p>}
+        </CardContent>
+      </Card>
     </div>
   )
+}
+
+function percent(share: number) {
+  return `${(share * 100).toFixed(1)}%`
 }

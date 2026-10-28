@@ -197,6 +197,15 @@ def run_ledger_trace(body: LedgerTraceInput, case_id: UUID = Query(...), db: Ses
         raise HTTPException(status_code=500, detail="Tracing scenario could not be calculated.")
 
 
+@router.get("/ask-the-bank")
+def download_ask_the_bank(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    """Every payment of the case whose other side the case does not name, with what to ask the bank for (CSV)."""
+    from services.financial.party_requests import request_rows, requests_csv
+    content = requests_csv(request_rows(db, case_id))
+    return Response(content=content, media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="ask-the-bank-{str(case_id)[:8]}.csv"'})
+
+
 @router.get("/ledger-export")
 def download_ledger_export(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
         start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None), db: Session = Depends(get_db), include_source_files: bool = False, include_pdf: bool = False, table_view: Optional[str] = Query(None, max_length=4096), privilege_marking: Literal["unmarked","confidential","privileged_confidential"] = "unmarked", include_case_financial_history: bool = False, current_user=Depends(get_current_db_user), account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):

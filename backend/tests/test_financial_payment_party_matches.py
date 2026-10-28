@@ -122,6 +122,32 @@ class MatchPartiesTests(unittest.TestCase):
         self.assertFalse(_same_holder('ANA', 'ANALYTICS EJEMPLO SA'))
         self.assertTrue(_same_holder('ALPHA EJEMPLO', 'ALPHA EJEMPLO SA DE CV'))
 
+    def test_line_printing_another_case_account_names_it(self):
+        from services.financial.payment_party_matches import printed_accounts
+        into = row('alpha', '(NB) RECEPCION DE CUENTA: 0100000001', 'credit')
+        other = row('gamma', 'ABONO TRANSFERENCIA ENLACE', 'credit', amount=1)
+        found = printed_accounts([into, other])[into['id']]
+        self.assertEqual(found['value'], 'ALPHA EJEMPLO SA DE CV · BBVA Mexico 0100000001')
+        self.assertEqual(found['source'], 'printed_account')
+        self.assertTrue(found['own_account'])
+        self.assertIn('The line prints account 0100000001', found['explanation'])
+        # Its own account, a number no account has, an unlabelled number and a named line name nothing.
+        own = row('gamma', 'PAGO CUENTA: 0100000001', 'debit')
+        self.assertEqual(printed_accounts([own]), {})
+        self.assertEqual(printed_accounts([row('alpha', 'PAGO CUENTA: 9999999999', 'debit'), other]), {})
+        self.assertEqual(printed_accounts([row('alpha', 'PAGO 0100000001', 'debit'), other]), {})
+        self.assertEqual(printed_accounts([row('alpha', 'PAGO CUENTA: 0100000001', 'debit', name='OTRA SA'), other]), {})
+
+    def test_printed_account_with_two_holders_is_shown_without_a_holder(self):
+        from services.financial.payment_party_matches import printed_accounts
+        into = row('alpha', 'RECEPCION DE CUENTA: 0100000001', 'credit')
+        first = row('gamma', 'ABONO', 'credit', amount=1)
+        second = dict(row('gamma', 'ABONO', 'credit', amount=2), account_id=_id(), holder='DELTA OTRA SA DE CV')
+        found = printed_accounts([into, first, second])[into['id']]
+        self.assertEqual(found['value'], 'BBVA Mexico 0100000001')
+        self.assertIn('more than one holder name', found['explanation'])
+        self.assertFalse(found['own_account'])
+
     def test_cash_and_bank_charges_never_match(self):
         out = row('alpha', 'RETIRO EN EFECTIVO CAJERO', 'debit', amount=1234561)
         into = row('beta', 'ABONO TRANSFERENCIA ENLACE', 'credit', amount=1234561)
@@ -164,6 +190,20 @@ class LabelViewTests(unittest.TestCase):
         self.assertEqual(source['explanation'], 'Saved by Example Reviewer on 2024-05-01. Printed on the next statement page.')
         row.metadata_['investigation_label_history'] = []
         self.assertEqual(payment_label_view(row, stored=None)['label_sources']['to_name']['explanation'], 'Saved by an investigator.')
+
+
+class AskTheBankTests(unittest.TestCase):
+    def test_csv_keeps_accents_and_never_runs_a_formula(self):
+        from services.financial.party_requests import COLUMNS, requests_csv, _ask
+        line = dict.fromkeys(COLUMNS, '')
+        line.update({'Printed line': '=HYPERLINK("x") DEPÓSITO', 'Amount': '-12.50'})
+        text = requests_csv([line]).decode('utf-8')
+        self.assertTrue(text.startswith('\ufeffBank,'))
+        self.assertIn("'=HYPERLINK", text)
+        self.assertIn('DEPÓSITO', text)
+        self.assertIn("'-12.50", text)
+        self.assertEqual(_ask('cheque-number-only', 'debit', '* 1234'), 'Image of cheque 1234 (front and back): payee and endorsement')
+        self.assertEqual(_ask(None, 'credit', 'DEPOSIT'), 'Sender name and account of this deposit')
 
 
 class CoverageTests(unittest.TestCase):

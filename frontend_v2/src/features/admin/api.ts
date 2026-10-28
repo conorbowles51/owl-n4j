@@ -228,3 +228,23 @@ export interface ReaderGapsResponse {
 export const readerGapsAPI = {
   get: () => fetchAPI<ReaderGapsResponse>("/api/admin/reader-gaps"),
 }
+
+/** How many payments name the other side: named, unnamed with a stated reason, or bare "Not identified". */
+export interface PartyCoverageCounts {
+  rows: number
+  named: number
+  reason: number
+  bare: number
+  unnamed_share: number
+  bare_share: number
+}
+
+export interface PartyCoverageResponse {
+  measured_at: string
+  total: PartyCoverageCounts
+  cases: (PartyCoverageCounts & { case_id: string; title: string })[]
+}
+
+export const partyCoverageAPI = {
+  get: () => fetchAPI<PartyCoverageResponse>("/api/admin/party-coverage"),
+}
