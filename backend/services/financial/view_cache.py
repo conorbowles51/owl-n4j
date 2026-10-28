@@ -233,6 +233,65 @@ def _lookup(key):
         return entry
 
 
+def in_snapshot():
+    """True while a cached view computes: every row read now is a committed row version of its snapshot."""
+    recording = _recording.get()
+    return recording is not None and not recording.paused
+
+
+def row_versions(session, table, ids):
+    """{id: xmin} of rows of ``table`` in the computing view's snapshot (in_snapshot() only).
+
+    A row's id and xmin name one committed version of it: any later update is a new version with the xmin of
+    another transaction (two updates in one transaction leave only the last version visible to anyone)."""
+    ids = list(ids)
+    if not ids:
+        return {}
+    rows = session.execute(text(f'SELECT id, xmin::text FROM "{table}" WHERE id = ANY(:ids)'), dict(ids=ids)).all()
+    return {row[0]: row[1] for row in rows}
+
+
+class VersionMemo:
+    """A value computed from fixed row versions only (see row_versions), reused while those versions are current.
+
+    Filled only inside a computing view's read-only snapshot, so no uncommitted or in-request change is ever
+    stored. Bounded; least recently used entries go first. Callers get a deep copy, never the stored value."""
+
+    def __init__(self, name, max_entries):
+        self.name, self.max_entries = name, max_entries
+        self._values: OrderedDict = OrderedDict()
+        self._lock = threading.Lock()
+        self.stats = dict(hits=0, misses=0)
+
+    def has(self, key):
+        with self._lock:
+            return key is not None and key in self._values
+
+    def get(self, key, compute):
+        from copy import deepcopy
+        with self._lock:
+            found = self._values.get(key, _MISSING)
+            if found is not _MISSING:
+                self._values.move_to_end(key)
+                self.stats['hits'] += 1
+                return deepcopy(found)
+            self.stats['misses'] += 1
+        value = compute()
+        with self._lock:
+            self._values[key] = deepcopy(value)
+            self._values.move_to_end(key)
+            while len(self._values) > self.max_entries:
+                self._values.popitem(last=False)
+        return value
+
+    def clear(self):
+        with self._lock:
+            self._values.clear()
+
+
+_MISSING = object()
+
+
 def clear():
     global _total_bytes
     with _lock:

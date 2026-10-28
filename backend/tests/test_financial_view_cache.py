@@ -432,3 +432,61 @@ def test_overlapping_views_resume_the_collector_when_the_last_one_ends():
     assert not gc.isenabled()
     second.__exit__(None, None, None)
     assert gc.isenabled()
+
+
+def memo_view(counter, memo):
+    """A view whose per-row part is reused by row version (as account_history reuses saved statement checks)."""
+    @view_cache.cached_view('memo')
+    def handler(case_id, db):
+        rows = db.execute(text('SELECT id, amount FROM payments WHERE case_id = :c ORDER BY id'), dict(c=case_id)).all()
+        versions = view_cache.row_versions(db, 'payments', [id_ for id_, _ in rows]) if view_cache.in_snapshot() else None
+        def compute(amount):
+            counter.calls += 1
+            return dict(double=amount * 2)
+        out = []
+        for id_, amount in rows:
+            key = versions and (id_, versions.get(id_))
+            out.append(memo.get(key, lambda: compute(amount)) if key else compute(amount))
+        return out
+    return handler
+
+
+def test_a_row_version_memo_recomputes_only_the_changed_row(engine):
+    case, counter = uuid.uuid4(), Counter()
+    memo = view_cache.VersionMemo('test', 100)
+    write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 1), (:c, 2), (:c, 3)', c=case)
+    view = memo_view(counter, memo)
+    assert call(engine, view, case).body == b'[{"double":2},{"double":4},{"double":6}]' and counter.calls == 3
+    write(engine, 'UPDATE payments SET amount = 10 WHERE case_id = :c AND amount = 2', c=case)
+    assert call(engine, view, case).body == b'[{"double":2},{"double":20},{"double":6}]' and counter.calls == 4
+    # Rewriting a row with the same values is still a new version: computed again, with the same result.
+    write(engine, 'UPDATE payments SET amount = amount WHERE case_id = :c AND amount = 1', c=case)
+    assert call(engine, view, case).body == b'[{"double":2},{"double":20},{"double":6}]' and counter.calls == 5
+    write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 4)', c=case)
+    assert call(engine, view, case).body == b'[{"double":2},{"double":20},{"double":6},{"double":8}]' and counter.calls == 6
+
+
+def test_a_row_version_memo_is_not_used_outside_a_view_snapshot(engine):
+    case, counter = uuid.uuid4(), Counter()
+    memo = view_cache.VersionMemo('test', 100)
+    write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 1)', c=case)
+    handler = memo_view(counter, memo).__wrapped__
+    with Session(engine) as db:
+        assert not view_cache.in_snapshot()
+        # An uncommitted change in the caller's own transaction is never stored.
+        db.execute(text('UPDATE payments SET amount = 50 WHERE case_id = :c'), dict(c=case))
+        assert handler(case_id=case, db=db) == [dict(double=100)]
+        db.rollback()
+    assert memo.stats == dict(hits=0, misses=0)
+    assert call(engine, memo_view(counter, memo), case).body == b'[{"double":2}]'
+
+
+def test_a_row_version_memo_hands_out_copies_and_stays_bounded():
+    memo = view_cache.VersionMemo('test', 2)
+    value = memo.get('a', lambda: dict(items=[1]))
+    value['items'].append(2)
+    assert memo.get('a', lambda: None) == dict(items=[1])
+    memo.get('a', lambda: None)['items'].append(3)
+    assert memo.get('a', lambda: None) == dict(items=[1])
+    memo.get('b', lambda: 1); memo.get('c', lambda: 2)
+    assert memo.get('a', lambda: 'again') == 'again'
