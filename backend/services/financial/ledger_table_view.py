@@ -66,7 +66,11 @@ def _party(row, side):
     if link:
         encoded = quote(name, safe="~()*!.'-")
         return f"identity:{link['kind']}:{link['id']}:{encoded}"
-    return f'name:{name}' if name else f'unknown:{side}'
+    if name:
+        return f'name:{name}'
+    # An unnamed side groups by the reason its layout prints no name, as the ledger table does.
+    reason = ((row.get('label_sources') or {}).get(f'{side}_name') or {}).get('reason')
+    return f'unknown:{side}:' + quote(reason, safe="~()*!.'-") if reason else f'unknown:{side}'
 
 
 def _period(row):

@@ -22,6 +22,18 @@ class LedgerTableViewTests(TestCase):
         with self.assertRaises(LedgerSummaryError):
             capture_table_view(ledger, {'analysis_direction': 'outgoing'})
 
+    def test_unnamed_sides_are_selected_by_their_stated_reason(self):
+        from urllib.parse import quote
+        readings = [self.row(key, account_id='a', from_name='Owner', to_name='') for key in ['cash', 'plain']]
+        for reading in readings:
+            reading['row']['direction'] = 'debit'
+        reason = 'Cash withdrawal — no other party'
+        readings[0]['row']['label_sources'] = {'to_name': {'source': 'missing', 'reason': reason}}
+        ledger = {'readings': readings}
+        key = 'unknown:to:' + quote(reason, safe="~()*!.'-")
+        self.assertEqual(capture_table_view(ledger, {'to_names': [key]})['row_ids'], ['cash'])
+        self.assertEqual(capture_table_view(ledger, {'to_names': ['unknown:to']})['row_ids'], ['plain'])
+
     def test_profile_scope_stays_in_exports_when_additional_filters_are_cleared(self):
         ledger = {'readings': [self.row('one', account_id='a', from_name='Supplier', to_name='Owner'), self.row('two', account_id='b', from_name='Supplier', to_name='Owner'), self.row('unknown', account_id='a', from_name='', counterparty_raw='Rejected'), self.row('other', account_id='a', from_name='Other')]}
         ledger['readings'][1]['row']['currency'] = 'USD'

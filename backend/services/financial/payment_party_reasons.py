@@ -6,145 +6,169 @@ its type, and no name for the other side. The reason is shown in place of a
 name so an empty From or To says what the statement holds rather than looking
 like a missing reading. These are read-time notes; nothing stored changes and a
 person's label always wins (services.financial.payment_labels).
+
+A reason never claims that no name is printed on a line that might print one.
+Each layout states what may follow its own wording:
+
+- STRICT: only the layout's vocabulary, references and numbers. Any other word
+  could be a name, so the reason is withheld and the side stays unnamed.
+- CITY: as STRICT, after removing a final town and state (an issuer's or
+  branch's location).
+- ADDRESS: an ATM or branch address. Directed wording (TO, FOR, BENEFICIARIO,
+  DESTINO ..) withholds the reason.
+- FIELD: layouts the bank defines with a free-text concept and no payee field
+  (BBVA cash-management batches, Enlace transfers, payroll batches). Their
+  reason says the statement has no payee field, which stays true whatever the
+  concept text holds; the concept itself remains in the description.
 """
 import re
 
 NO_NAME = 'The statement doesn’t name the other side'
+STRICT, CITY, ADDRESS, FIELD = 'strict', 'city', 'address', 'field'
 
-# (pattern on the normalised description, direction or None, account type or None, shown text, rule, explanation)
+_STATES = ('AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH '
+           'OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY').split()
+_CARD_PAYMENT = ('Card payment (from the holder’s bank)', 'card-payment-source',
+                 'A payment made to this card. The card statement does not print which bank account paid it; the payment comes from the holder’s own paying account.')
+
+# (pattern on the normalised description, direction or None, account type or None, mode, shown text, rule, explanation)
 _REASONS = [
     # Card statements: a payment to the card comes from the holder's paying account, which the card statement does not print.
-    (r'^(?:CAPITAL\s*ONE\s+)?(?:MOBILE|ONLINE|AUTOMATIC|AUTOPAY|ELECTRONIC|ACH)?\s*(?:PYMT|PMT|PAYMENT)(?:\b|AUTHDATE)|^(?:MOBILE )?PAYMENT\W*(?:MOBILE APP|THANK YOU)|'
-     r'^ONLINE PAYMENT,? THANK YOU|^AUTOMATIC PAYMENT\b|^PAYMENT\s*$', 'credit', 'credit_card',
-     'Card payment (from the holder’s bank)', 'card-payment-source',
-     'A payment made to this card. The card statement does not print which bank account paid it; the payment comes from the holder’s own paying account.'),
-    (r'^MOBILE PAYMENT\W*THANK YOU', None, 'credit_card',
-     'Card payment (from the holder’s bank)', 'card-payment-source',
-     'A payment made to this card. The card statement does not print which bank account paid it; the payment comes from the holder’s own paying account.'),
-    # BBVA cash-management (BMRCASH) batch lines print the batch and a concept, never the payee or payer.
-    (r'^W[O0]?\d{1,2}\s+TRASPASO A TERCEROS\b', 'debit', None,
-     'BBVA batch payment — the statement doesn’t list who was paid', 'bbva-batch-payment',
-     'A BBVA cash-management (BMRCASH) batch payment. The statement prints the batch reference and concept only; the payees are listed in the batch file, not on the statement.'),
-    (r'^W[O0]?\d{1,2}\s+DEPOSITO DE TERCERO\b', 'credit', None,
-     'BBVA batch collection — the statement doesn’t name who paid', 'bbva-batch-payment',
-     'A BBVA cash-management (BMRCASH) collection. The statement prints the batch reference and concept only, not the payer.'),
-    (r'^T\d{2}\s+DISPERSION\b|^BT\d\s+TRANSF\s+SP\S+\b', None, None,
-     'Payroll batch — the statement doesn’t list the employees', 'payroll-batch',
-     'A payroll dispersion line. The statement prints the receiving bank, batch number and payroll period only, not the employee.'),
-    (r'^R[O0]\d\s+PAGO DE (?:NOMINA|AGUINALDO)\b|^[T1]16\s+PAGO DE NOMINA\b|^CARGO PAGO NOMINA POR APLICAR\b|^(?:\d+\s+)?CARGO TRANSFERENCIA ENLACE NOMINA\b', 'debit', None,
-     'Payroll batch — the statement doesn’t list the employees', 'payroll-batch',
-     'A payroll batch. The name printed on it is the paying company (this account’s holder), not the employees paid.'),
-    (r'^(?:\d+\s+)?CARGO TRANSFERENCIA ENLACE GTOS A COMPR', 'debit', None,
-     NO_NAME, 'enlace-expense-advance',
-     'An expense-advance transfer made through the bank’s business channel (Enlace). The statement prints only the concept, not the recipient.'),
-    (r'^R[O0]\d\s+REEMBOLSO DE NOMINA\b', 'credit', None,
-     'Payroll refund — the statement doesn’t list the employees', 'payroll-batch',
-     'Part of a payroll batch returned to the account. The name printed on it is the paying company (this account’s holder), not the employees.'),
-    (r'^(?:BUS ONLINE )?ACH SETTLEMENT$', 'debit', None,
+    (r'^(?:CAPITAL\s*ONE\s+)?(?:MOBILE|ONLINE|AUTOMATIC|AUTOPAY|ELECTRONIC|ACH|WEB)?\s*(?:PYMT|PMT|PAYMENT)(?:\b|AUTHDATE)', 'credit', 'credit_card', CITY,
+     *_CARD_PAYMENT),
+    (r'^MOBILE PAYMENT\b', None, 'credit_card', CITY, *_CARD_PAYMENT),
+    # BBVA cash-management (BMRCASH) batch lines print the batch and the payer's concept; the payees are in the batch file.
+    (r'^W[O0]?\d{1,2}\s+TRASPASO A TERCEROS\b', 'debit', None, FIELD,
+     'BBVA batch payment — the statement has no payee field', 'bbva-batch-payment',
+     'A BBVA cash-management (BMRCASH) batch payment. This layout prints the batch reference and the payer’s own concept, '
+     'not a payee; the payees are listed in the batch file. Any words in the concept are the payer’s note and stay in the description.'),
+    (r'^W[O0]?\d{1,2}\s+DEPOSITO DE TERCERO\b', 'credit', None, FIELD,
+     'BBVA batch collection — the statement has no payer field', 'bbva-batch-payment',
+     'A BBVA cash-management (BMRCASH) collection. This layout prints the batch reference and a concept, not the payer. '
+     'Any words in the concept stay in the description.'),
+    (r'^T\d{2}\s+DISPERSION\b|^BT\d\s+TRANSF\s+SP\S+\b', None, None, FIELD,
+     'Payroll batch — the statement has no employee field', 'payroll-batch',
+     'A payroll dispersion line. This layout prints the receiving bank, batch number and payroll period, not the employee. '
+     'Any words in the concept stay in the description.'),
+    (r'^R[O0]\d\s+PAGO DE (?:NOMINA|AGUINALDO)\b|^[T1]16\s+PAGO DE NOMINA\b|^CARGO PAGO NOMINA POR APLICAR\b|^(?:\d+\s+)?CARGO TRANSFERENCIA ENLACE NOMINA\b', 'debit', None, FIELD,
+     'Payroll batch — the statement has no employee field', 'payroll-batch',
+     'A payroll batch. The name this layout prints is the paying company (this account’s holder), not the employees paid.'),
+    (r'^(?:\d+\s+)?CARGO TRANSFERENCIA ENLACE GTOS A COMPR', 'debit', None, FIELD,
+     'Expense advance — the statement has no recipient field', 'enlace-expense-advance',
+     'An expense-advance transfer made through the bank’s business channel (Enlace). This layout prints the payer’s concept, '
+     'not a recipient field; any words in the concept stay in the description.'),
+    (r'^R[O0]\d\s+REEMBOLSO DE NOMINA\b', 'credit', None, FIELD,
+     'Payroll refund — the statement has no employee field', 'payroll-batch',
+     'Part of a payroll batch returned to the account. The name this layout prints is the paying company (this account’s holder), not the employees.'),
+    (r'^(?:\d+\s+)?(?:CARGO|ABONO) TRANSFERENCIA ENLACE\b(?!.*\bTRANSFERENCIA A\b)', None, None, FIELD,
+     'Enlace transfer — the statement has no payee field', 'enlace-transfer',
+     'A transfer made through the bank’s business channel (Enlace). This layout prints the payer’s concept, not the other '
+     'account or its holder; any words in the concept stay in the description.'),
+    (r'^(?:BUS ONLINE )?ACH SETTLEMENT$', 'debit', None, STRICT,
      'ACH batch — the statement doesn’t list who was paid', 'ach-batch',
      'A batch of ACH payments sent by the business. The statement prints the batch total only, not the individual payees.'),
-    (r'^(?:\d+\s+-\s+)?\d+\s+(?:[A-Z0-9]+\s+){0,2}(?:AV|AVE|ST|RD|BLVD|DR|PKWY|HWY|PL|WAY|LN|CT)\b|^\d+\s+-\s+\d+\s', 'debit', 'credit_card',
+    # A card line that is only a terminal number and an address, with the town and state run together.
+    (r'^\d+\s+-\s+\d+\s+(?:[A-Z]{1,20}\s+)?[A-Z]{4,}(?:' + '|'.join(_STATES) + r')$', 'debit', 'credit_card', STRICT,
      'Card purchase — the line prints only the store’s address', 'card-address-only',
      'The card line prints the terminal number and street address of the store, not a merchant name.'),
     # International payments: the statement prints the order and its reference, not the beneficiary.
-    (r'^E\d{2}\s+ORDEN DE PAGO EXTRANJERO\b', None, None,
+    (r'^E\d{2}\s+ORDEN DE PAGO EXTRANJERO\b', None, None, STRICT,
      'International transfer — the statement doesn’t name the other side', 'foreign-payment-order',
      'An international payment order. The statement prints the amount, currency and reference only.'),
     # Cheques: the statement lists the cheque number; the payee is only on the cheque itself.
-    (r'^(?:\|\s*)?(?:CHECK(?: NUMBER)?|CHEQUE|CHQ)\s*#?\s*\d+$|^\*?\s*\d{3,5}$', 'debit', None,
+    (r'^(?:\|\s*)?(?:CHECK(?: NUMBER)?|CHEQUE|CHQ)\s*#?\s*\d+$|^\*?\s*\d{3,5}$', 'debit', None, STRICT,
      'Cheque — the statement lists only the cheque number', 'cheque-number-only',
      'A cheque listed by its number. The statement line does not print the payee; where the statement includes cheque images, the payee is on the image.'),
-    (r'^[A-Z]\d{2}\s+DEPOSITO CHEQUE\b|^C\d{2}\s+DEP\.?\s*CHEQUES\b|^(?:\d+\s+)?DEPOSITO SALVO BUEN COBRO\b|^DEPOSIT BY CHECK\b|'
-     r'^DEPOSIT SHARED BRANCH\b.*\bMOBILE DEPOSIT\b|^DEPOSIT MOBILE BANKING$|^(?:\|\s*)?MOBILE DEPOSIT\b', 'credit', None,
+    (r'^[A-Z]\d{2}\s+DEPOSITO CHEQUE(?:\s+(?:BBVA|BANCOMER)\b)?|^C\d{2}\s+DEP\.?\s*CHEQUES\b|^(?:\d+\s+)?DEPOSITO SALVO BUEN COBRO\b|^DEPOSIT BY CHECK\b|'
+     r'^DEPOSIT MOBILE BANKING$|^(?:\|\s*)?MOBILE DEPOSIT\b', 'credit', None, STRICT,
      'Cheque deposit — the statement doesn’t name who wrote the cheque', 'cheque-deposit',
      'A cheque paid into the account. The statement does not print the drawer of the cheque.'),
-    (r'^[A-Z]\d{2}\s+DEP POR CAN DE DOCUMENTO\b', 'credit', None,
+    (r'^DEPOSIT SHARED BRANCH\b.*?\bMOBILE DEPOSIT\b', 'credit', None, CITY,
+     'Cheque deposit — the statement doesn’t name who wrote the cheque', 'cheque-deposit',
+     'A cheque paid into the account through a mobile deposit. The statement prints the branch network and place, not the drawer of the cheque.'),
+    (r'^[A-Z]\d{2}\s+DEP POR CAN DE DOCUMENTO\b', 'credit', None, STRICT,
      'Cancelled cashier’s cheque returned to the account', 'cancelled-cashier-cheque',
      'The bank cancelled a cashier’s cheque and returned its amount to this account; no other party is involved.'),
-    (r'^(?:\d+\s+)?(?:VTA CHQ CAJ|VENTA CHEQUE)\b', 'debit', None,
+    (r'^(?:\d+\s+)?(?:VTA CHQ CAJ|VENTA CHEQUE)\b', 'debit', None, STRICT,
      'Cashier’s cheque — the statement doesn’t name the payee', 'cashier-cheque',
      'A cashier’s cheque bought from the bank. The statement does not print who it is payable to.'),
     # Cash.
-    (r'^(?:[A-Z]{1,2}\d{1,2}\s+|\d+\s+)?DEPOSITO (?:EN )?EFECTIVO\b', 'credit', None,
+    (r'^(?:[A-Z]{1,2}\d{1,2}\s+|\d+\s+)?DEPOSITO (?:EN )?EFECTIVO\b', 'credit', None, STRICT,
      'Cash deposit — the statement doesn’t name who paid it in', 'cash-deposit',
      'Cash paid into the account. The statement does not print who deposited it.'),
-    (r'^TRUIST ATM (?:MIXED |CASH )?DEPOSIT\b|^(?:\|\s*)?ATM (?:CASH )?DEPOSIT\b', 'credit', None,
+    (r'^TRUIST ATM (?:MIXED |CASH )?DEPOSIT\b|^(?:\|\s*)?ATM (?:CASH )?DEPOSIT\b', 'credit', None, ADDRESS,
      'Cash deposit — the statement doesn’t name who paid it in', 'cash-deposit',
      'Cash paid into the account at an ATM. The statement prints the ATM or branch, not who deposited it.'),
-    (r'^WITHDRAWAL (?:AT ATM|BY CASH)\b|^ATM WITHDRAWAL\b|^(?:\|\s*)?ATM CASH\b|^TRUIST ATM (?:CASH )?WITHDRAWAL\b|^(?:\d+\s+)?RETIRO (?:DE )?EFECTIVO\b|^CASH WITHDRAWAL\b', 'debit', None,
+    (r'^WITHDRAWAL (?:AT ATM|BY CASH)\b|^ATM WITHDRAWAL\b|^(?:\|\s*)?ATM CASH\b|^TRUIST ATM (?:CASH )?WITHDRAWAL\b', 'debit', None, ADDRESS,
      'Cash withdrawal — no other party', 'cash-withdrawal',
-     'Cash taken out of the account. There is no other party; the ATM or branch printed is where the cash was taken.'),
+     'Cash taken out of the account at an ATM. There is no other party; the ATM printed is where the cash was taken.'),
+    (r'^(?:\d+\s+)?RETIRO (?:DE )?EFECTIVO\b|^CASH WITHDRAWAL\b', 'debit', None, STRICT,
+     'Cash withdrawal — no other party', 'cash-withdrawal',
+     'Cash taken out of the account. The line prints no one it was paid to.'),
     # Insurance premiums and receipts the bank collects, printed with the policy or receipt reference only.
-    (r'^G30\s+(?:RECIBO NO\b|CARGO POR PRIMA DE SEGURO\b)|^(?:\d+\s+)?COB(?:RO)? PRIMA (?:DE )?SEGU', 'debit', None,
+    (r'^G30\s+(?:RECIBO NO\b|CARGO POR PRIMA DE SEGURO\b)|^(?:\d+\s+)?COB(?:RO)? PRIMA (?:DE )?SEGU', 'debit', None, STRICT,
      NO_NAME, 'bank-collected-premium',
      'An insurance premium or receipt collected by the bank. The statement prints only the policy or receipt reference, not the insurer.'),
-    (r'^(?:\d+\s+)?APORT LINEA CAPTURA\b', 'debit', None,
+    (r'^(?:\d+\s+)?APORT LINEA CAPTURA\b', 'debit', None, STRICT,
      'Government payment by capture line — the statement doesn’t name the authority', 'capture-line-payment',
      'A payment made with a capture line (línea de captura), the reference used for federal tax and social-security payments. The statement prints the line number only, not which authority was paid.'),
-    (r'^N\d{2}\s+DEVOLUCION NC MULTIPAGOS\b', 'credit', None,
-     'Refund of a bill payment — the statement doesn’t name the payee', 'returned-transfer',
+    (r'^N\d{2}\s+DEVOLUCION NC MULTIPAGOS\b', 'credit', None, STRICT,
+     'Refund of a bill payment — the statement doesn’t name the payee', 'returned-bill-payment',
      'A bill payment (CIE) came back. This line prints the refund wording only, not the payee.'),
     # Returned transfers whose original beneficiary is not printed.
-    (r'^\S{1,3}\s+(?:SP\S+|TEF)\s+DEVUELTO', 'credit', None,
+    # The returning bank follows DEVUELTO, often run into it (DEVUELTOBANAMEX, INTERCAM BAN, BANCO NO DEF).
+    (r'^\S{1,3}\s+(?:SP\S+|TEF)\s+DEVUELTO\s*(?:[A-Z]+(?:\s+(?:BAN|MEXICO|NO DEF)\b)?)?', 'credit', None, STRICT,
      'Returned transfer — the statement doesn’t name who it was sent to', 'returned-transfer',
      'An earlier transfer came back. This line prints the returning bank only, not the original beneficiary.'),
     # BBVA transfer lines saved without a name line. BBVA prints the other side's name as the last line of a
-    # transfer when it has one; many entries print only the bank and concept.
-    (r'^\S{1,4}\s+(?:SP\S{1,3}|TEF)\s+(?:ENVIADO|RECIBIDO)', None, None,
+    # transfer when it has one; many entries print only the bank and concept. The bank (one word, or two
+    # such as INTERCAM BAN, CITI MEXICO) is part of the layout.
+    (r'^\S{1,4}\s+(?:SP\S{1,3}|TEF)\s+(?:ENVIADO|RECIBIDO)\s*(?:[A-Z]+(?:\s+(?:BAN|MEXICO)\b)?)?', None, None, STRICT,
      'No name on this transfer line', 'bbva-transfer-no-name',
-     'This BBVA transfer, as saved, holds the bank and concept but no name for the other side. Many BBVA entries print no '
+     'This BBVA transfer, as saved, holds the bank, concept and references but no name for the other side. Many BBVA entries print no '
      'name; where an entry runs onto the next page, its last line (the name) is on that page.'),
     # Brokerage contract cash movements (Intercam Casa de Bolsa, Kapital): folio and type only.
-    (r'^\d+\s+(?:RETIRO|DEPOSITO|CARGO)\s+0\s+0\s+1\.0+\b', None, None,
+    (r'^\d+\s+(?:RETIRO|DEPOSITO|CARGO)\s+0\s+0\s+1\.0+\b', None, None, STRICT,
      'Brokerage cash movement — the statement doesn’t name the other account', 'brokerage-cash-movement',
      'Cash paid into or out of the brokerage contract. The statement prints the folio and the movement type only.'),
     # Generic movements that print only their type.
-    (r'^(?:\d+\s+)?(?:I?ABONO|CARGO)(?: A CUENTA(?: DE CHEQUES)?)?(?:\s*\|\s*\S+)?$|^(?:I?ABONO|CARGO)\s+\d+$|^ABONO TRANSFER GB\d+\b|^AUTOMATIC PAYMENT$|^AB TRANSF SPEI\b(?!.*\b(?:DE|DEL) CLIENTE\b)|^DEPOSIT$|^DEPOSIT\s*-?\s*$|^WITHDRAWAL MOBILE BANKING$|'
-     r'^POR SOLICITUD DE CANCELACION$|^(?:\d+\s+)?ABONO POR TRANSFERENCIA\b(?!.*\bCLIENTE\b)', None, None,
+    (r'^(?:\d+\s+)?(?:I?ABONO|CARGO)(?: A CUENTA(?: DE CHEQUES)?)?\b|^ABONO TRANSFER GB\d+\b|^AUTOMATIC PAYMENT\b|^AB TRANSF SPEI\b|^DEPOSIT\b|'
+     r'^WITHDRAWAL MOBILE BANKING\b|^POR SOLICITUD DE CANCELACION\b|^(?:\d+\s+)?ABONO POR TRANSFERENCIA\b|^(?:\d+\s+)?(?:PAGO|ABONO) TRANSFERENCIA SPEI HORA\b', None, None, STRICT,
      NO_NAME, 'type-only',
-     'The statement prints only the kind of movement for this line, with no name for the other side.'),
-    (r'^(?:\d+\s+)?(?:PAGO|ABONO) TRANSFERENCIA SPEI HORA \d{2}:\d{2}:\d{2}$', None, None,
-     NO_NAME, 'type-only',
-     'The statement prints only the transfer type and time for this line, with no name for the other side.'),
-    (r'^(?:\d+\s+)?(?:CARGO|ABONO) TRANSFERENCIA ENLACE\b(?!.*\bTRANSFERENCIA A\b)', None, None,
-     NO_NAME, 'type-only',
-     'A transfer made through the bank’s business channel (Enlace). The statement prints only the concept, not the other account.'),
+     'The statement prints only the kind of movement for this line, with its references, and no name for the other side.'),
 ]
-_REASONS = [(re.compile(pattern), direction, account_type, text, rule, explanation)
-            for pattern, direction, account_type, text, rule, explanation in _REASONS]
+_REASONS = [(re.compile(pattern), direction, account_type, mode, text, rule, explanation)
+            for pattern, direction, account_type, mode, text, rule, explanation in _REASONS]
 
-# Some of these layouts carry a free-text concept that can hold a name. A reason is given only when the
-# text after the layout's own wording holds nothing that could be a name: words beyond the layout's
-# vocabulary (concepts, banks, months, references) are taken as a possible name and the reason is withheld.
-# The value is how many such words in a row withhold it (1 for lines that normally print none at all).
-_GUARDED = {'type-only': 2, 'enlace-expense-advance': 2, 'bbva-transfer-no-name': 2, 'returned-transfer': 2,
-            'cheque-deposit': 2, 'foreign-payment-order': 1, 'cash-deposit': 1}
+# The words these layouts print themselves. Single letters and anything holding a digit are references.
+# Bank names are not listed: a bank printed where a name could be is not taken as a layout word.
 _LAYOUT_WORDS = frozenset('''
-    PAGO PAGOS FACT FACTURA FACTURAS COT PREFAC ABONO CTA CTAS CUENTA CUENTAS TRASPASO TRANSFERENCIA TRANSF TRANSFER
-    INVERSION ENTRE PROPIAS PRESTAMO GASTOS GTOS COMPROBAR COMPR COMP APORTACION CAPITAL AUMENTO NOM NOMINA QNA
-    SALDO COMISION SPEI SPID TEF HORA ENVIADO RECIBIDO REF DEL LAS LOS PARA POR CON ANTICIPO FINIQUITO PENSION
-    AGUINALDO VACACIONES LIQUIDACION DEVOLUCION DEVUELTO DIVISAS COMPRA VENTA INTERNET EXTRANJERO ORDEN ORDENANTE
-    EFECTIVO DEPOSITO ATM BNET BET ENLACE CHEQUE CHEQUES CARGO CASH WINDOWS PRACTIC PRAC FOLIO VIATICOS VIAT
-    SOBRANTE REINT INFONAVIT SOLICITUD CANCELACION MOBILE BANKING DEPOSIT WITHDRAWAL AUTOMATIC PAYMENT
+    PAGO PAGOS FACT FACTURA FACTURAS COT PREFAC ABONO CTA CTAS CUENTA CUENTAS CHEQUES TRASPASO TRANSFERENCIA TRANSF
+    TRANSFER INVERSION ENTRE PROPIAS PRESTAMO GASTOS GTOS COMPROBAR COMPR COMP NOM NOMINA QNA SALDO COMISION
+    SPEI SPID TEF HORA ENVIADO RECIBIDO REF DE DEL LA LAS LOS EL EN AL POR CON NO ANTICIPO FINIQUITO AGUINALDO
+    VACACIONES DEVOLUCION DEVUELTO DEV CIE NC MULTIPAGOS DIVISAS INTERNET EXTRANJERO ORDEN EFECTIVO DEPOSITO ATM
+    BNET BET CHEQUE CARGO CASH WINDOWS PRACTIC PRAC FOLIO SOLICITUD CANCELACION CANC CAJA CHQ CAJ OTRO BCO
+    RECIBO POLIZA POL PRIMA SEGURO COB COBRO RO ROS LINEA CAPTURA APORT IMPORTE MOBILE BANKING DEPOSIT WITHDRAWAL
+    AUTOMATIC PAYMENT PMT PYMT ONLINE WEB APP THANK YOU PROMO PURCHASE OFFER AUTHDATE USD EUR MXP MXN MN
     ENE FEB MAR ABR MAY JUN JUL AGO SEP SEPT OCT NOV DIC ENERO FEBRERO MARZO ABRIL MAYO JUNIO JULIO AGOSTO
-    SEPTIEMBRE OCTUBRE NOVIEMBRE DICIEMBRE PRIMERA SEGUNDA
-    BBVA BANCOMER SANTANDER BANAMEX CITI CITIBANAMEX MEXICO BANORTE AZTECA BANCOPPEL INTERCAM BAN HSBC BAJIO
-    SCOTIABANK INBURSA KUSPIT MIFEL BANREGIO MONEX BMONEX PEIBO BANKAOOL AFIRME MULTIVA INVEX BANSI BANCREA STP
-    BANJERCITO SABADELL ACTINVER BANCO BANK
+    SEPTIEMBRE OCTUBRE NOVIEMBRE DICIEMBRE JAN APR AUG DEC VIDA OTRO BANCO MEXICO
 '''.split())
+_DIRECTED = re.compile(r'\b(?:TO|FROM|FOR|BY|PAY|PAID|PAYEE|PARA|FAVOR|BENEFICIARIO|DESTINO|ORDENANTE|CLIENTE|NAME)\b')
 
 
-def _may_print_a_name(text, run_needed):
-    run = 0
-    for token in text.split():
-        word = token.strip('.,:;()/[]|*"\'')
-        if len(word) >= 3 and word.isalpha() and word not in _LAYOUT_WORDS:
-            run += 1
-            if run >= run_needed:
-                return True
-        else:
-            run = 0
-    return False
+def _only_layout_words(text):
+    for token in re.split(r'[\s.,:;()/\[\]|*"\'\-–—#%+=&!?·]+', text):
+        if len(token) >= 2 and token.isalpha() and token not in _LAYOUT_WORDS:
+            return False
+    return True
+
+
+def _without_town(text):
+    """The text without a final town and state (at most two words before the state)."""
+    words = text.split()
+    if words and words[-1] in _STATES:
+        return ' '.join(words[:max(0, len(words) - 3)])
+    return text
 
 
 def unnamed_reason(value, *, direction, account_type=None):
@@ -153,12 +177,18 @@ def unnamed_reason(value, *, direction, account_type=None):
     ``value`` is the normalised description (payment_inference.normalized)."""
     from services.financial.payment_parties import strip_date_prefix
     value = strip_date_prefix(value)
-    for pattern, wanted, kind, text, rule, explanation in _REASONS:
+    for pattern, wanted, kind, mode, text, rule, explanation in _REASONS:
         if (wanted is None or wanted == direction) and (kind is None or kind == account_type):
             match = pattern.search(value)
             if not match:
                 continue
-            if rule in _GUARDED and _may_print_a_name(value[match.end():], _GUARDED[rule]):
+            tail = value[match.end():]
+            if mode == STRICT and not _only_layout_words(tail):
+                return None
+            if mode == CITY and not _only_layout_words(_without_town(tail)):
+                return None
+            # An ATM address carries a street or terminal number; directed wording names someone.
+            if mode == ADDRESS and (_DIRECTED.search(tail) or tail.strip() and not re.search(r'\d{2,}', tail)):
                 return None
             return text, rule, explanation
     return None

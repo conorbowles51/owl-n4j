@@ -72,6 +72,71 @@ _CONCEPT_FIRST = frozenset('PAGO PAGOS ONLINE AUTOPAY AUTOMATIC RECURRING TRANSF
 _CONCEPT_ANY = frozenset('PAYMENT PAYMENTS PMT PYMT FEE MENSUALIDAD COLEGIATURA ANTICIPO REFUND CANCELLED CANCELED'.split())
 
 
+# Common given names (Spanish and English). Where a layout runs a free-text concept and a name together,
+# a person is recognised only by opening with one of these; a company only by its legal form or a word
+# that only names companies. Anything else is left unnamed rather than guessed.
+_GIVEN_NAMES = frozenset("""
+    AARON ABEL ABRAHAM ADA ADAN ADOLFO ADRIAN ADRIANA AGUSTIN ALAN ALBA ALBERTO ALEJANDRA ALEJANDRO ALFONSO ALFREDO ALICIA
+    ALMA ALONSO ALVARO AMADO AMALIA AMPARO ANA ANABEL ANDREA ANDRES ANGEL ANGELA ANGELICA ANTONIA ANTONIO ARACELI ARIEL
+    ARMANDO ARTURO AURORA AXEL BEATRIZ BENITO BENJAMIN BERENICE BERNARDO BLANCA BRANDON BRENDA BRUNO CAMILA CANDELARIO
+    CARLA CARLOS CARMEN CAROLINA CATALINA CECILIA CELIA CESAR CHRISTIAN CINTHIA CLARA CLAUDIA CRISTIAN CRISTINA CRISTOBAL
+    CYNTHIA DAMIAN DANIEL DANIELA DARIO DAVID DIANA DIEGO DOLORES DOMINGO DULCE EDGAR EDITH EDUARDO EFRAIN ELENA ELIAS
+    ELISA ELIZABETH ELSA ELVIRA EMILIA EMILIO EMMANUEL ENRIQUE ERIC ERICK ERIKA ERNESTO ESPERANZA ESTEBAN ESTELA EUGENIO
+    EVA EVER FABIAN FABIOLA FATIMA FELIPE FELIX FERNANDA FERNANDO FIDEL FLOR FRANCISCA FRANCISCO GABRIEL GABRIELA GENARO
+    GEORGINA GERARDO GERMAN GILBERTO GLORIA GONZALO GRACIELA GREGORIO GUADALUPE GUILLERMO GUSTAVO HECTOR HERIBERTO HILDA
+    HORACIO HUGO HUMBERTO IGNACIO IRENE IRMA ISAAC ISABEL ISAIAS ISMAEL ISRAEL IVAN JACINTO JAIME JAVIER JESICA JESSICA
+    JESUS JOAQUIN JOEL JORGE JOSE JOSEFINA JOSUE JUAN JUANA JULIA JULIAN JULIO KARINA KARLA LAURA LAZARO LEONARDO LEONEL
+    LETICIA LILIA LILIANA LORENA LORENZO LOURDES LUCIA LUIS LUISA LUZ MANUEL MANUELA MARCO MARCOS MARGARITA MARIA MARIANA
+    MARIANO MARIO MARISOL MARTA MARTHA MARTIN MATEO MAURICIO MAXIMILIANO MAYRA MELISSA MERCEDES MIGUEL MIRIAM MOISES
+    MONICA NANCY NATALIA NELSON NESTOR NICOLAS NOE NOEMI NORA NORMA OCTAVIO OFELIA OLGA OMAR ORLANDO OSCAR OSWALDO
+    PABLO PAOLA PATRICIA PAULA PAULINA PEDRO PILAR RAFAEL RAMIRO RAMON RAQUEL RAUL REBECA REYNA RICARDO RIGOBERTO ROBERTO
+    ROCIO RODOLFO RODRIGO ROGELIO ROLANDO ROMAN ROSA ROSARIO RUBEN RUTH SALVADOR SAMUEL SANDRA SANTIAGO SARA SAUL
+    SEBASTIAN SERGIO SILVIA SOFIA SONIA SUSANA TERESA TOMAS ULISES URIEL VALENTIN VALERIA VERONICA VICENTE VICTOR
+    VICTORIA VIRGINIA VLADIMIR WALTER XOCHITL YESENIA YOLANDA ZOILA
+    ADAM AMY ANDREW ANN ANTHONY BRIAN CHARLES CHRISTOPHER DONALD EMILY GEORGE JAMES JANE JASON JENNIFER JOHN JOSEPH
+    KAREN KEVIN LINDA LISA MARK MARY MATTHEW MICHAEL NANCY PAUL RICHARD ROBERT SARAH STEVEN SUSAN THOMAS WILLIAM
+""".split())
+_LEGAL_FORM = re.compile(r'\b(?:S\.?\s?A\.?(?:\s?(?:P\.?\s?I|B)\.?)?|S\s?DE\s?R\.?\s?L|S\.?\s?C|A\.?\s?C|S\.?\s?P\.?\s?R|INC|LLC|LTD|CORP)\.?'
+                         r'(?:\s*(?:DE|D\s?E)\s*(?:C\.?\s?V?\.?|R\.?\s?L\.?))?\s*$|\bDE\s+C\.?\s?V\.?$|\bS\s?DE\s?R\.?\s?L\b')
+_COMPANY_WORDS = re.compile(r'\b(?:GRUPO|CORPORAT\w*|COMERCIALIZADORA|CONSTRUCTORA|DISTRIBUIDORA|ARRENDADORA|INMOBILIARIA|'
+                            r'FINANCIAL|FINANCIERA|LEASIN\w*|CONSULTORES|LABORATORIOS)\b')
+
+
+_PAYMENT_CONCEPT = re.compile(r'\b(?:PAGO|PAGOS|ABONO|ANTICIPO|SALDO|RENTA|MENSUALIDAD|PRIMER|PRIMERO|SEGUNDO|TERCER|TERCERO|'
+                              r'FACTURA|CUOTA|PARCIAL|FINIQUITO|NOMINA|LIQUIDACION|ENGANCHE|COLEGIATURA|INSCRIPCION|REEMBOLSO)\b')
+
+
+def party_shaped(name):
+    """True when a name taken from free text has the shape of a party: a company by its legal form or a
+    word that only names companies, or a person opening with a common given name (after an optional initial)."""
+    text = normalized(name)
+    # Payment wording inside the text (SEGUNDO PAGO, ANTICIPO) makes it a concept, whatever its other words.
+    if _PAYMENT_CONCEPT.search(text):
+        return False
+    if _LEGAL_FORM.search(text) or _COMPANY_WORDS.search(text):
+        return True
+    words = text.split()
+    if words and len(words[0]) == 1:
+        words = words[1:]
+    return 2 <= len(words) <= 6 and words[0] in _GIVEN_NAMES and all(re.fullmatch(r"[A-Z][A-Z'\-]*", w) for w in words)
+
+
+# Generic payment, concept and place words: a merchant or payee name made only of these is a description of
+# the payment (CREDIT CARD, CAR LOAN, ELECTRIC BILL), not who it is with.
+_GENERIC_WORDS = frozenset("""
+    PAYMENT PAYMENTS PMT PYMT PAY BILL BILLS CARD CREDIT DEBIT LOAN CAR AUTO HOME MORTGAGE RENT TAX TAXES PAYROLL
+    INSURANCE PREMIUM ELECTRIC WATER GAS UTILITY UTILITIES PHONE MOBILE INTERNET CABLE WEB ONLINE TRANSFER DIRECT
+    MONTHLY QUARTERLY ANNUAL WEEKLY FEE FEES SERVICE SERVICES CHARGE PURCHASE SALE REFUND RETURN DEPOSIT WITHDRAWAL
+    PENDING AUTHORIZATION AUTH CC ACH CASH CHECK STORE SHOP MARKET NEW SAN SANTA ST SAINT NORTH SOUTH EAST WEST CITY
+    TOWN COUNTY YORK THE AND OF FOR TO
+""".split())
+
+
+def generic_words_only(name):
+    words = [w for w in re.sub(r'[^A-Z0-9 ]', ' ', normalized(name)).split() if not w.isdigit()]
+    return not words or all(w in _GENERIC_WORDS or w in _STATES for w in words)
+
+
 def concept_or_place(name, place=True, anywhere=True):
     """True when a captured name is the payment's concept, a street address or (with ``place``) a place, not a party.
 
@@ -239,16 +304,20 @@ def _bbva_spei(raw, value, direction):
     tail = re.search(r'\b\d{15,}\s+([^\d]+)$', match[2])
     if tail:
         return tail[1], 'bbva-transfer-party', f'The {role} printed after the account and tracking references; the bank named first carries the transfer and is not taken as the party.'
-    # Without any reference the concept and name run together. Only a
-    # payroll concept with its date ends at a known place.
-    short = (re.match(r'^.+?\s\d{7}NOMINA\s+\d{6}\s+(.+)$', match[2])
-             or re.match(r'^\S+(?:\s\S+)?\s\d{7}(?:NOMINA\s+\d?\S{1,3}\s+QNA\s+[A-Z]{3,5}\s?\d{2}|FINIQUITO|PENSION|GTOS A COMPROBAR|AGUINALDO|VACACIONES|'
-                         r'PRESTAMO(?: PERSONAL)?|LIQUIDACION)\s+([A-Z][A-Z.]+(?:\s+[A-Z][A-Z.]+){1,5})$', match[2])
+    # Without any reference the concept and name run together. A payroll concept with its date or
+    # fortnight (NOMINA 150125, NOMINA 1A QNA ENE25) ends at a fixed place, so what follows is the name slot.
+    fixed = (re.match(r'^.+?\s\d{7}NOMINA\s+\d{6}\s+(.+)$', match[2])
+             or re.match(r'^\S+(?:\s\S+)?\s\d{7}NOMINA\s+\d?\S{1,3}\s+QNA\s+[A-Z]{3,5}\s?\d{2}\s+([A-Z][A-Z.]+(?:\s+[A-Z][A-Z.]+){1,5})$', match[2]))
+    if fixed and not re.search(r'\d', fixed[1]) and not generic_words_only(fixed[1]):
+        return fixed[1], 'bbva-transfer-party', f'The {role} printed after the payroll concept and its date; the bank named first carries the transfer and is not taken as the party.'
+    # Other concepts are free text of any length; the name is taken only when it has the shape of a party.
+    short = (re.match(r'^\S+(?:\s\S+)?\s\d{7}(?:FINIQUITO|PENSION|GTOS A COMPROBAR|AGUINALDO|VACACIONES|'
+                      r'PRESTAMO(?: PERSONAL)?|LIQUIDACION)\s+([A-Z][A-Z.]+(?:\s+[A-Z][A-Z.]+){1,5})$', match[2])
              or re.match(r'^\S+(?:\s\S+)?\s\d{7}PAGO\s+(?:F|FACT|FACTURA|COT)\.?\s+\S*\d\S*\s+([A-Z][A-Z ]+?\s(?:SA|S\.A\.|S DE RL|SAPI|SC|AC)(?:\s+DE\s+CV)?)$', match[2])
              # A payroll or invoice concept, its reference (holding a digit), then the name to the end of the line.
              or re.match(r'^\S+(?:\s\S+)?\s\d{7}(?:NOMINA|AGUINALDO|PTU|FINIQUITO|(?:PAGO|SALDO|ABONO|AB)(?:\s+A\s+CTA)?\s+(?:F|FA|FACT|FACTURA)|COT)\.?\s+'
-                         r'\S*\d\S*\s+((?!(?:A|CTA|F|DE|QNA|REF|PAGO|SALDO|EQ|DISP|CAMION|SELLOS|CONCRETO)\s)[A-Z][A-Z]+(?:\s+[A-Z][A-Z]*){1,5})$', match[2]))
-    if short and not re.search(r'\d', short[1]):
+                         r'\S*\d\S*\s+((?!(?:EQ|DISP|CAMION|SELLOS|CONCRETO)\s)[A-Z][A-Z]+(?:\s+[A-Z][A-Z]*){1,5})$', match[2]))
+    if short and not re.search(r'\d', short[1]) and party_shaped(short[1]):
         return short[1], 'bbva-transfer-party', f'The {role} printed after the payroll concept and its date; the bank named first carries the transfer and is not taken as the party.'
     return None
 
@@ -350,15 +419,15 @@ def _mx_named_lines(raw, value, direction):
                 '(including the INFONAVIT and retirement shares).')
     # BBVA cashier's cheque bought for a named payee: C61 COMPRA CHEQUE DE CAJA <payee> Ref. ..
     match = re.match(r'^[A-Z]\d{2}\s+COMPRA CHEQUE DE CAJA\s+(.+?)(?:\s+REF(?:\.|\b).*)?$', value)
-    if match and direction == 'debit' and not concept_or_place(match[1], place=False):
+    if match and direction == 'debit' and party_shaped(match[1]):
         return match[1], 'cashier-cheque-payee', 'The payee printed on this cashier’s cheque purchase.'
     # BBVA SIT receipts: TJ3 SITH<ref> <payer, fixed width><agreement> Ref. ..
     match = re.match(r'^T[A-Z0-9]\d\s+SIT[A-Z]\d{6,}\s+(.+?)\s*\d{5,}\s+REF\.', value)
-    if match and direction == 'credit' and not concept_or_place(match[1], place=False):
+    if match and direction == 'credit' and party_shaped(match[1]):
         return match[1], 'bbva-sit-payer', 'The payer printed after the SIT reference on this collection; its agreement number and reference follow it.'
     # BBVA collections for a leasing company: Z3 CARGO COBRANZA <company> Ref. ..
     match = re.match(r'^Z\d{1,2}\s+CARGO COBRANZA\s+([A-Z][A-Z .&]+?)\s+REF\.', value)
-    if match and direction == 'debit' and not concept_or_place(match[1], place=False):
+    if match and direction == 'debit' and party_shaped(match[1]):
         return match[1], 'bbva-direct-debit-payee', 'The company collecting this charge, printed after “cargo cobranza”.'
     # BBVA Leasing invoices: Z32 BBVA LEASING PAGO FACTURA ..
     if direction == 'debit' and re.match(r'^[A-Z]\d{2}\s+BBVA LEASING\b', value):
@@ -376,7 +445,7 @@ def _mx_payee(raw, value, direction):
     match = (re.search(r'\bDOMICILIACION PAGO SERVICIO\b.*\bCOBRO\d?\s+[\d,.]+\s+(.+)$', value)
              or re.search(r'\bDOMICILIACION PAGO SERVICIO\b.*\d\s*COBRO\s+([A-Z][A-Z .&]+)$', value)
              or re.search(r'\bDOMICILIACION PAGO SERVICIO\s+\d+\s+RFC\s+\S+\s+\d+\s+[\d,]+\.\d{2}\s+([A-Z][A-Z .&]+)$', value))
-    if match and not concept_or_place(match[1], place=False):
+    if match and party_shaped(match[1]):
         return match[1], 'direct-debit-payee', 'The company collecting this direct debit, printed after the amount collected.'
     match = re.search(r'\bDOMICILIACION PAGO SERVICIO\s+\d+\s+RFC\s+([A-Z&]{3,4}[0-9O]{6}[A-Z0-9]{3})$', value)
     if match:
@@ -415,8 +484,9 @@ def _us_ach_company(raw, value, direction):
     # OCR splits the opening word (Wi thdrawal ACH ..).
     value = re.sub(r'^W\s?I\s?T\s?H\s?D\s?R\s?A\s?W\s?A\s?L\b', 'WITHDRAWAL', value)
     # Truist: ACH CORP DEBIT <company> PYMT|PAYMENT ..
-    match = re.match(r'^ACH CORP DEBIT\s+(?:DISCOUNT|FEE|FEES)\s+(TRUIST MERCH SVC)\b', value) or re.match(r'^ACH CORP DEBIT\s+([A-Z][A-Z0-9&.]+(?:\s+[A-Z][A-Z0-9&.]+){0,2}?)\s+(?:PYMT|PAYMENT|PMT|FEE|FEES|DEBIT)\b', value)
-    if match and direction == 'debit' and match[1] not in ('ACH', 'CORP', 'DEBIT', 'PMT', 'PAYMENT') and not concept_or_place(match[1], place=False):
+    # Only the card processors named on these lines are taken; the slot otherwise holds the entry's own wording.
+    match = re.match(r'^ACH CORP DEBIT\s+(?:(?:DISCOUNT|FEE|FEES)\s+)?(TRUIST MERCH SVC|FDMS)\b', value)
+    if match and direction == 'debit':
         return match[1], 'ach-company', 'The company printed first on this ACH debit, before its entry wording.'
     # Andrews: Withdrawal ACH <name> TYPE: <type> ID: <id> CO: <company> [NAME: <person>] ACH Trace Number: ..
     match = re.match(r'^(?:WITHDRAWAL|DEPOSIT)\s+ACH\b.*?\bCO\s*:\s*(.+?)\s+(?:NAME\s*:|ACH TRACE|ENTRY CLASS|\.\s)', value)
@@ -490,7 +560,8 @@ def _us_named_transfer(raw, value, direction):
                 name = re.split(r'\s+(?:MOBILE PMT|ONLINE PMT|CHECK PYMT|(?:ONLINE\s+)?PAYMENTS?\b|CHK\b|CK#|PYMT\b|PMT\b|ARC\b|\d)', name)[0]
             # The name fields of these layouts can also hold the payment's purpose or, on a Visa transfer, a place.
             if rule in ('bill-payee', 'card-push-payment-source', 'ach-company', 'debit-card-descriptor') \
-                    and concept_or_place(name, place=rule == 'card-push-payment-source', anywhere=rule != 'debit-card-descriptor'):
+                    and (concept_or_place(name, place=rule == 'card-push-payment-source', anywhere=rule != 'debit-card-descriptor')
+                         or generic_words_only(name)):
                 return None
             span = re.search(re.escape(name), text, re.I)
             return (text[span.start():span.end()] if span else name), rule, explanation
@@ -501,7 +572,7 @@ def _us_card_merchant(raw, value, direction):
     from services.financial.payment_inference import _card_tail, MERCHANTS
     # Truist: DEBIT CARD PURCHASE <merchant> #<store> <terminal> <date> ..: the merchant comes before the store number.
     store = re.match(r'^DEBIT CARD PURCHASE\s+(\S+(?:\s+\S+)?)\s+#\d{6}\b', value)
-    if store and re.search(r'[A-Z]{2}', store[1]) and not concept_or_place(store[1]):
+    if store and re.search(r'[A-Z]{2}', store[1]) and not concept_or_place(store[1]) and not generic_words_only(store[1]):
         return store[1], 'debit-card-descriptor', 'Merchant as printed on this debit card line, before its store number. It is not a verified legal identity; the original description remains available.'
     tail = _card_tail(value, direction) if not value.startswith(('|', '}', '~')) else None
     if tail is None:
@@ -704,12 +775,12 @@ def card_line_merchant(raw, *, institution=None):
             break
         kept.append(token)
     # A town and state before the phone or store number (ANYTOWN TX 555-..) is the place, not the merchant.
-    if len(kept) == 2 and kept[-1] in _STATES:
+    if 2 <= len(kept) <= 3 and kept[-1] in _STATES:
         return None
     while len(kept) > 1 and (kept[-1] in _STATES or re.fullmatch(r'[#\-]?[\d\-]+|[-*•·]+', kept[-1])):
         kept.pop()
     label = _without_place(' '.join(kept)).strip(' *-#•·')
-    if not evidence or re.fullmatch(r'[A-Z]{1,3}', label) or (len(kept) == 1 and '*' in kept[0]) or concept_or_place(label, place=False):
+    if not evidence or re.fullmatch(r'[A-Z]{1,3}', label) or (len(kept) == 1 and '*' in kept[0]) or concept_or_place(label, place=False) or generic_words_only(label):
         return None
     if len(re.sub(r'[^A-Z]', '', label)) < 3 or label in _PLACES or re.fullmatch(r'(?:COLUMBIA HEIGHTS|COLUMBIA HEIGH\S*)', label):
         return None

@@ -20,7 +20,8 @@ export function unidentifiedPayment(row: LedgerTransaction) {
     row.label_sources?.[side === "from" ? "from_name" : "to_name"]
   if (known?.source === "missing" && known.reason)
     return {
-      kind: `reason:${known.rule || known.reason}`,
+      // Keyed by the shown reason: one rule can state different reasons.
+      kind: `reason:${known.reason}`,
       label: known.reason,
       reason: known.explanation || known.reason,
     }

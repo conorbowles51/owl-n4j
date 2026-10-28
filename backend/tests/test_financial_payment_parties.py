@@ -5,6 +5,7 @@ Every description below is a real statement line with its layout kept exactly
 references are replaced by invented ones so no case material is committed.
 """
 import unittest
+from services.financial.payment_party_reasons import unnamed_reason
 
 from services.financial.payment_inference import infer_payment_labels, VERSION
 
@@ -278,7 +279,7 @@ class PhaseTwoPartyTests(unittest.TestCase):
         self.assertEqual(party('TJ3 SITH200100001 EJEMPLO GAS S DE RL DE CV 1000001 Ref. 100000000000001', 'credit'),
                          ('EJEMPLO GAS S DE RL DE CV', 'bbva-sit-payer'))
         self.assertEqual(party('Z32 BBVA LEASING PAGO FACTURA FE000000000001 Ref. 200001'), ('BBVA LEASING', 'bbva-cie-payee'))
-        self.assertEqual(party('Z3 CARGO COBRANZA EJEMPLOLEASIN Ref. 0000200001'), ('EJEMPLOLEASIN', 'bbva-direct-debit-payee'))
+        self.assertEqual(party('Z3 CARGO COBRANZA EJEMPLO ARRENDADORA SA DE CV Ref. 0000200001'), ('EJEMPLO ARRENDADORA SA DE CV', 'bbva-direct-debit-payee'))
         self.assertEqual(party('RECEPCION SPEI | CB INTERCAM | DATO NO VERIFICADO POR ESTA INSTITUCION | | INTERCACB20220101-1 | 1 | '
                                'ABONO INTERCAM CTO 1 FOL 1 | INTERCAM BANCO | EJEMPLO SERVICIOS | 136180000000000001 |', 'credit')[1], 'brokerage-party')
         self.assertEqual(party('P14 PODER EJECUTIVO DEL 1000001 Ref. GUIA:1000001'), ('PODER EJECUTIVO DEL', 'bbva-cie-payee'))
@@ -311,7 +312,7 @@ class PhaseTwoPartyTests(unittest.TestCase):
 
     def test_us_layouts(self):
         self.assertEqual(party('DEBIT CARD PURCHASE AB/CD #300001 Z99 11-15 EXAMPLETOWN MD 7000'), ('AB/CD', 'debit-card-descriptor'))
-        self.assertEqual(party('ACH CORP DEBIT EJEMPLOMS PYMT EJEMPLOMS EXAMPLE SHOP CUSTOMER ID 000-0000001-000')[0], 'EJEMPLOMS')
+        self.assertEqual(party('ACH CORP DEBIT FDMS PYMT EXAMPLE SHOP CUSTOMER ID 000-0000001-000')[0], 'FDMS')
         self.assertEqual(party('ACH CORP DEBIT DISCOUNT TRUIST MERCH SVC EXAMPLESHOP CUSTOMER ID 1')[0], 'TRUIST MERCH SVC')
         self.assertEqual(party('Recurring Withdrawal Bill Payment #000060000001 EXAMPLE LEASING 1 EXAMPLE DR EXAMPLE UT'),
                          ('EXAMPLE LEASING', 'bill-payee'))
@@ -397,7 +398,8 @@ class PhaseTwoPartyTests(unittest.TestCase):
             with self.subTest(description=description):
                 self.assertEqual(party(description), (name, 'bill-payee'))
         self.assertIsNone(party('ACH CORP DEBIT PYMT'))
-        self.assertEqual(party('ACH CORP DEBIT EXAMPLE UTILITY PYMT'), ('EXAMPLE UTILITY', 'ach-company'))
+        # Only named card processors are taken from ACH CORP DEBIT lines; other words there may be the entry's wording.
+        self.assertIsNone(party('ACH CORP DEBIT EXAMPLE UTILITY PYMT'))
         self.assertEqual(party('T17 SPEI ENVIADO BANCOPPEL 0300425PRESTAMO PERSONAL JUAN EJEMPLO PEREZ'),
                          ('JUAN EJEMPLO PEREZ', 'bbva-transfer-party'))
         for description, name in [
@@ -434,14 +436,22 @@ class PhaseTwoPartyTests(unittest.TestCase):
         self.assertEqual(party('C61 COMPRA CHEQUE DE CAJA JUAN EJEMPLO REFACCIONES Ref. 1')[0], 'JUAN EJEMPLO REFACCIONES')
         # A BBVA concept and its reference, then the name to the end of the line.
         self.assertEqual(party('T17 SPEI ENVIADO BANCOPPEL 0100125AGUINALDO 2024 JUAN EJEMPLO PEREZ'), ('JUAN EJEMPLO PEREZ', 'bbva-transfer-party'))
-        self.assertEqual(party('T17 SPEI ENVIADO BAJIO 0100125PAGO F A1000 EJEMPLO ELECTRONICA INDUSTRIAL')[0], 'EJEMPLO ELECTRONICA INDUSTRIAL')
+        self.assertEqual(party('T17 SPEI ENVIADO BAJIO 0100125PAGO F A1000 EJEMPLO ELECTRONICA SA DE CV')[0], 'EJEMPLO ELECTRONICA SA DE CV')
+        # Free concept text is named only when it has the shape of a party.
+        for description in ['T17 SPEI ENVIADO BAJIO 0100125PAGO F A1000 EJEMPLO ELECTRONICA INDUSTRIAL',
+                            'T17 SPEI ENVIADO BBVA 0012345PAGO FACTURA 123 RENTA OFICINA CENTRO',
+                            'T17 SPEI ENVIADO BBVA 0012345FINIQUITO SEGUNDA PARTE',
+                            'T17 SPEI ENVIADO BBVA 0012345NOMINA 12 SEMANA OCHO',
+                            'C61 COMPRA CHEQUE DE CAJA OBRA NEGRA Ref. 1',
+                            'Z3 CARGO COBRANZA EJEMPLO LEASING SEGUNDO PAGO Ref. 1']:
+            with self.subTest(description=description):
+                self.assertIsNone(party(description))
         self.assertIsNone(party('T17 SPEI ENVIADO BANORTE 0100125PAGO F 1000 CAMION JUAN EJEMPLO PEREZ'))
 
     def test_no_reason_is_given_where_a_name_may_be_printed(self):
         for description, direction, kind in [
             ('AB TRANSF SPEI JUAN EJEMPLO LOPEZ', 'credit', 'checking'),
             ('ABONO POR TRANSFERENCIA DE MARIA EJEMPLO GARCIA', 'credit', 'checking'),
-            ('CARGO TRANSFERENCIA ENLACE PAGO PROVEEDOR ACME EJEMPLO SA DE CV', 'debit', 'checking'),
             ('E17 ORDEN DE PAGO EXTRANJERO ORDENANTE: EJEMPLO TRADING LLC', 'credit', 'checking'),
             ('T17 SPEI ENVIADO BANORTE 0012345PAGO RENTA EJEMPLO PEREZ GOMEZ', 'debit', 'checking'),
             ('T20 SPEI RECIBIDO BANAMEX 0012345 REFERENCIA EJEMPLO PEREZ GOMEZ', 'credit', 'checking'),
@@ -454,9 +464,21 @@ class PhaseTwoPartyTests(unittest.TestCase):
                 self.assertIsNone(reason(description, direction, kind))
         # The same layouts with only their own wording keep their reason.
         self.assertEqual(reason('T17 SPEI ENVIADO BANAMEX 0100125NOMINA 1A QNA ENE25 Ref. 0000000001 002'), 'bbva-transfer-no-name')
-        self.assertEqual(reason('0000001 CARGO TRANSFERENCIA ENLACE PAGO FACTURA 1000'), 'type-only')
+        self.assertEqual(reason('ABONO TRANSFERENCIA SPEI HORA 10:11:12', 'credit'), 'type-only')
+        # Layouts with only a free-text concept and no payee field say exactly that, whatever the concept holds.
+        self.assertEqual(reason('0000001 CARGO TRANSFERENCIA ENLACE PAGO PROVEEDOR EJEMPLO SA DE CV'), 'enlace-transfer')
+        self.assertIn('no payee field', unnamed_reason('W01 TRASPASO A TERCEROS JUAN EJEMPLO LOPEZ BMRCASH', direction='debit')[0])
+        for description, direction, kind in [('AB TRANSF SPEI ANA', 'credit', 'checking'), ('AB TRANSF SPEI LI WU', 'credit', 'checking'),
+                                             ('ABONO POR TRANSFERENCIA DE GRUPO MEXICO', 'credit', 'checking'),
+                                             ('T20 SPEI RECIBIDO BANORTE 0012345 BANCO AZTECA', 'credit', 'checking'),
+                                             ('A01 DEPOSITO CHEQUE JUAN', 'credit', 'checking'), ('VTA CHQ CAJ JUAN EJEMPLO LOPEZ', 'debit', 'checking'),
+                                             ('ATM DEPOSIT FROM JOHN EXAMPLE', 'credit', 'checking'), ('WITHDRAWAL AT ATM JOHN EXAMPLE', 'debit', 'checking'),
+                                             ('CASH WITHDRAWAL TO JOHN EXAMPLE', 'debit', 'checking'), ('PAYMENT JOHN EXAMPLE', 'credit', 'credit_card'),
+                                             ('123 MAIN ST JOES PIZZA', 'debit', 'credit_card'), ('1 - 800 FLOWERS', 'debit', 'credit_card')]:
+            with self.subTest(description=description):
+                self.assertIsNone(reason(description, direction, kind))
         self.assertEqual(reason('C01 DEPOSITO EN EFECTIVO Ref. 1000', 'credit'), 'cash-deposit')
-        self.assertEqual(reason('1000 MAIN ST', 'debit', 'credit_card'), 'card-address-only')
+        self.assertEqual(reason('60001 - 1000 Q STEXAMPLETOWNDC', 'debit', 'credit_card'), 'card-address-only')
 
 if __name__ == '__main__':
     unittest.main()
