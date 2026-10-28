@@ -530,7 +530,7 @@ class ImageReplacementTests(TestCase):
         reading = self._reading()
         reading['charge_totals'] = dict(fee=0)
 
-        def judge(db, case_id, proposal, raw, pages, knowledge, saved=False):
+        def judge(db, case_id, proposal, raw, pages, knowledge, saved=False, by=None):
             self.assertEqual(raw, {'stored': 1}, 'the stored reading is judged again')
             return reading, None, None, dict(proposal)
         with self._image(), patch.object(vision_reader, '_saved_target', side_effect=target), \

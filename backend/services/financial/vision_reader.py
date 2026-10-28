@@ -1603,6 +1603,11 @@ def render_pages(path, page_numbers, width=IMAGE_WIDTH, strips=None):
     return pages
 
 
+def _render(path, pages, reader):
+    """The pages in this reader's strips (a reader without its own strips: the default)."""
+    return render_pages(path, pages) if reader.strips is None else render_pages(path, pages, strips=reader.strips)
+
+
 # Each provider's request settings (in code, never .env). DeepSeek (benchmarked 2026-10-28): max thinking, 6 strips a
 # page (it gives each image a fixed token budget, so narrower strips keep the print legible), a long read (a long
 # statement takes up to ~25 minutes), 2 retries of a dropped connection or a server error. OpenAI: as before.
@@ -2356,7 +2361,7 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
                 continue
             if raw is None:
                 # Outside any lock or transaction: render (in this reader's strips) and read.
-                images = render_pages(path, pages, strips=reader.strips)
+                images = _render(path, pages, reader)
                 reserved = reserve_usd(reader.model, images, reader.max_output_tokens)
                 # The most it can cost is counted before the request is sent, and settled after.
                 if not _reserve(case_id, reserved):
@@ -2848,7 +2853,7 @@ def read_saved(factory, document_id, resolve_path, *, page_reader=None, knowledg
                 attempts.append(dict(attempt, status='unavailable', message=reader.unavailable))
                 continue
             if raw is None:
-                images = render_pages(path, pages, strips=reader.strips)
+                images = _render(path, pages, reader)
                 reserved = reserve_usd(reader.model, images, reader.max_output_tokens)
                 if not _reserve(case_id, reserved):
                     attempts.append(dict(attempt, status='budget', message='the reading budget for this case is used for now'))
