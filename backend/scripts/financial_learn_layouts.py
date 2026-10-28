@@ -97,7 +97,7 @@ def dump(db, directory, shard=0, shards=1, out=print):
                 .order_by(EvidenceTableGeometry.page_number))]
             sources = [read_candidate_source(db, case_id=case_id, evidence_file_id=file_id, page_number=page,
                                              table_index=index) for page, tables in pages for index in range(tables)]
-            temporary = path.with_suffix('.tmp')
+            temporary = path.with_suffix('.%s.tmp' % os.getpid())  # two dumps never share a temporary file
             temporary.write_bytes(pickle.dumps(dict(case_id=str(case_id), sources=sources, extracted_at=str(extracted))))
             os.replace(temporary, path)
             done += 1
