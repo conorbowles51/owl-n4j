@@ -42,13 +42,19 @@ export function party(row: LedgerTransaction, side: PartySide) {
       : row.counterparty_raw)
   const name = (value || "").trim().replace(/\s+/g, " ")
   const linked = !own ? row.counterparty_link : null
+  // Unnamed sides group by their stated reason, so rows with different reasons (or none) are never totalled together.
+  const reason = name
+    ? ""
+    : row.label_sources?.[side === "from" ? "from_name" : "to_name"]?.reason || ""
   return {
     key: linked
       ? `identity:${linked.kind}:${linked.id}:${encodeURIComponent(name)}`
       : name
         ? `name:${name}`
-        : `unknown:${side}`,
-    name: name || unnamedParty(row, side === "from" ? "from_name" : "to_name"),
+        : reason
+          ? `unknown:${side}:${encodeURIComponent(reason)}`
+          : `unknown:${side}`,
+    name: name || reason || "Not identified",
     suggested:
       row.label_sources?.[side === "from" ? "from_name" : "to_name"]?.source ===
       "description",
@@ -61,6 +67,13 @@ export function partyName(key: string) {
         decodeURIComponent(key.split(":").slice(3).join(":")) ||
         "Not identified"
       )
+    } catch {
+      return "Not identified"
+    }
+  }
+  if (key.startsWith("unknown:")) {
+    try {
+      return decodeURIComponent(key.split(":").slice(2).join(":")) || "Not identified"
     } catch {
       return "Not identified"
     }
@@ -328,9 +341,14 @@ export function analysisTableView(filters: AnalysisFilters) {
 export function sortAnalysisRows(rows: LedgerTransaction[], sort: string) {
   const [field, direction] = sort.split("-")
   if (!["description", "from", "to", "category"].includes(field)) return
+  // Unnamed sides sort as "Not identified" whatever their stated reason, as the export service does.
+  const sideName = (row: LedgerTransaction, side: PartySide) => {
+    const p = party(row, side)
+    return p.key.startsWith("unknown:") ? "Not identified" : p.name
+  }
   const value = (row: LedgerTransaction) =>
     field === "from" || field === "to"
-      ? party(row, field).name
+      ? sideName(row, field)
       : field === "category"
         ? row.category || "Uncategorized"
         : row.description || ""

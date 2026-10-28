@@ -43,7 +43,7 @@ _REASONS = [
     (r'^(?:BUS ONLINE )?ACH SETTLEMENT$', 'debit', None,
      'ACH batch — the statement doesn’t list who was paid', 'ach-batch',
      'A batch of ACH payments sent by the business. The statement prints the batch total only, not the individual payees.'),
-    (r'^(?:\d+\s+-\s+)?\d+\s+(?:[A-Z0-9]+\s+){0,2}(?:AV|AVE|ST|RD|BLVD|DR|PKWY|HWY|PL|WAY|LN|CT)|^\d+\s+-\s+\d+\s', 'debit', 'credit_card',
+    (r'^(?:\d+\s+-\s+)?\d+\s+(?:[A-Z0-9]+\s+){0,2}(?:AV|AVE|ST|RD|BLVD|DR|PKWY|HWY|PL|WAY|LN|CT)\b|^\d+\s+-\s+\d+\s', 'debit', 'credit_card',
      'Card purchase — the line prints only the store’s address', 'card-address-only',
      'The card line prints the terminal number and street address of the store, not a merchant name.'),
     # International payments: the statement prints the order and its reference, not the beneficiary.
@@ -65,9 +65,12 @@ _REASONS = [
      'Cashier’s cheque — the statement doesn’t name the payee', 'cashier-cheque',
      'A cashier’s cheque bought from the bank. The statement does not print who it is payable to.'),
     # Cash.
-    (r'^(?:[A-Z]{1,2}\d{1,2}\s+|\d+\s+)?DEPOSITO (?:EN )?EFECTIVO\b|^TRUIST ATM (?:MIXED |CASH )?DEPOSIT\b|^(?:\|\s*)?ATM (?:CASH )?DEPOSIT\b', 'credit', None,
+    (r'^(?:[A-Z]{1,2}\d{1,2}\s+|\d+\s+)?DEPOSITO (?:EN )?EFECTIVO\b', 'credit', None,
      'Cash deposit — the statement doesn’t name who paid it in', 'cash-deposit',
      'Cash paid into the account. The statement does not print who deposited it.'),
+    (r'^TRUIST ATM (?:MIXED |CASH )?DEPOSIT\b|^(?:\|\s*)?ATM (?:CASH )?DEPOSIT\b', 'credit', None,
+     'Cash deposit — the statement doesn’t name who paid it in', 'cash-deposit',
+     'Cash paid into the account at an ATM. The statement prints the ATM or branch, not who deposited it.'),
     (r'^WITHDRAWAL (?:AT ATM|BY CASH)\b|^ATM WITHDRAWAL\b|^(?:\|\s*)?ATM CASH\b|^TRUIST ATM (?:CASH )?WITHDRAWAL\b|^(?:\d+\s+)?RETIRO (?:DE )?EFECTIVO\b|^CASH WITHDRAWAL\b', 'debit', None,
      'Cash withdrawal — no other party', 'cash-withdrawal',
      'Cash taken out of the account. There is no other party; the ATM or branch printed is where the cash was taken.'),
@@ -110,6 +113,39 @@ _REASONS = [
 _REASONS = [(re.compile(pattern), direction, account_type, text, rule, explanation)
             for pattern, direction, account_type, text, rule, explanation in _REASONS]
 
+# Some of these layouts carry a free-text concept that can hold a name. A reason is given only when the
+# text after the layout's own wording holds nothing that could be a name: words beyond the layout's
+# vocabulary (concepts, banks, months, references) are taken as a possible name and the reason is withheld.
+# The value is how many such words in a row withhold it (1 for lines that normally print none at all).
+_GUARDED = {'type-only': 2, 'enlace-expense-advance': 2, 'bbva-transfer-no-name': 2, 'returned-transfer': 2,
+            'cheque-deposit': 2, 'foreign-payment-order': 1, 'cash-deposit': 1}
+_LAYOUT_WORDS = frozenset('''
+    PAGO PAGOS FACT FACTURA FACTURAS COT PREFAC ABONO CTA CTAS CUENTA CUENTAS TRASPASO TRANSFERENCIA TRANSF TRANSFER
+    INVERSION ENTRE PROPIAS PRESTAMO GASTOS GTOS COMPROBAR COMPR COMP APORTACION CAPITAL AUMENTO NOM NOMINA QNA
+    SALDO COMISION SPEI SPID TEF HORA ENVIADO RECIBIDO REF DEL LAS LOS PARA POR CON ANTICIPO FINIQUITO PENSION
+    AGUINALDO VACACIONES LIQUIDACION DEVOLUCION DEVUELTO DIVISAS COMPRA VENTA INTERNET EXTRANJERO ORDEN ORDENANTE
+    EFECTIVO DEPOSITO ATM BNET BET ENLACE CHEQUE CHEQUES CARGO CASH WINDOWS PRACTIC PRAC FOLIO VIATICOS VIAT
+    SOBRANTE REINT INFONAVIT SOLICITUD CANCELACION MOBILE BANKING DEPOSIT WITHDRAWAL AUTOMATIC PAYMENT
+    ENE FEB MAR ABR MAY JUN JUL AGO SEP SEPT OCT NOV DIC ENERO FEBRERO MARZO ABRIL MAYO JUNIO JULIO AGOSTO
+    SEPTIEMBRE OCTUBRE NOVIEMBRE DICIEMBRE PRIMERA SEGUNDA
+    BBVA BANCOMER SANTANDER BANAMEX CITI CITIBANAMEX MEXICO BANORTE AZTECA BANCOPPEL INTERCAM BAN HSBC BAJIO
+    SCOTIABANK INBURSA KUSPIT MIFEL BANREGIO MONEX BMONEX PEIBO BANKAOOL AFIRME MULTIVA INVEX BANSI BANCREA STP
+    BANJERCITO SABADELL ACTINVER BANCO BANK
+'''.split())
+
+
+def _may_print_a_name(text, run_needed):
+    run = 0
+    for token in text.split():
+        word = token.strip('.,:;()/[]|*"\'')
+        if len(word) >= 3 and word.isalpha() and word not in _LAYOUT_WORDS:
+            run += 1
+            if run >= run_needed:
+                return True
+        else:
+            run = 0
+    return False
+
 
 def unnamed_reason(value, *, direction, account_type=None):
     """(shown text, rule, explanation) for a layout that prints no name for the other side, or None.
@@ -118,6 +154,11 @@ def unnamed_reason(value, *, direction, account_type=None):
     from services.financial.payment_parties import strip_date_prefix
     value = strip_date_prefix(value)
     for pattern, wanted, kind, text, rule, explanation in _REASONS:
-        if (wanted is None or wanted == direction) and (kind is None or kind == account_type) and pattern.search(value):
+        if (wanted is None or wanted == direction) and (kind is None or kind == account_type):
+            match = pattern.search(value)
+            if not match:
+                continue
+            if rule in _GUARDED and _may_print_a_name(value[match.end():], _GUARDED[rule]):
+                return None
             return text, rule, explanation
     return None

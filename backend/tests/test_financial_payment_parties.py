@@ -310,10 +310,10 @@ class PhaseTwoPartyTests(unittest.TestCase):
         self.assertIsNone(party('T17 SPEI ENVIADO SANTANDER'))
 
     def test_us_layouts(self):
-        self.assertEqual(party('DEBIT CARD PURCHASE DD/BR #300001 Q35 11-15 EXAMPLETOWN MD 7000'), ('DD/BR', 'debit-card-descriptor'))
+        self.assertEqual(party('DEBIT CARD PURCHASE AB/CD #300001 Z99 11-15 EXAMPLETOWN MD 7000'), ('AB/CD', 'debit-card-descriptor'))
         self.assertEqual(party('ACH CORP DEBIT EJEMPLOMS PYMT EJEMPLOMS EXAMPLE SHOP CUSTOMER ID 000-0000001-000')[0], 'EJEMPLOMS')
         self.assertEqual(party('ACH CORP DEBIT DISCOUNT TRUIST MERCH SVC EXAMPLESHOP CUSTOMER ID 1')[0], 'TRUIST MERCH SVC')
-        self.assertEqual(party('Recurring Withdrawal Bill Payment #000060000001 EXAMPLE LEASING 200 WEST DATA DR EXAMPLE UT'),
+        self.assertEqual(party('Recurring Withdrawal Bill Payment #000060000001 EXAMPLE LEASING 1 EXAMPLE DR EXAMPLE UT'),
                          ('EXAMPLE LEASING', 'bill-payee'))
         self.assertEqual(party('Deposit Debit Card CASH APP*JANE*CASH OUT San Francisco CA Date 12/30/23 o 0000800001 O 4000', 'credit'),
                          ('Cash App (JANE)', 'card-push-payment-source'))
@@ -325,7 +325,7 @@ class PhaseTwoPartyTests(unittest.TestCase):
 
     def test_card_statement_lines(self):
         card = dict(kind='credit_card')
-        for description, expected in [('EXAMPLE STEAK 0100001 FALLS CHURCH VA', 'EXAMPLE STEAK'),
+        for description, expected in [('EXAMPLE STEAK 0100001 EXAMPLETOWN VA', 'EXAMPLE STEAK'),
                                       ('F200000JP000ABCDE EXAMPLE NAIL BAR WASHINGTON DC', 'EXAMPLE NAIL BAR'),
                                       ('EXAMPLEAIR0010000000001 FORT WORTH TX NAME: DOE/JANE DEPART: 08/31/23', 'EXAMPLEAIR')]:
             with self.subTest(description=description):
@@ -363,7 +363,7 @@ class PhaseTwoPartyTests(unittest.TestCase):
             ('| CHECK NUMBER 9001', 'debit', 'checking', 'cheque-number-only'),
             ('M97 DEPOSITO CHEQUE BBVA', 'credit', 'checking', 'cheque-deposit'),
             ('C02 DEPOSITO EN EFECTIVO Ref. 10001', 'credit', 'checking', 'cash-deposit'),
-            ('Withdrawal at ATM #000000000001 1000 EXAMPLE ST NE WASHINGTON DC PX0001', 'debit', 'checking', 'cash-withdrawal'),
+            ('Withdrawal at ATM #000000000001 1000 EXAMPLE ST NE WASHINGTON DC ZZ0001', 'debit', 'checking', 'cash-withdrawal'),
             ('G30 RECIBO NO. Ref. P0QAAA0000AA', 'debit', 'checking', 'bank-collected-premium'),
             ('0000000 APORT LINEA CAPTURA INTERNET 060000000001', 'debit', 'checking', 'capture-line-payment'),
             ('T22 SPEI DEVUELTOBANAMEX', 'credit', 'checking', 'returned-transfer'),
@@ -409,6 +409,54 @@ class PhaseTwoPartyTests(unittest.TestCase):
             with self.subTest(description=description):
                 self.assertEqual(party(description, 'debit', 'credit_card'), (name, 'card-line-merchant'))
 
+
+    def test_concepts_places_and_addresses_are_not_parties(self):
+        for description, direction in [
+            ('ACH CORP DEBIT ONLINE PAYMENT 123456', 'debit'), ('ACH CORP DEBIT AUTOPAY PMT 123456', 'debit'),
+            ('ACH CORP DEBIT TRANSFER FEE', 'debit'), ('ACH CORP DEBIT LOAN PYMT 123', 'debit'),
+            ('C61 COMPRA CHEQUE DE CAJA PAGO ANTICIPO OBRA Ref. 123', 'debit'), ('Z3 CARGO COBRANZA MENSUALIDAD Ref. 1', 'debit'),
+            ('TJ3 SITH1234567 PAGO COLEGIATURA 12345 Ref. 1', 'credit'),
+            ('VISA MONEY TRANSFER CREDIT 01-02-26 VISA DIRECT CA 1234 SAN FRANCISCO CA', 'credit'),
+            ('VISA MONEY TRANSFER DEBIT 01-02-26 ANYTOWN 1234 RENT PAYMENT', 'debit'),
+            ('CD PREMIUM MONTHLY 12345', 'debit'), ('RECURRING INTERNET PAYMENT CRCARDPMT ONLINE 12345', 'debit'),
+            ('POS CREDIT ADJUSTMENT 1234 TRANSACTION 01-02-26 REFUND 12345', 'credit'),
+            ('DEBIT CARD PURCHASE ANYTOWN TX #123456 12345', 'debit'), ('DEBIT CARD PURCHASE 123 MAIN #123456 12345', 'debit'),
+            ('DOMICILIACION PAGO SERVICIO 12345 RFC ABC010203XY1 99 1,234.00 MENSUALIDAD', 'debit'),
+            ('WITHDRAWAL BILL PAYMENT #123 RENT 555-123-4567', 'debit'),
+        ]:
+            with self.subTest(description=description):
+                self.assertIsNone(party(description, direction))
+        for description in ['ANYTOWN TX 555-123-4567', 'SALE CANCELLED 555-123-4567']:
+            with self.subTest(description=description):
+                self.assertIsNone(party(description, 'debit', 'credit_card'))
+        # The statement bank still answers for its own fee; a name holding REF is not cut there.
+        self.assertEqual(party('ACH CORP DEBIT MONTHLY SERVICE FEE'), ('Example Bank', 'bank-charge'))
+        self.assertEqual(party('C61 COMPRA CHEQUE DE CAJA JUAN EJEMPLO REFACCIONES Ref. 1')[0], 'JUAN EJEMPLO REFACCIONES')
+        # A BBVA concept and its reference, then the name to the end of the line.
+        self.assertEqual(party('T17 SPEI ENVIADO BANCOPPEL 0100125AGUINALDO 2024 JUAN EJEMPLO PEREZ'), ('JUAN EJEMPLO PEREZ', 'bbva-transfer-party'))
+        self.assertEqual(party('T17 SPEI ENVIADO BAJIO 0100125PAGO F A1000 EJEMPLO ELECTRONICA INDUSTRIAL')[0], 'EJEMPLO ELECTRONICA INDUSTRIAL')
+        self.assertIsNone(party('T17 SPEI ENVIADO BANORTE 0100125PAGO F 1000 CAMION JUAN EJEMPLO PEREZ'))
+
+    def test_no_reason_is_given_where_a_name_may_be_printed(self):
+        for description, direction, kind in [
+            ('AB TRANSF SPEI JUAN EJEMPLO LOPEZ', 'credit', 'checking'),
+            ('ABONO POR TRANSFERENCIA DE MARIA EJEMPLO GARCIA', 'credit', 'checking'),
+            ('CARGO TRANSFERENCIA ENLACE PAGO PROVEEDOR ACME EJEMPLO SA DE CV', 'debit', 'checking'),
+            ('E17 ORDEN DE PAGO EXTRANJERO ORDENANTE: EJEMPLO TRADING LLC', 'credit', 'checking'),
+            ('T17 SPEI ENVIADO BANORTE 0012345PAGO RENTA EJEMPLO PEREZ GOMEZ', 'debit', 'checking'),
+            ('T20 SPEI RECIBIDO BANAMEX 0012345 REFERENCIA EJEMPLO PEREZ GOMEZ', 'credit', 'checking'),
+            ('DEPOSITO EN EFECTIVO DE JUAN EJEMPLO', 'credit', 'checking'),
+            ('C01 DEPOSITO EN EFECTIVO Ref. 1000AT JUAN', 'credit', 'checking'),
+            ('76 STATION 1234 ANYTOWN CA', 'debit', 'credit_card'),
+            ('54 PLACE BISTRO NEW YORK NY', 'debit', 'credit_card'),
+        ]:
+            with self.subTest(description=description):
+                self.assertIsNone(reason(description, direction, kind))
+        # The same layouts with only their own wording keep their reason.
+        self.assertEqual(reason('T17 SPEI ENVIADO BANAMEX 0100125NOMINA 1A QNA ENE25 Ref. 0000000001 002'), 'bbva-transfer-no-name')
+        self.assertEqual(reason('0000001 CARGO TRANSFERENCIA ENLACE PAGO FACTURA 1000'), 'type-only')
+        self.assertEqual(reason('C01 DEPOSITO EN EFECTIVO Ref. 1000', 'credit'), 'cash-deposit')
+        self.assertEqual(reason('1000 MAIN ST', 'debit', 'credit_card'), 'card-address-only')
 
 if __name__ == '__main__':
     unittest.main()

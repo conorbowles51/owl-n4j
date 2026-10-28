@@ -63,6 +63,35 @@ def plausible_name(value):
                                  r'TERCEROS?|ORDENANTE|BENEFICIARIO|NOMBRE|NONE|UNKNOWN)', text))
 
 
+# Words that describe what a payment is for rather than who it is with. A name opening with one of
+# these, or holding a payment word anywhere, is the concept or the line's own wording, not a party.
+_CONCEPT_FIRST = frozenset('PAGO PAGOS ONLINE AUTOPAY AUTOMATIC RECURRING TRANSFER TRANSFERENCIA TRASPASO LOAN MONTHLY ANNUAL '
+                           'MENSUALIDAD RENT RENTA REFUND REEMBOLSO ANTICIPO COLEGIATURA FEE FEES SERVICE SERVICIO CUOTA ABONO '
+                           'CARGO TRANSACTION DEPOSIT DEPOSITO WITHDRAWAL RETIRO SALE PURCHASE CHARGE NOMINA '
+                           'REFERENCIA CONCEPTO FACTURA ADJUSTMENT PRESTAMO'.split())
+_CONCEPT_ANY = frozenset('PAYMENT PAYMENTS PMT PYMT FEE MENSUALIDAD COLEGIATURA ANTICIPO REFUND CANCELLED CANCELED'.split())
+
+
+def concept_or_place(name, place=True, anywhere=True):
+    """True when a captured name is the payment's concept, a street address or (with ``place``) a place, not a party.
+
+    Used by the layout rules whose name field can also hold a concept or a place."""
+    words = re.sub(r'[^A-Z0-9&\- ]', ' ', normalized(name)).split()
+    if not words:
+        return True
+    if words[0] in _CONCEPT_FIRST or (anywhere and any(w in _CONCEPT_ANY for w in words)):
+        return True
+    # A street number opening the name (123 MAIN) is an address.
+    if re.fullmatch(r'\d+', words[0]):
+        return True
+    # A town and its state (ANYTOWN TX, SAN FRANCISCO CA) with nothing else is where, not who.
+    if not place:
+        return False
+    if words[-1] in _STATES and len(words) <= 3:
+        return True
+    return ' '.join(words) in _PLACES
+
+
 # A transfer's own layout opening: wording found later in it (a concept saying COMISION) is not the bank's charge.
 TRANSFER_OPENING = re.compile(r'^(?:\S{1,3}\s+\d{2}/[A-Z]{3}\s+)?(?:\d+\s+)?(?:[A-Z0-9]{2,3}\s+)?(?:(?:ABONO|CARGO|PAGO)\s+(?:POR\s+)?TRANSFERENCIA\b|'
                               r'SP(?:ID|E\S?)\s+(?:ENVIADO|RECIBIDO)|TRASPASO A TERCEROS\b|(?:ENVIO|RECEPCION)\s+SP(?:EI|ID)\b)')
@@ -215,7 +244,10 @@ def _bbva_spei(raw, value, direction):
     short = (re.match(r'^.+?\s\d{7}NOMINA\s+\d{6}\s+(.+)$', match[2])
              or re.match(r'^\S+(?:\s\S+)?\s\d{7}(?:NOMINA\s+\d?\S{1,3}\s+QNA\s+[A-Z]{3,5}\s?\d{2}|FINIQUITO|PENSION|GTOS A COMPROBAR|AGUINALDO|VACACIONES|'
                          r'PRESTAMO(?: PERSONAL)?|LIQUIDACION)\s+([A-Z][A-Z.]+(?:\s+[A-Z][A-Z.]+){1,5})$', match[2])
-             or re.match(r'^\S+(?:\s\S+)?\s\d{7}PAGO\s+(?:F|FACT|FACTURA|COT)\.?\s+\S*\d\S*\s+([A-Z][A-Z ]+?\s(?:SA|S\.A\.|S DE RL|SAPI|SC|AC)(?:\s+DE\s+CV)?)$', match[2]))
+             or re.match(r'^\S+(?:\s\S+)?\s\d{7}PAGO\s+(?:F|FACT|FACTURA|COT)\.?\s+\S*\d\S*\s+([A-Z][A-Z ]+?\s(?:SA|S\.A\.|S DE RL|SAPI|SC|AC)(?:\s+DE\s+CV)?)$', match[2])
+             # A payroll or invoice concept, its reference (holding a digit), then the name to the end of the line.
+             or re.match(r'^\S+(?:\s\S+)?\s\d{7}(?:NOMINA|AGUINALDO|PTU|FINIQUITO|(?:PAGO|SALDO|ABONO|AB)(?:\s+A\s+CTA)?\s+(?:F|FA|FACT|FACTURA)|COT)\.?\s+'
+                         r'\S*\d\S*\s+((?!(?:A|CTA|F|DE|QNA|REF|PAGO|SALDO|EQ|DISP|CAMION|SELLOS|CONCRETO)\s)[A-Z][A-Z]+(?:\s+[A-Z][A-Z]*){1,5})$', match[2]))
     if short and not re.search(r'\d', short[1]):
         return short[1], 'bbva-transfer-party', f'The {role} printed after the payroll concept and its date; the bank named first carries the transfer and is not taken as the party.'
     return None
@@ -275,12 +307,12 @@ def _own_account(raw, value, direction):
         number = _own_number(value)
         label = f'Own account …{number[-4:]}' if number else 'Own account (number not printed)'
         return label, 'own-account-transfer', 'The description says “cuentas propias”.' + _OWN_NOTE
-    # Andrews: Withdrawal|Deposit [Online|Mobile Banking] Transfer To|From Share 0040 | Loan ####6867
+    # Andrews: Withdrawal|Deposit [Online|Mobile Banking] Transfer To|From Share 0010 | Loan ####0001
     match = re.match(rf'^(?:WITHDRAWAL|DEPOSIT)\s+(?:(?:ONLINE|MOBILE) BANKING\s+)?TRANSFER\s+{cue}\s+(SHARE|LOAN)\s+[#X]*(\d{{2,}})\b', value)
     if match and value.startswith('WITHDRAWAL' if direction == 'debit' else 'DEPOSIT'):
         label = f'Own share account {match[2]}' if match[1] == 'SHARE' else f'Own loan account …{match[2][-4:]}'
         return label, 'own-account-transfer', 'The credit union prints this as a transfer between the member’s own share or loan accounts.' + _OWN_NOTE
-    # Truist: TRUIST ONLINE TRANSFER ONLINE TO|FROM ****5614- ; TRUIST DEPOSIT TRANSFER MOBILE TO ****2431-
+    # Truist: TRUIST ONLINE TRANSFER ONLINE TO|FROM ****0001- ; TRUIST DEPOSIT TRANSFER MOBILE TO ****0002-
     match = re.match(rf'^TRUIST (?:ONLINE|DEPOSIT) TRANSFER (?:ONLINE|MOBILE) {cue} \*+(\d{{4}})\b', value)
     if match:
         return f'Own account ****{match[1]}', 'own-account-transfer', 'Truist prints this as an online transfer between the customer’s own accounts.' + _OWN_NOTE
@@ -317,16 +349,16 @@ def _mx_named_lines(raw, value, direction):
                 'The description says “pago cuotas patronales”: employer social-security contributions, collected by IMSS '
                 '(including the INFONAVIT and retirement shares).')
     # BBVA cashier's cheque bought for a named payee: C61 COMPRA CHEQUE DE CAJA <payee> Ref. ..
-    match = re.match(r'^[A-Z]\d{2}\s+COMPRA CHEQUE DE CAJA\s+(.+?)(?:\s+REF\.?.*)?$', value)
-    if match and direction == 'debit':
+    match = re.match(r'^[A-Z]\d{2}\s+COMPRA CHEQUE DE CAJA\s+(.+?)(?:\s+REF(?:\.|\b).*)?$', value)
+    if match and direction == 'debit' and not concept_or_place(match[1], place=False):
         return match[1], 'cashier-cheque-payee', 'The payee printed on this cashier’s cheque purchase.'
     # BBVA SIT receipts: TJ3 SITH<ref> <payer, fixed width><agreement> Ref. ..
     match = re.match(r'^T[A-Z0-9]\d\s+SIT[A-Z]\d{6,}\s+(.+?)\s*\d{5,}\s+REF\.', value)
-    if match and direction == 'credit':
+    if match and direction == 'credit' and not concept_or_place(match[1], place=False):
         return match[1], 'bbva-sit-payer', 'The payer printed after the SIT reference on this collection; its agreement number and reference follow it.'
     # BBVA collections for a leasing company: Z3 CARGO COBRANZA <company> Ref. ..
     match = re.match(r'^Z\d{1,2}\s+CARGO COBRANZA\s+([A-Z][A-Z .&]+?)\s+REF\.', value)
-    if match and direction == 'debit':
+    if match and direction == 'debit' and not concept_or_place(match[1], place=False):
         return match[1], 'bbva-direct-debit-payee', 'The company collecting this charge, printed after “cargo cobranza”.'
     # BBVA Leasing invoices: Z32 BBVA LEASING PAGO FACTURA ..
     if direction == 'debit' and re.match(r'^[A-Z]\d{2}\s+BBVA LEASING\b', value):
@@ -344,7 +376,7 @@ def _mx_payee(raw, value, direction):
     match = (re.search(r'\bDOMICILIACION PAGO SERVICIO\b.*\bCOBRO\d?\s+[\d,.]+\s+(.+)$', value)
              or re.search(r'\bDOMICILIACION PAGO SERVICIO\b.*\d\s*COBRO\s+([A-Z][A-Z .&]+)$', value)
              or re.search(r'\bDOMICILIACION PAGO SERVICIO\s+\d+\s+RFC\s+\S+\s+\d+\s+[\d,]+\.\d{2}\s+([A-Z][A-Z .&]+)$', value))
-    if match:
+    if match and not concept_or_place(match[1], place=False):
         return match[1], 'direct-debit-payee', 'The company collecting this direct debit, printed after the amount collected.'
     match = re.search(r'\bDOMICILIACION PAGO SERVICIO\s+\d+\s+RFC\s+([A-Z&]{3,4}[0-9O]{6}[A-Z0-9]{3})$', value)
     if match:
@@ -384,7 +416,7 @@ def _us_ach_company(raw, value, direction):
     value = re.sub(r'^W\s?I\s?T\s?H\s?D\s?R\s?A\s?W\s?A\s?L\b', 'WITHDRAWAL', value)
     # Truist: ACH CORP DEBIT <company> PYMT|PAYMENT ..
     match = re.match(r'^ACH CORP DEBIT\s+(?:DISCOUNT|FEE|FEES)\s+(TRUIST MERCH SVC)\b', value) or re.match(r'^ACH CORP DEBIT\s+([A-Z][A-Z0-9&.]+(?:\s+[A-Z][A-Z0-9&.]+){0,2}?)\s+(?:PYMT|PAYMENT|PMT|FEE|FEES|DEBIT)\b', value)
-    if match and direction == 'debit' and match[1] not in ('ACH', 'CORP', 'DEBIT', 'PMT', 'PAYMENT'):
+    if match and direction == 'debit' and match[1] not in ('ACH', 'CORP', 'DEBIT', 'PMT', 'PAYMENT') and not concept_or_place(match[1], place=False):
         return match[1], 'ach-company', 'The company printed first on this ACH debit, before its entry wording.'
     # Andrews: Withdrawal ACH <name> TYPE: <type> ID: <id> CO: <company> [NAME: <person>] ACH Trace Number: ..
     match = re.match(r'^(?:WITHDRAWAL|DEPOSIT)\s+ACH\b.*?\bCO\s*:\s*(.+?)\s+(?:NAME\s*:|ACH TRACE|ENTRY CLASS|\.\s)', value)
@@ -456,6 +488,10 @@ def _us_named_transfer(raw, value, direction):
             if rule == 'named-payment-party':
                 # The payee comes before the payment type, check or reference.
                 name = re.split(r'\s+(?:MOBILE PMT|ONLINE PMT|CHECK PYMT|(?:ONLINE\s+)?PAYMENTS?\b|CHK\b|CK#|PYMT\b|PMT\b|ARC\b|\d)', name)[0]
+            # The name fields of these layouts can also hold the payment's purpose or, on a Visa transfer, a place.
+            if rule in ('bill-payee', 'card-push-payment-source', 'ach-company', 'debit-card-descriptor') \
+                    and concept_or_place(name, place=rule == 'card-push-payment-source', anywhere=rule != 'debit-card-descriptor'):
+                return None
             span = re.search(re.escape(name), text, re.I)
             return (text[span.start():span.end()] if span else name), rule, explanation
     return None
@@ -465,7 +501,7 @@ def _us_card_merchant(raw, value, direction):
     from services.financial.payment_inference import _card_tail, MERCHANTS
     # Truist: DEBIT CARD PURCHASE <merchant> #<store> <terminal> <date> ..: the merchant comes before the store number.
     store = re.match(r'^DEBIT CARD PURCHASE\s+(\S+(?:\s+\S+)?)\s+#\d{6}\b', value)
-    if store and re.search(r'[A-Z]{2}', store[1]):
+    if store and re.search(r'[A-Z]{2}', store[1]) and not concept_or_place(store[1]):
         return store[1], 'debit-card-descriptor', 'Merchant as printed on this debit card line, before its store number. It is not a verified legal identity; the original description remains available.'
     tail = _card_tail(value, direction) if not value.startswith(('|', '}', '~')) else None
     if tail is None:
@@ -667,10 +703,13 @@ def card_line_merchant(raw, *, institution=None):
             evidence = True
             break
         kept.append(token)
+    # A town and state before the phone or store number (ANYTOWN TX 555-..) is the place, not the merchant.
+    if len(kept) == 2 and kept[-1] in _STATES:
+        return None
     while len(kept) > 1 and (kept[-1] in _STATES or re.fullmatch(r'[#\-]?[\d\-]+|[-*•·]+', kept[-1])):
         kept.pop()
     label = _without_place(' '.join(kept)).strip(' *-#•·')
-    if not evidence or re.fullmatch(r'[A-Z]{1,3}', label) or (len(kept) == 1 and '*' in kept[0]):
+    if not evidence or re.fullmatch(r'[A-Z]{1,3}', label) or (len(kept) == 1 and '*' in kept[0]) or concept_or_place(label, place=False):
         return None
     if len(re.sub(r'[^A-Z]', '', label)) < 3 or label in _PLACES or re.fullmatch(r'(?:COLUMBIA HEIGHTS|COLUMBIA HEIGH\S*)', label):
         return None

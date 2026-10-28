@@ -236,8 +236,9 @@ def render_ledger_report(snapshot):
         origin = (row.get('label_sources') or {}).get(field, {})
         source = origin.get('source')
         if not value and origin.get('reason'):
-            # The statement's layout prints no name for the other side; say why rather than leave it blank.
-            value = origin['reason']
+            # The statement's layout prints no name for the other side; say why rather than leave it blank,
+            # bracketed so it never reads as a name.
+            value = f"[{origin['reason']}]"
         if source == 'description':
             value += ' (suggested)'
         elif source == 'model':

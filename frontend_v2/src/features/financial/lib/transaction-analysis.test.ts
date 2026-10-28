@@ -222,6 +222,18 @@ describe("unnamedParty", () => {
     } as unknown as Partial<LedgerTransaction>)
     expect(unnamedParty(withReason, "to_name")).toBe("Payroll batch — the statement doesn’t list the employees")
     expect(party(withReason, "to").name).toBe("Payroll batch — the statement doesn’t list the employees")
-    expect(unnamedParty(row("plain", { to_name: null } as Partial<LedgerTransaction>), "to_name")).toBe("Not identified")
+    expect(unnamedParty(row("plain", { to_name: "" }), "to_name")).toBe("Not identified")
+  })
+  it("never totals unnamed sides with different reasons, or none, under one reason", () => {
+    const cash = row("cash", {
+      to_name: null,
+      label_sources: { to_name: { source: "missing", reason: "Cash withdrawal — no other party" } },
+    } as unknown as Partial<LedgerTransaction>)
+    const plain = row("plain", { to_name: "" })
+    const groups = partySummaries([cash, plain, cash], "to")
+    expect(groups.map((g) => [partyName(g.key), g.name, g.count]).sort()).toEqual([
+      ["Cash withdrawal — no other party", "Cash withdrawal — no other party", 2],
+      ["Not identified", "Not identified", 1],
+    ])
   })
 })
