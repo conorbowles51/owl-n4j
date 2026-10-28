@@ -270,10 +270,12 @@ class ProofTest(unittest.TestCase):
         with mock.patch.object(vr, 'PRINTED_ORDER', False):
             with self.assertRaisesRegex(vr.NotProved, 'skip'):
                 vr.check_page_numbering(numbered((1, 2), (2, 1)), [1, 2, 3])
-        # Printed 2, 1 is one complete run: read in printed order (see PrintedOrderTest).
-        vr.check_page_numbering(numbered((1, 2), (2, 1)), [1, 2, 3])
+        # Printed 2, 1 is one complete run: read in printed order where the caller checks it (see PrintedOrderTest).
+        self.assertTrue(vr.check_page_numbering(numbered((1, 2), (2, 1)), [1, 2, 3], printed_order=True))
         with self.assertRaisesRegex(vr.NotProved, 'skip'):
-            vr.check_page_numbering(numbered((1, 3), (2, 1)), [1, 2, 3])
+            vr.check_page_numbering(numbered((1, 2), (2, 1)), [1, 2, 3])
+        with self.assertRaisesRegex(vr.NotProved, 'skip'):
+            vr.check_page_numbering(numbered((1, 3), (2, 1)), [1, 2, 3], printed_order=True)
         with self.assertRaisesRegex(vr.NotProved, 'same page number'):
             vr.check_page_numbering(numbered((1, 1), (2, 1)), [1, 2, 3])
         # Printed pages before or after the period must at least be pages of the file.
@@ -427,7 +429,7 @@ class PrintedOrderTest(unittest.TestCase):
         # As judge: the order check, then the pages as the text reading keeps them.
         proposal = self._proposal(sent, text_pages)
         pages = vr.document_pages(document, sent)
-        if vr.check_page_numbering(pages, file_pages or sorted(sent)):
+        if vr.check_page_numbering(pages, file_pages or sorted(sent), printed_order=True):
             vr.check_text_keeps_printed_order(document, proposal, sent)
         return vr.prove(proposal, vr.choose_section(vr.combine(pages), proposal), _knowledge())
 
@@ -503,7 +505,10 @@ class PrintedOrderTest(unittest.TestCase):
         document['accounts'][0].update(total_credits='100.00', total_debits='100.00', count_credits=1, count_debits=2)
         proposal = self._proposal([5, 6, 7])
         pages = vr.document_pages(document, [5, 6, 7])
-        self.assertTrue(vr.check_page_numbering(pages, [5, 6, 7]))
+        self.assertTrue(vr.check_page_numbering(pages, [5, 6, 7], printed_order=True))
+        # Without the caller's order check (a page-image example has no text reading), the old rule stands.
+        with self.assertRaisesRegex(vr.NotProved, 'skip'):
+            vr.check_page_numbering(pages, [5, 6, 7])
         with self.assertRaisesRegex(vr.NotProved, 'does not read them in the printed order'):
             vr.check_text_keeps_printed_order(document, proposal, [5, 6, 7])
         section = vr.choose_section(vr.combine(pages), proposal)

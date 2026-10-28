@@ -570,12 +570,14 @@ def combine(pages):
     return merged
 
 
-def check_page_numbering(pages, file_pages=None):
+def check_page_numbering(pages, file_pages=None, printed_order=False):
     """NotProved when the printed numbering shows pages absent from the file.
 
     The numbering may count the whole printed document while this period uses
     only some of its pages; a page is missing when the file has fewer pages
-    than printed, or a printed number is beyond the file.
+    than printed, or a printed number is beyond the file. ``printed_order``: pages
+    out of the file's order may pass in printed order (PRINTED_ORDER); True is then
+    returned and the caller must check the order is the one it reads and saves.
     """
     totals = {page.get('printed_page_total') for _, page in pages if page.get('printed_page_total')}
     numbers = {page.get('printed_page_number') for _, page in pages if page.get('printed_page_number')}
@@ -590,7 +592,7 @@ def check_page_numbering(pages, file_pages=None):
             missing = sorted(set(range(1, total + 1)) - numbers)
             raise NotProved('The pages print %s pages but the file has %s; pages may be missing (printed pages not read: %s).' % (
                 total, count, ', '.join(str(n) for n in missing[:10]) or 'none'))
-    return _numbering_has_no_gap(pages, file_pages, next(iter(totals)) if totals else None)
+    return _numbering_has_no_gap(pages, file_pages, next(iter(totals)) if totals else None, printed_order)
 
 
 def _printed_run(numbers, file_pages, total, period_pages):
@@ -641,7 +643,7 @@ def printed_order(document, sent_pages):
     return [next(in_order) if page in numbered else page for page in sent]
 
 
-def _numbering_has_no_gap(pages, file_pages, total):
+def _numbering_has_no_gap(pages, file_pages, total, printed_order=False):
     """NotProved when a printed page number between this period's pages is not one of them.
 
     With PRINTED_ORDER, pages whose printed numbers form one complete run pass in printed order
@@ -653,7 +655,7 @@ def _numbering_has_no_gap(pages, file_pages, total):
     except NotProved:
         numbers = [page.get('printed_page_number') for _, page in sorted(pages, key=lambda pair: pair[0])
                    if isinstance(page.get('printed_page_number'), int) and page.get('printed_page_number') >= 1]
-        if not PRINTED_ORDER or not _printed_run(numbers, file_pages, total, [p for p, _ in pages]):
+        if not (printed_order and PRINTED_ORDER) or not _printed_run(numbers, file_pages, total, [p for p, _ in pages]):
             raise
         return True
     return False
@@ -2094,7 +2096,7 @@ def judge(db, case_id, proposal, document, pages, knowledge, *, saved=False):
     readings = document_pages(document, pages)
     page_gap, printed = None, False
     try:
-        printed = check_page_numbering(readings, proposal.get('page_numbers'))
+        printed = check_page_numbering(readings, proposal.get('page_numbers'), printed_order=True)
     except NotProved as gap:
         if not PRINTED_COUNTS:
             raise
