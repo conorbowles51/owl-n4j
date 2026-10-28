@@ -746,6 +746,11 @@ def run(out, python, concurrency, corpus=CORPUS, readings=None, compare=None):
                                    institution=item.get('institution'), currency=item.get('currency'),
                                    period_start=item.get('period_start'), period_end=item.get('period_end'),
                                    transactions=item.get('transaction_count')))
+            if proposal is not None:
+                # Payment rows the reading produced, held or not (reader_coverage): the item's transaction count leaves
+                # out rows it cannot count yet (no currency, an amount it could not establish).
+                entry['read']['payment_rows'] = sum(1 for row in proposal.get('rows') or []
+                                                    if row.get('kind') == 'transaction')
             views[item['id']] = real_compare.proposal_view(proposal) if proposal is not None else None
             if proposal is None:
                 entry['proposal_error'] = proposal_error
@@ -808,6 +813,7 @@ def run(out, python, concurrency, corpus=CORPUS, readings=None, compare=None):
         periods=periods,
         ledger=ledger,
     )
+    result['reader_coverage'] = reader_coverage(periods, truths)
     result['metrics'] = metrics(result)
     compare = compare or _default_compare(manifest, corpus)
     if compare:
@@ -1032,6 +1038,7 @@ def rescore(out, corpus, compare=None, resimulated=False):
                                          holder_of=saved_holder_lookup(db, select))
     engine.dispose()
     result['corpus'].update(periods=len(truths), path=str(corpus))
+    result['reader_coverage'] = reader_coverage(result['periods'], truths)
     result['rescored'] = dict(at=datetime.now(timezone.utc).isoformat(timespec='seconds'), code=_git('rev-parse', 'HEAD'),
                               scored_truth=sorted(SCORED_TRUTH), rematched_items=rematched,
                               not_detected_refreshed=added_not_detected,
@@ -1447,6 +1454,33 @@ def metrics(result):
                              for e in sorted({p['expected'] or 'unmatched' for p in periods})})
 
 
+def reader_coverage(periods, truths):
+    """Truth files the readers got no payment out of (fin-holes E, 2026-10-27).
+
+    OPDMD66's Truist statements, a layout no reader knew, read as nothing (no payment, period or balance) and nothing
+    failed: a held statement passes every safety check. A truth file whose truth periods hold payments, read here
+    with 0 payments over all its statements, is a layout the readers do not know; it fails the run (safety_failures)
+    so an unknown layout can never pass the gates unnoticed. Returns {zero_payment_files: [{filename, families,
+    truth_rows, statements_read}]}."""
+    rows, families = Counter(), defaultdict(set)
+    for truth in truths.values():
+        printed = truth.get('rows') or []
+        rows[truth['filename']] += len(printed) if isinstance(printed, list) else int(printed)
+        families[truth['filename']].add(truth.get('family') or 'unknown')
+    read, statements = Counter(), Counter()
+    for period in periods:
+        filename = period.get('filename')
+        if not filename or period.get('status') == 'not_detected':
+            continue
+        statements[filename] += 1
+        seen = period.get('read') or {}
+        # The payment rows read (held or not); a run from before they were recorded: its counted transactions.
+        read[filename] += int(seen['payment_rows'] if 'payment_rows' in seen else seen.get('transactions') or 0)
+    zero = [dict(filename=name, families=sorted(families[name]), truth_rows=rows[name], statements_read=statements[name])
+            for name in sorted(rows) if rows[name] > 0 and read[name] == 0]
+    return dict(zero_payment_files=zero)
+
+
 def safety_failures(result):
     """Why this run must fail (exit 1); empty when it may pass.
 
@@ -1469,6 +1503,11 @@ def safety_failures(result):
     copies = overall.get('duplicate_copies_offered_for_import', 0) + overall.get('duplicate_copies_saved', 0)
     if copies:
         failures.append(f"{copies} exact cop{'y' if copies == 1 else 'ies'} offered or saved instead of set aside")
+    zero = (result.get('reader_coverage') or {}).get('zero_payment_files') or []
+    if zero:
+        layouts = sorted({family for entry in zero for family in entry['families']})
+        failures.append(f"{len(zero)} truth file(s) with payments read with 0 payments (a layout no reader knows: "
+                        f"{', '.join(layouts)})")
     return failures
 
 
