@@ -250,13 +250,16 @@ def describe(unnamed, other, gap_days):
                 own_account=own)
 
 
-_CASE_ROWS = """select t.id, t.account_id, a.metadata->>'canonical_account_id', t.source_document_id, t.amount_minor, t.currency,
+_CASE_ROWS = """select t.id, t.account_id, t.source_document_id, t.amount_minor, t.currency,
  t.direction, t.ordering_date, t.ordering_date_source, t.transaction_date, t.posted_date, t.value_date, t.effective_date,
  t.description, t.counterparty_raw, t.metadata->'investigation_labels', t.provenance->'reviewed_counterparty',
- t.provenance->>'date_basis', a.holder_name, a.institution_name, a.identifier_as_printed, a.account_type,
- a.metadata->'identity_conflicts'
+ t.provenance->>'date_basis'
  from financial_transactions t join financial_accounts a on a.id = t.account_id
  where t.case_id = :case_id and a.case_id = :case_id and t.ledger_status = 'admitted' and t.superseded_by_id is null"""
+
+# Accounts are read once per case: an account's holder conflicts are the same for every one of its payments.
+_CASE_ACCOUNTS = """select a.id, a.metadata->>'canonical_account_id', a.holder_name, a.institution_name, a.identifier_as_printed,
+ a.account_type, a.metadata->'identity_conflicts' from financial_accounts a where a.case_id = :case_id"""
 
 
 def _plain(value):
@@ -273,31 +276,36 @@ def disputed_holders(holder, conflicts):
     return found
 
 
-def case_rows(session, case_id):
+def case_rows(session, case_id, *, dated_only=True):
     """Every current admitted payment of the case, reduced to what match_parties reads, with the other side's
-    effective name as the Transactions table shows it (statement, person label or link, description)."""
+    effective name as the Transactions table shows it (statement, person label or link, description).
+    ``dated_only``: leave out payments dated only by their statement's end (they cannot be matched by date)."""
     from sqlalchemy import text
     from services.financial.payment_labels import _inferred_labels
+    accounts = {str(id): (str(canonical or id), holder, institution, identifier, _plain(account_type), disputed_holders(holder, conflicts))
+                for id, canonical, holder, institution, identifier, account_type, conflicts in session.execute(
+                    text(_CASE_ACCOUNTS), dict(case_id=str(case_id)))}
     rows = []
-    for (id, account_id, canonical, document, amount, currency, direction, ordering, ordering_source, td, pd, vd, ed,
-         description, raw, labels, reviewed, date_basis, holder, institution, identifier, account_type, conflicts) in session.execute(
-            text(_CASE_ROWS), dict(case_id=str(case_id))):
-        direction, account_type = _plain(direction), _plain(account_type)
-        if date_basis == 'statement_end_ordering_only' or direction not in ('credit', 'debit'):
+    for (id, account_id, document, amount, currency, direction, ordering, ordering_source, td, pd, vd, ed,
+         description, raw, labels, reviewed, date_basis) in session.execute(text(_CASE_ROWS), dict(case_id=str(case_id))):
+        direction = _plain(direction)
+        if (dated_only and date_basis == 'statement_end_ordering_only') or direction not in ('credit', 'debit'):
             continue
+        canonical, holder, institution, identifier, account_type, other_holders = accounts[str(account_id)]
         labels = labels if isinstance(labels, dict) else {}
         side = 'from_name' if direction == 'credit' else 'to_name'
         inferred = _inferred_labels(description, direction, account_type, institution)
         reviewed = reviewed.get('label') if isinstance(reviewed, dict) else None
         name = ((raw or '').strip() or labels.get(side) or (labels.get('counterparty_link') or {}).get('label')
                 or reviewed or (inferred.get('counterparty') or {}).get('value'))
-        rows.append(dict(id=str(id), account_id=str(canonical or account_id), source_document_id=str(document),
+        rows.append(dict(id=str(id), account_id=canonical, source_document_id=str(document),
                          amount_minor=amount, currency=currency, direction=direction, ordering_date=ordering,
                          ordering_date_source=_plain(ordering_source), transaction_date=td, posted_date=pd,
                          value_date=vd, effective_date=ed, description=description, holder=holder,
                          institution=institution, identifier=identifier, name=name,
                          reason=(inferred.get('counterparty_reason') or {}).get('value') or '',
-                         other_holders=disputed_holders(holder, conflicts)))
+                         reason_rule=(inferred.get('counterparty_reason') or {}).get('rule'),
+                         other_holders=other_holders))
     return rows
 
 

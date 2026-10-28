@@ -45,35 +45,25 @@ def _ask(rule, direction, description):
 
 def request_rows(session, case_id):
     """One dict per admitted, current payment of the case whose other side is not named, by bank, account and date."""
-    from sqlalchemy import select
-    from sqlalchemy.orm import selectinload
-    from postgres.models.financial import FinancialTransaction
-    from services.financial.payment_labels import payment_label_view
-    from services.financial.payment_party_matches import case_party_matches
-    matches = case_party_matches(session, case_id)
-    rows = []
-    for row in session.scalars(select(FinancialTransaction).where(
-            FinancialTransaction.case_id == case_id, FinancialTransaction.ledger_status == 'admitted',
-            FinancialTransaction.superseded_by_id.is_(None)).options(selectinload(FinancialTransaction.account))):
-        direction = str(getattr(row.direction, 'value', row.direction))
-        side = 'from_name' if direction == 'credit' else 'to_name'
-        # stored=None: the stored category is not read here, and looking it up costs a query per payment.
-        view = payment_label_view(row, row.account, stored=None, matched=matches.get(str(row.id)))
-        source = view['label_sources'][side]
-        if source.get('source') != 'missing' or (view.get(side) or '').strip():
+    from services.financial.payment_party_matches import case_party_matches, case_rows
+    # Named from another account of the case exactly as the ledger shows it.
+    named = case_party_matches(session, case_id)
+    rows = case_rows(session, case_id, dated_only=False)
+    out = []
+    for row in rows:
+        if row['name'] or row['id'] in named:
             continue
-        account = row.account
-        rows.append({
-            'Bank': account.institution_name if account else '', 'Account': account.identifier_as_printed if account else '',
-            'Holder': account.holder_name if account else '', 'Date': str(row.transaction_date or ''),
-            'Direction': 'Money in' if direction == 'credit' else 'Money out',
-            'Amount': f'{row.amount_minor / 100:.2f}', 'Currency': row.currency or '', 'Printed line': row.description or '',
-            'Missing': 'Who sent it' if direction == 'credit' else 'Who received it',
-            'Ask the bank for': _ask(source.get('rule'), direction, row.description),
-            'Why the statement does not say': source.get('reason') or 'The line prints no name and no known layout explains why.',
-            'Payment id': str(row.id)})
-    rows.sort(key=lambda r: (r['Bank'], r['Account'], r['Date'], r['Payment id']))
-    return rows
+        credit = row['direction'] == 'credit'
+        out.append({
+            'Bank': row['institution'] or '', 'Account': row['identifier'] or '', 'Holder': row['holder'] or '',
+            'Date': str(row['transaction_date'] or row['ordering_date'] or ''), 'Direction': 'Money in' if credit else 'Money out',
+            'Amount': f"{row['amount_minor'] / 100:.2f}", 'Currency': row['currency'] or '', 'Printed line': row['description'] or '',
+            'Missing': 'Who sent it' if credit else 'Who received it',
+            'Ask the bank for': _ask(row['reason_rule'], row['direction'], row['description']),
+            'Why the statement does not say': row['reason'] or 'The line prints no name and no known layout explains why.',
+            'Payment id': row['id']})
+    out.sort(key=lambda r: (r['Bank'], r['Account'], r['Date'], r['Payment id']))
+    return out
 
 
 def requests_csv(rows):

@@ -32,14 +32,15 @@ def bank_of(institution):
 
 def classify(*, description, direction, account_type, institution, counterparty_raw, labels, reviewed_counterparty=None, matched=False):
     """NAMED, REASON or BARE for one stored payment, as the Transactions table shows its other side."""
-    from services.financial.payment_inference import infer_payment_labels
+    # The read-time memo (payment_labels._inferred_once): the same four values always give the same labels.
+    from services.financial.payment_labels import _inferred_once
     if counterparty_raw and counterparty_raw.strip():
         return NAMED
     labels = labels if isinstance(labels, dict) else {}
     side = 'from_name' if direction == 'credit' else 'to_name'
     if labels.get(side) or labels.get('counterparty_link') or reviewed_counterparty:
         return NAMED
-    inferred = infer_payment_labels(description, direction=direction, account_type=account_type, institution=institution)
+    inferred = _inferred_once(description, direction, account_type, institution)
     if inferred.get('counterparty') or matched:
         return NAMED
     return REASON if inferred.get('counterparty_reason') else BARE
