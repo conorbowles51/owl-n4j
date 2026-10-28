@@ -691,7 +691,7 @@ class FirstStatementTest(unittest.TestCase):
         with mock.patch.object(vr, 'FIRST_STATEMENT', False), self.assertRaisesRegex(vr.NotProved, 'no saved statement'):
             self._first()
         self.assertTrue(vr.FIRST_STATEMENT)
-        self.assertEqual(vr.PROOF_VERSION, 14)  # 13 before rule 1: stored not-proved readings are judged again once
+        self.assertEqual(vr.PROOF_VERSION, 15)  # 13 before rule 1, 14 before row dates: stored not-proved readings are judged again once
 
     def test_a_known_account_is_judged_as_before(self):
         self.assertNotIn('account_basis', _proved(_proposal(**self.TEXT)))
@@ -979,4 +979,76 @@ class TextMisreadsTest(ClosingDaysTest):
         pages = self._pages(extra=[too_early])
         pages[0][1]['sections'][0]['closing_balance'] = '1823.11'
         with self.assertRaisesRegex(vr.NotProved, 'outside the statement period'):
+            self._prove(pages)
+
+
+class RowDatesTest(unittest.TestCase):
+    """Row dates the arithmetic cannot check (coordinator 2026-10-28, Andrews 820516588: OpenAI took a neighbour's date)."""
+
+    def _text_row(self, amount, direction, day, **extra):
+        return dict(dict(id='t' + amount + day, kind='transaction', excluded=False, issues=[], page_number=1,
+                         fields=dict(amount_minor=amount, direction=direction, date=day, description='X')), **extra)
+
+    def _pages(self, *rows, **values):
+        values = dict(dict(opening_balance='1000.00', closing_balance='1000.00', **HEADER), **values)
+        return [(1, _page([_section(rows, **values)], 1, 1))]
+
+    def _prove(self, pages, text_rows=()):
+        proposal = _proposal(text_rows)
+        proposal['page_numbers'] = proposal['statement_page_numbers'] = [1]
+        return _proved(proposal, pages=pages)
+
+    def test_a_neighbours_date_disagreeing_with_the_text_is_held(self):
+        # Printed "11/03 Withdrawal ... -20.00": the page images read the 11/02 of the line above.
+        pages = self._pages(_row('2025-12-02', '0.10', 'debit', '999.90'), _row('2025-12-02', '20.00', 'debit', '979.90'),
+                            _row('2025-12-05', '20.10', 'credit', '1000.00'))
+        text = [self._text_row('10', 'debit', '2025-12-02'), self._text_row('2000', 'debit', '2025-12-03'),
+                self._text_row('2010', 'credit', '2025-12-05')]
+        with self.assertRaisesRegex(vr.NotProved, 'dated differently'):
+            self._prove(pages, text)
+        right = self._pages(_row('2025-12-02', '0.10', 'debit', '999.90'), _row('2025-12-03', '20.00', 'debit', '979.90'),
+                            _row('2025-12-05', '20.10', 'credit', '1000.00'))
+        self.assertEqual(len(self._prove(right, text)['rows']), 3)
+        with mock.patch.object(vr, 'ROW_DATES', False):
+            self.assertEqual(len(self._prove(pages, text)['rows']), 3)
+
+    def test_same_amounts_on_other_days_are_counted_one_by_one(self):
+        pages = self._pages(_row('2025-12-02', '20.00', 'debit', '980.00'), _row('2025-12-02', '20.00', 'debit', '960.00'),
+                            _row('2025-12-09', '40.00', 'credit', '1000.00'))
+        text = [self._text_row('2000', 'debit', '2025-12-02'), self._text_row('2000', 'debit', '2025-12-03'),
+                self._text_row('4000', 'credit', '2025-12-09')]
+        with self.assertRaisesRegex(vr.NotProved, 'dated differently'):
+            self._prove(pages, text)
+
+    def test_a_text_row_the_reader_doubted_or_without_date_does_not_count(self):
+        pages = self._pages(_row('2025-12-02', '20.00', 'debit', '980.00'), _row('2025-12-09', '20.00', 'credit', '1000.00'))
+        self._prove(pages, [self._text_row('2000', 'debit', '2025-12-04', issues=['Check the full date in the PDF.'])])
+        self._prove(pages, [dict(self._text_row('2000', 'debit', ''))])
+
+    def test_out_of_printed_order_is_held(self):
+        pages = self._pages(_row('2025-12-02', '9.00', 'debit', '991.00'), _row('2025-12-01', '4.00', 'credit', '995.00'),
+                            _row('2025-12-09', '5.00', 'debit', '990.00'), _row('2025-12-10', '10.00', 'credit', '1000.00'))
+        with self.assertRaisesRegex(vr.NotProved, 'out of printed order on page 1'):
+            self._prove(pages)
+
+    def test_reverse_printed_and_grouped_by_direction_are_in_order(self):
+        newest_first = self._pages(_row('2025-12-09', '13.00', 'credit', '1000.00'), _row('2025-12-05', '4.00', 'debit', '987.00'),
+                                   _row('2025-12-02', '9.00', 'debit', '991.00'))
+        self.assertEqual(len(self._prove(newest_first)['rows']), 3)
+        grouped = self._pages(_row('2025-12-03', '5.00', 'credit'), _row('2025-12-20', '8.00', 'credit'),
+                              _row('2025-12-01', '9.00', 'debit'), _row('2025-12-15', '4.00', 'debit'))
+        self.assertEqual(len(self._prove(grouped)['rows']), 4)
+        # Grouped, but a block out of order.
+        broken = self._pages(_row('2025-12-03', '5.00', 'credit'), _row('2025-12-20', '8.00', 'credit'),
+                             _row('2025-12-15', '9.00', 'debit'), _row('2025-12-01', '4.00', 'debit'),
+                             _row('2025-12-10', '0.00', 'debit'))
+        with self.assertRaises(vr.NotProved):
+            self._prove(broken)
+
+    def test_a_two_cent_amount_slip_fails_the_printed_running_balance(self):
+        # Printed "03/05 Withdrawal Debit Card -11.82  17.80": read as 11.80, a 2.00 read as 2.02 hiding the
+        # difference in the closing balance. The running balance after it is checked row by row.
+        pages = self._pages(_row('2025-12-02', '115.00', 'debit', '29.62'), _row('2025-12-05', '11.80', 'debit', '17.80'),
+                            _row('2025-12-09', '2.02', 'debit', '15.80'), opening_balance='144.62', closing_balance='15.80')
+        with self.assertRaisesRegex(vr.NotProved, 'running balance'):
             self._prove(pages)

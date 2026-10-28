@@ -196,10 +196,17 @@ FIRST_STATEMENT_BASIS = 'page_image_header_matches_text'
 FIRST_STATEMENT_MIN_DIGITS = 6
 FIRST_STATEMENT_NOTE = (' The first statement of this account in the case: its full account number, holder and bank on the '
                         'page images agree with the text of the same file.')
+# Row dates the arithmetic cannot check (coordinator, 2026-10-28: OpenAI read Andrews "11/03 ... -20.00" as 11/02 and
+# "09/01 08/31 Debit Card -9.00" as 09/02, each the date of the line beside it). Besides lying inside the period, the
+# rows of a section must run in date order as printed (forward or reverse, or each block of one direction when the
+# statement prints deposits and withdrawals apart), and every payment the text of the file reads cleanly with its date
+# must be in the page-image reading with that same date, amount and direction. Any disagreement holds the statement
+# with its reason. Off: dates are checked against the period only, as before.
+ROW_DATES = _switch('LOUPE_FINANCIAL_VISION_ROW_DATES')
 PROOF_VERSION = 1
 for _switched in (SPLIT_SPELLINGS, SECTION_NUMBER, PRINTED_COUNTS, QUIET_PRINTED, CLABE_ACCOUNT, SECTION_BY_TEXT,
                   SIGNED_DEBITS, DATES_FROM_IMAGE, OPENING_FROM_PREVIOUS, IMAGE_TOTALS, CLOSING_DAYS, TEXT_MISREADS,
-                  FIRST_STATEMENT):
+                  FIRST_STATEMENT, ROW_DATES):
     # Each switch on top of the one before; with one off, the rules are the version before it.
     if not _switched:
         break
@@ -938,6 +945,9 @@ def prove(proposal, section, knowledge):
             if not str(count).isdigit() or int(count) != sum(r['direction'] == direction for r in rows):
                 raise NotProved('The number of %s read differs from the printed count.' % ('credits' if direction == 'credit' else 'charges'))
     _agrees_with_rule_reading(proposal, rows, opening, closing)
+    if ROW_DATES:
+        _dates_in_order(rows)
+        _dates_agree_with_text(proposal, rows, exponent)
     charges = charge_totals(proposal, section, rows, exponent) if CLOSING_DAYS else {}
     return dict(account_keys=[k.key for k in candidates], currency=currency, holder=holder, institution=institution,
                 account_number=account_text, charge_totals=charges,
@@ -1175,6 +1185,57 @@ def _running_ok(rows, opening, liability):
         if ok:
             return True
     return False
+
+
+def _forward(dates):
+    return all(a <= b for a, b in zip(dates, dates[1:]))
+
+
+def _ordered(dates):
+    return _forward(dates) or _forward(dates[::-1])
+
+
+def _dates_in_order(rows):
+    """(ROW_DATES) The rows run in date order as printed: the whole section forward or in reverse, or, when it prints
+    each direction in a block of its own (deposits, then withdrawals), each block, all in the same order."""
+    if _ordered([r['date'] for r in rows]):
+        return
+    blocks, seen = [], set()
+    for row in rows:
+        if not blocks or blocks[-1][0] != row['direction']:
+            if row['direction'] in seen:
+                break
+            seen.add(row['direction'])
+            blocks.append((row['direction'], []))
+        blocks[-1][1].append(row)
+    else:
+        for oriented in (lambda d: d, lambda d: d[::-1]):
+            if all(_forward(oriented([r['date'] for r in block])) for _, block in blocks):
+                return
+    page = next(b['page'] for a, b in zip(rows, rows[1:]) if b['date'] < a['date'])
+    raise NotProved('The payment dates read from the page images are out of printed order on page %s.' % page)
+
+
+def _dates_agree_with_text(proposal, rows, exponent):
+    """(ROW_DATES) Every payment the text of the file reads cleanly, with its date, whose amount and direction the
+    page images also read, is in the page-image reading on that same date."""
+    from collections import Counter
+    from services.financial.review_arithmetic import integer
+    available = Counter((r['amount_minor'], r['direction'], r['date']) for r in rows)
+    read = {(r['amount_minor'], r['direction']) for r in rows}
+    for row in proposal['rows']:
+        fields = row.get('fields') or {}
+        if row.get('kind') != 'transaction' or row.get('excluded') or row.get('issues'):
+            continue
+        amount, when = integer(fields.get('amount_minor')), _iso(fields.get('date'))
+        if not when or (amount, fields.get('direction')) not in read:
+            continue
+        key = (amount, fields['direction'], when)
+        if available[key]:
+            available[key] -= 1
+            continue
+        raise NotProved('A payment of %s the text of the file dates %s is dated differently in the page-image reading.'
+                        % (_show(amount, exponent), when))
 
 
 def _misread_of(amount, direction, row):
