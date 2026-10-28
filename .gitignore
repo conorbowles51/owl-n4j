@@ -141,3 +141,6 @@ backups/
 
 # Playwright CLI snapshot artifacts
 .playwright-cli/
+
+# Layout-learning release lock (layout_learning.release)
+backend/services/financial/.learned_profiles.lock

@@ -583,7 +583,12 @@ class EngineHookTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, why):
                 ll.registry_entry(draft, 'zzfinger', gates, review)
         first = ll.registry_entry(draft, 'zzfinger', passed(draft), 'PASS')
+        other = dict(name='learned-otherfp', match=dict(all=['zz other layout']), currency='USD')
+        other_entry = ll.registry_entry(other, 'otherfp', passed(other, fingerprint='otherfp'), 'PASS')
         self.assertEqual(ll.release(first, self.path), [])
+        # Gated before 'first' went live: never read beside it, so it is refused until gated again.
+        self.assertIn('run the gates again', ll.release(other_entry, self.path)[0][1])
+        self.assertEqual(len(lp.registry(self.path)['profiles']), 1)
         lp.reset()
         self.assertEqual(sep.matching_profile('zz released layout page 1')['name'], first['name'])
         revised = dict(draft, institution='ZZ Bank')
@@ -591,11 +596,12 @@ class EngineHookTests(unittest.TestCase):
         before, after = ll.live_and_draft(revised)
         self.assertIn(first['name'], [p['name'] for p in before])
         self.assertEqual([p['name'] for p in after if p.get('learned')], [ll.keyed(revised)['name']])
-        stale = passed(revised)  # gates that did not replace the live version
+        stale = passed(revised, live_learned=[first['name']])  # gates that did not replace the live version
         self.assertTrue(ll.release(ll.registry_entry(revised, 'zzfinger', stale, 'PASS'), self.path))
         self.assertEqual(lp.registry(self.path)['profiles'][0]['name'], first['name'])  # nothing was written
         self.assertEqual(len(lp.registry(self.path)['profiles']), 1)
-        second = ll.registry_entry(revised, 'zzfinger', passed(revised, replaced=[first['name']]), 'PASS')
+        second = ll.registry_entry(revised, 'zzfinger', passed(revised, replaced=[first['name']],
+                                                               live_learned=[first['name']]), 'PASS')
         self.assertEqual(ll.release(second, self.path), [])
         lp.reset()
         self.assertEqual(sep.matching_profile('zz released layout page 1')['name'], second['name'])
@@ -607,10 +613,12 @@ class EngineHookTests(unittest.TestCase):
         self.path.write_text(json.dumps(dict(data, profiles=data['profiles'] + [dict(name='broken', learned=dict(state='live'))])))
         written = self.path.read_text()
         third = dict(revised, institution='ZZ Bank NA')
-        problems = ll.release(ll.registry_entry(third, 'zzfinger', passed(third, replaced=[second['name']]), 'PASS'), self.path)
+        problems = ll.release(ll.registry_entry(third, 'zzfinger', passed(third, replaced=[second['name']],
+                                                                     live_learned=[second['name']]), 'PASS'), self.path)
         self.assertTrue(problems)
         self.assertEqual(self.path.read_text(), written)
-        self.assertEqual([p.name for p in self.path.parent.iterdir()], [self.path.name])  # no temporary left
+        self.assertEqual(sorted(p.name for p in self.path.parent.iterdir()),
+                         ['.learned_profiles.lock', self.path.name])  # no temporary left
 
     def test_drafts_are_checked_as_the_registry_checks_them(self):
         draft = dict(name='learned-zz', match=dict(all=['zz layout']), settlement_days=dict(operation=['w'] * 50000,

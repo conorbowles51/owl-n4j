@@ -1114,7 +1114,10 @@ def gates(profile, corpus, sources_of, truth_dir, inventory, out=None):
     # What the pass is for: exactly these rules, with these profiles switched off (a release needs none off).
     conditions = dict(rules_hash=lp.rules_hash(profile), profiles_off=sorted(sep.PROFILES_OFF | lp.LEARNED_OFF),
                       fingerprint=draft_fingerprint(profile['name']),
-                      replaced=sorted(p['name'] for p in before if p not in after and p.get('learned')))
+                      replaced=sorted(p['name'] for p in before if p not in after and p.get('learned')),
+                      # The learned profiles live when the gates read: a release is refused unless the registry
+                      # still holds exactly these live (anything released since was never read with this draft).
+                      live_learned=sorted(p['name'] for p in before if p.get('learned')))
     truth_result = truth_gate(corpus_result['rematched'], sources_of, truth_dir, inventory)
     return dict(corpus=corpus_result, truth=truth_result, conditions=conditions,
                 passed=corpus_result['passed'] and truth_result['passed'])
@@ -1311,6 +1314,7 @@ def registry_entry(profile, fingerprint, gate_result, review, examples=(), today
     entry = dict(rules, name=name, learned=dict(
         state='live', fingerprint=fingerprint, version=VERSION, rules_hash=digest, review='PASS', gates=gates,
         examples=list(examples), replaces=list(conditions.get('replaced') or []),
+        gated_with=list(conditions.get('live_learned') or []),
         live_since=str(today or date.today())))
     lp._servable(entry)
     lp._validated(entry)
@@ -1318,13 +1322,26 @@ def registry_entry(profile, fingerprint, gate_result, review, examples=(), today
 
 
 def release(entry, path=None):
-    """Write ``entry`` into the registry (atomically), retiring the layout's previous live version; returns the
-    registry's problems afterwards, which must be none (the release test requires it)."""
+    """Write ``entry`` into the registry (atomically), retiring the layout's previous live version. Returns the
+    problems that stopped it ([] when written): the registry no longer holding exactly the live learned profiles
+    the gates read, or any entry the engine would refuse. Nothing is written unless there are none."""
+    from services.financial import learned_profiles as lp
+    path = Path(path or lp.REGISTRY)
+    with open(path.with_name('.learned_profiles.lock'), 'a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)  # two releases never read the same version and drop each other's entry
+        return _release(entry, path)
+
+
+def _release(entry, path):
     import os
     import tempfile
     from services.financial import learned_profiles as lp
-    path = Path(path or lp.REGISTRY)
     data = lp.registry(path)
+    live_now = sorted(e.get('name') for e in data.get('profiles', [])
+                      if isinstance(e, dict) and (e.get('learned') or {}).get('state') == 'live')
+    if 'gated_with' not in entry['learned'] or live_now != sorted(entry['learned']['gated_with']):
+        return [('(release)', 'the gates read the live learned profiles %s, the registry now holds %s: run the '
+                 'gates again' % (entry['learned'].get('gated_with'), live_now))]
     entries = []
     for old in data.get('profiles', []):
         if old.get('name') == entry['name']:
