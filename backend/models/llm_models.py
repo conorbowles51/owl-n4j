@@ -146,6 +146,13 @@ AVAILABLE_MODELS = [
         context_window=1_000_000,
     ),
     _model(
+        "deepseek-flash",
+        "DeepSeek V4.1 Flash",
+        LLMProvider.DEEPSEEK,
+        "DeepSeek's fast model; reads text and images (DeepSeek lists its input as text and image).",
+        context_window=1_000_000,
+    ),
+    _model(
         "deepseek-v4-pro",
         "DeepSeek V4 Pro",
         LLMProvider.DEEPSEEK,

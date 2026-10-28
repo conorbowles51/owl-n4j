@@ -175,6 +175,20 @@ def get_workload_model(db: Session, workload: str) -> tuple[str, str]:
     return entry["provider"], entry["model_id"]
 
 
+# Workloads that send page images (each must use a model that takes images).
+IMAGE_WORKLOADS = frozenset({"financial_vision"})
+
+
+def _provider_key(provider: str, db: Session | None) -> str | None:
+    if db is None:
+        return DEEPSEEK_API_KEY if provider == "deepseek" else None
+    try:
+        from services.ai_provider_credentials import get_provider_api_key
+        return get_provider_api_key(db, provider)
+    except Exception:  # noqa: BLE001 - no key: the capability check fails closed
+        return None
+
+
 def validate_policy(
     configuration: Any,
     *,
@@ -209,6 +223,19 @@ def validate_policy(
             raise ValueError(f"{model_id} does not support agent tool use")
         if (workload.startswith("ingestion_") or workload in ("workspace_analysis", "financial_vision")) and not model.supports_structured_output:
             raise ValueError(f"{model_id} does not support reliable structured output")
+        if workload in IMAGE_WORKLOADS:
+            # Page images only go to a model that takes images (services/ai_model_capabilities): a text-only model
+            # can accept the request and answer without having read the page.
+            from services.ai_model_capabilities import accepts_images
+            api_key = None
+            if provider == "deepseek":
+                api_key = _provider_key(provider, db)
+            readable, why = accepts_images(provider, model_id, api_key=api_key)
+            if not readable:
+                raise ValueError(
+                    f"{model.name} cannot read page images, so it "
+                    f"cannot be used for {WORKLOADS[workload]['label']} ({why}). Choose a model that reads images."
+                )
         if require_configured_provider and not provider_is_configured(provider, db):
             raise ValueError(
                 f"{provider.title()} is not configured on the server. Add its API key first."

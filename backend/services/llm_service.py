@@ -172,8 +172,16 @@ class LLMExecutionContext:
         self.last_usage = None
         self.last_request_arguments = None
         self.last_response_metadata = {}
-        if self.provider != "openai":
+        from services.ai_model_capabilities import require_images
+
+        if self.provider not in ("openai", "deepseek"):
             raise ValueError(f"Page-image reading is not available for provider {self.provider}")
+        # Never sent to a model that does not take images (a text-only model can answer without reading them).
+        require_images(self.provider, self.model_id, api_key=self.api_key or (DEEPSEEK_API_KEY if self.provider == "deepseek" else None),
+                       context="page-image request")
+        if self.provider == "deepseek":
+            return self._call_deepseek_vision(prompt, images_png, schema=schema, timeout=timeout,
+                                              max_output_tokens=max_output_tokens, image_labels=image_labels)
         openai_client = self._client or client
         if not openai_client:
             raise ValueError("OpenAI client not initialized. OPENAI_API_KEY not set.")
@@ -214,6 +222,63 @@ class LLMExecutionContext:
         text = choice.message.content
         if not text:
             raise ValueError("LLM returned empty response")
+        self.last_raw_response = text
+        return text
+
+    # DeepSeek page-image requests: thinking at its highest effort (Neil, 2026-10-28: example reading compared
+    # at max thinking). DeepSeek enforces no schema, so the schema is stated in the prompt and the answer is
+    # checked by the caller exactly as an OpenAI answer is.
+    DEEPSEEK_VISION_EFFORT = "max"
+
+    def _call_deepseek_vision(self, prompt, images_png, *, schema, timeout, max_output_tokens, image_labels=None):
+        import base64
+
+        api_key = self.api_key or DEEPSEEK_API_KEY
+        if not api_key:
+            raise ValueError("DEEPSEEK_API_KEY is not set")
+        content: list[dict[str, Any]] = [{"type": "text", "text": prompt + "\n\nReturn only one JSON object that "
+                                          "follows this JSON schema exactly (no markdown fence):\n"
+                                          + json.dumps(schema, separators=(",", ":"))}]
+        for index, image in enumerate(images_png):
+            if image_labels:
+                content.append({"type": "text", "text": image_labels[index]})
+            content.append({"type": "image_url", "image_url": {
+                "url": "data:image/png;base64," + base64.b64encode(image).decode("ascii")}})
+        payload: Dict[str, Any] = {
+            "model": self.model_id,
+            "messages": [{"role": "user", "content": content}],
+            "response_format": {"type": "json_object"},
+            "thinking": {"type": "enabled"},
+            "reasoning_effort": self.DEEPSEEK_VISION_EFFORT,
+            "max_tokens": max(max_output_tokens, 32000),
+        }
+        self.last_request_arguments = {"model": self.model_id, "images": len(images_png),
+                                       "image_bytes": sum(len(i) for i in images_png), "schema": "in prompt",
+                                       "reasoning_effort": self.DEEPSEEK_VISION_EFFORT}
+        response = requests.post(
+            "https://api.deepseek.com/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}", "content-type": "application/json"},
+            json=payload,
+            timeout=(10, timeout),
+        )
+        response.raise_for_status()
+        data = response.json()
+        choices = data.get("choices") or []
+        if not choices:
+            raise ValueError("DeepSeek returned no answer")
+        if choices[0].get("finish_reason") != "stop":
+            raise ValueError(f"The page-image reading was incomplete ({choices[0].get('finish_reason')})")
+        text = str((choices[0].get("message") or {}).get("content") or "").strip()
+        if not text:
+            raise ValueError("DeepSeek returned an empty response")
+        usage = data.get("usage") or {}
+        self.last_usage = {
+            "prompt_tokens": usage.get("prompt_tokens"),
+            "completion_tokens": usage.get("completion_tokens"),
+            "total_tokens": usage.get("total_tokens"),
+            "reasoning_tokens": (usage.get("completion_tokens_details") or {}).get("reasoning_tokens"),
+            "prompt_cache_hit_tokens": usage.get("prompt_cache_hit_tokens"),
+        }
         self.last_raw_response = text
         return text
 

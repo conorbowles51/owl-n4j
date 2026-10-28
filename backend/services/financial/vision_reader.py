@@ -243,7 +243,10 @@ FINAL = ('proved', 'not_proved', 'stale', 'offered', 'offer_accepted', 'offer_de
 # USD per million tokens (input, output). Unknown models use the most expensive line.
 # As Loupe's own pricing table (ai_pricing_rates, migration 20260722) for the 5.6 models.
 PRICES = {'gpt-4o': (2.50, 10.00), 'gpt-4.1': (2.00, 8.00), 'gpt-5': (1.25, 10.00),
-          'gpt-5.6-sol': (5.00, 30.00), 'gpt-5.6-terra': (2.50, 15.00), 'gpt-5.6-luna': (1.00, 6.00)}
+          'gpt-5.6-sol': (5.00, 30.00), 'gpt-5.6-terra': (2.50, 15.00), 'gpt-5.6-luna': (1.00, 6.00),
+          # Loupe's pricing table (migration 20260807): deepseek-v4-flash* 0.14 / 0.28, deepseek-v4-pro* 0.435 / 0.87;
+          # 'deepseek-flash' is the account's name for V4.1 Flash (GET /models, 2026-10-28), priced as V4 Flash.
+          'deepseek-flash': (0.14, 0.28), 'deepseek-v4-flash': (0.14, 0.28), 'deepseek-v4-pro': (0.435, 0.87)}
 FALLBACK_PRICE = (5.00, 30.00)
 
 _spend = {}
@@ -1459,17 +1462,20 @@ def openai_page_reader(db, case_id):
     """(model_id, read(png) -> (json, usage)) for the workload's model; raises when unavailable (fail closed)."""
     from services.ai_model_policy import get_workload_model
     from services.ai_provider_credentials import get_provider_api_key
+    from services.ai_model_capabilities import require_images
     provider, model_id = get_workload_model(db, WORKLOAD)
-    if provider != 'openai':
+    if provider not in ('openai', 'deepseek'):
         raise RuntimeError(f'Page-image reading is not available for {provider}')
     api_key = get_provider_api_key(db, provider)
     if not api_key:
-        raise RuntimeError('No OpenAI key is configured')
+        raise RuntimeError('No %s key is configured' % {'openai': 'OpenAI', 'deepseek': 'DeepSeek'}[provider])
+    # Fail closed before any page is rendered or sent: the statement stays held with this reason
+    # ('unavailable', ai_model_capabilities.CANNOT_READ_IMAGES) and a WARNING goes to the journal.
+    require_images(provider, model_id, api_key=api_key, context=f'case {str(case_id)[:8]}')
+    return model_id, document_request(model_id, api_key, provider)
 
-    return model_id, document_request(model_id, api_key)
 
-
-def document_request(model_id, api_key):
+def document_request(model_id, api_key, provider='openai'):
     """read([(page, [png, ...])]) -> (document json, usage): one request for the statement's pages."""
     from services.llm_service import LLMExecutionContext
 
@@ -1481,7 +1487,7 @@ def document_request(model_id, api_key):
                 labels.append(f'Page {number}' if len(parts) == 1 else f'Page {number}, part {index + 1} of {len(parts)}')
                 images.append(image)
         prompt = PROMPT + (STRIPS_NOTE.format(count=strips) if strips > 1 else '')
-        context = LLMExecutionContext('openai', model_id, api_key=api_key)
+        context = LLMExecutionContext(provider, model_id, api_key=api_key)
         text = context.call_vision_json(prompt, images, image_labels=labels, schema=DOCUMENT_SCHEMA,
                                         schema_name='statement_document', timeout=PAGE_TIMEOUT_SECONDS,
                                         max_output_tokens=16000)
