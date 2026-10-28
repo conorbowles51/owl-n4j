@@ -28,6 +28,7 @@ graph database, other threads) must not use this.
 from __future__ import annotations
 
 import functools
+import gc
 import json
 import logging
 import re
@@ -56,6 +57,34 @@ _total_bytes = 0
 _key_locks: dict = {}
 stats = dict(hits=0, misses=0, stored=0, not_stored=0)
 _Encoded = None
+_gc_lock = threading.Lock()
+_gc_pauses = 0
+_gc_resume = False
+
+
+class _CollectorPaused:
+    """Python's cycle collector waits while a view is computed, and runs as usual once no view is computing.
+
+    A large case decodes hundreds of MB of stored JSON into millions of objects; the collector re-scanned
+    them again and again while they were being built (d5b330d1: 46 s of 60 s decoding source metadata).
+    Pausing it changes no value: objects are still freed when unreferenced, and cycles are collected later.
+    Process-wide, so it is counted: the collector resumes when the last computing view ends."""
+
+    def __enter__(self):
+        global _gc_pauses, _gc_resume
+        with _gc_lock:
+            if _gc_pauses == 0:
+                _gc_resume = gc.isenabled()
+                gc.disable()
+            _gc_pauses += 1
+
+    def __exit__(self, *exc):
+        global _gc_pauses
+        with _gc_lock:
+            _gc_pauses -= 1
+            if _gc_pauses == 0 and _gc_resume:
+                gc.enable()
+        return False
 
 
 @dataclass
@@ -309,9 +338,10 @@ def _serve(handler, key, engine, case_id, kwargs, state):
             session = Session(bind=owner, autoflush=False, join_transaction_mode='create_savepoint')
             try:
                 state['handler_started'] = True
-                result = handler(**{**kwargs, 'db': session})
-                # Lazy loads while encoding still belong to this snapshot and are recorded.
-                response = result if isinstance(result, Response) else _json_response(result)
+                with _CollectorPaused():
+                    result = handler(**{**kwargs, 'db': session})
+                    # Lazy loads while encoding still belong to this snapshot and are recorded.
+                    response = result if isinstance(result, Response) else _json_response(result)
             finally:
                 recording.paused = True
                 _recording.reset(token)

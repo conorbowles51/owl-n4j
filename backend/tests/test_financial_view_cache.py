@@ -395,3 +395,40 @@ def test_a_failing_view_is_not_run_twice(engine):
     with pytest.raises(ValueError):
         call(engine, handler, uuid.uuid4())
     assert calls.calls == 1
+
+
+def test_the_cycle_collector_waits_only_while_a_view_computes(engine):
+    import gc
+    seen = []
+
+    @view_cache.cached_view('collector')
+    def handler(case_id, db):
+        seen.append(gc.isenabled())
+        db.execute(text('SELECT count(*) FROM payments WHERE case_id = :c'), dict(c=case_id))
+        return dict(ok=True)
+
+    @view_cache.cached_view('collector-failing')
+    def failing(case_id, db):
+        seen.append(gc.isenabled())
+        raise ValueError('view failed')
+    assert gc.isenabled()
+    assert call(engine, handler, uuid.uuid4()).body == b'{"ok":true}'
+    with pytest.raises(ValueError):
+        call(engine, failing, uuid.uuid4())
+    assert seen == [False, False] and gc.isenabled()
+    gc.disable()  # a process that turned it off itself keeps it off
+    try:
+        call(engine, handler, uuid.uuid4())
+        assert not gc.isenabled()
+    finally:
+        gc.enable()
+
+
+def test_overlapping_views_resume_the_collector_when_the_last_one_ends():
+    import gc
+    first, second = view_cache._CollectorPaused(), view_cache._CollectorPaused()
+    first.__enter__(); second.__enter__()
+    first.__exit__(None, None, None)
+    assert not gc.isenabled()
+    second.__exit__(None, None, None)
+    assert gc.isenabled()
