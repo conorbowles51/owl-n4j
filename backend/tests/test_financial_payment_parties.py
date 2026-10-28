@@ -489,7 +489,10 @@ class PhaseTwoPartyTests(unittest.TestCase):
                             'BANCO SANTANDER MEXICO 5512345678', 'BANK OF AMERICA ATM 555-123-4567', 'BANCOMER SA 5512345678',
                             'PASEO DE LA REFORMA 222 5512345678', 'INSURGENTES SUR 1602 5512345678', 'INSURGENTES SUR #1602 5512345678',
                             'INSURGENTES SUR 1602-A 5512345678', 'INSURGENTES SUR NO 1602 5512345678', 'MAIN STREET 12A 5551234567',
-                            'THE BANK OF AMERICA 5551234567']:
+                            'THE BANK OF AMERICA 5551234567', 'MAIN ST. 12 5551234567', 'MAIN ST, 12 5551234567',
+                            'MAIN ST STE 100 5551234567', 'MAIN ST APT 4 5551234567', 'INSURGENTES SUR NUM. 1602 5512345678',
+                            'INSURGENTES SUR N 1602 5512345678', 'INSURGENTES SUR NO.1602 5512345678', 'BANORTE SUCURSAL 1234 5512345678',
+                            'SANTANDER SUC 123 5512345678', 'HSBC BRANCH 555-123-4567', 'BANAMEX CAJERO 5512345678']:
             with self.subTest(description=description):
                 self.assertIsNone(party(description, 'debit', 'credit_card'))
         self.assertEqual(party('STARBUCKS #12345 WASHINGTON DC', 'debit', 'credit_card')[0], 'Starbucks')
@@ -502,7 +505,8 @@ class PhaseTwoPartyTests(unittest.TestCase):
         self.assertIsNone(party('TJ3 SITH1234567 VICTORIA DE DURANGO 12345 Ref. 1', 'credit'))
         self.assertIsNone(party('C61 COMPRA CHEQUE DE CAJA MIGUEL HIDALGO Ref. 123'))
         self.assertEqual(party('CITI TRENDS 123 5551234567', 'debit', 'credit_card')[0], 'CITI TRENDS')
-        for tail in ['SANTANDER SA', 'BANORTE SA DE CV', 'BANCO AZTECA SA', 'PASEO DE LA REFORMA SA DE CV', 'INSURGENTES SUR SA DE CV']:
+        for tail in ['SANTANDER SA', 'BANORTE SA DE CV', 'BANCO AZTECA SA', 'PASEO DE LA REFORMA SA DE CV', 'INSURGENTES SUR SA DE CV',
+                     'INSURGENTES SUR 1602-A SA']:
             with self.subTest(tail=tail):
                 self.assertIsNone(party('T17 SPEI ENVIADO BANORTE 0012345 ' + tail))
         # A company word after a name still names the company (a truncated CORPORATIVO, FINANCIAL).

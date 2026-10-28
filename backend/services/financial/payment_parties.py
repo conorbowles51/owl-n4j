@@ -59,7 +59,8 @@ _MX_PLACES = frozenset(' '.join(p.split()) for p in """
 # Openings of a street address.
 _ADDRESS_FIRST = frozenset('AV AVE AVENIDA CALLE CALZ CALZADA BLVD BOULEVARD CARR CARRETERA PRIV PRIVADA COL COLONIA KM '
                            'PROL PROLONGACION ANDADOR CIRCUITO RETORNO CERRADA MANZANA MZ LOTE LT PASEO PERIFERICO ANILLO EJE'.split())
-# Last words of a street name (INSURGENTES SUR, MAIN ST).
+# Last words of a street name (INSURGENTES SUR, MAIN ST) and the unit or number words printed after it.
+_UNIT_WORDS = frozenset('STE SUITE APT UNIT INT INTERIOR NUM NUMERO NO N DEPTO LOCAL'.split())
 _ADDRESS_LAST = frozenset('SUR NORTE OTE PTE ORIENTE PONIENTE ST STREET AVE AVENUE RD ROAD BLVD DR DRIVE LN LANE WAY HWY PKWY'.split())
 # Concept, period and linking words: a name made only of these (even with a legal form) is not a party.
 _NOT_NAME_WORDS = frozenset(
@@ -80,7 +81,7 @@ def bank_name(text):
     # A bank followed by bank wording or a legal form (WELLS FARGO BANK, BANCOMER SA); a merchant that only opens
     # with a bank's word (CITI TRENDS) is not a bank.
     return any(text == bank or re.match(re.escape(bank) + r' (?:BANK|BANCO|MEXICO|ATM|NA|N A|CU|FCU|FEDERAL|CREDIT|INVERLAT|BANCOMER|IXE|'
-                                                       r'S ?A|SA DE CV|INSTITUCION|GRUPO FINANCIERO|GF)\b', text) for bank in _BANK_NAMES) \
+                                                       r'S ?A|SA DE CV|INSTITUCION|GRUPO FINANCIERO|GF|SUCURSAL|SUC|BRANCH|CAJERO|OFICINA|OFC|BRCH)\b', text) for bank in _BANK_NAMES) \
         or bool(re.match(r'BANCO\b|BANK\b', text))
 
 
@@ -181,7 +182,7 @@ def party_shaped(name):
         # The words before the legal form must hold a name, not only a concept, period or place (BONO SC, CDMX AC).
         before = re.sub(r'[^A-Z0-9& ]', ' ', text[:legal.start()]).split()
         return bool(before) and not all(w in _NOT_NAME_WORDS for w in before) and not place_name(' '.join(before)) \
-            and not (before[-1] in _ADDRESS_LAST or re.fullmatch(r'\d{1,5}', before[-1]))
+            and not any(re.sub(r'[^A-Z0-9]', '', w) in _ADDRESS_LAST or w in _ADDRESS_FIRST for w in before)
     company = _COMPANY_WORDS.search(text)
     if company:
         # A company word names a company after a name (TOYOTA FINANCIAL) or before one (GRUPO BIMBO), not as the
@@ -845,9 +846,6 @@ def card_line_merchant(raw, *, institution=None):
         if kept and (re.fullmatch(r'#?\d{2,}\S*|\d[\d\-]{6,}|\d{1,5}-?[A-Z]', token) or re.search(r'[\dSOIL]{3}-\d{3}-\d{4}', token)):
             evidence = True
             # A street name and its number (INSURGENTES SUR 1602, MAIN ST 12) is an address, not the merchant.
-            street = [w for w in kept if w not in ('NO', 'NUM', 'NUMERO', 'NO.', '#')]
-            if re.fullmatch(r'#?\d{1,5}(?:-?[A-Z])?', token) and street and street[-1] in _ADDRESS_LAST:
-                return None
             break
         if kept and token in _STATES + ['OC'] and index == len(tokens) - 1:
             evidence = True
@@ -858,6 +856,10 @@ def card_line_merchant(raw, *, institution=None):
         return None
     while len(kept) > 1 and (kept[-1] in _STATES or re.fullmatch(r'[#\-]?[\d\-]+|[-*•·]+', kept[-1])):
         kept.pop()
+    # A street word or unit word (MAIN ST. 12, INSURGENTES SUR NO.1602, MAIN ST STE 100) with a number on the line is an address.
+    plain = [re.sub(r'[^A-Z0-9]', '', w) for w in kept]
+    if any(w in _ADDRESS_LAST or w in _UNIT_WORDS or re.fullmatch(r'(?:NO|NUM|N)\d+', w) for w in plain) and re.search(r'\d', ' '.join(tokens)):
+        return None
     label = _without_place(' '.join(kept)).strip(' *-#•·')
     if not evidence or re.fullmatch(r'[A-Z]{1,3}', label) or (len(kept) == 1 and '*' in kept[0]) or concept_or_place(label, place=False) or generic_words_only(label) \
             or place_name(label) or bank_name(label) or re.search(r'\b(?:TO|FROM)\b', label):
