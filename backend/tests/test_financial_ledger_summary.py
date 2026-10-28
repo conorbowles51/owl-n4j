@@ -50,8 +50,9 @@ class LedgerSummaryTests(fixture.DuplicateTestCase):
             # account/event reads are bounded per case, never per payment.
             # Accounts are one query of their own, not joined to every payment. (Where the stored-category table
             # exists, capture reads it in one more bounded query; this fixture does not build it.) Capture also reads
-            # the case's payments once to name unnamed ones from their matching payment (payment_party_matches).
-            self.assertEqual(len(statements), 5 if capture else 2)
+            # the case's accounts once and its payments once to name unnamed ones from their matching payment
+            # (payment_party_matches).
+            self.assertEqual(len(statements), 6 if capture else 2)
             self.assertTrue(all('financial_source_documents.metadata' not in sql for sql in statements))
             if capture:
                 self.assertEqual(result['readings'][0]['source']['id'], str(doc.id))
