@@ -111,6 +111,9 @@ def _view(document, period, account):
     sign = -1 if convention == 'liability_owed' else 1
     pages = list(original.get('statement_page_numbers') or
                  sorted({s['page_number'] for s in original.get('sources', [])}) or original.get('page_numbers', []))
+    from services.financial.summary_pages import statement_summary_pages
+    # Its summary page, where its printed balances may be cited from (summary_pages).
+    pages = sorted(set(pages) | set(statement_summary_pages(original))) if statement_summary_pages(original) else pages
     controls = metadata.get('statement_details_review', {}).get('balances', {})
     result = dict(case_id=str(document.case_id), source_document_id=str(document.id),
         evidence_file_id=str(document.evidence_file_id), account_id=str(account.id),

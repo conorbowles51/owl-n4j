@@ -937,6 +937,17 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                 revision=revision, current_import=current_import, applied=False)
     if trim:
         result['overlap_trim'] = trim
+    if selected:
+        # The period's summary page before its payment pages (summary_pages): pages its printed balances may be cited
+        # from and read with it from the page images. Outside the revision: nothing of the reading's rows changes.
+        from services.financial.summary_pages import page_labels, summary_pages
+        labels = _shared_value(cache, shared, ('page_labels', str(evidence_file_id), text.content_sha256),
+                               lambda: page_labels(text.content, text.source_locations))
+        summary = summary_pages(result['statement_page_numbers'], all_page_numbers,
+                                {page for choice in choices if choice.get('id') != statement_id
+                                 for page in choice.get('page_numbers') or []}, labels)
+        if summary:
+            result['summary_page_numbers'] = summary
     if _brokerage_cash_ledger(selected):
         result['brokerage_cash_ledger'] = True
     if selected and selected.get('form'):

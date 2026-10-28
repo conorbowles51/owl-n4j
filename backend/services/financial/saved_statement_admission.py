@@ -76,7 +76,8 @@ def assess_saved_additions(session, document, period, metadata, currency, *, no_
                 # control, even when the retained reading has several competing
                 # balances. Do not turn every old candidate into that control.
                 row['balance_minor'] = None if role.removesuffix(' balance') in controls else str(sign*value) if value is not None else None
-    pages = proposal.get('statement_page_numbers') or sorted({source['page_number'] for source in proposal.get('sources', [])}) or proposal.get('page_numbers', [])
+    from services.financial.summary_pages import balance_pages
+    pages = balance_pages(proposal)
     for role, balance in controls.items():
         if role not in ('opening', 'closing'):
             continue

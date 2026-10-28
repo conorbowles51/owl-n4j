@@ -178,7 +178,7 @@ class LastFourProofTest(unittest.TestCase):
 
     def test_the_proof_version_counts_the_rule(self):
         self.assertTrue(vr.LAST4_FIRST_STATEMENT)
-        self.assertEqual(vr.PROOF_VERSION, 17)
+        self.assertEqual(vr.PROOF_VERSION, 19)
 
 
 class FullNumberReasonTest(unittest.TestCase):
@@ -206,8 +206,12 @@ class TextLayerAndTurnTest(unittest.TestCase):
     def test_a_longer_number_printed_in_the_file_holds_it(self):
         for printed in ({'5178051234568160'}, {'1234568160'}):
             with self.subTest(printed=printed), mock.patch.object(vr, 'card_turn') as turn, \
-                    self.assertRaisesRegex(vr.NotProved, MASKED + r'its file prints a longer number ending in 8160 \(%s\)'
-                                           % next(iter(printed))) as raised:
+                    self.assertRaisesRegex(vr.NotProved, r'The statement prints only the last 4 digits of this card '
+                                           r'\(ending 8160\) as its account, and no statement of it is confirmed in this '
+                                           r'case yet\. The file also prints a longer number ending in the same digits '
+                                           r'\(%s\), which the page images do not read as this card\'s number, so this '
+                                           r'statement is not accepted as the first of this card\. Confirm one statement '
+                                           r'of this card and the rest can follow\.$' % next(iter(printed))) as raised:
                 vr.last4_turn(None, 'c', 'i', self.READING, 'x.pdf', numbers_of=lambda path: printed)
             turn.assert_not_called()
             self.assertEqual(raised.exception.card, vr.card_key('Capital One', '8160'))
@@ -371,10 +375,10 @@ class LastFourFlowTest(unittest.TestCase):
     def test_the_full_number_printed_in_the_file_holds_it(self):
         outcome = self.read(numbers={'99990123'})
         self.assertEqual(outcome['status'], 'not_proved')
-        self.assertIn('its file prints a longer number ending in 0123 (99990123)', outcome['message'])
+        self.assertIn('The file also prints a longer number ending in the same digits (99990123)', outcome['message'])
         self.assertEqual(self.stored()['account_wait'], vr.card_key('Synthetic Bank', '0123'))
         self.assertEqual(self.r.item(self.batch).status, 'attention')
-        self.assertIn('the bank prints only the last 4 digits of this card (ending 0123)',
+        self.assertIn('the statement prints only the last 4 digits of this card (ending 0123)',
                       self.r.item(self.batch).summary['vision_reading']['line'])
 
     def test_an_earlier_held_statement_still_to_be_judged_goes_first(self):

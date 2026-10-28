@@ -231,10 +231,32 @@ LAST4_FIRST_STATEMENT = _switch('LOUPE_FINANCIAL_VISION_LAST4_FIRST_STATEMENT')
 LAST4_BASIS = 'page_image_last4_header_matches_text'
 LAST4_NOTE = (' The first statement of this card in the case: the last 4 digits of its number, its holder and bank on '
               'the page images agree with the text of the same file, which prints no longer number for it.')
+# A period's summary page read with it (coordinator, 2026-10-28: each of fdaf956c's 52 Capital One periods was read
+# from its "Page 2 of N" onwards; the file page before, printing "Page 1 of N" with the previous and new balance, the
+# holder and address, is on no statement's table pages, so no opening or closing balance could be read and 6 holders
+# were read from the text only). The summary pages the text reading finds before the period (summary_pages: its text
+# numbering leads back to "Page 1 of N" over pages of no other statement) are read with the period from its page
+# images, and its printed balances may be cited from them. Every proof is unchanged. Off: the period's table pages
+# only, as before.
+SUMMARY_PAGES = _switch('LOUPE_FINANCIAL_VISION_SUMMARY_PAGES')
+# Stored with each outcome read under SUMMARY_PAGES: an outcome stored before it is looked at again once (pending),
+# read anew only when its period now has more pages, else just marked.
+PAGES_RULE = 1 if SUMMARY_PAGES else 0
+# Read with its summary page, a period also has the summary's reverse side: a page the reader marks as not a statement
+# page, printing a form number ("002") the reader takes for a page number without a count. Where the period's pages
+# print a count ("Page 2 of 4"), a number without one on a page that is not a statement page is not that numbering: the
+# page is unnumbered (it may stand only in a gap, as any unnumbered page). Off: it is a page number, as before ("two
+# pages of this period print the same page number").
+FORM_NUMBERS = _switch('LOUPE_FINANCIAL_VISION_FORM_NUMBERS')
+# A card statement lists each purchase by its transaction date, which can fall a few days before the billing cycle it
+# is posted in (fdaf956c Capital One "Jun 9 | Jun 12 | U-HAUL" on the statement for Jun 10 to Jul 10, 2023; the text
+# reading of the same file dates it Jun 9 too). On any card (liability) statement, not only one whose period is its
+# closing date and days, a row dated up to POSTING_DAYS before the start is a posting of this cycle. Off: only there.
+CARD_POSTING = _switch('LOUPE_FINANCIAL_VISION_CARD_POSTING')
 PROOF_VERSION = 1
 for _switched in (SPLIT_SPELLINGS, SECTION_NUMBER, PRINTED_COUNTS, QUIET_PRINTED, CLABE_ACCOUNT, SECTION_BY_TEXT,
                   SIGNED_DEBITS, DATES_FROM_IMAGE, OPENING_FROM_PREVIOUS, IMAGE_TOTALS, CLOSING_DAYS, TEXT_MISREADS,
-                  FIRST_STATEMENT, ROW_DATES, PRINTED_ORDER, LAST4_FIRST_STATEMENT):
+                  FIRST_STATEMENT, ROW_DATES, PRINTED_ORDER, LAST4_FIRST_STATEMENT, FORM_NUMBERS, CARD_POSTING):
     # Each switch on top of the one before; with one off, the rules are the version before it.
     if not _switched:
         break
@@ -679,6 +701,10 @@ def check_page_numbering(pages, file_pages=None, printed_order=False):
     out of the file's order may pass in printed order (PRINTED_ORDER); True is then
     returned and the caller must check the order is the one it reads and saves.
     """
+    if FORM_NUMBERS and any(page.get('printed_page_total') for _, page in pages):
+        pages = [(physical, dict(page, printed_page_number=None) if page.get('printed_page_number')
+                  and not page.get('printed_page_total') and page.get('is_statement_page') is False else page)
+                 for physical, page in pages]
     totals = {page.get('printed_page_total') for _, page in pages if page.get('printed_page_total')}
     numbers = {page.get('printed_page_number') for _, page in pages if page.get('printed_page_number')}
     if len(totals) > 1:
@@ -1032,6 +1058,18 @@ def masked_only_reason(account_text, liability, proposal, check):
             'of this %s because %s.' % (kind, ending, kind, kind, check))
 
 
+def longer_number_reason(account_text, longer, liability, proposal):
+    """The statement's header prints only the last digits, and the file's text prints a longer number ending in them
+    (fdaf956c: Capital One's payment coupon line): the first statement of the card is not confirmed from the last digits
+    (LAST4 applies only where no longer number is printed), and the page images do not read the longer one."""
+    kind, ending = _account_words(account_text, liability, proposal)
+    return ('The statement prints only the last 4 digits of this %s (%s) as its account, and no statement of it is '
+            'confirmed in this case yet. The file also prints a longer number ending in the same digits (%s), which the '
+            'page images do not read as this %s\'s number, so this statement is not accepted as the first of this %s. '
+            'Confirm one statement of this %s and the rest can follow.' % (kind, ending, ', '.join(longer[:3]), kind, kind,
+                                                                           kind))
+
+
 def holder_differs_reason(account_text, saved_holders, holder, liability, proposal):
     kind, ending = _account_words(account_text, liability, proposal)
     return ('This %s (%s) is saved for %s; this statement prints %s. Confirm whether they are the same account.'
@@ -1163,6 +1201,8 @@ def prove(proposal, section, knowledge):
             start = (date.fromisoformat(end) - timedelta(days=days - 1)).isoformat()
             if TEXT_MISREADS and liability:
                 earliest = (date.fromisoformat(start) - timedelta(days=POSTING_DAYS)).isoformat()
+    if CARD_POSTING and TEXT_MISREADS and liability and start and earliest is None:
+        earliest = (date.fromisoformat(start) - timedelta(days=POSTING_DAYS)).isoformat()
     if not start and end and rule['period_start'] and rule['period_end'] == end:
         # Only the end is printed with this section; the start is the text reading's for the same period.
         start = rule['period_start']
@@ -1720,6 +1760,9 @@ def build_request(proposal, reading, by=None):
             row.update(excluded=True, reason=REPLACED_REASON)
     pages = proposal.get('statement_page_numbers') or sorted({s['page_number'] for s in proposal.get('sources') or []}) \
         or proposal.get('page_numbers') or []
+    from services.financial.summary_pages import balance_pages
+    # Its pages and its summary page before them, where a card prints its previous and new balance (summary_pages).
+    cited = balance_pages(proposal)
     for role, value, page in (('opening balance', reading['opening'], reading['opening_page']),
                               ('closing balance', reading['closing'], reading['closing_page'])):
         existing = roles.get(role) or []
@@ -1732,7 +1775,7 @@ def build_request(proposal, reading, by=None):
             if derived:
                 existing[0]['reason'] = reason
             continue
-        if page not in pages:
+        if page not in cited:
             raise NotProved('The %s was read from a page outside this statement.' % role)
         request['rows'].append(dict(id=f'manual:{role.split()[0]}-balance', excluded=True, manual_page=page,
                                     date='', date_unprinted=False, date_values={}, description=role.title(),
@@ -2132,6 +2175,16 @@ def statement_pages(proposal):
     return [p for p in pages if p in (proposal.get('page_numbers') or pages)]
 
 
+def period_pages(proposal):
+    """The pages read from page images for this held period: statement_pages, and its summary pages before it that
+    the text reading found (SUMMARY_PAGES, summary_pages)."""
+    from services.financial.summary_pages import statement_summary_pages
+    pages = statement_pages(proposal)
+    if not SUMMARY_PAGES or not pages:
+        return pages
+    return sorted(set(pages) | set(statement_summary_pages(proposal)))
+
+
 def rejudgeable(record, revision=None, model_id=None, pages=None, due=False):
     """A stored not-proved outcome judged under older proof rules, whose stored page reading is judged
     again under the current ones (no new request). With ``revision``: only for the same reading of
@@ -2167,12 +2220,13 @@ def _being_read(stored):
     return (datetime.now(timezone.utc) - started).total_seconds() < CLAIM_SECONDS
 
 
-def _store(db, file_id, key, record, claim=None, rejudge=None, owner=None):
+def _store(db, file_id, key, record, claim=None, rejudge=None, owner=None, unchanged=None):
     """Store the record under the file's lock. With ``claim=(revision, model)``: False, storing
     nothing, when the statement is being read, was read or was given up (checked under the lock).
     With ``rejudge=(revision, model, pages)``: False, storing nothing, unless the stored outcome is
     still one to judge again from its stored page reading (rejudgeable). With ``owner``: False, storing
-    nothing, unless the stored record is this worker's re-judge claim or still rejudgeable."""
+    nothing, unless the stored record is this worker's re-judge claim or still rejudgeable. With ``unchanged``: False,
+    storing nothing, unless the stored record is still that one."""
     from postgres.models.evidence import EvidenceFile
     file = db.scalar(select(EvidenceFile).where(EvidenceFile.id == file_id).with_for_update()
                      .execution_options(populate_existing=True))
@@ -2186,6 +2240,8 @@ def _store(db, file_id, key, record, claim=None, rejudge=None, owner=None):
     if rejudge and not rejudgeable(previous, *rejudge):
         return False
     if owner and not ((previous or {}).get('claim_id') == owner or rejudgeable(previous)):
+        return False
+    if unchanged is not None and previous != unchanged:
         return False
     if previous and previous.get('status') not in ('reading',) and previous.get('revision') != record.get('revision'):
         metadata.setdefault(METADATA_KEY + '_history', []).append(previous)
@@ -2494,9 +2550,12 @@ def gave_up(record, revision):
     return failures(record, revision) >= MAX_FAILURES
 
 
-def _current(record, revision, model_id):
+def _current(record, revision, model_id, pages=None):
+    """A final outcome of this reading of the file by this reader; with ``pages``, of these same pages (a period read
+    now with more pages, SUMMARY_PAGES, is read anew)."""
     return (record and record.get('version') == VERSION and record.get('revision') == revision
-            and _reader_of(record) == model_id and record.get('status') in FINAL)
+            and _reader_of(record) == model_id and record.get('status') in FINAL
+            and (pages is None or list(record.get('pages') or []) == list(pages)))
 
 
 def read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for=None, apply=True, force=False,
@@ -2578,7 +2637,7 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
                 state, _ = assess(proposal, None)
                 if state != 'attention':
                     return dict(record, reason='not_held')
-            pages = statement_pages(proposal)
+            pages = period_pages(proposal)
             if not pages:
                 return dict(record, reason='no_pages')
             if len(pages) > MAX_PAGES:
@@ -2596,21 +2655,28 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
             stored = _stored(file, key)
             due = not force and due_again(stored, lambda: knowledge_for(db, case_id))
             again = not force and rejudgeable(stored, proposal['revision'], model_id, pages, due=due)
+            same_pages = list((stored or {}).get('pages') or []) == list(pages)
             if not again and not force and rejudgeable(stored):
                 # Judged again only from the same stored page reading; never requested anew for it. Marked
-                # judged under these rules, so it is not offered again (as before re-judging existed).
+                # judged under these rules, so it is not offered again (as before re-judging existed). A period
+                # now read with more pages (SUMMARY_PAGES) is not marked as looked at: it is read anew next time.
                 if apply:
                     # Under the file's lock, only while it is still that outcome (rejudgeable, any reading).
-                    _store(db, file_id, key, _judged(stored), rejudge=(None, None, None))
+                    _store(db, file_id, key, _judged(stored, **({'pages_rule': PAGES_RULE} if same_pages else {})),
+                           rejudge=(None, None, None))
                     db.commit()
                 else:
                     db.rollback()
                 return dict(stored, reason='already_read')
-            if _current(stored, proposal['revision'], model_id) and not force and not again:
+            if _current(stored, proposal['revision'], model_id, pages) and not force and not again:
+                if apply and (stored.get('pages_rule') or 0) != PAGES_RULE:
+                    # Its pages are still the ones read (SUMMARY_PAGES adds none): marked looked at, nothing read.
+                    _store(db, file_id, key, dict(stored, pages_rule=PAGES_RULE), unchanged=stored)
+                    db.commit()
                 return dict(stored, reason='already_read')
             if _being_read(stored) and not force:
                 return dict(record, reason='being_read')
-            record.update(revision=proposal['revision'], model=model_id, reader=model_id, pages=pages,
+            record.update(revision=proposal['revision'], model=model_id, reader=model_id, pages=pages, pages_rule=PAGES_RULE,
                           text_reading=_rule_metadata(proposal),
                           failures=0 if again else failures(stored, proposal['revision']))
             if record['failures'] >= MAX_FAILURES and not force:
@@ -2635,7 +2701,7 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
                     db.rollback()
             elif apply:
                 # The claim, checked again under the file's lock (another worker may hold it).
-                if not _store(db, file_id, key, dict(record, status='reading'), claim=(proposal['revision'], model_id)):
+                if not _store(db, file_id, key, dict(record, status='reading'), claim=(proposal['revision'], model_id, pages)):
                     db.rollback()
                     return dict(record, reason='being_read')
                 db.commit()
@@ -3023,9 +3089,8 @@ def last4_turn(db, case_id, item_id, reading, path, numbers_of=None):
                                            'the text of its file could not be checked (%s)' % type(error).__name__))
     longer = sorted(n for n in numbers if len(n) > len(digits) and n.endswith(digits))
     if longer:
-        raise NotProved(masked_only_reason(reading['account_number'], True, proposal,
-                        'its file prints a longer number ending in %s (%s), so the page images and the text must both '
-                        'read that full number' % (digits, ', '.join(longer[:3]))), card=card_key(reading['institution'], digits))
+        raise NotProved(longer_number_reason(reading['account_number'], longer, True, proposal),
+                        card=card_key(reading['institution'], digits))
     card_turn(db, case_id, item_id, last4_card(reading))
 
 
@@ -3558,7 +3623,8 @@ def pending(db, limit=50):
             continue
         stored = ((metadata or {}).get(METADATA_KEY) or {}).get(key or '')
         due = stored and stored.get('version') == VERSION and due_again(stored, lambda: knowledge_of(batch_id))
-        if stored and stored.get('version') == VERSION and not rejudgeable(stored, due=due) and (stored.get('status') in FINAL or (
+        looked_at = not (stored and stored.get('status') == 'not_proved' and (stored.get('pages_rule') or 0) != PAGES_RULE)
+        if stored and stored.get('version') == VERSION and not rejudgeable(stored, due=due) and looked_at and (stored.get('status') in FINAL or (
                 stored.get('status') == 'failed' and (stored.get('failures') or 0) >= MAX_FAILURES)):
             # Read once per reading of the file (a new reading is a new file, with its own statements).
             continue

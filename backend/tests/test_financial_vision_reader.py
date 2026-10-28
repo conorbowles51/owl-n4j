@@ -865,7 +865,7 @@ class FirstStatementTest(unittest.TestCase):
         self.assertTrue(vr.FIRST_STATEMENT)
         # 13 before rule 1, 14 before row dates, 15 before printed order, 16 before LAST4: stored not-proved readings
         # are judged again once
-        self.assertEqual(vr.PROOF_VERSION, 17)
+        self.assertEqual(vr.PROOF_VERSION, 19)
 
     def test_a_known_account_is_judged_as_before(self):
         self.assertNotIn('account_basis', _proved(_proposal(**self.TEXT)))
