@@ -32,3 +32,8 @@ class LedgerTimelineTests(TestCase):
         capture=self.capture([self.reading('one')])
         with self.assertRaises(LedgerSummaryError):ledger_timeline(capture,population='all')
         with patch('services.financial.ledger_timeline.MAX_TIMELINE_ROWS',0),self.assertRaises(LedgerSummaryError):ledger_timeline(capture)
+    def test_payment_view_account_label_is_kept_not_passed_twice(self):
+        reading=self.reading('own',value_date='2026-01-02');reading['account']={'id':'account'};reading['row']['account_label']='Holder · Bank · 1234'
+        self.assertEqual(ledger_timeline(self.capture([reading]))['rows'][0]['account_label'],'Holder · Bank · 1234')
+        bare=self.reading('bare',value_date='2026-01-02');bare['account']={'id':'account'}
+        self.assertEqual(ledger_timeline(self.capture([bare]))['rows'][0]['account_label'],'Account account')
