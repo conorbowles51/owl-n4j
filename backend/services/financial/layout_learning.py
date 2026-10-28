@@ -1305,6 +1305,8 @@ def registry_entry(profile, fingerprint, gate_result, review, examples=(), today
         raise ValueError('No layout fingerprint.')
     if conditions.get('fingerprint') != fingerprint:
         raise ValueError('The gate result is for another layout.')
+    if not (isinstance(conditions.get('live_learned'), list) and isinstance(conditions.get('replaced'), list)):
+        raise ValueError('The gate result does not record the live learned profiles it read (run the gates again).')
     name = 'learned-%s-%s' % (fingerprint, digest[:12])
     gates = dict(corpus_passed=True, truth_passed=True, rules_hash=digest, profiles_off=[],
                  corpus_dumped_at=conditions['corpus_dumped_at'],
@@ -1313,8 +1315,7 @@ def registry_entry(profile, fingerprint, gate_result, review, examples=(), today
                  truth_judged=len(gate_result['truth'].get('judged') or []))
     entry = dict(rules, name=name, learned=dict(
         state='live', fingerprint=fingerprint, version=VERSION, rules_hash=digest, review='PASS', gates=gates,
-        examples=list(examples), replaces=list(conditions.get('replaced') or []),
-        gated_with=list(conditions.get('live_learned') or []),
+        examples=list(examples), replaces=list(conditions['replaced']), gated_with=list(conditions['live_learned']),
         live_since=str(today or date.today())))
     lp._servable(entry)
     lp._validated(entry)
@@ -1336,7 +1337,13 @@ def _release(entry, path):
     import os
     import tempfile
     from services.financial import learned_profiles as lp
-    data = lp.registry(path)
+    try:
+        data = lp.registry(path)
+    except Exception as error:  # noqa: BLE001
+        return [('(registry)', 'the registry cannot be read (%s)' % error)]
+    if not (isinstance(data, dict) and isinstance(data.get('profiles', []), list)
+            and all(isinstance(e, dict) for e in data.get('profiles', []))):
+        return [('(registry)', 'the registry is malformed; it is not replaced by a release')]
     live_now = sorted(e.get('name') for e in data.get('profiles', [])
                       if isinstance(e, dict) and (e.get('learned') or {}).get('state') == 'live')
     if 'gated_with' not in entry['learned'] or live_now != sorted(entry['learned']['gated_with']):

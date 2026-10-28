@@ -572,6 +572,7 @@ class EngineHookTests(unittest.TestCase):
         def passed(profile, **conditions):
             return dict(passed=True, corpus=dict(passed=True, rematched=['f'], gained=[1]), truth=dict(passed=True, judged=['f']),
                         conditions=dict(dict(rules_hash=lp.rules_hash(profile), profiles_off=[], fingerprint='zzfinger',
+                                             live_learned=[], replaced=[],
                                              corpus_dumped_at='2026-10-28T03:26:00+00:00'), **conditions))
         for gates, review, why in ((dict(passed(draft), passed=False), 'PASS', 'did not pass'),
                                    (passed(draft, rules_hash='x'), 'PASS', 'other rules'),
@@ -579,6 +580,7 @@ class EngineHookTests(unittest.TestCase):
                                    (passed(draft, off_for_this_run=['truist-consolidated']), 'PASS', 'backtest'),
                                    (passed(draft, corpus_dumped_at=None), 'PASS', 'corpus copy'),
                                    (passed(draft, fingerprint='other'), 'PASS', 'another layout'),
+                                   (passed(draft, live_learned=None), 'PASS', 'run the gates again'),
                                    (passed(draft), 'FAIL', 'review')):
             with self.assertRaisesRegex(ValueError, why):
                 ll.registry_entry(draft, 'zzfinger', gates, review)
@@ -617,6 +619,8 @@ class EngineHookTests(unittest.TestCase):
                                                                      live_learned=[second['name']]), 'PASS'), self.path)
         self.assertTrue(problems)
         self.assertEqual(self.path.read_text(), written)
+        self.path.write_text(json.dumps(dict(profiles=['junk'])))
+        self.assertIn('malformed', ll.release(ll.registry_entry(third, 'zzfinger', passed(third), 'PASS'), self.path)[0][1])
         self.assertEqual(sorted(p.name for p in self.path.parent.iterdir()),
                          ['.learned_profiles.lock', self.path.name])  # no temporary left
 
