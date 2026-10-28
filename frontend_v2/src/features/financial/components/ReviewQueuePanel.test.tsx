@@ -410,6 +410,28 @@ it("offers a reading from the page images beside the person's work, and saves it
   expect(calls[0]).toBe("/api/financial/statement-import/batches/b2/items/i2/page-image-offer/accept?case_id=case&offer_id=o1")
 })
 
+it("shows why a held card statement's account could not be confirmed, in full", async () => {
+  // fin-last4 B: one plain reason per cause, saying what a person can do; never cut short.
+  const line = "Read from page images: not accepted, because no reading of the page images proves it. DeepSeek could " +
+    "not prove it: the bank prints only the last 4 digits of this card (ending 8160) and no statement of it is " +
+    "confirmed in this case yet. Confirm one statement of this card and the rest can follow. It was not accepted as " +
+    "the first statement of this card because the account holder is not read from both the page images and the text."
+  const held = {
+    ...queue,
+    counts: { ...queue.counts, waiting: 1 },
+    items: [{ ...entries[1], vision_reading: { status: "not_proved", message: "", line } }],
+  }
+  vi.mocked(fetchAPI).mockImplementation(async (url: string) => {
+    if (url.includes("/review/queue")) return held as never
+    throw Error(`unexpected ${url}`)
+  })
+  mount("/cases/case/financial?view=statements&queue=1")
+  const shown = await screen.findByLabelText("Page images")
+  expect(shown).toHaveTextContent(line)
+  expect(shown.className).not.toMatch(/truncate|line-clamp|overflow-hidden|whitespace-nowrap/)
+  expect(shown.closest(".truncate, [class*='line-clamp']")).toBeNull()
+})
+
 it("never counts files removed from Financial as couldn't read, and says what they are", async () => {
   const removed = {
     ...queue,
