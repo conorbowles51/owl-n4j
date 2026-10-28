@@ -103,46 +103,64 @@ def problems(path=None):
     return found
 
 
-def live():
-    """The registry's live profiles (validated; loaded once per file change)."""
+def reset():
+    """Forget the loaded registry (the next read loads it again)."""
+    global _LOADED
+    _LOADED = {}
+
+
+def _loaded():
+    """The registry as loaded for its current file: {'stamp', 'all', 'profiles'}, or {} when there is none.
+
+    Published whole by rebinding ``_LOADED`` (never mutated in place), so a reader on another thread sees either
+    the old load or the new one, never a half-built or emptied one."""
+    global _LOADED
     try:
         stamp = REGISTRY.stat().st_mtime_ns
     except FileNotFoundError:
-        return ()
-    if _LOADED.get('stamp') != stamp:
-        # Fail closed per entry: an entry the engine refuses is never served (ERROR in the journal); the others and
-        # every written profile keep reading. A saved choice naming a refused entry finds no profile (held).
-        accepted = []
+        return {}
+    except OSError as error:  # an unreadable registry serves no learned profile; written ones keep reading
+        log.error('Learned profiles refused: the registry cannot be read (%s)', error)
+        return {}
+    loaded = _LOADED
+    if loaded.get('stamp') == stamp:
+        return loaded
+    # Fail closed per entry: an entry the engine refuses is never served (ERROR in the journal); the others and
+    # every written profile keep reading. A saved choice naming a refused entry finds no profile (held).
+    accepted = []
+    try:
+        entries = registry().get('profiles', [])
+    except Exception as error:  # noqa: BLE001 - an unreadable registry serves no learned profile at all
+        log.error('Learned profiles refused: the registry cannot be read (%s)', error)
+        entries = []
+    for entry in entries if isinstance(entries, list) else []:
         try:
-            entries = registry().get('profiles', [])
-        except Exception as error:  # noqa: BLE001 - an unreadable registry serves no learned profile at all
-            log.error('Learned profiles refused: the registry cannot be read (%s)', error)
-            entries = []
-        for entry in entries if isinstance(entries, list) else []:
-            try:
-                if isinstance(entry, dict) and _servable(entry):
-                    accepted.append(_validated(entry))
-            except Exception as error:  # noqa: BLE001 - one refused entry never stops the others
-                log.error('Learned profile refused: %s', error)
-        # One live version per layout: two would make every file of it ambiguous (read plainly again).
-        layouts = Counter(p['learned'].get('fingerprint') for p in accepted if p['learned'].get('state') == 'live')
-        doubled = {f for f, n in layouts.items() if n > 1}
-        for p in accepted:
-            if p['learned'].get('state') == 'live' and p['learned'].get('fingerprint') in doubled:
-                log.error('Learned profile refused: %s shares its layout with another live version', p['name'])
-        accepted = [p for p in accepted if not (p['learned'].get('state') == 'live'
-                                                and p['learned'].get('fingerprint') in doubled)]
-        result = dict(stamp=stamp, all=tuple(accepted),
-                      profiles=tuple(p for p in accepted if p['learned'].get('state') == 'live'))
-        _LOADED.clear()
-        _LOADED.update(result)  # built fully before it is visible
-    return _LOADED['profiles']
+            if isinstance(entry, dict) and _servable(entry):
+                accepted.append(_validated(entry))
+        except Exception as error:  # noqa: BLE001 - one refused entry never stops the others
+            log.error('Learned profile refused: %s', error)
+    # One live version per layout: two would make every file of it ambiguous (read plainly again).
+    layouts = Counter(p['learned'].get('fingerprint') for p in accepted if p['learned'].get('state') == 'live')
+    doubled = {f for f, n in layouts.items() if n > 1}
+    for p in accepted:
+        if p['learned'].get('state') == 'live' and p['learned'].get('fingerprint') in doubled:
+            log.error('Learned profile refused: %s shares its layout with another live version', p['name'])
+    accepted = [p for p in accepted if not (p['learned'].get('state') == 'live'
+                                            and p['learned'].get('fingerprint') in doubled)]
+    loaded = dict(stamp=stamp, all=tuple(accepted),
+                  profiles=tuple(p for p in accepted if p['learned'].get('state') == 'live'))
+    _LOADED = loaded
+    return loaded
+
+
+def live():
+    """The registry's live profiles (validated; loaded once per file change)."""
+    return _loaded().get('profiles', ())
 
 
 def everything():
     """Live and retired entries: what a by-name lookup may resolve (a saved choice naming an older version)."""
-    live()
-    return _LOADED.get('all', ())
+    return _loaded().get('all', ())
 
 
 # The gates' exact learned set (layout_learning.with_profiles, the command-line tool only; never set in the server).
@@ -159,7 +177,12 @@ def profiles():
 
 
 def named(name):
-    return next((p for p in profiles() + tuple(everything()) if p['name'] == name), None)
+    """The learned profile called ``name``. A saved choice naming a retired entry, or one switched off with
+    LOUPE_FINANCIAL_LEARNED_PROFILES_OFF, still resolves (as LOUPE_FINANCIAL_PROFILES_OFF leaves a written profile
+    resolvable by name): switching a profile off stops new matches, never the re-reading of saved work. Under the
+    gates' exact set (``_OVERRIDE``) only that set resolves."""
+    pool = profiles() if _OVERRIDE is not None else profiles() + everything()
+    return next((p for p in pool if p['name'] == name), None)
 
 
 def _found(profiles, text):
@@ -168,7 +191,7 @@ def _found(profiles, text):
     lowered = ' '.join(text.lower().split())
     found = []
     for profile in profiles:
-        if profile['name'] in PROFILES_OFF or profile['name'] in LEARNED_OFF:
+        if profile['name'] in PROFILES_OFF or (profile.get('learned') and profile['name'] in LEARNED_OFF):
             continue
         rule = profile['match']
         if all(p in lowered for p in rule.get('all', [])) and (not rule.get('any') or any(p in lowered for p in rule['any'])):
@@ -197,18 +220,18 @@ def pick(text, furniture, written, learned):
 
     * a learned pick stands only when no written profile is printed in the furniture (the text without dated
       lines; the whole text when no furniture is given): a written profile the layout prints always wins;
-    * when the learned profiles make the match ambiguous (None), the written profiles alone decide, as before.
+    * in every other case (no learned pick, or the learned profiles changing which written profile would win
+      the tie-breaks) the written profiles alone decide, exactly as before.
 
     Pure: the profile tuples are arguments; no module state is changed (the server reads on several threads).
     Measured on OPDMD66 (hand Truist profile removed): 6 of the 7 Truist files print a payment to Capital One in
     a movement line, so the written Capital One card profile matched their text but not their furniture."""
     written, learned = tuple(written), tuple(learned)
     found = match_among(written + learned, text, furniture)
-    if found is not None and found.get('learned') and _found(written, furniture if furniture is not None else text):
-        found = None
-    if found is None:
-        found = match_among(written, text, furniture)
-    return found
+    if found is not None and found.get('learned') and not _found(written, furniture if furniture is not None else text):
+        return found
+    # Otherwise the written rule alone decides: a learned profile can never move a file to a different written one.
+    return match_among(written, text, furniture)
 
 
 def matching(text, furniture=None):

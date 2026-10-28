@@ -348,7 +348,7 @@ class RegistryTests(unittest.TestCase):
                 dict(name='learned-b', match=dict(all=['b']), learned=dict(state='draft_failed', version=1)),
                 dict(name='learned-c', match=dict(all=['c']))])))
             with mock.patch.object(lp, 'REGISTRY', path):
-                lp._LOADED.clear()
+                lp.reset()
                 self.assertEqual([p['name'] for p in lp.live()], [a['name']])
                 with mock.patch.object(lp, 'LEARNED_OFF', {a['name']}):
                     self.assertEqual(lp.profiles(), ())
@@ -362,7 +362,7 @@ class RegistryTests(unittest.TestCase):
                 path.write_text(json.dumps(dict(version=3, profiles=[broken, dict(a, learned=dict(
                     passed, state='live', rules_hash=lp.rules_hash(a)))])))
                 with mock.patch.object(lp, 'REGISTRY', path), self.assertLogs('services.financial.learned_profiles', 'ERROR'):
-                    lp._LOADED.clear()
+                    lp.reset()
                     self.assertEqual([p['name'] for p in lp.live()], [a['name']])
                 self.assertEqual(len(lp.problems(path)), 1)
             renamed = dict(a, name='learned-a')  # a name without its rules' hash
@@ -386,14 +386,14 @@ class RegistryTests(unittest.TestCase):
                                                    state='live', rules_hash=lp.rules_hash(x)))
             path.write_text(json.dumps(dict(profiles=[entry(a), entry(b)])))
             with mock.patch.object(lp, 'REGISTRY', path), self.assertLogs('services.financial.learned_profiles', 'ERROR'):
-                lp._LOADED.clear()
+                lp.reset()
                 self.assertEqual(lp.live(), ())
             # An unreadable registry serves no learned profile and raises nothing.
             path.write_text('{not json')
             with mock.patch.object(lp, 'REGISTRY', path), self.assertLogs('services.financial.learned_profiles', 'ERROR'):
-                lp._LOADED.clear()
+                lp.reset()
                 self.assertEqual(lp.live(), ())
-        lp._LOADED.clear()
+        lp.reset()
 
     def test_shipped_registry_is_valid(self):
         self.assertEqual(lp.problems(), [])
@@ -413,8 +413,8 @@ class EngineHookTests(unittest.TestCase):
         patcher = mock.patch.object(lp, 'REGISTRY', self.path)
         patcher.start()
         self.addCleanup(patcher.stop)
-        lp._LOADED.clear()
-        self.addCleanup(lp._LOADED.clear)
+        lp.reset()
+        self.addCleanup(lp.reset)
 
     def entry(self, phrase, state='live', fingerprint='f1'):
         rules = dict(match=dict(all=[phrase]), currency='USD')
@@ -426,7 +426,7 @@ class EngineHookTests(unittest.TestCase):
 
     def write(self, *entries):
         self.path.write_text(json.dumps(dict(version=1, profiles=list(entries))))
-        lp._LOADED.clear()
+        lp.reset()
 
     def test_without_learned_profiles_the_pick_is_the_written_rule(self):
         for path in sorted(FIXTURES.glob('financial_*fixture*.json')):
@@ -457,9 +457,69 @@ class EngineHookTests(unittest.TestCase):
         sources = fixture('financial_truist_consolidated_fixture.json')
         text, furniture = sep.profile_text(sources), sep.furniture_text(sources)
         self.path.write_text('{"profiles": [ {"name": 1}, ')
-        lp._LOADED.clear()
+        lp.reset()
         with self.assertLogs('services.financial.learned_profiles', 'ERROR'):
             self.assertEqual(sep.matching_profile(text, furniture)['name'], 'truist-consolidated')
+
+    def test_a_learned_profile_never_moves_a_file_to_another_written_profile(self):
+        # Review: L printed beside A cancelled the furniture narrowing, and the 'specific' tie-break then chose B,
+        # which the document prints only in a movement line.
+        a = dict(name='a', match=dict(all=['bank a'], any=['xx']))
+        b = dict(name='b', match=dict(all=['b1', 'b2']))
+        learned = dict(name='l', match=dict(all=['bank a'], any=['yy']), learned=dict(state='live'))
+        text, furniture = 'bank a xx yy\n01/02 b1 b2', 'bank a xx yy'
+        self.assertEqual(lp.match_among((a, b), text, furniture)['name'], 'a')
+        self.assertEqual(lp.pick(text, furniture, (a, b), (learned,))['name'], 'a')
+        # A learned pick stands when no written profile is printed in the furniture.
+        self.assertEqual(lp.pick('zz only\n01/02 b1 b2', 'zz only', (a, b),
+                                 (dict(learned, match=dict(all=['zz only'])),))['name'], 'l')
+
+    def test_switches_apply_to_their_own_kind(self):
+        a = dict(name='a', match=dict(all=['bank a']))
+        with mock.patch.object(lp, 'LEARNED_OFF', {'a'}):
+            self.assertEqual(lp.pick('bank a', 'bank a', (a,), ())['name'], 'a')  # the learned switch spares written
+        with mock.patch('services.financial.statement_engine_profiles.PROFILES_OFF', {'a'}):
+            self.assertIsNone(lp.pick('bank a', 'bank a', (a,), ()))
+        live = self.entry('zz off layout')
+        self.write(live)
+        with mock.patch.object(lp, 'LEARNED_OFF', {live['name']}):
+            self.assertIsNone(sep.matching_profile('zz off layout'))
+            self.assertEqual(sep.profile_named(live['name'])['name'], live['name'])  # saved work still re-reads
+
+    def test_a_refused_entry_or_a_doubled_layout_leaves_the_rest_reading(self):
+        good, bad = self.entry('zz good layout'), self.entry('zz bad layout', fingerprint='f2')
+        bad['learned']['review'] = 'FAIL'
+        one, two = self.entry('zz twin one', fingerprint='f3'), self.entry('zz twin two', fingerprint='f3')
+        self.write(good, bad, one, two)
+        with self.assertLogs('services.financial.learned_profiles', 'ERROR') as logs:
+            self.assertEqual(sep.matching_profile('zz good layout')['name'], good['name'])
+        self.assertEqual(len(logs.output), 3)
+        for text in ('zz bad layout', 'zz twin one', 'zz twin two'):
+            self.assertIsNone(sep.matching_profile(text))
+        self.assertIsNone(sep.profile_named(bad['name']))
+        self.assertEqual(sep.matching_profile('truist consolidated'), sep.written_matching_profile('truist consolidated'))
+
+    def test_an_unreadable_registry_file_leaves_the_written_profiles_reading(self):
+        sources = fixture('financial_truist_consolidated_fixture.json')
+        text, furniture = sep.profile_text(sources), sep.furniture_text(sources)
+        self.write(self.entry('zz layout'))
+        with mock.patch.object(Path, 'stat', side_effect=PermissionError('denied')), \
+                self.assertLogs('services.financial.learned_profiles', 'ERROR'):
+            self.assertEqual(sep.matching_profile(text, furniture)['name'], 'truist-consolidated')
+            self.assertIsNone(sep.matching_profile('zz layout'))
+
+    def test_saved_choices_are_resolved_through_the_hook(self):
+        from services.financial import statement_engine, statement_printed_no_activity
+        live = self.entry('zz saved layout')
+        self.write(live)
+        self.assertFalse(sep.brokerage_cash_ledger(live['name']))
+        with mock.patch.object(lp, 'named', return_value=dict(live, holdings_currency=True)) as named:
+            self.assertTrue(sep.brokerage_cash_ledger(live['name']))  # a learned name is looked up in the registry
+        named.assert_called_once_with(live['name'])
+        for module in (statement_engine, statement_printed_no_activity):
+            source = Path(module.__file__).read_text()
+            self.assertIn('profile_named(', source, module.__name__)
+            self.assertNotIn("for p in PROFILES if p['name'] ==", source.replace('sep.', ''), module.__name__)
 
     def test_concurrent_matching_never_changes_the_written_profiles(self):
         import threading
@@ -470,7 +530,7 @@ class EngineHookTests(unittest.TestCase):
             try:
                 for _ in range(200):
                     results.append(sep.matching_profile('zz concurrent layout')['name'])
-                    lp._LOADED.clear() if len(results) % 50 == 0 else None
+                    lp.reset() if len(results) % 50 == 0 else None
             except Exception as error:  # noqa: BLE001
                 errors.append(error)
         threads = [threading.Thread(target=work) for _ in range(4)]
