@@ -43,6 +43,7 @@ import { LedgerTracingWorkbench } from "./LedgerTracingWorkbench"
 import { InvestigatorPeople } from "./InvestigatorPeople"
 import { AccountTypeReview } from "./AccountTypeReview"
 import { InvestigatorOverview } from "./InvestigatorOverview"
+import { useFinancialViewSpeed } from "../lib/page-speed"
 import { InvestigatorFollowMoney } from "./InvestigatorFollowMoney"
 import { InvestigatorTrends } from "./InvestigatorTrends"
 import { StatementRegister } from "./StatementRegister"
@@ -170,6 +171,10 @@ function FinancialPageContent() {
           ? statementSection.section
           : "queue"
   const reviewingAccounts = section === "accounts"
+  useFinancialViewSpeed(
+    caseId,
+    store.mainView === "statements" ? `financial/statements/${section}` : `financial/${store.mainView}`
+  )
   const statementScroll = useRef<HTMLDivElement>(null)
   const accountsDestination = useRef<HTMLDivElement>(null)
 

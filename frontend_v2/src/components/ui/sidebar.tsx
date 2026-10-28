@@ -22,6 +22,7 @@ import {
   ChevronRight,
   CloudDownload,
   History,
+  Gauge,
   type LucideIcon,
 } from "lucide-react"
 import { cn } from "@/lib/cn"
@@ -87,6 +88,7 @@ const adminNav: NavItem[] = [
   { label: "Updates", icon: CloudDownload, to: "/admin/updates" },
   { label: "Users", icon: Users, to: "/admin/users" },
   { label: "Activity", icon: History, to: "/admin/activity" },
+  { label: "Speed", icon: Gauge, to: "/admin/speed" },
   { label: "Profiles", icon: Sliders, to: "/admin/profiles" },
 ]
 
