@@ -445,9 +445,11 @@ def _attach_detached_minus(tokens):
 def _pages(sources):
     """Rows of every page in reading order, each with its located tokens."""
     pages = {}
+    side_by_side = bool((_PROFILE.get() or {}).get('repeated_column_groups')) and REPEATED_COLUMN_GROUPS
     for source in sources:
         heading = False
         payment_boxes = []
+        groups = None
         for raw in source['rows']:
             tokens, width, located = [], None, True
             for cell in raw['cells']:
@@ -468,6 +470,13 @@ def _pages(sources):
             row = dict(page=source['page_number'], source=source, raw=raw, tokens=tokens,
                        y0=min(t['y0'] for t in tokens), width=width, located=located)
             parts = _split_row(row, heading, payment_boxes) if located else None
+            if side_by_side and located and parts is None:
+                if _repeated_column_groups(row):
+                    groups = True
+                elif groups:
+                    parts = _column_group_parts(row)
+                    if parts is None:
+                        groups = None  # the side-by-side table ended (its total line, the next heading)
             for part in parts or [row]:
                 part['tokens'] = _attach_detached_minus(_rejoin_split_cells(part['tokens']))
                 part['text'] = ' '.join(t['t'] for t in part['tokens'])
@@ -481,6 +490,60 @@ def _pages(sources):
         _mark_chart_scale(rows)
         _mark_wide_amount_boxes(rows)
     return pages
+
+
+# (profile ``repeated_column_groups``) A movement table printed two or three times side by side on each line
+# ('DATE | CHECK # | AMOUNT($)' three times: checks paid, three to a line). Every dated group of a line under such
+# a heading is a movement line of its own. Off: the line is read whole, as one movement.
+REPEATED_COLUMN_GROUPS = os.environ.get('LOUPE_FINANCIAL_REPEATED_COLUMN_GROUPS', '1').strip().lower() not in (
+    '0', 'false', 'off', 'no')
+
+
+def _repeated_column_groups(row):
+    """The number of groups of a column heading printing the same column words k >= 2 times side by side (a
+    date word and an amount word in each group), or None."""
+    words = [label(t['t']) for t in sorted(row['tokens'], key=lambda t: (t['line'], t['x0']))]
+    for size in range(2, len(words) // 2 + 1):
+        if len(words) % size or any(words[i] != words[i % size] for i in range(len(words))):
+            continue
+        roles = {column_role(word) for word in words[:size]}
+        if 'date' in roles and roles & {'amount', 'debit', 'credit'}:
+            return len(words) // size
+        return None
+    return None
+
+
+def _column_group_parts(row):
+    """One row per group of a line printed under a side-by-side heading ('11/17 3353 951.16 11/15 3525 819.93'),
+    or None (not such a line). A group opens with a date and ends with its amount: a date after an amount opens
+    the next. Each group is read as its own printed cell (the span of its words in the stored cell's band)."""
+    if row['source'].get('reading_rotation'):
+        return None
+    tokens = sorted(row['tokens'], key=lambda t: (t['line'], t['x0']))
+    if not tokens or any(t['line'] != tokens[0]['line'] for t in tokens):
+        return None
+    groups = []
+    for token in tokens:
+        opens = _leading_date(token['t'].rstrip('.,'))
+        if not groups or opens and any(_money_like(t['t']) for t in groups[-1]):
+            if not opens:
+                return None
+            groups.append([])
+        groups[-1].append(token)
+    if len(groups) < 2 or not all(any(_money_like(t['t']) for t in group) for group in groups):
+        return None
+    parts = []
+    for index, group in enumerate(groups):
+        first = group[0]['cell']
+        locator = dict(first['locator'])
+        top, bottom = locator['rect'][1], locator['rect'][3]
+        locator['rect'] = [int(min(t['x0'] for t in group)), top, max(int(max(t['x1'] for t in group)),
+                                                                        int(min(t['x0'] for t in group)) + 1), bottom]
+        cell = dict(first, expected_text=' '.join(t['t'] for t in group), locator=locator, column_group=index)
+        own = [dict(t, cell=cell) for t in group]
+        parts.append(dict(row, raw=dict(row['raw'], cells=[cell], box=index), tokens=own,
+                          y0=min(t['y0'] for t in own), x0=min(t['x0'] for t in own)))
+    return parts
 
 
 #: (E2) An amount stored alone in a box much wider than its characters (the reading joined a mark printed beside
@@ -3390,7 +3453,7 @@ def _suffix_heading_account(row):
     return (printed[1].strip() + ' ' + m[2]) if printed and printed[1].strip() else m[2]
 
 
-_NUMBER_HEADING = re.compile(r'^([A-Z][A-Z .&/]{2,60}?)\s+(\d{8,17})(?:\s+\(CONTINUED[A-Z ]*\))?$')
+_NUMBER_HEADING = re.compile(r'^([A-Z][A-Z0-9 .&/]{2,60}?)\s+(\d{8,17})(?:\s+\(CONTINUED[A-Z ]*\))?$')
 
 
 def _number_heading_account(row):
@@ -4266,6 +4329,9 @@ def _reading(rows, statement, style, exponent, liability, period):
                 labels_seen.add(text)
                 handled = True
                 table_totals = index
+                # It also ends the movement table: a page printed after it (a blank back page, check images)
+                # cannot hold one of this period's movements (A3).
+                ends.append(index)
                 continue
             if role in ('credit_total', 'debit_total', 'credit_component', 'debit_component', 'net_component') and not in_summary:
                 handled = handled or bool(money_values)

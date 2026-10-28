@@ -181,6 +181,55 @@ class ChecksTableAndQuietSavingsTests(unittest.TestCase):
         self.assertEqual(evidence['reason'], 'line_missing')
 
 
+
+class BusinessStatementTests(unittest.TestCase):
+    """'Your account statement' for a business account (OPDMD66, Bee Thrifty): one account, a product name with
+    digits ('BUSINESS VALUE 200 CHECKING'), and a blank fourth page the numbering counts ('Page 1 of 4')."""
+
+    def setUp(self):
+        self.statements, self.profile = reading(fixture('financial_truist_business_fixture.json'))
+
+    def test_business_statement_is_proved(self):
+        self.assertEqual(self.profile, 'truist-consolidated')
+        [account] = self.statements
+        statement = self.statements[account]
+        self.assertEqual(account, '9990007778889')
+        self.assertTrue(statement['engine']['proved'], statement['engine'])
+        self.assertEqual((statement['period_start'], statement['period_end']), ('2023-09-29', '2023-10-31'))
+        self.assertEqual((control(statement, 'Opening Balance'), control(statement, 'Closing Balance')),
+                         ('5162173', '5122744'))
+        count, credit, debit = sums(statement)
+        self.assertEqual((credit, debit), (33564907, 33604336))
+        # Page 4 is printed blank: no movement can be on it, after the table printed its last total (A3).
+        self.assertTrue(statement['engine'].get('pages_unread_after_table'))
+
+    def test_a_product_name_with_digits_still_names_the_account(self):
+        self.assertEqual(E._number_heading_account(dict(text='BUSINESS VALUE 200 CHECKING 1000000000001')),
+                         '1000000000001')
+
+
+    def test_checks_printed_three_to_a_line_are_one_movement_each(self):
+        statements, profile = reading(fixture('financial_truist_side_by_side_checks_fixture.json'))
+        statement = statements['9990006667778']
+        self.assertTrue(statement['engine']['proved'], statement['engine'])
+        self.assertEqual((control(statement, 'Opening Balance'), control(statement, 'Closing Balance')),
+                         ('7550838', '4473278'))
+        checks = [r for r in statement['_rows'] if r['kind'] == 'transaction' and ':box' in r['id']]
+        self.assertEqual(len(checks), 8)
+        self.assertEqual(sum(int(r['fields']['debit']) for r in checks), 8033700)  # 'Total checks = $80,337.00'
+        # Each check keeps its own printed cell: date, number and amount of that check only.
+        self.assertEqual({len(r['source_cells']) for r in checks}, {1})
+        self.assertTrue(all(r['source_cells'][0]['expected_text'].startswith(r['fields']['date'][5:].replace('-', '/'))
+                            for r in checks))
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+        with mock.patch.object(E, 'REPEATED_COLUMN_GROUPS', False):
+            statements, _ = reading(fixture('financial_truist_side_by_side_checks_fixture.json'))
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+        self.assertFalse(any(st['engine']['proved'] for st in statements.values()))
+
+
 class HolderBlockRuleTests(unittest.TestCase):
     def test_spaced_zip_is_a_postal_line(self):
         self.assertTrue(E._postal(E.fold('SPRING HILLS MD 2 0 9 9 9 - 1 2 3 4')))

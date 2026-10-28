@@ -54,6 +54,9 @@ Profile format (every key optional except ``name`` and ``match``):
                  one table per direction, each under a heading printing a credit_component or debit_component label
                  alone ('Deposits, credits and interest'); an amount under such a heading moves that way, up to the
                  next one (statement_engine._section_direction)
+    repeated_column_groups  True: a movement table may print its columns two or three times side by side on each
+                 line ('DATE | CHECK # | AMOUNT($)' three times); every dated group is a movement line of its own
+                 (statement_engine._column_group_parts)
     account_suffix_heading  True: each section's account is the number printed after
                  its product name in the section's own heading ('<product> - 1234'),
                  never a number from the statement's other pages; one or none
@@ -189,7 +192,7 @@ PROFILES = (
     dict(name='truist-consolidated', match=dict(all=['truist.com', 'your previous balance as of'],
                                                 any=['your consolidated statement', 'your account statement']),
          institution='Truist Bank', currency='USD', convention='asset_balance', date_order='mdy',
-         account_number_heading=True, direction_headings=True,
+         account_number_heading=True, direction_headings=True, repeated_column_groups=True,
          labels=dict(opening=['Your previous balance as of'], closing=['Your new balance as of'],
                      debit_total=['Total other withdrawals, debits and service charges', 'Total checks'],
                      credit_total=['Total deposits, credits and interest'],
@@ -239,7 +242,7 @@ PROFILES += (
 _KEYS = {'name', 'match', 'institution', 'currency', 'convention', 'date_order', 'labels', 'columns', 'account_heading',
          'statement_account', 'prior_period_block', 'account_suffix_heading', 'holder_heading', 'settlement_days',
          'client_line', 'rule_mark', 'holdings_currency', 'column_order', 'blank_closing_quiet', 'opening_from_first_day',
-         'account_number_heading', 'direction_headings'}
+         'account_number_heading', 'direction_headings', 'repeated_column_groups'}
 _LABEL_ROLES = {'opening', 'closing', 'subtotal', 'credit_total', 'debit_total', 'credit_component',
                 'debit_component', 'column_total', 'day_balance', 'ignore'}
 _COLUMN_ROLES = {'date', 'description', 'credit', 'debit', 'balance', 'amount', 'ignore'}
@@ -265,7 +268,8 @@ def validate(profile):
     if (profile.get('account_heading') not in (None, True) or profile.get('statement_account') not in (None, True)
             or profile.get('account_suffix_heading') not in (None, True) or profile.get('client_line') not in (None, True)
             or profile.get('account_number_heading') not in (None, True)
-            or profile.get('direction_headings') not in (None, True)):
+            or profile.get('direction_headings') not in (None, True)
+            or profile.get('repeated_column_groups') not in (None, True)):
         raise ValueError('Invalid profile account heading flag.')
     titled = profile.get('holder_heading')
     if titled is not None and (not isinstance(titled, dict) or set(titled) != {'title', 'prefix'}
