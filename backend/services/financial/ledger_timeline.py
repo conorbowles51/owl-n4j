@@ -24,12 +24,13 @@ def ledger_timeline(export, *, population="working"):
         basis = next((field for field in ("value_date", "transaction_date", "posted_date", "effective_date") if row.get(field)), "ordering_date")
         if row.get("ordering_date_context") == "statement_end_ordering_only":
             basis = "statement_end_ordering_only"
-        rows.append(dict(
+        # Payment views already carry account_label when the account is known; replace it, never pass it twice.
+        rows.append({
             **row,
-            chronology_date=row["ordering_date"] if basis == "statement_end_ordering_only" else row[basis],
-            chronology_basis=basis,
-            account_label=reading.get("account", {}).get("label") or "Account " + row["account_id"][:8],
-        ))
+            "chronology_date": row["ordering_date"] if basis == "statement_end_ordering_only" else row[basis],
+            "chronology_basis": basis,
+            "account_label": reading.get("account", {}).get("label") or row.get("account_label") or "Account " + row["account_id"][:8],
+        })
     rows.sort(key=lambda r: (r["chronology_date"], r["key"]))
     return dict(
         case_id=ledger["case_id"], account_id=ledger["account_id"],
