@@ -48,9 +48,48 @@ def rules_hash(rules):
     return hashlib.sha256(body.encode()).hexdigest()
 
 
+def _phrases(value):
+    return isinstance(value, list) and bool(value) and all(isinstance(p, str) and p.strip() for p in value)
+
+
+def _typed(rules):
+    """Every rule value of the type the engine reads it as. statement_engine_profiles.validate checks the shape
+    of the written profiles (each reviewed in code); a learned entry arrives as data, so each value is checked
+    too: a wrongly typed value would raise inside the reading and lose the file's plain reading as well."""
+    name = rules.get('name')
+    bad = lambda what: ValueError('Learned profile %s: %s' % (name, what))
+    if not isinstance(name, str) or not name.strip():
+        raise bad('its name is not text')
+    for key in ('labels', 'columns'):
+        if key in rules and not (isinstance(rules[key], dict) and all(
+                isinstance(role, str) and _phrases(words) for role, words in rules[key].items())):
+            raise bad('%s must map each role to a list of printed words' % key)
+    for key in ('institution', 'currency', 'convention', 'date_order', 'rule_mark'):
+        if key in rules and not isinstance(rules[key], str):
+            raise bad('%s is not text' % key)
+    for key in ('account_heading', 'statement_account', 'account_suffix_heading', 'client_line',
+                'account_number_heading', 'direction_headings', 'repeated_column_groups', 'holdings_currency'):
+        if key in rules and rules[key] is not True:
+            raise bad('%s must be true when given' % key)
+    if 'holder_heading' in rules and not (isinstance(rules['holder_heading'], dict)
+                                          and _phrases(rules['holder_heading'].get('title'))):
+        raise bad('holder_heading needs a list of printed titles')
+    if 'prior_period_block' in rules and not (isinstance(rules['prior_period_block'], dict) and all(
+            _phrases(v) for v in rules['prior_period_block'].values())):
+        raise bad('prior_period_block needs lists of printed words')
+    if 'column_order' in rules and not (isinstance(rules['column_order'], list)
+                                        and all(isinstance(r, str) for r in rules['column_order'])):
+        raise bad('column_order must be a list of roles')
+    first = rules.get('opening_from_first_day')
+    if 'opening_from_first_day' in rules and not (isinstance(first, dict) and set(first) == {'cash_line'}
+                                                  and _phrases(first['cash_line'])):
+        raise bad('opening_from_first_day needs a cash_line list of printed words')
+
+
 def _validated(entry):
     from services.financial import statement_engine_profiles as sep
     rules = {k: v for k, v in entry.items() if k != 'learned'}
+    _typed(rules)
     match = rules.get('match')
     if not isinstance(match, dict) or not match.get('all') or set(match) - {'all', 'any'} or not all(
             isinstance(v, list) and v and all(isinstance(p, str) and p.strip() for p in v) for v in match.values()):
@@ -65,8 +104,12 @@ def _servable(entry):
     """An entry the engine may use: a learned block recording state live (or retired, kept only so saved choices
     naming it still resolve), gates that passed, a review that passed, and the hash of exactly these rules."""
     learned = entry.get('learned')
-    if not isinstance(learned, dict) or learned.get('state') not in ('live', 'retired'):
-        return False
+    if learned is None:
+        return False  # no learned block: not a registry entry the engine serves
+    if not isinstance(learned, dict) or not isinstance(learned.get('state'), str):
+        raise ValueError('Learned profile %s: its learned block or state is malformed' % entry.get('name'))
+    if learned['state'] not in ('live', 'retired'):
+        return False  # a draft, failed or passed entry: recorded, never served
     fingerprint = learned.get('fingerprint')
     if not (isinstance(fingerprint, str) and fingerprint.strip()):
         raise ValueError('Learned profile %s records no layout fingerprint' % entry.get('name'))
@@ -95,6 +138,8 @@ def problems(path=None):
         entries = registry(path).get('profiles', [])
     except Exception as error:  # noqa: BLE001
         return [('(registry)', str(error))]
+    if not isinstance(entries, list):
+        return [('(registry)', 'the profiles are not a list')]
     for entry in entries:
         try:
             if not isinstance(entry, dict):
@@ -102,7 +147,7 @@ def problems(path=None):
             if _servable(entry):
                 _validated(entry)
         except Exception as error:  # noqa: BLE001
-            found.append((entry.get('name'), str(error)))
+            found.append((entry.get('name') if isinstance(entry, dict) else repr(entry)[:60], str(error)))
     return found
 
 
@@ -119,7 +164,8 @@ def _loaded():
     the old load or the new one, never a half-built or emptied one."""
     global _LOADED
     try:
-        stamp = REGISTRY.stat().st_mtime_ns
+        status = REGISTRY.stat()
+        stamp = (status.st_mtime_ns, status.st_size, status.st_ino, status.st_ctime_ns)
     except FileNotFoundError:
         return {}
     except OSError as error:  # an unreadable registry serves no learned profile; written ones keep reading
@@ -136,9 +182,14 @@ def _loaded():
     except Exception as error:  # noqa: BLE001 - an unreadable registry serves no learned profile at all
         log.error('Learned profiles refused: the registry cannot be read (%s)', error)
         entries = []
-    for entry in entries if isinstance(entries, list) else []:
+    if not isinstance(entries, list):
+        log.error('Learned profiles refused: the registry\'s profiles are not a list')
+        entries = []
+    for entry in entries:
         try:
-            if isinstance(entry, dict) and _servable(entry):
+            if not isinstance(entry, dict):
+                raise ValueError('a registry entry is not an object')
+            if _servable(entry):
                 accepted.append(_validated(entry))
         except Exception as error:  # noqa: BLE001 - one refused entry never stops the others
             log.error('Learned profile refused: %s', error)

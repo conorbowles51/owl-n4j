@@ -284,7 +284,13 @@ def _profiled(sources, engine):
     profile = matching_profile(profile_text(sources), furniture_text(sources))
     if profile is None:
         return engine, None
-    profiled = read_statements(sources, profile=profile)
+    try:
+        profiled = read_statements(sources, profile=profile)
+    except Exception:  # noqa: BLE001 - a learned profile (data) never costs a file its plain reading
+        if not profile.get('learned'):
+            raise
+        logger.exception('Learned profile %s could not read a file; the plain reading stands', profile['name'])
+        return engine, None
     plain_keys = {(st['period_start'], st['period_end'], reading_key(st['_rows'])) for st in engine if st['engine']['proved']}
     profiled_keys = {(st['period_start'], st['period_end'], reading_key(st['_rows'])) for st in profiled if st['engine']['proved']}
     # A period the profile reads with the same money but holds for an identity reason it alone can see

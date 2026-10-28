@@ -512,6 +512,55 @@ class EngineHookTests(unittest.TestCase):
         self.assertIsNone(sep.matching_profile('zz listed layout'))
         self.assertEqual(sep.matching_profile('truist consolidated'), sep.written_matching_profile('truist consolidated'))
 
+    def test_wrongly_typed_rule_values_are_refused_on_their_own(self):
+        good = self.entry('zz good layout')
+        bad_rules = [dict(labels=['opening']), dict(labels={'opening': 5}), dict(labels={'opening': 'SALDO ANTERIOR'}),
+                     dict(columns=['ignore']), dict(holder_heading={'title': [1], 'prefix': 'x'}),
+                     dict(prior_period_block={'start': [1], 'end': [2]}), dict(institution=5),
+                     dict(direction_headings='yes'), dict(opening_from_first_day=True)]
+        entries = []
+        for number, extra in enumerate(bad_rules):
+            rules = dict(match=dict(all=['zz bad layout %d' % number]), currency='USD', **extra)
+            name = 'learned-b%d-%s' % (number, lp.rules_hash(rules)[:12])
+            hashed = lp.rules_hash(dict(rules, name=name))
+            entries.append(dict(rules, name=name, learned=dict(
+                state='live', fingerprint='b%d' % number, rules_hash=hashed, review='PASS',
+                gates=dict(corpus_passed=True, truth_passed=True, rules_hash=hashed, profiles_off=[],
+                           corpus_dumped_at='2026-10-28T00:00:00+00:00'))))
+        odd = [1, 'x', None, [], dict(good, name='odd-learned', learned='live'),
+               dict(good, name='odd-state', learned=dict(good['learned'], state=['live']))]
+        self.write(good, *entries, *odd)
+        with self.assertLogs('services.financial.learned_profiles', 'ERROR') as logs:
+            self.assertEqual(sep.matching_profile('zz good layout')['name'], good['name'])
+        self.assertEqual(len(logs.output), len(bad_rules) + len(odd))
+        for number in range(len(bad_rules)):
+            self.assertIsNone(sep.matching_profile('zz bad layout %d' % number))
+        self.assertEqual(len(lp.problems(self.path)), len(bad_rules) + len(odd))
+        self.assertEqual(lp.problems(self.path)[0][0], entries[0]['name'])
+        self.path.write_text(json.dumps(dict(profiles=dict(a=1))))
+        lp.reset()
+        with self.assertLogs('services.financial.learned_profiles', 'ERROR'):
+            self.assertEqual(lp.live(), ())
+        self.assertEqual(lp.problems(self.path), [('(registry)', 'the profiles are not a list')])
+
+    def test_a_learned_profile_that_cannot_read_leaves_the_plain_reading(self):
+        from services.financial import statement_engine_routing as routing
+        plain = [dict(engine=dict(proved=True), period_start='a', period_end='b', _rows=[])]
+        learned = dict(name='learned-x', match=dict(all=['x']), learned=dict(state='live'))
+        with mock.patch('services.financial.statement_engine_profiles.matching_profile', return_value=learned), \
+                mock.patch.object(routing, 'read_statements', side_effect=AttributeError('list')), \
+                mock.patch('services.financial.statement_engine_profiles.profile_text', return_value=''), \
+                mock.patch('services.financial.statement_engine_profiles.furniture_text', return_value=''), \
+                self.assertLogs('services.financial.statement_engine_routing', 'ERROR'):
+            self.assertEqual(routing._profiled([], plain), (plain, None))
+        with mock.patch('services.financial.statement_engine_profiles.matching_profile',
+                        return_value=dict(learned, learned=None)), \
+                mock.patch.object(routing, 'read_statements', side_effect=AttributeError('list')), \
+                mock.patch('services.financial.statement_engine_profiles.profile_text', return_value=''), \
+                mock.patch('services.financial.statement_engine_profiles.furniture_text', return_value=''), \
+                self.assertRaises(AttributeError):
+            routing._profiled([], plain)  # a written profile's fault is never hidden
+
     def test_an_unreadable_registry_file_leaves_the_written_profiles_reading(self):
         sources = fixture('financial_truist_consolidated_fixture.json')
         text, furniture = sep.profile_text(sources), sep.furniture_text(sources)
