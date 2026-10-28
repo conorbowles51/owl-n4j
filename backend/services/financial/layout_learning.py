@@ -1280,6 +1280,24 @@ def llm_draft(files, name, provider, model, api_key, *, attempts=None, exclude=(
 
 
 def registry_entry(profile, fingerprint, gate_result, review, examples=(), today=None):
+    """The registry entry releasing ``profile`` for layout ``fingerprint`` (``_registry_entry``); any malformed
+    input is a ValueError naming it (reported by promote, never a traceback)."""
+    try:
+        return _registry_entry(profile, fingerprint, gate_result, review, examples, today)
+    except ValueError:
+        raise
+    except Exception as error:  # noqa: BLE001 - e.g. an unknown currency (money.UnknownCurrencyError)
+        raise ValueError('%s: %s' % (type(error).__name__, str(error)[:300])) from error
+
+
+def _listed(result, key):
+    value = result.get(key) or []
+    if not isinstance(value, list):
+        raise ValueError('The gate result\'s %s is not a list.' % key)
+    return value
+
+
+def _registry_entry(profile, fingerprint, gate_result, review, examples=(), today=None):
     """The registry entry releasing ``profile`` for layout ``fingerprint``, or ValueError naming what is missing.
 
     Only a draft whose gates passed on exactly these rules with every written profile in force (not a backtest),
@@ -1295,8 +1313,8 @@ def registry_entry(profile, fingerprint, gate_result, review, examples=(), today
     rules = {k: v for k, v in profile.items() if k not in ('name', 'learned')}
     digest = lp.rules_hash(rules)
     conditions = gate_result['conditions']
-    if not (gate_result or {}).get('passed') or not gate_result['corpus'].get('passed') \
-            or not gate_result['truth'].get('passed'):
+    if not (gate_result.get('passed') is True and gate_result['corpus'].get('passed') is True
+            and gate_result['truth'].get('passed') is True):
         raise ValueError('The gates did not pass.')
     if conditions.get('rules_hash') != digest:
         raise ValueError('The gate result is for other rules.')
@@ -1315,9 +1333,9 @@ def registry_entry(profile, fingerprint, gate_result, review, examples=(), today
     name = 'learned-%s-%s' % (fingerprint, digest[:12])
     gates = dict(corpus_passed=True, truth_passed=True, rules_hash=digest, profiles_off=[],
                  corpus_dumped_at=conditions['corpus_dumped_at'],
-                 rematched=len(gate_result['corpus'].get('rematched') or []),
-                 gained=len(gate_result['corpus'].get('gained') or []),
-                 truth_judged=len(gate_result['truth'].get('judged') or []))
+                 rematched=len(_listed(gate_result['corpus'], 'rematched')),
+                 gained=len(_listed(gate_result['corpus'], 'gained')),
+                 truth_judged=len(_listed(gate_result['truth'], 'judged')))
     entry = dict(rules, name=name, learned=dict(
         state='live', fingerprint=fingerprint, version=VERSION, rules_hash=digest, review='PASS', gates=gates,
         examples=list(examples), replaces=list(conditions['replaced']), gated_with=list(conditions['live_learned']),

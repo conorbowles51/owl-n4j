@@ -632,6 +632,13 @@ class EngineHookTests(unittest.TestCase):
                 ll.registry_entry(third, 'zzfinger', gates, 'PASS')
         with self.assertRaisesRegex(ValueError, 'not an object'):
             ll.registry_entry(None, 'zzfinger', passed(third), 'PASS')
+        for gates in (dict(passed(third), passed='false'), dict(passed(third), corpus=dict(passed='no')),
+                      dict(passed(third), corpus=dict(passed=True, rematched=5))):
+            with self.assertRaises(ValueError):
+                ll.registry_entry(third, 'zzfinger', gates, 'PASS')
+        odd = dict(third, currency='QQQ')
+        with self.assertRaises(ValueError):
+            ll.registry_entry(odd, 'zzfinger', passed(odd), 'PASS')
         self.assertEqual(sorted(p.name for p in self.path.parent.iterdir()),
                          ['.learned_profiles.lock', self.path.name])  # no temporary left
 
