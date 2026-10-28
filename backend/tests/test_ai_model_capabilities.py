@@ -96,9 +96,11 @@ class ImagePathTests(unittest.TestCase):
 
     def test_vision_call_to_deepseek_image_model_states_the_schema_and_uses_max_thinking(self):
         from services.llm_service import LLMExecutionContext
+        answer = {'choices': [{'finish_reason': 'stop', 'message': {'content': '{"ok": true}'}}],
+                  'usage': {'prompt_tokens': 10, 'completion_tokens': 5, 'total_tokens': 15}}
         response = mock.Mock()
-        response.json.return_value = {'choices': [{'finish_reason': 'stop', 'message': {'content': '{"ok": true}'}}],
-                                      'usage': {'prompt_tokens': 10, 'completion_tokens': 5, 'total_tokens': 15}}
+        # Streamed in pieces, with a keep-alive blank line first (read against a deadline).
+        response.iter_content.side_effect = lambda chunk_size: iter([b'\n', json.dumps(answer).encode()])
         context = LLMExecutionContext('deepseek', 'deepseek-flash', api_key='k')
         with mock.patch('requests.post', return_value=response) as post:
             self.assertEqual(json.loads(context.call_vision_json('p', [b'png'], schema={'type': 'object'},
@@ -111,9 +113,26 @@ class ImagePathTests(unittest.TestCase):
         self.assertIn('{"type":"object"}', sent['messages'][0]['content'][0]['text'])
         self.assertEqual(sent['messages'][0]['content'][1]['type'], 'image_url')
         self.assertNotIn('png', json.dumps(context.last_request_arguments))
-        response.json.return_value['choices'][0]['finish_reason'] = 'length'
+        self.assertTrue(post.call_args.kwargs['stream'])
+        answer['choices'][0]['finish_reason'] = 'length'
+        context.last_usage = None
         with mock.patch('requests.post', return_value=response), self.assertRaisesRegex(ValueError, 'incomplete'):
             context.call_vision_json('p', [b'png'], schema={}, schema_name='s')
+        # An answer cut short is billed: its usage is kept for the caller to record.
+        self.assertEqual(context.last_usage['completion_tokens'], 5)
+
+    def test_deepseek_answer_is_bounded_by_the_clock_not_by_keep_alive_lines(self):
+        from services.llm_service import LLMExecutionContext
+        import services.llm_service as llm
+        response = mock.Mock()
+        response.iter_content.side_effect = lambda chunk_size: iter([b'\n'] * 5)
+        clock = iter([0, 1, 2, 50, 100, 200, 300])
+        context = LLMExecutionContext('deepseek', 'deepseek-flash', api_key='k')
+        with mock.patch('requests.post', return_value=response), \
+                mock.patch.object(llm.time, 'monotonic', lambda: next(clock)), \
+                self.assertRaises(llm.requests.exceptions.ReadTimeout):
+            context._call_deepseek_vision('p', [b'png'], schema={}, timeout=60, max_output_tokens=10)
+        response.close.assert_called()
 
     def test_page_reader_holds_the_statement_when_the_setting_is_text_only(self):
         from services.financial import vision_reader as vr
@@ -175,6 +194,27 @@ class PolicyTests(unittest.TestCase):
         with mock.patch('services.ai_model_policy.DEEPSEEK_API_KEY', 'k'), \
                 self.assertRaisesRegex(ValueError, 'cannot read page images'):
             validate_policy(self.policy('deepseek', 'deepseek-v4-pro'), require_configured_provider=False)
+
+    def test_default_chain_saves_when_deepseeks_list_is_down_but_a_text_only_model_never_does(self):
+        cap.clear_cache()
+        configuration = {key: dict(value) for key, value in DEFAULT_POLICY.items()}
+        with mock.patch.object(cap, '_fetch_deepseek', return_value=None), \
+                mock.patch('services.ai_model_policy.DEEPSEEK_API_KEY', 'k'), \
+                self.assertLogs('services.ai_model_policy', 'WARNING'):
+            validated = validate_policy(configuration, require_configured_provider=False)
+        self.assertEqual(validated['financial_vision']['chain'][0]['model_id'], 'deepseek-flash')
+        cap.clear_cache()
+        with mock.patch('services.ai_model_policy.DEEPSEEK_API_KEY', 'k'), \
+                self.assertRaisesRegex(ValueError, 'cannot read page images'):
+            validate_policy(self.chain(('deepseek', 'deepseek-flash'), ('deepseek', 'deepseek-v4-pro')),
+                            require_configured_provider=False)
+
+    def test_deepseek_only_needs_a_deepseek_model_in_the_chain(self):
+        configuration = self.chain(('openai', 'gpt-5.6-terra'))
+        with self.assertRaisesRegex(ValueError, 'DeepSeek only is on'):
+            validate_policy(configuration, require_configured_provider=False)
+        configuration['financial_vision']['deepseek_only'] = False
+        validate_policy(configuration, require_configured_provider=False)
 
     def test_text_only_model_stays_allowed_for_text_workloads(self):
         configuration = {key: dict(value) for key, value in DEFAULT_POLICY.items()}

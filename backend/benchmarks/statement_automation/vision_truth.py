@@ -116,8 +116,9 @@ def main(argv=None):
     if args.limit:
         chosen = chosen[:args.limit]
     saved_truth = {p['truth_id'] for p in periods if p['status'] == 'imported' and p.get('truth_id')}
-    from services.ai_model_policy import DEFAULT_POLICY
-    model_id = os.environ.get('VISION_TRUTH_MODEL') or DEFAULT_POLICY[vision_reader.WORKLOAD]['model_id']
+    from services.ai_model_policy import FINANCIAL_VISION_OPENAI
+    # Without --readers: OpenAI alone, unnamed (as before the chain). Only when asked for: it ignores "DeepSeek only".
+    model_id = os.environ.get('VISION_TRUTH_MODEL') or FINANCIAL_VISION_OPENAI['model_id']
 
     def page_reader(db, case_id):
         if not OPENAI_API_KEY:

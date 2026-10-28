@@ -48,7 +48,7 @@ class ChainTests(TestCase):
         self.assertEqual(held.status, 'attention')
         return batch, held
 
-    def read(self, batch, held, page_reader, knowledge):
+    def read(self, batch, held, page_reader, knowledge, neighbours=lambda *a: None):
         rendered = []
 
         def render(path, pages, width=None, strips=None):
@@ -57,7 +57,7 @@ class ChainTests(TestCase):
         with patch.object(vr, 'render_pages', render), \
                 patch.object(batches, 'read_statement_import', release.old_reader), \
                 patch('services.financial.statement_import.read_statement_import', release.old_reader), \
-                patch.object(vr, 'check_neighbours', lambda *a: None), \
+                patch.object(vr, 'check_neighbours', neighbours), \
                 patch('services.financial.field_proposals.MIN_MASKED_DIGITS', 3):
             outcome = vr.read_item(self.f.SessionLocal, held.id, Path, page_reader=page_reader,
                                    knowledge_for=lambda db, case_id: knowledge)
@@ -253,6 +253,65 @@ class ChainTests(TestCase):
         self.assertEqual(self.stored(held)['reader'],
                          f'deepseek/deepseek-flash > openai/gpt-5.6-terra ({vr.PROMPT_VERSION})')
 
+    def test_deepseek_only_on_never_accepts_a_stored_openai_reading(self):
+        # Review #1: an OpenAI reading stored while failover was on (not proved then) is not judged again once
+        # DeepSeek only is ON, even if it would prove now.
+        batch, held = self.held()
+        right, knowledge = self.r._image_reading(held)
+
+        def broken(images):
+            raise requests.exceptions.ConnectionError('reset by peer')
+
+        def no_neighbour(*a):
+            raise vr.NotProved('This account has no saved statement in the case to confirm the page-image reading against.')
+        chain = [reader('deepseek', 'deepseek-flash', broken), reader('openai', 'gpt-5.6-terra', lambda images: (right, USAGE))]
+        with self.assertLogs(vr.log.name, 'WARNING'):
+            first, _ = self.read(batch, held, lambda db, case_id: chain, knowledge, neighbours=no_neighbour)
+        self.assertEqual(first['status'], 'failed', first.get('message'))
+        self.assertTrue(any(a.get('raw') for a in self.stored(held)['attempts'] if a['provider'] == 'openai')
+                        or self.stored(held).get('raw'))
+        off = vr.PageReader(provider='openai', model='gpt-5.6-terra', read=None, switched_off=True, strips=None,
+                            unavailable='OpenAI failover is switched off', max_output_tokens=1000)
+        chain = [reader('deepseek', 'deepseek-flash', broken), off]
+        with self.assertLogs(vr.log.name, 'WARNING'):
+            second, _ = self.read(batch, held, lambda db, case_id: chain, knowledge)
+        self.assertNotEqual(second['status'], 'proved', second.get('message'))
+        self.assertIn('OpenAI failover is switched off', second['message'])
+        self.assertEqual(self.r.item(batch).status, 'attention')
+
+    def test_a_reader_that_could_outlast_the_claim_is_not_started(self):
+        batch, held = self.held()
+        right, knowledge = self.r._image_reading(held)
+        deepseek = Mock(side_effect=AssertionError('not started: it could outlast the claim'))
+        chain = [vr.PageReader(provider='deepseek', model='deepseek-flash', read=deepseek, unavailable='', strips=1,
+                               max_output_tokens=1000),
+                 vr.PageReader(provider='openai', model='gpt-5.6-terra', read=lambda images: (right, USAGE),
+                               unavailable='', strips=1, max_output_tokens=1000)]
+        self.assertLess(vr.CHAIN_SECONDS, vr.CLAIM_SECONDS)
+        # The default chain at its slowest fits inside the chain's time.
+        self.assertLess(sum(vr.reader_worst_seconds(r) for r in chain), vr.CHAIN_SECONDS)
+        with patch.object(vr, 'CHAIN_SECONDS', vr.reader_worst_seconds(chain[1]) + 60):
+            outcome, _ = self.read(batch, held, lambda db, case_id: chain, knowledge)
+        self.assertEqual(outcome['status'], 'proved', outcome.get('message'))
+        self.assertIn('DeepSeek was not used: not enough time was left to read it in this round', outcome['message'])
+
+    def test_a_failed_answer_that_was_billed_is_counted(self):
+        batch, held = self.held()
+        right, knowledge = self.r._image_reading(held)
+
+        def cut_short(images):
+            error = ValueError('The page-image reading was incomplete (length)')
+            error.usage = dict(prompt_tokens=10000, completion_tokens=64000)
+            raise error
+        chain = [reader('deepseek', 'deepseek-flash', cut_short), reader('openai', 'gpt-5.6-terra', lambda images: (right, USAGE))]
+        with self.assertLogs(vr.log.name, 'WARNING'):
+            outcome, _ = self.read(batch, held, lambda db, case_id: chain, knowledge)
+        self.assertEqual(outcome['status'], 'proved', outcome.get('message'))
+        stored = self.stored(held)
+        billed = vr.cost_usd('deepseek-flash', dict(prompt_tokens=10000, completion_tokens=64000))
+        self.assertAlmostEqual(stored['attempts'][0]['cost_usd'], billed, places=5)
+        self.assertAlmostEqual(stored['cost_usd'], billed + vr.cost_usd('gpt-5.6-terra', USAGE), places=5)
+
     def test_a_text_only_model_in_the_chain_is_never_sent_the_pages(self):
         batch, held = self.held()
         right, knowledge = self.r._image_reading(held)
@@ -291,7 +350,7 @@ class ChainTests(TestCase):
         right, knowledge = self.r._image_reading(held)
         deepseek_sent, openai_sent = [], []
 
-        def deepseek_post(url, headers=None, json=None, timeout=None):
+        def deepseek_post(url, headers=None, json=None, timeout=None, stream=None):
             deepseek_sent.append(json)
             raise requests.exceptions.ConnectionError('Connection reset by peer')
 

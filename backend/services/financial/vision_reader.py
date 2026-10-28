@@ -238,9 +238,11 @@ SYSTEM_EMAIL = 'vision-reader@system.local'
 ROW_REASON = 'Read from page image, page {page}.'
 REPLACED_REASON = ('Set aside: the reading of the page images of this period reconciles exactly and replaces '
                    'the text reading, which is retained.')
-# A claim outlives the longest chain reading (DeepSeek's read allowance with its retries, then OpenAI's), so no
-# other worker takes up a statement still being read; a claim left by a stopped worker expires after it.
-CLAIM_SECONDS = 90 * 60
+# A claim outlives the longest chain reading, so no other worker takes up a statement still being read; a claim left
+# by a stopped worker expires after it. The chain itself stops starting readers that could not finish inside
+# CHAIN_SECONDS (reader_worst_seconds: each request is bounded by the clock), which leaves the claim a margin.
+CLAIM_SECONDS = 2 * 60 * 60
+CHAIN_SECONDS = CLAIM_SECONDS - 15 * 60
 # A statement whose request fails this many times (for the same reading) is not requested again.
 MAX_FAILURES = 3
 # Reserved before each request: an answer cut short, refused or timed out is still billed.
@@ -271,8 +273,9 @@ _spend_lock = threading.Lock()
 
 
 def price(model_id):
+    # The override was set for OpenAI's vision model; DeepSeek models are always priced at DeepSeek's own price.
     override = (os.environ.get('LOUPE_FINANCIAL_VISION_PRICE_IN'), os.environ.get('LOUPE_FINANCIAL_VISION_PRICE_OUT'))
-    if all(override):
+    if all(override) and not str(model_id).startswith('deepseek'):
         try:
             return float(override[0]), float(override[1])
         except ValueError:
@@ -1624,6 +1627,21 @@ READER_SETTINGS = {
     'openai': dict(strips=STRIPS, timeout=PAGE_TIMEOUT_SECONDS, max_output_tokens=16000, retries=0),
 }
 RETRY_PAUSE_SECONDS = 5
+# The OpenAI client tries a request up to 3 times (its own 2 retries), each within the timeout.
+OPENAI_CLIENT_TRIES = 3
+CONNECT_SECONDS = 10
+
+
+def reader_worst_seconds(reader):
+    """The longest one reader's request can take: every try at its full allowance, with the pauses between."""
+    settings = READER_SETTINGS.get(reader.provider)
+    if settings is None:
+        return 0
+    tries = settings['retries'] + 1
+    if reader.provider == 'openai':
+        tries *= OPENAI_CLIENT_TRIES
+    pauses = sum(RETRY_PAUSE_SECONDS * (n + 1) for n in range(settings['retries']))
+    return tries * (settings['timeout'] + CONNECT_SECONDS) + pauses
 
 
 class PageReader(SimpleNamespace):
@@ -1807,6 +1825,8 @@ def document_request(model_id, api_key, provider='openai'):
                 break
             except Exception as error:  # noqa: BLE001 - retried only when the connection or server failed
                 if attempt >= settings['retries'] or not _retryable(error):
+                    # What the provider reported it used (an answer cut short is billed), for the caller to count.
+                    error.usage = dict(context.last_usage or {})
                     raise
                 log.warning('Page-image request to %s failed (%s: %s); trying again (%s of %s)', provider,
                             type(error).__name__, str(error)[:200], attempt + 1, settings['retries'])
@@ -1814,9 +1834,13 @@ def document_request(model_id, api_key, provider='openai'):
         try:
             document = json.loads(text)
         except ValueError as error:
-            raise UnreadableAnswer('the answer was not valid JSON') from error
+            unreadable = UnreadableAnswer('the answer was not valid JSON')
+            unreadable.usage = dict(context.last_usage or {})
+            raise unreadable from error
         if not isinstance(document, dict):
-            raise UnreadableAnswer('the answer was not a JSON object')
+            unreadable = UnreadableAnswer('the answer was not a JSON object')
+            unreadable.usage = dict(context.last_usage or {})
+            raise unreadable
         return document, dict(context.last_usage or {})
     return read
 
@@ -2406,22 +2430,32 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
                 db.commit()
             else:
                 db.rollback()
+        # A reader not used now (switched off by "DeepSeek only", no key, cannot read images) is never judged from a
+        # reading it stored earlier either: only the readers in use decide.
+        not_used = {(r.provider, r.model) for r in readers if r.unavailable and r.provider}
         if again:
             # The page readings already stored, judged under the current proof rules: no request, no cost.
-            candidates = stored_attempts(stored)
+            candidates = [(reader, raw) for reader, raw in stored_attempts(stored)
+                          if (reader.provider, reader.model) not in not_used]
         else:
             # A reading of an earlier try of this same reading of the file (the chain stopped at a failed request)
             # is judged again rather than requested again.
             reuse = _reusable(stored, record['revision'], pages)
-            candidates = [(reader, reuse.get(_attempt_key(reader))) for reader in readers]
+            candidates = [(reader, None if reader.unavailable else reuse.get(_attempt_key(reader))) for reader in readers]
         attempts, accepted = [], None
         spent_now, seconds, page_costs = 0.0, 0.0, {}
+        chain_started = time.monotonic()
         for reader, raw in candidates:
             attempt = dict(provider=reader.provider, model=reader.model,
                            prompt_version=getattr(reader, 'prompt_version', None) or (PROMPT_VERSION if reader.provider else None))
             if raw is None and reader.unavailable:
                 attempts.append(dict(attempt, status='switched_off' if getattr(reader, 'switched_off', False)
                                      else 'unavailable', message=reader.unavailable))
+                continue
+            if raw is None and time.monotonic() - chain_started + reader_worst_seconds(reader) > CHAIN_SECONDS:
+                # It could outlast the claim: not started now; the statement is read again in a later round.
+                attempts.append(dict(attempt, status='unavailable',
+                                     message='not enough time was left to read it in this round'))
                 continue
             if raw is None:
                 # Outside any lock or transaction: render (in this reader's strips) and read.
@@ -2444,8 +2478,22 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
                     log.warning('Page-image reading by %s %s failed for file %s after %ss (%s: %s)%s',
                                 reader.provider, reader.model, str(file_id)[:8], took, type(error).__name__,
                                 str(error)[:200], '; the next reader takes over' if reader is not candidates[-1][0] else '')
-                    attempts.append(dict(attempt, status='failed', error=type(error).__name__,
-                                         message=failure_words(error), seconds=took))
+                    failed = dict(attempt, status='failed', error=type(error).__name__,
+                                  message=failure_words(error), seconds=took)
+                    usage = getattr(error, 'usage', None) or {}
+                    if usage.get('completion_tokens'):
+                        # An answer cut short or unreadable is billed: its cost is counted (the reservation stays).
+                        cost = cost_usd(reader.model, usage)
+                        spent_now += cost
+                        failed.update(cost_usd=round(cost, 6), prompt_tokens=usage.get('prompt_tokens'),
+                                      completion_tokens=usage.get('completion_tokens'))
+                        for number, _ in images:
+                            share = page_costs.setdefault(number, dict(page=number, prompt_tokens=0,
+                                                                       completion_tokens=0, cost_usd=0.0))
+                            share['prompt_tokens'] += round((usage.get('prompt_tokens') or 0) / len(images))
+                            share['completion_tokens'] += round((usage.get('completion_tokens') or 0) / len(images))
+                            share['cost_usd'] = round(share['cost_usd'] + cost / len(images), 6)
+                    attempts.append(failed)
                     continue
                 took = round(time.monotonic() - started, 1)
                 cost = cost_usd(reader.model, usage)
@@ -2899,6 +2947,11 @@ def read_saved(factory, document_id, resolve_path, *, page_reader=None, knowledg
                 candidates, again = stored_attempts(stored), True
             else:
                 candidates, again = [(reader, None) for reader in readers], False
+            # Only readers in use decide, from a stored reading too (not switched off, not unavailable).
+            not_used = {(r.provider, r.model) for r in readers if r.unavailable and r.provider}
+            candidates = [(reader, raw) for reader, raw in candidates
+                          if raw is None or not reader.provider
+                          or ((reader.provider, reader.model) not in not_used and not switched_off(db, reader.provider))]
             path = resolve_path(file.stored_path)
             file_id = file.id
             db.rollback()
@@ -2910,12 +2963,17 @@ def read_saved(factory, document_id, resolve_path, *, page_reader=None, knowledg
             return dict(record, reason='no_image_reading')
         attempts, accepted, reading, controls = [], None, None, None
         spent_now, seconds, page_costs = 0.0, 0.0, {}
+        chain_started = time.monotonic()
         for reader, raw in candidates:
             attempt = dict(provider=reader.provider, model=reader.model,
                            prompt_version=getattr(reader, 'prompt_version', None) or (PROMPT_VERSION if reader.provider else None))
             if raw is None and reader.unavailable:
                 attempts.append(dict(attempt, status='switched_off' if getattr(reader, 'switched_off', False)
                                      else 'unavailable', message=reader.unavailable))
+                continue
+            if raw is None and time.monotonic() - chain_started + reader_worst_seconds(reader) > CHAIN_SECONDS:
+                attempts.append(dict(attempt, status='unavailable',
+                                     message='not enough time was left to read it in this round'))
                 continue
             if raw is None:
                 images = _render(path, pages, reader)
@@ -2931,8 +2989,18 @@ def read_saved(factory, document_id, resolve_path, *, page_reader=None, knowledg
                         raise
                     log.warning('Page-image reading of saved statement by %s %s failed (%s: %s)', reader.provider,
                                 reader.model, type(error).__name__, str(error)[:200])
-                    attempts.append(dict(attempt, status='failed', error=type(error).__name__,
-                                         message=failure_words(error), seconds=round(time.monotonic() - started, 1)))
+                    failed = dict(attempt, status='failed', error=type(error).__name__,
+                                  message=failure_words(error), seconds=round(time.monotonic() - started, 1))
+                    usage = getattr(error, 'usage', None) or {}
+                    if usage.get('completion_tokens'):
+                        cost = cost_usd(reader.model, usage)  # billed though it failed (the reservation stays)
+                        spent_now += cost
+                        failed['cost_usd'] = round(cost, 6)
+                        for number, _ in images:
+                            share = page_costs.setdefault(number, dict(page=number, prompt_tokens=0,
+                                                                       completion_tokens=0, cost_usd=0.0))
+                            share['cost_usd'] = round(share['cost_usd'] + cost / len(images), 6)
+                    attempts.append(failed)
                     continue
                 took = round(time.monotonic() - started, 1)
                 cost = cost_usd(reader.model, usage)

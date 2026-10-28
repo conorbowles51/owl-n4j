@@ -5,6 +5,7 @@ LLM Service - handles AI API interactions for the investigation console.
 from __future__ import annotations
 
 import json
+import time
 from typing import Any, Dict, Optional
 
 import requests
@@ -257,22 +258,27 @@ class LLMExecutionContext:
         self.last_request_arguments = {"model": self.model_id, "images": len(images_png),
                                        "image_bytes": sum(len(i) for i in images_png), "schema": "in prompt",
                                        "reasoning_effort": self.DEEPSEEK_VISION_EFFORT}
+        # ``timeout`` bounds the whole answer by the clock: DeepSeek keeps a slow request open with blank keep-alive
+        # lines, which would restart a plain read timeout, so the body is read in pieces against a deadline.
+        deadline = time.monotonic() + timeout
         response = requests.post(
             "https://api.deepseek.com/chat/completions",
             headers={"Authorization": f"Bearer {api_key}", "content-type": "application/json"},
             json=payload,
             timeout=(10, timeout),
+            stream=True,
         )
-        response.raise_for_status()
-        data = response.json()
-        choices = data.get("choices") or []
-        if not choices:
-            raise ValueError("DeepSeek returned no answer")
-        if choices[0].get("finish_reason") != "stop":
-            raise ValueError(f"The page-image reading was incomplete ({choices[0].get('finish_reason')})")
-        text = str((choices[0].get("message") or {}).get("content") or "").strip()
-        if not text:
-            raise ValueError("DeepSeek returned an empty response")
+        try:
+            response.raise_for_status()
+            body = bytearray()
+            for chunk in response.iter_content(chunk_size=65536):
+                if time.monotonic() > deadline:
+                    raise requests.exceptions.ReadTimeout(f"DeepSeek did not finish answering within {timeout}s")
+                body.extend(chunk or b"")
+        finally:
+            response.close()
+        data = json.loads(bytes(body).decode("utf-8").strip() or "{}")
+        # Usage first: an answer cut short is still billed, and the caller records what it cost.
         usage = data.get("usage") or {}
         self.last_usage = {
             "prompt_tokens": usage.get("prompt_tokens"),
@@ -281,6 +287,14 @@ class LLMExecutionContext:
             "reasoning_tokens": (usage.get("completion_tokens_details") or {}).get("reasoning_tokens"),
             "prompt_cache_hit_tokens": usage.get("prompt_cache_hit_tokens"),
         }
+        choices = data.get("choices") or []
+        if not choices:
+            raise ValueError("DeepSeek returned no answer")
+        if choices[0].get("finish_reason") != "stop":
+            raise ValueError(f"The page-image reading was incomplete ({choices[0].get('finish_reason')})")
+        text = str((choices[0].get("message") or {}).get("content") or "").strip()
+        if not text:
+            raise ValueError("DeepSeek returned an empty response")
         self.last_raw_response = text
         return text
 

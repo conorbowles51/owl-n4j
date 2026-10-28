@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from copy import deepcopy
 from typing import Any
 
@@ -10,6 +11,8 @@ from sqlalchemy.orm import Session
 from config import ANTHROPIC_API_KEY, DEEPSEEK_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, OPENAI_VISION_MODEL
 from models.llm_models import LLMProvider, get_model_by_id
 from postgres.models.runtime_state import AIModelPolicy
+
+logger = logging.getLogger(__name__)
 
 
 POLICY_KEY = "default"
@@ -105,8 +108,10 @@ DEFAULT_POLICY: dict[str, dict[str, str]] = {
     "financial_vision": dict(FINANCIAL_VISION_DEFAULT),
 }
 
+# A recommended profile sets models, never the "DeepSeek only" switch: applying one keeps the switch as it is.
+FINANCIAL_VISION_PROFILE = {k: v for k, v in FINANCIAL_VISION_DEFAULT.items() if k != "deepseek_only"}
 PROVIDER_DEFAULTS: dict[str, dict[str, dict[str, str]]] = {
-    "openai": deepcopy(DEFAULT_POLICY),
+    "openai": {**deepcopy(DEFAULT_POLICY), "financial_vision": deepcopy(FINANCIAL_VISION_PROFILE)},
     "anthropic": {
         "chat": {"provider": "anthropic", "model_id": "claude-sonnet-5"},
         "agent": {"provider": "anthropic", "model_id": "claude-opus-4-8"},
@@ -116,7 +121,7 @@ PROVIDER_DEFAULTS: dict[str, dict[str, dict[str, str]]] = {
         "ingestion_entity_summary": {"provider": "anthropic", "model_id": "claude-sonnet-5"},
         "ingestion_document_summary": {"provider": "anthropic", "model_id": "claude-opus-4-8"},
         "ingestion_quality": {"provider": "anthropic", "model_id": "claude-sonnet-5"},
-        "financial_vision": dict(FINANCIAL_VISION_DEFAULT),
+        "financial_vision": dict(FINANCIAL_VISION_PROFILE),
     },
     "gemini": {
         "chat": {"provider": "gemini", "model_id": "gemini-3.6-flash"},
@@ -127,7 +132,7 @@ PROVIDER_DEFAULTS: dict[str, dict[str, dict[str, str]]] = {
         "ingestion_entity_summary": {"provider": "gemini", "model_id": "gemini-3.6-flash"},
         "ingestion_document_summary": {"provider": "gemini", "model_id": "gemini-3.5-flash"},
         "ingestion_quality": {"provider": "gemini", "model_id": "gemini-3.6-flash"},
-        "financial_vision": dict(FINANCIAL_VISION_DEFAULT),
+        "financial_vision": dict(FINANCIAL_VISION_PROFILE),
     },
     "deepseek": {
         "chat": {"provider": "deepseek", "model_id": "deepseek-v4-flash"},
@@ -138,7 +143,7 @@ PROVIDER_DEFAULTS: dict[str, dict[str, dict[str, str]]] = {
         "ingestion_entity_summary": {"provider": "deepseek", "model_id": "deepseek-v4-flash"},
         "ingestion_document_summary": {"provider": "deepseek", "model_id": "deepseek-v4-pro"},
         "ingestion_quality": {"provider": "deepseek", "model_id": "deepseek-v4-flash"},
-        "financial_vision": dict(FINANCIAL_VISION_DEFAULT),
+        "financial_vision": dict(FINANCIAL_VISION_PROFILE),
     },
 }
 
@@ -287,6 +292,12 @@ def _validated_entry(workload: str, entry: Any, db: Session | None) -> dict[str,
         if provider == "deepseek":
             api_key = _provider_key(provider, db)
         readable, why = accepts_images(provider, model_id, api_key=api_key)
+        unconfirmed = why.startswith("DeepSeek's model list could not be fetched")
+        if not readable and unconfirmed and api_key and {"provider": provider, "model_id": model_id} in FINANCIAL_VISION_CHAIN:
+            # The code default cannot be confirmed while DeepSeek's model list is down (a key is connected): saving
+            # other settings is not blocked by it. With no DeepSeek key it stays refused (add the key or remove it). Nothing is sent unconfirmed: each reading checks again and fails closed.
+            logger.warning("%s %s kept in %s without confirming it reads images: %s", provider, model_id, workload, why)
+            readable = True
         if not readable:
             raise ValueError(
                 f"{model.name} cannot read page images, so it "
@@ -328,6 +339,10 @@ def validate_policy(
                 )
             if "deepseek_only" in entry and not isinstance(entry["deepseek_only"], bool):
                 raise ValueError("DeepSeek only must be on or off")
+            if entry.get("deepseek_only", FINANCIAL_VISION_DEEPSEEK_ONLY) and not any(
+                    e["provider"] == "deepseek" for e in chain):
+                raise ValueError(f"{WORKLOADS[workload]['label']}: DeepSeek only is on, so the list needs a DeepSeek "
+                                 "model (or switch DeepSeek only off)")
             validated[workload] = _with_chain(chain, entry)
             continue
         found = _validated_entry(workload, entry, db)
