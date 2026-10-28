@@ -355,6 +355,7 @@ def _monex_transfer(raw, value, direction):
     return match[1], 'monex-named-party', f'The {role} printed in its own labelled field of the transfer description; the receiving or sending bank is a separate field.'
 
 
+_EQUIPMENT_WORDS = frozenset('RETRO RETROEXCAVADORA EXCAVADORA GRUA CAMION EQ DISP'.split())
 _BBVA_SPEI = re.compile(r'^(?:\S{1,3}\s+\d{2}/[A-Z]{3}\s+)?[A-Z0-9]{2,3}\s+SP(?:ID|E\S?)\s+(ENVIADO|RECIBIDO)\s*(.*)$')
 
 
@@ -368,14 +369,17 @@ def _bbva_spei(raw, value, direction):
     if after_ref:
         tokens = after_ref[1].replace('|', ' ').split()
         # Account, tracking key and other references come first; the name follows them.
-        while tokens and (re.search(r'\d', tokens[0]) and len(tokens[0]) >= 5 or re.fullmatch(r'\d+', tokens[0])):
+        # A word with a digit glued to it (HERRAMIENTAS7) is part of the name, not a reference.
+        while tokens and (re.search(r'\d', tokens[0]) and len(tokens[0]) >= 5 and not re.fullmatch(r'[A-Z]{4,}\d{1,2}', tokens[0])
+                          or re.fullmatch(r'\d+', tokens[0])):
             tokens.pop(0)
         # A further long reference inside what is left ends the reference block.
         for index in range(len(tokens) - 1, -1, -1):
             if re.search(r'\d{8,}', tokens[index]) or re.fullmatch(r'(?=(?:\D*\d){3})[A-Z0-9]{10,}', tokens[index]):
                 tokens = tokens[index + 1:]
                 break
-        if tokens:
+        # A legal form on its own (SA DE CV) is not a name.
+        if tokens and not _LEGAL_FORM.fullmatch(' '.join(tokens)):
             return ' '.join(tokens), 'bbva-transfer-party', f'The {role} printed after the account and tracking references; the bank named first carries the transfer and is not taken as the party.'
         return None
     # Without the Ref. block, an account or tracking number of 15 or more digits still ends the references.
@@ -395,8 +399,12 @@ def _bbva_spei(raw, value, direction):
              # A payroll or invoice concept, its reference (holding a digit), then the name to the end of the line.
              or re.match(r'^\S+(?:\s\S+)?\s\d{7}(?:NOMINA|AGUINALDO|PTU|FINIQUITO|(?:PAGO|SALDO|ABONO|AB)(?:\s+A\s+CTA)?\s+(?:F|FA|FACT|FACTURA)|COT)\.?\s+'
                          r'\S*\d\S*\s+((?!(?:EQ|DISP|CAMION|SELLOS|CONCRETO)\s)[A-Z][A-Z]+(?:\s+[A-Z][A-Z]*){1,5})$', match[2]))
-    if short and not re.search(r'\d', short[1]) and party_shaped(short[1]):
-        return short[1], 'bbva-transfer-party', f'The {role} printed after the payroll concept and its date; the bank named first carries the transfer and is not taken as the party.'
+    name = short and short[1]
+    # An equipment word left from the concept (RETRO for retroexcavadora) opens the line before the name.
+    while name and name.split()[0] in _EQUIPMENT_WORDS and len(name.split()) > 1 and party_shaped(name.split(None, 1)[1]):
+        name = name.split(None, 1)[1]
+    if name and not re.search(r'\d', name) and party_shaped(name):
+        return name, 'bbva-transfer-party', f'The {role} printed after the payroll concept and its date; the bank named first carries the transfer and is not taken as the party.'
     return None
 
 

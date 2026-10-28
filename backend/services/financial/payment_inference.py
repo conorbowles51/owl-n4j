@@ -7,7 +7,7 @@ payment. Explicit investigator labels always take precedence in payment_labels.
 import re
 import unicodedata
 
-VERSION = 'description-labels/9'
+VERSION = 'description-labels/10'
 
 
 def normalized(value):

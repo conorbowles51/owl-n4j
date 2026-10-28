@@ -81,6 +81,16 @@ class PrintedPartyTests(unittest.TestCase):
         self.assertEqual(party('T17 SPEI ENVIADO BANORTE 0010125NOMINA 1A QNA ENE25 00001234567800000000 JULIO EJEMPLO PRUEBA')[0],
                          'JULIO EJEMPLO PRUEBA')
         self.assertEqual(party('T17 SPEI ENVIADO BANCOPPEL 0010125NOMINA 010125 LUIS EJEMPLO PRUEBA')[0], 'LUIS EJEMPLO PRUEBA')
+        # A word with a digit glued to it belongs to the name; a legal form alone is no name.
+        self.assertEqual(party('T17 SPEI ENVIADO SANTANDER 10101251040 Ref. 0000000007 014 00014180000000000007 '
+                               '002601002501010000000007 EJEMPLO7 31 SA DE CV')[0], 'EJEMPLO7 31 SA DE CV')
+        self.assertIsNone(party('T17 SPEI ENVIADO SANTANDER 10101251040 Ref. 0000000008 014 00014180000000000008 '
+                                '002601002501010000000008 SA DE CV'))
+        # A short key mixing letters and digits is still a reference, not the start of the name.
+        self.assertEqual(party('T17 SPEI ENVIADO SANTANDER 10101251040 Ref. 0000000009 014 00014180000000000009 '
+                               '1ABC2D3E JUAN EJEMPLO PRUEBA')[0], 'JUAN EJEMPLO PRUEBA')
+        # An equipment word left from the concept (RETRO for retroexcavadora) is not part of the name.
+        self.assertEqual(party('T17 SPEI ENVIADO BANAMEX 0010125PAGO F A101 RETRO EJEMPLO SA DE CV')[0], 'EJEMPLO SA DE CV')
         # Concept and name run together with nothing to tell them apart: no name.
         self.assertIsNone(party('T17 SPEI ENVIADO SCOTIABANK 0010125ANT PRUEBAS PEDRO EJEMPLO PRUEBA'))
         self.assertIsNone(party('T17 SPEI ENVIADO SANTANDER 0000004NOMINA 2A QNA ENE25 Ref. 0000000003 014'))
