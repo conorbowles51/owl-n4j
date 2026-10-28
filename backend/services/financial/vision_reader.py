@@ -1738,7 +1738,13 @@ def chain_page_reader(db, case_id):
 
 
 def switched_off(db, provider):
-    """Why ``provider`` is not sent page images now ("DeepSeek only" is ON and it is not DeepSeek), else ''."""
+    """Why ``provider`` is not sent page images now ("DeepSeek only" is ON and it is not DeepSeek), else ''.
+
+    Scope (fin-deepseek, 2026-10-28): the switch decides who reads NOW. While ON nothing is sent to another provider,
+    and no reading by it decides a new outcome of the chain or a new replacement of a saved statement. Evidence
+    already accepted before the switch (stored proved readings behind ready/imported statements, their printed
+    counts, offers a person already holds, the learning loop's record of proved readings) stays as it was: undoing it
+    would un-settle statements that are already settled (Rule 0, no regression)."""
     from services.ai_model_policy import deepseek_only
     if provider != 'deepseek' and deepseek_only(db, WORKLOAD):
         return f'{provider_name(provider)} failover is switched off'

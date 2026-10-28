@@ -134,6 +134,25 @@ class ImagePathTests(unittest.TestCase):
             context._call_deepseek_vision('p', [b'png'], schema={}, timeout=60, max_output_tokens=10)
         response.close.assert_called()
 
+    def test_deepseek_watchdog_closes_a_body_that_never_yields(self):
+        # A sized or compressed body may yield nothing until it is complete: the watchdog closes it at the deadline.
+        import threading
+        from services.llm_service import LLMExecutionContext
+        import services.llm_service as llm
+        closed = threading.Event()
+        response = mock.Mock()
+        response.close.side_effect = closed.set
+
+        def blocked(chunk_size):
+            closed.wait(5)
+            raise llm.requests.exceptions.ConnectionError('connection closed')
+            yield b''  # noqa: unreachable - a generator
+        response.iter_content.side_effect = blocked
+        context = LLMExecutionContext('deepseek', 'deepseek-flash', api_key='k')
+        with mock.patch('requests.post', return_value=response), \
+                self.assertRaises(llm.requests.exceptions.ReadTimeout):
+            context._call_deepseek_vision('p', [b'png'], schema={}, timeout=0.2, max_output_tokens=10)
+
     def test_page_reader_holds_the_statement_when_the_setting_is_text_only(self):
         from services.financial import vision_reader as vr
         chain = [{'provider': 'deepseek', 'model_id': 'deepseek-v4-pro'}]

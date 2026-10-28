@@ -271,14 +271,36 @@ class LLMExecutionContext:
             timeout=(10, min(timeout, self.DEEPSEEK_READ_GAP_SECONDS)),
             stream=True,
         )
+        # A watchdog closes the connection at the deadline whatever the body's framing (chunked, sized or
+        # close-delimited, compressed or not): a read blocked on it then fails and is reported as a timeout.
+        import threading
+        expired = threading.Event()
+
+        def expire():
+            expired.set()
+            response.close()
+        watchdog = threading.Timer(max(deadline - time.monotonic(), 0), expire)
+        watchdog.daemon = True
+        watchdog.start()
         try:
             response.raise_for_status()
             body = bytearray()
-            for chunk in response.iter_content(chunk_size=65536):
-                if time.monotonic() > deadline:
-                    raise requests.exceptions.ReadTimeout(f"DeepSeek did not finish answering within {timeout}s")
-                body.extend(chunk or b"")
+            try:
+                for chunk in response.iter_content(chunk_size=65536):
+                    if expired.is_set() or time.monotonic() > deadline:
+                        raise requests.exceptions.ReadTimeout(f"DeepSeek did not finish answering within {timeout}s")
+                    body.extend(chunk or b"")
+            except requests.exceptions.ReadTimeout:
+                raise
+            except Exception as error:
+                if expired.is_set():
+                    raise requests.exceptions.ReadTimeout(
+                        f"DeepSeek did not finish answering within {timeout}s") from error
+                raise
+            if expired.is_set():
+                raise requests.exceptions.ReadTimeout(f"DeepSeek did not finish answering within {timeout}s")
         finally:
+            watchdog.cancel()
             response.close()
         data = json.loads(bytes(body).decode("utf-8").strip() or "{}")
         # Usage first: an answer cut short is still billed, and the caller records what it cost.
