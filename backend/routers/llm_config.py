@@ -72,9 +72,16 @@ class SetLLMConfigRequest(BaseModel):
     model_id: str
 
 
+class WorkloadChainEntry(BaseModel):
+    provider: str
+    model_id: str
+
+
 class WorkloadModelConfig(BaseModel):
     provider: str
     model_id: str
+    # Statement page images: the models tried in order (ai_model_policy.CHAIN_WORKLOADS).
+    chain: list[WorkloadChainEntry] | None = None
 
 
 class AIModelPolicyResponse(BaseModel):
@@ -150,7 +157,7 @@ def update_ai_model_policy(
     try:
         record = save_policy(
             db,
-            configuration={key: value.model_dump() for key, value in request.configuration.items()},
+            configuration={key: value.model_dump(exclude_none=True) for key, value in request.configuration.items()},
             expected_revision=request.revision,
             updated_by=current_user.email,
         )

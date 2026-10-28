@@ -117,18 +117,35 @@ class ImagePathTests(unittest.TestCase):
 
     def test_page_reader_holds_the_statement_when_the_setting_is_text_only(self):
         from services.financial import vision_reader as vr
-        with mock.patch('services.ai_model_policy.get_workload_model', return_value=('deepseek', 'deepseek-v4-pro')), \
+        chain = [{'provider': 'deepseek', 'model_id': 'deepseek-v4-pro'}]
+        with mock.patch('services.ai_model_policy.get_workload_chain', return_value=chain), \
                 mock.patch('services.ai_provider_credentials.get_provider_api_key', return_value='k'), \
                 mock.patch.object(vr, 'render_pages') as render, \
                 self.assertLogs('services.ai_model_capabilities', 'WARNING'):
-            with self.assertRaisesRegex(cap.ModelCannotReadImages, cap.CANNOT_READ_IMAGES):
-                vr.openai_page_reader(object(), 'case')
+            readers = vr.chain_page_reader(object(), 'case')
+            with self.assertRaisesRegex(RuntimeError, cap.CANNOT_READ_IMAGES):
+                vr.deepseek_page_reader(object(), 'case')
+        self.assertIsNone(readers[0].read)
+        self.assertIn(cap.CANNOT_READ_IMAGES, readers[0].unavailable)
         render.assert_not_called()
-        with mock.patch('services.ai_model_policy.get_workload_model', return_value=('deepseek', 'deepseek-flash')), \
+        chain = [{'provider': 'deepseek', 'model_id': 'deepseek-flash'}, {'provider': 'openai', 'model_id': 'gpt-5.6-terra'}]
+        with mock.patch('services.ai_model_policy.get_workload_chain', return_value=chain), \
                 mock.patch('services.ai_provider_credentials.get_provider_api_key', return_value='k'):
-            model_id, read = vr.openai_page_reader(object(), 'case')
+            readers = vr.chain_page_reader(object(), 'case')
+            model_id, read = vr.deepseek_page_reader(object(), 'case')
+        self.assertEqual([(r.provider, r.model, r.unavailable) for r in readers],
+                         [('deepseek', 'deepseek-flash', ''), ('openai', 'gpt-5.6-terra', '')])
         self.assertEqual(model_id, 'deepseek-flash')
-        self.assertTrue(callable(read))
+        self.assertTrue(callable(read) and all(callable(r.read) for r in readers))
+
+    def test_unknown_model_is_refused_in_the_chain(self):
+        from services.financial import vision_reader as vr
+        chain = [{'provider': 'openai', 'model_id': 'gpt-9-new'}]
+        with mock.patch('services.ai_model_policy.get_workload_chain', return_value=chain), \
+                mock.patch('services.ai_provider_credentials.get_provider_api_key', return_value='k'), \
+                self.assertLogs('services.ai_model_capabilities', 'WARNING'):
+            readers = vr.chain_page_reader(object(), 'case')
+        self.assertIn(cap.CANNOT_READ_IMAGES, readers[0].unavailable)
 
     def test_held_statement_records_the_reason(self):
         """vision_reader turns a page reader that raises into 'unavailable' with the error as the message."""
@@ -159,13 +176,32 @@ class PolicyTests(unittest.TestCase):
     def test_text_only_model_stays_allowed_for_text_workloads(self):
         configuration = {key: dict(value) for key, value in DEFAULT_POLICY.items()}
         configuration['chat'] = {'provider': 'deepseek', 'model_id': 'deepseek-v4-pro'}
-        validate_policy(configuration, require_configured_provider=False)
+        with mock.patch('services.ai_model_policy.DEEPSEEK_API_KEY', 'k'):
+            validate_policy(configuration, require_configured_provider=False)
 
     def test_image_models_can_be_set(self):
         with mock.patch('services.ai_model_policy.DEEPSEEK_API_KEY', 'k'):
             validated = validate_policy(self.policy('deepseek', 'deepseek-flash'), require_configured_provider=False)
-        self.assertEqual(validated['financial_vision'], {'provider': 'deepseek', 'model_id': 'deepseek-flash'})
+        self.assertEqual(validated['financial_vision'], {'provider': 'deepseek', 'model_id': 'deepseek-flash',
+                                                         'chain': [{'provider': 'deepseek', 'model_id': 'deepseek-flash'}]})
         validate_policy(self.policy('openai', 'gpt-5.6-terra'), require_configured_provider=False)
+
+    def chain(self, *entries):
+        configuration = {key: dict(value) for key, value in DEFAULT_POLICY.items()}
+        chain = [{'provider': p, 'model_id': m} for p, m in entries]
+        configuration['financial_vision'] = dict(chain[0], chain=chain)
+        return configuration
+
+    def test_text_only_model_cannot_be_anywhere_in_the_chain(self):
+        with mock.patch('services.ai_model_policy.DEEPSEEK_API_KEY', 'k'), \
+                self.assertRaisesRegex(ValueError, 'cannot read page images'):
+            validate_policy(self.chain(('openai', 'gpt-5.6-terra'), ('deepseek', 'deepseek-v4-pro')),
+                            require_configured_provider=False)
+        with mock.patch('services.ai_model_policy.DEEPSEEK_API_KEY', 'k'):
+            validated = validate_policy(self.chain(('deepseek', 'deepseek-flash'), ('openai', 'gpt-5.6-terra')),
+                                        require_configured_provider=False)
+        self.assertEqual([e['provider'] for e in validated['financial_vision']['chain']], ['deepseek', 'openai'])
+        self.assertEqual(validated['financial_vision']['provider'], 'deepseek')
 
     def test_unknown_or_unmeasured_model_is_refused(self):
         with self.assertRaisesRegex(ValueError, 'Unknown model'):

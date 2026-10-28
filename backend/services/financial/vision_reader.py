@@ -3,8 +3,10 @@
 A statement the rule readers could not prove stays held. When its file is
 prepared again through the normal batch path (a recovery re-read or any new
 preparation), this reader looks at the images of that statement's pages with
-the AI workload ``financial_vision`` (OpenAI's vision model by default), page
-by page, and asks for structured JSON only: the account sections printed on
+the AI workload ``financial_vision``, a chain of models tried in order
+(DeepSeek's image model first, OpenAI's vision model the failsafe: Neil,
+2026-10-28), all given the same instructions (PROMPT, PROMPT_VERSION), and asks
+for structured JSON only: the account sections printed on
 each page, their header (bank, holder, account, currency, period), opening and
 closing balances, printed totals and counts, and every payment row with its
 printed running balance.
@@ -30,6 +32,13 @@ batch's normal assessment and admission then decide again, and the existing
 automatic save saves it only when that finds nothing at all to check. A reading
 that does not prove is not applied; the statement stays held exactly as it was,
 with the reason recorded beside it.
+
+The chain: the first reader whose reading proves is used. A reader that fails
+(error, timeout, an answer that is not JSON) or whose reading does not prove
+hands over to the next, and the reason is recorded; readings are never combined
+and an unproved one is never accepted. Every outcome records each reader's
+provider, model, instructions version, seconds, cost and why it did not settle
+it; when none proves, the statement stays held with every reason.
 
 Never: a statement with any investigator work (draft or saved review), a saved
 or set-aside statement, a ready one, a document review, a fund statement.
@@ -229,7 +238,9 @@ SYSTEM_EMAIL = 'vision-reader@system.local'
 ROW_REASON = 'Read from page image, page {page}.'
 REPLACED_REASON = ('Set aside: the reading of the page images of this period reconciles exactly and replaces '
                    'the text reading, which is retained.')
-CLAIM_SECONDS = 20 * 60
+# A claim outlives the longest chain reading (DeepSeek's read allowance with its retries, then OpenAI's), so no
+# other worker takes up a statement still being read; a claim left by a stopped worker expires after it.
+CLAIM_SECONDS = 90 * 60
 # A statement whose request fails this many times (for the same reading) is not requested again.
 MAX_FAILURES = 3
 # Reserved before each request: an answer cut short, refused or timed out is still billed.
@@ -356,23 +367,77 @@ DOCUMENT_SCHEMA = {'type': 'object', 'additionalProperties': False, 'required': 
                                                 'is_statement_page': {'type': 'boolean'}}}},
                        'accounts': {'type': 'array', 'items': _ACCOUNT}}}
 
-PROMPT = """You are transcribing a bank account statement for a forensic ledger. The images are its pages; each is preceded by its label "Page N". Transcribe exactly what is printed. Never calculate, correct, complete or adjust any number, and never make figures add up. Return JSON only, in the given schema.
+# The one set of instructions for reading statement page images, sent to every provider (Neil, 2026-10-28: "when
+# sending anything to openai the same advanced instructions you send to deepseek"). OpenAI receives the schema as its
+# enforced response format; DeepSeek, which enforces none, receives it after these instructions (llm_service).
+# Benchmarked as headless/ds_prompt_v3.txt (20 statements, image-checked answer key). No bank is a rule here: names
+# in quotation marks are examples only. Change the text -> change PROMPT_VERSION (stored on every reading).
+PROMPT_VERSION = 'statement-pages-v3'
+PROMPT = """You are a forensic transcriber. The images are the pages of a bank, credit-union or card account statement. Your transcription goes into a forensic ledger used as evidence, and it is checked afterwards by strict arithmetic: opening balance plus every movement must equal the closing balance to the cent, every printed running balance must agree, and every printed total and count must match. One missed, doubled, mis-dated, mis-signed or mis-read line fails the whole statement. Accuracy matters far more than speed: work slowly, line by line.
 
-pages: one entry per labelled page: page (N from its label), printed_page_number / printed_page_total (the numbering printed on it, e.g. "PAGINA 2 / 7", "Page 2 of 7", "2 de 7"; null when not printed), is_statement_page (false for a page with no account information: blank, legal notes, advertising).
+These instructions apply to statements from any bank, in any language and layout. The examples in quotation marks show common wording; they are illustrations, not the only forms you will meet.
 
-accounts: one entry per account or sub-account whose statement is printed (a product, currency sub-account or share with its own balances is its own entry), in printed order:
-- section_name: the printed product, sub-account or share heading; institution; holder (account holder name); account_number (the account number as printed, including masks; not a CLABE, client or contract number when an account number is printed); currency (ISO code only when the statement prints the currency or its name; never guess from a "$" sign) and currency_as_printed (the literal text).
-- period_start, period_end as YYYY-MM-DD: the statement period printed for this account. A card statement that prints only its statement date (billing-cycle closing date) and no period: period_end is that date and period_start is empty. days_in_period: the number of days in the period or billing cycle as printed (e.g. "Days in Billing Cycle 31"); null when not printed.
-- opening_balance (balance at the start of the period, e.g. "Saldo anterior", "Saldo inicial", "Previous balance") and closing_balance (e.g. "Saldo final", "Saldo al corte", "New balance"), with the page each is printed on (opening_balance_page, closing_balance_page). Negative only when printed negative.
-- total_credits / total_debits: printed totals of deposits/credits and of withdrawals/charges for the period; count_credits / count_debits: printed numbers of them. null when not printed.
-- total_fees / total_interest: the printed totals of fees and of interest charged for the period (e.g. "TOTAL FEES FOR THIS PERIOD", "TOTAL INTEREST FOR THIS PERIOD"); null when not printed.
-- rows: every movement line of this account in printed order, across all its pages: page (the label N of the page it is printed on); date as YYYY-MM-DD (the operation date; take the year from the statement period); description as printed (one line is enough); amount positive; direction credit (money in, deposit, abono) or debit (money out, charge, cargo, retiro); balance_after = the running balance printed on that line, or null; charge_kind "fee" for a fee charged, "interest" for an interest charge, else empty. Never list opening or closing balance lines, totals, subtotals or summary lines as rows. Set unreadable true for a row whose date or amount you cannot read with certainty.
-- no_transactions_printed: true only when the statement states there were no movements for this account.
-All amounts use a dot as decimal separator, no thousands separators, a leading "-" only when printed negative. Empty string or null for anything not printed."""
+ABSOLUTE RULES
+1. Transcribe only what is printed. Never calculate, infer, correct, round or complete a number, and never invent or drop a line to make figures add up. If the printed figures do not reconcile after careful re-reading, transcribe them as printed: the checker decides.
+2. Every movement line printed for an account appears in rows exactly once.
+3. If you cannot read a row's date or amount with certainty, still include the row with your best reading and set unreadable: true.
+4. Return one JSON object only, no markdown, matching the given JSON Schema.
 
-STRIPS_NOTE = """
+HOW THE IMAGES ARE GIVEN
+- Each image is preceded by a label "Page N" or "Page N, part k of K". N is the page's position in the evidence file. It is NOT the page number printed on the statement, and it may be a large number such as 39 even for the first page of this statement. Wherever the schema asks for "page", give this label number N, never the printed page number.
+- The pages may not be given in the statement's own order. Use the printed page numbers ("Page 2 of 6", "2 de 6", "PAGINA 2 / 6") to know the reading order.
+- When a page is cut into horizontal strips (part 1 of K is the top), neighbouring strips OVERLAP: the last lines of one strip are repeated at the top of the next. A line seen in two strips is one line. Judge sameness by date, description, amount AND running balance together.
 
-Each page is given as {count} consecutive horizontal strips, top to bottom (labelled "Page N, part k of {count}"); neighbouring strips overlap slightly. Read the strips of a page as one page and transcribe every printed line exactly once (a line visible in two strips is one line)."""
+WORK IN THIS ORDER (internally; output only the JSON)
+Step 1, survey. For each image note its label N, the printed page number and total, which accounts or sub-accounts it shows, and where each movement table starts and ends. Tables often continue across pages.
+Step 2, header facts for each account (rules below).
+Step 3, read every movement table line by line in the statement's reading order (printed page order, top to bottom). For each line with an amount in a movement column, record its date, description, amount, direction, running balance and page label.
+Step 4, verify with the printed running balances. When the statement prints a running balance on its lines, walk your rows in order: each balance should equal the previous balance plus a credit or minus a debit. Where it does not, you have probably skipped a line, taken a line twice (often across a strip overlap or page break), put an amount in the wrong direction, or misread a digit. Go back to that exact spot in the image and re-read it. Fix only what the image shows; never change a number to make it fit. Two consecutive rows with the same running balance after a non-zero amount are almost always one line read twice.
+Step 5, completeness. Re-check every strip once more: every movement line appears once, and no line was taken from a summary box, a totals line or a balance line.
+
+PAGES (pages[])
+One entry per image label: page = the label number N; printed_page_number / printed_page_total = exactly what is printed on that page, digit by digit (null when not printed or not certain); is_statement_page = false only for a page with no account information at all (blank, legal terms, advertising, cheque images without balances).
+
+ACCOUNTS (accounts[]): one entry per account or sub-account that has its own opening and closing balance, in printed order.
+- section_name: that section's printed heading, verbatim, including any ID printed with it (e.g. "ID 0040 FREE CHECKING", "CUENTA SANTANDER PYME").
+- institution: the bank's name as printed.
+- holder: the account holder name(s) exactly as printed in the name/address block or "Account holder" line. When several names are printed as joint holders, give all of them, one per line, separated by a newline, in printed order. Read each letter carefully: these are real people's or companies' names, so check easily confused letters (E/B/F, O/D/0, I/l/1, rn/m) against the rest of the name. Never use the bank's name, a street address or a column heading.
+- account_number: the identifier of THIS section's account, exactly as printed, keeping masks such as ****1234.
+  * When one statement covers several sub-accounts (shares, pockets, currency sub-accounts) under one customer/member number and each section prints its own short ID, give that section's own ID (e.g. "0000", "0040"), not the shared member number. When sections print no ID of their own, give the account number printed for the statement.
+  * Prefer the number labelled as the account number ("Account Number", "No. de Cuenta", "Número de cuenta", "Cuenta"). Use an interbank/IBAN/CLABE-type number only when no account number is printed.
+  * Never use a statement, page, document, routing/sort-code, branch, client, contract or card number of another product, a phone number, or a Bates/production stamp.
+- currency: ISO code only when the statement prints the currency or its name (e.g. "M.N.", "Moneda Nacional", "PESOS" = MXN; "USD", "DÓLARES" = USD; "EUR"). A bare "$" or other symbol alone is not a currency: leave it empty. currency_as_printed: the literal text you used, else empty.
+- period_start / period_end (YYYY-MM-DD): the statement period printed for this account. US statements write month/day/year; most others day/month/year: decide from the statement's language and from dates that only make sense one way (a 13 or higher must be a day). A statement that prints only a closing/statement date: period_end = that date, period_start empty. days_in_period: printed number of days, else null.
+- opening_balance / closing_balance: the balances printed at the start and at the end of the period (e.g. "Previous Balance", "Beginning Balance", "Saldo Anterior", "Saldo Inicial"; "Ending Balance", "New Balance", "Saldo Final", "Saldo al Corte"), with the page label each is printed on. Negative only when printed negative (minus sign, parentheses, "DR"/"OD", or as the statement marks it).
+- total_credits / total_debits and count_credits / count_debits: only when the statement prints a period total or count of money in / money out for this account; else null. Never add them up yourself.
+- total_fees / total_interest: only when the statement prints a single line that is explicitly the period total of fees charged, or of interest charged, to the customer (e.g. "Total Fees for this Period", "Total Interest Charged for this Period"). Use null for anything else: commission or tax summaries that may break amounts down differently, interest earned or paid to the customer, year-to-date figures, rates, and any figure whose label you are not certain of.
+- no_transactions_printed: true only when the statement explicitly says there were no movements for this account.
+
+ROWS (rows[]): every movement line of the account, in the statement's reading order, across all its pages.
+- page: the label number N of the image the line is printed on.
+- date (YYYY-MM-DD): the date in the table's own date column, on the same printed line as the amount: the date the bank lists the line under.
+  * If the table has two date columns side by side (e.g. "Fecha Oper." / "Fecha Liq.", "Trans. date" / "Post date"), use the leftmost one.
+  * Other dates on or under the line (a card purchase date, a cheque date, a date inside the description or on a detail line, e.g. "08/31 0 0000089465 CASH APP") belong to the description. They are not the row's date.
+  * If a line has no date of its own because the statement prints the date only once for a group of lines, use the last date printed above it in the date column.
+  * Read the date on THE SAME printed line as the amount. Never take it from the line above or below. Dates in a table normally never go backwards; if yours do, re-read that spot.
+  * Take the year from the statement period; for a period spanning two years, give each date the year of its month within the period.
+- description: the first printed line of the entry, as printed. Detail lines under it belong to the same entry and are never separate rows.
+- amount: exactly as printed in the movement column, digits with a dot decimal separator, no thousands separators, no currency symbol. Keep a minus sign when the statement prints one; never add one.
+- direction: from where and how the amount is printed, never from arithmetic.
+  * Separate money-in and money-out columns: the column the number sits under decides (money in = credit; money out = debit). Line each number up with its column heading.
+  * A single amount column: a minus sign, parentheses, "DR" or the statement's own debit marker = debit. Otherwise decide from the line's meaning: deposit, transfer in, refund, interest or dividend paid to the customer = credit; withdrawal, purchase, cheque, fee, transfer out, payment = debit.
+- balance_after: the running balance printed on that line, exactly as printed, else null. If two balance columns are printed, use the leftmost one.
+- charge_kind: "fee" for a fee or commission charged to the customer, "interest" for interest charged to the customer, otherwise "". Interest earned is "".
+- unreadable: true only when you cannot read the date or amount with certainty.
+NEVER list as rows: opening, previous, closing or ending balance lines, "balance forward" lines, subtotals, totals, daily-balance tables, summary boxes, year-to-date figures, rate lines, or cheque-image captions.
+
+FORMAT
+All amounts use a dot as the decimal separator, no thousands separators, and a minus sign only where printed. Use "" or null for anything not printed. Output exactly one JSON object."""
+
+# After the instructions: how many pages, and in how many strips each is given (strips: render_pages).
+PAGES_NOTE = """
+
+This statement has {pages} page(s), each given as {count} overlapping strip(s)."""
 
 
 def document_pages(document, sent_pages):
@@ -1431,8 +1496,14 @@ def dates_request(proposal, readings):
     return request
 
 
-def build_request(proposal, reading):
-    """The statement review (as the batch save takes it) recording a proved reading."""
+def row_reason(page, by=None):
+    """A row's provenance: the page it is read from and, in a chain, which provider read it."""
+    reason = ROW_REASON.format(page=page)
+    return reason[:-1] + f', by {by}.' if by else reason
+
+
+def build_request(proposal, reading, by=None):
+    """The statement review (as the batch save takes it) recording a proved reading (``by``: the provider)."""
     from services.financial.import_batches import initial_request
     from services.financial.manual_row_placement import allowed_source_positions
     request = initial_request(proposal)
@@ -1464,7 +1535,7 @@ def build_request(proposal, reading):
         if len(existing) > 1:
             raise NotProved('The text reading has more than one %s for this period.' % role)
         derived = role == 'opening balance' and reading.get('opening_previous_end')
-        reason = OPENING_REASON.format(previous=derived) if derived else ROW_REASON.format(page=page)
+        reason = OPENING_REASON.format(previous=derived) if derived else row_reason(page, by)
         if existing:
             existing[0]['balance_minor'] = str(value)
             if derived:
@@ -1483,7 +1554,7 @@ def build_request(proposal, reading):
                      date=row['date'], date_unprinted=False, date_values={}, description=row['description'],
                      counterparty='', amount_minor=str(row['amount_minor']), direction=row['direction'],
                      balance_minor=str(row['balance_minor']) if row['balance_minor'] is not None else None,
-                     reason=ROW_REASON.format(page=row['page']) + (
+                     reason=row_reason(row['page'], by) + (
                          ' In or out from the printed running balance.' if row.get('direction_from_balance') else ''))
         allowed = sorted(allowed_source_positions(originals, row['page'], pages))
         anchor = next((a for a in allowed if a[0] == 'after'), None) or (allowed[0] if allowed else None)
@@ -1532,26 +1603,130 @@ def render_pages(path, page_numbers, width=IMAGE_WIDTH, strips=None):
     return pages
 
 
-def openai_page_reader(db, case_id):
-    """(model_id, read(png) -> (json, usage)) for the workload's model; raises when unavailable (fail closed)."""
-    from services.ai_model_policy import get_workload_model
+# Each provider's request settings (in code, never .env). DeepSeek (benchmarked 2026-10-28): max thinking, 6 strips a
+# page (it gives each image a fixed token budget, so narrower strips keep the print legible), a long read (a long
+# statement takes up to ~25 minutes), 2 retries of a dropped connection or a server error. OpenAI: as before.
+PROVIDER_NAMES = {'deepseek': 'DeepSeek', 'openai': 'OpenAI'}
+READER_SETTINGS = {
+    'deepseek': dict(strips=6, timeout=1500, max_output_tokens=DEEPSEEK_RESERVE_OUTPUT_TOKENS, retries=2),
+    'openai': dict(strips=STRIPS, timeout=PAGE_TIMEOUT_SECONDS, max_output_tokens=16000, retries=0),
+}
+RETRY_PAUSE_SECONDS = 5
+
+
+class PageReader(SimpleNamespace):
+    """One reader of the chain: provider, model, read(pages) -> (document json, usage), strips, max_output_tokens;
+    ``unavailable`` (why) instead of ``read`` when it cannot be used now (no key, a model that cannot read images)."""
+
+
+def provider_name(provider):
+    return PROVIDER_NAMES.get(provider or '', provider or '')
+
+
+def _retryable(error):
+    """A dropped connection or a server-side error (5xx, 429): sent again. A read timeout is not (it took the whole
+    allowance once already); the next reader of the chain takes over instead."""
+    import requests
+    if isinstance(error, requests.exceptions.ReadTimeout):
+        return False
+    if isinstance(error, (requests.exceptions.ConnectionError, requests.exceptions.ChunkedEncodingError)):
+        return True
+    response = getattr(error, 'response', None)
+    status = getattr(response, 'status_code', None)
+    return isinstance(error, requests.exceptions.HTTPError) and status is not None and (status >= 500 or status == 429)
+
+
+def provider_page_reader(db, case_id, provider, model_id):
+    """PageReader for ``provider``/``model_id`` with the provider's stored key (ai_provider_credentials). Fails closed:
+    no key, or a model that does not take images (ai_model_capabilities), gives an unavailable reader (WARNING)."""
     from services.ai_provider_credentials import get_provider_api_key
-    from services.ai_model_capabilities import require_images
-    provider, model_id = get_workload_model(db, WORKLOAD)
-    if provider not in ('openai', 'deepseek'):
-        raise RuntimeError(f'Page-image reading is not available for {provider}')
-    api_key = get_provider_api_key(db, provider)
-    if not api_key:
-        raise RuntimeError('No %s key is configured' % {'openai': 'OpenAI', 'deepseek': 'DeepSeek'}[provider])
-    # Fail closed before any page is rendered or sent: the statement stays held with this reason
-    # ('unavailable', ai_model_capabilities.CANNOT_READ_IMAGES) and a WARNING goes to the journal.
-    require_images(provider, model_id, api_key=api_key, context=f'case {str(case_id)[:8]}')
-    return model_id, document_request(model_id, api_key, provider)
+    from services.ai_model_capabilities import ModelCannotReadImages, require_images
+    settings = READER_SETTINGS.get(provider)
+    reader = PageReader(provider=provider, model=model_id, read=None, unavailable='',
+                        strips=(settings or {}).get('strips', STRIPS),
+                        max_output_tokens=(settings or {}).get('max_output_tokens', RESERVE_OUTPUT_TOKENS))
+    if settings is None:
+        reader.unavailable = f'page-image reading is not available for {provider}'
+    else:
+        try:
+            api_key = get_provider_api_key(db, provider)
+        except Exception as error:  # noqa: BLE001 - no key: not used
+            api_key, reader.unavailable = None, f'its key could not be read ({type(error).__name__})'
+        if not api_key and not reader.unavailable:
+            reader.unavailable = f'no {provider_name(provider)} key is connected'
+        if api_key:
+            try:
+                # Before any page is rendered or sent: never to a model that does not take images.
+                require_images(provider, model_id, api_key=api_key, context=f'case {str(case_id)[:8]}')
+                reader.read = document_request(model_id, api_key, provider)
+            except ModelCannotReadImages as error:
+                reader.unavailable = str(error)
+    if reader.unavailable:
+        log.warning('Page-image reader %s %s not used for case %s: %s', provider, model_id, str(case_id)[:8],
+                    reader.unavailable)
+    return reader
+
+
+def chain_page_reader(db, case_id):
+    """The readers of the workload's chain, in order (ai_model_policy.get_workload_chain): DeepSeek first, OpenAI the
+    failsafe by default. A reader that cannot be used now is kept with its reason; the chain starts at the next."""
+    from services.ai_model_policy import get_workload_chain
+    return [provider_page_reader(db, case_id, entry['provider'], entry['model_id'])
+            for entry in get_workload_chain(db, WORKLOAD)]
+
+
+def _single(db, case_id, provider, model_id):
+    reader = provider_page_reader(db, case_id, provider, model_id)
+    if reader.unavailable:
+        raise RuntimeError(reader.unavailable)
+    return reader.model, reader.read
+
+
+def openai_page_reader(db, case_id, model_id=None):
+    """(model_id, read) for OpenAI alone: the chain's OpenAI model unless given; raises when unavailable."""
+    from services.ai_model_policy import get_workload_chain
+    model_id = model_id or next((e['model_id'] for e in get_workload_chain(db, WORKLOAD) if e['provider'] == 'openai'),
+                                None) or get_openai_vision_default()
+    return _single(db, case_id, 'openai', model_id)
+
+
+def deepseek_page_reader(db, case_id, model_id=None):
+    """(model_id, read) for DeepSeek alone: the chain's DeepSeek model unless given; raises when unavailable."""
+    from services.ai_model_policy import get_workload_chain
+    model_id = model_id or next((e['model_id'] for e in get_workload_chain(db, WORKLOAD) if e['provider'] == 'deepseek'),
+                                None) or 'deepseek-flash'
+    return _single(db, case_id, 'deepseek', model_id)
+
+
+def get_openai_vision_default():
+    from services.ai_model_policy import FINANCIAL_VISION_OPENAI
+    return FINANCIAL_VISION_OPENAI['model_id']
+
+
+def readers_of(page_reader, db, case_id):
+    """[PageReader] from a page reader: the chain's list, or a single (model_id, read) (tests, benchmarks), whose
+    provider is not named (its outcomes keep the single-reader wording)."""
+    found = page_reader(db, case_id)
+    if isinstance(found, tuple):
+        model_id, read = found
+        return [PageReader(provider=None, model=model_id, read=read, unavailable='', strips=None,
+                           max_output_tokens=RESERVE_OUTPUT_TOKENS)]
+    return list(found)
+
+
+def chain_id(readers):
+    """What a stored outcome was read by: one unnamed reader keeps its model id (as before the chain); a chain is its
+    providers and models in order with the instructions' version, so a new chain or prompt reads again."""
+    if len(readers) == 1 and readers[0].provider is None:
+        return readers[0].model
+    return ' > '.join(f'{r.provider}/{r.model}' for r in readers) + f' ({PROMPT_VERSION})'
 
 
 def document_request(model_id, api_key, provider='openai'):
-    """read([(page, [png, ...])]) -> (document json, usage): one request for the statement's pages."""
+    """read([(page, [png, ...])]) -> (document json, usage): one request for the statement's pages, with the shared
+    instructions (PROMPT); each provider's own settings (READER_SETTINGS). Raises on any failure."""
     from services.llm_service import LLMExecutionContext
+    settings = READER_SETTINGS.get(provider) or READER_SETTINGS['openai']
 
     def read(pages):
         strips = max(len(images) for _, images in pages)
@@ -1560,13 +1735,54 @@ def document_request(model_id, api_key, provider='openai'):
             for index, image in enumerate(parts):
                 labels.append(f'Page {number}' if len(parts) == 1 else f'Page {number}, part {index + 1} of {len(parts)}')
                 images.append(image)
-        prompt = PROMPT + (STRIPS_NOTE.format(count=strips) if strips > 1 else '')
-        context = LLMExecutionContext(provider, model_id, api_key=api_key)
-        text = context.call_vision_json(prompt, images, image_labels=labels, schema=DOCUMENT_SCHEMA,
-                                        schema_name='statement_document', timeout=PAGE_TIMEOUT_SECONDS,
-                                        max_output_tokens=16000)
-        return json.loads(text), dict(context.last_usage or {})
+        prompt = PROMPT + PAGES_NOTE.format(pages=len(pages), count=strips)
+        for attempt in range(settings['retries'] + 1):
+            context = LLMExecutionContext(provider, model_id, api_key=api_key)
+            try:
+                text = context.call_vision_json(prompt, images, image_labels=labels, schema=DOCUMENT_SCHEMA,
+                                                schema_name='statement_document', timeout=settings['timeout'],
+                                                max_output_tokens=settings['max_output_tokens'])
+                break
+            except Exception as error:  # noqa: BLE001 - retried only when the connection or server failed
+                if attempt >= settings['retries'] or not _retryable(error):
+                    raise
+                log.warning('Page-image request to %s failed (%s: %s); trying again (%s of %s)', provider,
+                            type(error).__name__, str(error)[:200], attempt + 1, settings['retries'])
+                time.sleep(RETRY_PAUSE_SECONDS * (attempt + 1))
+        try:
+            document = json.loads(text)
+        except ValueError as error:
+            raise UnreadableAnswer('the answer was not valid JSON') from error
+        if not isinstance(document, dict):
+            raise UnreadableAnswer('the answer was not a JSON object')
+        return document, dict(context.last_usage or {})
     return read
+
+
+class UnreadableAnswer(ValueError):
+    """The provider answered, but not with the JSON object asked for."""
+
+
+def failure_words(error):
+    """Why a request failed, in plain words (stored beside the outcome; never the key or the images)."""
+    import requests
+    if isinstance(error, UnreadableAnswer):
+        return str(error)
+    if isinstance(error, requests.exceptions.Timeout) or 'timed out' in str(error).lower():
+        return 'it did not answer in time'
+    if isinstance(error, (requests.exceptions.ConnectionError, requests.exceptions.ChunkedEncodingError)):
+        return 'the connection to it failed'
+    status = getattr(getattr(error, 'response', None), 'status_code', None) or getattr(error, 'status_code', None)
+    text = str(error)
+    if status == 429 or 'insufficient_quota' in text or 'no credits' in text.lower():
+        return 'it refused the request (rate limit, or no credit left on the account)'
+    if 'Connection' in type(error).__name__:
+        return 'the connection to it failed'
+    if status:
+        return f'it answered with an error (HTTP {status})'
+    if 'incomplete' in text or 'declined' in text or 'empty' in text:
+        return text[:200].rstrip('.')
+    return f'the request failed ({type(error).__name__})'
 
 
 # ---------------------------------------------------------------------------
@@ -1642,7 +1858,7 @@ def rejudgeable(record, revision=None, model_id=None, pages=None):
     status = record.get('status')
     if status != 'not_proved' and not (status == 'reading' and record.get('rejudging') and not _being_read(record)):
         return False
-    if revision is not None and (record.get('revision') != revision or record.get('model') != model_id
+    if revision is not None and (record.get('revision') != revision or _reader_of(record) != model_id
                                  or list(record.get('pages') or []) != list(pages or [])):
         return False
     return True
@@ -1697,7 +1913,7 @@ def _note(item, record):
     """The outcome beside the held statement, shown in the queue (summary key survives readiness refreshes)."""
     offer = record.get('offer') if isinstance(record.get('offer'), dict) else None
     item.summary = {**(item.summary or {}), 'vision_reading': dict(
-        {k: record.get(k) for k in ('status', 'reason', 'message', 'pages', 'cost_usd', 'model', 'at')},
+        {k: record.get(k) for k in ('status', 'reason', 'message', 'pages', 'cost_usd', 'model', 'provider', 'at')},
         line=outcome_line(record), **({'offer': {k: offer.get(k) for k in ('id', 'mine', 'offered')}} if offer else {}))}
 
 
@@ -1756,8 +1972,9 @@ def outcome_line(record):
 
 
 def _history_entry(record):
-    entry = {k: record.get(k) for k in ('at', 'status', 'reason', 'message', 'model', 'cost_usd', 'pages', 'revision',
-                                        'proof', 'rejudged', 'basis', 'account_basis') if record.get(k) not in (None, '', [])}
+    entry = {k: record.get(k) for k in ('at', 'status', 'reason', 'message', 'model', 'provider', 'prompt_version',
+                                        'cost_usd', 'seconds', 'pages', 'revision', 'proof', 'rejudged', 'basis',
+                                        'account_basis', 'failover') if record.get(k) not in (None, '', [])}
     entry['line'] = outcome_line(record)
     return entry
 
@@ -1828,12 +2045,138 @@ def _decided(factory, item_id, record):
         log.exception('Recording a page-image reading outcome failed')
 
 
-def reserve_usd(model_id, images):
+def reserve_usd(model_id, images, max_output_tokens=RESERVE_OUTPUT_TOKENS):
     """The most a request with these images can cost (counted before it is sent)."""
     count = sum(len(strips) for _, strips in images)
-    # A DeepSeek page-image request may answer up to llm_service.DEEPSEEK_VISION_MAX_TOKENS (its thinking counts).
-    output = DEEPSEEK_RESERVE_OUTPUT_TOKENS if str(model_id).startswith('deepseek') else RESERVE_OUTPUT_TOKENS
-    return cost_usd(model_id, dict(prompt_tokens=count * RESERVE_TOKENS_PER_IMAGE + 4000, completion_tokens=output))
+    return cost_usd(model_id, dict(prompt_tokens=count * RESERVE_TOKENS_PER_IMAGE + 4000,
+                                   completion_tokens=max_output_tokens))
+
+
+# ---------------------------------------------------------------------------
+# The reader chain: each reader's attempt, and the outcome they decide
+# ---------------------------------------------------------------------------
+
+def _reader_of(record):
+    """What a stored outcome was read by (chain_id); outcomes stored before the chain name their model."""
+    return (record or {}).get('reader') or (record or {}).get('model')
+
+
+def _attempt_key(reader):
+    return (reader.provider, reader.model, getattr(reader, 'prompt_version', None) or PROMPT_VERSION)
+
+
+def _attempt_raw(record, attempt):
+    if attempt.get('raw') is not None:
+        return attempt['raw']
+    return record.get('raw') if attempt.get('raw_in_record') else None
+
+
+def stored_attempts(record):
+    """[(PageReader, page reading)] of a stored outcome, in the order they were read (no request needed)."""
+    found = []
+    for attempt in record.get('attempts') or []:
+        raw = _attempt_raw(record, attempt)
+        if isinstance(raw, dict):
+            found.append((PageReader(provider=attempt.get('provider'), model=attempt.get('model'), read=None,
+                                     unavailable='', strips=None, max_output_tokens=RESERVE_OUTPUT_TOKENS,
+                                     prompt_version=attempt.get('prompt_version')), raw))
+    if not found and isinstance(record.get('raw'), dict):
+        found.append((PageReader(provider=record.get('provider'), model=record.get('model'), read=None, unavailable='',
+                                 strips=None, max_output_tokens=RESERVE_OUTPUT_TOKENS,
+                                 prompt_version=record.get('prompt_version')), record['raw']))
+    return found
+
+
+def _reusable(stored, revision, pages):
+    """{attempt key: page reading} of the stored outcome's readings of this same reading of the file and pages."""
+    if not stored or stored.get('version') != VERSION or stored.get('revision') != revision \
+            or list(stored.get('pages') or []) != list(pages or []) or stored.get('status') == 'reading':
+        return {}
+    return {(a.get('provider'), a.get('model'), a.get('prompt_version')): _attempt_raw(stored, a)
+            for a in stored.get('attempts') or [] if a.get('provider') and isinstance(_attempt_raw(stored, a), dict)}
+
+
+def _reused_cost(stored, reader):
+    key = _attempt_key(reader)
+    return next((a.get('cost_usd') for a in (stored or {}).get('attempts') or []
+                 if (a.get('provider'), a.get('model'), a.get('prompt_version')) == key), None)
+
+
+def _clause(message):
+    message = str(message or '').strip().rstrip('.')
+    return message[:1].lower() + message[1:] if message[:2] != message[:2].upper() else message
+
+
+def _attempt_words(attempt):
+    name = provider_name(attempt.get('provider'))
+    status, message = attempt.get('status'), _clause(attempt.get('message'))
+    if status == 'not_proved':
+        return f'{name} could not prove it: {message}'
+    if status == 'failed':
+        return f'{name} could not read it: {message}'
+    if status == 'stale':
+        return f'{name} read it while the statement changed'
+    return f'{name} was not used: {message}'
+
+
+def _outcome(record, attempts, accepted, spent_now, seconds, page_costs, again):
+    """The outcome record of the chain's attempts: what each reader did (provider, model, instructions version,
+    seconds, cost, why it did not settle it), the reading that decided it, and the outcome in plain words.
+    An outcome of one unnamed reader (tests, benchmarks) keeps the wording it had before the chain."""
+    record = dict(record)
+    named = any(a.get('provider') for a in attempts)
+    with_raw = [a for a in attempts if a.get('raw') is not None]
+    main = accepted or (with_raw[0] if with_raw else None)
+    if main is not None:
+        record['raw'] = main['raw']
+    if again:
+        record['seconds'] = 0
+    else:
+        costs = sorted(page_costs.values(), key=lambda c: c['page'])
+        reused = sum(a.get('cost_usd') or 0 for a in attempts if a.get('reused'))
+        record.update(page_costs=costs, cost_usd=round(sum(c['cost_usd'] for c in costs) + reused, 6),
+                      spent_usd=round(spent_now, 6), seconds=round(seconds, 1))
+    if named:
+        shown = main or (attempts[-1] if attempts else {})
+        record.update(provider=shown.get('provider'), model=shown.get('model'), prompt_version=shown.get('prompt_version'),
+                      attempts=[dict({k: v for k, v in a.items() if k != 'raw'},
+                                     **({'raw_in_record': True} if a is main else
+                                        {'raw': a['raw']} if a.get('raw') is not None else {}))
+                                for a in attempts])
+    if record.get('status') == 'stale':
+        return record
+    before = [a for a in attempts if a is not accepted and a.get('status') != 'proved']
+    details = ' '.join(_attempt_words(a) + '.' for a in before) if named else ''
+    if accepted is not None:
+        by = f' by {provider_name(accepted.get("provider"))}' if named else ''
+        if named and before:
+            record['failover'] = [{k: a.get(k) for k in ('provider', 'model', 'status', 'message')} for a in before]
+            by += ' (' + '; '.join(_attempt_words(a) for a in before) + ')'
+        record.update(status='proved', rows=accepted['rows'])
+        if accepted.get('basis') == 'dates_from_page_images':
+            filled = accepted['rows']
+            record['message'] = ('The text reading, with %s date%s read from the page images%s; the period reconciles '
+                                 'exactly. (The page-image reading alone did not prove it: %s)' % (
+                                     filled, '' if filled == 1 else 's', by, accepted.get('alone')))
+        else:
+            record['message'] = f'Read from the page images{by}; the period reconciles exactly.'
+        return record
+    statuses = {a.get('status') for a in attempts}
+    if 'failed' in statuses:
+        failures_now = (record.get('failures') or 0) + 1
+        record.update(status='failed', failures=failures_now,
+                      error=next(a.get('error') for a in attempts if a.get('status') == 'failed'),
+                      message=(GAVE_UP if failures_now >= MAX_FAILURES else
+                               'The page images could not be read just now; the statement stays held.')
+                      + (' ' + details if details else ''))
+    elif 'budget' in statuses:
+        record.update(status='budget', message='Not read from the page images: the reading budget for this case is '
+                                               'used for now.' + (' ' + details if details else ''))
+    elif not named:
+        record.update(status='not_proved', message=next(a['message'] for a in attempts if a.get('status') == 'not_proved'))
+    else:
+        record.update(status='not_proved', message='No reading of the page images proves it. ' + details)
+    return record
 
 
 def failures(record, revision):
@@ -1854,7 +2197,7 @@ def gave_up(record, revision):
 
 def _current(record, revision, model_id):
     return (record and record.get('version') == VERSION and record.get('revision') == revision
-            and record.get('model') == model_id and record.get('status') in FINAL)
+            and _reader_of(record) == model_id and record.get('status') in FINAL)
 
 
 def read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for=None, apply=True, force=False):
@@ -1882,7 +2225,7 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
     from services.financial.statement_import import read_statement_import
     if force and apply:
         raise ValueError('A forced reading is for measurement only')
-    page_reader = page_reader or openai_page_reader
+    page_reader = page_reader or chain_page_reader
     if knowledge_for is None:
         from services.financial.field_proposals import case_knowledge
 
@@ -1940,9 +2283,14 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
                 record.update(status='not_proved', message=f'This period has {len(pages)} pages; page images are read for periods up to {MAX_PAGES} pages.')
                 return _finish(factory, item_id, file_id, key, dict(record, revision=proposal['revision'], pages=pages), apply)
             try:
-                model_id, read = page_reader(db, case_id)
+                readers = readers_of(page_reader, db, case_id)
             except Exception as error:  # noqa: BLE001 - fail closed
                 return dict(record, status='unavailable', reason='unavailable', message=str(error)[:300])
+            if not any(not r.unavailable for r in readers):
+                # No reader of the chain can be used (no key, no model that reads images): nothing is sent.
+                return dict(record, status='unavailable', reason='unavailable', message='; '.join(
+                    f'{provider_name(r.provider)} {r.model}: {r.unavailable}' for r in readers)[:300])
+            model_id = chain_id(readers)
             stored = _stored(file, key)
             again = not force and rejudgeable(stored, proposal['revision'], model_id, pages)
             if not again and not force and rejudgeable(stored):
@@ -1959,7 +2307,7 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
                 return dict(stored, reason='already_read')
             if _being_read(stored) and not force:
                 return dict(record, reason='being_read')
-            record.update(revision=proposal['revision'], model=model_id, pages=pages,
+            record.update(revision=proposal['revision'], model=model_id, reader=model_id, pages=pages,
                           text_reading=_rule_metadata(proposal),
                           failures=0 if again else failures(stored, proposal['revision']))
             if record['failures'] >= MAX_FAILURES and not force:
@@ -1991,65 +2339,111 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
             else:
                 db.rollback()
         if again:
-            # The page reading already stored, judged under the current proof rules: no request, no cost.
-            document = stored['raw']
-            record.update(raw=document, seconds=0)
+            # The page readings already stored, judged under the current proof rules: no request, no cost.
+            candidates = stored_attempts(stored)
         else:
-            # Outside any lock or transaction: render and read page by page.
-            images = render_pages(path, pages)
-            reserved = reserve_usd(record['model'], images)
-            # The most it can cost is counted before the request is sent, and settled after.
-            if not _reserve(case_id, reserved):
-                return _finish(factory, item_id, file_id, key, dict(record, status='budget',
-                    message='Not read from the page images: the reading budget for this case is used for now.'), apply)
-            started = time.monotonic()
-            # One request with every page of the period, each image labelled with its page number.
-            document, usage = read(images)
-            cost = cost_usd(record['model'], usage)
-            _add_spend(case_id, cost - reserved)
-            page_costs = [dict(page=number, prompt_tokens=round((usage.get('prompt_tokens') or 0) / len(images)),
-                               completion_tokens=round((usage.get('completion_tokens') or 0) / len(images)),
-                               cost_usd=round(cost / len(images), 6)) for number, _ in images]
-            log.info('Page-image reading: case %s file %s, %s pages, cost $%.4f ($%.4f a page; %s tokens in, %s out)',
-                     str(case_id)[:8], str(file_id)[:8], len(images), cost, cost / len(images),
-                     usage.get('prompt_tokens'), usage.get('completion_tokens'))
-            record.update(page_costs=page_costs, cost_usd=round(sum(c['cost_usd'] for c in page_costs), 6),
-                          seconds=round(time.monotonic() - started, 1), raw=document)
-        with factory() as db:
-            item = db.get(Item, item_id)
-            proposal = read_statement_import(db, case_id=case_id, evidence_file_id=file_id,
-                                             currency=entry.get('currency') or None, statement_id=key or None)
-            if proposal['revision'] != record['revision']:
-                db.rollback()
-                return _finish(factory, item_id, file_id, key, dict(record, status='stale',
-                    message='The statement was read again while its page images were read.'), apply)
-            try:
-                reading, request, controls, _ = judge(db, case_id, proposal, document, pages, knowledge_for(db, case_id),
-                                                      saved=force)
-            except NotProved as reason:
-                request = None
-                if DATES_FROM_IMAGE and not force:
-                    try:
-                        request = dates_request(proposal, document_pages(document, pages))
-                    except NotProved:
-                        request = None
-                if request is None:
+            # A reading of an earlier try of this same reading of the file (the chain stopped at a failed request)
+            # is judged again rather than requested again.
+            reuse = _reusable(stored, record['revision'], pages)
+            candidates = [(reader, reuse.get(_attempt_key(reader))) for reader in readers]
+        attempts, accepted = [], None
+        spent_now, seconds, page_costs = 0.0, 0.0, {}
+        for reader, raw in candidates:
+            attempt = dict(provider=reader.provider, model=reader.model,
+                           prompt_version=getattr(reader, 'prompt_version', None) or (PROMPT_VERSION if reader.provider else None))
+            if raw is None and reader.unavailable:
+                attempts.append(dict(attempt, status='unavailable', message=reader.unavailable))
+                continue
+            if raw is None:
+                # Outside any lock or transaction: render (in this reader's strips) and read.
+                images = render_pages(path, pages, strips=reader.strips)
+                reserved = reserve_usd(reader.model, images, reader.max_output_tokens)
+                # The most it can cost is counted before the request is sent, and settled after.
+                if not _reserve(case_id, reserved):
+                    attempts.append(dict(attempt, status='budget',
+                                         message='the reading budget for this case is used for now'))
+                    break
+                started = time.monotonic()
+                try:
+                    # One request with every page of the period, each image labelled with its page number.
+                    raw, usage = reader.read(images)
+                except Exception as error:  # noqa: BLE001 - this reader failed: the next one of the chain reads
+                    took = round(time.monotonic() - started, 1)
+                    seconds += took
+                    if reader.provider is None:
+                        raise  # a single reader (tests, benchmarks): failed as before
+                    log.warning('Page-image reading by %s %s failed for file %s after %ss (%s: %s)%s',
+                                reader.provider, reader.model, str(file_id)[:8], took, type(error).__name__,
+                                str(error)[:200], '; the next reader takes over' if reader is not candidates[-1][0] else '')
+                    attempts.append(dict(attempt, status='failed', error=type(error).__name__,
+                                         message=failure_words(error), seconds=took))
+                    continue
+                took = round(time.monotonic() - started, 1)
+                cost = cost_usd(reader.model, usage)
+                _add_spend(case_id, cost - reserved)
+                spent_now += cost
+                seconds += took
+                for number, _ in images:
+                    share = page_costs.setdefault(number, dict(page=number, prompt_tokens=0, completion_tokens=0, cost_usd=0.0))
+                    share['prompt_tokens'] += round((usage.get('prompt_tokens') or 0) / len(images))
+                    share['completion_tokens'] += round((usage.get('completion_tokens') or 0) / len(images))
+                    share['cost_usd'] = round(share['cost_usd'] + cost / len(images), 6)
+                attempt.update(cost_usd=round(cost, 6), seconds=took, prompt_tokens=usage.get('prompt_tokens'),
+                               completion_tokens=usage.get('completion_tokens'))
+                log.info('Page-image reading: case %s file %s by %s %s, %s pages, %ss, cost $%.4f ($%.4f a page; '
+                         '%s tokens in, %s out)', str(case_id)[:8], str(file_id)[:8], reader.provider or 'model',
+                         reader.model, len(images), took, cost, cost / len(images), usage.get('prompt_tokens'),
+                         usage.get('completion_tokens'))
+            else:
+                attempt.update(reused=True, cost_usd=_reused_cost(stored, reader), seconds=0)
+            attempt['raw'] = raw
+            by = provider_name(reader.provider) or None
+            with factory() as db:
+                item = db.get(Item, item_id)
+                proposal = read_statement_import(db, case_id=case_id, evidence_file_id=file_id,
+                                                 currency=entry.get('currency') or None, statement_id=key or None)
+                if proposal['revision'] != record['revision']:
                     db.rollback()
-                    return _finish(factory, item_id, file_id, key, dict(record, status='not_proved', message=str(reason)), apply)
-                filled = sum(1 for row in request['rows'] if str(row.get('reason') or '').startswith('Date read from page image'))
-                record.update(status='proved', basis='dates_from_page_images', rows=filled, request=request,
-                              message='The text reading, with %s date%s read from the page images; the period reconciles '
-                                      'exactly. (The page-image reading alone did not prove it: %s)' % (
-                                          filled, '' if filled == 1 else 's', reason))
-                if not apply:
+                    attempts.append(dict(attempt, status='stale'))
+                    return _finish(factory, item_id, file_id, key, _outcome(dict(record, status='stale',
+                        message='The statement was read again while its page images were read.'),
+                        attempts, None, spent_now, seconds, page_costs, again), apply)
+                try:
+                    reading, request, controls, _ = judge(db, case_id, proposal, raw, pages, knowledge_for(db, case_id),
+                                                          saved=force, by=by)
+                    accepted = dict(attempt, status='proved', rows=len(reading['rows']))
+                    attempts.append(accepted)
                     db.rollback()
-                    return record
-                db.rollback()
-                if offer:
-                    return _offer(factory, item_id, file_id, key, record, request)
-                return _save(factory, item_id, case_id, file_id, key, record, request)
-            record.update(status='proved', message='Read from the page images; the period reconciles exactly.',
-                          rows=len(reading['rows']), request=request)
+                    break
+                except NotProved as reason:
+                    request = None
+                    if DATES_FROM_IMAGE and not force:
+                        try:
+                            request = dates_request(proposal, document_pages(raw, pages))
+                        except NotProved:
+                            request = None
+                    db.rollback()
+                    if request is not None:
+                        filled = sum(1 for row in request['rows'] if str(row.get('reason') or '').startswith('Date read from page image'))
+                        accepted = dict(attempt, status='proved', basis='dates_from_page_images', rows=filled,
+                                        alone=str(reason))
+                        attempts.append(accepted)
+                        reading, controls = None, None
+                        break
+                    attempts.append(dict(attempt, status='not_proved', message=str(reason)))
+                except Exception as error:  # noqa: BLE001 - this reading could not be judged: the next one reads
+                    db.rollback()
+                    if reader.provider is None:
+                        raise
+                    log.exception('Judging the page-image reading by %s %s failed', reader.provider, reader.model)
+                    attempts.append(dict(attempt, status='failed', error=type(error).__name__,
+                                         message=f'its reading could not be checked ({type(error).__name__})'))
+        record = _outcome(record, attempts, accepted, spent_now, seconds, page_costs, again)
+        if accepted is None:
+            return _finish(factory, item_id, file_id, key, record, apply)
+        if accepted.get('basis') == 'dates_from_page_images':
+            record['basis'] = 'dates_from_page_images'
+        else:
             if reading.get('account_basis'):
                 # The first statement of its account (FIRST_STATEMENT): what admitted its header, recorded with it.
                 record.update(account_basis=reading['account_basis'], message=record['message'] + FIRST_STATEMENT_NOTE)
@@ -2057,10 +2451,9 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
                 record['printed_controls'] = controls
             if reading.get('charge_totals') and CLOSING_DAYS:
                 record['charge_totals'] = reading['charge_totals']
-            if not apply:
-                db.rollback()
-                return record
-            db.rollback()
+        record['request'] = request
+        if not apply:
+            return record
         if offer:
             return _offer(factory, item_id, file_id, key, record, request)
         return _save(factory, item_id, case_id, file_id, key, record, request)
@@ -2088,7 +2481,7 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
         return record
 
 
-def judge(db, case_id, proposal, document, pages, knowledge, *, saved=False):
+def judge(db, case_id, proposal, document, pages, knowledge, *, saved=False, by=None):
     """(reading, request, printed controls, judged proposal) of a page reading that proves this statement; NotProved
     otherwise. ``saved``: a saved statement, judged as if it were not saved yet (no neighbour check: the reader
     replacement weighs its coverage)."""
@@ -2123,7 +2516,7 @@ def judge(db, case_id, proposal, document, pages, knowledge, *, saved=False):
     reading = prove(proposal, section, knowledge)
     if not saved:
         check_neighbours(db, case_id, reading)
-    request = build_request(proposal, reading)
+    request = build_request(proposal, reading, by=by)
     controls = printed_controls(proposal, section, reading, request) if (PRINTED_COUNTS or QUIET_PRINTED) else None
     judged = dict(proposal, **image_evidence(proposal, controls, reading.get('charge_totals')))
     state, summary = assess(dict(judged, current_import=None) if saved else judged, request)
@@ -2406,7 +2799,7 @@ def read_saved(factory, document_id, resolve_path, *, page_reader=None, knowledg
 
         def knowledge_for(db, case_id):
             return case_knowledge(db, case_id)
-    page_reader = page_reader or openai_page_reader
+    page_reader = page_reader or chain_page_reader
     record = dict(version=VERSION, proof=PROOF_VERSION, status='skipped', at=datetime.now(timezone.utc).isoformat())
     if not SAVED_READING:
         return dict(record, reason='disabled')
@@ -2424,42 +2817,86 @@ def read_saved(factory, document_id, resolve_path, *, page_reader=None, knowledg
                 return dict(record, reason='pages')
             stored = ((file.metadata_ or {}).get(SAVED_KEY) or {}).get(key)
             if stored_only:
-                model_id, read = (stored or {}).get('model'), None
+                readers, model_id = [], _reader_of(stored)
             else:
-                model_id, read = page_reader(db, case_id)
+                readers = readers_of(page_reader, db, case_id)
+                if not any(not r.unavailable for r in readers):
+                    return dict(record, status='unavailable', reason='unavailable', message='; '.join(
+                        f'{provider_name(r.provider)} {r.model}: {r.unavailable}' for r in readers)[:300])
+                model_id = chain_id(readers)
             if (stored and stored.get('version') == VERSION and stored.get('revision') == proposal['revision']
-                    and stored.get('model') == model_id and list(stored.get('pages') or []) == pages
+                    and _reader_of(stored) == model_id and list(stored.get('pages') or []) == pages
                     and isinstance(stored.get('raw'), dict)):
-                raw, cost = stored['raw'], stored.get('cost_usd')
+                candidates, again = stored_attempts(stored), True
             else:
-                raw = None
+                candidates, again = [(reader, None) for reader in readers], False
             path = resolve_path(file.stored_path)
             file_id = file.id
             db.rollback()
-        record.update(revision=proposal['revision'], model=model_id, pages=pages, document_id=str(document_id))
-        if raw is None and stored_only:
+        record.update(revision=proposal['revision'], model=model_id, reader=model_id, pages=pages,
+                      document_id=str(document_id))
+        if again:
+            record.update(cost_usd=stored.get('cost_usd'), page_costs=stored.get('page_costs'))
+        if not candidates and stored_only:
             return dict(record, reason='no_image_reading')
-        if raw is None:
-            images = render_pages(path, pages)
-            reserved = reserve_usd(model_id, images)
-            if not _reserve(case_id, reserved):
-                return dict(record, status='budget', reason='budget')
-            raw, usage = read(images)
-            cost = cost_usd(model_id, usage)
-            _add_spend(case_id, cost - reserved)
-            log.info('Page-image reading of saved statement: case %s file %s, %s pages, cost $%.4f',
-                     str(case_id)[:8], str(file_id)[:8], len(pages), cost)
-        record.update(raw=raw, cost_usd=cost)
+        attempts, accepted, reading, controls = [], None, None, None
+        spent_now, seconds, page_costs = 0.0, 0.0, {}
+        for reader, raw in candidates:
+            attempt = dict(provider=reader.provider, model=reader.model,
+                           prompt_version=getattr(reader, 'prompt_version', None) or (PROMPT_VERSION if reader.provider else None))
+            if raw is None and reader.unavailable:
+                attempts.append(dict(attempt, status='unavailable', message=reader.unavailable))
+                continue
+            if raw is None:
+                images = render_pages(path, pages, strips=reader.strips)
+                reserved = reserve_usd(reader.model, images, reader.max_output_tokens)
+                if not _reserve(case_id, reserved):
+                    attempts.append(dict(attempt, status='budget', message='the reading budget for this case is used for now'))
+                    break
+                started = time.monotonic()
+                try:
+                    raw, usage = reader.read(images)
+                except Exception as error:  # noqa: BLE001 - the next reader of the chain reads
+                    if reader.provider is None:
+                        raise
+                    log.warning('Page-image reading of saved statement by %s %s failed (%s: %s)', reader.provider,
+                                reader.model, type(error).__name__, str(error)[:200])
+                    attempts.append(dict(attempt, status='failed', error=type(error).__name__,
+                                         message=failure_words(error), seconds=round(time.monotonic() - started, 1)))
+                    continue
+                took = round(time.monotonic() - started, 1)
+                cost = cost_usd(reader.model, usage)
+                _add_spend(case_id, cost - reserved)
+                spent_now, seconds = spent_now + cost, seconds + took
+                for number, _ in images:
+                    share = page_costs.setdefault(number, dict(page=number, prompt_tokens=0, completion_tokens=0, cost_usd=0.0))
+                    share['cost_usd'] = round(share['cost_usd'] + cost / len(images), 6)
+                attempt.update(cost_usd=round(cost, 6), seconds=took)
+                log.info('Page-image reading of saved statement: case %s file %s by %s %s, %s pages, cost $%.4f',
+                         str(case_id)[:8], str(file_id)[:8], reader.provider or 'model', reader.model, len(pages), cost)
+            attempt['raw'] = raw
+            with factory() as db:
+                try:
+                    reading, request, controls, _ = judge(db, case_id, proposal, raw, pages, knowledge_for(db, case_id),
+                                                          saved=True, by=provider_name(reader.provider) or None)
+                    accepted = dict(attempt, status='proved', rows=len(reading['rows']))
+                    attempts.append(accepted)
+                    break
+                except NotProved as reason:
+                    attempts.append(dict(attempt, status='not_proved', message=str(reason)))
+                finally:
+                    db.rollback()
+        record = _outcome(record, attempts, accepted, spent_now, seconds, page_costs, again)
+        if again:
+            record.pop('seconds', None)
+        if record.get('raw') is None:
+            return dict(record, reason=record.get('status'))
+        if accepted is not None:
+            if controls:
+                record['printed_controls'] = controls
+            if reading.get('charge_totals'):
+                record['charge_totals'] = reading['charge_totals']
         with factory() as db:
-            try:
-                reading, request, controls, _ = judge(db, case_id, proposal, raw, pages, knowledge_for(db, case_id), saved=True)
-                record.update(status='proved', rows=len(reading['rows']), message='Read from the page images; the period reconciles exactly.')
-                if controls:
-                    record['printed_controls'] = controls
-                if reading.get('charge_totals'):
-                    record['charge_totals'] = reading['charge_totals']
-            except NotProved as reason:
-                record.update(status='not_proved', message=str(reason))
             from postgres.models.evidence import EvidenceFile
             locked = db.scalar(select(EvidenceFile).where(EvidenceFile.id == file_id).with_for_update()
                                .execution_options(populate_existing=True))
@@ -2582,7 +3019,8 @@ def sweep(factory, resolve_path, *, budget_seconds=SWEEP_SECONDS):
             report['read'] += 1
             report[outcome['status']] = report.get(outcome['status'], 0) + 1
             if not outcome.get('rejudged'):
-                report['cost_usd'] = round(report['cost_usd'] + (outcome.get('cost_usd') or 0), 6)
+                spent_now = outcome.get('spent_usd')
+                report['cost_usd'] = round(report['cost_usd'] + ((outcome.get('cost_usd') if spent_now is None else spent_now) or 0), 6)
         elif reason or outcome.get('status') in ('budget', 'stale', 'unavailable'):
             why = reason or outcome['status']
             skipped[why] = skipped.get(why, 0) + 1

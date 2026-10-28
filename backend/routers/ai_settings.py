@@ -73,8 +73,8 @@ class AISettingsResponse(BaseModel):
     providers: list[ProviderConnectionResponse]
     models: list[dict[str, Any]]
     workloads: dict[str, dict[str, str]]
-    routing: dict[str, dict[str, str]]
-    recommended_profiles: dict[str, dict[str, dict[str, str]]]
+    routing: dict[str, dict[str, Any]]
+    recommended_profiles: dict[str, dict[str, dict[str, Any]]]
     supporting_services: list[dict[str, Any]]
     permissions: dict[str, bool]
 
@@ -91,9 +91,16 @@ class CredentialTestResponse(BaseModel):
     tested_at: datetime
 
 
+class PolicyChainEntry(BaseModel):
+    provider: str
+    model_id: str
+
+
 class PolicyModelConfig(BaseModel):
     provider: str
     model_id: str
+    # Statement page images: the models tried in order (ai_model_policy.CHAIN_WORKLOADS).
+    chain: list[PolicyChainEntry] | None = None
 
 
 class PolicyUpdateRequest(BaseModel):
@@ -134,17 +141,19 @@ def _connection_response(
     )
 
 
-def _provider_for_policy(configuration: dict[str, dict[str, str]]) -> str:
+def _provider_for_policy(configuration: dict[str, dict[str, Any]]) -> str:
     providers = {entry["provider"] for entry in configuration.values()}
     return next(iter(providers)) if len(providers) == 1 else "mixed"
 
 
-def _provider_usage(configuration: dict[str, dict[str, str]]) -> dict[str, list[str]]:
+def _provider_usage(configuration: dict[str, dict[str, Any]]) -> dict[str, list[str]]:
     usage = {provider: [] for provider in SUPPORTED_PROVIDERS}
     for workload, entry in configuration.items():
-        provider = entry.get("provider")
-        if provider in usage:
-            usage[provider].append(workload)
+        # A chain's every provider is in use (its first is the one the chain starts at).
+        providers = [e.get("provider") for e in entry.get("chain") or []] or [entry.get("provider")]
+        for provider in dict.fromkeys(providers):
+            if provider in usage:
+                usage[provider].append(workload)
     return usage
 
 
@@ -444,7 +453,7 @@ def update_ai_policy(
     try:
         record = save_policy(
             db,
-            configuration={key: value.model_dump() for key, value in request.configuration.items()},
+            configuration={key: value.model_dump(exclude_none=True) for key, value in request.configuration.items()},
             expected_revision=request.revision,
             updated_by=current_user.email,
         )

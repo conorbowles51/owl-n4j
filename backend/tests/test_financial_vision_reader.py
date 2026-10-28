@@ -720,13 +720,14 @@ class FailClosedTest(unittest.TestCase):
 
     def test_provider_without_page_images_or_key_is_unavailable(self):
         db = object()
-        with mock.patch('services.ai_model_policy.get_workload_model', return_value=('anthropic', 'claude-sonnet-5')):
-            with self.assertRaisesRegex(RuntimeError, 'not available'):
-                vr.openai_page_reader(db, 'c')
-        with mock.patch('services.ai_model_policy.get_workload_model', return_value=('openai', 'gpt-4o')), \
-                mock.patch('services.ai_provider_credentials.get_provider_api_key', return_value=None):
-            with self.assertRaisesRegex(RuntimeError, 'No OpenAI key'):
-                vr.openai_page_reader(db, 'c')
+        with self.assertLogs(vr.log.name, 'WARNING'):
+            self.assertIn('not available', vr.provider_page_reader(db, 'c', 'anthropic', 'claude-sonnet-5').unavailable)
+        with mock.patch('services.ai_provider_credentials.get_provider_api_key', return_value=None), \
+                self.assertLogs(vr.log.name, 'WARNING'):
+            with self.assertRaisesRegex(RuntimeError, 'no OpenAI key'):
+                vr.openai_page_reader(db, 'c', 'gpt-4o')
+            self.assertEqual(vr.provider_page_reader(db, 'c', 'deepseek', 'deepseek-flash').unavailable,
+                             'no DeepSeek key is connected')
 
     def test_vision_call_is_schema_enforced_and_raises_on_incomplete_or_refused(self):
         from services.llm_service import LLMExecutionContext
@@ -756,12 +757,13 @@ class FailClosedTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'not available'):
             LLMExecutionContext('gemini', 'gemini-3.6-flash', api_key='x').call_vision_json('p', [], schema={}, schema_name='s')
 
-    def test_workload_registered_and_kept_on_openai(self):
+    def test_workload_is_deepseek_first_with_the_openai_failsafe(self):
         from services.ai_model_policy import DEFAULT_POLICY, PROVIDER_DEFAULTS, WORKLOADS
         self.assertIn(vr.WORKLOAD, WORKLOADS)
-        self.assertEqual(DEFAULT_POLICY[vr.WORKLOAD]['provider'], 'openai')
-        for profile in PROVIDER_DEFAULTS.values():
-            self.assertEqual(profile[vr.WORKLOAD]['provider'], 'openai')
+        for profile in (DEFAULT_POLICY, *PROVIDER_DEFAULTS.values()):
+            self.assertEqual(profile[vr.WORKLOAD]['chain'], [{'provider': 'deepseek', 'model_id': 'deepseek-flash'},
+                                                            {'provider': 'openai', 'model_id': 'gpt-5.6-terra'}])
+            self.assertEqual(profile[vr.WORKLOAD]['provider'], 'deepseek')
 
     def test_case_budget(self):
         with mock.patch.dict(vr._spend, {}, clear=True):
