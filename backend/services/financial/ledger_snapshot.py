@@ -1,6 +1,7 @@
 """Immutable ledger snapshots, consistent history capture and downloadable reports."""
 import hashlib
 import json
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from services.financial.ledger_summary import ledger_summary, LedgerSummaryError
 
@@ -96,13 +97,33 @@ def _capture_history(session, document, *, case_id):
     return document
 
 
+def _in_consistent_read(connection):
+    """A PostgreSQL connection already inside one read-only REPEATABLE READ transaction (a cached Financial
+    view's snapshot, services.financial.view_cache). Reading there is the same single consistent read."""
+    from sqlalchemy.engine import Connection
+    if not isinstance(connection, Connection) or connection.dialect.name != 'postgresql' or not connection.in_transaction():
+        return False
+    return (connection.exec_driver_sql('SHOW transaction_isolation').scalar() == 'repeatable read'
+            and connection.exec_driver_sql('SHOW transaction_read_only').scalar() == 'on')
+
+
+@contextmanager
+def _consistent_connection(engine):
+    from sqlalchemy.engine import Engine
+    if isinstance(engine, Engine):
+        with engine.connect().execution_options(isolation_level='REPEATABLE READ') as connection:
+            yield connection
+    else:
+        yield engine
+
+
 def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, end_date=None, generated_at=None, include_source_files=False, resolve_path=None, table_view=None, generated_by=None, privilege_marking="unmarked", include_case_financial_history=False, account_ids=None, account_holders=None):
     """Own a fresh PostgreSQL repeatable-read read-only transaction for both reads."""
     from datetime import datetime, timezone
     from sqlalchemy.engine import Engine
     from sqlalchemy.orm import Session
     from services.financial.version import code_version
-    if not isinstance(engine,Engine) or engine.dialect.name!='postgresql':
+    if not (isinstance(engine,Engine) and engine.dialect.name=='postgresql') and not _in_consistent_read(engine):
         raise LedgerSummaryError('Consistent ledger export requires a fresh PostgreSQL engine connection.')
     if include_source_files and not callable(resolve_path):
         raise LedgerSummaryError('Source file export requires a registered path resolver.')
@@ -112,10 +133,11 @@ def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, 
     generated_at=generated_at or datetime.now(timezone.utc)
     if generated_at.tzinfo is None or generated_at.utcoffset() is None:
         raise LedgerSummaryError('Export generation time must carry a timezone.')
-    with engine.connect().execution_options(isolation_level='REPEATABLE READ') as connection:
-        with connection.begin():
-            connection.exec_driver_sql('SET TRANSACTION READ ONLY')
-            with Session(bind=connection,autoflush=False) as session:
+    with _consistent_connection(engine) as connection:
+        with connection.begin() if isinstance(engine, Engine) else nullcontext():
+            if isinstance(engine, Engine):
+                connection.exec_driver_sql('SET TRANSACTION READ ONLY')
+            with Session(bind=connection,autoflush=False,**({} if isinstance(engine, Engine) else dict(join_transaction_mode='create_savepoint'))) as session:
                 snapshot=capture_ledger_snapshot(session,case_id=case_id,account_id=account_id, account_ids=account_ids, account_holders=account_holders,start_date=start_date,end_date=end_date)
                 document=_capture_history(session,json.loads(snapshot.content),case_id=case_id)
                 from postgres.models.case import Case

@@ -158,7 +158,7 @@ def payment_label_view(row, account=None, stored=_LOOKUP):
     return dict(**values, counterparty_link=link, label_sources=sources, label_version=labels.get('version', 0))
 
 
-@lru_cache(maxsize=200_000)
+@lru_cache(maxsize=50_000)
 def _inferred_once(description, direction, account_type, institution):
     from services.financial.payment_inference import infer_payment_labels
     return infer_payment_labels(description, direction=direction, account_type=account_type, institution=institution)
