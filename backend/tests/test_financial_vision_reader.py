@@ -267,8 +267,13 @@ class ProofTest(unittest.TestCase):
         vr.check_page_numbering(numbered((1, 1), (2, None), (3, 3)), [1, 2, 3])
         with self.assertRaisesRegex(vr.NotProved, 'skip'):
             vr.check_page_numbering(numbered((1, 1), (2, 3), (3, None)), [1, 2, 3])
+        with mock.patch.object(vr, 'PRINTED_ORDER', False):
+            with self.assertRaisesRegex(vr.NotProved, 'skip'):
+                vr.check_page_numbering(numbered((1, 2), (2, 1)), [1, 2, 3])
+        # Printed 2, 1 is one complete run: read in printed order (see PrintedOrderTest).
+        vr.check_page_numbering(numbered((1, 2), (2, 1)), [1, 2, 3])
         with self.assertRaisesRegex(vr.NotProved, 'skip'):
-            vr.check_page_numbering(numbered((1, 2), (2, 1)), [1, 2, 3])
+            vr.check_page_numbering(numbered((1, 3), (2, 1)), [1, 2, 3])
         with self.assertRaisesRegex(vr.NotProved, 'same page number'):
             vr.check_page_numbering(numbered((1, 1), (2, 1)), [1, 2, 3])
         # Printed pages before or after the period must at least be pages of the file.
@@ -396,6 +401,77 @@ class NeighbourTest(unittest.TestCase):
     def test_overlapping_saved_period_holds(self):
         with self.assertRaisesRegex(vr.NotProved, 'already covers'):
             self._check(('2025-12-15', '2026-01-14', 1, 2))
+
+
+class PrintedOrderTest(unittest.TestCase):
+    """Live: Andrews "statement 820433320 Pt 1" Dec 2020 is file pages 38,37,36,35,39,40 printing 1..6 (scanned out of
+    order); both page-image readings read the numbering right and the file-order check refused them."""
+
+    def _document(self, numbering):
+        first, second, third = (numbering[printed] for printed in sorted(numbering))
+        rows = [dict(_row('2025-12-02', '100.00', 'credit', '1100.00'), page=first),
+                dict(_row('2025-12-05', '30.50', 'debit', '1069.50'), page=second),
+                dict(_row('2025-12-20', '69.50', 'debit', '1000.00'), page=third)]
+        account = dict(_section(**HEADER), opening_balance='1000.00', opening_balance_page=first,
+                       closing_balance='1000.00', closing_balance_page=third, rows=rows)
+        return dict(pages=[dict(page=physical, printed_page_number=printed, printed_page_total=3, is_statement_page=True)
+                           for printed, physical in numbering.items()], accounts=[account])
+
+    def _prove(self, document, sent, file_pages=None):
+        pages = vr.document_pages(document, vr.printed_order(document, sent))
+        vr.check_page_numbering(pages, file_pages or sorted(sent))
+        proposal = dict(_proposal(currency='MXN'), page_numbers=sorted(sent), statement_page_numbers=list(sent))
+        return vr.prove(proposal, vr.choose_section(vr.combine(pages), proposal), _knowledge())
+
+    def test_pages_scanned_in_reverse_are_read_in_printed_order(self):
+        document = self._document({1: 7, 2: 6, 3: 5})
+        for sent in ([7, 6, 5], [5, 6, 7]):
+            reading = self._prove(document, sent)
+            self.assertEqual([r['page'] for r in reading['rows']], [7, 6, 5])
+            self.assertEqual(reading['closing'], 100000)
+        self.assertEqual(vr.printed_order(document, [5, 6, 7]), [7, 6, 5])
+        with mock.patch.object(vr, 'PRINTED_ORDER', False):
+            with self.assertRaisesRegex(vr.NotProved, 'skip from page'):
+                self._prove(document, [5, 6, 7])
+            self.assertEqual(vr.printed_order(document, [5, 6, 7]), [5, 6, 7])
+
+    def test_the_live_shape_pages_out_of_order_then_in_order(self):
+        # File pages 38,37,36 print 1,2,3 then 39 prints 4 (the live period, shortened).
+        document = self._document({1: 38, 2: 37, 3: 36})
+        document['pages'].append(dict(page=39, printed_page_number=4, printed_page_total=4, is_statement_page=True))
+        for entry in document['pages']:
+            entry['printed_page_total'] = 4
+        self.assertEqual(vr.printed_order(document, [36, 37, 38, 39]), [38, 37, 36, 39])
+        self.assertEqual(self._prove(document, [36, 37, 38, 39])['closing'], 100000)
+
+    def test_a_gap_or_a_number_twice_still_holds_whatever_the_order(self):
+        gap = self._document({1: 7, 2: 6, 3: 5})
+        gap['pages'][2]['printed_page_number'] = 4  # printed 3 missing
+        self.assertEqual(vr.printed_order(gap, [5, 6, 7]), [5, 6, 7])
+        with self.assertRaisesRegex(vr.NotProved, 'skip|missing'):
+            self._prove(gap, [5, 6, 7])
+        twice = self._document({1: 7, 2: 6, 3: 5})
+        twice['pages'][2]['printed_page_number'] = 2
+        with self.assertRaisesRegex(vr.NotProved, 'same page number|skip'):
+            self._prove(twice, [5, 6, 7])
+        # Printed pages before the run must still be pages of the file outside the period.
+        later = self._document({2: 7, 3: 6, 4: 5})
+        for entry in later['pages']:
+            entry['printed_page_total'] = 4
+        with self.assertRaisesRegex(vr.NotProved, 'may be missing'):
+            self._prove(later, [5, 6, 7], [5, 6, 7])
+        # A page of the file after the period cannot stand for printed page 1 before it.
+        with self.assertRaisesRegex(vr.NotProved, 'not in the file|skip'):
+            self._prove(later, [5, 6, 7], [5, 6, 7, 8])
+        self.assertEqual(self._prove(later, [5, 6, 7], [4, 5, 6, 7])['closing'], 100000)
+
+    def test_rows_out_of_printed_order_still_fail_the_running_balance(self):
+        # Numbers misread so the run is complete but the true order differs: the balances refuse it.
+        document = self._document({1: 7, 2: 6, 3: 5})
+        for entry in document['pages']:
+            entry['printed_page_number'] = {7: 2, 6: 1, 5: 3}[entry['page']]
+        with self.assertRaisesRegex(vr.NotProved, 'running balance|opening'):
+            self._prove(document, [5, 6, 7])
 
 
 class DocumentTest(unittest.TestCase):
@@ -691,7 +767,7 @@ class FirstStatementTest(unittest.TestCase):
         with mock.patch.object(vr, 'FIRST_STATEMENT', False), self.assertRaisesRegex(vr.NotProved, 'no saved statement'):
             self._first()
         self.assertTrue(vr.FIRST_STATEMENT)
-        self.assertEqual(vr.PROOF_VERSION, 15)  # 13 before rule 1, 14 before row dates: stored not-proved readings are judged again once
+        self.assertEqual(vr.PROOF_VERSION, 16)  # 13 before rule 1, 14 before row dates, 15 before printed order: stored not-proved readings are judged again once
 
     def test_a_known_account_is_judged_as_before(self):
         self.assertNotIn('account_basis', _proved(_proposal(**self.TEXT)))

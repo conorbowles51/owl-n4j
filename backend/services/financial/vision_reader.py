@@ -203,10 +203,15 @@ FIRST_STATEMENT_NOTE = (' The first statement of this account in the case: its f
 # must be in the page-image reading with that same date, amount and direction. Any disagreement holds the statement
 # with its reason. Off: dates are checked against the period only, as before.
 ROW_DATES = _switch('LOUPE_FINANCIAL_VISION_ROW_DATES')
+# Pages scanned out of order (coordinator, 2026-10-28: Andrews "statement 820433320 Pt 1" Dec 2020 is file pages
+# 38,37,36,35,39,40 printing 1..6): when the printed numbers of the period's pages form one complete run, no number
+# twice and none missing, the pages are read in printed order whatever their order in the file. Off: printed numbers
+# must rise with the file's pages, as before.
+PRINTED_ORDER = _switch('LOUPE_FINANCIAL_VISION_PRINTED_ORDER')
 PROOF_VERSION = 1
 for _switched in (SPLIT_SPELLINGS, SECTION_NUMBER, PRINTED_COUNTS, QUIET_PRINTED, CLABE_ACCOUNT, SECTION_BY_TEXT,
                   SIGNED_DEBITS, DATES_FROM_IMAGE, OPENING_FROM_PREVIOUS, IMAGE_TOTALS, CLOSING_DAYS, TEXT_MISREADS,
-                  FIRST_STATEMENT, ROW_DATES):
+                  FIRST_STATEMENT, ROW_DATES, PRINTED_ORDER):
     # Each switch on top of the one before; with one off, the rules are the version before it.
     if not _switched:
         break
@@ -588,7 +593,49 @@ def check_page_numbering(pages, file_pages=None):
     _numbering_has_no_gap(pages, file_pages, next(iter(totals)) if totals else None)
 
 
+def _printed_run(numbers, file_pages, total, period_pages):
+    """The printed numbers of the period's pages form one complete run first..last (no number twice, none missing),
+    out of file order, and the printed pages before and after the run are at least pages of the file before and
+    after the period's pages."""
+    if len(numbers) < 2 or numbers == sorted(numbers) or \
+            sorted(numbers) != list(range(min(numbers), min(numbers) + len(numbers))):
+        return False
+    file_pages = file_pages or period_pages
+    before = len([p for p in file_pages if p < min(period_pages)])
+    after = len([p for p in file_pages if p > max(period_pages)])
+    return min(numbers) - 1 <= before and (not total or total - max(numbers) <= after)
+
+
+def printed_order(document, sent_pages):
+    """The pages sent, numbered pages put in printed order (each into a place a numbered page held) when PRINTED_ORDER
+    is on and their printed numbers form one complete run; else the pages as sent."""
+    sent = list(sent_pages)
+    numbering = {entry.get('page'): entry.get('printed_page_number') for entry in document.get('pages') or []}
+    numbered = [page for page in sent if isinstance(numbering.get(page), int) and numbering[page] >= 1]
+    numbers = [numbering[page] for page in numbered]
+    if not PRINTED_ORDER or len(set(numbers)) != len(numbers) or \
+            sorted(numbers) != list(range(min(numbers or [1]), min(numbers or [1]) + len(numbers))):
+        return sent
+    in_order = iter(sorted(numbered, key=numbering.get))
+    return [next(in_order) if page in numbered else page for page in sent]
+
+
 def _numbering_has_no_gap(pages, file_pages, total):
+    """NotProved when a printed page number between this period's pages is not one of them.
+
+    With PRINTED_ORDER, pages whose printed numbers form one complete run pass in printed order
+    whatever their order in the file (a file scanned in reverse).
+    """
+    try:
+        _numbering_in_file_order(pages, file_pages, total)
+    except NotProved:
+        numbers = [page.get('printed_page_number') for _, page in sorted(pages, key=lambda pair: pair[0])
+                   if isinstance(page.get('printed_page_number'), int) and page.get('printed_page_number') >= 1]
+        if not PRINTED_ORDER or not _printed_run(numbers, file_pages, total, [p for p, _ in pages]):
+            raise
+
+
+def _numbering_in_file_order(pages, file_pages, total):
     """NotProved when a printed page number between this period's pages is not one of them.
 
     As the text reader's numbering rule: an unnumbered page of the period (cover,
@@ -1957,7 +2004,7 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
                 request = None
                 if DATES_FROM_IMAGE and not force:
                     try:
-                        request = dates_request(proposal, document_pages(document, pages))
+                        request = dates_request(proposal, document_pages(document, printed_order(document, pages)))
                     except NotProved:
                         request = None
                 if request is None:
@@ -2020,7 +2067,7 @@ def judge(db, case_id, proposal, document, pages, knowledge, *, saved=False):
     otherwise. ``saved``: a saved statement, judged as if it were not saved yet (no neighbour check: the reader
     replacement weighs its coverage)."""
     from services.financial.import_batches import assess
-    readings = document_pages(document, pages)
+    readings = document_pages(document, printed_order(document, pages))
     page_gap = None
     try:
         check_page_numbering(readings, proposal.get('page_numbers'))
