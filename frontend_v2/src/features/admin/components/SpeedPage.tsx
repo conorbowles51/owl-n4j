@@ -24,7 +24,7 @@ function formatBytes(bytes: number) {
 
 function what(row: { kind: string; method: string; route: string }) {
   if (row.kind === "page")
-    return `${row.method === "LOAD" ? "Opened" : "Switched to"} ${row.route}`
+    return `${row.method === "LOAD" ? "Opened" : row.method === "LEFT" ? "Left before shown:" : "Switched to"} ${row.route}`
   return `${row.method} ${row.route}`
 }
 
@@ -93,7 +93,8 @@ export function SpeedPage() {
       <p className="border-b border-border px-4 py-2 text-xs text-muted-foreground">
         How long things take, slowest first. "Typical" is the time half of them beat; "Slow end" is the time
         19 in 20 beat; "Slowest" is the single longest. Pages are timed in the browser, from opening a
-        Financial view to its data being on screen. Server requests are timed from arrival to the last byte
+        Financial view to its data being on screen; "Left before shown" is how long someone waited
+        before leaving a view whose data had not arrived. Server requests are timed from arrival to the last byte
         sent. Recorded since 28 Oct 2026; totals are saved about every 15 seconds.
       </p>
       <ScrollArea className="flex-1">

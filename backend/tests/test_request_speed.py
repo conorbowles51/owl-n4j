@@ -281,6 +281,7 @@ class PageViews(TestCase):
         self.assertTrue(rs.enqueue_page_view('financial/overview', 'LOAD', CASE, 1234.5, 'a@b'))
         [item] = list(rs._queue)
         self.assertEqual(item[1:9], ('page', 'LOAD', 'financial/overview', CASE, 200, 1234.5, 0, 'a@b'))
+        self.assertTrue(rs.enqueue_page_view('financial/ledger', 'LEFT', CASE, 90000, 'a@b'))
 
     def test_bad_names_methods_and_times_are_refused(self):
         for args in [('Financial/../x', 'LOAD', None, 5), ('financial/overview', 'GET', None, 5),

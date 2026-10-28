@@ -1,7 +1,9 @@
-import { QueryClient } from "@tanstack/react-query"
+import { createElement, type ReactNode } from "react"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { renderHook } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { fetchAPI } from "@/lib/api-client"
-import { flushPageViews, recordPageView, whenSettled } from "./page-speed"
+import { flushPageViews, recordPageView, useFinancialViewSpeed, whenSettled } from "./page-speed"
 
 vi.mock("@/lib/api-client", () => ({ fetchAPI: vi.fn() }))
 
@@ -55,5 +57,23 @@ describe("page speed", () => {
     const client = new QueryClient()
     const signal = { cancelled: true }
     expect(await whenSettled(client, signal)).toBeNull()
+  })
+
+  it("a view left before its data arrives is recorded as LEFT; a shown one by its time", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const wrapper = ({ children }: { children: ReactNode }) => createElement(QueryClientProvider, { client }, children)
+    const posted = () => vi.mocked(fetchAPI).mock.calls.flatMap(
+      ([, options]) => (options as { body: { views: { page: string; method: string }[] } }).body.views)
+    let release: (value: number) => void = () => {}
+    void client.fetchQuery({ queryKey: ["financial", "slow"], queryFn: () => new Promise<number>((r) => { release = r }) })
+    const view = renderHook(({ page }) => useFinancialViewSpeed("c1", page), { wrapper, initialProps: { page: "financial/ledger" } })
+    await new Promise((r) => setTimeout(r, 50))
+    view.rerender({ page: "financial/trends" })
+    await new Promise((r) => setTimeout(r, 50))
+    release(1)
+    await new Promise((r) => setTimeout(r, 80))
+    view.unmount()
+    flushPageViews()
+    expect(posted().map((v) => `${v.method} ${v.page}`)).toEqual(["LEFT financial/ledger", "VIEW financial/trends"])
   })
 })

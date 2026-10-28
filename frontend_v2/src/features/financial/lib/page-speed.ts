@@ -8,14 +8,15 @@ import { fetchAPI } from "@/lib/api-client"
  * "Opened" (LOAD): the browser loaded this Financial address directly, so the time runs from the
  * browser's navigation start (performance time origin). "Switched to" (VIEW): the view or case
  * changed inside the app, so the time runs from that change. Either way it ends at the first
- * frame painted after every request the view started has returned. A view left before that is
- * not recorded. Timings are queued and posted in small batches; a failed post is dropped, never
+ * frame painted after every request the view started has returned. A view the person leaves
+ * before that (another view, another case, another page) is recorded as LEFT with how long they
+ * waited, so the slowest loads are not lost. Timings are queued and posted in small batches; a failed post is dropped, never
  * retried and never shown. Uses only performance.now, timers and fetch (safe over plain http).
  */
 
 export interface PageView {
   page: string
-  method: "LOAD" | "VIEW"
+  method: "LOAD" | "VIEW" | "LEFT"
   case_id: string | null
   ms: number
 }
@@ -23,7 +24,8 @@ export interface PageView {
 const ENDPOINT = "/api/request-speed/page-views"
 const BATCH = 20
 const FLUSH_MS = 5000
-const GIVE_UP_MS = 120000
+const MAX_MS = 600000 // the server accepts up to 10 minutes
+const GIVE_UP_MS = MAX_MS
 
 const queue: PageView[] = []
 let timer: ReturnType<typeof setTimeout> | null = null
@@ -41,7 +43,7 @@ export function flushPageViews(keepalive = false) {
 }
 
 export function recordPageView(view: PageView) {
-  queue.push({ ...view, ms: Math.max(0, Math.round(view.ms)) })
+  queue.push({ ...view, ms: Math.min(MAX_MS, Math.max(0, Math.round(view.ms))) })
   if (!listening && typeof window !== "undefined") {
     listening = true
     window.addEventListener("pagehide", () => flushPageViews(true))
@@ -112,17 +114,22 @@ export function useFinancialViewSpeed(caseId: string | undefined, page: string) 
     const signal = { cancelled: false }
     const measuring = { start, method, armed: false, signal }
     current.current = measuring
+    let settled = false
     // Wait one frame so the view's own requests have started before looking for quiet.
     const frame = requestAnimationFrame(() => {
       measuring.armed = true
       void whenSettled(client, signal).then((end) => {
         if (end === null || signal.cancelled) return
+        settled = true
         recordPageView({ page, method, case_id: caseId, ms: end - start })
       })
     })
     return () => {
       signal.cancelled = true
       cancelAnimationFrame(frame)
+      // Left by the person before the data was shown (not the same-frame address sync).
+      if (measuring.armed && !settled)
+        recordPageView({ page, method: "LEFT", case_id: caseId, ms: performance.now() - start })
     }
   }, [caseId, page, client])
 }

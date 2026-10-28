@@ -400,7 +400,7 @@ FINANCIAL_VIEWS = ('overview', 'follow-money', 'findings', 'patterns', 'case-con
 STATEMENT_SECTIONS = ('queue', 'files', 'accounts', 'batches', 'remove', 'judgements')
 # The page names the browser may report (frontend financialMainViews and statement sections).
 PAGES = frozenset([f'financial/{v}' for v in FINANCIAL_VIEWS] + [f'financial/statements/{s}' for s in STATEMENT_SECTIONS])
-PAGE_METHODS = ('LOAD', 'VIEW')
+PAGE_METHODS = ('LOAD', 'VIEW', 'LEFT')  # LEFT: left before the data was shown (time waited)
 PAGE_MAX_MS = 600000
 
 
