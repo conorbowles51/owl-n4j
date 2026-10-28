@@ -235,6 +235,11 @@ DATE_RULE_UNDERSCORE = _switch('LOUPE_FINANCIAL_DATE_RULE_UNDERSCORE')
 # lines below it, as Monex's sideways layout prints a commission): those lines are its description, as they are for
 # a line printing one. Off: such a movement keeps an empty description and waits for a person.
 UNDESCRIBED_CONTINUATION = _switch('LOUPE_FINANCIAL_UNDESCRIBED_CONTINUATION')
+# (E3) A multi-line entry printed as a page's last movement continues at the top of the next page, under the movement
+# table's heading printed again there and before any dated line (BBVA Mexico SPEI/SPID entries: the CLABE, tracking
+# key and counterparty name lines). Those lines are its description. Only text lines in its description band, no
+# date, no amount, no label; amounts and dates are never read from them. Off: the entry ends at its page's foot.
+PAGE_BREAK_CONTINUATION = _switch('LOUPE_FINANCIAL_PAGE_BREAK_CONTINUATION')
 _UNDERSCORED_DATE = re.compile(r"^(\d{1,2}[/.-]?[A-Za-z]{3,10}(?:[/.-]\d{2,4})?|\d{1,2}[/.-]\d{1,2}(?:[/.-]\d{2,4})?)_+$")
 _PAREN_SECOND_DATE = re.compile(r"^(\d{1,2}[/.-][A-Za-z]{3,10})(\(\d{1,2}[/.-][A-Za-z]{3,10}\))$")
 
@@ -4210,9 +4215,18 @@ def _reading(rows, statement, style, exponent, liability, period):
     consumed, blank_dated = set(), []
     # Index of the line where the movement table printed its own credit or debit total after a movement (E9).
     table_totals = None
+    # (E3, PAGE_BREAK_CONTINUATION) The previous page's last movement, open for lines under this page's heading.
+    carry, carry_page, carry_open, carry_last = None, None, False, None
     for index, row in enumerate(rows):
         if not row['tokens'] or row.get('payment_box') or index in consumed:
             continue
+        if PAGE_BREAK_CONTINUATION and row['page'] != carry_page:
+            carry_page, carry, carry_open, carry_last = row['page'], None, False, None
+            if movements and region and not other_table and not prior:
+                tail = movements[-1]
+                tail_line = tail['continuation'][-1] if tail['continuation'] else tail['row']
+                if tail_line['page'] != row['page'] and not any(end > tail['row']['_index'] for end in ends):
+                    carry = tail
         if other_table:
             if _is_header(row) and _money_roles(row) == main_roles:
                 other_table = False
@@ -4241,7 +4255,24 @@ def _reading(rows, statement, style, exponent, liability, period):
             headers.append(row)
             labels_seen.update(w for w in words if column_role(w))
             region = True
+            if carry is not None and row['page'] == carry_page:
+                carry_open, carry_last = True, row
             continue
+        if carry_open:
+            if _carries(row, carry, carry_last, carry_last is not (carry['continuation'] or [None])[-1], liability,
+                        style or 'dot', exponent, early_columns, width or 1):
+                carry['continuation'].append(row)
+                continuation_of[index] = carry
+                carry_last = row
+                last_move = carry
+                continue
+            if not carry['continuation'] or carry_last is not carry['continuation'][-1]:
+                # Still the heading block ('FECHA ... SALDO' over 'OPER LIQ COD. DESCRIPCION ...'): another line
+                # of column words keeps the carry open below it.
+                if any(column_role(w) for w in words) and not _row_is_movement(row, style or 'dot', exponent):
+                    carry_last = row
+                    continue
+            carry_open = False
         if region and YEAR_TO_DATE.fullmatch(label(row['text'])):
             # A card's year-to-date block after its section totals: neither movements nor controls, up to the
             # movement table's heading again or a balance (read as another table, E9).
@@ -4864,6 +4895,35 @@ def _continues(row, move, text_only=False):
     elif first < start - 0.02 * width:
         return False
     return (not _is_header(row) and not any(_role_of(text, False) for text, _ in label_pairs(row, 'dot', 2))
+            and not (NOTICE_ENDS_DESCRIPTION and label(row['text']) in _NOTICES))
+
+
+def _carries(row, move, above, under_heading, liability, style, exponent, columns, width):
+    """(E3, PAGE_BREAK_CONTINUATION) A line at the top of a page, under the movement table's heading printed again
+    (``above``: that heading, or the line carried before this one), continuing the previous page's last movement: no
+    date, no amount in an amount column, starting in the movement's description band left of its amount, directly
+    below ``above``, and printing no heading, label or notice."""
+    if not row['tokens'] or row['y0'] is None or above.get('y0') is None or not move['description']:
+        return False
+    if _leading_date(row['tokens'][0]['t'].rstrip('.,')):
+        return False
+    if any(_value_kind(t, style, exponent) == 'money' and (not columns or _band(t, columns, width) is not None)
+           for t in row['tokens']):
+        return False
+    height = max(t['y1'] - t['y0'] for t in above['tokens'])
+    gap = row['y0'] - max(t['y1'] for t in above['tokens'])
+    if gap < -height or gap > height * (2.0 if under_heading else 1.2):
+        return False
+    start = min(t['x0'] for t in move['description'])
+    first = min(t['x0'] for t in row['tokens'])
+    if first < start - 0.02 * (row['width'] or width or 1):
+        return False
+    if move['money'] and first >= min(t['x0'] for t in move['money']):
+        return False
+    if YEAR_TO_DATE.fullmatch(label(row['text'])) or (not liability and _heading_direction(row, style, exponent)) or (
+            liability and _section_heading(row, style, exponent)):
+        return False
+    return (not _is_header(row) and not any(_role_of(text, liability) for text, _ in label_pairs(row, style, exponent))
             and not (NOTICE_ENDS_DESCRIPTION and label(row['text']) in _NOTICES))
 
 

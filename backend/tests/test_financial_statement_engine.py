@@ -3628,6 +3628,50 @@ class UndescribedContinuationTests(unittest.TestCase):
         self.assertFalse(tx[1]['fields'].get('description'))
 
 
+class PageBreakContinuationTests(unittest.TestCase):
+    """(E3) A page's last movement continues at the top of the next page, under the movement heading printed
+    again: those text lines are its description (the counterparty's name line of a multi-line SPEI entry)."""
+
+    def setUp(self):
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+
+    tearDown = setUp
+
+    @staticmethod
+    def sources(name_line=('EMPRESA DESTINO DE PRUEBA SA DE CV', 80000, 300000)):
+        first = mx_statement(MOVES[:2], closing='1,250.00')[0]
+        heading = [('FECHA', 20000, 60000), ('CONCEPTO', 80000, 160000), ('ABONOS', 330000, 380000),
+                   ('CARGOS', 410000, 460000), ('SALDO', 520000, 560000)]
+        day, text, credit, debit, balance = MOVES[2]
+        lines = [heading] + ([[name_line]] if name_line else []) + [[(day, 20000, 60000), (text, 80000, 300000),
+                 (debit, 460000 - 6000 * len(debit), 460000), (balance, 560000 - 6000 * len(balance), 560000)]]
+        return [first, page(2, lines)]
+
+    def moves(self, sources):
+        st = read_statements(sources)[0]
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        return [(r['fields'].get('date'), r['fields'].get('amount_minor'), r['fields'].get('description'))
+                for r in st['_rows'] if r['kind'] == 'transaction']
+
+    def test_lines_under_the_next_pages_heading_finish_the_last_movement(self):
+        moves = self.moves(self.sources())
+        self.assertEqual(moves[1][2], 'PAGO DE SERVICIO EMPRESA DESTINO DE PRUEBA SA DE CV')
+        self.assertEqual(moves[2][2], 'COMISION')
+
+    def test_money_is_the_same_with_the_switch_off(self):
+        on = self.moves(self.sources())
+        with mock.patch.object(E, 'PAGE_BREAK_CONTINUATION', False):
+            E._READINGS.clear(); E._LIVE_READINGS.clear()
+            off = self.moves(self.sources())
+        self.assertEqual([m[:2] for m in on], [m[:2] for m in off])
+        self.assertEqual(off[1][2], 'PAGO DE SERVICIO')
+
+    def test_an_amount_line_is_never_carried(self):
+        moves = self.moves(self.sources(name_line=None))
+        self.assertEqual([m[2] for m in moves], ['TRANSFERENCIA RECIBIDA', 'PAGO DE SERVICIO', 'COMISION'])
+
+
 class ScotiabankLegalNameTests(unittest.TestCase):
     def test_the_legal_name_read_without_its_comma_matches(self):
         from services.financial.statement_engine_profiles import matching_profile

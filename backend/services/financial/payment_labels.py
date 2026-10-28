@@ -41,7 +41,8 @@ class PaymentLabelsRequest(BaseModel):
         return value
 
 
-def update_payment_labels(session, *, case_id, request, actor, commit=True):
+def update_payment_labels(session, *, case_id, request, actor, commit=True, reason=None):
+    """``reason``: why the value was set (where it was read), kept in the label history and shown with the label."""
     changes = request.model_dump(exclude_unset=True, exclude={'transactions', 'add_to_library'})
     if not changes or any(value is None for key, value in changes.items() if key != 'counterparty_link'):
         raise PaymentLabelsError('Choose a category or enter a name. Use an empty value to clear it.', 422)
@@ -102,7 +103,7 @@ def update_payment_labels(session, *, case_id, request, actor, commit=True):
             metadata['investigation_label_history'] = [*metadata.get('investigation_label_history', []), dict(
                 at=datetime.now(timezone.utc).isoformat(), actor_name=actor.name,
                 actor_email=actor.email, actor_id=str(actor.user_id) if actor.user_id else None,
-                before=before, after=row_changes, version=current['version'],
+                before=before, after=row_changes, version=current['version'], **({'reason': reason} if reason else {}),
                 previous_label_sources={key: effective['label_sources'].get(key, {}) for key in row_changes})]
             row.metadata_ = metadata
         if commit:
@@ -153,13 +154,24 @@ def payment_label_view(row, account=None, stored=_LOOKUP, matched=None):
         # suggestion back into the investigator's view on the next read.
         if field in labels:
             values[field] = labels[field]
-            sources[field] = dict(source='investigator', explanation='Saved by an investigator.')
+            sources[field] = dict(source='investigator', explanation=_saved_by(row, field))
     link = display_link(row)
     if link:
         side = 'from_name' if row.direction == 'credit' else 'to_name'
         values[side] = link['label']
         sources[side] = dict(source='investigator', explanation='Linked by an investigator to an existing ' + link['kind'] + '.', identity_kind=link['kind'], identity_id=link['id'])
     return dict(**values, counterparty_link=link, label_sources=sources, label_version=labels.get('version', 0))
+
+
+def _saved_by(row, field):
+    """Who saved a label, when, and the reason they recorded, from the label history."""
+    history = (row.metadata_ or {}).get('investigation_label_history', [])
+    entry = next((e for e in reversed(history) if isinstance(e, dict) and field in (e.get('after') or {})), None)
+    if not entry or not entry.get('actor_name'):
+        return 'Saved by an investigator.'
+    when = str(entry.get('at') or '')[:10]
+    text = f"Saved by {entry['actor_name']}" + (f' on {when}' if when else '') + '.'
+    return text + (' ' + entry['reason'] if entry.get('reason') else '')
 
 
 def _missing(reason):

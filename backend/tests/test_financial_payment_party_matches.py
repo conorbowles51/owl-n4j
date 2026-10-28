@@ -154,6 +154,17 @@ class LabelViewTests(unittest.TestCase):
         printed = self._row(description='PAGO TRANSFERENCIA SPEI HORA 10:00:00 ENVIADO A BBVA MEXICO A LA CUENTA 012180000000000001 AL CLIENTE GAMMA EJEMPLO SA DE CV')
         self.assertEqual(payment_label_view(printed, stored=None, matched=matched)['label_sources']['to_name']['source'], 'description')
 
+    def test_saved_label_shows_who_saved_it_and_why(self):
+        from services.financial.payment_labels import payment_label_view
+        row = self._row(labels={'to_name': 'GAMMA EJEMPLO SA DE CV', 'version': 1})
+        row.metadata_['investigation_label_history'] = [dict(
+            at='2024-05-01T10:00:00+00:00', actor_name='Example Reviewer', after={'to_name': 'GAMMA EJEMPLO SA DE CV'},
+            reason='Printed on the next statement page.')]
+        source = payment_label_view(row, stored=None)['label_sources']['to_name']
+        self.assertEqual(source['explanation'], 'Saved by Example Reviewer on 2024-05-01. Printed on the next statement page.')
+        row.metadata_['investigation_label_history'] = []
+        self.assertEqual(payment_label_view(row, stored=None)['label_sources']['to_name']['explanation'], 'Saved by an investigator.')
+
 
 class CoverageTests(unittest.TestCase):
     def test_matched_payment_counts_as_named(self):
