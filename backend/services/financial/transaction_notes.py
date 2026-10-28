@@ -15,32 +15,39 @@ def _reading_history(session, case_id, readings):
     files = {key: reading['source']['evidence_file_id'] for key, reading in rows.items()}
     identities = [UUID(key) for key in rows]
     nodes = {}
+    # Only identity is needed to walk; provenance is read below for the payments that actually have a
+    # predecessor. Loading every selected payment's provenance took most of this walk on large cases.
     for offset in range(0, len(identities), 400):
-        for row in session.scalars(select(FinancialTransaction).where(FinancialTransaction.case_id == case_id,
+        for identifier in session.scalars(select(FinancialTransaction.id).where(FinancialTransaction.case_id == case_id,
                 FinancialTransaction.id.in_(identities[offset:offset + 400]))):
-            nodes[str(row.id)] = row
+            nodes[str(identifier)] = identifier
     frontier = list(nodes)
     selected = len(nodes)
     parents = {}
     while frontier:
         found = []
         for offset in range(0, len(frontier), 400):
-            found.extend(session.execute(select(FinancialTransaction, FinancialSourceDocument.evidence_file_id)
+            found.extend(session.execute(select(FinancialTransaction.id, FinancialTransaction.superseded_by_id, FinancialSourceDocument.evidence_file_id)
                 .join(FinancialSourceDocument, FinancialTransaction.source_document_id == FinancialSourceDocument.id)
                 .where(FinancialTransaction.case_id == case_id, FinancialSourceDocument.case_id == case_id,
                     FinancialTransaction.superseded_by_id.in_([UUID(key) for key in frontier[offset:offset + 400]]))).all())
         next_frontier = []
-        for parent, file_id in found:
-            child_key, key = str(parent.superseded_by_id), str(parent.id)
-            child = nodes[child_key]
-            if (child.provenance or {}).get('correction', {}).get('previous_transaction_id') != key:
+        children = sorted({superseded_by for _, superseded_by, _ in found}, key=str)
+        provenance = {}
+        for offset in range(0, len(children), 400):
+            provenance.update((str(identifier), value) for identifier, value in session.execute(select(
+                FinancialTransaction.id, FinancialTransaction.provenance).where(FinancialTransaction.case_id == case_id,
+                FinancialTransaction.id.in_(children[offset:offset + 400]))))
+        for parent_id, superseded_by, file_id in found:
+            child_key, key = str(superseded_by), str(parent_id)
+            if (provenance[child_key] or {}).get('correction', {}).get('previous_transaction_id') != key:
                 raise LedgerSummaryError('A payment citation has inconsistent correction history. Review its source before exporting.')
             if child_key in parents and parents[child_key] != key:
                 raise LedgerSummaryError('A payment has more than one correction predecessor. Review its source history.')
             parents[child_key] = key
             files[key] = str(file_id)
             if key not in nodes:
-                nodes[key] = parent
+                nodes[key] = parent_id
                 next_frontier.append(key)
         # The limit bounds the earlier readings walked here, not the selected payments themselves: counting those
         # refused every case with more than 10,000 payments as soon as one of them had a correction.
