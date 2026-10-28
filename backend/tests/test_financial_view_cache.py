@@ -173,6 +173,17 @@ def test_errors_and_non_json_responses_are_not_kept(engine):
     call(engine, plain, case); call(engine, plain, case)
     assert counter.calls == 4
 
+    @view_cache.cached_view('own-response')
+    def own(case_id, db):
+        from fastapi.responses import JSONResponse
+        counter.calls += 1
+        db.execute(text('SELECT count(*) FROM payments'))
+        return JSONResponse(content={'a': 1}, headers={'X-Loupe-Case-Id': str(case_id)})
+
+    assert call(engine, own, case).headers['x-loupe-case-id'] == str(case)
+    assert call(engine, own, case).headers['x-loupe-case-id'] == str(case)
+    assert counter.calls == 6, "a handler's own response, with its own headers, is not kept"
+
 
 def test_views_are_read_only(engine):
     case = uuid.uuid4()
@@ -199,9 +210,28 @@ def test_the_same_bytes_as_without_the_cache(engine):
         db.execute(text('SELECT count(*) FROM payments WHERE case_id = :c'), dict(c=case_id))
         return payload
 
-    expected = JSONResponse(content=jsonable_encoder(payload)).body
-    assert call(engine, handler, case).body == expected
-    assert call(engine, handler, case).body == expected
+    expected = JSONResponse(content=jsonable_encoder(payload))
+    for _ in range(2):
+        response = call(engine, handler, case)
+        assert response.body == expected.body
+        assert response.headers['content-type'] == expected.headers['content-type']
+        assert response.headers['content-length'] == expected.headers['content-length']
+
+
+def test_values_json_cannot_write_take_fastapis_path(engine):
+    import datetime
+    from decimal import Decimal
+    from fastapi.encoders import jsonable_encoder
+    from fastapi.responses import JSONResponse
+    case = uuid.uuid4()
+    payload = dict(id=case, day=datetime.date(2024, 2, 29), amount=Decimal('1.50'), tags={'x'})
+
+    @view_cache.cached_view('typed')
+    def handler(case_id, db):
+        db.execute(text('SELECT count(*) FROM payments WHERE case_id = :c'), dict(c=case_id))
+        return payload
+
+    assert call(engine, handler, case).body == JSONResponse(content=jsonable_encoder(payload)).body
 
 
 def test_off_without_postgresql():

@@ -24,6 +24,8 @@ from services.financial.payment_document_review import (
 
 logger = logging.getLogger(__name__)
 _require_access = case_access_dependency(lambda request, payload: ('case', 'view'))
+from services.financial.view_cache import cached_view
+
 router = APIRouter(prefix='/api/financial/statement-import', tags=['financial'],
                    dependencies=[Depends(get_current_db_user), Depends(_require_access)])
 
@@ -149,6 +151,7 @@ class _AccountTypePreview(BaseModel):
 
 
 @router.get('/account-types')
+@cached_view('statement-import-account-types')
 def account_types(case_id: UUID = Query(...), db: Session = Depends(get_db)):
     try:
         return account_type_change.account_type_review(db, case_id=case_id)

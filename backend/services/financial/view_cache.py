@@ -52,6 +52,7 @@ _entries: OrderedDict = OrderedDict()
 _total_bytes = 0
 _key_locks: dict = {}
 stats = dict(hits=0, misses=0, stored=0, not_stored=0)
+_Encoded = None
 
 
 @dataclass
@@ -179,6 +180,36 @@ def _response(entry):
     return Response(content=entry.body, status_code=entry.status_code, media_type=entry.media_type)
 
 
+def _encoded_class():
+    from fastapi.responses import JSONResponse
+
+    class Encoded(JSONResponse):
+        """A JSONResponse whose content is already its encoded body."""
+        def render(self, content):
+            return content
+    return Encoded
+
+
+def _json_response(result):
+    """FastAPI's own response for this result, without its slow pass over plain JSON.
+
+    jsonable_encoder walks every value in Python (13.8 s for one case's 61 MB payment list) and changes
+    nothing in data that is already JSON: dicts, lists, strings, numbers, booleans and None. json.dumps with
+    JSONResponse's settings writes those bytes directly and refuses (TypeError) anything else, which then
+    takes FastAPI's full path.
+    """
+    from fastapi.encoders import jsonable_encoder
+    from fastapi.responses import JSONResponse
+    try:
+        body = json.dumps(result, ensure_ascii=False, allow_nan=False, indent=None, separators=(',', ':')).encode('utf-8')
+    except TypeError:
+        return JSONResponse(content=jsonable_encoder(result))
+    global _Encoded
+    if _Encoded is None:
+        _Encoded = _encoded_class()
+    return _Encoded(content=body)
+
+
 def cached_view(name):
     """Decorate a synchronous route handler that has ``case_id`` and ``db`` parameters."""
     def decorate(handler):
@@ -198,8 +229,7 @@ def cached_view(name):
 
 
 def _serve(handler, key, engine, db, case_id, kwargs):
-    from fastapi.encoders import jsonable_encoder
-    from fastapi.responses import JSONResponse, Response
+    from fastapi.responses import Response
     # The access check ran in the session's own transaction; end it so this view's reads begin in the snapshot.
     db.rollback()
     started = time.perf_counter()
@@ -221,11 +251,12 @@ def _serve(handler, key, engine, db, case_id, kwargs):
             try:
                 result = handler(**kwargs)
                 # Lazy loads after the handler returns still belong to this snapshot.
-                response = result if isinstance(result, Response) else JSONResponse(content=jsonable_encoder(result))
+                response = result if isinstance(result, Response) else _json_response(result)
             finally:
                 _recording.reset(token)
                 db.rollback()
-            if type(response) is not JSONResponse or response.status_code != 200:
+            # Only plain results encoded here are kept: a handler's own Response may carry headers of its own.
+            if isinstance(result, Response) or response.status_code != 200:
                 stats['not_stored'] += 1
                 return response
             tables = tuple(sorted(recording.tables))

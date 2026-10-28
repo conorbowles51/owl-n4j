@@ -46,7 +46,7 @@ from typing import Any, Optional
 from uuid import UUID
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, selectinload
 
 from postgres.models.enums import LedgerStatus
 from postgres.models.financial import FinancialTransaction
@@ -83,7 +83,9 @@ def list_transactions(
 
     status = ledger_status if ledger_status is not None else LedgerStatus.admitted
 
-    stmt = select(FinancialTransaction).options(joinedload(FinancialTransaction.account)).where(
+    # Each account is loaded once (selectinload). Joined to every payment, its metadata JSON was read and
+    # decoded again for each of the account's payments.
+    stmt = select(FinancialTransaction).options(selectinload(FinancialTransaction.account)).where(
         FinancialTransaction.case_id == case_id,
         FinancialTransaction.ledger_status == status.value,
     )
