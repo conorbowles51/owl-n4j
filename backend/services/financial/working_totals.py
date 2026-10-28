@@ -51,7 +51,7 @@ def working_totals_from_readings(summary):
 
 def working_ledger_summary(session, *, case_id, account_id=None, start_date=None, end_date=None, account_ids=None, account_holders=None):
     return working_totals_from_readings(ledger_summary(session, case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders,
-        start_date=start_date, end_date=end_date, capture_readings=True))
+        start_date=start_date, end_date=end_date, capture_readings=True, totals_only_readings=True))
 
 
 
@@ -60,7 +60,7 @@ def working_ledger_analysis(session, *, case_id, account_id=None, start_date=Non
     if grouping not in ('daily', 'monthly', 'counterparty'):
         raise LedgerSummaryError('Unsupported working analysis grouping.')
     captured = ledger_summary(session, case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders,
-        start_date=start_date, end_date=end_date, capture_readings=True)
+        start_date=start_date, end_date=end_date, capture_readings=True, totals_only_readings=True)
     result = working_totals_from_readings(captured)
     counterparty = grouping == 'counterparty'
     output = 'counterparties' if counterparty else 'points'

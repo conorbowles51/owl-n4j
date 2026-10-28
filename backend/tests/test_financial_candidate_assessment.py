@@ -185,7 +185,7 @@ class CandidateAssessmentRouterTests(unittest.IsolatedAsyncioTestCase):
         from routers import financial_ledger as router
         case, mapping = uuid4(), uuid4()
         with patch.object(router, "read_candidate_mapping", return_value={}) as call:
-            await router.get_candidate_mapping(mapping, case, "db")
+            router.get_candidate_mapping(mapping, case, "db")
         call.assert_called_once_with("db", case_id=case, mapping_id=mapping)
 
     async def test_stale_source_status_is_preserved(self):
@@ -201,7 +201,7 @@ class CandidateAssessmentRouterTests(unittest.IsolatedAsyncioTestCase):
         from routers import financial_ledger as router
         with patch.object(router, "read_candidate_mapping", side_effect=RuntimeError("private database detail")):
             with self.assertRaises(HTTPException) as error:
-                await router.get_candidate_mapping(uuid4(), uuid4(), "db")
+                router.get_candidate_mapping(uuid4(), uuid4(), "db")
         self.assertEqual(error.exception.status_code, 500)
         self.assertNotIn("private", error.exception.detail)
 

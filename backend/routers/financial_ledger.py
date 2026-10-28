@@ -132,7 +132,7 @@ class CandidateAmountAssessmentRequest(BaseModel):
 
 
 @router.get("/candidates/{candidate_id}/review")
-async def get_candidate_review(candidate_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+def get_candidate_review(candidate_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
     try:
         return read_candidate_review(db, case_id=case_id, candidate_id=candidate_id)
     except CandidateStoreError as exc:
@@ -143,7 +143,7 @@ async def get_candidate_review(candidate_id: UUID, case_id: UUID = Query(...), d
 
 
 @router.get("/candidate-mappings/{mapping_id}")
-async def get_candidate_mapping(mapping_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+def get_candidate_mapping(mapping_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
     try:
         return read_candidate_mapping(db, case_id=case_id, mapping_id=mapping_id)
     except CandidateStoreError as exc:
@@ -154,7 +154,7 @@ async def get_candidate_mapping(mapping_id: UUID, case_id: UUID = Query(...), db
 
 
 @router.get("/candidate-mappings")
-async def get_candidate_mappings(case_id: UUID = Query(...), limit: int = Query(25, ge=1, le=100),
+def get_candidate_mappings(case_id: UUID = Query(...), limit: int = Query(25, ge=1, le=100),
                                   offset: int = Query(0, ge=0), db: Session = Depends(get_db)):
     try:
         return list_candidate_mappings(db, case_id=case_id, limit=limit, offset=offset)
@@ -415,7 +415,7 @@ async def assemble_saved_trace_support(case_id: UUID = Query(...), scenarios: Op
 
 
 @router.get("/ledger-counterparties")
-async def get_ledger_counterparties(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
+def get_ledger_counterparties(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
         start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None), db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
     from services.financial.ledger_summary import ledger_counterparties
     try:
@@ -429,7 +429,7 @@ async def get_ledger_counterparties(case_id: UUID = Query(...), account_id: Opti
 
 
 @router.get("/ledger-trends")
-async def get_ledger_trends(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
+def get_ledger_trends(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
         start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
         grouping: Literal["daily", "monthly"] = Query("monthly"), db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
     try:
@@ -444,7 +444,7 @@ async def get_ledger_trends(case_id: UUID = Query(...), account_id: Optional[UUI
 
 
 @router.get("/ledger-working-analysis")
-async def get_working_ledger_analysis(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
+def get_working_ledger_analysis(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
         start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
         grouping: Literal["daily", "monthly", "counterparty"] = Query("monthly"), db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
     from services.financial.working_totals import working_ledger_analysis
@@ -460,7 +460,7 @@ async def get_working_ledger_analysis(case_id: UUID = Query(...), account_id: Op
 
 
 @router.get("/ledger-working-summary")
-async def get_working_ledger_summary(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
+def get_working_ledger_summary(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
         start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
         db: Session = Depends(get_db), include_contributions: bool = False, account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
     from services.financial.working_totals import working_ledger_summary
@@ -479,7 +479,7 @@ async def get_working_ledger_summary(case_id: UUID = Query(...), account_id: Opt
 
 
 @router.get("/ledger-summary")
-async def get_ledger_summary(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
+def get_ledger_summary(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
         start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
         db: Session = Depends(get_db), include_contributions: bool = False, account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
     try:
@@ -497,7 +497,7 @@ async def get_ledger_summary(case_id: UUID = Query(...), account_id: Optional[UU
 
 
 @router.get("/requested-statement-coverage")
-async def get_requested_statement_coverage(case_id: UUID = Query(...), account_id: UUID = Query(...),
+def get_requested_statement_coverage(case_id: UUID = Query(...), account_id: UUID = Query(...),
         start_date: date = Query(...), end_date: date = Query(...), db: Session = Depends(get_db)):
     try:
         return requested_statement_coverage(db, case_id=case_id, account_id=account_id,
@@ -510,7 +510,7 @@ async def get_requested_statement_coverage(case_id: UUID = Query(...), account_i
 
 
 @router.get("/statement-periods/{period_id}/running-balances")
-async def get_statement_running_balances(period_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+def get_statement_running_balances(period_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
     try:
         return capture_statement_running_balances(db.get_bind(), case_id=case_id, period_id=period_id)
     except StatementCheckError as exc:
@@ -521,7 +521,7 @@ async def get_statement_running_balances(period_id: UUID, case_id: UUID = Query(
 
 
 @router.get("/statement-periods/{period_id}/source")
-async def get_statement_source(period_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+def get_statement_source(period_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
     try:
         return statement_source(db, case_id=case_id, period_id=period_id)
     except LedgerSourceError as exc:
@@ -532,7 +532,7 @@ async def get_statement_source(period_id: UUID, case_id: UUID = Query(...), db: 
 
 
 @router.get("/statement-checks")
-async def get_statement_checks(case_id: UUID = Query(...), offset: int = Query(0, ge=0), db: Session = Depends(get_db), include_native: bool = False, account_id: UUID | None = None):
+def get_statement_checks(case_id: UUID = Query(...), offset: int = Query(0, ge=0), db: Session = Depends(get_db), include_native: bool = False, account_id: UUID | None = None):
     try:
         return capture_statement_checks(db.get_bind(), case_id=case_id, offset=offset,
             **(dict(account_id=account_id) if account_id is not None else {}),
@@ -545,7 +545,7 @@ async def get_statement_checks(case_id: UUID = Query(...), offset: int = Query(0
 
 
 @router.get("/account-references")
-async def get_account_references(case_id: UUID = Query(...), offset: int = Query(0, ge=0),
+def get_account_references(case_id: UUID = Query(...), offset: int = Query(0, ge=0),
                                  search: str = Query('', max_length=128), show: Literal['missing','all'] = Query('missing'),
                                  db: Session = Depends(get_db)):
     from services.financial.account_mentions import account_references
@@ -557,7 +557,7 @@ async def get_account_references(case_id: UUID = Query(...), offset: int = Query
 
 
 @router.get("/statement-coverage")
-async def get_statement_coverage(case_id: UUID = Query(...), offset: int = Query(0, ge=0), db: Session = Depends(get_db), account_id: UUID | None = None):
+def get_statement_coverage(case_id: UUID = Query(...), offset: int = Query(0, ge=0), db: Session = Depends(get_db), account_id: UUID | None = None):
     try:
         return list_statement_coverage(db, case_id=case_id, offset=offset,
             **(dict(account_id=account_id) if account_id is not None else {}))
@@ -569,7 +569,7 @@ async def get_statement_coverage(case_id: UUID = Query(...), offset: int = Query
 
 
 @router.get('/account-history')
-async def get_account_history(case_id: UUID = Query(...), account_id: UUID | None = Query(None),
+def get_account_history(case_id: UUID = Query(...), account_id: UUID | None = Query(None),
         account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None,
         start_date: date | None = Query(None), end_date: date | None = Query(None), db: Session = Depends(get_db)):
     from services.financial.account_history import account_history
@@ -582,7 +582,7 @@ async def get_account_history(case_id: UUID = Query(...), account_id: UUID | Non
 
 
 @router.get("/ledger-accounts")
-async def get_candidate_accounts(case_id: UUID = Query(...), search: str = Query("", max_length=128), offset: int = 0,
+def get_candidate_accounts(case_id: UUID = Query(...), search: str = Query("", max_length=128), offset: int = 0,
                                   db: Session = Depends(get_db)):
     try:
         return list_candidate_accounts(db, case_id=case_id, search=search, offset=offset,
@@ -595,7 +595,7 @@ async def get_candidate_accounts(case_id: UUID = Query(...), search: str = Query
 
 
 @router.get("/candidates/{candidate_id}/source-readings")
-async def get_candidate_source_readings(candidate_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+def get_candidate_source_readings(candidate_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
     from services.financial.candidate_assessment import candidate_source_readings
     try:
         return candidate_source_readings(db, case_id=case_id, candidate_id=candidate_id)
@@ -607,7 +607,7 @@ async def get_candidate_source_readings(candidate_id: UUID, case_id: UUID = Quer
 
 
 @router.get("/candidates/{candidate_id}/date-assessment")
-async def assess_saved_candidate_dates(candidate_id: UUID, case_id: UUID = Query(...),
+def assess_saved_candidate_dates(candidate_id: UUID, case_id: UUID = Query(...),
                                        db: Session = Depends(get_db)):
     try:
         return assess_candidate_dates(db, case_id=case_id, candidate_id=candidate_id)
@@ -647,7 +647,7 @@ async def get_ledger_sources(body: LedgerSourcesRequest, case_id: UUID = Query(.
 
 
 @router.get("/ledger/{transaction_id}/source")
-async def get_ledger_source(transaction_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+def get_ledger_source(transaction_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
     try:
         return ledger_source(db, case_id=case_id, transaction_id=transaction_id)
     except LedgerSourceError as exc:
@@ -667,7 +667,7 @@ class AmountAssessmentRequest(BaseModel):
 
 
 @router.get("/source-files/{evidence_file_id}/text")
-async def get_amount_source_text(
+def get_amount_source_text(
     evidence_file_id: UUID,
     case_id: UUID = Query(...),
     start_char: int = Query(0, ge=0),
@@ -703,7 +703,7 @@ async def assess_evidence_amount(
 
 
 @router.get("/ledger")
-async def get_ledger_transactions(
+def get_ledger_transactions(
     case_id: UUID = Query(..., description="REQUIRED: Case ID"),
     source_document_id: UUID | None = None,
     account_id: Optional[UUID] = Query(
@@ -774,7 +774,7 @@ async def get_ledger_transactions(
 
 
 @router.get("/runs")
-async def get_ingestion_runs(
+def get_ingestion_runs(
     case_id: UUID = Query(..., description="REQUIRED: Case ID"),
     status: Optional[str] = Query(
         None,
@@ -857,7 +857,7 @@ def _parsed_member(value: Optional[str], enum, field: str):
 
 
 @router.get("/decisions")
-async def get_case_decisions(
+def get_case_decisions(
     case_id: UUID = Query(..., description="REQUIRED: Case ID"),
     subject_type: Optional[str] = Query(
         None,
@@ -937,7 +937,7 @@ async def get_case_decisions(
 
 
 @router.get("/proof-standing")
-async def get_case_proof_standing(
+def get_case_proof_standing(
     case_id: UUID = Query(..., description="REQUIRED: Case ID"),
     db: Session = Depends(get_db),
 ):
@@ -982,7 +982,7 @@ async def get_case_proof_standing(
 
 
 @router.get("/duplicates")
-async def get_duplicate_candidates(
+def get_duplicate_candidates(
     case_id: UUID = Query(..., description="REQUIRED: Case ID"),
     db: Session = Depends(get_db),
 ):
@@ -997,7 +997,7 @@ async def get_duplicate_candidates(
 
 
 @router.get("/candidate-sources")
-async def get_candidate_sources(case_id: UUID = Query(...), limit: int = 25, offset: int = 0,
+def get_candidate_sources(case_id: UUID = Query(...), limit: int = 25, offset: int = 0,
                                 db: Session = Depends(get_db)):
     try:
         return list_candidate_sources(db, case_id=case_id, limit=limit, offset=offset)
@@ -1031,7 +1031,7 @@ async def suggest_saved_source_rows(evidence_file_id: UUID, page_number: int, bo
 
 
 @router.get("/candidate-sources/{evidence_file_id}/pages/{page_number}")
-async def get_candidate_source(evidence_file_id: UUID, page_number: int, case_id: UUID = Query(...),
+def get_candidate_source(evidence_file_id: UUID, page_number: int, case_id: UUID = Query(...),
                                table_index: int = 0, db: Session = Depends(get_db)):
     try:
         return read_candidate_source(db, case_id=case_id, evidence_file_id=evidence_file_id,
@@ -1044,7 +1044,7 @@ async def get_candidate_source(evidence_file_id: UUID, page_number: int, case_id
 
 
 @router.get("/candidate-sources/{evidence_file_id}/progress")
-async def get_candidate_document_progress(evidence_file_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+def get_candidate_document_progress(evidence_file_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
     from services.financial.candidate_progress import candidate_document_progress
     try:
         return candidate_document_progress(db, case_id=case_id, evidence_file_id=evidence_file_id)
@@ -1056,7 +1056,7 @@ async def get_candidate_document_progress(evidence_file_id: UUID, case_id: UUID 
 
 
 @router.get("/candidate-sources/{evidence_file_id}/reuse-check")
-async def get_candidate_source_reuse(evidence_file_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+def get_candidate_source_reuse(evidence_file_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
     try:
         return check_candidate_source_reuse(db, case_id=case_id, evidence_file_id=evidence_file_id)
     except CandidateStoreError as exc:
@@ -1080,7 +1080,7 @@ async def preview_candidate_statement_scopes(evidence_file_id: UUID, body: State
 
 
 @router.get("/candidate-sources/{evidence_file_id}/finalization-preview")
-async def get_candidate_finalization_preview(evidence_file_id: UUID, case_id: UUID = Query(...),
+def get_candidate_finalization_preview(evidence_file_id: UUID, case_id: UUID = Query(...),
                                              db: Session = Depends(get_db)):
     try:
         return preview_candidate_finalization(db, case_id=case_id,
@@ -1095,7 +1095,7 @@ async def get_candidate_finalization_preview(evidence_file_id: UUID, case_id: UU
 
 
 @router.get("/candidate-sources/{evidence_file_id}/statement-draft")
-async def get_statement_review_draft(evidence_file_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+def get_statement_review_draft(evidence_file_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
     from services.financial.statement_review_drafts import read_statement_draft
     try:
         return read_statement_draft(db, case_id=case_id, evidence_file_id=evidence_file_id)
@@ -1324,7 +1324,7 @@ def run_indirect_review(body: IndirectReviewInput,case_id: UUID = Query(...),db:
 from services.financial.model_pdf_nomination import read_pdf_model_nomination, list_pdf_model_nominations
 
 @router.get("/model-nominations/{nomination_id}")
-async def get_pdf_model_nomination(nomination_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+def get_pdf_model_nomination(nomination_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
     from services.financial.pdf_candidates import PdfMappingError
     try:
         return read_pdf_model_nomination(db,case_id=case_id,nomination_id=nomination_id)
@@ -1335,7 +1335,7 @@ async def get_pdf_model_nomination(nomination_id: UUID, case_id: UUID = Query(..
         raise HTTPException(status_code=500,detail="Saved model nomination could not be read.")
 
 @router.get("/candidate-sources/{evidence_file_id}/model-nominations")
-async def get_pdf_model_nominations(evidence_file_id: UUID, case_id: UUID = Query(...), limit: int = Query(20,ge=1,le=50), offset: int = Query(0,ge=0), page_number: int | None = Query(None,ge=1), table_index: int | None = Query(None,ge=0,le=63), db: Session = Depends(get_db)):
+def get_pdf_model_nominations(evidence_file_id: UUID, case_id: UUID = Query(...), limit: int = Query(20,ge=1,le=50), offset: int = Query(0,ge=0), page_number: int | None = Query(None,ge=1), table_index: int | None = Query(None,ge=0,le=63), db: Session = Depends(get_db)):
     from services.financial.pdf_candidates import PdfMappingError
     try:
         return list_pdf_model_nominations(db,case_id=case_id,evidence_file_id=evidence_file_id,limit=limit,offset=offset,page_number=page_number,table_index=table_index)

@@ -43,3 +43,33 @@ class FinancialTransactionNotesTests(TransactionPersistenceTestCase):
         with self.assertRaises(LedgerSummaryError):self.capture()
         self.link.target_id=self.file_id;self.db.commit()
         with patch('services.financial.transaction_notes.MAX_NOTE_LINKS',0),self.assertRaises(LedgerSummaryError):self.capture()
+
+
+
+class CorrectionHistoryLimitTests(TransactionPersistenceTestCase):
+    """The history limit counts earlier readings walked, not the selected payments themselves."""
+
+    def setUp(self):
+        super().setUp()
+        Base.metadata.create_all(self.db.connection(),tables=[WorkspaceEntry.__table__,WorkspaceEntryLink.__table__])
+        self.rows=self.write([self.draft(row_index=index) for index in range(3)]);self.db.commit()
+
+    def readings(self,rows):
+        return [dict(row=dict(key=str(row.id),ref_id=row.ref_id,ledger_status=row.ledger_status),
+                     source=dict(evidence_file_id=str(self.evidence_file.id))) for row in rows]
+
+    def test_more_selected_payments_than_the_limit_are_not_refused(self):
+        with patch('services.financial.transaction_notes.MAX_NOTE_LINKS',1):
+            self.assertEqual(capture_transaction_notes(self.db,case_id=self.case.id,readings=self.readings(self.rows)),[])
+
+    def test_earlier_readings_beyond_the_limit_are_still_refused(self):
+        current,first,second=self.rows
+        first.ledger_status='superseded';first.superseded_by_id=current.id
+        second.ledger_status='superseded';second.superseded_by_id=first.id
+        current.provenance={**(current.provenance or {}),'correction':{'previous_transaction_id':str(first.id)}}
+        first.provenance={**(first.provenance or {}),'correction':{'previous_transaction_id':str(second.id)}}
+        self.db.commit()
+        with patch('services.financial.transaction_notes.MAX_NOTE_LINKS',2):
+            self.assertEqual(capture_transaction_notes(self.db,case_id=self.case.id,readings=self.readings([current])),[])
+        with patch('services.financial.transaction_notes.MAX_NOTE_LINKS',1),self.assertRaisesRegex(LedgerSummaryError,'Correction history exceeds'):
+            capture_transaction_notes(self.db,case_id=self.case.id,readings=self.readings([current]))

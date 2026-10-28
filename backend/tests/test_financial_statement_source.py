@@ -54,15 +54,15 @@ class StatementRoutesTests(unittest.IsolatedAsyncioTestCase):
     async def test_read_check_scope_and_safe_error(self):
         db=Mock()
         with patch.object(router,'capture_statement_checks',return_value={'applied':False}) as read:
-            self.assertEqual(await router.get_statement_checks('case',25,db),{'applied':False})
+            self.assertEqual(router.get_statement_checks('case',25,db),{'applied':False})
         read.assert_called_once_with(db.get_bind(),case_id='case',offset=25)
         with patch.object(router,'capture_statement_checks',side_effect=StatementCheckError('Scope mismatch')):
-            with self.assertRaises(HTTPException) as ctx:await router.get_statement_checks('case',0,db)
+            with self.assertRaises(HTTPException) as ctx:router.get_statement_checks('case',0,db)
         self.assertEqual(ctx.exception.status_code,422)
     async def test_source_scope_and_status(self):
         with patch.object(router,'statement_source',return_value={}) as read:
-            await router.get_statement_source('period','case','db')
+            router.get_statement_source('period','case','db')
         read.assert_called_once_with('db',case_id='case',period_id='period')
         with patch.object(router,'statement_source',side_effect=LedgerSourceError('Missing',404)):
-            with self.assertRaises(HTTPException) as ctx:await router.get_statement_source('period','case','db')
+            with self.assertRaises(HTTPException) as ctx:router.get_statement_source('period','case','db')
         self.assertEqual(ctx.exception.status_code,404)

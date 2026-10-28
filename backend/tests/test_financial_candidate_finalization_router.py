@@ -12,7 +12,7 @@ class FinalizationRouterTests(unittest.IsolatedAsyncioTestCase):
         case, file = uuid4(),uuid4()
         db=Mock()
         with patch.object(read,"preview_candidate_finalization",return_value={"applied":False}) as call:
-            self.assertFalse((await read.get_candidate_finalization_preview(file,case,db))["applied"])
+            self.assertFalse((read.get_candidate_finalization_preview(file,case,db))["applied"])
         call.assert_called_once_with(db,case_id=case,evidence_file_id=file,resolve_path=read._resolve_stored_path)
         db.rollback.assert_called_once()
         self.assertEqual(read._ledger_case_permission(None,{}),("case","view"))
@@ -21,7 +21,7 @@ class FinalizationRouterTests(unittest.IsolatedAsyncioTestCase):
         db=Mock()
         with patch.object(read,"preview_candidate_finalization",side_effect=CandidateStoreError("Reload",409)):
             with self.assertRaises(HTTPException) as error:
-                await read.get_candidate_finalization_preview(uuid4(),uuid4(),db)
+                read.get_candidate_finalization_preview(uuid4(),uuid4(),db)
         self.assertEqual(error.exception.status_code,409)
         db.rollback.assert_called_once()
 
@@ -42,6 +42,6 @@ class FinalizationRouterTests(unittest.IsolatedAsyncioTestCase):
         db=Mock()
         with patch.object(read,"preview_candidate_finalization",side_effect=RuntimeError("private path")):
             with self.assertRaises(HTTPException) as error:
-                await read.get_candidate_finalization_preview(uuid4(),uuid4(),db)
+                read.get_candidate_finalization_preview(uuid4(),uuid4(),db)
         self.assertEqual(error.exception.status_code,500)
         self.assertNotIn("private",error.exception.detail)

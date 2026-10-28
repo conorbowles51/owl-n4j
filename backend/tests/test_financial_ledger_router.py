@@ -54,7 +54,7 @@ class GetLedgerTransactionsTests(unittest.IsolatedAsyncioTestCase):
         ) as list_call, patch.object(
             financial_ledger, "to_view", return_value=FakeView()
         ) as to_view_call:
-            result = await financial_ledger.get_ledger_transactions(
+            result = financial_ledger.get_ledger_transactions(
                 case_id=case_id,
                 account_id=None,
                 ledger_status=None,
@@ -89,7 +89,7 @@ class GetLedgerTransactionsTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(
             financial_ledger, "list_transactions", return_value=[]
         ) as list_call:
-            await financial_ledger.get_ledger_transactions(
+            financial_ledger.get_ledger_transactions(
                 case_id=case_id,
                 account_id=None,
                 ledger_status="quarantined",
@@ -110,7 +110,7 @@ class GetLedgerTransactionsTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_an_unknown_ledger_status_is_a_400_not_a_500(self):
         with self.assertRaises(HTTPException) as ctx:
-            await financial_ledger.get_ledger_transactions(
+            financial_ledger.get_ledger_transactions(
                 case_id=uuid.uuid4(),
                 account_id=None,
                 ledger_status="not-a-real-status",
@@ -128,7 +128,7 @@ class GetLedgerTransactionsTests(unittest.IsolatedAsyncioTestCase):
             side_effect=LedgerQueryError("start_date is after end_date"),
         ):
             with self.assertRaises(HTTPException) as ctx:
-                await financial_ledger.get_ledger_transactions(
+                financial_ledger.get_ledger_transactions(
                     case_id=uuid.uuid4(),
                     account_id=None,
                     ledger_status=None,
@@ -147,7 +147,7 @@ class GetLedgerTransactionsTests(unittest.IsolatedAsyncioTestCase):
             side_effect=RuntimeError("db exploded"),
         ):
             with self.assertRaises(HTTPException) as ctx:
-                await financial_ledger.get_ledger_transactions(
+                financial_ledger.get_ledger_transactions(
                     case_id=uuid.uuid4(),
                     account_id=None,
                     ledger_status=None,
@@ -180,7 +180,7 @@ class GetCaseDecisionsTests(unittest.IsolatedAsyncioTestCase):
             "db": "fake-session",
         }
         params.update(overrides)
-        return await financial_ledger.get_case_decisions(**params)
+        return financial_ledger.get_case_decisions(**params)
 
     async def test_defaults_ask_the_service_for_the_whole_case(self):
         case_id = uuid.uuid4()
@@ -370,7 +370,7 @@ class GetCaseProofStandingTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(
             financial_ledger, "case_proof_standing", return_value=standing
         ) as service:
-            result = await financial_ledger.get_case_proof_standing(
+            result = financial_ledger.get_case_proof_standing(
                 case_id=case_id, db="fake-session"
             )
 
@@ -392,7 +392,7 @@ class GetCaseProofStandingTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(
             financial_ledger, "case_proof_standing", return_value=standing
         ):
-            result = await financial_ledger.get_case_proof_standing(
+            result = financial_ledger.get_case_proof_standing(
                 case_id=case_id, db="fake-session"
             )
 
@@ -418,7 +418,7 @@ class GetCaseProofStandingTests(unittest.IsolatedAsyncioTestCase):
             ),
         ):
             with self.assertRaises(HTTPException) as ctx:
-                await financial_ledger.get_case_proof_standing(
+                financial_ledger.get_case_proof_standing(
                     case_id=uuid.uuid4(), db="fake-session"
                 )
 
@@ -431,7 +431,7 @@ class GetCaseProofStandingTests(unittest.IsolatedAsyncioTestCase):
             side_effect=RuntimeError("db exploded"),
         ):
             with self.assertRaises(HTTPException) as ctx:
-                await financial_ledger.get_case_proof_standing(
+                financial_ledger.get_case_proof_standing(
                     case_id=uuid.uuid4(), db="fake-session"
                 )
 

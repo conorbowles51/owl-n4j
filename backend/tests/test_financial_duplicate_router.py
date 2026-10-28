@@ -13,7 +13,7 @@ class DuplicateRouterTests(unittest.IsolatedAsyncioTestCase):
         payload = {"case_id": str(case_id), "documents": 0, "compared": 0,
                    "groups": [], "skipped": []}
         with patch.object(financial_ledger, "list_duplicate_candidates", return_value=payload) as call:
-            self.assertEqual(await financial_ledger.get_duplicate_candidates(case_id, "db"), payload)
+            self.assertEqual(financial_ledger.get_duplicate_candidates(case_id, "db"), payload)
         call.assert_called_once_with("db", case_id)
 
     async def test_limit_is_explicit_and_fault_does_not_expose_database_details(self):
@@ -23,7 +23,7 @@ class DuplicateRouterTests(unittest.IsolatedAsyncioTestCase):
                 financial_ledger, "list_duplicate_candidates", side_effect=error
             ):
                 with self.assertRaises(HTTPException) as caught:
-                    await financial_ledger.get_duplicate_candidates(uuid.uuid4(), "db")
+                    financial_ledger.get_duplicate_candidates(uuid.uuid4(), "db")
                 self.assertEqual(caught.exception.status_code, status)
                 self.assertNotIn("private database detail", caught.exception.detail)
 

@@ -94,11 +94,11 @@ class CandidateSourceTests(unittest.TestCase):
         from routers import financial_ledger as router
         f = self.f
         with patch.object(router, 'read_candidate_source', return_value={'source':'checked'}) as call:
-            self.assertEqual(asyncio.run(router.get_candidate_source(f.file, 1, f.case, 0, f.db)), {'source':'checked'})
+            self.assertEqual(router.get_candidate_source(f.file, 1, f.case, 0, f.db), {'source':'checked'})
             call.assert_called_once_with(f.db, case_id=f.case, evidence_file_id=f.file, page_number=1, table_index=0)
         with patch.object(router, 'list_candidate_sources', side_effect=PdfMappingError('Source changed',409)):
             with self.assertRaises(HTTPException) as caught:
-                asyncio.run(router.get_candidate_sources(f.case, 25, 0, f.db))
+                router.get_candidate_sources(f.case, 25, 0, f.db)
             self.assertEqual(caught.exception.status_code,409)
 
 class CandidateRowSuggestionTests(CandidateSourceTests):
