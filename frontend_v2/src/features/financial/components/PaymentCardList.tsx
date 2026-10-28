@@ -125,14 +125,14 @@ export function PaymentCardList({
                           {other.name}
                         </button>
                         <PaymentLabelOrigin row={row} field={incoming ? "from_name" : "to_name"} />
-                        {onName && (
+                        {onName && needsName(row) && (
                           <button
                             type="button"
                             className="text-[12px] font-medium text-[#1d4aa6] hover:underline dark:text-blue-300"
                             aria-label={`Name ${incoming ? "who paid" : "who was paid"}: ${label} on ${row.ordering_date}`}
                             onClick={() => onName(row)}
                           >
-                            {needsName(row) ? "Name it" : "Rename"}
+                            Name it
                           </button>
                         )}
                       </div>

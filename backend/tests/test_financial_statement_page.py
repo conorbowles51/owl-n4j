@@ -233,5 +233,36 @@ class NamedFromStatementTests(DuplicateTestCase):
         self.assertEqual(caught.exception.status_code, 404)
 
 
+    def test_undo_after_a_rename_restores_the_earlier_persons_name(self):
+        side = self.other_side(self.row)
+        self.save([self.row], counterparty_name='ACME SA')
+        self.db.refresh(self.row)
+        self.save([self.row], counterparty_name='ACME SA DE CV', named_from='statement')
+        self.db.refresh(self.row)
+        remove_payment_labels(self.db, case_id=self.case.id, actor=self.actor, request=RemovePaymentLabelsRequest(
+            transactions=[{'id': self.row.id, 'version': 2}], fields=['counterparty_name']))
+        self.db.refresh(self.row)
+        view = payment_label_view(self.row, self.row.account)
+        self.assertEqual((view[side], view['label_sources'][side]['source']), ('ACME SA', 'investigator'))
+        self.assertEqual(self.row.metadata_['investigation_label_history'][-1]['restored'], {side: 'ACME SA'})
+
+    def test_undo_refuses_a_save_that_replaced_a_party_link(self):
+        side = self.other_side(self.row)
+        self.save([self.row], counterparty_name='ACME', named_from='statement')
+        self.db.refresh(self.row)
+        metadata = dict(self.row.metadata_)
+        history = [dict(entry) for entry in metadata['investigation_label_history']]
+        history[-1]['previous_label_sources'] = {side: {'source': 'investigator', 'identity_kind': 'party', 'identity_id': 'p'}}
+        metadata['investigation_label_history'] = history
+        self.row.metadata_ = metadata
+        self.db.commit()
+        from services.financial.payment_labels import PaymentLabelsError
+        with self.assertRaises(PaymentLabelsError) as caught:
+            remove_payment_labels(self.db, case_id=self.case.id, actor=self.actor, request=RemovePaymentLabelsRequest(
+                transactions=[{'id': self.row.id, 'version': 1}], fields=['counterparty_name']))
+        self.assertIn('link', str(caught.exception))
+        self.db.refresh(self.row)
+        self.assertEqual(self.row.metadata_['investigation_labels'][side], 'ACME')
+
 if __name__ == '__main__':
     unittest.main()

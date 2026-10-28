@@ -143,7 +143,8 @@ def _last_on_page(session, case_id, transaction_id, locator):
     bottom = locator['rect'][3]
     others = session.scalars(select(FinancialTransaction.provenance).where(
         FinancialTransaction.case_id == case_id, FinancialTransaction.source_document_id == row.source_document_id,
-        FinancialTransaction.id != row.id, FinancialTransaction.ledger_status == 'admitted'))
+        FinancialTransaction.id != row.id, FinancialTransaction.ledger_status == 'admitted',
+        FinancialTransaction.superseded_by_id.is_(None)))
     for provenance in others:
         other = (provenance or {}).get(LOCATOR_PROVENANCE_KEY) if isinstance(provenance, dict) else None
         if (isinstance(other, dict) and other.get('kind') == 'page_rectangle' and other.get('page') == locator['page']

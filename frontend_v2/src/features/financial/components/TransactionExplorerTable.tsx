@@ -266,13 +266,13 @@ export function TransactionExplorerTable({
                           row={row}
                           field={side === "from" ? "from_name" : "to_name"}
                         />
-                        {onName && otherSide(row) === (side === "from" ? "from_name" : "to_name") && (
+                        {onName && needsName(row) && otherSide(row) === (side === "from" ? "from_name" : "to_name") && (
                           <button
                             className="ml-1 text-xs font-medium text-[#1d4aa6] hover:underline dark:text-blue-300"
                             aria-label={`Name ${side === "from" ? "who paid" : "who was paid"}: ${row.description || row.ref_id} on ${row.ordering_date}`}
                             onClick={() => onName(row)}
                           >
-                            {needsName(row) ? "Name it" : "Rename"}
+                            Name it
                           </button>
                         )}
                       </div>

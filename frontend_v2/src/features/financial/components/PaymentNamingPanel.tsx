@@ -14,6 +14,7 @@ import {
   cropWindow,
   lineBand,
   missingNameReason,
+  needsName,
   otherSide,
   showNextPageTop,
   similarPayments,
@@ -169,7 +170,8 @@ export function PaymentNamingPanel({
       return originals
     },
     onSuccess: (originals) => {
-      patchLedger(client, caseId, originals)
+      // The save and the removal each count one edit on the server.
+      patchLedger(client, caseId, originals.map((item) => ({ ...item, label_version: (item.label_version ?? 0) + 2 })))
       void client.invalidateQueries({ queryKey: ["financial-ledger", caseId], refetchType: "none" })
       void client.invalidateQueries({ queryKey: ["ledger-source", caseId] })
       setLast(null)
@@ -180,7 +182,11 @@ export function PaymentNamingPanel({
   const busy = save.isPending || undo.isPending
   const submit = () => {
     const value = name.trim().replace(/\s+/g, " ")
-    if (!row || !value || busy) return
+    if (!row || !value || busy || row.counterparty_link) return
+    if (value === (row[otherSide(row)] ?? "").trim()) {
+      if (next) onMove(next)
+      return
+    }
     const target = row
     save.mutate({ targets: [target], value }, { onSuccess: () => next && onMove(next) })
   }
@@ -249,7 +255,13 @@ export function PaymentNamingPanel({
                 })
               }
               onApply={() => {
-                const targets = offer.groups.flatMap((group) => group.rows).filter((item) => offer.ticked.has(item.key))
+                // The rows as they are now: one named meanwhile is left alone, and versions are current.
+                const fresh = new Map(rows.map((item) => [item.key, item]))
+                const targets = offer.groups
+                  .flatMap((group) => group.rows)
+                  .filter((item) => offer.ticked.has(item.key))
+                  .map((item) => fresh.get(item.key))
+                  .filter((item): item is LedgerTransaction => !!item && needsName(item))
                 if (targets.length) save.mutate({ targets, value: offer.name, sameAs: offer.source.key })
               }}
               onDismiss={() => setOffer(null)}
@@ -294,7 +306,7 @@ export function PaymentNamingPanel({
                 className="mt-1 block w-full rounded border bg-background p-2"
                 placeholder="Type the name printed on the statement"
                 value={name}
-                disabled={busy}
+                disabled={busy || !!row.counterparty_link}
                 onChange={(event) => setName(event.target.value)}
               />
             </label>

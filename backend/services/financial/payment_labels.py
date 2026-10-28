@@ -169,14 +169,27 @@ def remove_payment_labels(session, *, case_id, request, actor, commit=True):
                 continue
             effective = payment_label_view(row, row.account)
             before = {field: effective.get(field, '') for field in fields}
+            history = metadata.get('investigation_label_history', [])
+            restored = {}
             for field in fields:
-                current.pop(field)
+                # Undo the save that set this name: a person's earlier name comes back; a statement reading comes
+                # back by dropping the label. A save that replaced a link to a known party is not undone here.
+                entry = next((e for e in reversed(history) if isinstance(e, dict)
+                              and (field in (e.get('after') or {}) or field in (e.get('removed') or []))), None)
+                previous = ((entry or {}).get('previous_label_sources') or {}).get(field) or {}
+                if entry is not None and field in (entry.get('after') or {}) and previous.get('identity_kind'):
+                    raise PaymentLabelsError('This name replaced a link to a known party. Open the payment to link it again.', 422)
+                if (entry is not None and field in (entry.get('after') or {}) and previous.get('source') == 'investigator'
+                        and isinstance((entry.get('before') or {}).get(field), str)):
+                    current[field] = restored[field] = entry['before'][field]
+                else:
+                    current.pop(field)
             current['version'] = current.get('version', 0) + 1
             metadata['investigation_labels'] = current
             metadata['investigation_label_history'] = [*metadata.get('investigation_label_history', []), dict(
                 at=datetime.now(timezone.utc).isoformat(), actor_name=actor.name,
                 actor_email=actor.email, actor_id=str(actor.user_id) if actor.user_id else None,
-                before=before, removed=fields, version=current['version'],
+                before=before, removed=fields, version=current['version'], **({'restored': restored} if restored else {}),
                 previous_label_sources={key: effective['label_sources'].get(key, {}) for key in fields})]
             row.metadata_ = metadata
             removed += 1
