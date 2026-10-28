@@ -1,3 +1,4 @@
+import { needsName, otherSide } from "../lib/payment-naming"
 import { Fragment, useState } from "react"
 import { readProofClass } from "../lib/ledger-format"
 import { OPTIONAL_COLUMNS, type OptionalColumn } from "../lib/table-columns"
@@ -71,6 +72,7 @@ export function TransactionExplorerTable({
   onCategory,
   categoryColors,
   onParty,
+  onName,
   findings = [],
   amountAllowed = true,
   columns = [],
@@ -92,6 +94,7 @@ export function TransactionExplorerTable({
   onCategory?: (row: LedgerTransaction) => void
   categoryColors?: Map<string, string>
   onParty: (side: PartySide, key: string) => void
+  onName?: (row: LedgerTransaction) => void
   findings?: { title?: string | null; tags: string[]; payment_ids: string[] }[]
 }) {
   const selectedIds = new Set(selected),
@@ -251,7 +254,11 @@ export function TransactionExplorerTable({
                         <button
                           className="text-left hover:underline"
                           title={`Filter ${side}: ${party(row, side).name}`}
-                          onClick={() => onParty(side, party(row, side).key)}
+                          onClick={() =>
+                            onName && needsName(row) && otherSide(row) === (side === "from" ? "from_name" : "to_name")
+                              ? onName(row)
+                              : onParty(side, party(row, side).key)
+                          }
                         >
                           {party(row, side).name}
                         </button>
@@ -259,6 +266,15 @@ export function TransactionExplorerTable({
                           row={row}
                           field={side === "from" ? "from_name" : "to_name"}
                         />
+                        {onName && otherSide(row) === (side === "from" ? "from_name" : "to_name") && (
+                          <button
+                            className="ml-1 text-xs font-medium text-[#1d4aa6] hover:underline dark:text-blue-300"
+                            aria-label={`Name ${side === "from" ? "who paid" : "who was paid"}: ${row.description || row.ref_id} on ${row.ordering_date}`}
+                            onClick={() => onName(row)}
+                          >
+                            {needsName(row) ? "Name it" : "Rename"}
+                          </button>
+                        )}
                       </div>
                     ))}
                   </td>

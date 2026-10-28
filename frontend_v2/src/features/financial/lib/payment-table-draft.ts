@@ -37,6 +37,8 @@ export const emptyPaymentTableView = {
   judgementStrength: "",
   judgementOrigin: "",
   judgementStatus: "",
+  // Only payments whose other side has no name yet, to work through them beside their statement lines.
+  unnamedOnly: false,
 }
 
 export function showAllImportedPayments(caseId: string) {

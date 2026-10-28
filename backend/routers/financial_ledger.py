@@ -677,6 +677,45 @@ def get_ledger_source(transaction_id: UUID, case_id: UUID = Query(...), db: Sess
         raise HTTPException(status_code=500, detail="Ledger source could not be read.")
 
 
+def _open_statement_pdf(path):
+    from routers.evidence import _load_pymupdf
+    library = _load_pymupdf()
+    if library is None:
+        raise LedgerSourceError("Page rendering is unavailable on this server.", 503)
+    return library.open(path)
+
+
+@router.get("/ledger/{transaction_id}/statement-page")
+def get_payment_statement_page(transaction_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    """The page this payment is printed on, for naming it beside the table (case view access, router-wide)."""
+    from services.financial.statement_page import payment_page
+    try:
+        return payment_page(db, case_id=case_id, transaction_id=transaction_id,
+                            resolve_path=_resolve_stored_path, open_pdf=_open_statement_pdf)
+    except LedgerSourceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Statement page lookup failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="The statement page could not be read.")
+
+
+@router.get("/ledger/{transaction_id}/statement-page/{page}/image")
+def get_payment_statement_page_image(transaction_id: UUID, page: int, case_id: UUID = Query(...),
+                                     width: int = Query(1400, ge=200, le=2400), db: Session = Depends(get_db)):
+    """The payment's page or the page next to it as a PNG; another case's payment or file is a 404."""
+    from services.financial.statement_page import payment_page_png
+    try:
+        png, count = payment_page_png(db, case_id=case_id, transaction_id=transaction_id, page=page, width=width,
+                                      resolve_path=_resolve_stored_path, open_pdf=_open_statement_pdf)
+    except LedgerSourceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Statement page image failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="The statement page could not be rendered.")
+    return Response(content=png, media_type="image/png",
+                    headers={"X-PDF-Page-Count": str(count), "Cache-Control": "private, no-store"})
+
+
 class AmountAssessmentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     start_char: int = Field(ge=0, strict=True)

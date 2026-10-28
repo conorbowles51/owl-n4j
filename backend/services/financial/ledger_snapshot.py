@@ -267,6 +267,9 @@ def render_ledger_report(snapshot):
             value += ' (model guess)'
         elif source == 'learned':
             value += ' (applied from a similar payment)'
+        elif source == 'investigator' and value and str(origin.get('explanation') or '').startswith('Named by '):
+            # A name a person read off the statement page: who named it and when travel with it.
+            value += f" ({origin['explanation'].rstrip('.')})"
         return value
 
     def absent_balance(row):

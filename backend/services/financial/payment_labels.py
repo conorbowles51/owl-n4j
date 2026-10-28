@@ -1,6 +1,7 @@
 """Investigator categories and names, kept separately from statement readings."""
 from datetime import datetime, timezone
 from functools import lru_cache
+from typing import Literal
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from services.financial.payment_counterparty_link import PaymentCounterpartyLink, resolve_link, effective_link, display_link
@@ -29,6 +30,11 @@ class PaymentLabelsRequest(BaseModel):
     to_name: str | None = Field(default=None, max_length=512)
     counterparty_link: PaymentCounterpartyLink | None = None
     counterparty_name: str | None = Field(default=None, max_length=512)
+    # 'statement': the person read the name off the statement page shown beside the table. Recorded in the label
+    # history and shown as "Named by <person> from the statement"; it changes nothing else about the save.
+    named_from: Literal['statement'] | None = None
+    # The payment whose name this one was given, when a person applied it to payments like it after reviewing them.
+    same_as: UUID | None = None
 
     @field_validator('category', 'from_name', 'to_name', 'counterparty_name')
     @classmethod
@@ -43,7 +49,11 @@ class PaymentLabelsRequest(BaseModel):
 
 def update_payment_labels(session, *, case_id, request, actor, commit=True, reason=None):
     """``reason``: why the value was set (where it was read), kept in the label history and shown with the label."""
-    changes = request.model_dump(exclude_unset=True, exclude={'transactions', 'add_to_library'})
+    changes = request.model_dump(exclude_unset=True, exclude={'transactions', 'add_to_library', 'named_from', 'same_as'})
+    if request.named_from == 'statement':
+        reason = reason or 'Named from the statement.'
+        if request.same_as is not None:
+            reason = f'Named from the statement, the same name as payment {request.same_as}.'
     if not changes or any(value is None for key, value in changes.items() if key != 'counterparty_link'):
         raise PaymentLabelsError('Choose a category or enter a name. Use an empty value to clear it.', 422)
     ids = [target.id for target in request.transactions]
@@ -104,6 +114,8 @@ def update_payment_labels(session, *, case_id, request, actor, commit=True, reas
                 at=datetime.now(timezone.utc).isoformat(), actor_name=actor.name,
                 actor_email=actor.email, actor_id=str(actor.user_id) if actor.user_id else None,
                 before=before, after=row_changes, version=current['version'], **({'reason': reason} if reason else {}),
+                **({'via': 'statement'} if request.named_from == 'statement' else {}),
+                **({'same_as': str(request.same_as)} if request.same_as is not None else {}),
                 previous_label_sources={key: effective['label_sources'].get(key, {}) for key in row_changes})]
             row.metadata_ = metadata
         if commit:
@@ -115,6 +127,67 @@ def update_payment_labels(session, *, case_id, request, actor, commit=True, reas
         session.rollback()
         raise
 
+
+
+class RemovePaymentLabelsRequest(BaseModel):
+    """Take a person's name off payments so the statement's own reading (or "Not identified") shows again."""
+    model_config = ConfigDict(extra='forbid')
+    transactions: list[LabelTarget] = Field(min_length=1, max_length=5000)
+    fields: list[Literal['from_name', 'to_name', 'counterparty_name']] = Field(min_length=1, max_length=3)
+
+
+def remove_payment_labels(session, *, case_id, request, actor, commit=True):
+    """Remove saved names, recorded in the label history like any edit. Only the named label keys change."""
+    ids = [target.id for target in request.transactions]
+    if len(set(ids)) != len(ids):
+        raise PaymentLabelsError('A payment was selected twice.', 422)
+    try:
+        rows = []
+        ordered_ids = sorted(ids)
+        for offset in range(0, len(ordered_ids), 1000):
+            rows.extend(session.scalars(select(FinancialTransaction).where(
+                FinancialTransaction.case_id == case_id,
+                FinancialTransaction.id.in_(ordered_ids[offset:offset + 1000])
+            ).order_by(FinancialTransaction.id).with_for_update()))
+        if len(rows) != len(ids):
+            raise PaymentLabelsError('One or more payments are unavailable in this case.', 404)
+        versions = {target.id: target.version for target in request.transactions}
+        removed = 0
+        for row in rows:
+            current = (row.metadata_ or {}).get('investigation_labels', {})
+            if row.ledger_status != 'admitted' or row.superseded_by_id is not None:
+                raise PaymentLabelsError('A selected payment has been replaced or excluded. Reload the selection.')
+            if current.get('version', 0) != versions[row.id]:
+                raise PaymentLabelsError('Someone edited a selected payment. Reload the selection before saving.')
+        for row in rows:
+            metadata = dict(row.metadata_ or {})
+            current = dict(metadata.get('investigation_labels', {}))
+            fields = {('from_name' if row.direction == 'credit' else 'to_name') if field == 'counterparty_name' else field
+                      for field in request.fields}
+            fields = sorted(field for field in fields if field in current)
+            if not fields:
+                continue
+            effective = payment_label_view(row, row.account)
+            before = {field: effective.get(field, '') for field in fields}
+            for field in fields:
+                current.pop(field)
+            current['version'] = current.get('version', 0) + 1
+            metadata['investigation_labels'] = current
+            metadata['investigation_label_history'] = [*metadata.get('investigation_label_history', []), dict(
+                at=datetime.now(timezone.utc).isoformat(), actor_name=actor.name,
+                actor_email=actor.email, actor_id=str(actor.user_id) if actor.user_id else None,
+                before=before, removed=fields, version=current['version'],
+                previous_label_sources={key: effective['label_sources'].get(key, {}) for key in fields})]
+            row.metadata_ = metadata
+            removed += 1
+        if commit:
+            session.commit()
+        else:
+            session.flush()
+        return dict(case_id=str(case_id), updated=removed)
+    except Exception:
+        session.rollback()
+        raise
 
 _LOOKUP = object()
 
@@ -170,6 +243,9 @@ def _saved_by(row, field):
     if not entry or not entry.get('actor_name'):
         return 'Saved by an investigator.'
     when = str(entry.get('at') or '')[:10]
+    if entry.get('via') == 'statement':
+        same = ' (the same name as a payment like it)' if entry.get('same_as') else ''
+        return f"Named by {entry['actor_name']} from the statement" + (f' on {when}' if when else '') + same + '.'
     text = f"Saved by {entry['actor_name']}" + (f' on {when}' if when else '') + '.'
     return text + (' ' + entry['reason'] if entry.get('reason') else '')
 

@@ -131,3 +131,16 @@ class PaymentLabelsTests(unittest.TestCase):
         self.assertEqual((view['category'], view['to_name']), ('', ''))
         self.assertNotIn('Shopping', get_ledger_categories(case_id=self.f.case.id, db=self.f.db)['categories'])
         self.assertEqual(original, (row.amount_minor, row.currency, row.running_balance_minor, row.content_hash, row.provenance))
+
+
+class NamedFromStatementExportTests(PaymentLabelsTests):
+    def test_a_name_read_off_the_statement_reaches_the_report_with_who_named_it(self):
+        from services.financial.ledger_snapshot import render_ledger_report
+        row = self.rows[0]
+        self.save([row], counterparty_name='GRUAS DEL NORTE', named_from='statement')
+        self.f.db.expire_all()
+        html = render_ledger_report(capture_ledger_snapshot(self.f.db, case_id=self.f.case.id))
+        self.assertIn(f'GRUAS DEL NORTE (Named by {self.f.actor.name} from the statement on ', html)
+        snapshot = json.loads(capture_ledger_snapshot(self.f.db, case_id=self.f.case.id).content)
+        captured = next(r for r in snapshot['ledger']['readings'] if r['row']['key'] == str(row.id))
+        self.assertEqual(captured['investigation_label_history'][-1]['via'], 'statement')

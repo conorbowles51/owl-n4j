@@ -1,3 +1,4 @@
+import { needsName } from "../lib/payment-naming"
 import type { LedgerTransaction } from "../api"
 import { categoryTone } from "../lib/category-palette"
 import { formatLedgerAmount } from "../lib/ledger-format"
@@ -43,6 +44,7 @@ export function PaymentCardList({
   onCategory,
   categoryColors,
   onParty,
+  onName,
   findings = [],
 }: {
   rows: LedgerTransaction[]
@@ -56,6 +58,8 @@ export function PaymentCardList({
   onCategory?: (row: LedgerTransaction) => void
   categoryColors?: Map<string, string>
   onParty: (side: PartySide, key: string) => void
+  /** Name the other side beside the table, from the statement line. Clicking "Not identified" opens it too. */
+  onName?: (row: LedgerTransaction) => void
   findings?: { title?: string | null; tags: string[]; payment_ids: string[] }[]
 }) {
   const selectedIds = new Set(selected)
@@ -114,11 +118,23 @@ export function PaymentCardList({
                           type="button"
                           className="truncate text-left text-[15px] font-semibold hover:underline"
                           title={`Filter ${incoming ? "from" : "to"}: ${other.name}`}
-                          onClick={() => onParty(incoming ? "from" : "to", other.key)}
+                          onClick={() =>
+                            onName && needsName(row) ? onName(row) : onParty(incoming ? "from" : "to", other.key)
+                          }
                         >
                           {other.name}
                         </button>
                         <PaymentLabelOrigin row={row} field={incoming ? "from_name" : "to_name"} />
+                        {onName && (
+                          <button
+                            type="button"
+                            className="text-[12px] font-medium text-[#1d4aa6] hover:underline dark:text-blue-300"
+                            aria-label={`Name ${incoming ? "who paid" : "who was paid"}: ${label} on ${row.ordering_date}`}
+                            onClick={() => onName(row)}
+                          >
+                            {needsName(row) ? "Name it" : "Rename"}
+                          </button>
+                        )}
                       </div>
                       <button
                         type="button"

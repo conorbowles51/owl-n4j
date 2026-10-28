@@ -571,7 +571,8 @@ def append_source_custody(file_id: UUID, body: CustodyRequest, case_id: UUID = Q
         raise HTTPException(status_code=500, detail='Custody report could not be recorded. Reload before retrying.')
 
 
-from services.financial.payment_labels import PaymentLabelsRequest, PaymentLabelsError, update_payment_labels
+from services.financial.payment_labels import (PaymentLabelsRequest, PaymentLabelsError, RemovePaymentLabelsRequest,
+                                               remove_payment_labels, update_payment_labels)
 from services.financial.category_library import CreatePaymentCategoryRequest, ensure_category
 
 
@@ -598,6 +599,19 @@ def put_payment_labels(body: PaymentLabelsRequest, case_id: UUID = Query(...),
     except Exception:
         logger.exception("Payment labels could not be saved for case %s", case_id)
         raise HTTPException(status_code=500, detail="The categories and names could not be saved. Reload before retrying.")
+
+
+@router.post("/ledger/payment-labels/remove")
+def remove_payment_label(body: RemovePaymentLabelsRequest, case_id: UUID = Query(...),
+                         db: Session = Depends(get_db), current_user=Depends(get_current_db_user)):
+    """Undo a saved name: the statement's own reading shows again; the removal is kept in the label history."""
+    try:
+        return remove_payment_labels(db, case_id=case_id, request=body, actor=actor_from_user(current_user))
+    except (PaymentLabelsError, ActorError) as exc:
+        raise HTTPException(status_code=getattr(exc, 'status_code', 422), detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Payment labels could not be removed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="The names could not be removed. Reload before retrying.")
 
 
 class ApplyLikeRequest(BaseModel):

@@ -68,6 +68,8 @@ import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
 import { useState, type ComponentProps } from "react"
 import { Button } from "@/components/ui/button"
 import { LedgerTable } from "./LedgerTable"
+import { PaymentNamingPanel } from "./PaymentNamingPanel"
+import { needsName } from "../lib/payment-naming"
 import type { LedgerTransaction } from "../api"
 const TABLE_VIEW_KEY = "financial-transactions-table-view"
 function readTableView() {
@@ -141,6 +143,7 @@ export function LedgerRowBrowser({
   const [notesCsv, setNotesCsv] = useState(false)
   const [manageCategories, setManageCategories] = useState(false)
   const [editNames, setEditNames] = useState(false)
+  const [naming, setNaming] = useState<string | null>(null)
   const [labelIds, setLabelIds] = useState<string[] | null>(null)
   // The quick Categorise dialog; "Edit other fields…" swaps in the full editor.
   const [fullEditor, setFullEditor] = useState(false)
@@ -347,7 +350,7 @@ export function LedgerRowBrowser({
       ...row,
       amount_minor: String(activityAmount(row, view.activity, internal)),
     }))
-  const rows = investigation ? filterAnalysis(baseRows, view) : baseRows
+  let rows = investigation ? filterAnalysis(baseRows, view) : baseRows
   sortAnalysisRows(rows, sort)
   const mixedCurrencies = new Set(rows.map((row) => row.currency)).size > 1
   if (sort === "newest")
@@ -359,10 +362,21 @@ export function LedgerRowBrowser({
       const order = compareDisplayedAmounts(a, b)
       return sort === "amount-desc" ? -order : order
     })
+  // Every payment in view before "Not identified only", so a payment just named stays open beside the table.
+  const namingRows = rows
+  const unnamedRows = investigation && exportContext ? rows.filter(needsName) : []
+  if (view.unnamedOnly && investigation && exportContext) rows = unnamedRows
   const index = Math.min(
     page,
     Math.max(0, Math.ceil(rows.length / pageSize) - 1)
   )
+  // Open a payment beside the table for naming, and turn the table to the page it is on.
+  const openNaming = (id: string) => {
+    setNaming(id)
+    const at = rows.findIndex((row) => row.key === id)
+    if (at >= 0 && Math.floor(at / pageSize) !== index)
+      setView((previous) => ({ ...previous, page: Math.floor(at / pageSize) }))
+  }
   const transactionToolbar = (
     <div
       className="sticky top-0 z-20 max-h-[55vh] overflow-y-auto rounded border bg-background p-3 shadow-sm"
@@ -1390,6 +1404,48 @@ export function LedgerRowBrowser({
           </button>
         </p>
       )}
+      {investigation && exportContext && (unnamedRows.length > 0 || view.unnamedOnly) && (
+        <div
+          className="flex flex-wrap items-center gap-2 rounded border bg-card px-3 py-2 text-sm"
+          role="group"
+          aria-label="Payments without a name"
+        >
+          <span role="status">
+            <strong>{unnamedRows.length.toLocaleString()}</strong>{" "}
+            {unnamedRows.length === 1 ? "payment" : "payments"} in view with
+            the other side not identified
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            aria-pressed={view.unnamedOnly}
+            onClick={() => changeView({ unnamedOnly: !view.unnamedOnly })}
+          >
+            {view.unnamedOnly ? "Show all payments" : "Show only these"}
+          </Button>
+          {canEdit && unnamedRows.length > 0 && (
+            <Button
+              size="sm"
+              onClick={() => {
+                const first = unnamedRows.find((row) =>
+                  rows.slice(index * pageSize, (index + 1) * pageSize).includes(row)
+                ) ?? unnamedRows[0]
+                openNaming(first.key)
+              }}
+            >
+              Name them one by one
+            </Button>
+          )}
+        </div>
+      )}
+      <div
+        className={
+          naming && exportContext
+            ? "grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(400px,0.85fr)]"
+            : ""
+        }
+      >
+      <div className="min-w-0">
       {!rows.length ? (
         <p>
           No payments match these filters. Clear the filters or choose another
@@ -1426,6 +1482,7 @@ export function LedgerRowBrowser({
                 }
               : undefined
           }
+          onName={canEdit ? (row) => openNaming(row.key) : undefined}
           onParty={(side, key) => {
             const field = side === "from" ? "fromNames" : "toNames"
             changeView({
@@ -1470,6 +1527,7 @@ export function LedgerRowBrowser({
                 }
               : undefined
           }
+          onName={canEdit ? (row) => openNaming(row.key) : undefined}
           onParty={(side, key) => {
             const field = side === "from" ? "fromNames" : "toNames"
             changeView({
@@ -1485,6 +1543,22 @@ export function LedgerRowBrowser({
           {...actions}
         />
       )}
+      </div>
+      {naming && exportContext && (
+        <div className="order-first min-w-0 xl:order-none">
+          <PaymentNamingPanel
+            key={exportContext.caseId}
+            caseId={exportContext.caseId}
+            rows={namingRows}
+            queue={unnamedRows}
+            currentId={naming}
+            onMove={openNaming}
+            onClose={() => setNaming(null)}
+            onOpenDetails={actions.onSource}
+          />
+        </div>
+      )}
+      </div>
       {exportContext && !invalidRange && (
         <Disclosure
           className="rounded border p-3"
