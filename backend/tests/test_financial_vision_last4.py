@@ -77,6 +77,10 @@ class LastFourProofTest(unittest.TestCase):
             _prove(pages=_card_pages(account_number=''))
         with self.assertRaisesRegex(vr.NotProved, r'ending 160\) .*fewer than 4 digits'):
             _prove(pages=_card_pages(account_number='160'), account_number='***160')
+        # Digits before the mask: they are not its last digits alone, so they do not name the card by them.
+        with self.assertRaisesRegex(vr.NotProved, MASKED + 'its number shows digits before the masked part'):
+            _prove(pages=_card_pages(account_number='517805******8160'), account_number='517805******8160')
+        self.assertEqual(_prove(pages=_card_pages(account_number='XXXX XXXX XXXX 8160'))['account_basis'], vr.LAST4_BASIS)
         # The images read a longer number than the text: rule 1's route, both must read it in full.
         with self.assertRaisesRegex(vr.NotProved, MASKED + 'the page images reads a longer number'):
             _prove(pages=_card_pages(account_number='5178051234568160'))
@@ -223,6 +227,8 @@ class TextLayerAndTurnTest(unittest.TestCase):
             page.insert_text((72, 72), 'Platinum Mastercard ending in 8160  Page 1 of 4')
             page.insert_text((72, 100), 'Card 5178 0512 3456 8160   Ref 12-3456-8160   Phone 1-800-227-4825')
             page.insert_text((72, 128), 'Amount 1,238,160.00  Date 06/10/2023  Zip 28160')
+            page.insert_text((72, 156), 'A 4000  1111  2222  8161  B 4000.1111.2222.8162  C 3782 822463 18163')
+            page.insert_text((72, 184), 'D 4000\u00a01111\u00a02222\u00a08164  E 5178 05XX XXXX 8165  F 10 2023 8166')
             document.save(str(path))
             document.close()
             numbers = vr.printed_numbers(path)
@@ -231,6 +237,9 @@ class TextLayerAndTurnTest(unittest.TestCase):
         self.assertNotIn('8160', numbers)
         self.assertNotIn('28160', numbers)  # 5 digits: not a full number
         self.assertFalse(any(n.endswith('238160') for n in numbers))  # an amount is not a number of the card
+        for full in ('4000111122228161', '4000111122228162', '378282246318163', '4000111122228164'):
+            self.assertIn(full, numbers)
+        self.assertFalse(any(n.endswith('8165') or n.endswith('8166') for n in numbers), numbers)  # masked; a date's parts
 
 
 class SweepPassTest(unittest.TestCase):
@@ -280,7 +289,7 @@ class SweepPassTest(unittest.TestCase):
 
 class LastFourFlowTest(unittest.TestCase):
     """Through read_item on the batch fixture: the card's first statement is saved with its basis; its turn, the
-    case's accounts and the requeue of the statements that waited on it."""
+    case's accounts, and the statements that waited on it judged again."""
 
     def setUp(self):
         from tests import test_financial_reader_release as release
@@ -306,10 +315,11 @@ class LastFourFlowTest(unittest.TestCase):
         proposal['metadata'].update(account_number='****0123', holder='ERICA HOPPER', account_type='credit_card')
         return proposal
 
-    def read(self, knowledge=None, numbers=frozenset(), apply=True):
+    def read(self, knowledge=None, numbers=frozenset(), apply=True, model='deepseek-flash', calls=None):
         from services.financial import import_batches as batches
         document = self.document
-        chain = [vr.PageReader(provider='deepseek', model='deepseek-flash', read=lambda images: (document, {}),
+        calls = calls if calls is not None else []
+        chain = [vr.PageReader(provider='deepseek', model=model, read=lambda images: calls.append(model) or (document, {}),
                                unavailable='', strips=1, max_output_tokens=1000)]
         with patch.object(vr, 'render_pages', lambda path, pages, width=None, strips=None: [(p, [b'png']) for p in pages]), \
                 patch.object(batches, 'read_statement_import', self.card_reader), \
@@ -369,8 +379,10 @@ class LastFourFlowTest(unittest.TestCase):
         self.assertEqual((outcome['status'], outcome['reason']), ('not_proved', 'waits_for_card'))
         self.assertIn('An earlier statement of this card (ending 0123, 2022-12-01', outcome['message'])
         stored = self.stored()
-        self.assertEqual(stored['proof'], vr.PROOF_VERSION - 1)  # judged again later, from the stored reading
-        self.assertTrue(vr.rejudgeable(stored))
+        # Never final: judged again later from the stored reading, whatever the proof version.
+        self.assertEqual((stored['proof'], stored['waiting']), (vr.PROOF_VERSION, True))
+        self.assertTrue(vr.due_again(stored, lambda: CaseKnowledge(accounts=[])))
+        self.assertTrue(vr.rejudgeable(stored, due=True))
         self.assertEqual(self.r.item(self.batch).status, 'attention')
         self.assertIn('is checked first', self.r.item(self.batch).summary['vision_reading']['line'])
 
@@ -381,7 +393,26 @@ class LastFourFlowTest(unittest.TestCase):
                                                             status='not_proved', raw={}))
         self.sibling(period_start='2019-01-01', account='****9999')  # another card
         self.sibling(status='imported', period_start='2019-01-01')   # in its account already (checked through it)
+        # Accepted, but its save or import refused and held again: decided, waiting for a person, not for this one.
+        self.sibling(period_start='2018-01-01', record=dict(version=vr.VERSION, proof=vr.PROOF_VERSION, status='proved', raw={}))
         self.assertEqual(self.read()['status'], 'proved')
+
+    def test_an_earlier_statement_that_is_itself_waiting_holds_it(self):
+        self.sibling(period_start='2022-12-01', record=dict(version=vr.VERSION, proof=vr.PROOF_VERSION, status='not_proved',
+                                                            raw={}, waiting=True))
+        self.assertEqual(self.read()['reason'], 'waits_for_card')
+
+    def test_a_wait_is_never_made_final(self):
+        old = dict(version=vr.VERSION, proof=vr.PROOF_VERSION - 1, status='not_proved', raw={}, message='x')
+        self.sibling(period_start='2022-12-01', record=old)
+        calls = []
+        self.assertEqual(self.read(calls=calls)['reason'], 'waits_for_card')
+        self.assertEqual(self.read(calls=calls)['reason'], 'waits_for_card')  # judged again from the stored reading
+        self.assertEqual(calls, ['deepseek-flash'])
+        # Another reader in use now: the wait is read again by it, not marked judged as it stands.
+        self.assertEqual(self.read(model='deepseek-pro', calls=calls)['reason'], 'waits_for_card')
+        self.assertEqual(calls, ['deepseek-flash', 'deepseek-pro'])
+        self.assertTrue(self.stored()['waiting'])
 
     def test_a_statement_of_the_card_waiting_to_be_imported_holds_it(self):
         self.sibling(status='ready', period_start='2030-01-01')
@@ -417,22 +448,37 @@ class LastFourFlowTest(unittest.TestCase):
         self.assertIn('saved for ERICA MCCAULEY; this statement prints ERICA HOPPER', outcome['message'])
         self.assertEqual(self.r.item(self.batch).status, 'attention')
 
-    def test_statements_that_waited_on_the_card_are_judged_again_after_it(self):
-        wait = vr.card_key('Synthetic Bank', '0123')
-        refused = dict(version=vr.VERSION, proof=vr.PROOF_VERSION, status='not_proved', raw={}, account_wait=wait)
-        other = dict(refused, account_wait=vr.card_key('Synthetic Bank', '9999'))
-        balance = {k: v for k, v in refused.items() if k != 'account_wait'}
-        ids = [self.sibling(period_start='2020-01-01', record=r) for r in (refused, other, balance)]
-        outcome = self.read()
+    def test_a_refusal_that_waited_on_the_card_is_judged_again_once_the_case_holds_it(self):
+        refused = self.read(numbers={'99990123'})
+        self.assertEqual(refused['status'], 'not_proved')
+        wait = self.stored()['account_wait']
+        self.assertEqual(wait, vr.card_key('Synthetic Bank', '0123'))
+        # Nothing saved for the card yet: not judged again.
+        self.assertEqual(self.read()['reason'], 'already_read')
+        # The card's account is saved (by this rule or confirmed by a person; only admitted statements count): its
+        # stored reading is judged again, now through the saved account.
+        same = CaseKnowledge(accounts=[_known(account='****0123', holder='ERICA HOPPER', institution='Synthetic Bank',
+                                              currency='EUR')])
+        self.assertTrue(vr.card_known(same, wait))
+        self.assertFalse(vr.card_known(CaseKnowledge(accounts=[_known(account='****0123', institution='Chase')]), wait))
+        outcome = self.read(knowledge=same)
         self.assertEqual(outcome['status'], 'proved', outcome.get('message'))
-        self.assertEqual(outcome['requeued'], [str(ids[0][0])])
-        from postgres.models.financial_import_batches import FinancialImportBatchItem as Item
-        with self.f.SessionLocal() as db:
-            items = [db.get(Item, i) for i, _ in ids]
-        stored = [self.stored(i) for i in items]
-        self.assertEqual([vr.rejudgeable(s) for s in stored], [True, False, False])
-        self.assertEqual(stored[0]['requeued_after'], str(self.held.id))
+        self.assertTrue(outcome.get('rejudged'))
+        self.assertNotIn('account_basis', self.stored())
+        self.assertEqual(self.r.item(self.batch).status, 'ready')
 
+    def test_pending_lists_the_statements_due_again(self):
+        from postgres.models.evidence import EvidenceFile
+        with self.f.SessionLocal() as db:
+            listed = vr.pending(db)
+        self.assertIn(self.held.id, listed)
+        self.read(numbers={'99990123'})
+        with self.f.SessionLocal() as db:
+            self.assertNotIn(self.held.id, vr.pending(db))
+        same = CaseKnowledge(accounts=[_known(account='****0123', holder='ERICA HOPPER', institution='Synthetic Bank',
+                                              currency='EUR')])
+        with self.f.SessionLocal() as db, patch('services.financial.field_proposals.case_knowledge', lambda *a, **k: same):
+            self.assertIn(self.held.id, vr.pending(db))
 
 if __name__ == '__main__':
     unittest.main()

@@ -572,7 +572,7 @@ def _exponent(currency):
 class NotProved(Exception):
     """The image reading does not prove; ``str`` is the plain reason recorded for the investigator. ``card`` (a
     card_key) names the account it waits on: no statement of it is confirmed in the case yet, so it is judged again
-    once the first statement of that card is accepted (_requeue_card)."""
+    once the case holds that card's account (due_again)."""
 
     def __init__(self, message='', card=None):
         super().__init__(message)
@@ -580,8 +580,8 @@ class NotProved(Exception):
 
 
 class WaitsForCard(NotProved):
-    """(LAST4_FIRST_STATEMENT) Not judged now: another statement of the same card goes first (last4_turn). Judged
-    again in a later round; never a final outcome."""
+    """(LAST4_FIRST_STATEMENT) Not judged now: another statement of the same card goes first (last4_turn). Stored
+    with ``waiting`` and judged again in a later pass or round (due_again); never a final outcome."""
 
 
 # ---------------------------------------------------------------------------
@@ -1064,6 +1064,9 @@ def _not_both(field, rule, header, same):
     return ''
 
 
+_TRAILING_DIGITS = re.compile(r'^[^\d]*\d+$')
+
+
 def _last4_check(proposal, rule, header, liability):
     """(LAST4_FIRST_STATEMENT) The first check a masked first statement fails, in plain words; '' when all pass."""
     from services.financial import field_proposals as fp
@@ -1080,6 +1083,10 @@ def _last4_check(proposal, rule, header, liability):
                 % ('text' if not numbers[0][1] else 'page images'))
     if min(len(digits) for digits, _ in numbers) < 4:
         return 'fewer than 4 digits of its number are read'
+    if not all(_TRAILING_DIGITS.match(re.sub(r'\s', '', str(n))) for n in (rule['account_number'], header['account_number'])):
+        # "517805******8160": its visible digits are not one run at the end, so they do not name it by its last
+        # digits; matched by them, it would be another account than one saved with its full number.
+        return 'its number shows digits before the masked part; only a number printed by its last digits alone can be accepted this way'
     if numbers[0][0] != numbers[1][0]:
         return 'the digits read from the page images (%s) differ from those read from the text (%s)' % (
             numbers[1][0], numbers[0][0])
@@ -2125,12 +2132,14 @@ def statement_pages(proposal):
     return [p for p in pages if p in (proposal.get('page_numbers') or pages)]
 
 
-def rejudgeable(record, revision=None, model_id=None, pages=None):
+def rejudgeable(record, revision=None, model_id=None, pages=None, due=False):
     """A stored not-proved outcome judged under older proof rules, whose stored page reading is judged
     again under the current ones (no new request). With ``revision``: only for the same reading of
-    the file, the same model and the same pages the stored page reading covers."""
+    the file, the same model and the same pages the stored page reading covers. ``due``: one judged under these
+    rules that is due again all the same (due_again: it waits on another statement of its card, or the card it
+    waited on is now saved)."""
     if not (REJUDGE and record and record.get('version') == VERSION and isinstance(record.get('raw'), dict)
-            and (record.get('proof') or 1) < PROOF_VERSION):
+            and ((record.get('proof') or 1) < PROOF_VERSION or due)):
         return False
     status = record.get('status')
     if status != 'not_proved' and not (status == 'reading' and record.get('rejudging') and not _being_read(record)):
@@ -2585,7 +2594,8 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
                     f'{provider_name(r.provider)} {r.model}: {r.unavailable}' for r in readers)[:300])
             model_id = chain_id(readers)
             stored = _stored(file, key)
-            again = not force and rejudgeable(stored, proposal['revision'], model_id, pages)
+            due = not force and due_again(stored, lambda: knowledge_for(db, case_id))
+            again = not force and rejudgeable(stored, proposal['revision'], model_id, pages, due=due)
             if not again and not force and rejudgeable(stored):
                 # Judged again only from the same stored page reading; never requested anew for it. Marked
                 # judged under these rules, so it is not offered again (as before re-judging existed).
@@ -2617,7 +2627,7 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
                     claim_id = str(uuid4())
                     if not _store(db, file_id, key, dict(stored, status='reading', rejudging=True, claim_id=claim_id,
                                   at=datetime.now(timezone.utc).isoformat()),
-                                  rejudge=(proposal['revision'], model_id, pages)):
+                                  rejudge=(proposal['revision'], model_id, pages, due)):
                         db.rollback()
                         return dict(record, reason='being_read')
                     db.commit()
@@ -2769,8 +2779,8 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
         record = _outcome(record, attempts, accepted, spent_now, seconds, page_costs, again)
         if accepted is None:
             if waiting is not None:
-                # Not final: kept judgeable again from the stored reading (REJUDGE), in a later round or pass.
-                record.update(status='not_proved', message=str(waiting), proof=PROOF_VERSION - 1)
+                # Not final (waiting, due_again): judged again from the stored reading, in a later pass or round.
+                record.update(status='not_proved', message=str(waiting), waiting=True)
                 return dict(_finish(factory, item_id, file_id, key, record, apply), reason='waits_for_card')
             wait = next((a['account_wait'] for a in attempts if a.get('account_wait')), None)
             if wait:
@@ -2878,15 +2888,18 @@ def judge(db, case_id, proposal, document, pages, knowledge, *, saved=False, by=
 # Statements whose status settles nothing more about their card: imported ones are in its saved account (checked
 # through the case's accounts), the others are not statements of it any more.
 SETTLED_STATUSES = ('imported', 'removed', 'superseded_reading', 'duplicate_ignored', 'skipped')
-_LONGER = re.compile(r'(?<![\d-])(?:\d{4}([ -])\d{4}\1\d{4}\1\d{1,7}|\d+(?:-\d+)+|\d{6,})(?![\d-])')
+# A run of digits; digits joined by hyphens; or a card number printed in groups (13 to 19 digits in groups of 3 to 7,
+# separated by spaces, non-breaking spaces, dots or hyphens, a line break included: 4-4-4-4, Amex 4-6-5).
+_LONGER = re.compile(r'(?<![\d-])(?:\d{3,7}(?:[\s\u00a0.\-]{1,3}\d{3,7}){2,5}|\d+(?:-\d+)+|\d{6,})(?![\d-])')
+_CARD_GROUPS = re.compile(r'\d{3,7}(?:[\s\u00a0.\-]{1,3}\d{3,7}){2,5}')
 _printed_cache = {}
 _printed_lock = threading.Lock()
 
 
 def printed_numbers(path):
     """Every number of at least 6 digits (a full account number, as field_proposals.FULL_ACCOUNT_DIGITS) the file's
-    text layer prints, digits only: a run of digits, digits joined by hyphens, or a card number printed in groups of
-    4. Cached per file (path, size, time)."""
+    text layer prints, digits only: a run of digits, digits joined by hyphens, or a card number printed in groups
+    (_LONGER). Cached per file (path, size, time)."""
     import fitz
     stat = os.stat(str(path))
     key = (str(path), stat.st_size, stat.st_mtime)
@@ -2896,9 +2909,15 @@ def printed_numbers(path):
     found = set()
     with fitz.open(str(path)) as document:
         for page in document:
-            for match in _LONGER.finditer(page.get_text() or ''):
-                if len(_digits(match.group(0))) >= 6:
-                    found.add(_digits(match.group(0)))
+            text = page.get_text() or ''
+            for match in _LONGER.finditer(text):
+                digits = _digits(match.group(0))
+                if _CARD_GROUPS.fullmatch(match.group(0)) and not 13 <= len(digits) <= 19:
+                    # Groups that do not make a card number: each run on its own (an amount beside a date is not one).
+                    found.update(d for d in re.findall(r'\d{6,}', match.group(0)))
+                    continue
+                if len(digits) >= 6:
+                    found.add(digits)
     with _printed_lock:
         _printed_cache.clear()  # one file at a time is enough: a round reads one file's statements together
         _printed_cache[key] = found
@@ -2914,8 +2933,9 @@ def _same_card(digits, institution, account, bank):
 
 def card_turn(db, case_id, item_id, card):
     """(LAST4_FIRST_STATEMENT) NotProved when the case already records an account with the card's last digits at its
-    bank; WaitsForCard while another statement of the card goes first: an earlier held one still to be judged, or one
-    accepted and not yet imported. ``card``: dict(digits, institution, holder, period_start) of the reading."""
+    bank; WaitsForCard while another statement of the card goes first: an earlier held one still to be judged (or
+    itself waiting), or one saved and not yet imported. An earlier one held after its reading was accepted (its save
+    or import refused) is decided: it waits for a person, and this one is not held for it. ``card``: dict(digits, institution, holder, period_start) of the reading."""
     from services.financial import field_proposals as fp
     from postgres.models.financial import FinancialAccount as Account
     from postgres.models.evidence import EvidenceFile
@@ -2952,7 +2972,8 @@ def card_turn(db, case_id, item_id, card):
         if file_id not in metadata:
             metadata[file_id] = db.scalar(select(EvidenceFile.metadata_).where(EvidenceFile.id == file_id)) or {}
         stored = (metadata[file_id].get(METADATA_KEY) or {}).get(key or '')
-        if stored and (stored.get('status') == 'proved' or rejudgeable(stored) or _being_read(stored)):
+        if stored and (rejudgeable(stored) or _being_read(stored) or (stored.get('status') == 'not_proved'
+                                                                      and stored.get('waiting'))):
             raise WaitsForCard('An earlier statement of this card (ending %s, %s) is checked first: a card is '
                                'confirmed from its earliest statement. This one follows it.' % (ending, period))
 
@@ -2982,53 +3003,36 @@ def last4_card(reading):
 
 
 def _lock_card(db, case_id, card):
-    """Serialise the first statement of one card across workers (the lock ends with the transaction)."""
+    """Serialise the first statement of one card across workers (the lock ends with the transaction): keyed on the
+    case and the last 4 digits only, so two spellings of one bank share it."""
     if db.get_bind().dialect.name != 'postgresql':
         return
     from sqlalchemy import text
     db.execute(text('SELECT pg_advisory_xact_lock(hashtext(:key))'),
-               dict(key='financial-last4|%s|%s' % (case_id, card_key(card['institution'], card['digits']))))
+               dict(key='financial-last4|%s|%s' % (case_id, _digits(card['digits'])[-4:])))
 
 
-def _requeue_card(factory, case_id, item_id, card):
-    """After a card's first statement is saved: its other held statements refused only because no statement of the
-    card was confirmed yet are judged again from their stored readings (through REJUDGE), now against it. Returns
-    their item ids."""
-    from postgres.models.evidence import EvidenceFile
-    from postgres.models.financial_import_batches import (FinancialImportBatch as Batch,
-                                                          FinancialImportBatchItem as Item)
-    wanted = card_key(card['institution'], card['digits'])
-    requeued = []
-    with factory() as db:
-        rows = db.execute(select(Item.id, Item.file_id, Item.statement_key).join(Batch, Batch.id == Item.batch_id)
-                          .where(Batch.case_id == case_id, Batch.status != 'removed', Item.id != item_id,
-                                 Item.status == 'attention')).all()
-        by_file = {}
-        for other_id, file_id, key in rows:
-            by_file.setdefault(file_id, []).append((other_id, key or ''))
-        for file_id, statements in by_file.items():
-            # Each file once, under its lock (several statements of a card share one file).
-            file = db.scalar(select(EvidenceFile).where(EvidenceFile.id == file_id).with_for_update()
-                             .execution_options(populate_existing=True))
-            if file is None:
-                continue
-            metadata = deepcopy(file.metadata_ or {})
-            changed = False
-            for other_id, key in statements:
-                stored = (metadata.get(METADATA_KEY) or {}).get(key)
-                if not (stored and stored.get('status') == 'not_proved' and stored.get('account_wait') == wanted
-                        and (stored.get('proof') or 1) >= PROOF_VERSION):
-                    continue
-                metadata[METADATA_KEY][key] = dict(stored, proof=PROOF_VERSION - 1, requeued_after=str(item_id))
-                requeued.append(other_id)
-                changed = True
-            if changed:
-                file.metadata_ = metadata
-        db.commit()
-    if requeued:
-        log.info('Page-image reader: %s held statement(s) of card ending %s judged again after its first statement',
-                 len(requeued), card['digits'][-4:])
-    return requeued
+def card_known(knowledge, card):
+    """A saved account of the case (knowledge) carries the card a refusal waited on (card_key): its last digits at
+    its bank, as first_statement_basis finds a clash."""
+    from services.financial import field_proposals as fp
+    last4, _, bank = str(card or '').partition('|')
+    if not last4:
+        return False
+    return any(fp.account_match((last4, True), (k.digits, k.masked)) and _at_bank(k, bank)
+               for k in getattr(knowledge, 'accounts', []) or [])
+
+
+def due_again(stored, knowledge):
+    """(LAST4_FIRST_STATEMENT) A not-proved outcome judged under these rules that is judged again from its stored
+    reading all the same: it waited on another statement of its card (WaitsForCard, never final), or it was refused
+    only because no statement of its card was confirmed yet and the case now holds the card's account (accepted by
+    this rule, or confirmed by a person). ``knowledge``: a callable giving the case's knowledge, called only then."""
+    if not (stored and stored.get('status') == 'not_proved'):
+        return False
+    if stored.get('waiting'):
+        return True
+    return bool(stored.get('account_wait')) and card_known(knowledge(), stored['account_wait'])
 
 
 def _finish(factory, item_id, file_id, key, record, apply):
@@ -3072,7 +3076,7 @@ def _save(factory, item_id, case_id, file_id, key, record, request):
                 db.rollback()
                 waits = isinstance(reason, WaitsForCard)
                 held = {k: v for k, v in record.items() if k not in ('account_basis', 'card')}
-                held.update(status='not_proved', message=str(reason), **({'proof': PROOF_VERSION - 1} if waits else {}))
+                held.update(status='not_proved', message=str(reason), **({'waiting': True} if waits else {}))
                 done = _finish(factory, item_id, file_id, key, held, True)
                 return dict(done, reason='waits_for_card') if waits else done
         try:
@@ -3114,13 +3118,6 @@ def _save(factory, item_id, case_id, file_id, key, record, request):
         log.exception('Recording a saved page-image reading failed; its review is saved')
     log.info('Page-image reading proved statement %s of file %s (%s rows, $%.4f); saved as System review',
              str(item_id)[:8], str(file_id)[:8], record.get('rows'), record.get('cost_usd') or 0)
-    if card:
-        try:
-            requeued = _requeue_card(factory, case_id, item_id, card)
-        except Exception:  # noqa: BLE001 - they are judged again at the next proof version or by a person
-            log.exception('Judging the other statements of a card again after its first statement failed')
-            requeued = []
-        return dict(stored, requeued=[str(i) for i in requeued])
     return stored
 
 
@@ -3509,6 +3506,14 @@ def pending(db, limit=50):
                 marked.setdefault(batch_id, set()).add(entry['file_id'])
     if not marked:
         return []
+    from services.financial.field_proposals import case_knowledge
+    cases, knowledge = dict(db.execute(select(Batch.id, Batch.case_id).where(Batch.id.in_(list(marked)))).all()), {}
+
+    def knowledge_of(batch_id):
+        case_id = cases[batch_id]
+        if case_id not in knowledge:
+            knowledge[case_id] = case_knowledge(db, case_id)
+        return knowledge[case_id]
     found = []
     for item_id, batch_id, file_id, key, draft, metadata in db.execute(
             select(Item.id, Item.batch_id, Item.file_id, Item.statement_key, Item.review_request, EvidenceFile.metadata_)
@@ -3520,7 +3525,8 @@ def pending(db, limit=50):
         if str(file_id) not in marked.get(batch_id, ()):
             continue
         stored = ((metadata or {}).get(METADATA_KEY) or {}).get(key or '')
-        if stored and stored.get('version') == VERSION and not rejudgeable(stored) and (stored.get('status') in FINAL or (
+        due = stored and stored.get('version') == VERSION and due_again(stored, lambda: knowledge_of(batch_id))
+        if stored and stored.get('version') == VERSION and not rejudgeable(stored, due=due) and (stored.get('status') in FINAL or (
                 stored.get('status') == 'failed' and (stored.get('failures') or 0) >= MAX_FAILURES)):
             # Read once per reading of the file (a new reading is a new file, with its own statements).
             continue
@@ -3562,9 +3568,6 @@ def sweep(factory, resolve_path, *, budget_seconds=SWEEP_SECONDS, concurrency=No
 
     def tally(item_id, outcome):
         reason = outcome.get('reason')
-        for other in outcome.get('requeued') or ():
-            # Judged again now that its card's first statement is accepted.
-            _skip_until.pop(UUID(other), None)
         if reason == 'waits_for_card':
             # Another statement of its card goes first: tried again after it, in this round's next pass.
             later.append(item_id)
