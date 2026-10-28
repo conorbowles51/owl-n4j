@@ -401,11 +401,11 @@ def main():
     args = parser.parse_args()
     if args.command == 'promote':
         from services.financial import layout_learning as ll
-        profile = json.loads(Path(args.profile).read_text())
-        profile = profile.get('profile', profile)
         try:
+            profile = json.loads(Path(args.profile).read_text())
+            profile = profile.get('profile', profile) if isinstance(profile, dict) else profile
             entry = ll.registry_entry(profile, args.fingerprint, json.loads(Path(args.gates).read_text()), args.review)
-        except ValueError as error:
+        except (OSError, ValueError) as error:  # json's errors are ValueErrors
             print('Not released: %s' % error)
             sys.exit(1)
         problems = ll.release(entry, args.registry)

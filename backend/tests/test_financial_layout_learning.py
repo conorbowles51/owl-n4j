@@ -621,6 +621,17 @@ class EngineHookTests(unittest.TestCase):
         self.assertEqual(self.path.read_text(), written)
         self.path.write_text(json.dumps(dict(profiles=['junk'])))
         self.assertIn('malformed', ll.release(ll.registry_entry(third, 'zzfinger', passed(third), 'PASS'), self.path)[0][1])
+        for registry in (dict(version='abc', profiles=[]), dict(profiles=[dict(name='x', learned='live')])):
+            self.path.write_text(json.dumps(registry))
+            self.assertIn('malformed', ll.release(ll.registry_entry(third, 'zzfinger', passed(third), 'PASS'),
+                                                  self.path)[0][1])
+        self.assertTrue(ll.release(ll.registry_entry(third, 'zzfinger', passed(third), 'PASS'),
+                                   self.path.parent / 'missing' / 'r.json'))
+        for gates in (dict(passed(third), truth=None), {}, None, []):
+            with self.assertRaisesRegex(ValueError, 'complete gates result'):
+                ll.registry_entry(third, 'zzfinger', gates, 'PASS')
+        with self.assertRaisesRegex(ValueError, 'not an object'):
+            ll.registry_entry(None, 'zzfinger', passed(third), 'PASS')
         self.assertEqual(sorted(p.name for p in self.path.parent.iterdir()),
                          ['.learned_profiles.lock', self.path.name])  # no temporary left
 

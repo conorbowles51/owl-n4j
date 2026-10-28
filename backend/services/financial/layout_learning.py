@@ -1287,9 +1287,14 @@ def registry_entry(profile, fingerprint, gate_result, review, examples=(), today
     its rules' hash (learned_profiles._servable)."""
     from datetime import date
     from services.financial import learned_profiles as lp
+    if not isinstance(profile, dict):
+        raise ValueError('The profile is not an object.')
+    if not (isinstance(gate_result, dict) and all(isinstance(gate_result.get(k), dict)
+                                                  for k in ('corpus', 'truth', 'conditions'))):
+        raise ValueError('The gate result is not a complete gates result.')
     rules = {k: v for k, v in profile.items() if k not in ('name', 'learned')}
     digest = lp.rules_hash(rules)
-    conditions = (gate_result or {}).get('conditions') or {}
+    conditions = gate_result['conditions']
     if not (gate_result or {}).get('passed') or not gate_result['corpus'].get('passed') \
             or not gate_result['truth'].get('passed'):
         raise ValueError('The gates did not pass.')
@@ -1328,9 +1333,12 @@ def release(entry, path=None):
     the gates read, or any entry the engine would refuse. Nothing is written unless there are none."""
     from services.financial import learned_profiles as lp
     path = Path(path or lp.REGISTRY)
-    with open(path.with_name('.learned_profiles.lock'), 'a') as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)  # two releases never read the same version and drop each other's entry
-        return _release(entry, path)
+    try:
+        with open(path.with_name('.learned_profiles.lock'), 'a') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)  # two releases never read the same version and drop each other's entry
+            return _release(entry, path)
+    except Exception as error:  # noqa: BLE001 - malformed input is reported; the registry is only ever replaced whole
+        return [('(release)', '%s: %s' % (type(error).__name__, str(error)[:300]))]
 
 
 def _release(entry, path):
@@ -1342,7 +1350,8 @@ def _release(entry, path):
     except Exception as error:  # noqa: BLE001
         return [('(registry)', 'the registry cannot be read (%s)' % error)]
     if not (isinstance(data, dict) and isinstance(data.get('profiles', []), list)
-            and all(isinstance(e, dict) for e in data.get('profiles', []))):
+            and isinstance(data.get('version', 0), int)
+            and all(isinstance(e, dict) and isinstance(e.get('learned', {}), dict) for e in data.get('profiles', []))):
         return [('(registry)', 'the registry is malformed; it is not replaced by a release')]
     live_now = sorted(e.get('name') for e in data.get('profiles', [])
                       if isinstance(e, dict) and (e.get('learned') or {}).get('state') == 'live')
