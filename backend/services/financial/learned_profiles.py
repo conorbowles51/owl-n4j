@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from collections import Counter
 from contextlib import contextmanager
 from pathlib import Path
@@ -48,8 +49,19 @@ def rules_hash(rules):
     return hashlib.sha256(body.encode()).hexdigest()
 
 
+# Bounds on a learned entry's lists: the engine compares every heading word with every listed phrase, so an
+# unbounded list makes a matching file slow to read (measured: 2,000 column words, 28 s for a 6-page Truist
+# file read in 0.5 s plainly). The written profiles' longest list has 12 phrases, the longest phrase 51 characters.
+MAX_PHRASES = 40
+MAX_PHRASE_CHARS = 200
+# The registry's states (layout_learning.STATES and 'retired'); live and retired are served, the others are
+# recorded only. Any other state is a malformed entry (refused with an ERROR).
+STATES = ('unread', 'learning', 'draft_failed', 'gates_failed', 'passed', 'live', 'read', 'retired')
+
+
 def _phrases(value):
-    return isinstance(value, list) and bool(value) and all(isinstance(p, str) and p.strip() for p in value)
+    return (isinstance(value, list) and 0 < len(value) <= MAX_PHRASES
+            and all(isinstance(p, str) and p.strip() and len(p) <= MAX_PHRASE_CHARS for p in value))
 
 
 def _typed(rules):
@@ -65,8 +77,12 @@ def _typed(rules):
                 isinstance(role, str) and _phrases(words) for role, words in rules[key].items())):
             raise bad('%s must map each role to a list of printed words' % key)
     for key in ('institution', 'currency', 'convention', 'date_order', 'rule_mark'):
-        if key in rules and not isinstance(rules[key], str):
+        if key in rules and not (isinstance(rules[key], str) and len(rules[key]) <= MAX_PHRASE_CHARS):
             raise bad('%s is not text' % key)
+    if 'currency' in rules and not re.fullmatch(r'[A-Z]{3}', rules['currency']):
+        raise bad('currency must be a three-letter code in capitals (the engine records it as given)')
+    if len(rules.get('labels') or {}) > 12 or len(rules.get('columns') or {}) > 12:
+        raise bad('too many label or column roles')
     for key in ('account_heading', 'statement_account', 'account_suffix_heading', 'client_line',
                 'account_number_heading', 'direction_headings', 'repeated_column_groups', 'holdings_currency'):
         if key in rules and rules[key] is not True:
@@ -77,7 +93,7 @@ def _typed(rules):
     if 'prior_period_block' in rules and not (isinstance(rules['prior_period_block'], dict) and all(
             _phrases(v) for v in rules['prior_period_block'].values())):
         raise bad('prior_period_block needs lists of printed words')
-    if 'column_order' in rules and not (isinstance(rules['column_order'], list)
+    if 'column_order' in rules and not (isinstance(rules['column_order'], list) and len(rules['column_order']) <= 12
                                         and all(isinstance(r, str) for r in rules['column_order'])):
         raise bad('column_order must be a list of roles')
     first = rules.get('opening_from_first_day')
@@ -92,7 +108,7 @@ def _validated(entry):
     _typed(rules)
     match = rules.get('match')
     if not isinstance(match, dict) or not match.get('all') or set(match) - {'all', 'any'} or not all(
-            isinstance(v, list) and v and all(isinstance(p, str) and p.strip() for p in v) for v in match.values()):
+            _phrases(v) for v in match.values()):
         raise ValueError('Learned profile %s: match needs a non-empty list of printed phrases' % rules.get('name'))
     if any(p['name'] == rules.get('name') for p in sep.PROFILES if not p.get('learned')):
         raise ValueError('Learned profile %s has the name of a written profile' % rules.get('name'))
@@ -104,10 +120,9 @@ def _servable(entry):
     """An entry the engine may use: a learned block recording state live (or retired, kept only so saved choices
     naming it still resolve), gates that passed, a review that passed, and the hash of exactly these rules."""
     learned = entry.get('learned')
-    if learned is None:
-        return False  # no learned block: not a registry entry the engine serves
-    if not isinstance(learned, dict) or not isinstance(learned.get('state'), str):
-        raise ValueError('Learned profile %s: its learned block or state is malformed' % entry.get('name'))
+    if not isinstance(learned, dict) or learned.get('state') not in STATES:
+        raise ValueError('Learned profile %s: its learned block or state is missing or not one of %s'
+                         % (entry.get('name'), ', '.join(STATES)))
     if learned['state'] not in ('live', 'retired'):
         return False  # a draft, failed or passed entry: recorded, never served
     fingerprint = learned.get('fingerprint')
@@ -235,7 +250,7 @@ def named(name):
     LOUPE_FINANCIAL_LEARNED_PROFILES_OFF, still resolves (as LOUPE_FINANCIAL_PROFILES_OFF leaves a written profile
     resolvable by name): switching a profile off stops new matches, never the re-reading of saved work. Under the
     gates' exact set (``_OVERRIDE``) only that set resolves."""
-    pool = profiles() if _OVERRIDE is not None else profiles() + everything()
+    pool = tuple(_OVERRIDE) if _OVERRIDE is not None else profiles() + everything()
     return next((p for p in pool if p['name'] == name), None)
 
 

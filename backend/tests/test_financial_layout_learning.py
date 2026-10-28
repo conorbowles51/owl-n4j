@@ -517,10 +517,12 @@ class EngineHookTests(unittest.TestCase):
         bad_rules = [dict(labels=['opening']), dict(labels={'opening': 5}), dict(labels={'opening': 'SALDO ANTERIOR'}),
                      dict(columns=['ignore']), dict(holder_heading={'title': [1], 'prefix': 'x'}),
                      dict(prior_period_block={'start': [1], 'end': [2]}), dict(institution=5),
-                     dict(direction_headings='yes'), dict(opening_from_first_day=True)]
+                     dict(direction_headings='yes'), dict(opening_from_first_day=True),
+                     dict(columns=dict(ignore=['word %d' % n for n in range(2000)])), dict(currency='usd'),
+                     dict(currency=' MXN '), dict(labels=dict(opening=['x' * 5000]))]
         entries = []
         for number, extra in enumerate(bad_rules):
-            rules = dict(match=dict(all=['zz bad layout %d' % number]), currency='USD', **extra)
+            rules = dict(dict(match=dict(all=['zz bad layout %d' % number]), currency='USD'), **extra)
             name = 'learned-b%d-%s' % (number, lp.rules_hash(rules)[:12])
             hashed = lp.rules_hash(dict(rules, name=name))
             entries.append(dict(rules, name=name, learned=dict(
@@ -528,7 +530,9 @@ class EngineHookTests(unittest.TestCase):
                 gates=dict(corpus_passed=True, truth_passed=True, rules_hash=hashed, profiles_off=[],
                            corpus_dumped_at='2026-10-28T00:00:00+00:00'))))
         odd = [1, 'x', None, [], dict(good, name='odd-learned', learned='live'),
-               dict(good, name='odd-state', learned=dict(good['learned'], state=['live']))]
+               dict(good, name='odd-state', learned=dict(good['learned'], state=['live'])),
+               dict(good, name='typo-state', learned=dict(good['learned'], state='Live')),
+               {k: v for k, v in dict(good, name='no-learned').items() if k != 'learned'}]
         self.write(good, *entries, *odd)
         with self.assertLogs('services.financial.learned_profiles', 'ERROR') as logs:
             self.assertEqual(sep.matching_profile('zz good layout')['name'], good['name'])
