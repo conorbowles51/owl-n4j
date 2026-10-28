@@ -2706,7 +2706,8 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
                 # now read with more pages (SUMMARY_PAGES) is not marked as looked at: it is read anew next time.
                 if apply:
                     # Under the file's lock, only while it is still that outcome (rejudgeable, any reading).
-                    _store(db, file_id, key, _judged(stored, **({'pages_rule': PAGES_RULE} if same_pages else {})),
+                    _store(db, file_id, key, _judged(stored, **({'pages_rule': PAGES_RULE} if same_pages else
+                                                              {'read_anew_at': datetime.now(timezone.utc).isoformat()})),
                            rejudge=(None, None, None))
                     db.commit()
                 else:
@@ -3106,7 +3107,7 @@ def card_turn(db, case_id, item_id, card):
             continue
         if (when, str(other_id)) >= ours:
             continue
-        if stored and (rejudgeable(stored) or _being_read(stored) or _fresh_wait(stored)):
+        if stored and (rejudgeable(stored) or _being_read(stored) or _fresh_wait(stored) or _to_read_anew(stored)):
             raise WaitsForCard('An earlier statement of this card (ending %s, %s) is checked first: a card is '
                                'confirmed from its earliest statement. This one follows it.' % (ending, period))
 
@@ -3114,6 +3115,23 @@ def card_turn(db, case_id, item_id, card):
 # A wait is refreshed each time its statement is judged again (every round or pass while it waits); one not judged
 # for this long (its batch paused, its file removed or queued to be prepared again) no longer holds the others back.
 WAIT_FRESH_SECONDS = 2 * 3600
+READ_ANEW_HOLD_SECONDS = 24 * 3600
+
+
+def _to_read_anew(stored):
+    """A not-proved outcome listed to be read anew with more pages (SUMMARY_PAGES: marked, not yet read): still to be
+    judged, so a later statement of its card does not go before it. Marking costs nothing and is done for a whole
+    backlog at once, while reading takes minutes each (fdaf956c's 52 took about 1.5 hours), so the hold lasts
+    READ_ANEW_HOLD_SECONDS from the mark: long enough for any backlog, and one never read (its batch paused, its file
+    removed) stops holding the others after it."""
+    if not (stored.get('status') == 'not_proved' and (stored.get('pages_rule') or 0) != PAGES_RULE
+            and stored.get('read_anew_at')):
+        return False
+    try:
+        started = datetime.fromisoformat(stored['read_anew_at'])
+        return (datetime.now(timezone.utc) - started).total_seconds() < READ_ANEW_HOLD_SECONDS
+    except (TypeError, ValueError):
+        return False
 
 
 def _fresh_wait(stored):

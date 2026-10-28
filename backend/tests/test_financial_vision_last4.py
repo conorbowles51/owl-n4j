@@ -444,6 +444,22 @@ class LastFourFlowTest(unittest.TestCase):
         self.assertEqual(self.r.item(self.batch).status, 'attention')
         self.assertIn('is checked first', self.r.item(self.batch).summary['vision_reading']['line'])
 
+    def test_an_earlier_statement_listed_to_be_read_anew_goes_first(self):
+        # Marked to be read anew with its summary page (SUMMARY_PAGES), not read yet: it is still to be judged.
+        from datetime import datetime, timezone
+        record = dict(version=vr.VERSION, proof=vr.PROOF_VERSION, status='not_proved', raw={},
+                      read_anew_at=datetime.now(timezone.utc).isoformat())
+        _, key = self.sibling(period_start='2022-12-01', record=record)
+        outcome = self.read()
+        self.assertEqual((outcome['status'], outcome['reason']), ('not_proved', 'waits_for_card'))
+        self.assertTrue(vr._to_read_anew(record))
+        # Read since (its pages rule recorded), or marked long ago and never read: it does not hold this one.
+        self.assertFalse(vr._to_read_anew(dict(record, pages_rule=vr.PAGES_RULE)))
+        self.assertFalse(vr._to_read_anew(dict(record, read_anew_at='2026-01-01T00:00:00+00:00')))
+        # A backlog takes hours to read: a mark 3 hours old still holds the later statement.
+        from datetime import timedelta
+        self.assertTrue(vr._to_read_anew(dict(record, read_anew_at=(datetime.now(timezone.utc) - timedelta(hours=3)).isoformat())))
+
     def test_a_later_or_decided_statement_does_not_hold_it(self):
         self.sibling(period_start='2030-01-01', record=dict(version=vr.VERSION, proof=vr.PROOF_VERSION - 1,
                                                             status='not_proved', raw={}))

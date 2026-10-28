@@ -196,6 +196,36 @@ class SummaryPagesFlowTest(unittest.TestCase):
             self.flow.read(calls=calls)
             self.assertEqual(len(calls), 2)
 
+    def test_an_older_outcome_whose_pages_grew_is_marked_then_read_anew(self):
+        calls = []
+        first = self.flow.read(calls=calls)
+        pages = first['pages']
+        stored = self.flow.stored()
+        # Judged under older rules, from fewer pages than its period has now (live: proof 17, page 1 missing).
+        old = {k: v for k, v in stored.items() if k != 'pages_rule'}
+        old.update(status='not_proved', proof=vr.PROOF_VERSION - 1, message='The opening or closing balance could not be read.')
+        self.store(old)
+        wider = lambda proposal: sorted(set(vr.statement_pages(proposal)) | {99})
+        with patch.object(vr, 'period_pages', wider):
+            marked = self.flow.read(calls=calls)
+            self.assertEqual((len(calls), marked['reason']), (1, 'already_read'))
+            stamped = self.flow.stored()
+            self.assertTrue(stamped.get('read_anew_at'))
+            self.assertNotIn('pages_rule', stamped)
+            self.assertTrue(vr._to_read_anew(stamped))
+            self.assertTrue(self.pending())
+            self.flow.read(calls=calls)
+            self.assertEqual(len(calls), 2)
+            read = self.flow.stored()
+            self.assertEqual((read['pages'], read['pages_rule']), (sorted(set(pages) | {99}), vr.PAGES_RULE))
+            self.assertNotIn('read_anew_at', read)
+            self.assertFalse(vr._to_read_anew(read))
+        # Same pages: re-judged from its stored reading, never marked to be read anew.
+        self.store(old)
+        self.flow.read(calls=calls)
+        self.assertEqual(len(calls), 2)
+        self.assertNotIn('read_anew_at', self.flow.stored())
+
     def test_with_the_rule_off_nothing_is_read_again(self):
         calls = []
         self.flow.read(calls=calls)
