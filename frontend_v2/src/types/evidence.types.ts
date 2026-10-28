@@ -176,11 +176,20 @@ export interface LLMModel {
   supports_agent?: boolean
   supports_structured_output?: boolean
   provider_configured?: boolean
+  /** Page images may be sent to it (the server's image-capability check). */
+  reads_images?: boolean
+}
+
+export interface AIWorkloadModelChainEntry {
+  provider: string
+  model_id: string
 }
 
 export interface AIWorkloadModelConfig {
   provider: string
   model_id: string
+  /** Statement page images: the models tried in order; the first whose reading proves is used. */
+  chain?: AIWorkloadModelChainEntry[]
 }
 
 export interface AIModelPolicy {

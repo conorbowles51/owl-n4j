@@ -42,6 +42,7 @@ import {
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/cn"
 import { aiSettingsAPI } from "../api"
+import type { AIWorkloadModelChainEntry, LLMModel } from "@/types/evidence.types"
 import type { AIProviderConnection, AISettings } from "../types"
 import { SettingsNav } from "./SettingsNav"
 
@@ -144,6 +145,85 @@ function providerDisplay(provider: string) {
   return provider.charAt(0).toUpperCase() + provider.slice(1)
 }
 
+const MAX_CHAIN = 3
+
+function chainStepLabel(index: number) {
+  return index === 0 ? "Reads first" : "If the one above fails or cannot prove its reading"
+}
+
+/** An ordered chain of models (Statement page images): each model is tried in turn until one's reading proves. */
+function ModelChainEditor({ label, description, chain, models, allModels, disabled, onChange }: {
+  label: string
+  description: string
+  chain: AIWorkloadModelChainEntry[]
+  models: LLMModel[]
+  allModels: LLMModel[]
+  disabled: boolean
+  onChange: (chain: AIWorkloadModelChainEntry[]) => void
+}) {
+  const unused = models.filter((model) => !chain.some((entry) => entry.model_id === model.id))
+  const name = (entry: AIWorkloadModelChainEntry) => {
+    const model = allModels.find((candidate) => candidate.id === entry.model_id)
+    return model ? `${model.name} · ${providerDisplay(model.provider)}` : entry.model_id
+  }
+  return (
+    <div className="space-y-3 rounded-lg border border-border/65 p-3" data-testid="model-chain">
+      <div className="min-w-0">
+        <p className="text-xs font-medium">{label}</p>
+        <p className="text-[10px] leading-relaxed text-muted-foreground">{description}</p>
+        <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
+          Models are tried in this order. A reading is used only when it checks out; otherwise the next model reads the
+          statement, and when none checks out it stays held. Only models that can read page images are offered.
+        </p>
+      </div>
+      <ol className="space-y-2">
+        {chain.map((entry, index) => {
+          const offered = [...models.filter((model) => model.id === entry.model_id), ...unused]
+          return (
+            <li key={`${entry.provider}/${entry.model_id}`} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <span className="text-[10px] text-muted-foreground">{index + 1}. {chainStepLabel(index)}</span>
+              <div className="flex items-center gap-1.5">
+                <Select
+                  value={entry.model_id}
+                  disabled={disabled}
+                  onValueChange={(modelId) => {
+                    const model = models.find((candidate) => candidate.id === modelId)
+                    if (!model) return
+                    onChange(chain.map((existing, at) => (at === index ? { provider: model.provider, model_id: model.id } : existing)))
+                  }}
+                >
+                  <SelectTrigger className="w-full shrink-0 text-xs sm:w-56" aria-label={`${label}, model ${index + 1}`}>
+                    <SelectValue>{name(entry)}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {offered.map((model) => <SelectItem key={model.id} value={model.id}>{model.name} · {providerDisplay(model.provider)}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-[10px]" disabled={disabled || index === 0}
+                  aria-label={`Move model ${index + 1} up`}
+                  onClick={() => onChange(chain.map((existing, at) => (at === index - 1 ? chain[index] : at === index ? chain[index - 1] : existing)))}>
+                  Up
+                </Button>
+                <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-[10px]" disabled={disabled || chain.length === 1}
+                  aria-label={`Remove model ${index + 1}`}
+                  onClick={() => onChange(chain.filter((_, at) => at !== index))}>
+                  Remove
+                </Button>
+              </div>
+            </li>
+          )
+        })}
+      </ol>
+      {chain.length < MAX_CHAIN && unused.length ? (
+        <Button type="button" variant="outline" size="sm" className="h-7 text-[10px]" disabled={disabled}
+          onClick={() => onChange([...chain, { provider: unused[0].provider, model_id: unused[0].id }])}>
+          Add a fallback model
+        </Button>
+      ) : null}
+    </div>
+  )
+}
+
 export function AISettingsPage() {
   const [settings, setSettings] = useState<AISettings | null>(null)
   const [draft, setDraft] = useState<AISettings["routing"]>({})
@@ -175,7 +255,8 @@ export function AISettingsPage() {
   const connectedCount = settings?.providers.filter((provider) => provider.configured).length ?? 0
   const isDirty = settings ? JSON.stringify(draft) !== JSON.stringify(settings.routing) : false
   const selectedProvider = useMemo(() => {
-    const providers = new Set(Object.values(draft).map((entry) => entry.provider))
+    // A chain workload (page images) runs on several providers in order and does not make the profile a mix.
+    const providers = new Set(Object.values(draft).filter((entry) => !entry.chain).map((entry) => entry.provider))
     return providers.size === 1 ? Array.from(providers)[0] : "mixed"
   }, [draft])
   const groups = useMemo(() => {
@@ -430,6 +511,20 @@ export function AISettingsPage() {
                       {workloads.map((workload) => {
                         const metadata = settings.workloads[workload]
                         const current = draft[workload]
+                        if (current?.chain) {
+                          return (
+                            <ModelChainEditor
+                              key={workload}
+                              label={metadata.label}
+                              description={metadata.description}
+                              chain={current.chain}
+                              models={settings.models.filter((model) => model.provider_configured !== false && model.reads_images === true)}
+                              allModels={settings.models}
+                              disabled={!settings.permissions.can_edit_routing}
+                              onChange={(chain) => setDraft((existing) => ({ ...existing, [workload]: { ...chain[0], chain } }))}
+                            />
+                          )
+                        }
                         const available = settings.models.filter((model) => {
                           if (model.provider_configured === false) return false
                           if (workload === "agent" && model.supports_agent === false) return false

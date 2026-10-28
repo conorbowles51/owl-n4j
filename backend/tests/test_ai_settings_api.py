@@ -55,6 +55,31 @@ class AISettingsAPITests(unittest.TestCase):
         self.assertNotIn("ollama", response.text.lower())
         self.assertNotIn("api_key", response.text)
 
+    def test_page_image_chain_and_which_models_read_images(self):
+        from services import ai_model_capabilities as cap
+        cap.clear_cache()
+        self.addCleanup(cap.clear_cache)
+        listed = {"deepseek-flash": {"text", "image"}, "deepseek-v4-pro": {"text"}}
+        from dataclasses import replace
+        from services.ai_provider_credentials import credential_store as store
+        real = store.list_connections
+
+        def connected(db):  # OpenAI and DeepSeek connected
+            return [replace(c, configured=c.provider in ("openai", "deepseek")) for c in real(db)]
+        with patch.object(cap, "_fetch_deepseek", return_value=listed), \
+                patch("services.ai_provider_credentials.get_provider_api_key", return_value="k"), \
+                patch("routers.ai_settings.credential_store.list_connections", side_effect=connected):
+            payload = self.client.get("/api/ai-settings").json()
+        reads = {m["id"]: m["reads_images"] for m in payload["models"]}
+        self.assertTrue(reads["deepseek-flash"])
+        self.assertFalse(reads["deepseek-v4-pro"])
+        self.assertTrue(reads["gpt-5.6-terra"])
+        self.assertFalse(any(reads[m["id"]] for m in payload["models"] if m["provider"] in ("anthropic", "gemini")))
+        chain = payload["routing"]["financial_vision"]["chain"]
+        self.assertEqual([e["provider"] for e in chain], ["deepseek", "openai"])
+        # The chain workload does not turn a one-provider profile into a mix.
+        self.assertEqual(payload["default_provider"], "openai")
+
     @patch("routers.ai_settings.requests.get")
     def test_deepseek_key_validation_uses_official_model_catalog(self, get):
         response = get.return_value

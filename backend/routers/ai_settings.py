@@ -142,7 +142,8 @@ def _connection_response(
 
 
 def _provider_for_policy(configuration: dict[str, dict[str, Any]]) -> str:
-    providers = {entry["provider"] for entry in configuration.values()}
+    # A chain workload (page images) runs on several providers in order and does not make the profile a mix.
+    providers = {entry["provider"] for entry in configuration.values() if not entry.get("chain")}
     return next(iter(providers)) if len(providers) == 1 else "mixed"
 
 
@@ -185,6 +186,23 @@ def _supporting_services(db: Session) -> list[dict[str, Any]]:
     ]
 
 
+def _reads_images(db: Session, model: Any, connections: list[Any]) -> bool:
+    """Whether page images may be sent to this model (ai_model_capabilities): the settings page offers only these for
+    Statement page images. Unknown, unconnected or text-only: False (the save refuses them too)."""
+    from services.ai_model_capabilities import accepts_images
+    from services.ai_model_policy import _provider_key
+    provider = model.provider.value
+    if provider not in ("openai", "deepseek"):
+        return False
+    if not any(c.provider == provider and c.configured for c in connections):
+        return False
+    try:
+        api_key = _provider_key(provider, db) if provider == "deepseek" else None
+        return accepts_images(provider, model.id, api_key=api_key)[0]
+    except Exception:  # noqa: BLE001 - not confirmed: not offered
+        return False
+
+
 def _settings_response(db: Session, user: User) -> AISettingsResponse:
     configuration, revision = get_policy(db)
     usage = _provider_usage(configuration)
@@ -204,6 +222,7 @@ def _settings_response(db: Session, user: User) -> AISettingsResponse:
                     for connection in connections
                     if connection.provider == model.provider.value
                 ),
+                "reads_images": _reads_images(db, model, connections),
             }
             for model in AVAILABLE_MODELS
         ],
