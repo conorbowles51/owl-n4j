@@ -206,3 +206,31 @@ def test_a_healthy_backend_started_outside_a_deploy_is_recorded_as_last_good(rel
     assert last_good == (RUNNING if recorded else 'previous-safe-revision')
     assert ('recorded as last known-good' in result.stdout) is recorded
     assert not any(event.startswith(('git pull', 'systemctl start owl-backend')) for event in events)
+
+
+def _party_gate(project, exit_code):
+    gate = project / 'backend/benchmarks/statement_automation/party_coverage_gate.py'
+    gate.parent.mkdir(parents=True, exist_ok=True)
+    for package in (project / 'backend/benchmarks', gate.parent):
+        (package / '__init__.py').write_text('')
+    gate.write_text(f'import sys\nprint("PARTY COVERAGE GATE: {"FAIL" if exit_code == 1 else "PASS"}")\n'
+                    'out = sys.argv[sys.argv.index("--out") + 1]\nopen(out, "w").write("{}")\n'
+                    f'raise SystemExit({exit_code})\n')
+
+
+def test_party_coverage_gate_failure_stops_the_release_before_any_install(release_sandbox):
+    _party_gate(release_sandbox, 1)
+    result, events = run_release(release_sandbox, 'deploy.sh')
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert 'Party coverage gate failed' in result.stdout
+    assert any(event.startswith('git reset --hard') for event in events)
+    assert not any(event.startswith(('pip ', 'npm ', 'docker compose ', 'systemctl restart', 'systemctl stop owl-frontend')) for event in events)
+    assert not (release_sandbox / 'deploy/logs/party-coverage-baseline.json').exists()
+
+
+def test_party_coverage_gate_pass_becomes_the_baseline_after_a_healthy_release(release_sandbox):
+    _party_gate(release_sandbox, 0)
+    result, events = run_release(release_sandbox, 'deploy.sh')
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert 'Party coverage gate passed' in result.stdout
+    assert (release_sandbox / 'deploy/logs/party-coverage-baseline.json').read_text() == '{}'

@@ -251,6 +251,35 @@ else
     success "Updated ${PREV_COMMIT_SHORT} -> ${NEW_COMMIT_SHORT}"
 fi
 
+# Party coverage: with the code being released, the share of stored payments that show a bare
+# "Not identified" (no name and no stated reason) may not rise on any bank, and a newly read layout may
+# not land mostly bare (backend/benchmarks/statement_automation/party_coverage_gate.py). Read-only.
+# A failed gate puts the checkout back on the running revision before anything is installed or restarted.
+PARTY_GATE="${BACKEND_DIR}/benchmarks/statement_automation/party_coverage_gate.py"
+PARTY_BASELINE="${LOG_DIR}/party-coverage-baseline.json"
+PARTY_CANDIDATE="${LOG_DIR}/party-coverage-candidate.json"
+rm -f "${PARTY_CANDIDATE}"
+if [ -f "${PARTY_GATE}" ]; then
+    step "Party coverage gate (payments that name the other side)"
+    PARTY_RC=0
+    (cd "${BACKEND_DIR}" && $RUN_AS env PYTHONPATH=. "${VENV_DIR}/bin/python" -m benchmarks.statement_automation.party_coverage_gate \
+        --baseline "${PARTY_BASELINE}" --out "${PARTY_CANDIDATE}") || PARTY_RC=$?
+    if [ "${PARTY_RC}" -eq 1 ]; then
+        fail "Party coverage gate failed: more payments would show a bare \"Not identified\". Release stopped."
+        if [ -n "${ROLLBACK_TARGET}" ] && [ "${ROLLBACK_TARGET}" != "${NEW_COMMIT}" ]; then
+            check_ingestion_idle
+            $RUN_AS git reset --hard "${ROLLBACK_TARGET}"
+            warn "Checkout returned to the running revision $(git rev-parse --short HEAD); services were not changed."
+        fi
+        exit 1
+    elif [ "${PARTY_RC}" -ne 0 ]; then
+        warn "Party coverage gate could not measure (exit ${PARTY_RC}); release continues without it."
+        rm -f "${PARTY_CANDIDATE}"
+    else
+        success "Party coverage gate passed"
+    fi
+fi
+
 step "Installing backend dependencies"
 check_ingestion_idle
 $RUN_AS "${VENV_DIR}/bin/pip" install -r "${BACKEND_DIR}/requirements.txt" --quiet
@@ -337,6 +366,8 @@ done
 
 if [ "${HEALTHY}" = true ]; then
     echo "${NEW_COMMIT}" > "${LAST_GOOD_FILE}"
+    # The measure this healthy release passed with is the baseline the next release is held to.
+    [ -f "${PARTY_CANDIDATE}" ] && mv -f "${PARTY_CANDIDATE}" "${PARTY_BASELINE}"
     DEPLOY_OUTCOME="deployed and healthy"
     DEPLOY_END=$(date +%s)
     DEPLOY_DURATION=$(( DEPLOY_END - DEPLOY_START ))

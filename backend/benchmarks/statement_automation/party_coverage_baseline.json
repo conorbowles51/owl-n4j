@@ -1,0 +1,248 @@
+{
+ "banks": {
+  "ANDREWS": {
+   "bare": 548,
+   "named": 5443,
+   "reason": 0,
+   "rows": 5991
+  },
+  "BBVA": {
+   "bare": 4839,
+   "named": 14038,
+   "reason": 0,
+   "rows": 18877
+  },
+  "CAPITAL": {
+   "bare": 448,
+   "named": 2785,
+   "reason": 0,
+   "rows": 3233
+  },
+  "CITIBANK": {
+   "bare": 153,
+   "named": 291,
+   "reason": 0,
+   "rows": 444
+  },
+  "CREDIT": {
+   "bare": 103,
+   "named": 177,
+   "reason": 0,
+   "rows": 280
+  },
+  "FIRST": {
+   "bare": 0,
+   "named": 12,
+   "reason": 0,
+   "rows": 12
+  },
+  "INTERCAM": {
+   "bare": 295,
+   "named": 1423,
+   "reason": 0,
+   "rows": 1718
+  },
+  "KAPITAL": {
+   "bare": 85,
+   "named": 688,
+   "reason": 0,
+   "rows": 773
+  },
+  "M&T": {
+   "bare": 97,
+   "named": 782,
+   "reason": 0,
+   "rows": 879
+  },
+  "MERRICK": {
+   "bare": 266,
+   "named": 57,
+   "reason": 0,
+   "rows": 323
+  },
+  "MONEX": {
+   "bare": 86,
+   "named": 296,
+   "reason": 0,
+   "rows": 382
+  },
+  "NAVY": {
+   "bare": 121,
+   "named": 828,
+   "reason": 0,
+   "rows": 949
+  },
+  "SANTANDER": {
+   "bare": 1565,
+   "named": 5137,
+   "reason": 0,
+   "rows": 6702
+  },
+  "SCOTIABANK": {
+   "bare": 3,
+   "named": 15,
+   "reason": 0,
+   "rows": 18
+  },
+  "SYNCHRONY": {
+   "bare": 28,
+   "named": 25,
+   "reason": 0,
+   "rows": 53
+  },
+  "TRUIST": {
+   "bare": 656,
+   "named": 1131,
+   "reason": 0,
+   "rows": 1787
+  }
+ },
+ "layouts": {
+  "ANDREWS/checking": {
+   "bare": 410,
+   "named": 5443,
+   "reason": 0,
+   "rows": 5853
+  },
+  "ANDREWS/savings": {
+   "bare": 138,
+   "named": 0,
+   "reason": 0,
+   "rows": 138
+  },
+  "BBVA/checking": {
+   "bare": 4835,
+   "named": 14037,
+   "reason": 0,
+   "rows": 18872
+  },
+  "BBVA/credit_card": {
+   "bare": 4,
+   "named": 1,
+   "reason": 0,
+   "rows": 5
+  },
+  "CAPITAL/credit_card": {
+   "bare": 448,
+   "named": 2785,
+   "reason": 0,
+   "rows": 3233
+  },
+  "CITIBANK/credit_card": {
+   "bare": 153,
+   "named": 291,
+   "reason": 0,
+   "rows": 444
+  },
+  "CREDIT/credit_card": {
+   "bare": 103,
+   "named": 177,
+   "reason": 0,
+   "rows": 280
+  },
+  "FIRST/unknown": {
+   "bare": 0,
+   "named": 12,
+   "reason": 0,
+   "rows": 12
+  },
+  "INTERCAM/checking": {
+   "bare": 295,
+   "named": 1423,
+   "reason": 0,
+   "rows": 1718
+  },
+  "KAPITAL/checking": {
+   "bare": 85,
+   "named": 682,
+   "reason": 0,
+   "rows": 767
+  },
+  "KAPITAL/unknown": {
+   "bare": 0,
+   "named": 6,
+   "reason": 0,
+   "rows": 6
+  },
+  "M&T/checking": {
+   "bare": 90,
+   "named": 772,
+   "reason": 0,
+   "rows": 862
+  },
+  "M&T/credit_card": {
+   "bare": 7,
+   "named": 10,
+   "reason": 0,
+   "rows": 17
+  },
+  "MERRICK/credit_card": {
+   "bare": 266,
+   "named": 57,
+   "reason": 0,
+   "rows": 323
+  },
+  "MONEX/checking": {
+   "bare": 86,
+   "named": 296,
+   "reason": 0,
+   "rows": 382
+  },
+  "NAVY/checking": {
+   "bare": 110,
+   "named": 815,
+   "reason": 0,
+   "rows": 925
+  },
+  "NAVY/credit_card": {
+   "bare": 11,
+   "named": 13,
+   "reason": 0,
+   "rows": 24
+  },
+  "SANTANDER/checking": {
+   "bare": 1488,
+   "named": 4296,
+   "reason": 0,
+   "rows": 5784
+  },
+  "SANTANDER/savings": {
+   "bare": 77,
+   "named": 841,
+   "reason": 0,
+   "rows": 918
+  },
+  "SCOTIABANK/checking": {
+   "bare": 3,
+   "named": 15,
+   "reason": 0,
+   "rows": 18
+  },
+  "SYNCHRONY/credit_card": {
+   "bare": 26,
+   "named": 23,
+   "reason": 0,
+   "rows": 49
+  },
+  "SYNCHRONY/unknown": {
+   "bare": 2,
+   "named": 2,
+   "reason": 0,
+   "rows": 4
+  },
+  "TRUIST/checking": {
+   "bare": 656,
+   "named": 1131,
+   "reason": 0,
+   "rows": 1787
+  }
+ },
+ "note": "Seed: measured with the released code 29e998a7 over every stored payment (42,421) on 2026-10-28. The live baseline after each release is deploy/logs/party-coverage-baseline.json.",
+ "total": {
+  "bare": 9293,
+  "named": 33128,
+  "reason": 0,
+  "rows": 42421
+ },
+ "version": "description-labels/6"
+}
