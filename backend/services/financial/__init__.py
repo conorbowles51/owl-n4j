@@ -2258,3 +2258,7 @@ from services.financial.credit_line_total_owed import total_owed_rows
 __all__ += ["total_owed_rows"]
 from services.financial.scan_daily_balance import scan_rows
 __all__ += ["scan_rows"]
+from services.financial.learned_profiles import match_among, rules_hash
+__all__ += ["match_among", "rules_hash"]
+from services.financial.layout_learning import corpus_gate, prove_example, truth_gate
+__all__ += ["corpus_gate", "prove_example", "truth_gate"]
