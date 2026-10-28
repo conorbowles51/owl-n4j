@@ -39,6 +39,7 @@ SLOW_KEEP_DAYS = 30
 QUEUE_LIMIT = 50000
 MAX_PENDING_KEYS = 20000
 UNMATCHED = '(no matching route)'
+STREAM = ' (stream)'  # appended to an event-stream route: long by design, never a slow request
 METHODS = frozenset(('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'))
 # Bucket i holds durations in (BUCKET_EDGES_MS[i-1], BUCKET_EDGES_MS[i]]; the last bucket
 # holds everything above the last edge. 1 ms .. ~11 min in 15% steps (98 buckets).
@@ -129,7 +130,7 @@ class RequestSpeedMiddleware:
             await self.app(scope, receive, send)
             return
         started = time.perf_counter()
-        outcome = [None, 0]
+        outcome = [None, 0, False]
         person = {}
         token = _person.set(person)
 
@@ -137,6 +138,9 @@ class RequestSpeedMiddleware:
             kind = message['type']
             if kind == 'http.response.start':
                 outcome[0] = message['status']
+                for name, value in message.get('headers') or ():
+                    if name.lower() == b'content-type' and value.startswith(b'text/event-stream'):
+                        outcome[2] = True
             elif kind == 'http.response.body':
                 outcome[1] += len(message.get('body') or b'')
             await send(message)
@@ -153,12 +157,13 @@ class RequestSpeedMiddleware:
             try:
                 method = scope.get('method') if scope.get('method') in METHODS else 'OTHER'
                 route = _template(scope)
+                streamed = outcome[2] and route != UNMATCHED
                 # A case only for a matched route and a signed-in person: an anonymous caller
                 # cannot create rows for made-up cases.
                 case = _case(scope) if route != UNMATCHED and person.get('email') else None
-                enqueue('api', method, route, case, outcome[0] or 499, seconds * 1000, outcome[1],
-                        person.get('email'))
-                if seconds > SLOW_LOG_SECONDS:
+                enqueue('api', method, route + STREAM if streamed else route, case, outcome[0] or 499,
+                        seconds * 1000, outcome[1], person.get('email'))
+                if seconds > SLOW_LOG_SECONDS and not streamed:
                     log.warning('Slow request: %s %s case %s %.1f s (status %s)', method, route,
                                 case[:8] if case else '-', seconds, outcome[0] or 499)
             except Exception:
@@ -209,7 +214,7 @@ def aggregate(items, user_ids):
         if group is None:
             group = groups[key] = Group()
         group.add(ms, size, status)
-        if ms > SLOW_ROW_SECONDS * 1000:
+        if ms > SLOW_ROW_SECONDS * 1000 and not route.endswith(STREAM):
             slow.append(dict(at=datetime.fromtimestamp(at, tz=timezone.utc), kind=kind, method=method, route=route,
                              case_id=case, user_id=user, status=status, duration_ms=ms, bytes=size))
     return groups, slow

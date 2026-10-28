@@ -36,6 +36,11 @@ def build_app():
     def summary(case_id: str = Query(None), secret: str = Query(None), _=Depends(person)):
         return {'rows': [1, 2, 3]}
 
+    @app.get('/api/stream')
+    def stream():
+        from fastapi.responses import StreamingResponse
+        return StreamingResponse(iter([b'data: 1\n\n']), media_type='text/event-stream')
+
     @app.get('/api/public')
     def public(case_id: str = Query(None)):
         return {}
@@ -93,6 +98,15 @@ class MiddlewareRecords(Captured):
         self.client.get(f'/api/public?case_id={CASE}')
         self.client.get(f'/api/nothing?case_id={CASE}')
         self.assertEqual([item[4] for item in self.drained()], [None, None])
+
+    def test_event_streams_are_labelled_and_never_slow(self):
+        with patch.object(rs, 'SLOW_LOG_SECONDS', 0.0), patch.object(rs, 'SLOW_ROW_SECONDS', 0.0), \
+                self.assertNoLogs(rs.log, logging.WARNING):
+            self.client.get('/api/stream')
+        items = self.drained()
+        self.assertEqual(items[0][3], '/api/stream (stream)')
+        with patch.object(rs, 'SLOW_ROW_SECONDS', 0.0):
+            self.assertEqual(rs.aggregate(items, {})[1], [])
 
     def test_unknown_methods_are_kept_as_other(self):
         self.client.request('MKCALENDAR', '/api/odd')
