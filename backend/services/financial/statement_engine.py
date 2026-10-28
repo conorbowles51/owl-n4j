@@ -4690,6 +4690,12 @@ HEADING_DESCRIBES_ROW = os.environ.get('LOUPE_FINANCIAL_HEADING_DESCRIBES_ROW', 
     '0', 'false', 'off', 'no')
 
 
+# A direction-table line whose only amount sits in no column band (merged stored cells) takes that amount
+# (_movement_value). Off: such a line is held as unresolved, as before.
+HEADING_TABLE_AMOUNT = os.environ.get('LOUPE_FINANCIAL_HEADING_TABLE_AMOUNT', '1').strip().lower() not in (
+    '0', 'false', 'off', 'no')
+
+
 def _heading_direction(row, style, exponent):
     """(profile, asset) A line printing only a direction heading of the active profile: no amount, no date."""
     return (_section_direction(label(row['text'])) is not None
@@ -4930,6 +4936,18 @@ def _movement_value(move, assignment, columns, width, style, exponent, liability
             # (E10) An amount merged into its balance's cell takes the reading's one signed amount column;
             # the reading proves only through the printed running balance (_search).
             partner = _merged_partner(token, move['money']) if 'amount' in assignment else None
+            if (partner is None and HEADING_TABLE_AMOUNT and len(move['money']) == 1 and not liability
+                    and _section_direction(move.get('section'))):
+                # (profile ``direction_headings``) A line of a direction table whose stored cells are merged
+                # (each word's position only estimated) prints one amount and nothing else to choose from: it is
+                # the line's unsigned amount, moving the heading's way. The table's printed total and the
+                # statement's balances still have to prove every such line.
+                role = 'amount'
+                value = money(token['t'], style, exponent)
+                if value is None:
+                    return None
+                amounts.append((role, value, token))
+                continue
             if partner is None and ((_PROFILE.get() or {}).get('columns') or {}).get('ignore'):
                 # (profile) A layout whose profile names the amount columns that are not the movement (gross,
                 # fees, taxes) and that reads a line as one merged cell: an amount placed in no column is one of

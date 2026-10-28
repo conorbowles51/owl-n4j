@@ -253,6 +253,29 @@ class BusinessStatementTests(unittest.TestCase):
         self.assertFalse(any(st['engine']['proved'] for st in statements.values()))
 
 
+    def test_merged_cells_take_the_one_amount_of_a_direction_table_line(self):
+        # Stored with merged cells ('901.09 12/04 * 3573' is one cell): word positions are only estimated, so no
+        # amount can be placed in a column. Each line of a direction table prints one amount: that is the movement.
+        sources = fixture('financial_truist_merged_cells_fixture.json')
+        statements, profile = reading(sources)
+        self.assertEqual(profile, 'truist-consolidated')
+        statement = statements['9990005556667']
+        self.assertTrue(statement['engine']['proved'], statement['engine'])
+        self.assertEqual((statement['period_start'], statement['period_end']), ('2023-12-01', '2023-12-29'))
+        self.assertEqual((control(statement, 'Opening Balance'), control(statement, 'Closing Balance')),
+                         ('2303309', '2532741'))
+        count, credit, debit = sums(statement)
+        # 44 checks + 3 other withdrawals + 3 deposits; 'Total checks = $36,149.14', 'Total other withdrawals ...
+        # = $54,198.55', 'Total deposits, credits and interest = $92,642.01'.
+        self.assertEqual((count, credit, debit), (50, 9264201, 3614914 + 5419855))
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+        with mock.patch.object(E, 'HEADING_TABLE_AMOUNT', False):
+            statements, _ = reading(sources)
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+        self.assertFalse(any(st['engine']['proved'] for st in statements.values()))
+
 class HolderBlockRuleTests(unittest.TestCase):
     def test_spaced_zip_is_a_postal_line(self):
         self.assertTrue(E._postal(E.fold('SPRING HILLS MD 2 0 9 9 9 - 1 2 3 4')))
