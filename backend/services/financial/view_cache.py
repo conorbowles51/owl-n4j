@@ -44,6 +44,8 @@ logger = logging.getLogger(__name__)
 
 MAX_ENTRY_BYTES = 96 * 1024 * 1024
 MAX_TOTAL_BYTES = 384 * 1024 * 1024
+# Bounds the entry count too: many tiny bodies (paging past the end) must not grow memory through per-entry overhead.
+MAX_ENTRIES = 2000
 # A table without case_id is fingerprinted whole; above this size a view reading it is not stored.
 MAX_UNSCOPED_BYTES = 64 * 1024 * 1024
 
@@ -175,17 +177,23 @@ class _KeyLock:
                 _key_locks[self.key] = (lock, users - 1)
 
 
+def _cost(key, entry):
+    """Memory an entry holds: its body plus key, table names and fingerprint, with a fixed allowance per object."""
+    return (len(entry.body) + len(key[0]) + len(key[1]) + 1024
+            + sum(len(table) + 128 for table in entry.tables) + 256 * len(entry.fingerprint))
+
+
 def _store(key, entry):
     global _total_bytes
     with _lock:
         old = _entries.pop(key, None)
         if old is not None:
-            _total_bytes -= len(old.body)
+            _total_bytes -= _cost(key, old)
         _entries[key] = entry
-        _total_bytes += len(entry.body)
-        while _total_bytes > MAX_TOTAL_BYTES and _entries:
-            _, evicted = _entries.popitem(last=False)
-            _total_bytes -= len(evicted.body)
+        _total_bytes += _cost(key, entry)
+        while (_total_bytes > MAX_TOTAL_BYTES or len(_entries) > MAX_ENTRIES) and _entries:
+            evicted_key, evicted = _entries.popitem(last=False)
+            _total_bytes -= _cost(evicted_key, evicted)
 
 
 def _lookup(key):
@@ -263,13 +271,22 @@ def cached_view(name):
             # The access check ran in the session's own transaction. End it, which returns its connection to
             # the pool, before waiting: a request waiting for the same view holds no connection.
             db.rollback()
-            with _KeyLock(key):
-                return _serve(handler, key, engine, case_id, kwargs)
+            state = dict(handler_started=False)
+            try:
+                with _KeyLock(key):
+                    return _serve(handler, key, engine, case_id, kwargs, state)
+            except Exception:
+                if state['handler_started']:
+                    raise
+                # The reuse machinery itself failed (connection, snapshot, table list): answer as if it were absent,
+                # so the route's own error handling and messages apply.
+                logger.warning('Financial view reuse unavailable for %s; computing directly', name, exc_info=True)
+                return handler(*args, **kwargs)
         return wrapper
     return decorate
 
 
-def _serve(handler, key, engine, case_id, kwargs):
+def _serve(handler, key, engine, case_id, kwargs, state):
     from fastapi.responses import Response
     from sqlalchemy.orm import Session
     started = time.perf_counter()
@@ -291,6 +308,7 @@ def _serve(handler, key, engine, case_id, kwargs):
             token = _recording.set(recording)
             session = Session(bind=owner, autoflush=False, join_transaction_mode='create_savepoint')
             try:
+                state['handler_started'] = True
                 result = handler(**{**kwargs, 'db': session})
                 # Lazy loads while encoding still belong to this snapshot and are recorded.
                 response = result if isinstance(result, Response) else _json_response(result)

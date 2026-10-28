@@ -3,13 +3,18 @@ import json
 import unittest
 
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+import tempfile
+
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.testclient import TestClient
 
 from services.json_gzip import JSONGZipMiddleware
 
 PAYLOAD = {'rows': [{'id': index, 'description': 'PAYMENT TO SUPPLIER ' * 3} for index in range(500)]}
 ARCHIVE = bytes(range(256)) * 200
+LARGE = {'rows': [{'id': index, 'description': 'PAYMENT TO SUPPLIER %d' % index} for index in range(20000)]}
+JSON_FILE = tempfile.NamedTemporaryFile(suffix='.json', delete=False)
+JSON_FILE.write(json.dumps(PAYLOAD).encode()); JSON_FILE.close()
 
 
 def app():
@@ -35,6 +40,18 @@ def app():
     @application.get('/encoded')
     def encoded():
         return JSONResponse(content=PAYLOAD, headers={'Content-Encoding': 'identity'})
+
+    @application.get('/large')
+    def large():
+        return LARGE
+
+    @application.get('/json-file')
+    def json_file():
+        return FileResponse(JSON_FILE.name, media_type='application/json')
+
+    @application.get('/json-attachment')
+    def json_attachment():
+        return JSONResponse(content=PAYLOAD, headers={'Content-Disposition': 'attachment; filename="rows.json"'})
 
     return application
 
@@ -66,6 +83,26 @@ class JSONGZipTests(unittest.TestCase):
                 self.assertEqual(wire, ARCHIVE)
             if path == '/stream':
                 self.assertEqual(wire, b'data: one\n\ndata: two\n\n')
+
+    def test_large_json_is_compressed_off_the_loop_with_exact_length(self):
+        plain = self.client.get('/large', headers={'Accept-Encoding': 'identity'})
+        self.assertGreater(len(plain.content), 256 * 1024)
+        with self.client.stream('GET', '/large', headers={'Accept-Encoding': 'gzip'}) as response:
+            self.assertEqual(response.headers['content-encoding'], 'gzip')
+            self.assertIn('Accept-Encoding', response.headers['vary'])
+            wire = b''.join(response.iter_raw())
+        self.assertEqual(int(response.headers['content-length']), len(wire))
+        self.assertEqual(gzip.decompress(wire), plain.content)
+
+    def test_json_files_attachments_and_ranges_are_sent_unchanged(self):
+        original = open(JSON_FILE.name, 'rb').read()
+        for path, extra in (('/json-file', {}), ('/json-file', {'Range': 'bytes=0-99'}), ('/json-attachment', {})):
+            with self.subTest(path=path, extra=extra), self.client.stream('GET', path, headers={'Accept-Encoding': 'gzip', **extra}) as response:
+                self.assertNotEqual(response.headers.get('content-encoding'), 'gzip')
+                wire = b''.join(response.iter_raw())
+            if path == '/json-file':
+                self.assertEqual(wire, original[:100] if extra else original)
+                self.assertEqual(response.status_code, 206 if extra else 200)
 
 
 if __name__ == '__main__':

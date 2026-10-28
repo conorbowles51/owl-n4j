@@ -358,3 +358,40 @@ def test_a_table_whose_case_id_is_text_is_checked(engine):
     assert call(engine, handler, case).body == b'{"n":1}'
     assert call(engine, handler, case).body == b'{"n":1}'
     assert counter.calls == 2
+
+
+def test_many_small_views_are_bounded_by_count(engine, monkeypatch):
+    case, counter = uuid.uuid4(), Counter()
+    write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 5)', c=case)
+    monkeypatch.setattr(view_cache, 'MAX_ENTRIES', 3)
+    view = payments_view(counter)
+    for minimum in range(6):
+        call(engine, view, case, minimum=minimum)
+    assert len(view_cache._entries) == 3
+    assert view_cache._total_bytes == sum(view_cache._cost(k, e) for k, e in view_cache._entries.items())
+    assert view_cache._total_bytes > sum(len(e.body) for e in view_cache._entries.values()), 'overhead is counted'
+    call(engine, view, case, minimum=5)
+    assert counter.calls == 6, 'the newest views are kept'
+
+
+def test_when_reuse_itself_fails_the_view_is_computed_as_without_it(engine, monkeypatch):
+    case, counter = uuid.uuid4(), Counter()
+    write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 5), (:c, 7)', c=case)
+
+    def broken(connection):
+        raise RuntimeError('table list unavailable')
+    monkeypatch.setattr(view_cache, '_load_tables', broken)
+    assert call(engine, payments_view(counter), case) == dict(total=12)
+    assert counter.calls == 1 and not view_cache._entries
+
+
+def test_a_failing_view_is_not_run_twice(engine):
+    calls = Counter()
+
+    @view_cache.cached_view('failing')
+    def handler(case_id, db):
+        calls.calls += 1
+        raise ValueError('view failed')
+    with pytest.raises(ValueError):
+        call(engine, handler, uuid.uuid4())
+    assert calls.calls == 1
