@@ -23,6 +23,10 @@ REGISTRY = Path(__file__).with_name('learned_profiles.json')
 # Learned profiles turned off by name (comma separated), as LOUPE_FINANCIAL_PROFILES_OFF does for written ones.
 LEARNED_OFF = {n.strip() for n in os.environ.get('LOUPE_FINANCIAL_LEARNED_PROFILES_OFF', '').split(',') if n.strip()}
 
+import logging
+
+log = logging.getLogger(__name__)
+
 _LOADED = {}
 _CANDIDATES = []  # drafts under test (layout_learning.candidate); never persisted
 
@@ -61,7 +65,24 @@ def _servable(entry):
         raise ValueError('Learned profile %s has no passing gates and review on record' % entry.get('name'))
     if learned.get('rules_hash') != rules_hash(entry):
         raise ValueError('Learned profile %s was changed after its gates (rules hash differs)' % entry.get('name'))
+    # The name carries the rules' hash: rules edited under the same name could be served a reading the engine
+    # keeps under that name (statement_engine.read_statements caches by file and profile name).
+    if not str(entry.get('name') or '').endswith(learned['rules_hash'][:12]):
+        raise ValueError('Learned profile %s: its name must end with its rules hash (%s)'
+                         % (entry.get('name'), learned['rules_hash'][:12]))
     return True
+
+
+def problems(path=None):
+    """[(name, why)] for every registry entry the engine refuses (the release test requires none)."""
+    found = []
+    for entry in registry(path).get('profiles', []):
+        try:
+            if _servable(entry):
+                _validated(entry)
+        except ValueError as error:
+            found.append((entry.get('name'), str(error)))
+    return found
 
 
 def live():
@@ -71,8 +92,16 @@ def live():
     except FileNotFoundError:
         return ()
     if _LOADED.get('stamp') != stamp:
-        entries = [e for e in registry().get('profiles', []) if _servable(e)]
-        _LOADED.update(stamp=stamp, all=tuple(_validated(e) for e in entries))
+        # Fail closed per entry: an entry the engine refuses is never served (ERROR in the journal); the others and
+        # every written profile keep reading. A saved choice naming a refused entry finds no profile (held).
+        accepted = []
+        for entry in registry().get('profiles', []):
+            try:
+                if _servable(entry):
+                    accepted.append(_validated(entry))
+            except ValueError as error:
+                log.error('Learned profile refused: %s', error)
+        _LOADED.update(stamp=stamp, all=tuple(accepted))
         _LOADED['profiles'] = tuple(p for p in _LOADED['all'] if p['learned'].get('state') == 'live')
     return _LOADED['profiles']
 

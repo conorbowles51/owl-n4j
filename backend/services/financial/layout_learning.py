@@ -195,10 +195,12 @@ def read_file_images(db, case_id, file, pages, *, budget, resolve_path, page_rea
         # A failed request keeps its reservation counted against the case and the layout (it may be billed).
         raise RequestFailed(error, reserved) from error
     cost = vr.cost_usd(model_id, usage)
+    if not (usage or {}).get('completion_tokens'):
+        cost = max(cost, reserved)  # an answer reporting no usage is charged what was reserved for it
     vr._add_spend(case_id, cost - reserved)
     reading = dict(raw=document, model=model_id, cost_usd=round(cost, 6), pages=list(pages), file_id=str(file.id),
                    case_id=str(case_id), read_at=datetime.now(timezone.utc).isoformat(), usage=usage,
-                   seconds=round(time.monotonic() - started, 1))
+                   seconds=round(time.monotonic() - started, 1), requested=True)
     _write_json(_reading_path(file.id, directory, model), reading)
     return reading, cost
 
@@ -823,8 +825,8 @@ def check(profile, files, others=(), fast=False):
     from services.financial.statement_engine import read_statements
     outcomes, other = [], {}
     profile = keyed(profile)
-    # The currency every period must be read in: the example's own, else the profile's, else the one the layout's
-    # text shows (currency_of); a period read with none is never exact (an image printing a bare '$' leaves the
+    # The currency every period must be read in: the example's own, else the one the layout's text shows
+    # (currency_of), never the draft's; a period read with none is never exact (an image printing a bare '$' leaves the
     # example without one, which must not let a profile read no currency).
     currency = currency_of(files)
     with candidate(profile):
@@ -936,7 +938,13 @@ def corpus_gate(profile, corpus, out=None):
         if before == after:
             unchanged += 1
             continue
-        old, new = _read_with(sources, base_profiles), _read_with(sources, with_profile)
+        try:
+            old, new = _read_with(sources, base_profiles), _read_with(sources, with_profile)
+            old_served, new_served = _catalog_with(sources, base_profiles), _catalog_with(sources, with_profile)
+        except Exception as error:  # noqa: BLE001 - a file that cannot be compared fails the gate, with its reason
+            lost.append(dict(file=file_id, case=case_id, before=before, after=after,
+                             error='%s: %s' % (type(error).__name__, str(error)[:200])))
+            continue
         old_by, new_by = {}, {}
         for v in old:
             old_by.setdefault(_period_key(v), []).append(v)
@@ -961,12 +969,22 @@ def corpus_gate(profile, corpus, out=None):
             if after_count and not before_count:
                 gained.append(dict(entry, period=key))
         # What the live route serves (statement_import_catalog.statement_catalog: the engine with the family readers'
-        # cross-check): every statement served before must be served after, identical but for the profile's name.
-        old_served, new_served = _catalog_with(sources, base_profiles), _catalog_with(sources, with_profile)
-        missing = [k for k in old_served if k not in new_served]
-        if missing:
+        # cross-check): every statement served before must be served after, identical but for the profile's name
+        # (compared as multisets), and a newly served statement must not cover days an old one serves for the same
+        # account (the same money served twice under a different start, currency or pages).
+        missing = sum((Counter(old_served) - Counter(new_served)).values())
+        added = list((Counter(new_served) - Counter(old_served)).elements())
+        overlapping = [a for a in added if any(_overlaps(json.loads(a), json.loads(o)) for o in old_served)]
+        if missing or overlapping:
             served_changed.append(dict(entry, served_before=len(old_served), served_after=len(new_served),
-                                       missing=len(missing)))
+                                       missing=missing, overlapping=len(overlapping)))
+        # The same for the proved periods of the engine reading: a new proved period overlapping an old proved one
+        # of the same account, not identical to it, counts that money twice.
+        old_proved = [v for v in old if v['proved']]
+        for v in new:
+            if v['proved'] and not any(_served(v) == _served(o) and _period_key(v) == _period_key(o) for o in old_proved) \
+                    and any(_overlaps(_as_statement(v), _as_statement(o)) for o in old_proved):
+                doubled.append(dict(entry, period=_period_key(v), overlapping=True))
         entry.update(served_before=len(old_served), served_after=len(new_served))
         rematched.append(entry)
         if out:
@@ -975,6 +993,21 @@ def corpus_gate(profile, corpus, out=None):
     return dict(files=files, unchanged=unchanged, rematched=rematched, lost=lost, changed=changed, gained=gained,
                 doubled=doubled, served_changed=served_changed,
                 passed=not lost and not changed and not doubled and not served_changed)
+
+
+def _as_statement(values):
+    return dict(account_reference=values['account'], period_start=values['period_start'],
+                period_end=values['period_end'])
+
+
+def _overlaps(a, b):
+    """Two statements of the same account (digits; one ending the other's) whose printed periods share a day."""
+    x, y = vr._digits(a.get('account_reference')), vr._digits(b.get('account_reference'))
+    if not x or not y or not (x == y or x.endswith(y[-4:]) and len(y) >= 4 and y.endswith(x[-4:])):
+        return False
+    if not all((a.get('period_start'), a.get('period_end'), b.get('period_start'), b.get('period_end'))):
+        return False
+    return a['period_start'] <= b['period_end'] and b['period_start'] <= a['period_end']
 
 
 def _catalog_with(sources, profiles):
@@ -1059,7 +1092,9 @@ def gates(profile, corpus, sources_of, truth_dir, inventory, out=None):
     keyed_profile = keyed(profile)
     base = written_profiles(profile['name'])
     _GATE_PROFILES.update(before=base, after=base + (dict(keyed_profile, learned=True),))
+    from services.financial import statement_engine_routing as routing
     corpus_result = corpus_gate(profile, corpus, out)
+    corpus_result['routing'] = dict(generic_only=bool(routing.generic_only()), generic_enabled=bool(routing.generic_enabled()))
     truth_result = truth_gate(corpus_result['rematched'], sources_of, truth_dir, inventory)
     return dict(corpus=corpus_result, truth=truth_result, passed=corpus_result['passed'] and truth_result['passed'])
 

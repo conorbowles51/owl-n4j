@@ -103,6 +103,8 @@ def dump(db, directory, shard=0, shards=1, out=print):
             done += 1
         except Exception as error:
             errors[str(file_id)] = '%s: %s' % (type(error).__name__, str(error)[:200])
+            if path.exists():
+                path.unlink()  # never gated on text older than the file's current extraction
             out('ERR %s %s' % (file_id, errors[str(file_id)]))
             db.rollback()
             db.execute(text('SET TRANSACTION READ ONLY'))
@@ -118,6 +120,33 @@ CORPUS_MAX_AGE_HOURS = 24
 # Errors allowed in a corpus: stored tables the candidate-source reader refuses, which the router cannot read
 # either, with or without any profile.
 UNREADABLE_EITHER_WAY = ('PdfMappingError',)
+
+
+def _database_files(db):
+    """{file id: latest table extraction} of every file with table geometry, from the database (read only)."""
+    from postgres.models.evidence import EvidenceTableGeometry
+    return {str(f): str(e) for f, e in db.execute(text(
+        'SELECT evidence_file_id, max(extracted_at) FROM %s GROUP BY evidence_file_id'
+        % EvidenceTableGeometry.__tablename__)).all()}
+
+
+def corpus_differs(db, directory):
+    """None when the corpus holds exactly the database's files at their current extraction (dump errors aside:
+    files the router cannot read either way), else why not."""
+    import pickle
+    current = _database_files(db)
+    manifest = json.loads(Path(directory, 'manifest.json').read_text())
+    errors = set(manifest.get('errors') or {})
+    stored = {}
+    for path in Path(directory).glob('*.pkl'):
+        stored[path.stem] = pickle.loads(path.read_bytes()).get('extracted_at')
+    missing = [f for f in current if f not in stored and f not in errors]
+    extra = [f for f in stored if f not in current]
+    stale = [f for f in current if f in stored and stored[f] != current[f]]
+    if missing or extra or stale:
+        return 'The corpus differs from the database: %s missing, %s no longer stored, %s re-extracted since.' % (
+            len(missing), len(extra), len(stale))
+    return None
 
 
 def manifest_problem(directory, now=None):
@@ -148,10 +177,11 @@ def corpus(directory):
         yield path.stem, stored['case_id'], stored['sources']
 
 
-def run_gates(profile, directory, truth, inventory, off=(), out=print):
+def run_gates(profile, directory, truth, inventory, off=(), out=print, db=None):
     import pickle
     from services.financial import layout_learning as ll, statement_engine_profiles as sep
-    problem = manifest_problem(directory)
+    problem = manifest_problem(directory) or (corpus_differs(db, directory) if db is not None else
+                                              'The corpus was not compared with the database.')
     if problem:
         out('corpus: %s -> FAIL' % problem)
         return dict(passed=False, corpus=dict(passed=False, reason=problem, files=0, unchanged=0, rematched=[],
@@ -238,10 +268,11 @@ def learn_layout(db, mark, entries, directory, *, provider=None, model=None, dra
         except Exception as error:  # noqa: BLE001 - the provider failed: recorded, the layout is tried again later
             provider_errors += 1
             spent += getattr(error, 'reserved', 0.0)  # counted against the layout's budget (it may be billed)
+            requested += 1 if hasattr(error, 'reserved') else 0
             reasons.append('%s: the page-image request failed: %s' % (file_id[:8], str(error)[:200]))
             continue
         spent += cost
-        requested += 1 if cost else 0
+        requested += 1 if reading.get('requested') else 0
         image_seconds += reading.get('seconds') or 0
         examples = []
         for example, reason in ll.examples_of(reading, pages):
@@ -295,7 +326,7 @@ def learn_layout(db, mark, entries, directory, *, provider=None, model=None, dra
                              **record)
     if not gate:
         return ll.set_layout(mark, state='learning', reason='draft re-reads every example; gates not run', **record)
-    gates = run_gates(profile, directory, truth, inventory, out=out)
+    gates = run_gates(profile, directory, truth, inventory, out=out, db=db)
     record['gates'] = dict(corpus=dict((k, gates['corpus'].get(k)) for k in ('files', 'unchanged', 'lost', 'changed',
                                                                           'gained', 'doubled', 'served_changed',
                                                                           'reason')),
@@ -361,8 +392,12 @@ def main():
     le.add_argument('--inventory', default='/mnt/owl-data/fin-real/inventory.json')
     args = parser.parse_args()
     if args.command == 'gates':
-        result = run_gates(json.loads(Path(args.profile).read_text()), args.corpus, args.truth, args.inventory,
-                           args.off)
+        db = _session()
+        try:
+            result = run_gates(json.loads(Path(args.profile).read_text()), args.corpus, args.truth, args.inventory,
+                               args.off, db=db)
+        finally:
+            db.rollback()
         if args.json:
             Path(args.json).write_text(json.dumps(result, indent=1, default=str))
         print('Full results', 'PASS' if result['passed'] else 'FAIL')

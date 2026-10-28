@@ -258,6 +258,50 @@ class GateRefusalTests(unittest.TestCase):
             self.assertIn('could not be dumped', cli.manifest_problem(directory))
 
 
+class OverlapTests(unittest.TestCase):
+    def test_the_same_money_under_another_start_or_currency_overlaps(self):
+        a = dict(account_reference='1470015292431', period_start='2023-10-13', period_end='2023-11-10')
+        self.assertTrue(ll._overlaps(a, dict(a, period_start='2023-10-14')))
+        self.assertTrue(ll._overlaps(a, dict(a, account_reference='****2431')))
+        self.assertFalse(ll._overlaps(a, dict(a, period_start='2023-11-11', period_end='2023-12-12')))
+        self.assertFalse(ll._overlaps(a, dict(a, account_reference='4470005569061')))
+
+    def test_a_second_served_copy_of_a_period_fails_the_gate(self):
+        sources = fixture('financial_truist_consolidated_fixture.json')
+        served = ['{"account_reference": "1470015292431", "period_end": "2024-05-13", "period_start": "2024-04-12"}']
+        calls = iter([served, served + ['{"account_reference": "1470015292431", "period_end": "2024-05-13", '
+                                        '"period_start": "2024-04-11", "currency": "EUR"}']])
+        with mock.patch.object(ll, '_matched', side_effect=[None, 'learned-x']), \
+                mock.patch.object(ll, '_read_with', return_value=[]), \
+                mock.patch.object(ll, '_catalog_with', side_effect=lambda *a: next(calls)):
+            result = ll.corpus_gate(dict(name='learned-x', match=dict(all=['x'])), [('f', 'c', sources)])
+        self.assertFalse(result['passed'])
+        self.assertEqual(result['served_changed'][0]['overlapping'], 1)
+
+    def test_an_unreadable_file_fails_the_gate_with_its_reason(self):
+        with mock.patch.object(ll, '_matched', side_effect=[None, 'learned-x']), \
+                mock.patch.object(ll, '_read_with', side_effect=RuntimeError('boom')):
+            result = ll.corpus_gate(dict(name='learned-x', match=dict(all=['x'])), [('f', 'c', [])])
+        self.assertFalse(result['passed'])
+        self.assertIn('boom', result['lost'][0]['error'])
+
+
+class CostTests(unittest.TestCase):
+    def test_an_answer_without_usage_is_charged_its_reservation(self):
+        file = mock.Mock(id='f1', stored_path='/x.pdf', metadata_={})
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(ll.vr, 'approved', return_value=True), \
+                mock.patch.object(ll.vr, 'render_pages', return_value=[(1, [b'png'])]), \
+                mock.patch.object(ll.vr, '_reserve', return_value=True), \
+                mock.patch.object(ll.vr, '_add_spend') as spend:
+            reading, cost = ll.read_file_images(None, 'case', file, [1], budget=5, resolve_path=Path, directory=directory,
+                                                page_reader=lambda db, case: ('gpt-5.6-terra', lambda images: ({}, {})))
+        reserved = ll.vr.reserve_usd('gpt-5.6-terra', [(1, [b'png'])])
+        self.assertEqual(cost, reserved)
+        spend.assert_called_once_with('case', 0)
+        self.assertTrue(reading['requested'])
+
+
 class LlmDraftTests(unittest.TestCase):
     def test_proposals_are_tested_and_answered_with_the_misses(self):
         files = [dict(file_id='f', sources=[], lines=[dict(page=1, text='A | B')],
@@ -286,7 +330,7 @@ class RegistryTests(unittest.TestCase):
     def test_live_entries_only_and_validated(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'learned_profiles.json'
-            a = dict(name='learned-a', match=dict(all=['a']))
+            a = dict(name='learned-a-' + lp.rules_hash(dict(match=dict(all=['a'])))[:12], match=dict(all=['a']))
             passed = dict(gates=dict(corpus_passed=True, truth_passed=True), review='PASS')
             path.write_text(json.dumps(dict(version=2, profiles=[
                 dict(a, learned=dict(passed, state='live', version=1, rules_hash=lp.rules_hash(a))),
@@ -294,24 +338,29 @@ class RegistryTests(unittest.TestCase):
                 dict(name='learned-c', match=dict(all=['c']))])))
             with mock.patch.object(lp, 'REGISTRY', path):
                 lp._LOADED.clear()
-                self.assertEqual([p['name'] for p in lp.live()], ['learned-a'])
-                with mock.patch.object(lp, 'LEARNED_OFF', {'learned-a'}):
+                self.assertEqual([p['name'] for p in lp.live()], [a['name']])
+                with mock.patch.object(lp, 'LEARNED_OFF', {a['name']}):
                     self.assertEqual(lp.profiles(), ())
             for broken in (dict(a, learned=dict(state='live', rules_hash=lp.rules_hash(a))),  # no gates on record
                            dict(a, match=dict(all=['edited']), learned=dict(passed, state='live',
                                                                             rules_hash=lp.rules_hash(a))),
                            dict(a, unknown_rule=True, learned=dict(passed, state='live',
                                                                    rules_hash=lp.rules_hash(dict(a, unknown_rule=True))))):
-                path.write_text(json.dumps(dict(version=3, profiles=[broken])))
-                with mock.patch.object(lp, 'REGISTRY', path):
+                # One refused entry is never served; the registry's other entries still are.
+                path.write_text(json.dumps(dict(version=3, profiles=[broken, dict(a, learned=dict(
+                    passed, state='live', rules_hash=lp.rules_hash(a)))])))
+                with mock.patch.object(lp, 'REGISTRY', path), self.assertLogs('services.financial.learned_profiles', 'ERROR'):
                     lp._LOADED.clear()
-                    with self.assertRaises(ValueError):
-                        lp.live()
+                    self.assertEqual([p['name'] for p in lp.live()], [a['name']])
+                self.assertEqual(len(lp.problems(path)), 1)
+            renamed = dict(a, name='learned-a')  # a name without its rules' hash
+            path.write_text(json.dumps(dict(profiles=[dict(renamed, learned=dict(passed, state='live',
+                                                                                 rules_hash=lp.rules_hash(renamed)))])))
+            self.assertIn('rules hash', lp.problems(path)[0][1])
         lp._LOADED.clear()
 
     def test_shipped_registry_is_valid(self):
-        lp._LOADED.clear()
-        lp.live()
+        self.assertEqual(lp.problems(), [])
 
 
 if __name__ == '__main__':
