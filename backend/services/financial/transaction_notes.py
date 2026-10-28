@@ -20,6 +20,7 @@ def _reading_history(session, case_id, readings):
                 FinancialTransaction.id.in_(identities[offset:offset + 400]))):
             nodes[str(row.id)] = row
     frontier = list(nodes)
+    selected = len(nodes)
     parents = {}
     while frontier:
         found = []
@@ -41,7 +42,9 @@ def _reading_history(session, case_id, readings):
             if key not in nodes:
                 nodes[key] = parent
                 next_frontier.append(key)
-        if len(nodes) > MAX_NOTE_LINKS:
+        # The limit bounds the earlier readings walked here, not the selected payments themselves: counting those
+        # refused every case with more than 10,000 payments as soon as one of them had a correction.
+        if len(nodes) - selected > MAX_NOTE_LINKS:
             raise LedgerSummaryError('Correction history exceeds the export limit. Narrow the export scope.')
         frontier = next_frontier
     for target in rows:

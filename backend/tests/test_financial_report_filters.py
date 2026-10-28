@@ -11,7 +11,7 @@ class ReportFilterTests(unittest.IsolatedAsyncioTestCase):
         kwargs.update(case_id='case-a', case_name='Case Ω', mode='intelligence', include_entity_notes=False, min_amount=100, max_amount=200)
         records = [dict(key='low', amount=99), dict(key='negative', amount=-150), dict(key='edge', amount=200), dict(key='high', amount=201)]
         with patch.object(financial.neo4j_service, 'get_financial_transactions', return_value=dict(transactions=records)), patch.object(financial, 'render_financial_export', return_value=dict(content=b'PDF', media_type='application/pdf', extension='pdf')) as render:
-            response = await financial.export_financial_pdf(**kwargs)
+            response = financial.export_financial_pdf(**kwargs)
             self.assertEqual([r['key'] for r in render.call_args.args[0]], ['negative', 'edge'])
             self.assertIn('Minimum amount (absolute value): 100', render.call_args.args[2])
             self.assertIn('Maximum amount (absolute value): 200', render.call_args.args[2])
@@ -19,7 +19,7 @@ class ReportFilterTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.status_code, 200)
             kwargs.update(min_amount=201, max_amount=100)
             with self.assertRaises(HTTPException) as failure:
-                await financial.export_financial_pdf(**kwargs)
+                financial.export_financial_pdf(**kwargs)
             self.assertEqual(failure.exception.status_code, 422)
 
     def test_sender_groups_do_not_combine_currencies(self):
@@ -36,7 +36,7 @@ class ReportFilterTests(unittest.IsolatedAsyncioTestCase):
         records = [dict(key='wanted',amount=100,category='Review, priority',from_entity=dict(name='Example, Ltd')),
                    dict(key='other',amount=100,category='Review',from_entity=dict(name='Example'))]
         with patch.object(financial.neo4j_service, 'get_financial_transactions', return_value=dict(transactions=records)), patch.object(financial, 'render_financial_export', return_value=dict(content=b'PDF',media_type='application/pdf',extension='pdf')) as render:
-            await financial.export_financial_pdf(**kwargs)
+            financial.export_financial_pdf(**kwargs)
             self.assertEqual([r['key'] for r in render.call_args.args[0]], ['wanted'])
 
     async def test_end_date_includes_timestamps_on_the_recorded_last_day(self):
@@ -45,11 +45,11 @@ class ReportFilterTests(unittest.IsolatedAsyncioTestCase):
         records = [dict(key=str(i), date=value, amount=100) for i, value in enumerate([
             '2026-09-01', '2026-09-02', '2026-09-02T23:59:59-04:00', '2026-09-03', 'Sep 2', '2026-02-30'])]
         with patch.object(financial.neo4j_service, 'get_financial_transactions', return_value=dict(transactions=records)), patch.object(financial, 'render_financial_export', return_value=dict(content=b'PDF', media_type='application/pdf', extension='pdf')) as render:
-            await financial.export_financial_pdf(**kwargs)
+            financial.export_financial_pdf(**kwargs)
             self.assertEqual([row['key'] for row in render.call_args.args[0]], ['1', '2'])
             for start, end in [('2026-02-30', '2026-09-02'), ('2026-09-03', '2026-09-02'), ('2026-09', '2026-09-02')]:
                 with self.assertRaises(HTTPException) as failure:
-                    await financial.export_financial_pdf(**{**kwargs, 'start_date': start, 'end_date': end})
+                    financial.export_financial_pdf(**{**kwargs, 'start_date': start, 'end_date': end})
                 self.assertEqual(failure.exception.status_code, 422)
 
     def test_recorded_dates_do_not_use_missing_or_impossible_parts(self):
@@ -61,7 +61,7 @@ class ReportFilterTests(unittest.IsolatedAsyncioTestCase):
     async def test_list_endpoint_refuses_invalid_date_range_before_reading(self):
         with patch.object(financial.neo4j_service, 'get_financial_transactions') as read:
             with self.assertRaises(HTTPException) as failure:
-                await financial.get_financial_transactions(case_id='case-a', mode='intelligence', types=None, start_date='2026-09-03', end_date='2026-09-02', categories=None, db=None)
+                financial.get_financial_transactions(case_id='case-a', mode='intelligence', types=None, start_date='2026-09-03', end_date='2026-09-02', categories=None, db=None)
             self.assertEqual(failure.exception.status_code, 422)
             read.assert_not_called()
 
@@ -86,5 +86,5 @@ class ReportFilterTests(unittest.IsolatedAsyncioTestCase):
         kwargs.update(case_id='case-a', mode='intelligence', include_entity_notes=False, max_amount=100)
         records=[dict(key='unknown',amount=None,raw_amount='not stated'),dict(key='zero',amount=0),dict(key='known',amount=50)]
         with patch.object(financial.neo4j_service, 'get_financial_transactions', return_value=dict(transactions=records)), patch.object(financial, 'render_financial_export', return_value=dict(content=b'PDF',media_type='application/pdf',extension='pdf')) as render:
-            await financial.export_financial_pdf(**kwargs)
+            financial.export_financial_pdf(**kwargs)
             self.assertEqual([row['key'] for row in render.call_args.args[0]], ['zero','known'])

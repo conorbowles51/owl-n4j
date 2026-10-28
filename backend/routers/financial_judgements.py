@@ -55,7 +55,7 @@ def _actor(user):
 
 
 @router.get("")
-async def list_judgement_calls(case_id: UUID = Query(...), source_document_id: UUID | None = None,
+def list_judgement_calls(case_id: UUID = Query(...), source_document_id: UUID | None = None,
                                statement_period_id: UUID | None = None, subject_id: list[UUID] | None = Query(None),
                                q: str = Query('', max_length=256), status: list[str] | None = Query(None),
                                strength: list[str] | None = Query(None), origin: list[str] | None = Query(None),
@@ -73,7 +73,7 @@ async def list_judgement_calls(case_id: UUID = Query(...), source_document_id: U
 
 
 @router.get("/rows")
-async def judgement_rows(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+def judgement_rows(case_id: UUID = Query(...), db: Session = Depends(get_db)):
     """Which ledger payments each call touches, for the whole case in one read (the ledger's marks and filter)."""
     return judgements.row_map(db, case_id)
 
@@ -86,12 +86,12 @@ async def preview_judgement_calls(body: Preview, case_id: UUID = Query(...)):
 
 
 @router.get("/counts")
-async def judgement_counts(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+def judgement_counts(case_id: UUID = Query(...), db: Session = Depends(get_db)):
     return judgements.counts(db, case_id)
 
 
 @router.get("/rules")
-async def processor_rules(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+def processor_rules(case_id: UUID = Query(...), db: Session = Depends(get_db)):
     """Per rule: confirmed / corrected / open, in this case and in every case."""
     return dict(case=judgements.track_record(db, case_id), all_cases=judgements.track_record(db, None))
 

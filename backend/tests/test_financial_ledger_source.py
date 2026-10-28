@@ -122,9 +122,9 @@ class LedgerSourceTests(DuplicateTestCase):
 class LedgerSourceRouterTests(unittest.IsolatedAsyncioTestCase):
     async def test_case_scope_and_refusal_status_are_preserved(self):
         with patch.object(financial_ledger, "ledger_source", return_value={"locator": None}) as call:
-            await financial_ledger.get_ledger_source("row", "case", "session")
+            financial_ledger.get_ledger_source("row", "case", "session")
         call.assert_called_once_with("session", case_id="case", transaction_id="row")
         with patch.object(financial_ledger, "ledger_source", side_effect=LedgerSourceError("Changed", 409)):
             with self.assertRaises(HTTPException) as ctx:
-                await financial_ledger.get_ledger_source("row", "case", "session")
+                financial_ledger.get_ledger_source("row", "case", "session")
         self.assertEqual(ctx.exception.status_code, 409)

@@ -18,7 +18,7 @@ class FinancialRouterTests(unittest.IsolatedAsyncioTestCase):
             "get_financial_transactions",
             return_value=response,
         ) as get_transactions:
-            result = await financial.get_financial_transactions(
+            result = financial.get_financial_transactions(
                 case_id="case-1",
                 mode="transactions",
                 types=None,

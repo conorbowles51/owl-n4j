@@ -264,5 +264,5 @@ class CandidateReviewRouterTests(unittest.IsolatedAsyncioTestCase):
         from routers import financial_ledger as router
         case, candidate = uuid4(), uuid4()
         with patch.object(router, "read_candidate_review", return_value={}) as call:
-            await router.get_candidate_review(candidate, case, "db")
+            router.get_candidate_review(candidate, case, "db")
         call.assert_called_once_with("db", case_id=case, candidate_id=candidate)

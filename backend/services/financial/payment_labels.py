@@ -1,5 +1,6 @@
 """Investigator categories and names, kept separately from statement readings."""
 from datetime import datetime, timezone
+from functools import lru_cache
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from services.financial.payment_counterparty_link import PaymentCounterpartyLink, resolve_link, effective_link, display_link
@@ -120,15 +121,14 @@ _LOOKUP = object()
 def payment_label_view(row, account=None, stored=_LOOKUP):
     """``stored``: the row's stored category (services.financial.payment_categories), None when it has none, or
     left out to look it up. A stored category replaces the per-read description guess; a person's label wins."""
-    from services.financial.payment_inference import infer_payment_labels
     if account is not None and (account.id != row.account_id or account.case_id != row.case_id):
         account = None
     labels = (row.metadata_ or {}).get('investigation_labels', {})
     if stored is _LOOKUP:
         stored = _stored_category(row)
-    inferred = infer_payment_labels(row.description, direction=row.direction,
-        account_type=account.account_type if account is not None else None,
-        institution=account.institution_name if account is not None else None)
+    inferred = _inferred_labels(row.description, row.direction,
+        account.account_type if account is not None else None,
+        account.institution_name if account is not None else None)
     if stored is not None and 'category' not in labels:
         from services.financial.payment_categories import label_source
         inferred = {**inferred, 'category': dict(value=stored.category, **label_source(stored))}
@@ -156,6 +156,18 @@ def payment_label_view(row, account=None, stored=_LOOKUP):
         values[side] = link['label']
         sources[side] = dict(source='investigator', explanation='Linked by an investigator to an existing ' + link['kind'] + '.', identity_kind=link['kind'], identity_id=link['id'])
     return dict(**values, counterparty_link=link, label_sources=sources, label_version=labels.get('version', 0))
+
+
+@lru_cache(maxsize=200_000)
+def _inferred_once(description, direction, account_type, institution):
+    from services.financial.payment_inference import infer_payment_labels
+    return infer_payment_labels(description, direction=direction, account_type=account_type, institution=institution)
+
+
+def _inferred_labels(description, direction, account_type, institution):
+    """infer_payment_labels reads only these four values, so equal values get the same labels. Reading a case asked
+    the same descriptions again for every payment on every request; each caller gets its own copy."""
+    return {field: dict(label) for field, label in _inferred_once(description, direction, account_type, institution).items()}
 
 
 def _stored_category(row):

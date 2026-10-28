@@ -139,7 +139,7 @@ class LedgerAccountPeriodRouterTests(IsolatedAsyncioTestCase):
         case_id = uuid4()
         response = {'case_id':str(case_id), 'items':[], 'has_more':False}
         with patch.object(financial_ledger, 'list_candidate_accounts', return_value=response) as read:
-            result = await financial_ledger.get_candidate_accounts(case_id=case_id,
+            result = financial_ledger.get_candidate_accounts(case_id=case_id,
                 search='Synthetic bank', offset=100, db='session')
         self.assertEqual(result, response)
         read.assert_called_once_with('session', case_id=case_id, search='Synthetic bank', offset=100,

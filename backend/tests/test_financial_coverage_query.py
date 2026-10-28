@@ -111,14 +111,14 @@ class CoverageRouterTests(unittest.IsolatedAsyncioTestCase):
         from fastapi import HTTPException
         case=uuid4()
         with patch.object(router,"list_statement_coverage",return_value={}) as call:
-            await router.get_statement_coverage(case,25,"db")
+            router.get_statement_coverage(case,25,"db")
             call.assert_called_once_with("db",case_id=case,offset=25)
         with patch.object(router,"list_statement_coverage",return_value={}) as call:
             account = uuid4()
-            await router.get_statement_coverage(case,0,"db",account)
+            router.get_statement_coverage(case,0,"db",account)
             call.assert_called_once_with("db",case_id=case,offset=0,account_id=account)
         with patch.object(router,"list_statement_coverage",side_effect=RuntimeError("private")):
-            with self.assertRaises(HTTPException) as caught:await router.get_statement_coverage(case,0,"db")
+            with self.assertRaises(HTTPException) as caught:router.get_statement_coverage(case,0,"db")
             self.assertNotIn("private",caught.exception.detail)
 
 class RequestedCoverageTests(fixture.DuplicateTestCase):
@@ -193,11 +193,11 @@ class RequestedCoverageRouterTests(unittest.IsolatedAsyncioTestCase):
         from fastapi import HTTPException
         case,account=uuid4(),uuid4();start,end=date(2026,2,1),date(2026,2,28)
         with patch.object(router,"requested_statement_coverage",return_value={}) as call:
-            await router.get_requested_statement_coverage(case,account,start,end,"db")
+            router.get_requested_statement_coverage(case,account,start,end,"db")
             call.assert_called_once_with("db",case_id=case,account_id=account,start_date=start,end_date=end)
         for error,status in ((CoverageQueryError("Not found",404),404),(RuntimeError("private"),500)):
             with patch.object(router,"requested_statement_coverage",side_effect=error):
                 with self.assertRaises(HTTPException) as caught:
-                    await router.get_requested_statement_coverage(case,account,start,end,"db")
+                    router.get_requested_statement_coverage(case,account,start,end,"db")
                 self.assertEqual(caught.exception.status_code,status)
                 self.assertNotIn("private",caught.exception.detail)

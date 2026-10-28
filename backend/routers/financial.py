@@ -238,7 +238,7 @@ class AutoExtractFromToRequest(BaseModel):
 
 
 @router.get("")
-async def get_financial_transactions(
+def get_financial_transactions(
     case_id: str = Query(..., description="REQUIRED: Filter to transactions in this case"),
     mode: str = Query("transactions", description="Dataset mode: transactions or intelligence"),
     types: Optional[str] = Query(None, description="Comma-separated transaction types to include"),
@@ -284,7 +284,7 @@ async def get_financial_transactions(
 
 
 @router.get("/entities")
-async def get_financial_entities(
+def get_financial_entities(
     case_id: str = Query(..., description="REQUIRED: Case ID"),
 ):
     """Return all non-transaction entities in a case for from/to pickers."""
@@ -296,7 +296,7 @@ async def get_financial_entities(
 
 
 @router.get("/summary")
-async def get_financial_summary(
+def get_financial_summary(
     case_id: str = Query(..., description="REQUIRED: Case ID"),
     mode: str = Query("transactions", description="Dataset mode: transactions or intelligence"),
     entity_key: Optional[str] = Query(None, description="Optional entity key for entity-relative inflow/outflow"),
@@ -313,7 +313,7 @@ async def get_financial_summary(
 
 
 @router.get("/volume")
-async def get_financial_volume(
+def get_financial_volume(
     case_id: str = Query(..., description="REQUIRED: Case ID"),
     mode: str = Query("transactions", description="Dataset mode: transactions or intelligence"),
 ):
@@ -431,7 +431,7 @@ async def batch_update_from_to(body: BatchFromToRequest):
 
 
 @router.get("/categories")
-async def get_categories(
+def get_categories(
     case_id: str = Query(..., description="REQUIRED: Case ID"),
     mode: str = Query("transactions", description="Dataset mode: transactions or intelligence"),
 ):
@@ -686,7 +686,7 @@ async def unlink_sub_transaction(
 
 
 @router.get("/transactions/{parent_key}/sub-transactions")
-async def get_transaction_children(
+def get_transaction_children(
     parent_key: str,
     case_id: str = Query(..., description="REQUIRED: Case ID"),
 ):
@@ -699,7 +699,7 @@ async def get_transaction_children(
 
 
 @router.get("/export/pdf")
-async def export_financial_pdf(
+def export_financial_pdf(
     case_id: str = Query(..., description="REQUIRED: Case ID"),
     mode: str = Query("transactions", description="Dataset mode: transactions or intelligence"),
     case_name: str = Query("Case", description="Case name for the header"),
