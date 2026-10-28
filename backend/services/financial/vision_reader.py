@@ -2095,6 +2095,11 @@ def _offer(factory, item_id, file_id, key, record, request):
         # The file before the item: the order save_review locks them in.
         file = db.scalar(select(EvidenceFile).where(EvidenceFile.id == file_id).with_for_update())
         item = db.scalar(select(Item).where(Item.id == item_id).with_for_update())
+        answered = _stored(file, key) if file is not None else None
+        if answered and answered.get('status') in ('offer_accepted', 'offer_declined'):
+            # The person answered an earlier offer while this reading ran: their answer stands as the record.
+            db.rollback()
+            return dict(record, status='stale', message='The person answered an earlier offer while this one was read.')
         if item is None or item.status != 'attention':
             db.rollback()
             return _finish(factory, item_id, file_id, key, dict(record, status='stale',

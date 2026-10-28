@@ -381,6 +381,22 @@ class ReaderReleaseTests(TestCase):
             record = db.get(EvidenceFile, held.file_id).metadata_[vision_reader.METADATA_KEY][held.statement_key or '']
             self.assertEqual(record['status'], 'offer_accepted')  # the record of what happened stands
 
+    def test_a_reading_finishing_after_the_person_answered_leaves_their_answer_as_the_record(self):
+        from services.financial import vision_reader
+        from services.financial.decisions import Actor
+        from postgres.models.evidence import EvidenceFile
+        batch, held, stored = self._offered()
+        person = Actor(name='Alex Investigator', email='alex@example.org', user_id=uuid4())
+        with self._patched_readers(), self.f.SessionLocal() as db:
+            vision_reader.accept_offer(db, case_id=self.f.case.id, batch_id=batch, item_id=held.id,
+                                       offer_id=stored['offer']['id'], actor=person)
+        late = vision_reader._offer(self.f.SessionLocal, held.id, held.file_id, held.statement_key or '',
+                                    dict(status='proved', at='later'), stored['offer']['request'])
+        self.assertEqual(late['status'], 'stale')
+        with self.f.SessionLocal() as db:
+            record = db.get(EvidenceFile, held.file_id).metadata_[vision_reader.METADATA_KEY][held.statement_key or '']
+            self.assertEqual(record['status'], 'offer_accepted')
+
     def test_offers_off_reads_nothing_of_a_person_s_work(self):
         from services.financial import vision_reader
         batch, draft = self._worked_on()
