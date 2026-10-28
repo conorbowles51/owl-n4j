@@ -1652,7 +1652,6 @@ def provider_page_reader(db, case_id, provider, model_id):
     """PageReader for ``provider``/``model_id`` with the provider's stored key (ai_provider_credentials). Fails closed:
     no key, or a model that does not take images (ai_model_capabilities), gives an unavailable reader (WARNING)."""
     from services.ai_provider_credentials import get_provider_api_key
-    from services.ai_model_capabilities import ModelCannotReadImages, require_images
     settings = READER_SETTINGS.get(provider)
     reader = PageReader(provider=provider, model=model_id, read=None, unavailable='',
                         strips=(settings or {}).get('strips', STRIPS),
@@ -1667,15 +1666,32 @@ def provider_page_reader(db, case_id, provider, model_id):
         if not api_key and not reader.unavailable:
             reader.unavailable = f'no {provider_name(provider)} key is connected'
         if api_key:
-            try:
-                # Before any page is rendered or sent: never to a model that does not take images.
-                require_images(provider, model_id, api_key=api_key, context=f'case {str(case_id)[:8]}')
-                reader.read = document_request(model_id, api_key, provider)
-            except ModelCannotReadImages as error:
-                reader.unavailable = str(error)
+            keyed = keyed_page_reader(provider, model_id, api_key, context=f'case {str(case_id)[:8]}', warn=False)
+            reader.read, reader.unavailable = keyed.read, keyed.unavailable
     if reader.unavailable:
         log.warning('Page-image reader %s %s not used for case %s: %s', provider, model_id, str(case_id)[:8],
                     reader.unavailable)
+    return reader
+
+
+def keyed_page_reader(provider, model_id, api_key, *, context='', warn=True):
+    """PageReader for ``provider``/``model_id`` with a key in hand (provider_page_reader; benchmarks). Checked before
+    any page is rendered or sent: never to a model that does not take images (ai_model_capabilities)."""
+    from services.ai_model_capabilities import ModelCannotReadImages, require_images
+    settings = READER_SETTINGS.get(provider) or {}
+    reader = PageReader(provider=provider, model=model_id, read=None, unavailable='',
+                        strips=settings.get('strips', STRIPS),
+                        max_output_tokens=settings.get('max_output_tokens', RESERVE_OUTPUT_TOKENS))
+    if not settings:
+        reader.unavailable = f'page-image reading is not available for {provider}'
+    else:
+        try:
+            require_images(provider, model_id, api_key=api_key, context=context)
+            reader.read = document_request(model_id, api_key, provider)
+        except ModelCannotReadImages as error:
+            reader.unavailable = str(error)
+    if warn and reader.unavailable:
+        log.warning('Page-image reader %s %s not used (%s): %s', provider, model_id, context, reader.unavailable)
     return reader
 
 
