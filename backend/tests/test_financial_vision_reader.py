@@ -1024,6 +1024,10 @@ class RowDatesTest(unittest.TestCase):
         pages = self._pages(_row('2025-12-02', '20.00', 'debit', '980.00'), _row('2025-12-09', '20.00', 'credit', '1000.00'))
         self._prove(pages, [self._text_row('2000', 'debit', '2025-12-04', issues=['Check the full date in the PDF.'])])
         self._prove(pages, [dict(self._text_row('2000', 'debit', ''))])
+        # Held only for the second date printed beside it, its own date still counts.
+        beside = self._text_row('2000', 'debit', '2025-12-04', issues=['Check the additional date printed beside this payment. It is unreadable, later than the row date.'])
+        with self.assertRaisesRegex(vr.NotProved, 'dated differently'):
+            self._prove(pages, [beside])
 
     def test_out_of_printed_order_is_held(self):
         pages = self._pages(_row('2025-12-02', '9.00', 'debit', '991.00'), _row('2025-12-01', '4.00', 'credit', '995.00'),
@@ -1040,9 +1044,8 @@ class RowDatesTest(unittest.TestCase):
         self.assertEqual(len(self._prove(grouped)['rows']), 4)
         # Grouped, but a block out of order.
         broken = self._pages(_row('2025-12-03', '5.00', 'credit'), _row('2025-12-20', '8.00', 'credit'),
-                             _row('2025-12-15', '9.00', 'debit'), _row('2025-12-01', '4.00', 'debit'),
-                             _row('2025-12-10', '0.00', 'debit'))
-        with self.assertRaises(vr.NotProved):
+                             _row('2025-12-15', '9.00', 'debit'), _row('2025-12-01', '4.00', 'debit'))
+        with self.assertRaisesRegex(vr.NotProved, 'out of printed order'):
             self._prove(broken)
 
     def test_a_two_cent_amount_slip_fails_the_printed_running_balance(self):

@@ -1216,6 +1216,9 @@ def _dates_in_order(rows):
     raise NotProved('The payment dates read from the page images are out of printed order on page %s.' % page)
 
 
+_BESIDE_DATE = 'Check the additional date printed beside this payment.'
+
+
 def _dates_agree_with_text(proposal, rows, exponent):
     """(ROW_DATES) Every payment the text of the file reads cleanly, with its date, whose amount and direction the
     page images also read, is in the page-image reading on that same date."""
@@ -1225,7 +1228,8 @@ def _dates_agree_with_text(proposal, rows, exponent):
     read = {(r['amount_minor'], r['direction']) for r in rows}
     for row in proposal['rows']:
         fields = row.get('fields') or {}
-        if row.get('kind') != 'transaction' or row.get('excluded') or row.get('issues'):
+        # A row held only for the second date printed beside it (Andrews "09/01 08/31 Debit Card") has its own date read.
+        if row.get('kind') != 'transaction' or row.get('excluded') or not all(str(issue).startswith(_BESIDE_DATE) for issue in row.get('issues') or ()):
             continue
         amount, when = integer(fields.get('amount_minor')), _iso(fields.get('date'))
         if not when or (amount, fields.get('direction')) not in read:
