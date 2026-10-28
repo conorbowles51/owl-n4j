@@ -1384,7 +1384,7 @@ def _release(entry, path):
         if learned.get('state') == 'live' and learned.get('fingerprint') == entry['learned']['fingerprint']:
             old = dict(old, learned=dict(learned, state='retired', retired_for=entry['name']))
         entries.append(old)
-    data = dict(version=int(data.get('version') or 0) + 1, profiles=entries + [entry])
+    data = dict(data, version=int(data.get('version') or 0) + 1, profiles=entries + [entry])
     retired = sorted(e['name'] for e in entries if (e.get('learned') or {}).get('retired_for') == entry['name']
                      and (e.get('learned') or {}).get('state') == 'retired')
     replaced = entry['learned'].get('replaces')

@@ -405,8 +405,8 @@ def main():
             profile = json.loads(Path(args.profile).read_text())
             profile = profile.get('profile', profile) if isinstance(profile, dict) else profile
             entry = ll.registry_entry(profile, args.fingerprint, json.loads(Path(args.gates).read_text()), args.review)
-        except (OSError, ValueError) as error:  # json's errors are ValueErrors
-            print('Not released: %s' % error)
+        except Exception as error:  # noqa: BLE001 - any unreadable input is a refusal, never a traceback
+            print('Not released: %s: %s' % (type(error).__name__, str(error)[:300]))
             sys.exit(1)
         problems = ll.release(entry, args.registry)
         print('Released %s' % entry['name'] if not problems else 'Registry problems: %s' % problems)
