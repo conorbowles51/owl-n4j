@@ -2152,7 +2152,7 @@ def rejudgeable(record, revision=None, model_id=None, pages=None, due=False):
 
 def _judged(stored, **extra):
     """A stored not-proved outcome (or an abandoned re-judge claim of one) marked judged under these rules."""
-    record = {k: v for k, v in stored.items() if k not in ('rejudging', 'claim_id')}
+    record = {k: v for k, v in stored.items() if k not in ('rejudging', 'claim_id', 'waiting')}
     return dict(record, status='not_proved', proof=PROOF_VERSION, **extra)
 
 
@@ -2913,8 +2913,15 @@ def printed_numbers(path):
             for match in _LONGER.finditer(text):
                 digits = _digits(match.group(0))
                 if _CARD_GROUPS.fullmatch(match.group(0)) and not 13 <= len(digits) <= 19:
-                    # Groups that do not make a card number: each run on its own (an amount beside a date is not one).
-                    found.update(d for d in re.findall(r'\d{6,}', match.group(0)))
+                    # Groups that do not make a card number as a whole: each run of 6 digits or more on its own, and
+                    # every run of neighbouring groups that makes 13 to 19 digits ("Ref 1234 5178 0512 3456 8160").
+                    groups = re.findall(r'\d+', match.group(0))
+                    found.update(g for g in groups if len(g) >= 6)
+                    for first in range(len(groups)):
+                        for last in range(first + 2, len(groups)):
+                            joined = ''.join(groups[first:last + 1])
+                            if 13 <= len(joined) <= 19:
+                                found.add(joined)
                     continue
                 if len(digits) >= 6:
                     found.add(digits)
@@ -2967,15 +2974,40 @@ def card_turn(db, case_id, item_id, card):
         if status != 'attention':
             raise WaitsForCard('Another statement of this card (ending %s, %s) is accepted and waits to be imported; '
                                'this one follows it once it is.' % (ending, period))
-        if (when, str(other_id)) >= ours:
-            continue
         if file_id not in metadata:
             metadata[file_id] = db.scalar(select(EvidenceFile.metadata_).where(EvidenceFile.id == file_id)) or {}
         stored = (metadata[file_id].get(METADATA_KEY) or {}).get(key or '')
-        if stored and (rejudgeable(stored) or _being_read(stored) or (stored.get('status') == 'not_proved'
-                                                                      and stored.get('waiting'))):
+        if stored and stored.get('status') == 'proved':
+            # Its reading was accepted (saved as System) and it is held again: it can still be imported into this
+            # card's account later (by the automatic save or a person's retry), and the import joins on bank and last
+            # digits alone. So another holder is never let through beside it; the same holder is the same account.
+            theirs = ((stored.get('card') or {}).get('holder') or (stored.get('text_reading') or {}).get('holder')
+                      or summary.get('holder') or '')
+            if not (theirs and card.get('holder') and fp.same_holder(theirs, card['holder'])):
+                raise NotProved('Another statement of this card (ending %s, %s) was accepted for %s and waits for a '
+                                'person; this statement prints %s. Confirm whether they are the same account.' % (
+                                    ending, period, _one_line(theirs) or 'a holder not read',
+                                    _one_line(card.get('holder')) or 'no holder'))
+            continue
+        if (when, str(other_id)) >= ours:
+            continue
+        if stored and (rejudgeable(stored) or _being_read(stored) or _fresh_wait(stored)):
             raise WaitsForCard('An earlier statement of this card (ending %s, %s) is checked first: a card is '
                                'confirmed from its earliest statement. This one follows it.' % (ending, period))
+
+
+# A wait is refreshed each time its statement is judged again (every round or pass while it waits); one not judged
+# for this long (its batch paused, its file removed or queued to be prepared again) no longer holds the others back.
+WAIT_FRESH_SECONDS = 2 * 3600
+
+
+def _fresh_wait(stored):
+    if not (stored.get('status') == 'not_proved' and stored.get('waiting')):
+        return False
+    try:
+        return (datetime.now(timezone.utc) - datetime.fromisoformat(stored['at'])).total_seconds() < WAIT_FRESH_SECONDS
+    except (KeyError, TypeError, ValueError):
+        return False
 
 
 def last4_turn(db, case_id, item_id, reading, path, numbers_of=None):
@@ -3537,6 +3569,7 @@ def pending(db, limit=50):
 
 
 _skip_until = {}
+WAIT_SKIP_SECONDS = 600
 PENDING_LIMIT = 2000
 # Statements read at once by a round (each a request of minutes to DeepSeek; small: the host is short of memory).
 READ_CONCURRENCY = 3
@@ -3619,6 +3652,9 @@ def sweep(factory, resolve_path, *, budget_seconds=SWEEP_SECONDS, concurrency=No
                     stop = True  # no key / provider: nothing else this round can be read either
             if stop or time.monotonic() - started >= budget_seconds:
                 queue = []
+    for item_id in later:
+        # Still waiting at the round's end, nothing ahead of it decided: looked at again in a while, not every round.
+        _skip_until[item_id] = now + WAIT_SKIP_SECONDS
     if skipped:
         report['skipped'] = skipped
     if report['read'] or skipped:
