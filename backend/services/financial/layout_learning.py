@@ -709,8 +709,8 @@ def live_and_draft(profile):
 @contextmanager
 def candidate(profile):
     """The engine's profiles with ``profile`` among them as a learned profile, for this block only."""
-    from services.financial import statement_engine_profiles as sep
-    sep.validate({k: v for k, v in profile.items() if k != 'learned'})
+    from services.financial import learned_profiles as lp
+    lp.check_rules(profile)
     with with_profiles(written_profiles(profile['name']) + (dict(profile, learned=True),)):
         yield
 
@@ -1225,7 +1225,7 @@ def llm_draft(files, name, provider, model, api_key, *, attempts=None, exclude=(
     examples; each proposal is validated and re-read against every example (``check``); a proposal short of
     every example exact goes back with the outcomes, up to ``attempts`` times. The gates decide afterwards,
     exactly as for a derived draft. ``exclude``: written profiles not shown as format examples (a backtest)."""
-    from services.financial import statement_engine_profiles as sep
+    from services.financial import learned_profiles as lp, statement_engine_profiles as sep
     ask = ask or ask_model
     attempts = attempts or DRAFT_ATTEMPTS
     log, feedback, best = [], '', (None, None)
@@ -1237,9 +1237,10 @@ def llm_draft(files, name, provider, model, api_key, *, attempts=None, exclude=(
         try:
             answer, usage, seconds = ask(provider, model, prompt, api_key)
             entry.update(usage=usage, seconds=seconds)
-            profile = dict(answer.get('profile') or {}, name=name)
+            # A key answered null is a key not given (the registry refuses typed nulls).
+            profile = dict({k: v for k, v in (answer.get('profile') or {}).items() if v is not None}, name=name)
             profile.pop('learned', None)
-            sep.validate(profile)
+            lp.check_rules(profile)
         except Exception as error:  # noqa: BLE001 - a failed proposal is recorded and answered with the reason
             entry.update(outcome='invalid', reason='%s: %s' % (type(error).__name__, str(error)[:300]))
             log.append(entry)
@@ -1263,3 +1264,65 @@ def llm_draft(files, name, provider, model, api_key, *, attempts=None, exclude=(
                         '%s %s %s..%s: %s' % (f[:8], account, start, end, outcome)
                         for f, account, start, end, outcome in misses[:12])))
     return best[0], best[1], log
+
+
+def registry_entry(profile, fingerprint, gate_result, review, examples=(), today=None):
+    """The registry entry releasing ``profile`` for layout ``fingerprint``, or ValueError naming what is missing.
+
+    Only a draft whose gates passed on exactly these rules with every written profile in force (not a backtest),
+    on a corpus copy checked against the database, and whose independent review passed. The entry's name carries
+    its rules' hash (learned_profiles._servable)."""
+    from datetime import date
+    from services.financial import learned_profiles as lp
+    rules = {k: v for k, v in profile.items() if k not in ('name', 'learned')}
+    digest = lp.rules_hash(rules)
+    conditions = (gate_result or {}).get('conditions') or {}
+    if not (gate_result or {}).get('passed') or not gate_result['corpus'].get('passed') \
+            or not gate_result['truth'].get('passed'):
+        raise ValueError('The gates did not pass.')
+    if conditions.get('rules_hash') != digest:
+        raise ValueError('The gate result is for other rules.')
+    if conditions.get('profiles_off') != [] or conditions.get('off_for_this_run'):
+        raise ValueError('The gates ran with profiles switched off (a backtest), which is never released.')
+    if not conditions.get('corpus_dumped_at'):
+        raise ValueError('The gate result records no corpus copy.')
+    if review != 'PASS':
+        raise ValueError('The independent review did not pass.')
+    if not (isinstance(fingerprint, str) and fingerprint.strip()):
+        raise ValueError('No layout fingerprint.')
+    name = 'learned-%s-%s' % (fingerprint[:8], digest[:12])
+    gates = dict(corpus_passed=True, truth_passed=True, rules_hash=digest, profiles_off=[],
+                 corpus_dumped_at=conditions['corpus_dumped_at'],
+                 rematched=len(gate_result['corpus'].get('rematched') or []),
+                 gained=len(gate_result['corpus'].get('gained') or []),
+                 truth_judged=len(gate_result['truth'].get('judged') or []))
+    entry = dict(rules, name=name, learned=dict(
+        state='live', fingerprint=fingerprint, version=VERSION, rules_hash=digest, review='PASS', gates=gates,
+        examples=list(examples), live_since=str(today or date.today())))
+    lp._servable(entry)
+    lp._validated(entry)
+    return entry
+
+
+def release(entry, path=None):
+    """Write ``entry`` into the registry (atomically), retiring the layout's previous live version; returns the
+    registry's problems afterwards, which must be none (the release test requires it)."""
+    import os
+    import tempfile
+    from services.financial import learned_profiles as lp
+    path = Path(path or lp.REGISTRY)
+    data = lp.registry(path)
+    entries = []
+    for old in data.get('profiles', []):
+        if old.get('name') == entry['name']:
+            continue
+        learned = old.get('learned') or {}
+        if learned.get('state') == 'live' and learned.get('fingerprint') == entry['learned']['fingerprint']:
+            old = dict(old, learned=dict(learned, state='retired', retired_for=entry['name']))
+        entries.append(old)
+    data = dict(version=int(data.get('version') or 0) + 1, profiles=entries + [entry])
+    handle, temporary = tempfile.mkstemp(dir=str(path.parent), prefix='.learned-', suffix='.json')
+    with os.fdopen(handle, 'w') as stream:
+        stream.write(json.dumps(data, indent=1, sort_keys=True) + '\n')
+    os.replace(temporary, path)
+    return lp.problems(path)

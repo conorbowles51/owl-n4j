@@ -392,7 +392,25 @@ def main():
     le.add_argument('--no-gates', action='store_true')
     le.add_argument('--truth', default='/mnt/owl-data/fin-real/truth')
     le.add_argument('--inventory', default='/mnt/owl-data/fin-real/inventory.json')
+    pr = sub.add_parser('promote', help='write a gated, reviewed draft into the learned registry')
+    pr.add_argument('profile')
+    pr.add_argument('--gates', required=True, help='the gates result (gates --json) for exactly this profile')
+    pr.add_argument('--fingerprint', required=True)
+    pr.add_argument('--review', required=True, help='the independent review verdict (PASS or FAIL)')
+    pr.add_argument('--registry', help='registry path (default: the one the engine reads)')
     args = parser.parse_args()
+    if args.command == 'promote':
+        from services.financial import layout_learning as ll
+        profile = json.loads(Path(args.profile).read_text())
+        profile = profile.get('profile', profile)
+        try:
+            entry = ll.registry_entry(profile, args.fingerprint, json.loads(Path(args.gates).read_text()), args.review)
+        except ValueError as error:
+            print('Not released: %s' % error)
+            sys.exit(1)
+        problems = ll.release(entry, args.registry)
+        print('Released %s' % entry['name'] if not problems else 'Registry problems: %s' % problems)
+        sys.exit(1 if problems else 0)
     if args.command == 'gates':
         db = _session()
         try:

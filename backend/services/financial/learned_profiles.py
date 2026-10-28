@@ -88,7 +88,8 @@ def _typed(rules):
         if key in rules and rules[key] is not True:
             raise bad('%s must be true when given' % key)
     if 'holder_heading' in rules and not (isinstance(rules['holder_heading'], dict)
-                                          and _phrases(rules['holder_heading'].get('title'))):
+                                          and _phrases(rules['holder_heading'].get('title'))
+                                          and _phrases([rules['holder_heading'].get('prefix')])):
         raise bad('holder_heading needs a list of printed titles')
     if 'prior_period_block' in rules and not (isinstance(rules['prior_period_block'], dict) and all(
             _phrases(v) for v in rules['prior_period_block'].values())):
@@ -96,10 +97,21 @@ def _typed(rules):
     if 'column_order' in rules and not (isinstance(rules['column_order'], list) and len(rules['column_order']) <= 12
                                         and all(isinstance(r, str) for r in rules['column_order'])):
         raise bad('column_order must be a list of roles')
+    days = rules.get('settlement_days')
+    if 'settlement_days' in rules and not (isinstance(days, dict) and all(_phrases(v) for v in days.values())):
+        raise bad('settlement_days needs lists of printed words')
+    if 'blank_closing_quiet' in rules and not _phrases(rules['blank_closing_quiet']):
+        raise bad('blank_closing_quiet needs a list of printed labels')
     first = rules.get('opening_from_first_day')
     if 'opening_from_first_day' in rules and not (isinstance(first, dict) and set(first) == {'cash_line'}
                                                   and _phrases(first['cash_line'])):
         raise bad('opening_from_first_day needs a cash_line list of printed words')
+
+
+def check_rules(profile):
+    """Raise ValueError unless ``profile`` (without its learned block) could be served from the registry: the
+    check the learning tool applies to every draft, so no draft passes its gates only to be refused at load."""
+    _validated({k: v for k, v in profile.items() if k != 'learned'})
 
 
 def _validated(entry):

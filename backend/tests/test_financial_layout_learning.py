@@ -320,7 +320,7 @@ class LlmDraftTests(unittest.TestCase):
                                                   currency='USD', rows=[]))])]
         prompts = []
         answers = iter([{'profile': {'match': {'all': ['a']}, 'nonsense_key': 1}},
-                        {'profile': {'match': {'all': ['a']}}}])
+                        {'profile': {'match': {'all': ['a']}, 'currency': None, 'account_heading': None}}])
 
         def ask(provider, model, prompt, api_key):
             prompts.append(prompt)
@@ -332,6 +332,7 @@ class LlmDraftTests(unittest.TestCase):
         self.assertEqual([e['outcome'] for e in log][:2], ['invalid', '0/1 exact'])
         self.assertIn('rejected', prompts[1])
         self.assertEqual(profile['name'], 'learned-x')
+        self.assertNotIn('currency', profile)  # a key answered null is a key not given
         self.assertIn('account not read', prompts[2]) if len(prompts) > 2 else None
         self.assertIn(sep.__doc__.splitlines()[0], prompts[0])
 
@@ -564,6 +565,45 @@ class EngineHookTests(unittest.TestCase):
                 mock.patch('services.financial.statement_engine_profiles.furniture_text', return_value=''), \
                 self.assertRaises(AttributeError):
             routing._profiled([], plain)  # a written profile's fault is never hidden
+
+    def test_release_writes_only_a_gated_reviewed_draft_and_retires_the_old_version(self):
+        draft = dict(name='learned-zz~abc', match=dict(all=['zz released layout']), currency='USD')
+
+        def passed(profile, **conditions):
+            return dict(passed=True, corpus=dict(passed=True, rematched=['f'], gained=[1]), truth=dict(passed=True, judged=['f']),
+                        conditions=dict(dict(rules_hash=lp.rules_hash(profile), profiles_off=[],
+                                             corpus_dumped_at='2026-10-28T03:26:00+00:00'), **conditions))
+        for gates, review, why in ((dict(passed(draft), passed=False), 'PASS', 'did not pass'),
+                                   (passed(draft, rules_hash='x'), 'PASS', 'other rules'),
+                                   (passed(draft, profiles_off=['truist-consolidated']), 'PASS', 'backtest'),
+                                   (passed(draft, off_for_this_run=['truist-consolidated']), 'PASS', 'backtest'),
+                                   (passed(draft, corpus_dumped_at=None), 'PASS', 'corpus copy'),
+                                   (passed(draft), 'FAIL', 'review')):
+            with self.assertRaisesRegex(ValueError, why):
+                ll.registry_entry(draft, 'zzfinger', gates, review)
+        first = ll.registry_entry(draft, 'zzfinger', passed(draft), 'PASS')
+        self.assertEqual(ll.release(first, self.path), [])
+        lp.reset()
+        self.assertEqual(sep.matching_profile('zz released layout page 1')['name'], first['name'])
+        revised = dict(draft, institution='ZZ Bank')
+        second = ll.registry_entry(revised, 'zzfinger', passed(revised), 'PASS')
+        self.assertEqual(ll.release(second, self.path), [])
+        lp.reset()
+        self.assertEqual(sep.matching_profile('zz released layout page 1')['name'], second['name'])
+        self.assertEqual(sep.profile_named(first['name'])['learned']['state'], 'retired')  # saved choices resolve
+        self.assertEqual([p['learned']['state'] for p in lp.registry(self.path)['profiles']], ['retired', 'live'])
+
+    def test_drafts_are_checked_as_the_registry_checks_them(self):
+        draft = dict(name='learned-zz', match=dict(all=['zz']), settlement_days=dict(operation=['w'] * 50000,
+                                                                                    settlement=['LIQ']))
+        with self.assertRaisesRegex(ValueError, 'settlement_days'):
+            lp.check_rules(draft)
+        with self.assertRaisesRegex(ValueError, 'settlement_days'), ll.candidate(draft):
+            pass
+        with self.assertRaises(ValueError):
+            lp.check_rules(dict(name='learned-zz', match=dict(all=['zz']), currency=None))
+        with self.assertRaisesRegex(ValueError, 'blank_closing_quiet'):
+            lp.check_rules(dict(name='learned-zz', match=dict(all=['zz']), blank_closing_quiet=['x'] * 41))
 
     def test_an_unreadable_registry_file_leaves_the_written_profiles_reading(self):
         sources = fixture('financial_truist_consolidated_fixture.json')
