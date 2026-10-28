@@ -40,6 +40,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
+import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/cn"
 import { aiSettingsAPI } from "../api"
 import type { AIWorkloadModelChainEntry, LLMModel } from "@/types/evidence.types"
@@ -152,7 +153,7 @@ function chainStepLabel(index: number) {
 }
 
 /** An ordered chain of models (Statement page images): each model is tried in turn until one's reading proves. */
-function ModelChainEditor({ label, description, chain, models, allModels, disabled, onChange }: {
+function ModelChainEditor({ label, description, chain, models, allModels, disabled, onChange, deepseekOnly, switchedBy, switchedAt, onDeepseekOnlyChange }: {
   label: string
   description: string
   chain: AIWorkloadModelChainEntry[]
@@ -160,6 +161,10 @@ function ModelChainEditor({ label, description, chain, models, allModels, disabl
   allModels: LLMModel[]
   disabled: boolean
   onChange: (chain: AIWorkloadModelChainEntry[]) => void
+  deepseekOnly?: boolean
+  switchedBy?: string
+  switchedAt?: string
+  onDeepseekOnlyChange?: (on: boolean) => void
 }) {
   const unused = models.filter((model) => !chain.some((entry) => entry.model_id === model.id))
   const name = (entry: AIWorkloadModelChainEntry) => {
@@ -176,6 +181,25 @@ function ModelChainEditor({ label, description, chain, models, allModels, disabl
           statement, and when none checks out it stays held. Only models that can read page images are offered.
         </p>
       </div>
+      {onDeepseekOnlyChange ? (
+        <div className="flex items-start justify-between gap-3 rounded-md border border-border/65 p-2" data-testid="deepseek-only">
+          <div className="min-w-0">
+            <p className="text-xs font-medium">DeepSeek only</p>
+            <p className="text-[10px] leading-relaxed text-muted-foreground">
+              {deepseekOnly
+                ? "On: only DeepSeek reads statements; nothing is sent to the other models. A statement DeepSeek cannot prove stays held."
+                : "Off: DeepSeek reads first; when it fails or cannot prove a statement, the next model in the list reads it."}
+            </p>
+            {switchedBy ? (
+              <p className="text-[10px] text-muted-foreground">
+                Last switched by {switchedBy}{switchedAt ? ` on ${new Date(switchedAt).toLocaleString()}` : ""}
+              </p>
+            ) : null}
+          </div>
+          <Switch checked={Boolean(deepseekOnly)} disabled={disabled} aria-label={`${label}: DeepSeek only`}
+            onCheckedChange={(on) => onDeepseekOnlyChange(on === true)} />
+        </div>
+      ) : null}
       <ol className="space-y-2">
         {chain.map((entry, index) => {
           const offered = [...models.filter((model) => model.id === entry.model_id), ...unused]
@@ -521,7 +545,12 @@ export function AISettingsPage() {
                               models={settings.models.filter((model) => model.provider_configured !== false && model.reads_images === true)}
                               allModels={settings.models}
                               disabled={!settings.permissions.can_edit_routing}
-                              onChange={(chain) => setDraft((existing) => ({ ...existing, [workload]: { ...chain[0], chain } }))}
+                              onChange={(chain) => setDraft((existing) => ({ ...existing, [workload]: { ...existing[workload], ...chain[0], chain } }))}
+                              deepseekOnly={current.deepseek_only}
+                              switchedBy={current.deepseek_only_changed_by}
+                              switchedAt={current.deepseek_only_changed_at}
+                              onDeepseekOnlyChange={current.deepseek_only === undefined ? undefined : (on) =>
+                                setDraft((existing) => ({ ...existing, [workload]: { ...existing[workload], deepseek_only: on } }))}
                             />
                           )
                         }

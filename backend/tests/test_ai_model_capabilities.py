@@ -119,6 +119,7 @@ class ImagePathTests(unittest.TestCase):
         from services.financial import vision_reader as vr
         chain = [{'provider': 'deepseek', 'model_id': 'deepseek-v4-pro'}]
         with mock.patch('services.ai_model_policy.get_workload_chain', return_value=chain), \
+                mock.patch('services.ai_model_policy.deepseek_only', return_value=False), \
                 mock.patch('services.ai_provider_credentials.get_provider_api_key', return_value='k'), \
                 mock.patch.object(vr, 'render_pages') as render, \
                 self.assertLogs('services.ai_model_capabilities', 'WARNING'):
@@ -130,6 +131,7 @@ class ImagePathTests(unittest.TestCase):
         render.assert_not_called()
         chain = [{'provider': 'deepseek', 'model_id': 'deepseek-flash'}, {'provider': 'openai', 'model_id': 'gpt-5.6-terra'}]
         with mock.patch('services.ai_model_policy.get_workload_chain', return_value=chain), \
+                mock.patch('services.ai_model_policy.deepseek_only', return_value=False), \
                 mock.patch('services.ai_provider_credentials.get_provider_api_key', return_value='k'):
             readers = vr.chain_page_reader(object(), 'case')
             model_id, read = vr.deepseek_page_reader(object(), 'case')
@@ -142,6 +144,7 @@ class ImagePathTests(unittest.TestCase):
         from services.financial import vision_reader as vr
         chain = [{'provider': 'openai', 'model_id': 'gpt-9-new'}]
         with mock.patch('services.ai_model_policy.get_workload_chain', return_value=chain), \
+                mock.patch('services.ai_model_policy.deepseek_only', return_value=False), \
                 mock.patch('services.ai_provider_credentials.get_provider_api_key', return_value='k'), \
                 self.assertLogs('services.ai_model_capabilities', 'WARNING'):
             readers = vr.chain_page_reader(object(), 'case')
@@ -183,7 +186,8 @@ class PolicyTests(unittest.TestCase):
         with mock.patch('services.ai_model_policy.DEEPSEEK_API_KEY', 'k'):
             validated = validate_policy(self.policy('deepseek', 'deepseek-flash'), require_configured_provider=False)
         self.assertEqual(validated['financial_vision'], {'provider': 'deepseek', 'model_id': 'deepseek-flash',
-                                                         'chain': [{'provider': 'deepseek', 'model_id': 'deepseek-flash'}]})
+                                                         'chain': [{'provider': 'deepseek', 'model_id': 'deepseek-flash'}],
+                                                         'deepseek_only': True})
         validate_policy(self.policy('openai', 'gpt-5.6-terra'), require_configured_provider=False)
 
     def chain(self, *entries):

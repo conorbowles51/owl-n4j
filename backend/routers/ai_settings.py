@@ -101,6 +101,8 @@ class PolicyModelConfig(BaseModel):
     model_id: str
     # Statement page images: the models tried in order (ai_model_policy.CHAIN_WORKLOADS).
     chain: list[PolicyChainEntry] | None = None
+    # Statement page images: ON, only DeepSeek reads (OpenAI failover switched off, nothing sent to OpenAI).
+    deepseek_only: bool | None = None
 
 
 class PolicyUpdateRequest(BaseModel):
@@ -469,6 +471,8 @@ def update_ai_policy(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
+    from services.ai_model_policy import CHAIN_WORKLOADS
+    before, _ = get_policy(db)
     try:
         record = save_policy(
             db,
@@ -488,5 +492,16 @@ def update_ai_policy(
         user=current_user.email,
         db=db,
     )
+    for workload in sorted(CHAIN_WORKLOADS):
+        switched = record.configuration.get(workload, {}).get("deepseek_only")
+        if switched != before[workload].get("deepseek_only"):
+            system_log_service.log(
+                log_type=LogType.SYSTEM,
+                origin=LogOrigin.BACKEND,
+                action=f"{WORKLOADS[workload]['label']}: DeepSeek only switched {'ON' if switched else 'OFF'}",
+                details={"workload": workload, "deepseek_only": switched, "revision": record.revision},
+                user=current_user.email,
+                db=db,
+            )
     db.commit()
     return _settings_response(db, current_user)

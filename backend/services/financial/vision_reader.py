@@ -1698,9 +1698,19 @@ def keyed_page_reader(provider, model_id, api_key, *, context='', warn=True):
 def chain_page_reader(db, case_id):
     """The readers of the workload's chain, in order (ai_model_policy.get_workload_chain): DeepSeek first, OpenAI the
     failsafe by default. A reader that cannot be used now is kept with its reason; the chain starts at the next."""
-    from services.ai_model_policy import get_workload_chain
-    return [provider_page_reader(db, case_id, entry['provider'], entry['model_id'])
-            for entry in get_workload_chain(db, WORKLOAD)]
+    from services.ai_model_policy import deepseek_only, get_workload_chain
+    only = deepseek_only(db, WORKLOAD)
+    readers = []
+    for entry in get_workload_chain(db, WORKLOAD):
+        if only and entry['provider'] != 'deepseek':
+            # "DeepSeek only" is ON: this reader is not built and nothing is sent to it; the reason shows on the
+            # outcome ("OpenAI failover is switched off").
+            readers.append(PageReader(provider=entry['provider'], model=entry['model_id'], read=None,
+                                      unavailable=f'{provider_name(entry["provider"])} failover is switched off',
+                                      switched_off=True, strips=None, max_output_tokens=RESERVE_OUTPUT_TOKENS))
+            continue
+        readers.append(provider_page_reader(db, case_id, entry['provider'], entry['model_id']))
+    return readers
 
 
 def _single(db, case_id, provider, model_id):
@@ -1747,7 +1757,10 @@ def chain_id(readers):
     providers and models in order with the instructions' version, so a new chain or prompt reads again."""
     if len(readers) == 1 and readers[0].provider is None:
         return readers[0].model
-    return ' > '.join(f'{r.provider}/{r.model}' for r in readers) + f' ({PROMPT_VERSION})'
+    # A reader switched off (DeepSeek only) is not part of it: switching OpenAI failover back on reads held
+    # statements again, with the failsafe.
+    return ' > '.join(f'{r.provider}/{r.model}' for r in readers
+                      if not getattr(r, 'switched_off', False)) + f' ({PROMPT_VERSION})'
 
 
 def document_request(model_id, api_key, provider='openai'):
@@ -2144,6 +2157,8 @@ def _attempt_words(attempt):
         return f'{name} could not read it: {message}'
     if status == 'stale':
         return f'{name} read it while the statement changed'
+    if status == 'switched_off':
+        return f'{name} failover is switched off'
     return f'{name} was not used: {message}'
 
 
@@ -2380,7 +2395,8 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
             attempt = dict(provider=reader.provider, model=reader.model,
                            prompt_version=getattr(reader, 'prompt_version', None) or (PROMPT_VERSION if reader.provider else None))
             if raw is None and reader.unavailable:
-                attempts.append(dict(attempt, status='unavailable', message=reader.unavailable))
+                attempts.append(dict(attempt, status='switched_off' if getattr(reader, 'switched_off', False)
+                                     else 'unavailable', message=reader.unavailable))
                 continue
             if raw is None:
                 # Outside any lock or transaction: render (in this reader's strips) and read.
@@ -2873,7 +2889,8 @@ def read_saved(factory, document_id, resolve_path, *, page_reader=None, knowledg
             attempt = dict(provider=reader.provider, model=reader.model,
                            prompt_version=getattr(reader, 'prompt_version', None) or (PROMPT_VERSION if reader.provider else None))
             if raw is None and reader.unavailable:
-                attempts.append(dict(attempt, status='unavailable', message=reader.unavailable))
+                attempts.append(dict(attempt, status='switched_off' if getattr(reader, 'switched_off', False)
+                                     else 'unavailable', message=reader.unavailable))
                 continue
             if raw is None:
                 images = _render(path, pages, reader)

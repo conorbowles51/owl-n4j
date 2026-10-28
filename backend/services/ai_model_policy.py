@@ -82,7 +82,15 @@ MAX_CHAIN = 3
 FINANCIAL_VISION_DEEPSEEK = {"provider": "deepseek", "model_id": "deepseek-flash"}
 FINANCIAL_VISION_OPENAI = {"provider": "openai", "model_id": _financial_vision_model()}
 FINANCIAL_VISION_CHAIN = [dict(FINANCIAL_VISION_DEEPSEEK), dict(FINANCIAL_VISION_OPENAI)]
-FINANCIAL_VISION_DEFAULT = {**FINANCIAL_VISION_CHAIN[0], "chain": deepcopy(FINANCIAL_VISION_CHAIN)}
+# "DeepSeek only" (Neil, 2026-10-28): ON, the chain's readers other than DeepSeek are switched off and nothing is sent
+# to them; a statement DeepSeek cannot prove stays held with DeepSeek's reason and "OpenAI failover is switched off".
+# OFF, DeepSeek first and OpenAI the failsafe. ON by default until OpenAI is topped up; the AI settings page switches
+# it (who and when is kept on the setting and in the system log).
+FINANCIAL_VISION_DEEPSEEK_ONLY = True
+FINANCIAL_VISION_DEFAULT = {**FINANCIAL_VISION_CHAIN[0], "chain": deepcopy(FINANCIAL_VISION_CHAIN),
+                            "deepseek_only": FINANCIAL_VISION_DEEPSEEK_ONLY}
+# Kept with the switch: who last switched it and when (save_policy).
+SWITCH_FIELDS = ("deepseek_only_changed_by", "deepseek_only_changed_at")
 
 
 DEFAULT_POLICY: dict[str, dict[str, str]] = {
@@ -179,8 +187,23 @@ def _stored_chain(entry: dict[str, Any]) -> list[dict[str, str]]:
     return [dict(e) if e["provider"] != single["provider"] else single for e in FINANCIAL_VISION_CHAIN]
 
 
-def _with_chain(chain: list[dict[str, str]]) -> dict[str, Any]:
-    return {**chain[0], "chain": deepcopy(chain)}
+def _with_chain(chain: list[dict[str, str]], entry: Any = None) -> dict[str, Any]:
+    """A chain workload's entry: its first model, the chain, and the DeepSeek-only switch (with who switched it last
+    and when) from ``entry`` (the code default when not set)."""
+    entry = entry if isinstance(entry, dict) else {}
+    result: dict[str, Any] = {**chain[0], "chain": deepcopy(chain)}
+    switch = entry.get("deepseek_only")
+    result["deepseek_only"] = switch if isinstance(switch, bool) else FINANCIAL_VISION_DEEPSEEK_ONLY
+    for field in SWITCH_FIELDS:
+        if isinstance(entry.get(field), str) and entry[field]:
+            result[field] = entry[field]
+    return result
+
+
+def deepseek_only(db: Session, workload: str = "financial_vision") -> bool:
+    """Whether the workload's readers other than DeepSeek are switched off (nothing is sent to them)."""
+    policy, _ = get_policy(db)
+    return bool(policy[workload].get("deepseek_only"))
 
 
 def _normalized_configuration(configuration: Any) -> dict[str, dict[str, Any]]:
@@ -192,7 +215,7 @@ def _normalized_configuration(configuration: Any) -> dict[str, dict[str, Any]]:
         if not isinstance(entry, dict):
             continue
         if workload in CHAIN_WORKLOADS:
-            result[workload] = _with_chain(_stored_chain(entry))
+            result[workload] = _with_chain(_stored_chain(entry), entry)
             continue
         found = _entry(entry)
         if found:
@@ -303,14 +326,18 @@ def validate_policy(
                 raise ValueError(
                     f"No provider of {WORKLOADS[workload]['label']} is configured on the server. Add an API key first."
                 )
-            validated[workload] = _with_chain(chain)
+            if "deepseek_only" in entry and not isinstance(entry["deepseek_only"], bool):
+                raise ValueError("DeepSeek only must be on or off")
+            validated[workload] = _with_chain(chain, entry)
             continue
         found = _validated_entry(workload, entry, db)
         if require_configured_provider and not provider_is_configured(found["provider"], db):
             raise ValueError(
                 f"{found['provider'].title()} is not configured on the server. Add its API key first."
             )
-        validated[workload] = _with_chain([found]) if workload in CHAIN_WORKLOADS else found
+        if workload in CHAIN_WORKLOADS and "deepseek_only" in entry and not isinstance(entry["deepseek_only"], bool):
+            raise ValueError("DeepSeek only must be on or off")
+        validated[workload] = _with_chain([found], entry) if workload in CHAIN_WORKLOADS else found
     return validated
 
 
@@ -323,12 +350,25 @@ def _keep_chains(db: Session, configuration: Any) -> Any:
     result = dict(configuration)
     for workload in CHAIN_WORKLOADS:
         entry = result.get(workload)
-        if not isinstance(entry, dict) or entry.get("chain") is not None:
+        if not isinstance(entry, dict):
+            continue
+        # A save that does not name the switch keeps it as it is (who switched it last and when go with it).
+        entry = dict(entry)
+        for field in SWITCH_FIELDS:
+            entry.pop(field, None)
+        if "deepseek_only" not in entry:
+            entry["deepseek_only"] = current[workload].get("deepseek_only", FINANCIAL_VISION_DEEPSEEK_ONLY)
+        switch_same = entry["deepseek_only"] == current[workload].get("deepseek_only")
+        for field in SWITCH_FIELDS:
+            if switch_same and current[workload].get(field):
+                entry[field] = current[workload][field]
+        result[workload] = entry
+        if entry.get("chain") is not None:
             continue
         first = {"provider": str(entry.get("provider") or "").strip().lower(),
                  "model_id": str(entry.get("model_id") or "").strip()}
         rest = [e for e in current[workload].get("chain") or [] if e["provider"] != first["provider"]]
-        result[workload] = {**first, "chain": [first, *rest]}
+        result[workload] = {**entry, **first, "chain": [first, *rest]}
     return result
 
 
@@ -340,6 +380,13 @@ def save_policy(
     updated_by: str | None,
 ) -> AIModelPolicy:
     validated = validate_policy(_keep_chains(db, configuration), db=db)
+    current, _ = get_policy(db)
+    for workload in CHAIN_WORKLOADS:
+        # Who switched DeepSeek only and when, kept on the setting (the router also logs it).
+        if validated[workload].get("deepseek_only") != current[workload].get("deepseek_only"):
+            from datetime import datetime, timezone
+            validated[workload]["deepseek_only_changed_by"] = updated_by or "unknown"
+            validated[workload]["deepseek_only_changed_at"] = datetime.now(timezone.utc).isoformat()
     record = db.get(AIModelPolicy, POLICY_KEY)
     current_revision = record.revision if record else 0
     if expected_revision is not None and expected_revision != current_revision:

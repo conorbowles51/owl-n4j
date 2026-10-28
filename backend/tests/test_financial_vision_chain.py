@@ -36,6 +36,10 @@ class ChainTests(TestCase):
         spend = patch.dict(vr._spend, {}, clear=True)
         spend.start()
         self.addCleanup(spend.stop)
+        # The chain with OpenAI failover on (the "DeepSeek only" switch OFF) unless a test switches it on.
+        self.only = patch('services.ai_model_policy.deepseek_only', return_value=False)
+        self.only.start()
+        self.addCleanup(self.only.stop)
 
     def held(self):
         with patch.object(vr, 'ENABLED', True):
@@ -170,6 +174,84 @@ class ChainTests(TestCase):
         self.assertEqual(outcome['status'], 'proved', outcome.get('message'))
         self.assertIn('by OpenAI (DeepSeek was not used: no DeepSeek key is connected)', outcome['message'])
         self.assertEqual(rendered, [vr.READER_SETTINGS['openai']['strips']], 'only OpenAI is rendered for')
+
+    # -- the "DeepSeek only" switch (Neil, 2026-10-28) ------------------------------------------------------------
+
+    def switched(self, on):
+        self.only.stop()
+        self.only = patch('services.ai_model_policy.deepseek_only', return_value=on)
+        self.only.start()
+        cap.clear_cache()
+        self.addCleanup(cap.clear_cache)
+        listed = patch.object(cap, '_fetch_deepseek', return_value={'deepseek-flash': {'text', 'image'}})
+        listed.start()
+        self.addCleanup(listed.stop)
+
+    def test_deepseek_only_on_never_sends_anything_to_openai(self):
+        chain = [{'provider': 'deepseek', 'model_id': 'deepseek-flash'}, {'provider': 'openai', 'model_id': 'gpt-5.6-terra'}]
+        self.switched(True)
+        for case in ('not_proved', 'error', 'timeout', 'no_key'):
+            with self.subTest(case=case):
+                batch, held = self.held()
+                right, knowledge = self.r._image_reading(held)
+                wrong, _ = self.r._image_reading(held, nudge=1)
+                sent = []
+
+                def request(model, key, provider):
+                    def read(images):
+                        sent.append(provider)
+                        if provider == 'openai':
+                            raise AssertionError('nothing is sent to OpenAI while DeepSeek only is ON')
+                        if case == 'error':
+                            raise requests.exceptions.ConnectionError('reset by peer')
+                        if case == 'timeout':
+                            raise requests.exceptions.ReadTimeout('read timed out')
+                        return wrong, USAGE
+                    return read
+                keys = {'deepseek': None if case == 'no_key' else 'k', 'openai': 'k'}
+                api_key = Mock(side_effect=lambda db, p: keys[p])
+                with patch('services.ai_model_policy.get_workload_chain', return_value=chain), \
+                        patch('services.ai_provider_credentials.get_provider_api_key', api_key), \
+                        patch.object(vr, 'RETRY_PAUSE_SECONDS', 0), \
+                        patch.object(vr, 'document_request', request):
+                    outcome, _ = self.read(batch, held, vr.chain_page_reader, knowledge)
+                self.assertNotIn('openai', sent)
+                self.assertNotIn('openai', [c.args[1] for c in api_key.call_args_list], 'OpenAI\'s key is not even read')
+                self.assertNotEqual(outcome['status'], 'proved')
+                self.assertIn('OpenAI failover is switched off', outcome['message'])
+                self.assertEqual(self.r.item(batch).status, 'attention')
+                if case != 'no_key':
+                    self.assertIn('DeepSeek could not', outcome['message'])
+
+    def test_deepseek_only_on_accepts_a_proved_deepseek_reading(self):
+        self.switched(True)
+        batch, held = self.held()
+        right, knowledge = self.r._image_reading(held)
+        chain = [{'provider': 'deepseek', 'model_id': 'deepseek-flash'}, {'provider': 'openai', 'model_id': 'gpt-5.6-terra'}]
+        with patch('services.ai_model_policy.get_workload_chain', return_value=chain), \
+                patch('services.ai_provider_credentials.get_provider_api_key', return_value='k'), \
+                patch.object(vr, 'document_request', lambda model, key, provider: lambda images: (right, USAGE)):
+            outcome, _ = self.read(batch, held, vr.chain_page_reader, knowledge)
+        self.assertEqual(outcome['status'], 'proved', outcome.get('message'))
+        self.assertEqual(outcome['message'], 'Read from the page images by DeepSeek; the period reconciles exactly.')
+        # Switching failover back on is a different chain: held statements are read again with the failsafe.
+        self.assertEqual(self.stored(held)['reader'], f'deepseek/deepseek-flash ({vr.PROMPT_VERSION})')
+
+    def test_deepseek_only_off_fails_over_to_openai(self):
+        self.switched(False)
+        batch, held = self.held()
+        right, knowledge = self.r._image_reading(held)
+        wrong, _ = self.r._image_reading(held, nudge=1)
+        chain = [{'provider': 'deepseek', 'model_id': 'deepseek-flash'}, {'provider': 'openai', 'model_id': 'gpt-5.6-terra'}]
+        with patch('services.ai_model_policy.get_workload_chain', return_value=chain), \
+                patch('services.ai_provider_credentials.get_provider_api_key', return_value='k'), \
+                patch.object(vr, 'document_request',
+                             lambda model, key, provider: lambda images: ((wrong if provider == 'deepseek' else right), USAGE)):
+            outcome, _ = self.read(batch, held, vr.chain_page_reader, knowledge)
+        self.assertEqual(outcome['status'], 'proved', outcome.get('message'))
+        self.assertTrue(outcome['message'].startswith('Read from the page images by OpenAI (DeepSeek could not prove it'))
+        self.assertEqual(self.stored(held)['reader'],
+                         f'deepseek/deepseek-flash > openai/gpt-5.6-terra ({vr.PROMPT_VERSION})')
 
     def test_a_text_only_model_in_the_chain_is_never_sent_the_pages(self):
         batch, held = self.held()
