@@ -61,7 +61,9 @@ _ADDRESS_FIRST = frozenset('AV AVE AVENIDA CALLE CALZ CALZADA BLVD BOULEVARD CAR
                            'PROL PROLONGACION ANDADOR CIRCUITO RETORNO CERRADA MANZANA MZ LOTE LT PASEO PERIFERICO ANILLO EJE'.split())
 # Last words of a street name (INSURGENTES SUR, MAIN ST) and the unit or number words printed after it.
 _UNIT_WORDS = frozenset('STE SUITE APT UNIT INT INTERIOR NUM NUMERO NO N DEPTO LOCAL'.split())
-_ADDRESS_LAST = frozenset('SUR NORTE OTE PTE ORIENTE PONIENTE ST STREET AVE AVENUE RD ROAD BLVD DR DRIVE LN LANE WAY HWY PKWY'.split())
+_ADDRESS_LAST = frozenset('SUR NORTE NTE OTE PTE ORIENTE PONIENTE AV AVE AVENUE AVENIDA ST STR STREET RD ROAD BLVD DR DRIVE LN LANE WAY HWY '
+                          'PKWY PKY PL PLACE CIR CIRCLE TER TERRACE PLZ PLAZA CT COURT SQ SQUARE TRL TRAIL EXPY TPKE PIKE ALY CV CRES '
+                          'CALZ CALLE CARR PRIV PROL'.split())
 # Concept, period and linking words: a name made only of these (even with a legal form) is not a party.
 _NOT_NAME_WORDS = frozenset(
     'VIDA BONO BONOS QUINCENA QNA HORAS HORA EXTRA EXTRAS SUELDO SUELDOS SALARIO SALARIOS VIATICOS AGUINALDO VACACIONES '
@@ -81,7 +83,7 @@ def bank_name(text):
     # A bank followed by bank wording or a legal form (WELLS FARGO BANK, BANCOMER SA); a merchant that only opens
     # with a bank's word (CITI TRENDS) is not a bank.
     return any(text == bank or re.match(re.escape(bank) + r' (?:BANK|BANCO|MEXICO|ATM|NA|N A|CU|FCU|FEDERAL|CREDIT|INVERLAT|BANCOMER|IXE|'
-                                                       r'S ?A|SA DE CV|INSTITUCION|GRUPO FINANCIERO|GF|SUCURSAL|SUC|BRANCH|CAJERO|OFICINA|OFC|BRCH)\b', text) for bank in _BANK_NAMES) \
+                                                       r'S ?A|SA DE CV|INSTITUCION|GRUPO FINANCIERO|GF|SUCURSAL|SUC|BRANCH|CAJERO|OFICINA|OFC|BRCH|PRACTICAJA|PRACTIC|CORRESPONSAL|SUPERMOVIL|MOVIL|NET|BNET|ONLINE|LINEA|EN LINEA|ENLACE|APP)\b', text) for bank in _BANK_NAMES) \
         or bool(re.match(r'BANCO\b|BANK\b', text))
 
 
@@ -858,7 +860,7 @@ def card_line_merchant(raw, *, institution=None):
         kept.pop()
     # A street word or unit word (MAIN ST. 12, INSURGENTES SUR NO.1602, MAIN ST STE 100) with a number on the line is an address.
     plain = [re.sub(r'[^A-Z0-9]', '', w) for w in kept]
-    if any(w in _ADDRESS_LAST or w in _UNIT_WORDS or re.fullmatch(r'(?:NO|NUM|N)\d+', w) for w in plain) and re.search(r'\d', ' '.join(tokens)):
+    if any(w in _ADDRESS_LAST or w in _UNIT_WORDS or re.fullmatch(r'(?:NO|NUM|N|' + '|'.join(_ADDRESS_LAST) + r')\d+', w) for w in plain) and re.search(r'\d', ' '.join(tokens)):
         return None
     label = _without_place(' '.join(kept)).strip(' *-#•·')
     if not evidence or re.fullmatch(r'[A-Z]{1,3}', label) or (len(kept) == 1 and '*' in kept[0]) or concept_or_place(label, place=False) or generic_words_only(label) \
