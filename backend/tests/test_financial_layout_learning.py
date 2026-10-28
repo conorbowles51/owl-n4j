@@ -499,6 +499,19 @@ class EngineHookTests(unittest.TestCase):
         self.assertIsNone(sep.profile_named(bad['name']))
         self.assertEqual(sep.matching_profile('truist consolidated'), sep.written_matching_profile('truist consolidated'))
 
+    def test_a_malformed_fingerprint_is_refused_on_its_own(self):
+        good = self.entry('zz good layout')
+        listed, missing = self.entry('zz listed layout', fingerprint='f2'), self.entry('zz missing layout', fingerprint='f3')
+        listed['learned']['fingerprint'] = ['a', 'b']
+        del missing['learned']['fingerprint']
+        self.write(good, listed, missing)
+        with self.assertLogs('services.financial.learned_profiles', 'ERROR') as logs:
+            self.assertEqual(sep.matching_profile('zz good layout')['name'], good['name'])
+        self.assertEqual(len(logs.output), 2)
+        self.assertTrue(all('fingerprint' in line for line in logs.output))
+        self.assertIsNone(sep.matching_profile('zz listed layout'))
+        self.assertEqual(sep.matching_profile('truist consolidated'), sep.written_matching_profile('truist consolidated'))
+
     def test_an_unreadable_registry_file_leaves_the_written_profiles_reading(self):
         sources = fixture('financial_truist_consolidated_fixture.json')
         text, furniture = sep.profile_text(sources), sep.furniture_text(sources)

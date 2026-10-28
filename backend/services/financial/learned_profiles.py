@@ -67,6 +67,9 @@ def _servable(entry):
     learned = entry.get('learned')
     if not isinstance(learned, dict) or learned.get('state') not in ('live', 'retired'):
         return False
+    fingerprint = learned.get('fingerprint')
+    if not (isinstance(fingerprint, str) and fingerprint.strip()):
+        raise ValueError('Learned profile %s records no layout fingerprint' % entry.get('name'))
     gates = learned.get('gates')
     if not isinstance(gates, dict) or not (gates.get('corpus_passed') and gates.get('truth_passed')
                                            and learned.get('review') == 'PASS'):
