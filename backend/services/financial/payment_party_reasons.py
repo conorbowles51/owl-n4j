@@ -151,25 +151,32 @@ _LAYOUT_WORDS = frozenset('''
     RECIBO POLIZA POL PRIMA SEGURO COB COBRO RO ROS LINEA CAPTURA APORT IMPORTE MOBILE BANKING DEPOSIT WITHDRAWAL
     AUTOMATIC PAYMENT PMT PYMT ONLINE WEB APP THANK YOU PROMO PURCHASE OFFER AUTHDATE USD EUR MXP MXN MN
     ENE FEB MAR ABR MAY JUN JUL AGO SEP SEPT OCT NOV DIC ENERO FEBRERO MARZO ABRIL MAYO JUNIO JULIO AGOSTO
-    SEPTIEMBRE OCTUBRE NOVIEMBRE DICIEMBRE JAN APR AUG DEC VIDA OTRO BANCO MEXICO COMPRA VENTA RFC GUIA COTIZACION
+    SEPTIEMBRE OCTUBRE NOVIEMBRE DICIEMBRE JAN APR AUG DEC VIDA OTRO BANCO MEXICO COMPRA VENTA RFC GUIA COTIZACION INV
 '''.split())
+# Letter codes printed inside references (BNET0123, REFBNTC00123): not words.
+_REFERENCE_CODES = frozenset('BNET REFBNTC BMRCASH MBAN SITH CIE TEF SPEI SPID REF REFB'.split())
 _DIRECTED = re.compile(r'\b(?:TO|FROM|FOR|BY|PAY|PAID|PAYEE|PARA|FAVOR|BENEFICIARIO|DESTINO|ORDENANTE|CLIENTE|NAME)\b')
 
 
 # A labelled name field (BENEFICIARIO JUAN PEREZ, DEL CLIENTE ACME): a name is printed, whatever the layout.
-_LABELLED = re.compile(r'\b(?:BENEF\w*|ORDENANTE|CLIENTE|A FAVOR DE|DESTINATARIO|NOMBRE|PAYEE|NAME|PAID TO|PAY TO|TO|FROM)\b\s*:?\s*[A-Z]{2,}')
+_LABELLED = re.compile(r'\b(?:BENEF\w*|ORDENANTE|CLIENTE|A FAVOR DE|DESTINATARIO|NOMBRE|PAGO A|PARA|PAYEE|NAME|PAID TO|PAY TO|TO|FROM)\b\s*:?\s*([A-Z]{2,})')
+
+
+def _labelled(text):
+    """True when a name label (BENEFICIARIO, PAGO A, PARA ..) is followed by a word that is not the layout's own."""
+    return any(match[1] not in _LAYOUT_WORDS for match in _LABELLED.finditer(text))
 
 
 def _only_layout_words(text):
-    for token in re.split(r'[\s.,:;()/\[\]|*"\'\-–—#%+=&!?·]+', text):
+    # The bank's reference codes after Ref. mix letters and digits; before it, letters run into a number
+    # (BBVA glues the concept to its 7-digit reference: 0012345BIMBO; 7ELEVEN) are still a word that could be a name.
+    referenced = re.search(r'\bREF\.\s', text)
+    for index, token in ((m.start(), m[0]) for m in re.finditer(r'[^\s.,:;()/\[\]|*"\'\-–—#%+=&!?·]+', text)):
         if len(token) >= 2 and token.isalpha() and token not in _LAYOUT_WORDS:
             return False
-        # A word run into a reference (BBVA glues the concept to its 7-digit reference: 0012345BIMBO) or opening
-        # with digits (7ELEVEN) is still a word that could be a name.
-        if not token.isalpha():
-            for run in re.findall(r'(?<=\d{5})[A-Z]{3,}$|^\d{1,2}[A-Z]{3,}$', token):
-                run = re.sub(r'^\d+', '', run)
-                if run not in _LAYOUT_WORDS:
+        if not token.isalpha() and not (referenced and index > referenced.start()):
+            for run in re.findall(r'[A-Z]{3,}', token):
+                if run not in _LAYOUT_WORDS and run not in _REFERENCE_CODES and not re.fullmatch(r'X+', run):
                     return False
     return True
 
@@ -203,7 +210,7 @@ def unnamed_reason(value, *, direction, account_type=None):
                 continue
             tail = value[match.end():]
             # A labelled name field, or (outside FIELD layouts) a given name or legal form, means a name may be printed.
-            if _LABELLED.search(tail) or (mode != FIELD and _name_like(tail)):
+            if _labelled(tail) or (mode != FIELD and _name_like(tail)):
                 return None
             if mode == STRICT and not _only_layout_words(tail):
                 return None

@@ -58,7 +58,9 @@ _MX_PLACES = frozenset(' '.join(p.split()) for p in """
 """.split('|') if p.strip())
 # Openings of a street address.
 _ADDRESS_FIRST = frozenset('AV AVE AVENIDA CALLE CALZ CALZADA BLVD BOULEVARD CARR CARRETERA PRIV PRIVADA COL COLONIA KM '
-                           'PROL PROLONGACION ANDADOR CIRCUITO RETORNO CERRADA MANZANA MZ LOTE LT'.split())
+                           'PROL PROLONGACION ANDADOR CIRCUITO RETORNO CERRADA MANZANA MZ LOTE LT PASEO PERIFERICO ANILLO EJE'.split())
+# Last words of a street name (INSURGENTES SUR, MAIN ST).
+_ADDRESS_LAST = frozenset('SUR NORTE OTE PTE ORIENTE PONIENTE ST STREET AVE AVENUE RD ROAD BLVD DR DRIVE LN LANE WAY HWY PKWY'.split())
 # Concept, period and linking words: a name made only of these (even with a legal form) is not a party.
 _NOT_NAME_WORDS = frozenset(
     'VIDA BONO BONOS QUINCENA QNA HORAS HORA EXTRA EXTRAS SUELDO SUELDOS SALARIO SALARIOS VIATICOS AGUINALDO VACACIONES '
@@ -69,6 +71,12 @@ _NOT_NAME_WORDS = frozenset(
 _BANK_NAMES = frozenset(_MX_BANKS) | frozenset(' '.join(b.split()) for b in """BANK OF AMERICA|CHASE|JPMORGAN CHASE|WELLS FARGO|
     CITIBANK|CITI|CAPITAL ONE|TRUIST|PNC|US BANK|TD BANK|NAVY FEDERAL|NAVY FEDERAL CREDIT UNION|M&T|M&T BANK|SANTANDER BANK|
     BANCO SANTANDER|BBVA USA|BANCO AZTECA|BANCO DEL BAJIO|BANCOMER|BANCO BBVA|BANCO MONEX|BANCO INTERCAM|HSBC BANK""".split('|'))
+
+
+def bank_name(text):
+    """True when the text is a bank's name, alone or followed by other words (WELLS FARGO BANK, BANCOMER SA)."""
+    text = ' '.join(re.sub(r'[^A-Z0-9& ]', ' ', normalized(text)).split())
+    return any(text == bank or text.startswith(bank + ' ') for bank in _BANK_NAMES) or bool(re.match(r'BANCO\b|BANK\b', text))
 
 
 def place_name(text):
@@ -161,7 +169,7 @@ def party_shaped(name):
     if _PAYMENT_CONCEPT.search(text):
         return False
     words = text.split()
-    if not words or words[0] in _ADDRESS_FIRST or words[-1] in _MX_STATES or place_name(text) or text in _BANK_NAMES:
+    if not words or words[0] in _ADDRESS_FIRST or words[-1] in _MX_STATES or place_name(text) or bank_name(text):
         return False
     legal = _LEGAL_FORM.search(text)
     if legal:
@@ -830,6 +838,9 @@ def card_line_merchant(raw, *, institution=None):
             return None
         if kept and (re.fullmatch(r'#?\d{2,}\S*|\d[\d\-]{6,}', token) or re.search(r'[\dSOIL]{3}-\d{3}-\d{4}', token)):
             evidence = True
+            # A street name and its number (INSURGENTES SUR 1602, MAIN ST 12) is an address, not the merchant.
+            if re.fullmatch(r'\d{1,5}', token) and kept[-1] in _ADDRESS_LAST:
+                return None
             break
         if kept and token in _STATES + ['OC'] and index == len(tokens) - 1:
             evidence = True
@@ -842,7 +853,7 @@ def card_line_merchant(raw, *, institution=None):
         kept.pop()
     label = _without_place(' '.join(kept)).strip(' *-#•·')
     if not evidence or re.fullmatch(r'[A-Z]{1,3}', label) or (len(kept) == 1 and '*' in kept[0]) or concept_or_place(label, place=False) or generic_words_only(label) \
-            or place_name(label) or label in _BANK_NAMES or re.search(r'\b(?:TO|FROM)\b', label):
+            or place_name(label) or bank_name(label) or re.search(r'\b(?:TO|FROM)\b', label):
         return None
     if len(re.sub(r'[^A-Z]', '', label)) < 3 or label in _PLACES or re.fullmatch(r'(?:COLUMBIA HEIGHTS|COLUMBIA HEIGH\S*)', label):
         return None

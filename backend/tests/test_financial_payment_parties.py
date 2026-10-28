@@ -485,7 +485,9 @@ class PhaseTwoPartyTests(unittest.TestCase):
         for description in ['MONTERREY NL 555-123-4567', 'CIUDAD DE MEXICO 5512345678 MX', 'GUADALAJARA JAL 3312345678',
                             'SAN FRANCISCO #1234', 'AV REFORMA 222 CDMX 5512345678', 'CALLE 5 DE MAYO 5512345678',
                             'FINIQUITO 555-123-4567', 'BBVA MEXICO 5551234567', 'BANK OF AMERICA 555-123-4567',
-                            'ZELLE TO JOHN EXAMPLE 5551234567']:
+                            'ZELLE TO JOHN EXAMPLE 5551234567', 'WELLS FARGO BANK 5551234567', 'CHASE BANK 5551234567',
+                            'BANCO SANTANDER MEXICO 5512345678', 'BANK OF AMERICA ATM 555-123-4567', 'BANCOMER SA 5512345678',
+                            'PASEO DE LA REFORMA 222 5512345678', 'INSURGENTES SUR 1602 5512345678']:
             with self.subTest(description=description):
                 self.assertIsNone(party(description, 'debit', 'credit_card'))
         self.assertEqual(party('STARBUCKS #12345 WASHINGTON DC', 'debit', 'credit_card')[0], 'Starbucks')
@@ -497,6 +499,9 @@ class PhaseTwoPartyTests(unittest.TestCase):
                 self.assertIsNone(party('T17 SPEI ENVIADO BANORTE 0012345 ' + tail))
         self.assertIsNone(party('TJ3 SITH1234567 VICTORIA DE DURANGO 12345 Ref. 1', 'credit'))
         self.assertIsNone(party('C61 COMPRA CHEQUE DE CAJA MIGUEL HIDALGO Ref. 123'))
+        for tail in ['SANTANDER SA', 'BANORTE SA DE CV', 'BANCO AZTECA SA', 'PASEO DE LA REFORMA SA DE CV']:
+            with self.subTest(tail=tail):
+                self.assertIsNone(party('T17 SPEI ENVIADO BANORTE 0012345 ' + tail))
         # A company word after a name still names the company (a truncated CORPORATIVO, FINANCIAL).
         self.assertEqual(party('TJ3 SITH1234567 EJEMPLO SERVICIOS CORPORAT1234567 Ref. 1234567', 'credit')[0], 'EJEMPLO SERVICIOS CORPORAT')
         # The card issuer named in a card payment is the payee.
@@ -515,6 +520,10 @@ class PhaseTwoPartyTests(unittest.TestCase):
             ('ATM WITHDRAWAL 12 JOHN EXAMPLE', 'debit', 'checking'),
             ('DEPOSIT SHARED BRANCH MOBILE DEPOSIT JOHN EXAMPLE TX', 'credit', 'checking'),
             ('PAYMENT TO JOHN TX', 'credit', 'credit_card'),
+            ('T17 SPEI ENVIADO BANORTE 0012345BIMBO123', 'debit', 'checking'), ('T17 SPEI ENVIADO BANORTE BIMBO0012345', 'debit', 'checking'),
+            ('T17 SPEI ENVIADO BANORTE 0012345REF1BIMBO', 'debit', 'checking'), ('T17 SPEI ENVIADO BANORTE 123ELEVEN', 'debit', 'checking'),
+            ('T17 SPEI ENVIADO BANAMEX 0012345 Ref. 0000001 002 EJEMPLO AUTO', 'debit', 'checking'),
+            ('CARGO TRANSFERENCIA ENLACE PAGO A JUAN EJEMPLO', 'debit', 'checking'),
         ]:
             with self.subTest(description=description):
                 self.assertIsNone(reason(description, direction, kind))
