@@ -34,6 +34,7 @@ import { hasRowDetails } from "../lib/queue-row-fields"
 import { QueueNoActivityConfirm } from "./QueueNoActivityConfirm"
 import { QueueAnswerOnce } from "./QueueAnswerOnce"
 import { LEFT_OUT_MESSAGE, QueueNotStatement } from "./QueueNotStatement"
+import { PageImageOffer, type PageImageOfferData } from "./PageImageOffer"
 import { QueuePreview } from "./QueuePreview"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import {
@@ -1503,8 +1504,19 @@ export function ItemFixes({
 }) {
   const guide = guidanceFor(entry, user, bucket)
   const { reason, proposal, answerHere, rowDetails } = itemFixPlan(entry, canEdit, bucket)
+  const offer = entry.vision_reading?.offer
   return (
     <>
+      {offer && entry.batch_id && (
+        <PageImageOffer
+          caseId={caseId}
+          batchId={entry.batch_id}
+          itemId={entry.id}
+          offer={offer as PageImageOfferData}
+          canEdit={canEdit}
+          onDone={() => onSaved(entry)}
+        />
+      )}
       {bucket === "waiting" && <StatementNeedsList entry={entry} />}
       <FilledMarks caseId={caseId} entry={entry} canEdit={canEdit} onSaved={onSaved} />
       {answerHere && (

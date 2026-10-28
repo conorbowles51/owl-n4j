@@ -64,7 +64,16 @@ const entry = z.object({
   why: z.array(z.string()).default([]),
   /** The latest outcome of reading its page images, in plain words (why it did not settle it, or why it was not read). */
   vision_reading: z
-    .object({ status: z.string().nullish(), reason: z.string().nullish(), message: z.string().default(""), line: z.string().default("") })
+    .object({
+      status: z.string().nullish(),
+      reason: z.string().nullish(),
+      message: z.string().default(""),
+      line: z.string().default(""),
+      /** Rule 2: a reading that checks out, beside the person's saved work (values as compared). */
+      offer: z
+        .object({ mine: z.record(z.string(), z.unknown()), offered: z.record(z.string(), z.unknown()) })
+        .nullish(),
+    })
     .nullish(),
   /** Who saved the held work (their own corrections or added rows), when that is what is held. */
   worked_by: z.object({ user_id: z.string(), name: z.string() }).nullish(),

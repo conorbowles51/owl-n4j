@@ -378,6 +378,38 @@ it("lists a statement the reader got nothing out of under the reader fix, with i
   expect(screen.getByRole("button", { name: "This isn't a statement" })).toBeVisible()
 })
 
+it("offers a reading from the page images beside the person's work, and saves it only on their click", async () => {
+  const mine = { holder: "Typed by hand", account_number: "1470015292431", institution: "Truist", currency: "USD",
+    period_start: "2024-01-12", period_end: "2024-02-12", opening_minor: null, closing_minor: "53117", payments: 0,
+    credits_minor: "0", debits_minor: "0" }
+  const offered = { ...mine, holder: "KENY V ALVARADO GOMEZ", opening_minor: "178270", payments: 41,
+    credits_minor: "469116", debits_minor: "594269" }
+  const withOffer = {
+    ...queue,
+    counts: { ...queue.counts, waiting: 1 },
+    items: [{ ...entries[1], vision_reading: { status: "offered", message: "A reading from the page images checks out.",
+      line: "Read from page images: A reading from the page images checks out.", offer: { mine, offered } } }],
+  }
+  const calls: string[] = []
+  vi.mocked(fetchAPI).mockImplementation(async (url: string, options?: unknown) => {
+    if ((options as { method?: string } | undefined)?.method === "POST") {
+      calls.push(url)
+      return { status: "attention" } as never
+    }
+    if (url.includes("/review/queue")) return withOffer as never
+    throw Error(`unexpected ${url}`)
+  })
+  mount("/cases/case/financial?view=statements&queue=1")
+  const panel = await screen.findByRole("region", { name: "Reading from the page images" })
+  expect(panel).toHaveTextContent("Typed by hand")
+  expect(panel).toHaveTextContent("KENY V ALVARADO GOMEZ")
+  expect(panel).toHaveTextContent("1,782.70 USD")
+  expect(calls).toEqual([])  // nothing is saved by showing it
+  fireEvent.click(screen.getByRole("button", { name: "Use this reading" }))
+  await waitFor(() => expect(calls).toHaveLength(1))
+  expect(calls[0]).toBe("/api/financial/statement-import/batches/b2/items/i2/page-image-offer/accept?case_id=case")
+})
+
 it("never counts files removed from Financial as couldn't read, and says what they are", async () => {
   const removed = {
     ...queue,

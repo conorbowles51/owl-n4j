@@ -625,6 +625,77 @@ class FailClosedTest(unittest.TestCase):
             self.assertEqual(vr.spent('other'), 0.0)
 
 
+
+class FirstStatementTest(unittest.TestCase):
+    """Rule 1 (Neil, 2026-10-27): the first statement of an account, no saved statement to confirm it."""
+    TEXT = dict(account_number='0123456789', holder='ACME SA DE CV', institution='BBVA MEXICO', currency='MXN',
+                period_start='2025-12-01', period_end='2025-12-31')
+
+    def _first(self, pages=None, knowledge=None, **text):
+        return _proved(_proposal(**dict(self.TEXT, **text)), knowledge=knowledge or CaseKnowledge(accounts=[]), pages=pages)
+
+    def _pages(self, **header):
+        pages = _balanced_pages()
+        pages[0][1]['sections'][0].update(header)
+        return pages
+
+    def test_full_number_holder_and_bank_agreeing_with_the_text_prove_it(self):
+        reading = self._first()
+        self.assertEqual(reading['account_basis'], 'page_image_header_matches_text')
+        self.assertEqual(reading['account_keys'], [])
+        self.assertEqual((reading['opening'], reading['closing'], len(reading['rows'])), (100000, 100000, 3))
+        # The bank spelled differently but naming the same bank is the same bank.
+        self.assertEqual(self._first(institution='BBVA')['account_basis'], 'page_image_header_matches_text')
+
+    def test_a_masked_or_partial_number_holds(self):
+        with self.assertRaisesRegex(vr.NotProved, 'no saved statement'):
+            self._first(account_number='******6789')
+        with self.assertRaisesRegex(vr.NotProved, 'no saved statement'):
+            self._first(pages=self._pages(account_number='XXXX6789'), account_number='XXXX6789')
+        with self.assertRaisesRegex(vr.NotProved, 'no saved statement'):
+            self._first(pages=self._pages(account_number='6789'), account_number='6789')
+
+    def test_every_header_value_must_be_read_by_both(self):
+        for field in ('holder', 'institution'):
+            with self.subTest(images_without=field), self.assertRaisesRegex(vr.NotProved, 'no saved statement'):
+                self._first(pages=self._pages(**{field: ''}))
+            with self.subTest(text_without=field), self.assertRaisesRegex(vr.NotProved, 'no saved statement'):
+                self._first(**{field: ''})
+        with self.assertRaisesRegex(vr.NotProved, 'no saved statement'):
+            self._first(account_number='')  # only the images print the number
+
+    def test_disagreeing_values_hold(self):
+        with self.assertRaisesRegex(vr.NotProved, 'holder'):
+            self._first(holder='SOMEONE ELSE')
+        with self.assertRaisesRegex(vr.NotProved, 'bank'):
+            self._first(institution='SANTANDER')
+
+    def test_the_currency_must_be_printed(self):
+        with self.assertRaisesRegex(vr.NotProved, 'currency is not printed'):
+            self._first(pages=self._pages(currency=''), currency='')
+
+    def test_a_saved_account_with_the_number_at_another_bank_holds(self):
+        other = _knowledge(institution='SANTANDER')
+        with self.assertRaisesRegex(vr.NotProved, 'no saved statement'):
+            self._first(knowledge=other)
+
+    def test_every_other_proof_is_unchanged(self):
+        pages = _balanced_pages()
+        pages[1][1]['sections'][0]['closing_balance'] = '1000.01'
+        with self.assertRaisesRegex(vr.NotProved, 'did not balance'):
+            self._first(pages=pages)
+        with self.assertRaisesRegex(vr.NotProved, 'period'):
+            self._first(period_end='2025-12-30')
+
+    def test_switch_off_holds_and_the_proof_version_counts_it(self):
+        with mock.patch.object(vr, 'FIRST_STATEMENT', False), self.assertRaisesRegex(vr.NotProved, 'no saved statement'):
+            self._first()
+        self.assertTrue(vr.FIRST_STATEMENT)
+        self.assertEqual(vr.PROOF_VERSION, 14)  # 13 before rule 1: stored not-proved readings are judged again once
+
+    def test_a_known_account_is_judged_as_before(self):
+        self.assertNotIn('account_basis', _proved(_proposal(**self.TEXT)))
+
 if __name__ == '__main__':
     unittest.main()
 

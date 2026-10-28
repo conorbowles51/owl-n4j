@@ -224,6 +224,129 @@ class ReaderReleaseTests(TestCase):
                                                   knowledge_for=lambda db, case_id: knowledge)
         return batch, held, outcome
 
+    def _worked_on(self):
+        """A held statement a person has worked on (their draft: the holder corrected by hand)."""
+        from services.financial import vision_reader
+        with patch.object(vision_reader, 'ENABLED', True):
+            batch = self.prepare_with_old_reader()
+        held = self.item(batch)
+        with self.f.SessionLocal() as db:
+            proposal = old_reader(db, case_id=self.f.case.id, evidence_file_id=held.file_id,
+                                  currency=held.summary.get('currency') or None, statement_id=held.statement_key or None)
+            draft = deepcopy(batches.initial_request(proposal))
+            draft['holder'] = 'Holder as typed by the investigator'
+            record = db.get(Item, held.id)
+            record.review_request = draft
+            db.commit()
+        return batch, draft
+
+    def _patched_readers(self):
+        import services.financial.statement_import as statement_import
+        from contextlib import ExitStack
+        stack = ExitStack()
+        for target in (patch.object(batches, 'read_statement_import', old_reader),
+                       patch.object(statement_import, 'read_statement_import', old_reader),
+                       patch('services.financial.field_proposals.MIN_MASKED_DIGITS', 3)):
+            stack.enter_context(target)
+        return stack
+
+    def _evidence(self, file_id):
+        from postgres.models.evidence import EvidenceFile
+        with self.f.SessionLocal() as db:
+            return deepcopy(db.get(EvidenceFile, file_id).metadata_ or {})
+
+    def test_a_statement_a_person_worked_on_gets_an_offer_and_nothing_of_theirs_changes(self):
+        self._offered()
+
+    def _offered(self):
+        from services.financial import vision_reader
+        batch, draft = self._worked_on()
+        before = self.item(batch)
+        metadata_before = self._evidence(before.file_id)
+        _, held, outcome = self._read_from_images(0, batch=batch)
+        self.assertEqual(outcome['status'], 'offered', msg=outcome.get('message'))
+        after = self.item(batch)
+        self.assertEqual(after.status, 'attention')
+        self.assertEqual(after.review_request, draft)  # their draft untouched
+        metadata = self._evidence(held.file_id)
+        self.assertEqual(metadata.get('financial_review_progress'), metadata_before.get('financial_review_progress'))
+        self.assertEqual(metadata.get('financial_review_history'), metadata_before.get('financial_review_history'))
+        shown = after.summary['vision_reading']
+        self.assertEqual(shown['status'], 'offered')
+        self.assertEqual(shown['offer']['mine']['holder'], 'Holder as typed by the investigator')
+        self.assertNotEqual(shown['offer']['offered']['holder'], 'Holder as typed by the investigator')
+        self.assertIn('nothing is changed unless you use it', shown['line'])
+        stored = metadata[vision_reader.METADATA_KEY][held.statement_key or '']
+        self.assertEqual(stored['offer']['request']['holder'], shown['offer']['offered']['holder'])
+        return batch, held, stored
+
+    def test_use_this_reading_saves_exactly_the_offered_reading_as_the_person(self):
+        from services.financial import vision_reader
+        from services.financial.decisions import Actor
+        from services.financial.statement_progress import review_progress
+        from postgres.models.evidence import EvidenceFile
+        batch, held, stored = self._offered()
+        person = Actor(name='Alex Investigator', email='alex@example.org', user_id=uuid4())
+        with self._patched_readers(), self.f.SessionLocal() as db:
+            vision_reader.accept_offer(db, case_id=self.f.case.id, batch_id=batch, item_id=held.id, actor=person)
+        after = self.item(batch)
+        from services.financial.statement_import import StatementReviewDraft
+        offered = StatementReviewDraft.model_validate(stored['offer']['request']).model_dump(mode='json')
+        self.assertEqual(after.review_request, offered)
+        with self.f.SessionLocal() as db:
+            file = db.get(EvidenceFile, held.file_id)
+            progress = review_progress(file, held.statement_key)
+            self.assertEqual(progress['request'], offered)
+            self.assertEqual(progress['saved_by']['name'], 'Alex Investigator')
+            record = file.metadata_[vision_reader.METADATA_KEY][held.statement_key or '']
+            self.assertEqual((record['status'], record['decided_by']['name']), ('offer_accepted', 'Alex Investigator'))
+            history = vision_reader.outcomes(file, held.statement_key)
+            self.assertEqual(history[-1]['status'], 'offer_accepted')
+
+    def test_keep_mine_leaves_their_work_and_sets_the_offer_aside(self):
+        from services.financial import vision_reader
+        from services.financial.decisions import Actor
+        batch, held, stored = self._offered()
+        draft = self.item(batch).review_request
+        person = Actor(name='Alex Investigator', email='alex@example.org', user_id=uuid4())
+        with self.f.SessionLocal() as db:
+            vision_reader.decline_offer(db, case_id=self.f.case.id, batch_id=batch, item_id=held.id, actor=person)
+        after = self.item(batch)
+        self.assertEqual(after.review_request, draft)
+        self.assertEqual(after.summary['vision_reading']['status'], 'offer_declined')
+        with self.f.SessionLocal() as db:
+            self.assertNotIn(held.id, vision_reader.pending(db))  # decided: not read or offered again
+
+    def test_an_offer_on_work_changed_since_is_refused_and_nothing_saved(self):
+        from services.financial import vision_reader
+        from services.financial.decisions import Actor
+        from services.financial.pdf_candidates import PdfMappingError
+        batch, held, stored = self._offered()
+        with self.f.SessionLocal() as db:
+            record = db.get(Item, held.id)
+            changed = dict(deepcopy(record.review_request), holder='Typed again later')
+            record.review_request = changed
+            db.commit()
+        person = Actor(name='Alex Investigator', email='alex@example.org', user_id=uuid4())
+        with self._patched_readers(), self.f.SessionLocal() as db, self.assertRaises(PdfMappingError) as refused:
+            vision_reader.accept_offer(db, case_id=self.f.case.id, batch_id=batch, item_id=held.id, actor=person)
+        self.assertEqual(refused.exception.status_code, 409)
+        after = self.item(batch)
+        self.assertEqual(after.review_request, changed)
+        self.assertEqual(after.summary['vision_reading']['status'], 'stale')
+        with self.f.SessionLocal() as db, self.assertRaises(PdfMappingError):
+            vision_reader.accept_offer(db, case_id=self.f.case.id, batch_id=batch, item_id=held.id, actor=person)
+
+    def test_offers_off_reads_nothing_of_a_person_s_work(self):
+        from services.financial import vision_reader
+        batch, draft = self._worked_on()
+        read = Mock()
+        with patch.object(vision_reader, 'OFFERS', False):
+            _, held, outcome = self._read_from_images(0, read=read, batch=batch)
+        self.assertEqual(outcome['reason'], 'investigator_work')
+        read.assert_not_called()
+        self.assertEqual(self.item(batch).review_request, draft)
+
     def test_a_held_statement_proved_from_its_page_images_is_saved_as_a_system_review(self):
         from services.financial import vision_reader
         from services.financial.statement_progress import review_progress

@@ -183,9 +183,22 @@ TEXT_MISREADS = _switch('LOUPE_FINANCIAL_VISION_TEXT_MISREADS')
 # closing date and days (CLOSING_DAYS), a row dated up to POSTING_DAYS before the start is a posting of this cycle.
 # Off: such a row is 'dated outside the statement period'. Rides on TEXT_MISREADS.
 POSTING_DAYS = 5
+# The first statement of an account (Neil, 2026-10-27, rule 1): no saved statement of the case confirms the account,
+# so every reading of it was refused ("This account has no saved statement in the case to confirm the page-image
+# reading against"; OPDMD66 Truist: 2 statements) and no first statement could ever be accepted. The header is then
+# accepted when the page images and the text reading of the same file agree on all three: the FULL account number
+# (both printed in full, no mask, the same digits), the holder (same_holder) and the bank (same_institution); the
+# currency must be printed. Every other proof is unchanged (balances to the cent, printed totals and counts, pages,
+# period). Recorded with the basis 'page_image_header_matches_text'. Off: such a statement stays held as before.
+FIRST_STATEMENT = _switch('LOUPE_FINANCIAL_VISION_FIRST_STATEMENT')
+FIRST_STATEMENT_BASIS = 'page_image_header_matches_text'
+FIRST_STATEMENT_MIN_DIGITS = 6
+FIRST_STATEMENT_NOTE = (' The first statement of this account in the case: its full account number, holder and bank on the '
+                        'page images agree with the text of the same file.')
 PROOF_VERSION = 1
 for _switched in (SPLIT_SPELLINGS, SECTION_NUMBER, PRINTED_COUNTS, QUIET_PRINTED, CLABE_ACCOUNT, SECTION_BY_TEXT,
-                  SIGNED_DEBITS, DATES_FROM_IMAGE, OPENING_FROM_PREVIOUS, IMAGE_TOTALS, CLOSING_DAYS, TEXT_MISREADS):
+                  SIGNED_DEBITS, DATES_FROM_IMAGE, OPENING_FROM_PREVIOUS, IMAGE_TOTALS, CLOSING_DAYS, TEXT_MISREADS,
+                  FIRST_STATEMENT):
     # Each switch on top of the one before; with one off, the rules are the version before it.
     if not _switched:
         break
@@ -210,8 +223,15 @@ MAX_FAILURES = 3
 RESERVE_TOKENS_PER_IMAGE = 1600
 RESERVE_OUTPUT_TOKENS = 16000
 GAVE_UP = 'The page images could not be read after several tries; the statement stays held.'
+# Statements a person has worked on (Neil, 2026-10-27, rule 2): read from their page images too (the same cost cap).
+# A reading that proves is stored as an OFFER beside their work ('offered'), never saved, merged or imported: the queue
+# and the statement show it side by side with their saved work, and only their click saves it (accept_offer: their own
+# save, save_review, as them, against the work the offer was compared with; their earlier review stays in its history).
+# "Keep mine" records the decline ('offer_declined'); their work is never changed. Off: such a statement is not read.
+OFFERS = _switch('LOUPE_FINANCIAL_VISION_OFFERS')
+OFFER_MESSAGE = 'A reading from the page images checks out.'
 # Outcomes not attempted again for the same reading (failed, budget and unavailable are retried later).
-FINAL = ('proved', 'not_proved', 'stale')
+FINAL = ('proved', 'not_proved', 'stale', 'offered', 'offer_accepted', 'offer_declined')
 # USD per million tokens (input, output). Unknown models use the most expensive line.
 # As Loupe's own pricing table (ai_pricing_rates, migration 20260722) for the 5.6 models.
 PRICES = {'gpt-4o': (2.50, 10.00), 'gpt-4.1': (2.00, 8.00), 'gpt-5': (1.25, 10.00),
@@ -756,6 +776,24 @@ def one_account_spelled_apart(candidates, account_text, institution, holder):
     return candidates, {'account', 'institution', 'holder'}
 
 
+def first_statement_header(rule, header):
+    """(FIRST_STATEMENT) The page images and the text reading of the same file agree on the full account number,
+    the holder and the bank: each read by both, the number printed in full by both (no mask, at least
+    FIRST_STATEMENT_MIN_DIGITS digits, the same digits), the holder the same person and the bank the same bank."""
+    from services.financial import field_proposals as fp
+    if not FIRST_STATEMENT:
+        return False
+    numbers = [fp.account_identity(rule['account_number']), fp.account_identity(header['account_number'])]
+    if any(masked or len(digits or '') < FIRST_STATEMENT_MIN_DIGITS for digits, masked in numbers):
+        return False
+    if numbers[0][0] != numbers[1][0] or _digits(rule['account_number']) != _digits(header['account_number']):
+        return False
+    if not (rule['holder'] and header['holder'] and fp.same_holder(rule['holder'], header['holder'])):
+        return False
+    return bool(rule['institution'] and header['institution']
+                and fp.same_institution(rule['institution'], header['institution']))
+
+
 def prove(proposal, section, knowledge):
     """The proved reading {details, opening, closing, rows, pages} or NotProved with the reason."""
     from services.financial import field_proposals as fp
@@ -799,9 +837,17 @@ def prove(proposal, section, knowledge):
     candidates, matched = fp.matching_accounts(dict(account_number=account_text, institution=institution_printed), knowledge)
     if matched == {'ambiguous'}:
         candidates, matched = one_account_spelled_apart(candidates, account_text, institution_printed, holder_printed)
-    if not candidates or 'ambiguous' in matched or 'account' not in matched:
+    first_statement = False
+    if not candidates and not matched & {'ambiguous'}:
+        # Truly the first: no saved account of the case carries this number at all (at any bank, full or masked).
+        identity = fp.account_identity(account_text)
+        first_statement = first_statement_header(rule, header) and not any(
+            fp.account_match(identity, (known.digits, known.masked)) for known in getattr(knowledge, 'accounts', []) or [])
+        if not first_statement:
+            raise NotProved('This account has no saved statement in the case to confirm the page-image reading against.')
+    elif not candidates or 'ambiguous' in matched or 'account' not in matched:
         raise NotProved('This account has no saved statement in the case to confirm the page-image reading against.')
-    partial = 'masked' in matched or not rule['account_number']
+    partial = not first_statement and ('masked' in matched or not rule['account_number'])
     if partial and not holder_printed:
         # Only some digits agree, or only the page images print the number: another account at the
         # bank could end the same way, so the printed holder must also agree (checked below).
@@ -813,10 +859,12 @@ def prove(proposal, section, knowledge):
     printed = {c for c in (rule['currency'], header['currency']) if c}
     if len(printed) > 1:
         raise NotProved('The currency read from the page images differs from the one read from the text.')
+    if first_statement and not printed:
+        raise NotProved('The currency is not printed, and this account has no saved statement to take it from.')
     if printed:
         currency = next(iter(printed))
         candidates = [k for k in candidates if currencies(k) == {currency}]
-        if not candidates:
+        if not candidates and not first_statement:
             raise NotProved('The currency differs from the saved statements of this account.')
     else:
         known_currencies = set().union(*(currencies(k) for k in candidates))
@@ -892,6 +940,7 @@ def prove(proposal, section, knowledge):
     charges = charge_totals(proposal, section, rows, exponent) if CLOSING_DAYS else {}
     return dict(account_keys=[k.key for k in candidates], currency=currency, holder=holder, institution=institution,
                 account_number=account_text, charge_totals=charges,
+                **(dict(account_basis=FIRST_STATEMENT_BASIS) if first_statement else {}),
                 period_start=start, period_end=end, opening=opening, closing=closing, rows=rows,
                 opening_page=section['balance_pages'].get('opening_balance') if previous_end is None else rows[0]['page'],
                 closing_page=section['balance_pages'].get('closing_balance'),
@@ -1500,9 +1549,10 @@ def _store(db, file_id, key, record, claim=None, rejudge=None, owner=None):
 
 def _note(item, record):
     """The outcome beside the held statement, shown in the queue (summary key survives readiness refreshes)."""
+    offer = record.get('offer') if isinstance(record.get('offer'), dict) else None
     item.summary = {**(item.summary or {}), 'vision_reading': dict(
         {k: record.get(k) for k in ('status', 'reason', 'message', 'pages', 'cost_usd', 'model', 'at')},
-        line=outcome_line(record))}
+        line=outcome_line(record), **({'offer': {k: offer.get(k) for k in ('mine', 'offered')}} if offer else {}))}
 
 
 # ---------------------------------------------------------------------------
@@ -1546,7 +1596,9 @@ def outcome_line(record):
     if status == 'not_proved':
         return 'Read from page images: not accepted, because ' + (message[:1].lower() + message[1:] if message else 'it did not prove.')
     if status == 'offered':
-        return 'Read from page images: ' + (message or 'a reading that checks out is offered beside your saved work.')
+        return 'Read from page images: ' + (message or OFFER_MESSAGE) + ' It is offered beside your saved work; nothing is changed unless you use it.'
+    if status in ('offer_accepted', 'offer_declined'):
+        return 'Read from page images: ' + message
     if status == 'failed':
         return 'Not read from page images: ' + (message or 'the reading failed; it is tried again later.')
     if status == 'budget':
@@ -1559,7 +1611,7 @@ def outcome_line(record):
 
 def _history_entry(record):
     entry = {k: record.get(k) for k in ('at', 'status', 'reason', 'message', 'model', 'cost_usd', 'pages', 'revision',
-                                        'proof', 'rejudged', 'basis') if record.get(k) not in (None, '', [])}
+                                        'proof', 'rejudged', 'basis', 'account_basis') if record.get(k) not in (None, '', [])}
     entry['line'] = outcome_line(record)
     return entry
 
@@ -1720,6 +1772,11 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
             why = eligible(item, file, proposal)
             if force and why in ('not_held', 'saved', 'investigator_work'):
                 why = None  # accuracy sampling of saved statements only (never applied)
+            offer = False
+            if why == 'investigator_work' and OFFERS and not force:
+                # Their work stays theirs: a reading that proves is only offered to them (_offer), never saved.
+                why, offer = None, True
+                record['offer'] = True
             if why:
                 return dict(record, reason=why)
             if not force:
@@ -1841,9 +1898,14 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
                     db.rollback()
                     return record
                 db.rollback()
+                if offer:
+                    return _offer(factory, item_id, file_id, key, record, request)
                 return _save(factory, item_id, case_id, file_id, key, record, request)
             record.update(status='proved', message='Read from the page images; the period reconciles exactly.',
                           rows=len(reading['rows']), request=request)
+            if reading.get('account_basis'):
+                # The first statement of its account (FIRST_STATEMENT): what admitted its header, recorded with it.
+                record.update(account_basis=reading['account_basis'], message=record['message'] + FIRST_STATEMENT_NOTE)
             if controls:
                 record['printed_controls'] = controls
             if reading.get('charge_totals') and CLOSING_DAYS:
@@ -1852,6 +1914,8 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
                 db.rollback()
                 return record
             db.rollback()
+        if offer:
+            return _offer(factory, item_id, file_id, key, record, request)
         return _save(factory, item_id, case_id, file_id, key, record, request)
     except Exception as error:  # noqa: BLE001 - fail closed: the statement stays held
         log.exception('Page-image reading failed; the statement stays held')
@@ -1984,6 +2048,135 @@ def _save(factory, item_id, case_id, file_id, key, record, request):
     log.info('Page-image reading proved statement %s of file %s (%s rows, $%.4f); saved as System review',
              str(item_id)[:8], str(file_id)[:8], record.get('rows'), record.get('cost_usd') or 0)
     return stored
+
+
+# ---------------------------------------------------------------------------
+# An offer beside a person's work (rule 2)
+# ---------------------------------------------------------------------------
+
+def _minor_text(value):
+    return None if value in (None, '') else str(value)
+
+
+def offer_values(request):
+    """The values a person compares: header, balances, payments read and their totals (minor units as text)."""
+    request = request or {}
+    rows = [r for r in request.get('rows') or [] if isinstance(r, dict)]
+    balances = {}
+    for row in rows:
+        role = str(row.get('description') or '').strip().lower()
+        if row.get('excluded') and role in ('opening balance', 'closing balance') and row.get('balance_minor') not in (None, ''):
+            balances.setdefault(role.split()[0], str(row['balance_minor']))
+    payments = [r for r in rows if not r.get('excluded') and str(r.get('amount_minor') or '0').strip('0-')]
+    total = lambda direction: str(sum(int(r['amount_minor']) for r in payments if r.get('direction') == direction))
+    return dict(holder=request.get('holder') or '', account_number=request.get('account_number') or '',
+                institution=request.get('institution') or '', currency=request.get('currency') or '',
+                period_start=request.get('period_start') or '', period_end=request.get('period_end') or '',
+                opening_minor=balances.get('opening'), closing_minor=balances.get('closing'), payments=len(payments),
+                credits_minor=total('credit'), debits_minor=total('debit'))
+
+
+def _their_work(item, file, key):
+    """(their current review request, its revision token): the batch draft, else their saved review."""
+    from services.financial.effective_statement_review import batch_review_revision
+    from services.financial.statement_progress import review_progress
+    saved = review_progress(file, key) if file is not None else None
+    request = item.review_request or (saved or {}).get('request') or {}
+    return request, batch_review_revision(item.review_request, saved)
+
+
+def _offer(factory, item_id, file_id, key, record, request):
+    """Store a proving reading of a statement a person has worked on as an offer beside their work. Nothing of theirs
+    is written: their draft, saved review and the statement stay exactly as they are."""
+    from postgres.models.evidence import EvidenceFile
+    from postgres.models.financial_import_batches import FinancialImportBatchItem as Item
+    with factory() as db:
+        item = db.scalar(select(Item).where(Item.id == item_id).with_for_update())
+        file = db.get(EvidenceFile, file_id)
+        if item is None or item.status != 'attention':
+            db.rollback()
+            return _finish(factory, item_id, file_id, key, dict(record, status='stale',
+                message='The statement changed while its page images were read.'), True)
+        theirs, work_revision = _their_work(item, file, key)
+        offered = offer_values(request)
+        stored = dict({k: v for k, v in record.items() if k != 'request'}, status='offered', message=OFFER_MESSAGE,
+                      offer=dict(request=request, work_revision=work_revision, mine=offer_values(theirs), offered=offered))
+        _store(db, file_id, key, stored)
+        _note(item, stored)
+        db.commit()
+    log.info('Page-image reading of statement %s of file %s (a person\'s work) checks out: offered beside their work '
+             '(%s rows, $%.4f); nothing saved', str(item_id)[:8], str(file_id)[:8], record.get('rows'), record.get('cost_usd') or 0)
+    return stored
+
+
+def _offer_target(session, case_id, batch_id, item_id):
+    from postgres.models.evidence import EvidenceFile
+    from postgres.models.financial_import_batches import (FinancialImportBatch as Batch,
+                                                          FinancialImportBatchItem as Item)
+    from services.financial.pdf_candidates import PdfMappingError
+    item = session.scalar(select(Item).where(Item.id == item_id, Item.batch_id == batch_id))
+    batch = session.get(Batch, batch_id)
+    if item is None or batch is None or str(batch.case_id) != str(case_id):
+        raise PdfMappingError('Statement not found in this batch.', 404)
+    file = session.get(EvidenceFile, item.file_id)
+    stored = _stored(file, item.statement_key)
+    if not stored or stored.get('status') != 'offered' or not (stored.get('offer') or {}).get('request'):
+        raise PdfMappingError('There is no page-image reading on offer for this statement.', 409)
+    return item, file, stored
+
+
+def _offer_decided(session, item, file_id, stored, status, actor, message):
+    """Record the person's answer to an offer: on the reading record, in the outcome history, beside the statement."""
+    from postgres.models.financial_import_batches import FinancialImportBatchItem as Item
+    who = dict(name=getattr(actor, 'name', None), email=getattr(actor, 'email', None),
+               user_id=str(getattr(actor, 'user_id', '') or ''))
+    record = dict(stored, status=status, message=message, decided_by=who, at=datetime.now(timezone.utc).isoformat())
+    _store(session, file_id, item.statement_key or '', record)
+    session.flush()  # the outcome history reads the file again under its lock
+    _record_outcome(session, file_id, item.statement_key or '', record)
+    current = session.scalar(select(Item).where(Item.id == item.id).with_for_update())
+    if current is not None:
+        _note(current, record)
+    session.commit()
+    log.info('Page-image offer for statement %s of file %s: %s by %s', str(item.id)[:8], str(file_id)[:8], status,
+             who.get('name') or who.get('email'))
+    return record
+
+
+def accept_offer(session, *, case_id, batch_id, item_id, actor):
+    """'Use this reading': the offered reading saved through the person's own save (save_review, as them), checked
+    against the work the offer was compared with, so a change to their work since refuses (409) instead of being
+    overwritten. Their earlier review stays in the file's review history. Returns save_review's result."""
+    from services.financial.import_batches import save_review
+    from services.financial.statement_import import StatementReviewDraft
+    from services.financial.pdf_candidates import PdfMappingError
+    item, file, stored = _offer_target(session, case_id, batch_id, item_id)
+    offer = stored['offer']
+    file_id = file.id
+    try:
+        result = save_review(session, case_id=case_id, batch_id=batch_id, item_id=item_id,
+                             request=StatementReviewDraft.model_validate(offer['request']),
+                             expected_review_revision=offer['work_revision'], actor=actor)
+    except PdfMappingError as error:
+        session.rollback()
+        if error.status_code == 409:
+            # Their work or the reading changed since the offer was made: nothing was saved; the offer is withdrawn.
+            item, file, stored = _offer_target(session, case_id, batch_id, item_id)
+            _offer_decided(session, item, file_id, stored, 'stale', actor,
+                           'The statement or your work on it changed after this reading was offered, so it was not used. '
+                           'Nothing was changed.')
+        raise
+    _offer_decided(session, item, file_id, stored, 'offer_accepted', actor,
+                   'The reading from the page images was used, by your choice; your earlier review is kept in its history.')
+    return result
+
+
+def decline_offer(session, *, case_id, batch_id, item_id, actor):
+    """'Keep mine': the offer is set aside; their work is not touched."""
+    item, file, stored = _offer_target(session, case_id, batch_id, item_id)
+    _offer_decided(session, item, file.id, stored, 'offer_declined', actor,
+                   'You kept your own work; the reading from the page images was set aside.')
+    return dict(status='offer_declined')
 
 
 # ---------------------------------------------------------------------------
@@ -2192,9 +2385,9 @@ def sweep(factory, resolve_path, *, budget_seconds=SWEEP_SECONDS):
         if outcome.get('status') in ('proved', 'not_proved', 'failed', 'unavailable', 'stale', 'budget') or reason:
             # Not looked at again by this process for a while unless its reading changes.
             _skip_until[item_id] = now + (3600 if outcome.get('status') in ('failed', 'unavailable', 'budget') else 6 * 3600)
-        if outcome.get('status') in ('proved', 'not_proved', 'failed'):
+        if outcome.get('status') in ('proved', 'not_proved', 'failed', 'offered'):
             report['read'] += 1
-            report[outcome['status']] += 1
+            report[outcome['status']] = report.get(outcome['status'], 0) + 1
             if not outcome.get('rejudged'):
                 report['cost_usd'] = round(report['cost_usd'] + (outcome.get('cost_usd') or 0), 6)
         elif reason or outcome.get('status') in ('budget', 'stale', 'unavailable'):

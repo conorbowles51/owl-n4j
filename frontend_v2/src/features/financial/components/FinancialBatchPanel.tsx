@@ -28,6 +28,7 @@ import { randomRequestId } from "@/lib/browser-crypto"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { useStatementWorkspace } from "../stores/statement-workspace"
 import { useFinancialAccess } from "../hooks/use-financial-access"
+import { PageImageOffer, type PageImageOfferData } from "./PageImageOffer"
 import { StatementImportPanel, type StatementImportReceipt } from "./StatementImportPanel"
 import { serverStatementDraft } from "../lib/statement-review-draft"
 import { BatchReviewContext } from "../lib/batch-review-context"
@@ -90,6 +91,14 @@ const itemSchema = z.object({
   duplicate_disposition: statementDuplicateDisposition.nullish(),
   balance_status: z.string().optional(),
   balance_exception: z.boolean().optional(),
+  /** The latest page-image outcome; with rule 2, a reading that checks out offered beside the person's work. */
+  vision_reading: z
+    .object({
+      status: z.string().nullish(),
+      line: z.string().nullish(),
+      offer: z.object({ mine: z.record(z.string(), z.unknown()), offered: z.record(z.string(), z.unknown()) }).nullish(),
+    })
+    .nullish(),
   source_id: z.string(),
   review_revision: z.string().optional(),
   disposition_revision: z.string().optional(),
@@ -1777,6 +1786,7 @@ export function BatchStatementReview({
     refetchOnWindowFocus: false,
   })
   const item = query.data
+  const { canEdit: reviewCanEdit } = useFinancialAccess()
   const [savedBalances, setSavedBalances] = useState(false)
   const [selected, setSelected] = useState(false)
   useEffect(() => {
@@ -2016,6 +2026,17 @@ export function BatchStatementReview({
                 item.status !== "imported" &&
                 " Your previous review draft is saved."}
             </p>
+            {item.vision_reading?.line && <p className="text-xs text-muted-foreground">{item.vision_reading.line}</p>}
+            {item.vision_reading?.offer && item.status === "attention" && (
+              <PageImageOffer
+                caseId={caseId}
+                batchId={batchId}
+                itemId={itemId}
+                offer={item.vision_reading.offer as PageImageOfferData}
+                canEdit={reviewCanEdit}
+                onDone={() => void client.invalidateQueries({ queryKey: ["financial-batch-item", caseId, batchId, itemId] })}
+              />
+            )}
           </div>
         )}
         {queue ? (
