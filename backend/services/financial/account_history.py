@@ -54,6 +54,8 @@ def _statement_reading(session, document, period, current):
             undated += 1; continue
         entry = activity.setdefault(day.isoformat(), dict(date=day.isoformat(), count=0, credit_minor=0, debit_minor=0))
         entry['count'] += 1; entry[tx.direction + '_minor'] += tx.amount_minor
+    # Only what the history shows is kept (a full assessment also carries every check and calculation).
+    admission = {key: admission[key] for key in ('can_import', 'assessment_current', 'no_activity_confirmed', 'blockers') if key in admission}
     return admission, convention, len(admitted), activity, undated
 
 
