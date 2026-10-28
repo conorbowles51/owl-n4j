@@ -76,7 +76,12 @@ _BANK_NAMES = frozenset(_MX_BANKS) | frozenset(' '.join(b.split()) for b in """B
 def bank_name(text):
     """True when the text is a bank's name, alone or followed by other words (WELLS FARGO BANK, BANCOMER SA)."""
     text = ' '.join(re.sub(r'[^A-Z0-9& ]', ' ', normalized(text)).split())
-    return any(text == bank or text.startswith(bank + ' ') for bank in _BANK_NAMES) or bool(re.match(r'BANCO\b|BANK\b', text))
+    text = re.sub(r'^THE ', '', text)
+    # A bank followed by bank wording or a legal form (WELLS FARGO BANK, BANCOMER SA); a merchant that only opens
+    # with a bank's word (CITI TRENDS) is not a bank.
+    return any(text == bank or re.match(re.escape(bank) + r' (?:BANK|BANCO|MEXICO|ATM|NA|N A|CU|FCU|FEDERAL|CREDIT|INVERLAT|BANCOMER|IXE|'
+                                                       r'S ?A|SA DE CV|INSTITUCION|GRUPO FINANCIERO|GF)\b', text) for bank in _BANK_NAMES) \
+        or bool(re.match(r'BANCO\b|BANK\b', text))
 
 
 def place_name(text):
@@ -175,7 +180,8 @@ def party_shaped(name):
     if legal:
         # The words before the legal form must hold a name, not only a concept, period or place (BONO SC, CDMX AC).
         before = re.sub(r'[^A-Z0-9& ]', ' ', text[:legal.start()]).split()
-        return bool(before) and not all(w in _NOT_NAME_WORDS for w in before) and not place_name(' '.join(before))
+        return bool(before) and not all(w in _NOT_NAME_WORDS for w in before) and not place_name(' '.join(before)) \
+            and not (before[-1] in _ADDRESS_LAST or re.fullmatch(r'\d{1,5}', before[-1]))
     company = _COMPANY_WORDS.search(text)
     if company:
         # A company word names a company after a name (TOYOTA FINANCIAL) or before one (GRUPO BIMBO), not as the
@@ -836,10 +842,11 @@ def card_line_merchant(raw, *, institution=None):
             break
         if re.search(r'[A-Z]{2,}\d{3,}[A-Z]', token) or (not kept and re.search(r'\d', token)):
             return None
-        if kept and (re.fullmatch(r'#?\d{2,}\S*|\d[\d\-]{6,}', token) or re.search(r'[\dSOIL]{3}-\d{3}-\d{4}', token)):
+        if kept and (re.fullmatch(r'#?\d{2,}\S*|\d[\d\-]{6,}|\d{1,5}-?[A-Z]', token) or re.search(r'[\dSOIL]{3}-\d{3}-\d{4}', token)):
             evidence = True
             # A street name and its number (INSURGENTES SUR 1602, MAIN ST 12) is an address, not the merchant.
-            if re.fullmatch(r'\d{1,5}', token) and kept[-1] in _ADDRESS_LAST:
+            street = [w for w in kept if w not in ('NO', 'NUM', 'NUMERO', 'NO.', '#')]
+            if re.fullmatch(r'#?\d{1,5}(?:-?[A-Z])?', token) and street and street[-1] in _ADDRESS_LAST:
                 return None
             break
         if kept and token in _STATES + ['OC'] and index == len(tokens) - 1:
