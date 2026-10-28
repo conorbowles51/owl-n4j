@@ -114,6 +114,8 @@ def ledger_summary(session, *, case_id, account_id=None, start_date=None, end_da
         from services.financial.transaction_query import account_label_index
         parties = {a['id']: a for a in _account_party_state(session, case_id=case_id)['accounts']}
         account_labels = account_label_index(parties)
+        from services.financial.payment_party_matches import case_party_matches
+        party_matches = case_party_matches(session, case_id)
         # Stored categories in bounded queries, not one query per payment in to_view.
         from services.financial.payment_categories import attach_stored
         attach_stored(session, [row for row, _, _ in pairs])
@@ -135,7 +137,7 @@ def ledger_summary(session, *, case_id, account_id=None, start_date=None, end_da
                 account=dict(id=str(account.id), account_type=account.account_type),
                 source=dict(id=str(document.id), proof_class=source_class.value, status=source_status.value))
                 if totals_only_readings else dict(row=to_view(row, account=row.account, account_parties=parties,
-                canonical_account_labels=account_labels).to_json(), included=reason is None,
+                canonical_account_labels=account_labels, party_matches=party_matches).to_json(), included=reason is None,
                 exclusion_reason=reason, provenance=_json_copy(row.provenance),
                 investigation_label_history=_json_copy((row.metadata_ or {}).get("investigation_label_history", [])),
                 account=dict(id=str(account.id), account_type=account.account_type, label=(account.metadata_ or {}).get('display_label') or account.identifier_as_printed or account.holder_name),

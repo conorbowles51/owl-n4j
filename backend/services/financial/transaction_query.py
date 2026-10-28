@@ -231,7 +231,7 @@ def account_label_index(accounts):
         for identifier, account in accounts.items()}
 
 
-def to_view(row: FinancialTransaction, *, account=None, account_parties=None, canonical_account_labels=None) -> TransactionView:
+def to_view(row: FinancialTransaction, *, account=None, account_parties=None, canonical_account_labels=None, party_matches=None) -> TransactionView:
     """Convert one stored row into its read shape.
 
     Reads every closed-vocabulary column as the plain string or int
@@ -259,7 +259,7 @@ def to_view(row: FinancialTransaction, *, account=None, account_parties=None, ca
             canonical_label = ' · '.join(v for v in (canonical.holder_name, canonical.institution_name, canonical.identifier_as_printed) if v)
     return TransactionView(
         canonical_account_id=canonical_id, canonical_account_label=canonical_label, account_alias_ids=identity.get("alias_ids", []),
-        **payment_label_view(row, account),
+        **payment_label_view(row, account, matched=(party_matches or {}).get(str(row.id))),
         balance_status=balance_reading_status(row),
         account_type=account_type,
         account_party_id=(identity.get('party') or {}).get('id') if 'party' in identity else identity.get('id'),

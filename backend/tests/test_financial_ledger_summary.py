@@ -49,8 +49,9 @@ class LedgerSummaryTests(fixture.DuplicateTestCase):
             # Captured rows now include reviewed account-party identity. Its
             # account/event reads are bounded per case, never per payment.
             # Accounts are one query of their own, not joined to every payment. (Where the stored-category table
-            # exists, capture reads it in one more bounded query; this fixture does not build it.)
-            self.assertEqual(len(statements), 4 if capture else 2)
+            # exists, capture reads it in one more bounded query; this fixture does not build it.) Capture also reads
+            # the case's payments once to name unnamed ones from their matching payment (payment_party_matches).
+            self.assertEqual(len(statements), 5 if capture else 2)
             self.assertTrue(all('financial_source_documents.metadata' not in sql for sql in statements))
             if capture:
                 self.assertEqual(result['readings'][0]['source']['id'], str(doc.id))

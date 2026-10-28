@@ -30,7 +30,7 @@ SEED = os.path.join(os.path.dirname(__file__), 'party_coverage_baseline.json')
 
 
 def measure(rows_json=None):
-    from services.financial.party_coverage import load_rows, tally
+    from services.financial.party_coverage import load_rows, tally, matched_ids
     if rows_json:
         with open(rows_json) as handle:
             return tally(json.load(handle))
@@ -38,7 +38,8 @@ def measure(rows_json=None):
     from postgres.session import _get_session_local
     with _get_session_local()() as session:
         session.execute(text('SET TRANSACTION READ ONLY'))
-        return tally(load_rows(session))
+        rows = list(load_rows(session))
+        return tally(rows, matched_ids(session, {row['case_id'] for row in rows}))
 
 
 def main(argv=None):

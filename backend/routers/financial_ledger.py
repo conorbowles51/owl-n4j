@@ -775,8 +775,10 @@ def get_ledger_transactions(
     parties = {a['id']: a for a in _account_party_state(db, case_id=case_id)['accounts']}
     from services.financial.transaction_query import account_label_index
     labels = account_label_index(parties)
+    from services.financial.payment_party_matches import case_party_matches
+    matches = case_party_matches(db, case_id)
     transactions = [to_view(row, account=row.account, account_parties=parties,
-        canonical_account_labels=labels).to_json() for row in rows]
+        canonical_account_labels=labels, party_matches=matches).to_json() for row in rows]
     return {
         "case_id": str(case_id),
         "transactions": transactions,

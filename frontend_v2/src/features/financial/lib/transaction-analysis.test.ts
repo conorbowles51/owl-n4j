@@ -224,6 +224,16 @@ describe("unnamedParty", () => {
     expect(party(withReason, "to").name).toBe("Payroll batch — the statement doesn’t list the employees")
     expect(unnamedParty(row("plain", { to_name: "" }), "to_name")).toBe("Not identified")
   })
+  it("treats a name from the matching payment as a suggestion that groups with the same account", () => {
+    const matched = row("matched", {
+      to_name: "Sister Co · Bank 0001",
+      label_sources: {
+        to_name: { source: "matched_payment", explanation: "Named from the matching payment in Sister Co · Bank 0001." },
+      },
+    } as unknown as Partial<LedgerTransaction>)
+    expect(party(matched, "to")).toMatchObject({ name: "Sister Co · Bank 0001", suggested: true })
+    expect(party(matched, "to").key).toBe(party(row("printed", { to_name: "Sister Co · Bank 0001" }), "to").key)
+  })
   it("never totals unnamed sides with different reasons, or none, under one reason", () => {
     const cash = row("cash", {
       to_name: null,

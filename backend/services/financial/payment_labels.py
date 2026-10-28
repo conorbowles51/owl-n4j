@@ -118,9 +118,11 @@ def update_payment_labels(session, *, case_id, request, actor, commit=True):
 _LOOKUP = object()
 
 
-def payment_label_view(row, account=None, stored=_LOOKUP):
+def payment_label_view(row, account=None, stored=_LOOKUP, matched=None):
     """``stored``: the row's stored category (services.financial.payment_categories), None when it has none, or
-    left out to look it up. A stored category replaces the per-read description guess; a person's label wins."""
+    left out to look it up. A stored category replaces the per-read description guess; a person's label wins.
+    ``matched``: this row's entry from services.financial.payment_party_matches.case_party_matches, used only when
+    neither the statement nor the description names the other side."""
     if account is not None and (account.id != row.account_id or account.case_id != row.case_id):
         account = None
     labels = (row.metadata_ or {}).get('investigation_labels', {})
@@ -134,6 +136,8 @@ def payment_label_view(row, account=None, stored=_LOOKUP):
         inferred = {**inferred, 'category': dict(value=stored.category, **label_source(stored))}
     own = (account.holder_name or account.identifier_as_printed) if account is not None else None
     own = own or 'Account ' + str(row.account_id)[:8]
+    if matched and not row.counterparty_raw and not inferred.get('counterparty'):
+        inferred = {**inferred, 'counterparty': matched}
     other = row.counterparty_raw or inferred.get('counterparty', {}).get('value', '')
     sender, recipient = (other, own) if row.direction == 'credit' else (own, other)
     own_source = dict(source='account', explanation='From the saved statement account details.')

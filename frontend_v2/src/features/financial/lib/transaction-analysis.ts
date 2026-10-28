@@ -55,9 +55,10 @@ export function party(row: LedgerTransaction, side: PartySide) {
           ? `unknown:${side}:${encodeURIComponent(reason)}`
           : `unknown:${side}`,
     name: name || reason || "Not identified",
-    suggested:
-      row.label_sources?.[side === "from" ? "from_name" : "to_name"]?.source ===
-      "description",
+    suggested: ["description", "matched_payment"].includes(
+      row.label_sources?.[side === "from" ? "from_name" : "to_name"]?.source ??
+        "",
+    ),
   }
 }
 export function partyName(key: string) {

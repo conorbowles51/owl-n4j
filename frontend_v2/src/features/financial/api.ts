@@ -222,7 +222,11 @@ export interface LedgerTransaction {
           | "missing"
           | "model"
           | "learned"
+          | "matched_payment"
         explanation?: string
+        /** For a name taken from the matching payment in another account of the case. */
+        matched_transaction_id?: string
+        matched_account_id?: string
         /** Why no name is shown, when the statement's layout is known to print none. */
         reason?: string
         rule?: string

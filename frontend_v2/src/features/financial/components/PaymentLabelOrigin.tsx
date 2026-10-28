@@ -4,6 +4,7 @@ const SHORT: Record<string, string> = {
   description: "Auto",
   model: "Model guess",
   learned: "Learned",
+  matched_payment: "Matched payment",
 }
 
 /** A quiet note of who set an automatic label: rules, the model, or a person's choice applied to similar payments. */
