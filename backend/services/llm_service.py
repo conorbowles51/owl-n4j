@@ -232,6 +232,9 @@ class LLMExecutionContext:
     DEEPSEEK_VISION_EFFORT = "max"
     # Thinking counts against the answer's tokens; vision_reader reserves this many (DEEPSEEK_RESERVE_OUTPUT_TOKENS).
     DEEPSEEK_VISION_MAX_TOKENS = 64000
+    # The longest silence allowed on the connection (DeepSeek sends keep-alive lines while it thinks); the answer as
+    # a whole is bounded by the request's timeout, checked as each piece arrives.
+    DEEPSEEK_READ_GAP_SECONDS = 300
 
     def _call_deepseek_vision(self, prompt, images_png, *, schema, timeout, max_output_tokens, image_labels=None):
         import base64
@@ -265,7 +268,7 @@ class LLMExecutionContext:
             "https://api.deepseek.com/chat/completions",
             headers={"Authorization": f"Bearer {api_key}", "content-type": "application/json"},
             json=payload,
-            timeout=(10, timeout),
+            timeout=(10, min(timeout, self.DEEPSEEK_READ_GAP_SECONDS)),
             stream=True,
         )
         try:

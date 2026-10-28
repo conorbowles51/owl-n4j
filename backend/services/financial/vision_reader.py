@@ -241,7 +241,7 @@ REPLACED_REASON = ('Set aside: the reading of the page images of this period rec
 # A claim outlives the longest chain reading, so no other worker takes up a statement still being read; a claim left
 # by a stopped worker expires after it. The chain itself stops starting readers that could not finish inside
 # CHAIN_SECONDS (reader_worst_seconds: each request is bounded by the clock), which leaves the claim a margin.
-CLAIM_SECONDS = 2 * 60 * 60
+CLAIM_SECONDS = 150 * 60
 CHAIN_SECONDS = CLAIM_SECONDS - 15 * 60
 # A statement whose request fails this many times (for the same reading) is not requested again.
 MAX_FAILURES = 3
@@ -1627,8 +1627,10 @@ READER_SETTINGS = {
     'openai': dict(strips=STRIPS, timeout=PAGE_TIMEOUT_SECONDS, max_output_tokens=16000, retries=0),
 }
 RETRY_PAUSE_SECONDS = 5
-# The OpenAI client tries a request up to 3 times (its own 2 retries), each within the timeout.
+# The OpenAI client tries a request up to 3 times (its own 2 retries); its timeout applies to connecting and to
+# reading each, and it may pause up to a minute between tries.
 OPENAI_CLIENT_TRIES = 3
+OPENAI_RETRY_PAUSE_SECONDS = 60
 CONNECT_SECONDS = 10
 
 
@@ -1637,11 +1639,15 @@ def reader_worst_seconds(reader):
     settings = READER_SETTINGS.get(reader.provider)
     if settings is None:
         return 0
+    from services.llm_service import LLMExecutionContext
     tries = settings['retries'] + 1
-    if reader.provider == 'openai':
-        tries *= OPENAI_CLIENT_TRIES
     pauses = sum(RETRY_PAUSE_SECONDS * (n + 1) for n in range(settings['retries']))
-    return tries * (settings['timeout'] + CONNECT_SECONDS) + pauses
+    if reader.provider == 'openai':
+        return tries * OPENAI_CLIENT_TRIES * 2 * settings['timeout'] + tries * (OPENAI_CLIENT_TRIES - 1) * \
+            OPENAI_RETRY_PAUSE_SECONDS + pauses
+    # DeepSeek: the clock deadline is checked as each piece arrives, and a silent connection is dropped after
+    # DEEPSEEK_READ_GAP_SECONDS, so one try ends by timeout + gap.
+    return tries * (settings['timeout'] + LLMExecutionContext.DEEPSEEK_READ_GAP_SECONDS + CONNECT_SECONDS) + pauses
 
 
 class PageReader(SimpleNamespace):
@@ -1737,6 +1743,11 @@ def switched_off(db, provider):
     if provider != 'deepseek' and deepseek_only(db, WORKLOAD):
         return f'{provider_name(provider)} failover is switched off'
     return ''
+
+
+def reading_provider(record):
+    """Who read a stored outcome's deciding reading: its provider; a reading stored before the chain was OpenAI's."""
+    return (record or {}).get('provider') or 'openai'
 
 
 def _single(db, case_id, provider, model_id):
@@ -2254,7 +2265,11 @@ def _outcome(record, attempts, accepted, spent_now, seconds, page_costs, again):
             record['message'] = f'Read from the page images{by}; the period reconciles exactly.'
         return record
     statuses = {a.get('status') for a in attempts}
-    if 'failed' in statuses:
+    if 'deferred' in statuses and 'failed' not in statuses:
+        # A reader was not started for lack of time: not a final outcome; read again in a later round.
+        record.update(status='unavailable', message='The page images are read again later; the statement stays held. '
+                                                    + details)
+    elif 'failed' in statuses:
         failures_now = (record.get('failures') or 0) + 1
         record.update(status='failed', failures=failures_now,
                       error=next(a.get('error') for a in attempts if a.get('status') == 'failed'),
@@ -2437,6 +2452,8 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
             # The page readings already stored, judged under the current proof rules: no request, no cost.
             candidates = [(reader, raw) for reader, raw in stored_attempts(stored)
                           if (reader.provider, reader.model) not in not_used]
+            # The readers not used now still show why ("OpenAI failover is switched off").
+            candidates += [(reader, None) for reader in readers if reader.unavailable and reader.provider]
         else:
             # A reading of an earlier try of this same reading of the file (the chain stopped at a failed request)
             # is judged again rather than requested again.
@@ -2454,7 +2471,7 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
                 continue
             if raw is None and time.monotonic() - chain_started + reader_worst_seconds(reader) > CHAIN_SECONDS:
                 # It could outlast the claim: not started now; the statement is read again in a later round.
-                attempts.append(dict(attempt, status='unavailable',
+                attempts.append(dict(attempt, status='deferred',
                                      message='not enough time was left to read it in this round'))
                 continue
             if raw is None:
@@ -2950,8 +2967,8 @@ def read_saved(factory, document_id, resolve_path, *, page_reader=None, knowledg
             # Only readers in use decide, from a stored reading too (not switched off, not unavailable).
             not_used = {(r.provider, r.model) for r in readers if r.unavailable and r.provider}
             candidates = [(reader, raw) for reader, raw in candidates
-                          if raw is None or not reader.provider
-                          or ((reader.provider, reader.model) not in not_used and not switched_off(db, reader.provider))]
+                          if raw is None or ((reader.provider, reader.model) not in not_used
+                                             and not switched_off(db, reader.provider or 'openai'))]
             path = resolve_path(file.stored_path)
             file_id = file.id
             db.rollback()
@@ -2972,7 +2989,7 @@ def read_saved(factory, document_id, resolve_path, *, page_reader=None, knowledg
                                      else 'unavailable', message=reader.unavailable))
                 continue
             if raw is None and time.monotonic() - chain_started + reader_worst_seconds(reader) > CHAIN_SECONDS:
-                attempts.append(dict(attempt, status='unavailable',
+                attempts.append(dict(attempt, status='deferred',
                                      message='not enough time was left to read it in this round'))
                 continue
             if raw is None:
@@ -3060,6 +3077,9 @@ def saved_image_request(db, document, statement_id, proposal):
         return None, 'no_image_reading'
     if stored.get('revision') != proposal.get('revision') or list(stored.get('pages') or []) != statement_pages(proposal):
         return None, 'image_reading_stale'
+    if switched_off(db, reading_provider(stored)):
+        # "DeepSeek only" is ON: a reading by another provider decides nothing.
+        return None, 'image_reader_switched_off'
     from services.financial.field_proposals import case_knowledge
     try:
         reading, request, _, judged = judge(db, document.case_id, proposal, stored['raw'], stored['pages'],

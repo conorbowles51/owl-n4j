@@ -295,6 +295,50 @@ class ChainTests(TestCase):
         self.assertEqual(outcome['status'], 'proved', outcome.get('message'))
         self.assertIn('DeepSeek was not used: not enough time was left to read it in this round', outcome['message'])
 
+    def test_a_reader_skipped_for_time_leaves_the_statement_to_be_read_again(self):
+        # Review #2: DeepSeek does not prove it and OpenAI is not started for lack of time: not a final outcome.
+        batch, held = self.held()
+        wrong, knowledge = self.r._image_reading(held, nudge=1)
+        openai = Mock(side_effect=AssertionError('not started'))
+        chain = [reader('deepseek', 'deepseek-flash', lambda images: (wrong, USAGE)),
+                 vr.PageReader(provider='openai', model='gpt-5.6-terra', read=openai, unavailable='', strips=1,
+                               max_output_tokens=1000)]
+        worst = lambda r: 10 if r.provider == 'deepseek' else vr.CHAIN_SECONDS + 1  # noqa: E731
+        with patch.object(vr, 'reader_worst_seconds', worst):
+            outcome, _ = self.read(batch, held, lambda db, case_id: chain, knowledge)
+        self.assertEqual(outcome['status'], 'unavailable', outcome.get('message'))
+        self.assertNotIn(outcome['status'], vr.FINAL)
+        self.assertIn('DeepSeek could not prove it', outcome['message'])
+        self.assertIn('OpenAI was not used: not enough time', outcome['message'])
+        self.assertEqual(self.r.item(batch).status, 'attention')
+
+    def test_worst_case_chain_fits_inside_the_claim(self):
+        deepseek = vr.PageReader(provider='deepseek', model='deepseek-flash')
+        openai = vr.PageReader(provider='openai', model='gpt-5.6-terra')
+        self.assertLess(vr.reader_worst_seconds(deepseek) + vr.reader_worst_seconds(openai), vr.CHAIN_SECONDS)
+        self.assertLess(vr.CHAIN_SECONDS, vr.CLAIM_SECONDS)
+
+    def test_deepseek_only_on_a_stored_openai_reading_never_replaces_a_saved_statement(self):
+        from services.financial import saved_reading_replacement  # noqa: F401 - the caller of saved_image_request
+        stored = {'raw': {'accounts': []}, 'version': vr.VERSION, 'revision': 'r1', 'pages': [1]}
+        file = SimpleNamespace(metadata_={vr.SAVED_KEY: {'s': stored}})
+        db = Mock()
+        db.get.return_value = file
+        document = SimpleNamespace(evidence_file_id='f', case_id='c')
+        proposal = {'revision': 'r1'}
+        judge = Mock(side_effect=AssertionError('a reading by OpenAI is not judged while DeepSeek only is ON'))
+        self.switched(True)
+        for provider in (None, 'openai'):  # a reading stored before the chain was OpenAI's
+            stored['provider'] = provider
+            with patch.object(vr, 'SAVED_READING', True), patch.object(vr, 'statement_pages', lambda p: [1]), \
+                    patch.object(vr, 'judge', judge):
+                self.assertEqual(vr.saved_image_request(db, document, 's', proposal), (None, 'image_reader_switched_off'))
+        stored['provider'] = 'deepseek'
+        with patch.object(vr, 'SAVED_READING', True), patch.object(vr, 'statement_pages', lambda p: [1]), \
+                patch.object(vr, 'judge', return_value=('reading', 'request', None, 'judged')), \
+                patch('services.financial.field_proposals.case_knowledge', return_value=None):
+            self.assertEqual(vr.saved_image_request(db, document, 's', proposal), (('request', 'judged', 'reading'), None))
+
     def test_a_failed_answer_that_was_billed_is_counted(self):
         batch, held = self.held()
         right, knowledge = self.r._image_reading(held)

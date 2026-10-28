@@ -535,7 +535,10 @@ class ImageReplacementTests(TestCase):
             return reading, None, None, dict(proposal)
         with self._image(), patch.object(vision_reader, '_saved_target', side_effect=target), \
                 patch.object(vision_reader, 'judge', side_effect=judge), \
+                patch('services.ai_model_policy.deepseek_only', return_value=False), \
                 patch.object(vision_reader, 'openai_page_reader', side_effect=AssertionError('no request is sent')):
+            # A reading stored before the chain is OpenAI's: judged again with OpenAI failover on (with DeepSeek only
+            # ON it decides nothing: test_financial_vision_chain).
             result = self.t.replace(old_id)
         self.assertTrue(result['applied'], result)
         with self.f.SessionLocal() as db:
