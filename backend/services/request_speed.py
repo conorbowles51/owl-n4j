@@ -39,6 +39,7 @@ SLOW_KEEP_DAYS = 30
 QUEUE_LIMIT = 50000
 MAX_PENDING_KEYS = 20000
 UNMATCHED = '(no matching route)'
+METHODS = frozenset(('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'))
 # Bucket i holds durations in (BUCKET_EDGES_MS[i-1], BUCKET_EDGES_MS[i]]; the last bucket
 # holds everything above the last edge. 1 ms .. ~11 min in 15% steps (98 buckets).
 BUCKET_EDGES_MS = tuple(round(1.15 ** i, 3) for i in range(97))
@@ -150,7 +151,11 @@ class RequestSpeedMiddleware:
             _person.reset(token)
             seconds = time.perf_counter() - started
             try:
-                method, route, case = scope.get('method') or '-', _template(scope), _case(scope)
+                method = scope.get('method') if scope.get('method') in METHODS else 'OTHER'
+                route = _template(scope)
+                # A case only for a matched route and a signed-in person: an anonymous caller
+                # cannot create rows for made-up cases.
+                case = _case(scope) if route != UNMATCHED and person.get('email') else None
                 enqueue('api', method, route, case, outcome[0] or 499, seconds * 1000, outcome[1],
                         person.get('email'))
                 if seconds > SLOW_LOG_SECONDS:
@@ -244,17 +249,28 @@ def write(session, groups, slow):
     from sqlalchemy import text
     session.execute(text("SET LOCAL statement_timeout = '10s'"))
     session.execute(text("SET LOCAL lock_timeout = '3s'"))
+    from sqlalchemy.exc import DataError, IntegrityError
     for (hour, kind, method, route, case, user), g in sorted(groups.items(), key=lambda kv: tuple(map(str, kv[0]))):
-        row = session.execute(text(UPSERT), dict(
-            hour=hour, kind=kind, method=method, route=route, case_id=case, user_id=user, count=g.count,
-            total_ms=g.total_ms, max_ms=g.max_ms, bytes=g.bytes, errors=g.errors, buckets=g.buckets,
-            p50_ms=percentile(g.buckets, 0.5, g.max_ms), p95_ms=percentile(g.buckets, 0.95, g.max_ms))).one()
-        buckets = list(row.buckets)
-        session.execute(text(SET_PERCENTILES), dict(
-            id=row.id, buckets=buckets, p50_ms=percentile(buckets, 0.5, row.max_ms),
-            p95_ms=percentile(buckets, 0.95, row.max_ms)))
-    if slow:
-        session.execute(text(INSERT_SLOW), slow)
+        # A row the database refuses as data is dropped alone (savepoint) so it cannot block every
+        # later flush; a busy or unreachable database raises and the whole flush is retried.
+        try:
+            with session.begin_nested():
+                row = session.execute(text(UPSERT), dict(
+                    hour=hour, kind=kind, method=method, route=route, case_id=case, user_id=user, count=g.count,
+                    total_ms=g.total_ms, max_ms=g.max_ms, bytes=g.bytes, errors=g.errors, buckets=g.buckets,
+                    p50_ms=percentile(g.buckets, 0.5, g.max_ms), p95_ms=percentile(g.buckets, 0.95, g.max_ms))).one()
+                buckets = list(row.buckets)
+                session.execute(text(SET_PERCENTILES), dict(
+                    id=row.id, buckets=buckets, p50_ms=percentile(buckets, 0.5, row.max_ms),
+                    p95_ms=percentile(buckets, 0.95, row.max_ms)))
+        except (DataError, IntegrityError) as error:
+            log.warning('Request speed: dropped one refused group %s %s (%s)', method, route[:80], type(error).__name__)
+    for one in slow:
+        try:
+            with session.begin_nested():
+                session.execute(text(INSERT_SLOW), one)
+        except (DataError, IntegrityError) as error:
+            log.warning('Request speed: dropped one refused slow row (%s)', type(error).__name__)
     session.commit()
 
 
@@ -270,6 +286,7 @@ class Writer:
         self.last_warning = 0.0
         self.pid = None
         self.lock = threading.Lock()
+        self.flushing = threading.Lock()
         self.wake = threading.Event()
 
     def ensure_started(self):
@@ -286,7 +303,10 @@ class Writer:
         while True:
             self.wake.wait(self.interval)
             self.wake.clear()
-            self.flush()
+            try:
+                self.flush()
+            except Exception:  # flush never raises by design; the thread must outlive a bug in it
+                log.exception('Request speed: writer error')
 
     def _factory(self):
         if self.session_factory is None:
@@ -308,7 +328,11 @@ class Writer:
             session.rollback()
 
     def flush(self):
-        """Drain the queue into the database. Never raises."""
+        """Drain the queue into the database. Never raises; one flush at a time."""
+        with self.flushing:
+            self._flush()
+
+    def _flush(self):
         items = []
         while True:
             try:
@@ -360,18 +384,23 @@ _writer = Writer()
 
 
 def flush_now():
+    """Save what is queued now (at shutdown). Never raises."""
     _writer.flush()
 
 
 # --- page views from the browser -------------------------------------------------------------
 
-PAGE_NAME = re.compile(r'^[a-z0-9][a-z0-9/_:-]{0,63}$')
+FINANCIAL_VIEWS = ('overview', 'follow-money', 'findings', 'patterns', 'case-context', 'ledger', 'quarantine', 'runs',
+                   'decisions', 'transactions', 'counterparties', 'trends', 'tracing', 'transfers', 'posting-graph')
+STATEMENT_SECTIONS = ('queue', 'files', 'accounts', 'batches', 'remove', 'judgements')
+# The page names the browser may report (frontend financialMainViews and statement sections).
+PAGES = frozenset([f'financial/{v}' for v in FINANCIAL_VIEWS] + [f'financial/statements/{s}' for s in STATEMENT_SECTIONS])
 PAGE_METHODS = ('LOAD', 'VIEW')
 PAGE_MAX_MS = 600000
 
 
 def enqueue_page_view(page, method, case_id, ms, email):
-    if not PAGE_NAME.match(page or '') or method not in PAGE_METHODS:
+    if page not in PAGES or method not in PAGE_METHODS:
         return False
     if not (0 <= ms <= PAGE_MAX_MS):
         return False

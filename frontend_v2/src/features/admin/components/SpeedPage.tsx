@@ -42,6 +42,7 @@ export function SpeedPage() {
       if (kind !== ALL) qs.set("kind", kind)
       return fetchAPI<SpeedSummary>(`/api/request-speed/summary?${qs}`)
     },
+    placeholderData: (previous) => previous, // keep the case list and table while a filter reloads
   })
   const data = query.data
   const caseTitle = (id: string | null, title?: string | null) =>

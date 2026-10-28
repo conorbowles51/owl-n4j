@@ -33,8 +33,16 @@ def build_app():
         return {'ok': True}
 
     @app.get('/api/financial/summary')
-    def summary(case_id: str = Query(None), secret: str = Query(None)):
+    def summary(case_id: str = Query(None), secret: str = Query(None), _=Depends(person)):
         return {'rows': [1, 2, 3]}
+
+    @app.get('/api/public')
+    def public(case_id: str = Query(None)):
+        return {}
+
+    @app.api_route('/api/odd', methods=['MKCALENDAR'])
+    def odd():
+        return {}
 
     @app.get('/api/boom')
     def boom():
@@ -79,7 +87,17 @@ class MiddlewareRecords(Captured):
         self.assertEqual(item[3], '/api/financial/summary')
         self.assertEqual(item[4], CASE)
         self.assertNotIn('hunter2', repr(item))
-        self.assertIsNone(item[8])
+        self.assertEqual(item[8], 'alex@example.com')
+
+    def test_anonymous_or_unmatched_requests_keep_no_case(self):
+        self.client.get(f'/api/public?case_id={CASE}')
+        self.client.get(f'/api/nothing?case_id={CASE}')
+        self.assertEqual([item[4] for item in self.drained()], [None, None])
+
+    def test_unknown_methods_are_kept_as_other(self):
+        self.client.request('MKCALENDAR', '/api/odd')
+        self.client.request('PROPPATCHXYZ', '/api/odd')
+        self.assertEqual({item[2] for item in self.drained()}, {'OTHER'})
 
     def test_unmatched_path_is_not_kept_raw(self):
         self.client.get(f'/api/nothing/{CASE}/here')
@@ -164,6 +182,39 @@ class NeverBreaksARequest(Captured):
         self.assertEqual(writer.pending_groups, {})
 
 
+class RefusedRowsDoNotBlock(TestCase):
+    def test_a_refused_group_is_dropped_alone(self):
+        from contextlib import nullcontext
+        from sqlalchemy.exc import DataError
+        done = []
+
+        class Row:
+            id, buckets, max_ms = 1, [0] * rs.BUCKET_COUNT, 5.0
+
+        class Session:
+            def begin_nested(self):
+                return nullcontext()
+
+            def commit(self):
+                done.append('commit')
+
+            def execute(self, statement, params=None):
+                if 'INSERT INTO request_speed_hourly' in str(statement):
+                    if params['route'] == '/bad':
+                        raise DataError('x', {}, Exception('value too long'))
+                    done.append(params['route'])
+
+                class Result:
+                    def one(self_inner):
+                        return Row
+                return Result()
+        groups, slow = rs.aggregate([(1e9, 'api', 'GET', '/bad', None, 200, 5.0, 0, None),
+                                     (1e9, 'api', 'GET', '/good', None, 200, 5.0, 0, None)], {})
+        with self.assertLogs(rs.log, logging.WARNING):
+            rs.write(Session(), groups, slow)
+        self.assertEqual(done, ['/good', 'commit'])
+
+
 class Arithmetic(TestCase):
     def test_buckets_cover_every_duration(self):
         self.assertEqual(rs.bucket_of(0), 0)
@@ -219,6 +270,7 @@ class PageViews(TestCase):
 
     def test_bad_names_methods_and_times_are_refused(self):
         for args in [('Financial/../x', 'LOAD', None, 5), ('financial/overview', 'GET', None, 5),
+                     ('financial/made-up', 'VIEW', None, 5), ('financial/statements/queue/x', 'VIEW', None, 5),
                      ('financial/overview', 'VIEW', None, -1), ('financial/overview', 'VIEW', None, 10 ** 7),
                      ('', 'VIEW', None, 5)]:
             self.assertFalse(rs.enqueue_page_view(*args, None), args)
@@ -234,3 +286,16 @@ class PageViews(TestCase):
             {'page': 'BAD NAME', 'method': 'VIEW', 'ms': 900}]})
         self.assertEqual((response.status_code, response.json()), (202, {'accepted': 1}))
         self.assertEqual(len(rs._queue), 1)
+
+
+class PageNamesMatchTheFrontend(TestCase):
+    def test_financial_views_are_the_frontend_list(self):
+        import re
+        from pathlib import Path
+        store = (Path(__file__).resolve().parents[2] / 'frontend_v2/src/features/financial/stores/financial.store.ts').read_text()
+        block = re.search(r'financialMainViews = \[(.*?)\] as const', store, re.S).group(1)
+        views = set(re.findall(r'"([a-z-]+)"', block))
+        self.assertEqual(views - {'statements'}, set(rs.FINANCIAL_VIEWS))
+        page = (Path(__file__).resolve().parents[2] / 'frontend_v2/src/features/financial/components/FinancialPage.tsx').read_text()
+        sections = re.search(r'type StatementSection = ([^\n]+)', page).group(1)
+        self.assertEqual(set(re.findall(r'"([a-z]+)"', sections)), set(rs.STATEMENT_SECTIONS))

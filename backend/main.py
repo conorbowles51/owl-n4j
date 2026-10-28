@@ -157,6 +157,13 @@ async def lifespan(app: FastAPI):
         timeout=process_shutdown.BACKGROUND_STOP_SECONDS,
     )
 
+    # Save the request timings still queued in this worker (bounded; never blocks shutdown long).
+    try:
+        from services.request_speed import flush_now
+        await asyncio.wait_for(asyncio.to_thread(flush_now), timeout=10)
+    except Exception as e:
+        print(f"Warning: request timings not saved at shutdown: {e}")
+
     # Stop job status subscriber
     try:
         await job_subscriber.stop()
