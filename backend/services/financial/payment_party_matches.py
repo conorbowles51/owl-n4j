@@ -64,7 +64,7 @@ def _same_holder(left, right):
     left, right = normalise_name(left), normalise_name(right)
     if not left or not right:
         return False
-    if left.startswith(right) or right.startswith(left):
+    if left == right or left.startswith(right + ' ') or right.startswith(left + ' '):
         return True
     return (name_similarity(left, right) or 0) >= 0.85
 
@@ -135,7 +135,9 @@ def compatible(unnamed, other):
                 and not shared and not _prints_account(row['description'], theirs['identifier']):
             return 'a transfer inside one bank cannot be paid to or from another bank'
     names_holder = bool(other.get('name')) and _same_holder(other['name'], unnamed['holder'])
-    if not _related_holders(unnamed['holder'], other['holder']) and int(unnamed['amount_minor']) % 1000 == 0 \
+    related = _related_holders(unnamed['holder'], other['holder']) \
+        and not unnamed.get('other_holders') and not other.get('other_holders')
+    if not related and int(unnamed['amount_minor']) % 1000 == 0 \
             and not shared and not names_holder:
         return 'a round amount between different holders, with nothing else in common, can be a coincidence'
     name = other.get('name')
@@ -226,14 +228,23 @@ def _observation(row):
 
 def describe(unnamed, other, gap_days):
     account = ' '.join(' '.join(str(v).split()) for v in (other['institution'], other['identifier']) if v)
-    holder = ' '.join((other['holder'] or '').replace('\n', ' / ').split()) or 'the case account'
-    own = _related_holders(other['holder'], unnamed['holder'])
-    value = (holder + ' · ' + account) if account else holder
+    holder = ' '.join((other['holder'] or '').replace('\n', ' / ').split())
+    disputed = other.get('other_holders') or []
     when = 'the same day' if not gap_days else ('1 day apart' if gap_days == 1 else f'{gap_days} days apart')
-    explanation = (f'Named from the matching payment in {holder} · {account} '
-                   f'({"money in" if other["direction"] == "credit" else "money out"}, same amount and currency, {when}). '
-                   'It is the only payment in the case that matches this one, and this is the only one that matches it.'
-                   + (' The two accounts share a holder.' if own else ''))
+    how = (f'({"money in" if other["direction"] == "credit" else "money out"}, same amount and currency, {when}). '
+           'It is the only payment in the case that matches this one, and this is the only one that matches it.')
+    if disputed or not holder:
+        # The account's statements print more than one holder name (or none): show the account, never a holder.
+        own = False
+        value = account or 'Another account in the case'
+        explanation = (f'Named from the matching payment in {value} {how}'
+                       + (' The account’s statements print more than one holder name (' + ', '.join([holder] + disputed)
+                          + '), so the holder is not shown.' if disputed else ''))
+    else:
+        own = _related_holders(other['holder'], unnamed['holder']) and not unnamed.get('other_holders')
+        value = (holder + ' · ' + account) if account else holder
+        explanation = (f'Named from the matching payment in {value} {how}'
+                       + (' The two accounts share a holder.' if own else ''))
     return dict(value=value, source='matched_payment', rule=RULE, version=VERSION, explanation=explanation,
                 matched_transaction_id=str(other['id']), matched_account_id=str(other['account_id']),
                 own_account=own)
@@ -242,13 +253,24 @@ def describe(unnamed, other, gap_days):
 _CASE_ROWS = """select t.id, t.account_id, a.metadata->>'canonical_account_id', t.source_document_id, t.amount_minor, t.currency,
  t.direction, t.ordering_date, t.ordering_date_source, t.transaction_date, t.posted_date, t.value_date, t.effective_date,
  t.description, t.counterparty_raw, t.metadata->'investigation_labels', t.provenance->'reviewed_counterparty',
- t.provenance->>'date_basis', a.holder_name, a.institution_name, a.identifier_as_printed, a.account_type
+ t.provenance->>'date_basis', a.holder_name, a.institution_name, a.identifier_as_printed, a.account_type,
+ a.metadata->'identity_conflicts'
  from financial_transactions t join financial_accounts a on a.id = t.account_id
  where t.case_id = :case_id and a.case_id = :case_id and t.ledger_status = 'admitted' and t.superseded_by_id is null"""
 
 
 def _plain(value):
     return value.value if hasattr(value, 'value') else value
+
+
+def disputed_holders(holder, conflicts):
+    """Other holder names the account's statements printed, recorded as identity conflicts on the account."""
+    found = []
+    for conflict in conflicts if isinstance(conflicts, list) else []:
+        offered = conflict.get('offered') if isinstance(conflict, dict) and conflict.get('field') == 'holder_name' else None
+        if offered and not _same_holder(offered, holder) and not any(_same_holder(offered, f) for f in found):
+            found.append(' '.join(str(offered).split()))
+    return found
 
 
 def case_rows(session, case_id):
@@ -258,7 +280,7 @@ def case_rows(session, case_id):
     from services.financial.payment_labels import _inferred_labels
     rows = []
     for (id, account_id, canonical, document, amount, currency, direction, ordering, ordering_source, td, pd, vd, ed,
-         description, raw, labels, reviewed, date_basis, holder, institution, identifier, account_type) in session.execute(
+         description, raw, labels, reviewed, date_basis, holder, institution, identifier, account_type, conflicts) in session.execute(
             text(_CASE_ROWS), dict(case_id=str(case_id))):
         direction, account_type = _plain(direction), _plain(account_type)
         if date_basis == 'statement_end_ordering_only' or direction not in ('credit', 'debit'):
@@ -274,7 +296,8 @@ def case_rows(session, case_id):
                          ordering_date_source=_plain(ordering_source), transaction_date=td, posted_date=pd,
                          value_date=vd, effective_date=ed, description=description, holder=holder,
                          institution=institution, identifier=identifier, name=name,
-                         reason=(inferred.get('counterparty_reason') or {}).get('value') or ''))
+                         reason=(inferred.get('counterparty_reason') or {}).get('value') or '',
+                         other_holders=disputed_holders(holder, conflicts)))
     return rows
 
 

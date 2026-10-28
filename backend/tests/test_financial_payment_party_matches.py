@@ -103,6 +103,25 @@ class MatchPartiesTests(unittest.TestCase):
         paying['name'] = 'Truist'
         self.assertEqual(match_parties([paid, paying]), {})
 
+    def test_account_with_disputed_holder_is_shown_without_a_holder(self):
+        from services.financial.payment_party_matches import disputed_holders
+        conflicts = [dict(field='holder_name', stored='BETA PRUEBA SA DE CV', offered='DELTA OTRA SA DE CV'),
+                     dict(field='holder_name', stored='BETA PRUEBA SA DE CV', offered='DELTA OTRA SA DE CV')]
+        self.assertEqual(disputed_holders('BETA PRUEBA SA DE CV', conflicts), ['DELTA OTRA SA DE CV'])
+        self.assertEqual(disputed_holders('BETA PRUEBA SA DE CV', [dict(field='currency', offered='USD')]), [])
+        out = row('alpha', 'CARGO TRANSFERENCIA ENLACE PAGO DE PRUEBA', 'debit')
+        into = row('beta', 'ABONO TRANSFERENCIA ENLACE PAGO DE PRUEBA', 'credit')
+        into['other_holders'] = ['DELTA OTRA SA DE CV']
+        found = match_parties([out, into])[out['id']]
+        self.assertEqual(found['value'], 'Banco Santander Mexico 65-22222222-2')
+        self.assertIn('more than one holder name', found['explanation'])
+        self.assertFalse(found['own_account'])
+
+    def test_holder_prefix_must_end_on_a_word(self):
+        from services.financial.payment_party_matches import _same_holder
+        self.assertFalse(_same_holder('ANA', 'ANALYTICS EJEMPLO SA'))
+        self.assertTrue(_same_holder('ALPHA EJEMPLO', 'ALPHA EJEMPLO SA DE CV'))
+
     def test_cash_and_bank_charges_never_match(self):
         out = row('alpha', 'RETIRO EN EFECTIVO CAJERO', 'debit', amount=1234561)
         into = row('beta', 'ABONO TRANSFERENCIA ENLACE', 'credit', amount=1234561)
