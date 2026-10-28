@@ -5,7 +5,7 @@ from unittest.mock import patch
 from sqlalchemy import event, select
 
 from postgres.models.evidence import EvidenceFile
-from postgres.models.financial import FinancialStatementPeriod
+from postgres.models.financial import FinancialSourceDocument, FinancialStatementPeriod
 from services.financial.duplicate_query import (
     DuplicateQueryLimitError, list_duplicate_candidates,
 )
@@ -216,6 +216,23 @@ class DuplicateQueryTests(DuplicateTestCase):
         with patch("services.financial.duplicate_query.MAX_COMPARISON_DOCUMENTS", 1):
             with self.assertRaises(DuplicateQueryLimitError):
                 list_duplicate_candidates(self.db, self.case.id)
+
+    def test_document_cap_is_counted_before_any_document_is_loaded(self):
+        self.make_copy()
+        self.make_copy()
+        case_id = self.case.id
+        self.db.expunge_all()
+        loaded = []
+        from sqlalchemy import event
+        listener = lambda *args: loaded.append(args[0])
+        event.listen(FinancialSourceDocument, 'load', listener)
+        try:
+            with patch("services.financial.duplicate_query.MAX_COMPARISON_DOCUMENTS", 1):
+                with self.assertRaisesRegex(DuplicateQueryLimitError, '1-document comparison limit. No partial comparison has been returned.'):
+                    list_duplicate_candidates(self.db, case_id)
+        finally:
+            event.remove(FinancialSourceDocument, 'load', listener)
+        self.assertEqual(loaded, [])
 
     def test_balance_observations_change_reading_but_not_coverage(self):
         first = self.make_copy(closing=printed(380_00))

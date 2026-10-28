@@ -69,7 +69,19 @@ def _statement_contexts(session, case_id, documents):
     return contexts
 
 
+def _too_many_documents():
+    return DuplicateQueryLimitError(
+        f"This case exceeds the {MAX_COMPARISON_DOCUMENTS}-document comparison limit. "
+        "No partial comparison has been returned."
+    )
+
+
 def list_duplicate_candidates(session, case_id: uuid.UUID) -> dict:
+    # Counted first: loading MAX + 1 whole documents (with their saved readings: hundreds of MB on a large case)
+    # only to find there are too many took 25-40 s before the same refusal.
+    if session.scalar(select(func.count()).select_from(FinancialSourceDocument).where(
+            FinancialSourceDocument.case_id == case_id)) > MAX_COMPARISON_DOCUMENTS:
+        raise _too_many_documents()
     documents = list(session.scalars(
         select(FinancialSourceDocument)
         .where(FinancialSourceDocument.case_id == case_id)
@@ -77,10 +89,7 @@ def list_duplicate_candidates(session, case_id: uuid.UUID) -> dict:
         .limit(MAX_COMPARISON_DOCUMENTS + 1)
     ))
     if len(documents) > MAX_COMPARISON_DOCUMENTS:
-        raise DuplicateQueryLimitError(
-            f"This case exceeds the {MAX_COMPARISON_DOCUMENTS}-document comparison limit. "
-            "No partial comparison has been returned."
-        )
+        raise _too_many_documents()
     row_count = session.scalar(select(func.count()).select_from(FinancialTransaction).where(
         FinancialTransaction.case_id == case_id))
     if row_count > MAX_COMPARISON_ROWS:
