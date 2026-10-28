@@ -15,6 +15,7 @@ from config import AUTH_TOKEN_EXPIRE_MINUTES
 from postgres.session import get_db
 from services.auth_service import auth_service
 from services import activity_trail
+from services import request_speed
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 security = HTTPBearer(auto_error=False)
@@ -75,6 +76,7 @@ def get_current_user(
 
     try:
         data = auth_service["verify_access_token"](token)
+        request_speed.note_person(data.get("username") if isinstance(data, dict) else None)
         return data
     except Exception as err:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(err)) from err

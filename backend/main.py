@@ -202,6 +202,9 @@ app.add_middleware(
 # Correlation id and per-stage Server-Timing on financial batch endpoints.
 from services.financial.request_timing import FinancialTimingMiddleware
 app.add_middleware(FinancialTimingMiddleware)
+# How long every /api request takes, kept permanently (services.request_speed).
+from services.request_speed import RequestSpeedMiddleware
+app.add_middleware(RequestSpeedMiddleware)
 # Source address, user agent and screen of every request, for the activity trail.
 from services.activity_trail import ActivityContextMiddleware
 app.add_middleware(ActivityContextMiddleware)
@@ -261,6 +264,8 @@ app.include_router(significant_router)
 app.include_router(evidence_ws_router)
 from routers.activity import router as activity_router
 app.include_router(activity_router)
+from routers.request_speed import router as request_speed_router
+app.include_router(request_speed_router)
 
 
 @app.get("/")
