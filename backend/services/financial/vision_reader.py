@@ -144,6 +144,11 @@ SECTION_BY_TEXT = _switch('LOUPE_FINANCIAL_VISION_SECTION_BY_TEXT')
 # withdrawal's when the minus agrees with its direction. A minus on a credit is refused as before. Off: every
 # such row is unreadable (Erica Andrews Dec 2020, 129 withdrawals).
 SIGNED_DEBITS = _switch('LOUPE_FINANCIAL_VISION_SIGNED_DEBITS')
+# On a card statement (balance owed) a payment or refund is printed with a minus ("- $246.92": Capital One, fdaf956c),
+# and the images give it so with direction credit: on a liability the minus marks what reduces the amount owed, so it
+# agrees with the credit. Only on a liability statement; a minus on a credit of any other account is refused as
+# before. Every proof applies (the balance to the cent decides). Off: such a row is unreadable.
+SIGNED_CARD_CREDITS = _switch('LOUPE_FINANCIAL_VISION_SIGNED_CARD_CREDITS')
 # A text reading complete in every amount and running balance, held only for row dates it could not read
 # ('12/lll' printed 12/18), takes each such date from the page images: the one image row on the same page with the
 # same amount, direction and running balance, dated inside the period and inside the text's own payment order (on
@@ -231,6 +236,17 @@ LAST4_FIRST_STATEMENT = _switch('LOUPE_FINANCIAL_VISION_LAST4_FIRST_STATEMENT')
 LAST4_BASIS = 'page_image_last4_header_matches_text'
 LAST4_NOTE = (' The first statement of this card in the case: the last 4 digits of its number, its holder and bank on '
               'the page images agree with the text of the same file, which prints no longer number for it.')
+# The full number printed beside a masked one (coordinator, 2026-10-28: each Capital One statement page 1 prints the
+# card's complete number only in its payment coupon's machine-readable line, "1 5178059984428160 09 ...", so LAST4,
+# which needs the file to print no longer number, refuses them and rule 1 needs both readings of the full number).
+# A card's first statement whose header prints only the last digits is accepted when, besides every LAST4 check but
+# that one, the page images read the complete number (full_account_number) and it is, digit for digit, the ONE longer
+# number ending in those digits the file's text prints: rule 1's evidence (the full number read alike from the page
+# images and the text of the same file), with LAST4's order (one statement creates the card; the rest follow through
+# the saved account; another holder is never merged). Off: such a statement stays held as before.
+FULL_NUMBER_FROM_IMAGES = _switch('LOUPE_FINANCIAL_VISION_FULL_NUMBER_FROM_IMAGES')
+FULL_NUMBER_NOTE = (' The first statement of this card in the case: its full number (%s), printed on its payment '
+                    'coupon, is read alike from the page images and the text, as are its holder and bank.')
 # A period's summary page read with it (coordinator, 2026-10-28: each of fdaf956c's 52 Capital One periods was read
 # from its "Page 2 of N" onwards; the file page before, printing "Page 1 of N" with the previous and new balance, the
 # holder and address, is on no statement's table pages, so no opening or closing balance could be read and 6 holders
@@ -256,7 +272,8 @@ CARD_POSTING = _switch('LOUPE_FINANCIAL_VISION_CARD_POSTING')
 PROOF_VERSION = 1
 for _switched in (SPLIT_SPELLINGS, SECTION_NUMBER, PRINTED_COUNTS, QUIET_PRINTED, CLABE_ACCOUNT, SECTION_BY_TEXT,
                   SIGNED_DEBITS, DATES_FROM_IMAGE, OPENING_FROM_PREVIOUS, IMAGE_TOTALS, CLOSING_DAYS, TEXT_MISREADS,
-                  FIRST_STATEMENT, ROW_DATES, PRINTED_ORDER, LAST4_FIRST_STATEMENT, FORM_NUMBERS, CARD_POSTING):
+                  FIRST_STATEMENT, ROW_DATES, PRINTED_ORDER, LAST4_FIRST_STATEMENT, FORM_NUMBERS, CARD_POSTING,
+                  SIGNED_CARD_CREDITS, FULL_NUMBER_FROM_IMAGES):
     # Each switch on top of the one before; with one off, the rules are the version before it.
     if not _switched:
         break
@@ -391,8 +408,9 @@ _DOC_ROW = dict(_ROW, required=_ROW['required'] + ['page', 'charge_kind'],
                 properties=dict(_ROW['properties'], page={'type': 'integer'},
                                 charge_kind={'type': 'string', 'enum': ['', 'fee', 'interest']}))
 _ACCOUNT = dict(_SECTION, required=_SECTION['required'] + ['opening_balance_page', 'closing_balance_page', 'days_in_period',
-                                                           'total_fees', 'total_interest'],
+                                                           'total_fees', 'total_interest', 'full_account_number'],
                 properties=dict(_SECTION['properties'], rows={'type': 'array', 'items': _DOC_ROW},
+                                full_account_number={'type': 'string'},
                                 opening_balance_page=_nullable('integer'), closing_balance_page=_nullable('integer'),
                                 days_in_period=_nullable('integer'), total_fees=_nullable('string'),
                                 total_interest=_nullable('string')))
@@ -411,7 +429,7 @@ DOCUMENT_SCHEMA = {'type': 'object', 'additionalProperties': False, 'required': 
 # enforced response format; DeepSeek, which enforces none, receives it after these instructions (llm_service).
 # Benchmarked as headless/ds_prompt_v3.txt (20 statements, image-checked answer key). No bank is a rule here: names
 # in quotation marks are examples only. Change the text -> change PROMPT_VERSION (stored on every reading).
-PROMPT_VERSION = 'statement-pages-v3'
+PROMPT_VERSION = 'statement-pages-v4'
 PROMPT = """You are a forensic transcriber. The images are the pages of a bank, credit-union or card account statement. Your transcription goes into a forensic ledger used as evidence, and it is checked afterwards by strict arithmetic: opening balance plus every movement must equal the closing balance to the cent, every printed running balance must agree, and every printed total and count must match. One missed, doubled, mis-dated, mis-signed or mis-read line fails the whole statement. Accuracy matters far more than speed: work slowly, line by line.
 
 These instructions apply to statements from any bank, in any language and layout. The examples in quotation marks show common wording; they are illustrations, not the only forms you will meet.
@@ -445,6 +463,7 @@ ACCOUNTS (accounts[]): one entry per account or sub-account that has its own ope
   * When one statement covers several sub-accounts (shares, pockets, currency sub-accounts) under one customer/member number and each section prints its own short ID, give that section's own ID (e.g. "0000", "0040"), not the shared member number. When sections print no ID of their own, give the account number printed for the statement.
   * Prefer the number labelled as the account number ("Account Number", "No. de Cuenta", "Número de cuenta", "Cuenta"). Use an interbank/IBAN/CLABE-type number only when no account number is printed.
   * Never use a statement, page, document, routing/sort-code, branch, client, contract or card number of another product, a phone number, or a Bates/production stamp.
+- full_account_number: only when account_number is printed masked or as its last digits only, and the complete number of this same account is printed elsewhere on these pages (e.g. in a payment coupon's account box, or as the run of digits in the coupon's machine-readable line that ends in the same last digits): that complete number, digits only, exactly as printed. Otherwise empty. Never build, complete or guess a number.
 - currency: ISO code only when the statement prints the currency or its name (e.g. "M.N.", "Moneda Nacional", "PESOS" = MXN; "USD", "DÓLARES" = USD; "EUR"). A bare "$" or other symbol alone is not a currency: leave it empty. currency_as_printed: the literal text you used, else empty.
 - period_start / period_end (YYYY-MM-DD): the statement period printed for this account. US statements write month/day/year; most others day/month/year: decide from the statement's language and from dates that only make sense one way (a 13 or higher must be a day). A statement that prints only a closing/statement date: period_end = that date, period_start empty. days_in_period: printed number of days, else null.
 - opening_balance / closing_balance: the balances printed at the start and at the end of the period (e.g. "Previous Balance", "Beginning Balance", "Saldo Anterior", "Saldo Inicial"; "Ending Balance", "New Balance", "Saldo Final", "Saldo al Corte"), with the page label each is printed on. Negative only when printed negative (minus sign, parentheses, "DR"/"OD", or as the statement marks it).
@@ -515,6 +534,7 @@ def document_pages(document, sent_pages):
                            rows=[{k: v for k, v in row.items() if k != 'page'} for row in rows if row.get('page') == page],
                            no_transactions_printed=bool(account.get('no_transactions_printed')) and page == first)
             if page == first:
+                section['full_account_number'] = str(account.get('full_account_number') or '')
                 section.update({key: account.get(key) for key in ('institution', 'holder', 'currency', 'currency_as_printed',
                                 'period_start', 'period_end', 'total_credits', 'total_debits', 'count_credits', 'count_debits')})
                 for key in ('days_in_period', 'total_fees', 'total_interest'):
@@ -571,10 +591,13 @@ def to_minor(value, exponent, *, signed=False):
     return int(amount) if amount == amount.to_integral_value() else None
 
 
-def row_amount(row, exponent):
-    """The row's positive amount in minor units, or None; '-15.89' only on a debit (SIGNED_DEBITS)."""
+def row_amount(row, exponent, liability=False):
+    """The row's positive amount in minor units, or None; '-15.89' only on a debit (SIGNED_DEBITS), or on a credit of
+    a card statement (``liability``, SIGNED_CARD_CREDITS)."""
     amount = row.get('amount')
-    if SIGNED_DEBITS and row.get('direction') == 'debit' and str(amount or '').strip().startswith('-'):
+    signed = (SIGNED_DEBITS and row.get('direction') == 'debit') or (
+        SIGNED_CARD_CREDITS and liability and row.get('direction') == 'credit')
+    if signed and str(amount or '').strip().startswith('-'):
         amount = str(amount).strip()[1:]
     return to_minor(amount, exponent)
 
@@ -610,7 +633,7 @@ class WaitsForCard(NotProved):
 # Combining pages into account sections
 # ---------------------------------------------------------------------------
 
-_HEADER = ('institution', 'holder', 'account_number', 'currency', 'period_start', 'period_end')
+_HEADER = ('institution', 'holder', 'account_number', 'currency', 'period_start', 'period_end', 'full_account_number')
 
 
 def _continued(merged, account, label, period):
@@ -1275,8 +1298,15 @@ def prove(proposal, section, knowledge):
         raise NotProved('The opening or closing balance could not be read from the page images.')
     # Rows.
     rows = []
+    # A summary page (SUMMARY_PAGES) is read for the period's balances and header only: its account summary lines
+    # ("Payments - $x", "Transactions + $x") are no payments, so a row cited there holds the statement.
+    from services.financial.summary_pages import statement_summary_pages
+    summary_only = set(statement_summary_pages(proposal)) - set(statement_pages(proposal)) if SUMMARY_PAGES else set()
     for index, row in enumerate(section['rows']):
-        amount = row_amount(row, exponent)
+        if row.get('page') in summary_only:
+            raise NotProved('A payment was read from page %s, the summary page of this period, which lists no payments.'
+                            % row['page'])
+        amount = row_amount(row, exponent, liability)
         if CLOSING_DAYS and amount == 0 and not row.get('unreadable') and row.get('charge_kind') in ('fee', 'interest'):
             continue  # a charge line printed as 0.00 moves nothing
         when = _iso(row.get('date'))
@@ -1325,6 +1355,9 @@ def prove(proposal, section, knowledge):
     return dict(account_keys=[k.key for k in candidates], currency=currency, holder=holder, institution=institution,
                 account_number=account_text, charge_totals=charges,
                 **(dict(account_basis=basis) if basis else {}),
+                # The complete number the page images read beside a masked one (FULL_NUMBER_FROM_IMAGES).
+                **(dict(full_account_number=_digits(header.get('full_account_number'))) if basis == LAST4_BASIS
+                   and _digits(header.get('full_account_number')) else {}),
                 period_start=start, period_end=end, opening=opening, closing=closing, rows=rows,
                 opening_page=section['balance_pages'].get('opening_balance') if previous_end is None else rows[0]['page'],
                 closing_page=section['balance_pages'].get('closing_balance'),
@@ -2197,10 +2230,20 @@ def rejudgeable(record, revision=None, model_id=None, pages=None, due=False):
     status = record.get('status')
     if status != 'not_proved' and not (status == 'reading' and record.get('rejudging') and not _being_read(record)):
         return False
-    if revision is not None and (record.get('revision') != revision or _reader_of(record) != model_id
+    if revision is not None and (record.get('revision') != revision
+                                 or _without_prompt(_reader_of(record)) != _without_prompt(model_id)
                                  or list(record.get('pages') or []) != list(pages or [])):
         return False
     return True
+
+
+_PROMPT_SUFFIX = re.compile(r' \(statement-pages-[^)]*\)$')
+
+
+def _without_prompt(reader_id):
+    """A chain id without its instructions' version: a stored page reading is judged again under new proof rules
+    whatever instructions it was read with (a new prompt reads only what is read anew, never re-judging)."""
+    return _PROMPT_SUFFIX.sub('', str(reader_id or ''))
 
 
 def _judged(stored, **extra):
@@ -2642,7 +2685,8 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
                 return dict(record, reason='no_pages')
             if len(pages) > MAX_PAGES:
                 record.update(status='not_proved', message=f'This period has {len(pages)} pages; page images are read for periods up to {MAX_PAGES} pages.')
-                return _finish(factory, item_id, file_id, key, dict(record, revision=proposal['revision'], pages=pages), apply)
+                return _finish(factory, item_id, file_id, key, dict(record, revision=proposal['revision'], pages=pages,
+                                                                    pages_rule=PAGES_RULE), apply)
             try:
                 readers = readers_of(page_reader, db, case_id)
             except Exception as error:  # noqa: BLE001 - fail closed
@@ -2809,7 +2853,8 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
                                                           saved=force, by=by)
                     if reading.get('account_basis') == LAST4_BASIS:
                         # The first statement of a card printing only its last digits: its file's text and its turn.
-                        last4_turn(db, case_id, item_id, reading, path, numbers_of=numbers_of)
+                        full = last4_turn(db, case_id, item_id, reading, path, numbers_of=numbers_of)
+                        reading['full_number_confirmed'] = full
                     accepted = dict(attempt, status='proved', rows=len(reading['rows']))
                     attempts.append(accepted)
                     db.rollback()
@@ -2858,10 +2903,14 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
             if reading.get('account_basis'):
                 # The first statement of its account (FIRST_STATEMENT, LAST4_FIRST_STATEMENT): what admitted its
                 # header, recorded with it.
+                full = reading.get('full_number_confirmed')
                 record.update(account_basis=reading['account_basis'], message=record['message'] + (
+                    FULL_NUMBER_NOTE % full if full else
                     LAST4_NOTE if reading['account_basis'] == LAST4_BASIS else FIRST_STATEMENT_NOTE))
                 if reading['account_basis'] == LAST4_BASIS:
                     record['card'] = last4_card(reading)
+                    if full:
+                        record['card']['full_number'] = full
             if controls:
                 record['printed_controls'] = controls
             if reading.get('charge_totals') and CLOSING_DAYS:
@@ -3088,10 +3137,34 @@ def last4_turn(db, case_id, item_id, reading, path, numbers_of=None):
         raise NotProved(masked_only_reason(reading['account_number'], True, proposal,
                                            'the text of its file could not be checked (%s)' % type(error).__name__))
     longer = sorted(n for n in numbers if len(n) > len(digits) and n.endswith(digits))
+    full = None
     if longer:
-        raise NotProved(longer_number_reason(reading['account_number'], longer, True, proposal),
-                        card=card_key(reading['institution'], digits))
+        full = full_number_confirmed(reading, longer)
+        if not full:
+            raise NotProved(longer_number_reason(reading['account_number'], longer, True, proposal),
+                            card=card_key(reading['institution'], digits))
     card_turn(db, case_id, item_id, last4_card(reading))
+    return full
+
+
+def full_number_confirmed(reading, longer):
+    """(FULL_NUMBER_FROM_IMAGES) The card's complete number when the page images read it (full_account_number), it
+    is a card number (13 to 19 digits, Luhn check digit) and it is the one longer number ending in its last digits the
+    file's text prints, digit for digit; else None."""
+    full = _digits(reading.get('full_account_number'))
+    if not (FULL_NUMBER_FROM_IMAGES and full and 13 <= len(full) <= 19 and _luhn(full) and len(longer) == 1
+            and full == longer[0] and full.endswith(_digits(reading['account_number']))):
+        return None
+    return full
+
+
+def _luhn(digits):
+    """A card number's check digit holds (ISO/IEC 7812)."""
+    total = 0
+    for index, digit in enumerate(reversed(digits)):
+        value = int(digit) * (2 if index % 2 else 1)
+        total += value - 9 if value > 9 else value
+    return total % 10 == 0
 
 
 def last4_card(reading):

@@ -178,7 +178,7 @@ class LastFourProofTest(unittest.TestCase):
 
     def test_the_proof_version_counts_the_rule(self):
         self.assertTrue(vr.LAST4_FIRST_STATEMENT)
-        self.assertEqual(vr.PROOF_VERSION, 19)
+        self.assertEqual(vr.PROOF_VERSION, 21)
 
 
 class FullNumberReasonTest(unittest.TestCase):
@@ -220,6 +220,30 @@ class TextLayerAndTurnTest(unittest.TestCase):
         turn.assert_called_once()
         with self.assertRaisesRegex(vr.NotProved, 'the text of its file could not be checked'):
             vr.last4_turn(None, 'c', 'i', self.READING, 'x.pdf', numbers_of=lambda path: 1 / 0)
+
+    def test_a_reading_stored_under_earlier_instructions_is_judged_again(self):
+        # A prompt change reads anew only what is read anew: a stored page reading is still judged under new rules.
+        record = dict(version=vr.VERSION, proof=vr.PROOF_VERSION - 1, status='not_proved', raw={}, revision='r',
+                      reader='deepseek/deepseek-v4-flash (statement-pages-v3)', pages=[1, 2])
+        model = 'deepseek/deepseek-v4-flash (%s)' % vr.PROMPT_VERSION
+        self.assertTrue(vr.rejudgeable(record, 'r', model, [1, 2]))
+        self.assertFalse(vr.rejudgeable(record, 'r', 'openai/gpt-x (%s)' % vr.PROMPT_VERSION, [1, 2]))
+        self.assertFalse(vr.rejudgeable(record, 'r', model, [1, 2, 3]))
+
+    def test_full_number_confirmed_needs_the_one_longer_number_digit_for_digit(self):
+        reading = dict(self.READING, full_account_number='5178 0599 8442 8160')
+        self.assertEqual(vr.full_number_confirmed(reading, ['5178059984428160']), '5178059984428160')
+        self.assertIsNone(vr.full_number_confirmed(reading, ['5178059984428160', '5178000000048160']))
+        self.assertIsNone(vr.full_number_confirmed(reading, ['5178059984420000']))
+        self.assertIsNone(vr.full_number_confirmed(dict(self.READING, full_account_number=''), ['5178059984428160']))
+        # Not a card number: too short, or its check digit fails.
+        self.assertIsNone(vr.full_number_confirmed(dict(self.READING, full_account_number='998160'), ['998160']))
+        self.assertIsNone(vr.full_number_confirmed(dict(self.READING, full_account_number='5178051234568160'),
+                                                   ['5178051234568160']))
+        with mock.patch.object(vr, 'card_turn') as turn:
+            self.assertEqual(vr.last4_turn(None, 'c', 'i', reading, 'x.pdf', numbers_of=lambda path: {'5178059984428160'}),
+                             '5178059984428160')
+        turn.assert_called_once()
 
     def test_printed_numbers_reads_the_text_layer(self):
         import fitz
@@ -380,6 +404,31 @@ class LastFourFlowTest(unittest.TestCase):
         self.assertEqual(self.r.item(self.batch).status, 'attention')
         self.assertIn('the statement prints only the last 4 digits of this card (ending 0123)',
                       self.r.item(self.batch).summary['vision_reading']['line'])
+
+    def test_the_full_number_read_alike_from_the_page_images_and_the_text_admits_it(self):
+        # Capital One: page 1's payment coupon line prints the complete card number; the page images read it.
+        self.document['accounts'][0]['full_account_number'] = '4000000000040123'
+        outcome = self.read(numbers={'4000000000040123'})
+        self.assertEqual(outcome['status'], 'proved', outcome.get('message'))
+        stored = self.stored()
+        self.assertEqual(stored['account_basis'], vr.LAST4_BASIS)
+        self.assertEqual(stored['card']['full_number'], '4000000000040123')
+        self.assertIn('its full number (4000000000040123), printed on its payment coupon, is read alike from the page images and the text', stored['message'])
+        self.assertEqual(self.r.item(self.batch).status, 'ready')
+
+    def test_a_full_number_the_text_does_not_print_alike_still_holds_it(self):
+        for read, printed in (('4000000000040123', {'4000000000050123'}), ('400000000040123', {'4000000000040123'}),
+                              ('4000000000040123', {'4000000000040123', '77770123'}),
+                              ('4000000000040124', {'4000000000040124', '4000000000040123'}),
+                              ('99990123', {'99990123'})):  # not a card number (8 digits, no Luhn check)
+            with self.subTest(read=read, printed=printed):
+                self.document['accounts'][0]['full_account_number'] = read
+                outcome = self.read(numbers=printed)
+                self.assertEqual(outcome['status'], 'not_proved')
+                self.assertIn('The file also prints a longer number ending in the same digits', outcome['message'])
+        with patch.object(vr, 'FULL_NUMBER_FROM_IMAGES', False):
+            self.document['accounts'][0]['full_account_number'] = '4000000000040123'
+            self.assertEqual(self.read(numbers={'4000000000040123'})['status'], 'not_proved')
 
     def test_an_earlier_held_statement_still_to_be_judged_goes_first(self):
         old = dict(version=vr.VERSION, proof=vr.PROOF_VERSION - 1, status='not_proved', raw={}, message='x')

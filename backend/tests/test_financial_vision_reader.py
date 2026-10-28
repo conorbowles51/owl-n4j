@@ -865,7 +865,7 @@ class FirstStatementTest(unittest.TestCase):
         self.assertTrue(vr.FIRST_STATEMENT)
         # 13 before rule 1, 14 before row dates, 15 before printed order, 16 before LAST4: stored not-proved readings
         # are judged again once
-        self.assertEqual(vr.PROOF_VERSION, 19)
+        self.assertEqual(vr.PROOF_VERSION, 21)
 
     def test_a_known_account_is_judged_as_before(self):
         self.assertNotIn('account_basis', _proved(_proposal(**self.TEXT)))
@@ -940,6 +940,16 @@ class SectionByTextTest(unittest.TestCase):
                                                       'ERICA HOPPER / LASHIKA HOPPER')[1], {'ambiguous'})
 
 
+class SummaryPageRowsTest(unittest.TestCase):
+    """A summary page is read for the balances and header only: no payment is read from it (SUMMARY_PAGES)."""
+
+    def test_a_row_cited_on_a_summary_page_holds_the_statement(self):
+        proposal = dict(_proposal(), statement_page_numbers=[2], summary_page_numbers=[1])
+        with self.assertRaisesRegex(vr.NotProved, 'read from page 1, the summary page of this period'):
+            _proved(proposal)
+        self.assertEqual(len(_proved()['rows']), 3)
+
+
 class SignedDebitsTest(unittest.TestCase):
     """The images give a withdrawal as printed, '-15.89' (L20, Erica Andrews Dec 2020)."""
 
@@ -949,6 +959,13 @@ class SignedDebitsTest(unittest.TestCase):
 
     def test_minus_on_a_credit_is_refused(self):
         self.assertIsNone(vr.row_amount(dict(amount='-15.89', direction='credit'), 2))
+
+    def test_minus_on_a_card_payment_is_its_amount(self):
+        # Capital One prints a payment to the card '- $246.92' (fdaf956c): on a liability, the minus is the credit's.
+        self.assertEqual(vr.row_amount(dict(amount='-246.92', direction='credit'), 2, liability=True), 24692)
+        self.assertIsNone(vr.row_amount(dict(amount='-246.92', direction='credit'), 2, liability=False))
+        with mock.patch.object(vr, 'SIGNED_CARD_CREDITS', False):
+            self.assertIsNone(vr.row_amount(dict(amount='-246.92', direction='credit'), 2, liability=True))
 
     def test_off_refuses_the_minus(self):
         with mock.patch.object(vr, 'SIGNED_DEBITS', False):
