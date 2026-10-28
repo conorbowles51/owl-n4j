@@ -78,20 +78,26 @@ def main(argv=None):
     parser.add_argument('--key-from-live', action='store_true')
     parser.add_argument('--raw', action='store_true', help='keep the page readings (server-side diagnosis only)')
     parser.add_argument('--items', default='', help='comma-separated item ids')
+    parser.add_argument('--readers', default='',
+                        help='the reader chain, e.g. "deepseek" (DeepSeek only: OpenAI switched off), "openai", '
+                             '"deepseek,openai"; keys from the live store (read only). Default: OpenAI alone, '
+                             'unnamed (as before the chain)')
     args = parser.parse_args(argv)
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
     from benchmarks.statement_automation.harness import _load_models
     from services.financial import vision_reader
     from config import OPENAI_API_KEY
-    if args.key_from_live:
-        # The application's stored key (read only), as the product uses it.
+    keys = {}
+    if args.key_from_live or args.readers:
+        # The application's stored keys (read only), as the product uses them.
         from sqlalchemy import text
         from postgres.session import _get_session_local
         from services.ai_provider_credentials import credential_store
         with _get_session_local()() as live:
             live.execute(text('SET TRANSACTION READ ONLY'))
-            OPENAI_API_KEY = credential_store.get_api_key(live, 'openai')
+            keys = {p: credential_store.get_api_key(live, p) for p in ('openai', 'deepseek')}
+            OPENAI_API_KEY = keys['openai']
             live.rollback()
     _load_models()
     engine = create_engine(f'sqlite+pysqlite:///{args.db}', future=True, connect_args=dict(timeout=300, check_same_thread=False))
@@ -118,6 +124,20 @@ def main(argv=None):
             raise RuntimeError('No OpenAI key')
         return model_id, vision_reader.document_request(model_id, OPENAI_API_KEY)
 
+    if args.readers:
+        from services.ai_model_policy import FINANCIAL_VISION_DEEPSEEK, FINANCIAL_VISION_OPENAI
+        models = {'deepseek': FINANCIAL_VISION_DEEPSEEK['model_id'], 'openai': FINANCIAL_VISION_OPENAI['model_id']}
+        named = [r.strip() for r in args.readers.split(',') if r.strip()]
+
+        def page_reader(db, case_id):  # noqa: F811 - the chain, built as chain_page_reader builds it
+            chain = [vision_reader.keyed_page_reader(p, models[p], keys.get(p), context='truth') for p in named]
+            if named == ['deepseek']:
+                # "DeepSeek only": the OpenAI reader is switched off, nothing is sent to it.
+                chain.append(vision_reader.PageReader(
+                    provider='openai', model=models['openai'], read=None, switched_off=True, strips=None,
+                    unavailable='OpenAI failover is switched off', max_output_tokens=vision_reader.RESERVE_OUTPUT_TOKENS))
+            return chain
+
     def one(period):
         started = time.monotonic()
         record = vision_reader.read_item(factory, uuid.UUID(period['item_id']), lambda path: path, page_reader=page_reader,
@@ -127,7 +147,10 @@ def main(argv=None):
                     expected=period.get('expected'), status=record.get('status'), reason=record.get('reason'),
                     message=record.get('message'), pages=len(record.get('pages') or []),
                     cost_usd=record.get('cost_usd'), seconds=round(time.monotonic() - started, 1),
-                    page_costs=record.get('page_costs'))
+                    page_costs=record.get('page_costs'), provider=record.get('provider'),
+                    prompt_version=record.get('prompt_version'),
+                    attempts=[{k: a.get(k) for k in ('provider', 'status', 'seconds', 'cost_usd', 'message')}
+                              for a in record.get('attempts') or []])
         if args.raw and record.get('raw'):
             line['raw'] = record['raw']
         if record.get('status') == 'proved':
