@@ -694,12 +694,22 @@ def with_profiles(profiles):
 
 
 def written_profiles(excluding=None):
-    """The engine's written profiles (and live learned ones, as learned), less any named ``excluding``."""
+    """The profiles live now: the engine's written profiles and the registry's live learned ones (as learned).
+    ``excluding``: a draft's name; the learned versions it replaces (same layout name) are left out."""
     from services.financial import learned_profiles as lp, statement_engine_profiles as sep
-    base = lambda name: name.split('~')[0]
     found = tuple(p for p in sep.PROFILES if not p.get('learned')) + tuple(
         p for p in lp.live() if p['name'] not in lp.LEARNED_OFF)
-    return tuple(p for p in found if not excluding or base(p['name']) != base(excluding))
+    if not excluding:
+        return found
+    layout = excluding.split('~')[0]
+    return tuple(p for p in found if not (p.get('learned') and p['name'].startswith(layout)))
+
+
+def live_and_draft(profile):
+    """(before, after) for the gates: exactly the profiles live now, and the same with the learned versions the
+    draft replaces swapped for the draft (a written profile is never left out)."""
+    profile = keyed(profile)
+    return written_profiles(), written_profiles(profile['name']) + (dict(profile, learned=True),)
 
 
 @contextmanager
@@ -923,9 +933,8 @@ def corpus_gate(profile, corpus, out=None):
     changes is read both ways: a period proved before must be proved after with the same values ('lost' /
     'changed' otherwise); every served period's values are compared too. Returns
     {files, unchanged, rematched: [...], lost, changed, gained, passed}."""
+    base_profiles, with_profile = live_and_draft(profile)
     profile = keyed(profile)
-    base_profiles = written_profiles(profile['name'])
-    with_profile = base_profiles + (dict(profile, learned=True),)
     files = unchanged = 0
     rematched, lost, changed, gained, doubled, served_changed = [], [], [], [], [], []
     for file_id, case_id, sources in corpus:
@@ -975,15 +984,19 @@ def corpus_gate(profile, corpus, out=None):
         missing = sum((Counter(old_served) - Counter(new_served)).values())
         added = list((Counter(new_served) - Counter(old_served)).elements())
         overlapping = [a for a in added if any(_overlaps(json.loads(a), json.loads(o)) for o in old_served)]
+        # Two new statements covering the same days of one account are the same money twice, unless that very
+        # pair was served before.
+        overlapping += [a for i, a in enumerate(added) for b in added[i + 1:] if _overlaps(json.loads(a), json.loads(b))]
         if missing or overlapping:
             served_changed.append(dict(entry, served_before=len(old_served), served_after=len(new_served),
                                        missing=missing, overlapping=len(overlapping)))
         # The same for the proved periods of the engine reading: a new proved period overlapping an old proved one
         # of the same account, not identical to it, counts that money twice.
         old_proved = [v for v in old if v['proved']]
-        for v in new:
-            if v['proved'] and not any(_served(v) == _served(o) and _period_key(v) == _period_key(o) for o in old_proved) \
-                    and any(_overlaps(_as_statement(v), _as_statement(o)) for o in old_proved):
+        fresh = [v for v in new if v['proved'] and not any(_served(v) == _served(o) and _period_key(v) == _period_key(o)
+                                                             for o in old_proved)]
+        for i, v in enumerate(fresh):
+            if any(_overlaps(_as_statement(v), _as_statement(o)) for o in old_proved + fresh[i + 1:]):
                 doubled.append(dict(entry, period=_period_key(v), overlapping=True))
         entry.update(served_before=len(old_served), served_after=len(new_served))
         rematched.append(entry)
@@ -1001,9 +1014,10 @@ def _as_statement(values):
 
 
 def _overlaps(a, b):
-    """Two statements of the same account (digits; one ending the other's) whose printed periods share a day."""
+    """Two statements of one file that may be the same account (the same digits, the same last four, or either
+    without any) and whose printed periods share a day."""
     x, y = vr._digits(a.get('account_reference')), vr._digits(b.get('account_reference'))
-    if not x or not y or not (x == y or x.endswith(y[-4:]) and len(y) >= 4 and y.endswith(x[-4:])):
+    if x and y and x != y and x[-4:] != y[-4:]:
         return False
     if not all((a.get('period_start'), a.get('period_end'), b.get('period_start'), b.get('period_end'))):
         return False
@@ -1089,14 +1103,17 @@ def _truth_outcomes(sources, entry, side, periods, audit):
 
 def gates(profile, corpus, sources_of, truth_dir, inventory, out=None):
     """Both data gates for one draft: {'corpus': corpus_gate, 'truth': truth_gate, 'passed': bool}."""
-    keyed_profile = keyed(profile)
-    base = written_profiles(profile['name'])
-    _GATE_PROFILES.update(before=base, after=base + (dict(keyed_profile, learned=True),))
+    from services.financial import learned_profiles as lp, statement_engine_profiles as sep
+    before, after = live_and_draft(profile)
+    _GATE_PROFILES.update(before=before, after=after)
     from services.financial import statement_engine_routing as routing
     corpus_result = corpus_gate(profile, corpus, out)
     corpus_result['routing'] = dict(generic_only=bool(routing.generic_only()), generic_enabled=bool(routing.generic_enabled()))
+    # What the pass is for: exactly these rules, with these profiles switched off (a release needs none off).
+    conditions = dict(rules_hash=lp.rules_hash(profile), profiles_off=sorted(sep.PROFILES_OFF | lp.LEARNED_OFF))
     truth_result = truth_gate(corpus_result['rematched'], sources_of, truth_dir, inventory)
-    return dict(corpus=corpus_result, truth=truth_result, passed=corpus_result['passed'] and truth_result['passed'])
+    return dict(corpus=corpus_result, truth=truth_result, conditions=conditions,
+                passed=corpus_result['passed'] and truth_result['passed'])
 
 
 # ---------------------------------------------------------------------------

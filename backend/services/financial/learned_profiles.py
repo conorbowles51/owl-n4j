@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections import Counter
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -50,6 +51,12 @@ def rules_hash(rules):
 def _validated(entry):
     from services.financial import statement_engine_profiles as sep
     rules = {k: v for k, v in entry.items() if k != 'learned'}
+    match = rules.get('match')
+    if not isinstance(match, dict) or not match.get('all') or set(match) - {'all', 'any'} or not all(
+            isinstance(v, list) and v and all(isinstance(p, str) and p.strip() for p in v) for v in match.values()):
+        raise ValueError('Learned profile %s: match needs a non-empty list of printed phrases' % rules.get('name'))
+    if any(p['name'] == rules.get('name') for p in sep.PROFILES if not p.get('learned')):
+        raise ValueError('Learned profile %s has the name of a written profile' % rules.get('name'))
     sep.validate(rules)
     return dict(rules, learned=entry.get('learned') or True)
 
@@ -60,9 +67,14 @@ def _servable(entry):
     learned = entry.get('learned')
     if not isinstance(learned, dict) or learned.get('state') not in ('live', 'retired'):
         return False
-    gates = learned.get('gates') or {}
-    if not (gates.get('corpus_passed') and gates.get('truth_passed') and learned.get('review') == 'PASS'):
+    gates = learned.get('gates')
+    if not isinstance(gates, dict) or not (gates.get('corpus_passed') and gates.get('truth_passed')
+                                           and learned.get('review') == 'PASS'):
         raise ValueError('Learned profile %s has no passing gates and review on record' % entry.get('name'))
+    # The gates must have run on exactly these rules, with every written profile in force (not a backtest).
+    if gates.get('rules_hash') != rules_hash(entry) or gates.get('profiles_off') != [] or not gates.get('corpus_dumped_at'):
+        raise ValueError('Learned profile %s: its gate result is not for these rules with every profile on'
+                         % entry.get('name'))
     if learned.get('rules_hash') != rules_hash(entry):
         raise ValueError('Learned profile %s was changed after its gates (rules hash differs)' % entry.get('name'))
     # The name carries the rules' hash: rules edited under the same name could be served a reading the engine
@@ -76,11 +88,17 @@ def _servable(entry):
 def problems(path=None):
     """[(name, why)] for every registry entry the engine refuses (the release test requires none)."""
     found = []
-    for entry in registry(path).get('profiles', []):
+    try:
+        entries = registry(path).get('profiles', [])
+    except Exception as error:  # noqa: BLE001
+        return [('(registry)', str(error))]
+    for entry in entries:
         try:
+            if not isinstance(entry, dict):
+                raise ValueError('an entry is not an object')
             if _servable(entry):
                 _validated(entry)
-        except ValueError as error:
+        except Exception as error:  # noqa: BLE001
             found.append((entry.get('name'), str(error)))
     return found
 
@@ -95,14 +113,29 @@ def live():
         # Fail closed per entry: an entry the engine refuses is never served (ERROR in the journal); the others and
         # every written profile keep reading. A saved choice naming a refused entry finds no profile (held).
         accepted = []
-        for entry in registry().get('profiles', []):
+        try:
+            entries = registry().get('profiles', [])
+        except Exception as error:  # noqa: BLE001 - an unreadable registry serves no learned profile at all
+            log.error('Learned profiles refused: the registry cannot be read (%s)', error)
+            entries = []
+        for entry in entries if isinstance(entries, list) else []:
             try:
-                if _servable(entry):
+                if isinstance(entry, dict) and _servable(entry):
                     accepted.append(_validated(entry))
-            except ValueError as error:
+            except Exception as error:  # noqa: BLE001 - one refused entry never stops the others
                 log.error('Learned profile refused: %s', error)
-        _LOADED.update(stamp=stamp, all=tuple(accepted))
-        _LOADED['profiles'] = tuple(p for p in _LOADED['all'] if p['learned'].get('state') == 'live')
+        # One live version per layout: two would make every file of it ambiguous (read plainly again).
+        layouts = Counter(p['learned'].get('fingerprint') for p in accepted if p['learned'].get('state') == 'live')
+        doubled = {f for f, n in layouts.items() if n > 1}
+        for p in accepted:
+            if p['learned'].get('state') == 'live' and p['learned'].get('fingerprint') in doubled:
+                log.error('Learned profile refused: %s shares its layout with another live version', p['name'])
+        accepted = [p for p in accepted if not (p['learned'].get('state') == 'live'
+                                                and p['learned'].get('fingerprint') in doubled)]
+        result = dict(stamp=stamp, all=tuple(accepted),
+                      profiles=tuple(p for p in accepted if p['learned'].get('state') == 'live'))
+        _LOADED.clear()
+        _LOADED.update(result)  # built fully before it is visible
     return _LOADED['profiles']
 
 
@@ -123,43 +156,59 @@ def named(name):
     return next((p for p in profiles() + tuple(everything()) if p['name'] == name), None)
 
 
+def _found(profiles, text):
+    """statement_engine_profiles._matching over an explicit tuple (no module state is swapped)."""
+    from services.financial.statement_engine_profiles import PROFILES_OFF
+    lowered = ' '.join(text.lower().split())
+    found = []
+    for profile in profiles:
+        if profile['name'] in PROFILES_OFF or profile['name'] in LEARNED_OFF:
+            continue
+        rule = profile['match']
+        if all(p in lowered for p in rule.get('all', [])) and (not rule.get('any') or any(p in lowered for p in rule['any'])):
+            found.append(profile)
+    return found
+
+
+def match_among(profiles, text, furniture=None):
+    """statement_engine_profiles.matching_profile's rule over an explicit tuple: the one matching profile; with
+    several, the one printed in the furniture, then the one matched by phrases that must all occur; else None."""
+    found = _found(profiles, text)
+    if len(found) > 1 and furniture is not None:
+        printed = _found(profiles, furniture)
+        if len(printed) == 1:
+            found = printed
+    if len(found) > 1:
+        specific = [p for p in found if not p['match'].get('any')]
+        found = specific if len(specific) == 1 else found
+    return found[0] if len(found) == 1 else None
+
+
 def pick(text, furniture, written, learned):
-    """The profile the router uses, written and learned profiles together under statement_engine_profiles'
-    matching rule (a profile printed in the document's furniture outranks one matched only by a movement line,
-    '<date> | CAPITAL ONE ...'), with two limits on a learned profile:
+    """The profile the router uses, written and learned profiles together under the engine's matching rule (a
+    profile printed in the document's furniture outranks one matched only by a movement line, '<date> | CAPITAL
+    ONE ...'), with two limits on a learned profile:
 
     * a learned pick stands only when no written profile is printed in the furniture (the text without dated
       lines; the whole text when no furniture is given): a written profile the layout prints always wins;
     * when the learned profiles make the match ambiguous (None), the written profiles alone decide, as before.
 
+    Pure: the profile tuples are arguments; no module state is changed (the server reads on several threads).
     Measured on OPDMD66 (hand Truist profile removed): 6 of the 7 Truist files print a payment to Capital One in
     a movement line, so the written Capital One card profile matched their text but not their furniture."""
-    from services.financial import statement_engine_profiles as sep
-    match = getattr(sep.matching_profile, '__wrapped__', sep.matching_profile)
     written, learned = tuple(written), tuple(learned)
-    saved = sep.PROFILES
-    try:
-        sep.PROFILES = written + learned
-        found = match(text, furniture) if sep.PROFILES else None
-        if found is not None and found.get('learned'):
-            sep.PROFILES = written
-            if sep._matching(furniture if furniture is not None else text):
-                found = None
-        if found is None:
-            sep.PROFILES = written
-            found = match(text, furniture) if written else None
-    finally:
-        sep.PROFILES = saved
+    found = match_among(written + learned, text, furniture)
+    if found is not None and found.get('learned') and _found(written, furniture if furniture is not None else text):
+        found = None
+    if found is None:
+        found = match_among(written, text, furniture)
     return found
 
 
 def matching(text, furniture=None):
-    """The router's pick among the engine's written profiles and the learned ones (``pick``)."""
+    """The router's pick among the engine's written profiles and the registry's learned ones (``pick``)."""
     from services.financial import statement_engine_profiles as sep
-    written = tuple(p for p in sep.PROFILES if not p.get('learned'))
-    learned = tuple(p for p in sep.PROFILES if p.get('learned'))
-    names = {p['name'] for p in learned}
-    return pick(text, furniture, written, learned + tuple(p for p in profiles() if p['name'] not in names))
+    return pick(text, furniture, tuple(p for p in sep.PROFILES if not p.get('learned')), profiles())
 
 
 @contextmanager

@@ -278,6 +278,16 @@ class OverlapTests(unittest.TestCase):
         self.assertFalse(result['passed'])
         self.assertEqual(result['served_changed'][0]['overlapping'], 1)
 
+    def test_two_new_overlapping_statements_fail_the_gate(self):
+        new = ['{"account_reference": "", "period_end": "2024-01-31", "period_start": "2024-01-01"}',
+               '{"account_reference": "1234", "period_end": "2024-01-31", "period_start": "2024-01-02"}']
+        calls = iter([[], new])
+        with mock.patch.object(ll, '_matched', side_effect=[None, 'learned-x']), \
+                mock.patch.object(ll, '_read_with', return_value=[]), \
+                mock.patch.object(ll, '_catalog_with', side_effect=lambda *a: next(calls)):
+            result = ll.corpus_gate(dict(name='learned-x', match=dict(all=['x'])), [('f', 'c', [])])
+        self.assertFalse(result['passed'])
+
     def test_an_unreadable_file_fails_the_gate_with_its_reason(self):
         with mock.patch.object(ll, '_matched', side_effect=[None, 'learned-x']), \
                 mock.patch.object(ll, '_read_with', side_effect=RuntimeError('boom')):
@@ -331,7 +341,8 @@ class RegistryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'learned_profiles.json'
             a = dict(name='learned-a-' + lp.rules_hash(dict(match=dict(all=['a'])))[:12], match=dict(all=['a']))
-            passed = dict(gates=dict(corpus_passed=True, truth_passed=True), review='PASS')
+            passed = dict(gates=dict(corpus_passed=True, truth_passed=True, rules_hash=lp.rules_hash(a), profiles_off=[],
+                                     corpus_dumped_at='2026-10-28T00:00:00+00:00'), review='PASS', fingerprint='fa')
             path.write_text(json.dumps(dict(version=2, profiles=[
                 dict(a, learned=dict(passed, state='live', version=1, rules_hash=lp.rules_hash(a))),
                 dict(name='learned-b', match=dict(all=['b']), learned=dict(state='draft_failed', version=1)),
@@ -342,6 +353,7 @@ class RegistryTests(unittest.TestCase):
                 with mock.patch.object(lp, 'LEARNED_OFF', {a['name']}):
                     self.assertEqual(lp.profiles(), ())
             for broken in (dict(a, learned=dict(state='live', rules_hash=lp.rules_hash(a))),  # no gates on record
+                           dict(a, learned=dict(passed, gates=['x'], state='live', rules_hash=lp.rules_hash(a))),
                            dict(a, match=dict(all=['edited']), learned=dict(passed, state='live',
                                                                             rules_hash=lp.rules_hash(a))),
                            dict(a, unknown_rule=True, learned=dict(passed, state='live',
@@ -357,6 +369,30 @@ class RegistryTests(unittest.TestCase):
             path.write_text(json.dumps(dict(profiles=[dict(renamed, learned=dict(passed, state='live',
                                                                                  rules_hash=lp.rules_hash(renamed)))])))
             self.assertIn('rules hash', lp.problems(path)[0][1])
+            # A gate result from a backtest (a profile switched off) never releases an entry.
+            backtest = dict(passed, gates=dict(passed['gates'], profiles_off=['truist-consolidated']))
+            path.write_text(json.dumps(dict(profiles=[dict(a, learned=dict(backtest, state='live',
+                                                                           rules_hash=lp.rules_hash(a)))])))
+            self.assertIn('every profile on', lp.problems(path)[0][1])
+            # A match printing nothing would match every document.
+            empty = dict(name='learned-e-' + lp.rules_hash(dict(match={}))[:12], match={})
+            path.write_text(json.dumps(dict(profiles=[dict(empty, learned=dict(
+                passed, gates=dict(passed['gates'], rules_hash=lp.rules_hash(empty)), state='live',
+                rules_hash=lp.rules_hash(empty)))])))
+            self.assertIn('non-empty list', lp.problems(path)[0][1])
+            # Two live versions of one layout: neither is served.
+            b = dict(name='learned-b-' + lp.rules_hash(dict(match=dict(all=['b'])))[:12], match=dict(all=['b']))
+            entry = lambda x: dict(x, learned=dict(passed, gates=dict(passed['gates'], rules_hash=lp.rules_hash(x)),
+                                                   state='live', rules_hash=lp.rules_hash(x)))
+            path.write_text(json.dumps(dict(profiles=[entry(a), entry(b)])))
+            with mock.patch.object(lp, 'REGISTRY', path), self.assertLogs('services.financial.learned_profiles', 'ERROR'):
+                lp._LOADED.clear()
+                self.assertEqual(lp.live(), ())
+            # An unreadable registry serves no learned profile and raises nothing.
+            path.write_text('{not json')
+            with mock.patch.object(lp, 'REGISTRY', path), self.assertLogs('services.financial.learned_profiles', 'ERROR'):
+                lp._LOADED.clear()
+                self.assertEqual(lp.live(), ())
         lp._LOADED.clear()
 
     def test_shipped_registry_is_valid(self):

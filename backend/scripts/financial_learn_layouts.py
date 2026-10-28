@@ -196,6 +196,8 @@ def run_gates(profile, directory, truth, inventory, off=(), out=print, db=None):
     finally:
         sep.PROFILES_OFF.clear()
         sep.PROFILES_OFF.update(saved_off)
+    result['conditions']['corpus_dumped_at'] = json.loads(Path(directory, 'manifest.json').read_text())['dumped_at']
+    result['conditions']['off_for_this_run'] = sorted(off)
     c, t = result['corpus'], result['truth']
     out('corpus: %s files, %s pick unchanged, %s re-read: lost %s changed %s doubled %s served-changed %s gained %s'
         ' -> %s' % (c['files'], c['unchanged'], len(c['rematched']), len(c['lost']), len(c['changed']),
