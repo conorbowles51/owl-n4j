@@ -28,6 +28,38 @@ _ENGINE_STATUS_MAP = {
 _RETRY_DELAYS = (5, 30, 120, 300)
 _QUIET_SWEEP_SECONDS = 300
 
+# The engine answers 404 for a job it no longer has. That is final: the job
+# will never report a terminal status, so the row is failed with a plain reason
+# instead of being tracked forever.
+_MISSING_MERGE_REASON = (
+    "The processing job for this merge no longer exists, so the merge did not "
+    "finish. Run the merge again."
+)
+_MISSING_FILE_REASON = (
+    "The processing job for this file no longer exists, so processing did not "
+    "finish. Process the file again."
+)
+
+
+def _engine_job_missing(exc: Exception) -> bool:
+    import httpx
+    return (
+        isinstance(exc, httpx.HTTPStatusError)
+        and exc.response is not None
+        and exc.response.status_code == 404
+    )
+
+
+def _missing_job(job_id: str) -> dict:
+    """A synthetic failed engine job for one the engine no longer has."""
+    return {"job_id": job_id, "status": "failed", "engine_job_missing": True}
+
+
+def _failure_reason(payload: dict, missing_reason: str) -> str | None:
+    if payload.get("engine_job_missing"):
+        return missing_reason
+    return _extract_failure_message(payload)
+
 
 def _extract_failure_message(payload: dict) -> str | None:
     for key in ("error_message", "message"):
@@ -68,6 +100,7 @@ class JobStatusSubscriber:
         self._last_seen: Dict[str, float] = {}  # job_id -> monotonic time of last message/check
         self._retry_at: Dict[str, float] = {}  # job_id -> monotonic time the failed sync is retried
         self._failures: Dict[str, int] = {}  # job_id -> consecutive failed syncs
+        self._warned: Set[str] = set()  # jobs already warned unreachable this start
         self._next_sweep = time.monotonic() + _QUIET_SWEEP_SECONDS
         self._task: asyncio.Task | None = None
 
@@ -163,10 +196,14 @@ class JobStatusSubscriber:
                             self._tracked[jid] = case_id
                             await self._pubsub.subscribe(f"job:{jid}:progress")
                     except Exception as e:
+                        if _engine_job_missing(e):
+                            self._fail_missing_file(db, ef)
+                            logger.info("Engine no longer has job %s; file marked failed", jid)
+                            continue
                         # Engine unreachable — subscribe anyway, will catch up later
                         self._tracked[jid] = case_id
                         await self._pubsub.subscribe(f"job:{jid}:progress")
-                        logger.warning("Could not check engine job %s: %s", jid, e)
+                        self._warn_unreachable(jid, e)
 
                 # Recover MergeJobs the same way. Without this, a backend
                 # restart mid-merge leaves source entities un-recycled.
@@ -193,9 +230,13 @@ class JobStatusSubscriber:
                             self._tracked[jid] = case_id
                             await self._pubsub.subscribe(f"job:{jid}:progress")
                     except Exception as e:
+                        if _engine_job_missing(e):
+                            self._handle_merge_completion(db, mj, _missing_job(jid), "failed", case_id)
+                            logger.info("Engine no longer has merge job %s; merge marked failed", jid)
+                            continue
                         self._tracked[jid] = case_id
                         await self._pubsub.subscribe(f"job:{jid}:progress")
-                        logger.warning("Could not check merge engine job %s: %s", jid, e)
+                        self._warn_unreachable(jid, e)
 
                 db.commit()
         except Exception as e:
@@ -267,6 +308,29 @@ class JobStatusSubscriber:
             except Exception:
                 pass
 
+    def _warn_unreachable(self, job_id: str, exc: Exception):
+        """Warn once per job per start; later failures to reach the engine
+        about the same job are debug only."""
+        if job_id in self._warned:
+            logger.debug("Could not check engine job %s: %s", job_id, exc)
+            return
+        self._warned.add(job_id)
+        logger.warning("Could not check engine job %s (will keep retrying): %s", job_id, exc)
+
+    @staticmethod
+    def _fail_missing_file(db, ef):
+        from services.evidence_db_storage import EvidenceDBStorage
+
+        EvidenceDBStorage.mark_processed(db, [ef.id], error=_MISSING_FILE_REASON)
+        EvidenceDBStorage.add_log(
+            db,
+            case_id=ef.case_id,
+            evidence_file_id=ef.id,
+            filename=ef.original_filename,
+            level="error",
+            message=f"Failed: {ef.original_filename}: {_MISSING_FILE_REASON}",
+        )
+
     def _forget(self, job_id: str):
         self._tracked.pop(job_id, None)
         self._last_seen.pop(job_id, None)
@@ -296,10 +360,14 @@ class JobStatusSubscriber:
             try:
                 job = await evidence_engine_client.get_job(jid)
             except Exception as e:
+                if _engine_job_missing(e):
+                    # The engine dropped the job: it will never finish.
+                    await self._settle(jid, _missing_job(jid), "failed")
+                    continue
                 # Engine unreachable: keep the retry pending, check again later.
                 if jid in self._retry_at:
                     self._retry_at[jid] = now + _RETRY_DELAYS[-1]
-                    logger.warning("Could not check engine job %s: %s", jid, e)
+                    self._warn_unreachable(jid, e)
                 else:
                     logger.debug("Could not check quiet engine job %s: %s", jid, e)
                 continue
@@ -341,7 +409,7 @@ class JobStatusSubscriber:
                 # No matching row will ever exist — drop the subscription.
                 return True
 
-            err = _extract_failure_message(data) if status == "failed" else None
+            err = _failure_reason(data, _MISSING_FILE_REASON) if status == "failed" else None
             EvidenceDBStorage.mark_processed(db, [db_rec.id], error=err)
 
             if status == "completed":
@@ -472,7 +540,7 @@ class JobStatusSubscriber:
                     len(failed),
                 )
             else:
-                err = _extract_failure_message(data)
+                err = _failure_reason(data, _MISSING_MERGE_REASON)
                 merge_job.status = "failed"
                 merge_job.error_message = err
                 logger.error(
