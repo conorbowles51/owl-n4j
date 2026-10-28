@@ -151,16 +151,35 @@ _LAYOUT_WORDS = frozenset('''
     RECIBO POLIZA POL PRIMA SEGURO COB COBRO RO ROS LINEA CAPTURA APORT IMPORTE MOBILE BANKING DEPOSIT WITHDRAWAL
     AUTOMATIC PAYMENT PMT PYMT ONLINE WEB APP THANK YOU PROMO PURCHASE OFFER AUTHDATE USD EUR MXP MXN MN
     ENE FEB MAR ABR MAY JUN JUL AGO SEP SEPT OCT NOV DIC ENERO FEBRERO MARZO ABRIL MAYO JUNIO JULIO AGOSTO
-    SEPTIEMBRE OCTUBRE NOVIEMBRE DICIEMBRE JAN APR AUG DEC VIDA OTRO BANCO MEXICO
+    SEPTIEMBRE OCTUBRE NOVIEMBRE DICIEMBRE JAN APR AUG DEC VIDA OTRO BANCO MEXICO COMPRA VENTA RFC GUIA COTIZACION
 '''.split())
 _DIRECTED = re.compile(r'\b(?:TO|FROM|FOR|BY|PAY|PAID|PAYEE|PARA|FAVOR|BENEFICIARIO|DESTINO|ORDENANTE|CLIENTE|NAME)\b')
+
+
+# A labelled name field (BENEFICIARIO JUAN PEREZ, DEL CLIENTE ACME): a name is printed, whatever the layout.
+_LABELLED = re.compile(r'\b(?:BENEF\w*|ORDENANTE|CLIENTE|A FAVOR DE|DESTINATARIO|NOMBRE|PAYEE|NAME|PAID TO|PAY TO|TO|FROM)\b\s*:?\s*[A-Z]{2,}')
 
 
 def _only_layout_words(text):
     for token in re.split(r'[\s.,:;()/\[\]|*"\'\-–—#%+=&!?·]+', text):
         if len(token) >= 2 and token.isalpha() and token not in _LAYOUT_WORDS:
             return False
+        # A word run into a reference (BBVA glues the concept to its 7-digit reference: 0012345BIMBO) or opening
+        # with digits (7ELEVEN) is still a word that could be a name.
+        if not token.isalpha():
+            for run in re.findall(r'(?<=\d{5})[A-Z]{3,}$|^\d{1,2}[A-Z]{3,}$', token):
+                run = re.sub(r'^\d+', '', run)
+                if run not in _LAYOUT_WORDS:
+                    return False
     return True
+
+
+def _name_like(text):
+    """True when the text holds a common given name or a legal form, i.e. a person or company may be printed."""
+    from services.financial.payment_parties import _GIVEN_NAMES, _LEGAL_FORM
+    words = re.sub(r'[^A-Z ]', ' ', text).split()
+    return any(w in _GIVEN_NAMES for w in words) or bool(re.search(r'\b(?:S\.?\s?A\.?|S\s?DE\s?R\.?\s?L|S\.?\s?C|A\.?\s?C|INC|LLC|LTD|CORP)\b\.?', text)) \
+        or bool(_LEGAL_FORM.search(text))
 
 
 def _without_town(text):
@@ -183,6 +202,9 @@ def unnamed_reason(value, *, direction, account_type=None):
             if not match:
                 continue
             tail = value[match.end():]
+            # A labelled name field, or (outside FIELD layouts) a given name or legal form, means a name may be printed.
+            if _LABELLED.search(tail) or (mode != FIELD and _name_like(tail)):
+                return None
             if mode == STRICT and not _only_layout_words(tail):
                 return None
             if mode == CITY and not _only_layout_words(_without_town(tail)):

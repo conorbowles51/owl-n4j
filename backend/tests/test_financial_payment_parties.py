@@ -480,5 +480,47 @@ class PhaseTwoPartyTests(unittest.TestCase):
         self.assertEqual(reason('C01 DEPOSITO EN EFECTIVO Ref. 1000', 'credit'), 'cash-deposit')
         self.assertEqual(reason('60001 - 1000 Q STEXAMPLETOWNDC', 'debit', 'credit_card'), 'card-address-only')
 
+    def test_no_place_address_bank_or_concept_as_a_party(self):
+        # Card lines whose descriptor is a place, an address, a bank, a concept or a directed phrase name no merchant.
+        for description in ['MONTERREY NL 555-123-4567', 'CIUDAD DE MEXICO 5512345678 MX', 'GUADALAJARA JAL 3312345678',
+                            'SAN FRANCISCO #1234', 'AV REFORMA 222 CDMX 5512345678', 'CALLE 5 DE MAYO 5512345678',
+                            'FINIQUITO 555-123-4567', 'BBVA MEXICO 5551234567', 'BANK OF AMERICA 555-123-4567',
+                            'ZELLE TO JOHN EXAMPLE 5551234567']:
+            with self.subTest(description=description):
+                self.assertIsNone(party(description, 'debit', 'credit_card'))
+        self.assertEqual(party('STARBUCKS #12345 WASHINGTON DC', 'debit', 'credit_card')[0], 'Starbucks')
+        # Names taken from free text must be shaped like a party: not a borough, a town and state, a concept with a legal form.
+        for tail in ['NOMINA A12 MIGUEL HIDALGO', 'BENITO JUAREZ', 'DOLORES HIDALGO GTO', 'JESUS MARIA AGS', 'VICTORIA DE DURANGO',
+                     'FINIQUITO GUADALUPE NL', 'NOMINA A12 VIDA SA', 'BONO SC', 'HORAS EXTRA SC', 'CDMX AC', 'CALLE JUAREZ SA',
+                     'GRUPO DE TRABAJO']:
+            with self.subTest(tail=tail):
+                self.assertIsNone(party('T17 SPEI ENVIADO BANORTE 0012345 ' + tail))
+        self.assertIsNone(party('TJ3 SITH1234567 VICTORIA DE DURANGO 12345 Ref. 1', 'credit'))
+        self.assertIsNone(party('C61 COMPRA CHEQUE DE CAJA MIGUEL HIDALGO Ref. 123'))
+        # A company word after a name still names the company (a truncated CORPORATIVO, FINANCIAL).
+        self.assertEqual(party('TJ3 SITH1234567 EJEMPLO SERVICIOS CORPORAT1234567 Ref. 1234567', 'credit')[0], 'EJEMPLO SERVICIOS CORPORAT')
+        # The card issuer named in a card payment is the payee.
+        self.assertEqual(party('RECURRING INTERNET PAYMENT CRCARDPMT CAPITAL ONE 3ABCDEFGHIJ1234')[0], 'CAPITAL ONE')
+
+    def test_no_reason_where_a_name_is_printed(self):
+        for description, direction, kind in [
+            ('CARGO TRANSFERENCIA ENLACE BENEFICIARIO JUAN EJEMPLO', 'debit', 'checking'),
+            ('ABONO TRANSFERENCIA ENLACE DEL CLIENTE JUAN EJEMPLO', 'credit', 'checking'),
+            ('W01 TRASPASO A TERCEROS BENEFICIARIO JUAN EJEMPLO', 'debit', 'checking'),
+            ('T16 PAGO DE NOMINA BENEFICIARIO JUAN EJEMPLO', 'debit', 'checking'),
+            ('T17 SPEI ENVIADO BANORTE 0012345BIMBO', 'debit', 'checking'),
+            ('T20 SPEI RECIBIDOBANORTE 0012345JUAN', 'credit', 'checking'),
+            ('ABONO 7ELEVEN', 'credit', 'checking'), ('CARGO 99MINUTOS', 'debit', 'checking'),
+            ('ATM CASH DEPOSIT 12 ACME LLC', 'credit', 'checking'), ('ATM DEPOSIT 12345 MARIA EJEMPLO', 'credit', 'checking'),
+            ('ATM WITHDRAWAL 12 JOHN EXAMPLE', 'debit', 'checking'),
+            ('DEPOSIT SHARED BRANCH MOBILE DEPOSIT JOHN EXAMPLE TX', 'credit', 'checking'),
+            ('PAYMENT TO JOHN TX', 'credit', 'credit_card'),
+        ]:
+            with self.subTest(description=description):
+                self.assertIsNone(reason(description, direction, kind))
+        # References that hold letters (insurance receipts) are not names.
+        self.assertEqual(reason('G30 RECIBO NO. Ref. P12Q34OB56CR'), 'bank-collected-premium')
+        self.assertEqual(reason('W01 TRASPASO A TERCEROS SALDO A FAVOR BMRCASH Ref. REFBNTC00123'), 'bbva-batch-payment')
+
 if __name__ == '__main__':
     unittest.main()

@@ -37,6 +37,52 @@ _PLACES = ['WASHINGTON', 'HYATTSVILLE', 'SUITLAND', 'SILVER SPRING', 'OXON HILL'
            'GREENBELT', 'WOODBRIDGE', 'FORESTVILLE', 'DISTRICT HEIGHTS', 'NEW YORK', 'NEW YORK CITY']
 _PLACES.sort(key=len, reverse=True)
 
+# Mexican state abbreviations and the places most printed as a branch, borough or merchant location. A name
+# ending in a state code, or that is one of these places, is where, not who.
+_MX_STATES = ('AGS BC BCN BCS CAMP CHIS CHIH CDMX COAH COL DGO DF EDOMEX GTO GRO HGO JAL MEX MICH MOR NAY NL OAX PUE '
+              'QRO QROO SLP SIN SON TAB TAMPS TAMS TLAX VER YUC ZAC').split()
+_MX_PLACES = frozenset(' '.join(p.split()) for p in """
+    MEXICO|CIUDAD DE MEXICO|CD DE MEXICO|CD MEXICO|MEXICO DF|MONTERREY|GUADALAJARA|ZAPOPAN|PUEBLA|TIJUANA|LEON|JUAREZ|CIUDAD JUAREZ|
+    CD JUAREZ|TOLUCA|QUERETARO|SANTIAGO DE QUERETARO|MERIDA|CANCUN|CHIHUAHUA|AGUASCALIENTES|SAN LUIS POTOSI|HERMOSILLO|CULIACAN|
+    MEXICALI|SALTILLO|TORREON|MORELIA|VERACRUZ|ACAPULCO|OAXACA|TAMPICO|REYNOSA|MATAMOROS|DURANGO|VICTORIA DE DURANGO|CIUDAD VICTORIA|
+    MAZATLAN|CUERNAVACA|PACHUCA|XALAPA|VILLAHERMOSA|TUXTLA GUTIERREZ|TLAXCALA|ZACATECAS|COLIMA|TEPIC|CAMPECHE|CHETUMAL|LA PAZ|
+    ENSENADA|NOGALES|CELAYA|IRAPUATO|SAN PEDRO GARZA GARCIA|SAN NICOLAS DE LOS GARZA|APODACA|ESCOBEDO|GUADALUPE|SANTA CATARINA|
+    NAUCALPAN|TLALNEPANTLA|ECATEPEC|NEZAHUALCOYOTL|HUIXQUILUCAN|METEPEC|TLAQUEPAQUE|TONALA|TLAJOMULCO|MIGUEL HIDALGO|BENITO JUAREZ|
+    CUAUHTEMOC|COYOACAN|TLALPAN|IZTAPALAPA|IZTACALCO|AZCAPOTZALCO|GUSTAVO A MADERO|ALVARO OBREGON|VENUSTIANO CARRANZA|XOCHIMILCO|
+    CUAJIMALPA|MAGDALENA CONTRERAS|MILPA ALTA|TLAHUAC|DOLORES HIDALGO|JESUS MARIA|SALVADOR ALVARADO|SAN MIGUEL DE ALLENDE|
+    LOS MOCHIS|GUASAVE|NAVOJOA|CIUDAD OBREGON|CD OBREGON|SAN JOSE DEL CABO|CABO SAN LUCAS|PLAYA DEL CARMEN|SANTA FE|POLANCO|
+    SAN FRANCISCO|LOS ANGELES|SAN DIEGO|SAN ANTONIO|SAN JOSE|HOUSTON|DALLAS|AUSTIN|EL PASO|CHICAGO|PHOENIX|PHILADELPHIA|
+    MIAMI|ORLANDO|TAMPA|ATLANTA|BOSTON|SEATTLE|DENVER|DETROIT|LAS VEGAS|PORTLAND|CHARLOTTE|NASHVILLE|COLUMBUS|INDIANAPOLIS|
+    JACKSONVILLE|FORT WORTH|MEMPHIS|LOUISVILLE|MILWAUKEE|ALBUQUERQUE|TUCSON|FRESNO|SACRAMENTO|KANSAS CITY|OMAHA|RALEIGH|
+    RICHMOND|NORFOLK|PITTSBURGH|CLEVELAND|CINCINNATI|BROOKLYN|BRONX|QUEENS|MANHATTAN|NEWARK|JERSEY CITY|BUFFALO|LONDON|TORONTO
+""".split('|') if p.strip())
+# Openings of a street address.
+_ADDRESS_FIRST = frozenset('AV AVE AVENIDA CALLE CALZ CALZADA BLVD BOULEVARD CARR CARRETERA PRIV PRIVADA COL COLONIA KM '
+                           'PROL PROLONGACION ANDADOR CIRCUITO RETORNO CERRADA MANZANA MZ LOTE LT'.split())
+# Concept, period and linking words: a name made only of these (even with a legal form) is not a party.
+_NOT_NAME_WORDS = frozenset(
+    'VIDA BONO BONOS QUINCENA QNA HORAS HORA EXTRA EXTRAS SUELDO SUELDOS SALARIO SALARIOS VIATICOS AGUINALDO VACACIONES '
+    'PRIMA PRIMAS FINIQUITO NOMINA PAGO PAGOS RENTA SEGURO SEGUROS GASTOS COMISION COMISIONES TRABAJO SANGUINEO SERVICIO '
+    'SERVICIOS PRESTAMO ANTICIPO APOYO AYUDA DESPENSA FONDO AHORRO UTILIDADES PTU INCAPACIDAD DE DEL LA LAS LOS EL Y E'.split()) \
+    | frozenset(_MX_STATES)
+# Banks a descriptor may print; a bank alone is never the merchant or payee of a line that should name one.
+_BANK_NAMES = frozenset(_MX_BANKS) | frozenset(' '.join(b.split()) for b in """BANK OF AMERICA|CHASE|JPMORGAN CHASE|WELLS FARGO|
+    CITIBANK|CITI|CAPITAL ONE|TRUIST|PNC|US BANK|TD BANK|NAVY FEDERAL|NAVY FEDERAL CREDIT UNION|M&T|M&T BANK|SANTANDER BANK|
+    BANCO SANTANDER|BBVA USA|BANCO AZTECA|BANCO DEL BAJIO|BANCOMER|BANCO BBVA|BANCO MONEX|BANCO INTERCAM|HSBC BANK""".split('|'))
+
+
+def place_name(text):
+    """True when the text is a place: it ends in a Mexican state code (at most three words before it), or without
+    its final state code it is a known place."""
+    words = re.sub(r'[^A-Z0-9 ]', ' ', normalized(text)).split()
+    if not words:
+        return False
+    if words[-1] in _MX_STATES and len(words) <= 4:
+        return True
+    while words and (words[-1] in _MX_STATES or words[-1] in _STATES):
+        words = words[:-1]
+    return ' '.join(words) in _MX_PLACES or ' '.join(words) in _PLACES
+
 
 def _without_place(label):
     """The label without a known place printed (or glued, 'MARKETWASHINGTON') at its end."""
@@ -68,7 +114,8 @@ def plausible_name(value):
 _CONCEPT_FIRST = frozenset('PAGO PAGOS ONLINE AUTOPAY AUTOMATIC RECURRING TRANSFER TRANSFERENCIA TRASPASO LOAN MONTHLY ANNUAL '
                            'MENSUALIDAD RENT RENTA REFUND REEMBOLSO ANTICIPO COLEGIATURA FEE FEES SERVICE SERVICIO CUOTA ABONO '
                            'CARGO TRANSACTION DEPOSIT DEPOSITO WITHDRAWAL RETIRO SALE PURCHASE CHARGE NOMINA '
-                           'REFERENCIA CONCEPTO FACTURA ADJUSTMENT PRESTAMO'.split())
+                           'REFERENCIA CONCEPTO FACTURA ADJUSTMENT PRESTAMO FINIQUITO AGUINALDO BONO QUINCENA SUELDO SALARIO VIATICOS '
+                           'ZELLE VENMO'.split())
 _CONCEPT_ANY = frozenset('PAYMENT PAYMENTS PMT PYMT FEE MENSUALIDAD COLEGIATURA ANTICIPO REFUND CANCELLED CANCELED'.split())
 
 
@@ -113,9 +160,23 @@ def party_shaped(name):
     # Payment wording inside the text (SEGUNDO PAGO, ANTICIPO) makes it a concept, whatever its other words.
     if _PAYMENT_CONCEPT.search(text):
         return False
-    if _LEGAL_FORM.search(text) or _COMPANY_WORDS.search(text):
-        return True
     words = text.split()
+    if not words or words[0] in _ADDRESS_FIRST or words[-1] in _MX_STATES or place_name(text) or text in _BANK_NAMES:
+        return False
+    legal = _LEGAL_FORM.search(text)
+    if legal:
+        # The words before the legal form must hold a name, not only a concept, period or place (BONO SC, CDMX AC).
+        before = re.sub(r'[^A-Z0-9& ]', ' ', text[:legal.start()]).split()
+        return bool(before) and not all(w in _NOT_NAME_WORDS for w in before) and not place_name(' '.join(before))
+    company = _COMPANY_WORDS.search(text)
+    if company:
+        # A company word names a company after a name (TOYOTA FINANCIAL) or before one (GRUPO BIMBO), not as the
+        # opening of a phrase (GRUPO DE TRABAJO).
+        before = text[:company.start()].split()
+        after = text[company.end():].split()
+        if before:
+            return not all(w in _NOT_NAME_WORDS for w in before) and not place_name(' '.join(before))
+        return bool(after) and after[0] not in _NOT_NAME_WORDS and not all(w in _NOT_NAME_WORDS for w in after)
     if words and len(words[0]) == 1:
         words = words[1:]
     return 2 <= len(words) <= 6 and words[0] in _GIVEN_NAMES and all(re.fullmatch(r"[A-Z][A-Z'\-]*", w) for w in words)
@@ -146,15 +207,15 @@ def concept_or_place(name, place=True, anywhere=True):
         return True
     if words[0] in _CONCEPT_FIRST or (anywhere and any(w in _CONCEPT_ANY for w in words)):
         return True
-    # A street number opening the name (123 MAIN) is an address.
-    if re.fullmatch(r'\d+', words[0]):
+    # A street number opening the name (123 MAIN), or a street word (AV REFORMA, CALLE 5 DE MAYO), is an address.
+    if re.fullmatch(r'\d+', words[0]) or words[0] in _ADDRESS_FIRST:
         return True
     # A town and its state (ANYTOWN TX, SAN FRANCISCO CA) with nothing else is where, not who.
     if not place:
         return False
     if words[-1] in _STATES and len(words) <= 3:
         return True
-    return ' '.join(words) in _PLACES
+    return ' '.join(words) in _PLACES or place_name(' '.join(words))
 
 
 # A transfer's own layout opening: wording found later in it (a concept saying COMISION) is not the bank's charge.
@@ -780,7 +841,8 @@ def card_line_merchant(raw, *, institution=None):
     while len(kept) > 1 and (kept[-1] in _STATES or re.fullmatch(r'[#\-]?[\d\-]+|[-*•·]+', kept[-1])):
         kept.pop()
     label = _without_place(' '.join(kept)).strip(' *-#•·')
-    if not evidence or re.fullmatch(r'[A-Z]{1,3}', label) or (len(kept) == 1 and '*' in kept[0]) or concept_or_place(label, place=False) or generic_words_only(label):
+    if not evidence or re.fullmatch(r'[A-Z]{1,3}', label) or (len(kept) == 1 and '*' in kept[0]) or concept_or_place(label, place=False) or generic_words_only(label) \
+            or place_name(label) or label in _BANK_NAMES or re.search(r'\b(?:TO|FROM)\b', label):
         return None
     if len(re.sub(r'[^A-Z]', '', label)) < 3 or label in _PLACES or re.fullmatch(r'(?:COLUMBIA HEIGHTS|COLUMBIA HEIGH\S*)', label):
         return None
