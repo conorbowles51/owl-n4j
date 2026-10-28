@@ -217,10 +217,24 @@ ROW_DATES = _switch('LOUPE_FINANCIAL_VISION_ROW_DATES')
 # twice and none missing, the pages are read in printed order whatever their order in the file. Off: printed numbers
 # must rise with the file's pages, as before.
 PRINTED_ORDER = _switch('LOUPE_FINANCIAL_VISION_PRINTED_ORDER')
+# The first statement of a card that prints only the last 4 digits (Neil, 2026-10-28, LAST4-APPROVED: fdaf956c's 51
+# Capital One statements print only "ending in 8160" / "ending in 2602", so rule 1 can never confirm them). With no
+# saved statement of the account, a card (liability) statement's header is accepted when the page images and the text
+# reading of the same file both read the number masked with the same visible digits (at least 4), the same holder and
+# the same bank, the currency is printed, the file's text layer prints no longer number ending in those digits (that
+# is rule 1's route), and the case holds no account with those last digits at that bank. Every other proof is
+# unchanged. One card is created by one statement only: the earliest of its held statements still to be judged
+# (last4_turn); the others wait for it and then follow through the saved account (masked number, holder and bank), so
+# a differently printed holder is never merged into it. Recorded with the basis 'page_image_last4_header_matches_text'.
+# Off: such a statement stays held as before.
+LAST4_FIRST_STATEMENT = _switch('LOUPE_FINANCIAL_VISION_LAST4_FIRST_STATEMENT')
+LAST4_BASIS = 'page_image_last4_header_matches_text'
+LAST4_NOTE = (' The first statement of this card in the case: the last 4 digits of its number, its holder and bank on '
+              'the page images agree with the text of the same file, which prints no longer number for it.')
 PROOF_VERSION = 1
 for _switched in (SPLIT_SPELLINGS, SECTION_NUMBER, PRINTED_COUNTS, QUIET_PRINTED, CLABE_ACCOUNT, SECTION_BY_TEXT,
                   SIGNED_DEBITS, DATES_FROM_IMAGE, OPENING_FROM_PREVIOUS, IMAGE_TOTALS, CLOSING_DAYS, TEXT_MISREADS,
-                  FIRST_STATEMENT, ROW_DATES, PRINTED_ORDER):
+                  FIRST_STATEMENT, ROW_DATES, PRINTED_ORDER, LAST4_FIRST_STATEMENT):
     # Each switch on top of the one before; with one off, the rules are the version before it.
     if not _switched:
         break
@@ -556,7 +570,18 @@ def _exponent(currency):
 
 
 class NotProved(Exception):
-    """The image reading does not prove; ``str`` is the plain reason recorded for the investigator."""
+    """The image reading does not prove; ``str`` is the plain reason recorded for the investigator. ``card`` (a
+    card_key) names the account it waits on: no statement of it is confirmed in the case yet, so it is judged again
+    once the first statement of that card is accepted (_requeue_card)."""
+
+    def __init__(self, message='', card=None):
+        super().__init__(message)
+        self.card = card
+
+
+class WaitsForCard(NotProved):
+    """(LAST4_FIRST_STATEMENT) Not judged now: another statement of the same card goes first (last4_turn). Judged
+    again in a later round; never a final outcome."""
 
 
 # ---------------------------------------------------------------------------
@@ -954,6 +979,154 @@ def first_statement_header(rule, header):
                 and fp.same_institution(rule['institution'], header['institution']))
 
 
+def is_card(proposal, liability=None):
+    """A card (liability) statement: its balance is what is owed, or the reader detected a credit card."""
+    metadata = proposal.get('metadata') or {}
+    if liability is None:
+        liability = metadata.get('balance_convention') == 'liability_owed'
+    return bool(liability) or metadata.get('account_type') == 'credit_card'
+
+
+def card_key(institution, digits):
+    """The card an account-confirmation refusal waits on: its visible last digits at its bank."""
+    from services.financial import field_proposals as fp
+    return '%s|%s' % (_digits(digits)[-4:], ' '.join(sorted(fp.institution_key(institution))))
+
+
+def _one_line(text):
+    return ' '.join(str(text or '').split())
+
+
+def _names(values):
+    """Distinct printed names, in the order first seen, joined for a sentence."""
+    from services.financial import field_proposals as fp
+    seen, names = set(), []
+    for value in values:
+        key = fp.holder_key(value)
+        if key and key not in seen:
+            seen.add(key)
+            names.append(_one_line(value))
+    return ' and '.join(names)
+
+
+def _account_words(account_text, liability, proposal):
+    """('card'|'account', 'ending 8160'|'1234567890') for a sentence about the statement's account."""
+    from services.financial import field_proposals as fp
+    digits, masked = fp.account_identity(account_text)
+    kind = 'card' if is_card(proposal, liability) else 'account'
+    return kind, ('ending %s' % digits[-4:] if masked else digits)
+
+
+def _at_bank(known, institution):
+    """A saved account at the statement's bank (or one recording no bank, which could be it)."""
+    from services.financial import field_proposals as fp
+    banks = known.values('institution') or ([known.institution] if known.institution else [])
+    return not banks or not institution or any(fp.same_institution(institution, b) for b in banks)
+
+
+def masked_only_reason(account_text, liability, proposal, check):
+    """The plain reason a statement printing only the last digits of its number is held, and what to do."""
+    kind, ending = _account_words(account_text, liability, proposal)
+    return ('The bank prints only the last 4 digits of this %s (%s) and no statement of it is confirmed in this case '
+            'yet. Confirm one statement of this %s and the rest can follow. It was not accepted as the first statement '
+            'of this %s because %s.' % (kind, ending, kind, kind, check))
+
+
+def holder_differs_reason(account_text, saved_holders, holder, liability, proposal):
+    kind, ending = _account_words(account_text, liability, proposal)
+    return ('This %s (%s) is saved for %s; this statement prints %s. Confirm whether they are the same account.'
+            % (kind, ending, _names(saved_holders), _one_line(holder)))
+
+
+def choose_account_reason(account_text, accounts, institution, liability, proposal):
+    """More than one saved account could be this statement's, or one with the same digits at another bank."""
+    from services.financial import field_proposals as fp
+    kind, ending = _account_words(account_text, liability, proposal)
+    named = '; '.join('%s at %s' % (k.account or k.digits, _names(k.values('institution') or [k.institution]) or 'a bank not recorded')
+                      for k in accounts) or 'another account'
+    if len(accounts) == 1 and not _at_bank(accounts[0], institution):
+        return ('An account with the same number is saved in this case: %s. This statement (%s %s) prints %s. Confirm '
+                'which account it belongs to.' % (named, kind, ending, _one_line(institution) or 'no bank'))
+    return ('More than one account saved in this case could be this %s (%s): %s. Choose which account this statement '
+            'belongs to.' % (kind, ending, named) if len(accounts) > 1 else
+            'Another account saved in this case has the same digits as this %s (%s): %s. Choose whether this '
+            'statement belongs to it.' % (kind, ending, named))
+
+
+def _not_both(field, rule, header, same):
+    """Plain words for a header field the page images and the text do not both read alike, else ''."""
+    words = {'account_number': 'its number', 'holder': 'the account holder', 'institution': 'the bank'}[field]
+    if not (rule[field] and header[field]):
+        return '%s is not read from both the page images and the text' % words
+    if not same(rule[field], header[field]):
+        return '%s read from the page images (%s) differs from the one read from the text (%s)' % (
+            words, _one_line(header[field]), _one_line(rule[field]))
+    return ''
+
+
+def _last4_check(proposal, rule, header, liability):
+    """(LAST4_FIRST_STATEMENT) The first check a masked first statement fails, in plain words; '' when all pass."""
+    from services.financial import field_proposals as fp
+    if not LAST4_FIRST_STATEMENT:
+        return 'accepting the first statement of such a card from its page images is switched off'
+    if not is_card(proposal, liability):
+        return 'it is not a card statement; only the first statement of a card can be accepted this way'
+    missing = _not_both('account_number', rule, header, lambda a, b: True)
+    if missing:
+        return missing
+    numbers = [fp.account_identity(rule['account_number']), fp.account_identity(header['account_number'])]
+    if not all(masked for _, masked in numbers):
+        return ('the %s reads a longer number, so both must read the full number'
+                % ('text' if not numbers[0][1] else 'page images'))
+    if min(len(digits) for digits, _ in numbers) < 4:
+        return 'fewer than 4 digits of its number are read'
+    if numbers[0][0] != numbers[1][0]:
+        return 'the digits read from the page images (%s) differ from those read from the text (%s)' % (
+            numbers[1][0], numbers[0][0])
+    for field, same in (('holder', fp.same_holder), ('institution', fp.same_institution)):
+        failed = _not_both(field, rule, header, same)
+        if failed:
+            return failed
+    if not (rule['currency'] or header['currency']):
+        return 'the currency is not printed'
+    return ''
+
+
+def first_statement_basis(proposal, rule, header, account_text, institution, holder, liability, knowledge):
+    """The basis on which a statement whose account no saved statement confirms is its account's first statement
+    (FIRST_STATEMENT: the full number; LAST4_FIRST_STATEMENT: a card printing only its last digits); NotProved with
+    the plain reason (what is missing and what a person can do) otherwise."""
+    from services.financial import field_proposals as fp
+    identity = fp.account_identity(account_text)
+    digits, masked = identity
+    accounts = getattr(knowledge, 'accounts', []) or []
+    same_digits = [k for k in accounts if fp.account_match(identity, (k.digits, k.masked))]
+    # A full number: no saved account carries it at any bank (rule 1). Last digits only: none at this bank.
+    clash = [k for k in same_digits if _at_bank(k, institution)] if masked else same_digits
+    if clash:
+        holders = [h for k in clash for h in k.values('holder')]
+        if (holder and holders and all(_at_bank(k, institution) for k in clash)
+                and not any(fp.same_holder(holder, h) for h in holders)):
+            raise NotProved(holder_differs_reason(account_text, holders, holder, liability, proposal))
+        raise NotProved(choose_account_reason(account_text, clash, institution, liability, proposal))
+    if not masked:
+        if first_statement_header(rule, header):
+            return FIRST_STATEMENT_BASIS
+        why = next((w for w in (_not_both(f, rule, header, same) for f, same in (
+            ('account_number', lambda a, b: _digits(a) == _digits(b) and not fp.account_identity(a)[1]
+             and not fp.account_identity(b)[1]), ('holder', fp.same_holder), ('institution', fp.same_institution)))
+            if w), 'accepting the first statement of an account from its page images is switched off')
+        if why.startswith('its number read') or why.startswith('its number is'):
+            why = why.replace('its number', 'the full number', 1)
+        raise NotProved('No statement of account %s is confirmed in this case yet, and this one was not accepted as '
+                        'its first because %s. Confirm one statement of this account and the rest can follow.'
+                        % (digits, why))
+    check = _last4_check(proposal, rule, header, liability)
+    if check:
+        raise NotProved(masked_only_reason(account_text, liability, proposal, check), card=card_key(institution, digits))
+    return LAST4_BASIS
+
+
 def prove(proposal, section, knowledge):
     """The proved reading {details, opening, closing, rows, pages} or NotProved with the reason."""
     from services.financial import field_proposals as fp
@@ -995,18 +1168,17 @@ def prove(proposal, section, knowledge):
     holder_printed = header['holder'] or rule['holder']
     institution_printed = header['institution'] or rule['institution']
     candidates, matched = fp.matching_accounts(dict(account_number=account_text, institution=institution_printed), knowledge)
+    found = candidates
     if matched == {'ambiguous'}:
         candidates, matched = one_account_spelled_apart(candidates, account_text, institution_printed, holder_printed)
-    first_statement = False
+    basis = None
     if not candidates and not matched & {'ambiguous'}:
-        # Truly the first: no saved account of the case carries this number at all (at any bank, full or masked).
-        identity = fp.account_identity(account_text)
-        first_statement = first_statement_header(rule, header) and not any(
-            fp.account_match(identity, (known.digits, known.masked)) for known in getattr(knowledge, 'accounts', []) or [])
-        if not first_statement:
-            raise NotProved('This account has no saved statement in the case to confirm the page-image reading against.')
+        # No saved account confirms it: the first statement of its account (rule 1 or LAST4), or held with the reason.
+        basis = first_statement_basis(proposal, rule, header, account_text, institution_printed, holder_printed,
+                                      liability, knowledge)
     elif not candidates or 'ambiguous' in matched or 'account' not in matched:
-        raise NotProved('This account has no saved statement in the case to confirm the page-image reading against.')
+        raise NotProved(choose_account_reason(account_text, candidates or found, institution_printed, liability, proposal))
+    first_statement = basis is not None
     partial = not first_statement and ('masked' in matched or not rule['account_number'])
     if partial and not holder_printed:
         # Only some digits agree, or only the page images print the number: another account at the
@@ -1039,7 +1211,9 @@ def prove(proposal, section, knowledge):
         # A partial number is confirmed only by a printed holder and bank the saved statements also record.
         raise NotProved('The account could not be confirmed from a partial number: the saved statements of this '
                         'account do not record the holder and bank to compare.')
-    if not holder or (saved_holders and not any(fp.same_holder(holder, h) for h in saved_holders)):
+    if holder and saved_holders and not any(fp.same_holder(holder, h) for h in saved_holders):
+        raise NotProved(holder_differs_reason(account_text, saved_holders, holder, liability, proposal))
+    if not holder:
         raise NotProved('The account holder could not be confirmed against the saved statements of this account.')
     if not institution or (saved_institutions and not all(fp.same_institution(institution, i) for i in saved_institutions)):
         raise NotProved('The bank could not be confirmed against the saved statements of this account.')
@@ -1103,7 +1277,7 @@ def prove(proposal, section, knowledge):
     charges = charge_totals(proposal, section, rows, exponent) if CLOSING_DAYS else {}
     return dict(account_keys=[k.key for k in candidates], currency=currency, holder=holder, institution=institution,
                 account_number=account_text, charge_totals=charges,
-                **(dict(account_basis=FIRST_STATEMENT_BASIS) if first_statement else {}),
+                **(dict(account_basis=basis) if basis else {}),
                 period_start=start, period_end=end, opening=opening, closing=closing, rows=rows,
                 opening_page=section['balance_pages'].get('opening_balance') if previous_end is None else rows[0]['page'],
                 closing_page=section['balance_pages'].get('closing_balance'),
@@ -2316,17 +2490,20 @@ def _current(record, revision, model_id):
             and _reader_of(record) == model_id and record.get('status') in FINAL)
 
 
-def read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for=None, apply=True, force=False):
+def read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for=None, apply=True, force=False,
+              numbers_of=None):
     """Read one held statement from its page images (_read_item) and record the outcome, whatever it is (_decided):
-    a journal line, the statement's outcome history and, a skip, its queue note. Measuring records nothing."""
+    a journal line, the statement's outcome history and, a skip, its queue note. Measuring records nothing.
+    ``numbers_of(path)``: the numbers the file's text prints (printed_numbers; injectable for tests)."""
     record = _read_item(factory, item_id, resolve_path, page_reader=page_reader, knowledge_for=knowledge_for,
-                        apply=apply, force=force)
+                        apply=apply, force=force, numbers_of=numbers_of)
     if apply and not force:
         _decided(factory, item_id, record)
     return record
 
 
-def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for=None, apply=True, force=False):
+def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for=None, apply=True, force=False,
+               numbers_of=None):
     """Read one held statement from its page images. Returns the outcome record. Never raises.
 
     ``page_reader(db, case_id) -> (model_id, read)`` and ``knowledge_for(db, case_id)``
@@ -2468,7 +2645,7 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
             # is judged again rather than requested again.
             reuse = _reusable(stored, record['revision'], pages)
             candidates = [(reader, None if reader.unavailable else reuse.get(_attempt_key(reader))) for reader in readers]
-        attempts, accepted = [], None
+        attempts, accepted, waiting = [], None, None
         spent_now, seconds, page_costs = 0.0, 0.0, {}
         chain_started = time.monotonic()
         for reader, raw in candidates:
@@ -2554,6 +2731,9 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
                 try:
                     reading, request, controls, _ = judge(db, case_id, proposal, raw, pages, knowledge_for(db, case_id),
                                                           saved=force, by=by)
+                    if reading.get('account_basis') == LAST4_BASIS:
+                        # The first statement of a card printing only its last digits: its file's text and its turn.
+                        last4_turn(db, case_id, item_id, reading, path, numbers_of=numbers_of)
                     accepted = dict(attempt, status='proved', rows=len(reading['rows']))
                     attempts.append(accepted)
                     db.rollback()
@@ -2573,7 +2753,12 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
                         attempts.append(accepted)
                         reading, controls = None, None
                         break
-                    attempts.append(dict(attempt, status='not_proved', message=str(reason)))
+                    attempts.append(dict(attempt, status='not_proved', message=str(reason),
+                                         **({'account_wait': reason.card} if reason.card else {})))
+                    if isinstance(reason, WaitsForCard):
+                        # Not this statement's turn: judged again later, once the card's earlier statement is.
+                        waiting = reason
+                        break
                 except Exception as error:  # noqa: BLE001 - this reading could not be judged: the next one reads
                     db.rollback()
                     if reader.provider is None:
@@ -2583,13 +2768,24 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
                                          message=f'its reading could not be checked ({type(error).__name__})'))
         record = _outcome(record, attempts, accepted, spent_now, seconds, page_costs, again)
         if accepted is None:
+            if waiting is not None:
+                # Not final: kept judgeable again from the stored reading (REJUDGE), in a later round or pass.
+                record.update(status='not_proved', message=str(waiting), proof=PROOF_VERSION - 1)
+                return dict(_finish(factory, item_id, file_id, key, record, apply), reason='waits_for_card')
+            wait = next((a['account_wait'] for a in attempts if a.get('account_wait')), None)
+            if wait:
+                record['account_wait'] = wait  # judged again once the card's first statement is accepted
             return _finish(factory, item_id, file_id, key, record, apply)
         if accepted.get('basis') == 'dates_from_page_images':
             record['basis'] = 'dates_from_page_images'
         else:
             if reading.get('account_basis'):
-                # The first statement of its account (FIRST_STATEMENT): what admitted its header, recorded with it.
-                record.update(account_basis=reading['account_basis'], message=record['message'] + FIRST_STATEMENT_NOTE)
+                # The first statement of its account (FIRST_STATEMENT, LAST4_FIRST_STATEMENT): what admitted its
+                # header, recorded with it.
+                record.update(account_basis=reading['account_basis'], message=record['message'] + (
+                    LAST4_NOTE if reading['account_basis'] == LAST4_BASIS else FIRST_STATEMENT_NOTE))
+                if reading['account_basis'] == LAST4_BASIS:
+                    record['card'] = last4_card(reading)
             if controls:
                 record['printed_controls'] = controls
             if reading.get('charge_totals') and CLOSING_DAYS:
@@ -2657,6 +2853,10 @@ def judge(db, case_id, proposal, document, pages, knowledge, *, saved=False, by=
         # printed on the images (each proved equal to the payments read, in prove) settle it.
         raise page_gap
     reading = prove(proposal, section, knowledge)
+    if saved and reading.get('account_basis') == LAST4_BASIS:
+        # A saved statement's account is in the case already: a card is never created from its replacement.
+        raise NotProved(masked_only_reason(reading['account_number'], None, proposal,
+                                           'a saved statement is never the first statement of a card'))
     if not saved:
         check_neighbours(db, case_id, reading)
     request = build_request(proposal, reading, by=by)
@@ -2669,6 +2869,166 @@ def judge(db, case_id, proposal, document, pages, knowledge, *, saved=False, by=
         first = next((p.get('message') for p in summary.get('problems') or [] if p.get('message')), '')
         raise NotProved('The page-image reading reconciles, but the statement still has a check: ' + (first or state))
     return reading, request, controls, judged
+
+
+# ---------------------------------------------------------------------------
+# The first statement of a card printing only its last digits (LAST4_FIRST_STATEMENT): whose turn it is
+# ---------------------------------------------------------------------------
+
+# Statements whose status settles nothing more about their card: imported ones are in its saved account (checked
+# through the case's accounts), the others are not statements of it any more.
+SETTLED_STATUSES = ('imported', 'removed', 'superseded_reading', 'duplicate_ignored', 'skipped')
+_LONGER = re.compile(r'(?<![\d-])(?:\d{4}([ -])\d{4}\1\d{4}\1\d{1,7}|\d+(?:-\d+)+|\d{6,})(?![\d-])')
+_printed_cache = {}
+_printed_lock = threading.Lock()
+
+
+def printed_numbers(path):
+    """Every number of at least 6 digits (a full account number, as field_proposals.FULL_ACCOUNT_DIGITS) the file's
+    text layer prints, digits only: a run of digits, digits joined by hyphens, or a card number printed in groups of
+    4. Cached per file (path, size, time)."""
+    import fitz
+    stat = os.stat(str(path))
+    key = (str(path), stat.st_size, stat.st_mtime)
+    with _printed_lock:
+        if key in _printed_cache:
+            return _printed_cache[key]
+    found = set()
+    with fitz.open(str(path)) as document:
+        for page in document:
+            for match in _LONGER.finditer(page.get_text() or ''):
+                if len(_digits(match.group(0))) >= 6:
+                    found.add(_digits(match.group(0)))
+    with _printed_lock:
+        _printed_cache.clear()  # one file at a time is enough: a round reads one file's statements together
+        _printed_cache[key] = found
+    return found
+
+
+def _same_card(digits, institution, account, bank):
+    from services.financial import field_proposals as fp
+    if not fp.account_match((digits, True), fp.account_identity(account)):
+        return False
+    return not bank or not institution or fp.same_institution(institution, bank)
+
+
+def card_turn(db, case_id, item_id, card):
+    """(LAST4_FIRST_STATEMENT) NotProved when the case already records an account with the card's last digits at its
+    bank; WaitsForCard while another statement of the card goes first: an earlier held one still to be judged, or one
+    accepted and not yet imported. ``card``: dict(digits, institution, holder, period_start) of the reading."""
+    from services.financial import field_proposals as fp
+    from postgres.models.financial import FinancialAccount as Account
+    from postgres.models.evidence import EvidenceFile
+    from postgres.models.financial_import_batches import (FinancialImportBatch as Batch,
+                                                          FinancialImportBatchItem as Item)
+    digits, institution = card['digits'], card['institution']
+    ending = digits[-4:]
+    for account in db.scalars(select(Account).where(Account.case_id == case_id)):
+        if _same_card(digits, institution, account.identifier_as_printed or account.identifier_normalised or '',
+                      account.institution_name):
+            if account.holder_name and card.get('holder') and not fp.same_holder(card['holder'], account.holder_name):
+                raise NotProved('This card (ending %s) is saved for %s; this statement prints %s. Confirm whether they '
+                                'are the same account.' % (ending, _one_line(account.holder_name), _one_line(card['holder'])))
+            raise NotProved('An account with the same last digits (%s at %s) is already recorded in this case. Choose '
+                            'whether this statement belongs to it.' % (account.identifier_as_printed or ending,
+                                                                       account.institution_name or 'a bank not recorded'))
+    ours = (card.get('period_start') or '', str(item_id))
+    others = db.execute(select(Item.id, Item.status, Item.statement_key, Item.file_id, Item.summary)
+                        .join(Batch, Batch.id == Item.batch_id)
+                        .where(Batch.case_id == case_id, Batch.status != 'removed', Item.id != item_id,
+                               Item.status.notin_(SETTLED_STATUSES))).all()
+    metadata = {}
+    for other_id, status, key, file_id, summary in sorted(others, key=lambda r: ((r[4] or {}).get('period_start') or '', str(r[0]))):
+        summary = summary or {}
+        if not _same_card(digits, institution, summary.get('account') or '', summary.get('institution')):
+            continue
+        when = summary.get('period_start') or ''
+        period = ' to '.join(v for v in (when, summary.get('period_end') or '') if v) or 'a period not read'
+        if status != 'attention':
+            raise WaitsForCard('Another statement of this card (ending %s, %s) is accepted and waits to be imported; '
+                               'this one follows it once it is.' % (ending, period))
+        if (when, str(other_id)) >= ours:
+            continue
+        if file_id not in metadata:
+            metadata[file_id] = db.scalar(select(EvidenceFile.metadata_).where(EvidenceFile.id == file_id)) or {}
+        stored = (metadata[file_id].get(METADATA_KEY) or {}).get(key or '')
+        if stored and (stored.get('status') == 'proved' or rejudgeable(stored) or _being_read(stored)):
+            raise WaitsForCard('An earlier statement of this card (ending %s, %s) is checked first: a card is '
+                               'confirmed from its earliest statement. This one follows it.' % (ending, period))
+
+
+def last4_turn(db, case_id, item_id, reading, path, numbers_of=None):
+    """(LAST4_FIRST_STATEMENT) The checks a card's first statement needs beyond its own pages: the file's text layer
+    prints no longer number ending in its digits (rule 1 is that number's route), and it is the card's turn
+    (card_turn). NotProved with the plain reason, or WaitsForCard."""
+    proposal = dict(metadata=dict(balance_convention='liability_owed'))
+    digits = _digits(reading['account_number'])
+    try:
+        numbers = (numbers_of or printed_numbers)(path)
+    except Exception as error:  # noqa: BLE001 - fail closed: the text layer could not be checked
+        raise NotProved(masked_only_reason(reading['account_number'], True, proposal,
+                                           'the text of its file could not be checked (%s)' % type(error).__name__))
+    longer = sorted(n for n in numbers if len(n) > len(digits) and n.endswith(digits))
+    if longer:
+        raise NotProved(masked_only_reason(reading['account_number'], True, proposal,
+                        'its file prints a longer number ending in %s (%s), so the page images and the text must both '
+                        'read that full number' % (digits, ', '.join(longer[:3]))), card=card_key(reading['institution'], digits))
+    card_turn(db, case_id, item_id, last4_card(reading))
+
+
+def last4_card(reading):
+    return dict(digits=_digits(reading['account_number']), institution=reading['institution'],
+                holder=reading['holder'], period_start=reading['period_start'])
+
+
+def _lock_card(db, case_id, card):
+    """Serialise the first statement of one card across workers (the lock ends with the transaction)."""
+    if db.get_bind().dialect.name != 'postgresql':
+        return
+    from sqlalchemy import text
+    db.execute(text('SELECT pg_advisory_xact_lock(hashtext(:key))'),
+               dict(key='financial-last4|%s|%s' % (case_id, card_key(card['institution'], card['digits']))))
+
+
+def _requeue_card(factory, case_id, item_id, card):
+    """After a card's first statement is saved: its other held statements refused only because no statement of the
+    card was confirmed yet are judged again from their stored readings (through REJUDGE), now against it. Returns
+    their item ids."""
+    from postgres.models.evidence import EvidenceFile
+    from postgres.models.financial_import_batches import (FinancialImportBatch as Batch,
+                                                          FinancialImportBatchItem as Item)
+    wanted = card_key(card['institution'], card['digits'])
+    requeued = []
+    with factory() as db:
+        rows = db.execute(select(Item.id, Item.file_id, Item.statement_key).join(Batch, Batch.id == Item.batch_id)
+                          .where(Batch.case_id == case_id, Batch.status != 'removed', Item.id != item_id,
+                                 Item.status == 'attention')).all()
+        by_file = {}
+        for other_id, file_id, key in rows:
+            by_file.setdefault(file_id, []).append((other_id, key or ''))
+        for file_id, statements in by_file.items():
+            # Each file once, under its lock (several statements of a card share one file).
+            file = db.scalar(select(EvidenceFile).where(EvidenceFile.id == file_id).with_for_update()
+                             .execution_options(populate_existing=True))
+            if file is None:
+                continue
+            metadata = deepcopy(file.metadata_ or {})
+            changed = False
+            for other_id, key in statements:
+                stored = (metadata.get(METADATA_KEY) or {}).get(key)
+                if not (stored and stored.get('status') == 'not_proved' and stored.get('account_wait') == wanted
+                        and (stored.get('proof') or 1) >= PROOF_VERSION):
+                    continue
+                metadata[METADATA_KEY][key] = dict(stored, proof=PROOF_VERSION - 1, requeued_after=str(item_id))
+                requeued.append(other_id)
+                changed = True
+            if changed:
+                file.metadata_ = metadata
+        db.commit()
+    if requeued:
+        log.info('Page-image reader: %s held statement(s) of card ending %s judged again after its first statement',
+                 len(requeued), card['digits'][-4:])
+    return requeued
 
 
 def _finish(factory, item_id, file_id, key, record, apply):
@@ -2701,6 +3061,20 @@ def _save(factory, item_id, case_id, file_id, key, record, request):
             return _finish(factory, item_id, file_id, key, dict(record, status='stale',
                 message='The statement changed while its page images were read.'), True)
         batch_id = item.batch_id
+        card = record.get('card') if record.get('account_basis') == LAST4_BASIS else None
+        if card:
+            # A card's first statement: its turn is checked again under the card's lock, held until this save
+            # commits, so two workers never both create one card.
+            _lock_card(db, case_id, card)
+            try:
+                card_turn(db, case_id, item_id, card)
+            except NotProved as reason:
+                db.rollback()
+                waits = isinstance(reason, WaitsForCard)
+                held = {k: v for k, v in record.items() if k not in ('account_basis', 'card')}
+                held.update(status='not_proved', message=str(reason), **({'proof': PROOF_VERSION - 1} if waits else {}))
+                done = _finish(factory, item_id, file_id, key, held, True)
+                return dict(done, reason='waits_for_card') if waits else done
         try:
             outcome = save_review(db, case_id=case_id, batch_id=batch_id, item_id=item_id,
                                   request=StatementReviewDraft.model_validate(request),
@@ -2740,6 +3114,13 @@ def _save(factory, item_id, case_id, file_id, key, record, request):
         log.exception('Recording a saved page-image reading failed; its review is saved')
     log.info('Page-image reading proved statement %s of file %s (%s rows, $%.4f); saved as System review',
              str(item_id)[:8], str(file_id)[:8], record.get('rows'), record.get('cost_usd') or 0)
+    if card:
+        try:
+            requeued = _requeue_card(factory, case_id, item_id, card)
+        except Exception:  # noqa: BLE001 - they are judged again at the next proof version or by a person
+            log.exception('Judging the other statements of a card again after its first statement failed')
+            requeued = []
+        return dict(stored, requeued=[str(i) for i in requeued])
     return stored
 
 
@@ -3177,8 +3558,18 @@ def sweep(factory, resolve_path, *, budget_seconds=SWEEP_SECONDS, concurrency=No
     now = time.monotonic()
     ids = [item_id for item_id in ids if _skip_until.get(item_id, 0) <= now]
 
+    later, progressed = [], [False]
+
     def tally(item_id, outcome):
         reason = outcome.get('reason')
+        for other in outcome.get('requeued') or ():
+            # Judged again now that its card's first statement is accepted.
+            _skip_until.pop(UUID(other), None)
+        if reason == 'waits_for_card':
+            # Another statement of its card goes first: tried again after it, in this round's next pass.
+            later.append(item_id)
+            return
+        progressed[0] = True
         if reason in ('already_read', 'being_read'):
             _skip_until[item_id] = now + 600
             return
@@ -3205,11 +3596,15 @@ def sweep(factory, resolve_path, *, budget_seconds=SWEEP_SECONDS, concurrency=No
     queue, running, stop = list(ids), {}, False
     workers = max(1, int(concurrency or READ_CONCURRENCY))
     with ThreadPoolExecutor(max_workers=workers, thread_name_prefix='page-images') as pool:
-        while queue or running:
+        while queue or running or later:
             while queue and not stop and len(running) < workers \
                     and time.monotonic() - started < budget_seconds:
                 item_id = queue.pop(0)
                 running[pool.submit(one, item_id)] = item_id
+            if not running and later and progressed[0] and not stop and time.monotonic() - started < budget_seconds:
+                # A pass in which a statement was decided: those waiting on another statement of their card follow.
+                queue, later[:], progressed[0] = list(later), [], False
+                continue
             if not running:
                 break
             done, _ = wait(list(running), return_when=FIRST_COMPLETED)

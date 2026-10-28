@@ -316,7 +316,7 @@ class ProofTest(unittest.TestCase):
             _proved(_proposal(holder='SOMEONE ELSE'))
 
     def test_header_must_agree_with_saved_statements(self):
-        with self.assertRaisesRegex(vr.NotProved, 'no saved statement'):
+        with self.assertRaisesRegex(vr.NotProved, 'No statement of account 0123456789 is confirmed in this case yet'):
             _proved(knowledge=_knowledge(account='5555555555'))
         with self.assertRaisesRegex(vr.NotProved, 'currency'):
             _proved(knowledge=_knowledge(currency='USD'))
@@ -815,20 +815,24 @@ class FirstStatementTest(unittest.TestCase):
         self.assertEqual(self._first(institution='BBVA')['account_basis'], 'page_image_header_matches_text')
 
     def test_a_masked_or_partial_number_holds(self):
-        with self.assertRaisesRegex(vr.NotProved, 'no saved statement'):
+        # Not a card statement: rule 1 needs the full number, and LAST4 is for cards only.
+        masked = r'The bank prints only the last 4 digits of this account \(ending 6789\) and no statement of it is ' \
+                 r'confirmed in this case yet\. Confirm one statement of this account and the rest can follow\.'
+        with self.assertRaisesRegex(vr.NotProved, masked + ' .*not a card statement'):
             self._first(account_number='******6789')
-        with self.assertRaisesRegex(vr.NotProved, 'no saved statement'):
+        with self.assertRaisesRegex(vr.NotProved, masked + ' .*not a card statement'):
             self._first(pages=self._pages(account_number='XXXX6789'), account_number='XXXX6789')
-        with self.assertRaisesRegex(vr.NotProved, 'no saved statement'):
+        with self.assertRaisesRegex(vr.NotProved, masked + ' .*not a card statement'):
             self._first(pages=self._pages(account_number='6789'), account_number='6789')
 
     def test_every_header_value_must_be_read_by_both(self):
-        for field in ('holder', 'institution'):
-            with self.subTest(images_without=field), self.assertRaisesRegex(vr.NotProved, 'no saved statement'):
+        for field, words in (('holder', 'the account holder'), ('institution', 'the bank')):
+            why = 'not accepted as its first because %s is not read from both the page images and the text' % words
+            with self.subTest(images_without=field), self.assertRaisesRegex(vr.NotProved, why):
                 self._first(pages=self._pages(**{field: ''}))
-            with self.subTest(text_without=field), self.assertRaisesRegex(vr.NotProved, 'no saved statement'):
+            with self.subTest(text_without=field), self.assertRaisesRegex(vr.NotProved, why):
                 self._first(**{field: ''})
-        with self.assertRaisesRegex(vr.NotProved, 'no saved statement'):
+        with self.assertRaisesRegex(vr.NotProved, 'because the full number is not read from both'):
             self._first(account_number='')  # only the images print the number
 
     def test_disagreeing_values_hold(self):
@@ -843,7 +847,8 @@ class FirstStatementTest(unittest.TestCase):
 
     def test_a_saved_account_with_the_number_at_another_bank_holds(self):
         other = _knowledge(institution='SANTANDER')
-        with self.assertRaisesRegex(vr.NotProved, 'no saved statement'):
+        with self.assertRaisesRegex(vr.NotProved, 'An account with the same number is saved in this case: 0123456789 at '
+                                                  'SANTANDER. This statement .* prints BBVA MEXICO. Confirm which account'):
             self._first(knowledge=other)
 
     def test_every_other_proof_is_unchanged(self):
@@ -855,10 +860,12 @@ class FirstStatementTest(unittest.TestCase):
             self._first(period_end='2025-12-30')
 
     def test_switch_off_holds_and_the_proof_version_counts_it(self):
-        with mock.patch.object(vr, 'FIRST_STATEMENT', False), self.assertRaisesRegex(vr.NotProved, 'no saved statement'):
+        with mock.patch.object(vr, 'FIRST_STATEMENT', False), self.assertRaisesRegex(vr.NotProved, 'switched off'):
             self._first()
         self.assertTrue(vr.FIRST_STATEMENT)
-        self.assertEqual(vr.PROOF_VERSION, 16)  # 13 before rule 1, 14 before row dates, 15 before printed order: stored not-proved readings are judged again once
+        # 13 before rule 1, 14 before row dates, 15 before printed order, 16 before LAST4: stored not-proved readings
+        # are judged again once
+        self.assertEqual(vr.PROOF_VERSION, 17)
 
     def test_a_known_account_is_judged_as_before(self):
         self.assertNotIn('account_basis', _proved(_proposal(**self.TEXT)))
