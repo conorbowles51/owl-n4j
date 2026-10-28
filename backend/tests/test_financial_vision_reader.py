@@ -417,23 +417,54 @@ class PrintedOrderTest(unittest.TestCase):
         return dict(pages=[dict(page=physical, printed_page_number=printed, printed_page_total=3, is_statement_page=True)
                            for printed, physical in numbering.items()], accounts=[account])
 
-    def _prove(self, document, sent, file_pages=None):
-        pages = vr.document_pages(document, vr.printed_order(document, sent))
+    def _proposal(self, sent, text_pages=None):
+        # The text reading: one (set aside) payment line per page, in the order the text reader keeps the pages.
+        text = [dict(id='t%d' % page, kind='transaction', page_number=page, excluded=False, issues=[], fields={})
+                for page in (text_pages or sent)]
+        return dict(_proposal(text, currency='MXN'), page_numbers=sorted(sent), statement_page_numbers=list(sent))
+
+    def _prove(self, document, sent, file_pages=None, text_pages=None):
+        # As judge: the order check, then the pages as the text reading keeps them.
+        proposal = self._proposal(sent, text_pages)
+        vr.check_text_keeps_printed_order(document, proposal, sent)
+        pages = vr.document_pages(document, sent)
         vr.check_page_numbering(pages, file_pages or sorted(sent))
-        proposal = dict(_proposal(currency='MXN'), page_numbers=sorted(sent), statement_page_numbers=list(sent))
         return vr.prove(proposal, vr.choose_section(vr.combine(pages), proposal), _knowledge())
+
+    def _saved_order(self, document, sent):
+        from services.financial.manual_row_placement import place_manual_rows
+        proposal = self._proposal(sent)
+        request = vr.build_request(proposal, self._prove(document, sent))
+        effective = list(proposal['rows']) + [
+            dict(id=r['id'], kind='manual_entry', excluded=False, issues=[], page_number=r['manual_page'],
+                 fields=dict(r)) for r in request['rows'] if r['id'].startswith('manual:vision-')]
+        placed = place_manual_rows(effective, {r['id']: r for r in proposal['rows']},
+                                   statement_pages=proposal['statement_page_numbers'])
+        return [(r['page_number'], r['fields']['balance_minor']) for r in placed if r['kind'] == 'manual_entry']
 
     def test_pages_scanned_in_reverse_are_read_in_printed_order(self):
         document = self._document({1: 7, 2: 6, 3: 5})
-        for sent in ([7, 6, 5], [5, 6, 7]):
-            reading = self._prove(document, sent)
-            self.assertEqual([r['page'] for r in reading['rows']], [7, 6, 5])
-            self.assertEqual(reading['closing'], 100000)
+        reading = self._prove(document, [7, 6, 5])
+        self.assertEqual([r['page'] for r in reading['rows']], [7, 6, 5])
+        self.assertEqual(reading['closing'], 100000)
+        # The saved review keeps the printed order, so its running balances chain as printed.
+        self.assertEqual(self._saved_order(document, [7, 6, 5]), [(7, '110000'), (6, '106950'), (5, '100000')])
         self.assertEqual(vr.printed_order(document, [5, 6, 7]), [7, 6, 5])
         with mock.patch.object(vr, 'PRINTED_ORDER', False):
             with self.assertRaisesRegex(vr.NotProved, 'skip from page'):
-                self._prove(document, [5, 6, 7])
-            self.assertEqual(vr.printed_order(document, [5, 6, 7]), [5, 6, 7])
+                self._prove(document, [7, 6, 5])
+
+    def test_the_text_reading_must_keep_the_printed_order_too(self):
+        # The saved review places the image rows beside the text rows page by page: a text reading in file order
+        # would save them out of printed order, so the statement holds.
+        document = self._document({1: 7, 2: 6, 3: 5})
+        with self.assertRaisesRegex(vr.NotProved, 'does not read them in the printed order'):
+            self._prove(document, [5, 6, 7])
+        with self.assertRaisesRegex(vr.NotProved, 'does not read them in the printed order'):
+            self._prove(document, [7, 6, 5], text_pages=[5, 6, 7])
+        # Pages in file order printing a rising run are not affected.
+        rising = self._document({1: 5, 2: 6, 3: 7})
+        self.assertEqual(self._prove(rising, [5, 6, 7], text_pages=[5, 6, 7])['closing'], 100000)
 
     def test_the_live_shape_pages_out_of_order_then_in_order(self):
         # File pages 38,37,36 print 1,2,3 then 39 prints 4 (the live period, shortened).
@@ -442,28 +473,28 @@ class PrintedOrderTest(unittest.TestCase):
         for entry in document['pages']:
             entry['printed_page_total'] = 4
         self.assertEqual(vr.printed_order(document, [36, 37, 38, 39]), [38, 37, 36, 39])
-        self.assertEqual(self._prove(document, [36, 37, 38, 39])['closing'], 100000)
+        self.assertEqual(self._prove(document, [38, 37, 36, 39], text_pages=[38, 37, 36])['closing'], 100000)
 
     def test_a_gap_or_a_number_twice_still_holds_whatever_the_order(self):
         gap = self._document({1: 7, 2: 6, 3: 5})
         gap['pages'][2]['printed_page_number'] = 4  # printed 3 missing
         self.assertEqual(vr.printed_order(gap, [5, 6, 7]), [5, 6, 7])
         with self.assertRaisesRegex(vr.NotProved, 'skip|missing'):
-            self._prove(gap, [5, 6, 7])
+            self._prove(gap, [7, 6, 5])
         twice = self._document({1: 7, 2: 6, 3: 5})
         twice['pages'][2]['printed_page_number'] = 2
         with self.assertRaisesRegex(vr.NotProved, 'same page number|skip'):
-            self._prove(twice, [5, 6, 7])
+            self._prove(twice, [7, 6, 5])
         # Printed pages before the run must still be pages of the file outside the period.
         later = self._document({2: 7, 3: 6, 4: 5})
         for entry in later['pages']:
             entry['printed_page_total'] = 4
         with self.assertRaisesRegex(vr.NotProved, 'may be missing'):
-            self._prove(later, [5, 6, 7], [5, 6, 7])
+            self._prove(later, [7, 6, 5], [5, 6, 7])
         # A page of the file after the period cannot stand for printed page 1 before it.
         with self.assertRaisesRegex(vr.NotProved, 'not in the file|skip'):
-            self._prove(later, [5, 6, 7], [5, 6, 7, 8])
-        self.assertEqual(self._prove(later, [5, 6, 7], [4, 5, 6, 7])['closing'], 100000)
+            self._prove(later, [7, 6, 5], [5, 6, 7, 8])
+        self.assertEqual(self._prove(later, [7, 6, 5], [4, 5, 6, 7])['closing'], 100000)
 
     def test_rows_out_of_printed_order_still_fail_the_running_balance(self):
         # Numbers misread so the run is complete but the true order differs: the balances refuse it.
@@ -471,7 +502,7 @@ class PrintedOrderTest(unittest.TestCase):
         for entry in document['pages']:
             entry['printed_page_number'] = {7: 2, 6: 1, 5: 3}[entry['page']]
         with self.assertRaisesRegex(vr.NotProved, 'running balance|opening'):
-            self._prove(document, [5, 6, 7])
+            self._prove(document, [6, 7, 5])
 
 
 class DocumentTest(unittest.TestCase):

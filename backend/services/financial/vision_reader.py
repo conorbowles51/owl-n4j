@@ -606,6 +606,27 @@ def _printed_run(numbers, file_pages, total, period_pages):
     return min(numbers) - 1 <= before and (not total or total - max(numbers) <= after)
 
 
+def check_text_keeps_printed_order(document, proposal, pages):
+    """NotProved when the page images print this period's pages out of the file's order and the text reading of the
+    same file does not already keep them (its pages and its payment rows) in that printed order.
+
+    The saved review places the page-image rows beside the text reading's rows, page by page, and the date checks
+    follow the text reading's row order: both are in printed order only when the text reading is. Two readings agreeing
+    on the order also settles a page number misread into another complete run.
+    """
+    numbering = {entry.get('page'): entry.get('printed_page_number') for entry in document.get('pages') or []}
+    numbers = [numbering.get(page) for page in sorted(pages) if isinstance(numbering.get(page), int)]
+    if not PRINTED_ORDER or numbers == sorted(numbers):
+        return
+    order = list(pages)
+    rows = [row.get('page_number') for row in proposal.get('rows') or [] if row.get('kind') in ('transaction', 'unresolved')
+            and row.get('page_number') in order]
+    positions = [order.index(page) for page in rows]
+    if printed_order(document, order) != order or positions != sorted(positions):
+        raise NotProved('The pages of this period are out of order in the file, and the text of the file does not '
+                        'read them in the printed order; the payments could not be put in printed order.')
+
+
 def printed_order(document, sent_pages):
     """The pages sent, numbered pages put in printed order (each into a place a numbered page held) when PRINTED_ORDER
     is on and their printed numbers form one complete run; else the pages as sent."""
@@ -2004,7 +2025,7 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
                 request = None
                 if DATES_FROM_IMAGE and not force:
                     try:
-                        request = dates_request(proposal, document_pages(document, printed_order(document, pages)))
+                        request = dates_request(proposal, document_pages(document, pages))
                     except NotProved:
                         request = None
                 if request is None:
@@ -2067,7 +2088,8 @@ def judge(db, case_id, proposal, document, pages, knowledge, *, saved=False):
     otherwise. ``saved``: a saved statement, judged as if it were not saved yet (no neighbour check: the reader
     replacement weighs its coverage)."""
     from services.financial.import_batches import assess
-    readings = document_pages(document, printed_order(document, pages))
+    check_text_keeps_printed_order(document, proposal, pages)
+    readings = document_pages(document, pages)
     page_gap = None
     try:
         check_page_numbering(readings, proposal.get('page_numbers'))
