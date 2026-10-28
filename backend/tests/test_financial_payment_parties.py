@@ -363,8 +363,6 @@ class PhaseTwoPartyTests(unittest.TestCase):
             ('3481', 'debit', 'checking', 'cheque-number-only'),
             ('| CHECK NUMBER 9001', 'debit', 'checking', 'cheque-number-only'),
             ('M97 DEPOSITO CHEQUE BBVA', 'credit', 'checking', 'cheque-deposit'),
-            ('C02 DEPOSITO EN EFECTIVO Ref. 10001', 'credit', 'checking', 'cash-deposit'),
-            ('Withdrawal at ATM #000000000001 1000 EXAMPLE ST NE WASHINGTON DC ZZ0001', 'debit', 'checking', 'cash-withdrawal'),
             ('G30 RECIBO NO. Ref. P0QAAA0000AA', 'debit', 'checking', 'bank-collected-premium'),
             ('0000000 APORT LINEA CAPTURA INTERNET 060000000001', 'debit', 'checking', 'capture-line-payment'),
             ('T22 SPEI DEVUELTOBANAMEX', 'credit', 'checking', 'returned-transfer'),
@@ -376,6 +374,14 @@ class PhaseTwoPartyTests(unittest.TestCase):
             with self.subTest(description=description):
                 self.assertIsNone(party(description, direction, kind))
                 self.assertEqual(reason(description, direction, kind), rule)
+        # Cash is the other side of a cash movement: named Cash, not left unnamed. A mixed ATM deposit can hold cheques.
+        for description, direction, rule in [('C02 DEPOSITO EN EFECTIVO Ref. 10001', 'credit', 'cash-deposit'),
+                ('Withdrawal at ATM #000000000001 1000 EXAMPLE ST NE WASHINGTON DC ZZ0001', 'debit', 'cash-withdrawal'),
+                ('ATM CASH WITHDRAWAL ON 01/02 1000 EXAMPLE AVE WASHINGTON DC', 'debit', 'cash-withdrawal')]:
+            with self.subTest(description=description):
+                self.assertEqual(party(description, direction, 'checking'), ('Cash', rule))
+                self.assertIsNone(reason(description, direction, 'checking'))
+        self.assertEqual(reason('TRUIST ATM MIXED DEPOSIT 01-02-24 10:00 AB01 EXAMPLE BRANCH 00000001', 'credit', 'checking'), 'cash-deposit')
         # A printed name is never replaced by a reason, and an unknown layout gets neither.
         self.assertIsNone(reason('T17 SPEI ENVIADO MIFEL 0310125NOMINA 2A QNA ENE25 JUAN EJEMPLO PEREZ'))
         self.assertIsNone(reason('SOMETHING UNREADABLE 1A2B'))
@@ -477,7 +483,7 @@ class PhaseTwoPartyTests(unittest.TestCase):
                                              ('123 MAIN ST JOES PIZZA', 'debit', 'credit_card'), ('1 - 800 FLOWERS', 'debit', 'credit_card')]:
             with self.subTest(description=description):
                 self.assertIsNone(reason(description, direction, kind))
-        self.assertEqual(reason('C01 DEPOSITO EN EFECTIVO Ref. 1000', 'credit'), 'cash-deposit')
+        self.assertEqual(party('C01 DEPOSITO EN EFECTIVO Ref. 1000', 'credit'), ('Cash', 'cash-deposit'))
         self.assertEqual(reason('60001 - 1000 Q STEXAMPLETOWNDC', 'debit', 'credit_card'), 'card-address-only')
 
     def test_no_place_address_bank_or_concept_as_a_party(self):

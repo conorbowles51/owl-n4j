@@ -7,7 +7,7 @@ payment. Explicit investigator labels always take precedence in payment_labels.
 import re
 import unicodedata
 
-VERSION = 'description-labels/7'
+VERSION = 'description-labels/8'
 
 
 def normalized(value):
@@ -115,6 +115,9 @@ MERCHANTS = [
 MERCHANTS = [(re.compile(pattern), name, category) for pattern, name, category in MERCHANTS]
 
 
+_CASH_RULES = {'cash-deposit': ' The other side is shown as Cash.', 'cash-withdrawal': ' The other side is shown as Cash.'}
+
+
 def infer_payment_labels(description, *, direction, account_type=None, institution=None):
     """Return label values with the rule and explanation used for each one.
 
@@ -132,7 +135,13 @@ def infer_payment_labels(description, *, direction, account_type=None, instituti
         reason = unnamed_reason(value, direction=direction, account_type=account_type)
         if reason:
             text, rule, explanation = reason
-            result['counterparty_reason'] = dict(value=text, source='description', rule=rule, version=VERSION, explanation=explanation)
+            # A mixed ATM deposit can hold cheques as well as cash, so it keeps the reason.
+            if rule in _CASH_RULES and 'MIXED DEPOSIT' not in value:
+                # Cash is the other side of a cash movement: shown as the name, with why, never as a missing name.
+                result['counterparty'] = dict(value='Cash', source='description', rule=rule, version=VERSION,
+                                              explanation=explanation + _CASH_RULES[rule])
+            else:
+                result['counterparty_reason'] = dict(value=text, source='description', rule=rule, version=VERSION, explanation=explanation)
     return result
 
 
