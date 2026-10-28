@@ -478,3 +478,9 @@ class WordingTests(TestCase):
         self.assertEqual(vr._clause('DeepSeek returned an empty response.'), 'DeepSeek returned an empty response')
         self.assertEqual(vr._clause('OpenAI failover is switched off'), 'OpenAI failover is switched off')
         self.assertEqual(vr._clause('The answer was cut short'), 'the answer was cut short')
+
+    def test_another_readers_failures_do_not_stop_the_chain(self):
+        record = dict(version=vr.VERSION, revision='r', status='failed', failures=vr.MAX_FAILURES, reader='gpt-5.6-terra')
+        self.assertEqual(vr.failures(record, 'r'), vr.MAX_FAILURES)
+        self.assertEqual(vr.failures(record, 'r', 'gpt-5.6-terra'), vr.MAX_FAILURES)
+        self.assertEqual(vr.failures(record, 'r', f'deepseek/deepseek-flash ({vr.PROMPT_VERSION})'), 0)

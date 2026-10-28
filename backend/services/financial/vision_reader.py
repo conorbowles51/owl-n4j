@@ -2295,10 +2295,13 @@ def _outcome(record, attempts, accepted, spent_now, seconds, page_costs, again):
     return record
 
 
-def failures(record, revision):
+def failures(record, revision, reader=None):
     """Failed requests for this reading; a claim left 'reading' past its time (the worker stopped
-    mid-request, after the request was sent) counts as one more."""
+    mid-request, after the request was sent) counts as one more. Given ``reader`` (chain_id), only its own failures
+    count: another reader's (e.g. OpenAI out of credit) never stop a new chain from reading."""
     if not record or record.get('version') != VERSION or record.get('revision') != revision:
+        return 0
+    if reader is not None and _reader_of(record) != reader:
         return 0
     if record.get('status') == 'failed':
         return record.get('failures') or 0
@@ -2425,7 +2428,7 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
                 return dict(record, reason='being_read')
             record.update(revision=proposal['revision'], model=model_id, reader=model_id, pages=pages,
                           text_reading=_rule_metadata(proposal),
-                          failures=0 if again else failures(stored, proposal['revision']))
+                          failures=0 if again else failures(stored, proposal['revision'], model_id))
             if record['failures'] >= MAX_FAILURES and not force:
                 if stored.get('status') == 'failed':
                     return dict(stored, reason='failed_repeatedly')
