@@ -2211,7 +2211,10 @@ def _reused_cost(stored, reader):
 
 def _clause(message):
     message = str(message or '').strip().rstrip('.')
-    return message[:1].lower() + message[1:] if message[:2] != message[:2].upper() else message
+    first = message.split(' ', 1)[0]
+    # Lower-cased to run on in a sentence, unless the first word is a name or an acronym (DeepSeek, OpenAI, PDF).
+    keep = first[1:] != first[1:].lower() or message[:2] == message[:2].upper()
+    return message if keep else message[:1].lower() + message[1:]
 
 
 def _attempt_words(attempt):

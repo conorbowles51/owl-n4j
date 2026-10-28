@@ -471,3 +471,10 @@ class ChainTests(TestCase):
         longest = sum((s['retries'] + 1) * (s['timeout'] + 10) + sum(vr.RETRY_PAUSE_SECONDS * (k + 1)
                       for k in range(s['retries'])) for s in vr.READER_SETTINGS.values())
         self.assertLess(longest, vr.CLAIM_SECONDS)
+
+
+class WordingTests(TestCase):
+    def test_names_keep_their_capitals_in_a_reason(self):
+        self.assertEqual(vr._clause('DeepSeek returned an empty response.'), 'DeepSeek returned an empty response')
+        self.assertEqual(vr._clause('OpenAI failover is switched off'), 'OpenAI failover is switched off')
+        self.assertEqual(vr._clause('The answer was cut short'), 'the answer was cut short')
