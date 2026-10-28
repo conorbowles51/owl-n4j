@@ -723,11 +723,30 @@ class FailClosedTest(unittest.TestCase):
         with self.assertLogs(vr.log.name, 'WARNING'):
             self.assertIn('not available', vr.provider_page_reader(db, 'c', 'anthropic', 'claude-sonnet-5').unavailable)
         with mock.patch('services.ai_provider_credentials.get_provider_api_key', return_value=None), \
+                mock.patch('services.ai_model_policy.deepseek_only', return_value=False), \
                 self.assertLogs(vr.log.name, 'WARNING'):
             with self.assertRaisesRegex(RuntimeError, 'no OpenAI key'):
                 vr.openai_page_reader(db, 'c', 'gpt-4o')
             self.assertEqual(vr.provider_page_reader(db, 'c', 'deepseek', 'deepseek-flash').unavailable,
                              'no DeepSeek key is connected')
+
+    def test_deepseek_only_on_no_openai_reader_is_made_anywhere(self):
+        # "DeepSeek only" ON: OpenAI alone, the learning loop's default reader and the chain never get an OpenAI
+        # reader (its key is not even read).
+        db = object()
+        chain = [{'provider': 'deepseek', 'model_id': 'deepseek-flash'}, {'provider': 'openai', 'model_id': 'gpt-4o'}]
+        key = mock.Mock(return_value=None)
+        with mock.patch('services.ai_model_policy.deepseek_only', return_value=True), \
+                mock.patch('services.ai_model_policy.get_workload_chain', return_value=chain), \
+                mock.patch('services.ai_provider_credentials.get_provider_api_key', key), \
+                self.assertLogs(vr.log.name, 'WARNING'):
+            with self.assertRaisesRegex(RuntimeError, 'OpenAI failover is switched off'):
+                vr.openai_page_reader(db, 'c', 'gpt-4o')
+            with self.assertRaisesRegex(RuntimeError, 'no DeepSeek key is connected.*OpenAI failover is switched off'):
+                vr.workload_page_reader(db, 'c')
+        self.assertEqual([c.args[1] for c in key.call_args_list], ['deepseek'])
+        self.assertEqual(vr.reserve_usd('deepseek-flash', [(1, [b'png'])]),
+                         vr.reserve_usd('deepseek-flash', [(1, [b'png'])], vr.DEEPSEEK_RESERVE_OUTPUT_TOKENS))
 
     def test_vision_call_is_schema_enforced_and_raises_on_incomplete_or_refused(self):
         from services.llm_service import LLMExecutionContext

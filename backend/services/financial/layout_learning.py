@@ -157,6 +157,9 @@ def page_reader_for(provider, model_id):
     from services.ai_provider_credentials import get_provider_api_key
 
     def page_reader(db, case_id):
+        switched_off = vr.switched_off(db, provider)
+        if switched_off:
+            raise NotProved(switched_off + '.')
         api_key = get_provider_api_key(db, provider)
         if not api_key:
             raise NotProved('No %s key is configured.' % provider)
@@ -168,7 +171,7 @@ def page_reader_for(provider, model_id):
 def read_file_images(db, case_id, file, pages, *, budget, resolve_path, page_reader=None, directory=None,
                      provider=None, model=None):
     """(reading, cost) of every page of one file: stored readings first (no cost), else one request through the
-    vision reader's provider path (the workload's model, or ``provider``/``model`` for a measurement).
+    vision reader's provider path (the workload chain's first usable model, or ``provider``/``model`` for a measurement).
     ``budget``: dollars left for this layout; NotProved when it is used up or the case is not approved for page
     images. Nothing is written to the file, its statements or a review: the reading is kept in the learning
     state only."""
@@ -180,7 +183,7 @@ def read_file_images(db, case_id, file, pages, *, budget, resolve_path, page_rea
         return stored, 0.0
     if not vr.approved(case_id):
         raise NotProved('Page images of this case may not be sent for reading.')
-    model_id, read = (page_reader or vr.openai_page_reader)(db, case_id)
+    model_id, read = (page_reader or vr.workload_page_reader)(db, case_id)
     images = vr.render_pages(resolve_path(file.stored_path), pages)
     reserved = vr.reserve_usd(model_id, images)
     if reserved > budget:

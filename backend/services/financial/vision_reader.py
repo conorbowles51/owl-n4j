@@ -1713,7 +1713,18 @@ def chain_page_reader(db, case_id):
     return readers
 
 
+def switched_off(db, provider):
+    """Why ``provider`` is not sent page images now ("DeepSeek only" is ON and it is not DeepSeek), else ''."""
+    from services.ai_model_policy import deepseek_only
+    if provider != 'deepseek' and deepseek_only(db, WORKLOAD):
+        return f'{provider_name(provider)} failover is switched off'
+    return ''
+
+
 def _single(db, case_id, provider, model_id):
+    why = switched_off(db, provider)
+    if why:
+        raise RuntimeError(why)
     reader = provider_page_reader(db, case_id, provider, model_id)
     if reader.unavailable:
         raise RuntimeError(reader.unavailable)
@@ -1734,6 +1745,16 @@ def deepseek_page_reader(db, case_id, model_id=None):
     model_id = model_id or next((e['model_id'] for e in get_workload_chain(db, WORKLOAD) if e['provider'] == 'deepseek'),
                                 None) or 'deepseek-flash'
     return _single(db, case_id, 'deepseek', model_id)
+
+
+def workload_page_reader(db, case_id):
+    """(model_id, read) of the first reader of the workload's chain that can be used now (chain_page_reader: the
+    "DeepSeek only" switch, keys and the image check apply); raises with every reason when none can."""
+    readers = chain_page_reader(db, case_id)
+    for reader in readers:
+        if not reader.unavailable:
+            return reader.model, reader.read
+    raise RuntimeError('; '.join(f'{provider_name(r.provider)} {r.model}: {r.unavailable}' for r in readers))
 
 
 def get_openai_vision_default():
@@ -2086,8 +2107,12 @@ def _decided(factory, item_id, record):
         log.exception('Recording a page-image reading outcome failed')
 
 
-def reserve_usd(model_id, images, max_output_tokens=RESERVE_OUTPUT_TOKENS):
-    """The most a request with these images can cost (counted before it is sent)."""
+def reserve_usd(model_id, images, max_output_tokens=None):
+    """The most a request with these images can cost (counted before it is sent). Not given, the output reserved is
+    the provider's cap: a DeepSeek request may answer up to DEEPSEEK_RESERVE_OUTPUT_TOKENS (its thinking counts)."""
+    if max_output_tokens is None:
+        max_output_tokens = DEEPSEEK_RESERVE_OUTPUT_TOKENS if str(model_id).startswith('deepseek') \
+            else RESERVE_OUTPUT_TOKENS
     count = sum(len(strips) for _, strips in images)
     return cost_usd(model_id, dict(prompt_tokens=count * RESERVE_TOKENS_PER_IMAGE + 4000,
                                    completion_tokens=max_output_tokens))
