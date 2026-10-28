@@ -7,7 +7,7 @@ payment. Explicit investigator labels always take precedence in payment_labels.
 import re
 import unicodedata
 
-VERSION = 'description-labels/5'
+VERSION = 'description-labels/6'
 
 
 def normalized(value):
@@ -212,7 +212,8 @@ def infer_payment_labels(description, *, direction, account_type=None, instituti
     spei = kapital_spei(raw) if account_type != 'credit_card' else None
     if spei and spei['direction'] == direction:
         endpoint = spei['sender' if direction == 'credit' else 'recipient']
-        suggest('counterparty', endpoint['party']['name'], 'kapital-spei-party',
+        from services.financial.payment_parties import clean_name
+        suggest('counterparty', clean_name(endpoint['party']['name']) or endpoint['party']['name'], 'kapital-spei-party',
             'Sender or recipient printed in the SPEI party field. The bank and account are separate fields. The statement qualifies this name as unverified; review ownership separately.'
             if endpoint['party']['qualifier'] else 'Sender or recipient printed in the SPEI party field. This is a source-name suggestion, not an ownership decision.')
     elif direction == 'debit' and account_type != 'credit_card' and cie and _name(cie[1]):
@@ -221,28 +222,38 @@ def infer_payment_labels(description, *, direction, account_type=None, instituti
             category('Payments', 'cie-payment', 'the CIE payment reference')
     elif named and _name(named[1]):
         suggest('counterparty', named[1].strip(), 'named-payment-party', f'The description explicitly says “{cue.lower()} {named[1].strip()}”. Verify the name against the source before linking an identity.')
-    # BBVA: the receiving bank precedes the reference. The named beneficiary
-    # follows the long numeric tracking code. Never use the intermediary bank.
-    elif re.match(r'T\d{2}\s+(?:SPEI|SPID)\s+(?:ENVIADO|RECIBIDO)\b', normalized(raw)):
-        sent = ' ENVIADO ' in normalized(raw)
-        tail = re.search(r'\b\d{15,}\s+([A-ZÁÉÍÓÚÜÑ][A-ZÁÉÍÓÚÜÑ .&\x27’/-]{2,180})$', raw, re.I)
-        if tail and sent == (direction == 'debit') and _name(tail[1]):
-            suggest('counterparty', tail[1].strip(), 'bbva-transfer-party', 'Name printed after the transfer tracking reference; the receiving bank is not treated as the beneficiary.')
     elif direction == 'credit':
         depositor = re.match(r'^(?:W\d{2}\s+)?DEPOSITO DE TERCERO\s+(.+?)\s+BMRCASH\b', raw, re.I)
         if depositor and _name(depositor[1]):
             suggest('counterparty', depositor[1].strip(), 'bbva-depositor', 'Name printed after “DEPOSITO DE TERCERO” in the description.')
-    if account_type == 'credit_card' and 'counterparty' not in result:
-        merchant = card_merchant_descriptor(raw)
-        if merchant and result.get('category', {}).get('value') not in (
-                'Taxes', 'Interest income', 'Interest charges', 'Bank fees',
-                'Payroll', 'Cash withdrawals', 'Transfers', 'Deposits'):
-            suggest('counterparty', merchant, 'card-statement-descriptor',
-                'Merchant label from the card payment description, not a verified legal identity. '
-                'Location or store text is retained when its boundary is unclear. '
-                'The original description remains available; a processor prefix does not establish the ultimate recipient.')
-            if direction == 'credit' and 'category' not in result:
-                category('Merchant credits', 'merchant-credit-descriptor', 'the merchant descriptor on this card credit')
+    # The other side as the statement's own layout prints it (services.financial.payment_parties).
+    # A charge, interest, withheld tax or product of the statement bank is the bank's; a person or
+    # company printed in a transfer's name field replaces a guess made only from wording elsewhere.
+    # A card line the merchant descriptor below reads keeps that reading (and its category).
+    merchant = card_merchant_descriptor(raw) if account_type == 'credit_card' and 'counterparty' not in result else None
+    if merchant and result.get('category', {}).get('value') in (
+            'Taxes', 'Interest income', 'Interest charges', 'Bank fees',
+            'Payroll', 'Cash withdrawals', 'Transfers', 'Deposits'):
+        merchant = None
+    if not merchant and result.get('counterparty', {}).get('rule') in (None, 'bank-charge', 'bank-interest'):
+        from services.financial.payment_parties import printed_party, bank_service, TRANSFER_RULES, TRANSFER_OPENING
+        # The bank's own service with no bank recorded names nobody, not a name printed in it.
+        service = bank_service(value)
+        party = None if service or account_type == 'credit_card' else printed_party(raw, direction=direction, account_type=account_type)
+        if service and institution:
+            suggest('counterparty', institution, *service)
+        elif party and ('counterparty' not in result or party[1] in TRANSFER_RULES):
+            suggest('counterparty', *party)
+        elif not service and TRANSFER_OPENING.match(value):
+            # A transfer whose concept says COMISION or INTERESES is not the bank's charge; with no name printed, nobody is named.
+            result.pop('counterparty', None)
+    if merchant:
+        suggest('counterparty', merchant, 'card-statement-descriptor',
+            'Merchant label from the card payment description, not a verified legal identity. '
+            'Location or store text is retained when its boundary is unclear. '
+            'The original description remains available; a processor prefix does not establish the ultimate recipient.')
+        if direction == 'credit' and 'category' not in result:
+            category('Merchant credits', 'merchant-credit-descriptor', 'the merchant descriptor on this card credit')
     if 'category' not in result:
         found = bank_wording_category(value, direction=direction, account_type=account_type)
         if found:
