@@ -201,3 +201,75 @@ class QueueLineTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SweepConcurrencyTest(unittest.TestCase):
+    """A round reads a few statements at once (DeepSeek takes minutes each), never one twice, and starts none after
+    its time is used."""
+
+    class Factory:
+        def __call__(self):
+            return self
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def test_reads_at_most_the_limit_at_once_and_each_once(self):
+        import threading
+        import time as real_time
+        lock, live, seen = threading.Lock(), [0], []
+        peak = [0]
+
+        def read(factory, item_id, resolve_path):
+            with lock:
+                live[0] += 1
+                peak[0] = max(peak[0], live[0])
+                seen.append(item_id)
+            real_time.sleep(0.05)
+            with lock:
+                live[0] -= 1
+            return dict(status='not_proved', message='x', cost_usd=0.01)
+        vr._skip_until.clear()
+        with mock.patch.object(vr, 'ENABLED', True), \
+                mock.patch.object(vr, 'pending', return_value=[f'i{n}' for n in range(7)]), \
+                mock.patch.object(vr, 'read_item', side_effect=read):
+            report = vr.sweep(self.Factory(), None, concurrency=3)
+        vr._skip_until.clear()
+        self.assertEqual(peak[0], 3)
+        self.assertEqual(sorted(seen), sorted(f'i{n}' for n in range(7)))
+        self.assertEqual(report['read'], 7)
+        self.assertEqual(report['not_proved'], 7)
+
+    def test_no_reading_starts_after_the_round_time_and_unavailable_stops_it(self):
+        seen = []
+
+        def read(factory, item_id, resolve_path):
+            seen.append(item_id)
+            return dict(status='unavailable', reason='unavailable')
+        vr._skip_until.clear()
+        with mock.patch.object(vr, 'ENABLED', True), mock.patch.object(vr, 'pending', return_value=['a', 'b', 'c', 'd']), \
+                mock.patch.object(vr, 'read_item', side_effect=read):
+            vr.sweep(self.Factory(), None, concurrency=1)
+        self.assertEqual(seen, ['a'])
+        seen.clear()
+        vr._skip_until.clear()
+        with mock.patch.object(vr, 'ENABLED', True), mock.patch.object(vr, 'pending', return_value=['a', 'b']), \
+                mock.patch.object(vr, 'read_item', side_effect=read):
+            vr.sweep(self.Factory(), None, budget_seconds=0, concurrency=2)
+        vr._skip_until.clear()
+        self.assertEqual(seen, [])
+
+    def test_one_failing_statement_does_not_stop_the_round(self):
+        def read(factory, item_id, resolve_path):
+            if item_id == 'a':
+                raise RuntimeError('boom')
+            return dict(status='proved', cost_usd=0.01)
+        vr._skip_until.clear()
+        with mock.patch.object(vr, 'ENABLED', True), mock.patch.object(vr, 'pending', return_value=['a', 'b']), \
+                mock.patch.object(vr, 'read_item', side_effect=read):
+            report = vr.sweep(self.Factory(), None, concurrency=2)
+        vr._skip_until.clear()
+        self.assertEqual(report['proved'], 1)

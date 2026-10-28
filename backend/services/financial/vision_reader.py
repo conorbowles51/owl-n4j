@@ -2996,10 +2996,15 @@ def pending(db, limit=50):
 
 _skip_until = {}
 PENDING_LIMIT = 2000
+# Statements read at once by a round (each a request of minutes to DeepSeek; small: the host is short of memory).
+READ_CONCURRENCY = 3
 
 
-def sweep(factory, resolve_path, *, budget_seconds=SWEEP_SECONDS):
-    """Background round: read held statements from their page images, a few per round. Never raises."""
+def sweep(factory, resolve_path, *, budget_seconds=SWEEP_SECONDS, concurrency=None):
+    """Background round: read held statements from their page images, up to READ_CONCURRENCY at once (a DeepSeek
+    reading takes minutes; each statement's claim keeps any two workers from reading the same one). No new reading
+    starts once the round's time is used; those started are finished. Never raises."""
+    from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
     report = dict(read=0, proved=0, not_proved=0, failed=0, cost_usd=0.0)
     skipped = {}
     if not ENABLED:
@@ -3016,14 +3021,12 @@ def sweep(factory, resolve_path, *, budget_seconds=SWEEP_SECONDS):
         return report
     now = time.monotonic()
     ids = [item_id for item_id in ids if _skip_until.get(item_id, 0) <= now]
-    for item_id in ids:
-        if time.monotonic() - started >= budget_seconds:
-            break
-        outcome = read_item(factory, item_id, resolve_path)
+
+    def tally(item_id, outcome):
         reason = outcome.get('reason')
         if reason in ('already_read', 'being_read'):
             _skip_until[item_id] = now + 600
-            continue
+            return
         if outcome.get('status') in ('proved', 'not_proved', 'failed', 'unavailable', 'stale', 'budget') or reason:
             # Not looked at again by this process for a while unless its reading changes.
             _skip_until[item_id] = now + (3600 if outcome.get('status') in ('failed', 'unavailable', 'budget') else 6 * 3600)
@@ -3036,8 +3039,33 @@ def sweep(factory, resolve_path, *, budget_seconds=SWEEP_SECONDS):
         elif reason or outcome.get('status') in ('budget', 'stale', 'unavailable'):
             why = reason or outcome['status']
             skipped[why] = skipped.get(why, 0) + 1
-        if outcome.get('status') == 'unavailable':
-            break  # no key / provider: nothing else this round can be read either
+
+    def one(item_id):
+        try:
+            return read_item(factory, item_id, resolve_path)
+        except Exception:  # noqa: BLE001 - one statement's failure never stops the round
+            log.exception('Page-image reading of item %s failed', str(item_id)[:8])
+            return dict(status='skipped', reason='error')
+
+    queue, running, stop = list(ids), {}, False
+    workers = max(1, int(concurrency or READ_CONCURRENCY))
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix='page-images') as pool:
+        while queue or running:
+            while queue and not stop and len(running) < workers \
+                    and time.monotonic() - started < budget_seconds:
+                item_id = queue.pop(0)
+                running[pool.submit(one, item_id)] = item_id
+            if not running:
+                break
+            done, _ = wait(list(running), return_when=FIRST_COMPLETED)
+            for future in done:
+                item_id = running.pop(future)
+                outcome = future.result()
+                tally(item_id, outcome)
+                if outcome.get('status') == 'unavailable':
+                    stop = True  # no key / provider: nothing else this round can be read either
+            if stop or time.monotonic() - started >= budget_seconds:
+                queue = []
     if skipped:
         report['skipped'] = skipped
     if report['read'] or skipped:
