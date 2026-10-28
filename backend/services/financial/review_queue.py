@@ -361,7 +361,7 @@ def _entry(item, batch_id, describe_result=None):
                                        message=vision.get('message') or '', line=vision.get('line') or outcome_line(vision))
         if vision.get('status') == 'offered' and isinstance(vision.get('offer'), dict):
             # Rule 2: a reading that checks out, beside the person's saved work, for them to use or set aside.
-            entry['vision_reading']['offer'] = dict(mine=vision['offer'].get('mine') or {},
+            entry['vision_reading']['offer'] = dict(id=vision['offer'].get('id') or '', mine=vision['offer'].get('mine') or {},
                                                     offered=vision['offer'].get('offered') or {})
         if describe_result and vision.get('status') in ('not_proved', 'budget', 'failed') and vision.get('message') \
                 and vision['message'] not in entry['issue_messages']:

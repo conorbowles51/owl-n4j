@@ -71,7 +71,7 @@ const entry = z.object({
       line: z.string().default(""),
       /** Rule 2: a reading that checks out, beside the person's saved work (values as compared). */
       offer: z
-        .object({ mine: z.record(z.string(), z.unknown()), offered: z.record(z.string(), z.unknown()) })
+        .object({ id: z.string(), mine: z.record(z.string(), z.unknown()), offered: z.record(z.string(), z.unknown()) })
         .nullish(),
     })
     .nullish(),

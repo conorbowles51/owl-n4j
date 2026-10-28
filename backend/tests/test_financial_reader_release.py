@@ -165,7 +165,9 @@ class ReaderReleaseTests(TestCase):
             db.commit()
             self.assertEqual(vision_reader.pending(db), [held.id])
         reader = Mock()
-        with patch.object(vision_reader, 'APPROVED_CASES', frozenset({vision_reader.EVERY_CASE})):
+        # With offers off (rule 2 off); with them on, a person's work is read for an offer only (the offer tests).
+        with patch.object(vision_reader, 'APPROVED_CASES', frozenset({vision_reader.EVERY_CASE})), \
+                patch.object(vision_reader, 'OFFERS', False):
             outcome = vision_reader.read_item(self.f.SessionLocal, held.id, lambda p: p, page_reader=reader)
         self.assertEqual(outcome['reason'], 'investigator_work')
         reader.assert_not_called()
@@ -273,6 +275,7 @@ class ReaderReleaseTests(TestCase):
         self.assertEqual(metadata.get('financial_review_history'), metadata_before.get('financial_review_history'))
         shown = after.summary['vision_reading']
         self.assertEqual(shown['status'], 'offered')
+        self.assertTrue(shown['offer']['id'])
         self.assertEqual(shown['offer']['mine']['holder'], 'Holder as typed by the investigator')
         self.assertNotEqual(shown['offer']['offered']['holder'], 'Holder as typed by the investigator')
         self.assertIn('nothing is changed unless you use it', shown['line'])
@@ -288,7 +291,8 @@ class ReaderReleaseTests(TestCase):
         batch, held, stored = self._offered()
         person = Actor(name='Alex Investigator', email='alex@example.org', user_id=uuid4())
         with self._patched_readers(), self.f.SessionLocal() as db:
-            vision_reader.accept_offer(db, case_id=self.f.case.id, batch_id=batch, item_id=held.id, actor=person)
+            vision_reader.accept_offer(db, case_id=self.f.case.id, batch_id=batch, item_id=held.id,
+                                        offer_id=stored['offer']['id'], actor=person)
         after = self.item(batch)
         from services.financial.statement_import import StatementReviewDraft
         offered = StatementReviewDraft.model_validate(stored['offer']['request']).model_dump(mode='json')
@@ -297,9 +301,9 @@ class ReaderReleaseTests(TestCase):
             file = db.get(EvidenceFile, held.file_id)
             progress = review_progress(file, held.statement_key)
             self.assertEqual(progress['request'], offered)
-            self.assertEqual(progress['saved_by']['name'], 'Alex Investigator')
+            self.assertEqual(progress['saved_by'], dict(user_id=str(person.user_id), name='Alex Investigator'))
             record = file.metadata_[vision_reader.METADATA_KEY][held.statement_key or '']
-            self.assertEqual((record['status'], record['decided_by']['name']), ('offer_accepted', 'Alex Investigator'))
+            self.assertEqual((record['status'], record['decided_by']['user_id']), ('offer_accepted', str(person.user_id)))
             history = vision_reader.outcomes(file, held.statement_key)
             self.assertEqual(history[-1]['status'], 'offer_accepted')
 
@@ -310,7 +314,8 @@ class ReaderReleaseTests(TestCase):
         draft = self.item(batch).review_request
         person = Actor(name='Alex Investigator', email='alex@example.org', user_id=uuid4())
         with self.f.SessionLocal() as db:
-            vision_reader.decline_offer(db, case_id=self.f.case.id, batch_id=batch, item_id=held.id, actor=person)
+            vision_reader.decline_offer(db, case_id=self.f.case.id, batch_id=batch, item_id=held.id,
+                                        offer_id=stored['offer']['id'], actor=person)
         after = self.item(batch)
         self.assertEqual(after.review_request, draft)
         self.assertEqual(after.summary['vision_reading']['status'], 'offer_declined')
@@ -329,13 +334,52 @@ class ReaderReleaseTests(TestCase):
             db.commit()
         person = Actor(name='Alex Investigator', email='alex@example.org', user_id=uuid4())
         with self._patched_readers(), self.f.SessionLocal() as db, self.assertRaises(PdfMappingError) as refused:
-            vision_reader.accept_offer(db, case_id=self.f.case.id, batch_id=batch, item_id=held.id, actor=person)
+            vision_reader.accept_offer(db, case_id=self.f.case.id, batch_id=batch, item_id=held.id,
+                                        offer_id=stored['offer']['id'], actor=person)
         self.assertEqual(refused.exception.status_code, 409)
         after = self.item(batch)
         self.assertEqual(after.review_request, changed)
         self.assertEqual(after.summary['vision_reading']['status'], 'stale')
         with self.f.SessionLocal() as db, self.assertRaises(PdfMappingError):
-            vision_reader.accept_offer(db, case_id=self.f.case.id, batch_id=batch, item_id=held.id, actor=person)
+            vision_reader.accept_offer(db, case_id=self.f.case.id, batch_id=batch, item_id=held.id,
+                                        offer_id=stored['offer']['id'], actor=person)
+
+    def test_a_click_on_an_offer_other_than_the_one_on_offer_is_refused_and_nothing_saved(self):
+        from services.financial import vision_reader
+        from services.financial.decisions import Actor
+        from services.financial.pdf_candidates import PdfMappingError
+        batch, held, stored = self._offered()
+        draft = self.item(batch).review_request
+        person = Actor(name='Alex Investigator', email='alex@example.org', user_id=uuid4())
+        for answer in (vision_reader.accept_offer, vision_reader.decline_offer):
+            for shown in ('an-older-offer', ''):
+                with self._patched_readers(), self.f.SessionLocal() as db, self.assertRaises(PdfMappingError) as refused:
+                    answer(db, case_id=self.f.case.id, batch_id=batch, item_id=held.id, offer_id=shown, actor=person)
+                self.assertEqual(refused.exception.status_code, 409)
+        after = self.item(batch)
+        self.assertEqual(after.review_request, draft)
+        self.assertEqual(after.summary['vision_reading']['status'], 'offered')  # still on offer, untouched
+
+    def test_once_used_the_offer_cannot_also_be_kept_aside_or_used_again(self):
+        from services.financial import vision_reader
+        from services.financial.decisions import Actor
+        from services.financial.pdf_candidates import PdfMappingError
+        from postgres.models.evidence import EvidenceFile
+        batch, held, stored = self._offered()
+        person = Actor(name='Alex Investigator', email='alex@example.org', user_id=uuid4())
+        with self._patched_readers(), self.f.SessionLocal() as db:
+            vision_reader.accept_offer(db, case_id=self.f.case.id, batch_id=batch, item_id=held.id,
+                                       offer_id=stored['offer']['id'], actor=person)
+        used = self.item(batch).review_request
+        for answer in (vision_reader.decline_offer, vision_reader.accept_offer):
+            with self._patched_readers(), self.f.SessionLocal() as db, self.assertRaises(PdfMappingError) as refused:
+                answer(db, case_id=self.f.case.id, batch_id=batch, item_id=held.id, offer_id=stored['offer']['id'],
+                       actor=person)
+            self.assertEqual(refused.exception.status_code, 409)
+        self.assertEqual(self.item(batch).review_request, used)
+        with self.f.SessionLocal() as db:
+            record = db.get(EvidenceFile, held.file_id).metadata_[vision_reader.METADATA_KEY][held.statement_key or '']
+            self.assertEqual(record['status'], 'offer_accepted')  # the record of what happened stands
 
     def test_offers_off_reads_nothing_of_a_person_s_work(self):
         from services.financial import vision_reader

@@ -388,7 +388,7 @@ it("offers a reading from the page images beside the person's work, and saves it
     ...queue,
     counts: { ...queue.counts, waiting: 1 },
     items: [{ ...entries[1], vision_reading: { status: "offered", message: "A reading from the page images checks out.",
-      line: "Read from page images: A reading from the page images checks out.", offer: { mine, offered } } }],
+      line: "Read from page images: A reading from the page images checks out.", offer: { id: "o1", mine, offered } } }],
   }
   const calls: string[] = []
   vi.mocked(fetchAPI).mockImplementation(async (url: string, options?: unknown) => {
@@ -407,7 +407,7 @@ it("offers a reading from the page images beside the person's work, and saves it
   expect(calls).toEqual([])  // nothing is saved by showing it
   fireEvent.click(screen.getByRole("button", { name: "Use this reading" }))
   await waitFor(() => expect(calls).toHaveLength(1))
-  expect(calls[0]).toBe("/api/financial/statement-import/batches/b2/items/i2/page-image-offer/accept?case_id=case")
+  expect(calls[0]).toBe("/api/financial/statement-import/batches/b2/items/i2/page-image-offer/accept?case_id=case&offer_id=o1")
 })
 
 it("never counts files removed from Financial as couldn't read, and says what they are", async () => {

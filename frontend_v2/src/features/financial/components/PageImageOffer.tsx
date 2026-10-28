@@ -18,6 +18,8 @@ export interface OfferValues {
 }
 
 export interface PageImageOfferData {
+  /** Which offer this is: a choice is refused if the offer changed since it was shown. */
+  id: string
   mine: OfferValues
   offered: OfferValues
 }
@@ -71,7 +73,7 @@ export function PageImageOffer({
     setError("")
     try {
       await fetchAPI(
-        `/api/financial/statement-import/batches/${batchId}/items/${itemId}/page-image-offer/${choice}?case_id=${caseId}`,
+        `/api/financial/statement-import/batches/${batchId}/items/${itemId}/page-image-offer/${choice}?case_id=${caseId}&offer_id=${encodeURIComponent(offer.id)}`,
         { method: "POST" }
       )
       onDone(choice === "accept")

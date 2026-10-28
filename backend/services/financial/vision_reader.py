@@ -41,6 +41,7 @@ images once per reading and model.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -1552,7 +1553,7 @@ def _note(item, record):
     offer = record.get('offer') if isinstance(record.get('offer'), dict) else None
     item.summary = {**(item.summary or {}), 'vision_reading': dict(
         {k: record.get(k) for k in ('status', 'reason', 'message', 'pages', 'cost_usd', 'model', 'at')},
-        line=outcome_line(record), **({'offer': {k: offer.get(k) for k in ('mine', 'offered')}} if offer else {}))}
+        line=outcome_line(record), **({'offer': {k: offer.get(k) for k in ('id', 'mine', 'offered')}} if offer else {}))}
 
 
 # ---------------------------------------------------------------------------
@@ -2091,16 +2092,21 @@ def _offer(factory, item_id, file_id, key, record, request):
     from postgres.models.evidence import EvidenceFile
     from postgres.models.financial_import_batches import FinancialImportBatchItem as Item
     with factory() as db:
+        # The file before the item: the order save_review locks them in.
+        file = db.scalar(select(EvidenceFile).where(EvidenceFile.id == file_id).with_for_update())
         item = db.scalar(select(Item).where(Item.id == item_id).with_for_update())
-        file = db.get(EvidenceFile, file_id)
         if item is None or item.status != 'attention':
             db.rollback()
             return _finish(factory, item_id, file_id, key, dict(record, status='stale',
                 message='The statement changed while its page images were read.'), True)
         theirs, work_revision = _their_work(item, file, key)
         offered = offer_values(request)
+        # The offer's identity: the person's click names the offer they were shown; a different one is refused.
+        offer_id = hashlib.sha256(json.dumps([request, work_revision, record.get('at')], sort_keys=True, default=str)
+                                  .encode()).hexdigest()[:16]
         stored = dict({k: v for k, v in record.items() if k != 'request'}, status='offered', message=OFFER_MESSAGE,
-                      offer=dict(request=request, work_revision=work_revision, mine=offer_values(theirs), offered=offered))
+                      offer=dict(id=offer_id, request=request, work_revision=work_revision, mine=offer_values(theirs),
+                                 offered=offered))
         _store(db, file_id, key, stored)
         _note(item, stored)
         db.commit()
@@ -2109,71 +2115,97 @@ def _offer(factory, item_id, file_id, key, record, request):
     return stored
 
 
-def _offer_target(session, case_id, batch_id, item_id):
+def _offer_target(session, case_id, batch_id, item_id, offer_id):
+    """(item, file, stored offer) under the batch and file locks, in save_review's order (batch, file, item), so an
+    answer is settled against the offer as it stands: still on offer, and the very offer the person was shown."""
     from postgres.models.evidence import EvidenceFile
-    from postgres.models.financial_import_batches import (FinancialImportBatch as Batch,
-                                                          FinancialImportBatchItem as Item)
+    from postgres.models.financial_import_batches import FinancialImportBatchItem as Item
+    from services.financial.import_batches import batch_for
     from services.financial.pdf_candidates import PdfMappingError
-    item = session.scalar(select(Item).where(Item.id == item_id, Item.batch_id == batch_id))
-    batch = session.get(Batch, batch_id)
-    if item is None or batch is None or str(batch.case_id) != str(case_id):
+    batch = batch_for(session, case_id, batch_id, True)
+    file_id = session.scalar(select(Item.file_id).where(Item.id == item_id, Item.batch_id == batch.id))
+    if file_id is None:
         raise PdfMappingError('Statement not found in this batch.', 404)
-    file = session.get(EvidenceFile, item.file_id)
+    file = session.scalar(select(EvidenceFile).where(EvidenceFile.id == file_id).with_for_update()
+                          .execution_options(populate_existing=True))
+    item = session.scalar(select(Item).where(Item.id == item_id).with_for_update())
     stored = _stored(file, item.statement_key)
     if not stored or stored.get('status') != 'offered' or not (stored.get('offer') or {}).get('request'):
         raise PdfMappingError('There is no page-image reading on offer for this statement.', 409)
+    if not offer_id or stored['offer'].get('id') != offer_id:
+        raise PdfMappingError('The reading on offer changed since you opened it. Reopen the statement to see it.', 409)
     return item, file, stored
 
 
-def _offer_decided(session, item, file_id, stored, status, actor, message):
-    """Record the person's answer to an offer: on the reading record, in the outcome history, beside the statement."""
-    from postgres.models.financial_import_batches import FinancialImportBatchItem as Item
+def _offer_record(session, item, file_id, stored, status, actor, message):
+    """Record the person's answer to an offer on the reading record and in the outcome history, under the locks
+    _offer_target took (flushed, not committed)."""
     who = dict(name=getattr(actor, 'name', None), email=getattr(actor, 'email', None),
                user_id=str(getattr(actor, 'user_id', '') or ''))
     record = dict(stored, status=status, message=message, decided_by=who, at=datetime.now(timezone.utc).isoformat())
     _store(session, file_id, item.statement_key or '', record)
     session.flush()  # the outcome history reads the file again under its lock
     _record_outcome(session, file_id, item.statement_key or '', record)
-    current = session.scalar(select(Item).where(Item.id == item.id).with_for_update())
+    session.flush()  # save_review reads the file again (populate_existing): it must keep this record
+    return record, who
+
+
+def _offer_noted(session, item_id, file_id, record, who):
+    """The answer beside the statement, committed, and in the journal."""
+    from postgres.models.financial_import_batches import FinancialImportBatchItem as Item
+    current = session.scalar(select(Item).where(Item.id == item_id).with_for_update())
     if current is not None:
         _note(current, record)
     session.commit()
-    log.info('Page-image offer for statement %s of file %s: %s by %s', str(item.id)[:8], str(file_id)[:8], status,
-             who.get('name') or who.get('email'))
+    log.info('Page-image offer for statement %s of file %s: %s by %s', str(item_id)[:8], str(file_id)[:8],
+             record['status'], who.get('name') or who.get('email'))
     return record
 
 
-def accept_offer(session, *, case_id, batch_id, item_id, actor):
+def _offer_decided(session, item, file_id, stored, status, actor, message):
+    record, who = _offer_record(session, item, file_id, stored, status, actor, message)
+    return _offer_noted(session, item.id, file_id, record, who)
+
+
+def accept_offer(session, *, case_id, batch_id, item_id, offer_id, actor):
     """'Use this reading': the offered reading saved through the person's own save (save_review, as them), checked
     against the work the offer was compared with, so a change to their work since refuses (409) instead of being
-    overwritten. Their earlier review stays in the file's review history. Returns save_review's result."""
+    overwritten, and against the offer they were shown (offer_id). The acceptance is recorded in the same transaction
+    as the save (save_review's commit), under the batch and file locks, so a concurrent 'Keep mine' or second click
+    finds it settled. Their earlier saved review stays in the file's review history. Returns save_review's result."""
     from services.financial.import_batches import save_review
     from services.financial.statement_import import StatementReviewDraft
     from services.financial.pdf_candidates import PdfMappingError
-    item, file, stored = _offer_target(session, case_id, batch_id, item_id)
+    item, file, stored = _offer_target(session, case_id, batch_id, item_id, offer_id)
     offer = stored['offer']
-    file_id = file.id
+    file_id, item_id = file.id, item.id
+    record, who = _offer_record(session, item, file_id, stored, 'offer_accepted', actor,
+                                'The reading from the page images was used, by your choice; your earlier review is '
+                                'kept in its history.')
     try:
         result = save_review(session, case_id=case_id, batch_id=batch_id, item_id=item_id,
                              request=StatementReviewDraft.model_validate(offer['request']),
                              expected_review_revision=offer['work_revision'], actor=actor)
     except PdfMappingError as error:
-        session.rollback()
+        session.rollback()  # the acceptance record with it: nothing was saved
         if error.status_code == 409:
-            # Their work or the reading changed since the offer was made: nothing was saved; the offer is withdrawn.
-            item, file, stored = _offer_target(session, case_id, batch_id, item_id)
-            _offer_decided(session, item, file_id, stored, 'stale', actor,
-                           'The statement or your work on it changed after this reading was offered, so it was not used. '
-                           'Nothing was changed.')
+            # Their work or the statement changed since the offer was made: the offer, if still on offer, is withdrawn.
+            try:
+                item, file, stored = _offer_target(session, case_id, batch_id, item_id, offer_id)
+            except PdfMappingError:
+                session.rollback()
+            else:
+                _offer_decided(session, item, file_id, stored, 'stale', actor,
+                               'The statement or your work on it changed after this reading was offered, so it was '
+                               'not used. Nothing was changed.')
         raise
-    _offer_decided(session, item, file_id, stored, 'offer_accepted', actor,
-                   'The reading from the page images was used, by your choice; your earlier review is kept in its history.')
+    _offer_noted(session, item_id, file_id, record, who)
     return result
 
 
-def decline_offer(session, *, case_id, batch_id, item_id, actor):
+def decline_offer(session, *, case_id, batch_id, item_id, offer_id, actor):
     """'Keep mine': the offer is set aside; their work is not touched."""
-    item, file, stored = _offer_target(session, case_id, batch_id, item_id)
+    item, file, stored = _offer_target(session, case_id, batch_id, item_id, offer_id)
     _offer_decided(session, item, file.id, stored, 'offer_declined', actor,
                    'You kept your own work; the reading from the page images was set aside.')
     return dict(status='offer_declined')

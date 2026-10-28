@@ -1139,23 +1139,25 @@ def save_financial_batch_review(batch_id: UUID,item_id: UUID,body: SaveFinancial
 
 
 @router.post('/batches/{batch_id}/items/{item_id}/page-image-offer/accept', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit')))])
-def accept_financial_page_image_offer(batch_id: UUID, item_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db),
+def accept_financial_page_image_offer(batch_id: UUID, item_id: UUID, case_id: UUID = Query(...), offer_id: str = Query(...),
+        db: Session = Depends(get_db),
         user=Depends(get_current_db_user)):
     """'Use this reading': the reading from the page images on offer, saved as the person's own review."""
     from services.financial import vision_reader
     try:
-        return vision_reader.accept_offer(db, case_id=case_id, batch_id=batch_id, item_id=item_id, actor=actor_from_user(user))
+        return vision_reader.accept_offer(db, case_id=case_id, batch_id=batch_id, item_id=item_id, offer_id=offer_id, actor=actor_from_user(user))
     except PdfMappingError as exc:
         db.rollback();raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc
 
 
 @router.post('/batches/{batch_id}/items/{item_id}/page-image-offer/decline', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit')))])
-def decline_financial_page_image_offer(batch_id: UUID, item_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db),
+def decline_financial_page_image_offer(batch_id: UUID, item_id: UUID, case_id: UUID = Query(...), offer_id: str = Query(...),
+        db: Session = Depends(get_db),
         user=Depends(get_current_db_user)):
     """'Keep mine': the offer is set aside; the person's work is not touched."""
     from services.financial import vision_reader
     try:
-        return vision_reader.decline_offer(db, case_id=case_id, batch_id=batch_id, item_id=item_id, actor=actor_from_user(user))
+        return vision_reader.decline_offer(db, case_id=case_id, batch_id=batch_id, item_id=item_id, offer_id=offer_id, actor=actor_from_user(user))
     except PdfMappingError as exc:
         db.rollback();raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc
 

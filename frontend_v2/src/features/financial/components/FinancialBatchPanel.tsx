@@ -96,7 +96,7 @@ const itemSchema = z.object({
     .object({
       status: z.string().nullish(),
       line: z.string().nullish(),
-      offer: z.object({ mine: z.record(z.string(), z.unknown()), offered: z.record(z.string(), z.unknown()) }).nullish(),
+      offer: z.object({ id: z.string(), mine: z.record(z.string(), z.unknown()), offered: z.record(z.string(), z.unknown()) }).nullish(),
     })
     .nullish(),
   source_id: z.string(),
