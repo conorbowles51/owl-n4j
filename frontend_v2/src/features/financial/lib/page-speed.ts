@@ -9,7 +9,7 @@ import { fetchAPI } from "@/lib/api-client"
  * browser's navigation start (performance time origin). "Switched to" (VIEW): the view or case
  * changed inside the app, so the time runs from that change. Either way it ends at the first
  * frame painted after every request the view started has returned. A view the person leaves
- * before that (another view, another case, another page) is recorded as LEFT with how long they
+ * before that (another view, case or page, or closing the tab) is recorded as LEFT with how long they
  * waited, so the slowest loads are not lost. Timings are queued and posted in small batches; a failed post is dropped, never
  * retried and never shown. Uses only performance.now, timers and fetch (safe over plain http).
  */
@@ -124,12 +124,23 @@ export function useFinancialViewSpeed(caseId: string | undefined, page: string) 
         recordPageView({ page, method, case_id: caseId, ms: end - start })
       })
     })
+    const leave = () => {
+      // Left by the person before the data was shown (not the same-frame address sync).
+      if (measuring.armed && !settled && !signal.cancelled)
+        recordPageView({ page, method: "LEFT", case_id: caseId, ms: performance.now() - start })
+    }
+    // Closing or reloading the tab runs no React cleanup: record the leave and post it now.
+    const unload = () => {
+      leave()
+      signal.cancelled = true
+      flushPageViews(true)
+    }
+    window.addEventListener("pagehide", unload)
     return () => {
+      window.removeEventListener("pagehide", unload)
+      leave()
       signal.cancelled = true
       cancelAnimationFrame(frame)
-      // Left by the person before the data was shown (not the same-frame address sync).
-      if (measuring.armed && !settled)
-        recordPageView({ page, method: "LEFT", case_id: caseId, ms: performance.now() - start })
     }
   }, [caseId, page, client])
 }

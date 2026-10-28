@@ -76,4 +76,20 @@ describe("page speed", () => {
     flushPageViews()
     expect(posted().map((v) => `${v.method} ${v.page}`)).toEqual(["LEFT financial/ledger", "VIEW financial/trends"])
   })
+
+  it("closing the tab mid-load posts LEFT at once", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const wrapper = ({ children }: { children: ReactNode }) => createElement(QueryClientProvider, { client }, children)
+    void client.fetchQuery({ queryKey: ["financial", "never"], queryFn: () => new Promise<number>(() => {}) })
+    const view = renderHook(() => useFinancialViewSpeed("c1", "financial/ledger"), { wrapper })
+    await new Promise((r) => setTimeout(r, 50))
+    window.dispatchEvent(new Event("pagehide"))
+    const views = vi.mocked(fetchAPI).mock.calls.flatMap(
+      ([, options]) => (options as { body: { views: { method: string }[] } }).body.views)
+    expect(views.map((v) => v.method)).toEqual(["LEFT"])
+    expect((vi.mocked(fetchAPI).mock.calls[0][1] as { keepalive: boolean }).keepalive).toBe(true)
+    view.unmount() // already counted: no second LEFT
+    flushPageViews()
+    expect(vi.mocked(fetchAPI)).toHaveBeenCalledTimes(1)
+  })
 })
