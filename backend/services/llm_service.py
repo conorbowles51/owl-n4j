@@ -229,6 +229,8 @@ class LLMExecutionContext:
     # at max thinking). DeepSeek enforces no schema, so the schema is stated in the prompt and the answer is
     # checked by the caller exactly as an OpenAI answer is.
     DEEPSEEK_VISION_EFFORT = "max"
+    # Thinking counts against the answer's tokens; vision_reader reserves this many (DEEPSEEK_RESERVE_OUTPUT_TOKENS).
+    DEEPSEEK_VISION_MAX_TOKENS = 64000
 
     def _call_deepseek_vision(self, prompt, images_png, *, schema, timeout, max_output_tokens, image_labels=None):
         import base64
@@ -250,7 +252,7 @@ class LLMExecutionContext:
             "response_format": {"type": "json_object"},
             "thinking": {"type": "enabled"},
             "reasoning_effort": self.DEEPSEEK_VISION_EFFORT,
-            "max_tokens": max(max_output_tokens, 32000),
+            "max_tokens": self.DEEPSEEK_VISION_MAX_TOKENS,
         }
         self.last_request_arguments = {"model": self.model_id, "images": len(images_png),
                                        "image_bytes": sum(len(i) for i in images_png), "schema": "in prompt",

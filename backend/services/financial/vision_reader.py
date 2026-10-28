@@ -230,6 +230,7 @@ MAX_FAILURES = 3
 # Reserved before each request: an answer cut short, refused or timed out is still billed.
 RESERVE_TOKENS_PER_IMAGE = 1600
 RESERVE_OUTPUT_TOKENS = 16000
+DEEPSEEK_RESERVE_OUTPUT_TOKENS = 64000
 GAVE_UP = 'The page images could not be read after several tries; the statement stays held.'
 # Statements a person has worked on (Neil, 2026-10-27, rule 2): read from their page images too (the same cost cap).
 # A reading that proves is stored as an OFFER beside their work ('offered'), never saved, merged or imported: the queue
@@ -1757,8 +1758,9 @@ def _decided(factory, item_id, record):
 def reserve_usd(model_id, images):
     """The most a request with these images can cost (counted before it is sent)."""
     count = sum(len(strips) for _, strips in images)
-    return cost_usd(model_id, dict(prompt_tokens=count * RESERVE_TOKENS_PER_IMAGE + 4000,
-                                   completion_tokens=RESERVE_OUTPUT_TOKENS))
+    # A DeepSeek page-image request may answer up to llm_service.DEEPSEEK_VISION_MAX_TOKENS (its thinking counts).
+    output = DEEPSEEK_RESERVE_OUTPUT_TOKENS if str(model_id).startswith('deepseek') else RESERVE_OUTPUT_TOKENS
+    return cost_usd(model_id, dict(prompt_tokens=count * RESERVE_TOKENS_PER_IMAGE + 4000, completion_tokens=output))
 
 
 def failures(record, revision):
