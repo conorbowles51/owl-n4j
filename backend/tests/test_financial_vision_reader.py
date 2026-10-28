@@ -426,9 +426,9 @@ class PrintedOrderTest(unittest.TestCase):
     def _prove(self, document, sent, file_pages=None, text_pages=None):
         # As judge: the order check, then the pages as the text reading keeps them.
         proposal = self._proposal(sent, text_pages)
-        vr.check_text_keeps_printed_order(document, proposal, sent)
         pages = vr.document_pages(document, sent)
-        vr.check_page_numbering(pages, file_pages or sorted(sent))
+        if vr.check_page_numbering(pages, file_pages or sorted(sent)):
+            vr.check_text_keeps_printed_order(document, proposal, sent)
         return vr.prove(proposal, vr.choose_section(vr.combine(pages), proposal), _knowledge())
 
     def _saved_order(self, document, sent):
@@ -474,6 +474,40 @@ class PrintedOrderTest(unittest.TestCase):
             entry['printed_page_total'] = 4
         self.assertEqual(vr.printed_order(document, [36, 37, 38, 39]), [38, 37, 36, 39])
         self.assertEqual(self._prove(document, [38, 37, 36, 39], text_pages=[38, 37, 36])['closing'], 100000)
+
+    def test_judge_applies_the_order_check_only_where_printed_order_let_the_pages_pass(self):
+        document = self._document({1: 7, 2: 6, 3: 5})
+        with mock.patch.object(vr, 'check_text_keeps_printed_order', side_effect=vr.NotProved('order')) as check, \
+                mock.patch.object(vr, 'choose_section', side_effect=vr.NotProved('section')):
+            with mock.patch.object(vr, 'PRINTED_COUNTS', False):
+                with self.assertRaisesRegex(vr.NotProved, '^order$'):
+                    vr.judge(None, 'c', self._proposal([5, 6, 7]), document, [5, 6, 7], _knowledge())
+            # As before the rule, pages out of order are a page gap the printed counts may settle (judged on).
+            with self.assertRaisesRegex(vr.NotProved, '^section$'):
+                vr.judge(None, 'c', self._proposal([5, 6, 7]), document, [5, 6, 7], _knowledge())
+            # Pages rising in file order, or a numbering refused outright (left to the page-gap path): not checked.
+            with self.assertRaisesRegex(vr.NotProved, '^section$'):
+                vr.judge(None, 'c', self._proposal([5, 6, 7]), self._document({1: 5, 2: 6, 3: 7}), [5, 6, 7], _knowledge())
+            gap = self._document({1: 7, 2: 6, 3: 5})
+            gap['pages'][2]['printed_page_number'] = 4
+            with self.assertRaisesRegex(vr.NotProved, '^section$|skip'):
+                vr.judge(None, 'c', self._proposal([5, 6, 7]), gap, [5, 6, 7], _knowledge())
+            self.assertEqual(check.call_count, 2)
+
+    def test_text_in_file_order_with_all_four_printed_counts_proves_in_file_order_as_before(self):
+        # Review: images misreading 1,2,3 as 2,1,3 while the text keeps file order: the printed counts settle it,
+        # read in file order (the order saved), as before the rule.
+        document = self._document({1: 5, 2: 6, 3: 7})
+        for entry in document['pages']:
+            entry['printed_page_number'] = {5: 2, 6: 1, 7: 3}[entry['page']]
+        document['accounts'][0].update(total_credits='100.00', total_debits='100.00', count_credits=1, count_debits=2)
+        proposal = self._proposal([5, 6, 7])
+        pages = vr.document_pages(document, [5, 6, 7])
+        self.assertTrue(vr.check_page_numbering(pages, [5, 6, 7]))
+        with self.assertRaisesRegex(vr.NotProved, 'does not read them in the printed order'):
+            vr.check_text_keeps_printed_order(document, proposal, [5, 6, 7])
+        section = vr.choose_section(vr.combine(pages), proposal)
+        self.assertEqual([r['page'] for r in vr.prove(proposal, section, _knowledge())['rows']], [5, 6, 7])
 
     def test_a_gap_or_a_number_twice_still_holds_whatever_the_order(self):
         gap = self._document({1: 7, 2: 6, 3: 5})

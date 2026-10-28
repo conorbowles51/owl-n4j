@@ -590,7 +590,7 @@ def check_page_numbering(pages, file_pages=None):
             missing = sorted(set(range(1, total + 1)) - numbers)
             raise NotProved('The pages print %s pages but the file has %s; pages may be missing (printed pages not read: %s).' % (
                 total, count, ', '.join(str(n) for n in missing[:10]) or 'none'))
-    _numbering_has_no_gap(pages, file_pages, next(iter(totals)) if totals else None)
+    return _numbering_has_no_gap(pages, file_pages, next(iter(totals)) if totals else None)
 
 
 def _printed_run(numbers, file_pages, total, period_pages):
@@ -615,7 +615,7 @@ def check_text_keeps_printed_order(document, proposal, pages):
     on the order also settles a page number misread into another complete run.
     """
     numbering = {entry.get('page'): entry.get('printed_page_number') for entry in document.get('pages') or []}
-    numbers = [numbering.get(page) for page in sorted(pages) if isinstance(numbering.get(page), int)]
+    numbers = [numbering.get(page) for page in sorted(pages) if isinstance(numbering.get(page), int) and numbering[page] >= 1]
     if not PRINTED_ORDER or numbers == sorted(numbers):
         return
     order = list(pages)
@@ -645,7 +645,8 @@ def _numbering_has_no_gap(pages, file_pages, total):
     """NotProved when a printed page number between this period's pages is not one of them.
 
     With PRINTED_ORDER, pages whose printed numbers form one complete run pass in printed order
-    whatever their order in the file (a file scanned in reverse).
+    whatever their order in the file (a file scanned in reverse). True when the pages pass only in printed
+    order (the caller then checks the text reading keeps that order).
     """
     try:
         _numbering_in_file_order(pages, file_pages, total)
@@ -654,6 +655,8 @@ def _numbering_has_no_gap(pages, file_pages, total):
                    if isinstance(page.get('printed_page_number'), int) and page.get('printed_page_number') >= 1]
         if not PRINTED_ORDER or not _printed_run(numbers, file_pages, total, [p for p, _ in pages]):
             raise
+        return True
+    return False
 
 
 def _numbering_in_file_order(pages, file_pages, total):
@@ -2088,11 +2091,10 @@ def judge(db, case_id, proposal, document, pages, knowledge, *, saved=False):
     otherwise. ``saved``: a saved statement, judged as if it were not saved yet (no neighbour check: the reader
     replacement weighs its coverage)."""
     from services.financial.import_batches import assess
-    check_text_keeps_printed_order(document, proposal, pages)
     readings = document_pages(document, pages)
-    page_gap = None
+    page_gap, printed = None, False
     try:
-        check_page_numbering(readings, proposal.get('page_numbers'))
+        printed = check_page_numbering(readings, proposal.get('page_numbers'))
     except NotProved as gap:
         if not PRINTED_COUNTS:
             raise
@@ -2100,6 +2102,16 @@ def judge(db, case_id, proposal, document, pages, knowledge, *, saved=False):
         # deposits and withdrawals on a page held, as the batch's page gate settles it
         # (import_issues.printed_complete): decided below.
         page_gap = gap
+    if printed:
+        # The pages pass only in printed order: the text reading must keep that order too, or the saved review
+        # would place the payments out of it. Where it does not, the pages are out of order as before this rule:
+        # a page gap, read in the text reading's order, that only the printed counts and totals settle.
+        try:
+            check_text_keeps_printed_order(document, proposal, pages)
+        except NotProved as gap:
+            if not PRINTED_COUNTS:
+                raise
+            page_gap = gap
     section = choose_section(combine(readings), proposal)
     if page_gap is not None and not proposal.get('printed_pages_missing') and any(
             section['values'].get(k) is None for k in ('count_credits', 'count_debits', 'total_credits', 'total_debits')):
