@@ -159,7 +159,7 @@ def test_errors_and_non_json_responses_are_not_kept(engine):
     def failing(case_id, db):
         counter.calls += 1
         db.execute(text('SELECT count(*) FROM payments'))
-        raise HTTPException(status_code=422, detail='no')
+        raise HTTPException(status_code=409, detail='no')
 
     @view_cache.cached_view('text')
     def plain(case_id, db):
@@ -490,3 +490,85 @@ def test_a_row_version_memo_hands_out_copies_and_stays_bounded():
     assert memo.get('a', lambda: None) == dict(items=[1])
     memo.get('b', lambda: 1); memo.get('c', lambda: 2)
     assert memo.get('a', lambda: 'again') == 'again'
+
+
+def test_a_views_own_refusal_is_kept_and_raised_again_until_its_rows_change(engine):
+    from fastapi import HTTPException
+    case, other, counter = uuid.uuid4(), uuid.uuid4(), Counter()
+    write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 5), (:o, 7)', c=case, o=other)
+
+    @view_cache.cached_view('refusing')
+    def refusing(case_id, db):
+        counter.calls += 1
+        total = db.execute(text('SELECT sum(amount) FROM payments WHERE case_id = :c'), dict(c=case_id)).scalar()
+        raise HTTPException(status_code=422, detail=f'The complete ledger record exceeds 64 MiB ({total}).')
+
+    details = []
+    for _ in range(2):
+        with pytest.raises(HTTPException) as caught:
+            call(engine, refusing, case)
+        details.append((caught.value.status_code, caught.value.detail, caught.value.headers))
+    assert counter.calls == 1, 'the same rows give the same refusal'
+    assert details == [(422, 'The complete ledger record exceeds 64 MiB (5).', None)] * 2
+    write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:o, 1)', o=other)
+    with pytest.raises(HTTPException):
+        call(engine, refusing, case)
+    assert counter.calls == 1, "another case's write does not recompute"
+    write(engine, 'UPDATE payments SET amount = 6 WHERE case_id = :c', c=case)
+    with pytest.raises(HTTPException) as caught:
+        call(engine, refusing, case)
+    assert counter.calls == 2 and caught.value.detail == 'The complete ledger record exceeds 64 MiB (6).'
+
+
+def test_a_refusal_through_the_app_has_the_same_bytes_as_without_the_cache(engine):
+    from fastapi import FastAPI, HTTPException, Depends
+    from fastapi.testclient import TestClient
+    case = uuid.uuid4()
+
+    def refuse(case_id, db):
+        db.execute(text('SELECT count(*) FROM payments WHERE case_id = :c'), dict(c=case_id))
+        raise HTTPException(status_code=422, detail='More than 1,000 payments match these filters. Choose an account or a shorter date range, then run this check again.')
+
+    def db():
+        with Session(engine) as session:
+            yield session
+    app = FastAPI()
+    cached = view_cache.cached_view('refuse-app')(refuse)
+
+    @app.get('/plain')
+    def plain(case_id: uuid.UUID, db=Depends(db)):
+        return refuse(case_id=case_id, db=db)
+
+    @app.get('/cached')
+    def through_cache(case_id: uuid.UUID, db=Depends(db)):
+        return cached(case_id=case_id, db=db)
+    client = TestClient(app)
+    expected = client.get(f'/plain?case_id={case}')
+    first = client.get(f'/cached?case_id={case}')
+    hits = view_cache.stats['hits']
+    second = client.get(f'/cached?case_id={case}')
+    assert view_cache.stats['hits'] == hits + 1, 'the second answer is the kept refusal'
+    for response in (first, second):
+        assert (response.status_code, response.content, response.headers['content-type']) == (
+            expected.status_code, expected.content, expected.headers['content-type'])
+
+
+def test_other_refusals_are_not_kept(engine):
+    from fastapi import HTTPException
+    case, counter = uuid.uuid4(), Counter()
+
+    @view_cache.cached_view('refusal-with-headers')
+    def with_headers(case_id, db):
+        counter.calls += 1
+        db.execute(text('SELECT count(*) FROM payments'))
+        raise HTTPException(status_code=422, detail='no', headers={'Retry-After': '5'})
+
+    @view_cache.cached_view('refusal-reading-nothing')
+    def reads_nothing(case_id, db):
+        counter.calls += 1
+        raise HTTPException(status_code=422, detail='no')
+
+    for handler in (with_headers, with_headers, reads_nothing, reads_nothing):
+        with pytest.raises(HTTPException):
+            call(engine, handler, case)
+    assert counter.calls == 4 and not view_cache._entries

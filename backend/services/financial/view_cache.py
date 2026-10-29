@@ -20,7 +20,9 @@ How a stored response is known to be current:
   returns the stored bytes. Otherwise the view is computed again. Nothing is ever invalidated by hand, so
   no write path (imports, labels, categories, identities, notes) can be forgotten.
 
-Not stored: errors, non-JSON responses, views that read a large table without ``case_id`` (the check would
+A view's own refusal (the route's 422, e.g. "exceeds 64 MiB" or "more than 1,000 payments") is kept like a
+result and raised again with the same text while the fingerprint is equal: it is computed from the same rows.
+Not stored: other errors, non-JSON responses, views that read a large table without ``case_id`` (the check would
 cost more than it saves), and anything over the size limits. Off on databases other than PostgreSQL.
 Views whose result depends on anything besides these tables and their parameters (the clock, files, the
 graph database, other threads) must not use this.
@@ -102,6 +104,7 @@ class _Entry:
     body: bytes
     status_code: int
     media_type: str
+    refusal: str | None = None
 
 
 _TOKEN = re.compile(r'[a-z_][a-z0-9_]*')
@@ -208,7 +211,7 @@ class _KeyLock:
 
 def _cost(key, entry):
     """Memory an entry holds: its body plus key, table names and fingerprint, with a fixed allowance per object."""
-    return (len(entry.body) + len(key[0]) + len(key[1]) + 1024
+    return (len(entry.body) + len(entry.refusal or '') + len(key[0]) + len(key[1]) + 1024
             + sum(len(table) + 128 for table in entry.tables) + 256 * len(entry.fingerprint))
 
 
@@ -376,6 +379,7 @@ def cached_view(name):
 
 def _serve(handler, key, engine, case_id, kwargs, state):
     from fastapi.responses import Response
+    from starlette.exceptions import HTTPException as StarletteHTTPException
     from sqlalchemy.orm import Session
     started = time.perf_counter()
     # One connection for the whole view, as before: the snapshot owner is also the handler's session
@@ -390,21 +394,43 @@ def _serve(handler, key, engine, case_id, kwargs, state):
             if entry is not None and fingerprint(owner, entry.tables, case_id) == entry.fingerprint:
                 stats['hits'] += 1
                 logger.info('Financial view %s served unchanged (%.2f s)', key[0], time.perf_counter() - started)
+                if entry.refusal is not None:
+                    from fastapi import HTTPException
+                    state['handler_started'] = True
+                    raise HTTPException(status_code=422, detail=entry.refusal)
                 return _response(entry)
             stats['misses'] += 1
             recording = _Recording(owner=_dbapi(owner), snapshot=snapshot)
             token = _recording.set(recording)
             session = Session(bind=owner, autoflush=False, join_transaction_mode='create_savepoint')
+            refusal = None
             try:
                 state['handler_started'] = True
                 with _CollectorPaused():
-                    result = handler(**{**kwargs, 'db': session})
-                    # Lazy loads while encoding still belong to this snapshot and are recorded.
-                    response = result if isinstance(result, Response) else _json_response(result)
+                    try:
+                        result = handler(**{**kwargs, 'db': session})
+                    except StarletteHTTPException as exc:
+                        refusal = exc
+                    else:
+                        # Lazy loads while encoding still belong to this snapshot and are recorded.
+                        response = result if isinstance(result, Response) else _json_response(result)
             finally:
                 recording.paused = True
                 _recording.reset(token)
                 session.close()
+            if refusal is not None:
+                # Only the route's plain 422 with a text reason: the same rows give the same refusal.
+                tables = tuple(sorted(recording.tables))
+                if refusal.status_code == 422 and refusal.headers is None and isinstance(refusal.detail, str) and tables:
+                    current = fingerprint(owner, tables, case_id)
+                    if current is not None:
+                        _store(key, _Entry(tables, current, b'', 422, 'application/json', refusal=refusal.detail))
+                        stats['stored'] += 1
+                        logger.info('Financial view %s refusal kept (%.2f s, %d tables)', key[0],
+                                    time.perf_counter() - started, len(tables))
+                        raise refusal
+                stats['not_stored'] += 1
+                raise refusal
             # Only plain results encoded here are kept: a handler's own Response may carry headers of its own.
             if isinstance(result, Response) or response.status_code != 200:
                 stats['not_stored'] += 1
