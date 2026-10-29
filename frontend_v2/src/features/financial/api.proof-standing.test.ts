@@ -188,13 +188,17 @@ describe("the proof standing endpoint contract", () => {
     // A filter appearing on the route is the moment this file would need to
     // decide what to send for it, and the honest default is not obvious.
     const body = routeBody(router(), '@router.get("/proof-standing")')
-    // The signature only, from `async def` to the line that closes it. Scoped
+    // The signature only, from `def` to the line that closes it. Scoped
     // because the body has indented `name:` lines of its own -- a `try:` reads
     // as a parameter to a regex that is not told where the signature ends.
+    // Plain `def` or `async def`: FastAPI takes either, and a GET that never
+    // awaits is a plain `def` so its database work runs off the event loop.
+    const opens = body.search(/^(async )?def /m)
+    expect(opens, "the route no longer has a def line").toBeGreaterThan(-1)
     const closes = body.indexOf("\n):")
     expect(closes, "the route signature no longer closes at column zero")
-      .toBeGreaterThan(-1)
-    const signature = body.slice(body.indexOf("async def"), closes)
+      .toBeGreaterThan(opens)
+    const signature = body.slice(opens, closes)
     const params = [...signature.matchAll(/^ {4}(\w+):/gm)].map((m) => m[1])
     expect(params).toEqual(["case_id", "db"])
   })

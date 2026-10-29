@@ -5,8 +5,10 @@ import { configure } from "@testing-library/react"
 // every element against jsdom's default stylesheet. On the financial screens
 // one query measured 1.2-1.8 s with no other load, and about three times that
 // on a busy box. The 1 s default cannot fit even one check, so findBy and
-// waitFor failed on load alone. 10 s fits at least two checks.
-configure({ asyncUtilTimeout: 10_000 })
+// waitFor failed on load alone. With the job fleet running (load average
+// 24-40, 2026-10-29) one check on the review queue's 50-item page took over
+// 10 s, failing a passing journey; 30 s fits at least two checks there.
+configure({ asyncUtilTimeout: 30_000 })
 
 if (typeof Element.prototype.scrollIntoView !== "function") {
   Element.prototype.scrollIntoView = () => undefined

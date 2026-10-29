@@ -390,6 +390,9 @@ describe("FinancialPage", () => {
   })
 
   // This journey renders every retained tab repeatedly and checks the original file input.
+  // It is one journey on purpose: the same input element has to survive every switch.
+  // Measured on the shared deploy box: 41.5 s run alone, 252 s in a full run under load
+  // (the unit project's 300 s budget, vitest.config.ts).
   it("retains the selected PDF when switching financial tabs and transaction modes", () => {
     graphWithRows()
     renderPage()

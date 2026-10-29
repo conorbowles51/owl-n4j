@@ -30,8 +30,11 @@ export default defineConfig({
           // Role queries in jsdom cost about 1 ms per element after every
           // update (see src/test/setup.ts). The longest financial journeys
           // measured 7-22 s alone and up to 34 s in a full parallel run on a
-          // shared, loaded box. 60 s leaves headroom and still fails a hang.
-          testTimeout: 60_000,
+          // shared, loaded box (2026-10-02). On 2026-10-29, with the job fleet
+          // running (load average 24-40), seven passing journeys took 64-252 s
+          // and failed a 60 s budget only by time. 300 s covers that and still
+          // fails a hang.
+          testTimeout: 300_000,
         },
       },
       {
