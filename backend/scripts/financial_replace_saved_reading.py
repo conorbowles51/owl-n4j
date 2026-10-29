@@ -6,7 +6,10 @@ file, only when nobody typed or corrected its payments, exactly one statement
 of the file's current reading is that period (same currency, printed dates,
 account reference and ledger account), that reading proves under every
 admission check exactly as a fresh untouched statement would, and its money
-differs from what is saved.
+differs from what is saved. A period whose reading has exactly the saved money
+but prints more of its payments' descriptions is 'describe': each such payment
+gets the reading's description through the correction chain, keeping its names
+(``assess_descriptions``).
 
 DRY RUN (default): a READ ONLY transaction (refused if the database does not
 accept it; any ORM write raises). Prints counts only: per outcome and reason,
@@ -85,6 +88,10 @@ def report(results):
                          f"{r.get('saved_payments')}, fresh payments {r.get('fresh_payments')}, differs "
                          f"{'+'.join(r.get('differs') or [])}, missing {r.get('missing_payments')}, extra "
                          f"{r.get('extra_payments')}, investigator work {'yes' if r.get('investigator_work') else 'no'}")
+        elif r['outcome'] == 'describe':
+            lines.append(f"  DESCRIBE period {r.get('period_id')} (document {r['document_id']}): "
+                         f"{len(r.get('changes') or [])} of {r.get('saved_payments')} payment descriptions gain printed "
+                         f"text; money identical")
     return '\n'.join(lines)
 
 
@@ -161,7 +168,7 @@ def main(argv=None):
         from services.financial.saved_reading_replacement import replace_document
         resolve_path = _resolver()
         applied = []
-        for entry in [r for r in results if r['outcome'] == 'replace']:
+        for entry in [r for r in results if r['outcome'] in ('replace', 'describe')]:
             try:
                 outcome = replace_document(session_factory=factory, case_id=entry['case_id'],
                                            document_id=entry['document_id'], resolve_path=resolve_path)
@@ -170,10 +177,12 @@ def main(argv=None):
                            'refusal': str(error)[:300]}
             receipt = outcome.get('receipt') or {}
             print(f"  {'APPLIED' if outcome.get('applied') else 'NOT APPLIED'} period {entry.get('period_id')}: "
-                  + (f"new document {receipt.get('source_document_id')}, payments {receipt.get('transaction_count')}"
+                  + ((f"{outcome.get('payments')} payment descriptions completed" if outcome.get('basis') ==
+                      'reader_descriptions' else f"new document {receipt.get('source_document_id')}, payments "
+                      f"{receipt.get('transaction_count')}")
                      if outcome.get('applied') else (outcome.get('refusal') or outcome.get('code') or '')))
             applied.append(outcome)
-        results = applied + [r for r in results if r['outcome'] != 'replace']
+        results = applied + [r for r in results if r['outcome'] not in ('replace', 'describe')]
     if args.json:
         Path(args.json).write_text(json.dumps([{k: v for k, v in r.items() if k != 'request'} for r in results],
                                               indent=1, default=str))

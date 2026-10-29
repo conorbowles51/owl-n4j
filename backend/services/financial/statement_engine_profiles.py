@@ -145,11 +145,13 @@ PROFILES = (
     # reads as other letters or not at all; both layouts print the same six amount columns in the same order
     # (Abonos, Cargos, Movimiento garantia, Saldo en garantia / no disponible, Saldo disponible, Saldo total), so
     # ``column_order`` supplies the roles a lost heading would have given (the same roles the read heading gives).
+    # The sideways layout prints each entry's description as a block of lines around its dated line
+    # (``entry_blocks``, statement_engine E10).
     dict(name='monex-mexico', match=dict(any=['monex grupo financiero']), institution='Monex', statement_account=True,
          columns=dict(ignore=['MOVIMIENTO GARANTIA'], balance=['SALDO EN GARANTIA', 'SALDO NO DISPONIBLE',
                                                                 'SALDO DISPONIBLE', 'SALDO TOTAL'],
                       description=['REFERENCIA']),
-         column_order=['credit', 'debit', 'ignore', 'balance', 'balance', 'balance']),
+         column_order=['credit', 'debit', 'ignore', 'balance', 'balance', 'balance'], entry_blocks=True),
     # Santander prints some accounts only after the product name ("<PRODUCT NAME> 12-34567890-1"):
     # on the verified truth 45 such heading lines, every one the truth account.
     dict(name='santander-mexico', match=dict(any=['grupo financiero santander']), institution='Santander',
@@ -242,7 +244,7 @@ PROFILES += (
 _KEYS = {'name', 'match', 'institution', 'currency', 'convention', 'date_order', 'labels', 'columns', 'account_heading',
          'statement_account', 'prior_period_block', 'account_suffix_heading', 'holder_heading', 'settlement_days',
          'client_line', 'rule_mark', 'holdings_currency', 'column_order', 'blank_closing_quiet', 'opening_from_first_day',
-         'account_number_heading', 'direction_headings', 'repeated_column_groups'}
+         'account_number_heading', 'direction_headings', 'repeated_column_groups', 'entry_blocks'}
 _LABEL_ROLES = {'opening', 'closing', 'subtotal', 'credit_total', 'debit_total', 'credit_component',
                 'debit_component', 'column_total', 'day_balance', 'ignore'}
 _COLUMN_ROLES = {'date', 'description', 'credit', 'debit', 'balance', 'amount', 'ignore'}
@@ -277,7 +279,8 @@ def validate(profile):
             or profile.get('account_suffix_heading') not in (None, True) or profile.get('client_line') not in (None, True)
             or profile.get('account_number_heading') not in (None, True)
             or profile.get('direction_headings') not in (None, True)
-            or profile.get('repeated_column_groups') not in (None, True)):
+            or profile.get('repeated_column_groups') not in (None, True)
+            or profile.get('entry_blocks') not in (None, True)):
         raise ValueError('Invalid profile account heading flag.')
     titled = profile.get('holder_heading')
     if titled is not None and (not isinstance(titled, dict) or set(titled) != {'title', 'prefix'}

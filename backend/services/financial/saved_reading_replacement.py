@@ -65,7 +65,7 @@ import os
 import re
 import uuid
 from collections import Counter
-from datetime import date
+from datetime import date, datetime, timezone
 
 from sqlalchemy import func, select
 
@@ -107,6 +107,19 @@ FROM_IMAGES = os.environ.get('LOUPE_FINANCIAL_REPLACE_FROM_IMAGES', '1').strip()
 # stored record is judged again under the current rules (read_saved stored_only, no request). Off: the record is used
 # as stored.
 STORED_REJUDGE = os.environ.get('LOUPE_FINANCIAL_REPLACE_STORED_REJUDGE', '1').strip().lower() not in ('0', 'false', 'off', 'no')
+# DESCRIPTIONS (switch LOUPE_FINANCIAL_REPLACE_DESCRIPTIONS, default on; fin-monex 2026-10-29): a saved period whose
+# current reading has exactly the saved money (every payment's amount, direction, date and running balance, the same
+# payments one for one, the same opening and closing balances) but whose reading prints more of a payment's
+# description than was saved (Monex sideways entries saved with their reference number only, statement_engine E10)
+# gains that text: each such payment is superseded by the same payment with the reading's description, through the
+# correction chain (its names, category, link and notes go with it; the replaced row is kept, linked), only when
+# every word of the saved description is in the new one (a payment whose reading would drop a saved word stays as
+# saved). A reading differing in any money changes nothing here. Decisions on the payments (names a person saved) do not stop it: the payment stays the same
+# payment. Off: such periods stay 'same'.
+DESCRIPTIONS = os.environ.get('LOUPE_FINANCIAL_REPLACE_DESCRIPTIONS', '1').strip().lower() not in ('0', 'false', 'off', 'no')
+DESCRIPTION_BASIS = 'reader_descriptions'
+DESCRIPTION_REASON = ('The current reader reads more of this payment\'s printed description; its amount, direction, '
+                      'date and balance are the saved ones. The earlier row is kept, linked.')
 IMAGE_BASIS = 'page_image'
 IMAGE_REASON = ('The page images of this statement period were read and the reading balances under every admission '
                 'check; the saved copy was incomplete (no dates or a balance missing). The saved copy is kept, linked '
@@ -138,6 +151,9 @@ REFUSED = {
     'coverage': 'Another saved statement overlaps this account and period.',
     'same': 'The current reading has the same payments and balances as the saved copy.',
     'unreadable': 'The current reading could not be built.',
+    'money_differs': 'The current reading differs in money from the saved copy; only its descriptions are compared here.',
+    'payments_differ': 'The current reading does not have the saved payments one for one.',
+    'description_loses_text': 'The current reading would drop text from a saved payment description.',
 }
 
 
@@ -208,8 +224,9 @@ def saved_money(session, document, period):
     return dict(rows=rows, opening=period.opening_balance_minor, closing=period.closing_balance_minor)
 
 
-def _typed(session, document):
-    """Refusal code when a person typed, changed, corrected or decided payments of this saved copy."""
+def _typed(session, document, decisions_ok=False):
+    """Refusal code when a person typed, changed, corrected or decided payments of this saved copy
+    (``decisions_ok``: decisions recorded on its payments do not count, DESCRIPTIONS)."""
     from services.financial.import_batches import initial_request
     metadata = document.metadata_ or {}
     original, request = metadata.get('statement_import_original'), metadata.get('statement_import_request')
@@ -231,7 +248,7 @@ def _typed(session, document):
         # Every field of a payment row: amount, direction, dates, description, counterparty, its link, page, reason.
         if any(_given(row.get(key)) != _given(initial.get(key)) for key in set(row) | set(initial) if key != 'id'):
             return 'typed_payments'
-    return _rows_changed(session, document)
+    return _rows_changed(session, document, decisions_ok)
 
 
 def _given(value):
@@ -239,7 +256,7 @@ def _given(value):
     return None if value in (None, '', {}, [], False) else value
 
 
-def _rows_changed(session, document):
+def _rows_changed(session, document, decisions_ok=False):
     """Refusal code when saved payments of this copy were corrected, completed or decided after it was saved."""
     metadata = document.metadata_ or {}
     if any(record.get('correction') or record.get('resolved_transaction_id')
@@ -250,7 +267,7 @@ def _rows_changed(session, document):
         FinancialTransaction.source_document_id == document.id)))
     if any(status != 'admitted' or superseded for _, status, superseded in rows):
         return 'corrected_payments'
-    if rows and session.scalar(select(func.count()).select_from(AdjudicationEvent).where(
+    if rows and not decisions_ok and session.scalar(select(func.count()).select_from(AdjudicationEvent).where(
             AdjudicationEvent.case_id == document.case_id, AdjudicationEvent.subject_type == 'transaction',
             AdjudicationEvent.subject_id.in_([row[0] for row in rows]))):
         return 'row_decisions'
@@ -284,7 +301,7 @@ def investigator_work(session, document):
     return bool(progress and saved_by and saved_by != SYSTEM_NAME and not saved_by.startswith('system'))
 
 
-def _saved_state(session, document):
+def _saved_state(session, document, decisions_ok=False):
     """(refusal code, period) for a saved copy, before any reading."""
     if document.status != 'admitted':
         return 'not_admitted', None
@@ -304,7 +321,7 @@ def _saved_state(session, document):
         return 'no_single_period', None
     if _restored_before(session, document):
         return 'restored_by_request', periods[0]
-    code = _typed(session, document)
+    code = _typed(session, document, decisions_ok)
     if code and not (code == 'typed_payments' and TYPED_MIRROR):
         return code, periods[0]
     if session.scalar(select(FinancialSourceDocument.id).where(
@@ -469,6 +486,12 @@ def assess_document(session, document, *, cache=None, reading=None):
     replace is assessed from the page reading stored for it (FROM_IMAGES). Reads only."""
     seen = {}
     verdict = assess_reading(session, document, cache=cache, reading=reading, seen=seen)
+    if DESCRIPTIONS and reading is None and verdict.get('code') in ('same', 'row_decisions'):
+        # The money is the saved money (or decisions on its payments keep the copy): its descriptions may still gain
+        # the text the reader of the day left out (assess_descriptions).
+        described = assess_descriptions(session, document, cache=cache)
+        if described['outcome'] == 'describe':
+            return described
     if verdict['outcome'] == 'replace' or not FROM_IMAGES or verdict.get('code') not in ('not_proved', 'same') \
             or 'match' not in seen or not incomplete(seen.get('period')):
         return verdict
@@ -521,6 +544,37 @@ def assess_image(session, document, period, statement_id, proposal, result):
             'extra_payments': sum((saved['rows'] - fresh['rows']).values())}
 
 
+def _matching_reading(session, document, period, *, cache=None, reading=None, end_only=False):
+    """(refusal code, statement id, proposal): the one statement of the file's current reading that is this saved
+    period (``reading``: the one the writer read under its locks). Reads only."""
+    from services.financial.import_batches import initial_request
+    from services.financial.statement_import import read_statement_import
+    saved_request = (document.metadata_ or {}).get('statement_import_request') or {}
+    if reading is not None:
+        matches = [reading]
+    else:
+        cache = {} if cache is None else cache
+        top = read_statement_import(session, case_id=document.case_id, evidence_file_id=document.evidence_file_id,
+                                    currency=period.currency, _cache=cache)
+        choices = top.get('statement_choices') or ([dict(id=top['statement_id'], currency=top.get('currency'),
+            page_numbers=top.get('page_numbers'))] if top.get('statement_id') or top.get('rows') else [])
+        matches = []
+        for statement_id in _candidates(document, choices, period.currency):
+            proposal = top if statement_id and statement_id == top.get('statement_id') else read_statement_import(
+                session, case_id=document.case_id, evidence_file_id=document.evidence_file_id,
+                currency=period.currency, statement_id=statement_id, _cache=cache)
+            if not proposal.get('rows'):
+                continue
+            same_key = statement_id == (document.metadata_ or {}).get('statement_import_statement_id')
+            if _same_period(initial_request(proposal), period, saved_request, same_key=same_key, end_only=end_only):
+                matches.append((statement_id, proposal))
+    if not matches:
+        return 'no_matching_period', None, None
+    if len(matches) > 1:
+        return 'several_matching_periods', None, None
+    return None, matches[0][0], matches[0][1]
+
+
 def assess_reading(session, document, *, cache=None, reading=None, seen=None):
     """What replacing this saved copy with its text reading would do. Reads only.
 
@@ -530,7 +584,6 @@ def assess_reading(session, document, *, cache=None, reading=None, seen=None):
     and fresh payments, and for 'replace' the ``request`` to import.
     """
     from services.financial.duplicate_decisions import duplicate_revision
-    from services.financial.statement_import import read_statement_import
     result = dict(document_id=str(document.id), evidence_file_id=str(document.evidence_file_id),
                   case_id=str(document.case_id), outcome='refused', code=None)
     code, period = _saved_state(session, document)
@@ -547,31 +600,10 @@ def assess_reading(session, document, *, cache=None, reading=None, seen=None):
     result.update(saved_payments=sum(saved['rows'].values()))
     saved_request = (document.metadata_ or {}).get('statement_import_request') or {}
     try:
-        if reading is not None:
-            matches = [reading]
-        else:
-            cache = {} if cache is None else cache
-            top = read_statement_import(session, case_id=document.case_id, evidence_file_id=document.evidence_file_id,
-                                        currency=period.currency, _cache=cache)
-            choices = top.get('statement_choices') or ([dict(id=top['statement_id'], currency=top.get('currency'),
-                page_numbers=top.get('page_numbers'))] if top.get('statement_id') or top.get('rows') else [])
-            matches = []
-            for statement_id in _candidates(document, choices, period.currency):
-                proposal = top if statement_id and statement_id == top.get('statement_id') else read_statement_import(
-                    session, case_id=document.case_id, evidence_file_id=document.evidence_file_id,
-                    currency=period.currency, statement_id=statement_id, _cache=cache)
-                if not proposal.get('rows'):
-                    continue
-                from services.financial.import_batches import initial_request
-                same_key = statement_id == (document.metadata_ or {}).get('statement_import_statement_id')
-                if _same_period(initial_request(proposal), period, saved_request, same_key=same_key,
-                                end_only=mirror_only):
-                    matches.append((statement_id, proposal))
-        if not matches:
-            return {**result, 'code': 'no_matching_period'}
-        if len(matches) > 1:
-            return {**result, 'code': 'several_matching_periods'}
-        statement_id, proposal = matches[0]
+        code, statement_id, proposal = _matching_reading(session, document, period, cache=cache, reading=reading,
+                                                         end_only=mirror_only)
+        if code:
+            return {**result, 'code': code}
         seen['match'] = (statement_id, proposal)
         current = proposal.get('current_import') or {}
         if current.get('source_document_id') not in (None, str(document.id)):
@@ -635,6 +667,198 @@ def plan(session, *, case_ids=None, document_ids=None):
                 caches.pop(key)
         results.append(assess_document(session, document, cache=cache))
     return results
+
+
+# Descriptions ------------------------------------------------------------------
+
+def keeps_words(old, new):
+    """Whether ``new`` holds every word of ``old`` (as often as ``old`` does): no saved text is lost."""
+    return Counter(str(old or '').split()) <= Counter(str(new or '').split())
+
+
+def _saved_key(row):
+    review = (row.provenance or {}).get('statement_import_review') or {}
+    return review.get('id') or ((row.provenance or {}).get('statement_import_original') or {}).get('id')
+
+
+def assess_descriptions(session, document, *, cache=None):
+    """What refreshing this saved copy's payment descriptions from its current reading would do (DESCRIPTIONS). Reads
+    only. ``outcome`` 'describe' with ``changes`` (payment id, row id, saved and new description), else 'same' or
+    'refused' with a code."""
+    from services.financial.import_issues import incomplete_records
+    from services.financial.statement_import import StatementImportRequest
+    result = dict(document_id=str(document.id), evidence_file_id=str(document.evidence_file_id),
+                  case_id=str(document.case_id), outcome='refused', code=None, basis=DESCRIPTION_BASIS)
+    if not (ENABLED and DESCRIPTIONS):
+        return {**result, 'code': 'disabled'}
+    code, period = _saved_state(session, document, decisions_ok=True)
+    if period is not None:
+        result.update(period_id=str(period.id), currency=period.currency)
+    if code:
+        return {**result, 'code': code}
+    saved = saved_money(session, document, period)
+    rows = list(session.scalars(select(FinancialTransaction).where(
+        FinancialTransaction.source_document_id == document.id, FinancialTransaction.ledger_status == 'admitted',
+        FinancialTransaction.superseded_by_id.is_(None))))
+    result.update(saved_payments=len(rows))
+    saved_request = (document.metadata_ or {}).get('statement_import_request') or {}
+    try:
+        code, statement_id, proposal = _matching_reading(session, document, period, cache=cache)
+        if code:
+            return {**result, 'code': code}
+        if (proposal.get('current_import') or {}).get('source_document_id') not in (None, str(document.id)):
+            return {**result, 'code': 'no_matching_period'}
+        from services.financial.duplicate_decisions import duplicate_revision
+        raw = build_request(document, proposal)
+        raw['replacement_revision'] = duplicate_revision(session, document)
+        if not _same_period(raw, period, saved_request, same_key=statement_id == (
+                (document.metadata_ or {}).get('statement_import_statement_id'))):
+            return {**result, 'code': 'no_matching_period'}
+        fresh = fresh_money(proposal, raw)
+        result.update(statement_id=statement_id, fresh_payments=sum(fresh['rows'].values()))
+        if fresh != saved or period.period_end is None:
+            return {**result, 'code': 'money_differs'}
+        request = StatementImportRequest.model_validate(raw)
+        # The payments stay in the ledger account they are filed in (a person may have refiled it): which account a
+        # fresh import would choose is not asked here.
+        code = prove(session, document, proposal, raw)
+        if code:
+            return {**result, 'code': code}
+    except (PdfMappingError, ValueError) as error:
+        return {**result, 'code': 'unreadable', 'message': str(error)[:200]}
+    # One for one: each saved payment is the reading's row of the same id, with the same money.
+    originals = {row['id']: row for row in proposal['rows']}
+    held = {record['id'] for record in incomplete_records(proposal, request)}
+    reading = {row.id: row for row in request.rows if not row.excluded and row.id not in held}
+    by_key = {}
+    for row in rows:
+        by_key.setdefault(_saved_key(row), []).append(row)
+    if set(by_key) != set(reading) or any(len(found) != 1 for found in by_key.values()):
+        return {**result, 'code': 'payments_differ'}
+    sign = -1 if proposal['metadata'].get('balance_convention') == 'liability_owed' else 1
+    changes, kept = [], []
+    for key, (row,) in sorted(by_key.items(), key=lambda item: item[1][0].row_index or 0):
+        line = reading[key]
+        when = None if (row.provenance or {}).get('date_basis') == 'statement_end_ordering_only' else (
+            row.transaction_date or row.posted_date)
+        balance = sign * int(line.balance_minor) if line.balance_minor is not None else None
+        if ((int(line.amount_minor), line.direction, _row_date((originals.get(key) or {}).get('fields'),
+                                                             line.model_dump(mode='json')))
+                != (int(row.amount_minor), row.direction, when.isoformat() if when else None)
+                or balance != row.running_balance_minor or (line.counterparty or None) != row.counterparty_raw):
+            return {**result, 'code': 'payments_differ'}
+        old, new = ' '.join((row.description or '').split()), ' '.join((line.description or '').split())
+        if old == new:
+            continue
+        if not keeps_words(old, new):
+            # The reading would drop saved text from this payment: it stays as saved.
+            kept.append(dict(transaction_id=str(row.id), row_id=key, code='description_loses_text',
+                             before=row.description, after=line.description))
+            continue
+        changes.append(dict(transaction_id=str(row.id), row_id=key, before=row.description, after=line.description))
+    if not changes:
+        return {**result, 'outcome': 'same', 'code': 'same', 'kept': kept}
+    return {**result, 'outcome': 'describe', 'code': None, 'changes': changes, 'kept': kept,
+            'differs': ['descriptions'], 'revision': proposal.get('revision')}
+
+
+def refresh_descriptions(*, session_factory, case_id, document_id):
+    """Give each payment of this saved copy the description its current reading prints (assess_descriptions, judged
+    again under the case lock), in one transaction: each changed payment is superseded by the same payment with the
+    new description through the correction chain (names, category, link and notes go with it), with an adjudication
+    by "system: reader replacement" keeping both texts. Money, payment count and the period are unchanged."""
+    from copy import deepcopy
+    from dataclasses import fields as dataclass_fields
+    from postgres.models.case import Case
+    from postgres.models.enums import AdjudicationDecision, AdjudicationSubject, TransactionDirection
+    from services.financial.decisions import record
+    from services.financial.reconcile import reconcile_period
+    from services.financial.references import RowReading, content_hash, ref_id
+    from services.financial.saved_statement_admission import refresh_saved_assessment
+    from services.financial.transaction_query import to_view
+    with session_factory() as session:
+        session.execute(select(Case.id).where(Case.id == uuid.UUID(str(case_id))).with_for_update()).all()
+        document = session.scalar(select(FinancialSourceDocument).where(
+            FinancialSourceDocument.id == uuid.UUID(str(document_id))).with_for_update()
+            .execution_options(populate_existing=True))
+        if document is None or str(document.case_id) != str(case_id):
+            raise ReplacementError('Saved statement not found in this case.', 404)
+        verdict = assess_descriptions(session, document)
+        if verdict['outcome'] != 'describe':
+            session.rollback()
+            return verdict
+        period = session.get(FinancialStatementPeriod, uuid.UUID(verdict['period_id']))
+        before_admission = (document.metadata_ or {}).get('statement_admission') or {}
+        rows = list(session.scalars(select(FinancialTransaction).where(
+            FinancialTransaction.source_document_id == document.id).with_for_update()))
+        by_id = {str(row.id): row for row in rows}
+        hashes = {row.content_hash for row in rows}
+        references = set(session.scalars(select(FinancialTransaction.ref_id).where(
+            FinancialTransaction.case_id == document.case_id)))
+        now = datetime.now(timezone.utc).isoformat()
+        applied = []
+        for change in verdict['changes']:
+            row = by_id[change['transaction_id']]
+            reading = {field.name: getattr(row, field.name) for field in dataclass_fields(RowReading)}
+            reading.update(description=change['after'], direction=TransactionDirection(row.direction))
+            occurrence = 0
+            while True:
+                digest = content_hash(RowReading(**reading), occurrence)
+                reference = ref_id(document.sha256_at_ingestion, digest)
+                if digest not in hashes and reference not in references:
+                    break
+                occurrence += 1
+            hashes.add(digest)
+            references.add(reference)
+            values = {prop.key: deepcopy(getattr(row, prop.key)) for prop in FinancialTransaction.__mapper__.column_attrs
+                      if prop.key not in {'id', 'created_at', 'updated_at'}}
+            values.update(id=uuid.uuid4(), description=change['after'], ref_id=reference, content_hash=digest,
+                          superseded_by_id=None)
+            values['provenance'] = {**(values['provenance'] or {}), 'correction': dict(
+                previous_transaction_id=str(row.id), previous_ref_id=row.ref_id, occurrence=occurrence, version=1),
+                'reader_descriptions': dict(previous_description=row.description, statement_id=verdict['statement_id'],
+                                            reading_revision=verdict.get('revision'), row_id=change['row_id'], at=now)}
+            replacement = FinancialTransaction(**values)
+            view = to_view(row).to_json()
+            view.update(amount_minor=str(row.amount_minor),
+                        running_balance_minor=str(row.running_balance_minor) if row.running_balance_minor is not None else None)
+            session.add(replacement)
+            session.flush()
+            record(session, case_id=document.case_id, subject=row, subject_type=AdjudicationSubject.transaction,
+                   decision=AdjudicationDecision.correct_transaction, actor=ACTOR, reason=DESCRIPTION_REASON,
+                   before=dict(row=view, replacement_id=None, original_status=row.ledger_status,
+                               original_quarantine_reason=row.quarantine_reason, basis=DESCRIPTION_BASIS),
+                   after=dict(row={**view, 'key': str(replacement.id), 'ref_id': reference, 'description': change['after']},
+                              replacement_id=str(replacement.id), original_status='superseded',
+                              original_quarantine_reason=None, basis=DESCRIPTION_BASIS))
+            row.ledger_status = 'superseded'
+            row.quarantine_reason = None
+            row.superseded_by_id = replacement.id
+            applied.append(dict(change, replacement_id=str(replacement.id)))
+        session.flush()
+        reconcile_period(session, period)
+        admission = refresh_saved_assessment(session, document, period)
+        if (admission.get('status') != before_admission.get('status')
+                or bool(admission.get('can_import')) != bool(before_admission.get('can_import'))):
+            session.rollback()
+            raise ReplacementError('Refreshing the descriptions would change how this statement is admitted. Nothing '
+                                   'was changed.', 409)
+        metadata = dict(document.metadata_ or {})
+        metadata[DESCRIPTION_BASIS] = list(metadata.get(DESCRIPTION_BASIS) or []) + [dict(
+            at=now, statement_id=verdict['statement_id'], reading_revision=verdict.get('revision'),
+            payments=[dict(previous_transaction_id=c['transaction_id'], transaction_id=c['replacement_id'],
+                           row_id=c['row_id']) for c in applied])]
+        document.metadata_ = metadata
+        _log(session, document.case_id, document, f'{len(applied)} payment description(s) of this saved statement '
+             'completed from the current reading; amounts, dates and balances unchanged. The earlier rows are kept, '
+             'linked.', action='financial_reader_descriptions', payments=len(applied))
+        file_id, key = document.evidence_file_id, (document.metadata_ or {}).get('statement_import_statement_id') or ''
+        session.commit()
+    from services.financial.graph_followup import request_follow_up
+    request_follow_up(case_id)
+    _refresh(session_factory, case_id, file_id, key)
+    return {**{k: v for k, v in verdict.items() if k != 'changes'}, 'applied': True, 'payments': len(applied),
+            'changes': applied}
 
 
 # Writer hook -----------------------------------------------------------------
@@ -894,6 +1118,8 @@ def replace_document(*, session_factory, case_id, document_id, resolve_path):
         verdict = assess_document(session, document)
         file_id, old_key = document.evidence_file_id, (document.metadata_ or {}).get('statement_import_statement_id') or ''
         session.rollback()
+    if verdict['outcome'] == 'describe':
+        return refresh_descriptions(session_factory=session_factory, case_id=case_id, document_id=document_id)
     if verdict['outcome'] != 'replace':
         return verdict
     if verdict.get('basis') == IMAGE_BASIS and STORED_REJUDGE:

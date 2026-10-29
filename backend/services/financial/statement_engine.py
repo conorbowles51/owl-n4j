@@ -4217,6 +4217,9 @@ def _reading(rows, statement, style, exponent, liability, period):
     table_totals = None
     # (E3, PAGE_BREAK_CONTINUATION) The previous page's last movement, open for lines under this page's heading.
     carry, carry_page, carry_open, carry_last = None, None, False, None
+    # (E10, profile ``entry_blocks``) Text lines inside the movement region that no movement took (_entry_blocks).
+    entry_blocks = ENTRY_BLOCKS and bool((_PROFILE.get() or {}).get('entry_blocks'))
+    loose = set()
     for index, row in enumerate(rows):
         if not row['tokens'] or row.get('payment_box') or index in consumed:
             continue
@@ -4473,6 +4476,8 @@ def _reading(rows, statement, style, exponent, liability, period):
                 last_move['continuation'].append(row)
                 continuation_of[index] = last_move
             else:
+                if region and entry_blocks:
+                    loose.add(index)
                 last_move = None if last_move is not None and row['page'] == last_move['row']['page'] and _below(row, last_move) else last_move
             continue
         if region and last_move is not None and row['page'] == last_move['row']['page']:
@@ -4487,6 +4492,8 @@ def _reading(rows, statement, style, exponent, liability, period):
                 continuation_of[index] = last_move
                 continue
             unplaced.append(row)
+    if entry_blocks and loose:
+        _entry_blocks(rows, movements, loose)
     result['first_row'] = (rows[0]['page'], rows[0]['source']['table_index'], rows[0]['raw']['row_index']) if rows else ''
     # The page on which the movement table printed its end after its last movement (or None).
     last = max((m['row']['_index'] for m in movements), default=None)
@@ -4860,6 +4867,186 @@ def _letter_spaced(tokens):
             words.append((tokens[index]['t'], tokens[index]['line']))
             index += 1
     return words
+
+
+# (E10, profile ``entry_blocks``: Monex "Movimientos" tables) An entry prints its description as a block of lines with
+# its dated amount line in the middle of the block: lines above the dated line belong to it as much as lines below,
+# and the dated line itself may print only the Referencia column. A page's text lines in the movement table that no
+# movement took, or that the plain continuation rule gave to the movement above, are given to the entry whose block
+# prints them:
+# * the sideways layout (2022 on) sets entries apart by a wider gap between lines than the lines of one entry: a run
+#   of lines without such a gap holding one dated line is that movement's block;
+# * a run holding several dated lines (the scanned layout prints every line at the same distance) is cut so that
+#   each dated line has as many of its lines above it as below it, which the run's first movement fixes (its lines
+#   above it) and the run's last must then meet exactly; its first lines may end the previous page's last entry,
+#   printed across the page break (the fewest such lines for which the run works out stay where they were).
+# A run that does not work out so is left as it was, and so is a table whose first entry prints no line above its
+# dated line (the portrait layout prints its dated line first, its lines below it). Only text lines (no date, no amount in an amount column, no heading or
+# label) are moved; amounts and dates are never read from them. A movement given its block keeps its whole printed
+# description: the block's lines in printed order, the dated line's own words in their place, then the reference
+# printed in the Referencia column. Off (or another profile): as before.
+ENTRY_BLOCKS = _switch('LOUPE_FINANCIAL_ENTRY_BLOCKS')
+
+
+def _line_gap(above, below):
+    """The blank space between two printed lines (negative when they overlap), and the taller line's height."""
+    top = max(t['y1'] for t in above['tokens'])
+    height = max([t['y1'] - t['y0'] for t in above['tokens']] + [t['y1'] - t['y0'] for t in below['tokens']])
+    return below['y0'] - top, height
+
+
+def _block_line(row, move):
+    """A text line printed in a movement's description band: right of its date, left of its first amount."""
+    if not row['tokens'] or row['y0'] is None or row['page'] != move['row']['page'] or not move['money']:
+        return False
+    first = min(t['x0'] for t in row['tokens'])
+    start = max((t['x1'] for t in move['date_tokens']), default=None)
+    return (start is not None and start <= first and max(t['x1'] for t in row['tokens']) <= min(t['x0'] for t in move['money'])
+            and not _is_header(row) and not any(_role_of(text, False) for text, _ in label_pairs(row, 'dot', 2))
+            and not (NOTICE_ENDS_DESCRIPTION and label(row['text']) in _NOTICES))
+
+
+def _centred(run, moves, first_on_page):
+    """(E10) ([(movement, lines above, lines below)], the run's first lines ending the previous page's last entry)
+    cutting a run of evenly spaced lines holding several dated lines so that each has as many of its lines above it as
+    below it, or (None, []) when the run does not work out so."""
+    dated = {id(move['row']): move for move in moves}
+    groups, current = [], []
+    for row in run:
+        if id(row) in dated:
+            groups.append(current)
+            current = []
+        else:
+            current.append(row)
+    head, between, tail = groups[0], groups[1:], current
+    for start in range(len(head) if first_on_page else min(1, len(head))):
+        plan, lead = [], head[start:]
+        for move, lines in zip(moves, between):
+            if len(lead) > len(lines):
+                break
+            plan.append((move, lead, lines[:len(lead)]))
+            lead = lines[len(lead):]
+        else:
+            if len(lead) == len(tail):
+                return plan + [(moves[-1], lead, tail)], head[:start]
+    return None, []
+
+
+def _centred_layout(rows, movements, loose):
+    """(E10) Whether this table prints each dated line in the middle of its entry: its first entry, right under the
+    table's opening, has its own lines above its dated line (the portrait layout prints its dated line first, its
+    lines below it). An entry printing a single line says nothing; the next one decides."""
+    held = {row['_index'] for move in movements for row in move['continuation']}
+    text = lambda index, move: (index in loose or index in held) and _block_line(rows[index], move)
+    ordered = sorted(movements, key=lambda m: m['row']['_index'])
+    for number, move in enumerate(ordered):
+        if move['row']['y0'] is None or not move['date_tokens'] or not move['money']:
+            return False
+        index = move['row']['_index'] - 1
+        while index >= 0 and text(index, move):
+            index -= 1
+        if index < move['row']['_index'] - 1:
+            # Lines above: the entry's own when nothing but the opening (or the entry above, of a single line) is
+            # printed before them on its page.
+            return index >= 0 and rows[index]['page'] == move['row']['page'] and (
+                number == 0 or rows[index] is ordered[number - 1]['row'])
+        below = move['row']['_index'] + 1
+        if below < len(rows) and text(below, move):
+            return False
+        if number + 1 < len(ordered) and ordered[number + 1]['row']['page'] != move['row']['page']:
+            return False
+    return False
+
+
+def _entry_blocks(rows, movements, loose):
+    """(E10) Give each text line of a page's movement table to the movement whose entry block prints it."""
+    if not _centred_layout(rows, movements, loose):
+        return
+    by_page = {}
+    for move in movements:
+        if move['row']['y0'] is not None and move['date_tokens'] and move['money']:
+            by_page.setdefault(move['row']['page'], []).append(move)
+    for page, moves in by_page.items():
+        moves.sort(key=lambda m: m['row']['_index'])
+        if any(token in row['tokens'] for move in movements for row in move['continuation'] if row['page'] == page
+               for token in move['money']):
+            continue  # a value printed on a line under the dated one (E3, C9): not this layout
+        holder = {row['_index']: move for move in movements for row in move['continuation'] if row['page'] == page}
+        dated = {move['row']['_index']: move for move in moves}
+        text = lambda index: (index in loose or index in holder) and _block_line(rows[index], moves[0])
+        # The page's table lines from the first movement's lines above it to the last one's below it: dated lines and
+        # text lines only (a heading, an opening or closing line, a page foot ends it).
+        start = moves[0]['row']['_index']
+        while start > 0 and text(start - 1):
+            start -= 1
+        end = moves[-1]['row']['_index']
+        while end + 1 < len(rows) and text(end + 1):
+            end += 1
+        span = range(start, end + 1)
+        if any(index not in dated and not text(index) for index in span):
+            continue
+        # A line's height: the median over the span (an OCR line merging two printed lines is taller than either).
+        heights = sorted(max(t['y1'] - t['y0'] for t in rows[index]['tokens']) for index in span)
+        height = heights[len(heights) // 2]
+        runs, run = [], []
+        for index in span:
+            row = rows[index]
+            if run:
+                if _line_gap(run[-1], row)[0] > height * 1.2:
+                    runs.append(run)
+                    run = []
+            run.append(row)
+        runs.append(run)
+        plan, before = [], []
+        for number, run in enumerate(runs):
+            inside = [dated[row['_index']] for row in run if row['_index'] in dated]
+            if len(inside) == 1:
+                at = run.index(inside[0]['row'])
+                plan.append((inside[0], run[:at], run[at + 1:]))
+            elif len(inside) > 1:
+                cut, ending = _centred(run, inside, number == 0)
+                plan.extend(cut or ())
+                before.extend(ending)
+            elif number == 0:
+                before.extend(run)
+        # The page's first lines ending the previous page's last entry (its block printed across the page break) are
+        # that movement's, after its own lines, unless another movement already took them.
+        previous = next((m for m in reversed(movements) if m['row']['_index'] < moves[0]['row']['_index']), None)
+        carried = [row for row in before if row['_index'] in loose]
+        if previous is not None and previous['row']['page'] != page and carried and previous['date_tokens'] and \
+                previous['money']:
+            previous['continuation'].extend(carried)
+            previous.setdefault('lead', [])
+            previous['block'] = True
+            _mark_reference(rows, [previous])
+            for row in carried:
+                loose.discard(row['_index'])
+        for move, lead, below in plan:
+            if not lead and not below and not move['continuation']:
+                continue
+            for row in list(lead) + list(below):
+                owner = holder.get(row['_index'])
+                if owner is not None and owner is not move:
+                    owner['continuation'] = [r for r in owner['continuation'] if r is not row]
+                    owner['block'] = owner.get('block') or bool(owner.get('lead'))
+                holder[row['_index']] = move
+                loose.discard(row['_index'])
+            # Lines carried over the page break below it (PAGE_BREAK_CONTINUATION) stay the movement's.
+            carried = [row for row in move['continuation'] if row['page'] != page]
+            move['lead'], move['continuation'], move['block'] = list(lead), list(below) + carried, True
+        _mark_reference(rows, moves)
+
+
+def _mark_reference(rows, moves):
+    """(E10) The dated line's words printed in the Referencia column (from the page's movement heading): they follow
+    the block's description lines. No such heading on the page: the line's words keep their place."""
+    for move in moves:
+        if not move.get('block'):
+            continue
+        start = next((t['x0'] for row in reversed(rows[:move['row']['_index']]) if row['page'] == move['row']['page']
+                      and _is_header(row) for t in row['tokens'] if fold(t['t']).startswith('REFERENCIA')), None)
+        width = move['row']['width'] or 1
+        move['reference'] = [] if start is None else [t for t in move['description'] if t['x0'] >= start - 0.01 * width]
 
 
 def _below(row, move):
@@ -5604,6 +5791,18 @@ def _rows(rows, moves, resolved, chosen, controls, column_totals, statement, sty
             item = items[move['row']['_index']]
             fields = item['fields']
             description = ' '.join(t['t'] for t in move['description'])
+            reference = []
+            if move.get('block'):
+                # (E10) The entry block's lines in printed order; the dated line's words in the block's text band
+                # in their place, the reference printed beside the block (Referencia column) after them.
+                reference = move.get('reference') or []
+                description = ' '.join([t['t'] for extra in move['lead'] for t in extra['tokens']]
+                                       + [t['t'] for t in move['description'] if not any(t is r for r in reference)])
+                for extra in move['lead']:
+                    item.setdefault('continuation_sources', []).append(dict(
+                        page_number=extra['page'], table_index=extra['source']['table_index'],
+                        row_index=extra['raw']['row_index'], source_cells=extra['raw']['cells']))
+                    items[extra['_index']]['fields']['parent_transaction_id'] = item['id']
             for extra in move['continuation']:
                 description += ' ' + ' '.join(t['t'] for t in extra['tokens']
                                               if not any(t is m for m in move['money']))
@@ -5611,6 +5810,8 @@ def _rows(rows, moves, resolved, chosen, controls, column_totals, statement, sty
                     page_number=extra['page'], table_index=extra['source']['table_index'],
                     row_index=extra['raw']['row_index'], source_cells=extra['raw']['cells']))
                 items[extra['_index']]['fields']['parent_transaction_id'] = item['id']
+            if reference:
+                description += ' ' + ' '.join(t['t'] for t in reference)
             fields['description'] = ' '.join(description.split())
             fields['counterparty'] = ''
             if move.get('undated'):

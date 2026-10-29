@@ -593,3 +593,123 @@ class UndatedPeriodTests(TestCase):
         self.assertFalse(replacement.incomplete(SimpleNamespace(**whole)))
         for key in whole:
             self.assertTrue(replacement.incomplete(SimpleNamespace(**dict(whole, **{key: None}))))
+
+
+class DescriptionRefreshTests(TestCase):
+    """(DESCRIPTIONS, fin-monex 2026-10-29) A saved period whose current reading has exactly the saved money but prints
+    more of a payment's description gains that text through the correction chain; names and categories stay on the
+    payment. The "earlier reader" saved one payment's description cut short."""
+
+    def setUp(self):
+        self.t = SavedReadingReplacementTests('test_proved_reading_replaces_the_saved_period_linked_counted_once_and_restores_exactly')
+        self.t.setUp()
+        self.f = self.t.f
+        values = self.t.full[0]['table']['values']
+        self.row = sorted({v['row'] for v in values if v['column'] == 1 and v['text'] == 'Incoming'})[0]
+
+    def tearDown(self):
+        self.t.tearDown()
+
+    def payload(self, text):
+        payload = deepcopy(self.t.full)
+        for value in payload[0]['table']['values']:
+            if value['row'] == self.row and value['column'] == 1:
+                value['text'] = text
+        return payload
+
+    def save(self, now='Incoming transfer from EXAMPLE SUPPLIER SA'):
+        """Saved while the line read 'Incoming'; the current reader reads ``now``."""
+        self.t.set_payload(self.payload('Incoming'))
+        receipt = self.f.confirm_legacy(self.f.request())
+        self.t.set_payload(self.payload(now))
+        return UUID(receipt['source_document_id'])
+
+    def current(self, document_id):
+        with self.f.SessionLocal() as db:
+            return {row.description: row for row in db.scalars(select(FinancialTransaction).where(
+                FinancialTransaction.source_document_id == document_id, FinancialTransaction.superseded_by_id.is_(None)))}
+
+    def label(self, document_id, name):
+        from services.financial.decisions import Actor
+        from services.financial.payment_labels import PaymentLabelsRequest, update_payment_labels
+        with self.f.SessionLocal() as db:
+            row = next(row for row in db.scalars(select(FinancialTransaction).where(
+                FinancialTransaction.source_document_id == document_id))
+                if replacement._saved_key(row) == '1:0:%d' % self.row)
+            update_payment_labels(db, case_id=self.t.case_id, request=PaymentLabelsRequest(
+                transactions=[dict(id=row.id, version=0)], counterparty_name=name, category='Supplier payments'),
+                actor=Actor(name='Test Investigator', email='investigator@example.invalid'), reason='Read on the page.')
+            return row.id
+
+    def test_a_reading_printing_more_of_a_description_with_the_same_money_gains_it_and_keeps_the_names(self):
+        old_id = self.save()
+        labelled = self.label(old_id, 'EXAMPLE SUPPLIER SA')
+        saved_rows = self.t.admitted_rows()
+        verdict = self.t.assess(old_id)
+        self.assertEqual((verdict['outcome'], verdict['basis']), ('describe', replacement.DESCRIPTION_BASIS), verdict)
+        self.assertEqual([(c['transaction_id'], c['before'], c['after']) for c in verdict['changes']],
+                         [(str(labelled), 'Incoming', 'Incoming transfer from EXAMPLE SUPPLIER SA')])
+        self.assertEqual(self.t.admitted_rows(), saved_rows, 'assessing writes nothing')
+
+        result = self.t.replace(old_id)
+        self.assertTrue(result['applied'], result)
+        self.assertEqual(self.t.admitted_rows(), saved_rows, 'the same payments count, once')
+        from services.financial.payment_labels import payment_label_view
+        from services.financial.payment_categories import person_label
+        with self.f.SessionLocal() as db:
+            old = db.get(FinancialTransaction, labelled)
+            new = db.get(FinancialTransaction, old.superseded_by_id)
+            self.assertEqual((old.ledger_status, new.ledger_status, new.description),
+                             ('superseded', 'admitted', 'Incoming transfer from EXAMPLE SUPPLIER SA'))
+            self.assertEqual((new.amount_minor, new.direction, new.transaction_date, new.running_balance_minor,
+                              new.account_id, new.statement_period_id),
+                             (old.amount_minor, old.direction, old.transaction_date, old.running_balance_minor,
+                              old.account_id, old.statement_period_id))
+            self.assertEqual(new.provenance['correction']['previous_transaction_id'], str(old.id))
+            self.assertEqual(new.provenance['reader_descriptions']['previous_description'], 'Incoming')
+            view = payment_label_view(new, new.account)
+            self.assertEqual((view['from_name'], view['label_sources']['from_name']['source']),
+                             ('EXAMPLE SUPPLIER SA', 'investigator'))
+            self.assertEqual(person_label(new), 'Supplier payments')
+            event = db.scalar(select(AdjudicationEvent).where(AdjudicationEvent.subject_id == old.id,
+                                                              AdjudicationEvent.decision == 'correct_transaction'))
+            self.assertEqual((event.actor_name, event.after['replacement_id'], event.after['basis']),
+                             (replacement.ACTOR.name, str(new.id), replacement.DESCRIPTION_BASIS))
+            document = db.get(FinancialSourceDocument, old_id)
+            self.assertEqual(document.status, 'admitted')
+            self.assertEqual(document.metadata_['statement_admission']['status'], 'reconciled')
+            self.assertEqual(document.metadata_[replacement.DESCRIPTION_BASIS][0]['payments'][0]['transaction_id'],
+                             str(new.id))
+        self.assertEqual(self.t.assess(old_id)['code'], 'corrected_payments', 'done once; never again by itself')
+
+    def test_a_reading_dropping_saved_text_leaves_the_payment_as_saved(self):
+        old_id = self.save(now='Wire 72605624 EXAMPLE SUPPLIER')
+        with self.f.SessionLocal() as db:
+            verdict = replacement.assess_descriptions(db, db.get(FinancialSourceDocument, old_id))
+        self.assertEqual(verdict['outcome'], 'same', verdict)
+        self.assertEqual([k['code'] for k in verdict['kept']], ['description_loses_text'])
+        self.assertIn('Incoming', self.current(old_id))
+
+    def test_a_reading_with_other_money_is_not_a_description_refresh(self):
+        old_id = self.t.save_earlier_reading()
+        with self.f.SessionLocal() as db:
+            self.assertEqual(replacement.assess_descriptions(db, db.get(FinancialSourceDocument, old_id))['code'],
+                             'money_differs')
+        self.assertEqual(self.t.assess(old_id)['outcome'], 'replace', 'the money replacement is unchanged')
+
+    def test_the_same_description_is_same(self):
+        old_id = self.save(now='Incoming')
+        self.assertEqual(self.t.assess(old_id)['outcome'], 'same')
+
+    def test_switched_off_nothing_changes(self):
+        old_id = self.save()
+        with patch.object(replacement, 'DESCRIPTIONS', False):
+            self.assertEqual(self.t.assess(old_id)['outcome'], 'same')
+            self.assertFalse(self.t.replace(old_id).get('applied'))
+        self.assertIn('Incoming', self.current(old_id))
+
+    def test_keeps_words_needs_every_saved_word(self):
+        self.assertTrue(replacement.keeps_words('72605624', 'Retiro por compra 72605624 USD'))
+        self.assertTrue(replacement.keeps_words('de cambio Importe 1 en pesos', 'tipo de cambio Importe en pesos 1'))
+        self.assertFalse(replacement.keeps_words('de de cambio', 'de cambio'))
+        self.assertFalse(replacement.keeps_words('Incoming', 'Transfer'))

@@ -4102,3 +4102,130 @@ class FirstDayOpeningTests(unittest.TestCase):
         self.assertEqual((kept['id'], kept['engine_id']), ('old', 'new'))
         profiled[0]['_rows'] = [row(None)]
         self.assertEqual(R._ids_kept(profiled, plain)[0]['id'], 'new')
+
+
+def block_statement(entries, *, spaced=True, opening='1,000.00', closing='1,500.00'):
+    """An invented Monex-style 'Movimientos' table whose entries print their description as a block of lines with the
+    dated amount line in the middle (statement_engine E10). ``entries``: lists of lines, each a text line (str) or the
+    dated line (date, description words or '', reference, four amounts). ``spaced``: a wider gap between entries."""
+    lines = [[('BANCO EJEMPLO DEL NORTE, S.A., INSTITUCION DE BANCA MULTIPLE', 20000, 400000)],
+             [('EMPRESA DE PRUEBA SA DE CV', 20000, 200000), ('PERIODO', 330000, 380000),
+              ('DEL 01/03/2024 AL 31/03/2024', 390000, 590000)],
+             [('CALLE FALSA 123', 20000, 150000), ('NO. DE CUENTA', 330000, 400000), ('0012345678', 410000, 500000)],
+             [('COL CENTRO', 20000, 120000), ('MONEDA', 330000, 380000), ('PESOS', 390000, 450000)],
+             [('SALDO ANTERIOR', 330000, 430000), (opening, 500000, 560000)],
+             [('SALDO FINAL', 330000, 400000), (closing, 500000, 560000)],
+             [('FECHA', 20000, 60000), ('DESCRIPCION', 80000, 160000), ('REFERENCIA', 220000, 280000),
+              ('ABONOS', 340000, 380000), ('CARGOS', 410000, 450000), ('DISPONIBLE', 470000, 520000),
+              ('TOTAL', 550000, 590000)]]
+    rows, y = [], 40000
+    for line in lines:
+        rows.append([cell(t, x0, x1, y, c) for c, (t, x0, x1) in enumerate(line)])
+        y += 12000
+    for entry in entries:
+        y += 14000 if spaced else 0
+        for line in entry:
+            if isinstance(line, str):
+                rows.append([cell(line, 80000, 210000, y, 0)])
+            else:
+                first, text, reference, amounts = line
+                cells = [(first, 20000, 60000)] + ([(text, 80000, 210000)] if text else []) + [(reference, 220000, 280000)]
+                cells += [(a, x1 - 6000 * len(a), x1) for a, x1 in zip(amounts, (380000, 450000, 520000, 590000))]
+                rows.append([cell(t, x0, x1, y, c) for c, (t, x0, x1) in enumerate(cells)])
+            y += 12000
+    source = page(1, [])
+    source['rows'] = [dict(row_index=i, cells=cells) for i, cells in enumerate(rows)]
+    return [source]
+
+
+BLOCK_PROFILE = dict(name='test-entry-blocks', match=dict(any=['banco ejemplo del norte']), entry_blocks=True)
+FX = ['Compra de divisas 500.00 USD a un',
+      ('05/MAR', 'tipo de cambio de 17.000000 Importe', '70000001', ('500.00', '0.00', '1,500.00', '1,500.00')),
+      'en pesos $8,500.00']
+TRANSFER = ['RETIRO Nombre Receptor: BANCO EJEMPLO', 'Cuenta beneficiaria: 000000000000000000',
+            'Nombre Beneficiario: EMPRESA',
+            ('07/MAR', '', '80000002', ('0.00', '500.00', '1,000.00', '1,000.00')),
+            'PROVEEDORA SA DE CV', 'Clave de Rastreo: 0000AAA000', 'Concepto del pago: PAGO FACTURA 12']
+DEPOSIT = ['Deposito por venta de divisas 500.00',
+           ('09/MAR', '', '90000003', ('500.00', '0.00', '1,500.00', '1,500.00')),
+           'USD a un tipo de cambio de 17.100000']
+
+
+class EntryBlockTests(unittest.TestCase):
+    """(E10, fin-monex 2026-10-29: Monex 'Movimientos' tables, 01 ING. R2 MONEX MXN ENE 24 p3-p5 and 07 ARRENDO
+    MONEX MXN JUL 2025 p4 saved with the reference number or the last lines only). Invented values."""
+
+    def setUp(self):
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+
+    def read(self, entries, profile=BLOCK_PROFILE, **kwargs):
+        statements = read_statements(block_statement(entries, **kwargs), profile=profile)
+        self.assertEqual(len(statements), 1)
+        return statements[0]
+
+    def rows(self, st):
+        return [(r['fields'].get('date'), r['fields']['amount_minor'], r['fields']['direction'], r['fields']['balance'],
+                 r['fields']['description']) for r in st['_rows'] if r['kind'] == 'transaction']
+
+    def test_each_movement_keeps_every_line_of_its_block_in_printed_order_then_its_reference(self):
+        st = self.read([FX, TRANSFER, DEPOSIT], closing='1,500.00')
+        self.assertTrue(st['engine']['proved'], st['engine'])
+        self.assertEqual([r[4] for r in self.rows(st)], [
+            'Compra de divisas 500.00 USD a un tipo de cambio de 17.000000 Importe en pesos $8,500.00 70000001',
+            'RETIRO Nombre Receptor: BANCO EJEMPLO Cuenta beneficiaria: 000000000000000000 Nombre Beneficiario: '
+            'EMPRESA PROVEEDORA SA DE CV Clave de Rastreo: 0000AAA000 Concepto del pago: PAGO FACTURA 12 80000002',
+            'Deposito por venta de divisas 500.00 USD a un tipo de cambio de 17.100000 90000003'])
+
+    def test_evenly_spaced_entries_are_cut_with_as_many_lines_above_each_dated_line_as_below(self):
+        st = self.read([FX, TRANSFER, DEPOSIT], spaced=False, closing='1,500.00')
+        self.assertEqual([r[4].split()[0] for r in self.rows(st)], ['Compra', 'RETIRO', 'Deposito'])
+        self.assertTrue(self.rows(st)[1][4].endswith('PAGO FACTURA 12 80000002'))
+
+    def test_money_dates_and_balances_are_the_reading_without_the_rule(self):
+        on = self.rows(self.read([FX, TRANSFER, DEPOSIT]))
+        with mock.patch.object(E, 'ENTRY_BLOCKS', False):
+            E._READINGS.clear()
+            E._LIVE_READINGS.clear()
+            off = self.rows(self.read([FX, TRANSFER, DEPOSIT]))
+        self.assertEqual([r[:4] for r in on], [r[:4] for r in off])
+        # Without the rule (as saved before): the reference alone, or the lines from the dated one down.
+        self.assertEqual([r[4] for r in off], ['tipo de cambio de 17.000000 Importe 70000001 en pesos $8,500.00',
+                                               '80000002', '90000003'])
+
+    def test_another_profile_reads_as_before(self):
+        plain = dict(name='test-plain', match=dict(any=['banco ejemplo del norte']))
+        self.assertEqual([r[4] for r in self.rows(self.read([FX, TRANSFER, DEPOSIT], profile=plain))],
+                         ['tipo de cambio de 17.000000 Importe 70000001 en pesos $8,500.00', '80000002', '90000003'])
+
+    def test_a_dated_line_printed_first_in_evenly_spaced_entries_is_left_as_it_was(self):
+        # The portrait layout prints its dated line first: no line above the first movement, nothing is moved.
+        top = [[('05/MAR', 'Compra de divisas 500.00', '70000001', ('500.00', '0.00', '1,500.00', '1,500.00')),
+                'USD a un tipo de cambio de 17.000000'],
+               [('07/MAR', 'RETIRO Nombre Receptor: BANCO', '80000002', ('0.00', '500.00', '1,000.00', '1,000.00')),
+                'Nombre Beneficiario: EMPRESA SA DE CV']]
+        on = self.rows(self.read(top, spaced=False, closing='1,000.00'))
+        with mock.patch.object(E, 'ENTRY_BLOCKS', False):
+            E._READINGS.clear()
+            E._LIVE_READINGS.clear()
+            off = self.rows(self.read(top, spaced=False, closing='1,000.00'))
+        self.assertEqual(on, off)
+        self.assertEqual(on[1][4], 'RETIRO Nombre Receptor: BANCO 80000002 Nombre Beneficiario: EMPRESA SA DE CV')
+
+    def test_a_run_that_does_not_work_out_is_left_as_it_was(self):
+        # Two dated lines in one evenly spaced run, one line above the first and three below the second.
+        odd = [['Compra de divisas 500.00 USD a un',
+                ('05/MAR', '', '70000001', ('500.00', '0.00', '1,500.00', '1,500.00'))],
+               [('07/MAR', '', '80000002', ('0.00', '500.00', '1,000.00', '1,000.00')), 'PROVEEDORA SA DE CV',
+                'Clave de Rastreo: 0000AAA000', 'Concepto del pago: PAGO FACTURA 12']]
+        st = self.read(odd, spaced=False, closing='1,000.00')
+        with mock.patch.object(E, 'ENTRY_BLOCKS', False):
+            E._READINGS.clear()
+            E._LIVE_READINGS.clear()
+            self.assertEqual(self.rows(st), self.rows(self.read(odd, spaced=False, closing='1,000.00')))
+
+    def test_the_profile_flag_is_validated_and_set_for_monex_only(self):
+        from services.financial.statement_engine_profiles import PROFILES, validate
+        self.assertEqual([p['name'] for p in PROFILES if p.get('entry_blocks')], ['monex-mexico'])
+        with self.assertRaises(ValueError):
+            validate(dict(BLOCK_PROFILE, entry_blocks='yes'))
