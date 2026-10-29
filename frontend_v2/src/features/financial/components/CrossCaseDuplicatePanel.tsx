@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { z } from "zod"
@@ -185,16 +186,13 @@ function Comparison({ caseId, other }: { caseId: string; other: string }) {
             </div>
           )}
           {!!result.data.skipped.length && (
-            <details>
-              <summary>
-                Documents not compared ({result.data.skipped.length})
-              </summary>
+            <Disclosure label={<>Documents not compared ({result.data.skipped.length})</>}>
               {result.data.skipped.map((d) => (
                 <p key={d.document_id}>
                   {d.filename}: {d.reason}
                 </p>
               ))}
-            </details>
+            </Disclosure>
           )}
         </>
       )}

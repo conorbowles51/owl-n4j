@@ -117,7 +117,8 @@ _ADJUDICATION_SUBJECTS = (
 _ADJUDICATION_DECISIONS = (
     "('supersede_duplicate', 'restore_document', 'purge_duplicate', "
     "'quarantine_row', 'release_row', 'explain_balance_failure', "
-    "'reclassify_document', 'admit_financial_document', 'correct_transaction', 'set_account_party', 'set_counterparty_party', 'set_account_identity')"
+    "'reclassify_document', 'admit_financial_document', 'correct_transaction', 'set_account_party', 'set_counterparty_party', 'set_account_identity', "
+    "'keep_printed_holders')"
 )
 _QUARANTINE_REASONS = (
     "('balance_break', 'unreadable_row', 'currency_mismatch', "
@@ -993,6 +994,9 @@ class AdjudicationEvent(Base):
     )
     actor_name: Mapped[str] = mapped_column(String(255), nullable=False)
     actor_email: Mapped[str] = mapped_column(String(255), nullable=False)
+    # The model origin when a model decided for the person named by
+    # actor_user_id (services.financial.model_work); NULL for a person or a rule.
+    actor_origin: Mapped[dict | None] = mapped_column(_jsonb_column(), nullable=True)
 
     ingestion_run_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),

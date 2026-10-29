@@ -1,6 +1,7 @@
 """Immutable ledger snapshots, consistent history capture and downloadable reports."""
 import hashlib
 import json
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from services.financial.ledger_summary import ledger_summary, LedgerSummaryError
 
@@ -12,11 +13,57 @@ class LedgerSnapshot:
     byte_count: int
 
 
-def capture_ledger_snapshot(session, *, case_id, account_id=None, start_date=None, end_date=None, account_ids=None, account_holders=None):
+LEDGER_SCOPE_COVERS = 'ledger_readings_and_decisions'
+FULL_DOCUMENT_COVERS = 'ledger_snapshot_json_utf8'
+
+
+def _canonical_bytes(value):
+    return json.dumps(value,sort_keys=True,separators=(',',':'),ensure_ascii=False,allow_nan=False).encode('utf-8')
+
+
+class LedgerScopeDigest:
+    """Streaming sha256 over the ledger readings, the decision log and the ledger's scope and totals.
+
+    One canonical line per reading (in ledger order), then per decision record (in export order), then the
+    ledger without its readings. Views and exports feed it from the same objects, so a view's stamp equals the
+    ``ledger_scope_sha256`` of an export of the same scope. PDF review history, notes, processing provenance
+    and export context are not covered; the full export document keeps its own fingerprint over everything."""
+    covers = LEDGER_SCOPE_COVERS
+
+    def __init__(self):
+        self._hash = hashlib.sha256(b'loupe.financial.ledger_scope/1\n')
+        self._stage = 'readings'
+
+    def reading(self, reading):
+        if self._stage != 'readings':
+            raise LedgerSummaryError('Ledger fingerprint order is inconsistent; no view was produced.')
+        self._hash.update(_canonical_bytes(reading) + b'\n')
+
+    def decisions(self, records):
+        if self._stage != 'readings':
+            raise LedgerSummaryError('Ledger fingerprint order is inconsistent; no view was produced.')
+        self._stage = 'decisions'
+        self._hash.update(b'decisions\n')
+        for record in records:
+            self._hash.update(_canonical_bytes(record) + b'\n')
+
+    def finish(self, ledger):
+        if self._stage != 'decisions':
+            raise LedgerSummaryError('Ledger fingerprint order is inconsistent; no view was produced.')
+        self._stage = 'finished'
+        self._hash.update(b'ledger\n' + _canonical_bytes({key: value for key, value in ledger.items()
+            if key not in ('readings', 'history_captured')}))
+        return self._hash.hexdigest()
+
+
+def capture_ledger_snapshot(session, *, case_id, account_id=None, start_date=None, end_date=None, account_ids=None, account_holders=None, scope_digest=None):
     result=ledger_summary(session,case_id=case_id,account_id=account_id, account_ids=account_ids, account_holders=account_holders,start_date=start_date,
         end_date=end_date,capture_readings=True)
     if not result['available']:
         raise LedgerSummaryError(result['reason'])
+    if scope_digest is not None:
+        for reading in result['readings']:
+            scope_digest.reading(reading)
     document=dict(schema='loupe.financial.ledger_snapshot/1',ledger=result,
         export_ready=False,limitations=['Decision history has not been captured. This is an internal snapshot, not a completed export.',
             'Source digests are recorded ingestion digests; source bytes were not reverified for this snapshot.'])
@@ -42,15 +89,46 @@ class LedgerExport:
     manifest: str
     source_files: tuple = ()
     source_files_requested: bool = False
+    ledger_scope_sha256: str | None = None
 
 
-def _capture_history(session, document, *, case_id):
+@dataclass(frozen=True)
+class LedgerScope:
+    """The ledger readings and decision log of one scope, read in one consistent snapshot, without the export
+    document. ``document`` has the export's ``ledger``, ``decisions`` and ``export_ready`` keys only."""
+    document: dict
+    sha256: str
+    digest_covers: str = LEDGER_SCOPE_COVERS
+
+
+def view_capture(capture):
+    """(document, stamp) for a view: an export is parsed and stamped with its full-document fingerprint; a
+    ledger scope is used as read and stamped with its ledger-scope fingerprint. The stamp names what it covers."""
+    if isinstance(capture, LedgerScope):
+        return capture.document, dict(snapshot_sha256=capture.sha256, digest_covers=capture.digest_covers)
+    return json.loads(capture.snapshot.content), dict(snapshot_sha256=capture.snapshot.sha256, digest_covers=FULL_DOCUMENT_COVERS)
+
+
+def snapshot_matches(capture, expected_sha256):
+    """The covered fingerprint ``expected_sha256`` matches, compared like with like: a full-document stamp
+    against the full document, a ledger-scope stamp against the ledger scope. Returns what it covers, or None."""
+    if isinstance(capture, LedgerScope):
+        return capture.digest_covers if expected_sha256 == capture.sha256 else None
+    if expected_sha256 == capture.snapshot.sha256:
+        return FULL_DOCUMENT_COVERS
+    if capture.ledger_scope_sha256 is not None and expected_sha256 == capture.ledger_scope_sha256:
+        return LEDGER_SCOPE_COVERS
+    return None
+
+
+def _decision_records(session, readings, *, case_id):
+    """(scopes, records): the decision log of the readings' payments, accounts, sources, periods and files."""
     from uuid import UUID
     from sqlalchemy import select
     from postgres.models.financial import AdjudicationEvent
     from services.financial.decision_log import to_record, _machine_actor_email
     scopes = {name:set() for name in ('transaction','source_document','statement_period','evidence_file','account')}
-    for reading in document['ledger']['readings']:
+    for reading in readings:
         row, source = reading['row'], reading['source']
         scopes['transaction'].add(UUID(row['key']))
         scopes['account'].add(UUID(row['account_id']))
@@ -78,7 +156,11 @@ def _capture_history(session, document, *, case_id):
     if len(events)>MAX_EXPORT_DECISIONS:
         raise LedgerSummaryError('Too many relevant decisions for a complete export; no truncated export was produced.')
     machine_email=_machine_actor_email()
-    document['decisions']=[to_record(event,machine_email=machine_email).as_dict() for event in events]
+    return scopes, [to_record(event,machine_email=machine_email).as_dict() for event in events]
+
+
+def _capture_history(session, document, *, case_id):
+    scopes, document['decisions'] = _decision_records(session, document['ledger']['readings'], case_id=case_id)
     document['decision_scope']={kind:sorted(str(value) for value in ids) for kind,ids in scopes.items()}
     document['decision_order']='Per-subject sequence only; ordering across different subjects does not establish chronology.'
     document['ledger']['history_captured']=True
@@ -93,7 +175,69 @@ def _capture_history(session, document, *, case_id):
         'Decision history covers the captured rows and their accounts, source documents, statement periods and evidence files. It is not a complete case history.',
         'PDF review history covers all saved candidates for referenced source files, including other rows outside the ledger filters. Review history is context, not additional transactions.',
     ]
+    from services.financial.expert_support import model_work_inventory
+    work = model_work_inventory(document)
+    if work['unconfirmed_names'] or work['unconfirmed_saved_payments']:
+        document['limitations'].append(work['limitation'])
     return document
+
+
+def _in_consistent_read(connection):
+    """A PostgreSQL connection already inside one read-only REPEATABLE READ transaction (a cached Financial
+    view's snapshot, services.financial.view_cache). Reading there is the same single consistent read."""
+    from sqlalchemy.engine import Connection
+    if not isinstance(connection, Connection) or connection.dialect.name != 'postgresql' or not connection.in_transaction():
+        return False
+    return (connection.exec_driver_sql('SHOW transaction_isolation').scalar() == 'repeatable read'
+            and connection.exec_driver_sql('SHOW transaction_read_only').scalar() == 'on')
+
+
+@contextmanager
+def _consistent_connection(engine):
+    from sqlalchemy.engine import Engine
+    if isinstance(engine, Engine):
+        with engine.connect().execution_options(isolation_level='REPEATABLE READ') as connection:
+            yield connection
+    else:
+        yield engine
+
+
+@contextmanager
+def _consistent_session(engine):
+    """One read-only REPEATABLE READ session: a fresh one on an engine, or the caller's consistent read."""
+    from sqlalchemy.engine import Engine
+    from sqlalchemy.orm import Session
+    if not (isinstance(engine,Engine) and engine.dialect.name=='postgresql') and not _in_consistent_read(engine):
+        raise LedgerSummaryError('Consistent ledger export requires a fresh PostgreSQL engine connection.')
+    with _consistent_connection(engine) as connection:
+        with connection.begin() if isinstance(engine, Engine) else nullcontext():
+            if isinstance(engine, Engine):
+                connection.exec_driver_sql('SET TRANSACTION READ ONLY')
+            with Session(bind=connection,autoflush=False,**({} if isinstance(engine, Engine) else dict(join_transaction_mode='create_savepoint'))) as session:
+                yield session
+
+
+def capture_ledger_scope(engine, *, case_id, account_id=None, start_date=None, end_date=None, account_ids=None, account_holders=None):
+    """The readings and decision log an export of this scope would hold, read in one consistent read-only
+    snapshot, fingerprinted as they are read. No export document is built, so its size limit does not apply;
+    each view keeps its own limits and refuses plainly when one is reached."""
+    with _consistent_session(engine) as session:
+        ledger=ledger_summary(session,case_id=case_id,account_id=account_id, account_ids=account_ids, account_holders=account_holders,start_date=start_date,
+            end_date=end_date,capture_readings=True)
+        if not ledger['available']:
+            raise LedgerSummaryError(ledger['reason'])
+        # The export's working totals check every working reading (amount, direction, currency) and refuse an
+        # invalid one; the views must refuse the same readings, not show them.
+        from services.financial.working_totals import working_totals_from_readings
+        working_totals_from_readings(ledger)
+        digest=LedgerScopeDigest()
+        for reading in ledger['readings']:
+            digest.reading(reading)
+        _, decisions=_decision_records(session, ledger['readings'], case_id=case_id)
+        digest.decisions(decisions)
+        sha256=digest.finish(ledger)
+    ledger['history_captured']=True
+    return LedgerScope(document=dict(ledger=ledger, decisions=decisions, export_ready=True), sha256=sha256)
 
 
 def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, end_date=None, generated_at=None, include_source_files=False, resolve_path=None, table_view=None, generated_by=None, privilege_marking="unmarked", include_case_financial_history=False, account_ids=None, account_holders=None):
@@ -102,7 +246,7 @@ def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, 
     from sqlalchemy.engine import Engine
     from sqlalchemy.orm import Session
     from services.financial.version import code_version
-    if not isinstance(engine,Engine) or engine.dialect.name!='postgresql':
+    if not (isinstance(engine,Engine) and engine.dialect.name=='postgresql') and not _in_consistent_read(engine):
         raise LedgerSummaryError('Consistent ledger export requires a fresh PostgreSQL engine connection.')
     if include_source_files and not callable(resolve_path):
         raise LedgerSummaryError('Source file export requires a registered path resolver.')
@@ -112,12 +256,16 @@ def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, 
     generated_at=generated_at or datetime.now(timezone.utc)
     if generated_at.tzinfo is None or generated_at.utcoffset() is None:
         raise LedgerSummaryError('Export generation time must carry a timezone.')
-    with engine.connect().execution_options(isolation_level='REPEATABLE READ') as connection:
-        with connection.begin():
-            connection.exec_driver_sql('SET TRANSACTION READ ONLY')
-            with Session(bind=connection,autoflush=False) as session:
-                snapshot=capture_ledger_snapshot(session,case_id=case_id,account_id=account_id, account_ids=account_ids, account_holders=account_holders,start_date=start_date,end_date=end_date)
+    scope_digest=LedgerScopeDigest()
+    with _consistent_connection(engine) as connection:
+        with connection.begin() if isinstance(engine, Engine) else nullcontext():
+            if isinstance(engine, Engine):
+                connection.exec_driver_sql('SET TRANSACTION READ ONLY')
+            with Session(bind=connection,autoflush=False,**({} if isinstance(engine, Engine) else dict(join_transaction_mode='create_savepoint'))) as session:
+                snapshot=capture_ledger_snapshot(session,case_id=case_id,account_id=account_id, account_ids=account_ids, account_holders=account_holders,start_date=start_date,end_date=end_date,scope_digest=scope_digest)
                 document=_capture_history(session,json.loads(snapshot.content),case_id=case_id)
+                scope_digest.decisions(document['decisions'])
+                ledger_scope_sha256=scope_digest.finish(document['ledger'])
                 from postgres.models.case import Case
                 case = session.get(Case, case_id)
                 document['case_title'] = case.title if case is not None else None
@@ -156,8 +304,9 @@ def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, 
     if len(encoded)>MAX_LEDGER_SNAPSHOT_BYTES:
         raise LedgerSummaryError('The complete ledger record exceeds 64 MiB. Choose one account or a shorter date range to export. No partial export was produced.')
     snapshot=LedgerSnapshot(content,hashlib.sha256(encoded).hexdigest(),len(encoded))
-    manifest=dict(schema='loupe.financial.ledger_export_manifest/1',digest_covers='ledger_snapshot_json_utf8',
+    manifest=dict(schema='loupe.financial.ledger_export_manifest/1',digest_covers=FULL_DOCUMENT_COVERS,
         document_sha256=snapshot.sha256,byte_count=snapshot.byte_count,
+        ledger_scope_sha256=ledger_scope_sha256,ledger_scope_digest_covers=LEDGER_SCOPE_COVERS,
         generated_at=generated_at.astimezone(timezone.utc).isoformat(),case_id=str(case_id),
         code_version=code_version(),snapshot_schema=document['schema'],generated_by=generated_by,privilege_marking=privilege_marking,
         case_financial_history_included='case_financial_history' in document,
@@ -166,7 +315,7 @@ def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, 
         pdf_finalization_count=len(document['pdf_review_history']['finalizations']),
         decision_count=len(document['decisions']),included_rows=document['ledger']['included_rows'],
         excluded_rows=document['ledger']['excluded_rows'])
-    return LedgerExport(snapshot,json.dumps(manifest,sort_keys=True,separators=(',',':')), source_files, include_source_files)
+    return LedgerExport(snapshot,json.dumps(manifest,sort_keys=True,separators=(',',':')), source_files, include_source_files, ledger_scope_sha256)
 
 
 
@@ -233,9 +382,41 @@ def render_ledger_report(snapshot):
 
     def payment_label(row, field):
         value = row.get(field) or ('Uncategorized' if field == 'category' else '')
-        if (row.get('label_sources') or {}).get(field, {}).get('source') == 'description':
+        origin = (row.get('label_sources') or {}).get(field, {})
+        source = origin.get('source')
+        if not value and origin.get('reason'):
+            # The statement's layout prints no name for the other side; say why rather than leave it blank,
+            # bracketed so it never reads as a name.
+            value = f"[{origin['reason']}]"
+        if source == 'description':
             value += ' (suggested)'
+        elif source == 'model':
+            value += ' (model guess)'
+        elif source == 'learned':
+            value += ' (applied from a similar payment)'
+        elif source == 'model_reading' and value:
+            # A name Claude read for a person that no person has confirmed: the model, the citation and "not
+            # confirmed" travel with it, so the report never shows it as a person's.
+            value += f" ({origin.get('label') or 'read by a model, not confirmed'}: {str(origin.get('explanation') or '').rstrip('.')})"
+        elif source == 'investigator' and value and str(origin.get('explanation') or '').startswith(('Named by ', 'Confirmed by ')):
+            # A name a person read off the statement page, or a model reading a person confirmed: who and when.
+            value += f" ({origin['explanation'].rstrip('.')})"
         return value
+
+    # Payments a model saved to the case for a person: the source reference says so, with whether a person has
+    # confirmed the statement, so the report never presents the model's work as a person's.
+    model_saved = {reading['row']['key']: reading['model_work'] for reading in ledger['readings']
+                   if isinstance(reading.get('row'), dict) and reading.get('model_work')}
+
+    def source_reference(row):
+        work = model_saved.get(row.get('key'))
+        if not work:
+            return row['ref_id']
+        origin = work.get('origin') or {}
+        saved = f"saved by {origin.get('model') or 'a model'} for {(origin.get('for') or {}).get('name') or 'a person'}"
+        state = 'statement confirmed by a person' if work.get('statement_status') == 'confirmed' else (
+            'statement corrected by a person' if work.get('statement_status') == 'corrected' else 'not confirmed')
+        return f"{row['ref_id']} ({saved}; {state})"
 
     def absent_balance(row):
         return 'Not printed' if row.get('balance_status') == 'not_printed' else 'Not available'
@@ -300,7 +481,7 @@ def render_ledger_report(snapshot):
         '<p>' + text(ledger['limitation']) + '</p>',
         '<p>The transaction table shows currency amounts. Detailed readings retain exact integer minor units in brackets. '
         'Unsupported values remain explicitly unscaled. No exchange-rate conversion or transfer matching is applied.</p>',
-        '<p>Names and categories marked “suggested” are inferred from transaction descriptions; they are not confirmed identities or printed categories. Original readings and label origins are retained in the captured data.</p>',
+        '<p>Names and categories marked “suggested” are inferred from transaction descriptions; categories marked “model guess” were chosen by a model from the description, and “applied from a similar payment” were copied from a payment an investigator categorised. None of these are confirmed identities or printed categories. Original readings and label origins are retained in the captured data. Names marked “Read by Claude · not confirmed” were read from the cited page by Claude, working for the person named, and no person has confirmed them; “Confirmed by” names the person who did.</p>',
         ]
     verification_parts = [
         '<p>Rows in verified totals: ' + text(ledger['included_rows']) + '; other captured readings: ' + text(ledger['excluded_rows']) + '.</p>',
@@ -351,7 +532,7 @@ def render_ledger_report(snapshot):
             ('<h3>Active analysis filters</h3>' + table(['Filter', 'Selection'], analysis_labels) + '<p>Selections on the same side are alternatives; From, To, perspective and chart filters apply together. Card entries represent charges and credits. Internal entries have both names in the selected group and are counted once per ledger row.</p>') if analysis_labels else '',
 
             table(['Search', 'Category', 'Currency', 'Direction', 'Proof class', 'Display order', 'Matching rows'], [[
-                view['filters']['search'] or 'None', view['filters'].get('category') or 'All', view['filters']['currency'] or 'All',
+                view['filters']['search'] or 'None', view['filters'].get('category') or ', '.join(view['filters'].get('categories') or []) or 'All', view['filters']['currency'] or 'All',
                 view['filters']['direction'] or 'Both', view['filters']['proof'] or 'All',
                 view['filters']['sort'], view['matching_rows']]]),
             table(['Date', 'Description', 'From', 'To', 'Category', 'Credit', 'Debit', 'Printed balance', 'Source reference'], [[
@@ -359,7 +540,7 @@ def render_ledger_report(snapshot):
                 money_display(indexed[key]['amount_minor'], indexed[key]['currency'], exact=False) if indexed[key]['direction'] == 'credit' else '',
                 money_display(indexed[key]['amount_minor'], indexed[key]['currency'], exact=False) if indexed[key]['direction'] == 'debit' else '',
                 money_display(indexed[key]['running_balance_minor'], indexed[key]['currency'], exact=False) if indexed[key]['running_balance_minor'] is not None else absent_balance(indexed[key]),
-                indexed[key]['ref_id']] for key in view['row_ids']], widths=[9,19,10,10,10,11,11,10,10])]
+                source_reference(indexed[key])] for key in view['row_ids']], widths=[9,19,10,10,10,11,11,10,10])]
     else:
         current = [reading['row'] for reading in ledger['readings']
                    if reading['exclusion_reason'] in (None, 'proof_class_not_included')]
@@ -370,7 +551,7 @@ def render_ledger_report(snapshot):
                 money_display(row['amount_minor'], row['currency'], exact=False) if row['direction'] == 'credit' else '',
                 money_display(row['amount_minor'], row['currency'], exact=False) if row['direction'] == 'debit' else '',
                 money_display(row['running_balance_minor'], row['currency'], exact=False) if row['running_balance_minor'] is not None else absent_balance(row),
-                row['ref_id']] for row in current])]
+                source_reference(row)] for row in current])]
     notes = document.get('investigation_notes', [])
     if notes:
         parts += ['<h2>Investigation notes</h2><p>Current Workspace notes linked to captured transaction readings. These are the authors’ observations, not additional transactions. Notes may discuss other evidence.</p>']

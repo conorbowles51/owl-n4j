@@ -387,6 +387,31 @@ async def keep_duplicate_copy(
         raise HTTPException(status_code=500, detail="The decision could not be confirmed. Refresh before trying again.")
 
 
+class RestoreReplacedStatementRequest(BaseModel):
+    reason: str = Field(default="", max_length=4000)
+
+
+@router.post("/documents/{document_id}/restore-replaced-statement")
+async def restore_replaced_statement(
+    document_id: UUID,
+    payload: RestoreReplacedStatementRequest,
+    case_id: UUID = Query(...),
+    current_user=Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    """Undo a reader replacement: the earlier saved version counts again; the other reading is kept, linked."""
+    from services.financial.saved_reading_replacement import RESTORE_REASON, ReplacementError, restore_replacement
+    try:
+        return restore_replacement(session_factory=sessionmaker(bind=db.get_bind()), case_id=case_id,
+                                   document_id=document_id, actor=actor_from_user(current_user),
+                                   reason=payload.reason.strip() or RESTORE_REASON)
+    except (ReplacementError, DuplicateDecisionError, ActorError) as exc:
+        raise HTTPException(status_code=getattr(exc, "status_code", 422), detail=str(exc))
+    except Exception:
+        logger.exception("Restoring a replaced statement failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="The restore could not be confirmed. Refresh before trying again.")
+
+
 @router.post("/candidates/{candidate_id}/provisional-account")
 async def record_candidate_account(candidate_id: UUID, body: CandidateAccountRequest,
                                    case_id: UUID = Query(...), current_user=Depends(get_current_db_user),
@@ -546,7 +571,9 @@ def append_source_custody(file_id: UUID, body: CustodyRequest, case_id: UUID = Q
         raise HTTPException(status_code=500, detail='Custody report could not be recorded. Reload before retrying.')
 
 
-from services.financial.payment_labels import PaymentLabelsRequest, PaymentLabelsError, update_payment_labels
+from services.financial.payment_labels import (PaymentLabelsRequest, PaymentLabelsError, RemovePaymentLabelsRequest,
+                                               ConfirmPaymentLabelsRequest, confirm_payment_labels,
+                                               remove_payment_labels, update_payment_labels)
 from services.financial.category_library import CreatePaymentCategoryRequest, ensure_category
 
 
@@ -573,6 +600,107 @@ def put_payment_labels(body: PaymentLabelsRequest, case_id: UUID = Query(...),
     except Exception:
         logger.exception("Payment labels could not be saved for case %s", case_id)
         raise HTTPException(status_code=500, detail="The categories and names could not be saved. Reload before retrying.")
+
+
+@router.post("/ledger/payment-labels/confirm")
+def confirm_payment_label(body: ConfirmPaymentLabelsRequest, case_id: UUID = Query(...),
+                          db: Session = Depends(get_db), current_user=Depends(get_current_db_user)):
+    """A person confirms a name a model read: the name stays, the person becomes its actor, the reading stays in
+    the label history."""
+    try:
+        return confirm_payment_labels(db, case_id=case_id, request=body, actor=actor_from_user(current_user))
+    except (PaymentLabelsError, ActorError) as exc:
+        raise HTTPException(status_code=getattr(exc, 'status_code', 422), detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Payment labels could not be confirmed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="The names could not be confirmed. Reload before retrying.")
+
+
+@router.post("/ledger/payment-labels/remove")
+def remove_payment_label(body: RemovePaymentLabelsRequest, case_id: UUID = Query(...),
+                         db: Session = Depends(get_db), current_user=Depends(get_current_db_user)):
+    """Undo a saved name: the statement's own reading shows again; the removal is kept in the label history."""
+    try:
+        return remove_payment_labels(db, case_id=case_id, request=body, actor=actor_from_user(current_user))
+    except (PaymentLabelsError, ActorError) as exc:
+        raise HTTPException(status_code=getattr(exc, 'status_code', 422), detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Payment labels could not be removed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="The names could not be removed. Reload before retrying.")
+
+
+class ApplyLikeRequest(BaseModel):
+    transaction_id: UUID
+    category: str = Field(max_length=120)
+    # The payments the person was shown; payments that became like it since are left for another look.
+    transaction_ids: list[UUID] = Field(default_factory=list, max_length=50000)
+
+
+@router.post('/ledger/payment-categories/apply-like')
+def apply_category_to_like(body: ApplyLikeRequest, case_id: UUID = Query(...), db: Session = Depends(get_db),
+                           current_user=Depends(get_current_db_user)):
+    """Give the payments like this one the person's category, recorded as learned from it."""
+    from services.financial.payment_categories import apply_learned
+    try:
+        category = ' '.join(body.category.split())
+        if category == 'Uncategorized':
+            category = ''
+        updated = apply_learned(db, case_id, body.transaction_id, category, actor_from_user(current_user),
+                                expected_ids=body.transaction_ids or None)
+        db.commit()
+        return dict(case_id=str(case_id), updated=updated)
+    except ActorError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        db.rollback()
+        logger.exception('Applying a category to similar payments failed for case %s', case_id)
+        raise HTTPException(status_code=500, detail='The category could not be applied to the similar payments.')
+
+
+class CategoryRuleRequest(BaseModel):
+    transaction_id: UUID
+    category: str = Field(max_length=120)
+
+
+@router.post('/ledger/payment-categories/rules')
+def make_category_rule(body: CategoryRuleRequest, case_id: UUID = Query(...), db: Session = Depends(get_db),
+                       current_user=Depends(get_current_db_user)):
+    """"Make this a rule for future statements": payments like this one saved from now on get this category."""
+    from services.financial.payment_categories import CategoryRuleError, save_rule
+    try:
+        category = ' '.join(body.category.split())
+        if category == 'Uncategorized':
+            category = ''
+        rule = save_rule(db, case_id, body.transaction_id, category, actor_from_user(current_user))
+        db.commit()
+        return dict(case_id=str(case_id), rule=rule)
+    except (CategoryRuleError, ActorError) as exc:
+        db.rollback()
+        raise HTTPException(status_code=getattr(exc, 'status_code', 422), detail=str(exc)) from exc
+    except Exception:
+        db.rollback()
+        logger.exception('Saving a category rule failed for case %s', case_id)
+        raise HTTPException(status_code=500, detail='The rule could not be saved. The category you chose is kept.')
+
+
+@router.post('/ledger/payment-categories/rules/{rule_id}/retire')
+def retire_category_rule(rule_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db),
+                         current_user=Depends(get_current_db_user)):
+    """Stop a rule placing future payments; the rule and the payments it placed are kept."""
+    from services.financial.payment_categories import CategoryRuleError, retire_rule
+    try:
+        actor_from_user(current_user)
+        rule = retire_rule(db, case_id, rule_id)
+        db.commit()
+        return dict(case_id=str(case_id), rule=rule)
+    except (CategoryRuleError, ActorError) as exc:
+        db.rollback()
+        raise HTTPException(status_code=getattr(exc, 'status_code', 422), detail=str(exc)) from exc
+    except Exception:
+        db.rollback()
+        logger.exception('Retiring a category rule failed for case %s', case_id)
+        raise HTTPException(status_code=500, detail='The rule could not be stopped. Reload and try again.')
 
 
 from services.financial.payment_edits import PaymentEditRequest, preview_payment_edits, save_payment_edits
@@ -622,9 +750,12 @@ def record_account_identity(body: IdentityRequest, case_id: UUID = Query(...),
 
 @router.post('/account-identities/sync-graph')
 def sync_account_identity_graph(case_id: UUID = Query(...), db: Session = Depends(get_db)):
-    from services.financial.identity_graph import synchronize_case, identity_graph_status
+    from services.financial.identity_graph import synchronize_case, identity_graph_status, _case_claim
     try:
-        synchronize_case(case_id)
+        with _case_claim(case_id) as claimed:
+            # Another worker's sweep is drawing this case right now: report its state instead of colliding.
+            if claimed:
+                synchronize_case(case_id)
         return identity_graph_status(db, case_id)
     except Exception as exc:
         raise HTTPException(status_code=503, detail='Reviewed identities are saved. The case graph is temporarily unavailable and will retry automatically.') from exc

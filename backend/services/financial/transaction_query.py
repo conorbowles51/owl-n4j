@@ -46,7 +46,7 @@ from typing import Any, Optional
 from uuid import UUID
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, selectinload
 
 from postgres.models.enums import LedgerStatus
 from postgres.models.financial import FinancialTransaction
@@ -83,7 +83,9 @@ def list_transactions(
 
     status = ledger_status if ledger_status is not None else LedgerStatus.admitted
 
-    stmt = select(FinancialTransaction).options(joinedload(FinancialTransaction.account)).where(
+    # Each account is loaded once (selectinload). Joined to every payment, its metadata JSON was read and
+    # decoded again for each of the account's payments.
+    stmt = select(FinancialTransaction).options(selectinload(FinancialTransaction.account)).where(
         FinancialTransaction.case_id == case_id,
         FinancialTransaction.ledger_status == status.value,
     )
@@ -102,7 +104,11 @@ def list_transactions(
         FinancialTransaction.row_index.asc(),
         FinancialTransaction.id.asc(),
     )
-    return list(session.scalars(stmt).all())
+    rows = list(session.scalars(stmt).all())
+    # Load the stored categories in bounded queries so each row's label view finds its own without a query.
+    from services.financial.payment_categories import attach_stored
+    attach_stored(session, rows)
+    return rows
 
 
 
@@ -225,7 +231,7 @@ def account_label_index(accounts):
         for identifier, account in accounts.items()}
 
 
-def to_view(row: FinancialTransaction, *, account=None, account_parties=None, canonical_account_labels=None) -> TransactionView:
+def to_view(row: FinancialTransaction, *, account=None, account_parties=None, canonical_account_labels=None, party_matches=None) -> TransactionView:
     """Convert one stored row into its read shape.
 
     Reads every closed-vocabulary column as the plain string or int
@@ -253,7 +259,7 @@ def to_view(row: FinancialTransaction, *, account=None, account_parties=None, ca
             canonical_label = ' · '.join(v for v in (canonical.holder_name, canonical.institution_name, canonical.identifier_as_printed) if v)
     return TransactionView(
         canonical_account_id=canonical_id, canonical_account_label=canonical_label, account_alias_ids=identity.get("alias_ids", []),
-        **payment_label_view(row, account),
+        **payment_label_view(row, account, matched=(party_matches or {}).get(str(row.id))),
         balance_status=balance_reading_status(row),
         account_type=account_type,
         account_party_id=(identity.get('party') or {}).get('id') if 'party' in identity else identity.get('id'),

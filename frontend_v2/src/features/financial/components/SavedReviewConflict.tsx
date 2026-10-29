@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import type { StatementDraft } from "../lib/statement-review-draft"
@@ -29,10 +30,7 @@ export function SavedReviewConflict({
         to the new reading because its rows may be different. Compare any
         corrections before importing.
       </p>
-      <details>
-        <summary className="cursor-pointer">
-          Show previous saved values ({rows.length} rows)
-        </summary>
+      <Disclosure label={<>Show previous saved values ({rows.length} rows)</>}>
         <p className="my-2">
           {draft.holder} · {draft.account} · {draft.periodStart} to{" "}
           {draft.periodEnd}
@@ -90,7 +88,7 @@ export function SavedReviewConflict({
             </Button>
           </div>
         )}
-      </details>
+      </Disclosure>
       <label className="flex gap-2 items-center">
         <input
           type="checkbox"

@@ -19,6 +19,7 @@ that every statement appears once:
 The per-case status line (imported, waiting, copies, couldn't read) is counted
 from the same classification, so it always agrees with the queue.
 """
+import os
 import threading
 import time
 from collections import OrderedDict
@@ -29,6 +30,7 @@ from sqlalchemy import select
 
 from postgres.models.evidence import EvidenceFile
 from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item
+from services.financial import reader_gaps
 
 # Review reasons that never ask the investigator for anything.
 NOTE_REASONS = frozenset({'overlap', 'balance_unavailable', 'readiness_update', 'duplicate'})
@@ -39,7 +41,7 @@ SYSTEM_KINDS = frozenset({'readiness_pending', 'coverage_load'})
 # Most important first: the reason a statement is opened for.
 # A credit line printing only its principal balance (principal_only) cannot be checked whatever details are
 # filled in, so its missing amount owed leads, ahead of the details a person can fill for it.
-REASON_ORDER = ('import_failed', 'saved_review', 'reprint', 'assignment', 'principal_only', 'currency', 'institution',
+REASON_ORDER = ('import_failed', 'pages_missing', 'saved_review', 'reprint', 'assignment', 'principal_only', 'currency', 'institution',
                 'holder', 'account', 'dates', 'balance', 'incomplete', 'count', 'no_activity', 'reading')
 # The one control a single-field issue opens on (the field its sentence names).
 DETAIL_FIELDS = {'holder': 'holder', 'account': 'account_number', 'dates': 'period', 'currency': 'currency',
@@ -103,6 +105,8 @@ def issue_sentence(reason, problems, summary):
         return carried['message']
     if reason == 'import_failed':
         return 'Saving did not finish: open it to retry'
+    if reason == 'pages_missing':
+        return problems[0]['message']
     if reason == 'saved_review':
         return 'Your earlier corrections need comparing with a new reading'
     if reason == 'reprint':
@@ -170,7 +174,7 @@ def describe(summary):
     """(reason, sentence, target row, target field, page, other problem count) for an actionable item."""
     problems = actionable_problems(summary)
     if not problems:
-        return None
+        return _hold_detail(summary)
     by_reason = {}
     for problem in problems:
         by_reason.setdefault(problem['review_reason'], []).append(problem)
@@ -201,6 +205,17 @@ def describe(summary):
                 **(dict(choice=choice) if choice else {}))
 
 
+def _hold_detail(summary):
+    """The queue entry of a balanced statement the System would not save on its own (auto_save_guard)."""
+    hold = summary.get('auto_save_hold')
+    if not hold:
+        return None
+    field = DETAIL_FIELDS.get(hold.get('reason'))
+    return dict(reason='auto_save_check', sentence=hold['sentence'], row_id=None, field=field,
+                page=summary.get('page_number'), other_problems=0, problem_total=1, reasons=['auto_save_check'],
+                also=[], pages=[], messages=[hold['sentence']])
+
+
 def _empty_reading(summary):
     return not (summary.get('transaction_count') or summary.get('record_count') or summary.get('incomplete_count')
                 or summary.get('unclassified_count') or summary.get('period_start') or summary.get('period_end'))
@@ -227,6 +242,9 @@ def classify(item):
         return 'rechecking'
     if actionable_problems(summary):
         return 'unreadable' if _empty_reading(summary) and not summary.get('assignment_only') else 'waiting'
+    if summary.get('auto_save_hold'):
+        # Balanced, but a fact the balances cannot prove is not: a person checks it (auto_save_guard).
+        return 'waiting'
     if summary.get('can_import', item.status == 'ready'):
         return 'ready'
     if any(p.get('kind') in SYSTEM_KINDS for p in summary.get('problems') or []):
@@ -258,9 +276,13 @@ def _saved_scopes(session, case_id):
             *conditions, kind='saved_scopes')]
 
     rows = read(Source.case_id == case_id, Source.status == 'admitted', Source.document_type == 'statement_review')
+    # An empty legacy import (no statement, no dates, nothing paid) saved nothing of any statement of its
+    # bytes (saved_reading_replacement, lesson 13).
+    from services.financial.saved_reading_replacement import standing_shell_ids
+    shells = standing_shell_ids(session, case_id)
     current = {}
-    for _, sha, key, _, removed, file_id in rows:
-        if not removed:
+    for identifier, sha, key, _, removed, file_id in rows:
+        if not removed and str(identifier) not in shells:
             current.setdefault((sha, key or ''), file_id)
     scopes = set(current)
     parents, seen = {parent for _, _, _, parent, removed, _ in rows if parent and not removed}, set()
@@ -284,12 +306,20 @@ def _saved_scopes(session, case_id):
 def _proposals(summary, knowledge, detail):
     """Proposals for a waiting statement's missing details; True when they resolve every problem."""
     from services.financial import field_proposals
-    proposals = field_proposals.propose(field_proposals.summary_values(summary), knowledge)
+    values = field_proposals.summary_values(summary)
+    proposals = field_proposals.propose(values, knowledge)
+    reasons = {p['review_reason'] for p in actionable_problems(summary)}
+    if detail is not None and 'currency' in reasons and 'currency' in field_proposals.enabled_fields():
+        # Why the currency stays a person's question, in plain words (empty once it is settled automatically).
+        headline, why = field_proposals.currency_why(values, knowledge, proposals.get('currency'))
+        if why:
+            detail['why'] = why
+            if detail.get('reason') == 'currency':
+                detail['sentence'] = headline
     if not proposals:
         return {}, False
-    reasons = {p['review_reason'] for p in actionable_problems(summary)}
     text = field_proposals.sentence(detail['reason'], proposals) if detail else None
-    if text:
+    if text and not (detail.get('reason') == 'currency' and detail.get('why')):
         detail['sentence'] = text
     return proposals, field_proposals.resolves_all(reasons, proposals)
 
@@ -319,7 +349,23 @@ def _entry(item, batch_id, describe_result=None):
             reasons=describe_result.get('reasons') or [describe_result['reason']], also=describe_result.get('also') or [])
         if describe_result.get('choice'):
             entry['choice'] = describe_result['choice']
+        if describe_result.get('why'):
+            entry['why'] = describe_result['why']
         entry.update(issue_pages=describe_result.get('pages') or [], issue_messages=describe_result.get('messages') or [])
+    vision = summary.get('vision_reading')
+    if vision and item.status == 'attention' and (vision.get('message') or vision.get('line')):
+        # The latest outcome of reading its page images (vision_reader), in plain words: why it did not settle it,
+        # or why it was not read. The statement stays as it was.
+        from services.financial.vision_reader import outcome_line
+        entry['vision_reading'] = dict(status=vision.get('status'), reason=vision.get('reason'),
+                                       message=vision.get('message') or '', line=vision.get('line') or outcome_line(vision))
+        if vision.get('status') == 'offered' and isinstance(vision.get('offer'), dict):
+            # Rule 2: a reading that checks out, beside the person's saved work, for them to use or set aside.
+            entry['vision_reading']['offer'] = dict(id=vision['offer'].get('id') or '', mine=vision['offer'].get('mine') or {},
+                                                    offered=vision['offer'].get('offered') or {})
+        if describe_result and vision.get('status') in ('not_proved', 'budget', 'failed') and vision.get('message') \
+                and vision['message'] not in entry['issue_messages']:
+            entry['issue_messages'] = [*entry['issue_messages'], 'Page images: ' + vision['message']]
     not_payment = summary.get('not_payment_statement')
     if not_payment:
         entry.update(not_payment=dict(kind=not_payment.get('kind'), label=not_payment.get('label'),
@@ -362,9 +408,12 @@ def _preparing_again(batches):
     A file handed back for a new reading (``recovery``) waits for its turn
     before it is processed; it is being rechecked from the hand-off on.
     """
+    from services.financial.held_reprepare import pending_files
+    batches = list(batches)
+    # Also a held file marked to be prepared again with the deployed reader, waiting for its turn.
     return {(batch.id, file['file_id']) for batch in batches if batch.status in ('preparing', 'pausing')
             for file in batch.files or [] if file.get('file_id') and (file.get('status') == 'processing'
-                or (file.get('status') == 'waiting' and file.get('recovery')))}
+                or (file.get('status') == 'waiting' and file.get('recovery')))} | pending_files(batches)
 
 
 # Buckets a scheduled re-read moves to "Being rechecked": held statements only.
@@ -470,6 +519,18 @@ def _build(session, case_id):
                 # which applies the values and checks the statement again.
                 bucket = 'filled'
         rows.append((identity, bucket, current, detail, proposals))
+    # A whole-file entry prepared before its file was split into named statements stands for nothing once every
+    # one of those statements is imported, set aside as a copy, left out or not a payment statement: its own
+    # reading is older, and the work is done (BNB2 2026-10-25: 6 such entries counted as waiting). Nothing is
+    # deleted; the entry is only no longer listed. Reverse: LOUPE_FINANCIAL_QUEUE_HIDE_SPLIT_DONE=0.
+    if os.environ.get('LOUPE_FINANCIAL_QUEUE_HIDE_SPLIT_DONE', '1').strip().lower() not in ('0', 'false', 'off', 'no'):
+        named_buckets = {}
+        for identity, bucket, *_ in rows:
+            if identity[1]:
+                named_buckets.setdefault(identity[0], set()).add(bucket)
+        settled = {'imported', 'copies', 'not_payment', 'left_unimported'}
+        rows = [row for row in rows if row[0][1] or row[1] not in ('waiting', 'unreadable', 'ready', 'filled')
+                or not named_buckets.get(row[0][0]) or not named_buckets[row[0][0]] <= settled]
     items = light
     batch_of = {item.id: item.batch_id for item in items}
     result = []
@@ -494,6 +555,11 @@ def _build(session, case_id):
                 field_proposals.REASONS.get(name) == single[0] for name in proposals)
         entry.update(bucket=bucket, root=identity[0], file_ids=sorted({str(i.file_id) for i in identities[identity]}
             | {source for i in identities[identity] for source in sources.get(str(i.file_id), ())}))
+        if bucket in ('waiting', 'filled') and reader_gaps.reader_gap(item.summary, item.status):
+            # Nothing was read from pages that carry text: a reader problem, reported to us (reader_gaps), not a
+            # person's task. Listed under the reader fix with every action it has where it was (held_bucket).
+            entry.update(bucket='reader_fix', held_bucket=bucket, reader_gap=True, reader_file=True,
+                         reader_gap_line=reader_gaps.SENTENCE)
         if bucket == 'copies':
             disposition = item.summary.get('duplicate_disposition') or {}
             retained = disposition.get('retained') or {}
@@ -561,8 +627,13 @@ def reader_files(entries):
             batch_id=entry['batch_id'], statements=0, file_statements=entry.get('file_statements', 0), item_ids=[]))
         line['statements'] += 1
         line['item_ids'].append(entry['id'])
-    for line in files.values():
+    gaps = {entry['root'] for entry in entries if entry['bucket'] == 'reader_fix' and entry.get('reader_gap')}
+    for root, line in files.items():
         n = line['statements']
+        if root in gaps:
+            line['reader_gap'] = True
+            line['message'] = reader_gaps.FILE_MESSAGE.format(n=n, s='s' if n != 1 else '')
+            continue
         line['message'] = (f"Loupe can't read this file reliably yet ({n} statement{'s' if n != 1 else ''}). No need to "
                            "review it by hand; it will be re-read when the reader is fixed.")
     return list(files.values())
@@ -622,15 +693,95 @@ def _compute(session, case_id):
     """The whole-case view: entries, failed and set-aside files, unread count. Read only."""
     from services.financial.auto_read import unread_statement_files
     entries = _build(session, case_id)
+    _saved_checks(session, case_id, entries)
+    _copies_none_saved(session, case_id, entries)
     set_aside = []
     entries, failed, copy_files = _set_aside_read_copies(session, case_id, entries,
         _failed_files(session, case_id, set(), set_aside))
+    _ready_saved_elsewhere(session, case_id, entries)
     _mark_read_afresh(session, case_id, failed)
     _worked_by(session, entries)
     from datetime import datetime, timezone
     return dict(entries=entries, failed=failed, copy_files=copy_files, set_aside=set_aside,
                 unread=len(unread_statement_files(session, case_id=case_id)),
                 as_of=datetime.now(timezone.utc).isoformat(timespec='seconds'))
+
+
+# A saved statement a ledger check finds wrong or unproven is listed for a person with the plain reason instead of
+# counting as imported (auto_save_guard.saved_checks: holder an address line, a balance that does not carry, the
+# same account and period saved twice, a one-digit account misread). Nothing saved is changed. Reverse:
+# LOUPE_FINANCIAL_QUEUE_SAVED_CHECKS=0.
+SAVED_CHECKS = os.environ.get('LOUPE_FINANCIAL_QUEUE_SAVED_CHECKS', '1').strip().lower() not in ('0', 'false', 'off', 'no')
+
+
+def _saved_checks(session, case_id, entries):
+    if not SAVED_CHECKS:
+        return
+    from services.financial.auto_save_guard import saved_checks
+    found = saved_checks(session, case_id)
+    if not found:
+        return
+    imported = [entry for entry in entries if entry['bucket'] == 'imported']
+    ids = {UUID(entry['file_id']) for entry in imported if _uuid(entry['file_id'])}
+    shas = {str(file_id): sha for file_id, sha in session.execute(select(EvidenceFile.id, EvidenceFile.sha256)
+                                                                  .where(EvidenceFile.id.in_(ids)))} if ids else {}
+    for entry in imported:
+        check = found.get((shas.get(entry['file_id']), entry.get('statement_id') or ''))
+        if not check:
+            continue
+        reason, sentence = check
+        entry.update(bucket='waiting', issue=sentence, issue_reason='saved_check', saved_check=reason,
+                     field=DETAIL_FIELDS.get(reason), row_id=None, other_problems=0, problem_total=1,
+                     reasons=['saved_check'], also=[], issue_pages=[], issue_messages=[sentence])
+
+
+# A statement whose every upload sits in 'copies' while none of them is saved is not settled: the copies were set
+# aside for, or held against, each other (BNB2: CAAL BBVA 0119200843 Aug 2025 and BBVA 0125701104 USD Sep 2025 were
+# absent from the ledger with all their items under copies). When no saved period of the same account (its printed
+# digits equal or one inside the other, as an account inside its CLABE), currency and overlapping dates exists, and
+# no entry of that statement is imported, saving or left unimported (a copy left unimported always carries the
+# reason a person gave, e.g. that its payments are already saved from other statements), one of its copies (the one the copy rule keeps, else the first)
+# is listed under 'waiting' with the plain reason. Nothing is changed. Reverse: LOUPE_FINANCIAL_QUEUE_COPIES_NONE_SAVED=0.
+COPIES_NONE_SAVED = os.environ.get('LOUPE_FINANCIAL_QUEUE_COPIES_NONE_SAVED', '1').strip().lower() not in ('0', 'false', 'off', 'no')
+COPIES_NONE_SAVED_SENTENCE = ('Every copy of this statement was set aside as a copy of another, and none of them is '
+                              'saved. Check this one against the PDF and save it.')
+
+
+def _digits(value):
+    return ''.join(ch for ch in str(value or '') if ch.isdigit())
+
+
+def _copies_none_saved(session, case_id, entries):
+    if not COPIES_NONE_SAVED:
+        return
+    scope = lambda e: (_digits(e.get('account')), e.get('currency') or '', e.get('period_start') or '', e.get('period_end') or '')
+    copies = {}
+    for entry in entries:
+        key = scope(entry)
+        if entry['bucket'] == 'copies' and len(key[0]) >= 6 and all(key[1:]):
+            copies.setdefault(key, []).append(entry)
+    if not copies:
+        return
+    busy = {scope(e) for e in entries if e['bucket'] in ('imported', 'saving', 'waiting', 'ready', 'filled', 'rechecking',
+                                                        'reader_fix', 'left_unimported')}
+    from postgres.models.financial import FinancialAccount, FinancialSourceDocument, FinancialStatementPeriod
+    saved = session.execute(select(FinancialAccount.identifier_as_printed, FinancialStatementPeriod.currency,
+                                   FinancialStatementPeriod.period_start, FinancialStatementPeriod.period_end)
+        .join(FinancialStatementPeriod, FinancialStatementPeriod.account_id == FinancialAccount.id)
+        .join(FinancialSourceDocument, FinancialSourceDocument.id == FinancialStatementPeriod.source_document_id)
+        .where(FinancialStatementPeriod.case_id == case_id, FinancialSourceDocument.status == 'admitted',
+               FinancialStatementPeriod.period_start.is_not(None), FinancialStatementPeriod.period_end.is_not(None))).all()
+    saved = [(_digits(a), c, str(s0), str(e0)) for a, c, s0, e0 in saved]
+    for key, group in copies.items():
+        digits, currency, start, end = key
+        if key in busy or any(c == currency and d and (d in digits or digits in d) and s0 <= end and e0 >= start
+                              for d, c, s0, e0 in saved):
+            continue
+        keeps = [e for e in group if not e.get('set_aside')]
+        entry = sorted(keeps or group, key=lambda e: e['id'])[0]
+        entry.update(bucket='waiting', issue=COPIES_NONE_SAVED_SENTENCE, issue_reason='copies_none_saved', row_id=None,
+                     other_problems=0, problem_total=1, reasons=['copies_none_saved'], also=[], issue_pages=[],
+                     issue_messages=[COPIES_NONE_SAVED_SENTENCE])
 
 
 def _store(key, fingerprint, view):
@@ -851,6 +1002,69 @@ def _set_aside_read_copies(session, case_id, entries, failed):
     return entries, kept, copies
 
 
+# Neil, 2026-10-25 (BNB2 queue): a "ready" statement that its save would hold as "Already saved through another
+# batch" is a copy, not work. Reverse: LOUPE_FINANCIAL_QUEUE_SAVED_ELSEWHERE=0 (it stays listed as ready).
+SAVED_ELSEWHERE = os.environ.get('LOUPE_FINANCIAL_QUEUE_SAVED_ELSEWHERE', '1').strip().lower() not in (
+    '0', 'false', 'off', 'no')
+
+
+def _ready_saved_elsewhere(session, case_id, entries):
+    """Move to copies the ready entries whose statement another upload of the same document already saved. In place.
+
+    The queue save's own rule (``queue_save.save_statements``): the same statement key in a file with the same
+    bytes or the same rendered pages (``page_identity``) is imported or being imported in a batch of the case
+    that is not removed. Only such an upload whose file also holds an admitted, not removed saved statement is
+    named as the original, so a removed import never makes a statement look saved. Nothing is written.
+    """
+    if not SAVED_ELSEWHERE:
+        return entries
+    from sqlalchemy import or_
+    from postgres.models.financial import FinancialSourceDocument as Source
+    from services.financial import page_identity
+    ready = [e for e in entries if e['bucket'] == 'ready' and _uuid(e['file_id'])]
+    if not ready:
+        return entries
+    own = {str(f.id): f for f in session.scalars(select(EvidenceFile).where(
+        EvidenceFile.case_id == case_id, EvidenceFile.id.in_({UUID(e['file_id']) for e in ready})))}
+    pages = lambda file: (page_identity.stored(file) or {}).get('identity')
+    shas = {f.sha256 for f in own.values() if f.sha256}
+    identities = {pages(f) for f in own.values() if pages(f)}
+    if not shas and not identities:
+        return entries
+    matching = ([EvidenceFile.sha256.in_(shas)] if shas else []) + ([EvidenceFile.metadata_[
+        page_identity.METADATA_KEY]['identity'].as_string().in_(identities)] if identities else [])
+    saved = {}
+    for file, key in session.execute(select(EvidenceFile, Item.statement_key)
+            .join(Item, Item.file_id == EvidenceFile.id).join(Batch, Batch.id == Item.batch_id)
+            .where(Batch.case_id == case_id, Batch.status != 'removed', or_(*matching),
+                   Item.status.in_(('pending_import', 'imported')))):
+        saved.setdefault(key or '', {})[str(file.id)] = file
+    # (file, statement key) of admitted, not removed saved statements (a keyless record matches only a keyless
+    # statement, as in _saved_scopes).
+    admitted = {(str(file_id), key or '') for file_id, key in session.execute(select(
+        Source.evidence_file_id, Source.metadata_['statement_import_statement_id'].as_string()).where(
+        Source.case_id == case_id, Source.status == 'admitted', Source.document_type == 'statement_review',
+        Source.metadata_['financial_import_removal'].as_string().is_(None),
+        Source.evidence_file_id.in_([UUID(i) for files in saved.values() for i in files])))} if saved else set()
+    for entry in ready:
+        file = own.get(entry['file_id'])
+        if file is None:
+            continue
+        for other_id, other in sorted((saved.get(entry.get('statement_id') or '') or {}).items()):
+            if other_id == entry['file_id'] or (other_id, entry.get('statement_id') or '') not in admitted:
+                continue
+            same_bytes = bool(file.sha256 and other.sha256 == file.sha256)
+            stored, other_stored = page_identity.stored(file) or {}, page_identity.stored(other) or {}
+            same_pages = bool(stored.get('identity') and (stored.get('identity'), stored.get('renderer'))
+                              == (other_stored.get('identity'), other_stored.get('renderer')))
+            if not same_bytes and not same_pages:
+                continue
+            entry.update(bucket='copies', set_aside=True, copy_of=other.original_filename or None,
+                         copy_reason='same_file_read' if same_bytes else 'same_pages_read', copy_file_id=other_id)
+            break
+    return entries
+
+
 def _mark_read_afresh(session, case_id, failed):
     """Mark failed files whose retained PDF the investigator can explicitly read afresh.
 
@@ -881,7 +1095,7 @@ OWN_WORK_MESSAGE = 'manually added transaction'
 
 
 def _own_work(entry):
-    return entry['bucket'] in ('waiting', 'unreadable') and (
+    return entry.get('held_bucket', entry['bucket']) in ('waiting', 'unreadable') and (
         bool(OWN_WORK_REASONS & set(entry.get('reasons') or [entry.get('issue_reason')]))
         or any(OWN_WORK_MESSAGE in (m or '').lower() for m in entry.get('issue_messages') or []))
 

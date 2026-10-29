@@ -248,6 +248,8 @@ def pin_payment_direction(rows, sources, currency):
     """
     payments = [r for r in rows if not r['excluded'] and r['kind'] in ('transaction', 'unresolved')]
     unread = [r for r in payments if r['fields'].get('payment_sign_unread')]
+    if len(unread) > 1 and SEVERAL_PAYMENT_SIGNS:
+        return _pin_several_payments(rows, payments, unread, sources, currency)
     if len(unread) != 1:
         return rows
     line = unread[0]
@@ -278,6 +280,72 @@ def pin_payment_direction(rows, sources, currency):
         return rows
     line['fields'].update(direction='credit', direction_basis=PAYMENT_SIGN_PINNED)
     line['issues'] = []
+    return rows
+
+
+# Several payment lines whose minus no reader read may take the credit
+# direction together (``_pin_several_payments``). Reverse in one place: False.
+SEVERAL_PAYMENT_SIGNS = True
+# At most this many such lines are decided in one period (every other sign
+# combination is checked against the balances).
+MAX_UNREAD_PAYMENT_SIGNS = 6
+
+
+def _printed_credits(sources, currency):
+    """The period's printed payments and other credits as confirmed amounts, or ``None`` when not all read.
+
+    From the labelled summary box, or for a Merrick page whose box lost its
+    labels, its values read in printed order (``summary_by_position``).
+    """
+    printed = [value for heading, beside in SUMMARY_BOXES for s in sources
+               for role, _, _, value, _ in summary_components(s, heading, beside, currency, point_mark=True)
+               if role == 'credit_component']
+    if printed:
+        return None if any(v is None or v[0] is None or v[1] is not True for v in printed) else [v[0] for v in printed]
+    from services.financial.statement_import_merrick import summary_by_position
+    boxes = [summary_by_position(s) for s in sources]
+    boxes = [box for box in boxes if box]
+    if len(boxes) != 1:
+        return None
+    return [boxes[0]['amounts']['payments'], boxes[0]['amounts']['other_credits']]
+
+
+def _pin_several_payments(rows, payments, unread, sources, currency):
+    """Several card payment lines whose minus no reader read take the credit direction together.
+
+    As ``pin_payment_direction`` for one line, and stricter: every such line
+    is dated with that one issue, every other line is complete, both printed
+    balances are read, the balance equation holds with all of them as credits
+    and with no other combination of their signs, and the printed payments and
+    other credits (all read, none unconfirmed) equal the credit lines with
+    them. Anything else leaves every one held.
+    """
+    from itertools import product
+    others = [r for r in payments if not any(r is line for line in unread)]
+    if (len(unread) > MAX_UNREAD_PAYMENT_SIGNS
+            or any(len(r['issues']) != 1 or not str(r['fields'].get('amount_minor') or '').isdigit()
+                   or not r['fields'].get('date') for r in unread)
+            or any(r['issues'] or not str(r['fields'].get('amount_minor') or '').isdigit()
+                   or r['fields'].get('direction') not in ('credit', 'debit') for r in others)):
+        return rows
+    balances = {r['fields'].get('description'): r['fields'].get('balance') for r in rows if r['kind'] == 'balance'}
+    try:
+        opening, closing = int(balances['Opening Balance']), int(balances['Closing Balance'])
+    except (KeyError, TypeError, ValueError):
+        return rows
+    moved = sum(int(r['fields']['amount_minor']) * (1 if r['fields']['direction'] == 'debit' else -1) for r in others)
+    amounts = [int(r['fields']['amount_minor']) for r in unread]
+    holding = [signs for signs in product((1, -1), repeat=len(amounts))
+               if opening + moved + sum(sign * amount for sign, amount in zip(signs, amounts)) == closing]
+    if holding != [tuple(-1 for _ in amounts)]:
+        return rows
+    printed = _printed_credits(sources, currency)
+    credits = sum(int(r['fields']['amount_minor']) for r in others if r['fields']['direction'] == 'credit')
+    if printed is None or sum(printed) != credits + sum(amounts):
+        return rows
+    for line in unread:
+        line['fields'].update(direction='credit', direction_basis=PAYMENT_SIGN_PINNED)
+        line['issues'] = []
     return rows
 
 

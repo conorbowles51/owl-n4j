@@ -1,8 +1,9 @@
+import { Disclosure } from "./Disclosure"
 import { paymentInventory } from "../lib/payment-inventory"
 import { knownAccountGroup, type KnownPaymentAccount } from "../lib/known-payment-accounts"
 import { openPaymentParty } from "../lib/payment-party-navigation"
 import { paymentGroup } from "../lib/investigator-workspace"
-import { amountGroupName, amountOf } from "../lib/transaction-analysis"
+import { amountGroupName, amountOf, unnamedParty } from "../lib/transaction-analysis"
 import type { LedgerTransaction } from "../api"
 import { formatLedgerAmount } from "../lib/ledger-format"
 import { Button } from "@/components/ui/button"
@@ -110,11 +111,8 @@ export function PaymentTotals({
         </p>
       )}
       {expandAccounts && inventory.accounts.length > 0 && (
-        <details className="text-xs">
-          <summary className="cursor-pointer">
-            View all {inventory.accounts.length} accounts and{" "}
-            {inventory.banks.length} banks
-          </summary>
+        <Disclosure className="text-xs" label={<>View all {inventory.accounts.length} accounts and{" "}
+            {inventory.banks.length} banks</>}>
           <p className="mt-2">
             Banks: {inventory.banks.join(", ") || "Not identified"}
           </p>
@@ -128,7 +126,7 @@ export function PaymentTotals({
               </li>
             ))}
           </ul>
-        </details>
+        </Disclosure>
       )}
       {[...totals].map(([group, total]) => {
         const [currency, kind] = group.split(":")
@@ -385,7 +383,7 @@ export function InvestigationTransactionTable({
                     (row.direction === "debit"
                       ? row.account_label
                       : row.counterparty_raw)) ||
-                    "Not identified"}
+                    unnamedParty(row, "from_name")}
                 </button>
                 <PaymentLabelOrigin row={row} field="from_name" />
               </td>
@@ -398,7 +396,7 @@ export function InvestigationTransactionTable({
                     (row.direction === "credit"
                       ? row.account_label
                       : row.counterparty_raw)) ||
-                    "Not identified"}
+                    unnamedParty(row, "to_name")}
                 </button>
                 <PaymentLabelOrigin row={row} field="to_name" />
               </td>

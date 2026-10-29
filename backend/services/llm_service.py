@@ -5,6 +5,7 @@ LLM Service - handles AI API interactions for the investigation console.
 from __future__ import annotations
 
 import json
+import time
 from typing import Any, Dict, Optional
 
 import requests
@@ -146,6 +147,189 @@ class LLMExecutionContext:
                 "total_tokens": usage.total_tokens,
             }
         return content
+
+    def call_vision_json(
+        self,
+        prompt: str,
+        images_png: list[bytes],
+        *,
+        schema: dict[str, Any],
+        schema_name: str,
+        timeout: int = 120,
+        detail: str = "high",
+        max_output_tokens: int = 8000,
+        image_labels: list[str] | None = None,
+    ) -> str:
+        """One page-image request with schema-enforced JSON output (OpenAI only).
+
+        Raises on any failure (no key, unsupported provider, API error, refusal,
+        truncated output) so callers fail closed. The images are never logged or
+        remembered; only their count and size are.
+        """
+        import base64
+
+        self.last_prompt = prompt
+        self.last_raw_response = None
+        self.last_usage = None
+        self.last_request_arguments = None
+        self.last_response_metadata = {}
+        from services.ai_model_capabilities import require_images
+
+        if self.provider not in ("openai", "deepseek"):
+            raise ValueError(f"Page-image reading is not available for provider {self.provider}")
+        # Never sent to a model that does not take images (a text-only model can answer without reading them).
+        require_images(self.provider, self.model_id, api_key=self.api_key or (DEEPSEEK_API_KEY if self.provider == "deepseek" else None),
+                       context="page-image request")
+        if self.provider == "deepseek":
+            return self._call_deepseek_vision(prompt, images_png, schema=schema, timeout=timeout,
+                                              max_output_tokens=max_output_tokens, image_labels=image_labels)
+        openai_client = self._client or client
+        if not openai_client:
+            raise ValueError("OpenAI client not initialized. OPENAI_API_KEY not set.")
+        content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
+        for index, image in enumerate(images_png):
+            if image_labels:
+                content.append({"type": "text", "text": image_labels[index]})
+            content.append({"type": "image_url", "image_url": {
+                "url": "data:image/png;base64," + base64.b64encode(image).decode("ascii"), "detail": detail}})
+        kwargs: Dict[str, Any] = {
+            "model": self.model_id,
+            "messages": [{"role": "user", "content": content}],
+            "response_format": {"type": "json_schema", "json_schema": {
+                "name": schema_name, "strict": True, "schema": schema}},
+            "timeout": timeout,
+        }
+        if self.model_id.startswith(("o1", "o3", "gpt-5")):
+            kwargs["max_completion_tokens"] = max_output_tokens
+        else:
+            kwargs["temperature"] = 0
+            kwargs["max_tokens"] = max_output_tokens
+        self.last_request_arguments = {"model": self.model_id, "images": len(images_png),
+                                       "image_bytes": sum(len(i) for i in images_png), "schema": schema_name}
+        response = openai_client.chat.completions.create(**kwargs)
+        self._remember_response(response)
+        choice = response.choices[0]
+        usage = response.usage
+        if usage:
+            self.last_usage = {
+                "prompt_tokens": usage.prompt_tokens,
+                "completion_tokens": usage.completion_tokens,
+                "total_tokens": usage.total_tokens,
+            }
+        if getattr(choice.message, "refusal", None):
+            raise ValueError("The model declined to read the page image")
+        if choice.finish_reason != "stop":
+            raise ValueError(f"The page-image reading was incomplete ({choice.finish_reason})")
+        text = choice.message.content
+        if not text:
+            raise ValueError("LLM returned empty response")
+        self.last_raw_response = text
+        return text
+
+    # DeepSeek page-image requests: thinking at its highest effort (Neil, 2026-10-28: example reading compared
+    # at max thinking). DeepSeek enforces no schema, so the schema is stated in the prompt and the answer is
+    # checked by the caller exactly as an OpenAI answer is.
+    DEEPSEEK_VISION_EFFORT = "max"
+    # Thinking counts against the answer's tokens; vision_reader reserves this many (DEEPSEEK_RESERVE_OUTPUT_TOKENS).
+    DEEPSEEK_VISION_MAX_TOKENS = 64000
+    # The longest silence allowed on the connection (DeepSeek sends keep-alive lines while it thinks); the answer as
+    # a whole is bounded by the request's timeout, checked as each piece arrives.
+    DEEPSEEK_READ_GAP_SECONDS = 300
+
+    def _call_deepseek_vision(self, prompt, images_png, *, schema, timeout, max_output_tokens, image_labels=None):
+        import base64
+
+        api_key = self.api_key or DEEPSEEK_API_KEY
+        if not api_key:
+            raise ValueError("DEEPSEEK_API_KEY is not set")
+        content: list[dict[str, Any]] = [{"type": "text", "text": prompt + "\n\nReturn only one JSON object that "
+                                          "follows this JSON schema exactly (no markdown fence):\n"
+                                          + json.dumps(schema, separators=(",", ":"))}]
+        for index, image in enumerate(images_png):
+            if image_labels:
+                content.append({"type": "text", "text": image_labels[index]})
+            content.append({"type": "image_url", "image_url": {
+                "url": "data:image/png;base64," + base64.b64encode(image).decode("ascii")}})
+        payload: Dict[str, Any] = {
+            "model": self.model_id,
+            "messages": [{"role": "user", "content": content}],
+            "response_format": {"type": "json_object"},
+            "thinking": {"type": "enabled"},
+            "reasoning_effort": self.DEEPSEEK_VISION_EFFORT,
+            "max_tokens": self.DEEPSEEK_VISION_MAX_TOKENS,
+        }
+        self.last_request_arguments = {"model": self.model_id, "images": len(images_png),
+                                       "image_bytes": sum(len(i) for i in images_png), "schema": "in prompt",
+                                       "reasoning_effort": self.DEEPSEEK_VISION_EFFORT}
+        # ``timeout`` bounds the whole answer by the clock: DeepSeek keeps a slow request open with blank keep-alive
+        # lines, which would restart a plain read timeout, so the body is read in pieces against a deadline.
+        deadline = time.monotonic() + timeout
+        response = requests.post(
+            "https://api.deepseek.com/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}", "content-type": "application/json"},
+            json=payload,
+            timeout=(10, min(timeout, self.DEEPSEEK_READ_GAP_SECONDS)),
+            stream=True,
+        )
+        # A watchdog closes the connection at the deadline whatever the body's framing (chunked, sized or
+        # close-delimited, compressed or not): a read blocked on it then fails and is reported as a timeout.
+        import threading
+        expired = threading.Event()
+
+        def expire():
+            expired.set()
+            # Shut the socket down first: that wakes a read already blocked on it (a bare close may not).
+            sock = getattr(getattr(response.raw, "_connection", None), "sock", None)
+            try:
+                if sock is not None:
+                    import socket
+                    sock.shutdown(socket.SHUT_RDWR)
+            except Exception:  # noqa: BLE001 - already closed
+                pass
+            response.close()
+        watchdog = threading.Timer(max(deadline - time.monotonic(), 0), expire)
+        watchdog.daemon = True
+        watchdog.start()
+        try:
+            response.raise_for_status()
+            body = bytearray()
+            try:
+                for chunk in response.iter_content(chunk_size=65536):
+                    if expired.is_set() or time.monotonic() > deadline:
+                        raise requests.exceptions.ReadTimeout(f"DeepSeek did not finish answering within {timeout}s")
+                    body.extend(chunk or b"")
+            except requests.exceptions.ReadTimeout:
+                raise
+            except Exception as error:
+                if expired.is_set():
+                    raise requests.exceptions.ReadTimeout(
+                        f"DeepSeek did not finish answering within {timeout}s") from error
+                raise
+            if expired.is_set():
+                raise requests.exceptions.ReadTimeout(f"DeepSeek did not finish answering within {timeout}s")
+        finally:
+            watchdog.cancel()
+            response.close()
+        data = json.loads(bytes(body).decode("utf-8").strip() or "{}")
+        # Usage first: an answer cut short is still billed, and the caller records what it cost.
+        usage = data.get("usage") or {}
+        self.last_usage = {
+            "prompt_tokens": usage.get("prompt_tokens"),
+            "completion_tokens": usage.get("completion_tokens"),
+            "total_tokens": usage.get("total_tokens"),
+            "reasoning_tokens": (usage.get("completion_tokens_details") or {}).get("reasoning_tokens"),
+            "prompt_cache_hit_tokens": usage.get("prompt_cache_hit_tokens"),
+        }
+        choices = data.get("choices") or []
+        if not choices:
+            raise ValueError("DeepSeek returned no answer")
+        if choices[0].get("finish_reason") != "stop":
+            raise ValueError(f"The page-image reading was incomplete ({choices[0].get('finish_reason')})")
+        text = str((choices[0].get("message") or {}).get("content") or "").strip()
+        if not text:
+            raise ValueError("DeepSeek returned an empty response")
+        self.last_raw_response = text
+        return text
 
     def _call_anthropic(
         self,

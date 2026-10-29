@@ -95,6 +95,23 @@ class VerifyLedgerTests(TestCase):
         result['metrics'] = harness.metrics(result)
         self.assertTrue(any('saved twice' in f for f in harness.safety_failures(result)))
 
+    def test_a_printed_period_saved_twice_in_two_ledger_accounts_fails_the_run_and_is_named(self):
+        # r15-hold-gaps: the live defect, a copy saved again into another ledger account.
+        first, second = str(uuid.uuid4()), str(uuid.uuid4())
+        periods = [_period('i1', self.original), _period('i2', self.copy)]
+        final = {'i1': dict(status='imported', source_document_id=first),
+                 'i2': dict(status='imported', source_document_id=second)}
+        other_account = [SimpleNamespace(**dict(vars(row), account_id='b')) for row in _rows(self.copy)]
+        ledger = self.verify(periods, final, {uuid.UUID(first): _rows(self.original), uuid.UUID(second): other_account})
+        self.assertEqual((ledger['printed_periods_saved_twice'], ledger['printed_periods_saved_twice_across_accounts']), (1, 1))
+        self.assertEqual(ledger['saved_twice_across_accounts'], ['a.pdf#1'])
+        result = dict(ledger=ledger, periods=periods, environment={})
+        result['metrics'] = harness.metrics(result)
+        self.assertTrue(any('more than one ledger account' in f for f in harness.safety_failures(result)))
+        # The same pair in one account is still a failure, without the account clause.
+        ledger = self.verify(periods, final, {uuid.UUID(first): _rows(self.original), uuid.UUID(second): _rows(self.copy)})
+        self.assertEqual(ledger['printed_periods_saved_twice_across_accounts'], 0)
+
     def test_two_statements_the_truth_tells_apart_are_not_saved_twice_even_with_equal_values(self):
         # Two quiet sections of one member: same account, dates and balances, no
         # payments, two printed statements (the real set has 16 such pairs).
@@ -176,6 +193,45 @@ class MetricsTests(TestCase):
         # A held period the system saved is a wrong one, like any offered one.
         periods[1].update(status='imported', auto_saved=True, can_import=True)
         self.assertEqual(harness.metrics(result)['overall']['wrongly_ready'], ['h.pdf#1'])
+
+
+class ReaderCoverageTests(TestCase):
+    """fin-holes E: a truth file with payments read with 0 payments fails the run (OPDMD66 Truist, 2026-10-27)."""
+
+    def _result(self, periods):
+        result = dict(periods=periods, ledger=dict(wrongly_admitted=[], duplicate_contributions=0), environment={})
+        result['metrics'] = harness.metrics(result)
+        return result
+
+    def test_a_truth_file_read_with_no_payment_fails_the_run_naming_its_layout(self):
+        truist = _truth('t.pdf#1', 't.pdf', family='truist')
+        known = _truth('k.pdf#1', 'k.pdf')
+        truths = {t['id']: t for t in (truist, known)}
+        periods = [_period('i1', truist, status='attention', can_import=False, read=dict(transactions=0, payment_rows=0)),
+                   _period('i2', known, read=dict(transactions=3, payment_rows=3))]
+        result = self._result(periods)
+        result['reader_coverage'] = harness.reader_coverage(periods, truths)
+        self.assertEqual(result['reader_coverage']['zero_payment_files'],
+                         [dict(filename='t.pdf', families=['truist'], truth_rows=3, statements_read=1)])
+        self.assertTrue(any('read with 0 payments' in f and 'truist' in f for f in harness.safety_failures(result)))
+
+    def test_payments_read_but_held_count(self):
+        # Rows read and held (no currency yet: the counted transactions are 0) are payments the reader got.
+        held = _truth('h.pdf#1', 'h.pdf')
+        periods = [_period('i1', held, status='attention', can_import=False, read=dict(transactions=0, payment_rows=3))]
+        self.assertEqual(harness.reader_coverage(periods, {held['id']: held})['zero_payment_files'], [])
+
+    def test_a_quiet_file_is_not_a_reader_gap_and_a_file_never_detected_is(self):
+        quiet = _truth('q.pdf#1', 'q.pdf', rows=[])
+        periods = [_period('i1', quiet, read=dict(transactions=0, payment_rows=0))]
+        coverage = harness.reader_coverage(periods, {quiet['id']: quiet})
+        self.assertEqual(coverage['zero_payment_files'], [])
+        self.assertEqual(harness.safety_failures(dict(self._result(periods), reader_coverage=coverage)), [])
+        # Nothing detected in a file whose truth has payments: no payment was read from it either.
+        missing = _truth('m.pdf#1', 'm.pdf')
+        periods.append(dict(_period(None, missing), status='not_detected', read={}))
+        coverage = harness.reader_coverage(periods, {t['id']: t for t in (quiet, missing)})
+        self.assertEqual([e['filename'] for e in coverage['zero_payment_files']], ['m.pdf'])
 
 
 class DrainTests(TestCase):

@@ -141,4 +141,84 @@ describe("AISettingsPage", () => {
       expect(screen.queryByDisplayValue("sk-ant-secret-value")).not.toBeInTheDocument()
     )
   })
+
+  it("shows the page-image chain in order, offers only models that read images, and saves the new order", async () => {
+    const chain = [
+      { provider: "deepseek", model_id: "deepseek-flash" },
+      { provider: "openai", model_id: "gpt-5.6-terra" },
+    ]
+    const withChain = {
+      ...settings,
+      models: [
+        { id: "gpt-5.6-terra", name: "GPT-5.6 Terra", provider: "openai", provider_configured: true, reads_images: true },
+        { id: "deepseek-flash", name: "DeepSeek V4.1 Flash", provider: "deepseek", provider_configured: true, reads_images: true },
+        { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", provider: "deepseek", provider_configured: true, reads_images: false },
+      ],
+      workloads: {
+        ...settings.workloads,
+        financial_vision: { label: "Statement page images", description: "Held statements", group: "Financial" },
+      },
+      routing: { ...settings.routing, financial_vision: { ...chain[0], chain } },
+    }
+    api.get.mockResolvedValue(withChain)
+    api.updatePolicy.mockResolvedValue({ ...withChain, policy_revision: 4 })
+    render(<MemoryRouter><AISettingsPage /></MemoryRouter>)
+    await screen.findByText("Provider connections")
+    fireEvent.click(screen.getByRole("button", { name: /Advanced model routing/ }))
+
+    const editor = await screen.findByTestId("model-chain")
+    expect(editor).toHaveTextContent("1. Reads first")
+    expect(editor).toHaveTextContent("2. If the one above fails or cannot prove its reading")
+    expect(screen.getByLabelText("Statement page images, model 1")).toHaveTextContent("DeepSeek V4.1 Flash")
+    expect(screen.getByLabelText("Statement page images, model 2")).toHaveTextContent("GPT-5.6 Terra")
+    // Both image models are in the chain and the text-only model is never offered: nothing left to add.
+    expect(screen.queryByRole("button", { name: "Add a fallback model" })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Move model 2 up" }))
+    fireEvent.click(screen.getByRole("button", { name: "Save routing" }))
+    await waitFor(() => expect(api.updatePolicy).toHaveBeenCalled())
+    const [, saved] = api.updatePolicy.mock.calls[0]
+    expect(saved.financial_vision).toEqual({ provider: "openai", model_id: "gpt-5.6-terra", chain: [chain[1], chain[0]] })
+  })
+
+  it("shows the DeepSeek only switch with who switched it, and saves it switched off", async () => {
+    const chain = [
+      { provider: "deepseek", model_id: "deepseek-flash" },
+      { provider: "openai", model_id: "gpt-5.6-terra" },
+    ]
+    const withSwitch = {
+      ...settings,
+      models: [
+        { id: "gpt-5.6-terra", name: "GPT-5.6 Terra", provider: "openai", provider_configured: true, reads_images: true },
+        { id: "deepseek-flash", name: "DeepSeek V4.1 Flash", provider: "deepseek", provider_configured: true, reads_images: true },
+      ],
+      workloads: {
+        ...settings.workloads,
+        financial_vision: { label: "Statement page images", description: "Held statements", group: "Financial" },
+      },
+      routing: {
+        ...settings.routing,
+        financial_vision: { ...chain[0], chain, deepseek_only: true, deepseek_only_changed_by: "neil@example.com",
+          deepseek_only_changed_at: "2026-10-28T03:30:00+00:00" },
+      },
+    }
+    api.get.mockResolvedValue(withSwitch)
+    api.updatePolicy.mockResolvedValue({ ...withSwitch, policy_revision: 4 })
+    render(<MemoryRouter><AISettingsPage /></MemoryRouter>)
+    await screen.findByText("Provider connections")
+    fireEvent.click(screen.getByRole("button", { name: /Advanced model routing/ }))
+
+    const box = await screen.findByTestId("deepseek-only")
+    expect(box).toHaveTextContent("On: only DeepSeek reads statements")
+    expect(box).toHaveTextContent("Last switched by neil@example.com")
+    const toggle = screen.getByRole("switch", { name: "Statement page images: DeepSeek only" })
+    expect(toggle).toBeChecked()
+    fireEvent.click(toggle)
+    expect(box).toHaveTextContent("Off: DeepSeek reads first")
+    fireEvent.click(screen.getByRole("button", { name: "Save routing" }))
+    await waitFor(() => expect(api.updatePolicy).toHaveBeenCalled())
+    const [, saved] = api.updatePolicy.mock.calls[0]
+    expect(saved.financial_vision.deepseek_only).toBe(false)
+    expect(saved.financial_vision.chain).toEqual(chain)
+  })
 })

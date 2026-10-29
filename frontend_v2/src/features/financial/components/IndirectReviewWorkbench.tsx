@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { useFinancialDraft } from "../stores/financial-drafts"
 import { useState, useRef } from "react"
@@ -549,11 +550,8 @@ export function IndirectReviewWorkbench({
             {selected.terms.map((term) => {
               const field = entries[term.id] ?? empty()
               return (
-                <details key={term.id} className="rounded border p-3">
-                  <summary>
-                    {term.sign === 1 ? "Add" : "Subtract"}: {term.label} ·{" "}
-                    {field.amount_input || "Unknown"}
-                  </summary>
+                <Disclosure key={term.id} className="rounded border p-3" label={<>{term.sign === 1 ? "Add" : "Subtract"}: {term.label} ·{" "}
+                    {field.amount_input || "Unknown"}</>}>
                   <div className="space-y-2 pt-2">
                     <label>
                       Amount ({currency || "choose currency"})
@@ -569,7 +567,7 @@ export function IndirectReviewWorkbench({
                     </label>
                     {sourceFields(term.id, field, false)}
                   </div>
-                </details>
+                </Disclosure>
               )
             })}
           </fieldset>
@@ -581,10 +579,7 @@ export function IndirectReviewWorkbench({
             {catalog.data.requirements.map((check) => {
               const field = checks[check.id] ?? empty()
               return (
-                <details key={check.id} className="rounded border p-3">
-                  <summary>
-                    {check.label} · {field.status}
-                  </summary>
+                <Disclosure key={check.id} className="rounded border p-3" label={<>{check.label} · {field.status}</>}>
                   <div className="space-y-2 pt-2">
                     <label>
                       <input
@@ -607,7 +602,7 @@ export function IndirectReviewWorkbench({
                     </label>
                     {sourceFields(check.id, field, true)}
                   </div>
-                </details>
+                </Disclosure>
               )
             })}
           </fieldset>
@@ -661,12 +656,9 @@ export function IndirectReviewWorkbench({
             evidence and any alternative explanations before recording a
             finding.
           </p>
-          <details>
-            <summary className="cursor-pointer text-sm">
-              Calculation notes
-            </summary>
+          <Disclosure label="Calculation notes">
             <p className="text-sm mt-2">{report.value.limitation}</p>
-          </details>
+          </Disclosure>
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={download}>
               Download indirect workpaper

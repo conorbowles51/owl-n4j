@@ -44,9 +44,16 @@ class AIModelPolicyTests(unittest.TestCase):
             set(PROVIDER_DEFAULTS),
             {"openai", "anthropic", "gemini", "deepseek"},
         )
-        for configuration in PROVIDER_DEFAULTS.values():
-            self.assertEqual(set(configuration), set(DEFAULT_POLICY))
-            validate_policy(configuration, require_configured_provider=False)
+        from unittest import mock
+        from services import ai_model_capabilities as cap
+        cap.clear_cache()
+        self.addCleanup(cap.clear_cache)
+        listed = {'deepseek-flash': {'text', 'image'}, 'deepseek-v4-pro': {'text'}}
+        with mock.patch.object(cap, '_fetch_deepseek', return_value=listed), \
+                mock.patch('services.ai_model_policy.DEEPSEEK_API_KEY', 'k'):
+            for configuration in PROVIDER_DEFAULTS.values():
+                self.assertEqual(set(configuration), set(DEFAULT_POLICY))
+                validate_policy(configuration, require_configured_provider=False)
 
 
 if __name__ == "__main__":

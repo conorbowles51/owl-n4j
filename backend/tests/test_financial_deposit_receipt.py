@@ -136,3 +136,93 @@ class ReceiptSaveTests(PaymentDocumentReviewTests):
         self.assertNotIn('document_review',statement)
         self.assertEqual(statement['transaction_count'],1)
         self.assertTrue(all(r['page_number']==1 for r in statement['rows']))
+
+
+class ReceiptSettlementTests(ReceiptSaveTests):
+    """A receipt whose deposit a saved statement records (receipt_settlement)."""
+
+    def receipt_document(self):
+        identifier = self.add_receipt()
+        return read_payment_document(self.db, case_id=self.case.id, evidence_file_id=self.wire.id, document_id=identifier)
+
+    def statement_payment(self, balance=13000, identifier='123456780040', **changes):
+        row = self.payment(**changes)
+        row.running_balance_minor = balance
+        self.acct.identifier_normalised = identifier
+        self.db.commit()
+        return row
+
+    def test_the_one_statement_payment_with_the_receipts_account_amount_and_balances_is_found(self):
+        from services.financial.receipt_settlement import receipt_payment
+        row = self.statement_payment()
+        self.assertEqual(receipt_payment(self.db, case_id=self.case.id, document=self.receipt_document()).id, row.id)
+
+    def test_anything_short_of_one_exact_payment_leaves_the_receipt_for_a_person(self):
+        from services.financial.receipt_settlement import receipt_payment
+        from postgres.models.enums import TransactionDirection
+        from datetime import date
+        for changes in (dict(balance=13100), dict(identifier='123499990040'), dict(identifier='123456780000'),
+                        dict(direction=TransactionDirection.debit), dict(transaction_date=date(2021, 3, 30)),
+                        dict(amount_minor=12100)):
+            with self.subTest(changes=changes):
+                self.tearDown(); self.setUp()
+                self.statement_payment(**changes)
+                self.assertIsNone(receipt_payment(self.db, case_id=self.case.id, document=self.receipt_document()))
+        self.tearDown(); self.setUp()
+        self.statement_payment(); self.statement_payment(description='SYNTHETIC PAYMENT TWO')
+        self.assertIsNone(receipt_payment(self.db, case_id=self.case.id, document=self.receipt_document()))
+
+
+def two_deposit_source(page=83):
+    """Erica Andrews Pt 2 page 83: one teller receipt printing two deposits (L23)."""
+    lines=['Andrews Federal Credit Union','Henson Ridge Branch','Acct XXXXXX3320 HOPPER,ERICA',
+           'Eff: 04/07/23 Date: 04/07/23','Tlr: 1230 4:19pm',
+           'Deposit to BASE SHARE SAVINGS 0000','Prev Bal: 0.00','Amount: 1,000.00','New Bal: 1,000.00','Seq: #1268644',
+           'Deposit to FREE CHECKING 0040','Prev Bal: 478.68','Amount: 2,300.00','New Bal: 2,778.68','Seq: #1268645',
+           'Acct XXXXXX3320','Avail Bal S0000 1,000.00','Avail Bal S0040 2,778.68','Cash Dispense Clearing 3,300.00']
+    return dict(page_number=page,table_index=0,source_revision='c'*64,rows=[
+        dict(row_index=i,cells=[dict(column_index=0,expected_text=t,locator={**rectangle(20+i*24,x=20,width=min(500,len(t)*4),height=10),'page':page})])
+        for i,t in enumerate(lines)])
+
+
+class SeveralDepositsTests(unittest.TestCase):
+    """A receipt printing several deposits settles only when every deposit is its own saved payment (L23)."""
+
+    def test_each_deposit_block_is_read_and_the_page_stays_unsupported(self):
+        p = propose_deposit_receipt(two_deposit_source())
+        self.assertFalse(p['supported'])
+        blocks = p['deposits']['items']
+        self.assertEqual([(b['deposit_account']['value'], b['previous_balance']['value'], b['payment_amount']['value'],
+                           b['new_balance']['value']) for b in blocks],
+                         [('BASE SHARE SAVINGS 0000', '0.00', '1,000.00', '1,000.00'),
+                          ('FREE CHECKING 0040', '478.68', '2,300.00', '2,778.68')])
+        self.assertEqual(p['deposits']['effective_date']['raw'], '04/07/23')
+        self.assertEqual(p['deposits']['account_reference']['value'], 'XXXXXX3320')
+
+    def test_off_no_deposits_are_read(self):
+        from unittest import mock
+        from services.financial import deposit_receipt_proposal as drp
+        with mock.patch.object(drp, 'SEVERAL', False):
+            self.assertNotIn('deposits', propose_deposit_receipt(two_deposit_source()))
+
+    def test_every_deposit_must_be_its_own_payment(self):
+        from types import SimpleNamespace
+        from unittest import mock
+        from services.financial import receipt_settlement as rs
+        document = propose_deposit_receipt(two_deposit_source())
+        one, two = SimpleNamespace(id=1), SimpleNamespace(id=2)
+        with mock.patch.object(rs, '_payment', side_effect=[one, two]):
+            self.assertEqual(rs.receipt_payments(None, case_id=None, document=document), [one, two])
+        with mock.patch.object(rs, '_payment', side_effect=[one, None]):
+            self.assertEqual(rs.receipt_payments(None, case_id=None, document=document), [])
+        with mock.patch.object(rs, '_payment', side_effect=[one, one]):
+            self.assertEqual(rs.receipt_payments(None, case_id=None, document=document), [], 'one payment cannot be two deposits')
+        with mock.patch.object(rs, '_payment', side_effect=[one, two]), mock.patch.object(rs, 'SEVERAL', False):
+            self.assertEqual(rs.receipt_payments(None, case_id=None, document=document), [])
+
+    def test_a_block_missing_a_line_reads_nothing_for_it(self):
+        s = two_deposit_source()
+        del s['rows'][12]  # the second deposit's Amount line
+        block = propose_deposit_receipt(s)['deposits']['items'][1]
+        self.assertEqual(block['payment_amount']['value'], '')
+        self.assertTrue(block['payment_amount']['issues'])

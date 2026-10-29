@@ -19,6 +19,8 @@ still required. Admission binds the proof to the exact rows it cites (see
 ``statement_admission.source_proves_no_activity``): editing a cited balance,
 total, period date or the currency moves the basis to the investigator.
 """
+import os
+
 from services.financial.import_issues import calendar_date
 
 METHOD = 'printed-zero-totals-v1'
@@ -142,3 +144,90 @@ def printed_line_evidence(rows, statement, currency, sources, *, family):
                 period_start=statement.get('period_start'), period_end=statement.get('period_end'),
                 cited=[_cite(opening), _cite(closing), dict(page_number=page, text=text[:300],
                                                              locator=(line['cells'][0].get('locator') if line['cells'] else None))])
+
+
+# The summary components are also looked for under the component labels of the library profile the statement was
+# read with, and on a line that prints another block beside the summary. Off: the shared vocabulary on two-cell
+# lines only, as before.
+PROFILE_COMPONENT_LINES = os.environ.get('LOUPE_FINANCIAL_PROFILE_COMPONENT_LINES', '1').strip().lower() not in (
+    '0', 'false', 'off', 'no')
+COMPONENTS_METHOD = 'printed-zero-summary-components-v1'
+COMPONENTS_BASIS = 'printed_zero_summary_components'
+
+
+def summary_components_evidence(rows, statement, currency, sources, *, family):
+    """Source proof of a quiet period from a deposit account summary printing its credits and its debits as
+    components ('DEPOSITS & CREDITS', 'LESS CHECKS & DEBITS', 'LESS SERVICE CHARGES'), each zero, between its
+    equal beginning and ending balances, where the general reader proved the period from them (D7).
+
+    Verified only when, again on the proposal: nothing but excluded rows was read, exactly one opening and
+    one closing balance row are read and equal, every cited component line is found again with its label and
+    an amount of exactly zero (at least one per direction), the printed period is read and the review
+    currency is the currency read for the section. Admission binds the proof to the two balance rows
+    (``statement_admission.source_proves_no_activity``). Returns None when the reader did not prove the period
+    from such components (not this proof's question).
+    """
+    from services.financial.statement_engine import SUMMARY_COMPONENTS_BASIS, label_pairs, money
+    from services.financial.statement_engine_vocabulary import ASSET_COMPONENTS, label
+    engine = statement.get('engine') or {}
+    cited = engine.get('summary_component_rows') or []
+    if engine.get('basis') != SUMMARY_COMPONENTS_BASIS or not engine.get('proved') or not cited:
+        return None
+    if statement.get('assignment_only') or any(not row['excluded'] for row in rows):
+        return None
+
+    def refuse(reason, message):
+        return dict(verified=False, method=COMPONENTS_METHOD, family=family, reason=reason, message=message)
+    balances = [row for row in rows if row['kind'] == 'balance']
+    openings = [row for row in balances if row['fields'].get('description') == 'Opening Balance']
+    closings = [row for row in balances if row['fields'].get('description') == 'Closing Balance']
+    if len(openings) != 1 or len(closings) != 1 or len(balances) != 2:
+        return refuse('controls_missing', 'The opening and closing balances of this account section were not each read exactly once. Check the page before confirming that it contains no transactions.')
+    opening, closing = openings[0], closings[0]
+    if any(row['issues'] or row['fields'].get('balance') in (None, '') for row in (opening, closing)):
+        return refuse('control_unreadable', 'A printed balance of this account section could not be read. Check the page before confirming that it contains no transactions.')
+    if opening['fields']['balance'] != closing['fields']['balance']:
+        return refuse('endpoints_differ', 'The opening and closing balances differ, so money moved in this period. Check the page for transactions that were not read.')
+    components = {role: set(names) for role, names in ASSET_COMPONENTS.items()}
+    if PROFILE_COMPONENT_LINES and statement.get('engine_profile'):
+        # The reader proved the period from the component labels of the library profile it read the statement
+        # with ('Deposits, credits and interest' on Truist): the same printed labels are looked for again.
+        from services.financial.statement_engine_profiles import profile_named
+        profile = profile_named(statement['engine_profile'])
+        for role in components:
+            components[role] |= {label(p) for p in ((profile or {}).get('labels') or {}).get(role, ())}
+    directions, lines = set(), []
+    for page, table, index in cited:
+        source = next((s for s in sources if s['page_number'] == page and s['table_index'] == table), None)
+        line = next((r for r in (source or {}).get('rows', []) if r['row_index'] == index), None)
+        text = ' '.join(c.get('expected_text', '').strip() for c in (line or {}).get('cells', [])).strip()
+        cells = (line or {}).get('cells') or []
+        # A component's label cell and the amount cell right after it. Only a two-cell line, unless the
+        # summary prints another block beside it ('Interest summary'): then exactly one such pair on the line.
+        pairs = [(cells[0], cells[1])] if len(cells) == 2 else \
+            list(zip(cells, cells[1:])) if PROFILE_COMPONENT_LINES else []
+        hits = []
+        for name_cell, amount_cell in pairs:
+            name = label(name_cell.get('expected_text', ''))
+            role = next((r for r, names in components.items() if name in names), None)
+            if role:
+                hits.append((role, money(amount_cell.get('expected_text', '').strip(), 'dot'), name_cell))
+        found = hits[0][:2] if len(hits) == 1 else None
+        if found is None:
+            return refuse('line_missing', 'A printed deposit or withdrawal line of this account summary could not be found again. Check the page before confirming that it contains no transactions.')
+        if found[1] != 0:
+            return refuse('totals_not_zero', 'The printed deposits or withdrawals are not zero, so money moved in this period. Check the page for transactions that were not read.')
+        directions.add(found[0])
+        lines.append(dict(page_number=page, text=text[:300], locator=hits[0][2].get('locator')))
+    if directions != {'credit_component', 'debit_component'}:
+        return refuse('controls_missing', 'The printed deposits and withdrawals of this account summary were not both read. Check the page before confirming that it contains no transactions.')
+    if not calendar_date(statement.get('period_start') or '') or not calendar_date(statement.get('period_end') or ''):
+        return refuse('period_dates', 'The printed statement period was not read. Check the page before confirming that it contains no transactions.')
+    if not statement.get('currency') or currency != statement['currency']:
+        return refuse('currency_differs', 'The currency of this review differs from the currency read for this account section. Check the currency before confirming that it contains no transactions.')
+    return dict(verified=True, method=COMPONENTS_METHOD, basis=COMPONENTS_BASIS, family=family, reason=COMPONENTS_BASIS,
+                message='The statement prints zero deposits and zero withdrawals in its account summary, and its opening and closing balances are equal.',
+                page_number=opening.get('page_number'), opening_row_id=opening['id'], closing_row_id=closing['id'],
+                zero_total_row_ids=[], balance_minor=opening['fields']['balance'], currency=currency,
+                period_start=statement.get('period_start'), period_end=statement.get('period_end'),
+                cited=[_cite(opening), _cite(closing), *lines])

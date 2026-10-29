@@ -33,6 +33,9 @@ about 41 modules, with a test file per module in `backend/tests/`.
 
 These are standing instructions from Neil. They are not preferences.
 
+The ranked rules in `~/.claude/CLAUDE.md` apply here too and settle any conflict between rules (evidence
+integrity first, then no regressions, then measure before deciding). This section adds Loupe's own.
+
 - **Enterprise grade or don't ship it.** "Please please please this has to be
   thorough and correct."
 - **No assumptions.** "I need you to be more exact and stop making assumptions."
@@ -221,8 +224,9 @@ minutes. Always name the project.
 **Pushing `integration/evidence-main-reunion` is allowed.** Never push to main and
 never force-push.
 
-**Never modify git config.** The write procedure below sets both identities per
-commit instead.
+**Never modify git config in a sandbox session.** The write procedure below sets both identities per
+commit instead. On the deploy box, root's global git config carries `Neil Byrne <thenofisamizdat@gmail.com>`
+so the headless jobs commit as Neil; it was set deliberately and stays.
 
 **`user.name` and `user.email` are unset in the sandbox**, and git's guess
 (`beautiful-awesome-franklin@claude.(none)`) is not usable. Setting only the

@@ -30,6 +30,9 @@ def legacy_matching():
     for target in ('services.financial.statement_import_overlap.same_printed_period',
                    'services.financial.pending_statement_duplicates.same_printed_period'):
         stack.enter_context(patch(target, return_value=False))
+    # Nor the r15 printed-facts copy rules (the ledgers built here predate them).
+    stack.enter_context(patch('services.financial.pending_statement_duplicates.PRINTED_FACTS_COPIES', False))
+    stack.enter_context(patch('services.financial.statement_import_overlap.SAVED_PRINTED_PERIOD_ACROSS_BANKS', False))
     return stack
 
 
@@ -480,6 +483,32 @@ class ReaderIndependentCopyTests(TestCase):
         self.assertEqual((plan['set_aside'], plan['split_across_accounts']), ([], []))
         self.assertEqual([e['code'] for e in plan['held']], ['money_differs'])
 
+    def correct_bank(self, file, institution):
+        from services.financial.statement_details import StatementDetailsRequest, read_statement_details, update_statement_details
+        with self.f.SessionLocal() as db:
+            source = self.source_of(file)
+            before = read_statement_details(db, case_id=self.case_id, source_id=source.id)
+            details = before['details']
+            update_statement_details(db, case_id=self.case_id, source_id=source.id, actor=self.f.actor,
+                request=StatementDetailsRequest(expected_revision=before['revision'], holder=details['holder'],
+                    account_number=details['account_number'], institution=institution, currency=before['currency']))
+
+    def identities(self):
+        with self.f.SessionLocal() as db:
+            return {copy.document.evidence_file_id: copy.scope['identity'] for copy in admitted._load(db, self.case_id)}
+
+    def test_a_copy_is_compared_with_the_bank_a_person_corrected(self):
+        """BNB2 Monex 2836625 Nov/Dec 2025: the reprints were saved as 'BANCO MONEX', the bank originals as 'Monex';
+        with no payments, differing bank names refuse the set-aside even after a person corrected the reprints' bank."""
+        other, _ = self.save_twice(batch=False, second_request=lambda request: {**request, 'institution': 'Synthetic Bank Wording SA'})
+        self.assertNotEqual(self.identities()[other.id], self.identities()[self.primary.id])
+        self.correct_bank(other, self.f.request()['institution'])
+        self.assertEqual(self.identities()[other.id], self.identities()[self.primary.id])
+        plan = self.plan()
+        self.assertEqual((len(plan['set_aside']), plan['split_across_accounts'], plan['held']), (1, [], []), plan)
+        with patch.object(admitted, 'CORRECTED_DETAILS', False):
+            self.assertNotEqual(self.identities()[other.id], self.identities()[self.primary.id])
+
     def test_switch_off_is_the_r2_rule(self):
         self.save_split()
         with patch.object(admitted, 'READER_INDEPENDENT', False):
@@ -545,3 +574,81 @@ class ReaderIndependentRuleTests(TestCase):
     def test_split_account_is_decided_last(self):
         left = self.copy()
         self.assertEqual(admitted._compare(self.copy(sha='s2', account='b', account_type='savings'), left), 'account_differs')
+
+
+class ContractAccountCopyTests(TestCase):
+    """2026-10-26 fin-queue3 L30c: Monex 2836625 reprints filed in the contract's old single account, their bank
+    originals in the contract's account of each currency (no payments, the same printed period and balances)."""
+
+    def pair(self, *, number='2836625', currency='MXN'):
+        from services.financial.accounts import TIER_CONTRACT_CURRENCY, TIER_INSTITUTION_ACCOUNT
+        stub = ReaderIndependentRuleTests().copy
+        original = stub(payments=(), account='compartment', identity='institution_contract_currency|monex|2836625|MXN')
+        reprint = stub(payments=(), account='legacy', sha='s2', identity='institution_account|banco monex|2836625')
+        for stub_copy, saved in ((original, '2026-01-02'), (reprint, '2026-01-01')):  # the reprint saved first
+            stub_copy.document.created_at = saved
+        original.account = (TIER_CONTRACT_CURRENCY, 'monex', '2836625', currency)
+        reprint.account = (TIER_INSTITUTION_ACCOUNT, 'monex', number, None)
+        return reprint, original
+
+    def test_a_copy_in_the_contract_s_old_account_is_set_aside_for_the_copy_in_its_currency_account(self):
+        reprint, original = self.pair()
+        self.assertIsNone(admitted._compare(reprint, original))
+        self.assertEqual(sorted([reprint, original], key=admitted._rank)[0], original, 'the currency account copy is kept')
+        self.assertIsNotNone(admitted._compare(original, reprint), 'never the other way round')
+        with patch.object(admitted, 'CONTRACT_ACCOUNT', False):
+            self.assertEqual(admitted._compare(reprint, original), 'other_bank_without_payments')
+        for reprint, original in (self.pair(number='2836626'), self.pair(currency='USD')):
+            self.assertIsNotNone(admitted._compare(reprint, original))
+
+
+class PrintedFolioTests(TestCase):
+    """(fin-queue3 L26) Two saved copies with no payments whose readers worded the bank differently are one printed
+    statement when both files' first pages print the same bank document folio and each file's reading lists only this
+    statement for its account, currency and dates (BNB2 Monex 2836625 Nov/Dec 2025 reprints: FOLIO D-4836586 /
+    D-4903559; the reprints were read by section, the bank's files over every page)."""
+
+    def pair(self, folios=('D-4836586', 'D-4836586'), sections=(1, 1)):
+        """``sections``: how many statements of this account, currency and dates each file's reading lists."""
+        stub = ReaderIndependentRuleTests().copy
+        original = stub(payments=(), identity='monex', section=(1, 2, 3, 4, 5, 6, 7))
+        reprint = stub(payments=(), identity='banco monex', sha='s2', section=(3, 4, 5, 6, 7))
+        for copy, count in ((original, sections[0]), (reprint, sections[1])):
+            listed = dict(account_reference='123', currency='MXN', period_start='2024-01-01', period_end='2024-01-31')
+            copy.original.update(statement_id='x', statement_choices=[dict(listed, id='x')] + [
+                dict(listed, id=f'other{i}') for i in range(count - 1)] + [dict(listed, id='usd', currency='USD')])
+        original.folio, reprint.folio = folios
+        return reprint, original
+
+    def test_the_same_printed_folio_proves_a_copy_without_payments(self):
+        reprint, original = self.pair()
+        self.assertIsNone(admitted._compare(reprint, original))
+        self.assertTrue(admitted._same_printed_folio(reprint, original))
+
+    def test_another_folio_two_sections_of_the_period_or_the_same_file_hold(self):
+        for reprint, original in (self.pair(folios=('D-4836586', 'D-4903559')), self.pair(folios=(None, None)),
+                                  self.pair(sections=(1, 2)), self.pair(sections=(2, 1))):
+            self.assertEqual(admitted._compare(reprint, original), 'other_bank_without_payments')
+        reprint, original = self.pair()
+        reprint.file = original.file
+        self.assertEqual(admitted._compare(reprint, original), 'other_bank_without_payments')
+
+    def test_the_money_is_still_compared(self):
+        reprint, original = self.pair()
+        reprint.content = 'other balances'
+        self.assertEqual(admitted._compare(reprint, original), 'money_differs')
+
+    def test_the_folio_is_read_from_a_line_of_its_own_on_the_first_page(self):
+        from services.financial import candidate_sources as CS
+
+        def read(*lines):
+            cells = {(row, column): (text, None) for row, line in enumerate(lines) for column, text in enumerate(line)}
+            with patch.object(CS, '_snapshot', lambda *a: (None, None, None, None, [{}], None, None)), \
+                    patch.object(CS, '_table', lambda payload, index, page: (None, None, None, cells)):
+                return CS.printed_folio(None, case_id=None, evidence_file_id=None)
+        self.assertEqual(read(['FOLIO:', 'D-4836586'], ['CONTRATO:', '2836625']), 'D-4836586')
+        self.assertEqual(read(['Folio', '3202506022008)']), '3202506022008', 'Intercam: the closing mark is not part of it')
+        self.assertIsNone(read(['FOLIO', 'DESCRIPCION', 'DEPOSITOS']), 'a movement heading')
+        self.assertIsNone(read(['FOLIO', 'DESCRIPCION']), 'a heading, not a number')
+        self.assertIsNone(read(['FOLIO:', 'D-4836586'], ['FOLIO:', 'D-4903559']), 'two folios: none is the document')
+        self.assertIsNone(read(['FOLIO:', '1234']), 'too short to be a document number')

@@ -125,6 +125,62 @@ class RecordWithdrawalTests(TestCase):
         with self.assertRaisesRegex(PdfMappingError, 'Only a row you added or corrected'):
             self._change(source, record)
 
+    def _retained_zero_line(self):
+        """A saved statement that reconciles, plus a held printed line read without its date whose printed
+        amount is 0.00 (``Interest Charge on Cash Advances 0.00``)."""
+        saved = self.f.confirm(self.request().model_dump()); source = UUID(saved['source_document_id'])
+        with self.f.SessionLocal() as db:
+            document = db.get(FinancialSourceDocument, source)
+            metadata = deepcopy(document.metadata_)
+            cells = [dict(column_index=0, expected_text='Interest Charge on Cash Advances'),
+                     dict(column_index=1, expected_text='0.00')]
+            original = dict(id='1:0:99', kind='unresolved', fields={'charge_group': 'interest'}, excluded=False,
+                            issues=['Check this row in the transaction section. Its date or layout could not be read.'],
+                            page_number=1, table_index=0, row_index=99, source_cells=cells)
+            fields = dict(id='1:0:99', date='', reason='', excluded=False, direction=None, date_values={},
+                          description='', manual_page=None, amount_minor='', counterparty='', balance_minor=None,
+                          date_unprinted=False)
+            metadata['statement_import_original']['rows'].append(original)
+            metadata['statement_import_request']['rows'].append(deepcopy(fields))
+            metadata['statement_incomplete_records'] = [dict(id='1:0:99', fields=fields, original=original,
+                                                             missing_fields=['amount'], version=0)]
+            for key in ('statement_import_original', 'statement_import_request'):
+                metadata[key + '_sha256'] = _digest(metadata[key])
+            metadata.pop('statement_admission', None); document.metadata_ = metadata; db.commit()
+        return source
+
+    def test_a_printed_line_of_no_money_can_be_withdrawn_and_then_takes_no_part(self):
+        source = self._retained_zero_line()
+        [record] = self._records()['records']
+        self.assertTrue(record['can_withdraw'])
+        result = self._change(source, record, reason='Page prints 0.00: no payment.')
+        self.assertEqual((result['withdrawn'], result['changed']), (True, True))
+        listing = self._records()
+        self.assertEqual((listing['total'], listing['withdrawn_total']), (0, 1))
+        self.assertEqual(self._admitted(), 12)
+        with self.f.SessionLocal() as db:
+            from services.financial.saved_statement_admission import assess_saved_additions
+            document = db.get(FinancialSourceDocument, source)
+            from postgres.models.financial import FinancialStatementPeriod
+            period = db.scalar(select(FinancialStatementPeriod).where(FinancialStatementPeriod.source_document_id == source))
+            self.assertTrue(assess_saved_additions(db, document, period, document.metadata_, 'EUR')['can_import'])
+        [withdrawn] = listing['withdrawn']
+        restored = self._change(source, withdrawn, restore=True)
+        self.assertEqual((restored['withdrawn'], self._records()['total']), (False, 1))
+
+    def test_a_printed_line_with_money_or_switched_off_still_cannot_be_withdrawn(self):
+        from services.financial import record_withdrawal
+        source = self._retained_zero_line()
+        [record] = self._records()['records']
+        with patch.object(record_withdrawal, 'PRINTED_ZERO', False):
+            with self.assertRaisesRegex(PdfMappingError, 'Only a row you added or corrected'):
+                self._change(source, record)
+        for texts in (['Interest Charge on Purchases', '9.32'], ['0.00', 'Interest', '9.32'], ['Interest Charge', 'O.DO']):
+            item = dict(original=dict(kind='unresolved', fields={}, source_cells=[dict(expected_text=t) for t in texts]))
+            self.assertFalse(record_withdrawal.printed_zero(item), texts)
+        self.assertTrue(record_withdrawal.printed_zero(dict(original=dict(kind='unresolved', fields={},
+            source_cells=[dict(expected_text='Interest Charge on Cash Advances'), dict(expected_text='$0.00')]))))
+
     def test_an_admitted_added_row_is_set_aside_through_adjudication(self):
         source, repaired = self._retained_unreadable_amount()
         self._complete(source, repaired)

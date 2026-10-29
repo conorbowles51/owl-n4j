@@ -116,7 +116,8 @@ it("distinguishes suggestions and absent printed balances from an extracted zero
       onToggle={vi.fn()}
     />
   )
-  expect(screen.getAllByText("Suggested")).toHaveLength(2)
+  expect(screen.getAllByText("Suggested")).toHaveLength(1)
+  expect(screen.getByText("Auto")).toBeInTheDocument()
   expect(screen.getByText("Printed balance")).toBeInTheDocument()
   expect(screen.getByText("Not printed")).toBeInTheDocument()
   expect(screen.getByText("Not available")).toBeInTheDocument()

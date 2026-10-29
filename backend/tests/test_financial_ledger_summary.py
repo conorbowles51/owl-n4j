@@ -48,7 +48,11 @@ class LedgerSummaryTests(fixture.DuplicateTestCase):
             self.assertEqual(result['currencies'][0]['credits_minor'], '1234')
             # Captured rows now include reviewed account-party identity. Its
             # account/event reads are bounded per case, never per payment.
-            self.assertEqual(len(statements), 3 if capture else 1)
+            # Accounts are one query of their own, not joined to every payment. (Where the stored-category table
+            # exists, capture reads it in one more bounded query; this fixture does not build it.) Capture also reads
+            # the case's accounts once and its payments once to name unnamed ones from their matching payment
+            # (payment_party_matches).
+            self.assertEqual(len(statements), 6 if capture else 2)
             self.assertTrue(all('financial_source_documents.metadata' not in sql for sql in statements))
             if capture:
                 self.assertEqual(result['readings'][0]['source']['id'], str(doc.id))
@@ -109,12 +113,12 @@ class LedgerSummaryRouterTests(unittest.IsolatedAsyncioTestCase):
         from fastapi import HTTPException
         case,account=uuid4(),uuid4()
         with patch.object(router,'ledger_summary',return_value={}) as call:
-            await router.get_ledger_summary(case,account,None,None,'db')
+            router.get_ledger_summary(case,account,None,None,'db')
             call.assert_called_once_with('db',case_id=case,account_id=account,account_ids=None,account_holders=None,start_date=None,end_date=None)
         for error,status in ((LedgerSummaryError('Invalid range'),422),(RuntimeError('private'),500)):
             with patch.object(router,'ledger_summary',side_effect=error):
                 with self.assertRaises(HTTPException) as caught:
-                    await router.get_ledger_summary(case,None,None,None,'db')
+                    router.get_ledger_summary(case,None,None,None,'db')
                 self.assertEqual(caught.exception.status_code,status)
                 self.assertNotIn('private',caught.exception.detail)
 
@@ -209,11 +213,11 @@ class LedgerCounterpartyRouterTests(unittest.IsolatedAsyncioTestCase):
         from fastapi import HTTPException
         case, account = uuid4(), uuid4()
         with patch('services.financial.ledger_summary.ledger_counterparties', return_value={}) as call:
-            await router.get_ledger_counterparties(case, account, None, None, 'db')
+            router.get_ledger_counterparties(case, account, None, None, 'db')
             call.assert_called_once_with('db', case_id=case, account_id=account, account_ids=None, account_holders=None, start_date=None, end_date=None)
         for error, status in ((LedgerSummaryError('Invalid range'),422), (RuntimeError('private'),500)):
             with patch('services.financial.ledger_summary.ledger_counterparties', side_effect=error):
                 with self.assertRaises(HTTPException) as caught:
-                    await router.get_ledger_counterparties(case,None,None,None,'db')
+                    router.get_ledger_counterparties(case,None,None,None,'db')
                 self.assertEqual(caught.exception.status_code,status)
                 self.assertNotIn('private',caught.exception.detail)

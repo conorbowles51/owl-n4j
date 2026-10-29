@@ -7,6 +7,7 @@ from postgres.models.evidence import EvidenceFile
 from services.financial.pdf_candidates import PdfMappingError, _digest
 from services.financial.statement_import import read_statement_import
 from services.financial.review_arithmetic import check_proposed_rows
+from services.financial.model_work import origin_field
 
 
 def review_progress(file, statement_id):
@@ -54,7 +55,7 @@ def save_progress(session, *, case_id, evidence_file_id, request, expected_revie
     check_proposed_rows(proposal, [r.model_dump() for r in request.rows])
     payload = request.model_dump(mode='json')
     saved = dict(request=payload, review_revision=_digest(payload), saved_at=datetime.now(timezone.utc).isoformat(),
-                 saved_by=dict(user_id=str(actor.user_id), name=actor.name))
+                 saved_by=dict(user_id=str(actor.user_id), name=actor.name, **origin_field(actor)))
     from services.financial.effective_statement_review import request_signature
     from services.financial.import_batches import assess, initial_request
     state, assessment = assess(proposal, payload)

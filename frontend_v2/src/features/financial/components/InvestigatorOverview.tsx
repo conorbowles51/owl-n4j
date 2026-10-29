@@ -1,6 +1,7 @@
 import { useInvestigatorPayments } from "../hooks/use-investigator-payments"
 import { useMemo, useState } from "react"
 import { ArrowRight, Files, BookOpenCheck, WalletCards } from "lucide-react"
+import { useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { useCaseworkEntries } from "@/features/workspace/hooks/use-casework"
 import { useFinancialStore } from "../stores/financial.store"
@@ -8,7 +9,6 @@ import { nearbyPayments } from "../lib/investigator-workspace"
 import { PaymentTotals } from "./InvestigationTransactionTable"
 import {
   InvestigationReadState,
-  WorkspaceHeading,
   WorkspaceScope,
 } from "./InvestigationWorkspaceParts"
 import { useStatementRegister } from "../hooks/use-statement-register"
@@ -17,6 +17,21 @@ import { PaymentComparison } from "./PaymentComparison"
 import { InvestigatorFindingEditor } from "./InvestigatorFindingEditor"
 import { OverviewStatementCoverage } from "./OverviewStatementCoverage"
 import { useFinancialAccess } from "../hooks/use-financial-access"
+import { useJudgementCounts } from "../hooks/use-judgements"
+import { categoryName } from "../hooks/use-payment-categories"
+import { compactMoney, groupMoney, minorToNumber } from "../lib/category-palette"
+import { formatLedgerAmount } from "../lib/ledger-format"
+import { paymentDay } from "../lib/investigator-workspace"
+import { InfoTip } from "./InfoTip"
+
+const heading = { fontFamily: "'Space Grotesk', ui-sans-serif, system-ui, sans-serif", letterSpacing: "-0.025em" }
+const eyebrow = "font-mono text-[11px] uppercase tracking-[0.12em]"
+const card = { boxShadow: "0 1px 0 #e4e3df, 0 8px 24px rgba(20,22,27,.05)" }
+const n = (value: number) => value.toLocaleString()
+const plural = (count: number, one: string, many = `${one}s`) => `${n(count)} ${count === 1 ? one : many}`
+const monthName = (day: string) =>
+  new Date(`${day}T00:00:00Z`).toLocaleDateString("en-GB", { month: "short", year: "numeric", timeZone: "UTC" })
+type Step = { name: string; detail: string; done: boolean }
 
 export function InvestigatorOverview({
   caseId,
@@ -39,6 +54,9 @@ export function InvestigatorOverview({
   )
   const [finding, setFinding] = useState(false)
   const navigate = useFinancialStore((state) => state.setMainView)
+  const go = useNavigate()
+  const judgements = useJudgementCounts(caseId)
+  const [chosenCurrency, setChosenCurrency] = useState("")
   const files = register.files.data ?? []
   const importedIds = new Set(
     register.imports.data?.files
@@ -51,18 +69,217 @@ export function InvestigatorOverview({
   const unknownDates = data.rows.filter(
     (row) => row.ordering_date_context === "statement_end_ordering_only"
   ).length
+  const toCheck =
+    register.imports.data?.files.reduce((sum, file) => sum + file.periods_with_checks, 0) ?? 0
+  const readyToSave =
+    register.imports.data?.files.reduce((sum, file) => sum + file.available_periods, 0) ?? 0
+  const uncategorised = data.rows.filter((row) => categoryName(row) === "Uncategorized").length
+  const calls = judgements.data?.case ?? {}
+  const openCalls = Number(calls.open ?? 0)
+  const guesses = Number(calls.inferred ?? 0)
+  const findingCount = findings.data?.total ?? findings.data?.entries.length ?? 0
+  const accountCount = new Set(data.rows.map((row) => row.account_id)).size
+  const registerReady = !register.files.isPending && !register.imports.isPending && !register.files.isError && !register.imports.isError
+  const judgementsHref = (status: string, strength?: string) =>
+    `/cases/${caseId}/financial?${new URLSearchParams({
+      view: "statements",
+      judgements: "1",
+      jStatus: status,
+      ...(strength ? { jStrength: strength } : {}),
+    })}`
+  // Money through the case, in each currency the scope holds (largest first).
+  const currencyCounts = new Map<string, number>()
+  for (const row of data.rows) currencyCounts.set(row.currency, (currencyCounts.get(row.currency) ?? 0) + 1)
+  const currencies = [...currencyCounts.keys()].sort(
+    (a, b) => (currencyCounts.get(b) ?? 0) - (currencyCounts.get(a) ?? 0) || a.localeCompare(b)
+  )
+  const currency = currencies.includes(chosenCurrency) ? chosenCurrency : currencies[0] || ""
+  const [money] = groupMoney(data.rows.filter((row) => row.currency === currency), () => ["all", "all"])
+  const days = data.rows.map(paymentDay).filter((day): day is string => !!day).sort()
+  const span = days.length ? `${monthName(days[0])} – ${monthName(days[days.length - 1])}` : "No dated payments"
+  const exact = (minor: bigint) => `${formatLedgerAmount(String(minor), currency).text} ${currency}`
+  // One next step: the first unfinished thing, in the order the work runs.
+  const next: { eyebrow?: string; title: string; sub: string; action: string; onClick: () => void } =
+    !registerReady
+      ? { title: "Your case at a glance", sub: "Checking statement files…", action: "Open statements", onClick: () => navigate("statements") }
+      : !files.length
+        ? { title: "Start with a statement.", sub: "Upload the PDFs, check what Loupe read, then investigate.", action: "Open statement files", onClick: () => navigate("statements") }
+        : toCheck
+          ? { title: `${plural(toCheck, "statement needs", "statements need")} a check.`, sub: "Check them, then the ledger is complete.", action: `Check the ${plural(toCheck, "statement")} →`, onClick: () => navigate("statements") }
+          : notImported.length
+            ? { title: `${plural(notImported.length, "file has", "files have")} no saved statements yet.`, sub: "They may be waiting for review, still being read, or duplicates.", action: "See what needs saving →", onClick: () => navigate("statements") }
+            : uncategorised
+              ? { title: `${plural(uncategorised, "payment has", "payments have")} no category yet.`, sub: "Give each one a category so every total breaks down.", action: `Categorise ${n(uncategorised)} →`, onClick: () => navigate("transactions") }
+              : openCalls
+                ? { title: `${plural(openCalls, "call")} Loupe made ${openCalls === 1 ? "is" : "are"} waiting for a look.`, sub: "Confirm the ones that look right, correct the rest.", action: "Spot-check Loupe →", onClick: () => go(judgementsHref("open")) }
+                : !findingCount
+                  ? { title: "The ledger is checked.", sub: "Follow the money and record what needs explaining.", action: "Follow the money →", onClick: () => navigate("follow-money") }
+                  : { title: "The ledger is checked.", sub: `${plural(findingCount, "finding")} saved. Keep going, or build the report.`, action: "Open Findings & Observations →", onClick: () => navigate("findings") }
+  const steps: Step[] = [
+    { name: "Load", detail: plural(files.length, "file"), done: files.length > 0 },
+    { name: "Read", detail: `${n(importedIds.size)} saved${toCheck ? ` · ${n(toCheck)} to check` : ""}${notImported.length ? ` · ${n(notImported.length)} not saved` : ""}`, done: files.length > 0 && !toCheck && !notImported.length },
+    { name: "Check", detail: judgements.isSuccess ? (openCalls ? `${n(openCalls)} of Loupe's calls open` : "Loupe's calls checked") : "Loupe's calls", done: judgements.isSuccess && !openCalls },
+    { name: "Analyse", detail: `${plural(data.rows.length, "payment")}${uncategorised ? ` · ${n(uncategorised)} uncategorised` : ""}`, done: data.rows.length > 0 && !uncategorised },
+    { name: "Report", detail: findingCount ? plural(findingCount, "finding") : "No findings yet", done: findingCount > 0 },
+  ]
+  const now = steps.findIndex((step) => !step.done)
   return (
-    <div className="space-y-5 p-5">
-      <WorkspaceHeading
-        title="Financial investigation"
-        description="Start with the records you have, examine the money movements and record what needs explaining."
-        action={
-          <Button onClick={() => navigate("statements")}>
-            Add or review statements
-          </Button>
-        }
-      />
+    <div className="space-y-6 bg-[#f4f3ef] p-4 sm:p-5 dark:bg-transparent">
+      <section
+        aria-label="Next for you"
+        className="space-y-7 rounded-2xl p-5 text-[#f7f7f8] sm:p-8"
+        style={{ background: "radial-gradient(1100px 420px at 90% -20%, #3a1319 0%, #0b0c0f 62%)" }}
+      >
+        <div className="flex flex-wrap items-stretch gap-7">
+          <div className="flex min-w-0 flex-[1_1_420px] flex-col justify-center gap-3">
+            <span className={`${eyebrow} text-[#e33b4c]`}>Next for you</span>
+            <h2 className="text-3xl font-semibold leading-[1.05] sm:text-[42px]" style={heading}>
+              {next.title}
+              <br />
+              <span className="text-[#9a9da5]">{next.sub}</span>
+            </h2>
+            <div className="mt-1 flex flex-wrap gap-2.5">
+              <button
+                type="button"
+                onClick={next.onClick}
+                className="inline-flex items-center gap-2 rounded-lg bg-[#b41624] px-[18px] py-3 text-[15px] font-semibold text-white hover:bg-[#9a121f]"
+              >
+                {next.action}
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate("transactions")}
+                className="inline-flex items-center gap-2 rounded-lg border border-[#3b3d44] px-[18px] py-3 text-[15px] font-semibold text-[#f7f7f8] hover:bg-[#202126]"
+              >
+                Skip to transactions
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate("statements")}
+                className="inline-flex items-center gap-2 rounded-lg border border-[#3b3d44] px-[18px] py-3 text-[15px] font-semibold text-[#f7f7f8] hover:bg-[#202126]"
+              >
+                Add or review statements
+              </button>
+            </div>
+          </div>
+          <div className="flex min-w-0 flex-[0_1_380px] flex-col gap-3 rounded-[14px] border border-[#292b32] bg-[#17181c] p-5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className={`${eyebrow} text-[#9a9da5]`}>
+                Money in this scope{currency ? ` · ${currency}` : ""}
+              </span>
+              {currencies.length > 1 && (
+                <div role="group" aria-label="Currency" className="inline-flex rounded-lg border border-[#292b32] bg-[#0b0c0f] p-[3px]">
+                  {currencies.map((code) => (
+                    <button
+                      key={code}
+                      type="button"
+                      aria-pressed={code === currency}
+                      onClick={() => setChosenCurrency(code)}
+                      className={`rounded-md px-2.5 py-1 text-[12px] font-semibold ${code === currency ? "bg-[#f7f7f8] text-[#0b0c0f]" : "text-[#bfc1c8] hover:text-white"}`}
+                    >
+                      {code} · {n(currencyCounts.get(code) ?? 0)}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            {data.query.isPending ? (
+              <p role="status" className="text-[#bfc1c8]">Adding up payments…</p>
+            ) : (
+              <>
+                <div className="flex items-baseline justify-between" title={exact(money?.credit ?? 0n)}>
+                  <span className="text-[#bfc1c8]"><span aria-hidden="true">↓ </span>In</span>
+                  <span className="text-3xl font-semibold tabular-nums text-[#5fd39a]" style={heading}>
+                    +{compactMoney(minorToNumber(money?.credit ?? 0n, currency))}
+                  </span>
+                </div>
+                <div className="flex items-baseline justify-between" title={exact(money?.debit ?? 0n)}>
+                  <span className="text-[#bfc1c8]"><span aria-hidden="true">↑ </span>Out</span>
+                  <span className="text-3xl font-semibold tabular-nums" style={heading}>
+                    −{compactMoney(minorToNumber(money?.debit ?? 0n, currency))}
+                  </span>
+                </div>
+                <div className="h-px bg-[#292b32]" />
+                <div className="flex flex-wrap items-baseline justify-between gap-2 text-[14px]">
+                  <span className="text-[#bfc1c8]">{plural(accountCount, "account")} · {span}</span>
+                  <button type="button" onClick={() => navigate("transactions")} className="font-semibold text-[#f7f7f8] hover:underline">
+                    Open →
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+        <ol aria-label="Your progress on this case" className="grid grid-cols-2 gap-3 sm:grid-cols-5 sm:gap-2">
+          {steps.map((step, index) => {
+            const state = step.done ? "done" : index === now ? "now" : "todo"
+            return (
+              <li key={step.name} className="flex flex-col gap-2" aria-current={state === "now" ? "step" : undefined}>
+                <span
+                  aria-hidden="true"
+                  className="h-[5px] rounded-[3px]"
+                  style={{ background: state === "done" ? "#2fae6c" : state === "now" ? "#e33b4c" : "#292b32" }}
+                />
+                <span className="flex items-center gap-2">
+                  <span
+                    className="inline-flex size-6 items-center justify-center rounded-full text-[12px] font-semibold"
+                    style={
+                      state === "done"
+                        ? { background: "#2fae6c", color: "#0b0c0f" }
+                        : state === "now"
+                          ? { background: "#e33b4c", color: "#fff", boxShadow: "0 0 0 5px rgba(227,59,76,.18)" }
+                          : { background: "#202126", color: "#9a9da5", border: "1px solid #3b3d44" }
+                    }
+                  >
+                    {state === "done" ? "✓" : index + 1}
+                  </span>
+                  <span className={`text-base font-semibold ${state === "todo" ? "text-[#9a9da5]" : "text-[#f7f7f8]"}`} style={heading}>
+                    {step.name}
+                  </span>
+                  <span className="sr-only">{state === "done" ? "(done)" : state === "now" ? "(now)" : "(to do)"}</span>
+                </span>
+                <span className="pl-8 text-[13px] text-[#9a9da5]">{step.detail}</span>
+              </li>
+            )
+          })}
+        </ol>
+      </section>
       <WorkspaceScope caseId={caseId} />
+      <section aria-label="Jump in" className="space-y-3">
+        <h2 className="text-[26px] font-semibold" style={heading}>Jump in</h2>
+        <div className="grid gap-3.5 [grid-template-columns:repeat(auto-fit,minmax(240px,1fr))]">
+          <button type="button" onClick={() => navigate("follow-money")} className="flex min-h-[170px] flex-col gap-3 rounded-[14px] bg-[#3a6fd8] p-5 text-left text-white transition-transform hover:-translate-y-[3px]">
+            <span className={`${eyebrow} text-[#dbe6ff]`}>Follow the money</span>
+            <span className="text-[22px] font-semibold leading-tight" style={heading}>Where did the money go?</span>
+            <span className="mt-auto text-sm text-[#dbe6ff]">Trace a payment across accounts →</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate("transactions")}
+            className={`flex min-h-[170px] flex-col gap-3 rounded-[14px] p-5 text-left transition-transform hover:-translate-y-[3px] ${uncategorised ? "border-2 border-dashed border-[#d99a2b] bg-[#fdf0d5] text-[#5c3800]" : "bg-[#e4f4e9] text-[#1d6a3a]"}`}
+          >
+            <span className={`${eyebrow} ${uncategorised ? "text-[#8a5300]" : "text-[#1d6a3a]"}`}>Categorise</span>
+            <span className="text-[22px] font-semibold leading-tight tabular-nums" style={heading}>
+              {uncategorised ? `${plural(uncategorised, "payment has", "payments have")} no category yet` : "Every payment has a category"}
+            </span>
+            <span className="mt-auto text-sm">{uncategorised ? "Categorise them in bulk →" : "See where the money went →"}</span>
+          </button>
+          <button type="button" onClick={() => go(judgementsHref(openCalls ? "open" : "all", openCalls && guesses ? "inferred" : undefined))} className="flex min-h-[170px] flex-col gap-3 rounded-[14px] bg-[#0f8a7e] p-5 text-left text-white transition-transform hover:-translate-y-[3px]">
+            <span className={`${eyebrow} text-[#c9efe9]`}>Spot-check Loupe</span>
+            <span className="text-[22px] font-semibold leading-tight tabular-nums" style={heading}>
+              {judgements.isSuccess ? `${plural(Number(calls.total ?? 0), "call")} Loupe made for you` : judgements.isError ? "Loupe's calls could not be counted" : "Counting Loupe's calls…"}
+            </span>
+            <span className="mt-auto text-sm text-[#c9efe9]">
+              {openCalls ? `${n(openCalls)} open${guesses ? ` · start with the ${n(guesses)} guesses` : ""} →` : "See them all →"}
+            </span>
+          </button>
+          <button type="button" onClick={() => navigate("findings")} className="flex min-h-[170px] flex-col gap-3 rounded-[14px] bg-[#14161b] p-5 text-left text-white transition-transform hover:-translate-y-[3px]">
+            <span className={`${eyebrow} text-[#9a9da5]`}>Findings</span>
+            <span className="text-[22px] font-semibold leading-tight" style={heading}>Turn what you find into a report</span>
+            <span className="mt-auto text-sm text-[#bfc1c8]">{findings.isSuccess ? `${plural(findingCount, "finding")} so far →` : "Open Findings & Observations →"}</span>
+          </button>
+        </div>
+      </section>
       <InvestigationReadState data={data}>
         <PaymentTotals
           rows={data.rows}
@@ -76,7 +293,7 @@ export function InvestigatorOverview({
                 onOpen={(ids, title) => setOpen({ ids, title })}
               />
             ) : (
-              <section className="rounded-xl border bg-card p-6 space-y-3">
+              <section className="space-y-3 rounded-[14px] bg-card p-6" style={card}>
                 <Files className="text-primary" />
                 <h3 className="text-lg font-semibold">
                   Start with a statement
@@ -93,22 +310,19 @@ export function InvestigatorOverview({
             )}
             {!!comparisons.length && (
               <section
-                className="finance-panel rounded-xl border p-5 space-y-4"
-                data-finance-tone="review"
+                className="space-y-3 rounded-[14px] bg-card p-5"
+                style={card}
               >
-                <p className="finance-eyebrow text-xs font-medium uppercase tracking-wide">
+                <p className={`${eyebrow} text-[#1d4aa6] dark:text-[#9bb8f0]`}>
                   Money in, then money out
                 </p>
-                <h3 className="text-xl font-semibold">
+                <h3 className="text-xl font-semibold" style={heading}>
                   {comparisons.length} times money arrived and the next payment
                   left within a week
                 </h3>
                 <p className="text-sm text-muted-foreground">
-                  For each example, Loupe found money coming into an account,
-                  followed by its next recorded payment out within seven days.
-                  This is a starting point for review, not evidence of
-                  suspicious activity or proof that the incoming money funded
-                  the payment.
+                  A starting point for review, not proof one funded the other.
+                  <InfoTip text="For each example, Loupe found money coming into an account, followed by its next recorded payment out within seven days. This is a starting point for review, not evidence of suspicious activity or proof that the incoming money funded the payment." />
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <Button
@@ -139,11 +353,11 @@ export function InvestigatorOverview({
               </section>
             )}
             <section
-              className="finance-panel rounded-xl border p-5 space-y-3"
-              data-finance-tone="work"
+              className="space-y-3 rounded-[14px] bg-card p-5"
+              style={card}
             >
               <div className="flex items-center justify-between gap-2">
-                <h3 className="font-semibold text-lg">
+                <h3 className="text-lg font-semibold" style={heading}>
                   Saved investigation work
                 </h3>
                 <Button
@@ -185,9 +399,8 @@ export function InvestigatorOverview({
               ) : (
                 <>
                   <p className="text-sm text-muted-foreground">
-                    No findings saved yet. Write a question to follow up, or
-                    select payments and record what you noticed with the
-                    evidence attached.
+                    No findings saved yet.
+                    <InfoTip text="Write a question to follow up, or select payments and record what you noticed with the evidence attached." />
                   </p>
                   {canEdit && (
                     <Button variant="outline" onClick={() => setFinding(true)}>
@@ -200,12 +413,15 @@ export function InvestigatorOverview({
           </div>
           <aside className="space-y-4">
             <section
-              className="finance-panel rounded-xl border p-5 space-y-4"
-              data-finance-tone="review"
+              className="space-y-4 rounded-[14px] bg-card p-5"
+              style={card}
             >
               <div className="flex gap-2 items-center">
-                <BookOpenCheck size={19} className="finance-icon" />
-                <h3 className="font-semibold">Your statements</h3>
+                <BookOpenCheck size={19} className="text-[#c67a10]" />
+                <h3 className="font-semibold" style={heading}>
+                  Your statements
+                  <InfoTip text="These file counts cover the whole case. Saved statements are available for investigation, including statements with no transactions. Files not yet saved may be waiting for review, still being read, or duplicate copies. One file can contain several statements." />
+                </h3>
               </div>
               {register.files.isError || register.imports.isError ? (
                 <p role="alert" className="text-sm">
@@ -227,25 +443,15 @@ export function InvestigatorOverview({
                     </div>
                     <div className="flex justify-between">
                       <dt>Files with no saved statements yet</dt>
-                      <dd className="font-semibold">{notImported.length}</dd>
+                      <dd className={`rounded-md px-2 font-semibold tabular-nums ${notImported.length ? "bg-[#fdf0d5] text-[#8a5300]" : ""}`}>{notImported.length}</dd>
                     </div>
                     <div className="flex justify-between gap-3">
                       <dt>Statements ready to save together</dt>
-                      <dd className="font-semibold">
-                        {register.imports.data?.files.reduce(
-                          (sum, file) => sum + file.available_periods,
-                          0
-                        ) ?? 0}
-                      </dd>
+                      <dd className={`rounded-md px-2 font-semibold tabular-nums ${readyToSave ? "bg-[#e6efff] text-[#1f4fa8]" : ""}`}>{readyToSave}</dd>
                     </div>
                     <div className="flex justify-between gap-3">
                       <dt>Statements needing a check</dt>
-                      <dd className="font-semibold">
-                        {register.imports.data?.files.reduce(
-                          (sum, file) => sum + file.periods_with_checks,
-                          0
-                        ) ?? 0}
-                      </dd>
+                      <dd className={`rounded-md px-2 font-semibold tabular-nums ${toCheck ? "bg-[#fdf0d5] text-[#8a5300]" : ""}`}>{toCheck}</dd>
                     </div>
                   </dl>
                   {register.imports.data?.truncated && (
@@ -254,13 +460,6 @@ export function InvestigatorOverview({
                       record.
                     </p>
                   )}
-                  <p className="text-xs text-muted-foreground">
-                    These file counts cover the whole case. Saved statements are
-                    available for investigation, including statements with no
-                    transactions. Files not yet saved may be waiting for review,
-                    still being read, or duplicate copies. One file can contain
-                    several statements.
-                  </p>
                 </>
               )}
               {unknownDates > 0 && (
@@ -277,33 +476,30 @@ export function InvestigatorOverview({
                 See what needs saving
               </Button>
             </section>
-            <OverviewStatementCoverage caseId={caseId} active={active} />
             <section
-              className="finance-panel rounded-xl border p-5 space-y-3"
-              data-finance-tone="info"
+              className="space-y-3 rounded-[14px] bg-card p-5"
+              style={card}
             >
-              <WalletCards size={20} className="finance-icon" />
-              <h3 className="font-semibold">
+              <WalletCards size={20} className="text-[#c67a10]" />
+              <h3 className="font-semibold" style={heading}>
                 {new Set(data.rows.map((row) => row.account_id)).size} accounts
                 with payments in this scope
               </h3>
               <p className="text-sm text-muted-foreground">
-                Check account holders, statement periods and missing coverage in
-                Statements & accounts.
+                Holders, periods and coverage in Statements & accounts.
               </p>
               <Button variant="outline" onClick={() => navigate("statements")}>
                 Review accounts and coverage
               </Button>
             </section>
             <section
-              className="finance-panel rounded-xl border p-5 space-y-3"
-              data-finance-tone="info"
+              className="space-y-3 rounded-[14px] bg-card p-5"
+              style={card}
             >
-              <h3 className="font-semibold">Explore activity over time</h3>
-              <p className="text-sm text-muted-foreground">
-                Compare periods, open the entries behind a change and save your
-                explanation.
-              </p>
+              <h3 className="font-semibold" style={heading}>
+                Explore activity over time
+                <InfoTip text="Compare periods, open the entries behind a change and save your explanation." />
+              </h3>
               <Button variant="outline" onClick={() => navigate("trends")}>
                 Open Trends
               </Button>
@@ -311,6 +507,7 @@ export function InvestigatorOverview({
           </aside>
         </div>
       </InvestigationReadState>
+      <OverviewStatementCoverage caseId={caseId} active={active} />
       {open && (
         <PaymentComparison
           caseId={caseId}

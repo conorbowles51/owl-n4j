@@ -12,7 +12,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react"
-import { afterEach, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, expect, it, vi } from "vitest"
 import { page } from "vitest/browser"
 import { WorkspaceScope } from "./InvestigationWorkspaceParts"
 import { LedgerPanel } from "./LedgerPanel"
@@ -23,6 +23,9 @@ import {
 import { useFinancialDraftStore } from "../stores/financial-drafts"
 import { paymentFixture } from "../lib/payment-fixture.test-support"
 import type { LedgerTransaction } from "../api"
+
+// These tests read the dense table view of Transactions.
+beforeEach(() => localStorage.setItem("financial-transactions-table-view", "1"))
 
 const requests: URLSearchParams[] = []
 let currencyScopeFixture = false
@@ -249,8 +252,8 @@ it("applies native date inputs alongside bank, account, category and currency, r
   })
   await act(async () => {
     await page
-      .getByRole("combobox", { name: "Filter financial payments by category" })
-      .selectOptions("Transfers")
+      .getByRole("button", { name: /^Transfers, \d+ payments$/ })
+      .click()
   })
   fireEvent.click(screen.getByText("Filters (1)", { exact: true }))
   await act(async () => {
@@ -305,10 +308,8 @@ it("applies native date inputs alongside bank, account, category and currency, r
   expect(screen.getByLabelText("Transactions from")).toHaveValue("2021-01-01")
   expect(screen.getByLabelText("Transactions to")).toHaveValue("2021-01-31")
   expect(
-    screen.getByRole("combobox", {
-      name: "Filter financial payments by category",
-    })
-  ).toHaveValue("Transfers")
+    screen.getByRole("button", { name: /^Transfers, \d+ payments$/ })
+  ).toHaveAttribute("aria-pressed", "true")
   expect(
     screen.getByRole("combobox", { name: "Currency", hidden: true })
   ).toHaveValue("MXN")
@@ -319,10 +320,8 @@ it("applies native date inputs alongside bank, account, category and currency, r
   expect(screen.getByLabelText("Transactions from")).toHaveValue("")
   expect(screen.getByLabelText("Transactions to")).toHaveValue("")
   expect(
-    screen.getByRole("combobox", {
-      name: "Filter financial payments by category",
-    })
-  ).toHaveValue("Transfers")
+    screen.getByRole("button", { name: /^Transfers, \d+ payments$/ })
+  ).toHaveAttribute("aria-pressed", "true")
   fireEvent.click(
     screen.getByLabelText("Bank filter").querySelector("summary")!
   )

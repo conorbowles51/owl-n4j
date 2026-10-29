@@ -218,3 +218,10 @@ it("restores selected transfer identities only while the loaded payments agree",
     screen.getByText(/payments or possible pairs changed/)
   ).toBeInTheDocument()
 })
+it("says why Find possible transfers is unavailable when From is after To", () => {
+  mount()
+  fireEvent.change(screen.getByLabelText("Transfer start date"), { target: { value: "2024-02-01" } })
+  fireEvent.change(screen.getByLabelText("Transfer end date"), { target: { value: "2024-01-01" } })
+  expect(screen.getByRole("button", { name: "Find possible transfers" })).toBeDisabled()
+  expect(screen.getByRole("alert")).toHaveTextContent("The From date is after the To date.")
+})

@@ -72,6 +72,19 @@ export function parseNotesCsv(text: string) {
 }
 export const csvCell = (value: string) =>
   `"${(/^[\s]*[=+@-]/.test(value) ? "'" + value : value).replace(/"/g, '""')}"`
+/** A name's basis for the export: a model reading says so, with its citation, until a person confirms it. */
+function nameBasis(origin: NonNullable<LedgerTransaction["label_sources"]>["to_name"]) {
+  if (!origin) return ""
+  if (origin.source === "model_reading") {
+    const cited = origin.origin?.citation
+    const where = [cited?.file, cited?.page ? `page ${cited.page}` : ""].filter(Boolean).join(" ")
+    return `read by ${origin.origin?.model || "a model"}, not confirmed${where ? ` (${where})` : ""}`
+  }
+  if (origin.source === "investigator" && origin.confirmed_model_reading)
+    return origin.explanation || "confirmed by a person"
+  return origin.source
+}
+
 export function transactionCsv(rows: LedgerTransaction[]) {
   const headers = [
     "ref_id",
@@ -100,11 +113,11 @@ export function transactionCsv(rows: LedgerTransaction[]) {
     party(r, "from").name,
     party(r, "to").name,
     r.category || "Uncategorized",
-    r.label_sources?.from_name?.source ||
+    nameBasis(r.label_sources?.from_name) ||
       (party(r, "from").key.startsWith("unknown:")
         ? "not identified"
         : "recorded"),
-    r.label_sources?.to_name?.source ||
+    nameBasis(r.label_sources?.to_name) ||
       (party(r, "to").key.startsWith("unknown:")
         ? "not identified"
         : "recorded"),

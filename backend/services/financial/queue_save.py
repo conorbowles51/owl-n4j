@@ -113,7 +113,8 @@ def fully_reconciled(item, projection, file):
     summary = projection.summary
     untouched = not item.review_request and not (file is not None and review_progress(file, item.statement_key))
     return (projection.status == 'ready' and import_available(projection) and not summary.get('problems')
-            and not summary.get('problem_count') and (untouched or system_filled_only(item, file)))
+            and not summary.get('problem_count') and not summary.get('auto_save_hold')
+            and (untouched or system_filled_only(item, file)))
 
 
 def fill_confirmed(session, *, case_id, entries, owned_batch_id=None):
@@ -243,12 +244,22 @@ def save_statements(session, *, case_id, item_ids, actor, request_id=None, only_
     busy = set()
     if shas or identities:
         from sqlalchemy import or_
+        from services.financial import saved_reading_replacement
         matching = ([EvidenceFile.sha256.in_(shas)] if shas else []) + ([EvidenceFile.metadata_[
             page_identity.METADATA_KEY]['identity'].as_string().in_(identities)] if identities else [])
-        for file, key in session.execute(select(EvidenceFile, Item.statement_key)
+        found = list(session.execute(select(EvidenceFile, Item.statement_key, Item.status, Item.summary)
                 .join(Item, Item.file_id == EvidenceFile.id).join(Batch, Batch.id == Item.batch_id)
                 .where(Batch.case_id == case_id, Batch.status != 'removed', or_(*matching),
-                       Item.status.in_(('pending_import', 'imported')))):
+                       Item.status.in_(('pending_import', 'imported')))))
+        # An item imported as an empty legacy import (a "shell": no statement, no dates, nothing paid)
+        # saved nothing of this statement; the writer saves the statement and sets the shell aside
+        # (saved_reading_replacement). Off with the replacement switch.
+        shells = saved_reading_replacement.shell_document_ids(session, case_id, {
+            (summary or {}).get('source_document_id') for _, _, status, summary in found
+            if status == 'imported'} - {None}) if saved_reading_replacement.enabled() else set()
+        for file, key, status, summary in found:
+            if status == 'imported' and (summary or {}).get('source_document_id') in shells:
+                continue
             busy.add((file.sha256, key or ''))
             if pages_of(file):
                 busy.add((pages_of(file), key or ''))
@@ -276,6 +287,9 @@ def save_statements(session, *, case_id, item_ids, actor, request_id=None, only_
         if projection is None or not import_available(projection):
             held.append(_held(item, _not_ready_reason(projection) if projection is not None else
                               'No longer ready: open it in the queue'))
+        elif only_reconciled and projection.summary.get('auto_save_hold'):
+            # Balanced, but a fact the balances cannot prove is not proven (auto_save_guard).
+            held.append(_held(item, projection.summary['auto_save_hold']['sentence']))
         elif only_reconciled and not fully_reconciled(item, projection, files.get(item.file_id)):
             held.append(_held(item, 'Has a check or an edit: left for you'))
         else:
@@ -364,6 +378,9 @@ def _auto_save_once(session, *, case_id, batch_id, file_id, stored_checks=False)
     if entries:
         fill_confirmed(session, case_id=case_id, entries=entries, owned_batch_id=batch_id)
     file = session.get(EvidenceFile, file_id)
+    # A teller receipt whose deposit a saved statement already records is not a statement (receipt_settlement).
+    from services.financial.receipt_settlement import settle_receipts
+    settle_receipts(session, case_id=case_id, batch_id=batch_id, file_id=file_id, actor=SYSTEM_ACTOR)
     ids = [item.id for item in session.scalars(select(Item).where(Item.batch_id == batch_id,
            Item.file_id == file_id, Item.status == 'ready'))
            if (not item.review_request or system_filled_only(item, file))
@@ -553,6 +570,13 @@ BACKLOG_PER_ROUND = 30
 # bounded): a statement admission held is looked at again only after it changes.
 _BACKLOG_SEEN = OrderedDict()
 BACKLOG_SEEN_MAX = 100_000
+# Neil, 2026-10-25 (BNB2 queue): another case's backlog of statements the save holds (already saved through
+# another batch) took every round after each restart, so BNB2's ready statements were never reached. With this
+# switch each case with backlog gets its share of a round, starting after the case served last.
+# Reverse: LOUPE_FINANCIAL_BACKLOG_FAIR_CASES=0 (cases in id order, the first takes the round, as before).
+BACKLOG_FAIR_CASES = os.environ.get('LOUPE_FINANCIAL_BACKLOG_FAIR_CASES', '1').strip().lower() not in (
+    '0', 'false', 'off', 'no')
+_BACKLOG_LAST_CASE = ['']
 
 
 def backlog_choice(session, items):
@@ -633,11 +657,22 @@ def sweep_backlog(factory, *, budget_seconds=20.0, max_statements=BACKLOG_PER_RO
             by_case = {}
             for case_id, identity, _ in pending:
                 by_case.setdefault(case_id, []).append(identity)
+        share = None
+        if BACKLOG_FAIR_CASES and len(by_case) > 1:
+            # Each case gets its share of the round, and the case served first rotates, so one case's long
+            # backlog of statements the save holds cannot keep another case's ready statements waiting.
+            share = max(1, -(-max_statements // len(by_case)))
+            order = sorted(by_case, key=str)
+            start = next((i for i, case_id in enumerate(order) if str(case_id) > _BACKLOG_LAST_CASE[0]), 0)
+            by_case = OrderedDict((case_id, by_case[case_id]) for case_id in order[start:] + order[:start])
         for case_id, identities in by_case.items():
             if report['considered'] >= max_statements or (
                     budget_seconds is not None and time.monotonic() - started >= budget_seconds):
                 break
             identities = identities[:max_statements - report['considered']]
+            if share is not None:
+                identities = identities[:share]
+                _BACKLOG_LAST_CASE[0] = str(case_id)
             with factory() as db:
                 chosen = backlog_choice(db, list(db.scalars(select(Item).where(Item.id.in_(identities)))))
                 db.rollback()

@@ -290,7 +290,7 @@ function selectTab(name: string) {
   if (tab) fireEvent.mouseDown(tab)
   else {
     fireEvent.pointerDown(
-      screen.getByRole("button", { name: "More financial tools" }),
+      screen.getByRole("button", { name: /^More financial tools/ }),
       { button: 0, ctrlKey: false }
     )
     fireEvent.click(screen.getByRole("menuitem", { name }))
@@ -438,7 +438,7 @@ describe("FinancialPage", () => {
       screen.getByRole("button", { name: "Other financial records" })
     )
     fireEvent.click(
-      screen.getByRole("button", { name: "Imported statement payments" })
+      screen.getByRole("button", { name: "Statement payments" })
     )
     selectTab("Statements & accounts")
     fireEvent.click(
@@ -1012,7 +1012,7 @@ describe("FinancialPage authoritative Trends", () => {
       )
     ).toBeInTheDocument()
     fireEvent.click(
-      screen.getByRole("button", { name: "Imported statement payments" })
+      screen.getByRole("button", { name: "Statement payments" })
     )
     expect(screen.getByRole("heading", { name: "Trends" })).toBeInTheDocument()
   })
@@ -1069,7 +1069,7 @@ describe("FinancialPage authoritative Transactions", () => {
       )
     ).toBeInTheDocument()
     fireEvent.click(
-      screen.getByRole("button", { name: "Imported statement payments" })
+      screen.getByRole("button", { name: "Statement payments" })
     )
     expect(
       screen.getAllByText(
@@ -1123,7 +1123,7 @@ describe("FinancialPage authoritative Counterparties", () => {
       )
     ).toBeInTheDocument()
     fireEvent.click(
-      screen.getByRole("button", { name: "Imported statement payments" })
+      screen.getByRole("button", { name: "Statement payments" })
     )
     expect(
       screen.getByRole("heading", { name: "People & businesses" })

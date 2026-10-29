@@ -39,7 +39,10 @@ class BatchReadProjectionTests(TestCase):
                 identifier, item_id = uuid4(), uuid4()
                 name = f'synthetic-reading-{index}.pdf'
                 db.add(EvidenceFile(id=identifier, case_id=file.case_id, original_filename=name,
-                    stored_path=file.stored_path, sha256=file.sha256, status='processed', metadata_={}))
+                    stored_path=file.stored_path, status='processed', metadata_={},
+                    # Separate uploads (their own bytes): an unsaved upload of the very same bytes is the same
+                    # document, and the copy the copy rule keeps is not held by it (statement_import_overlap).
+                    sha256=f'{index + 1:064x}'))
                 db.add(EvidenceDocumentText(evidence_file_id=identifier, content=text.content,
                     content_sha256=text.content_sha256, character_count=text.character_count,
                     engine_job_id=text.engine_job_id, source_locations=deepcopy(text.source_locations)))

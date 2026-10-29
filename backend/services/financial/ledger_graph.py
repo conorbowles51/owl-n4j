@@ -2,6 +2,7 @@
 import hashlib
 import json
 from services.financial.ledger_summary import LedgerSummaryError
+from services.financial.ledger_snapshot import view_capture
 from services.financial.working_totals import working_totals_from_readings
 
 
@@ -9,7 +10,7 @@ from services.financial.working_totals import working_totals_from_readings
 def ledger_posting_graph(export, *, population='working'):
     if population not in ('working', 'verified'):
         raise LedgerSummaryError('Choose working or verified readings.')
-    document = json.loads(export.snapshot.content)
+    document, stamp = view_capture(export)
     ledger = document['ledger']
     if not document.get('export_ready') or not ledger.get('history_captured'):
         raise LedgerSummaryError('A posting graph requires a consistent ledger and source history.')
@@ -38,6 +39,6 @@ def ledger_posting_graph(export, *, population='working'):
             proof_class=row['proof_class'], category=row.get('category', ''),
             label_sources=row.get('label_sources', {})))
     return dict(case_id=ledger['case_id'], account_id=ledger['account_id'], start_date=ledger['start_date'], end_date=ledger['end_date'],
-        population=population, snapshot_sha256=export.snapshot.sha256, applied=False,
+        population=population, **stamp, applied=False,
         nodes=sorted(nodes.values(), key=lambda n:n['id']), edges=edges, currencies=totals['currencies'], excluded_rows=totals['excluded_rows'],
         limitation='One edge per current posting. Arrows show the account posting direction. Names may come from the statement, investigator edits, or description suggestions; each edge records its label origins. Name groups are local to each account and currency; equal names do not establish identity. Missing labels do not identify a party. Transfers are not paired in this graph; use the separate transfer scenario for explicit pairing assumptions.')

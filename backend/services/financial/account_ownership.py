@@ -128,28 +128,38 @@ def ownership_suggestions(session, *, case_id, accounts):
     """
     indexed = {a['id']: a for a in accounts}
     evidence = defaultdict(list)
-    documents = session.scalars(select(FinancialSourceDocument).where(
+    # Only the parts of each saved original read below are fetched: a case's source metadata is hundreds of MB
+    # (statement requests, page words of every original), and decoding all of it took most of this view's time.
+    metadata = FinancialSourceDocument.metadata_
+    original = metadata['statement_import_original']
+    documents = session.execute(select(FinancialSourceDocument.id, FinancialSourceDocument.evidence_file_id,
+        FinancialSourceDocument.sha256_at_ingestion, metadata['statement_account_id'], original['metadata']).where(
         FinancialSourceDocument.case_id == case_id,
-        FinancialSourceDocument.status == 'admitted').order_by(FinancialSourceDocument.id))
-    for document in documents:
-        metadata = document.metadata_ or {}
-        account_id = metadata.get('statement_account_id')
+        FinancialSourceDocument.status == 'admitted').order_by(FinancialSourceDocument.id)).all()
+    matching = []
+    for document_id, evidence_file_id, sha256, account_id, original_metadata in documents:
         if account_id not in indexed:
             continue
-        original = metadata.get('statement_import_original') or {}
-        original_metadata = original.get('metadata') or {}
+        original_metadata = original_metadata or {}
         # A subsequent correction to the account holder invalidates a proposed
         # identity until its source and corrected holder are reviewed together.
         account = indexed[account_id]
         if normalise_name(original_metadata.get('holder')) != normalise_name(account['holder_as_recorded']):
             continue
-        observations = holder_identifiers(original.get('sources') or [],
+        matching.append((document_id, evidence_file_id, sha256, account_id, original_metadata))
+    sources = {}
+    for start in range(0, len(matching), 200):
+        ids = [item[0] for item in matching[start:start + 200]]
+        sources.update(session.execute(select(FinancialSourceDocument.id, original['sources']).where(
+            FinancialSourceDocument.case_id == case_id, FinancialSourceDocument.id.in_(ids))).all())
+    for document_id, evidence_file_id, sha256, account_id, original_metadata in matching:
+        observations = holder_identifiers(sources.get(document_id) or [],
             account_reference=original_metadata.get('account_number'), holder=original_metadata.get('holder'))
         for observation in observations:
             evidence[account_id].append({**observation, 'account_id': account_id,
-                'source_document_id': str(document.id),
-                'evidence_file_id': str(document.evidence_file_id) if document.evidence_file_id else None,
-                'source_sha256': document.sha256_at_ingestion})
+                'source_document_id': str(document_id),
+                'evidence_file_id': str(evidence_file_id) if evidence_file_id else None,
+                'source_sha256': sha256})
     groups = defaultdict(dict)
     conflicts = []
     for account_id, observations in evidence.items():

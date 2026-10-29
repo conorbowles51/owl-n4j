@@ -24,6 +24,7 @@ from services.financial import import_batches as batches
 from services.financial import page_identity
 from services.financial import queue_save
 from services.financial import statement_import
+from services.financial import pending_statement_duplicates as pending_duplicates
 from tests import test_financial_statement_overlap as overlap_fixture
 
 try:
@@ -236,7 +237,7 @@ class PageCopyTests(TestCase):
         self.drain(self.batch(copy))
         self.assert_one_statement(self.primary, copy)
 
-    def _other_reader(self, file, pages=None):
+    def _other_reader(self, file, pages=None, account_type='savings'):
         """The file read by another reader: other bank wording and another product type
         (and, with ``pages``, the statement's pages grouped differently)."""
         real_read = statement_import.read_statement_import
@@ -244,7 +245,7 @@ class PageCopyTests(TestCase):
         def read(session, **kwargs):
             proposal = real_read(session, **kwargs)
             if str(kwargs.get('evidence_file_id')) == str(file.id) and proposal.get('metadata'):
-                proposal = {**proposal, 'metadata': {**proposal['metadata'], 'account_type': 'savings',
+                proposal = {**proposal, 'metadata': {**proposal['metadata'], 'account_type': account_type or proposal['metadata'].get('account_type'),
                                                      'institution': 'SYNTHETIC BANK SA INSTITUCION DE BANCA'}}
                 if pages:
                     proposal['statement_page_numbers'] = pages
@@ -272,13 +273,98 @@ class PageCopyTests(TestCase):
         self.assertIn('account_reference', disposition['matched_fields'])
 
     def test_without_page_identity_the_differently_read_copy_was_saved_twice(self):
-        # The defect this fixes (r9-engine-santander finding 2), kept as a check
-        # that the test above exercises the page rule and not another one.
+        # The defect r10 fixed with page identity (r9-engine-santander finding 2)
+        # and r15 with the printed facts: with both rules off it is saved twice,
+        # once in each ledger account. Kept as a check that the tests below
+        # exercise the printed-facts rule and not another one.
+        copy = self.copy()
+        first, second = self._other_reader(copy)
+        with first, second, patch.object(page_identity, 'ENABLED', False), \
+                patch.object(pending_duplicates, 'PRINTED_FACTS_COPIES', False):
+            self.drain(self.batch(self.primary, copy))
+        sources, rows = self.saved(self.primary, copy)
+        self.assertEqual(len(sources), 2)
+        self.assertEqual(len({self.account_of(source) for source in sources}), 2)
+
+    def account_of(self, source):
+        from postgres.models.financial import FinancialStatementPeriod
+        with self.f.SessionLocal() as db:
+            return db.scalar(select(FinancialStatementPeriod.account_id).where(
+                FinancialStatementPeriod.source_document_id == source.id))
+
+    # r15-hold-gaps: a copy of a statement already saved in the case, read into
+    # another ledger account (another product type and bank wording), with no
+    # page identity stored for either file (files saved before r10 have none).
+
+    def test_a_copy_read_into_another_ledger_account_is_set_aside_by_the_systems_sweep(self):
         copy = self.copy()
         first, second = self._other_reader(copy)
         with first, second, patch.object(page_identity, 'ENABLED', False):
             self.drain(self.batch(self.primary, copy))
+        disposition = self.assert_one_statement(self.primary, copy, basis='identical_financial_reading')
+        self.assertIn('payments_and_balances', disposition['matched_fields'])
+        self.assertIn('account_reference', disposition['matched_fields'])
+
+    def test_a_copy_read_into_another_ledger_account_after_the_original_was_saved_is_set_aside(self):
+        # The live order: the original saved in an earlier batch, the copy later.
+        with patch.object(page_identity, 'ENABLED', False):
+            self.drain(self.batch(self.primary))
+        copy = self.copy()
+        first, second = self._other_reader(copy)
+        with first, second, patch.object(page_identity, 'ENABLED', False):
+            self.drain(self.batch(copy))
+        self.assert_one_statement(self.primary, copy, basis='identical_financial_reading')
+
+    def test_a_persons_save_of_a_copy_read_into_another_ledger_account_is_set_aside(self):
+        with patch.object(page_identity, 'ENABLED', False):
+            self.drain(self.batch(self.primary))
+        copy = self.copy()
+        first, second = self._other_reader(copy)
+        with first, second, patch.object(page_identity, 'ENABLED', False):
+            with self.f.SessionLocal() as db:
+                proposal = statement_import.read_statement_import(db, case_id=self.f.case.id, evidence_file_id=copy.id)
+            self.assertEqual(proposal['metadata']['account_type'], 'savings')
+            receipt = statement_import.confirm_statement_import(session_factory=self.f.SessionLocal,
+                case_id=self.f.case.id, evidence_file_id=copy.id, request=batches.initial_request(proposal),
+                actor=self.f.actor, resolve_path=Path)
+        self.assertFalse(receipt['created'])
+        self.assertIsNone(receipt['source_document_id'])
         sources, rows = self.saved(self.primary, copy)
+        self.assertEqual([s.evidence_file_id for s in sources], [self.primary.id])
+        self.assertEqual(rows, 12)
+        with self.f.SessionLocal() as db:
+            decision = db.get(EvidenceFile, copy.id).metadata_['financial_duplicate_dispositions']['']
+        self.assertEqual((decision['status'], decision['basis']), ('ignored', 'identical_financial_reading'))
+        self.assertEqual(decision['retained']['evidence_file_id'], str(self.primary.id))
+
+    def test_a_differently_worded_reading_of_a_saved_statement_with_other_money_goes_to_a_person(self):
+        # The live pair saved after the wave-13 deploy: the same printed reference, product, currency and dates,
+        # the bank worded otherwise, and the two readers' money differs. Never saved again automatically.
+        with patch.object(page_identity, 'ENABLED', False):
+            self.drain(self.batch(self.primary))
+        other = self.copy(data=_pdf(OTHER_STATEMENT), revised=True)
+        first, second = self._other_reader(other, account_type=None)
+        with first, second, patch.object(page_identity, 'ENABLED', False):
+            self.drain(self.batch(other))
+        status, summary = self.items()[other.id]
+        self.assertNotEqual(status, 'imported')
+        self.assertEqual((summary.get('duplicate_disposition') or {}).get('status'), 'needs_comparison')
+        self.assertEqual(self.saved(self.primary, other)[0][0].evidence_file_id, self.primary.id)
+        self.assertEqual(len(self.saved(self.primary, other)[0]), 1)
+
+    def test_another_product_with_the_same_printed_reference_and_other_money_is_left_alone(self):
+        # Two products of one contract can print one reference and period: with
+        # other payments they are two statements, neither set aside nor held.
+        other = self.copy(data=_pdf(OTHER_STATEMENT), revised=True)
+        first, second = self._other_reader(other)
+        with first, second, patch.object(page_identity, 'ENABLED', False):
+            self.drain(self.batch(self.primary, other))
+        items = self.items()
+        for file in (self.primary, other):
+            status, summary = items[file.id]
+            self.assertNotEqual(status, 'duplicate_ignored')
+            self.assertNotEqual((summary.get('duplicate_disposition') or {}).get('status'), 'needs_comparison')
+        sources, _ = self.saved(self.primary, other)
         self.assertEqual(len(sources), 2)
 
     def test_a_different_statement_with_equal_metadata_is_not_a_copy(self):

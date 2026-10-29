@@ -14,6 +14,7 @@ import { beforeEach, expect, it, vi } from "vitest"
 import { FinancialBatchPanel } from "./FinancialBatchPanel"
 import { useBatchReview } from "../lib/batch-review-context"
 import { fetchAPI } from "@/lib/api-client"
+import { importJobs } from "@/test/statement-import-jobs"
 import { useFinancialDraftStore } from "../stores/financial-drafts"
 vi.mock("@/lib/api-client", async (original) => ({
   ...(await original<typeof import("@/lib/api-client")>()),
@@ -120,7 +121,7 @@ it("saves before next and previous, blocks navigation on failure and explains th
   }
   let fail = true
   const calls: string[] = []
-  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+  vi.mocked(fetchAPI).mockImplementation(importJobs(async (url, options) => {
     const current = url.includes("/items/second") ? "second" : "first"
     if (options?.method === "PUT") {
       calls.push(`save:${current}`)
@@ -160,7 +161,7 @@ it("saves before next and previous, blocks navigation on failure and explains th
         },
       } as never
     return batch as never
-  })
+  }))
   mount("/cases/case/financial?view=statements&batch=batch&batchItem=first")
   fireEvent.change(await screen.findByLabelText("Review holder"), {
     target: { value: "Corrected company" },
@@ -214,7 +215,7 @@ it("checks the same import after a lost response with the browser UUID API unava
   })
   let request = ""
   let submissions = 0
-  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+  vi.mocked(fetchAPI).mockImplementation(importJobs(async (url, options) => {
     if (url.includes("/confirm?")) {
       request = (options?.body as { request_id: string }).request_id
       submissions++
@@ -240,7 +241,7 @@ it("checks the same import after a lost response with the browser UUID API unava
         },
       } as never
     return batch as never
-  })
+  }))
   try {
     const first = mount()
     await screen.findByRole("button", { name: "Import 7 transactions" })
@@ -306,7 +307,7 @@ it.each([1280, 390])("keeps imported status explicit, saves before skipping comp
   await page.viewport(width, 900)
   const calls: string[] = []
   const summary = { total: 3, available: 1, blocked: 1, imported: 1, pending_import: 0, skipped: 0, duplicate_ignored: 0, assigned: 0, other: 0, available_with_payments: 1, available_no_activity: 0, available_other: 0 }
-  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+  vi.mocked(fetchAPI).mockImplementation(importJobs(async (url, options) => {
     const current = url.includes("/items/second") ? "second" : "first"
     if (options?.method === "PUT") {
       calls.push(`save:${current}`)
@@ -320,23 +321,26 @@ it.each([1280, 390])("keeps imported status explicit, saves before skipping comp
     if (url.includes("/items/")) return { ...item, id: current, filename: current === "first" ? "Already saved.pdf" : "Still unfinished.pdf", status: current === "first" ? "imported" : "attention", can_import: true } as never
     const group = new URLSearchParams(url.split("?")[1]).get("review_group")
     return { ...batch, statement_summary: summary, review_group: group, review_group_label: group === "unfinished" ? "Unfinished statements" : group === "needs_decision" ? "Statements with something to fix" : undefined } as never
-  })
+  }))
   mount("/cases/case/financial?view=statements&batch=batch&batchItem=first")
   expect(await screen.findByLabelText("Current batch statement status")).toHaveTextContent("Already saved to Financial")
-  await page.getByRole("button", { name: "Next statement with something to fix", exact: true }).click()
-  await waitFor(() => expect(screen.getByLabelText("Current batch statement status")).toHaveTextContent("Still unfinished.pdf"))
-  expect(calls).toEqual(["save:first", "next:first"])
-  await page.getByRole("button", { name: "Next statement with something to fix", exact: true }).click()
-  expect(await screen.findByText(/No further statements match this filter/)).toBeVisible()
-  expect(screen.getByLabelText("Current batch statement status")).toHaveTextContent("Still unfinished.pdf")
   await page.getByRole("button", { name: "Back to bulk import", exact: true }).click()
-  expect(await screen.findByText("Statements: Statements with something to fix")).toBeVisible()
+  expect(await screen.findByText("Statements: Unfinished statements")).toBeVisible()
   expect(screen.getByLabelText("Your batch progress")).toHaveTextContent("1 saved to Financial · 2 prepared reviews still to finish")
   await page.getByRole("button", { name: "Show already saved", exact: true }).click()
   await waitFor(() => expect(vi.mocked(fetchAPI).mock.calls.some(([url]) => url.includes("review_group=saved"))).toBe(true))
   await page.getByRole("button", { name: "Show unfinished statements", exact: true }).click()
   await screen.findByText("Statements: Unfinished statements")
   screen.getByLabelText("Your batch progress").scrollIntoView({ block: "start" })
-  await page.screenshot({ path: `/private/tmp/loupe-batch-progress-${width}.png`, element: screen.getByLabelText("Your batch progress") })
+  await page.screenshot({ path: `/tmp/loupe-batch-progress-${width}.png`, element: screen.getByLabelText("Your batch progress") })
+  cleanup()
+  // Since 303824c3 the next statement to fix comes from the review queue: the
+  // open statement is saved first, then the queue opens on this batch's files.
+  calls.length = 0
+  mount("/cases/case/financial?view=statements&batch=batch&batchItem=first")
+  expect(await screen.findByLabelText("Current batch statement status")).toHaveTextContent("Already saved.pdf")
+  await page.getByRole("button", { name: "Next statement with something to fix", exact: true }).click()
+  await waitFor(() => expect(screen.queryByLabelText("Current batch statement status")).not.toBeInTheDocument())
+  expect(calls).toEqual(["save:first"])
   cleanup()
 })

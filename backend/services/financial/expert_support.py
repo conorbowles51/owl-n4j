@@ -46,6 +46,7 @@ def build_expert_support(document, *, snapshot_sha256, code_version=None, source
             reason='No versioned independently reviewed extraction evaluation is attached to this snapshot. Software test counts are not measured extraction accuracy.'),
         tracing=dict(status='not_selected',
             reason='This ledger export does not capture a tracing scenario. Export the selected scenario separately with its source readings, assumptions and method comparisons.'),
+        model_work=model_work_inventory(document),
         completeness='incomplete_expert_packet')
 
     if imports is not None:
@@ -92,3 +93,30 @@ def build_expert_support(document, *, snapshot_sha256, code_version=None, source
         support['source_records']['limitation'] = ('Attributed custody reports are included where recorded; missing earlier history remains unknown. '
             'Recorded source hashes and optional fresh byte checks do not establish authenticity or all custody transfers.')
     return support
+
+
+def model_work_inventory(document):
+    """Work Claude did for a person in the captured rows that no person has confirmed: names it read and payments
+    it saved to the case. Listed as a limitation: a model's reading is not a person's until a person confirms it."""
+    names, saved, statements, confirmed_names = [], [], set(), 0
+    for reading in document['ledger']['readings']:
+        row = reading.get('row') or {}
+        for field in ('from_name', 'to_name'):
+            source = ((row.get('label_sources') or {}).get(field) or {})
+            if source.get('source') == 'model_reading':
+                cited = (source.get('origin') or {}).get('citation') or {}
+                names.append(dict(transaction_id=row.get('key'), field=field, value=row.get(field),
+                                  page=cited.get('page'), source_document_id=cited.get('source_document_id')))
+            elif source.get('confirmed_model_reading'):
+                confirmed_names += 1
+        work = reading.get('model_work') or {}
+        if work and work.get('statement_status') == 'not_confirmed':
+            saved.append(row.get('key'))
+            statements.add((reading.get('source') or {}).get('id'))
+    limitation = ('Work Claude did for a person, not yet confirmed by a person: '
+                  f'{len(names)} names read from the cited pages and {len(saved)} payments in {len(statements)} '
+                  'statements saved to the case. They are shown as Claude\'s, with their citations, and are not a '
+                  'person\'s reading until a person confirms them.')
+    return dict(status='listed', unconfirmed_names=len(names), unconfirmed_saved_payments=len(saved),
+                unconfirmed_statements=len(statements), confirmed_names=confirmed_names, names=names,
+                saved_payment_ids=saved, limitation=limitation)

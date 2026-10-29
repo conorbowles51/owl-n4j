@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { useEffect, useRef, useState } from "react"
 import { z } from "zod"
 import { Button } from "@/components/ui/button"
@@ -130,8 +131,7 @@ export function LedgerExportComparison({ caseId }: { caseId: string }) {
     setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
   return (
-    <details className="space-y-2 rounded border p-3">
-      <summary>Compare saved ledger exports</summary>
+    <Disclosure className="space-y-2 rounded border p-3" label="Compare saved ledger exports">
       <p className="text-sm">
         Choose two Loupe export ZIPs from this case. Their captured records and
         file hashes are checked on the server; the files are not added to case
@@ -196,8 +196,7 @@ export function LedgerExportComparison({ caseId }: { caseId: string }) {
             {result.packaging_or_generation_changed ? "changed" : "matches"}.
           </p>
           {result.readings.changed.length > 0 && (
-            <details>
-              <summary>Changed reading references (first 20)</summary>
+            <Disclosure label={<>Changed reading references (first 20)</>}>
               <ul>
                 {result.readings.changed.slice(0, 20).map((row) => (
                   <li key={row.id} className="break-all">
@@ -205,7 +204,7 @@ export function LedgerExportComparison({ caseId }: { caseId: string }) {
                   </li>
                 ))}
               </ul>
-            </details>
+            </Disclosure>
           )}
           <p className="text-sm">{result.limitation}</p>
           <Button variant="outline" onClick={download}>
@@ -213,6 +212,6 @@ export function LedgerExportComparison({ caseId }: { caseId: string }) {
           </Button>
         </section>
       )}
-    </details>
+    </Disclosure>
   )
 }

@@ -116,6 +116,8 @@ it("creates reusable categories, changes an automatic category, and recategorize
       }
     }
     const caseId = new URL(url, "http://test").searchParams.get("case_id")
+    if (url.includes("payment-categories/like"))
+      return { case_id: caseId, count: 0, transaction_ids: [] }
     if (url.includes("money-trails")) return { case_id: caseId, trails: [] }
     if (url.includes("ledger-accounts"))
       return { case_id: caseId, items: [], has_more: false, total: 0 }
@@ -165,7 +167,7 @@ it("creates reusable categories, changes an automatic category, and recategorize
       .selectOptions("25")
   })
   await act(async () => {
-    await page.getByRole("button", { name: "Manage categories" }).click()
+    await page.getByRole("button", { name: "New or manage categories" }).click()
   })
   await act(async () => {
     await page
@@ -195,23 +197,17 @@ it("creates reusable categories, changes an automatic category, and recategorize
       })
       .click()
   })
-  await screen.findByLabelText("Edit Category")
-  expect(screen.getByRole("dialog", { name: "Edit transaction" })).toBeVisible()
+  // The row chip opens the quick Categorise dialog: pick a tile, save.
+  await screen.findByRole("region", { name: "Or pick one" })
   await act(async () => {
     await page
-      .getByRole("combobox", { name: "Edit Category", exact: true })
-      .fill("Due diligence")
-  })
-  await act(async () => {
-    await page
-      .getByRole("button", { name: "Review changes", exact: true })
+      .getByRole("button", { name: /^Due diligence/ })
       .click()
   })
-  await screen.findByText(/Review changes to/)
+  // Walking the list: "Save 1 payment · next →" is offered; plain Save closes.
+  expect(screen.getByRole("button", { name: /^Save 1 payment · next/ })).toBeVisible()
   await act(async () => {
-    await page
-      .getByRole("button", { name: /Save changes to \d+ transaction/ })
-      .click()
+    await page.getByRole("button", { name: "Save", exact: true }).click()
   })
   await waitFor(() =>
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
@@ -238,6 +234,11 @@ it("creates reusable categories, changes an automatic category, and recategorize
     await page
       .getByRole("button", { name: "Categorize selected", exact: true })
       .click()
+  })
+  // The full field editor, with its review step, is one click away.
+  await screen.findByRole("region", { name: "Or pick one" })
+  await act(async () => {
+    await page.getByRole("button", { name: "Edit other fields…" }).click()
   })
   await screen.findByLabelText("Edit Category")
   expect(screen.getByText(/30 selected · EUR/)).toBeVisible()
@@ -282,7 +283,7 @@ it("creates reusable categories, changes an automatic category, and recategorize
   reloaded.unmount()
   show("another-case")
   await act(async () => {
-    await page.getByRole("button", { name: "Manage categories" }).click()
+    await page.getByRole("button", { name: "New or manage categories" }).click()
   })
   expect(
     await within(screen.getByRole("dialog")).findByText("Due diligence", {

@@ -177,24 +177,26 @@ it("lists only statements with something to fix, each saying what before it is o
   expect(screen.getByText("After that, the statement shows 1 more check.")).toBeVisible()
   // The split: what needs a person first, named for the signed-in person (no name here: "you").
   expect(screen.getByRole("tab", { name: /Needs you \(3\)/ })).toHaveAttribute("aria-selected", "true")
-  expect(screen.getByRole("tab", { name: /Loupe is handling \(4\)/ })).toBeVisible()
+  expect(screen.getByRole("tab", { name: /Not waiting on you \(4\)/ })).toBeVisible()
   expect(screen.getByText(/statement 7 of 54 in this file/)).toBeVisible()
   // Each row shows its period and printed balances, checkable against the PDF without opening it.
   expect(list.querySelectorAll('[aria-label="Period and printed balances"]')[1]).toHaveTextContent(
     "2021-01-01 to 2021-01-31 · opening 2,500.00 USD · closing 2,612.40 USD · 4 payments read"
   )
   expect(screen.getByLabelText("Statement status")).toHaveTextContent(
-    "Imported 49 · Waiting for you 2 · Ready to import 3 · Copies set aside 1 · Couldn't read 1"
+    "Imported 49 · Waiting for you 2 · Couldn't be read 1 · Ready to import 3 · Copies set aside 1"
   )
-  expect(screen.getByLabelText("Statement status")).toHaveTextContent(/^Total \d+: Imported 49/)
+  expect(screen.getByLabelText("Statement status")).toHaveTextContent(/^\d+ statements: Imported 49/)
   // Copies are behind their own entry, not in the queue.
   expect(screen.queryByText("Copy.pdf")).toBeNull()
-  fireEvent.click(screen.getByRole("tab", { name: /Loupe is handling/ }))
-  const handled = await screen.findByRole("list", { name: "What Loupe is handling" })
+  fireEvent.click(screen.getByRole("tab", { name: /Not waiting on you/ }))
+  // Ready (in progress) and copies (finished, set aside on purpose) are never one pile of pending work.
+  expect(await screen.findByRole("region", { name: "In progress" })).toHaveTextContent("Ready to import (3)")
+  const handled = await screen.findByRole("region", { name: "Set aside on purpose" })
   expect(handled).toHaveTextContent("Copies set aside (1)")
   fireEvent.click(within(handled).getAllByRole("button", { name: "Show them" }).at(-1)!)
   expect(await screen.findByText(/Set aside as a copy of Card statements.pdf/)).toBeVisible()
-  expect(screen.getByRole("note")).toHaveTextContent("Loupe is handling these. Nothing here needs you.")
+  expect(screen.getByRole("note")).toHaveTextContent("Nothing here needs you or is blocked.")
 })
 
 it("opens the statement itself at its problem, and Next moves to the next one with issues without reloading", async () => {
@@ -351,6 +353,85 @@ it("collapses a file the reader cannot handle yet into one line outside the wait
   expect(screen.getByText("Show their 2 statements")).toBeVisible()
 })
 
+it("lists a statement the reader got nothing out of under the reader fix, with its actions and the page-image outcome", async () => {
+  const gap = {
+    ...queue,
+    counts: { ...queue.counts, reader_fix: 1 },
+    reader_fix: [{ ...base, id: "g1", batch_id: "b1", filename: "CommitmentLetter (3).pdf", bucket: "reader_fix",
+      period_start: "", period_end: "", issue: "Enter a printed balance", reader_gap: true, held_bucket: "waiting",
+      reader_gap_line: "Loupe could not read this statement's layout yet: nothing was read from its pages. It has been reported.",
+      vision_reading: { status: "skipped", reason: "investigator_work", message: "",
+        line: "Not read from page images: you have saved work on it." } }],
+    reader_files: [{ file_id: "f1", filename: "CommitmentLetter (3).pdf", batch_id: "b1", statements: 1, file_statements: 1,
+      item_ids: ["g1"], message: "Loupe could not read this layout yet (1 statement): it has been reported so the reader can be taught it." }],
+  }
+  vi.mocked(fetchAPI).mockImplementation(async (url: string) => {
+    if (url.includes("/review/queue")) return gap as never
+    throw Error(`unexpected ${url}`)
+  })
+  mount("/cases/case/financial?view=statements&queue=1")
+  fireEvent.click(await screen.findByRole("button", { name: "Waiting for a reader fix 1" }))
+  expect(await screen.findByText(/could not read this layout yet \(1 statement\): it has been reported/)).toBeVisible()
+  fireEvent.click(screen.getByText("Show their 1 statements"))
+  expect(await screen.findByLabelText("Page images")).toHaveTextContent("Not read from page images: you have saved work on it.")
+  expect(screen.getByLabelText("Reader problem")).toHaveTextContent("It has been reported.")
+  expect(screen.getByRole("button", { name: "This isn't a statement" })).toBeVisible()
+})
+
+it("offers a reading from the page images beside the person's work, and saves it only on their click", async () => {
+  const mine = { holder: "Typed by hand", account_number: "1470015292431", institution: "Truist", currency: "USD",
+    period_start: "2024-01-12", period_end: "2024-02-12", opening_minor: null, closing_minor: "53117", payments: 0,
+    credits_minor: "0", debits_minor: "0" }
+  const offered = { ...mine, holder: "KENY V ALVARADO GOMEZ", opening_minor: "178270", payments: 41,
+    credits_minor: "469116", debits_minor: "594269" }
+  const withOffer = {
+    ...queue,
+    counts: { ...queue.counts, waiting: 1 },
+    items: [{ ...entries[1], vision_reading: { status: "offered", message: "A reading from the page images checks out.",
+      line: "Read from page images: A reading from the page images checks out.", offer: { id: "o1", mine, offered } } }],
+  }
+  const calls: string[] = []
+  vi.mocked(fetchAPI).mockImplementation(async (url: string, options?: unknown) => {
+    if ((options as { method?: string } | undefined)?.method === "POST") {
+      calls.push(url)
+      return { status: "attention" } as never
+    }
+    if (url.includes("/review/queue")) return withOffer as never
+    throw Error(`unexpected ${url}`)
+  })
+  mount("/cases/case/financial?view=statements&queue=1")
+  const panel = await screen.findByRole("region", { name: "Reading from the page images" })
+  expect(panel).toHaveTextContent("Typed by hand")
+  expect(panel).toHaveTextContent("KENY V ALVARADO GOMEZ")
+  expect(panel).toHaveTextContent("1,782.70 USD")
+  expect(calls).toEqual([])  // nothing is saved by showing it
+  fireEvent.click(screen.getByRole("button", { name: "Use this reading" }))
+  await waitFor(() => expect(calls).toHaveLength(1))
+  expect(calls[0]).toBe("/api/financial/statement-import/batches/b2/items/i2/page-image-offer/accept?case_id=case&offer_id=o1")
+})
+
+it("shows why a held card statement's account could not be confirmed, in full", async () => {
+  // fin-last4 B: one plain reason per cause, saying what a person can do; never cut short.
+  const line = "Read from page images: not accepted, because no reading of the page images proves it. DeepSeek could " +
+    "not prove it: the bank prints only the last 4 digits of this card (ending 8160) and no statement of it is " +
+    "confirmed in this case yet. Confirm one statement of this card and the rest can follow. It was not accepted as " +
+    "the first statement of this card because the account holder is not read from both the page images and the text."
+  const held = {
+    ...queue,
+    counts: { ...queue.counts, waiting: 1 },
+    items: [{ ...entries[1], vision_reading: { status: "not_proved", message: "", line } }],
+  }
+  vi.mocked(fetchAPI).mockImplementation(async (url: string) => {
+    if (url.includes("/review/queue")) return held as never
+    throw Error(`unexpected ${url}`)
+  })
+  mount("/cases/case/financial?view=statements&queue=1")
+  const shown = await screen.findByLabelText("Page images")
+  expect(shown).toHaveTextContent(line)
+  expect(shown.className).not.toMatch(/truncate|line-clamp|overflow-hidden|whitespace-nowrap/)
+  expect(shown.closest(".truncate, [class*='line-clamp']")).toBeNull()
+})
+
 it("never counts files removed from Financial as couldn't read, and says what they are", async () => {
   const removed = {
     ...queue,
@@ -367,7 +448,7 @@ it("never counts files removed from Financial as couldn't read, and says what th
   })
   mount("/cases/case/financial?view=statements&queue=1&queueList=unreadable")
   const status = await screen.findByLabelText("Statement status")
-  expect(status).toHaveTextContent("Couldn't read 1")
+  expect(status).toHaveTextContent("Couldn't be read 1")
   expect(status).toHaveTextContent("Files removed from Financial 2")
   expect(await screen.findByText(/Scan.pdf: PDF source preparation failed/)).toBeVisible()
   expect(screen.getByText(/2 files are not counted as couldn't read/)).toBeVisible()
@@ -389,7 +470,7 @@ it("after a fix inside a statement, refreshes the queue and its totals and says 
   fireEvent.click(await screen.findByRole("button", { name: "Save a field fix" }))
   const before = queueCalls()
   expect(await screen.findByLabelText("Result of your last save")).toHaveTextContent(
-    "Card statements.pdf (2020-10-08 to 2020-11-09): Saved. Still needs: 3 rows unreadable on page 7."
+    "Card statements.pdf (2020-10-08 to 2020-11-09): Saved. Still needed before it can be imported: opening balance, closing balance, account number, account holder and bank. Why it is held: 3 rows unreadable on page 7."
   )
   expect(queueCalls()).toBeGreaterThanOrEqual(before)
   expect(vi.mocked(fetchAPI).mock.calls.filter(([url]) => String(url).includes("/review/queue")).length).toBeGreaterThan(1)

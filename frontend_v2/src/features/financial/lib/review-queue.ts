@@ -4,6 +4,7 @@ import { z } from "zod"
 import { fetchAPI } from "@/lib/api-client"
 import { randomRequestId } from "@/lib/browser-crypto"
 import { formatLedgerAmount } from "./ledger-format"
+import { filledBySave, listWords, missingRequired } from "./statement-needs"
 import type { StatementImportReceipt } from "../components/StatementImportPanel"
 
 const entry = z.object({
@@ -40,6 +41,10 @@ const entry = z.object({
   /** True only when the proposed one-click fix leaves nothing else to fix. */
   fix_makes_ready: z.boolean().default(false),
   reader_file: z.boolean().optional(),
+  /** Nothing was read from pages that carry text: a reader problem, reported; `held_bucket` is the list it had its actions in. */
+  reader_gap: z.boolean().optional(),
+  reader_gap_line: z.string().optional(),
+  held_bucket: z.string().optional(),
   copy_of: z.string().nullish(),
   set_aside: z.boolean().optional(),
   /** "same_file_read": this upload's reading failed; the same bytes were read through another upload.
@@ -55,6 +60,21 @@ const entry = z.object({
   /** Every page the listed issue is on, and what the checks said about it (for plain instructions). */
   issue_pages: z.array(z.number()).default([]),
   issue_messages: z.array(z.string()).default([]),
+  /** Why Loupe could not settle it alone, in plain sentences (what the pages print, what the account holds). */
+  why: z.array(z.string()).default([]),
+  /** The latest outcome of reading its page images, in plain words (why it did not settle it, or why it was not read). */
+  vision_reading: z
+    .object({
+      status: z.string().nullish(),
+      reason: z.string().nullish(),
+      message: z.string().default(""),
+      line: z.string().default(""),
+      /** Rule 2: a reading that checks out, beside the person's saved work (values as compared). */
+      offer: z
+        .object({ id: z.string(), mine: z.record(z.string(), z.unknown()), offered: z.record(z.string(), z.unknown()) })
+        .nullish(),
+    })
+    .nullish(),
   /** Who saved the held work (their own corrections or added rows), when that is what is held. */
   worked_by: z.object({ user_id: z.string(), name: z.string() }).nullish(),
   /** Proposed values for missing details (value, its source, whether it is certain). */
@@ -455,17 +475,31 @@ export function importOutcome(receipt?: StatementImportReceipt) {
   }
 }
 
-/** Where a statement stands after a save, from the refreshed queue: one short line. */
+/**
+ * Where a statement stands after a save, from the refreshed queue: what the
+ * save filled, and when it still waits, exactly what is still needed and why.
+ */
 export function savedOutcome(data: ReviewQueue, entry: QueueEntry) {
   const same = (candidate: QueueEntry) => candidate.id === entry.id
   const waiting = data.items.find(same)
-  if (waiting)
-    return { held: true, message: `Saved. Still needs: ${waiting.issue || "a check"}.` }
+  const after = waiting ?? [...data.ready, ...data.filled, ...data.unreadable].find(same)
+  const filled = after ? filledBySave(entry, after) : []
+  const saved = filled.length ? `Saved your ${listWords(filled.map((need) => need.label))}.` : "Saved."
+  if (waiting) {
+    const missing = missingRequired(waiting)
+    const why = waiting.issue ? ` Why it is held: ${waiting.issue.replace(/\.?$/, ".")}` : ""
+    return {
+      held: true,
+      message: missing.length
+        ? `${saved} Still needed before it can be imported: ${listWords(missing.map((need) => need.label))}.${why}`
+        : `${saved} Still needed before it can be imported: ${waiting.issue || "a check"}.`,
+    }
+  }
   if (data.ready.some(same) || data.filled.some(same))
-    return { held: false, message: "Saved. Ready to import: use Import at the top of the queue." }
+    return { held: false, message: `${saved} Ready to import: use Import at the top of the queue.` }
   if (data.unreadable.some(same))
-    return { held: true, message: "Saved. Nothing could be read from it yet: open it to check its pages." }
-  return { held: false, message: "Saved. Nothing more is needed from you here." }
+    return { held: true, message: `${saved} Nothing could be read from it yet: open it to check its pages.` }
+  return { held: false, message: `${saved} Nothing more is needed from you here.` }
 }
 
 /** "opening 1,000.00 USD · closing 950.50 USD · 12 payments read": as printed, never a guessed zero. */

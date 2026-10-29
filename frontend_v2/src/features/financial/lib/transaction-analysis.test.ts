@@ -10,6 +10,7 @@ import {
   partySummaries,
   perspectiveSummary,
   sortAnalysisRows,
+  unnamedParty,
 } from "./transaction-analysis"
 import { sameTableView } from "./ledger-table-view"
 const row = (key: string, values: Partial<LedgerTransaction> = {}) =>
@@ -209,4 +210,40 @@ it("keeps a linked counterparty distinct from an identical printed name and expo
     filterAnalysis([linked, unlinked], filters).map((row) => row.key)
   ).toEqual(["linked"])
   expect(analysisTableView(filters).to_names).toEqual([key])
+})
+
+describe("unnamedParty", () => {
+  it("shows the stated reason for a side the statement does not name, else Not identified", () => {
+    const withReason = row("batch", {
+      to_name: null,
+      label_sources: {
+        to_name: { source: "missing", reason: "Payroll batch — the statement doesn’t list the employees" },
+      },
+    } as unknown as Partial<LedgerTransaction>)
+    expect(unnamedParty(withReason, "to_name")).toBe("Payroll batch — the statement doesn’t list the employees")
+    expect(party(withReason, "to").name).toBe("Payroll batch — the statement doesn’t list the employees")
+    expect(unnamedParty(row("plain", { to_name: "" }), "to_name")).toBe("Not identified")
+  })
+  it("treats a name from the matching payment as a suggestion that groups with the same account", () => {
+    const matched = row("matched", {
+      to_name: "Sister Co · Bank 0001",
+      label_sources: {
+        to_name: { source: "matched_payment", explanation: "Named from the matching payment in Sister Co · Bank 0001." },
+      },
+    } as unknown as Partial<LedgerTransaction>)
+    expect(party(matched, "to")).toMatchObject({ name: "Sister Co · Bank 0001", suggested: true })
+    expect(party(matched, "to").key).toBe(party(row("printed", { to_name: "Sister Co · Bank 0001" }), "to").key)
+  })
+  it("never totals unnamed sides with different reasons, or none, under one reason", () => {
+    const cash = row("cash", {
+      to_name: null,
+      label_sources: { to_name: { source: "missing", reason: "Cash withdrawal — no other party" } },
+    } as unknown as Partial<LedgerTransaction>)
+    const plain = row("plain", { to_name: "" })
+    const groups = partySummaries([cash, plain, cash], "to")
+    expect(groups.map((g) => [partyName(g.key), g.name, g.count]).sort()).toEqual([
+      ["Cash withdrawal — no other party", "Cash withdrawal — no other party", 2],
+      ["Not identified", "Not identified", 1],
+    ])
+  })
 })

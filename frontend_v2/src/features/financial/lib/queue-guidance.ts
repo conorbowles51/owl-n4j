@@ -21,15 +21,15 @@ export type QueuePerson = { id?: string | null; name?: string | null }
 const firstName = (name?: string | null) => (name || "").trim().split(/\s+/)[0] || ""
 
 /**
- * "Needs Maria": the person an item waits for. Held work someone saved
- * themselves (their corrections, rows they added) names them when they are
- * not the person looking; otherwise the signed-in user, or "you".
+ * "Needs you" when the item waits for the person looking; "Needs Sam" only when
+ * it waits on someone else: held work another person saved (their corrections,
+ * rows they added). Cases have no assigned reviewer (only owners and
+ * collaborators), so an item nobody has worked waits for whoever is looking.
  */
 export function needsLabel(user?: QueuePerson | null, entry?: Pick<QueueEntry, "worked_by">) {
   const worker = entry?.worked_by
   if (worker && worker.user_id !== (user?.id ?? "") && firstName(worker.name)) return `Needs ${firstName(worker.name)}`
-  const mine = firstName(user?.name)
-  return mine ? `Needs ${mine}` : "Needs you"
+  return "Needs you"
 }
 
 /** "Maria's" when someone else saved the held work, else "Your". */
@@ -94,7 +94,7 @@ export function guidanceFor(entry: QueueEntry, user?: QueuePerson | null, bucket
       steps: [
         openWhere,
         "Check that it is a bank or card statement and that the pages are legible.",
-        "If it is not a statement, choose Leave out. If it is, enter its opening and closing balances and its payments.",
+        "If it is not a statement, choose This isn't a statement. If it is, enter its opening and closing balances and its payments.",
       ],
       after: SAVES,
       action,
@@ -248,6 +248,42 @@ export function guidanceFor(entry: QueueEntry, user?: QueuePerson | null, bucket
         after: SAVES,
         action: "Open the statement",
       }
+    case "auto_save_check":
+      // It balances, but a fact the balances cannot prove is not proven: Loupe did not save it on its own.
+      return {
+        title: entry.issue || "Loupe could not prove every detail of this statement",
+        steps: [
+          openWhere,
+          "Check the detail named above against the page.",
+          "Correct it if it is wrong, then save the statement.",
+        ],
+        after: SAVES,
+        action,
+      }
+    case "saved_check":
+      // Already imported, but a check of the ledger finds a detail wrong or unproven: a person looks at the page.
+      return {
+        title: entry.issue || "A detail of this imported statement needs checking",
+        steps: [
+          "Open the statement and its PDF.",
+          "Check the detail named above against the page.",
+          "Correct the saved details, or set aside the statement if it is a copy.",
+        ],
+        after: "Once the saved statement is corrected or set aside, it leaves this list.",
+        action: "Open the statement",
+      }
+    case "copies_none_saved":
+      // Every upload of this statement was set aside as a copy of another one, and none of them was saved.
+      return {
+        title: entry.issue || "No copy of this statement is saved yet",
+        steps: [
+          openWhere,
+          "Check the statement against the page.",
+          "Save it. Its other copies then stay set aside.",
+        ],
+        after: SAVES,
+        action,
+      }
     case "no_activity":
       return {
         title: "No payments were read: confirm the period had none",
@@ -270,6 +306,19 @@ export function guidanceFor(entry: QueueEntry, user?: QueuePerson | null, bucket
       ],
       after: SAVES,
       action: "Choose the page",
+    }
+  // No payments and no printed balance were read (the server cannot save a
+  // statement with neither): say what to check first and what it needs.
+  if (reason === "reading" && /statement without transactions/i.test(entry.issue || ""))
+    return {
+      title: "No payments and no balances were read from this statement",
+      steps: [
+        openWhere,
+        "Check that it is a bank or card statement. If it is not, choose This isn't a statement.",
+        "If it is, enter the details listed below as Required and save. If it prints payments, add them in the statement.",
+      ],
+      after: SAVES,
+      action,
     }
   if (reason === "reading" && /unreadable/i.test(entry.issue || ""))
     return {
@@ -312,6 +361,9 @@ export const ISSUE_LABELS: Record<string, string> = {
   count: "Missing payments",
   no_activity: "No payments",
   reading: "Rows to check",
+  auto_save_check: "Not proven by its balances",
+  saved_check: "Imported, needs a check",
+  copies_none_saved: "No copy saved yet",
 }
 
 /** A label for any reason, including one this screen does not know yet. */
@@ -432,12 +484,16 @@ export function needsCount(counts: QueueCounts) {
   return counts.waiting + counts.unreadable + counts.unreadable_files
 }
 
-/** Everything Loupe moves on by itself; none of it needs her. */
+/**
+ * Everything that does not need her. ``settled`` parts are finished for good (set aside on purpose, never
+ * imported); the rest are still on their way into the ledger. The two must never read as one pile of pending work.
+ */
 export const HANDLED_PARTS: {
   list: "ready" | "filled" | "reader" | "copies" | "rechecking" | "saving" | "not_payment"
   count: (c: QueueCounts) => number
   label: string
   line: string
+  settled?: boolean
 }[] = [
   {
     list: "filled",
@@ -473,16 +529,28 @@ export const HANDLED_PARTS: {
     list: "copies",
     count: (c) => c.copies,
     label: "Copies set aside",
-    line: "Copies of statements already in the case. They count nothing.",
+    line: "Copies of statements already imported. Importing them would count the same money twice, so they are kept but count nothing.",
+    settled: true,
   },
   {
     list: "not_payment",
     count: (c) => c.not_payment ?? 0,
-    label: "Not payment statements",
-    line: "Fund statements: they list holdings, not payments. Set aside, counting nothing. Put one back if it is wrong.",
+    label: "Fund statements set aside",
+    line: "They list holdings, not payments in and out, so there is nothing to import. Put one back if it is wrong.",
+    settled: true,
   },
 ]
 
 export function handledCount(counts: QueueCounts) {
   return HANDLED_PARTS.reduce((sum, part) => sum + part.count(counts), 0)
+}
+
+/** Still on its way into the ledger, moved on by Loupe without her. */
+export function inProgressCount(counts: QueueCounts) {
+  return HANDLED_PARTS.filter((part) => !part.settled).reduce((sum, part) => sum + part.count(counts), 0)
+}
+
+/** Finished: set aside on purpose, never imported, counting nothing. Nothing about them is pending. */
+export function setAsideCount(counts: QueueCounts) {
+  return HANDLED_PARTS.filter((part) => part.settled).reduce((sum, part) => sum + part.count(counts), 0)
 }

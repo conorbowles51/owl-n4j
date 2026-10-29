@@ -76,7 +76,7 @@ it("fixes currency, bank and holder on the row itself, beside the shared fix, an
   fireEvent.change(within(row).getByLabelText("Bank for Savings.pdf"), { target: { value: "Banorte" } })
   fireEvent.click(within(row).getByRole("button", { name: "Save currency, bank" }))
   expect(await screen.findByLabelText("Result of your last save")).toHaveTextContent(
-    "Savings.pdf (2021-01-01 to 2021-01-31): Saved. Ready to import"
+    "Savings.pdf (2021-01-01 to 2021-01-31): Saved your currency. Ready to import"
   )
   expect(screen.queryByRole("dialog")).toBeNull()
   // The second statement of the file was the one changed, with only the changed fields.

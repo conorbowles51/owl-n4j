@@ -140,8 +140,12 @@ __all__ += ['FinancialImportBatch', 'FinancialImportBatchItem', 'FinancialImport
 from postgres.models.timeline_entry import TimelineEntry
 __all__ += ["TimelineEntry"]
 from postgres.models.evidence_upload import EvidenceUploadSession, EvidenceUploadGroup
+from postgres.models.activity_event import ActivityEvent
 __all__ += ["EvidenceUploadSession"]
 from postgres.models.financial_money_trails import FinancialMoneyTrail
+from postgres.models.financial_judgements import FinancialJudgement
 __all__ += ["FinancialMoneyTrail"]
 from postgres.models.financial_recovery import FinancialRecoveryRelease, FinancialRecoveryRun, FinancialRecoveryItem
 __all__ += ['FinancialRecoveryRelease', 'FinancialRecoveryRun', 'FinancialRecoveryItem']
+from postgres.models.financial_payment_category import FinancialPaymentCategory, FinancialCategoryModelCache, FinancialCategoryRule
+__all__ += ["FinancialPaymentCategory", "FinancialCategoryModelCache", "FinancialCategoryRule"]

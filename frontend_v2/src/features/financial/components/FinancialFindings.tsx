@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { Markdown } from "@/components/ui/markdown"
 import { FinancialFindingCard } from "./FinancialFindingCard"
 import { AddToTimelineDialog } from "@/features/timeline/components/AddToTimelineDialog"
@@ -94,7 +95,7 @@ export function FinancialFindings({
           </p>
         </div>
         {canEdit && (
-          <Button onClick={() => setEditing("new")}>Create finding</Button>
+          <Button className="bg-[#b41624] text-white hover:bg-[#9a121f]" onClick={() => setEditing("new")}>Create finding</Button>
         )}
       </header>
       <div className="flex gap-3 flex-wrap">
@@ -251,15 +252,12 @@ export function FinancialFindings({
             {entry.links.some(
               (link) => link.metadata.schema === indirectWorkpaperSchema
             ) ? (
-              <details>
-                <summary className="cursor-pointer">
-                  Written explanation and recorded amounts
-                </summary>
+              <Disclosure label="Written explanation and recorded amounts">
                 <Markdown
                   className="text-sm break-words mt-2"
                   content={entry.body}
                 />
-              </details>
+              </Disclosure>
             ) : entry.tags.includes("financial-workspace") ? (
               <div className="space-y-3 text-sm">
                 <Markdown
@@ -387,10 +385,7 @@ export function FinancialFindings({
               )
             })}
             {canEdit && !entry.tags.includes("financial-report") && (
-              <details className="rounded border p-3 space-y-2">
-                <summary className="cursor-pointer font-medium">
-                  Create a report from this note
-                </summary>
+              <Disclosure className="rounded border p-3 space-y-2" label="Create a report from this note">
                 <p className="text-sm">
                   Includes this note and any saved payment values and statement
                   references attached to it. The original PDFs are not included.
@@ -427,7 +422,7 @@ export function FinancialFindings({
                   entry={entry}
                   caseId={caseId}
                 />
-              </details>
+              </Disclosure>
             )}
             <a
               className="inline-block underline text-sm"
@@ -492,16 +487,12 @@ function SavedPaymentLinks({
   onOpen: (id: string) => void
 }) {
   const [page, setPage] = useState(0)
-  const [open, setOpen] = useState(ids.length <= 20)
   const byId = new Map(snapshots.map((row) => [row.key, row]))
   return (
-    <details
-      open={open}
-      onToggle={(event) => setOpen(event.currentTarget.open)}
+    <Disclosure
+      defaultOpen={ids.length <= 20}
+      label={`${ids.length} linked payments`}
     >
-      <summary className="cursor-pointer text-sm">
-        {ids.length} linked payments
-      </summary>
       <div className="flex flex-wrap gap-2">
         {ids.slice(page * 50, (page + 1) * 50).map((id, offset) => {
           const row = byId.get(id),
@@ -560,6 +551,6 @@ function SavedPaymentLinks({
           </Button>
         </div>
       )}
-    </details>
+    </Disclosure>
   )
 }

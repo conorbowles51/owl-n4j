@@ -45,7 +45,7 @@ from services.financial.candidate_materialization import preview_candidate_final
 from services.financial.candidate_statement_scopes import StatementScopesRequest
 from services.financial.account_parties import _account_party_state
 from routers.evidence import _resolve_stored_path
-from services.financial.ledger_snapshot import capture_ledger_export, ledger_export_archive
+from services.financial.ledger_snapshot import capture_ledger_export, capture_ledger_scope, ledger_export_archive
 from services.financial.ledger_summary import ledger_summary, LedgerSummaryError
 from services.financial.export_audit import record_prepared_export
 from services.financial.statement_balances import capture_statement_running_balances
@@ -93,6 +93,8 @@ def _ledger_case_permission(request: Request, payload: dict) -> tuple[str, str] 
 _require_ledger_case_access = case_access_dependency(_ledger_case_permission)
 
 
+from services.financial.view_cache import cached_view
+
 router = APIRouter(
     prefix="/api/financial",
     tags=["financial"],
@@ -132,7 +134,7 @@ class CandidateAmountAssessmentRequest(BaseModel):
 
 
 @router.get("/candidates/{candidate_id}/review")
-async def get_candidate_review(candidate_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+def get_candidate_review(candidate_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
     try:
         return read_candidate_review(db, case_id=case_id, candidate_id=candidate_id)
     except CandidateStoreError as exc:
@@ -143,7 +145,7 @@ async def get_candidate_review(candidate_id: UUID, case_id: UUID = Query(...), d
 
 
 @router.get("/candidate-mappings/{mapping_id}")
-async def get_candidate_mapping(mapping_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+def get_candidate_mapping(mapping_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
     try:
         return read_candidate_mapping(db, case_id=case_id, mapping_id=mapping_id)
     except CandidateStoreError as exc:
@@ -154,7 +156,7 @@ async def get_candidate_mapping(mapping_id: UUID, case_id: UUID = Query(...), db
 
 
 @router.get("/candidate-mappings")
-async def get_candidate_mappings(case_id: UUID = Query(...), limit: int = Query(25, ge=1, le=100),
+def get_candidate_mappings(case_id: UUID = Query(...), limit: int = Query(25, ge=1, le=100),
                                   offset: int = Query(0, ge=0), db: Session = Depends(get_db)):
     try:
         return list_candidate_mappings(db, case_id=case_id, limit=limit, offset=offset)
@@ -193,6 +195,15 @@ def run_ledger_trace(body: LedgerTraceInput, case_id: UUID = Query(...), db: Ses
     except Exception:
         logger.exception("Conditional tracing failed")
         raise HTTPException(status_code=500, detail="Tracing scenario could not be calculated.")
+
+
+@router.get("/ask-the-bank")
+def download_ask_the_bank(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    """Every payment of the case whose other side the case does not name, with what to ask the bank for (CSV)."""
+    from services.financial.party_requests import request_rows, requests_csv
+    content = requests_csv(request_rows(db, case_id))
+    return Response(content=content, media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="ask-the-bank-{str(case_id)[:8]}.csv"'})
 
 
 @router.get("/ledger-export")
@@ -415,7 +426,8 @@ async def assemble_saved_trace_support(case_id: UUID = Query(...), scenarios: Op
 
 
 @router.get("/ledger-counterparties")
-async def get_ledger_counterparties(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
+@cached_view('ledger-counterparties')
+def get_ledger_counterparties(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
         start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None), db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
     from services.financial.ledger_summary import ledger_counterparties
     try:
@@ -429,7 +441,8 @@ async def get_ledger_counterparties(case_id: UUID = Query(...), account_id: Opti
 
 
 @router.get("/ledger-trends")
-async def get_ledger_trends(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
+@cached_view('ledger-trends')
+def get_ledger_trends(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
         start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
         grouping: Literal["daily", "monthly"] = Query("monthly"), db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
     try:
@@ -444,7 +457,8 @@ async def get_ledger_trends(case_id: UUID = Query(...), account_id: Optional[UUI
 
 
 @router.get("/ledger-working-analysis")
-async def get_working_ledger_analysis(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
+@cached_view('ledger-working-analysis')
+def get_working_ledger_analysis(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
         start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
         grouping: Literal["daily", "monthly", "counterparty"] = Query("monthly"), db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
     from services.financial.working_totals import working_ledger_analysis
@@ -460,7 +474,8 @@ async def get_working_ledger_analysis(case_id: UUID = Query(...), account_id: Op
 
 
 @router.get("/ledger-working-summary")
-async def get_working_ledger_summary(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
+@cached_view('ledger-working-summary')
+def get_working_ledger_summary(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
         start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
         db: Session = Depends(get_db), include_contributions: bool = False, account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
     from services.financial.working_totals import working_ledger_summary
@@ -479,7 +494,8 @@ async def get_working_ledger_summary(case_id: UUID = Query(...), account_id: Opt
 
 
 @router.get("/ledger-summary")
-async def get_ledger_summary(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
+@cached_view('ledger-summary')
+def get_ledger_summary(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
         start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
         db: Session = Depends(get_db), include_contributions: bool = False, account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
     try:
@@ -497,7 +513,7 @@ async def get_ledger_summary(case_id: UUID = Query(...), account_id: Optional[UU
 
 
 @router.get("/requested-statement-coverage")
-async def get_requested_statement_coverage(case_id: UUID = Query(...), account_id: UUID = Query(...),
+def get_requested_statement_coverage(case_id: UUID = Query(...), account_id: UUID = Query(...),
         start_date: date = Query(...), end_date: date = Query(...), db: Session = Depends(get_db)):
     try:
         return requested_statement_coverage(db, case_id=case_id, account_id=account_id,
@@ -510,7 +526,7 @@ async def get_requested_statement_coverage(case_id: UUID = Query(...), account_i
 
 
 @router.get("/statement-periods/{period_id}/running-balances")
-async def get_statement_running_balances(period_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+def get_statement_running_balances(period_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
     try:
         return capture_statement_running_balances(db.get_bind(), case_id=case_id, period_id=period_id)
     except StatementCheckError as exc:
@@ -521,7 +537,7 @@ async def get_statement_running_balances(period_id: UUID, case_id: UUID = Query(
 
 
 @router.get("/statement-periods/{period_id}/source")
-async def get_statement_source(period_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+def get_statement_source(period_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
     try:
         return statement_source(db, case_id=case_id, period_id=period_id)
     except LedgerSourceError as exc:
@@ -532,7 +548,7 @@ async def get_statement_source(period_id: UUID, case_id: UUID = Query(...), db: 
 
 
 @router.get("/statement-checks")
-async def get_statement_checks(case_id: UUID = Query(...), offset: int = Query(0, ge=0), db: Session = Depends(get_db), include_native: bool = False, account_id: UUID | None = None):
+def get_statement_checks(case_id: UUID = Query(...), offset: int = Query(0, ge=0), db: Session = Depends(get_db), include_native: bool = False, account_id: UUID | None = None):
     try:
         return capture_statement_checks(db.get_bind(), case_id=case_id, offset=offset,
             **(dict(account_id=account_id) if account_id is not None else {}),
@@ -545,7 +561,8 @@ async def get_statement_checks(case_id: UUID = Query(...), offset: int = Query(0
 
 
 @router.get("/account-references")
-async def get_account_references(case_id: UUID = Query(...), offset: int = Query(0, ge=0),
+@cached_view('account-references')
+def get_account_references(case_id: UUID = Query(...), offset: int = Query(0, ge=0),
                                  search: str = Query('', max_length=128), show: Literal['missing','all'] = Query('missing'),
                                  db: Session = Depends(get_db)):
     from services.financial.account_mentions import account_references
@@ -557,7 +574,8 @@ async def get_account_references(case_id: UUID = Query(...), offset: int = Query
 
 
 @router.get("/statement-coverage")
-async def get_statement_coverage(case_id: UUID = Query(...), offset: int = Query(0, ge=0), db: Session = Depends(get_db), account_id: UUID | None = None):
+@cached_view('statement-coverage')
+def get_statement_coverage(case_id: UUID = Query(...), offset: int = Query(0, ge=0), db: Session = Depends(get_db), account_id: UUID | None = None):
     try:
         return list_statement_coverage(db, case_id=case_id, offset=offset,
             **(dict(account_id=account_id) if account_id is not None else {}))
@@ -569,7 +587,8 @@ async def get_statement_coverage(case_id: UUID = Query(...), offset: int = Query
 
 
 @router.get('/account-history')
-async def get_account_history(case_id: UUID = Query(...), account_id: UUID | None = Query(None),
+@cached_view('account-history')
+def get_account_history(case_id: UUID = Query(...), account_id: UUID | None = Query(None),
         account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None,
         start_date: date | None = Query(None), end_date: date | None = Query(None), db: Session = Depends(get_db)):
     from services.financial.account_history import account_history
@@ -582,7 +601,8 @@ async def get_account_history(case_id: UUID = Query(...), account_id: UUID | Non
 
 
 @router.get("/ledger-accounts")
-async def get_candidate_accounts(case_id: UUID = Query(...), search: str = Query("", max_length=128), offset: int = 0,
+@cached_view('ledger-accounts')
+def get_candidate_accounts(case_id: UUID = Query(...), search: str = Query("", max_length=128), offset: int = 0,
                                   db: Session = Depends(get_db)):
     try:
         return list_candidate_accounts(db, case_id=case_id, search=search, offset=offset,
@@ -595,7 +615,7 @@ async def get_candidate_accounts(case_id: UUID = Query(...), search: str = Query
 
 
 @router.get("/candidates/{candidate_id}/source-readings")
-async def get_candidate_source_readings(candidate_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+def get_candidate_source_readings(candidate_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
     from services.financial.candidate_assessment import candidate_source_readings
     try:
         return candidate_source_readings(db, case_id=case_id, candidate_id=candidate_id)
@@ -607,7 +627,7 @@ async def get_candidate_source_readings(candidate_id: UUID, case_id: UUID = Quer
 
 
 @router.get("/candidates/{candidate_id}/date-assessment")
-async def assess_saved_candidate_dates(candidate_id: UUID, case_id: UUID = Query(...),
+def assess_saved_candidate_dates(candidate_id: UUID, case_id: UUID = Query(...),
                                        db: Session = Depends(get_db)):
     try:
         return assess_candidate_dates(db, case_id=case_id, candidate_id=candidate_id)
@@ -647,7 +667,7 @@ async def get_ledger_sources(body: LedgerSourcesRequest, case_id: UUID = Query(.
 
 
 @router.get("/ledger/{transaction_id}/source")
-async def get_ledger_source(transaction_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+def get_ledger_source(transaction_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
     try:
         return ledger_source(db, case_id=case_id, transaction_id=transaction_id)
     except LedgerSourceError as exc:
@@ -655,6 +675,45 @@ async def get_ledger_source(transaction_id: UUID, case_id: UUID = Query(...), db
     except Exception:
         logger.exception("Ledger source lookup failed for case %s", case_id)
         raise HTTPException(status_code=500, detail="Ledger source could not be read.")
+
+
+def _open_statement_pdf(path):
+    from routers.evidence import _load_pymupdf
+    library = _load_pymupdf()
+    if library is None:
+        raise LedgerSourceError("Page rendering is unavailable on this server.", 503)
+    return library.open(path)
+
+
+@router.get("/ledger/{transaction_id}/statement-page")
+def get_payment_statement_page(transaction_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    """The page this payment is printed on, for naming it beside the table (case view access, router-wide)."""
+    from services.financial.statement_page import payment_page
+    try:
+        return payment_page(db, case_id=case_id, transaction_id=transaction_id,
+                            resolve_path=_resolve_stored_path, open_pdf=_open_statement_pdf)
+    except LedgerSourceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Statement page lookup failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="The statement page could not be read.")
+
+
+@router.get("/ledger/{transaction_id}/statement-page/{page}/image")
+def get_payment_statement_page_image(transaction_id: UUID, page: int, case_id: UUID = Query(...),
+                                     width: int = Query(1400, ge=200, le=2400), db: Session = Depends(get_db)):
+    """The payment's page or the page next to it as a PNG; another case's payment or file is a 404."""
+    from services.financial.statement_page import payment_page_png
+    try:
+        png, count = payment_page_png(db, case_id=case_id, transaction_id=transaction_id, page=page, width=width,
+                                      resolve_path=_resolve_stored_path, open_pdf=_open_statement_pdf)
+    except LedgerSourceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Statement page image failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="The statement page could not be rendered.")
+    return Response(content=png, media_type="image/png",
+                    headers={"X-PDF-Page-Count": str(count), "Cache-Control": "private, no-store"})
 
 
 class AmountAssessmentRequest(BaseModel):
@@ -667,7 +726,7 @@ class AmountAssessmentRequest(BaseModel):
 
 
 @router.get("/source-files/{evidence_file_id}/text")
-async def get_amount_source_text(
+def get_amount_source_text(
     evidence_file_id: UUID,
     case_id: UUID = Query(...),
     start_char: int = Query(0, ge=0),
@@ -703,7 +762,8 @@ async def assess_evidence_amount(
 
 
 @router.get("/ledger")
-async def get_ledger_transactions(
+@cached_view('ledger')
+def get_ledger_transactions(
     case_id: UUID = Query(..., description="REQUIRED: Case ID"),
     source_document_id: UUID | None = None,
     account_id: Optional[UUID] = Query(
@@ -763,8 +823,10 @@ async def get_ledger_transactions(
     parties = {a['id']: a for a in _account_party_state(db, case_id=case_id)['accounts']}
     from services.financial.transaction_query import account_label_index
     labels = account_label_index(parties)
+    from services.financial.payment_party_matches import case_party_matches
+    matches = case_party_matches(db, case_id)
     transactions = [to_view(row, account=row.account, account_parties=parties,
-        canonical_account_labels=labels).to_json() for row in rows]
+        canonical_account_labels=labels, party_matches=matches).to_json() for row in rows]
     return {
         "case_id": str(case_id),
         "transactions": transactions,
@@ -774,7 +836,7 @@ async def get_ledger_transactions(
 
 
 @router.get("/runs")
-async def get_ingestion_runs(
+def get_ingestion_runs(
     case_id: UUID = Query(..., description="REQUIRED: Case ID"),
     status: Optional[str] = Query(
         None,
@@ -857,7 +919,7 @@ def _parsed_member(value: Optional[str], enum, field: str):
 
 
 @router.get("/decisions")
-async def get_case_decisions(
+def get_case_decisions(
     case_id: UUID = Query(..., description="REQUIRED: Case ID"),
     subject_type: Optional[str] = Query(
         None,
@@ -937,7 +999,7 @@ async def get_case_decisions(
 
 
 @router.get("/proof-standing")
-async def get_case_proof_standing(
+def get_case_proof_standing(
     case_id: UUID = Query(..., description="REQUIRED: Case ID"),
     db: Session = Depends(get_db),
 ):
@@ -982,7 +1044,7 @@ async def get_case_proof_standing(
 
 
 @router.get("/duplicates")
-async def get_duplicate_candidates(
+def get_duplicate_candidates(
     case_id: UUID = Query(..., description="REQUIRED: Case ID"),
     db: Session = Depends(get_db),
 ):
@@ -997,7 +1059,7 @@ async def get_duplicate_candidates(
 
 
 @router.get("/candidate-sources")
-async def get_candidate_sources(case_id: UUID = Query(...), limit: int = 25, offset: int = 0,
+def get_candidate_sources(case_id: UUID = Query(...), limit: int = 25, offset: int = 0,
                                 db: Session = Depends(get_db)):
     try:
         return list_candidate_sources(db, case_id=case_id, limit=limit, offset=offset)
@@ -1031,7 +1093,7 @@ async def suggest_saved_source_rows(evidence_file_id: UUID, page_number: int, bo
 
 
 @router.get("/candidate-sources/{evidence_file_id}/pages/{page_number}")
-async def get_candidate_source(evidence_file_id: UUID, page_number: int, case_id: UUID = Query(...),
+def get_candidate_source(evidence_file_id: UUID, page_number: int, case_id: UUID = Query(...),
                                table_index: int = 0, db: Session = Depends(get_db)):
     try:
         return read_candidate_source(db, case_id=case_id, evidence_file_id=evidence_file_id,
@@ -1044,7 +1106,7 @@ async def get_candidate_source(evidence_file_id: UUID, page_number: int, case_id
 
 
 @router.get("/candidate-sources/{evidence_file_id}/progress")
-async def get_candidate_document_progress(evidence_file_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+def get_candidate_document_progress(evidence_file_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
     from services.financial.candidate_progress import candidate_document_progress
     try:
         return candidate_document_progress(db, case_id=case_id, evidence_file_id=evidence_file_id)
@@ -1056,7 +1118,7 @@ async def get_candidate_document_progress(evidence_file_id: UUID, case_id: UUID 
 
 
 @router.get("/candidate-sources/{evidence_file_id}/reuse-check")
-async def get_candidate_source_reuse(evidence_file_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+def get_candidate_source_reuse(evidence_file_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
     try:
         return check_candidate_source_reuse(db, case_id=case_id, evidence_file_id=evidence_file_id)
     except CandidateStoreError as exc:
@@ -1080,7 +1142,7 @@ async def preview_candidate_statement_scopes(evidence_file_id: UUID, body: State
 
 
 @router.get("/candidate-sources/{evidence_file_id}/finalization-preview")
-async def get_candidate_finalization_preview(evidence_file_id: UUID, case_id: UUID = Query(...),
+def get_candidate_finalization_preview(evidence_file_id: UUID, case_id: UUID = Query(...),
                                              db: Session = Depends(get_db)):
     try:
         return preview_candidate_finalization(db, case_id=case_id,
@@ -1095,7 +1157,7 @@ async def get_candidate_finalization_preview(evidence_file_id: UUID, case_id: UU
 
 
 @router.get("/candidate-sources/{evidence_file_id}/statement-draft")
-async def get_statement_review_draft(evidence_file_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+def get_statement_review_draft(evidence_file_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
     from services.financial.statement_review_drafts import read_statement_draft
     try:
         return read_statement_draft(db, case_id=case_id, evidence_file_id=evidence_file_id)
@@ -1106,11 +1168,12 @@ async def get_statement_review_draft(evidence_file_id: UUID, case_id: UUID = Que
 from services.financial.ledger_transfers import ledger_transfer_candidates, evaluate_transfer_scenario, LedgerTransferScenario
 
 @router.get('/ledger-transfer-candidates')
+@cached_view('ledger-transfer-candidates')
 def get_ledger_transfer_candidates(case_id: UUID = Query(...), start_date: Optional[date] = Query(None),
         end_date: Optional[date] = Query(None), population: Literal['working', 'verified'] = Query('working'),
         tolerance_days: int = Query(3, ge=0, le=7), db: Session = Depends(get_db)):
     try:
-        captured = capture_ledger_export(db.get_bind(), case_id=case_id, start_date=start_date, end_date=end_date)
+        captured = capture_ledger_scope(db.get_bind(), case_id=case_id, start_date=start_date, end_date=end_date)
         return ledger_transfer_candidates(captured, population=population, tolerance_days=tolerance_days)
     except LedgerSummaryError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -1132,12 +1195,13 @@ def calculate_ledger_transfer_scenario(body: LedgerTransferScenario, case_id: UU
 
 
 @router.get('/ledger-posting-graph')
+@cached_view('ledger-posting-graph')
 def get_ledger_posting_graph(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
         start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
         population: Literal['working', 'verified'] = Query('working'), db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
     from services.financial.ledger_graph import ledger_posting_graph
     try:
-        captured = capture_ledger_export(db.get_bind(), case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders, start_date=start_date, end_date=end_date)
+        captured = capture_ledger_scope(db.get_bind(), case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders, start_date=start_date, end_date=end_date)
         return ledger_posting_graph(captured, population=population)
     except LedgerSummaryError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -1207,12 +1271,13 @@ def run_network_trace(body: NetworkTraceInput,case_id: UUID = Query(...),db: Ses
 
 
 @router.get('/ledger-timeline')
+@cached_view('ledger-timeline')
 def get_ledger_timeline(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
         start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
         population: Literal['working', 'verified'] = Query('working'), db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
     from services.financial.ledger_timeline import ledger_timeline
     try:
-        captured = capture_ledger_export(db.get_bind(), case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders, start_date=start_date, end_date=end_date)
+        captured = capture_ledger_scope(db.get_bind(), case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders, start_date=start_date, end_date=end_date)
         return ledger_timeline(captured, population=population)
     except LedgerSummaryError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -1223,6 +1288,7 @@ def get_ledger_timeline(case_id: UUID = Query(...), account_id: Optional[UUID] =
 
 
 @router.get('/pattern-review')
+@cached_view('pattern-review')
 def get_pattern_review(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
         start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
         population: Literal['working', 'verified'] = Query('working'), window_days: int = Query(3,ge=0,le=30),
@@ -1230,7 +1296,7 @@ def get_pattern_review(case_id: UUID = Query(...), account_id: Optional[UUID] = 
         threshold_currency: Optional[str] = Query(None,pattern='^[A-Z]{3}$'), db: Session = Depends(get_db), cross_account: bool = False, account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
     from services.financial.pattern_review import screen_ledger_patterns
     try:
-        captured = capture_ledger_export(db.get_bind(), case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders, start_date=start_date, end_date=end_date)
+        captured = capture_ledger_scope(db.get_bind(), case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders, start_date=start_date, end_date=end_date)
         return screen_ledger_patterns(captured, population=population, window_days=window_days, threshold_minor=threshold_minor, threshold_currency=threshold_currency, **(dict(cross_account=True) if cross_account else {}))
     except LedgerSummaryError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -1263,6 +1329,7 @@ def run_claim_comparison(body: ClaimComparisonInput,case_id: UUID = Query(...),d
 from services.financial.account_parties import AccountPartyError, account_parties
 
 @router.get("/account-parties")
+@cached_view('account-parties')
 def get_account_parties(case_id: UUID = Query(...), db: Session = Depends(get_db)):
     try:
         return account_parties(db, case_id=case_id)
@@ -1272,6 +1339,7 @@ def get_account_parties(case_id: UUID = Query(...), db: Session = Depends(get_db
 from services.financial.counterparty_parties import counterparty_parties
 
 @router.get('/counterparty-parties')
+@cached_view('counterparty-parties')
 def get_counterparty_parties(case_id: UUID = Query(...), db: Session = Depends(get_db)):
     try:
         return counterparty_parties(db, case_id=case_id)
@@ -1283,12 +1351,13 @@ def get_counterparty_parties(case_id: UUID = Query(...), db: Session = Depends(g
 
 
 @router.get('/counterparty-party-analysis')
+@cached_view('counterparty-party-analysis')
 def get_counterparty_party_analysis(case_id: UUID = Query(...),account_id: Optional[UUID] = Query(None),
         start_date: Optional[date] = Query(None),end_date: Optional[date] = Query(None),
         population: Literal['working','verified'] = Query('working'),db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
     from services.financial.counterparty_parties import counterparty_party_analysis
     try:
-        return counterparty_party_analysis(capture_ledger_export(db.get_bind(),case_id=case_id,account_id=account_id, account_ids=account_ids, account_holders=account_holders,start_date=start_date,end_date=end_date),population=population)
+        return counterparty_party_analysis(capture_ledger_scope(db.get_bind(),case_id=case_id,account_id=account_id, account_ids=account_ids, account_holders=account_holders,start_date=start_date,end_date=end_date),population=population)
     except (AccountPartyError,LedgerSummaryError) as exc:
         raise HTTPException(status_code=getattr(exc,'status_code',422),detail=str(exc))
     except Exception:
@@ -1324,7 +1393,7 @@ def run_indirect_review(body: IndirectReviewInput,case_id: UUID = Query(...),db:
 from services.financial.model_pdf_nomination import read_pdf_model_nomination, list_pdf_model_nominations
 
 @router.get("/model-nominations/{nomination_id}")
-async def get_pdf_model_nomination(nomination_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+def get_pdf_model_nomination(nomination_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
     from services.financial.pdf_candidates import PdfMappingError
     try:
         return read_pdf_model_nomination(db,case_id=case_id,nomination_id=nomination_id)
@@ -1335,7 +1404,7 @@ async def get_pdf_model_nomination(nomination_id: UUID, case_id: UUID = Query(..
         raise HTTPException(status_code=500,detail="Saved model nomination could not be read.")
 
 @router.get("/candidate-sources/{evidence_file_id}/model-nominations")
-async def get_pdf_model_nominations(evidence_file_id: UUID, case_id: UUID = Query(...), limit: int = Query(20,ge=1,le=50), offset: int = Query(0,ge=0), page_number: int | None = Query(None,ge=1), table_index: int | None = Query(None,ge=0,le=63), db: Session = Depends(get_db)):
+def get_pdf_model_nominations(evidence_file_id: UUID, case_id: UUID = Query(...), limit: int = Query(20,ge=1,le=50), offset: int = Query(0,ge=0), page_number: int | None = Query(None,ge=1), table_index: int | None = Query(None,ge=0,le=63), db: Session = Depends(get_db)):
     from services.financial.pdf_candidates import PdfMappingError
     try:
         return list_pdf_model_nominations(db,case_id=case_id,evidence_file_id=evidence_file_id,limit=limit,offset=offset,page_number=page_number,table_index=table_index)
@@ -1360,22 +1429,76 @@ def get_ledger_categories(case_id: UUID = Query(...), db: Session = Depends(get_
     from sqlalchemy import select
     from postgres.models.financial import FinancialTransaction, FinancialAccount
     from services.financial.payment_inference import infer_payment_labels
-    # Select only the fields needed for labels, not PDF provenance or source
-    # proposals. Include inferred categories so filters match the ledger view.
-    query = select(FinancialTransaction.metadata_, FinancialTransaction.description,
-        FinancialTransaction.direction, FinancialAccount.account_type, FinancialAccount.institution_name).outerjoin(
+    from services.financial.payment_categories import table_ready
+    # Select only the fields needed for labels, not PDF provenance or source proposals. A person's label wins, then
+    # the stored category; a payment not yet categorised reads its description guess, as the ledger view does.
+    stored = table_ready(db)
+    columns = [FinancialTransaction.metadata_, FinancialTransaction.description, FinancialTransaction.direction,
+               FinancialAccount.account_type, FinancialAccount.institution_name]
+    if stored:
+        from postgres.models.financial_payment_category import FinancialPaymentCategory
+        columns.append(FinancialPaymentCategory.category)
+    query = select(*columns).outerjoin(
             FinancialAccount, (FinancialAccount.id == FinancialTransaction.account_id) &
-            (FinancialAccount.case_id == FinancialTransaction.case_id)).where(
-                FinancialTransaction.case_id == case_id, FinancialTransaction.ledger_status == 'admitted',
-                FinancialTransaction.superseded_by_id.is_(None)).distinct()
+            (FinancialAccount.case_id == FinancialTransaction.case_id))
+    if stored:
+        query = query.outerjoin(FinancialPaymentCategory, FinancialPaymentCategory.transaction_id == FinancialTransaction.id)
+    query = query.where(FinancialTransaction.case_id == case_id, FinancialTransaction.ledger_status == 'admitted',
+                        FinancialTransaction.superseded_by_id.is_(None)).distinct()
     values = set()
-    for metadata, description, direction, account_type, institution in db.execute(query):
+    for metadata, description, direction, account_type, institution, *saved in db.execute(query):
         labels = (metadata or {}).get('investigation_labels', {})
-        value = labels.get('category') if 'category' in labels else infer_payment_labels(
-            description, direction=direction, account_type=account_type, institution=institution).get('category', {}).get('value')
+        if 'category' in labels:
+            value = labels.get('category')
+        elif saved and saved[0] is not None:
+            value = saved[0]
+        else:
+            value = infer_payment_labels(description, direction=direction, account_type=account_type,
+                                         institution=institution).get('category', {}).get('value')
         if value:
             values.add(value)
     return dict(case_id=str(case_id), categories=sorted(values))
+
+
+@router.get('/ledger/payment-categories/like')
+def get_payments_like(transaction_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    """The other payments like this one (same description or counterparty) whose category no person has chosen."""
+    from services.financial.payment_categories import like_payments
+    rows, basis = like_payments(db, case_id, transaction_id)
+    dated = sorted(rows, key=lambda row: (row.ordering_date, str(row.id)))
+    return dict(case_id=str(case_id), transaction_id=str(transaction_id), basis=basis, count=len(rows),
+                transaction_ids=[str(row.id) for row in rows],
+                first_date=dated[0].ordering_date.isoformat() if dated else None,
+                last_date=dated[-1].ordering_date.isoformat() if dated else None,
+                examples=[dict(id=str(row.id), date=row.ordering_date.isoformat(), description=row.description or '')
+                          for row in dated[:8]])
+
+
+@router.get('/ledger/payment-categories/rules')
+def get_category_rules(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    """The case's category rules people made, each with how many payments it placed and how often a person chose
+    differently on payments it matches."""
+    from services.financial.payment_categories import rule_track_record
+    return dict(case_id=str(case_id), rules=rule_track_record(db, case_id))
+
+
+@router.get('/ledger/payment-categories/coverage')
+def get_category_coverage(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    from services.financial.payment_categories import coverage
+    return dict(case_id=str(case_id), coverage=coverage(db, case_id))
+
+
+@router.post("/ledger/category-breakdown")
+def post_category_breakdown(body: dict, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    """Money in / out / net and count per category under the given ledger filters, optionally per holder, account,
+    statement or month."""
+    from pydantic import ValidationError
+    from services.financial.category_breakdown import BreakdownFilters, breakdown
+    try:
+        filters = BreakdownFilters.model_validate(body)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return dict(case_id=str(case_id), group_by=filters.group_by, rows=breakdown(db, case_id, filters))
 
 
 @router.get('/ledger/category-library')
@@ -1420,6 +1543,7 @@ def get_ledger_graph_status(case_id: UUID = Query(...), db: Session = Depends(ge
 
 
 @router.get('/account-consolidations')
+@cached_view('account-consolidations')
 def get_account_consolidations(case_id: UUID = Query(...), db: Session = Depends(get_db)):
     from services.financial.account_consolidation import consolidation_state
     try:

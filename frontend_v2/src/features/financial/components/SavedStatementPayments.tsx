@@ -1,3 +1,4 @@
+import { ScopedCategoryBreakdown } from "./ScopedCategoryBreakdown"
 import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import type { LedgerTransaction } from "../api"
@@ -8,6 +9,7 @@ import { ImportedRecordsPanel } from "./ImportedRecordsPanel"
 import { LedgerSourceDialog } from "./LedgerSourceDialog"
 import { SavedStatementRecovery } from "./SavedStatementRecovery"
 import { AddSavedStatementPayment } from "./AddSavedStatementPayment"
+import { JudgementRowProvider } from "./JudgementCalls"
 
 /** The saved-record recovery path lives inside the statement's review. */
 export function SavedStatementPayments({
@@ -63,6 +65,11 @@ export function SavedStatementPayments({
       )}
       {open && (
         <div className="space-y-3">
+          <ScopedCategoryBreakdown
+            caseId={caseId}
+            title="Categories in this statement"
+            scope={{ source_document_ids: [sourceId] }}
+          />
           {hasIncomplete && (
             <ImportedRecordsPanel
               caseId={caseId}
@@ -85,14 +92,20 @@ export function SavedStatementPayments({
               />
             </div>
           )}
-          <LedgerPanel
-            independentFilters
+          <JudgementRowProvider
             caseId={caseId}
-            params={{ sourceDocumentId: sourceId }}
-            onCorrect={canEdit ? setCorrecting : undefined}
-            onSource={(row) => setSource(row.key)}
-            splitAmounts
-          />
+            sourceDocumentId={sourceId}
+            onCorrect={canEdit ? (_, row) => setCorrecting(row) : undefined}
+          >
+            <LedgerPanel
+              independentFilters
+              caseId={caseId}
+              params={{ sourceDocumentId: sourceId }}
+              onCorrect={canEdit ? setCorrecting : undefined}
+              onSource={(row) => setSource(row.key)}
+              splitAmounts
+            />
+          </JudgementRowProvider>
           {source && (
             <LedgerSourceDialog
               caseId={caseId}

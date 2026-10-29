@@ -3,6 +3,7 @@
 Only pages with the bank, product, account and printed page sequence are grouped.
 Summary amounts are controls, never additional payments. All source rows survive.
 """
+import os
 import re
 import unicodedata
 from datetime import date
@@ -12,6 +13,42 @@ from services.financial.pdf_candidates import _digest
 from services.financial.statement_import_proposal import exact_amount
 
 LAYOUT = 'bbva-mexico-cash-management'
+# Scans of this layout can set a space before a thousands comma ('1,031 ,472.00') or read one stray mark where
+# the amount cell meets the table rule ('591,276.11?'). A cell that is a whole amount but for that space, or for
+# exactly one such trailing mark, is that amount: it is placed in its column by its right edge like any amount, and
+# the statement's printed balances and totals still decide. Off: the cell is read as description / left unreadable.
+SCAN_AMOUNT_MARKS = os.environ.get('LOUPE_FINANCIAL_BBVA_SCAN_AMOUNT_MARKS', '1').strip().lower() not in ('0', 'false', 'no', 'off')
+# BBVA prints two dates on each line, operation (OPER) and liquidation (LIQ). When the scan leaves one unread and the
+# other is read, the line is not held for it: an unread liquidation date is left empty (the ledger date is the
+# operation date), and an unread operation date takes the printed liquidation date (date_basis records it) only when
+# it sits between the operation dates of the lines before and after it (the period's first/last day at its ends),
+# the order the bank prints them in.
+# Off: either unread date holds the line for a person.
+ONE_DATE_PRINTED = os.environ.get('LOUPE_FINANCIAL_BBVA_ONE_DATE_PRINTED', '1').strip().lower() not in ('0', 'false', 'no', 'off')
+LIQUIDATION_FOR_OPERATION = 'liquidation_date_operation_unread'
+# The same order check for a line whose liquidation date is unread: its read operation date must also sit between the
+# operation dates of the lines before and after it (07 ARRENDO BBVA USD JUL 2025 page 2: '14/JUL' read for the
+# printed 11/JUL, the liquidation date read '41\JUL', between lines of 07/JUL and 11/JUL). Out of order, the line is
+# held for its liquidation date as before ONE_DATE_PRINTED. Off: an unread liquidation date is never checked.
+ONE_DATE_BRACKET = os.environ.get('LOUPE_FINANCIAL_BBVA_ONE_DATE_BRACKET', '1').strip().lower() not in ('0', 'false', 'no', 'off')
+# On scanned pages OCR reads the zero of a two-digit day as the letter O (O7/ENE). In the day of a short printed date
+# (DD/MMM) a letter O is that zero: no BBVA day is written with a letter, and the date still has to be a real day of
+# the statement's own period. Off: the date is left unreadable and the line is held.
+SCAN_DAY_ZERO = os.environ.get('LOUPE_FINANCIAL_BBVA_SCAN_DAY_ZERO', '1').strip().lower() not in ('0', 'false', 'no', 'off')
+_WHOLE_AMOUNT = re.compile(r'(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)\.[0-9]{2}')
+
+
+def scan_amount_text(value):
+    """The amount a scanned amount cell prints, or the text unchanged when it is not one."""
+    value = value.strip()
+    if not SCAN_AMOUNT_MARKS:
+        return value
+    folded = re.sub(r'(?<=[0-9])\s+,(?=[0-9]{3}(?:[,.]|$))', ',', value)
+    if _WHOLE_AMOUNT.fullmatch(folded):
+        return folded
+    if len(folded) > 1 and folded[-1] in '),;?|' and _WHOLE_AMOUNT.fullmatch(folded[:-1]):
+        return folded[:-1]
+    return value
 MONTHS = {name: i for i, name in enumerate(
     ('ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'), 1)}
 
@@ -187,14 +224,14 @@ def box(cell):
 
 
 def short_date(value, choice):
-    match = re.fullmatch(r'(\d{1,2})/([A-Z]{3})', norm(value))
-    if not match or match[2] not in MONTHS:
+    match = re.fullmatch(r'([0-9O]{1,2})/([A-Z]{3})' if SCAN_DAY_ZERO else r'(\d{1,2})/([A-Z]{3})', norm(value))
+    if not match or match[2] not in MONTHS or not re.search(r'\d', match[1]):
         return None
     start, end = date.fromisoformat(choice['period_start']), date.fromisoformat(choice['period_end'])
     candidates = []
     for year in range(start.year, end.year+1):
         try:
-            parsed = date(year, MONTHS[match[2]], int(match[1]))
+            parsed = date(year, MONTHS[match[2]], int(match[1].replace('O', '0')))
             if start <= parsed <= end:
                 candidates.append(parsed.isoformat())
         except ValueError:
@@ -205,6 +242,7 @@ def short_date(value, choice):
 def propose_bbva_statement(sources, currency, choice):
     result = []
     last_payment = None
+    liquidation_unread = set()
     prior_period = False
     prior_period_pages = set()
     printed_labels = {control_norm(c['expected_text']) for s in sources for r in s['rows'] for c in r['cells']}
@@ -288,7 +326,7 @@ def propose_bbva_statement(sources, currency, choice):
                     continue
                 if rect[0] < box(columns['COD. DESCRIPCION'])[0] - 3000:
                     buckets['OPER'].append(cell)
-                elif (re.fullmatch(r'(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)\.[0-9]{2}', cell['expected_text'].strip())
+                elif (re.fullmatch(r'(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)\.[0-9]{2}', scan_amount_text(cell['expected_text']))
                         and len(aligned := [name for name in names[4:]
                             if abs(rect[2]-box(columns[name])[2]) <= 8000]) == 1):
                     # Large right-aligned amounts extend left of their shorter
@@ -304,7 +342,8 @@ def propose_bbva_statement(sources, currency, choice):
                         buckets[matches[0]].append(cell)
                     else:
                         malformed = True
-            joined = lambda name: ' '.join(c['expected_text'].strip() for c in buckets[name])
+            joined = lambda name: ' '.join((scan_amount_text(c['expected_text']) if name in names[4:] else c['expected_text'].strip())
+                                           for c in buckets[name])
             # Preserve the two printed dates even when OCR merges their
             # headings or puts the description in the liquidation-date cell.
             date_parts = joined('OPER').split(maxsplit=2)
@@ -330,10 +369,14 @@ def propose_bbva_statement(sources, currency, choice):
             description_cells = buckets['COD. DESCRIPCION'] or buckets['LIQ']
             if description_cells:
                 fields['description_column'] = str(description_cells[0]['column_index'])
-            for role, value in (('date', date_text), ('value_date', value_text)):
-                parsed = short_date(value, choice)
-                if parsed:
-                    fields[role] = parsed
+            printed_dates = {role: short_date(value, choice) for role, value in (('date', date_text), ('value_date', value_text))}
+            for role in ('date', 'value_date'):
+                if printed_dates[role]:
+                    fields[role] = printed_dates[role]
+                elif ONE_DATE_PRINTED and role == 'value_date' and printed_dates['date']:
+                    liquidation_unread.add(item['id'])
+                elif ONE_DATE_PRINTED and role == 'date' and printed_dates['value_date']:
+                    fields.update(date=printed_dates['value_date'], date_basis=LIQUIDATION_FOR_OPERATION)
                 else:
                     item['issues'].append('Check the printed ' + ('operation date.' if role == 'date' else 'liquidation date.'))
             if buckets['LIQ']:
@@ -361,6 +404,22 @@ def propose_bbva_statement(sources, currency, choice):
             if not description or malformed:
                 item['issues'].append('Some values could not be placed in the BBVA transaction columns. Compare this row with the PDF.')
             last_payment = item
+    payments = [row for row in result if row['kind'] == 'transaction' and not row['excluded']]
+    checked = (lambda r: r['fields'].get('date_basis') == LIQUIDATION_FOR_OPERATION
+               or (ONE_DATE_BRACKET and r['id'] in liquidation_unread))
+    for i, row in enumerate(payments):
+        if not checked(row):
+            continue
+        before = next((r['fields']['date'] for r in reversed(payments[:i]) if r['fields'].get('date')
+                       and not checked(r)), choice['period_start'])
+        after = next((r['fields']['date'] for r in payments[i+1:] if r['fields'].get('date')
+                      and not checked(r)), choice['period_end'])
+        if not before or not after or not before <= row['fields']['date'] <= after:
+            if row['fields'].get('date_basis') == LIQUIDATION_FOR_OPERATION:
+                del row['fields']['date'], row['fields']['date_basis']
+                row['issues'].insert(0, 'Check the printed operation date.')
+            else:
+                row['issues'].append('Check the printed liquidation date.')
     for row in result:
         count = row['fields'].get('printed_transaction_count')
         if count is not None:

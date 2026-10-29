@@ -27,6 +27,9 @@ vi.mock("./QuarantinePanel", () => ({
   QuarantinePanel: () => <p>Held out fixture</p>,
 }))
 vi.mock("./CorrectionForm", () => ({ CorrectionForm: () => null }))
+vi.mock("./JudgementCalls", () => ({
+  CaseJudgementProvider: ({ children }: { children: React.ReactNode }) => children,
+}))
 vi.mock("./LedgerSourceDialog", () => ({ LedgerSourceDialog: () => null }))
 it("resets applied account filters on a case change", () => {
   const { rerender } = render(

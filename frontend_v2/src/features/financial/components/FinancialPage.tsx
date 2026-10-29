@@ -1,3 +1,5 @@
+import { OverviewStatementCoverage } from "./OverviewStatementCoverage"
+import { Disclosure } from "./Disclosure"
 import { BatchSavedAccounts } from "./BatchSavedAccounts"
 import { ActiveCategoryNotice } from "./PaymentCategoryFilter"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
@@ -20,6 +22,7 @@ import {
 import { useCase } from "@/features/cases/hooks/use-cases"
 import {
   FinancialNavigation,
+  FinancialResetSlotProvider,
   RetainedFinancialTab,
 } from "./FinancialNavigation"
 import { FinancialFindings } from "./FinancialFindings"
@@ -40,10 +43,13 @@ import { LedgerTracingWorkbench } from "./LedgerTracingWorkbench"
 import { InvestigatorPeople } from "./InvestigatorPeople"
 import { AccountTypeReview } from "./AccountTypeReview"
 import { InvestigatorOverview } from "./InvestigatorOverview"
+import { useFinancialViewSpeed } from "../lib/page-speed"
 import { InvestigatorFollowMoney } from "./InvestigatorFollowMoney"
 import { InvestigatorTrends } from "./InvestigatorTrends"
 import { StatementRegister } from "./StatementRegister"
 import { ReviewQueuePanel } from "./ReviewQueuePanel"
+import { JudgementCallsLabel, JudgementCallsPanel } from "./JudgementCallsPanel"
+import { JUDGEMENT_KEYS } from "../lib/judgements"
 import { CaseReviewStatus } from "./CaseReviewStatus"
 import {
   useCallback,
@@ -94,6 +100,7 @@ import { StatementCoveragePanel } from "./StatementCoveragePanel"
 import { PdfCandidatesPanel } from "./PdfCandidatesPanel"
 import { ProofStandingPanel } from "./ProofStandingPanel"
 import { CorrectableLedger } from "./CorrectableLedger"
+import { RecordsModeSwitch } from "./RecordsModeSwitch"
 import { RowAdjudicationDialog } from "./RowAdjudicationDialog"
 import { IngestionRunNotice } from "./IngestionRunNotice"
 import { IngestionRunsPanel } from "./IngestionRunsPanel"
@@ -144,7 +151,7 @@ function FinancialPageContent() {
     store.setMainView(view)
   }
   const [params, setParams] = useSearchParams()
-  type StatementSection = "queue" | "files" | "accounts" | "batches" | "remove"
+  type StatementSection = "queue" | "files" | "accounts" | "batches" | "remove" | "judgements"
   const [statementSection, setStatementSection] = useState<{
     caseId: string | undefined
     section: StatementSection
@@ -152,6 +159,8 @@ function FinancialPageContent() {
   const section =
     params.get("queue") === "1"
       ? "queue"
+      : params.get("judgements") === "1"
+      ? "judgements"
       : params.get("files") === "1"
       ? "files"
       : params.get("accounts") === "1"
@@ -162,6 +171,10 @@ function FinancialPageContent() {
           ? statementSection.section
           : "queue"
   const reviewingAccounts = section === "accounts"
+  useFinancialViewSpeed(
+    caseId,
+    store.mainView === "statements" ? `financial/statements/${section}` : `financial/${store.mainView}`
+  )
   const statementScroll = useRef<HTMLDivElement>(null)
   const accountsDestination = useRef<HTMLDivElement>(null)
 
@@ -215,10 +228,12 @@ function FinancialPageContent() {
       const updated = new URLSearchParams(current)
       for (const key of [
         "batch", "batchItem", "batchRow", "batchCheck", "files", "accounts", "savedBatch", "savedOperation",
-        "reviewFile", "returnBatch", "returnBatchCheck", "queue", "queueItem", "queueList", "queueFiles",
+        "reviewFile", "returnBatch", "returnBatchCheck", "queue", "queueItem", "queueList", "queueFiles", "judgements",
+        ...JUDGEMENT_KEYS,
       ])
         updated.delete(key)
       if (next === "queue") updated.set("queue", "1")
+      if (next === "judgements") updated.set("judgements", "1")
       return updated
     })
   }
@@ -702,9 +717,17 @@ function FinancialPageContent() {
 
   return (
     <div className="flex h-full flex-col bg-background">
-      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-card px-4 py-2">
+      <div className="flex shrink-0 items-center gap-3 bg-[#0b0c0f] px-4 pt-2.5 text-[#f7f7f8]">
+        <span
+          aria-hidden="true"
+          className="inline-flex items-center gap-2 text-[17px] font-bold"
+          style={{ fontFamily: "'Space Grotesk', ui-sans-serif, system-ui, sans-serif" }}
+        >
+          <span className="size-2 rounded-full bg-[#e33b4c] shadow-[0_0_0_5px_rgba(227,59,76,.15)]" />
+          Loupe
+        </span>
         <p
-          className="min-w-0 truncate text-sm font-medium"
+          className="min-w-0 flex-1 truncate text-sm font-semibold"
           title={
             currentCase.data && currentCase.data.id === caseId
               ? currentCase.data.title
@@ -718,6 +741,21 @@ function FinancialPageContent() {
               ? "Loading case…"
               : (caseId ?? "Choose a case")}
         </p>
+        <FinancialGuide />
+      </div>
+      {/* "Reset view" sits at the right end of the tab bar, not in a band of its own. */}
+      <FinancialResetSlotProvider>
+      <Tabs
+        key={`financial-tabs:${caseId}`}
+        value={store.mainView}
+        onValueChange={(value) => navigateFinancial(value as FinancialMainView)}
+        className="flex min-h-0 flex-1 flex-col"
+      >
+        <FinancialNavigation
+          value={store.mainView}
+          onChange={navigateFinancial}
+        />
+        <FinancialAccessNotice />
         {/* Categories are chosen and managed under Transactions (Alex: not at
             the top of every view). A category chosen there still narrows the
             analysis views, so they say so instead of filtering silently. */}
@@ -735,19 +773,6 @@ function FinancialPageContent() {
               onChange={() => navigateFinancial("transactions")}
             />
           )}
-        <FinancialGuide />
-      </div>
-      <Tabs
-        key={`financial-tabs:${caseId}`}
-        value={store.mainView}
-        onValueChange={(value) => navigateFinancial(value as FinancialMainView)}
-        className="flex min-h-0 flex-1 flex-col"
-      >
-        <FinancialAccessNotice />
-        <FinancialNavigation
-          value={store.mainView}
-          onChange={navigateFinancial}
-        />
 
         <RetainedFinancialTab
           value="overview"
@@ -860,6 +885,13 @@ function FinancialPageContent() {
                 Review queue
               </Button>
               <Button
+                variant={section === "judgements" ? "primary" : "outline"}
+                aria-pressed={section === "judgements"}
+                onClick={() => showStatementSection("judgements")}
+              >
+                {caseId ? <JudgementCallsLabel caseId={caseId} /> : "Judgement calls"}
+              </Button>
+              <Button
                 variant={section === "files" ? "primary" : "outline"}
                 aria-pressed={section === "files"}
                 onClick={() => showStatementSection("files")}
@@ -941,10 +973,13 @@ function FinancialPageContent() {
                   }}
                 />
               )}
-              <details className="rounded border p-3 my-3">
-                <summary className="cursor-pointer font-medium">
+              <section
+                className="rounded-lg border p-3 my-3 space-y-2"
+                aria-label="Find an account by name, number or bank"
+              >
+                <h3 className="font-semibold">
                   Find an account by name, number or bank
-                </summary>
+                </h3>
                 <ErrorBoundary level="section">
                   <FinancialAccounts
                     active={store.mainView === "statements" && reviewingAccounts && !savedBatchAccounts}
@@ -960,14 +995,19 @@ function FinancialPageContent() {
                     }}
                   />
                 </ErrorBoundary>
-              </details>
+              </section>
             </div>
             {section === "queue" && caseId && (
               <ErrorBoundary level="section">
                 <ReviewQueuePanel caseId={caseId} onOpenBatch={openBatchFromQueue} />
               </ErrorBoundary>
             )}
-            <div hidden={reviewingAccounts || section === "queue"}>
+            {section === "judgements" && caseId && (
+              <ErrorBoundary level="section">
+                <JudgementCallsPanel caseId={caseId} />
+              </ErrorBoundary>
+            )}
+            <div hidden={reviewingAccounts || section === "queue" || section === "judgements"}>
               {section === "files" && returnBatch && workspaceReview?.open && (
                 <Button variant="outline" onClick={returnToBatch}>
                   Back to processing batch
@@ -975,7 +1015,7 @@ function FinancialPageContent() {
               )}
               {caseId && (
                 <StatementRegister
-                  active={store.mainView === "statements" && !reviewingAccounts && section !== "queue"}
+                  active={store.mainView === "statements" && !reviewingAccounts && section !== "queue" && section !== "judgements"}
                   mode={
                     section === "batches"
                       ? "batches"
@@ -1021,28 +1061,39 @@ function FinancialPageContent() {
               />
             )}
             {reviewingAccounts && !savedBatchAccounts && (
-              <details className="rounded border p-3 space-y-3">
-                <summary className="cursor-pointer font-medium">
-                  Account checks
-                </summary>
+              <section
+                className="rounded-lg border p-3 space-y-3"
+                aria-label="Account checks"
+              >
+                <h3 className="font-semibold">Account checks</h3>
                 <p className="text-sm text-muted-foreground">
                   Check balances and missing statement periods across this case.
                   To review one statement, open it from Statement files.
                 </p>
-                <ErrorBoundary level="section">
-                  <StatementChecksPanel
-                    onReviewStatement={reviewStatement}
-                    key={`checks:${caseId}`}
-                    caseId={caseId}
-                  />
-                </ErrorBoundary>
+                {caseId && (
+                  <ErrorBoundary level="section">
+                    <OverviewStatementCoverage
+                      caseId={caseId}
+                      active={store.mainView === "statements" && reviewingAccounts}
+                    />
+                  </ErrorBoundary>
+                )}
                 <ErrorBoundary level="section">
                   <StatementCoveragePanel
                     key={`coverage:${caseId}`}
                     caseId={caseId}
                   />
                 </ErrorBoundary>
-              </details>
+                <Disclosure label="Balance checks for all accounts">
+                  <ErrorBoundary level="section">
+                    <StatementChecksPanel
+                      onReviewStatement={reviewStatement}
+                      key={`checks:${caseId}`}
+                      caseId={caseId}
+                    />
+                  </ErrorBoundary>
+                </Disclosure>
+              </section>
             )}
           </div>
         </RetainedFinancialTab>
@@ -1147,27 +1198,10 @@ function FinancialPageContent() {
           className="flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden"
           active={store.mainView === "transactions"}
         >
-          <details className="px-4 py-1 border-b text-xs">
-            <summary className="cursor-pointer text-muted-foreground">
-              {isTransactionsMode
-                ? "Viewing imported statement payments"
-                : "Viewing other financial records"}
-            </summary>
-            <div className="flex items-center gap-2 py-2">
-              <Button
-                variant={isTransactionsMode ? "secondary" : "outline"}
-                onClick={() => handleModeChange("transactions")}
-              >
-                Imported statement payments
-              </Button>
-              <Button
-                variant={!isTransactionsMode ? "secondary" : "outline"}
-                onClick={() => handleModeChange("intelligence")}
-              >
-                Other financial records
-              </Button>
-            </div>
-          </details>
+          <RecordsModeSwitch
+            transactionsMode={isTransactionsMode}
+            onChange={handleModeChange}
+          />
           <div
             className="min-h-0 flex-1 space-y-4 overflow-auto p-4"
             style={!isTransactionsMode ? { display: "none" } : undefined}
@@ -1311,27 +1345,10 @@ function FinancialPageContent() {
           className="flex min-h-0 flex-1 flex-col"
           active={store.mainView === "counterparties"}
         >
-          <details className="px-4 py-1 border-b text-xs">
-            <summary className="cursor-pointer text-muted-foreground">
-              {isTransactionsMode
-                ? "Viewing imported statement payments"
-                : "Viewing other financial records"}
-            </summary>
-            <div className="flex items-center gap-2 py-2">
-              <Button
-                variant={isTransactionsMode ? "secondary" : "outline"}
-                onClick={() => handleModeChange("transactions")}
-              >
-                Imported statement payments
-              </Button>
-              <Button
-                variant={!isTransactionsMode ? "secondary" : "outline"}
-                onClick={() => handleModeChange("intelligence")}
-              >
-                Other financial records
-              </Button>
-            </div>
-          </details>
+          <RecordsModeSwitch
+            transactionsMode={isTransactionsMode}
+            onChange={handleModeChange}
+          />
           {isTransactionsMode ? (
             <div className="min-h-0 flex-1 overflow-auto">
               <ErrorBoundary level="section">
@@ -1351,7 +1368,7 @@ function FinancialPageContent() {
                     <EmptyState
                       icon={Users}
                       title="Counterparty analysis is only available for transactions"
-                      description="Select Imported statement payments above to examine who paid or received money."
+                      description="Select Statement payments above to examine who paid or received money."
                     />
                   </div>
                 ) : baseFilteredTransactions.length === 0 ? (
@@ -1415,27 +1432,10 @@ function FinancialPageContent() {
           className="flex min-h-0 flex-1 flex-col"
           active={store.mainView === "trends"}
         >
-          <details className="px-4 py-1 border-b text-xs">
-            <summary className="cursor-pointer text-muted-foreground">
-              {isTransactionsMode
-                ? "Viewing imported statement payments"
-                : "Viewing other financial records"}
-            </summary>
-            <div className="flex items-center gap-2 py-2">
-              <Button
-                variant={isTransactionsMode ? "secondary" : "outline"}
-                onClick={() => handleModeChange("transactions")}
-              >
-                Imported statement payments
-              </Button>
-              <Button
-                variant={!isTransactionsMode ? "secondary" : "outline"}
-                onClick={() => handleModeChange("intelligence")}
-              >
-                Other financial records
-              </Button>
-            </div>
-          </details>
+          <RecordsModeSwitch
+            transactionsMode={isTransactionsMode}
+            onChange={handleModeChange}
+          />
           {isTransactionsMode ? (
             <div className="min-h-0 flex-1 overflow-auto">
               <ErrorBoundary level="section">
@@ -1506,6 +1506,7 @@ function FinancialPageContent() {
           )}
         </RetainedFinancialTab>
       </Tabs>
+      </FinancialResetSlotProvider>
 
       <BulkCategorizeDialog
         open={bulkCategorizeOpen}

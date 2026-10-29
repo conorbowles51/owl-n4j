@@ -4,6 +4,7 @@ import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { useStatementWorkspace } from "../stores/statement-workspace"
 import { newReviewId } from "../lib/statement-review-id"
 import { z } from "zod"
+import { toast } from "sonner"
 import { useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Folder, ChevronRight } from "lucide-react"
@@ -24,8 +25,10 @@ import {
 import { BatchStartChoice } from "./BatchStartChoice"
 import {
   needsBatchStartChoice,
+  originHeader,
   previewBatchStart,
   startStatementBatch,
+  type FinancialSendOrigin,
   type BatchStartChoiceValue,
   type BatchStartPreview,
 } from "../lib/batch-start"
@@ -35,29 +38,38 @@ export function EvidenceFinancialPicker({
   initialFileIds = [],
   initialFolderId = null,
   label = "Choose from Evidence",
+  origin = "financial_statement_files",
 }: {
   caseId: string
   initialFileIds?: string[]
   initialFolderId?: string | null
   label?: string
+  /** The screen this is opened from; recorded with the send (activity trail). */
+  origin?: FinancialSendOrigin
 }) {
   const [open, setOpen] = useState(false)
   const { canEdit, canUpload } = useFinancialAccess()
   if (!canEdit || !canUpload) return null
   return (
     <>
-      <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => setOpen(true)}
+        title="Read the selected PDFs as bank or card statements and add them to this case's Financial review queue. The originals stay in Evidence, unchanged."
+      >
         {label}
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="flex max-h-[92dvh] flex-col sm:max-w-5xl">
-          <DialogTitle>Send existing evidence to Financial</DialogTitle>
+          <DialogTitle>Send evidence to Financial review</DialogTitle>
           <DialogDescription>
-            Select files whose contents are relevant to your financial
-            investigation, including CSV, spreadsheets, Word documents, images
-            and PDFs. Folders include their subfolders; review the list before
-            sending. File type determines the available reader, not financial
-            relevance.
+            The PDFs you choose are read as bank or card statements and added
+            to this case&apos;s Financial review queue. The originals stay in
+            Evidence, unchanged. Other files (CSV, spreadsheets, Word
+            documents, images) are added to Financial as sources to review.
+            Folders include their subfolders. Nothing is sent until you review
+            the list and confirm.
           </DialogDescription>
           {open && (
             <EvidenceBrowser
@@ -65,6 +77,7 @@ export function EvidenceFinancialPicker({
               caseId={caseId}
               initialFileIds={initialFileIds}
               initialFolderId={initialFolderId}
+              origin={origin}
               onStarted={() => setOpen(false)}
             />
           )}
@@ -79,11 +92,13 @@ function EvidenceBrowser({
   initialFileIds,
   initialFolderId,
   onStarted,
+  origin,
 }: {
   onStarted: () => void
   caseId: string
   initialFileIds: string[]
   initialFolderId: string | null
+  origin: FinancialSendOrigin
 }) {
   const { canEdit, canUpload } = useFinancialAccess()
   const client = useQueryClient()
@@ -183,6 +198,7 @@ function EvidenceBrowser({
     void client.invalidateQueries({
       queryKey: ["evidence-folder-contents", caseId],
     })
+    void client.invalidateQueries({ queryKey: ["file-provenance", caseId] })
   }
   const send = async (choice?: BatchStartChoiceValue) => {
     if (!review) return
@@ -203,6 +219,7 @@ function EvidenceBrowser({
               `/api/financial/statement-import/selection/include?case_id=${caseId}`,
               {
                 method: "POST",
+                headers: originHeader(origin),
                 body: {
                   files: otherSources.map((file) => ({
                     evidence_file_id: file.id,
@@ -231,6 +248,7 @@ function EvidenceBrowser({
           requestId,
           preview: startPreview,
           choice,
+          origin,
         })
       }
       changed()
@@ -242,9 +260,28 @@ function EvidenceBrowser({
           false
         )
       onStarted()
-      go(
-        `/cases/${caseId}/financial?view=statements${batchId && !otherSources.length ? `&batch=${encodeURIComponent(batchId)}` : "&files=1"}`
+      const destination = `/cases/${caseId}/financial?view=statements${batchId && !otherSources.length ? `&batch=${encodeURIComponent(batchId)}` : "&files=1"}`
+      const names = review.files.map((file) => file.original_filename)
+      toast.success(
+        `Added ${countFiles(names.length)} to Financial review`,
+        {
+          description:
+            names.slice(0, 8).join(", ") +
+            (names.length > 8 ? ` and ${names.length - 8} more` : "") +
+            ". The originals stay in Evidence.",
+          action: batchId
+            ? {
+                label: "Open batch",
+                onClick: () =>
+                  go(
+                    `/cases/${caseId}/financial?view=statements&batch=${encodeURIComponent(batchId!)}`
+                  ),
+              }
+            : undefined,
+          duration: 15000,
+        }
       )
+      go(destination)
     } catch (error) {
       setError(
         (error instanceof Error
@@ -404,7 +441,7 @@ function EvidenceBrowser({
       ) : (
         <>
           <h3 className="font-semibold">
-            {review.files.length} files to send to Financial
+            {countFiles(review.files.length)} to add to Financial review
           </h3>
           <p className="text-sm">
             Files selected more than once are included once. A removed source
@@ -487,7 +524,7 @@ function EvidenceBrowser({
                 }
                 onClick={() => void send()}
               >
-                Send {review.files.length} files to Financial
+                Add {countFiles(review.files.length)} to Financial review
               </Button>
             )}
             <Button
@@ -506,3 +543,5 @@ function EvidenceBrowser({
     </div>
   )
 }
+
+const countFiles = (count: number) => `${count} ${count === 1 ? "file" : "files"}`

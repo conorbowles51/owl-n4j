@@ -49,3 +49,36 @@ export function statementRowLocator(
     space: "pdf_displayed",
   }
 }
+
+type ProblemRow = {
+  id: string
+  kind: string
+  page_number: number
+  fields: { balance_column?: string | null } & Record<string, unknown>
+  source_cells: { column_index: number | string; locator: unknown }[]
+  value_sources?: Record<string, { source_cell: { locator: unknown } }> | null
+}
+
+/** Where a printed balance or total is drawn: its balance cell, else its page. */
+export function balanceCellLocator(original: ProblemRow): unknown {
+  return (
+    original.value_sources?.balance?.source_cell.locator ??
+    original.source_cells.find((cell) => String(cell.column_index) === original.fields.balance_column)?.locator ?? {
+      kind: "page_only",
+      page: original.page_number,
+    }
+  )
+}
+
+/**
+ * The highlight the statement review opens a problem row with (its openInlineRow
+ * and reviewRow): a printed total at its balance cell, a row without measured
+ * cells at its first cell or page, any other row across its measured cells.
+ */
+export function problemRowLocator(original: ProblemRow): unknown {
+  if (!original.source_cells.length && !original.id.startsWith("manual:") && original.kind !== "statement_total")
+    return original.source_cells[0]?.locator ?? { kind: "page_only", page: original.page_number }
+  return original.kind === "statement_total"
+    ? balanceCellLocator(original)
+    : statementRowLocator(original as Parameters<typeof statementRowLocator>[0], original.page_number)
+}

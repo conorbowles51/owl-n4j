@@ -2,6 +2,7 @@
 import asyncio
 import json
 import logging
+import os
 import time
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
@@ -17,6 +18,7 @@ from services.process_shutdown import shutdown_requested
 from services.financial.evidence_intake import resolve_financial_selection, prepare_existing_financial_file
 from services.financial.statement_import import read_statement_import, StatementImportRequest, check_import_request, confirm_statement_import, _date_roles, _primary_date_role
 from services.financial.review_arithmetic import check_proposed_rows, arithmetic_problems, accepted_difference
+from services.financial.model_work import origin_field, origin_of
 
 log = logging.getLogger(__name__)
 TERMINAL_FILES = {'checked', 'error'}
@@ -76,7 +78,7 @@ def create_batch(session, *, case_id, request_id, file_ids, folder_ids, actor, s
             if covering:
                 return UUID(covering[0]['id'])
     session.add(Batch(id=request_id, case_id=case_id, created_by=actor.user_id, status='preparing',
-        actor=dict(name=actor.name, email=actor.email, user_id=str(actor.user_id)),
+        actor=dict(name=actor.name, email=actor.email, user_id=str(actor.user_id), **origin_field(actor)),
         files=[dict(source_id=f['id'], file_id=f['id'], filename=f['original_filename'],
                     expected_revision=f['financial_visibility_revision'], status='waiting') for f in selection['files']]))
     session.commit()
@@ -234,6 +236,9 @@ def assess(proposal, request=None):
     if proposal.get('printed_currency') and not proposal['currency']:
         # Cited for the currency proposal (field_proposals); the reading stays without a currency.
         summary['printed_currency'] = proposal['printed_currency']
+    if not proposal['currency'] and isinstance(proposal.get('currency_marks'), list):
+        # Every currency marker the file prints: the case's usual currency is assumed only when each allows it.
+        summary['currency_marks'] = proposal['currency_marks']
     if proposal.get('brokerage_cash_ledger'):
         # Its currency is printed only in its holdings, or taken from its account (field_proposals).
         summary['brokerage_cash_ledger'] = True
@@ -254,12 +259,25 @@ def assess(proposal, request=None):
             summary['overlap_trim']['covered_movements'] = len(trim['before']) + len(trim['after'])
             summary['overlap_trim']['covered_by'] = [c['source_document_id'] for c in trim['covers']]
     summary['account_type'] = proposal['metadata'].get('account_type') or ''
+    if proposal.get('chain_contradicted'):
+        # Read by the duplicate comparison: this printing does not hold the one the file continues from.
+        summary['chain_contradicted'] = True
     # The pages this period is read from: which saved periods of its file its
     # readiness depends on (_relevant_admitted).
     summary['source_pages'] = sorted({source['page_number'] for source in proposal.get('sources') or []
                                       if type(source.get('page_number')) is int})
     if proposal['metadata'].get('account_reference_kind'):
         summary['account_reference_kind'] = proposal['metadata']['account_reference_kind']
+    from services.financial.auto_save_guard import section_currencies
+    sections = section_currencies(proposal.get('sources'))
+    if sections:
+        # The currencies this statement's own section headings print (auto_save_guard).
+        summary['section_currencies'] = sections
+    if proposal.get('currency') and not proposal.get('detected_currency') and proposal.get('sources'):
+        # A currency the reader did not find (a saved choice): what the pages name, for the guard.
+        from services.financial.statement_currency import currency_marks
+        summary['page_currencies'] = sorted({str(mark[0]).upper() for mark in currency_marks(proposal['sources'])
+                                             if isinstance(mark, list) and len(mark) == 1 and mark[0] != '?'})
     summary['unclassified_count'] = sum(row['kind'] == 'unclassified' and reviewed.get(row['id'], {}).get('excluded', row['excluded']) for row in rows)
     if admission is not None:
         from services.financial.import_issues import incomplete_records
@@ -417,6 +435,13 @@ VANISHED_PERIOD_MESSAGE = ('This file was read again and the statement periods w
                            'preparation is retained in history; review the periods listed now.')
 
 
+# A statement already in the ledger whose saved review was made on an earlier reading no longer stops its whole
+# file from being prepared again: the review cannot feed an import (the period is imported), it stays recorded and
+# listed in the recovery panel, and this batch's item follows the new reading. Not yet imported: refused as before.
+# Switch: LOUPE_FINANCIAL_IMPORTED_STALE_REVIEW (default on).
+IMPORTED_STALE_REVIEW_FOLLOWS_READING = os.environ.get('LOUPE_FINANCIAL_IMPORTED_STALE_REVIEW', '1') != '0'
+
+
 CARRIED_REVIEW_MESSAGE = ('This file was read again and its statement period is now named. Your saved corrections '
                           'were carried to that statement, which is listed now.')
 
@@ -464,13 +489,15 @@ def prepare_reviews(session, batch, file, *, lock_slice=None):
         if existing:
             draft, conflict = resolve_review(existing.review_request, progress, baseline=initial_request(proposal))
         if draft and draft.get('expected_revision') != proposal['revision']:
-            if proposal.get('saved_review'):
+            if proposal.get('saved_review') and not (IMPORTED_STALE_REVIEW_FOLLOWS_READING and proposal.get('current_import')):
                 raise PdfMappingError('This file has saved corrections from an earlier reading. Open its individual statement review, compare them and save progress before adding it to bulk import.', 409)
             # Keep the new reading editable while earlier values stay in the
             # recovery panel. Assessment holds import until comparison is saved.
             if not (existing and existing.review_request):
                 draft = None
         status,summary = assess(proposal, draft)
+        from services.financial.held_reprepare import ASSESSED, assessment_digest
+        summary[ASSESSED] = assessment_digest(status, summary)
         if conflict:
             status, summary = 'attention', conflict_summary(summary)
         summary.update(filename=file['filename'], currency=proposal['currency'], source_id=file['source_id'])
@@ -507,6 +534,23 @@ def prepare_reviews(session, batch, file, *, lock_slice=None):
     from services.financial.pending_statement_duplicates import prepare_batch_dispositions
     prepare_batch_dispositions(session, batch, fid, cache=cache, review_lock=review_lock)
     session.commit()
+
+
+# 2026-10-25 (fin-queue, Neil: build the queue's lessons in): a question carried onto a
+# newer reading ("you entered X, the statement now reads Y: choose which is right")
+# is answered by the person's next save of that statement, whatever it keeps. Before,
+# only a save whose values differed from the carried ones answered it, and the save
+# kept the question, so choosing the reading's value (already in the carried
+# request) could never be confirmed (BNB2 10 MONETA SANTANDER OCT 25 DOLARES).
+# A System or batch save answers nothing. Off: only a changed save answers it.
+PERSON_SAVE_ANSWERS_CARRY = os.environ.get('LOUPE_FINANCIAL_PERSON_SAVE_ANSWERS_CARRY', '1') != '0'
+CARRIED_QUESTIONS = ('carry_conflicts', 'carry_row_conflicts')
+
+
+def _answers_carried_question(saved, actor):
+    from services.financial.field_proposals import SYSTEM_NAME
+    return bool(PERSON_SAVE_ANSWERS_CARRY and saved and actor is not None and actor.name != SYSTEM_NAME
+                and any(saved.get(key) for key in CARRIED_QUESTIONS))
 
 
 def import_available(item):
@@ -999,6 +1043,9 @@ def _checked_batch_items(session, case_id, items, *, validate_reviews=False, rea
                 # Where the statement starts in its file: a second printed statement
                 # for the same account and dates in the same file is compared.
                 'page_number': summary.get('page_number') or item.summary.get('page_number')}
+            if (summary.get('duplicate_disposition') or {}).get('status'):
+                # The copy rule's decision for this projection (statement_import_overlap._copy_of_retained).
+                raw['_copy_rule_status'] = summary['duplicate_disposition']['status']
             if not projected_request and _ProjectionInputs._trims(summary):
                 # The dates of this projection's own reading (a trimmed query's kept dates), not the stored ones.
                 raw.update(period_start=summary.get('period_start', ''), period_end=summary.get('period_end', ''))
@@ -1033,10 +1080,18 @@ def _checked_batch_items(session, case_id, items, *, validate_reviews=False, rea
                     count=waiting, plural='' if waiting == 1 else 's', verb='is' if waiting == 1 else 'are')))
                 summary.update(can_import=False, comparison_pending=True)
             summary.update(coverage_review=review, problems=problems, problem_count=len(problems) + extra_count)
-            projected[index] = (item, 'attention' if problems else 'ready', summary, projected_request, held)
+            # A fund statement set aside as not a payment statement has no problem and is never saveable: it stays
+            # held (attention), the state its assessment stored, so the queue lists it as not a payment statement.
+            held_aside = bool(summary.get('not_payment_statement')) and _not_payment_enabled()
+            projected[index] = (item, 'attention' if problems or held_aside else 'ready', summary, projected_request, held)
     with stage('batch_finish'):
         result = _finish_projection(session, case_id, projected, inputs.files)
     return result, sources
+
+
+def _not_payment_enabled():
+    from services.financial import not_payment_statements
+    return not_payment_statements.ENABLED
 
 
 def _account_currency_conflict(session, case_id, summary, raw, knowledge):
@@ -1053,6 +1108,29 @@ def _account_currency_conflict(session, case_id, summary, raw, knowledge):
     return field_proposals.account_currency_conflict(values, knowledge['case'])
 
 
+def _auto_save_hold(session, case_id, item, summary, file, ledger):
+    """{reason, sentence} when the System may not save this ready statement on its own, else None.
+
+    Only statements the System would save (no person's review, or details the
+    System filled) are checked: a person's save stands on the person's look.
+    """
+    from services.financial import auto_save_guard
+    from services.financial.queue_save import system_filled_only
+    from services.financial.statement_progress import review_progress
+    if not auto_save_guard.enabled():
+        return None
+    untouched = not item.review_request and not (file is not None and review_progress(file, item.statement_key))
+    if not (untouched or system_filled_only(item, file)):
+        return None
+    if 'periods' not in ledger:
+        ledger['periods'] = auto_save_guard.load_ledger(session, case_id)
+    held = auto_save_guard.hold(summary, ledger=ledger['periods'],
+        currency_basis=auto_save_guard.system_currency_basis(file, item.statement_key, summary.get('currency')),
+        filename=file.original_filename if file is not None else '',
+        named_currencies=summary.get('page_currencies') or ())
+    return dict(reason=held[0], sentence=held[1]) if held else None
+
+
 def _finish_projection(session, case_id, projected, files):
     # A ready item may have been imported through its individual review. Resolve
     # all such receipts together rather than querying its saved rows per item.
@@ -1062,7 +1140,7 @@ def _finish_projection(session, case_id, projected, files):
     from services.financial.statement_progress import review_progress
     retained = current_imports(session, case_id, [UUID(summary['source_document_id'])
         for _, state, summary, _, _ in projected if state == 'imported' and summary.get('source_document_id')])
-    result = []
+    result, ledger = [], {}
     for item, state, summary, projected_request, _ in projected:
         if state == 'imported' and summary.get('source_document_id') in retained:
             current = retained[summary['source_document_id']]
@@ -1093,6 +1171,12 @@ def _finish_projection(session, case_id, projected, files):
         for key in ('currency', 'holder', 'account', 'institution', 'account_type', 'period_start', 'period_end'):
             if key in summary and summary[key] is None:
                 summary[key] = ''
+        summary.pop('auto_save_hold', None)
+        if state == 'ready' and summary.get('can_import'):
+            hold = _auto_save_hold(session, case_id, item, summary, files.get(item.file_id), ledger)
+            if hold:
+                # What the System could not prove: it does not save this statement on its own (auto_save_guard).
+                summary['auto_save_hold'] = hold
         result.append(SimpleNamespace(id=item.id, file_id=item.file_id, statement_key=item.statement_key,
             status=state, summary=summary, review_request=projected_request,
             review_revision=batch_review_revision(item.review_request,
@@ -1424,7 +1508,7 @@ def set_selected_currency(session, *, case_id, batch_id, selections, currency, a
             # A currency decision also saves the current draft for individual
             # review, so leaving the batch cannot restore the old currency.
             record = dict(request=merged, review_revision=_digest(merged), saved_at=datetime.now(timezone.utc).isoformat(),
-                saved_by=dict(user_id=str(actor.user_id), name=actor.name))
+                saved_by=dict(user_id=str(actor.user_id), name=actor.name, **origin_field(actor)))
             metadata = deepcopy(file.metadata_ or {})
             previous = metadata.get('financial_review_progress', {}).get(item.statement_key or '')
             if previous:
@@ -1571,6 +1655,24 @@ def _batch_view(session, case_id, batch_id, batch, items, *, offset, limit, only
         items=[dict(id=str(i.id),file_id=str(i.file_id),statement_id=i.statement_key or None,status=i.status,**i.summary) for i in shown[offset:offset+limit]])
 
 
+# Neil's decision (2026-10-26, fin-queue3 L24): the first save of the current reading over a review saved on an
+# older reading is assessed as it stands once saved (it is then the statement's saved review), not against the
+# review it replaces, which import admission refuses as an older reading. Off: that first save is held
+# ('attention') and only a second save reaches the reading's real state, as before.
+SAVE_OVER_OLDER = os.environ.get('LOUPE_FINANCIAL_SAVE_OVER_OLDER_READING', '1').strip().lower() not in (
+    '0', 'false', 'no', 'off')
+
+
+def _assessed_against(proposal, saved, payload):
+    """The reading save_review assesses ``payload`` against: when the saved review it replaces belongs to an older
+    reading and the draft is on the current one, the draft is that statement's saved review."""
+    if not (SAVE_OVER_OLDER and saved and saved['request'].get('expected_revision') != proposal['revision']
+            and payload.get('expected_revision') == proposal['revision']):
+        return proposal
+    replaced = {key: value for key, value in saved.items() if key not in CARRIED_QUESTIONS}
+    return {**proposal, 'saved_review': {**replaced, 'request': payload}}
+
+
 def save_review(session, *, case_id, batch_id, item_id, request, expected_review_revision, actor=None):
     """Persist the selected draft and return its local assessment.
 
@@ -1612,12 +1714,17 @@ def save_review(session, *, case_id, batch_id, item_id, request, expected_review
     _, conflict = resolve_review(item.review_request, saved, baseline=initial_request(proposal))
     if conflict and request_signature(payload) != request_signature(saved['request']):
         raise PdfMappingError('The individual statement and batch have different saved edits. Load the saved individual review or explicitly compare both before saving.', 409)
-    status,summary=assess(proposal,payload)
+    answered = _answers_carried_question(saved, actor)
+    if answered:
+        # The person's save is the answer: the reading is assessed without the carried question.
+        proposal = {**proposal, 'saved_review': {k: v for k, v in (proposal.get('saved_review') or {}).items()
+                                                 if k not in CARRIED_QUESTIONS}}
+    status,summary=assess(_assessed_against(proposal, saved, payload),payload)
     summary.update(filename=item.summary['filename'],source_id=item.summary['source_id'])
     for key in ('import_decision','import_decision_history'):
         if key in item.summary: summary[key] = item.summary[key]
     item.status=status;item.summary=summary;item.review_request=payload
-    if not saved or payload != saved['request']:
+    if not saved or payload != saved['request'] or answered:
         metadata = deepcopy(file.metadata_ or {})
         if saved:
             metadata.setdefault('financial_review_history', []).append(saved)
@@ -1626,8 +1733,12 @@ def save_review(session, *, case_id, batch_id, item_id, request, expected_review
             'initial_request_signature': (saved or {}).get('initial_request_signature') or request_signature(initial_request(proposal)),
             'superseded_request_signatures': sorted(set([*(saved or {}).get('superseded_request_signatures', []),
                 *([request_signature(saved['request'])] if saved else [])]))}
-        updated['saved_by'] = (dict(user_id=str(actor.user_id), name=actor.name) if actor else
+        updated['saved_by'] = (dict(user_id=str(actor.user_id), name=actor.name, **origin_field(actor)) if actor else
             dict(name='Batch review', batch_id=str(batch_id)))
+        if answered:
+            # The carried record with its question stays in the review history (appended above).
+            for key in CARRIED_QUESTIONS:
+                updated.pop(key, None)
         metadata.setdefault('financial_review_progress', {})[item.statement_key or ''] = updated
         file.metadata_ = metadata
         saved = updated
@@ -1674,7 +1785,7 @@ def confirm_review(*, session_factory, case_id, batch_id, item_id, request,
                     raise PdfMappingError('This statement cannot be imported yet. ' + ' '.join(
                         p['message'] for p in item.summary.get('problems', [])[:3]), 422)
                 item.status = 'pending_import'
-                item.summary = {**item.summary, 'import_actor':dict(name=actor.name, email=actor.email, user_id=str(actor.user_id))}
+                item.summary = {**item.summary, 'import_actor':dict(name=actor.name, email=actor.email, user_id=str(actor.user_id), **origin_field(actor))}
                 batch.status = 'preparing'
         session.commit()
     with session_factory() as session:
@@ -1757,7 +1868,7 @@ def claim_ready(session, *, case_id, batch, ready, checked, operation_id, expect
         session.rollback()
         return None
     operation = Operation(id=operation_id, case_id=case_id, batch_id=batch_id, expected_revision=expected_revision,
-        actor=dict(name=actor.name, user_id=_actor_id(actor)),
+        actor=dict(name=actor.name, user_id=_actor_id(actor), **origin_field(actor)),
         outcomes=[dict(item_id=str(i.id), file_id=str(i.file_id), filename=i.summary.get('filename', ''),
             period_start=i.summary.get('period_start', ''), period_end=i.summary.get('period_end', ''),
             status='queued') for i in ready])
@@ -1772,7 +1883,7 @@ def claim_ready(session, *, case_id, batch, ready, checked, operation_id, expect
             item.summary = metadata
             item.review_request = projection.review_request
         checked_summary = {key: value for key, value in {**item.summary, **projection.summary}.items() if key != 'readiness'}
-        item.summary={**checked_summary,'import_operation_id':str(operation_id), 'import_actor':dict(name=actor.name,email=actor.email,user_id=_actor_id(actor))}
+        item.summary={**checked_summary,'import_operation_id':str(operation_id), 'import_actor':dict(name=actor.name,email=actor.email,user_id=_actor_id(actor), **origin_field(actor))}
     batch.status='preparing'
     return operation
 
@@ -1792,7 +1903,7 @@ def leave_unimported(session, *, case_id, batch_id, item_id, action, reason, exp
     if action not in ('skip','restore') or not reason.strip():
         raise PdfMappingError('Choose whether to leave this statement unimported and record the reason.', 422)
     history = list(item.summary.get('import_decision_history', []))
-    decision = dict(action=action, reason=reason.strip(), actor=dict(user_id=str(actor.user_id), name=actor.name),
+    decision = dict(action=action, reason=reason.strip(), actor=dict(user_id=str(actor.user_id), name=actor.name, **origin_field(actor)),
                     at=datetime.now(timezone.utc).isoformat())
     history.append(decision)
     item.summary = {**item.summary, 'import_decision': decision, 'import_decision_history': history}
@@ -2064,7 +2175,7 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
             try:
                 with factory() as session, _bounded_lock_waits(session) as db:
                     batch=batch_for(db,case_id,batch_id)
-                    actor=Actor(name=batch.actor['name'],email=batch.actor['email'],user_id=UUID(batch.actor['user_id']))
+                    actor=Actor(name=batch.actor['name'],email=batch.actor['email'],user_id=UUID(batch.actor['user_id']),origin=origin_of(batch.actor))
                     if file['status']=='waiting':
                         from services.financial.auto_read import detected_only, prepare_detected
                         if file.get('recovery'):
@@ -2104,26 +2215,49 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
                         # The statement-reading code this preparation used (reader_release).
                         from services.financial.reader_release import reader_stamp
                         file['reader_stamp']=reader_stamp(); file.pop('recheck', None)
+                        # And the whole backend reader it was prepared by (held_reprepare).
+                        from services.financial.held_reprepare import record_preparation
+                        record_preparation(file)
                         file.pop('preparation_retries', None)
                         file.pop('error', None)
                         _reading_progress(file, 'complete', SHARED_PREPARATION_DONE, review_file_id=file['file_id'], prepared_in_batch=shared[1])
                     else:
-                        await _finish_atomic(_review_file,factory,batch_id,case_id,deepcopy(file))
-                        file['status']='checked'
-                        # Prepared with automatic save on: statements of this file
-                        # that become ready later are saved by the sweep (queue_save).
-                        from services.financial import queue_save
-                        if queue_save.AUTO_SAVE_READY:
-                            file[queue_save.AUTO_SAVE_MARK] = True
+                        reviewed = await _finish_atomic(_review_file,factory,batch_id,case_id,deepcopy(file))
+                        if isinstance(reviewed, dict) and reviewed.get('carry_refused'):
+                            # Nothing was prepared (held_reprepare: her work could not be carried now). The file
+                            # keeps the stamps of the reader that did prepare it; only the mark records why.
+                            from services.financial.held_reprepare import left_after_carry
+                            file['status']='checked'; file.pop('recheck', None)
+                            left_after_carry(file, reviewed['carry_refused'])
+                            file.pop('preparation_retries', None)
+                            file.pop('error', None)
+                            _reading_progress(file, 'complete', 'The reading is complete. Open its statement review to check reconciliation before importing.', review_file_id=file['file_id'])
                         else:
-                            file.pop(queue_save.AUTO_SAVE_MARK, None)
-                        # The statement-reading code this preparation used (reader_release).
-                        from services.financial.reader_release import reader_stamp
-                        file['reader_stamp']=reader_stamp(); file.pop('recheck', None)
-                        file.pop('preparation_retries', None)
-                        file.pop('error', None)
-                        file['prepared_reading'] = await asyncio.to_thread(_prepared_reading, factory, case_id, UUID(file['file_id']))
-                        _reading_progress(file, 'complete', 'The reading is complete. Open its statement review to check reconciliation before importing.', review_file_id=file['file_id'])
+                            file['status']='checked'
+                            # Prepared with automatic save on: statements of this file
+                            # that become ready later are saved by the sweep (queue_save).
+                            from services.financial import queue_save
+                            if queue_save.AUTO_SAVE_READY:
+                                file[queue_save.AUTO_SAVE_MARK] = True
+                            else:
+                                file.pop(queue_save.AUTO_SAVE_MARK, None)
+                            # Prepared with the page-image reader on: its held statements are
+                            # read from their page images in the background (vision_reader).
+                            from services.financial import vision_reader
+                            if vision_reader.ENABLED:
+                                file[vision_reader.MARK] = True
+                            else:
+                                file.pop(vision_reader.MARK, None)
+                            # The statement-reading code this preparation used (reader_release).
+                            from services.financial.reader_release import reader_stamp
+                            file['reader_stamp']=reader_stamp(); file.pop('recheck', None)
+                            # And the whole backend reader it was prepared by (held_reprepare).
+                            from services.financial.held_reprepare import record_preparation
+                            record_preparation(file)
+                            file.pop('preparation_retries', None)
+                            file.pop('error', None)
+                            file['prepared_reading'] = await asyncio.to_thread(_prepared_reading, factory, case_id, UUID(file['file_id']))
+                            _reading_progress(file, 'complete', 'The reading is complete. Open its statement review to check reconciliation before importing.', review_file_id=file['file_id'])
             except Exception as error:
                 retries = file.get('preparation_retries', 0)
                 if _lock_busy_error(error):
@@ -2278,6 +2412,12 @@ def _turn_candidates(files):
 
 def _review_file(factory,batch_id,case_id,file):
     with factory() as db:
+        # held_reprepare with investigator work: carried onto the current reading first (reprepare_carry). When it
+        # cannot be carried now, nothing is prepared and the file's statements stay exactly as they are.
+        from services.financial.held_reprepare import carry_before_preparing
+        refused = carry_before_preparing(db, case_id, batch_id, file)
+        if refused:
+            return dict(carry_refused=refused)
         prepare_reviews(db,batch_for(db,case_id,batch_id),file,lock_slice=REVIEW_LOCK_SLICE_SECONDS)
         # Saved reviews, earlier imports or duplicate decisions on this file can
         # leave its periods needing a reading at list time. Store it now.
@@ -2505,6 +2645,22 @@ READER_RELEASE_SWEEP_SECONDS = 120
 READINESS_SWEEP_BUDGET = 20.0
 
 
+VISION_SWEEP_PAUSE_SECONDS = 30
+
+
+async def _vision_forever(resolve_path):
+    from postgres.session import _get_session_local
+    from services.financial import vision_reader
+    while vision_reader.ENABLED:
+        try:
+            await asyncio.to_thread(vision_reader.sweep, _get_session_local(), resolve_path)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception('Page-image reading round failed; it will retry')
+        await asyncio.sleep(VISION_SWEEP_PAUSE_SECONDS)
+
+
 async def run_batches_forever():
     from postgres.session import _get_session_local
     from routers.evidence import _resolve_stored_path
@@ -2512,6 +2668,11 @@ async def run_batches_forever():
     next_sweep = time.monotonic() + READINESS_SWEEP_SECONDS
     next_auto_read = time.monotonic()
     next_reader_release = time.monotonic() + READINESS_SWEEP_SECONDS
+    next_reader_gaps = time.monotonic() + READINESS_SWEEP_SECONDS
+    # Held statements read from their page images: its own task, so a slow
+    # image reading never delays batch turns (vision_reader; switch
+    # LOUPE_FINANCIAL_VISION_FALLBACK).
+    vision_task = asyncio.create_task(_vision_forever(_resolve_stored_path))
     while True:
         try:
             factory=_get_session_local()
@@ -2563,6 +2724,28 @@ async def run_batches_forever():
                     raise
                 except Exception:
                     log.exception('Re-checking statement files after a release failed; it will retry')
+                # Held statements prepared by an earlier backend reader are prepared again from their
+                # saved reading, a few at a time (held_reprepare).
+                from services.financial.held_reprepare import sweep as held_reprepare_sweep
+                try:
+                    reprepared = await _finish_atomic(held_reprepare_sweep, factory)
+                    if reprepared['handed'] or reprepared['verdicts']:
+                        log.info('Held statements checked against the deployed reader: %s', reprepared)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    log.exception('Preparing held statements again after a reader change failed; it will retry')
+            if time.monotonic() >= next_reader_gaps:
+                # Held statements the reader got nothing out of (pages with text): registered and reported to us
+                # (reader_gaps; journal WARNING for each newly seen one).
+                from services.financial import reader_gaps
+                next_reader_gaps = time.monotonic() + reader_gaps.SWEEP_SECONDS
+                try:
+                    await _finish_atomic(reader_gaps.sweep, factory)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    log.exception('Reader-gap round failed; it will retry')
             if time.monotonic() >= next_sweep:
                 # Batch reads never re-read PDFs. Inputs changed by paths
                 # without their own refresh are brought current here.
@@ -2574,6 +2757,11 @@ async def run_batches_forever():
                 # or whose automatic save failed, are saved as at preparation.
                 from services.financial.queue_save import sweep_backlog, sweep_save
                 await _finish_atomic(sweep_save, factory)
+                # Held statements whose reading is current and whose only questions their account's saved
+                # statements answer are filled as System (autofill_reapply); the backlog round below saves
+                # those that then check out completely.
+                from services.financial.autofill_reapply import sweep as autofill_reapply_sweep
+                await _finish_atomic(autofill_reapply_sweep, factory)
                 # Statements ready from before automatic save (no preparation
                 # mark): saved under the same rule, a few per round.
                 await _finish_atomic(sweep_backlog, factory)
@@ -2724,7 +2912,7 @@ def recover_retained_source(session, *, case_id, batch_id, source_id, expected_r
         message='Preparing a new reading from this retained PDF. Its bytes will be verified before reading; earlier removals and reviews remain in history.',
         fresh_reading=True, read_from_file_id=str(source.id), reading_file_id=str(source.id),
         review_file_id=None, reading_mode='automatic', reset_revision=reset['id'],
-        requested_by=dict(name=actor.name, email=actor.email, user_id=str(actor.user_id)))
+        requested_by=dict(name=actor.name, email=actor.email, user_id=str(actor.user_id), **origin_field(actor)))
     target.update(status='waiting', expected_revision=expected_revision, recovery=result)
     target.pop('error', None)
     batch.files = files

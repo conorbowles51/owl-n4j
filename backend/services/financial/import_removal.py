@@ -9,6 +9,7 @@ from postgres.models.evidence import EvidenceFile, IngestionLog
 from postgres.models.financial import FinancialSourceDocument as Source, FinancialTransaction as Transaction, FinancialStatementPeriod as Period
 from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item
 from services.financial.pdf_candidates import PdfMappingError, _digest
+from services.financial.model_work import origin_field
 
 
 def _selection(session, case_id, batch_ids, file_ids, lock=False):
@@ -90,7 +91,7 @@ def remove_imports(session, *, case_id, batch_ids=(), file_ids=(), expected_revi
         raise PdfMappingError(preview['blocked_reason'], 409)
     files, batches, sources, rows = _selection(session, case_id, batch_ids, file_ids)
     removal = dict(id=str(uuid4()), at=datetime.now(timezone.utc).isoformat(),
-        actor=dict(user_id=str(actor.user_id), name=actor.name, email=actor.email))
+        actor=dict(user_id=str(actor.user_id), name=actor.name, email=actor.email, **origin_field(actor)))
     representatives = {}
     for file in files:
         representatives.setdefault(file.sha256, file)

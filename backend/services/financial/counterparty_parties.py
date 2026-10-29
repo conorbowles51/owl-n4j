@@ -162,7 +162,8 @@ def counterparty_party_analysis(export, *, population='working'):
     from services.financial.working_totals import working_totals_from_readings
     from services.financial.ledger_summary import LedgerSummaryError
     if population not in ('working','verified'):raise LedgerSummaryError('Choose working or verified readings.')
-    document=json.loads(export.snapshot.content);ledger=document['ledger']
+    from services.financial.ledger_snapshot import view_capture, LedgerScope
+    document,stamp=view_capture(export);ledger=document['ledger']
     if not document.get('export_ready') or not ledger.get('history_captured') or not ledger.get('available'):raise LedgerSummaryError('Identity analysis requires a complete captured ledger and history.')
     if len(ledger['readings'])>MAX_PARTY_READINGS:raise LedgerSummaryError(f'More than {MAX_PARTY_READINGS:,} payment records; choose a smaller account or date range.')
     rows=[SimpleNamespace(id=r['row']['key'],**{k:r['row'][k] for k in ('ref_id','account_id','currency','counterparty_raw','description','amount_minor','direction','superseded_by_id')}) for r in ledger['readings']]
@@ -187,5 +188,5 @@ def counterparty_party_analysis(export, *, population='working'):
     return dict(case_id=ledger['case_id'],account_id=ledger['account_id'],start_date=ledger['start_date'],end_date=ledger['end_date'],population=population,
         available=True,reason=None,applied=False,label_basis='investigator_payment_identity',included_rows=totals['included_rows'],excluded_rows=totals['excluded_rows'],currencies=totals['currencies'],counterparties=[groups[k] for k in sorted(groups)],
         has_credit_card_readings=totals.get('has_credit_card_readings', False),
-        snapshot_sha256=export.snapshot.sha256,snapshot_json=export.snapshot.content,
+        **stamp,snapshot_json=None if isinstance(export,LedgerScope) else export.snapshot.content,
         limitation=totals['limitation'],counterparty_limitation='Only explicitly linked readings use reviewed party identities. Unlinked source labels remain verbatim and unresolved. Original labels and identity decisions are captured. Grouping does not confirm payment direction roles, merge ledger rows, net internal transfers or promote proof classes.')

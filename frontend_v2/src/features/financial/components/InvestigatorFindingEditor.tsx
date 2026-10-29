@@ -155,10 +155,10 @@ export function InvestigatorFindingEditor({
                   placeholder="What do the records show? What remains unknown?"
                 />
               </label>
-              <details open={entry ? undefined : false}>
-                <summary className="cursor-pointer text-sm">
+              <fieldset className="space-y-2 rounded-md border p-3">
+                <legend className="px-1 text-sm font-semibold">
                   Follow-up and record details (optional)
-                </summary>
+                </legend>
                 <div className="space-y-3 pt-3">
                   {" "}
                   <div className="grid grid-cols-2 gap-3">
@@ -222,7 +222,7 @@ export function InvestigatorFindingEditor({
                     />
                   </label>
                 </div>
-              </details>
+              </fieldset>
               <div className="rounded border bg-muted/20 p-3 flex flex-wrap items-center justify-between gap-2">
                 <p>
                   {attached.length} supporting payments

@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { z } from "zod"
 import { batchReviewSummarySchema } from "../lib/batch-review-summary"
 import { Button } from "@/components/ui/button"
@@ -108,21 +109,18 @@ export function BatchReviewSummary({
         </>
       )}
       {!!summary.unchecked_balance_statements && (
-        <details className="text-sm text-muted-foreground">
-          <summary className="cursor-pointer">
-            Automatic balance comparison unavailable for{" "}
+        <Disclosure className="text-sm text-muted-foreground" label={<>Automatic balance comparison unavailable for{" "}
             {summary.unchecked_balance_statements}{" "}
             {summary.unchecked_balance_statements === 1
               ? "statement"
-              : "statements"}
-          </summary>
+              : "statements"}</>}>
           <p className="mt-1">
             A comparison needs readable opening and closing balances and payment
             values. Missing inputs mean the comparison could not run; they do
             not establish a difference. Any identified missing payment values
             are listed separately above.
           </p>
-        </details>
+        </Disclosure>
       )}
     </section>
   )

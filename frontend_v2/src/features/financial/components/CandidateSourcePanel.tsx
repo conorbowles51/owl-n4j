@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { StatementLayoutContextPanel } from "./StatementLayoutContextPanel"
 import {
   layoutContext,
@@ -138,8 +139,7 @@ export function CandidateSourcePanel({
       {query.data && !query.isError && !query.isFetching && (
         <>
           {query.data.model_nomination && (
-            <details className="rounded border p-3">
-              <summary>Original model proposal</summary>
+            <Disclosure className="rounded border p-3" label="Original model proposal">
               <p>
                 Requested model: {query.data.model_nomination.request.provider}{" "}
                 / {query.data.model_nomination.request.model_id}. Prompt:{" "}
@@ -162,7 +162,7 @@ export function CandidateSourcePanel({
                 These are the model’s saved proposals. Review choices and
                 confirmed values are recorded separately.
               </p>
-            </details>
+            </Disclosure>
           )}
           {query.data.layout_context && (
             <StatementLayoutContextPanel

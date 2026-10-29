@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { useState } from "react"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { z } from "zod"
@@ -239,8 +240,7 @@ export function BatchLayoutMemory({
                   </Button>
                 </div>
               )}
-              <details>
-                <summary className="text-sm">Statements in this group</summary>
+              <Disclosure label="Statements in this group">
                 <ul className="text-sm">
                   {item.statements.map((s) => (
                     <li key={s.item_id}>
@@ -249,7 +249,7 @@ export function BatchLayoutMemory({
                     </li>
                   ))}
                 </ul>
-              </details>
+              </Disclosure>
             </article>
           )
         })}

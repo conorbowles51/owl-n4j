@@ -142,8 +142,8 @@ def test_authoritative_running_attempt_prevents_dispatch_for_stale_failed_status
         return 1
 
     monkeypatch.setattr(processing, 'reconcile_case_jobs', current_running_job)
-    with pytest.raises(PdfMappingError, match='job could not be confirmed'):
-        intake.prepare(process=processing.process_db_files)
+    # The running attempt is the reading this request wanted: reported, never dispatched twice.
+    assert intake.prepare(process=processing.process_db_files)['outcome'] == 'processing'
     intake.db.rollback()
     assert intake.file.engine_job_id == job_id
     assert intake.file.status == 'processing'

@@ -198,3 +198,14 @@ class AutomaticCurrencyImportTests(TestCase):
             self.assertEqual(len(items), 2)
             self.assertEqual({i.summary['currency'] for i in items}, {'USD', 'CAD'})
             self.assertEqual([i.summary['transaction_count'] for i in items], [3, 3])
+
+
+def test_bbva_heading_garbled_by_the_scan_still_scopes_the_label():
+    # BNB2 BBVA USD Jul 2025: the text layer reads 'Informaciéon Financiera'; the glossary's 'Moneda nacional'
+    # must not count as a second account currency.
+    from services.financial.statement_currency import detect_statement_currency
+    rows = [['CASH MANAGEMENT DLLS C INT'], ['Informaciéon Financiera', 'MONEDA DOLARES'],
+            ['BBVA MEXICO, S.A., INSTITUCION DE BANCA MULTIPLE'], ['Moneda nacional']]
+    sources = [{'page_number': 1, 'table_index': 0,
+                'rows': [{'cells': [{'expected_text': t} for t in r]} for r in rows]}]
+    assert detect_statement_currency(sources, layout_id='bbva-mexico-cash-management') == 'USD'

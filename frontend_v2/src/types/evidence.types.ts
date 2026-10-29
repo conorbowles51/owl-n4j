@@ -176,11 +176,24 @@ export interface LLMModel {
   supports_agent?: boolean
   supports_structured_output?: boolean
   provider_configured?: boolean
+  /** Page images may be sent to it (the server's image-capability check). */
+  reads_images?: boolean
+}
+
+export interface AIWorkloadModelChainEntry {
+  provider: string
+  model_id: string
 }
 
 export interface AIWorkloadModelConfig {
   provider: string
   model_id: string
+  /** Statement page images: the models tried in order; the first whose reading proves is used. */
+  chain?: AIWorkloadModelChainEntry[]
+  /** Statement page images: ON, only DeepSeek reads (OpenAI failover switched off, nothing sent to OpenAI). */
+  deepseek_only?: boolean
+  deepseek_only_changed_by?: string
+  deepseek_only_changed_at?: string
 }
 
 export interface AIModelPolicy {

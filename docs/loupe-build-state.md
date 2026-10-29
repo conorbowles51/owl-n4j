@@ -1,33 +1,25 @@
-## 29 October: Cellebrite rebuild planned (resume here for phone work)
+## 29 October: Cellebrite rebuild planned (phone work resumes here)
 
-Head: `a90ee878` "docs: research and measurements behind the Cellebrite plan", on top of `7cc14970`
-(the plan and six specs); local on `integration/evidence-main-reunion`, not pushed (Neil: no push). Before
-them, `e4eb33f4` merged 260 commits from origin so the Mac matches the VM checkout (`68d95b20` at the time).
+Plan only; nothing built. Written on Neil's Mac and pushed as documents only (no code changed).
 
 - **Plan:** `docs/cellebrite-rebuild-plan.md` (standing decisions, evidence, index) and specs
-  `docs/cellebrite/01` to `06`. Where they differ in detail the spec governs; on a standing decision
-  the plan governs. Nothing built yet.
-- **Behind the plan:** `docs/cellebrite/research/` (eight reports, a snapshot superseded by the plan where
-  they differ) and `docs/cellebrite/measurements/` (14-phone structure catalogue, v1 reconciliation and
-  durations, all measurement scripts with placeholders for paths; README maps phone labels P01-P14 to
-  A-C1a ... B-C3, 1P). Read the research README before re-researching anything.
-- **Next unit:** `06-build-order.md` row 1 (01-0.1 reference corpus manifest), then row 2 (counter),
-  then row 3 (read-only server measurement batch, 06 section 5). Several mapping rows wait on row 3.
+  `docs/cellebrite/01` to `06`. Where they differ in detail the spec governs; on a standing decision the
+  plan governs.
+- **Behind the plan:** `docs/cellebrite/research/` (eight reports, a snapshot the plan supersedes where they
+  differ) and `docs/cellebrite/measurements/` (structure-only catalogue of the 14 phones v1 ingested, v1
+  reconciliation and durations, measurement scripts with placeholders for paths; README maps phone labels
+  P01-P14 to A-C1a ... B-C3, 1P). Read the research README before re-researching anything.
+- **Next unit:** `docs/cellebrite/06-build-order.md` row 1 (reference corpus manifest), row 2 (element
+  counter), row 3 (read-only server measurement batch, 06 section 5). Several mapping rows wait on row 3.
 - **Waiting on Neil (not blocking stage A):** OpenCelliD licence ruling (04, 06 row 44).
-- **Defects found, outside this plan, not fixed:** `/api/query` fallback is not case-scoped and runs in
-  a write transaction; Reports page calls `/api/reports`, which no route serves (06 section 6).
-- **Facts a fresh session would otherwise rediscover:**
-  - SSH: `ssh loupe` (alias in `~/.ssh/config`) as `neil_byrne`; VM `investigation-platform`, project
-    `digital-waters-470220-a3`, gcloud account `neil@owlconsultancygroup.com`. Loupe checkout on the VM:
-    `/home/conorbowles51/app-v3/owl-n4j` (owned by conorbowles51; use sudo).
-  - v1's 14 ingested phones (reference corpus, read-only): `/mnt/owl-data/ingestion-data/` on the VM,
-    three cases holding 10, 3 and 1 reports; each has v1's `owl_ingest_report.json`.
-  - Alex's own v1 feedback: `/home/conorbowles51/app_v2/data/testing-feedback.json` on the VM.
-  - v1-era Claude transcripts on the VM are gone (30-day default retention); v1 memory notes survive
-    in `/root/.claude/projects/-home-conorbowles51-app-v2/memory/`.
-  - The VM ran out of memory on 24 October (SSH banner timeouts) under the server Claude jobs plus
-    benchmarks; run server measurements with `nice -n 19 ionice -c3`.
-  - Server job status board: `/mnt/owl-data/fin-wt/headless/STATUS-BOARD.md`.
+- **Defects found outside this plan, not fixed:** `/api/query` fallback is not case-scoped and runs in a
+  write transaction; the Reports page calls `/api/reports`, which no route serves (06 section 6).
+- **Facts a fresh session would otherwise rediscover:** v1's 14 ingested phones are under
+  `/mnt/owl-data/ingestion-data/` (three cases holding 10, 3 and 1 reports, each with v1's
+  `owl_ingest_report.json`); Alex's own v1 feedback is `/home/conorbowles51/app_v2/data/testing-feedback.json`;
+  v1-era Claude transcripts are gone (30-day default retention) but v1 memory notes survive in
+  `/root/.claude/projects/-home-conorbowles51-app-v2/memory/`; the VM ran out of memory on 24 October under
+  the job fleet plus benchmarks, so run measurements with `nice -n 19 ionice -c3`.
 
 ## 2 October: plan audit, regression fixes, automation analysis
 
@@ -69,6 +61,45 @@ Three-tier rule: verified from printed balances / imported with a visible flag /
 **Server measurement:** `docs/financial-workflows/server-blocker-measurement-plan-2026-10-02.md`, read-only, counts only. Neil offered server access; not yet set up. Its M6 result decides whether step 2 or step 3 goes first.
 
 **Alex message:** a draft was written in the 2 October session but should not be sent until step 1 lands; its "correction made once and used everywhere" claim depends on fixes above.
+
+## 25 October fin-accounts: account-wide holder/bank correction; Kapital ING R2 holder corrected
+
+Live `9aa1bf01` (23:07 UTC). Full record: `/mnt/owl-data/fin-wt/headless/FIN-ACCOUNTS-STATUS.md`, `fin-accounts-progress.md`.
+
+- `statement_details.update_statement_details` compares the identified account's holder and bank folded
+  (`FOLDED_ACCOUNT_FIELDS`, `accounts._fold`) and the number by its digits, as the identity key does; a case or
+  separator difference no longer moves a period onto a `statement-details:` account. New kwarg `resolve_account`.
+- `account_details_correction` (routes `/statement-import/accounts/{id}/details`, `/preview`, `/undo`; UI
+  "Account holder and bank" in ImportedStatementDetails): a person with a reason, against the revision, corrects
+  the account record, records the corrected field on every statement through the statement edit, re-joins
+  `statement-details:` splits whose only difference was that field, keeps `account_details_history`; undo restores.
+- Established: the Kapital address holder came from the letters-only holder rule before `2a6df8be` (it skipped
+  "NAME R2" and the street line and took the district line). Readings since 21 October read the name; the account
+  record keeps its first holder (`_reconcile` records later ones as `identity_conflicts`), so stale holders need the
+  account-wide correction. BNB2: 0 of 1,304 saved statements and 0 accounts now hold an address-line holder.
+- Not done here (owned by fin-shells): 16 undated MONETA/ARRENDO KAPITAL legacy periods both given
+  `194-99208-001-8` by a bulk edit on 23 September; the 10 MONETA ones sit on their own split accounts.
+
+## 25 October fin-queue2: BNB2 queue worked through; empty legacy imports no longer block statements
+
+Head `ef4c7287` ("fin: an empty legacy import no longer stands as the saved copy of its file's statements"), live
+since 20:57 UTC. BNB2 queue: imported 2239 to 2282, waiting 37 to 1, ready 8 to 0, unreadable 4 to 1. Full record:
+`/mnt/owl-data/fin-wt/headless/FIN-QUEUE2-STATUS.md` and `fin-queue2-progress.md`.
+
+Established by reading source and live data: 65 BNB2 saved copies are "shells" (statement review with no statement
+key, every period undated, no transaction or incomplete record). A shell's empty key matched every statement of the
+same bytes in `statement_import._existing_statement`, so the writer refused them, `queue_save` held them as busy, and
+`read_statement_import` linked them as current_import (`assess` then says imported). `saved_reading_replacement`
+now has `is_shell` / `standing_shell` / `standing_shell_ids` / `shell_document_ids`; the writer saves the statement
+and sets the shell aside with `decide_duplicate(match='empty_shell')`; `_saved_scopes` and `queue_save` skip shells.
+Test: `tests/test_financial_shell_replacement.py`.
+
+Open, in order: (1) 393 batch items are stored "imported" pointing at a shell: 224 statements on the 65 files are not
+in the ledger (Monex 2836625 has no period before April 2024); re-prepare those files so the new reading offers them.
+(2) ECO 0118467374 July 2023 lacks bank page 13/18 in the production. (3) 83c275c1 Santander split gives page 3 to the
+66- statement only. (4) Reader fixes measured against the hand-entered specs in `headless/fq2-specs/`. (5) Monex
+2836625 EUR May/Aug 2025 saved as MXN by the previous run. Full backend suite: page_identity_copies two-edits test is
+flaky on base and head.
 
 ## 21 September live description suggestions verified
 

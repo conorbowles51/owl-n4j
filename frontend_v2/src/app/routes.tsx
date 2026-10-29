@@ -104,6 +104,16 @@ const BackgroundTasksPage = lazy(() =>
     default: m.BackgroundTasksPage,
   }))
 )
+const ActivityPage = lazy(() =>
+  import("@/features/admin/components/ActivityPage").then((m) => ({
+    default: m.ActivityPage,
+  }))
+)
+const SpeedPage = lazy(() =>
+  import("@/features/admin/components/SpeedPage").then((m) => ({
+    default: m.SpeedPage,
+  }))
+)
 const AICostsPage = lazy(() =>
   import("@/features/admin/components/AICostsPage").then((m) => ({
     default: m.AICostsPage,
@@ -178,6 +188,8 @@ export function AppRoutes() {
             <Route path="users" element={<LazyPage><UserManagementPage /></LazyPage>} />
             <Route path="profiles" element={<LazyPage><ProfileManagementPage /></LazyPage>} />
             <Route path="logs" element={<LazyPage><SystemLogsPage /></LazyPage>} />
+            <Route path="activity" element={<LazyPage><ActivityPage /></LazyPage>} />
+            <Route path="speed" element={<LazyPage><SpeedPage /></LazyPage>} />
             <Route path="tasks" element={<LazyPage><BackgroundTasksPage /></LazyPage>} />
             <Route path="updates" element={<LazyPage><PlatformUpdatesPage /></LazyPage>} />
             <Route path="usage" element={<Navigate to="/admin/ai-costs" replace />} />

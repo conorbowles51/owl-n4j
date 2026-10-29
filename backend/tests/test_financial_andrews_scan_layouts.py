@@ -261,9 +261,11 @@ class SpacedHeadingTests(unittest.TestCase):
         rows = propose_andrews_statement([data], 'USD', groups[0])['rows']
         self.assertEqual([r['fields']['date'] for r in rows if r['kind'] == 'balance'], ['2020-06-01', '2020-06-30'])
         # A glyph inside the ID or date is still not read as a digit (a point beside all four
-        # digits is a speck, SHARE_ID_SPECK; a comma or a point standing for a digit is not).
+        # digits is a speck, SHARE_ID_SPECK; a comma or a point standing for a digit is not). A
+        # look-alike date is read only when it then is the period start (SHARE_HEADING_LOOKALIKES,
+        # tests/test_financial_andrews_file_structure.py), so ``06/l0`` stays unread.
         for heading in ('06/01 ID 004,0 FREE CHECKING Previous Balance', '06/01 ID 00.4 FREE CHECKING Previous Balance',
-                        '06/0l ID 0040 FREE CHECKING Previous Balance'):
+                        '06/l0 ID 0040 FREE CHECKING Previous Balance'):
             bad = source([[(15, heading), (350, '10.00')], [(15, '06/30'), (75, 'Ending Balance'), (350, '10.00')]])
             with self.subTest(heading=heading):
                 self.assertEqual(andrews_catalog([bad])[0], [])
@@ -455,6 +457,39 @@ class OrderedDamagedDateTests(unittest.TestCase):
             self.assertIsNone(self.read('06/04·')['fields'].get('date'))
         finally:
             reader.ORDERED_DAMAGED_DATES = True
+
+
+class OrderFixedDateTests(OrderedDamagedDateTests):
+    """A row date damaged beyond its marks between two payments of one cleanly read date."""
+
+    def test_the_date_of_equal_neighbours_is_read_whatever_the_damage(self):
+        from services.financial.statement_import_andrews import DATE_FIXED_BY_ORDER
+        for damaged in ('01/0;', '0?/04', '06/0B'):
+            with self.subTest(damaged=damaged):
+                row = self.read(damaged, before='06/04', after='06/04')
+                self.assertEqual((row['fields'].get('date'), row['fields'].get('date_reading'), row['issues']),
+                                 ('2020-06-04', DATE_FIXED_BY_ORDER, []))
+
+    def test_unequal_neighbours_or_a_token_that_is_no_date_stay_held(self):
+        for case in (dict(damaged='01/0;'),                                    # 06/03 and 06/05
+                     dict(damaged='0604', before='06/04', after='06/04'),      # no slash
+                     dict(damaged='06/04/2020x', before='06/04', after='06/04'),
+                     dict(damaged='01/0;', before='06/0?', after='06/04')):   # neighbour not read cleanly
+            with self.subTest(**case):
+                row = self.read(**case)
+                self.assertIsNone(row['fields'].get('date'))
+                self.assertTrue(row['issues'])
+
+    def test_i_is_a_lookalike_for_one(self):
+        self.assertEqual(self.read('06/li', before='06/10', after='06/12')['fields'].get('date'), '2020-06-11')
+
+    def test_switch_turns_the_order_rule_off(self):
+        from services.financial import statement_import_andrews as reader
+        try:
+            reader.ORDER_FIXED_DATES = False
+            self.assertIsNone(self.read('01/0;', before='06/04', after='06/04')['fields'].get('date'))
+        finally:
+            reader.ORDER_FIXED_DATES = True
 
 
 class VoucherLayoutTests(unittest.TestCase):

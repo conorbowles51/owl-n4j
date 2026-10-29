@@ -5,6 +5,7 @@ from postgres.models.evidence import EvidenceFile
 from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item, FinancialImportOperation as Operation
 from services.financial.pdf_candidates import PdfMappingError, _digest
 from services.financial.import_operations import operation_view
+from services.financial.model_work import origin_field
 
 # A held statement lock (another save or a batch turn on this PDF) must not
 # hold the request open past the browser's own timeout. Nothing is written
@@ -71,7 +72,7 @@ def queue_statement(session, *, case_id, evidence_file_id, request, actor):
     if not summary.get('can_import'):
         raise PdfMappingError(' '.join(p['message'] for p in summary.get('problems', [])[:3]) or
             'This statement needs review before import.', 422)
-    actor_data = dict(name=actor.name, email=actor.email, user_id=str(actor.user_id))
+    actor_data = dict(name=actor.name, email=actor.email, user_id=str(actor.user_id), **origin_field(actor))
     item_id = uuid5(identifier, str(file.id) + ':' + (request.statement_id or ''))
     summary.update(filename=file.original_filename, source_id=str(file.id),
         import_actor=actor_data, import_operation_id=str(identifier))

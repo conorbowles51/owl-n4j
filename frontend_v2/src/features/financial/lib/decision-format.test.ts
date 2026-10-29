@@ -195,6 +195,20 @@ describe("readDecision", () => {
 })
 
 describe("readDecidedBy", () => {
+  it("shows a decision Claude took for a person as Claude's, from the stored origin", () => {
+    const decided = readDecidedBy(
+      record({
+        actor_name: "Claude (for Neil Byrne)",
+        actor_email: "neil@example.test",
+        actor_origin: { kind: "model", model: "Claude", for: { name: "Neil Byrne" } },
+      })
+    )
+    expect(decided.label).toBe("Claude (for Neil Byrne) · not confirmed")
+    expect(decided.description).toContain("not theirs")
+    // The same name without the stored origin is read as a name, never parsed.
+    expect(readDecidedBy(record({ actor_name: "Claude (for Neil Byrne)" })).label).toBe("Claude (for Neil Byrne)")
+  })
+
   it("marks a decision the software took", () => {
     const decided = readDecidedBy(record({ by_machine: true }))
     expect(decided.byMachine).toBe(true)

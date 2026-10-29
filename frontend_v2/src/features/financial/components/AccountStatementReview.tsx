@@ -1,3 +1,5 @@
+import { ScopedCategoryBreakdown } from "./ScopedCategoryBreakdown"
+import { AccountJudgements } from "./JudgementCalls"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { StatementChecksPanel } from "./StatementChecksPanel"
@@ -70,19 +72,36 @@ export function AccountStatementReview({
           View all account transactions
         </Button>
       </div>
-      <header>
+      <header
+        className="space-y-2 rounded-lg p-4 text-white"
+        style={{
+          background:
+            "radial-gradient(1100px 420px at 90% -20%, #3a1319 0%, #0b0c0f 62%)",
+        }}
+      >
+        <p className="text-xs font-semibold uppercase tracking-wide text-[#c9cbd2]">
+          Account
+        </p>
         <h3 className="text-lg font-semibold">{label}</h3>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-[#c9cbd2]">
           {account.institution || "Bank not recorded"} ·{" "}
           {account.currency || "Currency not recorded"}
         </p>
-        <p className="mt-2 text-sm">
+        <div className="inline-block rounded-md bg-[#fdf0d5] px-2 empty:hidden [&_a]:text-[#8a5300] [&_p]:py-1 [&_p]:text-[#8a5300]">
+          <AccountJudgements caseId={caseId} accountId={account.id} />
+        </div>
+        <p className="text-sm text-[#e7e8ec]">
           Review this account’s statements below. A balance difference needs
           investigation; missing dates show where another statement may be
           needed.
         </p>
       </header>
       <AccountHistory caseId={caseId} accountId={account.id} />
+      <ScopedCategoryBreakdown
+        caseId={caseId}
+        title="Categories in this account"
+        scope={{ account_ids: [account.id] }}
+      />
       {!datesFirst && balanceChecks}
       <StatementCoveragePanel
         caseId={caseId}

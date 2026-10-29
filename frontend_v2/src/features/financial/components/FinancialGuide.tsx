@@ -72,7 +72,7 @@ export function FinancialGuide() {
       }}
     >
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm">
+        <Button variant="outline" size="sm" className="border-[#3b3d44] bg-transparent text-[#f7f7f8] hover:bg-[#202126] hover:text-white">
           <BookOpen className="size-4" aria-hidden="true" />
           Financial guide
         </Button>

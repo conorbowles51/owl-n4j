@@ -538,6 +538,32 @@ class UnprintedDateAndAuditTests(unittest.TestCase):
             self.assertEqual(audit.holder_outcome(live, truth), dict(holder=outcome, holder_source=source), live)
         self.assertEqual(audit.holder_outcome(dict(holder='X Y'), dict(holder=''))['holder'], 'not_printed')
 
+    def test_audit_tells_an_overlap_trim_from_missing_rows(self):
+        """A movement query whose first days a saved period of the same account counts: counted once, not missing."""
+        from benchmarks.statement_automation import real_ledger_audit as audit
+        truth = dict(period_start='2024-05-31', opening_minor=1000, closing_minor=1150, account='1234',
+                     rows=[dict(amount_minor=100, direction='credit', date='2024-06-03', balance_after=1100),
+                           dict(amount_minor=50, direction='debit', date='2024-06-07', balance_after=1050),
+                           dict(amount_minor=100, direction='credit', date='2024-06-19', balance_after=1150)])
+        live = dict(period_id='p2', period_start='2024-06-11', period_end='2024-07-08', opening_minor=1050,
+                    closing_minor=1150, account='1234', rows=[(100, 'credit', '2024-06-19')])
+        cover = dict(period_id='p1', period_start='2024-03-27', period_end='2024-06-10', closing_minor=1050,
+                     rows=[(7, 'debit', '2024-04-01'), (100, 'credit', '2024-06-03'), (50, 'debit', '2024-06-07')])
+        entry = audit.compare(live, truth)
+        self.assertEqual((entry['outcome'], entry['missing_rows'], entry['balances']), ('disagrees', 2, ['opening']))
+        self.assertEqual(audit.overlap_trimmed(live, truth, entry, [live, cover]), 'p1')
+        # Fails closed: no covering period, a cover missing a row, a cover ending another day, a wrong opening.
+        self.assertIsNone(audit.overlap_trimmed(live, truth, entry, [live]))
+        self.assertIsNone(audit.overlap_trimmed(live, truth, entry, [live, dict(cover, rows=cover['rows'][:2])]))
+        self.assertIsNone(audit.overlap_trimmed(live, truth, entry, [live, dict(cover, period_end='2024-06-09')]))
+        other = dict(live, opening_minor=1100)
+        self.assertIsNone(audit.overlap_trimmed(other, truth, audit.compare(other, truth), [other, cover]))
+        unclosed = dict(live, closing_minor=None)
+        self.assertIsNone(audit.overlap_trimmed(unclosed, truth, audit.compare(unclosed, truth), [unclosed, cover]))
+        # A kept day's row missing as well is a disagreement, whatever covers the earlier days.
+        short = dict(live, rows=[])
+        self.assertIsNone(audit.overlap_trimmed(short, truth, audit.compare(short, truth), [short, cover]))
+
 
     def test_audit_counts_a_copy_saved_through_a_file_the_inventory_does_not_list(self):
         """r11-copy-audit: an upload of the same bytes after the inventory, saved to another ledger account."""
@@ -856,6 +882,55 @@ class SyntheticCorpusTruthTests(unittest.TestCase):
         for record, result in self.results:
             if record['mode'] == 'image_only':
                 self.assertEqual(result['status'], 'needs_visual', record['filename'])
+
+
+class TruistTruthTests(unittest.TestCase):
+    """Truist consolidated statement (synthetic text): one period per account, from the dated balances."""
+
+    def pages(self, checks_total='= $ 30.00'):
+        return [page(1, [
+            '111-22-33-44 55555 0 C 001 07 S 66 002', 'JANE Q EXAMPLE', '100 MAIN ST', 'SPRING MD 2 0 9 9 9',
+            'Your consolidated statement Contact us', 'For 02/12/2024 Truist.com',
+            'TRUIST STUDENT CHECKING 9990001112223',
+            'Your previous balance as of 01/12/2024 $100.00', 'Checks - 30.00',
+            'Other withdrawals, debits and service charges - 20.00', 'Deposits, credits and interest + 5.00',
+            'Your new balance as of 02/12/2024 = $-45.00',
+            'Checks', 'DATE CHECK # AMOUNT($)', '01/20 1001 10.00 01/22 * 1003 20.00',
+            'Total checks ' + checks_total,
+            'Other withdrawals, debits and service charges', 'DATE DESCRIPTION AMOUNT($)',
+            '01/13 OVERDRAFT FEE NOT CHARGED 36 0.00', '02/01 DEBIT CARD PURCHASE STORE 20.00', 'continued',
+            '00-0000000_Truist_0000_000001 03/17/2025']),
+            page(2, ['TRUIST STUDENT CHECKING 9990001112223 (continued)',
+                     'Total other withdrawals, debits and service charges = $20.00',
+                     'Deposits, credits and interest', 'DATE DESCRIPTION AMOUNT($)', '12/31 NOT IN PERIOD 1.00',
+                     'Total deposits, credits and interest = $5.00',
+                     'TRUIST ONLINE SAVINGS 9990004445556',
+                     'Your previous balance as of 01/12/2024 $2.50 Interest paid this statement period $0.00',
+                     'Other withdrawals, debits and service charges - 0.00 2024 interest paid year-to-date $0.00',
+                     'Deposits, credits and interest + 0.00 Interest rate 0.01%',
+                     'Your new balance as of 02/12/2024 = $2.50',
+                     '00-0000000_Truist_0000_000002 03/17/2025'])]
+
+    def test_issuer_and_periods(self):
+        pages = self.pages()
+        self.assertEqual(rt.detect_issuer(pages), 'truist')
+        checking, savings = rt.parse_truist(pages)
+        # 'Your previous balance as of 01/12/2024' is the previous statement's last day: the period starts the day after.
+        self.assertEqual((checking.account, checking.period_start, checking.period_end), ('9990001112223', '2024-01-13', '2024-02-12'))
+        self.assertEqual((checking.opening_minor, checking.closing_minor), (10000, -4500))
+        self.assertEqual(checking.holder, 'JANE Q EXAMPLE')
+        # Two checks printed side by side on one line; the 0.00 line is not a movement.
+        self.assertEqual([r['amount_minor'] for r in checking.rows if r['table'] == 'Checks'], [1000, 2000])
+        self.assertEqual(checking.controls['debits_total'], 5000)
+        self.assertEqual((savings.opening_minor, savings.closing_minor, savings.rows), (250, 250, []))
+        self.assertEqual(rt.reconcile(savings), ('verified', []))
+
+    def test_misread_lines_do_not_verify(self):
+        checking = rt.parse_truist(self.pages())[0]
+        # The deposit dated 12/31 falls outside the printed period: the reading is not verified.
+        self.assertEqual(rt.reconcile(checking)[0], 'unverified')
+        checking = rt.parse_truist(self.pages(checks_total='= $ 31.00'))[0]
+        self.assertIn('checks lines differ from their printed total', rt.reconcile(checking)[1])
 
 
 if __name__ == '__main__':

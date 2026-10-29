@@ -15,6 +15,16 @@ export function unidentifiedPayment(row: LedgerTransaction) {
       reason:
         "An investigator left this name blank. Open the payment to review or add a name.",
     }
+  // The statement's layout is known to print no name for this side: group by that reason.
+  const known =
+    row.label_sources?.[side === "from" ? "from_name" : "to_name"]
+  if (known?.source === "missing" && known.reason)
+    return {
+      // Keyed by the shown reason: one rule can state different reasons.
+      kind: `reason:${known.reason}`,
+      label: known.reason,
+      reason: known.explanation || known.reason,
+    }
   const description = (row.description || "")
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")

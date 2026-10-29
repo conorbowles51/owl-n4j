@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { SavePaymentSelection } from "./SavePaymentSelection"
 import { useAnalysisFreshness } from "../hooks/use-analysis-freshness"
 import { useFinancialDraft } from "../stores/financial-drafts"
@@ -258,6 +259,12 @@ function TransferScope({
       >
         Find possible transfers
       </Button>
+      {Boolean(start && end && start > end) && (
+        <p role="alert" className="text-sm">
+          The From date is after the To date. Change one of them to find
+          possible transfers.
+        </p>
+      )}
       <p className="text-sm text-muted-foreground">
         Your selections and explanation are kept in this browser tab. After a
         refresh, find possible transfers again to restore them. Save the
@@ -291,23 +298,17 @@ function TransferScope({
             {load.data.rows.length} payments · {load.data.excluded_rows}{" "}
             excluded · {load.data.candidates.length} possible pairs
           </p>
-          <details>
-            <summary className="cursor-pointer">
-              How possible transfers are matched
-            </summary>
+          <Disclosure label="How possible transfers are matched">
             <p>{load.data.limitation}</p>
-          </details>
-          <details>
-            <summary className="cursor-pointer">
-              Check repeated payment references (
-              {load.data.reference_evidence.length})
-            </summary>
+          </Disclosure>
+          <Disclosure label={<>Check repeated payment references (
+              {load.data.reference_evidence.length})</>}>
             <TransferReferenceEvidence
               key={load.data.snapshot_sha256}
               data={load.data}
               onSource={setSource}
             />
-          </details>
+          </Disclosure>
           {load.data.date_unavailable_ids.length > 0 && (
             <p>
               {load.data.date_unavailable_ids.length} payments have no
@@ -511,6 +512,7 @@ function TransferScope({
                 summary: `Saves ${selected.length} selected transfer pairs, your explanation and the calculated totals.`,
                 details: {
                   snapshot_sha256: load.data.snapshot_sha256,
+                  digest_covers: load.data.digest_covers,
                   scenario_sha256: scenario.data.scenario_sha256,
                   pairs: selected.map((i) => load.data!.candidates[i]),
                   basis,

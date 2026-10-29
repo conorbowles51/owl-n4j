@@ -32,6 +32,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { beforeEach, expect, it, vi } from "vitest"
 import { StatementImportPanel } from "./StatementImportPanel"
 import { fetchAPI } from "@/lib/api-client"
+import { importJobs } from "@/test/statement-import-jobs"
 import { useStatementChecks } from "../hooks/use-statement-checks"
 vi.mock("../hooks/use-statement-checks", async (original) => ({
   ...(await original<typeof import("../hooks/use-statement-checks")>()),
@@ -167,7 +168,7 @@ beforeEach(() => {
   sent = []
   failure = false
   vi.mocked(fetchAPI).mockReset()
-  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+  vi.mocked(fetchAPI).mockImplementation(importJobs(async (url, options) => {
     if (url.startsWith("/api/evidence-upload-")) return [] as never
     if (String(url).startsWith("/api/evidence?"))
       return {
@@ -191,7 +192,7 @@ beforeEach(() => {
       } as never
     }
     return data as never
-  })
+  }))
 })
 
 it("imports from the review summary without opening corrections or resolving every issue", async () => {
@@ -216,7 +217,7 @@ it("imports from the review summary without opening corrections or resolving eve
     page_numbers: [1],
     statement_page_numbers: [1],
   }
-  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+  vi.mocked(fetchAPI).mockImplementation(importJobs(async (url, options) => {
     if (url.startsWith("/api/evidence-upload-")) return [] as never
     if (url.includes("/confirm?")) {
       sent.push(options?.body)
@@ -232,7 +233,7 @@ it("imports from the review summary without opening corrections or resolving eve
     return url.includes("statement-import")
       ? (prepared as never)
       : originalRead(url, options)
-  })
+  }))
   await page.viewport(1440, 1000)
   document.documentElement.classList.remove("dark")
   mount()
@@ -277,7 +278,7 @@ it("sends all 588 selected PDFs to one preparation request even when a search hi
     original_filename: `Statement ${String(i + 1).padStart(3, "0")}.pdf`,
     status: "processed",
   }))
-  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+  vi.mocked(fetchAPI).mockImplementation(importJobs(async (url, options) => {
     if (url.startsWith("/api/evidence-upload-")) return [] as never
     if (options?.method === "POST") {
       sent.push(options.body)
@@ -288,7 +289,7 @@ it("sends all 588 selected PDFs to one preparation request even when a search hi
         ? { files }
         : { case_id: "case", files: [], truncated: false }
     ) as never
-  })
+  }))
   await page.viewport(1440, 1000)
   render(
     <MemoryRouter>
@@ -320,12 +321,11 @@ it("sends all 588 selected PDFs to one preparation request even when a search hi
     path: "/tmp/statement-files-bulk-preparation-light.png",
   })
   fireEvent.click(
-    screen.getByRole("button", { name: "Prepare statements from 588 files" })
+    screen.getByRole("button", { name: "Review and save selected files together (588)" })
   )
   await waitFor(() => expect(sent).toHaveLength(1))
   expect(sent[0]).toMatchObject({
     file_ids: files.map((file) => file.id),
-    folder_ids: [],
   })
 })
 
@@ -348,11 +348,11 @@ it("keeps field labels visible after scrolling through correction rows in light 
       })),
     ],
   }
-  vi.mocked(fetchAPI).mockImplementation((url, options) =>
+  vi.mocked(fetchAPI).mockImplementation(importJobs((url, options) =>
     url.includes("statement-import") && !url.includes("/confirm?")
       ? Promise.resolve(many as never)
       : base(url, options)
-  )
+  ))
   mount()
   await open()
   const amount = screen.getByLabelText("Credit row:30")
@@ -401,12 +401,12 @@ it("pages 1200 correction rows, restores a late edit and submits every row", asy
       source_cells: [],
     })),
   }
-  vi.mocked(fetchAPI).mockImplementation(async (url, options) =>
+  vi.mocked(fetchAPI).mockImplementation(importJobs(async (url, options) =>
     String(url).includes("/statement-import/") &&
     !String(url).includes("/confirm?")
       ? (large as never)
       : originalRead(url, options)
-  )
+  ))
   mount()
   await open()
   expect(screen.getAllByLabelText(/^Include row/)).toHaveLength(50)
@@ -441,7 +441,7 @@ it("pages 1200 correction rows, restores a late edit and submits every row", asy
   expect(request.rows[1199].description).toBe("Corrected last payment")
 })
 
-it("sets aside empty entries across all pages, preserves partial readings and edits, and supports undo", async () => {
+it("lists unreadable entries across all pages for review and preserves partial readings and edits", async () => {
   const base = vi.mocked(fetchAPI).getMockImplementation()!
   const emptyRows = Array.from({ length: 61 }, (_, i) => ({
     ...data.rows[0],
@@ -461,11 +461,11 @@ it("sets aside empty entries across all pages, preserves partial readings and ed
     fields: { description: "Readable merchant" },
   }
   const many = { ...data, rows: [...data.rows, ...emptyRows, partial] }
-  vi.mocked(fetchAPI).mockImplementation((url, options) =>
+  vi.mocked(fetchAPI).mockImplementation(importJobs((url, options) =>
     url.includes("statement-import") && !url.includes("/confirm?")
       ? Promise.resolve(many as never)
       : base(url, options)
-  )
+  ))
   mount()
   await open()
   expect(screen.getAllByText("Original line 0")[0]).toBeVisible()
@@ -473,44 +473,18 @@ it("sets aside empty entries across all pages, preserves partial readings and ed
   fireEvent.change(screen.getByLabelText("Description empty:0"), {
     target: { value: "My recovered payment" },
   })
-  fireEvent.click(
-    screen.getByRole("button", { name: "Exclude 60 blank rows from import" })
-  )
+  // Unreadable rows stay selected until each is decided (a9005e26): no bulk exclusion.
+  const region = screen.getByRole("region", { name: "Unreadable transaction rows" })
+  expect(region).toHaveTextContent("Loupe could not fill in 60 rows")
   expect(
-    screen.getAllByRole("button", { name: "Import 3 transactions" })[0]
-  ).toBeEnabled()
-  expect(
-    screen.queryByLabelText("Include row empty:60")
+    screen.queryByRole("button", { name: /blank rows from import/ })
   ).not.toBeInTheDocument()
+  expect(
+    within(region).getAllByRole("button", { name: /^Review original row \d+$/ })
+  ).toHaveLength(60)
   expect(screen.getByLabelText("Description empty:0")).toHaveValue(
     "My recovered payment"
   )
-  fireEvent.click(
-    screen.getByRole("button", { name: "Undo excluding blank rows" })
-  )
-  expect(
-    screen.getByRole("button", { name: "Exclude 60 blank rows from import" })
-  ).toBeEnabled()
-  fireEvent.click(
-    screen.getByRole("button", { name: "Exclude 60 blank rows from import" })
-  )
-  fireEvent.click(
-    screen.getAllByRole("button", { name: "Import 3 transactions" })[0]
-  )
-  await waitFor(() => expect(sent).toHaveLength(1))
-  const request = sent[0] as {
-    rows: { id: string; excluded: boolean; reason: string }[]
-  }
-  expect(request.rows).toHaveLength(64)
-  expect(request.rows.filter((r) => !r.excluded).map((r) => r.id)).toEqual([
-    "1:0:1",
-    "empty:0",
-    "partial",
-  ])
-  expect(request.rows.find((r) => r.id === "empty:60")).toMatchObject({
-    excluded: true,
-    reason: "",
-  })
 })
 
 it("keeps a 51-period PDF manageable from file list through saved-period review and removal preview", async () => {
@@ -542,7 +516,7 @@ it("keeps a 51-period PDF manageable from file list through saved-period review 
     index: i,
   }))
   const writes: string[] = []
-  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+  vi.mocked(fetchAPI).mockImplementation(importJobs(async (url, options) => {
     if (url.startsWith("/api/evidence-upload-")) return [] as never
     if (options?.method === "POST") writes.push(url)
     if (url.startsWith("/api/evidence?"))
@@ -593,7 +567,7 @@ it("keeps a 51-period PDF manageable from file list through saved-period review 
         },
       } as never
     return data as never
-  })
+  }))
   render(
     <MemoryRouter>
       <QueryClientProvider
@@ -607,6 +581,8 @@ it("keeps a 51-period PDF manageable from file list through saved-period review 
       </QueryClientProvider>
     </MemoryRouter>
   )
+  // The register opens on files needing action; this PDF's periods are all saved.
+  fireEvent.click(await screen.findByRole("button", { name: "Show all files" }))
   const review = await screen.findByRole("button", {
     name: "Review statement.pdf",
   })
@@ -658,10 +634,10 @@ it("keeps a 51-period PDF manageable from file list through saved-period review 
 
 it("keeps manual rows while completing amounts and preserves review filters across adding and reopening", async () => {
   const implementation = vi.mocked(fetchAPI).getMockImplementation()!
-  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+  vi.mocked(fetchAPI).mockImplementation(importJobs(async (url, options) => {
     const result = await implementation(url, options)
     return result === data ? ({ ...data, page_numbers: [1] } as never) : result
-  })
+  }))
   await page.viewport(1440, 1000)
   mount()
   await open()
@@ -710,11 +686,11 @@ it("opens a newly read file from its explicit action and returns without importi
   const { StatementRegister } = await import("./StatementRegister")
   await page.viewport(390, 844)
   const originalRead = vi.mocked(fetchAPI).getMockImplementation()!
-  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+  vi.mocked(fetchAPI).mockImplementation(importJobs(async (url, options) => {
     if (url.includes("statement-import/files?"))
       return { case_id: "case", files: [], truncated: false } as never
     return originalRead(url, options)
-  })
+  }))
   render(
     <MemoryRouter>
       <QueryClientProvider

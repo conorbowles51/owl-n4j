@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { currentNativeControls } from "../lib/native-control-contract"
 import { NativeControlComparisonPanel } from "./NativeControlComparisonPanel"
 import { statementDeltaHints } from "../lib/statement-delta-hints"
@@ -197,8 +198,7 @@ export function StatementChecksPanel({
         {opened ? "Refresh balance checks" : "Check statement balances"}
       </Button>
       {opened && (
-        <details className="text-sm">
-          <summary className="cursor-pointer">Additional file checks</summary>
+        <Disclosure className="text-sm" label="Additional file checks">
           <label className="block">
             <input
               aria-label="Recheck native bank-file controls"
@@ -209,7 +209,7 @@ export function StatementChecksPanel({
             Recheck native bank-file controls against current readings (reads
             original files)
           </label>
-        </details>
+        </Disclosure>
       )}
       {opened &&
         (query.isPending ? (
@@ -218,10 +218,7 @@ export function StatementChecksPanel({
           <p role="alert">Balance checks unavailable. {query.error.message}</p>
         ) : (
           <>
-            <details className="text-sm space-y-2">
-              <summary className="cursor-pointer">
-                Save these check results and read calculation details
-              </summary>
+            <Disclosure className="text-sm space-y-2" label="Save these check results and read calculation details">
               <Button
                 variant="outline"
                 disabled={query.isFetching}
@@ -258,7 +255,7 @@ export function StatementChecksPanel({
               <p className="text-sm">
                 Checked at {query.data.checked_at}. {query.data.limitation}
               </p>
-            </details>
+            </Disclosure>
             {query.data.items.length === 0 && (
               <p>
                 No imported statement periods were found here. Upload and
@@ -393,10 +390,7 @@ export function StatementChecksPanel({
                       </Button>
                     )}
                   </div>
-                  <details className="space-y-3 text-sm">
-                    <summary className="cursor-pointer">
-                      Calculation and further checks
-                    </summary>
+                  <Disclosure className="space-y-3 text-sm" label="Calculation and further checks">
                     <p>
                       Source: {period.source_status} ·{" "}
                       {period.proof_class.toUpperCase()}. These checks do not
@@ -475,8 +469,7 @@ export function StatementChecksPanel({
                       sourceDocumentId={period.source_document_id}
                       currency={period.currency}
                     />
-                    <details>
-                      <summary>Recorded check and source details</summary>
+                    <Disclosure label="Recorded check and source details">
                       <p>
                         Earlier stored check: {period.recorded_status}
                         {period.recorded_at
@@ -491,8 +484,8 @@ export function StatementChecksPanel({
                       <p className="break-all">
                         Source document: {period.source_document_id}
                       </p>
-                    </details>
-                  </details>
+                    </Disclosure>
+                  </Disclosure>
                 </article>
               ))}
             </div>

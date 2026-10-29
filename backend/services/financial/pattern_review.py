@@ -4,6 +4,7 @@ import json
 from datetime import date
 from services.financial.ledger_timeline import ledger_timeline
 from services.financial.ledger_summary import LedgerSummaryError
+from services.financial.ledger_snapshot import view_capture
 
 MAX_HYPOTHESES = 200
 
@@ -20,7 +21,8 @@ def screen_ledger_patterns(export, *, population='working', window_days=3, thres
         if not isinstance(threshold_currency, str) or len(threshold_currency) != 3 or not threshold_currency.isascii() or not threshold_currency.isalpha() or not threshold_currency.isupper():
             raise LedgerSummaryError('Choose a three-letter currency for the threshold.')
     timeline = ledger_timeline(export, population=population)
-    readings = {r['row']['key']: r for r in json.loads(export.snapshot.content)['ledger']['readings']}
+    document, stamp = view_capture(export)
+    readings = {r['row']['key']: r for r in document['ledger']['readings']}
     usable = [r for r in timeline['rows'] if r['chronology_basis'] not in ('ordering_date', 'statement_end_ordering_only')]
     excluded_dates = [r['key'] for r in timeline['rows'] if r not in usable]
     if cross_account and timeline['account_id'] is not None:
@@ -143,5 +145,5 @@ def screen_ledger_patterns(export, *, population='working', window_days=3, thres
     return dict(schema='loupe.financial.pattern_review/1',case_id=timeline['case_id'],account_id=timeline['account_id'],
         start_date=timeline['start_date'],end_date=timeline['end_date'],population=population,window_days=window_days,cross_account=cross_account,
         threshold_minor=None if threshold_minor is None else str(threshold_minor),threshold_currency=threshold_currency,
-        snapshot_sha256=export.snapshot.sha256,reviewed_rows=len(timeline['rows']),date_unavailable_ids=excluded_dates,
+        **stamp,reviewed_rows=len(timeline['rows']),date_unavailable_ids=excluded_dates,
         hypotheses=hypotheses,limitation='Optional cross-account screening follows two or three equal-value candidate transfers, with no repeated posting, a maximum seven-day per-pair date tolerance and the selected overall window. All alternatives remain proposals; same-day order is unknown. Repeated equal amounts and equal incoming/outgoing pairs are screened within one account and currency. An optional investigator-selected threshold also screens groups of smaller same-direction payments. Dates use the labelled chronology basis. Candidates can overlap and must not be totalled together. No regulatory threshold, intent, typology conclusion or automatic finding is applied.')

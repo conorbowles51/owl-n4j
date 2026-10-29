@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { useFinancialDraft } from "../stores/financial-drafts"
 import { CandidateSourcePanel } from "./CandidateSourcePanel"
@@ -649,8 +650,7 @@ function ReviewFields({
             trying again. {record.error.message}
           </p>
         )}
-        <details>
-          <summary>Review history ({review.history.length})</summary>
+        <Disclosure label={<>Review history ({review.history.length})</>}>
           {review.history.map((event) => (
             <div key={event.id} className="my-2 rounded border p-2">
               <p>
@@ -681,7 +681,7 @@ function ReviewFields({
               )}
             </div>
           ))}
-        </details>
+        </Disclosure>
       </div>
     </div>
   )

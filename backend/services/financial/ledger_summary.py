@@ -20,8 +20,31 @@ class LedgerSummaryError(ValueError):
     pass
 
 
-def ledger_summary(session, *, case_id, account_id=None, start_date=None, end_date=None, grouping=None, capture_readings=False, account_ids=None, account_holders=None):
-    if type(capture_readings) is not bool:
+def _json_copy(value):
+    """copy.deepcopy for stored JSON (dicts, lists, scalars); deepcopy's generic memo cost was a fifth of a large read."""
+    if type(value) is dict:
+        return {key: _json_copy(item) for key, item in value.items()}
+    if type(value) is list:
+        return [_json_copy(item) for item in value]
+    if value is None or type(value) in (str, int, float, bool):
+        return value
+    from copy import deepcopy
+    return deepcopy(value)
+
+
+def _totals_row(row):
+    """The fields of to_view(row).to_json() that totals, groups and contributions read, with identical values."""
+    return dict(key=str(row.id), ref_id=row.ref_id, currency=row.currency, amount_minor=str(row.amount_minor),
+        direction=row.direction, ordering_date=row.ordering_date.isoformat() if row.ordering_date is not None else None,
+        proof_class=row.proof_class, counterparty_raw=row.counterparty_raw, ledger_status=row.ledger_status,
+        superseded_by_id=str(row.superseded_by_id) if row.superseded_by_id is not None else None)
+
+
+def ledger_summary(session, *, case_id, account_id=None, start_date=None, end_date=None, grouping=None, capture_readings=False, account_ids=None, account_holders=None, totals_only_readings=False):
+    """``totals_only_readings``: each captured reading's row carries only the stored fields that totals, groups and
+    contributions read (see _totals_row), with no payment view, provenance or label history. Callers that never
+    return the readings use it; the same rows are included and excluded either way."""
+    if type(capture_readings) is not bool or type(totals_only_readings) is not bool or (totals_only_readings and not capture_readings):
         raise LedgerSummaryError("Reading capture must be explicit.")
     if grouping not in (None, "daily", "monthly"):
         raise LedgerSummaryError("Choose daily or monthly ledger grouping.")
@@ -33,15 +56,21 @@ def ledger_summary(session, *, case_id, account_id=None, start_date=None, end_da
     # A source can retain megabytes of original table readings. Selecting that
     # JSON for every joined payment multiplied the same PDF data hundreds of
     # times. Totals/citations need only the source identity and disposition.
-    query = select(FinancialTransaction, FinancialSourceDocument, FinancialAccount).options(load_only(
+    query = select(FinancialTransaction, FinancialSourceDocument).options(load_only(
         FinancialSourceDocument.id, FinancialSourceDocument.case_id, FinancialSourceDocument.status,
         FinancialSourceDocument.proof_class, FinancialSourceDocument.evidence_file_id,
         FinancialSourceDocument.sha256_at_ingestion, FinancialSourceDocument.parser_name,
         FinancialSourceDocument.parser_version, raiseload=True,
     )).outerjoin(
         FinancialSourceDocument, FinancialSourceDocument.id == FinancialTransaction.source_document_id
-    ).outerjoin(FinancialAccount, FinancialAccount.id == FinancialTransaction.account_id).where(
-        FinancialTransaction.case_id == case_id)
+    ).where(FinancialTransaction.case_id == case_id)
+    if not capture_readings or totals_only_readings:
+        # Totals read only these plain columns. The provenance and metadata JSON of every payment were fetched and
+        # decoded for nothing; any other column raises rather than lazily loading once per payment.
+        T = FinancialTransaction
+        query = query.options(load_only(T.id, T.case_id, T.account_id, T.source_document_id, T.ref_id, T.amount_minor,
+            T.currency, T.direction, T.ordering_date, T.proof_class, T.counterparty_raw, T.ledger_status,
+            T.superseded_by_id, raiseload=True))
     if account_id is not None:
         query = query.where(FinancialTransaction.account_id.in_(expand_account_ids(session, case_id, [account_id])))
     from services.financial.account_selection import apply_account_selection
@@ -51,6 +80,14 @@ def ledger_summary(session, *, case_id, account_id=None, start_date=None, end_da
     if end_date is not None:
         query = query.where(FinancialTransaction.ordering_date <= end_date)
     pairs = list(session.execute(query.order_by(FinancialTransaction.id).limit(MAX_SUMMARY_ROWS + 1).execution_options(populate_existing=True)))
+    # Accounts are read once each. Joined to every payment, each account's metadata JSON was decoded again for every
+    # one of its payments. A payment whose account is missing pairs with None, as the outer join gave.
+    account_keys = sorted({row.account_id for row, _ in pairs if row.account_id is not None}, key=str)
+    accounts = {}
+    for offset in range(0, len(account_keys), 5000):
+        accounts.update((account.id, account) for account in session.scalars(select(FinancialAccount).where(
+            FinancialAccount.id.in_(account_keys[offset:offset + 5000])).execution_options(populate_existing=True)))
+    pairs = [(row, document, accounts.get(row.account_id)) for row, document in pairs]
     result = dict(case_id=str(case_id), account_id=str(account_id) if account_id else None,
         start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None,
         included_classes=sorted(p.value for p in DEFAULT_TOTAL_CLASSES), max_rows=MAX_SUMMARY_ROWS,
@@ -72,11 +109,26 @@ def ledger_summary(session, *, case_id, account_id=None, start_date=None, end_da
     groups = {}
     points = {}
     parties = {}
-    if capture_readings:
+    if capture_readings and not totals_only_readings:
         from services.financial.account_parties import _account_party_state
         from services.financial.transaction_query import account_label_index
         parties = {a['id']: a for a in _account_party_state(session, case_id=case_id)['accounts']}
         account_labels = account_label_index(parties)
+        from services.financial.payment_party_matches import case_party_matches
+        party_matches = case_party_matches(session, case_id)
+        # Statements a model saved for a person, and whether a person has confirmed each (judgements): read once,
+        # and only when a captured payment was saved by a model, so other captures read nothing more.
+        from services.financial.judgements import model_work_statements_view
+        from services.financial.model_work import origin_of
+        statement_work = []
+
+        def statement_status(document_id):
+            if not statement_work:
+                statement_work.append(model_work_statements_view(session, case_id))
+            return statement_work[0].get(str(document_id))
+        # Stored categories in bounded queries, not one query per payment in to_view.
+        from services.financial.payment_categories import attach_stored
+        attach_stored(session, [row for row, _, _ in pairs])
     for row, document, account in pairs:
         if document is None or account is None or document.case_id != case_id or account.case_id != case_id:
             raise LedgerSummaryError("Ledger source or account ownership is inconsistent; summary unavailable.")
@@ -88,18 +140,21 @@ def ledger_summary(session, *, case_id, account_id=None, start_date=None, end_da
             raise LedgerSummaryError("Stored classification or disposition is unrecognized.") from exc
         if capture_readings:
             from services.financial.transaction_query import to_view
-            from copy import deepcopy
             reason = (status.value if status.value != 'admitted' else
                 'source_not_admitted' if source_status.value != 'admitted' else
                 'proof_class_not_included' if not counts_toward_totals(row_class) or not counts_toward_totals(source_class) else None)
-            result['readings'].append(dict(row=to_view(row, account=row.account, account_parties=parties,
-                canonical_account_labels=account_labels).to_json(), included=reason is None,
-                exclusion_reason=reason, provenance=deepcopy(row.provenance),
-                investigation_label_history=deepcopy((row.metadata_ or {}).get("investigation_label_history", [])),
+            result['readings'].append(dict(row=_totals_row(row), included=reason is None, exclusion_reason=reason,
+                account=dict(id=str(account.id), account_type=account.account_type),
+                source=dict(id=str(document.id), proof_class=source_class.value, status=source_status.value))
+                if totals_only_readings else dict(row=to_view(row, account=row.account, account_parties=parties,
+                canonical_account_labels=account_labels, party_matches=party_matches).to_json(), included=reason is None,
+                exclusion_reason=reason, provenance=_json_copy(row.provenance),
+                investigation_label_history=_json_copy((row.metadata_ or {}).get("investigation_label_history", [])),
                 account=dict(id=str(account.id), account_type=account.account_type, label=(account.metadata_ or {}).get('display_label') or account.identifier_as_printed or account.holder_name),
                 source=dict(id=str(document.id), evidence_file_id=str(document.evidence_file_id) if document.evidence_file_id else None,
                     sha256_at_ingestion=document.sha256_at_ingestion, proof_class=source_class.value,
-                    status=source_status.value, parser_name=document.parser_name, parser_version=document.parser_version)))
+                    status=source_status.value, parser_name=document.parser_name, parser_version=document.parser_version),
+                **_model_work(origin_of((row.provenance or {}).get('confirmed_by') or {}), lambda: statement_status(document.id))))
         if status.value == 'admitted' and row.superseded_by_id is not None:
             raise LedgerSummaryError("An admitted row references a replacement; summary unavailable.")
         if status.value != 'admitted':
@@ -151,7 +206,7 @@ def ledger_summary(session, *, case_id, account_id=None, start_date=None, end_da
 def ledger_counterparties(session, *, case_id, account_id=None, start_date=None, end_date=None, account_ids=None, account_holders=None):
     """Group exact source labels, not inferred people or matched transfers."""
     result = ledger_summary(session, case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders,
-        start_date=start_date, end_date=end_date, capture_readings=True)
+        start_date=start_date, end_date=end_date, capture_readings=True, totals_only_readings=True)
     readings = result.pop('readings')
     result.pop('history_captured')
     result.update(counterparties=[], label_basis='counterparty_raw_exact',
@@ -181,3 +236,12 @@ def ledger_counterparties(session, *, case_id, account_id=None, start_date=None,
         group['source_document_ids'] = sorted(group['source_document_ids'])
         result['counterparties'].append(group)
     return result
+
+
+def _model_work(origin, status):
+    """A reading saved to the case by a model for a person: its origin and whether a person has confirmed the
+    statement (``status`` is called only then). Left out entirely for a person's or the System's save, so those
+    readings are captured as before."""
+    if not origin:
+        return {}
+    return dict(model_work=dict(origin=origin, statement_status=status() or 'not_confirmed'))

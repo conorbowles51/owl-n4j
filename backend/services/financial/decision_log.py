@@ -152,6 +152,9 @@ class DecisionRecord:
     #: Whether the reconciliation stage wrote this, rather than a person.
     #: Derived from the actor's address; see the module docstring.
     by_machine: bool
+    #: Set when a model decided for the person named here (services.financial.model_work): the decision is the
+    #: model's, not that person's. Left out of as_dict for a person's or a rule's decision.
+    actor_origin: Optional[dict] = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -170,6 +173,7 @@ class DecisionRecord:
             "ingestion_run_id": self.ingestion_run_id,
             "recorded_at": self.recorded_at,
             "by_machine": self.by_machine,
+            **({"actor_origin": self.actor_origin} if self.actor_origin else {}),
         }
 
 
@@ -260,6 +264,7 @@ def to_record(event: AdjudicationEvent, *, machine_email: str) -> DecisionRecord
         # in its domain and the comparison decides whether a reader is told a
         # machine acted or a person did.
         by_machine=actor_email.strip().lower() == machine_email.strip().lower(),
+        actor_origin=getattr(event, "actor_origin", None) or None,
     )
 
 

@@ -131,9 +131,10 @@ class CreditOneReaderTests(unittest.TestCase):
 
     def test_damaged_digits_are_retained_for_review_and_never_inferred_from_totals(self):
         data = source()
-        data['rows'][9]['cells'][1]['expected_text'] = '12115'
+        # A damaged digit is not a printed-format glyph (see the printed-format test).
+        data['rows'][9]['cells'][1]['expected_text'] = '1211S'
         data['rows'][9]['cells'][-1]['expected_text'] = '2S.00'
-        data['rows'][4]['cells'][1]['expected_text'] = 'S100.00'
+        data['rows'][4]['cells'][1]['expected_text'] = 'S1O0.00'
         result = proposal(data)
         payment = result['rows'][9]
         self.assertFalse(payment['excluded'])
@@ -158,6 +159,27 @@ class CreditOneReaderTests(unittest.TestCase):
         second['cells'][0]['expected_text'] = 'Account Number 5555 5555 5555 4444'
         data['rows'].append(second)
         self.assertEqual(statement_catalog([data])['statements'], [])
+
+    def test_printed_format_glyphs_are_read_as_the_layout_prints_them(self):
+        data = source()
+        data['rows'][9]['cells'][1]['expected_text'] = '12115'      # MM/DD with the slash read as 1
+        data['rows'][9]['cells'][2]['expected_text'] = '12l16'
+        data['rows'][4]['cells'][1]['expected_text'] = 'S100.00'    # the summary's $ read as S
+        data['rows'][6]['cells'][1]['expected_text'] = 'S87.00'
+        data['rows'][15]['cells'][-1]['expected_text'] = '2,00'     # decimal comma
+        data['rows'][16]['cells'][-1]['expected_text'] = 'O.OD'     # zero charge
+        result = proposal(data)
+        payment = result['rows'][9]['fields']
+        self.assertEqual((payment['date'], payment['booking_date'], payment['amount_minor']), ('2023-12-15', '2023-12-16', '2500'))
+        self.assertEqual((result['rows'][4]['fields']['balance'], result['rows'][6]['fields']['balance']), ('10000', '8700'))
+        self.assertEqual(result['rows'][15]['fields']['amount_minor'], '200')
+        self.assertEqual(result['rows'][16]['kind'], 'zero_charge')
+        self.assertFalse(any(r['issues'] for r in result['rows']))
+        import services.financial.statement_import_credit_one as reader
+        with patch.object(reader, 'PRINTED_FORMAT', False):
+            result = proposal(data)
+        self.assertNotIn('date', result['rows'][9]['fields'])
+        self.assertNotIn('balance', result['rows'][4]['fields'])
 
     def test_interest_calculation_page_is_not_a_second_charge(self):
         data = source(continuation=True)
@@ -261,7 +283,7 @@ class StatementReadingQualityTests(unittest.TestCase):
         from services.financial.statement_reading_quality import assess_statement_reading, prefer_image_reading
         clean = source()
         damaged = deepcopy(clean)
-        damaged['rows'][9]['cells'][1]['expected_text'] = '12115'
+        damaged['rows'][9]['cells'][1]['expected_text'] = '1211S'
         before = assess_statement_reading([self.table(damaged)])
         after = assess_statement_reading([self.table(clean)])
         self.assertEqual(before['unreadable'], 1)
@@ -300,7 +322,7 @@ class StatementReadingQualityTests(unittest.TestCase):
         from services.financial.statement_reading_quality import assess_statement_reading, prefer_image_reading
         clean = source()
         damaged = deepcopy(clean)
-        damaged['rows'][16]['cells'][-1]['expected_text'] = 'O.00'
+        damaged['rows'][16]['cells'][-1]['expected_text'] = 'Q.00'
         before = assess_statement_reading([self.table(damaged)])
         after = assess_statement_reading([self.table(clean)])
         self.assertEqual(before['payments'], after['payments'] + 1)

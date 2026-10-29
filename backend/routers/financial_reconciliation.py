@@ -87,7 +87,7 @@ router = APIRouter(
 
 
 @router.get("/reconciliation")
-async def get_case_reconciliation(
+def get_case_reconciliation(
     case_id: UUID = Query(..., description="REQUIRED: Case ID"),
     account_id: UUID | None = Query(None, description="Restrict to one account"),
     reconciliation_status: str | None = Query(

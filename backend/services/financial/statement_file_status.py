@@ -3,7 +3,7 @@ import threading
 from collections import OrderedDict
 from copy import deepcopy
 
-from sqlalchemy import select, func, case, cast, String, text
+from sqlalchemy import select, func, case, cast, String, text, true
 from postgres.models.evidence import EvidenceFile
 from postgres.models.financial import (
     FinancialAccount as Account,
@@ -129,14 +129,19 @@ def _statement_file_status(session, *, case_id):
         ))
     # Incomplete imports can have no statement period (for example, no usable
     # currency). They still belong in the file register, with an honest count.
-    incomplete_sources = session.execute(select(Source.id, Source.evidence_file_id,
-            Source.metadata_['statement_incomplete_records'], Source.metadata_['statement_admission']['blockers'],
-            Source.metadata_['statement_import_request']['period_start'].as_string(),
-            Source.metadata_['statement_import_request']['period_end'].as_string())
-        .join(EvidenceFile, Source.evidence_file_id == EvidenceFile.id)
+    from services.financial.metadata_once import read_once
+    metadata, once = read_once(session, Source.metadata_)
+    incomplete_query = (select(Source.id, Source.evidence_file_id,
+            metadata['statement_incomplete_records'], metadata['statement_admission']['blockers'],
+            metadata['statement_import_request']['period_start'].as_string(),
+            metadata['statement_import_request']['period_end'].as_string())
+        .select_from(Source).join(EvidenceFile, Source.evidence_file_id == EvidenceFile.id)
         .where(Source.case_id == case_id, EvidenceFile.case_id == case_id,
                Source.status == 'admitted', Source.document_type == 'statement_review')
-        .order_by(Source.id).limit(5001)).all()
+        .order_by(Source.id).limit(5001))
+    if once is not None:
+        incomplete_query = incomplete_query.join(once, true())
+    incomplete_sources = session.execute(incomplete_query).all()
     truncated = truncated or len(incomplete_sources) > 5000
     saved_dates = {str(row[0].source_document_id): row[0] for row in periods}
     for source_id, file_id, records, blockers, request_start, request_end in incomplete_sources[:5000]:
@@ -211,14 +216,17 @@ def _statement_file_status(session, *, case_id):
     # snapshots marked ready. Match saved source scope, not the old UI status.
     from types import SimpleNamespace
     source_columns = (Source.id, Source.evidence_file_id, Source.sha256_at_ingestion,
-        Source.metadata_['statement_import_statement_id'].as_string(),
-        Source.metadata_['statement_recovery_parent_id'].as_string(),
-        Source.metadata_['financial_import_removal'].as_string())
+        metadata['statement_import_statement_id'].as_string(),
+        metadata['statement_recovery_parent_id'].as_string(),
+        metadata['financial_import_removal'].as_string())
     def _light(row):
         return SimpleNamespace(id=row[0], evidence_file_id=row[1], sha256_at_ingestion=row[2],
             statement_id=row[3], parent_id=row[4], removed=bool(row[5]))
-    saved_sources = [_light(row) for row in session.execute(select(*source_columns).where(Source.case_id == case_id,
-        Source.status == 'admitted', Source.document_type == 'statement_review'))]
+    def _sources(*conditions):
+        query = select(*source_columns).select_from(Source).where(*conditions)
+        return session.execute(query.join(once, true()) if once is not None else query)
+    saved_sources = [_light(row) for row in _sources(Source.case_id == case_id,
+        Source.status == 'admitted', Source.document_type == 'statement_review')]
     saved_scopes = {(source.sha256_at_ingestion, source.statement_id) for source in saved_sources}
     # A saved split replaces its earlier combined scope. An old batch snapshot
     # must not advertise that same source as a fresh set of available payments.
@@ -231,8 +239,8 @@ def _statement_file_status(session, *, case_id):
             break
         seen_ancestors.update(current)
         ancestors = set()
-        for source in map(_light, session.execute(select(*source_columns).where(
-                Source.case_id == case_id, Source.id.in_([UUID(key) for key in current])))):
+        for source in map(_light, _sources(
+                Source.case_id == case_id, Source.id.in_([UUID(key) for key in current]))):
             saved_scopes.add((source.sha256_at_ingestion, source.statement_id))
             if source.parent_id:
                 ancestors.add(source.parent_id)

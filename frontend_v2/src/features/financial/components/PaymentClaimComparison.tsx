@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { ClaimComparisonDecision } from "./ClaimComparisonDecision"
 import { useAnalysisFreshness } from "../hooks/use-analysis-freshness"
 import { useFinancialDraft } from "../stores/financial-drafts"
@@ -337,12 +338,11 @@ function ClaimForm({
             date do not establish who made the payment. This search does not add
             transactions or confirm that all statements have been supplied.
           </p>
-          <details>
-            <summary>How this comparison was made</summary>
+          <Disclosure label="How this comparison was made">
             {result.limitations.map((note) => (
               <p key={note}>{note}</p>
             ))}
-          </details>
+          </Disclosure>
           {result.comparison.notes.map((note) => (
             <p key={note}>{note}</p>
           ))}
@@ -382,8 +382,7 @@ function ClaimForm({
                   {candidate.entry.chronology_basis.replaceAll("_", " ")}) ·{" "}
                   {candidate.entry.description}
                 </p>
-                <details className="my-2">
-                  <summary>Why this result?</summary>
+                <Disclosure className="my-2" label={<>Why this result?</>}>
                   <p>
                     Reading class: {candidate.entry.proof_class.toUpperCase()}
                   </p>
@@ -393,7 +392,7 @@ function ClaimForm({
                       {component.agreement}. {component.detail}
                     </p>
                   ))}
-                </details>
+                </Disclosure>
                 <Button
                   variant="outline"
                   onClick={() => setOpened(candidate.entry.transaction_id)}

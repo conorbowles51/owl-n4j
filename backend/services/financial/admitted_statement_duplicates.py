@@ -65,6 +65,7 @@ deleted. Batch items of the copy show "Duplicate - Ignored by system".
 """
 from __future__ import annotations
 
+import os
 import re
 import uuid
 from collections import Counter, defaultdict
@@ -75,7 +76,7 @@ from sqlalchemy import func, select
 from postgres.models.case import Case
 from postgres.models.evidence import EvidenceFile, IngestionLog
 from postgres.models.financial import (
-    AdjudicationEvent, FinancialSourceDocument, FinancialStatementPeriod, FinancialTransaction,
+    AdjudicationEvent, FinancialAccount, FinancialSourceDocument, FinancialStatementPeriod, FinancialTransaction,
 )
 from services.financial.decisions import Actor
 from services.financial.pdf_candidates import _digest
@@ -93,6 +94,16 @@ READER_INDEPENDENT = True
 # The proof a copy filed in another ledger account may be set aside with: the
 # files are one document, as the pre-admission rule requires across readers.
 SAME_DOCUMENT = ('identical_bytes', 'identical_pages')
+# A copy is compared as its statement now stands: the holder, number, bank and currency a person corrected in the
+# statement details, not the values first read. Reverse: LOUPE_FINANCIAL_DUPLICATE_CORRECTED_DETAILS=0.
+CORRECTED_DETAILS = os.environ.get('LOUPE_FINANCIAL_DUPLICATE_CORRECTED_DETAILS', '1').strip().lower() not in (
+    '0', 'false', 'off', 'no')
+# 2026-10-26 fin-queue3 L30c: a copy filed in a multi-currency contract's old single account (Monex 2836625,
+# 'institution_account' records holding every currency) is in the same account as a copy filed in that contract's
+# account of the period's currency (same bank, number and currency), and that copy is the one kept. Reverse:
+# LOUPE_FINANCIAL_DUPLICATE_CONTRACT_ACCOUNT=0.
+CONTRACT_ACCOUNT = os.environ.get('LOUPE_FINANCIAL_DUPLICATE_CONTRACT_ACCOUNT', '1').strip().lower() not in (
+    '0', 'false', 'off', 'no')
 
 # Why a matching pair is not set aside. Codes are reported; messages refuse.
 HELD = {
@@ -144,6 +155,8 @@ class _Copy:
     pages: dict | None = None
     section: frozenset = frozenset()
     raw_accounts: frozenset = frozenset()
+    account: tuple | None = None  # (identity tier, bank, number, currency) of its one ledger account
+    folio: str | None = None  # the document folio its file's first page prints (read only for copies without payments)
 
 
 def _natural(name):
@@ -222,6 +235,7 @@ def _load(session, case_id, *, document_ids=None, identities=None):
     from services.financial.pending_statement_duplicates import (
         _initial, _printed_key, _review_shape, _section_pages, statement_content)
     from services.financial.statement_import_overlap import scope
+    from services.financial.statement_details import saved_currency, saved_details
     query = select(FinancialSourceDocument).where(
         FinancialSourceDocument.case_id == case_id,
         FinancialSourceDocument.document_type == 'statement_review',
@@ -243,6 +257,10 @@ def _load(session, case_id, *, document_ids=None, identities=None):
     for period in session.scalars(select(FinancialStatementPeriod).where(
             FinancialStatementPeriod.case_id == case_id, FinancialStatementPeriod.source_document_id.in_(ids))):
         periods_by[period.source_document_id].append(period)
+    ledger_accounts = {a.id: a for a in session.scalars(select(FinancialAccount).where(
+        FinancialAccount.case_id == case_id, FinancialAccount.id.in_(
+            {p.account_id for periods in periods_by.values() for p in periods}
+            | {r.account_id for rows in rows_by.values() for r in rows})))} if CONTRACT_ACCOUNT else {}
     latest = {}
     for event in session.scalars(select(AdjudicationEvent).where(
             AdjudicationEvent.case_id == case_id, AdjudicationEvent.subject_type == 'source_document',
@@ -267,7 +285,9 @@ def _load(session, case_id, *, document_ids=None, identities=None):
             first_page=_first_page(original) if original else 1, latest=latest.get(document.id), verified=verified,
             scope=None)
         if verified and not request.get('period_start_unprinted'):
-            copy.scope = scope({**request, 'account_type': (original.get('metadata') or {}).get('account_type') or ''})
+            stands = {**request, **saved_details(document), 'currency': saved_currency(document) or request.get('currency')} \
+                if CORRECTED_DETAILS else request
+            copy.scope = scope({**stands, 'account_type': (original.get('metadata') or {}).get('account_type') or ''})
             copy.key = _printed_key(copy.scope)
             copy.section = _section_pages(original)
         if file is not None and READER_INDEPENDENT:
@@ -288,16 +308,45 @@ def _load(session, case_id, *, document_ids=None, identities=None):
             periods=sorted([str(p.period_start), str(p.period_end), p.currency,
                             str(p.opening_balance_minor), str(p.closing_balance_minor)] for p in periods)))
         copy.raw_accounts = frozenset({r.account_id for r in admitted} | {p.account_id for p in periods})
+        if CONTRACT_ACCOUNT and len(copy.raw_accounts) == 1:
+            account = ledger_accounts.get(next(iter(copy.raw_accounts)))
+            if account is not None:
+                from services.financial.account_consolidation import bank_key
+                from services.financial.accounts import read_identity_tier
+                copy.account = (read_identity_tier(account), bank_key(account.institution_name or ''),
+                                account.identifier_normalised or '', account.currency)
         copy.accounts = frozenset(canonical.get(a, a) for a in copy.raw_accounts)
         copy.rows_clean = all(r.ledger_status == 'admitted' and r.superseded_by_id is None for r in rows)
         copy.corrected = any(r.superseded_by_id is not None for r in rows)
         copy.work = bool(copy.edited or copy.corrected or any(r.id in decided_rows for r in rows))
         copies.append(copy)
+    from services.financial.candidate_sources import PRINTED_FOLIO, printed_folio
+    if PRINTED_FOLIO:
+        folios = {}
+        for copy in copies:
+            if copy.verified and copy.scope and not copy.payments and copy.file is not None:
+                if copy.file.id not in folios:
+                    folios[copy.file.id] = printed_folio(session, case_id=case_id, evidence_file_id=copy.file.id)
+                copy.folio = folios[copy.file.id]
     return copies
 
 
 def _rank(copy):
-    return (not copy.work, copy.received, copy.first_page, str(copy.document.created_at), str(copy.document.id))
+    return (not copy.work, not _in_contract_account(copy), copy.received, copy.first_page, str(copy.document.created_at),
+            str(copy.document.id))
+
+
+def _in_contract_account(copy):
+    from services.financial.accounts import TIER_CONTRACT_CURRENCY
+    return bool(CONTRACT_ACCOUNT and copy.account and copy.account[0] == TIER_CONTRACT_CURRENCY)
+
+
+def _contract_account_copy(copy, retained):
+    """Whether ``copy`` sits in the contract's old single account and ``retained`` in its account of this currency."""
+    return bool(_in_contract_account(retained) and copy.account and not _in_contract_account(copy)
+                and copy.scope and retained.scope and copy.scope['currency'] == retained.scope['currency']
+                and copy.account[1:3] == retained.account[1:3] and all(copy.account[1:3])
+                and retained.account[3] == retained.scope['currency'])
 
 
 def _kept_reason(copy):
@@ -347,6 +396,17 @@ def _match(left, right):
     return 'printed_reference' if same_key and left.payments and right.payments else None
 
 
+def _same_printed_folio(copy, retained):
+    """(fin-queue3 L26) Two files printing the same bank document folio, the statement the only one of its account
+    reference, currency and dates in each file's reading: one printed statement however its readers named the bank
+    or grouped its pages, even with no payment to compare (Monex 'Print To PDF' reprints of the bank's own files,
+    read by section in one and over every page in the other). Its money is still compared after this."""
+    from services.financial.pending_statement_duplicates import only_section_of_its_period
+    return bool(copy.folio and copy.folio == retained.folio and copy.file is not None and retained.file is not None
+                and copy.file.id != retained.file.id and only_section_of_its_period(copy.original)
+                and only_section_of_its_period(retained.original))
+
+
 def _reviewed_to_same_ledger(copy, retained):
     """A person completed one copy's reading in review, and both saved the same money.
 
@@ -373,7 +433,8 @@ def _compare(copy, retained):
         return 'reading_not_comparable'
     code = None
     if basis == 'same_printed_period':
-        if copy.scope['identity'] != retained.scope['identity'] and not copy.payments:
+        if (copy.scope['identity'] != retained.scope['identity'] and not copy.payments
+                and not _contract_account_copy(copy, retained) and not _same_printed_folio(copy, retained)):
             code = 'other_bank_without_payments'
         elif copy.content != retained.content and not _reviewed_to_same_ledger(copy, retained):
             code = 'money_differs'
@@ -394,7 +455,7 @@ def _compare(copy, retained):
         return 'rows_corrected'
     if not retained.rows_clean:
         return 'retained_rows_set_aside'
-    if copy.accounts != retained.accounts:
+    if copy.accounts != retained.accounts and not _contract_account_copy(copy, retained):
         return 'account_differs'
     return None
 
@@ -437,7 +498,8 @@ def _entry(copy, retained, code=None):
         retained_evidence_file_id=str(retained.document.evidence_file_id) if retained else None,
         retained_file_sha256=(retained.file.sha256 if retained and retained.file else None),
         retained_saved_first=bool(retained and str(retained.document.created_at) <= str(copy.document.created_at)),
-        basis=basis, code=code, reason=HELD.get(code) if code else None)
+        basis=basis, code=code, reason=HELD.get(code) if code else None,
+        **(dict(printed_folio=copy.folio) if retained is not None and _same_printed_folio(copy, retained) else {}))
 
 
 def _account_merge(session, copy, retained):
@@ -591,7 +653,9 @@ def duplicate_copies(session, document):
         FinancialSourceDocument.superseded_by_id == document.id,
         FinancialSourceDocument.status == 'superseded',
         FinancialSourceDocument.duplicate_match_rung.is_not(None)).order_by(FinancialSourceDocument.id))
-    return [_link(session, copy) for copy in copies]
+    from services.financial.saved_reading_replacement import is_replacement_link
+    # A reading replaced by a reader replacement is not a copy (it is shown in the replacement notice).
+    return [_link(session, copy) for copy in copies if not is_replacement_link(session, copy, document)]
 
 
 # Writes -------------------------------------------------------------------
@@ -654,6 +718,9 @@ def _exclude(session, case_id, document, primary, actor, reason, basis, touched,
     _log(session, case_id, document, 'Statement period set aside as a duplicate of another saved copy. '
          'Original PDF and saved review retained.', action='financial_duplicate_set_aside',
          retained_source_document_id=str(primary.id), adjudication_id=result['adjudication_id'], basis=basis)
+    if actor.email == SYSTEM_ACTOR.email:
+        from services.financial.judgements import record_set_aside
+        record_set_aside(session, document, primary, basis=basis, reason=reason, adjudication_id=result.get('adjudication_id'))
     return result
 
 

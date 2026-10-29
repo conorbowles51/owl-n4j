@@ -7,6 +7,7 @@ from postgres.models.case import Case
 from postgres.models.evidence import EvidenceFile, IngestionLog
 from postgres.models.financial import FinancialSourceDocument, FinancialStatementPeriod, FinancialTransaction
 from services.financial.pdf_candidates import PdfMappingError
+from services.financial.model_work import origin_field
 
 
 def _removal_guard(session, case_id, files):
@@ -101,7 +102,7 @@ def set_financial_file_visibility(session, *, case_id, evidence_file_id, removed
         raise PdfMappingError('These imports were removed. Use Process PDF afresh to start without the old readings or reviews.', 409)
     revision = str(uuid4())
     changed_at = datetime.now(timezone.utc).isoformat()
-    actor_data = dict(user_id=str(actor.user_id), name=actor.name, email=actor.email)
+    actor_data = dict(user_id=str(actor.user_id), name=actor.name, email=actor.email, **origin_field(actor))
     for item in affected:
         item.metadata_ = {**(item.metadata_ or {}), 'financial_file_visibility': dict(
             removed=removed, revision=revision, changed_at=changed_at, actor=actor_data)}

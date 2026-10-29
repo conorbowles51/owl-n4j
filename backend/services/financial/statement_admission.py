@@ -93,6 +93,15 @@ def source_proves_no_activity(evidence, raw):
         and not raw.get('period_start_unprinted'))
 
 
+def image_charge_total(proposal, request, scope):
+    """Whether the page-image reading the payments were all read from proved this printed fee or interest total
+    against its charge lines (vision_reader.charge_totals): the control the added rows are checked by."""
+    if scope not in ('fee', 'interest') or scope not in (proposal.get('image_charge_totals') or {}):
+        return False
+    selected = [row for row in request.rows if not row.excluded]
+    return bool(selected) and all(str(row.id).startswith('manual:vision-') for row in selected)
+
+
 def assess_admission(proposal, request, arithmetic=None):
     raw = request.model_dump(mode='json')
     arithmetic = arithmetic or check_proposed_rows(proposal, raw['rows'])
@@ -151,7 +160,7 @@ def assess_admission(proposal, request, arithmetic=None):
         controls = [r for r in proposal['rows'] if r['kind'] == 'statement_total' and
             ((role in ('credit', 'debit') and not r['fields'].get('total_scope') and r['fields'].get('total_direction') == role)
              or r['fields'].get('total_scope') == role)]
-        if controls:
+        if controls and not image_charge_total(proposal, request, role):
             blockers.append(dict(kind='arithmetic', check=check['kind'], row_id=controls[0]['id'], page=controls[0].get('page_number'),
                 message=f'Check the printed {role} total. It could not be compared with the selected payments.'))
     # A missed payment cannot be used to waive known printed running controls.
@@ -183,6 +192,13 @@ def assess_admission(proposal, request, arithmetic=None):
             if evidence.get('page_number'):
                 blocker['page'] = evidence['page_number']
         blockers.append(blocker)
+    if proposal.get('chain_contradicted') and not (raw.get('coverage_review_reason') or '').strip():
+        # Held until a person compares it with the printing the next statement continues
+        # from and records why it should also be imported (statement_import_andrews).
+        from services.financial.statement_import_andrews import CHAIN_CONTRADICTED_MESSAGE
+        # The reprint reason (batch_review_summary): one file printing the period twice, read differently.
+        blockers.append(dict(kind='printed_copies', row_id=None, message=CHAIN_CONTRADICTED_MESSAGE,
+                             page=proposal['chain_contradicted'].get('continued_by_page')))
     if proposal.get('reading_failure') or proposal.get('assignment_only'):
         blockers.append(dict(kind='reading', row_id=None, message=proposal.get('reading_failure') or 'Assign the unallocated statement pages before importing.'))
     unique = []

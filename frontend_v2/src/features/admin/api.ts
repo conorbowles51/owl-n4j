@@ -190,3 +190,61 @@ export const platformUpdateAPI = {
       method: "POST",
     }),
 }
+
+/** A held statement the reader got nothing out of (pages with text), from the reader-gap register. */
+export interface ReaderGapStatement {
+  case_id: string
+  file_id: string
+  statement_key: string
+  filename: string
+  bank: string
+  fingerprint: string
+  labels: string[]
+  page_count: number
+  unclassified_lines: number
+  first_seen: string
+  last_seen: string
+  resolved_at?: string | null
+  files_with_layout?: number
+}
+
+export interface ReaderGapLayout {
+  fingerprint: string
+  labels: string[]
+  banks: string[]
+  files: number
+  held_files: number
+  cases: number
+  first_seen: string
+}
+
+export interface ReaderGapsResponse {
+  updated_at?: string | null
+  held: number
+  statements: ReaderGapStatement[]
+  layouts: ReaderGapLayout[]
+}
+
+export const readerGapsAPI = {
+  get: () => fetchAPI<ReaderGapsResponse>("/api/admin/reader-gaps"),
+}
+
+/** How many payments name the other side: named, unnamed with a stated reason, or bare "Not identified". */
+export interface PartyCoverageCounts {
+  rows: number
+  named: number
+  reason: number
+  bare: number
+  unnamed_share: number
+  bare_share: number
+}
+
+export interface PartyCoverageResponse {
+  measured_at: string
+  total: PartyCoverageCounts
+  cases: (PartyCoverageCounts & { case_id: string; title: string })[]
+}
+
+export const partyCoverageAPI = {
+  get: () => fetchAPI<PartyCoverageResponse>("/api/admin/party-coverage"),
+}

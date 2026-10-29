@@ -223,6 +223,9 @@ class AdjudicationDecision(str, Enum):
     set_account_party = "set_account_party"
     set_counterparty_party = "set_counterparty_party"
     set_account_identity = "set_account_identity"
+    # A card or account printed under different holder names on different statements: each statement is filed with
+    # the name printed on it, recorded as a judgement call; who holds the account is not decided (printed_holders).
+    keep_printed_holders = "keep_printed_holders"
 
 
 class IngestionRunStatus(str, Enum):

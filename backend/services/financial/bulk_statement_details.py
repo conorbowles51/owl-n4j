@@ -17,6 +17,7 @@ from services.financial.statement_details import StatementDetailsRequest, read_s
 from services.financial.statement_import import read_statement_import
 from services.financial.effective_statement_review import resolve_review, request_signature
 from services.financial.statement_progress import review_progress
+from services.financial.model_work import origin_field
 
 FIELDS = ('holder', 'account_number', 'institution', 'currency', 'period_start', 'period_end')
 
@@ -688,7 +689,7 @@ def save(session, *, case_id, request, actor, owned_batch_id=None):
                 if previous:
                     metadata.setdefault('financial_review_history', []).append(previous)
                 record = dict(request=raw, review_revision=_digest(raw), saved_at=datetime.now(timezone.utc).isoformat(),
-                    saved_by=dict(user_id=str(actor.user_id), name=actor.name))
+                    saved_by=dict(user_id=str(actor.user_id), name=actor.name, **origin_field(actor)))
                 status, summary = import_batches.assess(_with_duplicate(session, file, state['proposal'], duplicate_cache), raw)
                 record.update(assessment=summary, assessment_status=status,
                     initial_request_signature=request_signature(import_batches.initial_request(state['proposal'])),

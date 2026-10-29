@@ -33,12 +33,13 @@ class PaymentInferenceTests(unittest.TestCase):
     def test_spanish_bank_types_do_not_invent_a_payee(self):
         for description, direction, category, party in [
             ('C19 INTERESES GANADOS', 'credit', 'Interest income', 'BBVA'),
-            ('C20 I.S.R. RETENIDO', 'debit', 'Taxes', None),
-            ('E20 IVA COMISION ORDEN PAGO 16% Ref. 9644859.0173.01', 'debit', 'Taxes', None),
-            ('E18 COMISION ORDEN DE PAGO Ref. 9644859.0173.01', 'debit', 'Bank fees', 'BBVA'),
-            ('W01 TRASPASO A TERCEROS RENTA 21 DE 30 BMRCASH Ref. REFBNTC00509957', 'debit', 'Rent and leases', None),
-            ('W02 DEPOSITO DE TERCERO CARGOTECNIA BMRCASH Ref. REFBNTC00059250', 'credit', 'Deposits', 'CARGOTECNIA'),
-            ('E17 ORDEN DE PAGO EXTRANJERO ORDENANTE: /4451254647 Ref. 9644859.0173.01', 'credit', 'Transfers', None),
+            # Tax the bank withholds on interest, or charges on its own commission, is paid to the bank.
+            ('C20 I.S.R. RETENIDO', 'debit', 'Taxes', 'BBVA'),
+            ('E20 IVA COMISION ORDEN PAGO 16% Ref. 1000000.0001.01', 'debit', 'Taxes', 'BBVA'),
+            ('E18 COMISION ORDEN DE PAGO Ref. 1000000.0001.01', 'debit', 'Bank fees', 'BBVA'),
+            ('W01 TRASPASO A TERCEROS RENTA 21 DE 30 BMRCASH Ref. REFBNTC00000001', 'debit', 'Rent and leases', None),
+            ('W02 DEPOSITO DE TERCERO EJEMPLOTECNIA BMRCASH Ref. REFBNTC00000002', 'credit', 'Deposits', 'EJEMPLOTECNIA'),
+            ('E17 ORDEN DE PAGO EXTRANJERO ORDENANTE: /1000000001 Ref. 1000000.0001.01', 'credit', 'Transfers', 'Account 1000000001 (no name printed)'),
         ]:
             with self.subTest(description=description):
                 result = self.infer(description, direction, 'checking')
@@ -83,7 +84,13 @@ class PaymentInferenceTests(unittest.TestCase):
     def test_unclear_names_and_incidental_brand_mentions_stay_unresolved(self):
         for description in ['', 'COLUMBIA HEIGHTS', '60371 - 2141 K STWASHINGTONDC', 'NIKELSON LTD', 'SHELLY JONES', 'Unknown entry', 'Reference Nike shopping payment']:
             with self.subTest(description=description):
-                self.assertEqual(self.infer(description), {})
+                inferred = self.infer(description)
+                # No name is invented; a charge on a card statement is still a card purchase.
+                self.assertNotIn('counterparty', inferred)
+                if description:
+                    self.assertIn(inferred['category']['value'], {'Card purchases', 'Payments'})
+                else:
+                    self.assertEqual(inferred, {})
         self.assertEqual(self.infer('NIKE.COM', direction='invalid'), {})
 
     def test_readable_card_merchants_do_not_depend_on_a_brand_whitelist(self):
@@ -157,3 +164,35 @@ class PaymentInferenceTests(unittest.TestCase):
         self.assertEqual(balance_reading_status(row), 'unavailable')
         row.running_balance_minor = 0
         self.assertEqual(balance_reading_status(row), 'recorded')
+
+
+class BankWordingCategoryTests(unittest.TestCase):
+    """Mexican and US bank-statement wording places payments the merchant rules leave open."""
+
+    def test_common_bank_wording_gets_a_category(self):
+        from services.financial.payment_inference import infer_payment_labels
+        for description, direction, kind, expected in [
+            ('N06 PAGO CUENTA DE TERCERO BNET 0163384519 pago fac 1527', 'debit', 'checking', 'Transfers'),
+            ('117 SPE] ENVIADO BANAMEX 0209258GTOS A COMPROBAR', 'debit', 'checking', 'Transfers'),
+            ('78680199 Compra de Reporto CETES 260305 0 6,671,041', 'debit', 'checking', 'Investments'),
+            ('RETENCION |S R 18-03-2026 AL 18-03-2026', 'debit', 'savings', 'Taxes'),
+            ('X01 IMSS/INF/AFORE VIA ELECT. PAGO SIPARE', 'debit', 'checking', 'Social security'),
+            ('P31 SBLEASING SA DE CV 21533', 'debit', 'checking', 'Loans and leasing'),
+            ('P31 RADIO MOVIL DIPSA TE00011', 'debit', 'checking', 'Utilities and telecom'),
+            ('0000000 COM MEMBRESIA CUENTA E PYME FEB 2022', 'debit', 'checking', 'Bank fees'),
+            ('Compra de divisas 123,100.00 USD a un tipo de cambio', 'debit', 'checking', 'Currency exchange'),
+            ('Withdrawal Debit Card\n04/30 0 0000019595 0 PAPA JOHNS #3538 202-667-7272 DC', 'debit', 'checking', 'Meals'),
+            ('Wi t hdrawal Debit Card 12/07 0 0000057850 0 CASH APP*JADEN 8774174551 CA', 'debit', 'checking', 'Peer-to-peer payments'),
+            ('Withdrawal ACH CAPITAL ONE TYPE: MOBILE PMT', 'debit', 'checking', 'Card payments'),
+            ('| SSA TREAS 310 XXSOC SEC', 'credit', 'checking', 'Social security'),
+            ('Check 2320', 'debit', 'checking', 'Checks'),
+            ('Withdrawal at ATM #000000006662 PNC BANK', 'debit', 'checking', 'Cash withdrawals'),
+        ]:
+            with self.subTest(description=description):
+                category = infer_payment_labels(description, direction=direction, account_type=kind)['category']
+                self.assertEqual(category['value'], expected)
+                self.assertEqual(category['source'], 'description')
+
+    def test_bare_reference_numbers_stay_open_for_review(self):
+        from services.financial.payment_inference import infer_payment_labels
+        self.assertNotIn('category', infer_payment_labels('105413834', direction='debit', account_type='checking'))

@@ -19,7 +19,8 @@ MAX_TRANSFER_PAIRS = 1000
 def ledger_transfer_candidates(export, *, population='working', tolerance_days=3):
     if population not in ('working', 'verified') or type(tolerance_days) is not int or not 0 <= tolerance_days <= 7:
         raise LedgerSummaryError('Choose working or verified readings and a date tolerance from 0 to 7 days.')
-    document = json.loads(export.snapshot.content)
+    from services.financial.ledger_snapshot import view_capture
+    document, stamp = view_capture(export)
     ledger = document['ledger']
     if not document.get('export_ready') or not ledger.get('history_captured'):
         raise LedgerSummaryError('Transfer review requires a consistent captured ledger and history.')
@@ -108,7 +109,7 @@ def ledger_transfer_candidates(export, *, population='working', tolerance_days=3
     if len(pairs) > MAX_TRANSFER_PAIRS:
         raise LedgerSummaryError('More than 1,000 transfer candidates match. Narrow the date scope; no truncated comparison was returned.')
     return dict(case_id=ledger['case_id'], start_date=ledger['start_date'], end_date=ledger['end_date'],
-        population=population, tolerance_days=tolerance_days, snapshot_sha256=export.snapshot.sha256,
+        population=population, tolerance_days=tolerance_days, **stamp,
         rows=rows, candidates=pairs, reference_evidence=evidence, unscoped_reference_ids=unscoped_references, currencies=summary['currencies'], excluded_rows=summary['excluded_rows'],
         date_unavailable_ids=unavailable, applied=False,
         limitation='Recorded UUID references are compared as identifiers, not asserted UETRs. Native ACH traces require the same recorded effective date and routing prefix; unscoped bank/check references are not matched. Identifier equality alone does not prove payment identity. Equal amounts, currency and compatible dates across different accounts suggest possible transfers; they do not prove a match. Multiple possible partners remain explicit. Statement-end-only dates are not used as transaction timing. Original postings remain unchanged; any pairing is a separate investigator hypothesis.')
@@ -135,7 +136,11 @@ def evaluate_transfer_scenario(export, request):
     request = LedgerTransferScenario.model_validate(request)
     if not request.basis.strip(): raise LedgerSummaryError('Record a reason for the selected pairings.')
     result = ledger_transfer_candidates(export, population=request.population, tolerance_days=request.tolerance_days)
-    if request.expected_snapshot_sha256 != result['snapshot_sha256']:
+    from services.financial.ledger_snapshot import snapshot_matches, FULL_DOCUMENT_COVERS
+    # Candidates are stamped over the ledger readings and decisions; earlier ones over the whole export. Each
+    # stamp is compared with the fingerprint of its own kind, so either refuses on any payment or decision change.
+    covers = snapshot_matches(export, request.expected_snapshot_sha256)
+    if covers is None:
         raise LedgerSummaryError('Ledger readings or decisions changed. Reload transfer candidates before pairing.')
     if result['start_date'] != (request.start_date.isoformat() if request.start_date else None) or result['end_date'] != (request.end_date.isoformat() if request.end_date else None):
         raise LedgerSummaryError('Transfer scenario date scope differs from its captured ledger.')
@@ -158,6 +163,7 @@ def evaluate_transfer_scenario(export, request):
             unpaired_debits_minor=str(debits-paired['amount']), movement_volume_minor=str(credits+debits-paired['amount'])))
     document = dict(schema='loupe.financial.transfer_scenario/1', case_id=result['case_id'], applied=False,
         pairings_verified=False, inputs=request.model_dump(mode='json'), selected_pairs=selected, figures=figures,
+        **({} if covers == FULL_DOCUMENT_COVERS else dict(expected_snapshot_digest_covers=covers)),
         ledger_snapshot=json.loads(export.snapshot.content), ledger_manifest=json.loads(export.manifest),
         limitation='Conditional pairing only. Selected debit/credit pairs count once in this scenario; unpaired postings remain separate. This is not a deduplication decision, ownership conclusion or change to the ledger. Missing records and date scope can change candidate matches.')
     content = json.dumps(document, sort_keys=True, separators=(',', ':'), ensure_ascii=False, allow_nan=False)

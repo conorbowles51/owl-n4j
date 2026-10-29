@@ -95,12 +95,49 @@ def carry_file_level_review(file, proposal, identifiers):
 
 def conflict_problems(proposal, request):
     """One question per field the newer reading prints differently, while the
-    carried review is the one being assessed (any later save answers it)."""
+    carried review is the one being assessed (any later save answers it).
+
+    ``carry_row_conflicts`` (reprepare_carry): a payment line value she saved that the current reading prints
+    differently, or a line the current reading prints that her saved work did not have; hers is kept until
+    she answers."""
     saved = proposal.get('saved_review') or {}
-    conflicts = saved.get('carry_conflicts')
-    if not conflicts or (request is not None and request != saved.get('request')):
+    conflicts = saved.get('carry_conflicts') or {}
+    rows = saved.get('carry_row_conflicts') or []
+    if not (conflicts or rows) or (request is not None and request != saved.get('request')):
         return []
-    return [dict(kind='carry_conflict', field=field, row_id=None, yours=value['yours'], reading=value['reading'],
-                 message=f"{LABELS[field]}: you entered {value['yours']}, the statement now reads {value['reading']}. "
-                         f"Choose which is right.")
-            for field, value in conflicts.items()]
+    problems = [dict(kind='carry_conflict', field=field, row_id=None, yours=value['yours'], reading=value['reading'],
+                     message=f"{LABELS.get(field, 'Statement detail')}: you entered {_shown(field, value['yours'])}, "
+                             f"the statement now reads {_shown(field, value['reading'])}. Choose which is right.")
+                for field, value in conflicts.items()]
+    for value in rows:
+        field = value['field']
+        if field == 'new_line':
+            line = value['reading'] or {}
+            message = (f"The statement now reads a payment line your saved review did not have "
+                       f"({line.get('date') or 'no date'}, {_shown('amount_minor', line.get('amount_minor'))}). "
+                       f"Check it against the PDF.")
+        else:
+            message = (f"{ROW_LABELS.get(field, 'Payment line')}: you entered {_shown(field, value['yours'])}, "
+                       f"the statement now reads {_shown(field, value['reading'])}. Choose which is right.")
+        problems.append(dict(kind='carry_conflict', field=field, row_id=value['row_id'], yours=value['yours'],
+                             reading=value['reading'], message=message))
+    return problems
+
+
+ROW_LABELS = dict(excluded='Payment line included', date='Payment date', description='Payment description',
+                  counterparty='Payment counterparty', amount_minor='Payment amount', direction='Payment direction',
+                  balance_minor='Running balance')
+
+
+def _shown(field, value):
+    if value in (None, ''):
+        return 'nothing'
+    if field in ('amount_minor', 'balance_minor'):
+        try:
+            minor = int(str(value))
+        except ValueError:
+            return str(value)
+        return f"{'-' if minor < 0 else ''}{abs(minor) // 100:,}.{abs(minor) % 100:02d}"
+    if field == 'excluded':
+        return 'left out' if value else 'included'
+    return str(value)

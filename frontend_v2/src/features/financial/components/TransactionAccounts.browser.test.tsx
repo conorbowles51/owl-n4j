@@ -9,7 +9,7 @@ import {
   cleanup,
   within,
 } from "@testing-library/react"
-import { afterEach, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, expect, it, vi } from "vitest"
 import { page } from "vitest/browser"
 import { LedgerRowBrowser } from "./LedgerRowBrowser"
 import { WorkspaceScope } from "./InvestigationWorkspaceParts"
@@ -26,6 +26,9 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { RetainedFinancialTab } from "./FinancialNavigation"
 import { Button } from "@/components/ui/button"
 import type { LedgerTransaction } from "../api"
+
+// These tests read the dense table view of Transactions.
+beforeEach(() => localStorage.setItem("financial-transactions-table-view", "1"))
 vi.mock("@/lib/api-client", async (original) => ({
   ...(await original<typeof import("@/lib/api-client")>()),
   fetchAPI: vi.fn(async () => ({
@@ -180,8 +183,8 @@ it("downloads the complete filtered CSV across pages and reflects a later curren
   expect(screen.getByText("1–50 of 120 matching rows")).toBeVisible()
   await act(async () => {
     await page
-      .getByRole("combobox", { name: "Filter financial payments by category" })
-      .selectOptions("Due diligence")
+      .getByRole("button", { name: /^Due diligence, \d+ payments$/ })
+      .click()
   })
   expect(screen.getByText("1–50 of 80 matching rows")).toBeVisible()
   await act(async () => {
@@ -277,10 +280,8 @@ it("downloads the complete filtered CSV across pages and reflects a later curren
     })
   }
   expect(
-    screen.getByRole("combobox", {
-      name: "Filter financial payments by category",
-    })
-  ).toHaveValue("Due diligence")
+    screen.getByRole("button", { name: /^Due diligence, \d+ payments$/ })
+  ).toHaveAttribute("aria-pressed", "true")
   expect(
     screen.getByRole("checkbox", { name: /^Example Company$/ })
   ).toBeChecked()
@@ -383,6 +384,6 @@ it("starts with all imported payments and filters across banks without a load st
     name: "Transaction tools and filters",
   })
   expect(within(toolbar).getByRole("button", { name: /Charts/ })).toBeVisible()
-  expect(within(toolbar).getByLabelText("Category")).toBeVisible()
+  expect(screen.getByRole("group", { name: "Filter by category" })).toBeVisible()
   await page.screenshot({ path: "/tmp/loupe-transaction-workflow.png" })
 })

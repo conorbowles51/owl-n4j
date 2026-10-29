@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { appendAccountSelection } from "../lib/account-selection"
 import { sha256Hex } from "@/lib/browser-crypto"
 import { LinkedPayments } from "./LinkedPayments"
@@ -33,7 +34,8 @@ const response = z.object({
     "investigator_payment_identity",
   ]),
   snapshot_sha256: z.string().optional(),
-  snapshot_json: z.string().optional(),
+  snapshot_json: z.string().nullable().optional(),
+  digest_covers: z.string().optional(),
   counterparty_limitation: z.string(),
   available: z.boolean(),
   reason: z.string().nullable(),
@@ -150,25 +152,30 @@ function CounterpartyScope({
       )
         throw Error("Analysis returned a different grouping basis.")
       if (identities) {
+        // A ledger-scope stamp covers the readings and decisions the server read; no export document is sent.
+        // An export stamp arrives with its document, which is checked against it here.
+        const scoped = data.digest_covers === "ledger_readings_and_decisions"
         if (
-          !data.snapshot_json ||
+          (!scoped && !data.snapshot_json) ||
           !data.snapshot_sha256 ||
           data.counterparties.some((p) => !p.group_id)
         )
           throw Error("Identity analysis is missing its captured source.")
-        const digest = await sha256Hex(
-          new TextEncoder().encode(data.snapshot_json)
-        )
-        if (digest !== data.snapshot_sha256)
-          throw Error("Identity source capture hash differs.")
-        const ledger = JSON.parse(data.snapshot_json).ledger
-        if (
-          ledger.case_id !== caseId ||
-          ledger.account_id !== account ||
-          ledger.start_date !== start ||
-          ledger.end_date !== end
-        )
-          throw Error("Identity capture belongs to a different scope.")
+        if (!scoped) {
+          const digest = await sha256Hex(
+            new TextEncoder().encode(data.snapshot_json!)
+          )
+          if (digest !== data.snapshot_sha256)
+            throw Error("Identity source capture hash differs.")
+          const ledger = JSON.parse(data.snapshot_json!).ledger
+          if (
+            ledger.case_id !== caseId ||
+            ledger.account_id !== account ||
+            ledger.start_date !== start ||
+            ledger.end_date !== end
+          )
+            throw Error("Identity capture belongs to a different scope.")
+        }
       }
 
       if ((population === "working") !== (data.population === "working"))
@@ -288,18 +295,12 @@ function CounterpartyScope({
           </p>
         ) : (
           <>
-            <details className="text-sm">
-              <summary className="cursor-pointer">
-                How these totals were calculated
-              </summary>
+            <Disclosure className="text-sm" label="How these totals were calculated">
               <p>{query.data.limitation}</p>
-            </details>
-            <details className="text-sm">
-              <summary className="cursor-pointer">
-                How names were grouped
-              </summary>
+            </Disclosure>
+            <Disclosure className="text-sm" label="How names were grouped">
               <p>{query.data.counterparty_limitation}</p>
-            </details>
+            </Disclosure>
             {identities && (
               <Button
                 variant="outline"
@@ -420,8 +421,7 @@ function Point({
         Difference: {correctionMoney(point.net_minor, point.currency)}
       </p>
       {point.raw_labels && (
-        <details className="rounded border p-2">
-          <summary>Names printed on statements ({names.length})</summary>
+        <Disclosure className="rounded border p-2" label={<>Names printed on statements ({names.length})</>}>
           <ul className="my-2 max-h-56 overflow-auto break-words list-disc pl-5">
             {names.slice(page * 25, (page + 1) * 25).map((label, index) => (
               <li key={index}>
@@ -451,7 +451,7 @@ function Point({
               </Button>
             </div>
           )}
-        </details>
+        </Disclosure>
       )}
       <LinkedPayments caseId={caseId} ids={point.transaction_ids} />
     </div>

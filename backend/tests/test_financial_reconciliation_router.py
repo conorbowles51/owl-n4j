@@ -107,7 +107,7 @@ class GetCaseReconciliationTests(unittest.IsolatedAsyncioTestCase):
             "to_reconciliation_view",
             return_value=FakeView(),
         ) as view_call:
-            result = await financial_reconciliation.get_case_reconciliation(
+            result = financial_reconciliation.get_case_reconciliation(
                 case_id=case_id,
                 account_id=None,
                 reconciliation_status=None,
@@ -139,7 +139,7 @@ class GetCaseReconciliationTests(unittest.IsolatedAsyncioTestCase):
             "list_period_reconciliations",
             return_value=[],
         ) as list_call:
-            await financial_reconciliation.get_case_reconciliation(
+            financial_reconciliation.get_case_reconciliation(
                 case_id=uuid.uuid4(),
                 account_id=None,
                 reconciliation_status=None,
@@ -158,7 +158,7 @@ class GetCaseReconciliationTests(unittest.IsolatedAsyncioTestCase):
             "list_period_reconciliations",
             return_value=[],
         ) as list_call:
-            await financial_reconciliation.get_case_reconciliation(
+            financial_reconciliation.get_case_reconciliation(
                 case_id=case_id,
                 account_id=account_id,
                 reconciliation_status="not_attempted",
@@ -176,7 +176,7 @@ class GetCaseReconciliationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_an_unknown_status_is_a_400_naming_the_valid_words(self):
         with self.assertRaises(HTTPException) as ctx:
-            await financial_reconciliation.get_case_reconciliation(
+            financial_reconciliation.get_case_reconciliation(
                 case_id=uuid.uuid4(),
                 account_id=None,
                 reconciliation_status="reconciled",
@@ -195,7 +195,7 @@ class GetCaseReconciliationTests(unittest.IsolatedAsyncioTestCase):
             side_effect=ReconciliationQueryError("limit must be positive"),
         ):
             with self.assertRaises(HTTPException) as ctx:
-                await financial_reconciliation.get_case_reconciliation(
+                financial_reconciliation.get_case_reconciliation(
                     case_id=uuid.uuid4(),
                     account_id=None,
                     reconciliation_status=None,
@@ -213,7 +213,7 @@ class GetCaseReconciliationTests(unittest.IsolatedAsyncioTestCase):
             side_effect=RuntimeError("db exploded"),
         ):
             with self.assertRaises(HTTPException) as ctx:
-                await financial_reconciliation.get_case_reconciliation(
+                financial_reconciliation.get_case_reconciliation(
                     case_id=uuid.uuid4(),
                     account_id=None,
                     reconciliation_status=None,

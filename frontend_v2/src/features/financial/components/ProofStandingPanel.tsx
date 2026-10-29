@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { Button } from "@/components/ui/button"
 import { useProofStanding } from "../hooks/use-proof-standing"
 import { readProofClass } from "../lib/ledger-format"
@@ -68,10 +69,7 @@ export function ProofStandingPanel({ caseId }: { caseId: string | undefined }) {
               They describe evidence classes, not reviews still waiting for a
               decision or rows currently included in totals.
             </p>
-            <details>
-              <summary className="cursor-pointer text-sm font-medium">
-                View all classes and their rules
-              </summary>
+            <Disclosure label="View all classes and their rules">
               <div className="mt-3 overflow-x-auto">
                 <table className="w-full text-left text-xs">
                   <caption className="mb-2 text-left text-muted-foreground">
@@ -162,7 +160,7 @@ export function ProofStandingPanel({ caseId }: { caseId: string | undefined }) {
                 . Eligibility does not mean every row in that class is counted.
                 Held-out, superseded and rejected rows remain excluded.
               </p>
-            </details>
+            </Disclosure>
           </>
         )
       )}

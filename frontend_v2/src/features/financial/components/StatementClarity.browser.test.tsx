@@ -111,6 +111,65 @@ it.each([1280, 390])(
     expect(screen.getByLabelText("Destination")).toHaveTextContent("accounts=1")
   }
 )
+it("opens a month's statement, or the dates check for a missing month, from the coverage grid", async () => {
+  await page.viewport(1280, 900)
+  vi.mocked(fetchAPI).mockResolvedValue({
+    case_id: "case",
+    offset: 0,
+    has_more: false,
+    applied: false,
+    limitation: "Printed dates only",
+    items: [
+      {
+        account_id: "account",
+        label: "Example Company · 1234",
+        holder: "Example Company",
+        identifier: "1234",
+        institution: "Example Bank",
+        available: true,
+        reason: null,
+        periods: [
+          {
+            period_id: "p2024",
+            source_document_id: "doc2024",
+            evidence_file_id: "file2024",
+            filename: "2024.pdf",
+            currency: "USD",
+            start: "2024-01-01",
+            end: "2024-12-31",
+            included: true,
+            exclusion_reason: null,
+          },
+        ],
+        currencies: [
+          {
+            currency: "USD",
+            period_count: 1,
+            covered_days: 366,
+            uncovered_days: 31,
+            windows: [
+              { start: "2024-01-01", end: "2024-12-31", period_ids: ["p2024"] },
+              { start: "2025-02-01", end: "2025-02-28", period_ids: [] },
+            ],
+            gaps: [{ start: "2025-01-01", end: "2025-01-31", days: 31 }],
+            overlaps: [],
+          },
+        ],
+      },
+    ],
+  })
+  mount(<OverviewStatementCoverage caseId="case" active />)
+  fireEvent.click(await screen.findByRole("button", { name: "Jan 2025 · Missing" }))
+  const dialog = await screen.findByRole("dialog")
+  expect(dialog).toHaveTextContent("Example Company · 1234 · USD · Jan 2025")
+  expect(dialog).toHaveTextContent("No saved statement covers this month.")
+  fireEvent.keyDown(dialog, { key: "Escape" })
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
+  fireEvent.click(screen.getByRole("button", { name: "Mar 2024 · Covered" }))
+  expect(screen.getByLabelText("Destination")).toHaveTextContent(
+    "view=statements&files=1&reviewFile=file2024"
+  )
+})
 it.each([1280, 390])(
   "opens one group review for ready files without importing or including duplicates at %ipx",
   async (width) => {
@@ -119,6 +178,9 @@ it.each([1280, 390])(
     vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
       if (options?.method === "POST") {
         writes.push(options.body)
+        // The start check (fca92081): nothing open holds these files, no copies.
+        if (url.includes("/batches/preview?"))
+          return { case_id: "case", open_batches: [], copies: [] }
         return { id: "group", case_id: "case" }
       }
       if (url.includes("statement-import/files"))
@@ -170,7 +232,13 @@ it.each([1280, 390])(
       )
     )
     expect(writes).toEqual([
-      { request_id: expect.any(String), file_ids: ["ready"], folder_ids: [] },
+      { file_ids: ["ready"] },
+      {
+        request_id: expect.any(String),
+        file_ids: ["ready"],
+        folder_ids: [],
+        start_new: false,
+      },
     ])
   }
 )

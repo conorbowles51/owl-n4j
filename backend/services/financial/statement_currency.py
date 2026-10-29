@@ -21,6 +21,8 @@ _CURRENCY_NAMES = {'EURO': 'EUR', 'EUROS': 'EUR', 'PESOS MEXICANOS': 'MXN',
     'DOLARES AMERICANOS': 'USD', 'DOLARES ESTADOUNIDENSES': 'USD', 'US DOLLARS': 'USD',
     'U.S. DOLLARS': 'USD', 'MEXICAN PESOS': 'MXN'}
 _US_LAYOUTS = {'capital-one-card', 'merrick-card', 'credit-one-card', 'citi-card', 'andrews-share-statement'}
+# BBVA's 'Información Financiera' heading, with up to two letters of OCR noise where the accented 'ó' was.
+_BBVA_FINANCIAL = re.compile(r'INFORMACI[A-Z]{0,2}N FINANCIERA')
 
 
 def _code(text):
@@ -51,7 +53,9 @@ def detect_statement_currency(sources, *, layout_id=None, header_text=''):
         # not a second account currency and must not suppress a USD reading.
         def normal(value):
             return ''.join(c for c in unicodedata.normalize('NFKD', value.upper()) if not unicodedata.combining(c))
-        financial_rows = [cells for cells in rows if any(normal(c) == 'INFORMACION FINANCIERA' for c in cells)]
+        # A scan's text layer can garble the accented letter ('Informaciéon Financiera', BNB2 BBVA USD Jul 2025):
+        # missing the heading made every label of the file count, its glossary's 'Moneda nacional' included.
+        financial_rows = [cells for cells in rows if any(_BBVA_FINANCIAL.fullmatch(normal(c)) for c in cells)]
         if financial_rows:
             labelled_rows = financial_rows
     labelled = set()
@@ -146,3 +150,67 @@ def printed_holdings_currency(sources):
     if not found or len({cell['value'] for cell in found}) != 1:
         return None
     return dict(found[0], basis='printed_holdings_currency', cells=len(found))
+
+
+# Words that name a currency wherever a statement prints them (LOUPE_FINANCIAL_AUTOFILL_CASE_CURRENCY). Broad on
+# purpose: a word read here only ever stops the case's usual currency from being assumed.
+_NAMED_CODES = {'MXN': 'MXN', 'PESOS': 'MXN', 'PESO': 'MXN', 'M.N.': 'MXN', 'MN': 'MXN', 'MONEDA NACIONAL': 'MXN',
+                'UDIS': 'UDI', 'UDI': 'UDI', 'USD': 'USD', 'DLLS': 'USD', 'DLL': 'USD', 'DLS': 'USD',
+                'DOLAR': 'USD', 'DOLARES': 'USD', 'DOLLAR': 'USD', 'DOLLARS': 'USD', 'EUR': 'EUR', 'EURO': 'EUR',
+                'EUROS': 'EUR', 'CAD': 'CAD', 'GBP': 'GBP', 'JPY': 'JPY', 'YEN': 'JPY', 'YENES': 'JPY', 'CHF': 'CHF',
+                'AUD': 'AUD', 'NZD': 'NZD', 'HKD': 'HKD', 'SGD': 'SGD', 'CNY': 'CNY', 'BRL': 'BRL', 'COP': 'COP',
+                'ARS': 'ARS', 'CLP': 'CLP', 'PEN': 'PEN', 'KRW': 'KRW', 'INR': 'INR'}
+_NAMED = re.compile(r'(?<![A-Z.])(' + '|'.join(re.escape(w) for w in sorted(_NAMED_CODES, key=len, reverse=True))
+                    + r')(?![A-Z])')
+# A prefixed dollar or a symbol other than a bare '$' beside an amount, anywhere in a line of text (a symbol
+# alone is not: scans read seals and stamps as '£' and '¥').
+_SYMBOL_ANYWHERE = re.compile(r'(?<![A-Z])((?:US|CA|AU|NZ|HK|C|A|S|R)\$|[€£¥])\s?(?=\d[\d.,]*[.,]\d{2}(?!\d)|\d{1,3}(?:[.,]\d{3})+)')
+# The deposit-insurance limit every Mexican bank prints ('HASTA ... CUATROCIENTAS MIL UDIS POR PERSONA') is a
+# unit of that limit, not a currency of the statement.
+_INSURANCE_LIMIT = re.compile(r'\bMIL\s+UDIS\b')
+_SYMBOL_CODES = {'R$': {'BRL'}}
+# An exchange rate quoted as a pair of currency codes ('FX USD/MXN 18.57' among market indicators) names no
+# currency of the statement (as for the holdings above).
+_PAIR = re.compile(r'(?<![A-Z])([A-Z]{3})\s*/\s*([A-Z]{3})(?![A-Z])')
+
+
+def _without_rate_pairs(text):
+    return _PAIR.sub(lambda m: ' ' if _code(m[1]) and _code(m[2]) else m[0], text)
+
+
+def currency_marks(sources, header_text=''):
+    """Every currency marker the statement prints: one sorted list of the currencies each allows.
+
+    For the case's usual currency (field_proposals): it is assumed only when no
+    marker names one currency (a bare '$' allows pesos and dollars alike, so it
+    names none). Labels (one naming a currency this cannot read is '?'), money
+    markers beside an amount, currency words and symbols anywhere (descriptions
+    and holdings included) count; an exchange rate quoted as a pair of currency
+    codes does not.
+    """
+    rows = [[str(c.get('expected_text') or '').strip() for c in row['cells']] for source in sources for row in source['rows']]
+    rows.extend([[line.strip()] for line in header_text.splitlines()])
+    marks = set()
+    for cells in rows:
+        for candidate in [' '.join(cells), *cells]:
+            folded = ''.join(c for c in unicodedata.normalize('NFKD', candidate.upper()) if not unicodedata.combining(c))
+            label = _LABEL.fullmatch(folded)
+            value = ' '.join(label[1].split()) if label else ''
+            if value:
+                value = {'PESOS': 'MXN', 'MONEDA NACIONAL': 'MXN', 'NACIONAL': 'MXN', 'M.N.': 'MXN', 'MN': 'MXN',
+                         'M. N.': 'MXN', 'DOLAR': 'USD', 'DOLARES': 'USD'}.get(value, value)
+                # A label naming a currency this cannot read still names one ('?'): it blocks.
+                marks.add((_code(_CURRENCY_NAMES.get(value, value)) or '?',))
+            for word in _NAMED.findall(_INSURANCE_LIMIT.sub(' ', _without_rate_pairs(folded))):
+                marks.add((_NAMED_CODES[word],))
+            for symbol in _SYMBOL_ANYWHERE.findall(folded):
+                marks.add(tuple(sorted(_SYMBOL_CODES.get(symbol) or ({_PREFIXES[symbol]} if symbol in _PREFIXES
+                                                                     else _SYMBOLS.get(symbol) or {'?'}))))
+            match = _AMOUNT.fullmatch(candidate.strip()) or _SUFFIX.fullmatch(candidate.strip())
+            if match and _MONEY_FIGURE.search(candidate):
+                marker = match['marker']
+                possible = (_SYMBOLS.get(marker) or ({_PREFIXES[marker]} if marker in _PREFIXES else None)
+                            or ({marker} if _code(marker) else set()))
+                if possible:
+                    marks.add(tuple(sorted(possible)))
+    return sorted(list(mark) for mark in marks)

@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { CounterpartyPartyDirectory } from "./CounterpartyPartyDirectory"
 import { useState } from "react"
 import {
@@ -63,10 +64,13 @@ function CaseAnalysis({ caseId }: { caseId: string }) {
         population={population}
         identities={identities}
       />
-      <details className="rounded border p-3 space-y-3">
-        <summary className="cursor-pointer font-medium">
+      <section
+        className="rounded-lg border p-3 space-y-3"
+        aria-label="Analysis settings, statement coverage and downloads"
+      >
+        <h4 className="font-semibold">
           Analysis settings, statement coverage and downloads
-        </summary>
+        </h4>
         <label className="flex items-center gap-2">
           Payments to include
           <select
@@ -83,13 +87,10 @@ function CaseAnalysis({ caseId }: { caseId: string }) {
         </label>
         <RequestedCoveragePanel caseId={caseId} params={params} />
         <LedgerExportButton caseId={caseId} params={params} />
-      </details>
-      <details className="rounded border p-3">
-        <summary className="cursor-pointer font-medium">
-          Link different names for the same person or business
-        </summary>
+      </section>
+      <Disclosure className="rounded border p-3" label="Link different names for the same person or business">
         <CounterpartyPartyDirectory key={caseId} caseId={caseId} />
-      </details>
+      </Disclosure>
     </section>
   )
 }

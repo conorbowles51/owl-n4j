@@ -309,6 +309,22 @@ class StatementOverlapTests(TestCase):
         self.assertEqual(self.review(self.primary, {**raw, 'page_number': 1})['candidates'], [])
         self.assertEqual(self.review(self.primary, raw)['candidates'], [])
 
+    def test_a_second_printing_the_next_statement_contradicts_does_not_hold_the_other(self):
+        # The reader marks a printing contradicted when the file's next statement opens on
+        # the other printing's closing (statement_import_andrews.CHAIN_CONTRADICTION). That
+        # printing is held by admission itself; it no longer holds the other for comparison.
+        batch = self.create(self.primary)
+        with self.f.SessionLocal() as db:
+            item = db.scalar(select(Item).where(Item.batch_id == batch))
+            item.statement_key = 'a' * 64
+            item.summary = {**item.summary, 'page_number': 23, 'chain_contradicted': True}
+            db.commit()
+        raw = {**self.f.request(), 'statement_id': 'b' * 64, 'page_number': 1}
+        self.assertEqual(self.review(self.primary, raw)['candidates'], [])
+        # Another contradicted printing is still compared with it.
+        review = self.review(self.primary, {**raw, 'chain_contradicted': dict(continued_by_page=18)})
+        self.assertEqual([c['page_number'] for c in review['candidates']], [23])
+
     def test_false_lineage_with_different_bytes_still_requires_comparison(self):
         self.create(self.primary)
         other = self.copy_file()

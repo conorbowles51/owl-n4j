@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
+import { Disclosure } from "./Disclosure"
+import { InfoTip } from "./InfoTip"
 import { useSearchParams } from "react-router-dom"
 import { useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
@@ -27,9 +29,13 @@ import {
 } from "../lib/review-queue"
 import { ReadingProgress } from "./ReadingProgress"
 import { BulkStatementDetails } from "./BulkStatementDetails"
-import { QueueRowDetails, needsRowDetails } from "./QueueRowDetails"
+import { QueueRowDetails } from "./QueueRowDetails"
+import { hasRowDetails } from "../lib/queue-row-fields"
 import { QueueNoActivityConfirm } from "./QueueNoActivityConfirm"
 import { QueueAnswerOnce } from "./QueueAnswerOnce"
+import { LEFT_OUT_MESSAGE, QueueNotStatement } from "./QueueNotStatement"
+import { PageImageOffer, type PageImageOfferData } from "./PageImageOffer"
+import { QueuePreview } from "./QueuePreview"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import {
   HANDLED_PARTS,
@@ -39,14 +45,17 @@ import {
   groupGuidance,
   guidanceFor,
   handledCount,
+  inProgressCount,
   isGroup,
   issueLabel,
   needsCount,
   needsLabel,
+  setAsideCount,
   reasonProposal,
   type QueueGroup,
   type QueuePerson,
 } from "../lib/queue-guidance"
+import { listWords, statementNeeds } from "../lib/statement-needs"
 
 type ListName = "waiting" | "ready" | "filled" | "reader" | "copies" | "unreadable" | "not_payment" | "handled"
 const PAGE_LISTS: Record<ListName, QueuePageList> = {
@@ -117,19 +126,22 @@ export function ReviewStatusLine({
   const total =
     c.imported + c.waiting + (c.reader_fix ?? 0) + c.filled + c.ready + c.copies +
     c.unreadable + c.unreadable_files + c.saving + c.rechecking + c.left_unimported + (c.not_payment ?? 0)
+  // Imported first: it is the finished state. Set-aside statements are finished too, never pending.
   const parts = [
-    <span key="total">Total {total}:</span>,
+    <span key="total">{total} statements:</span>,
     part("Imported", c.imported),
-    part("Waiting for you", c.waiting, "waiting"),
+    ...(c.waiting ? [part("Waiting for you", c.waiting, "waiting")] : []),
+    ...(c.unreadable + c.unreadable_files
+      ? [part("Couldn't be read", c.unreadable + c.unreadable_files, "unreadable")]
+      : []),
     ...(c.reader_fix ? [part("Waiting for a reader fix", c.reader_fix, "reader")] : []),
     ...(c.filled ? [part("Details filled automatically", c.filled, "filled")] : []),
     ...(c.ready ? [part("Ready to import", c.ready, "ready")] : []),
-    part("Copies set aside", c.copies, "copies"),
-    part("Couldn't read", c.unreadable + c.unreadable_files, "unreadable"),
     ...(c.saving ? [part("Importing now", c.saving)] : []),
     ...(c.rechecking ? [part("Being rechecked", c.rechecking)] : []),
+    ...(c.copies ? [part("Copies set aside", c.copies, "copies")] : []),
+    ...(c.not_payment ? [part("Fund statements set aside", c.not_payment, "not_payment")] : []),
     ...(c.left_unimported ? [part("Left out by you", c.left_unimported)] : []),
-    ...(c.not_payment ? [part("Not payment statements", c.not_payment, "not_payment")] : []),
     ...(c.removed_files ? [part("Files removed from Financial", c.removed_files, "unreadable")] : []),
   ]
   return (
@@ -165,11 +177,24 @@ export function ReviewStatusLine({
   )
 }
 
-function EntryLine({ entry }: { entry: QueueEntry }) {
+function EntryLine({ entry, onPreview }: { entry: QueueEntry; onPreview?: () => void }) {
   return (
     <>
       <p className="font-medium">
-        {entry.filename}
+        {onPreview ? (
+          <button
+            type="button"
+            className="text-left font-medium underline decoration-dotted underline-offset-2 hover:decoration-solid"
+            title="Preview this statement's page beside its fields"
+            aria-haspopup="dialog"
+            data-queue-preview={entry.id}
+            onClick={onPreview}
+          >
+            {entry.filename}
+          </button>
+        ) : (
+          entry.filename
+        )}
         {entry.file_statements > 1 &&
           ` · statement ${entry.file_position} of ${entry.file_statements} in this file`}
       </p>
@@ -187,6 +212,11 @@ function EntryLine({ entry }: { entry: QueueEntry }) {
       <p className="text-xs tabular-nums" aria-label="Period and printed balances">
         <span className="font-medium">{entryPeriod(entry)}</span> · {entryBalances(entry)}
       </p>
+      {entry.vision_reading?.line && (
+        <p className="text-xs text-muted-foreground" aria-label="Page images">
+          {entry.vision_reading.line}
+        </p>
+      )}
     </>
   )
 }
@@ -350,6 +380,48 @@ export function ReviewQueuePanel({
       return next
     })
   const orderKey = `${list}:${fileIds.join(",")}:${issue}:${offset}`
+  // The items on screen, statements of a shared answer listed with it, and the
+  // one shown in the quick preview (J/K move through them in this order).
+  const shown = useMemo(
+    () =>
+      list === "waiting" || list === "unreadable"
+        ? groupEntries(current, bulkIssue === "no_activity" ? ["no_activity"] : [])
+        : [],
+    [current, list, bulkIssue]
+  )
+  const previewable = useMemo(
+    () => shown.flatMap((item) => (isGroup(item) ? item.entries : [item])).filter((entry) => entry.batch_id),
+    [shown]
+  )
+  // The previewed item and where it was in the list, so a fixed item that
+  // leaves the list is followed by the one that took its place.
+  const [preview, setPreview] = useState<{ id: string; at: number } | null>(null)
+  const previewTrigger = useRef<HTMLElement | null>(null)
+  const found = preview ? previewable.findIndex((entry) => entry.id === preview.id) : -1
+  const previewIndex =
+    found >= 0 ? found : preview && previewable.length ? Math.min(preview.at, previewable.length - 1) : -1
+  const previewEntry = previewIndex >= 0 ? previewable[previewIndex] : undefined
+  const openPreview = (entry: QueueEntry) => {
+    previewTrigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    setPreview({ id: entry.id, at: Math.max(0, previewable.findIndex((candidate) => candidate.id === entry.id)) })
+  }
+  const movePreview = (step: 1 | -1) => {
+    const next = previewable[previewIndex + step]
+    if (next) setPreview({ id: next.id, at: previewIndex + step })
+  }
+  const closePreview = () => {
+    const id = previewEntry?.id
+    setPreview(null)
+    // Focus returns to the item shown last: the control that opened it, or its preview controls.
+    requestAnimationFrame(() => {
+      const trigger = previewTrigger.current
+      const target =
+        trigger?.isConnected && trigger.dataset.queuePreview === id
+          ? trigger
+          : document.querySelector<HTMLElement>(`[data-queue-preview="${id}"]`)
+      target?.focus()
+    })
+  }
   const appliedOrder = useRef("")
   useEffect(() => {
     if (!query.data || query.isPlaceholderData) return
@@ -511,13 +583,13 @@ export function ReviewQueuePanel({
     )
 
   return (
-    <section aria-label="Review queue" className="space-y-4">
-      <header className="space-y-1">
+    <section aria-label="Review queue" className="space-y-3">
+      <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <h3 className="text-lg font-semibold">
           {list === "copies"
             ? "Copies set aside"
             : list === "not_payment"
-              ? "Not payment statements"
+              ? "Fund statements set aside"
             : list === "filled"
               ? "Details filled by Loupe"
               : list === "reader"
@@ -527,25 +599,38 @@ export function ReviewQueuePanel({
               : list === "ready"
                 ? "Ready to import"
               : list === "handled"
-                ? "Loupe is handling"
+                ? "Not waiting on you"
               : needsLabel(user)}
         </h3>
         <p className="text-sm text-muted-foreground">
-          {list === "reader"
+          {{
+            reader: "Read again automatically when the reader improves.",
+            filled: "Filled from the same account's saved statements; imported when you press Import.",
+            copies: "Finished: copies kept, counting nothing.",
+            not_payment: "Finished: fund statements have no payments to import.",
+            unreadable: "Each item says which pages to look at and what to do.",
+            ready: "Every check passes. Press Import above.",
+            handled: "Nothing here needs you and nothing here is blocked.",
+          }[list as string] ?? "Only what needs a person."}
+          <InfoTip
+            text={
+          list === "reader"
             ? "Loupe cannot read these files reliably yet. Nothing needs doing by hand: they are read again when the reader improves. You can still open their statements below."
             : list === "filled"
             ? "The missing details were found in the same account's saved statements. Each value says where it came from. They are filled and imported when you press Import; change any value that is not right."
             : list === "copies"
-            ? "Copies of statements already in the case. Copies set aside count nothing. A possible copy says so and asks you to compare it."
+            ? "Finished, not blocked. These are copies of statements already imported; importing them would count the same money twice, so they are kept but count nothing. A possible copy says so and asks you to compare it."
             : list === "not_payment"
-            ? "Fund statements: they list fund units, prices and market value, not payments in and out of an account. They are set aside and count nothing; the PDF and its reading are kept. Put one back to review it as a payment statement."
+            ? "Finished, not blocked. Fund statements list fund units, prices and market value, not payments in and out of an account, so there is nothing to import. They are set aside and count nothing; the PDF and its reading are kept. Put one back to review it as a payment statement."
             : list === "unreadable"
               ? "Each item says which pages to look at and what to do."
               : list === "ready"
                 ? "Every check passes. Press Import above to add them to the ledger; open one to look at it first."
               : list === "handled"
-                ? "Nothing here needs you. Loupe moves these on by itself."
-              : "Only what needs a person. Each item says what is wrong, where to look in the PDF and what to enter. It saves by itself once it checks out."}
+                ? "Nothing here needs you and nothing here is blocked. Statements set aside on purpose are finished; anything still in progress is moved on by Loupe."
+              : "Only what needs a person. Each item says what is wrong, where to look in the PDF and what to enter. It saves by itself once it checks out."
+            }
+          />
         </p>
       </header>
       {fileIds.length > 0 && (
@@ -573,6 +658,7 @@ export function ReviewQueuePanel({
         <p role="status">Loading the review queue…</p>
       ) : (
         <>
+          <StatementsAtAGlance counts={query.data.counts} onOpen={showList} />
           <QueueSplit
             counts={query.data.counts}
             user={user}
@@ -582,7 +668,7 @@ export function ReviewQueuePanel({
           />
           {HANDLED_LISTS.has(list) && (
             <p role="note" className="rounded border border-dashed bg-muted/40 p-2 text-sm text-muted-foreground">
-              Loupe is handling these. Nothing here needs you.
+              Nothing here needs you or is blocked.
             </p>
           )}
           {list === "handled" && <HandledOverview counts={query.data.counts} onOpen={showList} />}
@@ -608,10 +694,7 @@ export function ReviewQueuePanel({
             >
               <p className="font-medium">{saveResult.message}</p>
               {saveResult.held.length > 0 && (
-                <details>
-                  <summary className="cursor-pointer">
-                    Which {saveResult.held.length} {saveResult.held.length === 1 ? "statement was" : "statements were"} held
-                  </summary>
+                <Disclosure label={<>Which {saveResult.held.length} {saveResult.held.length === 1 ? "statement was" : "statements were"} held</>}>
                   <ul className="mt-1 space-y-1">
                     {saveResult.held
                       .filter((entry) => entry.filename)
@@ -628,13 +711,10 @@ export function ReviewQueuePanel({
                       </li>
                     )}
                   </ul>
-                </details>
+                </Disclosure>
               )}
               {!!saveResult.notReady?.length && (
-                <details>
-                  <summary className="cursor-pointer">
-                    Which {saveResult.notReady.length} were not imported after filling their details
-                  </summary>
+                <Disclosure label={<>Which {saveResult.notReady.length} were not imported after filling their details</>}>
                   <ul className="mt-1 space-y-1" aria-label="Not ready after filling">
                     {saveResult.notReady.map((entry) => {
                       // Where it stands now, from the refreshed queue.
@@ -647,7 +727,7 @@ export function ReviewQueuePanel({
                       )
                     })}
                   </ul>
-                </details>
+                </Disclosure>
               )}
               <Button size="sm" variant="ghost" onClick={() => setSaveResult(null)}>
                 Dismiss
@@ -656,7 +736,7 @@ export function ReviewQueuePanel({
           )}
           {list !== "waiting" && list !== "handled" && (
             <Button variant="outline" size="sm" onClick={() => showList(HANDLED_LISTS.has(list) ? "handled" : "waiting")}>
-              {HANDLED_LISTS.has(list) ? "Back to Loupe is handling" : `Back to ${needsLabel(user)} (${query.data.counts.waiting})`}
+              {HANDLED_LISTS.has(list) ? "Back to Not waiting on you" : `Back to ${needsLabel(user)} (${query.data.counts.waiting})`}
             </Button>
           )}
           {list === "waiting" && query.data.counts.unreadable + query.data.counts.unreadable_files > 0 && (
@@ -742,17 +822,30 @@ export function ReviewQueuePanel({
             </ul>
           )}
           {list === "handled" ? null : list === "reader" ? (
-            <details>
-              <summary className="cursor-pointer text-sm">
-                Show their {shownTotal} statements
-              </summary>
+            <Disclosure label={<>Show their {shownTotal} statements</>}>
               <ol className="divide-y rounded border" aria-label="Statements waiting for a reader fix">
                 {current.map((entry) => (
                   <li key={entry.id} className="flex flex-wrap items-center justify-between gap-3 p-3 text-sm">
                     <div className="min-w-0 flex-1 basis-72">
                       <EntryLine entry={entry} />
+                      {entry.reader_gap_line && <p className="mt-1" aria-label="Reader problem">{entry.reader_gap_line}</p>}
                       {entry.issue && <p className="mt-1">{entry.issue}</p>}
                       {entry.also.length > 0 && <p>also: {entry.also.join("; ")}</p>}
+                      {entry.reader_gap && (
+                        // Every action it had where it was held ("Needs you"), including "This isn't a statement".
+                        <ItemFixes
+                          entry={entry}
+                          user={user}
+                          caseId={caseId}
+                          canEdit={canEdit}
+                          bucket={entry.held_bucket ?? "waiting"}
+                          onSaved={(saved) => void refresh(saved)}
+                          onLeftOut={(left) => {
+                            setOutcome({ entry: left, held: false, message: LEFT_OUT_MESSAGE })
+                            void refresh(left, true)
+                          }}
+                        />
+                      )}
                     </div>
                     {entry.batch_id && (
                       <Button size="sm" variant="outline" onClick={() => {
@@ -766,11 +859,11 @@ export function ReviewQueuePanel({
                   </li>
                 ))}
               </ol>
-            </details>
+            </Disclosure>
           ) : current.length === 0 ? (
             <p role="status" className="rounded border p-3">
               {list === "waiting"
-                ? "Nothing needs you. Loupe is handling the rest."
+                ? "Nothing needs you."
                 : list === "copies"
                   ? query.data.copy_files.length > 0
                     ? "No statement is a copy; the files below are."
@@ -784,10 +877,8 @@ export function ReviewQueuePanel({
               className={`divide-y rounded border ${HANDLED_LISTS.has(list) ? "border-dashed bg-muted/30 text-muted-foreground" : ""}`}
               aria-label="Statements to review"
             >
-              {(list === "waiting" || list === "unreadable") && groupEntries(
-                // Chosen together with the no-payments confirmation above, one tick each.
-                current, bulkIssue === "no_activity" ? ["no_activity"] : []
-              ).map((item, position) => {
+              {/* Chosen together with the no-payments confirmation above, one tick each. */}
+              {shown.map((item, position) => {
                 const openEntry = (entry: QueueEntry) => {
                   setOrder(current)
                   appliedOrder.current = orderKey
@@ -801,6 +892,7 @@ export function ReviewQueuePanel({
                     caseId={caseId}
                     canEdit={canEdit}
                     onOpen={openEntry}
+                    onPreview={openPreview}
                     onSaved={(entries, line) => reportShared(entries, line)}
                   />
                 ) : (
@@ -814,6 +906,11 @@ export function ReviewQueuePanel({
                     bucket={list === "unreadable" ? "unreadable" : item.bucket}
                     onOpen={() => openEntry(item)}
                     onSaved={(saved) => void refresh(saved)}
+                    onLeftOut={(left) => {
+                      setOutcome({ entry: left, held: false, message: LEFT_OUT_MESSAGE })
+                      void refresh(left, true)
+                    }}
+                    onPreview={item.batch_id ? () => openPreview(item) : undefined}
                     noActivityPick={
                       canEdit && bulkIssue === "no_activity" && item.issue_reason === "no_activity"
                         ? {
@@ -907,6 +1004,40 @@ export function ReviewQueuePanel({
                 </li>
               ))}
             </ol>
+          )}
+          {previewEntry && (
+            <QueuePreview
+              key="queue-preview"
+              caseId={caseId}
+              entry={previewEntry}
+              guide={guidanceFor(previewEntry, user, list === "unreadable" ? "unreadable" : previewEntry.bucket)}
+              position={previewIndex + 1}
+              total={previewable.length}
+              onNext={() => movePreview(1)}
+              onPrevious={() => movePreview(-1)}
+              onClose={closePreview}
+              onOpen={() => {
+                setPreview(null)
+                setOrder(current)
+                appliedOrder.current = orderKey
+                open(previewEntry)
+              }}
+            >
+              <ItemFixes
+                inPreview
+                key={previewEntry.id}
+                entry={previewEntry}
+                user={user}
+                caseId={caseId}
+                canEdit={canEdit}
+                bucket={list === "unreadable" ? "unreadable" : previewEntry.bucket}
+                onSaved={(saved) => void refresh(saved)}
+                onLeftOut={(left) => {
+                  setOutcome({ entry: left, held: false, message: LEFT_OUT_MESSAGE })
+                  void refresh(left, true)
+                }}
+              />
+            </QueuePreview>
           )}
           {shownTotal > QUEUE_PAGE_SIZE || offset > 0 ? (
             <nav aria-label="Pages of this list" className="flex flex-wrap items-center gap-2 text-sm">
@@ -1004,13 +1135,10 @@ export function ReviewQueuePanel({
             </div>
           )}
           {list === "unreadable" && query.data.set_aside_files.length > 0 && (
-            <details className="rounded border p-3 text-sm">
-              <summary className="cursor-pointer">
-                {query.data.set_aside_files.length}{" "}
+            <Disclosure className="rounded border p-3 text-sm" label={<>{query.data.set_aside_files.length}{" "}
                 {query.data.set_aside_files.length === 1 ? "file is" : "files are"} not counted as
                 {" "}couldn't read: removed from Financial, no longer in the case, or already read from an
-                identical copy
-              </summary>
+                identical copy</>}>
               <ul className="mt-2 divide-y" aria-label="Files not counted as couldn't read">
                 {query.data.set_aside_files.map((file) => (
                   <li key={`${file.batch_id}:${file.source_id}`} className="py-2">
@@ -1018,7 +1146,7 @@ export function ReviewQueuePanel({
                   </li>
                 ))}
               </ul>
-            </details>
+            </Disclosure>
           )}
         </>
       )}
@@ -1073,7 +1201,19 @@ function OutcomeNote({
   )
 }
 
-/** The two halves of the queue: what needs a person, and what Loupe moves on by itself. */
+/** "3 waiting · 2 couldn't be read": what the needs count is made of, in the status line's words. */
+function needsParts(counts: ReviewQueue["counts"]) {
+  const unread = counts.unreadable + counts.unreadable_files
+  return [
+    ...(counts.waiting ? [`${counts.waiting} to check`] : []),
+    ...(unread ? [`${unread} couldn't be read`] : []),
+  ].join(" · ")
+}
+
+/**
+ * The two halves of the queue: what needs a person, and what does not. The second half says plainly whether
+ * anything is still in progress, and that statements set aside on purpose are finished, not blocked.
+ */
 function QueueSplit({
   counts,
   user,
@@ -1089,6 +1229,8 @@ function QueueSplit({
 }) {
   const needs = needsCount(counts)
   const handled = handledCount(counts)
+  const inProgress = inProgressCount(counts)
+  const setAside = setAsideCount(counts)
   return (
     <div role="tablist" aria-label="Queue" className="grid gap-2 sm:grid-cols-2">
       <button
@@ -1096,13 +1238,13 @@ function QueueSplit({
         role="tab"
         aria-selected={!handling}
         onClick={onNeeds}
-        className={`rounded-md border-2 p-3 text-left ${!handling ? "border-amber-500 bg-amber-50 dark:bg-amber-950/30" : "border-border"}`}
+        className={`rounded-md border-2 px-3 py-2 text-left ${!handling ? "border-amber-500 bg-amber-50 dark:bg-amber-950/30" : "border-border"}`}
       >
         <span className="block text-base font-semibold">
           {needsLabel(user)} ({needs})
         </span>
         <span className="block text-xs text-muted-foreground">
-          {needs ? "Each one says what to do and where to look." : "Nothing needs you right now."}
+          {needs ? `${needsParts(counts)}. Each one says what to do and where to look.` : "Nothing needs you right now."}
         </span>
       </button>
       <button
@@ -1110,10 +1252,17 @@ function QueueSplit({
         role="tab"
         aria-selected={handling}
         onClick={onHandled}
-        className={`rounded-md border p-3 text-left text-muted-foreground ${handling ? "border-foreground/40 bg-muted" : "border-dashed bg-muted/30"}`}
+        className={`rounded-md border px-3 py-2 text-left text-muted-foreground ${handling ? "border-foreground/40 bg-muted" : "border-dashed bg-muted/30"}`}
       >
-        <span className="block text-base font-semibold">Loupe is handling ({handled})</span>
-        <span className="block text-xs">Filled, checked again, ready to import or set aside. You can ignore these.</span>
+        <span className="block text-base font-semibold">Not waiting on you ({handled})</span>
+        <span className="block text-xs">
+          {inProgress
+            ? `${inProgress} on the way into the ledger, moved on by Loupe without you.`
+            : "Nothing in progress, nothing blocked."}
+          {setAside
+            ? ` ${setAside} set aside on purpose: copies and fund statements, finished and not imported.`
+            : ""}
+        </span>
       </button>
     </div>
   )
@@ -1126,29 +1275,49 @@ function HandledOverview({
   counts: ReviewQueue["counts"]
   onOpen: (list: ListName) => void
 }) {
+  const row = (part: (typeof HANDLED_PARTS)[number]) => {
+    const n = part.count(counts)
+    const canList = part.list !== "rechecking" && part.list !== "saving"
+    return (
+      <li key={part.list} className="flex flex-wrap items-center justify-between gap-2 p-3">
+        <span>
+          <span className="font-medium text-foreground">
+            {part.label} ({n})
+          </span>
+          {" · "}
+          {part.line}
+        </span>
+        {canList && n > 0 && (
+          <Button size="sm" variant="ghost" onClick={() => onOpen(part.list as ListName)}>
+            Show them
+          </Button>
+        )}
+      </li>
+    )
+  }
+  const shown = HANDLED_PARTS.filter((part) => part.count(counts) > 0)
+  const moving = shown.filter((part) => !part.settled)
+  const settled = shown.filter((part) => part.settled)
   return (
-    <ul className="divide-y rounded border bg-muted/30 text-sm text-muted-foreground" aria-label="What Loupe is handling">
-      {HANDLED_PARTS.filter((part) => part.count(counts) > 0).map((part) => {
-        const n = part.count(counts)
-        const canList = part.list !== "rechecking" && part.list !== "saving"
-        return (
-          <li key={part.list} className="flex flex-wrap items-center justify-between gap-2 p-3">
-            <span>
-              <span className="font-medium text-foreground">
-                {part.label} ({n})
-              </span>
-              {" · "}
-              {part.line}
-            </span>
-            {canList && n > 0 && (
-              <Button size="sm" variant="ghost" onClick={() => onOpen(part.list as ListName)}>
-                Show them
-              </Button>
-            )}
-          </li>
-        )
-      })}
-    </ul>
+    <div className="space-y-3">
+      <section aria-label="In progress" className="space-y-1">
+        <h4 className="text-sm font-semibold">In progress ({inProgressCount(counts)})</h4>
+        {moving.length ? (
+          <ul className="divide-y rounded border bg-muted/30 text-sm text-muted-foreground">{moving.map(row)}</ul>
+        ) : (
+          <p className="text-sm text-muted-foreground">Nothing in progress. Every statement that can be imported is imported.</p>
+        )}
+      </section>
+      {settled.length > 0 && (
+        <section aria-label="Set aside on purpose" className="space-y-1">
+          <h4 className="text-sm font-semibold">Set aside on purpose ({setAsideCount(counts)})</h4>
+          <p className="text-sm text-muted-foreground">
+            Finished. These are not imported on purpose and count nothing; nothing about them is pending.
+          </p>
+          <ul className="divide-y rounded border bg-muted/30 text-sm text-muted-foreground">{settled.map(row)}</ul>
+        </section>
+      )}
+    </div>
   )
 }
 
@@ -1209,6 +1378,8 @@ function NeedsItem({
   bucket,
   onOpen,
   onSaved,
+  onLeftOut,
+  onPreview,
   noActivityPick,
 }: {
   entry: QueueEntry
@@ -1219,20 +1390,12 @@ function NeedsItem({
   bucket: string
   onOpen: () => void
   onSaved: (entry: QueueEntry) => void
+  onLeftOut?: (entry: QueueEntry) => void
+  onPreview?: () => void
   noActivityPick?: { checked: boolean; onChange: (checked: boolean) => void }
 }) {
   const guide = guidanceFor(entry, user, bucket)
-  const reason = entry.issue_reason || ""
-  const proposal = reasonProposal(entry, reason)
-  // One press (or one typed value) when that answer is all the identity lacks;
-  // otherwise the row's detail fields, which take several values at once.
-  const othersKnown = (["currency", "institution", "holder"] as const).every(
-    (field) => field === reason || !!entry[field]
-  )
-  const answerHere =
-    canEdit && bucket === "waiting" && ANSWER_ONCE.has(reason) && reason !== "no_activity" && othersKnown &&
-    (reason === "account" || (!!proposal && !proposal.confirmed))
-  const rowDetails = canEdit && bucket === "waiting" && !!entry.batch_id && !answerHere && needsRowDetails(entry)
+  const { answerHere } = itemFixPlan(entry, canEdit, bucket)
   return (
     <li className="flex flex-wrap items-start justify-between gap-3 border-l-4 border-l-amber-500 p-3 text-sm">
       {noActivityPick && (
@@ -1251,6 +1414,7 @@ function NeedsItem({
         <p className="text-base font-semibold" aria-label="What is wrong">
           {guide.title}
         </p>
+        <WhyItNeedsYou why={entry.why} />
         <ol className="list-decimal space-y-0.5 pl-5" aria-label="What to do">
           {guide.steps.map((text, index) => (
             <li key={index}>{text}</li>
@@ -1270,27 +1434,164 @@ function NeedsItem({
           </p>
         )}
         <div className="rounded bg-muted/40 p-2 text-xs">
-          <EntryLine entry={entry} />
+          <EntryLine entry={entry} onPreview={onPreview} />
         </div>
-        <FilledMarks caseId={caseId} entry={entry} canEdit={canEdit} onSaved={onSaved} />
-        {answerHere && (
-          <QueueAnswerOnce
-            caseId={caseId}
-            reason={reason}
-            entries={[entry]}
-            proposal={proposal && !proposal.confirmed ? { value: proposal.value, label: proposal.label } : undefined}
-            actionLabel={guide.action}
-            onSaved={() => onSaved(entry)}
-          />
-        )}
-        {rowDetails && <QueueRowDetails key={entry.id} caseId={caseId} entry={entry} onSaved={(saved) => onSaved(saved)} />}
+        <ItemFixes entry={entry} user={user} caseId={caseId} canEdit={canEdit} bucket={bucket} onSaved={onSaved} onLeftOut={onLeftOut} />
       </div>
       {entry.batch_id && (
-        <Button size="sm" variant={first && !answerHere ? "primary" : "outline"} onClick={onOpen}>
-          {answerHere ? "Open the PDF" : guide.action}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {onPreview && (
+            <Button
+              size="sm"
+              variant="outline"
+              data-queue-preview={entry.id}
+              aria-haspopup="dialog"
+              title="See the page and its problem beside the fields it needs, without leaving the list (J/K next/previous, Esc closes)"
+              onClick={onPreview}
+            >
+              Preview
+            </Button>
+          )}
+          <Button size="sm" variant={first && !answerHere ? "primary" : "outline"} onClick={onOpen}>
+            {answerHere ? "Open the PDF" : guide.action}
+          </Button>
+        </div>
       )}
     </li>
+  )
+}
+
+/** Which of the item's fix forms it shows: one answer, or the row's detail fields. */
+function itemFixPlan(entry: QueueEntry, canEdit: boolean, bucket: string) {
+  const reason = entry.issue_reason || ""
+  const proposal = reasonProposal(entry, reason)
+  // One press (or one typed value) when that answer is all the identity lacks;
+  // otherwise the row's detail fields, which take several values at once.
+  const othersKnown = (["currency", "institution", "holder"] as const).every(
+    (field) => field === reason || !!entry[field]
+  )
+  const answerHere =
+    canEdit && bucket === "waiting" && ANSWER_ONCE.has(reason) && reason !== "no_activity" && othersKnown &&
+    (reason === "account" || (!!proposal && !proposal.confirmed))
+  const rowDetails = canEdit && bucket === "waiting" && !!entry.batch_id && !answerHere && hasRowDetails(entry)
+  return { reason, proposal, answerHere, rowDetails }
+}
+
+/**
+ * The item's own fixes, the same on the list and in its preview: what it still
+ * needs, values found elsewhere, one answer or the detail fields, and the exit
+ * for a document that is not a statement. Each saves through its usual call.
+ */
+export function ItemFixes({
+  entry,
+  user,
+  caseId,
+  canEdit,
+  bucket,
+  onSaved,
+  onLeftOut,
+  inPreview = false,
+}: {
+  entry: QueueEntry
+  user: QueuePerson | null
+  caseId: string
+  canEdit: boolean
+  bucket: string
+  onSaved: (entry: QueueEntry) => void
+  onLeftOut?: (entry: QueueEntry) => void
+  /** In the quick preview the detail fields open at once. */
+  inPreview?: boolean
+}) {
+  const guide = guidanceFor(entry, user, bucket)
+  const { reason, proposal, answerHere, rowDetails } = itemFixPlan(entry, canEdit, bucket)
+  const offer = entry.vision_reading?.offer
+  return (
+    <>
+      {offer && entry.batch_id && (
+        <PageImageOffer
+          caseId={caseId}
+          batchId={entry.batch_id}
+          itemId={entry.id}
+          offer={offer as PageImageOfferData}
+          canEdit={canEdit}
+          onDone={() => onSaved(entry)}
+        />
+      )}
+      {bucket === "waiting" && <StatementNeedsList entry={entry} />}
+      <FilledMarks caseId={caseId} entry={entry} canEdit={canEdit} onSaved={onSaved} />
+      {answerHere && (
+        <QueueAnswerOnce
+          caseId={caseId}
+          reason={reason}
+          entries={[entry]}
+          proposal={proposal && !proposal.confirmed ? { value: proposal.value, label: proposal.label } : undefined}
+          actionLabel={guide.action}
+          onSaved={() => onSaved(entry)}
+        />
+      )}
+      {/* Side by side while closed: one row of offers, each opening its own form. */}
+      <div className="flex flex-wrap items-start gap-x-3">
+        {rowDetails && (
+          <QueueRowDetails key={entry.id} caseId={caseId} entry={entry} startOpen={inPreview} onSaved={(saved) => onSaved(saved)} />
+        )}
+        {canEdit && onLeftOut && entry.batch_id && (bucket === "waiting" || bucket === "unreadable") && (
+          <QueueNotStatement key={`not:${entry.id}`} caseId={caseId} entry={entry} onLeftOut={onLeftOut} />
+        )}
+      </div>
+    </>
+  )
+}
+
+/**
+ * Every detail import needs, at once (Alex: "Saved" then "Still needs" one at a
+ * time): each missing one marked Required with why, what is already there, and
+ * what is optional. Shown only while a required detail is missing.
+ */
+export function StatementNeedsList({ entry }: { entry: QueueEntry }) {
+  const needs = statementNeeds(entry)
+  const missing = needs.filter((need) => need.required && !need.have)
+  if (!missing.length) return null
+  const have = needs.filter((need) => need.have)
+  const optional = needs.filter((need) => !need.required)
+  return (
+    <div aria-label="Before it can be imported" className="space-y-1 rounded border border-amber-500/40 p-2 text-xs">
+      <ul className="flex flex-wrap items-center gap-1.5" aria-label="Required details still missing">
+        <li className="font-medium" aria-hidden="true">Still needed before it can be imported:</li>
+        {missing.map((need) => (
+          <li
+            key={need.key}
+            title={`Required ${need.why}`}
+            className="rounded border border-amber-500/60 bg-amber-50 px-1.5 py-0.5 dark:bg-amber-950/30"
+          >
+            {need.label} <span className="font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300">Required</span>
+            <span className="sr-only">: {need.why}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="text-muted-foreground">
+        {have.length > 0 && <>Already there: {listWords(have.map((need) => need.label))}. </>}
+        {optional.map((need) => (
+          <span key={need.key}>
+            Optional: {need.label} ({need.why}).{" "}
+          </span>
+        ))}
+      </p>
+    </div>
+  )
+}
+
+/** Why Loupe could not settle an item alone: what it found and which check stopped it. */
+function WhyItNeedsYou({ why }: { why: string[] }) {
+  if (!why.length) return null
+  return (
+    <div className="rounded border border-amber-200 bg-amber-50 p-2 text-xs dark:border-amber-900 dark:bg-amber-950/40" aria-label="Why this needs you">
+      <p className="font-semibold">Why Loupe can't decide this</p>
+      <ul className="list-disc space-y-0.5 pl-4">
+        {why.map((text, index) => (
+          <li key={index}>{text}</li>
+        ))}
+      </ul>
+    </div>
   )
 }
 
@@ -1301,6 +1602,7 @@ function GroupItem({
   caseId,
   canEdit,
   onOpen,
+  onPreview,
   onSaved,
 }: {
   group: QueueGroup
@@ -1308,6 +1610,7 @@ function GroupItem({
   caseId: string
   canEdit: boolean
   onOpen: (entry: QueueEntry) => void
+  onPreview?: (entry: QueueEntry) => void
   onSaved: (entries: QueueEntry[], line: string) => void
 }) {
   const guide = groupGuidance(group)
@@ -1319,6 +1622,9 @@ function GroupItem({
       <p className="text-base font-semibold" aria-label="What is wrong">
         {guide.title}
       </p>
+      {group.entries.every((entry) => entry.why.join("\n") === group.entries[0].why.join("\n")) && (
+        <WhyItNeedsYou why={group.entries[0].why} />
+      )}
       <ol className="list-decimal space-y-0.5 pl-5" aria-label="What to do">
         {guide.steps.map((text, index) => (
           <li key={index}>{text}</li>
@@ -1337,13 +1643,12 @@ function GroupItem({
           onSaved={(entries, line) => onSaved(entries, line)}
         />
       )}
-      <details className="text-xs">
-        <summary className="cursor-pointer">Which {group.entries.length} statements</summary>
+      <Disclosure className="text-xs" label={<>Which {group.entries.length} statements</>}>
         <ul className="mt-1 divide-y rounded border">
           {group.entries.map((entry) => (
             <li key={entry.id} className="flex flex-wrap items-center justify-between gap-2 p-2">
               <div className="min-w-0 flex-1">
-                <EntryLine entry={entry} />
+                <EntryLine entry={entry} onPreview={onPreview && entry.batch_id ? () => onPreview(entry) : undefined} />
               </div>
               {entry.batch_id && (
                 <Button size="sm" variant="outline" onClick={() => onOpen(entry)}>
@@ -1353,7 +1658,92 @@ function GroupItem({
             </li>
           ))}
         </ul>
-      </details>
+      </Disclosure>
     </li>
+  )
+}
+
+/**
+ * The headline of the queue: how many statements are done and how many need a
+ * person, with every state as a block of the bar and a count that opens its list.
+ */
+function StatementsAtAGlance({
+  counts: c,
+  onOpen,
+}: {
+  counts: ReviewQueue["counts"]
+  onOpen: (list: ListName) => void
+}) {
+  const unreadable = c.unreadable + c.unreadable_files
+  const setAside = c.copies + (c.not_payment ?? 0)
+  const moving = c.filled + c.ready + c.saving + c.rechecking + (c.reader_fix ?? 0)
+  // label: the full legend meaning (tooltip and accessible name); short: what the line shows.
+  const parts: { label: string; short: string; value: number; color: string; text: string; list?: ListName }[] = [
+    { label: "imported", short: "imported", value: c.imported, color: "#2f9353", text: "#15653f" },
+    { label: "set aside on purpose (copies, fund statements)", short: "set aside", value: setAside, color: "#7b52c7", text: "#573199", list: c.copies ? "copies" : "not_payment" },
+    { label: "left out by you", short: "left out", value: c.left_unimported, color: "#9a9da5", text: "#3d4250" },
+    { label: "in progress (filled, ready, importing, rechecking, waiting for a reader fix)", short: "in progress", value: moving, color: "#3a6fd8", text: "#1f4fa8", list: c.ready ? "ready" : c.filled ? "filled" : c.reader_fix ? "reader" : undefined },
+    { label: "couldn't be read", short: "couldn't be read", value: unreadable, color: "#c4253a", text: "#a3142a", list: "unreadable" },
+    { label: "need you", short: "need you", value: c.waiting, color: "#d99a2b", text: "#8a5300", list: "waiting" },
+  ]
+  const total = parts.reduce((sum, part) => sum + part.value, 0)
+  if (!total) return null
+  const done = c.imported + setAside + c.left_unimported
+  // One compact line (Alex: the card pushed the first item below the fold): headline,
+  // what needs a person, then every count with its legend colour; a thin bar under it.
+  return (
+    <section aria-label="Statements at a glance" className="space-y-1.5 rounded-lg bg-[#0b0c0f] px-3 py-2 text-[#f7f7f8]">
+      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+        <h4 className="text-sm font-semibold">
+          {done.toLocaleString()} of {total.toLocaleString()} statements are done.{" "}
+          <span className="font-normal text-[#bfc1c8]">
+            {c.waiting + unreadable
+              ? `${(c.waiting + unreadable).toLocaleString()} need your eyes.`
+              : moving
+                ? "Nothing needs you; Loupe is moving the rest on."
+                : "Nothing needs you."}
+          </span>
+        </h4>
+        <ul className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs" aria-label={`All ${total} statements`}>
+          {parts
+            .filter((part) => part.value)
+            .map((part) => {
+              const body = (
+                <>
+                  <span aria-hidden="true" className="mr-1 inline-block size-2 rounded-sm" style={{ background: part.color }} />
+                  <strong className="tabular-nums">{part.value.toLocaleString()}</strong> {part.short}
+                  {part.short !== part.label && <span className="sr-only"> ({part.label})</span>}
+                </>
+              )
+              const title = `${part.value.toLocaleString()} ${part.label}`
+              return (
+                <li key={part.label} className="text-[#bfc1c8]" title={title}>
+                  {part.list ? (
+                    <button type="button" className="hover:text-white hover:underline" onClick={() => onOpen(part.list!)}>
+                      {body}
+                    </button>
+                  ) : (
+                    body
+                  )}
+                </li>
+              )
+            })}
+          {!c.saving && !c.rechecking && !c.waiting && !unreadable && (
+            <li className="text-[#9a9da5]">Nothing is blocked or still running.</li>
+          )}
+        </ul>
+      </div>
+      <div aria-hidden="true" className="flex h-1.5 overflow-hidden rounded-full bg-[#292b32]">
+        {parts
+          .filter((part) => part.value)
+          .map((part) => (
+            <span
+              key={part.label}
+              title={`${part.value.toLocaleString()} ${part.label}`}
+              style={{ width: `${(part.value / total) * 100}%`, minWidth: 4, background: part.color }}
+            />
+          ))}
+      </div>
+    </section>
   )
 }

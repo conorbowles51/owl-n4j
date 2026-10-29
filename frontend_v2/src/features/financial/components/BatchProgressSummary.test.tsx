@@ -136,3 +136,24 @@ it("keeps failed reading work visible when no statement reviews exist", () => {
     )
   ).toBeVisible()
 })
+it("draws one progress bar whose legend carries every non-zero count as text", () => {
+  render(
+    <BatchProgressSummary
+      files={[{ status: "checked" }]}
+      summary={{ ...summary, skipped: 2, duplicate_ignored: 1 }}
+      available={0}
+      imported={0}
+      pending={0}
+      skipped={0}
+      duplicates={0}
+      assigned={0}
+    />
+  )
+  const legend = screen.getByRole("list", { name: "Batch progress by state" })
+  expect(within(legend).getAllByRole("listitem").map((item) => item.textContent)).toEqual([
+    "Saved to Financial: 1",
+    "Ready to save: 7",
+    "Need corrections or a decision: 6",
+    "Left unimported or ignored: 3",
+  ])
+})

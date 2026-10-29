@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { authAPI } from "@/features/auth/api"
-import { platformUpdateAPI, profilesAPI } from "../api"
+import { partyCoverageAPI, platformUpdateAPI, profilesAPI, readerGapsAPI } from "../api"
 import { getPlatformUpdatePresentation } from "../platform-update-status"
 
 export function AdminDashboardPage() {
@@ -20,6 +20,14 @@ export function AdminDashboardPage() {
     queryFn: () => profilesAPI.list(),
   })
 
+  const { data: readerGaps } = useQuery({
+    queryKey: ["admin", "reader-gaps"],
+    queryFn: readerGapsAPI.get,
+  })
+  const { data: partyCoverage } = useQuery({
+    queryKey: ["admin", "party-coverage"],
+    queryFn: partyCoverageAPI.get,
+  })
   const { data: updateStatus } = useQuery({
     queryKey: ["admin", "platform-update", "status"],
     queryFn: () => platformUpdateAPI.getStatus(),
@@ -161,6 +169,77 @@ export function AdminDashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between gap-2 text-sm">
+            <span>Statements the reader could not read</span>
+            <Badge variant={readerGaps?.held ? "destructive" : "secondary"}>{readerGaps?.held ?? 0} held</Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-xs">
+          <p className="text-muted-foreground">
+            Held statements whose pages carry text but from which nothing was read (no payment, no period, no balance):
+            a layout the reader does not know yet. Every case; a statement stays listed after it is read, marked resolved.
+          </p>
+          {(readerGaps?.layouts ?? []).length > 0 && (
+            <ul className="space-y-1" aria-label="Layouts not read">
+              {readerGaps?.layouts.map((layout) => (
+                <li key={layout.fingerprint} className="rounded border px-2 py-1">
+                  <span className="font-medium">{layout.banks.join(", ") || "Bank not named"}</span>
+                  {` · ${layout.held_files} held of ${layout.files} file${layout.files === 1 ? "" : "s"} · ${layout.cases} case${layout.cases === 1 ? "" : "s"} · layout ${layout.fingerprint}`}
+                  <span className="block text-muted-foreground">{layout.labels.slice(0, 3).join(" / ")}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {(readerGaps?.statements ?? []).length > 0 && (
+            <ul className="space-y-0.5" aria-label="Statements not read">
+              {readerGaps?.statements.slice(0, 50).map((entry) => (
+                <li key={`${entry.file_id}:${entry.statement_key}`}>
+                  {entry.filename} · case {entry.case_id.slice(0, 8)} · {entry.page_count} page{entry.page_count === 1 ? "" : "s"} of text
+                  {` · first seen ${entry.first_seen.slice(0, 16).replace("T", " ")}`}
+                  {entry.resolved_at ? ` · resolved ${entry.resolved_at.slice(0, 16).replace("T", " ")}` : ""}
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between gap-2 text-sm">
+            <span>Payments without the other side named</span>
+            {partyCoverage && (
+              <Badge variant={partyCoverage.total.bare ? "destructive" : "secondary"}>
+                {percent(partyCoverage.total.unnamed_share)} unnamed · {partyCoverage.total.bare} with no reason
+              </Badge>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-xs">
+          <p className="text-muted-foreground">
+            Per case, the share of payments whose From or To names nobody: with a stated reason (the statement prints no
+            name), or with no reason at all. Counted from the stored payments now; a rise shows here the day it happens.
+          </p>
+          {(partyCoverage?.cases ?? []).length > 0 && (
+            <ul className="space-y-0.5" aria-label="Unnamed payments per case">
+              {partyCoverage?.cases.map((entry) => (
+                <li key={entry.case_id}>
+                  <span className="font-medium">{entry.title}</span>
+                  {` · ${entry.rows} payments · ${percent(entry.unnamed_share)} unnamed (${entry.reason} with a reason, ${entry.bare} with none)`}
+                </li>
+              ))}
+            </ul>
+          )}
+          {partyCoverage && <p className="text-muted-foreground">Counted {partyCoverage.measured_at.slice(0, 16).replace("T", " ")} UTC.</p>}
+        </CardContent>
+      </Card>
     </div>
   )
+}
+
+function percent(share: number) {
+  return `${(share * 100).toFixed(1)}%`
 }

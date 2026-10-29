@@ -66,8 +66,11 @@ it("checks on request with exact amounts, exclusions and old result clearly dist
   expect(await screen.findByText("Balance difference")).toBeVisible()
   expect(screen.getAllByText(/90071992547409\.93/)).toHaveLength(2)
   expect(screen.getByText("90,071,992,547,409.93 USD")).toBeVisible()
-  expect(screen.getByText(/Source: superseded · P3/)).not.toBeVisible()
+  // The calculation sits behind a labelled button that starts closed.
+  const calculation = screen.getByRole("button", { name: /Calculation and further checks/ })
+  expect(calculation).toHaveAttribute("aria-expanded", "false")
   fireEvent.click(screen.getByText("Calculation and further checks"))
+  expect(calculation).toHaveAttribute("aria-expanded", "true")
   expect(screen.getByText(/Source: superseded · P3/)).toBeVisible()
   expect(
     screen.getByText(/2 admitted rows counted; 1 other rows excluded/)
@@ -243,6 +246,6 @@ it("shows positive credit card amounts owed only with an explicit saved conventi
   expect(
     screen
       .getAllByText("0.00 USD", { exact: true })
-      .filter((element) => !element.closest("details"))
+      .filter((element) => !element.closest("details, .hidden"))
   ).toHaveLength(1)
 })

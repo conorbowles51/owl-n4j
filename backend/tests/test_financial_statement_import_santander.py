@@ -160,6 +160,96 @@ class SantanderTests(TestCase):
                 c['expected_text']=c['expected_text'].replace('MONEDA NACIONAL','UNREADABLE')
         self.assertTrue(all(c['currency']=='' for c in currencies_by_statement(santander_catalog(ss)[0],ss)))
 
+    def test_the_box_rule_read_before_the_printed_currency_name_does_not_hide_it(self):
+        # Live: 04 ING. R2 SANTANDER MXN ABR 26 page 1 reads 'MONEDA' | '—- MONEDA NACIONAL' (scan).
+        from unittest import mock
+        from services.financial import statement_import_santander as S
+        ss=statement()
+        for r in ss[0]['rows']:
+            for c in r['cells']:
+                if c['expected_text']=='MONEDA NACIONAL':c['expected_text']='—- MONEDA NACIONAL'
+        self.assertEqual({c['currency'] for c in currencies_by_statement(santander_catalog(deepcopy(ss))[0],ss)},{'MXN'})
+        with mock.patch.object(S,'CURRENCY_RULE_MARKS',False):
+            self.assertEqual({c['currency'] for c in currencies_by_statement(santander_catalog(deepcopy(ss))[0],ss)},{''})
+        for c in ss[0]['rows'][3]['cells']:
+            if 'NACIONAL' in c['expected_text']:c['expected_text']='—- MONEDA NACIONALX'
+        self.assertEqual({c['currency'] for c in currencies_by_statement(santander_catalog(deepcopy(ss))[0],ss)},{''})
+
+    def test_a_movement_table_the_reading_could_not_position_is_read_under_its_heading(self):
+        # Live: 09 NOVAC SANTANDER SEP 25 page 6, the Dinero Creciente table kept as ruled cells with no position.
+        from unittest import mock
+        from services.financial import statement_import_santander as S
+        from services.financial.statement_import_andrews import andrews_source_regions
+        positioned=statement()[0]
+        positioned['rows']=positioned['rows'][:14]
+        def unplaced(rows):
+            return dict(page_number=1,table_index=1,source_revision='b'*64,table_source='text_alignment',
+                rows=[dict(row_index=i,cells=[dict(column_index=j,expected_text=t) for j,t in cells]) for i,cells in enumerate(rows)])
+        table=unplaced([[(0,'SALDO FINAL DEL PERIODO ANTERIOR:'),(3,'0.00')],
+            [(0,'FECHA'),(1,'FOLIO'),(2,'DESCRIPCION'),(4,'DEPOSITO'),(5,'RETIRO'),(6,'SALDO')],
+            [(0,'02-SEP-2024'),(1,'0000000'),(2,'ABO POR INTERESES'),(4,'10.00'),(6,'10.00')],
+            [(0,'03-SEP-2024'),(1,'0000000'),(2,'RETENCION I S R'),(5,'4.00'),(6,'6.00\n9.99')],
+            [(2,'TOTAL'),(4,'10.00'),(5,'4.00')],
+            [(0,'SALDO FINAL DEL PERIODO:'),(6,'$6.00')]])
+        sources=[positioned,table]
+        choices,_=santander_catalog(deepcopy(sources))
+        savings=next(c for c in choices if c['account_reference']=='66-00001234-0')
+        rows=propose_santander_statement(deepcopy(sources),'MXN',savings)['rows']
+        moved=[r for r in rows if not r['excluded']]
+        self.assertEqual([(r['fields']['direction'],r['fields']['amount_minor'],r['fields'].get('balance')) for r in moved],
+                         [('credit','1000','1000'),('debit','400','600')])
+        self.assertEqual(check_statement_rows(rows)['balance_status'],'matches')
+        self.assertEqual(savings['unplaced_tables'],[[1,1]])
+        self.assertTrue(all('locator' not in c for r in moved for c in r['source_cells']))
+        regions=andrews_source_regions(sources,dict(sources=savings['section_sources'],unplaced_tables=savings['unplaced_tables']))
+        self.assertTrue(regions and all(r['table_index']==0 for r in regions))
+        with mock.patch.object(S,'UNPLACED_TABLE',False):
+            choices,_=santander_catalog(deepcopy(sources))
+            savings=next(c for c in choices if c['account_reference']=='66-00001234-0')
+            rows=propose_santander_statement(deepcopy(sources),'MXN',savings)['rows']
+        self.assertFalse([r for r in rows if not r['excluded']])
+
+    def test_an_unpositioned_continuation_table_continues_the_page_before(self):
+        # Live: 06-JUN25 SANTANDER MPA MXP page 3, the rest of the cheques movements (8 of 15) kept as ruled cells with
+        # no position, under the page header and above the Dinero Creciente heading.
+        from unittest import mock
+        from services.financial import statement_import_santander as S
+        rows=statement()[0]['rows']
+        layout=lambda r:[(c['locator']['rect'][0],c['locator']['rect'][1],c['locator']['rect'][2]-c['locator']['rect'][0],c['expected_text']) for c in r['cells']]
+        first=source(1,[layout(r) for r in rows[:9]])
+        second=source(2,[layout(r) for r in rows[:3]]+[layout(r) for r in rows[12:18]])
+        table=dict(page_number=2,table_index=1,source_revision='c'*64,table_source='text_alignment',
+            rows=[dict(row_index=i,cells=[dict(column_index=j,expected_text=v) for j,v in cells]) for i,cells in enumerate([
+                [(0,'FECHA'),(1,'FOLIO'),(2,'DESCRIPCION'),(3,'DEPOSITO'),(4,'RETIRO'),(5,'SALDO')],
+                [(0,'03-SEP-2024'),(1,'0000002'),(2,'EXAMPLE PAYMENT'),(4,'50.00'),(5,'75.00')],
+                [(2,'TOTAL'),(3,'25.00'),(4,'50.00')],
+                [(0,'SALDO FINAL DEL PERIODO:'),(5,'$75.00')]])])
+        sources=[first,second,table]
+        def checking():
+            choices,_=santander_catalog(deepcopy(sources))
+            choice=next(c for c in choices if c['account_reference']=='65-00001234-0')
+            return propose_santander_statement(deepcopy(sources),'MXN',choice)['rows']
+        rows=checking()
+        self.assertEqual([(r['fields']['direction'],r['fields']['amount_minor']) for r in rows if r['kind']=='transaction'],
+                         [('credit','2500'),('debit','5000')])
+        self.assertEqual(check_statement_rows(rows)['balance_status'],'matches')
+        # The writer retains the closing balance with its page and printed text (live, the import failed with 'The
+        # balance source position is missing.'): no position is invented.
+        from services.financial.statement_import_controls import _control
+        closing=next(r for r in rows if r['kind']=='balance' and r['fields']['description']=='Closing Balance')
+        control=_control('closing',dict(id='c',balance_minor='7500',reason=''),closing)
+        self.assertEqual((control['original_text'],control['locator']),('$75.00',dict(kind='page_only',page=2)))
+        unread=deepcopy(closing)
+        for c in unread['source_cells']:c.pop('table_order_rect',None)
+        with self.assertRaisesRegex((ValueError,KeyError),'position|locator'):
+            _control('closing',dict(id='c',balance_minor='7500',reason=''),unread)
+        # Something printed between the page header and the table: its place is not known, so it is not read.
+        second['rows'].insert(3,source(2,[[(30000,90000,200000,'AVISO IMPORTANTE')]])['rows'][0])
+        self.assertEqual(len([r for r in checking() if r['kind']=='transaction']),1)
+        del second['rows'][3]
+        with mock.patch.object(S,'CONTINUED_UNPLACED_TABLE',False):
+            self.assertEqual(len([r for r in checking() if r['kind']=='transaction']),1)
+
     def test_conflicting_period_or_unbranded_copy_is_not_accepted(self):
         for change in ['period','bank']:
             ss=statement()
@@ -330,3 +420,175 @@ class SantanderSavedReviewTests(TestCase):
             self.assertFalse(list(f.db.scalars(select(FinancialTransaction))))
         finally:
             f.tearDown()
+
+
+class SantanderReaderGapTests(TestCase):
+    """2026-10-24 reader gaps: apostrophe column rules, cover numbers split by OCR, quiet sections' lost closing."""
+
+    def checking(self, ss):
+        choice=next(c for c in santander_catalog(ss)[0] if c['account_type']=='checking')
+        return propose_santander_statement(ss,'MXN',choice)['rows']
+
+    def test_a_column_rule_read_as_an_apostrophe_separates_date_folio_and_description(self):
+        import services.financial.statement_import_santander as santander
+        for mark in ("'", '’'):
+            with self.subTest(mark=mark):
+                ss=statement(merged=True)
+                for row in ss[0]['rows']:
+                    for cell in row['cells']:
+                        if cell['expected_text'][:11] in ('02-SEP-2024','03-SEP-2024'):
+                            cell['expected_text']=cell['expected_text'].replace('|',mark,2)
+                tx=[r for r in self.checking(ss) if not r['excluded']]
+                self.assertEqual([(r['kind'],r['fields']['amount_minor']) for r in tx], [('transaction','2500'),('transaction','5000')])
+                self.assertEqual(tx[0]['fields']['description'],'EXAMPLE DEPOSIT')
+
+    def test_the_cover_summary_names_an_account_number_split_by_a_space(self):
+        ss=cover_statement()
+        summary=next(r for r in ss[0]['rows'] if r['row_index']==99)
+        summary['cells'][1]['expected_text']='65-000012 34-0'
+        rows=self.checking(ss)
+        closings=[r for r in rows if r['kind']=='balance' and r['fields']['description']=='Closing Balance']
+        self.assertEqual([(c['fields']['balance'],c['fields']['balance_basis']) for c in closings],[('7500','cover_balance_summary')])
+        self.assertEqual(check_statement_rows(rows)['balance_status'],'matches')
+        for other in ('65-000012 34-1','165-000012 34-0','65-000012 34-0 66'):
+            with self.subTest(other=other):
+                summary['cells'][1]['expected_text']=other
+                self.assertFalse(any(r['fields'].get('balance_basis') for r in self.checking(ss)))
+
+    def quiet(self, *, previous='0.00', current='0.00', total='0.00'):
+        """The investment section of statement() with its SALDO FINAL line lost and a cover summary line."""
+        ss=statement()
+        rows=ss[0]['rows']
+        ss[0]['rows']=[r for r in rows if not (r['cells'][0]['expected_text']=='SALDO FINAL DEL PERIODO:' and r['cells'][-1]['expected_text']=='$0.00')]
+        for r in ss[0]['rows']:
+            if r['cells'][0]['expected_text']=='TOTAL' and r['cells'][1]['expected_text']=='0.00':
+                r['cells'][1]['expected_text']=total
+        summary=source(1,[[(30000,100000,150000,'INVERSION CRECIENTE'),(200000,100000,60000,'66-000012 34-0'),
+            (280000,100000,40000,previous),(330000,100000,40000,'0.00%'),(400000,100000,40000,current),(460000,100000,40000,'0.00%')]])['rows'][0]
+        ss[0]['rows'].append(summary|{'row_index':99})
+        choice=next(c for c in santander_catalog(ss)[0] if c['account_type']=='savings')
+        return ss, choice, propose_santander_statement(ss,'MXN',choice)['rows']
+
+    def test_a_quiet_section_takes_its_lost_closing_from_the_cover_and_proves_no_activity(self):
+        from services.financial.statement_import_santander import santander_no_activity_evidence
+        ss, choice, rows = self.quiet()
+        closings=[r for r in rows if r['kind']=='balance' and r['fields']['description']=='Closing Balance']
+        self.assertEqual([(c['fields']['balance'],c['fields']['balance_basis']) for c in closings],[('0','cover_balance_summary')])
+        self.assertTrue(santander_no_activity_evidence(ss, choice, rows, 'MXN')['verified'])
+
+    def test_a_quiet_section_never_takes_a_cover_that_moved_or_unequal_totals(self):
+        for kwargs in (dict(current='5.00'), dict(previous='5.00', current='5.00'), dict(total='5.00')):
+            with self.subTest(**kwargs):
+                _, _, rows = self.quiet(**kwargs)
+                self.assertFalse(any(r['fields'].get('balance_basis') for r in rows))
+
+    def test_switches_off_restore_the_earlier_reading(self):
+        import services.financial.statement_import_santander as santander
+        try:
+            santander.QUIET_COVER_CLOSING=False
+            self.assertFalse(any(r['fields'].get('balance_basis') for r in self.quiet()[2]))
+            santander.COVER_SPACED_ACCOUNT=False
+            ss=cover_statement()
+            next(r for r in ss[0]['rows'] if r['row_index']==99)['cells'][1]['expected_text']='65-000012 34-0'
+            self.assertFalse(any(r['fields'].get('balance_basis') for r in self.checking(ss)))
+        finally:
+            santander.QUIET_COVER_CLOSING=True
+            santander.COVER_SPACED_ACCOUNT=True
+
+
+class SantanderBalanceStepAmountTests(TestCase):
+    def rows(self, amount, balance='75.00'):
+        ss=statement()
+        for row in ss[0]['rows']:
+            if row['cells'][0]['expected_text']=='03-SEP-2024':
+                row['cells'][3]['expected_text']=amount
+                row['cells'][4]['expected_text']=balance
+        choice=next(c for c in santander_catalog(ss)[0] if c['account_type']=='checking')
+        return propose_santander_statement(ss,'MXN',choice)['rows']
+
+    def test_a_misread_separator_is_read_when_the_running_balance_moves_by_exactly_that_amount(self):
+        rows=self.rows('0.050.00')
+        payment=[r for r in rows if not r['excluded']][1]
+        self.assertEqual((payment['fields'].get('amount_minor'), payment['fields'].get('amount_basis'), payment['issues']),
+                         ('5000','printed_balance_step',[]))
+        self.assertEqual(check_statement_rows(rows)['balance_status'],'matches')
+
+    def test_it_is_never_read_when_the_balance_step_differs_or_the_text_is_not_an_amount(self):
+        for amount, balance in (('0.051.00','75.00'), ('0.050.00','76.00'), ('5O.00','75.00')):
+            with self.subTest(amount=amount, balance=balance):
+                payment=[r for r in self.rows(amount, balance) if not r['excluded']][1]
+                self.assertNotIn('amount_minor', payment['fields'])
+                self.assertTrue(payment['issues'])
+
+    def test_switch_off_leaves_the_amount_unread(self):
+        import services.financial.statement_import_santander as santander
+        try:
+            santander.BALANCE_STEP_AMOUNT=False
+            payment=[r for r in self.rows('0.050.00') if not r['excluded']][1]
+            self.assertNotIn('amount_minor', payment['fields'])
+        finally:
+            santander.BALANCE_STEP_AMOUNT=True
+
+
+class SantanderLostOpeningTests(TestCase):
+    """(fin-queue3) 05 MONETA SANTANDER MXN MAY 26, INVERSION CRECIENTE 66-50958129-0: the scan lost the value after
+    SALDO FINAL DEL PERIODO ANTERIOR and the SALDO word of the movement heading; the cover's balance summary prints
+    the account's previous and current month (0.00 / 0.00), the TOTAL line 0.00 / 0.00 and SALDO FINAL $0.00."""
+
+    def section(self, *, previous='0.00', current='0.00', closing='$0.00', heading_saldo=False):
+        ss = statement()
+        rows = ss[0]['rows']
+        for r in rows:
+            texts = [c['expected_text'] for c in r['cells']]
+            if texts == ['SALDO FINAL DEL PERIODO ANTERIOR:', '0.00']:
+                r['cells'] = r['cells'][:1]
+            if texts[:1] == ['FECHA'] and r['cells'][0]['locator']['rect'][1] > 380000 and not heading_saldo:
+                r['cells'] = r['cells'][:-1]
+            if texts == ['SALDO FINAL DEL PERIODO:', '$0.00']:
+                r['cells'][-1]['expected_text'] = closing
+        summary = source(1, [[(30000, 100000, 150000, 'INVERSION CRECIENTE'), (200000, 100000, 60000, '66-00001234-0'),
+            (280000, 100000, 40000, previous), (330000, 100000, 40000, '0.00%'), (400000, 100000, 40000, current),
+            (460000, 100000, 40000, '0.00%')]])['rows'][0]
+        rows.append(summary | {'row_index': 99})
+        choice = next(c for c in santander_catalog(ss)[0] if c['account_type'] == 'savings')
+        return ss, choice, propose_santander_statement(ss, 'MXN', choice)['rows']
+
+    def test_a_lost_opening_is_the_covers_previous_month_when_closing_and_totals_agree(self):
+        from services.financial.statement_import_santander import santander_no_activity_evidence
+        ss, choice, rows = self.section()
+        openings = [r for r in rows if r['kind'] == 'balance' and r['fields']['description'] == 'Opening Balance']
+        self.assertEqual([(r['fields']['balance'], r['fields']['balance_basis'], r['row_index']) for r in openings],
+                         [('0', 'cover_balance_summary', 99)])
+        totals = sorted((r['fields']['total_direction'], r['fields']['balance']) for r in rows if r['kind'] == 'statement_total'
+                        and r['page_number'] == 1 and r['fields'].get('balance') == '0')
+        self.assertEqual(totals, [('credit', '0'), ('debit', '0')])
+        self.assertTrue(santander_no_activity_evidence(ss, choice, rows, 'MXN')['verified'])
+
+    def test_a_cover_that_disagrees_with_the_closing_or_the_totals_gives_no_opening(self):
+        for kwargs in (dict(previous='5.00'), dict(current='5.00'), dict(closing='$5.00')):
+            with self.subTest(**kwargs):
+                rows = self.section(**kwargs)[2]
+                self.assertFalse(any(r['fields'].get('balance_basis') for r in rows))
+
+    def test_switched_off_the_opening_and_the_quiet_heading_stay_unread(self):
+        from unittest import mock
+        import services.financial.statement_import_santander as S
+        with mock.patch.object(S, 'COVER_OPENING', False):
+            self.assertFalse(any(r['fields'].get('balance_basis') for r in self.section()[2]))
+        with mock.patch.object(S, 'QUIET_HEADING', False):
+            rows = self.section()[2]
+            self.assertFalse(any(r['kind'] == 'statement_total' and r['row_index'] > 15 for r in rows))
+            self.assertFalse(any(r['fields'].get('balance_basis') for r in rows))
+
+    def test_the_currency_label_rule_and_value_read_as_one_cell(self):
+        from unittest import mock
+        import services.financial.statement_import_santander as S
+        ss = statement()
+        row = ss[0]['rows'][3]
+        row['cells'] = [dict(row['cells'][0], expected_text='MONEDA — MONEDA NACIONAL')]
+        self.assertEqual({c['currency'] for c in currencies_by_statement(santander_catalog(deepcopy(ss))[0], ss)}, {'MXN'})
+        with mock.patch.object(S, 'CURRENCY_ONE_CELL', False):
+            self.assertEqual({c['currency'] for c in currencies_by_statement(santander_catalog(deepcopy(ss))[0], ss)}, {''})
+        row['cells'][0]['expected_text'] = 'MONEDA NACIONAL'
+        self.assertEqual({c['currency'] for c in currencies_by_statement(santander_catalog(deepcopy(ss))[0], ss)}, {''},
+                         'no rule mark between label and value: not this rule')

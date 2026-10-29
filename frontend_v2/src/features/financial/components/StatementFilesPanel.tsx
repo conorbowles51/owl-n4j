@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { StatementRecoveryPanel } from "./StatementRecoveryPanel"
 import { FinancialSourceAudit } from "./FinancialSourceAudit"
 import { ReadyStatementPeriods } from "./ReadyStatementPeriods"
@@ -453,6 +454,7 @@ export function StatementFilesPanel({
         requestId: batchRequest.current.id,
         preview,
         choice,
+        origin: "financial_statement_files",
       })
       setStartChoice(null)
       void client.invalidateQueries({ queryKey: ["financial-batches", caseId] })
@@ -1265,10 +1267,7 @@ export function StatementFilesPanel({
             {!!saved?.duplicate_dispositions.length &&
               !removalMode &&
               !removed && (
-                <details className="rounded border p-2 text-sm">
-                  <summary className="cursor-pointer font-medium">
-                    Duplicate decisions · evidence retained
-                  </summary>
+                <Disclosure className="rounded border p-2 text-sm" label={<>Duplicate decisions · evidence retained</>}>
                   <ul className="mt-2 space-y-2">
                     {saved.duplicate_dispositions.map(
                       ({ statement_id, decision }) => (
@@ -1304,7 +1303,7 @@ export function StatementFilesPanel({
                       )
                     )}
                   </ul>
-                </details>
+                </Disclosure>
               )}
             {!removed &&
               !removalMode &&
@@ -1410,11 +1409,8 @@ export function StatementFilesPanel({
                 </Button>
               )}
             {file.readingVersions.length > 1 && (
-              <details className="text-sm">
-                <summary className="cursor-pointer">
-                  Reading history ({file.readingVersions.length} versions of
-                  this PDF)
-                </summary>
+              <Disclosure className="text-sm" label={<>Reading history ({file.readingVersions.length} versions of
+                  this PDF)</>}>
                 <p className="text-xs text-muted-foreground">
                   These are retained readings of one source, not additional
                   uploaded statements. Opening a reading does not import it.
@@ -1452,7 +1448,7 @@ export function StatementFilesPanel({
                     </li>
                   ))}
                 </ul>
-              </details>
+              </Disclosure>
             )}
           </div>
         )

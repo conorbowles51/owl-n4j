@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { AccountIdentityReview } from "./AccountIdentityReview"
 import { useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -286,11 +287,8 @@ function OwnershipEditor({
             not. Leave dates blank when the period of the relationship is
             unspecified.
           </p>
-          <details>
-            <summary>
-              Suggestions from statement headers (
-              {state.ownership_review?.suggestions.length ?? 0})
-            </summary>
+          <Disclosure defaultOpen label={<>Suggestions from statement headers (
+              {state.ownership_review?.suggestions.length ?? 0})</>}>
             {state.ownership_review?.suggestions.map((s) => (
               <div key={s.id} className="rounded border p-3 my-2 space-y-2">
                 <p>{s.reason}</p>
@@ -355,7 +353,7 @@ function OwnershipEditor({
                 {c.reason}
               </p>
             ))}
-          </details>
+          </Disclosure>
           <label className="block">
             Find an account
             <input
@@ -767,8 +765,7 @@ function OwnershipEditor({
               </p>
             </fieldset>
           )}
-          <details>
-            <summary>Relationship history ({state.history.length})</summary>
+          <Disclosure label={<>Relationship history ({state.history.length})</>}>
             {state.history.map((h) => (
               <div key={h.id} className="rounded border p-2 my-2">
                 <p>
@@ -790,7 +787,7 @@ function OwnershipEditor({
                 )}
               </div>
             ))}
-          </details>
+          </Disclosure>
         </>
       )}
     </div>

@@ -92,11 +92,11 @@ class CandidateDateRouterTests(unittest.IsolatedAsyncioTestCase):
         from fastapi import HTTPException
         case, candidate = uuid4(), uuid4()
         with patch.object(router, "assess_candidate_dates", return_value={"applied": False}) as call:
-            self.assertFalse((await router.assess_saved_candidate_dates(candidate, case, "db"))["applied"])
+            self.assertFalse((router.assess_saved_candidate_dates(candidate, case, "db"))["applied"])
             call.assert_called_once_with("db", case_id=case, candidate_id=candidate)
         for error, status in ((CandidateStoreError("Reload",409),409),(RuntimeError("private detail"),500)):
             with patch.object(router, "assess_candidate_dates", side_effect=error):
                 with self.assertRaises(HTTPException) as caught:
-                    await router.assess_saved_candidate_dates(candidate, case, "db")
+                    router.assess_saved_candidate_dates(candidate, case, "db")
                 self.assertEqual(caught.exception.status_code,status)
                 self.assertNotIn("private",caught.exception.detail)

@@ -92,6 +92,16 @@ class KapitalProposalTests(TestCase):
         self.assertEqual(self.addressed(address+['Persona Moral']),['',''])
         self.assertEqual(self.addressed(address[1:]+['Persona Moral']),['',''])
 
+    def test_the_company_name_above_a_street_floor_district_and_postal_block_is_the_holder(self):
+        # The printed Kapital block (BNB2 ING R2, 2026): a name holding figures, the street with floor and
+        # unit, a district line in 'III SECCION, <borough>', the city, the postal line, the taxpayer type.
+        # The letters-only rule before 2a6df8be skipped the name and the street and took the district line.
+        block=['INGENIERIA EJEMPLO R2','MONTE EJEMPLO 124 PISO 2 INT 212 B','JARDINES DE EJEMPLO III SECCION, MIGUEL EJEMPLO',
+               'MEXICO, CIUDAD DE MEXICO','C.P. 11000','Persona Moral']
+        self.assertEqual(self.addressed(block),['INGENIERIA EJEMPLO R2']*2)
+        self.assertEqual(self.addressed(block[1:]),['',''])
+        self.assertEqual(self.addressed(block[2:]),['',''])
+
     def test_malformed_payment_remains_visible_and_does_not_become_balances_only(self):
         s=statement();s[0]['rows'][-3]['cells'][-2]['expected_text']='?.01'
         c=kapital_catalog(s)[0][0];rows=propose_kapital_statement(s,'MXN',c)['rows']
@@ -133,6 +143,33 @@ class KapitalProposalTests(TestCase):
         self.assertEqual([r['fields']['direction'] for r in tx],['credit','debit'])
         self.assertEqual(check_statement_rows(rows)['balance_status'],'matches')
         self.assertEqual(check_statement_rows(propose_kapital_statement(s,'USD',c[1])['rows'])['transaction_count'],0)
+
+
+class KapitalMissingDayCellTests(TestCase):
+    def test_an_unread_day_does_not_shift_the_folio_and_concepto(self):
+        # Live: 05 ECOTERRA KAPITAL MXN MAY 24 page 1 (folio in the day's place, concepto's first line taken as the
+        # reference); 01 MONETA KAPITAL MXN ENE 26 page 1 (concepto in the day's place, description emptied).
+        from unittest import mock
+        from services.financial import statement_import_kapital as K
+        def rows(change):
+            s=statement()
+            for r in s[0]['rows']:
+                if any(c['expected_text']=='COMISION POR TIMBRADO FISCAL' for c in r['cells']):change(r)
+            choice=currencies_by_statement(kapital_catalog(s)[0],s)[0]
+            return [r for r in propose_kapital_statement(s,'MXN',choice)['rows'] if not r['excluded']]
+        no_day=lambda r:r.update(cells=r['cells'][1:])
+        no_day_or_folio=lambda r:r.update(cells=r['cells'][2:])
+        fee=rows(no_day)[0]['fields']
+        self.assertEqual((fee['description'],fee['bank_reference'],fee.get('amount_minor')),('COMISION POR TIMBRADO FISCAL','12345678','1'))
+        self.assertNotIn('date',fee)
+        fee=rows(no_day_or_folio)[0]
+        self.assertEqual(fee['fields']['description'],'COMISION POR TIMBRADO FISCAL')
+        self.assertIn('Check the printed day against this statement period.',fee['issues'])
+        noisy=rows(lambda r:r['cells'][0].update(expected_text='2.'))[0]['fields']
+        self.assertEqual((noisy['description'],noisy['bank_reference']),('COMISION POR TIMBRADO FISCAL','12345678'))
+        with mock.patch.object(K,'MISSING_DAY_CELL',False):
+            fee=rows(no_day)[0]['fields']
+        self.assertEqual(fee['bank_reference'],'COMISION POR TIMBRADO FISCAL')
 
 
 class KapitalImportTests(TestCase):
@@ -197,3 +234,150 @@ class KapitalProductScopeTests(TestCase):
         from services.financial.statement_import_kapital import kapital_no_activity_evidence
         rows = propose_kapital_statement(s, 'USD', dollar)['rows']
         self.assertEqual(kapital_no_activity_evidence(s, dollar, rows, 'USD')['reason'], 'printed_zero_totals')
+
+
+def _partial_heading_statement(shift=0, retiro=None):
+    """Page 1 reads only 'CONCEPTO DEPOSITOS' (and, given, its RETIROS word as read) over its movements; page 2
+    prints the complete heading."""
+    first = table()
+    concepto, depositos, retiros = first[0][0], first[0][1], first[0][2]
+    first[0] = [concepto, (depositos[0] + shift,) + depositos[1:]] + ([retiros[:3] + (retiro,)] if retiro else [])
+    return [source(1, header() + [[(30000,120000,160000,'EXAMPLE SERVICES')],[(30000,150000,160000,'Persona Moral')]]
+                   + product() + first), source(2, header() + table(200000))]
+
+
+class KapitalHeadingFromSectionTests(TestCase):
+    def proposal(self, s):
+        choices = currencies_by_statement(kapital_catalog(s)[0], s)
+        return propose_kapital_statement(s, 'MXN', choices[0])['rows']
+
+    def test_a_partly_read_heading_takes_its_columns_from_the_sections_complete_heading(self):
+        rows = self.proposal(_partial_heading_statement())
+        tx = [r for r in rows if not r['excluded']]
+        self.assertEqual([r['fields'].get('amount_minor') for r in tx], ['1', '1', '1', '1'])
+        self.assertEqual([r['fields'].get('direction') for r in tx], ['debit', 'credit'] * 2)
+        self.assertEqual(check_statement_rows(rows)['flagged_rows'], 0)
+
+    def test_a_partly_read_heading_word_with_a_mark_is_completed_too(self):
+        # MONETA KAPITAL MXN NOV 25 Hoja 1 read 'CONCEPTO DEPOSITOS RETIRO:' over its one movement (04/11 SPEI
+        # 50,000.00 out); the colon made 'RETIRO:' another word in the amount columns and the line was dropped.
+        from unittest import mock
+        from services.financial import statement_import_kapital as K
+        s = _partial_heading_statement(retiro='RETIRO:')
+        rows = self.proposal(s)
+        tx = [r for r in rows if not r['excluded']]
+        self.assertEqual([r['fields'].get('amount_minor') for r in tx], ['1', '1', '1', '1'])
+        self.assertEqual(check_statement_rows(rows)['flagged_rows'], 0)
+        with mock.patch.object(K, 'HEADING_WORD_MARKS', False):
+            rows = self.proposal(_partial_heading_statement(retiro='RETIRO:'))
+        page_one = [r for r in rows if not r['excluded'] and r['id'].startswith('1:')]
+        self.assertTrue(page_one and all(r['fields'].get('amount_minor') is None for r in page_one))
+
+    def test_a_heading_word_away_from_the_complete_headings_position_is_not_completed(self):
+        rows = self.proposal(_partial_heading_statement(shift=20000))
+        page_one = [r for r in rows if not r['excluded'] and r['id'].startswith('1:')]
+        self.assertTrue(page_one and all(r['fields'].get('amount_minor') is None for r in page_one))
+
+    def test_the_switch_off_leaves_the_page_for_a_person(self):
+        from unittest import mock
+        from services.financial import statement_import_kapital as K
+        with mock.patch.object(K, 'HEADING_FROM_SECTION', False):
+            rows = self.proposal(_partial_heading_statement())
+        page_one = [r for r in rows if not r['excluded'] and r['id'].startswith('1:')]
+        self.assertTrue(page_one and all(r['fields'].get('amount_minor') is None for r in page_one))
+
+
+class KapitalAmountNoiseTests(TestCase):
+    def test_a_space_the_scan_sets_before_a_thousands_comma_is_that_comma(self):
+        # Live scans: 01 MONETA KAPITAL MXN ENE 26 Hoja 2-3, MONETA KAPITAL MXN NOV 25 Hoja 2, 03 MZO 26 Hoja 2.
+        from unittest import mock
+        from services.financial import statement_import_kapital as K
+        for noisy, plain in (('2,506 ,338.78)', '2,506,338.78'), ('7,531 ,506.44)', '7,531,506.44'),
+                             ('2,921 ,063.67;', '2,921,063.67'), ('1,031 ,472.00', '1,031,472.00')):
+            self.assertEqual(K._amount(noisy, 'MXN'), K._amount(plain, 'MXN'), noisy)
+        for value in ('2,506 ,33.78)', '2,506 , 338.78))'):
+            with self.assertRaises(ValueError, msg=value):
+                K._amount(value, 'MXN')
+        with mock.patch.object(K, 'AMOUNT_GROUP_SPACE', False):
+            with self.assertRaises(ValueError):
+                K._amount('2,506 ,338.78)', 'MXN')
+
+    def test_one_mark_read_after_a_whole_amount_is_that_amount(self):
+        from services.financial.statement_import_kapital import _amount
+        for noisy, plain in (('6,300,000.00)', '6,300,000.00'), ('6,616,985.42,', '6,616,985.42'),
+                             ('1,268,306.15?', '1,268,306.15'), ('0.01-|', '0.01-')):
+            self.assertEqual(_amount(noisy, 'MXN'), _amount(plain, 'MXN'), noisy)
+            self.assertIsNotNone(_amount(noisy, 'MXN'))
+
+    def test_two_marks_or_a_damaged_amount_stay_unreadable(self):
+        from unittest import mock
+        from services.financial import statement_import_kapital as K
+        for value in ('6,300,000.00))', '6,300,00.00)', '6,300,000.0)'):
+            with self.assertRaises(ValueError, msg=value):
+                K._amount(value, 'MXN')
+        with mock.patch.object(K, 'AMOUNT_NOISE', False):
+            with self.assertRaises(ValueError):
+                K._amount('6,300,000.00)', 'MXN')
+
+
+class KapitalHeadingWordMarksTests(TestCase):
+    """(fin-queue3 K3) 06 ARRENDO KAPITAL JUN 26 USD: the section's only movement heading read
+    'CONCEPTO | DEPOSITOS | RETIRO. | SALDO'; its two movements (09/06 803,556.00 in, 10/06 out) were held as
+    payments whose headings were not read."""
+
+    def statement(self, words=('CONCEPTO', 'DEPOSITOS', 'RETIRO.', 'SALDO'), lefts=(245000, 400000, 467000, 529000)):
+        movements = table()
+        movements[0] = [(left, 430000, 35000, word) for left, word in zip(lefts, words)]
+        return [source(1, header() + [[(30000,120000,160000,'EXAMPLE SERVICES')],[(30000,150000,160000,'Persona Moral')]]
+                       + product() + movements)]
+
+    def rows(self, s):
+        choice = currencies_by_statement(kapital_catalog(s)[0], s)[0]
+        return [r for r in propose_kapital_statement(s, 'MXN', choice)['rows'] if not r['excluded']]
+
+    def test_a_heading_word_with_a_mark_or_cut_short_is_that_heading_when_all_four_are_read_in_order(self):
+        for word in ('RETIRO.', 'RETIRO', 'RETIROS.'):
+            rows = self.rows(self.statement(words=('CONCEPTO', 'DEPOSITOS', word, 'SALDO')))
+            self.assertEqual([(r['kind'], r['fields'].get('amount_minor'), r['fields'].get('direction')) for r in rows],
+                             [('transaction', '1', 'debit'), ('transaction', '1', 'credit')], word)
+
+    def test_three_words_or_words_out_of_order_stay_for_a_person(self):
+        for words, lefts in ((('CONCEPTO', 'DEPOSITOS', 'SALDO'), (245000, 400000, 529000)),
+                             (('CONCEPTO', 'RETIRO.', 'DEPOSITOS', 'SALDO'), (245000, 400000, 467000, 529000))):
+            rows = self.rows(self.statement(words=words, lefts=lefts))
+            self.assertTrue(rows and all(r['fields'].get('amount_minor') is None for r in rows), words)
+
+    def test_switched_off_the_lines_stay_for_a_person(self):
+        from unittest import mock
+        from services.financial import statement_import_kapital as K
+        with mock.patch.object(K, 'HEADING_WORD_MARKS', False):
+            rows = self.rows(self.statement())
+        self.assertTrue(rows and all(r['fields'].get('amount_minor') is None for r in rows))
+
+
+class KapitalClientOneDigitTests(TestCase):
+    """(fin-queue3 K6) 06 MONETA KAPITAL MXN JUN 25: Hoja 2-3 read the client '49499208' as '19499208'; the same
+    statement number, R.F.C. and period are printed on every page, so the movement table continued there."""
+
+    def statement(self, client):
+        second = header()
+        second[3] = [(360000, 80000, 35000, 'Cliente'), (410000, 80000, 100000, client)]
+        return [source(1, header() + [[(30000,120000,160000,'EXAMPLE SERVICES')],[(30000,150000,160000,'Persona Moral')]]
+                       + product() + table()), source(2, second + table(200000))]
+
+    def pages(self, client):
+        return [c['page_numbers'] for c in kapital_catalog(self.statement(client))[0]]
+
+    def test_a_page_whose_client_number_is_read_one_digit_apart_continues_the_statement(self):
+        self.assertEqual(self.pages('12345679'), [[1, 2]])
+        self.assertEqual(self.pages('12345678'), [[1, 2]])
+
+    def test_two_digits_apart_or_another_length_is_another_header(self):
+        self.assertEqual(self.pages('12345699'), [[1]])
+        self.assertEqual(self.pages('123456789'), [[1]])
+
+    def test_switched_off_the_page_stays_unassigned(self):
+        from unittest import mock
+        from services.financial import statement_import_kapital as K
+        with mock.patch.object(K, 'CLIENT_ONE_DIGIT', False):
+            self.assertEqual(self.pages('12345679'), [[1]])

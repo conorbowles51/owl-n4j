@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { useMediaQuery } from "@/hooks/use-media-query"
 import { useFinancialDraft } from "../stores/financial-drafts"
 import { WorkspaceScope } from "./InvestigationWorkspaceParts"
@@ -15,6 +16,7 @@ import { LedgerPanel } from "./LedgerPanel"
 import { QuarantinePanel } from "./QuarantinePanel"
 import { LedgerSourceDialog } from "./LedgerSourceDialog"
 import { ImportedRecordsPanel } from "./ImportedRecordsPanel"
+import { CaseJudgementProvider } from "./JudgementCalls"
 
 export function CorrectableLedger(props: {
   caseId: string | undefined
@@ -109,6 +111,10 @@ function CorrectableLedgerContent({
         }
       >
         <div className="min-w-0">
+          <CaseJudgementProvider
+            caseId={heldOut ? undefined : caseId}
+            onCorrect={canEdit && !selected ? (_judgement, row) => setSelected(row) : undefined}
+          >
           <Panel
             splitAmounts
             investigation={investigation}
@@ -127,6 +133,7 @@ function CorrectableLedgerContent({
               caseId && setSource({ caseId, transactionId: row.key })
             }
           />
+          </CaseJudgementProvider>
         </div>
         {source && source.caseId === caseId && (
           <LedgerSourceDialog
@@ -141,10 +148,7 @@ function CorrectableLedgerContent({
         )}
       </div>
       {caseId && !heldOut && (
-        <details className="rounded border p-3">
-          <summary className="cursor-pointer font-medium">
-            Reports, balance coverage and verification details
-          </summary>
+        <Disclosure className="rounded border p-3" label="Reports, balance coverage and verification details">
           <div className="space-y-3 pt-3">
             <LedgerExportButton caseId={caseId} params={params} />
             <RequestedCoveragePanel caseId={caseId} params={params} />
@@ -155,7 +159,7 @@ function CorrectableLedgerContent({
               population="working"
             />
           </div>
-        </details>
+        </Disclosure>
       )}
     </div>
   )

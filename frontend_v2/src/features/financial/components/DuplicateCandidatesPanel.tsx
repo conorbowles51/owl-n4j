@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { LedgerSourceDialog } from "./LedgerSourceDialog"
 import { useEffect, useRef, useState } from "react"
 import { CrossCaseDuplicatePanel } from "./CrossCaseDuplicatePanel"
@@ -58,7 +59,10 @@ function DuplicateCandidatesCasePanel({
   const openDecision = (value: DuplicateSelection, button: HTMLElement) => {
     selectionOrigin.current = {
       button,
-      group: button.closest("details")?.querySelector("summary") || null,
+      group:
+        button
+          .closest("[data-disclosure]")
+          ?.querySelector<HTMLElement>(":scope > button") || null,
     }
     setSelection(value)
   }
@@ -150,8 +154,7 @@ function DuplicateCandidatesCasePanel({
                 {data.compared} of {data.documents} financial documents
                 compared. {data.skipped.length} not compared.
               </p>
-              <details className="text-xs text-muted-foreground">
-                <summary className="cursor-pointer">What was compared</summary>
+              <Disclosure className="text-xs text-muted-foreground" label="What was compared">
                 <p className="mt-2">
                   The comparison includes original transaction values, balances
                   and rows previously excluded or corrected. Open the originals
@@ -161,7 +164,7 @@ function DuplicateCandidatesCasePanel({
                 {data.stored_rows_in_case !== undefined && (
                   <p>{data.stored_rows_in_case} saved rows in this case.</p>
                 )}
-              </details>
+              </Disclosure>
               {data.source_hash_groups.length > 0 && (
                 <section aria-label="Matching original files across recorded periods">
                   <h3 className="font-medium">
@@ -175,19 +178,15 @@ function DuplicateCandidatesCasePanel({
                   {data.source_hash_groups
                     .slice(visibleHashPage * 10, visibleHashPage * 10 + 10)
                     .map((group, index) => (
-                      <details key={group.sha256_at_ingestion}>
-                        <summary>
-                          Original file group {visibleHashPage * 10 + index + 1}{" "}
+                      <Disclosure key={group.sha256_at_ingestion} label={<>Original file group {visibleHashPage * 10 + index + 1}{" "}
                           · {group.members.length} documents
-                          <DuplicateGroupContext documents={group.members} />
-                        </summary>
-                        <details className="my-2 text-xs text-muted-foreground">
-                          <summary>File matching details</summary>
+                          <DuplicateGroupContext documents={group.members} /></>}>
+                        <Disclosure className="my-2 text-xs text-muted-foreground" label="File matching details">
                           <p>{group.limitation}</p>
                           <p className="break-all">
                             Recorded SHA-256: {group.sha256_at_ingestion}
                           </p>
-                        </details>
+                        </Disclosure>
                         <ul>
                           {group.members.map((row) => (
                             <li
@@ -216,7 +215,7 @@ function DuplicateCandidatesCasePanel({
                             </li>
                           ))}
                         </ul>
-                      </details>
+                      </Disclosure>
                     ))}
                   {data.source_hash_groups.length > 10 && (
                     <div className="flex flex-wrap items-center gap-2">
@@ -253,15 +252,9 @@ function DuplicateCandidatesCasePanel({
                 data.groups
                   .slice(visibleGroupPage * 10, visibleGroupPage * 10 + 10)
                   .map((group, index) => (
-                    <details
-                      key={group.group_key}
-                      className="rounded border p-3"
-                    >
-                      <summary className="cursor-pointer text-sm font-medium">
-                        Candidate group {visibleGroupPage * 10 + index + 1} ·{" "}
+                    <Disclosure key={group.group_key} className="rounded border p-3" label={<>Candidate group {visibleGroupPage * 10 + index + 1} ·{" "}
                         {group.members.length} documents
-                        <DuplicateGroupContext documents={group.members} />
-                      </summary>
+                        <DuplicateGroupContext documents={group.members} /></>}>
                       <ul className="mt-2 grid items-start gap-3 lg:grid-cols-2">
                         {group.members.map((row, memberIndex) => (
                           <li
@@ -310,15 +303,12 @@ function DuplicateCandidatesCasePanel({
                                 )?.filename ?? "See document identifiers"}
                               </p>
                             )}
-                            <details className="text-xs break-all">
-                              <summary className="cursor-pointer">
-                                Document identifiers
-                              </summary>
+                            <Disclosure className="text-xs break-all" label="Document identifiers">
                               <p>Document: {row.document_id}</p>
                               {row.superseded_by_id && (
                                 <p>Retained document: {row.superseded_by_id}</p>
                               )}
-                            </details>
+                            </Disclosure>
                             {canEdit &&
                               row.status === "admitted" &&
                               group.members
@@ -352,7 +342,7 @@ function DuplicateCandidatesCasePanel({
                           </li>
                         ))}
                       </ul>
-                    </details>
+                    </Disclosure>
                   ))
               )}
               {data.groups.length > 10 && (
@@ -377,10 +367,7 @@ function DuplicateCandidatesCasePanel({
                 </div>
               )}
               {data.excluded_documents.length > 0 && (
-                <details>
-                  <summary className="cursor-pointer text-sm font-medium">
-                    Excluded documents ({data.excluded_documents.length})
-                  </summary>
+                <Disclosure label={<>Excluded documents ({data.excluded_documents.length})</>}>
                   <ul className="mt-2 space-y-2">
                     {data.excluded_documents.map((row) => (
                       <li
@@ -412,13 +399,10 @@ function DuplicateCandidatesCasePanel({
                       </li>
                     ))}
                   </ul>
-                </details>
+                </Disclosure>
               )}
               {data.skipped.length > 0 && (
-                <details>
-                  <summary className="cursor-pointer text-sm font-medium">
-                    Documents not compared ({data.skipped.length})
-                  </summary>
+                <Disclosure label={<>Documents not compared ({data.skipped.length})</>}>
                   <ul className="mt-2 space-y-2 text-sm">
                     {data.skipped.map((row) => (
                       <li key={row.document_id}>
@@ -432,7 +416,7 @@ function DuplicateCandidatesCasePanel({
                       </li>
                     ))}
                   </ul>
-                </details>
+                </Disclosure>
               )}
             </>
           )

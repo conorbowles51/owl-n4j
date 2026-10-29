@@ -5,10 +5,12 @@ import {
   groupGuidance,
   guidanceFor,
   handledCount,
+  inProgressCount,
   isGroup,
   issueLabel,
   needsCount,
   needsLabel,
+  setAsideCount,
   type QueueGroup,
 } from "./queue-guidance"
 import type { QueueCounts, QueueEntry } from "./review-queue"
@@ -18,7 +20,7 @@ const entry = (over: Partial<QueueEntry> = {}): QueueEntry => ({
   holder: "Holder", account: "0001", institution: "Bank", currency: "", period_start: "2021-01-01",
   period_end: "2021-01-31", page: 3, can_import: false, status: "attention", bucket: "waiting", file_ids: ["f1"],
   file_position: 1, file_statements: 1, other_problems: 0, problem_total: 1, reasons: [], also: [],
-  fix_makes_ready: false, issue_pages: [], issue_messages: [], ...over,
+  fix_makes_ready: false, issue_pages: [], issue_messages: [], why: [], ...over,
 })
 const me = { id: "u1", name: "Maria Lopez" }
 
@@ -26,7 +28,7 @@ const me = { id: "u1", name: "Maria Lopez" }
 const JARGON = /copy_of_saved|not_all_held|issue_reason|_|\bbatch\b|\breading\b|lineage/i
 const every = [
   "import_failed", "saved_review", "reprint", "assignment", "principal_only", "currency", "institution", "holder",
-  "account", "dates", "balance", "incomplete", "count", "no_activity", "reading", "some_new_reason",
+  "account", "dates", "balance", "incomplete", "count", "no_activity", "reading", "auto_save_check", "saved_check", "copies_none_saved", "some_new_reason",
 ]
 
 it("gives every reason a plain title, numbered steps that say where to look, one action and what happens next", () => {
@@ -76,12 +78,12 @@ it("tells her about a row added by hand that needs its page, naming who added it
   expect(guidanceFor(manual, me).action).toBe("Choose the page")
 })
 
-it("labels what needs a person with the signed-in user's first name, or the colleague whose work is held", () => {
-  expect(needsLabel(me)).toBe("Needs Maria")
+it("says Needs you for what waits on the viewer and names only the colleague whose work is held", () => {
+  expect(needsLabel(me)).toBe("Needs you")
   expect(needsLabel(null)).toBe("Needs you")
   expect(needsLabel({ id: "u1", name: "" })).toBe("Needs you")
   expect(needsLabel(me, { worked_by: { user_id: "u2", name: "Sam Diaz" } })).toBe("Needs Sam")
-  expect(needsLabel(me, { worked_by: { user_id: "u1", name: "Maria Lopez" } })).toBe("Needs Maria")
+  expect(needsLabel(me, { worked_by: { user_id: "u1", name: "Maria Lopez" } })).toBe("Needs you")
   const saved = entry({ issue_reason: "saved_review", worked_by: { user_id: "u2", name: "Sam Diaz" } })
   expect(guidanceFor(saved, me).title).toBe("Sam's saved corrections were made before Loupe read the PDF again")
 })
@@ -120,4 +122,31 @@ it("splits the counts into what needs a person and what Loupe handles", () => {
     unexplained: 0, not_payment: 0 } satisfies QueueCounts
   expect(needsCount(counts)).toBe(7)
   expect(handledCount(counts)).toBe(24)
+  // Set aside on purpose is finished, never in progress: the two never read as one pile of pending work.
+  expect(inProgressCount(counts)).toBe(18)
+  expect(setAsideCount({ ...counts, not_payment: 13 })).toBe(19)
+  expect(inProgressCount({ ...counts, saving: 0, filled: 0, reader_fix: 0, ready: 0, rechecking: 0 })).toBe(0)
+})
+
+it("shows what Loupe could not prove about a balanced statement it did not save on its own", () => {
+  const issue = 'The account holder read, "LOMAS DE CHAPULTEPEC III SECCION", is an address line: check the holder printed on the page'
+  const guide = guidanceFor(entry({ issue_reason: "auto_save_check", issue }), me)
+  expect(guide.title).toBe(issue)
+  expect(guide.steps[0]).toBe("Open the PDF at page 3.")
+  expect(issueLabel("auto_save_check")).toBe("Not proven by its balances")
+})
+
+it("lists an imported statement a ledger check finds wrong, with the check's own sentence", () => {
+  const issue = "This account, currency and period (Nov 2025) is saved more than once: check whether one is a copy of the other or belongs to another currency"
+  const guide = guidanceFor(entry({ issue_reason: "saved_check", issue }), me)
+  expect(guide.title).toBe(issue)
+  expect(guide.action).toBe("Open the statement")
+  expect(issueLabel("saved_check")).toBe("Imported, needs a check")
+})
+
+it("asks a person to save one copy of a statement whose copies were all set aside and none saved", () => {
+  const issue = "Every copy of this statement was set aside as a copy of another, and none of them is saved. Check this one against the PDF and save it."
+  const guide = guidanceFor(entry({ issue_reason: "copies_none_saved", issue }), me)
+  expect(guide.title).toBe(issue)
+  expect(issueLabel("copies_none_saved")).toBe("No copy saved yet")
 })

@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { z } from "zod"
@@ -367,8 +368,7 @@ export function AccountConsolidation({ caseId }: { caseId: string }) {
                 </p>
               )}
               {notice && <p role="status">{notice}</p>}
-              <details>
-                <summary>Merge history and undo</summary>
+              <Disclosure label="Merge history and undo">
                 {query.data.merges
                   .filter((m) => !m.undone)
                   .map((m) => (
@@ -403,7 +403,7 @@ export function AccountConsolidation({ caseId }: { caseId: string }) {
                 {!query.data.merges.length && (
                   <p>No account merges have been recorded.</p>
                 )}
-              </details>
+              </Disclosure>
             </fieldset>
           )}
           <AccountOwnershipReview

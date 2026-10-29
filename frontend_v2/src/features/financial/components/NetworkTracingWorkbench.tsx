@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import {
   useFinancialDraft,
   useFinancialOrderDraft,
@@ -838,8 +839,7 @@ function NetworkForm({
                     </Button>
                   </div>
                 ))}
-                <details>
-                  <summary>Per-account calculation details</summary>
+                <Disclosure label={<>Per-account calculation details</>}>
                   {Object.entries(result.accounts).map(([id, a]) => (
                     <div key={id}>
                       <p>
@@ -861,7 +861,7 @@ function NetworkForm({
                       ))}
                     </div>
                   ))}
-                </details>
+                </Disclosure>
               </article>
             )
           )}

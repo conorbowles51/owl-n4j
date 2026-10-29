@@ -209,6 +209,24 @@ export type QuarantineReason = (typeof QUARANTINE_REASONS)[number]
  * checked. Narrowing is a runtime job: `ledger-format.ts` does it, and every
  * one of these fields reaches a component through that module.
  */
+/** Work a model did for a person, recorded as the model's until a person confirms it. */
+export interface ModelOrigin {
+  kind: "model"
+  model: string
+  model_id?: string
+  at?: string
+  for?: { name?: string; user_id?: string | null }
+  citation?: {
+    page?: number
+    file?: string
+    image?: string
+    source_document_id?: string
+    reason?: string
+  } & Record<string, unknown>
+  how?: string
+  recorded_as?: string
+}
+
 export interface LedgerTransaction {
   label_sources?: Partial<
     Record<
@@ -220,10 +238,28 @@ export interface LedgerTransaction {
           | "account"
           | "investigator"
           | "missing"
+          | "model"
+          | "learned"
+          | "matched_payment"
+          | "printed_account"
+          | "model_reading"
         explanation?: string
+        /** "Read by Claude · not confirmed", for a name a model read that no person has confirmed. */
+        label?: string
+        /** Where the model read it, for whom and when (stored on the label, never parsed from a name). */
+        origin?: ModelOrigin
+        /** Set when a person confirmed a model reading: the reading they confirmed. */
+        confirmed_model_reading?: ModelOrigin
+        /** For a name taken from the matching payment in another account of the case. */
+        matched_transaction_id?: string
+        matched_account_id?: string
+        /** Why no name is shown, when the statement's layout is known to print none. */
+        reason?: string
         rule?: string
         version?: string
         value?: string
+        confidence?: number | null
+        judgement?: boolean
       }
     >
   >
@@ -818,6 +854,7 @@ export const ADJUDICATION_DECISIONS = [
   "set_account_party",
   "set_counterparty_party",
   "set_account_identity",
+  "keep_printed_holders",
 ] as const
 export type AdjudicationDecision = (typeof ADJUDICATION_DECISIONS)[number]
 
@@ -866,6 +903,12 @@ export interface DecisionRecord {
   recorded_at: string | null
   /** Whether the reconciliation stage wrote this, rather than a person. */
   by_machine: boolean
+  /**
+   * Present when a model (Claude) took this decision for the person named in
+   * actor_name: the decision is the model's, not that person's. Absent for a
+   * person's or a rule's decision.
+   */
+  actor_origin?: ModelOrigin
 }
 
 /**
@@ -894,6 +937,7 @@ export const DECISION_FIELDS: readonly (keyof DecisionRecord)[] = [
   "ingestion_run_id",
   "recorded_at",
   "by_machine",
+  "actor_origin",
 ]
 
 /**

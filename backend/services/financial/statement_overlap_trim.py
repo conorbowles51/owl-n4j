@@ -34,6 +34,7 @@ prepared save of it stale (the import writer re-reads it under the case lock).
 A query a person has already reviewed, or one already saved whole, is left as
 it is. Switch: ``TRIM_OVERLAPS``.
 """
+import os
 from copy import deepcopy
 from datetime import date, timedelta
 
@@ -297,3 +298,41 @@ def overlap_trim(session, *, case_id, file, selected, rows, metadata, currency, 
         return rows, dict(version=VERSION, status='held', code=planned[1], message=HOLD_MESSAGES[planned[1]])
     plan = planned[1]
     return apply_trim(rows, plan), dict(version=VERSION, status='trimmed', **plan)
+
+
+# Neil's decision (2026-10-26, fin-queue3 L21; fin-queue2 A1, 04 ARRENDO SANTANDER MOVIMIENTOS A ABR 24): a query
+# trimmed so that none of its movements is left proves by its own pages that the remaining dates had none: the trim
+# proved the whole query first (every printed running balance follows from the opening, the printed closing is
+# reached and the printed totals equal its movements), and every movement lies on dates saved statements already
+# hold. The remainder is then a quiet period on that page proof, as a statement printing zero totals is, not one a
+# person must confirm by looking. Off: the remainder asks a person to confirm no activity, as before.
+REMAINDER_PROOF = os.environ.get('LOUPE_FINANCIAL_TRIM_REMAINDER_PROOF', '1').strip().lower() not in (
+    '0', 'false', 'no', 'off')
+REMAINDER_BASIS = 'movement_query_covered_by_saved'
+REMAINDER_MESSAGE = ('Every movement this query prints falls on dates saved statements of this account already hold, '
+                     'and the query\'s running balances, closing and printed totals agree with those movements, so the '
+                     'remaining dates had no movement.')
+
+
+def remainder_evidence(rows, trim, currency):
+    """The page proof that a trimmed query's remaining dates had no movement, else None (admission binds it to the
+    derived balance and total rows: statement_admission.source_proves_no_activity)."""
+    if not REMAINDER_PROOF or not trim or trim.get('status') != 'trimmed' or not currency:
+        return None
+    if trim.get('kept_credit_minor') != '0' or trim.get('kept_debit_minor') != '0' or any(not r['excluded'] for r in rows):
+        return None
+    opening, closing = _control(rows, 'balance', 'Opening Balance'), _control(rows, 'balance', 'Closing Balance')
+    if (not opening or not closing or opening['fields'].get('balance') in (None, '')
+            or opening['fields']['balance'] != closing['fields'].get('balance')):
+        return None
+    totals = [r for r in rows if r['kind'] == 'statement_total' and not r['fields'].get('total_scope')
+              and r['fields'].get('total_direction') in ('credit', 'debit')]
+    if len(totals) != len({r['fields']['total_direction'] for r in totals}) or any(
+            r['fields'].get('balance') != '0' for r in totals):
+        return None
+    return dict(verified=True, method=VERSION, basis=REMAINDER_BASIS, family='movement_query',
+                reason='covered_remainder_without_movements', message=REMAINDER_MESSAGE,
+                page_number=opening.get('page_number'), opening_row_id=opening['id'], closing_row_id=closing['id'],
+                zero_total_row_ids=[r['id'] for r in totals], balance_minor=opening['fields']['balance'],
+                currency=currency, period_start=trim['period_start'], period_end=trim['period_end'],
+                covers=deepcopy(trim.get('covers') or []))

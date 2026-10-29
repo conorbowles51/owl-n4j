@@ -15,6 +15,7 @@ from postgres.models.financial import FinancialAccount, FinancialSourceDocument,
 from services.financial.decisions import Actor
 from services.financial.pdf_candidates import PdfMappingError, PdfMappingProposal, _digest, bind_pdf_mapping
 from services.financial.pdf_geometry_candidates import PdfGridMapping, bind_pdf_grid_mapping
+from services.financial.model_work import origin_field
 
 
 class CandidateStoreError(ValueError):
@@ -188,7 +189,7 @@ def store_pdf_candidates(session, *, case_id, proposal, actor):
         mapping = FinancialCandidateMapping(case_id=case_id, evidence_file_id=file_id,
             mapping_revision=bound.mapping_revision, snapshot=original, snapshot_sha256=_digest(original),
             candidate_count=len(candidates), actor=dict(name=actor.name, email=actor.email,
-                user_id=str(actor.user_id) if actor.user_id is not None else None))
+                user_id=str(actor.user_id) if actor.user_id is not None else None, **origin_field(actor)))
         session.add(mapping)
         session.flush()
         for candidate in candidates:

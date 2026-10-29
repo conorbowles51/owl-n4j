@@ -1,6 +1,8 @@
 """Synthetic Andrews-style sections; no private statement contents."""
 import unittest
 from copy import deepcopy
+from unittest import mock
+from services.financial import statement_import_andrews as andrews
 
 from services.financial.statement_import_catalog import statement_catalog
 from services.financial.statement_import_andrews import andrews_page, propose_andrews_statement
@@ -442,11 +444,37 @@ class AndrewsReaderTests(unittest.TestCase):
     def test_additional_date_does_not_hide_a_missing_minus(self):
         a = source([[(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],
                     [(15, '06/03 06/02 Withdrawal Debit Card'), (310, '20.00 80.00')]])
-        _, p = selected([a]); r = next(r for r in p['rows'] if not r['excluded'])
+        with mock.patch.object(andrews, 'DIRECTION_FROM_WORD', False):
+            _, p = selected([a])
+        r = next(r for r in p['rows'] if not r['excluded'])
         self.assertNotIn('direction', r['fields'])
         self.assertEqual(r['fields']['additional_printed_date'], '06/02')
         self.assertEqual(len(r['issues']), 1)
         self.assertIn('money entered or left', r['issues'][0])
+
+    def test_lost_minus_on_a_withdrawal_is_decided_by_the_word_and_both_balances(self):
+        a = source([[(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],
+                    [(15, '06/03 06/02 Withdrawal Debit Card'), (310, '20.00 80.00')]])
+        _, p = selected([a]); r = next(r for r in p['rows'] if not r['excluded'])
+        self.assertEqual(r['fields']['direction'], 'debit')
+        self.assertEqual(r['fields']['amount_minor'], '2000')
+        self.assertEqual(r['fields']['direction_basis'], andrews.DIRECTION_FROM_WORD_AND_BALANCES)
+        self.assertEqual(r['issues'], [])
+
+    def test_word_against_the_sign_stays_held_when_a_balance_disagrees(self):
+        for money in ('20.00 120.00', '20.00 81.00', '-20.00 120.00'):
+            verb = 'Deposit ACH' if money.startswith('-') else 'Withdrawal Debit Card'
+            a = source([[(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],
+                        [(15, '06/03 ' + verb), (310, money)]])
+            _, p = selected([a]); r = next(r for r in p['rows'] if not r['excluded'])
+            if money == '-20.00 120.00':
+                continue  # a minus on a Deposit whose balance rises 20.00: checked below
+            self.assertNotIn('direction', r['fields'], money)
+            self.assertIn('money entered or left', ' '.join(r['issues']))
+        a = source([[(15, '06/01 ID 0040 FREE CHECKING Previous Balance'), (350, '100.00')],
+                    [(15, '06/03 Deposit ACH'), (310, '-20.00 120.00')]])
+        _, p = selected([a]); r = next(r for r in p['rows'] if not r['excluded'])
+        self.assertEqual(r['fields']['direction'], 'credit')
 
     def test_additional_date_retains_first_row_date_without_inventing_another_role(self):
         for second in ('06/03', '06/02', '05/31'):

@@ -27,6 +27,7 @@ as an unresolved line, so the period stays held for a person, never admitted.
 Credit annexes, routing references, notices and tax certificates are not
 account sections and contribute nothing.
 """
+import os
 import re
 from datetime import date
 
@@ -46,6 +47,18 @@ CURRENCIES = {'PESO MEXICANO': 'MXN', 'DOLAR AMERICANO': 'USD', 'EURO': 'EUR', '
 PRINTED_CODES = {'MXP': 'MXN', 'MXN': 'MXN', 'USD': 'USD', 'EUR': 'EUR', 'GBP': 'GBP', 'CHF': 'CHF',
     'CAD': 'CAD', 'AUD': 'AUD', 'SEK': 'SEK', 'JPY': 'JPY'}
 MONEX_BANK_CODE = '112'
+# 2026-10-26 fin-queue3 L30c: older productions of the landscape layout store each page turned a quarter
+# (portrait pages whose text reads sideways, 06 ARRENDO MONEX MXN JUN 26). Their positions are read in the
+# frame the text reads upright in, as statement_engine does; the citations keep the stored page positions.
+UPRIGHT = os.environ.get('LOUPE_FINANCIAL_MONEX_UPRIGHT', '1').strip().lower() not in ('0', 'false', 'no', 'off')
+# 2026-10-26 fin-queue3 L30c: the same productions are read from the page image, which damages the printed
+# page numbers ('HOJA 4 DE7', 'HOJA 2 DEG' for 'Hoja 2 de 9'), leaves a tax certificate unreadable and drops
+# the postal code's label ('CP. 54090', 'CAP, 02970'). A page number whose total is unreadable is its page index
+# (the total comes from the run's other pages); pages without a readable number up to a page printing the
+# index its physical place gives it are the pages between: what they hold is read with its section, whose
+# printed controls decide; such a label followed by a five-digit code is the postal code line. Switch
+# LOUPE_FINANCIAL_MONEX_IMAGE_READING.
+IMAGE_READING = os.environ.get('LOUPE_FINANCIAL_MONEX_IMAGE_READING', '1').strip().lower() not in ('0', 'false', 'no', 'off')
 AMOUNT = re.compile(r'-?\d{1,3}(?:,\d{3})*\.\d{2}|-?\d+\.\d{2}')
 LEADING_AMOUNT = re.compile(r'(' + AMOUNT.pattern + r')(?:\s+\D.*)?')
 ROW_DATE = re.compile(r'(\d{1,2})/([A-Z]{3})(?:\((\d{1,2})/([A-Z]{3})\))?')
@@ -76,10 +89,13 @@ def _lines(items):
     """Located rows of one page in reading order, cells left to right."""
     located = []
     for s in items:
+        rotation = (s.get('reading_rotation') or 0) if UPRIGHT else 0
         for r in s['rows']:
             cells = [c for c in r['cells'] if c['expected_text'].strip()]
             if not cells:
                 continue
+            if rotation:
+                cells = [_upright(c, rotation) for c in cells]
             if any(box(c) is None for c in cells):
                 raise NotUnderstood('unplaced cell')
             cells = sorted(cells, key=lambda c: box(c)[0])
@@ -89,6 +105,17 @@ def _lines(items):
     for line in located:
         line['text'] = ' '.join(line['words'])
     return located
+
+
+def _upright(cell, rotation):
+    """A positioning copy of a cell on a turned page, its rectangle in the upright frame. Only the
+    reading's positions use it: proposals cite the source rows' own cells. A cell whose page size cannot
+    be turned is left unplaced, which refuses the contract."""
+    from services.financial.statement_engine import _rect
+    rect, _ = _rect(cell, rotation)
+    if rect is None or rect == (cell.get('locator') or {}).get('rect'):
+        return dict(cell, locator=None)
+    return dict(cell, locator=dict(cell['locator'], rect=rect))
 
 
 def _address(line):
@@ -169,8 +196,10 @@ def _labelled(lines, label):
 
 def _holder(lines):
     """The top line of the address block that ends with the postal code line."""
-    postal = [(line, cell) for line in lines for cell, word in zip(line['cells'], line['words'])
-              if re.fullmatch(r'C\.P\.:?(?: \d{5})?', word)]
+    postal = [(line, cell) for line in lines for i, (cell, word) in enumerate(zip(line['cells'], line['words']))
+              if re.fullmatch(r'C\.P\.:?(?: \d{5})?', word) or (IMAGE_READING and (
+                  re.fullmatch(r'C\.?A?P[.,]? \d{5}', word) or re.fullmatch(r'C\.?A?P[.,]?:?', word)
+                  and re.fullmatch(r'\d{5}', ''.join(line['words'][i + 1:i + 2]))))]
     if len(postal) != 1:
         return ''
     line, cell = postal[0]
@@ -206,7 +235,15 @@ def _cover(lines):
     return contract, start, end, _holder(lines)
 
 
+PAGE_NUMBER = r'HOJA (\d+) ?DE ?(\d+|[A-Z]{1,2})'
+
+
 def _page_number(lines):
+    """(page, total) printed as "Hoja n de m"; total None when only the page index is readable."""
+    if IMAGE_READING:
+        numbers = {(int(m[1]), int(m[2]) if m[2].isdigit() else None) for line in lines
+                   for m in [re.fullmatch(PAGE_NUMBER, line['text'])] if m}
+        return next(iter(numbers)) if len(numbers) == 1 else (None if not numbers else 'conflict')
     numbers = {(int(m[1]), int(m[2])) for line in lines for m in [re.fullmatch(r'HOJA (\d+) DE (\d+)', line['text'])] if m}
     return next(iter(numbers)) if len(numbers) == 1 else (None if not numbers else 'conflict')
 
@@ -215,6 +252,20 @@ def _tax_certificate(lines):
     content = [l['text'] for l in lines
                if not re.fullmatch(r'(?:MONEX ?)?(?:ESTADO DE CUENTA \| BANCO ?)?(?:CONTRATO: \d+)?', l['text'])]
     return bool(content) and content[0].startswith('COMPROBANTE FISCAL DIGITAL')
+
+
+def _numbered_after(lines, page, index):
+    """Whether the next page after ``page`` with a readable number prints the index the physical order gives
+    it (``page`` being printed page ``index``): the unnumbered pages up to it are the pages between."""
+    following = page + 1
+    while lines.get(following) is not None:
+        printed = _page_number(lines[following])
+        if printed == 'conflict':
+            return False
+        if printed is not None:
+            return printed[0] == index + following - page
+        following += 1
+    return False
 
 
 def _runs(pages):
@@ -226,7 +277,9 @@ def _runs(pages):
     belongs to the run). A page with no readable table (a blank page printed
     only with its number) is accepted between two correctly numbered pages:
     the PDF holds it, and any money on it would break the section controls.
-    An unnumbered tax certificate inside the run is accepted the same way.
+    An unnumbered tax certificate inside the run is accepted the same way, and
+    (IMAGE_READING) so is any page whose number the reading lost when the
+    next numbered page prints the index its physical place gives it.
     """
     lines = {}
     for page, items in pages.items():
@@ -253,7 +306,9 @@ def _runs(pages):
                 expected_after = None if offset is None else page + 1 - cover_page + offset
                 certificate = page in pages and offset is not None and _tax_certificate(lines[page])
                 blank = page not in pages and after not in (None, 'conflict') and after[0] == expected_after
-                if not (certificate or blank) or count is None:
+                between = IMAGE_READING and page in pages and offset is not None and _numbered_after(
+                    lines, page, page - cover_page + offset)
+                if not (certificate or blank or between) or count is None:
                     complete = False
                     break
                 page += 1
@@ -266,11 +321,11 @@ def _runs(pages):
                 if offset not in (1, 2):
                     complete = False
                     break
-            if printed[0] != page - cover_page + offset or (count is not None and printed[1] != count):
+            if printed[0] != page - cover_page + offset or (count is not None and printed[1] not in (count, None)):
                 complete = False
                 break
-            count = printed[1]
-            if not 2 <= count <= 200:
+            count = printed[1] or count
+            if count is not None and not 2 <= count <= 200:
                 complete = False
                 break
             if any(m and m[1] != cover[0] for line in lines[page] for m in [re.fullmatch(r'CONTRATO: (\d+)', line['text'])]):
@@ -323,7 +378,7 @@ def _furniture(line, contract, in_table=False):
     t = line['text']
     return (t == 'ESTADO DE CUENTA | BANCO'
             or (not in_table and t in ('ESTADO DE CUENTA', 'BANCO', 'CUENTA', 'CUENTA VISTA', 'RESUMEN CUENTA'))
-            or re.fullmatch(r'HOJA \d+ DE \d+', t) is not None or t == 'CONTRATO: ' + contract
+            or re.fullmatch(PAGE_NUMBER if IMAGE_READING else r'HOJA \d+ DE \d+', t) is not None or t == 'CONTRATO: ' + contract
             or FOOTER.match(t) is not None)
 
 

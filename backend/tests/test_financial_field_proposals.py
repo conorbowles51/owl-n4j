@@ -68,15 +68,19 @@ class CurrencyTests(TestCase):
         currency = fp.propose(values(), knowledge(account(*MONTHS, same)))['currency']
         self.assertEqual((currency['value'], currency['confirmed'], currency['same_dates_saved']), ('MXN', False, True))
 
-    def test_disagreeing_currencies_fall_back_to_the_case_default_unconfirmed(self):
+    def test_disagreeing_currencies_propose_no_case_default(self):
+        # The account's own history holds several currencies: the case's usual one would contradict it.
         mixed = account(*MONTHS, saved(currency='USD', start='2021-11-01', end='2021-11-30'))
-        currency = fp.propose(values(), knowledge(mixed, default='USD', default_count=7, total=9))['currency']
-        self.assertEqual((currency['value'], currency['basis'], currency['confirmed']), ('USD', 'case_default', False))
-        self.assertEqual(currency['label'], "the case's usual currency (7 of 9 saved statements)")
+        self.assertNotIn('currency', fp.propose(values(), knowledge(mixed, default='USD', default_count=7, total=9)))
 
     def test_account_record_currency_must_agree_too(self):
-        currency = fp.propose(values(), knowledge(account(*MONTHS, currency='EUR')))['currency']
-        self.assertEqual(currency['basis'], 'case_default')
+        self.assertNotIn('currency', fp.propose(values(), knowledge(account(*MONTHS, currency='EUR'))))
+
+    def test_unmatched_statement_still_gets_the_case_default(self):
+        currency = fp.propose(values(account_number='99-9999999-9'), knowledge(account(*MONTHS), default='USD',
+                                                                             default_count=7, total=9))['currency']
+        self.assertEqual((currency['value'], currency['basis'], currency['confirmed']), ('USD', 'case_default', False))
+        self.assertEqual(currency['label'], "the case's usual currency (7 of 9 saved statements)")
 
     def test_no_account_identity_gives_the_case_default(self):
         currency = fp.propose(values(account_number='', institution='', holder=''), knowledge(account(*MONTHS)))['currency']
@@ -242,9 +246,8 @@ class AccountCurrencyTests(TestCase):
         self.assertEqual((currency['basis'], currency['confirmed']), ('same_account', False))
 
     def test_conflicting_account_currencies_stay_held(self):
-        currency = fp.propose(self.broker(), knowledge(account(MONTHS[0], saved(currency='USD', start='2021-02-01',
-                                                                                   end='2021-02-28'))))['currency']
-        self.assertEqual((currency['basis'], currency['confirmed']), ('case_default', False))
+        self.assertNotIn('currency', fp.propose(self.broker(), knowledge(account(MONTHS[0], saved(
+            currency='USD', start='2021-02-01', end='2021-02-28')))))
 
     def test_no_saved_statement_of_the_account_stays_held(self):
         currency = fp.propose(self.broker(), knowledge(account(MONTHS[0], number='99-9999999-9')))['currency']
@@ -294,7 +297,7 @@ class AutofillCurrencyTests(TestCase):
 
     def test_held_when_the_saved_statements_disagree(self):
         mixed = account(MONTHS[0], saved(currency='USD', start='2021-02-01', end='2021-02-28'))
-        self.assertFalse(fp.propose(values(institution='', holder=''), knowledge(mixed))['currency']['confirmed'])
+        self.assertFalse(fp.propose(values(institution='', holder=''), knowledge(mixed)).get('currency', {}).get('confirmed'))
 
     def test_held_when_the_statement_prints_another_currency(self):
         printed = dict(value='USD', page_number=2, table_index=0, row_index=1, expected_text='USD')
@@ -366,3 +369,346 @@ class AutofillIdentityTests(TestCase):
         # Proposals are applied in fill_missing mode only: a value a person entered is not empty, so not proposed.
         self.assertNotIn('institution', fp.propose(values(institution='Typed by a person', holder='', currency='MXN'),
                                                    knowledge(account(*MONTHS))))
+
+
+class AutomaticFillTests(TestCase):
+    """REAPPLY: the no-click fill of a current reading applies a stricter subset of the confirmed proposals.
+
+    Each limit is one the leave-one-out run on the saved statements and the truth set needed: a currency
+    section of another currency sharing the account number (balance chain), a bank renamed or a holder changed
+    outside the saved span (bracketing), another account sharing a masked number's visible digits (never an
+    account number), and the case's usual currency (never).
+    """
+
+    def ledger(self, *, currency='MXN', institution='BANCO SANTANDER', holder='ACME SA DE CV'):
+        from dataclasses import replace
+        march = replace(saved(currency=currency, start='2021-03-01', end='2021-03-31', institution=institution,
+                              holder=holder), opening_minor=500, closing_minor=1000)
+        september = replace(saved(currency=currency, start='2021-09-01', end='2021-09-30', institution=institution,
+                                  holder=holder), opening_minor=3000, closing_minor=3500)
+        return knowledge(account(march, september, currency=currency))
+
+    def fills(self, known, **overrides):
+        statement = values(**{**dict(opening_minor=1000, closing_minor=2000), **overrides})
+        return fp.automatic_fills(statement, fp.propose(statement, known), known)
+
+    def test_currency_when_the_balances_continue_the_account_ledger(self):
+        currency = self.fills(self.ledger())['currency']
+        self.assertEqual((currency['value'], currency['basis'], currency['confirmed']), ('MXN', 'account_ledger', True))
+        # The closing side alone is enough (its opening unread).
+        self.assertIn('currency', self.fills(self.ledger(), opening_minor=None, closing_minor=3000))
+
+    def test_no_currency_when_the_balances_do_not_chain(self):
+        self.assertNotIn('currency', self.fills(self.ledger(), opening_minor=999, closing_minor=2999))
+        self.assertNotIn('currency', self.fills(self.ledger(), opening_minor=None, closing_minor=None))
+
+    def test_a_zero_balance_proves_nothing(self):
+        from dataclasses import replace
+        known = self.ledger()
+        known.accounts[0].statements[0] = replace(known.accounts[0].statements[0], closing_minor=0)
+        self.assertNotIn('currency', self.fills(known, opening_minor=0, closing_minor=2999))
+
+    def test_a_mixed_currency_account_stays_held(self):
+        from dataclasses import replace
+        known = self.ledger()
+        known.accounts[0].statements.append(replace(known.accounts[0].statements[1], currency='USD',
+                                                    period_start='2021-11-01', period_end='2021-11-30'))
+        self.assertNotIn('currency', self.fills(known))
+
+    def test_never_the_case_usual_currency_nor_a_printed_one(self):
+        known = knowledge(default='MXN')
+        self.assertEqual(fp.propose(values(), known)['currency']['basis'], 'case_default')
+        self.assertEqual(self.fills(known), {})
+        printed = dict(value='USD', page_number=2, table_index=0, row_index=1, expected_text='USD')
+        self.assertNotIn('currency', self.fills(self.ledger(), printed_currency=printed))
+        self.assertEqual(self.fills(self.ledger(), currency='MXN', institution='', holder='').get('currency'), None)
+
+    def test_a_saved_statement_on_the_same_dates_stays_held(self):
+        from dataclasses import replace
+        known = self.ledger()
+        known.accounts[0].statements.append(replace(known.accounts[0].statements[0], period_start='2021-06-01',
+                                                    period_end='2021-06-30', opening_minor=7, closing_minor=8))
+        self.assertNotIn('currency', self.fills(known))
+
+    def test_bank_and_holder_only_inside_the_saved_span(self):
+        bank = self.fills(self.ledger(), currency='MXN', institution='')
+        holder = self.fills(self.ledger(), currency='MXN', holder='')
+        self.assertEqual((sorted(bank), sorted(holder)), (['institution'], ['holder']))
+        self.assertEqual(bank['institution']['basis'], 'same_account_bracketed')
+        later = dict(period_start='2022-01-01', period_end='2022-01-31')
+        self.assertTrue(fp.propose(values(currency='MXN', institution='', **later), self.ledger())['institution']['confirmed'])
+        self.assertEqual(self.fills(self.ledger(), currency='MXN', institution='', **later), {})
+        self.assertEqual(self.fills(self.ledger(), currency='MXN', holder='', **later), {})
+
+    def test_never_an_account_number(self):
+        known = self.ledger()
+        result = fp.propose(values(account_number='****345678', currency='MXN'), known)
+        self.assertTrue(result['account_number']['confirmed'])
+        self.assertNotIn('account_number', fp.automatic_fills(values(account_number='****345678', currency='MXN'),
+                                                              result, known))
+
+    def test_an_ambiguous_account_fills_nothing(self):
+        known = self.ledger()
+        known.accounts.append(account(saved(institution='BBVA'), institution='BBVA', key='a2'))
+        statement = values(institution='', holder='', opening_minor=1000)
+        self.assertEqual(fp.automatic_fills(statement, fp.propose(statement, known), known), {})
+
+    def test_switch_off_fills_nothing(self):
+        with patch.dict(os.environ, {'LOUPE_FINANCIAL_AUTOFILL_REAPPLY': '0'}):
+            self.assertFalse(fp.reapply_enabled())
+            self.assertEqual(self.fills(self.ledger()), {})
+        self.assertTrue(fp.reapply_enabled())
+
+    def test_summary_values_carry_the_printed_balances(self):
+        summary = dict(checks=[dict(kind='closing_balance', opening_minor='1000', printed_minor='2000')])
+        self.assertEqual((fp.summary_values(summary)['opening_minor'], fp.summary_values(summary)['closing_minor']),
+                         (1000, 2000))
+        self.assertEqual(fp.summary_values({})['opening_minor'], None)
+
+
+class CaseCurrencyTests(TestCase):
+    """LOUPE_FINANCIAL_AUTOFILL_CASE_CURRENCY: the case's usual currency when no currency is printed anywhere."""
+
+    def setUp(self):
+        self.case = knowledge(account(*MONTHS), default='MXN', default_count=714, total=1202)
+        self.unmatched = values(account_number='', institution='', holder='', currency_marks=[])
+
+    def test_nothing_printed_and_no_account_assumes_the_case_currency(self):
+        currency = fp.propose(self.unmatched, self.case)['currency']
+        self.assertEqual((currency['value'], currency['basis'], currency['confirmed']),
+                         ('MXN', 'case_default_assumed', True))
+        self.assertEqual(currency['label'], "currency assumed: case's usual (not printed)")
+        fills = fp.automatic_fills(self.unmatched, {'currency': currency}, self.case)
+        self.assertEqual(fills['currency']['basis'], 'case_default_assumed')
+        self.assertTrue(fp.resolves_all({'currency'}, fills))
+
+    def test_a_bare_dollar_sign_allows_the_case_currency(self):
+        marks = [['AUD', 'BBD', 'BMD', 'BSD', 'CAD', 'FJD', 'HKD', 'JMD', 'MXN', 'NZD', 'SGD', 'TTD', 'USD', 'XCD']]
+        self.assertTrue(fp.case_currency_assumable(dict(self.unmatched, currency_marks=marks), self.case))
+
+    def test_another_currency_printed_anywhere_refuses(self):
+        # A page naming another currency gets no case default (and two named currencies, no 'only printed').
+        self.assertNotIn('currency', fp.propose(dict(self.unmatched, currency_marks=[['MXN'], ['USD']]), self.case))
+
+    def test_the_case_currency_itself_printed_refuses(self):
+        # 'No currency printed': a statement naming pesos is left for a person, even in a pesos case.
+        self.assertFalse(fp.case_currency_assumable(dict(self.unmatched, currency_marks=[['MXN']]), self.case))
+        self.assertFalse(fp.case_currency_assumable(dict(self.unmatched, currency_marks=[['?']]), self.case))
+
+    def test_malformed_markers_refuse_without_raising(self):
+        for marks in ([1], [None], ['MXN'], [['MXN', 1]], 'MXN'):
+            self.assertFalse(fp.case_currency_assumable(dict(self.unmatched, currency_marks=marks), self.case), marks)
+
+    def test_an_account_sharing_the_number_in_another_currency_refuses_whatever_its_holder(self):
+        usd = account(saved(currency='USD', holder='JUAN PEREZ'), currency='USD', institution='BBVA')
+        case = knowledge(usd, default='MXN', default_count=714, total=1202)
+        stranger = values(holder='MARIA LOPEZ', institution='BANCO SANTANDER MEXICO', currency_marks=[])
+        self.assertFalse(fp.case_currency_assumable(stranger, case))
+
+    def test_a_reading_without_recorded_markers_refuses(self):
+        currency = fp.propose(values(account_number='', institution='', holder=''), self.case)['currency']
+        self.assertEqual((currency['basis'], currency['confirmed']), ('case_default', False))
+
+    def test_a_holdings_currency_refuses(self):
+        printed = dict(value='MXN', page_number=2)
+        self.assertFalse(fp.case_currency_assumable(dict(self.unmatched, printed_currency=printed), self.case))
+
+    def test_a_matched_account_in_another_currency_refuses(self):
+        mixed = account(*MONTHS, saved(currency='USD', start='2021-11-01', end='2021-11-30'))
+        case = knowledge(mixed, default='MXN', default_count=714, total=1202)
+        self.assertFalse(fp.propose(values(currency_marks=[]), case).get('currency', {}).get('confirmed'))
+        record = knowledge(account(*MONTHS, currency='USD'), default='MXN', default_count=714, total=1202)
+        self.assertFalse(fp.case_currency_assumable(values(currency_marks=[]), record))
+
+    def test_a_matched_account_all_in_the_case_currency_is_filled(self):
+        # One saved statement only: the account alone confirms nothing; the case's currency does.
+        with OLD:
+            case = knowledge(account(MONTHS[0]), default='MXN', default_count=714, total=1202)
+            currency = fp.propose(values(currency_marks=[]), case)['currency']
+        self.assertEqual((currency['basis'], currency['confirmed']), ('case_default_assumed', True))
+
+    def test_no_clear_majority_refuses(self):
+        for count, total in ((600, 1202), (15, 18)):
+            case = knowledge(default='MXN', default_count=count, total=total)
+            self.assertFalse(fp.case_currency_assumable(self.unmatched, case), (count, total))
+
+    def test_switch_off_restores_the_one_click_proposal(self):
+        with patch.dict(os.environ, {'LOUPE_FINANCIAL_AUTOFILL_CASE_CURRENCY': '0'}):
+            currency = fp.propose(self.unmatched, self.case)['currency']
+            self.assertEqual((currency['basis'], currency['confirmed']), ('case_default', False))
+            self.assertEqual(fp.automatic_fills(self.unmatched, {'currency': dict(currency, confirmed=True,
+                             basis='case_default_assumed')}, self.case), {})
+
+    def test_summary_values_carries_the_markers_only_as_a_list(self):
+        self.assertEqual(fp.summary_values({'currency_marks': [['MXN']]})['currency_marks'], [['MXN']])
+        self.assertIsNone(fp.summary_values({'currency_marks': 'MXN'})['currency_marks'])
+        self.assertIsNone(fp.summary_values({})['currency_marks'])
+
+
+class CurrencyMarksTests(TestCase):
+    def test_markers(self):
+        from services.financial.statement_currency import currency_marks
+        self.assertEqual(currency_marks([], 'IPC 62,769.18\nFX USD/MXN 18.57\nKPTLUSD HR AAA'), [])
+        self.assertEqual(currency_marks([], 'COMPRA DOLARES'), [['USD']])
+        self.assertEqual(currency_marks([], 'Moneda: Nacional'), [['MXN']])
+        self.assertEqual(currency_marks([], 'EUR 1,234.56'), [['EUR']])
+        self.assertIn('MXN', currency_marks([], '$1,234.56')[0])
+        self.assertEqual(currency_marks([], 'SALDO €1.234,56 a la fecha'), [['EUR']])
+        self.assertEqual(currency_marks([], 'pago US$ 1,234.56'), [['USD']])
+        self.assertEqual(currency_marks([], 'USD/MES 10'), [['USD']])
+        self.assertEqual(currency_marks([], 'MONEDA: QUETZALES'), [['?']])
+        self.assertEqual(currency_marks([], 'CUENTA EN MONEDA NACIONAL'), [['MXN']])
+        self.assertEqual(currency_marks([], 'R$ 10,00'), [['BRL']])
+        self.assertEqual(currency_marks([{'page_number': 1, 'table_index': 0, 'rows': [{'cells': [{'expected_text': None}]}]}]), [])
+        self.assertEqual(currency_marks([], 'REF 1,234.56'), [])
+
+
+class AccountHistoryCurrencyTests(TestCase):
+    """LOUPE_FINANCIAL_AUTOFILL_ACCOUNT_HISTORY: the account's established currency, printed among others."""
+
+    def setUp(self):
+        # BNB2 BBVA 0110280038: 60 USD statements and one saved as MXN, far from the held one.
+        usd = [saved(currency='USD', start=f'{y}-{m:02d}-01', end=f'{y}-{m:02d}-28', institution='BBVA Mexico')
+               for y in (2024, 2025) for m in range(1, 13) if (y, m) != (2025, 7)]
+        usd[10] = replace_currency(usd[10], 'MXN')  # Nov 2024
+        self.known = knowledge(account(*usd, number='0110280038', institution='BBVA Mexico', currency=''),
+                               default='MXN', default_count=714, total=1202)
+        self.held = values(institution='BBVA Mexico', account_number='0110280038', period_start='2025-07-01',
+                           period_end='2025-07-31', currency_marks=[['MXN'], ['PEN'], ['USD']])
+
+    def test_fills_the_established_currency_with_no_click(self):
+        currency = fp.propose(self.held, self.known)['currency']
+        self.assertEqual((currency['value'], currency['basis'], currency['confirmed']), ('USD', 'account_history', True))
+        self.assertIn('22 of this account', currency['label'])
+        self.assertIn('MXN Nov 2024', currency['label'])
+        self.assertEqual(fp.automatic_fills(self.held, {'currency': currency}, self.known)['currency']['value'], 'USD')
+        self.assertEqual(fp.currency_why(self.held, self.known, currency), ('', []))
+
+    def test_page_must_print_the_currency(self):
+        self.assertFalse(fp.propose(dict(self.held, currency_marks=[['MXN']]), self.known).get('currency', {}).get('confirmed'))
+
+    def test_a_neighbour_in_another_currency_refuses(self):
+        neighbour = next(a for a in self.known.accounts[0].statements if a.period_start == '2025-06-01')
+        self.known.accounts[0].statements.remove(neighbour)
+        self.known.accounts[0].statements.append(replace_currency(neighbour, 'MXN'))
+        self.assertIsNone(fp.account_history_currency(self.held, self.known))
+
+    def test_below_ninety_percent_refuses(self):
+        for s in self.known.accounts[0].statements[:3]:
+            self.known.accounts[0].statements.append(replace_currency(s, 'MXN', shift='2023'))
+        self.assertIsNone(fp.account_history_currency(self.held, self.known))
+
+    def test_same_dates_saved_refuses(self):
+        self.known.accounts[0].statements.append(saved(currency='USD', start='2025-07-01', end='2025-07-31'))
+        self.assertIsNone(fp.account_history_currency(self.held, self.known))
+
+    def test_masked_number_refuses(self):
+        self.assertIsNone(fp.account_history_currency(dict(self.held, account_number='****0038'), self.known))
+
+    def test_switch_off(self):
+        with patch.dict(os.environ, {'LOUPE_FINANCIAL_AUTOFILL_ACCOUNT_HISTORY': '0'}):
+            self.assertIsNone(fp.account_history_currency(self.held, self.known))
+            self.assertNotIn('currency', fp.propose(self.held, self.known))
+
+    def test_why_names_the_failed_check(self):
+        headline, why = fp.currency_why(dict(self.held, currency_marks=[['MXN'], ['PEN']]), self.known)
+        self.assertEqual(headline, 'Currency unclear: the pages mention MXN and PEN')
+        self.assertTrue(any('the pages do not print USD anywhere' in w for w in why), why)
+
+
+def replace_currency(statement, currency, shift=None):
+    from dataclasses import replace
+    if shift:
+        return replace(statement, currency=currency, period_start=shift + statement.period_start[4:],
+                       period_end=shift + statement.period_end[4:])
+    return replace(statement, currency=currency)
+
+
+class OneClickCurrencyTests(TestCase):
+    def test_same_number_and_holder_at_the_previous_bank(self):
+        # BNB2: Intercam Casa de Bolsa statements up to Jun 2025, then Kapital (same number, same holder).
+        intercam = account(*[saved(start=f'2025-0{m}-01', end=f'2025-0{m}-28', institution='Intercam Casa de Bolsa',
+                                   holder='MONETA PATRIMONIAL') for m in range(1, 7)],
+                           number='00022008', institution='Intercam Casa de Bolsa')
+        held = values(institution='Kapital Mexico Casa de Bolsa', holder='MONETA PATRIMONIAL', account_number='00022008',
+                      period_start='2025-12-01', period_end='2025-12-31', currency_marks=[['UDI']])
+        known = knowledge(intercam)
+        currency = fp.propose(held, known)['currency']
+        self.assertEqual((currency['value'], currency['basis'], currency['confirmed']),
+                         ('MXN', 'same_number_previous_bank', False))
+        self.assertIn('moved from Intercam Casa de Bolsa', currency['label'])
+        headline, why = fp.currency_why(held, known, currency)
+        self.assertEqual(headline, "Currency not printed as the statement's own: MXN proposed, confirm it")
+        self.assertTrue(any('never assumes accounts at two banks' in w for w in why))
+        self.assertTrue(any(w.startswith('UDI also appears') for w in why))
+        self.assertTrue(why[0].startswith('Apart from UDI'))
+        # A statement of the old bank dated after the new one's: not a takeover.
+        later = values(**dict(held, period_start='2025-03-01', period_end='2025-03-31'))
+        self.assertNotEqual(fp.propose(later, known).get('currency', {}).get('basis'), 'same_number_previous_bank')
+
+    def test_file_name_with_page_and_account(self):
+        monex = account(*[saved(currency=c, start=f'2021-0{m}-01', end=f'2021-0{m}-28', institution='Monex')
+                          for m, c in zip(range(1, 9), ['MXN', 'USD', 'EUR', 'MXN', 'USD', 'MXN', 'EUR', 'MXN'])],
+                        number='2836625', institution='Monex', currency='')
+        held = values(institution='Monex', account_number='2836625', filename='05 ARRENDO MONEX MXN MAY 2025.pdf',
+                      currency_marks=[['EUR'], ['MXN'], ['USD']])
+        known = knowledge(monex)
+        currency = fp.propose(held, known)['currency']
+        self.assertEqual((currency['value'], currency['basis'], currency['confirmed']), ('MXN', 'file_name', False))
+        _, why = fp.currency_why(held, known, currency)
+        self.assertTrue(any('its own section under one account number' in w for w in why), why)
+        # A name the page does not print proposes nothing.
+        self.assertNotIn('currency', fp.propose(dict(held, filename='GBP.pdf'), known))
+
+    def test_only_currency_the_pages_mention(self):
+        held = values(account_number='', institution='', holder='', currency_marks=[['MXN']])
+        currency = fp.propose(held, knowledge(account(*MONTHS)))['currency']
+        self.assertEqual((currency['value'], currency['basis'], currency['confirmed']), ('MXN', 'only_printed_currency', False))
+
+
+class NotRecordedMarksTests(TestCase):
+    def test_an_older_preparation_never_claims_the_page_lacks_a_currency(self):
+        usd = [saved(currency='USD', start=f'2024-{m:02d}-01', end=f'2024-{m:02d}-28') for m in range(1, 13)]
+        known = knowledge(account(*usd, currency=''))
+        held = values(period_start='2025-01-01', period_end='2025-01-31')  # no currency_marks: prepared earlier
+        self.assertIsNone(fp.account_history_currency(held, known))
+        _, why = fp.currency_why(held, known)
+        self.assertFalse(any('do not print' in w for w in why), why)
+        self.assertTrue(any('prepared before' in w for w in why), why)
+
+
+class FileAndPageCurrencyTests(TestCase):
+    """LOUPE_FINANCIAL_AUTOFILL_FILE_AND_PAGE (fin-queue3 L4, 2026-10-26): a statement of no saved account whose file
+    name gives one currency, the only real currency its pages print, takes it with no click."""
+    held = values(institution='Kapital Mexico Casa de Bolsa', holder='EMPRESA DE PRUEBA', account_number='00099001',
+                  period_start='2026-06-01', period_end='2026-06-30', filename='06 EMPRESA KAPITAL MXN JUN 26.pdf',
+                  currency_marks=[['MXN'], ['UDI'], ['MXN', 'USD']])
+
+    def test_the_file_name_and_the_pages_only_currency_fill_it(self):
+        known = knowledge(account(*MONTHS))
+        currency = fp.propose(self.held, known)['currency']
+        self.assertEqual((currency['value'], currency['basis'], currency['confirmed']),
+                         ('MXN', fp.FILE_AND_PAGE_BASIS, True))
+        fills = fp.automatic_fills(self.held, {'currency': currency}, known)
+        self.assertEqual(fills['currency']['value'], 'MXN')
+        with patch.dict(os.environ, {'LOUPE_FINANCIAL_AUTOFILL_FILE_AND_PAGE': '0'}):
+            self.assertFalse(fp.propose(self.held, known)['currency']['confirmed'])
+            self.assertEqual(fp.automatic_fills(self.held, {'currency': currency}, known), {})
+
+    def test_any_disagreeing_signal_leaves_it_a_question(self):
+        known = knowledge(account(*MONTHS))
+        refused = dict(
+            other_name=dict(self.held, filename='06 EMPRESA KAPITAL USD JUN 26.pdf'),
+            two_names=dict(self.held, filename='06 EMPRESA MXN USD.pdf'),
+            no_name=dict(self.held, filename='06 EMPRESA KAPITAL JUN 26.pdf'),
+            page_names_another=dict(self.held, currency_marks=[['MXN'], ['USD']]),
+            marker_excludes_it=dict(self.held, currency_marks=[['MXN'], ['EUR', 'GBP']]),
+            nothing_recorded=dict(self.held, currency_marks=None),
+            printed_in_holdings=dict(self.held, printed_currency=dict(value='MXN', page_number=2)))
+        for name, held in refused.items():
+            currency = fp.propose(held, known).get('currency') or {}
+            self.assertNotEqual(currency.get('basis'), fp.FILE_AND_PAGE_BASIS, name)
+        # The same digits at another bank, saved in another currency.
+        elsewhere = account(saved(currency='USD', account='00099001'), number='00099001', institution='Intercam',
+                            currency='USD', key='a2')
+        self.assertIsNone(fp.file_and_page_currency(self.held, knowledge(elsewhere)))

@@ -9,7 +9,8 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from uuid import UUID
 
-from sqlalchemy import select, func, cast, String
+from sqlalchemy import select, func, cast, String, true, case, literal
+from sqlalchemy.dialects.postgresql import JSONPATH
 from postgres.models.evidence import EvidenceFile, EvidenceDocumentText
 from postgres.models.financial import FinancialSourceDocument as Source, FinancialStatementPeriod as Period, FinancialTransaction as Transaction
 from postgres.models.financial_candidates import FinancialCandidateMapping, FinancialStatementReviewDraft
@@ -30,10 +31,32 @@ def _iso(value):
     return value.isoformat() if hasattr(value, 'isoformat') else value
 
 
+# The string layout_id of every object in a JSON array (strict: an element without one is skipped).
+_LAYOUT_IDS = 'strict $[*] ? (@.type() == "object" && @.layout_id.type() == "string").layout_id'
+
+
+def _layout_ids(once, value):
+    """(layout ids, value): the reader names in a saved list of statement choices, without loading the list.
+
+    Only each choice's layout_id is used, but the choices themselves can be large (49494305: 8 s to load them
+    all). On PostgreSQL (``once`` set) an array gives its choices' string layout_ids, picked out by the
+    database, and no value; anything else gives the value as stored, read in Python as before. Other databases
+    always give the value.
+    """
+    if once is None:
+        return literal(None), value
+    array = func.jsonb_typeof(value) == 'array'
+    return (case((array, func.jsonb_path_query_array(value, cast(_LAYOUT_IDS, JSONPATH))), else_=None),
+            case((array, None), else_=value))
+
+
 def _index(session, case_id):
     # Scalar fields only: review bodies, geometry, paths, credentials and full
     # source metadata are deliberately not loaded into this audit inventory.
-    m = EvidenceFile.metadata_
+    # Each field read from a large stored metadata value decompresses all of it again; read_once copies it
+    # once per row (PostgreSQL) and every field reads the copy (services.financial.metadata_once).
+    from services.financial.metadata_once import read_once
+    m, once = read_once(session, EvidenceFile.metadata_)
     fields = dict(root=m['statement_root_evidence_id'].as_string(),
         parent=m['statement_parent_evidence_id'].as_string(),
         schema=m['financial_workspace']['schema'].as_string(),
@@ -48,9 +71,12 @@ def _index(session, case_id):
         has_progress=_present(m['financial_review_progress']),
         has_history=_present(m['financial_review_history']),
         has_version=_present(m['statement_version_request']))
-    rows = session.execute(select(EvidenceFile.id, EvidenceFile.case_id, EvidenceFile.original_filename,
+    query = select(EvidenceFile.id, EvidenceFile.case_id, EvidenceFile.original_filename,
         EvidenceFile.sha256, EvidenceFile.status, EvidenceFile.created_at,
-        *[value.label(key) for key, value in fields.items()]).where(EvidenceFile.case_id == case_id)).mappings()
+        *[value.label(key) for key, value in fields.items()]).select_from(EvidenceFile).where(EvidenceFile.case_id == case_id)
+    if once is not None:
+        query = query.join(once, true())
+    rows = session.execute(query).mappings()
     files, facts = {}, {}
     for row in rows:
         identifier = str(row['id'])
@@ -82,8 +108,10 @@ def _index(session, case_id):
             if (value := fact(identifier)) is not None:
                 value['member'] = True
                 value['saved_review_storage_count'] += count
+    # One text per file (its primary key) and never NULL: whether it is empty is all that is used, and comparing
+    # with '' is answered from the stored size, while length() decompresses every text (d5b330d1: 2.9 s).
     for identifier, count in session.execute(select(EvidenceDocumentText.evidence_file_id,
-            func.length(EvidenceDocumentText.content)).join(EvidenceFile,
+            EvidenceDocumentText.content != '').join(EvidenceFile,
             EvidenceDocumentText.evidence_file_id == EvidenceFile.id).where(EvidenceFile.case_id == case_id)):
         if (value := fact(identifier)) is not None:
             value['retained_text_available'] = bool(count)
@@ -118,11 +146,15 @@ def _index(session, case_id):
     # A saved period keeps its own statement choice; its file's whole catalogue
     # is stored once, on one saved record (services.financial.statement_catalogue).
     from services.financial.statement_catalogue import CATALOGUE
-    for identifier, source_id, status, parser, statement, choices, catalogue in session.execute(select(Source.evidence_file_id,
-            Source.id, Source.status, Source.parser_name,
-            Source.metadata_['statement_import_statement_id'].as_string(),
-            Source.metadata_['statement_import_original']['statement_choices'],
-            Source.metadata_[CATALOGUE]['choices']).where(Source.case_id == case_id)):
+    saved, saved_once = read_once(session, Source.metadata_)
+    choices_ids, choices = _layout_ids(saved_once, saved['statement_import_original']['statement_choices'])
+    catalogue_ids, catalogue = _layout_ids(saved_once, saved[CATALOGUE]['choices'])
+    sources = select(Source.evidence_file_id, Source.id, Source.status, Source.parser_name,
+            saved['statement_import_statement_id'].as_string(), choices_ids, choices, catalogue_ids, catalogue,
+            ).select_from(Source).where(Source.case_id == case_id)
+    if saved_once is not None:
+        sources = sources.join(saved_once, true())
+    for identifier, source_id, status, parser, statement, choices_ids, choices, catalogue_ids, catalogue in session.execute(sources):
         if (value := fact(identifier)) is None:
             continue
         value['member'] = True
@@ -130,6 +162,8 @@ def _index(session, case_id):
         value['imported_source_count'] += int(status == 'admitted')
         if statement is not None:
             value['scopes'].add(statement)
+        for layout_id in [*(choices_ids or []), *(catalogue_ids or [])]:
+            value['readers'].add(layout_id[:160])
         for choice in [*(choices or []), *(catalogue or [])]:
             if isinstance(choice, dict) and isinstance(choice.get('layout_id'), str):
                 value['readers'].add(choice['layout_id'][:160])

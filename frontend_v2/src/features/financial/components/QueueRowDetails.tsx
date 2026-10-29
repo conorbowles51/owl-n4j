@@ -1,7 +1,9 @@
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { CurrencyOptions } from "./CurrencyOptions"
+import { FieldNeed } from "./FieldNeed"
 import type { QueueEntry } from "../lib/review-queue"
+import { FIELDS, current, fieldsFor, needsRowDetails, type Field } from "../lib/queue-row-fields"
 import {
   changeLine,
   entryFiles,
@@ -10,24 +12,6 @@ import {
   previewAndSave,
   type DetailChanges,
 } from "../lib/queue-statement-details"
-
-type Field = "currency" | "institution" | "holder"
-const FIELDS: [Field, string][] = [
-  ["currency", "Currency"],
-  ["institution", "Bank"],
-  ["holder", "Account holder"],
-]
-const ISSUES: Record<string, Field> = { currency: "currency", institution: "institution", holder: "holder" }
-
-/** True when the row should open with its fields showing: one of them is what it waits for, or is missing. */
-export function needsRowDetails(entry: QueueEntry) {
-  return (
-    (!!entry.issue_reason && entry.issue_reason in ISSUES) ||
-    !entry.currency ||
-    !entry.institution ||
-    !entry.holder
-  )
-}
 
 /**
  * Currency, bank and account holder fixed on the queue row itself, without
@@ -39,22 +23,27 @@ export function QueueRowDetails({
   caseId,
   entry,
   onSaved,
+  startOpen = false,
 }: {
   caseId: string
   entry: QueueEntry
   onSaved: (entry: QueueEntry, message: string) => void
+  /** Open with the fields showing (the quick preview); otherwise only when one of them is what it waits for. */
+  startOpen?: boolean
 }) {
-  const proposal = (field: Field) => entry.proposals?.[field]
+  const proposal = (field: Field) =>
+    field === "currency" || field === "institution" || field === "holder" ? entry.proposals?.[field] : undefined
+  const fields = fieldsFor(entry)
   const initial = () =>
     Object.fromEntries(
-      FIELDS.map(([field]) => [field, entry[field] || proposal(field)?.value || ""])
+      fields.map(([field]) => [field, current(entry, field) || proposal(field)?.value || ""])
     ) as Record<Field, string>
-  const [open, setOpen] = useState(needsRowDetails(entry))
+  const [open, setOpen] = useState(startOpen || needsRowDetails(entry))
   const [values, setValues] = useState(initial)
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<{ message: string; failed: boolean } | null>(null)
-  const changed = FIELDS.filter(
-    ([field]) => values[field].trim() && values[field].trim() !== (entry[field] || "")
+  const changed = fields.filter(
+    ([field]) => values[field].trim() && values[field].trim() !== current(entry, field)
   )
   const save = async () => {
     if (!changed.length || busy) return
@@ -108,7 +97,12 @@ export function QueueRowDetails({
   if (!open)
     return (
       <Button size="sm" variant="ghost" className="px-1" onClick={() => setOpen(true)}>
-        Change currency, bank or holder here
+        {fields.length > FIELDS.length
+          ? `Change currency, bank or holder, or add ${fields
+              .slice(FIELDS.length)
+              .map(([, label]) => label.toLowerCase())
+              .join(", ")} here`
+          : "Change currency, bank or holder here"}
       </Button>
     )
   return (
@@ -117,11 +111,12 @@ export function QueueRowDetails({
       disabled={busy}
       className="mt-2 flex flex-wrap items-end gap-2 rounded border bg-muted/30 p-2 text-xs"
     >
-      {FIELDS.map(([field, label]) => (
+      {fields.map(([field, label]) => (
         <label key={field} className="flex flex-col gap-1">
           <span>
             {label}
-            {!entry[field] && proposal(field) && values[field] === proposal(field)!.value && (
+            <FieldNeed required />
+            {!current(entry, field) && proposal(field) && values[field] === proposal(field)!.value && (
               <span className="text-muted-foreground"> (proposed: {proposal(field)!.label})</span>
             )}
           </span>
@@ -135,13 +130,21 @@ export function QueueRowDetails({
               <option value="">Choose printed currency</option>
               <CurrencyOptions />
             </select>
+          ) : field.startsWith("period_") ? (
+            <input
+              type="date"
+              aria-label={`${label} for ${entry.filename}`}
+              className="rounded border bg-background p-1"
+              value={values[field]}
+              onChange={(event) => setValues({ ...values, [field]: event.target.value })}
+            />
           ) : (
             <input
               aria-label={`${label} for ${entry.filename}`}
               className="w-44 rounded border bg-background p-1"
               maxLength={128}
               value={values[field]}
-              placeholder={entry[field] ? undefined : "Not read"}
+              placeholder={current(entry, field) ? undefined : "Not read"}
               onChange={(event) => setValues({ ...values, [field]: event.target.value })}
             />
           )}

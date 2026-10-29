@@ -6,6 +6,13 @@ from services.financial.payment_document_proposal import SCHEMA, _position
 from services.financial.statement_import_proposal import exact_amount
 
 VERSION = 'andrews-deposit-receipt-v1'
+# One Andrews teller receipt can print several deposits ('Deposit to BASE SHARE SAVINGS 0000 / Prev Bal / Amount /
+# New Bal' then 'Deposit to FREE CHECKING 0040 / ...'; Erica Andrews Pt 2 page 83). Such a page stays a receipt that
+# cannot be recorded as one deposit, but each deposit block is read (``deposits``) so the receipt can be settled
+# against the statement that records every one of them (receipt_settlement). Switch
+# LOUPE_FINANCIAL_RECEIPT_SEVERAL_DEPOSITS (default on; off: such a page carries no deposits).
+import os
+SEVERAL = os.environ.get('LOUPE_FINANCIAL_RECEIPT_SEVERAL_DEPOSITS', '1') != '0'
 
 
 def _text(row):
@@ -58,8 +65,13 @@ def propose_deposit_receipt(source):
     identifier = _digest(dict(page=source['page_number'], table=source['table_index'], kind='andrews_deposit'))
     empty = dict(schema=SCHEMA, version=VERSION, kind='deposit_receipt', document_id=identifier,
                  page_numbers=[source['page_number']], fields=[], supported=False, issues=[], creates_transactions=False)
-    if len(headings) != 1 or any(re.search(r'Account\s*Statement|Previous Balance', _text(r)) for r in rows):
-        return dict(empty, issues=['This page contains multiple or conflicting document sections. Check the original before recording the receipt separately.'])
+    statement_text = any(re.search(r'Account\s*Statement|Previous Balance', _text(r)) for r in rows)
+    if len(headings) != 1 or statement_text:
+        several = {}
+        if SEVERAL and len(headings) > 1 and not statement_text:
+            several = dict(deposits=_deposits(source, headings))
+        return dict(empty, issues=['This page contains multiple or conflicting document sections. Check the original before recording the receipt separately.'],
+                    **several)
     share = re.fullmatch(r'Deposit to (.+) (\d{4})', _text(headings[0]))[2]
     fields = [
         _field(source,'payment_amount','Deposit amount',r'Amount:\s+(.+)','amount'),
@@ -83,6 +95,25 @@ def propose_deposit_receipt(source):
         if int(exact_amount(values['previous_balance'],'USD')) + int(exact_amount(values['payment_amount'],'USD')) != int(exact_amount(values['new_balance'],'USD')):
             issues.append('The previous balance plus the deposit differs from the new balance. Compare all three amounts with the original.')
     return dict(empty,supported=True,fields=fields,issues=issues,source_revision=_digest(dict(version=VERSION,source=source)))
+
+
+def _deposits(source, headings):
+    """Each deposit block of a receipt printing several (heading, then its Prev Bal, Amount and New Bal lines before
+    the next heading or the account summary), with the receipt's effective date and account reference."""
+    rows = source['rows']
+    starts = [rows.index(h) for h in headings]
+    ends = starts[1:] + [next((i for i in range(starts[-1] + 1, len(rows)) if _text(rows[i]).startswith('Acct')), len(rows))]
+    blocks = []
+    for heading, start, end in zip(headings, starts, ends):
+        block = dict(source, rows=[rows[i] for i in range(start, end)])
+        blocks.append(dict(deposit_account=_field(block, 'deposit_account', 'Deposit account and share', r'Deposit to (.+)'),
+                           previous_balance=_field(block, 'previous_balance', 'Previous balance', r'Prev Bal:\s+(.+)', 'amount'),
+                           payment_amount=_field(block, 'payment_amount', 'Deposit amount', r'Amount:\s+(.+)', 'amount'),
+                           new_balance=_field(block, 'new_balance', 'New balance', r'New Bal:\s+(.+)', 'amount')))
+    return dict(effective_date=_field(source, 'effective_date', 'Effective date', r'Eff:\s+(\S+)\s+Date:\s+\S+', 'date'),
+                account_reference=_field(source, 'account_reference', 'Account reference as printed', r'Acct\s+([Xx*\d]+)(?:\s+.*)?',
+                                         repeated=True),
+                items=blocks)
 
 
 def deposit_receipt_choices(sources):

@@ -4,13 +4,15 @@ from copy import deepcopy
 from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from uuid import UUID
-from sqlalchemy import select, func
+from sqlalchemy import select, func, true
+from services.financial.metadata_once import read_once as _read_once
 from pydantic import BaseModel, ConfigDict, Field
 from postgres.models.financial import FinancialSourceDocument, FinancialStatementPeriod, FinancialTransaction
 from postgres.models.evidence import EvidenceFile
 from services.financial.pdf_candidates import PdfMappingError
 from services.financial.statement_import import ImportRow, StatementImportRequest, _reading_dates, _date_roles, _primary_date_role
 from services.financial.import_issues import usable_currency, incomplete_fields
+from services.financial.model_work import origin_field
 
 
 class CompleteImportedRecord(BaseModel):
@@ -22,16 +24,19 @@ class CompleteImportedRecord(BaseModel):
 
 def imported_records(session, *, case_id, account_id=None, start_date=None, end_date=None, offset=0, limit=50, account_ids=None, account_holders=None, source_document_id=None, evidence_file_ids=None):
     # Select only the small retained-record arrays, never each full PDF proposal.
+    metadata, once = _read_once(session, FinancialSourceDocument.metadata_)
     query = select(FinancialSourceDocument.id, FinancialSourceDocument.evidence_file_id,
-        FinancialSourceDocument.metadata_['statement_account_id'].as_string(),
-        FinancialSourceDocument.metadata_['statement_incomplete_records'],
-        func.coalesce(FinancialSourceDocument.metadata_['statement_details_review']['currency'].as_string(),
-            FinancialSourceDocument.metadata_['statement_import_request']['currency'].as_string()),
-        EvidenceFile.original_filename, FinancialSourceDocument.metadata_['statement_admission']['blockers'],
-        FinancialSourceDocument.metadata_['statement_import_request']['period_start'].as_string(),
-        FinancialSourceDocument.metadata_['statement_import_request']['period_end'].as_string()).join(EvidenceFile, EvidenceFile.id == FinancialSourceDocument.evidence_file_id).where(
+        metadata['statement_account_id'].as_string(),
+        metadata['statement_incomplete_records'],
+        func.coalesce(metadata['statement_details_review']['currency'].as_string(),
+            metadata['statement_import_request']['currency'].as_string()),
+        EvidenceFile.original_filename, metadata['statement_admission']['blockers'],
+        metadata['statement_import_request']['period_start'].as_string(),
+        metadata['statement_import_request']['period_end'].as_string()).select_from(FinancialSourceDocument).join(EvidenceFile, EvidenceFile.id == FinancialSourceDocument.evidence_file_id).where(
             FinancialSourceDocument.case_id == case_id, EvidenceFile.case_id == case_id,
             FinancialSourceDocument.status == 'admitted').order_by(FinancialSourceDocument.id)
+    if once is not None:
+        query = query.join(once, true())
     if source_document_id:
         query = query.where(FinancialSourceDocument.id == source_document_id)
     if evidence_file_ids:
@@ -68,7 +73,7 @@ def imported_records(session, *, case_id, account_id=None, start_date=None, end_
         for item in items or []:
             if item.get('resolved_transaction_id'):
                 continue
-            from services.financial.record_withdrawal import entered_by_investigator, is_open
+            from services.financial.record_withdrawal import can_withdraw, is_open
             manual = item['original'].get('kind') == 'manual_entry'
             # A withdrawn correction leaves the printed row on its own reading.
             fields = item['fields'] if item.get('withdrawn') else item.get('correction') or item['fields']
@@ -95,9 +100,9 @@ def imported_records(session, *, case_id, account_id=None, start_date=None, end_
                 can_enter_now=item['id'] in admit,
                 # Rows the investigator entered can be withdrawn (and restored).
                 kind='added' if manual else 'printed',
-                can_withdraw=entered_by_investigator(item) and not item.get('withdrawn'),
+                can_withdraw=can_withdraw(item) and not item.get('withdrawn'),
                 withdrawn=item.get('withdrawn'),
-                has_withdrawn_correction=bool(item.get('withdrawn')) and not manual,
+                has_withdrawn_correction=bool(item.get('withdrawn')) and not manual and bool(item.get('correction')),
                 repeat_of=plan['repeats'].get(item['id']) or (None if item['id'] in held else item.get('hold_repeat_of')),
                 without_this=(plan['effects'] or {}).get('without_each', {}).get(item['id']),
                 # A late-posted card charge's printed date, proposed by the
@@ -230,7 +235,7 @@ def transaction_draft(row, original, *, account_id, period_id, currency, positio
             running_balance_minor=balance_sign * int(row.balance_minor) if row.balance_minor is not None else None),
         provenance=dict(**(dict(reviewed_counterparty=link) if link else {}), statement_import_original=original, statement_import_review=row.model_dump(mode='json'),
             **(dict(date_basis='statement_end_ordering_only', statement_end_date=period_end) if row.date_unprinted else {}),
-            confirmed_by=dict(user_id=str(actor.user_id), name=actor.name, email=actor.email)))
+            confirmed_by=dict(user_id=str(actor.user_id), name=actor.name, email=actor.email, **origin_field(actor))))
 
 
 def complete_record(*, session_factory, case_id, source_id, request, actor):
@@ -295,7 +300,8 @@ def complete_record(*, session_factory, case_id, source_id, request, actor):
                 # A new correction replaces the withdrawn one; the history stays.
                 record.pop('withdrawn')
                 record.setdefault('withdrawal_history', []).append(dict(action='replaced_by_correction',
-                    by=str(actor.user_id), name=actor.name, email=actor.email, at=datetime.now(timezone.utc).isoformat(), reason=''))
+                    by=str(actor.user_id), name=actor.name, email=actor.email, at=datetime.now(timezone.utc).isoformat(), reason='',
+                    **origin_field(actor)))
             record.update(correction=request.row.model_dump(mode='json'), correction_currency=currency,
                 version=request.version + 1, corrected_by=str(actor.user_id),
                 corrected_at=datetime.now(timezone.utc).isoformat(), missing_fields=[])

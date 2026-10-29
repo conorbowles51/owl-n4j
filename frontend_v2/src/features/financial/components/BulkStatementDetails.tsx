@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { z } from "zod"
@@ -716,11 +717,8 @@ function Editor({
                       </div>
                     )}
                     {!!query.data?.notices.length && (
-                      <details>
-                        <summary>
-                          {query.data.notices.length} statements or files need
-                          individual review
-                        </summary>
+                      <Disclosure label={<>{query.data.notices.length} statements or files need
+                          individual review</>}>
                         <ul className="text-sm list-disc pl-5">
                           {query.data.notices.map((notice, i) => (
                             <li key={i}>
@@ -728,7 +726,7 @@ function Editor({
                             </li>
                           ))}
                         </ul>
-                      </details>
+                      </Disclosure>
                     )}
                   </>
                 )}

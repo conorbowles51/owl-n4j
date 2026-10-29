@@ -82,6 +82,25 @@ class PaymentLabelsTests(unittest.TestCase):
             self.assertEqual(view.from_name if row.direction == 'credit' else view.to_name, 'Reviewed business')
             self.assertNotEqual(view.to_name if row.direction == 'credit' else view.from_name, 'Reviewed business')
 
+    def test_export_report_marks_model_and_learned_categories_by_origin(self):
+        from postgres.models.financial_payment_category import FinancialPaymentCategory as C
+        from services.financial.ledger_snapshot import render_ledger_report
+        from postgres.base import Base
+        from services.financial import payment_categories
+        Base.metadata.create_all(self.f.db.get_bind(), tables=[C.__table__])
+        payment_categories._HAS_TABLE.clear()
+        self.addCleanup(payment_categories._HAS_TABLE.clear)
+        first, second = self.rows[0], self.rows[1]
+        self.f.db.add(C(transaction_id=first.id, case_id=first.case_id, category='Payroll', origin='model',
+                        basis='test-model', confidence=0.55, why='Looks like salary.', stem=''))
+        self.f.db.add(C(transaction_id=second.id, case_id=second.case_id, category='Rent and leases', origin='learned',
+                        basis=str(first.id), stem=''))
+        self.f.db.commit()
+        html = render_ledger_report(capture_ledger_snapshot(self.f.db, case_id=self.f.case.id))
+        self.assertIn('Payroll (model guess)', html)
+        self.assertIn('Rent and leases (applied from a similar payment)', html)
+        self.assertIn('“model guess” were chosen by a model', html)
+
     def test_description_suggestions_reach_filters_exports_and_survive_explicit_clear(self):
         from routers.financial_ledger import get_ledger_categories
         from services.financial.ledger_snapshot import render_ledger_report
@@ -112,3 +131,16 @@ class PaymentLabelsTests(unittest.TestCase):
         self.assertEqual((view['category'], view['to_name']), ('', ''))
         self.assertNotIn('Shopping', get_ledger_categories(case_id=self.f.case.id, db=self.f.db)['categories'])
         self.assertEqual(original, (row.amount_minor, row.currency, row.running_balance_minor, row.content_hash, row.provenance))
+
+
+class NamedFromStatementExportTests(PaymentLabelsTests):
+    def test_a_name_read_off_the_statement_reaches_the_report_with_who_named_it(self):
+        from services.financial.ledger_snapshot import render_ledger_report
+        row = self.rows[0]
+        self.save([row], counterparty_name='GRUAS DEL NORTE', named_from='statement')
+        self.f.db.expire_all()
+        html = render_ledger_report(capture_ledger_snapshot(self.f.db, case_id=self.f.case.id))
+        self.assertIn(f'GRUAS DEL NORTE (Named by {self.f.actor.name} from the statement on ', html)
+        snapshot = json.loads(capture_ledger_snapshot(self.f.db, case_id=self.f.case.id).content)
+        captured = next(r for r in snapshot['ledger']['readings'] if r['row']['key'] == str(row.id))
+        self.assertEqual(captured['investigation_label_history'][-1]['via'], 'statement')

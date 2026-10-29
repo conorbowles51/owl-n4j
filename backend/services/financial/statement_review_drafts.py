@@ -13,6 +13,7 @@ from services.financial.pdf_candidates import _Contract
 from services.financial.candidate_store import CandidateStoreError
 from services.financial.pdf_candidates import _digest
 from services.financial.decisions import Actor
+from services.financial.model_work import origin_field
 
 class StatementEditorDraft(_Contract):
     group: Annotated[str, Field(strict=True, max_length=128)]
@@ -116,7 +117,7 @@ def save_statement_draft(session, *, case_id, evidence_file_id, request, actor):
         if "editor_draft" in request.model_fields_set:
             row.editor_draft = request.editor_draft.model_dump(mode="json") if request.editor_draft else None
         row.statement_scopes = scopes
-        row.actor = dict(name=actor.name, email=actor.email, user_id=str(actor.user_id) if actor.user_id else None)
+        row.actor = dict(name=actor.name, email=actor.email, user_id=str(actor.user_id) if actor.user_id else None, **origin_field(actor))
         row.updated_at = datetime.now(timezone.utc)
         session.flush()
         result = _view(row, case_id, evidence_file_id)

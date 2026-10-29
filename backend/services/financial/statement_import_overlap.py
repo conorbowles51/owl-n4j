@@ -3,6 +3,7 @@
 A matching account reference and overlapping period are a reason to compare
 sources, not a determination that the payments or account holders are identical.
 """
+import os
 import re
 from functools import lru_cache
 from datetime import date
@@ -156,7 +157,7 @@ def _saved_keys(session, source_ids):
 # JSON on a case with 2,400 prepared periods) was the largest part of each import's case comparison.
 COMPARED_SUMMARY_KEYS = ('revision', 'statement_id', 'currency', 'institution', 'account', 'holder', 'account_type',
                          'period_start', 'period_end', 'account_reference_kind', 'page_number', HYDRATION_ERROR_KEY,
-                         'statement_form')
+                         'statement_form', 'chain_contradicted')
 _PENDING_VALUES = None
 
 
@@ -318,6 +319,7 @@ def comparison_sources(session, case_id, pending=None, *, read_pending=None, dup
             file_id=str(file.id), statement_id=item.statement_key or None, source_document_id=None,
             filename=file.original_filename, status='awaiting_import', page_number=item.summary.get('page_number', 1),
             period_start=own['start'], period_end=own['end'],
+            chain_contradicted=bool(item.summary.get('chain_contradicted')),
             **({'statement_form': item.summary['statement_form']} if item.summary.get('statement_form') else {})))
     # A statement reviewed individually may have no batch item yet. Register
     # only explicit current decisions, never guess candidates from file names.
@@ -341,6 +343,45 @@ def comparison_sources(session, case_id, pending=None, *, read_pending=None, dup
                     page_number=(decision.get('retained') or {}).get('page_number', 1),
                     period_start=own['start'], period_end=own['end']))
     return entries, prepared
+
+
+# A saved statement printing the same account reference, product, currency and
+# dates under another bank wording holds this one for comparison (r15-hold-gaps).
+# Off: only the same bank identity is compared.
+SAVED_PRINTED_PERIOD_ACROSS_BANKS = os.environ.get('LOUPE_FINANCIAL_SAVED_PRINTED_PERIOD_ACROSS_BANKS', '1') != '0'
+
+
+# An unsaved upload of the very same bytes and statement (another evidence file of one PDF) is not a separate
+# statement to compare with the copy the copy rule keeps (pending_statement_duplicates: its own decision is a
+# current 'retained', the other's is not). Held against each other, two such uploads were never saved, and the
+# copies set aside in their favour left the statement out of the ledger with no item asking for it (BNB2: CAAL
+# BBVA 0119200843 Aug 2025, BBVA 0125701104 USD Sep 2025; fin-queue lessons 5 and 12). Only the retained copy is
+# released, so no import path finds two of them ready; once it is saved the other is held by a saved copy. A saved
+# copy and any upload with other bytes are still compared. Off: every unsaved upload is compared.
+IDENTICAL_UNSAVED_TO_RETAINED = os.environ.get('LOUPE_FINANCIAL_COVERAGE_IDENTICAL_UNSAVED_TO_RETAINED', '1') != '0'
+
+
+def _copy_of_retained(session, file, files, other, request):
+    """`other` is an unsaved upload of `file`'s bytes and statement, and `file` holds the current retained decision."""
+    key = request.get('statement_id') or ''
+    if other['status'] != 'awaiting_import' or (other.get('statement_id') or '') != key or other['file_id'] == str(file.id):
+        return False
+    from uuid import UUID
+    other_file = (files or {}).get(other['file_id']) or session.get(EvidenceFile, UUID(other['file_id']))
+    if other_file is None or not file.sha256 or other_file.sha256 != file.sha256:
+        return False
+    from services.financial.pending_statement_duplicates import METADATA_KEY
+    stored = lambda f: ((f.metadata_ or {}).get(METADATA_KEY) or {}).get(key) or {}
+    own = stored(file)
+    if stored(other_file).get('status') == 'retained':
+        return False
+    if '_copy_rule_status' in request:
+        # A batch projection passes the copy rule's decision for its own projected reading and review.
+        return request['_copy_rule_status'] == 'retained'
+    if own.get('status') != 'retained':
+        return False
+    # Decided on this very reading (the writer decides it just before this check; a batch projection reads it).
+    return bool(request.get('expected_revision') and own.get('reading_revision') == request['expected_revision'])
 
 
 def coverage_review(session, *, case_id, file_id, request, sources=None):
@@ -377,6 +418,8 @@ def coverage_review(session, *, case_id, file_id, request, sources=None):
         # below end in this test); skip the printed-reference comparison.
         if own['start'] > other['period_end'] or other['period_start'] > own['end']:
             continue
+        if IDENTICAL_UNSAVED_TO_RETAINED and _copy_of_retained(session, file, files, other, request):
+            continue
         # A masked card reference cannot meet ``same_statement``. The same bank,
         # reference and exact printed period is still another copy of this
         # statement until its payments show otherwise, so it is held, not warned.
@@ -392,6 +435,10 @@ def coverage_review(session, *, case_id, file_id, request, sources=None):
             if not (other['status'] == 'awaiting_import' and own_page and other.get('page_number')
                     and int(other['page_number']) != int(own_page)):
                 continue
+            # A second printing the file's next statement contradicts is held by
+            # itself (admission); it does not hold the printing the file continues from.
+            if other.get('chain_contradicted') and not request.get('chain_contradicted'):
+                continue
             same_file = True
         if own['start'] > other['period_end'] or other['period_start'] > own['end']:
             continue
@@ -399,6 +446,24 @@ def coverage_review(session, *, case_id, file_id, request, sources=None):
         if identifier not in candidates or other['status'] == 'imported':
             candidates[identifier] = {**{k: v for k, v in other.items() if k not in ('key', 'scope')},
                 'matching_statement': exact, 'same_file_statement': same_file}
+    if SAVED_PRINTED_PERIOD_ACROSS_BANKS:
+        # A saved statement of the same printed account reference, product,
+        # currency and exact dates, filed under another bank identity (another
+        # reader worded the bank differently): the same printed statement until
+        # its money shows otherwise. A copy with the same money was already set
+        # aside before this check (pending_statement_duplicates); one with other
+        # money is held here for a person, never saved again into another
+        # ledger account (r15-hold-gaps, live case).
+        for (identity, currency), entries in sources.items():
+            if identity == own['identity'] or currency != own['currency']:
+                continue
+            for other in entries:
+                identifier = other['key']
+                if (other['status'] != 'imported' or identifier[0] == own_key[0] or identifier in candidates
+                        or not same_printed_period(own, other.get('scope'))):
+                    continue
+                candidates[identifier] = {**{k: v for k, v in other.items() if k not in ('key', 'scope')},
+                    'matching_statement': True, 'same_file_statement': False, 'other_bank_wording': True}
     ordered = sorted(candidates.items())
     revision = _digest(dict(version='statement-coverage-review-v1', scope=own,
         reading=request.get('expected_revision'), candidates=[dict(key=k, start=v['period_start'], end=v['period_end'],

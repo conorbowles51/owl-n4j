@@ -1,4 +1,5 @@
 import unittest
+import unittest.mock
 from copy import deepcopy
 from services.financial.statement_import_merrick import merrick_statement, propose_merrick_table
 from services.financial.statement_import_card_balances import merrick_summary_balances
@@ -680,3 +681,163 @@ class MerrickCycleDaysTests(unittest.TestCase):
                 self.assertNotIn('printed_cycle_days', merrick_statement(with_cycle_days(summary_statement(), **kwargs)))
         doubled = with_cycle_days(with_cycle_days(summary_statement()), value='30', value_y=303)
         self.assertNotIn('printed_cycle_days', merrick_statement(doubled))
+
+
+def damaged_scan():
+    """A page of the layout as a damaged scan reads: the summary box's headings and labels lost, values in place.
+
+    Positions are thousandths of the page (x0, x1, y), as measured on such a page.
+    """
+    lines = [
+        [('Statement Date: 08/26121', 700, 900, 20)],
+        [('Account Number: 1111 2222 3333 4444', 700, 950, 32)],
+        [('MERRICK BANK', 100, 200, 120)],
+        [('Send Payments to:', 100, 200, 140), ('EXAMPLE HOLDER', 450, 600, 140)],
+        [('MERRICK ACCOUNT SUMMARY', 145, 382, 268), ('Account Number', 483, 571, 268)],
+        [('An amoun1 w11na e,gn', 143, 420, 279), ('BIiiing Cycle Closing Date', 484, 616, 279), ('08/26/21', 713, 748, 281)],
+        [("I _s_u_m_m_a_ry'--o_f_Ac_co_", 143, 583, 297)],
+        [('Pr-• Balance', 152, 222, 315), ('$741.21', 405, 437, 315), ('Now Balance', 468, 521, 315), ('$503.48', 783, 816, 315)],
+        [('"-\'"', 152, 192, 323), ('$465.00', 405, 437, 323), ('Minimum Payment Due', 468, 562, 323), ('$3500', 788, 816, 323)],
+        [('$0.00', 416, 438, 332), ('Payment Duo Date', 468, 544, 332)],
+        [('S217.95', 405, 437, 341)],
+        [('ca.,,,.,,..,,,_', 152, 200, 349), ('S0.00', 416, 438, 349)],
+        [('Fees Charged', 152, 220, 358), ('+', 330, 335, 358), ('$0.00', 422, 447, 358)],
+        [('Olher?- lnterut Charged', 151, 234, 367), ('+', 330, 335, 367), ('$9.32', 422, 447, 367)],
+        [('NewBal.lnce', 152, 205, 387), ('$503.48', 405, 437, 387)],
+        [('Pasl Due Anlounl', 151, 223, 398), ('S0.00', 416, 438, 399)],
+        [('?Linl AvaiableQ-..cil', 151, 215, 410), ('S1,000.00 $454.00', 397, 438, 410)],
+        [("Days in Biling C)'de", 152, 233, 425), ('31', 433, 442, 425)],
+        [('Transactions, Payments and Credits', 300, 600, 520)],
+    ]
+    table = [('TransDfla', 'Item Description', 'Amount'),
+             ('07rJO', '74120616KOOXLMJGP', 'MOBILE PAYMENT-THANK YOU SOUTH JORDAN UT', '300.00'),
+             ('08/02', '24492156NMN5BF35B', 'ZAZZLE INC', '68.91'),
+             ("0&'03", '24692166P2XRWX6RZ', 'AMZN MKTP US', '16.25'),
+             ("0&'03", '24692166P2X78KX4L', 'AMZN MKTP US', '98.49'),
+             ('08/10', '74120616YOOX1MJGL', 'MOBILE PAYMENT-THANK YOU SOUTH JORDAN UT', '165.00'),
+             ('08/17', '24941687520ZM1L7D', 'THECHILDRENSPLACE.COM', '24.35'),
+             ('08/19', '244921577TXLLJWSB', 'ZAZZLE INC', '9.95')]
+    tail = [('Fees',), ('TOTAL FEES FOR THIS PERIOD', '0.00'), ('Interest Charged',),
+            ('Interest Charge on Purchases', '9.32'), ('Interest Charge on Cash Advances', '0.00'),
+            ('TOTAL INTEREST FOR THIS PERIOD', '9.32'), ('2021 Totals Year-to-Date',)]
+    grid = [[text for text, *_ in line] for line in lines] + [list(row) for row in table] + [list(row) for row in tail]
+    data = source(grid)
+    for row, line in zip(data['rows'], lines):
+        for cell, (_, x0, x1, y) in zip(row['cells'], line):
+            cell['locator'] = rectangle(round(y * 0.8), x=round(x0 * 0.6), width=round((x1 - x0) * 0.6), height=6)
+    body = data['rows'][len(lines):]
+    for cell, (x, width) in zip(body[0]['cells'], ((30, 45), (270, 80), (490, 35))):
+        cell['locator'] = rectangle(440, x=x, width=width, height=8)
+    for offset, row in enumerate(body[1:len(table)]):
+        for cell, (x, width) in zip(row['cells'], ((30, 35), (150, 90), (270, 150), (490, 35))):
+            cell['locator'] = rectangle(455 + 12 * offset, x=x, width=width, height=8)
+    for offset, row in enumerate(body[len(table):]):
+        boxes = ((270, 150), (490, 35)) if len(row['cells']) == 2 else ((270, 150),)
+        for cell, (x, width) in zip(row['cells'], boxes):
+            cell['locator'] = rectangle(560 + 12 * offset, x=x, width=width, height=8)
+    return data
+
+
+def _cell(data, text):
+    return next(c for r in data['rows'] for c in r['cells'] if c['expected_text'] == text)
+
+
+class MerrickDamagedScanTests(unittest.TestCase):
+    """A damaged scan: summary box by position, the statement date's separator, dates, interest and payment signs."""
+
+    def read(self, data=None):
+        from services.financial.card_summary import check_card_period
+        data = data or damaged_scan()
+        statement = merrick_statement(data)
+        rows = propose_merrick_table(data, 'USD', statement)['rows']
+        return statement, check_card_period('merrick-card', rows, [data], 'USD')
+
+    def test_the_page_reads_with_no_person(self):
+        statement, rows = self.read()
+        self.assertEqual((statement['statement_date'], statement['statement_date_basis']),
+                         ('2021-08-26', 'statement_date_separator_read_as_one'))
+        self.assertEqual(statement['printed_cycle_days'], 31)
+        balances = {r['fields']['description']: r['fields']['balance'] for r in rows if r['kind'] == 'balance'}
+        self.assertEqual(balances, {'Opening Balance': '74121', 'Closing Balance': '50348'})
+        lines = [(r['fields']['date'], r['fields']['amount_minor'], r['fields']['direction'])
+                 for r in rows if not r['excluded']]
+        self.assertEqual(lines, [('2021-07-30', '30000', 'credit'), ('2021-08-02', '6891', 'debit'),
+                                 ('2021-08-03', '1625', 'debit'), ('2021-08-03', '9849', 'debit'),
+                                 ('2021-08-10', '16500', 'credit'), ('2021-08-17', '2435', 'debit'),
+                                 ('2021-08-19', '995', 'debit'), ('2021-08-26', '932', 'debit')])
+        self.assertFalse([r['issues'] for r in rows if r['issues']])
+        zero = [r for r in rows if r['kind'] == 'zero_charge']
+        self.assertEqual([(r['fields']['date'], r['fields']['amount_minor']) for r in zero], [('2021-08-26', '0')])
+
+    def test_the_statement_id_is_the_one_computed_before_the_date_is_read(self):
+        from services.financial import statement_import_merrick as merrick
+        with unittest.mock.patch.object(merrick, 'DATE_SEPARATOR_READ_AS_ONE', False), \
+                unittest.mock.patch.object(merrick, 'SUMMARY_BY_POSITION', False):
+            before = merrick_statement(damaged_scan())
+        self.assertEqual(before['statement_date'], '')
+        self.assertEqual(merrick_statement(damaged_scan())['id'], before['id'])
+
+    def test_a_closing_date_with_other_digits_or_another_year_reads_no_statement_date(self):
+        for change in (('08/26/21', '08/27/21'), ('2021 Totals Year-to-Date', '2022 Totals Year-to-Date'),
+                       ('Statement Date: 08/26121', 'Statement Date: 08/2612l')):
+            with self.subTest(change=change):
+                data = damaged_scan()
+                _cell(data, change[0])['expected_text'] = change[1]
+                self.assertEqual(merrick_statement(data)['statement_date'], '')
+
+    def test_a_box_that_does_not_add_up_or_a_value_without_its_dollar_glyph_reads_no_balances(self):
+        for change in (('S217.95', 'S217.96'), ('S217.95', '5217.95'), ('S217.95', 'S217.?'), ('31', '3l')):
+            with self.subTest(change=change):
+                data = damaged_scan()
+                _cell(data, change[0])['expected_text'] = change[1]
+                _, rows = self.read(data)
+                self.assertFalse([r for r in rows if r['kind'] == 'balance'])
+                self.assertTrue(any(r['issues'] for r in rows))
+
+    def test_a_missing_box_line_reads_no_balances(self):
+        data = damaged_scan()
+        data['rows'] = [r for r in data['rows'] if not any(c['expected_text'] == 'S217.95' for c in r['cells'])]
+        _, rows = self.read(data)
+        self.assertFalse([r for r in rows if r['kind'] == 'balance'])
+
+    def test_a_damaged_date_the_cycle_or_its_neighbours_do_not_pin_stays_held(self):
+        for text in ('07rJ?', '0?r?0', "0&'0Z"):
+            with self.subTest(text=text):
+                data = damaged_scan()
+                _cell(data, '07rJO')['expected_text'] = text
+                _, rows = self.read(data)
+                held = next(r for r in rows if r['source_cells'][0]['expected_text'] == text)
+                self.assertNotIn('date', held['fields'])
+                self.assertTrue(held['issues'])
+        data = damaged_scan()
+        _cell(data, '08/02')['expected_text'] = '08/04'  # printed after a line it would have to precede
+        _, rows = self.read(data)
+        self.assertTrue(all('date' not in r['fields'] for r in rows if r['source_cells'][0]['expected_text'] == "0&'03"))
+
+    def test_interest_lines_that_do_not_add_up_to_the_printed_total_stay_held(self):
+        data = damaged_scan()
+        next(r for r in data['rows'] if r['cells'][0]['expected_text'] == 'TOTAL INTEREST FOR THIS PERIOD'
+             )['cells'][1]['expected_text'] = '9.23'
+        _, rows = self.read(data)
+        line = next(r for r in rows if r['source_cells'][0]['expected_text'] == 'Interest Charge on Purchases')
+        self.assertEqual(line['kind'], 'unresolved')
+        self.assertNotIn('date', line['fields'])
+
+    def test_payment_signs_stay_held_when_the_printed_payments_differ(self):
+        data = damaged_scan()
+        _cell(data, '$465.00')['expected_text'] = '$400.00'
+        _cell(data, 'S217.95')['expected_text'] = 'S152.95'  # the box still adds up
+        _, rows = self.read(data)
+        payments = [r for r in rows if r['fields'].get('payment_sign_unread')]
+        self.assertEqual(len(payments), 2)
+        self.assertTrue(all(r['issues'] and 'direction' not in r['fields'] for r in payments))
+
+    def test_each_switch_leaves_its_part_held(self):
+        from services.financial import statement_import_merrick as merrick
+        from services.financial import card_summary
+        for module, name in ((merrick, 'SUMMARY_BY_POSITION'), (merrick, 'DATE_SEPARATOR_READ_AS_ONE'),
+                             (merrick, 'INTEREST_ON_CLOSING_DATE'), (merrick, 'DAMAGED_DATE_IN_CYCLE'),
+                             (card_summary, 'SEVERAL_PAYMENT_SIGNS')):
+            with self.subTest(name=name), unittest.mock.patch.object(module, name, False):
+                _, rows = self.read()
+                self.assertTrue(any(r['issues'] for r in rows))

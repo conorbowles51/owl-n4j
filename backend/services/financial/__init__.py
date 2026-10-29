@@ -2101,6 +2101,8 @@ from services.financial.manual_balances import manual_balance
 from services.financial.payment_edits import preview_payment_edits, save_payment_edits
 from services.financial.payment_inference import infer_payment_labels
 from services.financial.payment_labels import update_payment_labels
+from services.financial.payment_categories import classify_with_model, like_payments, apply_learned, record_person_choice
+from services.financial.category_breakdown import breakdown as category_breakdown, BreakdownFilters
 from services.financial.review_upgrade import upgrade_request
 from services.financial.statement_currency import detect_statement_currency
 from services.financial.statement_currency_edit import change_currency
@@ -2113,6 +2115,7 @@ __all__ += [
     "apply_account_selection", "current_imports", "category_library", "rescale_minor", "retained_issues",
     "preview_removal", "remove_imports", "complete_record", "refresh_legacy_import", "manual_balance",
     "preview_payment_edits", "save_payment_edits", "infer_payment_labels", "update_payment_labels",
+    "classify_with_model", "like_payments", "apply_learned", "record_person_choice", "BreakdownFilters",
     "upgrade_request", "detect_statement_currency", "change_currency", "update_statement_details",
     "bbva_catalog", "scotiabank_catalog", "transaction_search",
     "ownership_suggestions", "AccountRelationshipInput", "TrailRequest", "preview_trail", "save_trail", "list_trails",
@@ -2238,3 +2241,38 @@ from services.financial.review_carry import conflict_problems as carry_conflict_
 __all__ += ["carry_file_level_review", "conflict_problems", "carry_conflict_problems", "same_value"]
 from services.financial.row_versions import RowValues
 __all__ += ["RowValues"]
+from services.financial.page_row_proposals import (
+    page_proposals as propose_page_rows, apply_page as apply_page_row_proposal,
+    read_item_page_proposals, confirm_item_page,
+)
+__all__ += ["propose_page_rows", "apply_page_row_proposal", "read_item_page_proposals", "confirm_item_page"]
+from services.financial.vision_reader import (
+    ENABLED as VISION_FALLBACK, check_page_numbering, openai_page_reader, sweep as read_held_page_images,
+)
+__all__ += ["VISION_FALLBACK", "check_page_numbering", "openai_page_reader", "read_held_page_images"]
+from services.financial.auto_save_guard import holder_is_address, saved_checks, section_currencies
+__all__ += ["holder_is_address", "saved_checks", "section_currencies"]
+from services.financial.receipt_settlement import receipt_payment, settle_receipts
+__all__ += ["receipt_payment", "settle_receipts"]
+from services.financial.credit_line_total_owed import total_owed_rows
+__all__ += ["total_owed_rows"]
+from services.financial.scan_daily_balance import scan_rows
+__all__ += ["scan_rows"]
+from services.financial.learned_profiles import match_among, rules_hash
+__all__ += ["match_among", "rules_hash"]
+from services.financial.layout_learning import corpus_gate, prove_example, truth_gate
+__all__ += ["corpus_gate", "prove_example", "truth_gate"]
+from services.financial.view_cache import cached_view
+__all__ += ["cached_view"]
+from services.financial.view_warmup import warm_account_history, warm_views_once
+__all__ += ["warm_account_history", "warm_views_once"]
+from services.financial.printed_holders import PrintedHoldersError, holders_by_statement
+__all__ += ["PrintedHoldersError", "holders_by_statement"]
+from services.financial.summary_pages import balance_pages, statement_summary_pages
+__all__ += ["balance_pages", "statement_summary_pages"]
+from services.financial.model_work import model_actor, model_origin, origin_of, require_person
+__all__ += ["model_actor", "model_origin", "origin_of", "require_person"]
+from services.financial.model_work_migration import legacy_person, record_statement_calls
+__all__ += ["legacy_person", "record_statement_calls"]
+from services.financial.model_reads import load_model_reads
+__all__ += ["load_model_reads"]

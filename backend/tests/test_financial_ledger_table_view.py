@@ -22,6 +22,18 @@ class LedgerTableViewTests(TestCase):
         with self.assertRaises(LedgerSummaryError):
             capture_table_view(ledger, {'analysis_direction': 'outgoing'})
 
+    def test_unnamed_sides_are_selected_by_their_stated_reason(self):
+        from urllib.parse import quote
+        readings = [self.row(key, account_id='a', from_name='Owner', to_name='') for key in ['cash', 'plain']]
+        for reading in readings:
+            reading['row']['direction'] = 'debit'
+        reason = 'Cash withdrawal — no other party'
+        readings[0]['row']['label_sources'] = {'to_name': {'source': 'missing', 'reason': reason}}
+        ledger = {'readings': readings}
+        key = 'unknown:to:' + quote(reason, safe="~()*!.'-")
+        self.assertEqual(capture_table_view(ledger, {'to_names': [key]})['row_ids'], ['cash'])
+        self.assertEqual(capture_table_view(ledger, {'to_names': ['unknown:to']})['row_ids'], ['plain'])
+
     def test_profile_scope_stays_in_exports_when_additional_filters_are_cleared(self):
         ledger = {'readings': [self.row('one', account_id='a', from_name='Supplier', to_name='Owner'), self.row('two', account_id='b', from_name='Supplier', to_name='Owner'), self.row('unknown', account_id='a', from_name='', counterparty_raw='Rejected'), self.row('other', account_id='a', from_name='Other')]}
         ledger['readings'][1]['row']['currency'] = 'USD'
@@ -48,6 +60,13 @@ class LedgerTableViewTests(TestCase):
         self.assertEqual(capture_table_view(ledger, {})['matching_rows'], 4)
         with self.assertRaises(LedgerSummaryError):
             capture_table_view(ledger, {'account_id': 'not-an-account'})
+
+    def test_several_chosen_categories_export_their_payments_including_uncategorized(self):
+        ledger = {'readings': [self.row('rent', category='Rent'), self.row('pay', category='Payroll'), self.row('none'), self.row('fees', category='Fees')]}
+        view = capture_table_view(ledger, {'categories': ['Rent', 'Uncategorized']})
+        self.assertEqual(set(view['row_ids']), {'rent', 'none'})
+        self.assertEqual(view['filters']['categories'], ['Rent', 'Uncategorized'])
+        self.assertNotIn('categories', capture_table_view(ledger, {})['filters'])
 
     def row(self,key,**values):
         return {'row':dict(key=key,ledger_status='admitted',proof_class='p3',currency='GBP',direction='credit',amount_minor='9007199254740993',ordering_date='2026-01-01',row_index=0,description='Invoice payment',**values)}

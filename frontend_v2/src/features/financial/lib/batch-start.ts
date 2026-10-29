@@ -50,6 +50,13 @@ export type BatchStartChoiceValue = "continue" | "new"
 
 const prefix = "/api/financial/statement-import/batches"
 
+/** The screen a Send to Financial came from, recorded in the activity trail (X-Loupe-Origin). */
+export type FinancialSendOrigin =
+  | "evidence_toolbar"
+  | "financial_statement_files"
+export const originHeader = (origin?: FinancialSendOrigin) =>
+  origin ? { "X-Loupe-Origin": origin } : undefined
+
 export async function previewBatchStart(caseId: string, fileIds: string[]) {
   const result = batchStartPreview.parse(
     await fetchAPI(`${prefix}/preview?case_id=${caseId}`, {
@@ -84,11 +91,13 @@ async function createBatch(
   caseId: string,
   fileIds: string[],
   requestId: string,
-  startNew: boolean
+  startNew: boolean,
+  origin?: FinancialSendOrigin
 ) {
   const batch = z.object({ id: z.string(), case_id: z.string() }).parse(
     await fetchAPI(`${prefix}?case_id=${caseId}`, {
       method: "POST",
+      headers: originHeader(origin),
       body: {
         request_id: requestId,
         file_ids: fileIds,
@@ -118,21 +127,23 @@ export async function startStatementBatch({
   requestId,
   preview,
   choice,
+  origin,
 }: {
   caseId: string
   fileIds: string[]
   requestId: string
   preview: BatchStartPreview | null
   choice?: BatchStartChoiceValue
+  origin?: FinancialSendOrigin
 }) {
   const suggested = preview?.open_batches.find(
     (batch) => batch.id === preview.suggested_batch_id
   )
   if (choice === "new" || !suggested)
-    return createBatch(caseId, fileIds, requestId, choice === "new")
+    return createBatch(caseId, fileIds, requestId, choice === "new", origin)
   const others = fileIds.filter((id) => suggested.other_files.includes(id))
   // The request id is unused by the continued batch; reusing it keeps a
   // retry from preparing the other files twice.
-  if (others.length) await createBatch(caseId, others, requestId, true)
+  if (others.length) await createBatch(caseId, others, requestId, true, origin)
   return suggested.id
 }

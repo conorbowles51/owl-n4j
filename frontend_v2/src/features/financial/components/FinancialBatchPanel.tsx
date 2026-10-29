@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { statementAssessment } from "../lib/statement-assessment"
 import { statementDuplicateDisposition } from "../lib/statement-duplicate"
 import { StatementReconciliationSummary } from "./StatementReconciliationSummary"
@@ -27,6 +28,7 @@ import { randomRequestId } from "@/lib/browser-crypto"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { useStatementWorkspace } from "../stores/statement-workspace"
 import { useFinancialAccess } from "../hooks/use-financial-access"
+import { PageImageOffer, type PageImageOfferData } from "./PageImageOffer"
 import { StatementImportPanel, type StatementImportReceipt } from "./StatementImportPanel"
 import { serverStatementDraft } from "../lib/statement-review-draft"
 import { BatchReviewContext } from "../lib/batch-review-context"
@@ -89,6 +91,14 @@ const itemSchema = z.object({
   duplicate_disposition: statementDuplicateDisposition.nullish(),
   balance_status: z.string().optional(),
   balance_exception: z.boolean().optional(),
+  /** The latest page-image outcome; with rule 2, a reading that checks out offered beside the person's work. */
+  vision_reading: z
+    .object({
+      status: z.string().nullish(),
+      line: z.string().nullish(),
+      offer: z.object({ id: z.string(), mine: z.record(z.string(), z.unknown()), offered: z.record(z.string(), z.unknown()) }).nullish(),
+    })
+    .nullish(),
   source_id: z.string(),
   review_revision: z.string().optional(),
   disposition_revision: z.string().optional(),
@@ -136,6 +146,41 @@ function batchWorkLine(batch: {
   return "Files are being prepared. This page updates by itself. No action is needed."
 }
 
+const sentFrom = z
+  .object({
+    source_address: z.string().nullish(),
+    origin: z.string().nullish(),
+    origin_label: z.string().nullish(),
+    user_name: z.string().nullish(),
+    at: z.string().nullish(),
+  })
+  .nullish()
+type SentFrom = z.infer<typeof sentFrom>
+
+/** "Added by Alex, 27 Oct 2026 18:02 · from 203.0.113.7 via Evidence toolbar (Send to Financial)". */
+function addedLine(
+  by: string | null | undefined,
+  automatic: boolean,
+  at: string | null | undefined,
+  from: SentFrom
+) {
+  const when = at ? new Date(at).toLocaleString() : ""
+  const who = automatic
+    ? "Added automatically (statement detection)"
+    : by
+      ? `Added by ${by}`
+      : "Added (person not recorded)"
+  const where = [
+    from?.source_address && from.source_address !== "system"
+      ? `from ${from.source_address}`
+      : "",
+    from?.origin_label && !automatic ? `via ${from.origin_label}` : "",
+  ]
+    .filter(Boolean)
+    .join(" ")
+  return [`${who}${when ? `, ${when}` : ""}`, where].filter(Boolean).join(" · ")
+}
+
 const batchSchema = z.object({
   id: z.string(),
   case_id: z.string(),
@@ -172,6 +217,14 @@ const batchSchema = z.object({
   ready_revision: z.string(),
   total: z.number(),
   items: z.array(itemSchema),
+  added: z
+    .object({
+      by: z.string().nullish(),
+      automatic: z.boolean().default(false),
+      at: z.string().nullish(),
+      sent_from: sentFrom,
+    })
+    .nullish(),
 })
 const listSchema = z.object({
   case_id: z.string(),
@@ -182,6 +235,8 @@ const listSchema = z.object({
       created_at: z.string(),
       file_count: z.number(),
       created_by: z.string().optional(),
+      automatic: z.boolean().default(false),
+      sent_from: sentFrom,
       filenames: z.array(z.string()).optional(),
       checked_files: z.number().optional(),
       failed_files: z.number().optional(),
@@ -718,10 +773,14 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
                 )}
               </p>
               <p className="text-sm text-muted-foreground">
-                Batch {batch.id.slice(0, 8)}
-                {batch.created_by
-                  ? ` · Started by ${batch.created_by}`
-                  : ""} ·{" "}
+                Batch {batch.id.slice(0, 8)} ·{" "}
+                {addedLine(
+                  batch.automatic ? null : batch.created_by,
+                  batch.automatic,
+                  batch.created_at,
+                  batch.sent_from
+                )}{" "}
+                ·{" "}
                 {batch.status === "preparing"
                   ? "Processing continues"
                   : batch.status === "paused"
@@ -869,6 +928,16 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
                 ? "Pausing after the current statement finishes. No further statements or imports will start."
                 : "Preparation and imports continue on the server. You can leave this page and return to the batch."}
           </p>
+          {batch.added && (
+            <p className="text-sm text-muted-foreground">
+              {addedLine(
+                batch.added.by,
+                batch.added.automatic,
+                batch.added.at,
+                batch.added.sent_from
+              )}
+            </p>
+          )}
           {batchWorkLine(batch) && (
             <p role="status" className="text-sm">
               {batchWorkLine(batch)}
@@ -1053,19 +1122,12 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
             the batch when you leave this page.
           </p>
           {batch.operations.map((operation, index) => (
-            <details
-              key={operation.id}
-              open={index === 0}
-              className="rounded border p-3"
-            >
-              <summary className="cursor-pointer font-medium">
-                {operation.status === "in_progress"
+            <Disclosure key={operation.id} className="rounded border p-3" defaultOpen={index === 0} label={<>{operation.status === "in_progress"
                   ? "Import accepted — still running"
                   : operation.status === "needs_review"
                     ? "Import finished with statements to review"
                     : "Import complete"}{" "}
-                · {new Date(operation.created_at).toLocaleString()}
-              </summary>
+                · {new Date(operation.created_at).toLocaleString()}</>}>
               <p
                 role={operation.pending ? "status" : undefined}
                 className="my-2 text-sm"
@@ -1121,7 +1183,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
                   </li>
                 ))}
               </ul>
-            </details>
+            </Disclosure>
           ))}
         </section>
       )}
@@ -1176,13 +1238,12 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
           statements.
         </p>
       )}
-      <details
-        open={batch.files.some((f) => f.status !== "checked")}
+      <Disclosure
+        key={`file-processing:${batch.files.some((f) => f.status !== "checked")}`}
+        defaultOpen={batch.files.some((f) => f.status !== "checked")}
         className="rounded border p-3"
+        label={`File processing (${batch.files.length})`}
       >
-        <summary className="cursor-pointer font-medium">
-          File processing ({batch.files.length})
-        </summary>
         <ul className="max-h-52 overflow-auto divide-y">
           {batch.files.map((file) => (
             <li key={file.source_id} className="py-2 text-sm">
@@ -1290,7 +1351,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
         {paused && (
           <p className="text-sm">Resume PDF reading before retrying a file.</p>
         )}
-      </details>
+      </Disclosure>
       <div className="flex flex-wrap items-center gap-3">
         <label className="text-sm">
           <input
@@ -1567,16 +1628,13 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
                 {item.problems.length > 3 && (
                   <p className="text-sm">{item.problems[0].message}</p>
                 )}
-                <details open={item.problems.length <= 3} className="text-sm">
-                  <summary className="cursor-pointer font-medium">
-                    {item.problems.every(
+                <Disclosure className="text-sm" defaultOpen={item.problems.length <= 3} label={<>{item.problems.every(
                       (problem) => problem.kind === "statement_detail"
                     ) && item.problems.length
                       ? "Missing account details — statement can still be imported"
                       : !item.currency
                         ? "Choose currency to prepare this statement"
-                        : `${item.problem_count ?? item.problems.length} checks · ${item.can_import ? "import is available" : "open review for the next step"}`}
-                  </summary>
+                        : `${item.problem_count ?? item.problems.length} checks · ${item.can_import ? "import is available" : "open review for the next step"}`}</>}>
                   {item.problems.map((problem, index) => (
                     <div
                       className="flex flex-wrap items-center gap-2 text-sm"
@@ -1619,7 +1677,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
                   {(item.problem_count ?? 0) > item.problems.length && (
                     <p>Open the statement to review the remaining checks.</p>
                   )}
-                </details>
+                </Disclosure>
               </>
             )}
           </article>
@@ -1728,6 +1786,7 @@ export function BatchStatementReview({
     refetchOnWindowFocus: false,
   })
   const item = query.data
+  const { canEdit: reviewCanEdit } = useFinancialAccess()
   const [savedBalances, setSavedBalances] = useState(false)
   const [selected, setSelected] = useState(false)
   useEffect(() => {
@@ -1967,6 +2026,17 @@ export function BatchStatementReview({
                 item.status !== "imported" &&
                 " Your previous review draft is saved."}
             </p>
+            {item.vision_reading?.line && <p className="text-xs text-muted-foreground">{item.vision_reading.line}</p>}
+            {item.vision_reading?.offer && item.status === "attention" && (
+              <PageImageOffer
+                caseId={caseId}
+                batchId={batchId}
+                itemId={itemId}
+                offer={item.vision_reading.offer as PageImageOfferData}
+                canEdit={reviewCanEdit}
+                onDone={() => void client.invalidateQueries({ queryKey: ["financial-batch-item", caseId, batchId, itemId] })}
+              />
+            )}
           </div>
         )}
         {queue ? (

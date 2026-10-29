@@ -152,7 +152,7 @@ export function TransactionTable({
           <ChevronDown className="size-3" />
         )}
         {info.index && (
-          <span className="text-[9px] text-muted-foreground">{info.index}</span>
+          <span className="text-[12px] font-semibold text-muted-foreground">{info.index}</span>
         )}
       </span>
     )
@@ -179,6 +179,9 @@ export function TransactionTable({
 
   return (
     <div className="overflow-auto">
+      <p className="px-2 py-1 text-[12px] text-muted-foreground">
+        Click a heading to sort; Shift-click adds a second sort. Shift-click rows to select a range.
+      </p>
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
@@ -552,6 +555,17 @@ function TransactionRow({
               </Tooltip>
             )}
           </button>
+          {tx.amount_corrected && (
+            <span className="block text-[12px] text-[#8a5300] dark:text-[#f2c46b]">
+              Corrected from{" "}
+              {tx.original_amount == null
+                ? tx.original_amount_raw || "not recorded"
+                : tx.currency && /^[A-Z]{3}$/.test(tx.currency)
+                  ? tx.original_amount.toLocaleString("en-IE", { style: "currency", currency: tx.currency })
+                  : `${tx.original_amount.toLocaleString("en-IE")} ${tx.currency || "(currency not recorded)"}`}
+              {tx.correction_reason ? ` · ${tx.correction_reason}` : ""}
+            </span>
+          )}
         </TableCell>
 
         {/* Type */}

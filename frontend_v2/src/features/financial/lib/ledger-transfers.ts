@@ -39,6 +39,7 @@ export const transferInputs = z
     population: z.enum(["working", "verified"]),
     tolerance_days: count.max(7),
     snapshot_sha256: z.string().regex(/^[a-f0-9]{64}$/),
+    digest_covers: z.string().optional(),
     applied: z.literal(false),
     limitation: z.string(),
     excluded_rows: count,

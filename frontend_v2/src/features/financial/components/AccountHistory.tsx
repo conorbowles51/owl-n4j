@@ -1,3 +1,4 @@
+import { AccountJudgements, PeriodJudgements } from "./JudgementCalls"
 import { useMemo, useState, useRef } from "react"
 import { useQuery } from "@tanstack/react-query"
 import {
@@ -32,7 +33,7 @@ import { currencyMinorUnits, formatLedgerAmount } from "../lib/ledger-format"
 import { useInvestigationScope } from "../stores/investigation-scope"
 import { useLedgerTransactions } from "../hooks/use-ledger-transactions"
 import { StatementSourceButton } from "./StatementSourceButton"
-import { PaymentSet } from "./InvestigationWorkspaceParts"
+import { PaymentSet } from "./PaymentSet"
 
 export function AccountHistory({
   caseId,
@@ -130,6 +131,36 @@ export function AccountHistory({
             Compare activity with the balance left in each account, including
             periods with no transactions. {accountIds ? "Only the selected saved accounts are shown; all their recorded periods are included." : "Accounts and dates above apply here."}
           </p>
+          {!accountId &&
+            groups.length <= 5 &&
+            groups.map((group) => (
+              <AccountJudgements
+                key={group.account_id}
+                caseId={caseId}
+                accountId={group.account_id}
+                label={groups.length > 1 ? group.label : undefined}
+              />
+            ))}
+          {groups
+            .filter((group) => (group.printed_holders || []).length > 1)
+            .map((group) => (
+              <p
+                key={`holders-${group.key}`}
+                className="text-sm mt-2 rounded border border-amber-300 bg-amber-50 p-2"
+                data-testid="printed-holders"
+              >
+                <strong>Judgement call:</strong> {group.label} is printed
+                under {group.printed_holders!.length} different holder names:{" "}
+                {group.printed_holders!
+                  .map(
+                    (h) =>
+                      `${h.name} on ${h.statements} statement${h.statements === 1 ? "" : "s"} (${h.first || "start not read"} to ${h.last || "end not read"})`
+                  )
+                  .join("; ")}
+                . Each statement is filed under the name printed on it. Which
+                person holds the account has not been established.
+              </p>
+            ))}
         </div>
         <Button
           variant="outline"
@@ -354,11 +385,11 @@ export function AccountHistory({
               })}
             </div>
           )}
-          <details key={selected || "all"} open={!!active}>
-            <summary className="cursor-pointer font-semibold">
+          <section key={selected || "all"} className="space-y-2">
+            <h4 className="font-semibold">
               Statement periods and exact balances (
               {groups.reduce((n, g) => n + g.periods.length, 0)})
-            </summary>
+            </h4>
             <div className="overflow-auto max-h-[55vh]">
               <table className="text-sm w-full">
                 <thead className="sticky top-0 bg-background">
@@ -395,6 +426,12 @@ export function AccountHistory({
                               ●{" "}
                             </span>
                             {g.label} · {g.currency}
+                            {(g.printed_holders || []).length > 1 &&
+                              p.holder && (
+                                <span className="block text-xs text-muted-foreground">
+                                  Printed holder: {p.holder}
+                                </span>
+                              )}
                           </td>
                           <td className="p-2">
                             {p.start || "Start missing"} →{" "}
@@ -419,6 +456,7 @@ export function AccountHistory({
                               : p.status === "confirmed_no_activity"
                                 ? "Confirmed quiet period"
                                 : "Reconciled"}
+                            <PeriodJudgements caseId={caseId} periodId={p.id} />
                             {!!p.blockers?.length && (
                               <ul className="mt-1 text-xs list-disc pl-4">
                                 {p.blockers.map((reason, index) => (
@@ -450,7 +488,7 @@ export function AccountHistory({
                 </tbody>
               </table>
             </div>
-          </details>
+          </section>
         </>
       )}
       <Dialog

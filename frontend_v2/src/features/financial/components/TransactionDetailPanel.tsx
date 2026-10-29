@@ -95,7 +95,7 @@ export function TransactionDetailPanel({
         {/* AI Summary */}
         {transaction.summary && (
           <div className="md:col-span-3">
-            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               AI Summary
             </label>
             <p className="text-xs text-muted-foreground italic">
@@ -162,7 +162,7 @@ export function TransactionDetailPanel({
         )}
         {transaction.source_excerpt && (
           <div className="md:col-span-3">
-            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Source Excerpt
             </label>
             <p className="text-xs text-muted-foreground">
@@ -173,7 +173,7 @@ export function TransactionDetailPanel({
 
         {/* Source */}
         <div className="md:col-span-3">
-          <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Source
           </label>
           <TransactionSourceHighlight
@@ -217,7 +217,7 @@ export function TransactionDetailPanel({
 
         {/* Purpose */}
         <div>
-          <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Purpose
           </label>
           {editable ? (
@@ -238,7 +238,7 @@ export function TransactionDetailPanel({
 
         {/* Counterparty Details */}
         <div>
-          <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Counterparty Details
           </label>
           {editable ? (
@@ -265,7 +265,7 @@ export function TransactionDetailPanel({
 
         {/* Notes */}
         <div>
-          <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Notes
           </label>
           {editable ? (
@@ -291,7 +291,7 @@ export function TransactionDetailPanel({
 function MetadataField({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+      <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         {label}
       </label>
       <p className="text-sm text-foreground break-words">{value}</p>

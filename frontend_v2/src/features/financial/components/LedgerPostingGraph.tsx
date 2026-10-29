@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { appendAccountSelection } from "../lib/account-selection"
 import {
   usePaymentCategory,
@@ -71,7 +72,7 @@ function GraphScope({
   params: LedgerQueryParams
   population: "working" | "verified"
 }) {
-  const [category] = usePaymentCategory(caseId)
+  const [categories] = usePaymentCategory(caseId)
   const { canEdit } = useFinancialAccess()
   const [editing, setEditing] = useState<"name" | "category" | null>(null)
   const [connectionPage, setConnectionPage] = useState(0)
@@ -124,7 +125,7 @@ function GraphScope({
     const edges = query.data.edges.filter(
       (edge) =>
         (!node || edge.source === node || edge.target === node) &&
-        (!category || categoryName(edge) === category)
+        (!categories.length || categories.includes(categoryName(edge)))
     )
     const connected = new Set(
       edges.flatMap((edge) => [edge.source, edge.target])
@@ -133,7 +134,7 @@ function GraphScope({
       nodes: query.data.nodes.filter((item) => connected.has(item.id)),
       edges,
     }
-  }, [query.data, node, category])
+  }, [query.data, node, categories])
   const edges = focusedGraph?.edges ?? []
   const connections = useMemo(
     () => paymentConnections(focusedGraph?.edges ?? []),
@@ -193,12 +194,9 @@ function GraphScope({
             {query.data.edges.length} payments · {query.data.excluded_rows}{" "}
             excluded
           </p>
-          <details>
-            <summary className="cursor-pointer">
-              How these connections were drawn
-            </summary>
+          <Disclosure label="How these connections were drawn">
             <p>{query.data.limitation}</p>
-          </details>
+          </Disclosure>
           {!query.data.edges.length ? (
             <p>
               No payments match these filters. Change the account or dates, or
@@ -265,7 +263,7 @@ function GraphScope({
               )}
               {editing && (
                 <PaymentLabelsEditor
-                  key={JSON.stringify([editing, node, category])}
+                  key={JSON.stringify([editing, node, categories])}
                   caseId={caseId}
                   ids={edges.map((edge) => edge.transaction_id)}
                   counterparty={editing === "name"}

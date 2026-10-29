@@ -61,6 +61,8 @@ export type DetailChanges = {
   institution?: string
   currency?: string
   account_number?: string
+  period_start?: string
+  period_end?: string
   no_activity_confirmed?: true
 }
 
@@ -188,6 +190,8 @@ const LABELS: Record<string, string> = {
   institution: "bank",
   currency: "currency",
   account_number: "account number",
+  period_start: "statement start date",
+  period_end: "statement end date",
   no_activity_confirmed: "no payments confirmed",
 }
 

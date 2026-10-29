@@ -101,6 +101,11 @@ IDENTITY = ('institution', 'account_reference', 'holder', 'currency')
 # Monex zero section took another section's currency). Switch off to keep the library period as read.
 AGREEMENT_FILLS_IDENTITY = True
 AGREEMENT_FILLS = ('institution', 'holder')
+# 2026-10-26 fin-queue3 L30c: the engine serving a library period under its id keeps the account the library
+# established for it (statement_import_monex: one currency account of a multi-currency contract, the CLABE naming
+# the contract). The engine reads money, not that structure; without it the period was filed in the contract's
+# single legacy account (Monex 2836625 USD/EUR 2021-2022). Switch LOUPE_FINANCIAL_ROUTING_KEEPS_ACCOUNT_KIND.
+KEEPS_ACCOUNT_KIND = os.environ.get('LOUPE_FINANCIAL_ROUTING_KEEPS_ACCOUNT_KIND', '1').strip() != '0'
 
 
 def proved_rows(rows, liability):
@@ -279,7 +284,13 @@ def _profiled(sources, engine):
     profile = matching_profile(profile_text(sources), furniture_text(sources))
     if profile is None:
         return engine, None
-    profiled = read_statements(sources, profile=profile)
+    try:
+        profiled = read_statements(sources, profile=profile)
+    except Exception:  # noqa: BLE001 - a learned profile (data) never costs a file its plain reading
+        if not profile.get('learned'):
+            raise
+        logger.exception('Learned profile %s could not read a file; the plain reading stands', profile['name'])
+        return engine, None
     plain_keys = {(st['period_start'], st['period_end'], reading_key(st['_rows'])) for st in engine if st['engine']['proved']}
     profiled_keys = {(st['period_start'], st['period_end'], reading_key(st['_rows'])) for st in profiled if st['engine']['proved']}
     # A period the profile reads with the same money but holds for an identity reason it alone can see
@@ -287,8 +298,27 @@ def _profiled(sources, engine):
     identity_held = {(st['period_start'], st['period_end'], reading_key([r for r in st['_rows'] if r['kind'] != 'unresolved']))
                      for st in profiled if not st['engine']['proved'] and st['engine'].get('reason') in IDENTITY_HOLDS}
     if plain_keys <= profiled_keys | identity_held and profiled_keys:
-        return profiled, profile['name']
+        return _ids_kept(profiled, engine), profile['name']
     return engine, None
+
+
+def _ids_kept(profiled, engine):
+    """(L17) A profile chosen only because a period now proves from its first end-of-day balance (the profile
+    proves nothing else) serves every period under the id the plain reading gave it (same period, same first
+    page), its own id kept as ``engine_id``: work saved under the plain reading stays attached. A profile chosen
+    without that rule is served exactly as before."""
+    from services.financial.statement_engine import FIRST_DAY_OPENING_BASIS
+    first_day = lambda st: any(r['fields'].get('balance_basis') == FIRST_DAY_OPENING_BASIS for r in st['_rows'])
+    if any(st['engine']['proved'] and not first_day(st) for st in profiled):
+        return profiled
+    kept = []
+    for statement in profiled:
+        plain = [st for st in engine if st['period_start'] == statement['period_start']
+                 and st['period_end'] == statement['period_end'] and st['page_numbers'][:1] == statement['page_numbers'][:1]]
+        if len(plain) == 1 and plain[0]['id'] != statement['id']:
+            statement = dict(statement, id=plain[0]['id'], engine_id=statement['id'])
+        kept.append(statement)
+    return kept
 
 
 IDENTITY_HOLDS = ('account_shared',)
@@ -439,6 +469,8 @@ def route_catalog(sources, library_catalog):
                 replaced[field] = group[field]
                 if field == 'currency':
                     replaced['currency_source'] = 'printed_account_section'
+        if KEEPS_ACCOUNT_KIND and group.get('account_reference_kind') and not replaced.get('account_reference_kind'):
+            replaced['account_reference_kind'] = group['account_reference_kind']
         if library_proved:
             # (Reached only through AGREEMENT_PREFERS_ENGINE.) An agreed period served by the engine only for the fact it alone establishes (AGREEMENT_PREFERS_
             # ENGINE): the facts both read alike keep the library's printing of them (the same name or account

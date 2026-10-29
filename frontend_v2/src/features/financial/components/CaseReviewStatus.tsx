@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { useState } from "react"
 import { Link } from "react-router-dom"
 import { Button } from "@/components/ui/button"
@@ -43,10 +44,9 @@ export function CaseReviewStatus({
         </div>
       )}
       {queue.data && <ReadingProgress caseId={caseId} reading={queue.data.reading} />}
-      <details onToggle={(event) => setShowCases((event.target as HTMLDetailsElement).open)}>
-        <summary className="cursor-pointer text-sm">All financial cases</summary>
+      <Disclosure label="All financial cases" onToggle={setShowCases}>
         {showCases && <OtherCases currentCaseId={caseId} />}
-      </details>
+      </Disclosure>
     </section>
   )
 }

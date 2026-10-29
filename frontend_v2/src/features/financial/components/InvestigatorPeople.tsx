@@ -1,3 +1,6 @@
+import { CategoryBreakdownTable } from "./ScopedCategoryBreakdown"
+import { categoryTotals } from "../lib/category-totals"
+import { Disclosure } from "./Disclosure"
 import { paymentInventory } from "../lib/payment-inventory"
 import { ProfileStatementSummary } from "./ProfileStatementSummary"
 import { useQuery } from "@tanstack/react-query"
@@ -8,6 +11,7 @@ import { AccountConsolidation } from "./AccountConsolidation"
 import { useInvestigatorPayments } from "../hooks/use-investigator-payments"
 import { useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
+import { downloadProtectedFile } from "@/lib/protected-file"
 import { useFinancialDraft } from "../stores/financial-drafts"
 import {
   paymentProfiles,
@@ -33,10 +37,13 @@ import type { LedgerTransaction } from "../api"
 function UnidentifiedBreakdown({
   rows,
   detail = false,
+  caseId,
 }: {
   rows: LedgerTransaction[]
   detail?: boolean
+  caseId?: string
 }) {
+  const [downloadError, setDownloadError] = useState<string | null>(null)
   const groups = new Map<
     string,
     { label: string; reason: string; count: number }
@@ -69,6 +76,30 @@ function UnidentifiedBreakdown({
       <p className="text-xs text-muted-foreground">
         These payments do not represent one person or business.
       </p>
+      {caseId && (
+        <div className="space-y-1">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setDownloadError(null)
+              void downloadProtectedFile(
+                `/api/financial/ask-the-bank?${new URLSearchParams({ case_id: caseId })}`,
+                `ask-the-bank-${caseId.slice(0, 8)}.csv`
+              ).catch(() =>
+                setDownloadError("The list could not be prepared. Try again.")
+              )
+            }}
+          >
+            Download what to ask the bank for
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            Every payment in this case with no name for the other side, with the line as printed and what the bank holds
+            that the statement does not show.
+          </p>
+          {downloadError && <p className="text-xs text-destructive">{downloadError}</p>}
+        </div>
+      )}
     </div>
   )
 }
@@ -264,7 +295,13 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
                   selected.kind === "account" ? "info" : "work"
                 }
               >
-                <div className="flex flex-wrap items-start justify-between gap-3">
+                <div
+                  className="-mx-5 -mt-5 flex flex-wrap items-start justify-between gap-3 rounded-t-xl p-5 text-white"
+                  style={{
+                    background:
+                      "radial-gradient(1100px 420px at 90% -20%, #3a1319 0%, #0b0c0f 62%)",
+                  }}
+                >
                   <div>
                     <p className="finance-badge">
                       {selected.kind === "account"
@@ -402,6 +439,12 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
                     </dd>
                   </div>
                 </dl>
+                {activeRows.length > 0 && (
+                  <CategoryBreakdownTable
+                    title="Categories in these payments"
+                    rows={categoryTotals(activeRows)}
+                  />
+                )}
                 <AccountOwnershipReview
                   caseId={caseId}
                   accountIds={
@@ -422,7 +465,7 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
                   </p>
                 )}
                 {selected.unidentified && (
-                  <UnidentifiedBreakdown rows={selected.rows} detail />
+                  <UnidentifiedBreakdown rows={selected.rows} detail caseId={caseId} />
                 )}
                 {selected.kind === "name" && (
                   <p className="rounded border bg-muted/20 p-3 text-sm">
@@ -486,10 +529,7 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
                     ))}
                   </section>
                 )}
-                <details className="text-sm">
-                  <summary className="cursor-pointer font-medium">
-                    Accounts where these payments were recorded
-                  </summary>
+                <Disclosure className="text-sm" label={`Accounts where these payments were recorded (${new Set(activeRows.map((row) => row.canonical_account_id || row.account_id)).size})`}>
                   <ul className="space-y-2 pt-2">
                     {[
                       ...new Set(
@@ -512,7 +552,7 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
                       grouping.
                     </p>
                   )}
-                </details>
+                </Disclosure>
                 {recentFindings.isError && (
                   <p role="alert" className="text-sm">
                     Saved finding links could not be loaded.{" "}
@@ -800,16 +840,13 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
               )}
             </>
           )}
-          <details className="rounded border bg-card p-4">
-            <summary className="cursor-pointer font-medium">
-              Link recorded names to a person or business
-            </summary>
+          <Disclosure className="rounded border bg-card p-4" label="Link recorded names to a person or business">
             <p className="mt-2 text-sm">
               Use the identity tools below when you have evidence that different
               names refer to the same person or business.
             </p>
             <LedgerCounterpartiesAnalysis caseId={caseId} />
-          </details>
+          </Disclosure>
         </InvestigationReadState>
       )}
     </div>

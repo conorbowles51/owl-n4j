@@ -81,6 +81,11 @@ LIABILITY_DEBIT_COMPONENTS = ('TRANSACTIONS', 'PURCHASES', 'CASH ADVANCES', 'FEE
                               'FEES', 'INTEREST', 'BALANCE TRANSFERS', 'PURCHASES AND ADJUSTMENTS',
                               'PURCHASES AND OTHER CHARGES', 'CARGOS', 'COMPRAS', 'COMISIONES', 'INTERESES',
                               'NEW PURCHASES', 'LOANS & DEBITS', 'LOANS AND DEBITS')
+# A deposit account summary printing its credits and its debits as components between the beginning and the
+# ending balance (M&T: "DEPOSITS & CREDITS", "LESS CHECKS & DEBITS", "LESS SERVICE CHARGES"): their sum per
+# direction must equal what was read (D7 for deposit accounts). Switch: ASSET_SUMMARY_COMPONENTS (engine).
+ASSET_CREDIT_COMPONENTS = ('DEPOSITS & CREDITS',)
+ASSET_DEBIT_COMPONENTS = ('LESS CHECKS & DEBITS', 'LESS SERVICE CHARGES')
 # Summary lines printed as a NET of charges and credits ("+/- Interest Charge (net)"): signed as printed
 # (a credit balance in parentheses), they join the debit components' sum (D7). The printed '+/-' before
 # the label is a sign mark, not part of it.
@@ -98,7 +103,9 @@ SECTION_SCOPES = {'TOTAL FEES FOR THIS PERIOD': 'fee', 'TOTAL INTEREST FOR THIS 
 # interest totals for the calendar year): not this period's movements, nor its controls.
 YEAR_TO_DATE = re.compile(r'^(?:\d{4} )?TOTALS YEAR TO DATE$')
 # A table's continuation notice: never part of a movement's description.
-CONTINUATION_NOTICES = ('CONTINUED ON NEXT PAGE', 'CONTINUED ON THE NEXT PAGE', 'CONTINUED ON REVERSE SIDE')
+# 'continued' printed alone under a page's last movement (Truist) ends that movement's description: the page
+# furniture under it (the production stamp) is no description either.
+CONTINUATION_NOTICES = ('CONTINUED ON NEXT PAGE', 'CONTINUED ON THE NEXT PAGE', 'CONTINUED ON REVERSE SIDE', 'CONTINUED')
 # The heading of the remittance box printed beside a card's account summary. It repeats the new balance
 # and prints the payment due; its lines are never the summary's controls (D7).
 PAYMENT_BOX_HEADINGS = ('PAYMENT INFORMATION',)
@@ -215,6 +222,7 @@ INDEX = dict(
     credit_component=_index(LIABILITY_CREDIT_COMPONENTS), debit_component=_index(LIABILITY_DEBIT_COMPONENTS),
     net_component=_index(LIABILITY_NET_COMPONENTS), section_total=_index(SECTION_TOTALS),
 )
+ASSET_COMPONENTS = dict(credit_component=_index(ASSET_CREDIT_COMPONENTS), debit_component=_index(ASSET_DEBIT_COMPONENTS))
 SECTION_HEADINGS = {label(total): {label(heading) for heading in headings} for total, headings in SECTION_TOTALS.items()}
 SECTION_SCOPE = {label(total): scope for total, scope in SECTION_SCOPES.items()}
 COLUMN_INDEX = {label(word): role for role, words in COLUMN_WORDS.items() for word in words}

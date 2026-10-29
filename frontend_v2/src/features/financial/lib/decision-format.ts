@@ -155,6 +155,11 @@ export function readDecisionSubject(
  * proved.
  */
 const DECISION_COPY: Record<AdjudicationDecision, TermCopy> = {
+  keep_printed_holders: {
+    label: "Each statement keeps the holder printed on it",
+    description:
+      "This card or account is printed under different holder names on different statements. A person decided that each statement is filed under the name printed on it, and each such statement carries a judgement call. Who holds the account is not decided, and no name is merged or changed.",
+  },
   set_account_identity: {
     label: "Account identifiers and case connections reviewed",
     description:
@@ -246,6 +251,7 @@ const DECISION_VARIANT: Record<AdjudicationDecision, BadgeVariant> = {
   set_account_party: "info",
   set_counterparty_party: "info",
   set_account_identity: "info",
+  keep_printed_holders: "info",
   admit_financial_document: "danger",
 }
 
@@ -280,6 +286,7 @@ const CHANGED_STORED_STATE: Record<AdjudicationDecision, boolean> = {
   set_account_party: true,
   set_counterparty_party: true,
   set_account_identity: true,
+  keep_printed_holders: true,
   admit_financial_document: false,
 }
 
@@ -379,6 +386,19 @@ export function readDecidedBy(record: DecisionRecord): DecidedBy {
 
   const name = record.actor_name.trim()
   const email = record.actor_email.trim()
+  if (record.actor_origin?.kind === "model") {
+    // A model decided for a person: never presented as that person's decision.
+    const model = record.actor_origin.model || "A model"
+    const person = record.actor_origin.for?.name || "a person"
+    return {
+      byMachine: false,
+      label: `${model} (for ${person}) · not confirmed`,
+      email: email || null,
+      description:
+        `${model} took this decision while working for ${person}, under their account. ` +
+        "It is the model's decision, not theirs, until a person confirms it.",
+    }
+  }
   const label = name || email || "Not recorded"
   return {
     byMachine: false,

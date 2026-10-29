@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { randomRequestId } from "@/lib/browser-crypto"
 import { useEffect, useRef, useState } from "react"
@@ -498,8 +499,7 @@ function PdfModelNominationPanelContent({
               )}
             </div>
           )}
-          <details>
-            <summary>Saved attempts for this source table</summary>
+          <Disclosure label="Saved attempts for this source table">
             {history.isPending ? (
               <p>Loading attempts…</p>
             ) : history.isError ? (
@@ -536,7 +536,7 @@ function PdfModelNominationPanelContent({
                 </Button>
               </>
             )}
-          </details>
+          </Disclosure>
         </>
       )}
     </section>

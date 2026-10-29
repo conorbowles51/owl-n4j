@@ -178,3 +178,46 @@ class LaterQueriesTests(TestCase):
         review = self.review(self.candidate('2024-01-20', '2024-02-28'))
         self.assertIs(later_queries_trim_themselves(review, dict(period_start='2024-01-01', period_end='2024-01-31'),
                                                     file_id='f1', statement_id='s', summary={}), review)
+
+
+class RemainderProofTests(TestCase):
+    """L21 (fin-queue2 A1, BNB2 04 ARRENDO SANTANDER MOVIMIENTOS A ABR 24): a query trimmed to dates without
+    movement proves those dates quiet from its own pages; admission accepts that proof."""
+
+    def trimmed(self, neighbours):
+        rows = query()
+        kind, result = trim.plan_trim(rows, start=START, end=END, neighbours=neighbours)
+        self.assertEqual(kind, 'trim')
+        return trim.apply_trim(rows, result), dict(version=trim.VERSION, status='trimmed', **result)
+
+    @staticmethod
+    def raw(rows, evidence, **changes):
+        raw = dict(currency='MXN', period_start=evidence['period_start'], period_end=evidence['period_end'],
+                   rows=[dict(id=r['id'], excluded=r['excluded'], balance_minor=r['fields'].get('balance')) for r in rows])
+        raw.update(changes)
+        return raw
+
+    def test_a_query_trimmed_to_dates_without_movement_proves_them_quiet(self):
+        from services.financial.statement_admission import source_proves_no_activity
+        rows, result = self.trimmed([saved('2023-12-15', '2024-01-05', MOVES[:2]),
+                                     saved('2024-01-10', '2024-02-10', MOVES[2:], 'doc-2')])
+        evidence = trim.remainder_evidence(rows, result, 'MXN')
+        self.assertTrue(evidence['verified'])
+        self.assertEqual((evidence['period_start'], evidence['period_end']), ('2024-01-06', '2024-01-09'))
+        self.assertEqual((evidence['opening_row_id'], evidence['closing_row_id'], evidence['balance_minor']),
+                         ('open', 'close', '130000'))
+        self.assertEqual(sorted(evidence['zero_total_row_ids']), ['in', 'out'])
+        self.assertEqual(evidence['basis'], trim.REMAINDER_BASIS)
+        self.assertTrue(source_proves_no_activity(evidence, self.raw(rows, evidence)))
+        # A person's change to the proved values makes the person the basis again.
+        self.assertFalse(source_proves_no_activity(evidence, self.raw(rows, evidence, period_end='2024-01-12')))
+
+    def test_dates_with_a_movement_left_or_no_trim_prove_nothing(self):
+        rows, result = self.trimmed([saved('2023-12-15', '2024-01-05', MOVES[:2])])  # 01-06..01-31 keeps 3 movements
+        self.assertIsNone(trim.remainder_evidence(rows, result, 'MXN'))
+        quiet, quiet_result = self.trimmed([saved('2023-12-15', '2024-01-05', MOVES[:2]),
+                                            saved('2024-01-10', '2024-02-10', MOVES[2:], 'doc-2')])
+        self.assertIsNone(trim.remainder_evidence(quiet, dict(quiet_result, status='held'), 'MXN'))
+        self.assertIsNone(trim.remainder_evidence(quiet, quiet_result, ''))
+        with patch.object(trim, 'REMAINDER_PROOF', False):
+            self.assertIsNone(trim.remainder_evidence(quiet, quiet_result, 'MXN'))

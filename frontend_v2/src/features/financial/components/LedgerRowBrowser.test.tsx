@@ -10,6 +10,7 @@ import {
   render as originalRender,
   screen,
   fireEvent,
+  within,
 } from "@testing-library/react"
 import { beforeEach, expect, it, vi } from "vitest"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
@@ -198,6 +199,8 @@ const user = (id: string) =>
     ReturnType<typeof useAuthStore.getState>["user"]
   >
 beforeEach(() => {
+  // These tests read the dense table; the card rows have their own test below.
+  localStorage.setItem("financial-transactions-table-view", "1")
   useFinancialDraftStore.setState({ drafts: {} })
   useInvestigationScopeStore.getState().reset()
   useAuthStore.setState({ user: user("reviewer-a") })
@@ -475,4 +478,95 @@ it("loads every account then filters one holder across banks, preserving paginat
   expect(screen.getByText("51–65 of 65 matching rows")).toBeVisible()
   act(() => useInvestigationScopeStore.getState().apply("case", {}))
   expect(screen.getByText("51–100 of 125 matching rows")).toBeVisible()
+})
+
+it("shows roomy cards by default with totals and category tiles that filter, and remembers Table view", () => {
+  localStorage.removeItem("financial-transactions-table-view")
+  render(
+    <LedgerRowBrowser
+      investigation
+      exportContext={{ caseId: "case", params: {} }}
+      transactions={[
+        row("rent", { category: "Rent and leases", amount_minor: "50000", ordering_date: "2026-01-03" }),
+        row("fee", { category: "Bank fees", amount_minor: "200", ordering_date: "2026-03-04" }),
+        row("pay", { direction: "credit", amount_minor: "90000", ordering_date: "2026-03-05", description: "Salary" }),
+      ]}
+    />
+  )
+  const list = screen.getByRole("list", { name: "Investigation transactions" })
+  expect(within(list).getAllByRole("checkbox")).toHaveLength(3)
+  expect(screen.queryByRole("table", { name: "Investigation transactions" })).not.toBeInTheDocument()
+  const glance = screen.getByRole("region", { name: "This view at a glance" })
+  expect(glance).toHaveTextContent("+900")
+  expect(glance).toHaveTextContent("−502")
+  // February had no payments read: shown as a gap, never skipped.
+  expect(within(glance).getByTitle("2026-02: no payments read")).toBeInTheDocument()
+  const where = screen.getByRole("region", { name: "Where the money went" })
+  expect(within(where).getByText(/Needs a category · 1/)).toBeInTheDocument()
+  fireEvent.click(within(where).getByRole("button", { name: /^Rent and leases · 1/ }))
+  expect(within(list).getAllByRole("checkbox")).toHaveLength(1)
+  fireEvent.click(within(where).getByRole("button", { name: /^Rent and leases · 1/ }))
+  expect(within(list).getAllByRole("checkbox")).toHaveLength(3)
+  fireEvent.click(screen.getByRole("button", { name: "Table view" }))
+  expect(screen.getByRole("table", { name: "Investigation transactions" })).toBeInTheDocument()
+  expect(localStorage.getItem("financial-transactions-table-view")).toBe("1")
+})
+
+it("shows every set filter as a removable chip and removing one clears only it", () => {
+  render(
+    <LedgerRowBrowser
+      investigation
+      exportContext={{ caseId: "chips-case", params: {} }}
+      transactions={[
+        row("in", { direction: "credit", case_id: "chips-case" }),
+        row("out", { case_id: "chips-case" }),
+      ]}
+    />
+  )
+  expect(screen.queryByRole("group", { name: "Active filters" })).toBeNull()
+  fireEvent.change(screen.getByLabelText("Currency"), { target: { value: "GBP" } })
+  fireEvent.change(screen.getByLabelText("Money in or out"), { target: { value: "credit" } })
+  fireEvent.change(screen.getByLabelText("Search payments"), { target: { value: "Payment" } })
+  const chips = screen.getByRole("group", { name: "Active filters" })
+  expect(within(chips).getByText("3 active")).toBeInTheDocument()
+  fireEvent.click(within(chips).getByRole("button", { name: "Remove filter Incoming" }))
+  expect(screen.getByLabelText("Money in or out")).toHaveValue("")
+  expect(screen.getByLabelText("Currency")).toHaveValue("GBP")
+  expect(within(screen.getByRole("group", { name: "Active filters" })).getByText("2 active")).toBeInTheDocument()
+  fireEvent.click(screen.getByRole("button", { name: "Remove filter GBP" }))
+  expect(screen.getByLabelText("Currency")).toHaveValue("")
+})
+
+vi.mock("./PaymentNamingPanel", () => ({
+  PaymentNamingPanel: ({ currentId, readOnly }: { currentId: string; readOnly?: boolean }) => (
+    <aside aria-label="naming panel">
+      {currentId} {readOnly ? "read-only" : "editable"}
+    </aside>
+  ),
+}))
+
+it("opens a viewer the statement line of a payment without a name instead of filtering by the reason", () => {
+  localStorage.removeItem("financial-transactions-table-view")
+  const reason = "Cheque deposit — the statement doesn’t name who wrote the cheque"
+  render(
+    <LedgerRowBrowser
+      investigation
+      exportContext={{ caseId: "case", params: {} }}
+      transactions={[
+        row("cheque", {
+          direction: "credit",
+          from_name: "",
+          to_name: "HOLDER",
+          label_sources: { from_name: { source: "missing", reason, explanation: reason } },
+        } as Partial<LedgerTransaction>),
+        row("other", { direction: "credit", from_name: "", to_name: "HOLDER" }),
+      ]}
+    />
+  )
+  const list = screen.getByRole("list", { name: "Investigation transactions" })
+  fireEvent.click(within(list).getAllByRole("button", { name: /See the line who paid/ })[0])
+  expect(screen.getByRole("complementary", { name: "naming panel" })).toHaveTextContent("cheque read-only")
+  // The table is not narrowed to the reason as if it were a party.
+  expect(within(list).getAllByRole("checkbox")).toHaveLength(2)
+  expect(screen.getByRole("button", { name: "See their statement lines one by one" })).toBeInTheDocument()
 })

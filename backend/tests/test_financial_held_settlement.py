@@ -192,6 +192,175 @@ def test_compare_holds_without_payments_unread_lines_or_several_agreeing_stateme
     assert [d['field'] for d in saved_copies._differences(facts, period, facts['payments'])] == ['closing']
 
 
+def _unreadable_compare(monkeypatch, *, rows=None, opening=1269805805, closing=148716550, currency='MXN',
+                        saved=(('MXN', 1269805805, 148716550),), ledger=None):
+    """L19 (BNB2 09 ECOTERRA BBVA MXN SEP 22): compare() of a copy whose scan lines are not all read."""
+    from collections import Counter
+    periods = [(SimpleNamespace(id=f'p{n}', currency=cur, opening_balance_minor=o, closing_balance_minor=c),
+                SimpleNamespace(), SimpleNamespace(), '') for n, (cur, o, c) in enumerate(saved)]
+    monkeypatch.setattr(saved_copies, 'saved_periods', lambda *a, **k: periods)
+    monkeypatch.setattr(saved_copies, '_ledger', lambda session, period: Counter(
+        ledger if ledger is not None else {('2022-09-01', 500, 'debit'): 1, ('2022-09-02', 700, 'credit'): 1}))
+    monkeypatch.setattr(saved_copies, '_link', lambda document, file, key, period: dict(statement_period_id=period.id))
+    proposal = dict(currency=currency, rows=rows if rows is not None else [
+        dict(id='a', kind='transaction', excluded=False, fields=dict(date='2022-09-01', amount_minor='500', direction='debit')),
+        dict(id='b', kind='unresolved', excluded=False, fields=dict(description='unread scan line'))])
+    summary = dict(checks=[dict(kind='closing_balance', opening_minor=opening, printed_minor=closing)])
+    request = dict(account_number='0118467374', period_start='2022-09-01', period_end='2022-09-30', currency=currency,
+                   rows=[])
+    return saved_copies.compare(None, None, proposal, request, summary)
+
+
+def test_an_unreadable_copy_whose_printed_balances_equal_the_saved_statement_is_a_copy(monkeypatch):
+    result = _unreadable_compare(monkeypatch)
+    assert result['outcome'] == 'match' and result['basis'] == saved_copies.UNREADABLE_BASIS
+    assert result['saved'] == dict(statement_period_id='p0') and result['unread'] == ['unread_rows']
+    # No payment placed at all (the scan's amounts unread): the printed balances still identify it.
+    nothing = [dict(id='b', kind='unresolved', excluded=False, fields=dict(description='unread scan line'))]
+    assert _unreadable_compare(monkeypatch, rows=nothing)['outcome'] == 'match'
+
+
+@pytest.mark.parametrize('change', ['closing', 'opening_unread', 'payment_not_saved', 'currency_unread',
+                                    'currency_differs', 'two_saved', 'off'])
+def test_an_unreadable_copy_stays_held_unless_everything_it_reads_agrees(monkeypatch, change):
+    values = dict(closing=dict(closing=148716551), opening_unread=dict(opening=None),
+                  payment_not_saved=dict(rows=[dict(id='a', kind='transaction', excluded=False, fields=dict(
+                      date='2022-09-03', amount_minor='900', direction='debit')),
+                      dict(id='b', kind='unresolved', excluded=False, fields=dict(description='x'))]),
+                  currency_unread=dict(currency=''), currency_differs=dict(saved=(('USD', 1269805805, 148716550),)),
+                  two_saved=dict(saved=(('MXN', 1269805805, 148716550), ('MXN', 1269805805, 148716550))),
+                  off={})[change]
+    if change == 'off':
+        monkeypatch.setattr(saved_copies, 'UNREADABLE_COPIES', False)
+    assert _unreadable_compare(monkeypatch, **values)['outcome'] == 'not_comparable'
+
+
+def test_an_unreadable_copy_is_set_aside_with_its_own_reason(f, monkeypatch):
+    _, document_id, item_id = _held_copy(f)
+    facts = saved_copies.copy_facts
+    monkeypatch.setattr(saved_copies, 'copy_facts', lambda *a, **k: {**facts(*a, **k), 'holds': ['unread_rows']})
+    assert _settle(f) == {'saved_copy:set_aside': 1}
+    with f.SessionLocal() as db:
+        item = db.get(BatchItem, item_id)
+        decision = item.summary['duplicate_disposition']
+        assert item.status == 'duplicate_ignored' and decision['basis'] == saved_copies.BASIS
+        assert decision['reason'] == saved_copies.UNREADABLE_REASON
+        assert decision['matched_fields'] == saved_copies.UNREADABLE_MATCHED_FIELDS
+        assert decision['saved_ledger_match']['agreement'] == saved_copies.UNREADABLE_BASIS
+        assert decision['retained']['source_document_id'] == str(document_id)
+
+
+def _split_compare(monkeypatch, *, pages=(2,), saved_pages=(1, 2, 3, 4), sha='b' * 64, payments=None,
+                   opening=None, closing=118716550, running=(118716550,), currency='MXN', saved_currency='MXN'):
+    """L20 (fin-queue2 A4; BNB2 09 ARRENDO SANTANDER MXN SEP 2022): compare() of a held split of a statement the
+    case saved from the same file."""
+    from collections import Counter
+    owner = SimpleNamespace(id='own-file', sha256='b' * 64)
+    original = dict(statement_id='saved', statement_choices=[dict(id='saved', page_numbers=list(saved_pages))])
+    period = SimpleNamespace(id='p0', currency=saved_currency, opening_balance_minor=1269805805,
+                             closing_balance_minor=148716550)
+    monkeypatch.setattr(saved_copies, 'saved_periods', lambda *a, **k: [(
+        period, SimpleNamespace(metadata_=dict(statement_import_original=original)),
+        SimpleNamespace(id='own-file', sha256=sha), 'saved')])
+    monkeypatch.setattr(saved_copies, '_ledger', lambda session, p: Counter(
+        {('2022-09-01', 500, 'debit'): 1, ('2022-09-02', 700, 'credit'): 1}))
+    monkeypatch.setattr(saved_copies, '_running_balances', lambda session, p: set(running))
+    monkeypatch.setattr(saved_copies, '_link', lambda document, file, key, p: dict(statement_period_id=p.id))
+    rows = [dict(id=f'r{n}', kind='transaction', excluded=False, fields=dict(date=d, amount_minor=str(a), direction=w))
+            for n, (d, a, w) in enumerate(payments if payments is not None else [('2022-09-02', 700, 'credit')])]
+    proposal = dict(currency=currency, statement_id='split', statement_page_numbers=list(pages), rows=rows)
+    summary = dict(checks=[dict(kind='closing_balance', opening_minor=opening, printed_minor=closing)])
+    request = dict(account_number='65-50462403-4', period_start='2022-09-01', period_end='2022-09-30',
+                   currency=currency, rows=[])
+    return saved_copies.compare(SimpleNamespace(get=lambda model, key: owner), None, proposal, request, summary,
+                                own={('own-file', 'split')})
+
+
+def test_a_split_inside_a_statement_saved_from_the_same_file_is_part_of_it(monkeypatch):
+    result = _split_compare(monkeypatch)
+    assert result['outcome'] == 'match' and result['basis'] == saved_copies.PART_BASIS
+    assert result['saved'] == dict(statement_period_id='p0')
+
+
+@pytest.mark.parametrize('change', ['other_bytes', 'same_pages', 'page_outside', 'payment_not_saved',
+                                    'balance_not_printed_there', 'currency', 'off'])
+def test_a_split_stays_held_unless_it_lies_inside_the_saved_statement(monkeypatch, change):
+    values = dict(other_bytes=dict(sha='c' * 64), same_pages=dict(pages=(1, 2, 3, 4)), page_outside=dict(pages=(2, 5)),
+                  payment_not_saved=dict(payments=[('2022-09-03', 900, 'debit')]),
+                  balance_not_printed_there=dict(closing=111), currency=dict(saved_currency='USD'), off={})[change]
+    if change == 'off':
+        monkeypatch.setattr(saved_copies, 'PART_OF_SAVED', False)
+    assert _split_compare(monkeypatch, **values)['outcome'] != 'match'
+
+
+def test_held_copies_are_re_keyed_only_on_an_exact_agreement(monkeypatch):
+    from services.financial import field_proposals, held_reprepare, recovery_readers
+    monkeypatch.setattr(field_proposals, 'reapply_enabled', lambda: True)
+    monkeypatch.setattr(recovery_readers, 'copy_of_saved', lambda *a, **k: True)
+    statement = SimpleNamespace(statement_key='k', summary={})
+    reading = SimpleNamespace(id='r')
+    def rekeyed(result):
+        monkeypatch.setattr(saved_copies, 'compare', lambda *a, **k: result)
+        return held_reprepare.exact_copies_rekeyed(None, None, None, reading, [statement],
+                                                   {'k': dict(revision='x', currency='MXN', metadata={}, rows=[])}, {})
+    assert rekeyed(dict(outcome='match')) is True
+    assert rekeyed(dict(outcome='match', basis=saved_copies.UNREADABLE_BASIS)) is False
+    assert rekeyed(dict(outcome='match', basis=saved_copies.PART_BASIS)) is False
+
+
+def _vanished_item(f, *, saved=True, review_request=None):
+    """L22 (fin-queue2 A13): f.file's only statement saved; an item of an earlier reading of it holds a key the
+    current reading no longer lists ("This statement period is no longer available")."""
+    if saved:
+        f.confirm_legacy()
+    batch = Batch(id=uuid4(), case_id=f.case.id, created_by=f.user.id, status='review',
+        actor=dict(name=f.actor.name, email=f.actor.email, user_id=str(f.actor.user_id)),
+        files=[dict(source_id=str(f.file.id), file_id=str(f.file.id), filename=f.file.original_filename,
+            expected_revision='initial', status='checked')])
+    f.db.add(batch)
+    f.db.flush()
+    item = BatchItem(id=uuid5(batch.id, 'vanished'), batch_id=batch.id, file_id=f.file.id,
+        statement_key='an-earlier-readings-key', status='attention', review_request=review_request,
+        summary=dict(source_id=str(f.file.id), can_import=False, problem_count=1, problems=[dict(
+            row_id=None, message='This statement period is no longer available. Reload the document.')]))
+    f.db.add(item)
+    f.db.commit()
+    return item.id
+
+
+def test_an_item_whose_key_vanished_while_the_files_only_statement_is_saved_is_retired(f):
+    item_id = _vanished_item(f)
+    before = _ledger(f)
+    assert _settle(f, apply=False)['vanished_key:superseded'] == 1  # the estimate writes nothing
+    with f.SessionLocal() as db:
+        assert db.get(BatchItem, item_id).status == 'attention'
+    assert _settle(f)['vanished_key:superseded'] == 1
+    with f.SessionLocal() as db:
+        item = db.get(BatchItem, item_id)
+        assert item.status == 'superseded_reading'
+        assert item.summary['recovery_message'] == held_settlement.VANISHED_KEY_MESSAGE
+        assert item.summary['saved_source_document_id'] in {str(d) for d in before[1]}
+    assert _ledger(f) == before  # nothing saved, nothing removed
+
+
+def test_a_vanished_key_item_stays_when_the_statement_is_not_saved_or_a_person_worked_on_it(f, monkeypatch):
+    item_id = _vanished_item(f, saved=False)
+    assert _settle(f)['vanished_key:kept:not_saved'] == 1
+    with f.SessionLocal() as db:
+        assert db.get(BatchItem, item_id).status == 'attention'
+        db.get(BatchItem, item_id).review_request = dict(expected_revision='x', rows=[])
+        db.commit()
+    f.confirm_legacy()
+    assert _settle(f)['vanished_key:skipped:person_work'] == 1
+    with f.SessionLocal() as db:
+        db.get(BatchItem, item_id).review_request = None
+        db.commit()
+    monkeypatch.setattr(held_settlement, 'VANISHED_KEY', False)
+    assert 'vanished_key:superseded' not in _settle(f)
+    with f.SessionLocal() as db:
+        assert db.get(BatchItem, item_id).status == 'attention'
+
+
 # Fund statements ------------------------------------------------------------------------------------------
 
 FUND_PAGE = ('ESTADO DE CUENTA \nFONDOS DE INVERSIÓN\nPÁGINA 2 /3\nNUMERO DE\nTITULOS\nPRECIO AL\nCIERRE\n'
@@ -250,6 +419,66 @@ def test_a_fund_statement_is_recognised_only_on_clear_evidence(change, monkeypat
     else:
         monkeypatch.setattr(not_payment_statements, 'ENABLED', False)
     assert not_payment_statements.classify(file, _text(*pages), proposal) is None
+
+
+# Online balance positions ---------------------------------------------------------------------------------
+
+POSITION_PAGE = ('11/7/25, 13:13\nindex\nhttps://bank.example/portal\n1/1\nPosición Global - Posición\nDETALLE\n'
+                 'Revise el balance y posición de sus Cuentas de Cheques\nCheques\n1,000.00 USD\nVista\n0.00 USD\n'
+                 'Plazo\n0.00 USD\nTotal de la cartera:\n1,000.00 USD\nDetalle\n')
+
+
+def _position_proposal(**extra):
+    rows = [dict(id='u%d' % i, kind='unclassified', excluded=True, page_number=1, fields={}) for i in range(3)]
+    return {**dict(statement_id=None, statement_choices=[], period_dates=None, statement_page_numbers=[1], rows=rows), **extra}
+
+
+def test_a_printed_online_balance_position_is_not_a_payment_statement():
+    result = not_payment_statements.classify(FILE, _text(POSITION_PAGE), _position_proposal())
+    assert result['kind'] == 'online_balance_position' and result['status'] == 'set_aside'
+    assert result['label'] == not_payment_statements.LABEL and result['evidence']['position_pages'] == [1]
+    assert not_payment_statements.titled(POSITION_PAGE)
+
+
+@pytest.mark.parametrize('change', ['period_line', 'movements', 'statement_title', 'no_total', 'no_heading',
+                                    'second_page', 'statement_found', 'payment', 'saved_review', 'restored',
+                                    'switch_off', 'all_off'])
+def test_an_online_balance_position_is_recognised_only_on_clear_evidence(change, monkeypatch):
+    pages, proposal, file = [POSITION_PAGE], _position_proposal(), FILE
+    if change == 'period_line':
+        pages = [POSITION_PAGE + 'DEL 01/06/2025 AL 30/06/2025\n']
+    elif change == 'movements':
+        pages = [POSITION_PAGE + 'Movimientos del mes\n']
+    elif change == 'statement_title':
+        pages = [POSITION_PAGE + 'ESTADO DE CUENTA\n']
+    elif change == 'no_total':
+        pages = [POSITION_PAGE.replace('Total de la cartera', 'Total')]
+    elif change == 'no_heading':
+        pages = [POSITION_PAGE.replace('Revise el balance y posición de sus Cuentas', 'Cuentas')]
+    elif change == 'second_page':  # another page of the reading is not the position page
+        pages, proposal = [POSITION_PAGE, NOTICE], _position_proposal(statement_page_numbers=[1, 2])
+    elif change == 'statement_found':
+        proposal = dict(proposal, period_dates=dict(start='2025-06-01', end='2025-06-30'))
+    elif change == 'payment':
+        proposal['rows'].append(dict(id='t1', kind='transaction', excluded=False, page_number=1,
+                                     fields=dict(date='2025-07-01', amount_minor='100', direction='debit')))
+    elif change == 'saved_review':
+        proposal['saved_review'] = dict(request={})
+    elif change == 'restored':
+        file = SimpleNamespace(metadata_={not_payment_statements.METADATA_KEY: {'': dict(status='restored')}})
+    elif change == 'switch_off':
+        monkeypatch.setattr(not_payment_statements, 'POSITIONS', False)
+    else:
+        monkeypatch.setattr(not_payment_statements, 'ENABLED', False)
+    assert not_payment_statements.classify(file, _text(*pages), proposal) is None
+
+
+def test_a_set_aside_balance_position_is_never_saveable():
+    from services.financial.pdf_candidates import PdfMappingError
+    from services.financial.statement_import import check_import_request
+    flag = not_payment_statements.classify(FILE, _text(POSITION_PAGE), _position_proposal())
+    with pytest.raises(PdfMappingError, match='online balance position'):
+        check_import_request(dict(_position_proposal(), not_payment_statement=flag), None)
 
 
 def test_a_set_aside_fund_statement_is_never_saveable_and_leaves_the_waiting_queue():
@@ -338,3 +567,35 @@ def test_the_engine_release_snapshot_settles_held_copies_before_selecting(f):
         log = db.scalar(select(IngestionLog).where(IngestionLog.extra['operation'].as_string()
                                                    == 'statement_recovery_reader_snapshot'))
         assert log.extra['scope']['settled'] == {'saved_copy:set_aside': 1}
+
+
+@pytest.mark.parametrize('enabled', [True, False])
+def test_the_listing_projection_keeps_a_set_aside_fund_statement_held(f, monkeypatch, enabled):
+    """The coverage stage of the listing projection re-derived the state from problems alone, so a fund statement
+    (no problem, never saveable) was listed as ready-yet-unsaveable ('unexplained'), not as not a payment statement."""
+    from services.financial import import_batches
+    from services.financial.review_queue import classify as bucket
+    monkeypatch.setattr(not_payment_statements, 'ENABLED', enabled)
+    flag = not_payment_statements.classify(FILE, _text(NOTICE, FUND_PAGE, MOVES_PAGE), _fund_proposal())
+    batch = Batch(id=uuid4(), case_id=f.case.id, created_by=f.user.id, status='review',
+        actor=dict(name=f.actor.name, email=f.actor.email, user_id=str(f.actor.user_id)),
+        files=[dict(source_id=str(f.file.id), file_id=str(f.file.id), filename=f.file.original_filename,
+            expected_revision='initial', status='checked')])
+    f.db.add(batch)
+    f.db.flush()
+    summary = dict(source_id=str(f.file.id), revision='r', can_import=False, problems=[], problem_count=0,
+                   institution='BBVA', account_type='', holder='', account='', currency='MXN',
+                   **({'not_payment_statement': flag} if enabled else {}))
+    item = BatchItem(id=uuid5(batch.id, 'fund-list'), batch_id=batch.id, file_id=f.file.id, statement_key='s1',
+                     status='attention', summary=summary)
+    f.db.add(item)
+    f.db.commit()
+    monkeypatch.setattr(import_batches, '_project_item', lambda session, case_id, item, *a, **k: (
+        'attention', dict(item.summary), None))
+    with f.SessionLocal() as db:
+        projected = import_batches.checked_batch_items(db, f.case.id, [db.get(BatchItem, item.id)])[0]
+    if enabled:
+        assert projected.status == 'attention' and projected.summary['can_import'] is False
+        assert bucket(projected) == 'not_payment'
+    else:
+        assert bucket(projected) != 'not_payment'

@@ -234,6 +234,31 @@ class QueueReadTests(TestCase):
         self.assertEqual((after['counts']['imported'], after['counts']['ready'], after['counts']['waiting']), (1, 0, 0))
         self.assertTrue(after['status_line'].startswith('Imported 1 statements'))
 
+    def test_nothing_read_from_pages_with_text_is_a_reader_fix_not_a_person_s_task(self):
+        # OPDMD66 Truist before its reader (fin-holes B): 249 lines read, no payment, period or balance.
+        batch = self.create(); self.advance(batch)
+        with self.f.SessionLocal() as db:
+            record = db.query(Item).filter(Item.batch_id == batch).one()
+            summary = dict(record.summary)
+            summary.pop('readiness', None)
+            summary.update(can_import=False, problem_count=1, transaction_count=0, record_count=0, incomplete_count=0,
+                           unclassified_count=249, period_start='', period_end='',
+                           checks=[dict(kind='closing_balance', status='unavailable', opening_minor=None)],
+                           problems=[dict(message='Enter at least one printed opening or closing balance to save a '
+                                                  'statement without transactions.', row_id=None)])
+            record.summary = summary
+            record.status = 'attention'
+            db.commit()
+        queue = self.queue()
+        self.assertEqual((queue['counts']['waiting'], queue['counts']['reader_fix']), (0, 1), queue['counts'])
+        entry = queue['reader_fix'][0]
+        self.assertTrue(entry['reader_gap'])
+        self.assertEqual(entry['held_bucket'], 'waiting')
+        self.assertTrue(entry['issue'])  # its own issue and actions are kept
+        self.assertIn('could not read this layout yet', queue['reader_files'][0]['message'])
+        with patch('services.financial.reader_gaps.ENABLED', False):
+            self.assertEqual(self.queue()['counts']['waiting'], 1)
+
     def test_a_statement_with_a_problem_is_queued_with_its_sentence_and_file_filter_applies(self):
         batch = self.create(); self.advance(batch)
         with self.f.SessionLocal() as db:
@@ -473,6 +498,24 @@ class SupersededFileReadingTests(QueueReadTests):
         counts = self.queue()['counts']
         self.assertEqual((counts['unreadable'], counts['waiting']), (0, 1), counts)
 
+    def test_a_whole_file_entry_leaves_once_every_named_statement_of_the_file_is_imported(self):
+        import os
+        from unittest.mock import patch
+        batch = self.create(); self.advance(batch)
+        record = self.make_unreadable(batch)
+        with self.f.SessionLocal() as db:
+            whole = db.query(Item).filter(Item.batch_id == batch).one()
+            whole.summary = dict(whole.summary, transaction_count=3, record_count=3)
+            named = dict(record.summary, period_start='2020-01-01', period_end='2020-01-31', transaction_count=3,
+                         can_import=True, problems=[], problem_count=0)
+            db.add(Item(id=uuid4(), batch_id=batch, file_id=record.file_id, statement_key='a' * 64, status='imported',
+                        summary=named, review_request=record.review_request))
+            db.commit()
+        counts = self.queue()['counts']
+        self.assertEqual((counts['waiting'], counts['unreadable'], counts['imported']), (0, 0, 1), counts)
+        with patch.dict(os.environ, {'LOUPE_FINANCIAL_QUEUE_HIDE_SPLIT_DONE': '0'}):
+            self.assertEqual(self.queue()['counts']['waiting'], 1)
+
     def test_check_again_prepares_only_the_listed_files_from_their_saved_reading(self):
         batch = self.create(); self.advance(batch)
         self.make_unreadable(batch)
@@ -497,6 +540,7 @@ class PagedQueueTests(QueueReadTests):
     test_a_statement_with_a_problem_is_queued_with_its_sentence_and_file_filter_applies = None
     test_a_file_removed_from_financial_is_not_counted_as_unreadable = None
     test_a_file_no_longer_in_the_case_or_read_from_a_copy_is_not_unreadable = None
+    test_nothing_read_from_pages_with_text_is_a_reader_fix_not_a_person_s_task = None
 
     def setUp(self):
         super().setUp()

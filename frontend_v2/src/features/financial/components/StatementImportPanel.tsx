@@ -1,8 +1,10 @@
+import { Disclosure } from "./Disclosure"
 import {
   PaymentCounterpartyPicker,
   type PaymentCounterpartyLink,
 } from "./PaymentCounterpartyPicker"
 import { CurrencyOptions } from "./CurrencyOptions"
+import { FieldNeed } from "./FieldNeed"
 import { currencyMinorUnits } from "../lib/ledger-format"
 import { ImportedStatementDetails } from "./ImportedStatementDetails"
 import { SavedStatementPayments } from "./SavedStatementPayments"
@@ -19,7 +21,7 @@ import {
   StatementSectionPicker,
 } from "./StatementSectionPicker"
 import { useFinancialAccess } from "../hooks/use-financial-access"
-import { statementRowLocator } from "../lib/statement-row-locator"
+import { balanceCellLocator, statementRowLocator } from "../lib/statement-row-locator"
 import { useStatementChecks } from "../hooks/use-statement-checks"
 import { StatementArithmeticChecks } from "./StatementArithmeticChecks"
 import { StatementReconciliationSummary } from "./StatementReconciliationSummary"
@@ -40,6 +42,8 @@ import { hasPendingStatementImport, importWithReceiptRecovery, ImportStillSaving
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { z } from "zod"
+import { StatementModelWorkMark } from "./StatementModelWork"
+import { statementModelWork } from "../lib/statement-model-work"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import {
   readStatementDraft,
@@ -47,6 +51,8 @@ import {
   serverStatementDraft,
 } from "../lib/statement-review-draft"
 import { Button } from "@/components/ui/button"
+import { readerReplacementSchema } from "./readerReplacement"
+import { ReaderReplacementNotice } from "./ReaderReplacementNotice"
 import { ApiError, fetchAPI } from "@/lib/api-client"
 import { PdfReviewIntake } from "./PdfReviewIntake"
 import { TransactionSourceHighlight } from "./TransactionSourceHighlight"
@@ -82,6 +88,7 @@ import {
 } from "../lib/statement-date-fields"
 import { useStatementWorkspace } from "../stores/statement-workspace"
 import { useFinancialDraft } from "../stores/financial-drafts"
+import { ReadingJudgements } from "./JudgementCalls"
 
 const cell = z.object({
   column_index: z.number(),
@@ -106,6 +113,8 @@ const row = z.object({
     )
     .optional(),
   fields: z.record(z.string(), z.string()),
+  // How a reading rule repaired a damaged cell: shown as a judgement call before the statement is saved.
+  value_repairs: z.array(z.record(z.string(), z.unknown())).optional(),
   issues: z.array(z.string()),
   excluded: z.boolean(),
   kind: z.string(),
@@ -258,9 +267,11 @@ const proposalSchema = z.object({
         })
         .optional(),
       excluded_as_duplicate: z.boolean().default(false),
+      model_work: statementModelWork.nullish(),
       retained_filename: z.string().nullable().optional(),
       duplicate_disposition: statementDuplicateDisposition.nullish(),
       duplicate_copies: z.array(retainedStatement).default([]),
+      reader_replacement: readerReplacementSchema.nullish(),
       details_reason: z.string().default(""),
       review_decisions: z
         .array(
@@ -771,6 +782,15 @@ function StatementReview({
                   ? "This statement records balances and no transactions. Save its account and balances below; no payments need to be added."
                   : "This period has no usable imported payments yet. Review its readings below, then save the payments to Transactions."}
         </p>
+        {query.data.current_import?.model_work && (
+          <StatementModelWorkMark
+            caseId={caseId}
+            sourceDocumentId={query.data.current_import.source_document_id}
+            work={query.data.current_import.model_work}
+            canEdit={canEdit}
+            onConfirmed={() => void query.refetch()}
+          />
+        )}
         {query.data.current_import &&
           query.data.current_import.transaction_count > 0 &&
           !query.data.current_import.excluded_as_duplicate && (
@@ -920,6 +940,13 @@ function StatementReview({
                 !!query.data.current_import.incomplete_count &&
                 " The PDF is retained, but those readings are not payments in Transactions."}
             </p>
+            {query.data.current_import.reader_replacement && caseId && (
+              <ReaderReplacementNotice
+                caseId={caseId}
+                notice={query.data.current_import.reader_replacement}
+                canEdit={canEdit}
+              />
+            )}
             {query.data.current_import.duplicate_copies.length > 0 && (
               <div aria-label="Copies set aside as duplicates">
                 <p>
@@ -1017,11 +1044,8 @@ function StatementReview({
               </p>
             )}
             {query.data.current_import.review_decisions.length > 0 && (
-              <details>
-                <summary>
-                  Recorded import decisions (
-                  {query.data.current_import.review_decisions.length})
-                </summary>
+              <Disclosure label={<>Recorded import decisions (
+                  {query.data.current_import.review_decisions.length})</>}>
                 <ul className="space-y-3 mt-3">
                   {query.data.current_import.review_decisions.map(
                     (decision, index) => (
@@ -1040,7 +1064,7 @@ function StatementReview({
                     )
                   )}
                 </ul>
-              </details>
+              </Disclosure>
             )}
           </section>
         )}
@@ -2393,10 +2417,7 @@ function EditableStatement({
     )
   }
   const balanceLocator = (original: z.infer<typeof row>) =>
-    original.value_sources?.balance?.source_cell.locator ??
-    original.source_cells.find(
-      (cell) => String(cell.column_index) === original.fields.balance_column
-    )?.locator ?? { kind: "page_only", page: original.page_number }
+    balanceCellLocator(original)
   const editBalance = (id: string) => {
     const original = originals.get(id)
     if (!original) return
@@ -2922,6 +2943,7 @@ function EditableStatement({
       >
         <label>
           Account holder
+          <FieldNeed required />
           <input
             aria-label="Account holder"
             readOnly={!canEdit}
@@ -2932,6 +2954,7 @@ function EditableStatement({
         </label>
         <label>
           Account number
+          <FieldNeed required />
           <input
             aria-label="Account number"
             readOnly={!canEdit}
@@ -2959,6 +2982,7 @@ function EditableStatement({
       >
         <label>
           Bank
+          <FieldNeed required />
           <input
             aria-label="Bank"
             readOnly={!canEdit}
@@ -2969,6 +2993,7 @@ function EditableStatement({
         </label>
         <label>
           Period start
+          <FieldNeed required />
           <input
             type="date"
             aria-label="Period start"
@@ -2980,6 +3005,7 @@ function EditableStatement({
         </label>
         <label>
           Period end
+          <FieldNeed required />
           <input
             type="date"
             aria-label="Period end"
@@ -3287,6 +3313,16 @@ function EditableStatement({
             </p>
           )}
         </section>
+      )}
+      {!data.assignment_only && (!data.current_import || replacePrevious) && (
+        <ReadingJudgements
+          caseId={caseId}
+          statementId={data.statement_id || ""}
+          revision={data.revision}
+          currency={data.currency}
+          readingRows={data.rows}
+          reviewRows={rows}
+        />
       )}
       {!data.assignment_only && (!data.current_import || replacePrevious) && (
         <section
@@ -4558,16 +4594,13 @@ function EditableStatement({
           </div>
         )}
         {statementNotes.length > 0 && (
-          <details className="rounded border p-3 text-sm">
-            <summary className="cursor-pointer font-medium">
-              About this statement
-            </summary>
+          <Disclosure className="rounded border p-3 text-sm" label="About this statement">
             {statementNotes.map((message) => (
               <p key={message} className="mt-2">
                 {message}
               </p>
             ))}
-          </details>
+          </Disclosure>
         )}
         <div className="flex flex-wrap gap-5 text-sm">
           <span>
@@ -4680,7 +4713,7 @@ function EditableStatement({
                   {data.metadata.balance_convention === "liability_owed"
                     ? "amount owed"
                     : "balance"}
-                  :{" "}
+                  <FieldNeed required />:{" "}
                 </span>
                 {controls.length > 1 && (
                   <p className="text-amber-700 dark:text-amber-400">
@@ -4817,13 +4850,10 @@ function EditableStatement({
             : "Select an opening or closing amount to check its source."}
         </p>
 
-        <details className="border rounded p-3 text-sm">
-          <summary className="cursor-pointer">
-            Inspect another page of the original PDF
+        <Disclosure className="border rounded p-3 text-sm" label={<>Inspect another page of the original PDF
             {data.unassigned_page_numbers.length
               ? ` (${data.unassigned_page_numbers.length} pages need a coverage check)`
-              : ""}
-          </summary>
+              : ""}</>}>
           {data.unassigned_page_numbers.length > 0 && (
             <p>
               These pages were not assigned to a statement or recognised as
@@ -4888,7 +4918,7 @@ function EditableStatement({
           >
             Show selected page
           </Button>
-        </details>
+        </Disclosure>
         {!excludedCopy &&
           !importedHere &&
           !data.assignment_only &&

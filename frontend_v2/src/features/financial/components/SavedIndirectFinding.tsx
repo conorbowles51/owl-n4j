@@ -1,3 +1,4 @@
+import { Disclosure } from "./Disclosure"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
@@ -166,12 +167,9 @@ export function SavedIndirectFinding({
                 The result compares the amounts entered in this workpaper. Check
                 their explanations and sources before drawing a conclusion.
               </p>
-              <details>
-                <summary className="cursor-pointer text-sm">
-                  Explanation saved with the calculation
-                </summary>
+              <Disclosure label="Explanation saved with the calculation">
                 <p className="text-sm mt-2">{value.limitation}</p>
-              </details>
+              </Disclosure>
               {!!value.missing.length && (
                 <div>
                   <h4 className="font-semibold">Still to complete</h4>

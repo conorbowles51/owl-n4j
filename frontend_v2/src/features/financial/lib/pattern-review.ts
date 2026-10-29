@@ -33,6 +33,7 @@ export const patternReview = z
       .nullable()
       .default(null),
     snapshot_sha256: z.string().regex(/^[a-f0-9]{64}$/),
+    digest_covers: z.string().optional(),
     reviewed_rows: z.number().int().nonnegative(),
     date_unavailable_ids: z.array(z.string()),
     limitation: z.string(),
@@ -153,6 +154,7 @@ export function patternTheory(
         schema: "loupe.financial.pattern_support/1",
         pattern_id: h.id,
         snapshot_sha256: scope.snapshot_sha256,
+        digest_covers: scope.digest_covers,
         population: scope.population,
         window_days: scope.window_days,
         cross_account: scope.cross_account,

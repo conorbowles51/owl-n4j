@@ -47,6 +47,8 @@ from routers import (
     setup_router,
     cost_ledger_router,
     admin_ai_costs_router,
+    admin_reader_gaps_router,
+    admin_party_coverage_router,
     admin_update_router,
     financial_router,
     financial_ledger_router,
@@ -54,6 +56,7 @@ from routers import (
     financial_ingest_router,
     financial_adjudication_router,
     financial_reconciliation_router,
+    financial_judgements_router,
     maintenance_router,
     case_deadlines_router,
     notebook_router,
@@ -134,6 +137,13 @@ async def lifespan(app: FastAPI):
     from services.financial.deployment_recovery import run_recovery_forever
     recovery_task = asyncio.create_task(run_recovery_forever(), name="financial-deployment-recovery")
 
+    from services.financial.payment_categories import run_category_model_forever
+    category_task = asyncio.create_task(run_category_model_forever(), name="financial-payment-categories")
+
+    # One worker computes each case's account history once after start (services.financial.view_warmup).
+    from services.financial.view_warmup import warm_views_once
+    view_warmup_task = asyncio.create_task(warm_views_once(), name="financial-view-warmup")
+
     # The application loaded so far lives as long as the process: keep it out
     # of every later garbage-collector pass (services.process_memory).
     from services.process_memory import freeze_startup_objects
@@ -147,10 +157,17 @@ async def lifespan(app: FastAPI):
     # back when the process ends, and its durable record (leased batch,
     # pending recovery item, revisioned graph sweep) resumes on the next start.
     await process_shutdown.stop_background_tasks(
-        [recovery_task, identity_graph_task, financial_batches_task,
+        [recovery_task, identity_graph_task, financial_batches_task, category_task, view_warmup_task,
          cleanup_task, run_reaper_task, platform_update_task],
         timeout=process_shutdown.BACKGROUND_STOP_SECONDS,
     )
+
+    # Save the request timings still queued in this worker (bounded; never blocks shutdown long).
+    try:
+        from services.request_speed import flush_now
+        await asyncio.wait_for(asyncio.to_thread(flush_now), timeout=10)
+    except Exception as e:
+        print(f"Warning: request timings not saved at shutdown: {e}")
 
     # Stop job status subscriber
     try:
@@ -180,6 +197,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# JSON responses are gzipped for browsers that accept it (services.json_gzip). Added first, so it is the
+# innermost layer: the timing middlewares below record the bytes actually sent and the compression time.
+from services.json_gzip import JSONGZipMiddleware
+app.add_middleware(JSONGZipMiddleware)
 # CORS middleware for React frontend
 app.add_middleware(
     CORSMiddleware,
@@ -197,6 +218,12 @@ app.add_middleware(
 # Correlation id and per-stage Server-Timing on financial batch endpoints.
 from services.financial.request_timing import FinancialTimingMiddleware
 app.add_middleware(FinancialTimingMiddleware)
+# How long every /api request takes, kept permanently (services.request_speed).
+from services.request_speed import RequestSpeedMiddleware
+app.add_middleware(RequestSpeedMiddleware)
+# Source address, user agent and screen of every request, for the activity trail.
+from services.activity_trail import ActivityContextMiddleware
+app.add_middleware(ActivityContextMiddleware)
 
 # Include routers
 app.include_router(graph_router)
@@ -232,6 +259,8 @@ app.include_router(users_router)
 app.include_router(setup_router)
 app.include_router(cost_ledger_router)
 app.include_router(admin_ai_costs_router)
+app.include_router(admin_reader_gaps_router)
+app.include_router(admin_party_coverage_router)
 app.include_router(admin_update_router)
 app.include_router(financial_router)
 app.include_router(financial_ledger_router)
@@ -241,6 +270,7 @@ app.include_router(financial_source_audit_router)
 app.include_router(financial_ingest_router)
 app.include_router(financial_adjudication_router)
 app.include_router(financial_reconciliation_router)
+app.include_router(financial_judgements_router)
 app.include_router(maintenance_router)
 app.include_router(case_deadlines_router)
 app.include_router(notebook_router)
@@ -249,6 +279,10 @@ app.include_router(cellebrite_router)
 app.include_router(triage_router)
 app.include_router(significant_router)
 app.include_router(evidence_ws_router)
+from routers.activity import router as activity_router
+app.include_router(activity_router)
+from routers.request_speed import router as request_speed_router
+app.include_router(request_speed_router)
 
 
 @app.get("/")
