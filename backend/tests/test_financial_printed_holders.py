@@ -215,6 +215,20 @@ class DecisionTest(fixture.DuplicateTestCase):
         self.db.refresh(self.account)
         self.assertIsNone(self.account.holder_name)
 
+    def test_the_command_records_a_persons_decision_carried_out_by_a_model_as_the_models(self):
+        import contextlib
+        argv = ['--case', str(self.case.id), '--account', str(self.account.id), '--holder', BOTH[0], '--holder', BOTH[1],
+                '--decided-by', 'Neil Byrne', '--decided-by-email', self.user.email,
+                '--decided-by-user-id', str(self.user.id), '--model', 'Claude', '--model-id', 'claude-opus-5-5',
+                '--why', 'Each statement keeps the holder printed on it.', '--apply']
+        with mock.patch('postgres.session._get_session_local', return_value=lambda: contextlib.nullcontext(self.db)):
+            ph.main(argv)
+        event = self.db.scalar(select(AdjudicationEvent).where(AdjudicationEvent.decision == 'keep_printed_holders'))
+        self.assertEqual(event.actor_name, 'Claude (for Neil Byrne)')
+        self.assertEqual((event.actor_origin['kind'], event.actor_origin['model'], event.actor_origin['for']['name']),
+                         ('model', 'Claude', 'Neil Byrne'))
+        self.assertIn('Recorded the decision Neil Byrne made', event.actor_origin['how'])
+
     def test_it_refuses_one_name_and_an_account_of_another_case(self):
         with self.assertRaises(ph.PrintedHoldersError):
             ph.record_decision(self.db, case_id=self.case.id, account_id=self.account.id,
