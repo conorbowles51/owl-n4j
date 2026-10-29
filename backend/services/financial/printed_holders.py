@@ -122,7 +122,7 @@ def record_decision(session, *, case_id, account_id, holders, actor, reason):
     names = _distinct(holders)
     if len(names) < 2:
         raise PrintedHoldersError('Name at least two different printed holder names.')
-    current = decisions(session, case_id).get(str(account.id))
+    current = decisions(session, account.case_id).get(str(account.id))
     if current and {_key(h) for h in current['holders']} == {_key(h) for h in names}:
         return current
     before = dict(rule='one_holder', holders=current['holders'] if current else [])
@@ -154,7 +154,9 @@ def holders_by_statement(statements):
 
 def main(argv=None):
     """python -m services.financial.printed_holders --case C --account A --holder X --holder Y --decided-by NAME
-    --decided-by-email EMAIL [--recorded-by NAME] --why TEXT [--apply]: record a decision (dry run without --apply)."""
+    --decided-by-email EMAIL [--model NAME --model-id ID] --why TEXT [--apply]: record a decision (dry run without
+    --apply). With --model the record is the model's work carrying out the person's decision (its origin names the
+    model, services.financial.model_work), shown as the model's until a person confirms it."""
     import argparse
     import json
     from services.financial.decisions import Actor
@@ -166,13 +168,19 @@ def main(argv=None):
     parser.add_argument('--decided-by', required=True)
     parser.add_argument('--decided-by-email', required=True)
     parser.add_argument('--decided-by-user-id', default=None)
-    parser.add_argument('--recorded-by', default='', help='who carried the decision out for the person deciding')
+    parser.add_argument('--model', default='', help='the model carrying the decision out for the person deciding')
+    parser.add_argument('--model-id', default='')
     parser.add_argument('--why', required=True)
     parser.add_argument('--apply', action='store_true')
     args = parser.parse_args(argv)
-    name = f'{args.recorded_by} (for {args.decided_by})' if args.recorded_by else args.decided_by
-    actor = Actor(name=name, email=args.decided_by_email,
-                  user_id=uuid.UUID(args.decided_by_user_id) if args.decided_by_user_id else None)
+    user_id = uuid.UUID(args.decided_by_user_id) if args.decided_by_user_id else None
+    if args.model:
+        from services.financial.model_work import model_actor
+        actor = model_actor(for_name=args.decided_by, for_email=args.decided_by_email, for_user_id=user_id,
+                            model=args.model, model_id=args.model_id,
+                            how=f'Recorded the decision {args.decided_by} made: {args.why}')
+    else:
+        actor = Actor(name=args.decided_by, email=args.decided_by_email, user_id=user_id)
     with _get_session_local()() as session:
         result = record_decision(session, case_id=args.case, account_id=args.account, holders=args.holder,
                                  actor=actor, reason=args.why)
