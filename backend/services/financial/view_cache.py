@@ -261,11 +261,12 @@ class VersionMemo:
     stored. Bounded; least recently used entries go first. Callers get a deep copy, never the stored value.
 
     With ``decode`` (stored JSON -> value), values are also saved to disk and survive a restart, under the same
-    row-version keys, and only for the same database and the same code: the store names the database's system
-    identifier and a fingerprint of every backend source file and installed library (``code_identity``), so a
-    release or another database starts empty. A row's (id, xmin) names one version only while transaction ids
-    have not wrapped around, so values are saved and reused only while the database's transaction counter is
-    below 2**32. A value is saved only if it comes back from JSON exactly as computed. ``bind`` (inside the
+    row-version keys, and only for the same database and the same code and settings: the store names the
+    database's system identifier and ``code_identity`` (every backend file, the Python version, every installed
+    library and the process environment, taken when the process loaded its code), so a release, a changed
+    setting or another database starts empty. A row's (id, xmin) names one version only while transaction ids
+    have not wrapped around and the database has not been restored to an earlier point, so values are saved and
+    reused only while the transaction counter is below 2**32 and not below the highest one the store has seen. A value is saved only if it comes back from JSON exactly as computed. ``bind`` (inside the
     view's snapshot) loads the saved values; ``flush`` writes the new ones."""
 
     def __init__(self, name, max_entries, decode=None):
@@ -278,6 +279,8 @@ class VersionMemo:
         self._saved: dict = {}
         self._saved_stamp = None
         self._pending: dict = {}
+        self._xmax = None
+        self._saved_xmax = None
 
     def has(self, key):
         with self._lock:
@@ -322,12 +325,14 @@ class VersionMemo:
             try:
                 database, xmax = session.execute(text('SELECT (SELECT system_identifier::text FROM pg_control_system()), '
                     'pg_snapshot_xmax(pg_current_snapshot())::text')).one()
-                if int(xmax) < MEMO_XID_LIMIT:
+                if int(xmax) < MEMO_XID_LIMIT and code_identity() is not None:
                     scope = dict(format=1, memo=self.name, database=database, code=code_identity())
+                    xmax = int(xmax)
             except Exception:
                 logger.warning('Saved %s values unavailable; computing in memory only', self.name, exc_info=True)
         with self._lock:
             self._scope = scope
+            self._xmax = xmax if scope is not None else None
             if scope is None:
                 self._pending.clear()
                 return
@@ -337,20 +342,24 @@ class VersionMemo:
                 stamp = (stat.st_mtime_ns, stat.st_size, json.dumps(scope, sort_keys=True))
                 if stamp != self._saved_stamp:
                     document = json.loads(path.read_text(encoding='utf-8'))
-                    self._saved = dict(document['entries']) if document.get('scope') == scope else {}
+                    current = _current(document, scope, xmax)
+                    self._saved = dict(document['entries']) if current else {}
+                    self._saved_xmax = document['xmax'] if current else None
                     self._saved_stamp = stamp
+                if self._saved_xmax is not None and self._saved_xmax > xmax:
+                    self._saved, self._saved_xmax, self._saved_stamp = {}, None, None
             except FileNotFoundError:
-                self._saved, self._saved_stamp = {}, None
+                self._saved, self._saved_xmax, self._saved_stamp = {}, None, None
             except Exception:
                 logger.warning('Saved %s values unreadable; computing them again', self.name, exc_info=True)
-                self._saved, self._saved_stamp = {}, None
+                self._saved, self._saved_xmax, self._saved_stamp = {}, None, None
 
     def flush(self):
         """Save the values computed since ``bind`` (merged with what other processes saved). Never raises."""
         import fcntl
         import os
         with self._lock:
-            scope, pending = self._scope, dict(self._pending)
+            scope, xmax, pending = self._scope, self._xmax, dict(self._pending)
             self._pending.clear()
         directory = _memo_dir()
         if scope is None or not pending or directory is None:
@@ -360,11 +369,14 @@ class VersionMemo:
             path = directory / (self.name + '.json')
             with open(directory / (self.name + '.lock'), 'a') as lock:
                 fcntl.flock(lock, fcntl.LOCK_EX)
-                entries = {}
+                # Under the lock no other writer is mid-write: a temporary file left now was left by a killed one.
+                for left in directory.glob(self.name + '.json.*.tmp'):
+                    left.unlink(missing_ok=True)
+                entries, seen = {}, xmax
                 try:
                     document = json.loads(path.read_text(encoding='utf-8'))
-                    if document.get('scope') == scope:
-                        entries = dict(document['entries'])
+                    if _current(document, scope, xmax):
+                        entries, seen = dict(document['entries']), max(xmax, document['xmax'])
                 except FileNotFoundError:
                     pass
                 except Exception:
@@ -376,12 +388,12 @@ class VersionMemo:
                 temporary = path.with_name(path.name + '.%d.tmp' % os.getpid())
                 descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
                 with os.fdopen(descriptor, 'w', encoding='utf-8') as out:
-                    json.dump(dict(scope=scope, entries=kept), out, ensure_ascii=False, separators=(',', ':'))
+                    json.dump(dict(scope=scope, xmax=seen, entries=kept), out, ensure_ascii=False, separators=(',', ':'))
                 os.replace(temporary, path)
                 stat = path.stat()
             with self._lock:
                 if self._scope == scope:
-                    self._saved = dict(kept)
+                    self._saved, self._saved_xmax = dict(kept), seen
                     self._saved_stamp = (stat.st_mtime_ns, stat.st_size, json.dumps(scope, sort_keys=True))
         except Exception:
             logger.warning('Could not save %s values; they stay in memory only', self.name, exc_info=True)
@@ -389,13 +401,12 @@ class VersionMemo:
     def clear(self):
         with self._lock:
             self._values.clear()
-            self._saved, self._saved_stamp, self._scope = {}, None, None
+            self._saved, self._saved_xmax, self._saved_stamp, self._scope = {}, None, None, None
             self._pending.clear()
 
 
 # Below this many transactions a row version's xmin is unique in the database's life (no wraparound yet).
 MEMO_XID_LIMIT = 2 ** 32
-_code_identity = None
 
 
 def _memo_dir():
@@ -408,27 +419,54 @@ def _memo_dir():
     return Path.home() / '.cache' / 'loupe-financial-view-memo'
 
 
-def code_identity():
-    """sha256 over every backend source file (tests aside), the Python version and every installed library."""
-    global _code_identity
-    if _code_identity is None:
-        import hashlib
-        import os
-        import sys
-        from importlib import metadata
-        from pathlib import Path
+# Set by systemd (or the shell) anew for every start; nothing in Loupe reads them.
+_VOLATILE_ENVIRONMENT = frozenset(('INVOCATION_ID', 'JOURNAL_STREAM', 'SYSTEMD_EXEC_PID', 'MANAGERPID', 'LISTEN_PID',
+    'LISTEN_FDS', 'LISTEN_FDNAMES', 'WATCHDOG_PID', 'WATCHDOG_USEC', 'NOTIFY_SOCKET', '_', 'OLDPWD', 'SHLVL', 'PWD'))
+
+
+def _identity_now():
+    """sha256 over every backend file (code, data and configuration files; tests and logs aside), the Python
+    version, every installed library and the process environment. None if any of it cannot be read."""
+    import hashlib
+    import os
+    import sys
+    from importlib import metadata
+    from pathlib import Path
+    try:
         root = Path(__file__).resolve().parents[2]
         digest = hashlib.sha256(sys.version.encode())
         for line in sorted(f"{dist.metadata['Name']}=={dist.version}" for dist in metadata.distributions()):
             digest.update(line.encode() + b'\n')
+        for name, value in sorted(os.environ.items()):
+            if name not in _VOLATILE_ENVIRONMENT:
+                digest.update(b'env\0' + name.encode() + b'\0' + value.encode('utf-8', 'surrogateescape') + b'\n')
         files = []
         for folder, folders, names in os.walk(root):
-            folders[:] = [name for name in folders if not name.startswith('.') and name not in ('__pycache__', 'tests', 'node_modules', 'venv', 'logs')]
-            files.extend(Path(folder) / name for name in names if name.endswith('.py'))
+            folders[:] = [name for name in folders if not name.startswith('.') and name not in ('__pycache__', 'tests', 'logs')]
+            files.extend(Path(folder) / name for name in names if not name.startswith('.') and not name.endswith('.pyc'))
         for path in sorted(files, key=lambda path: path.relative_to(root).as_posix()):
             digest.update(path.relative_to(root).as_posix().encode() + b'\0' + hashlib.sha256(path.read_bytes()).digest())
-        _code_identity = digest.hexdigest()
+        return digest.hexdigest()
+    except Exception:
+        logger.warning('Code identity unavailable; Financial view values are kept in memory only', exc_info=True)
+        return None
+
+
+# Taken once, when this process loads its code (services.financial imports every module at start), never later:
+# a release rewrites the files under a running process before restarting it, and that process must not save its
+# values under the new release's identity.
+_code_identity = _identity_now()
+
+
+def code_identity():
     return _code_identity
+
+
+def _current(document, scope, xmax):
+    """Saved values belong to this database and code, and the database has not gone back in time since: a restore
+    of an earlier backup keeps the system identifier but hands out transaction ids it handed out before, so a
+    saved (id, xmin) could then name a different row version. ``xmax`` only grows on a database that has not."""
+    return document.get('scope') == scope and type(document.get('xmax')) is int and document['xmax'] <= xmax
 
 
 def _memo_key(key):

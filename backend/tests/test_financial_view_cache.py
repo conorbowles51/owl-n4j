@@ -668,3 +668,34 @@ def test_exact_json_keeps_types():
     assert same((1.0,), as_tuple) is not view_cache._MISSING
     assert same(({1: 'int key'},), as_tuple) is view_cache._MISSING
     assert same((object(),), as_tuple) is view_cache._MISSING
+
+
+def test_a_database_restored_to_an_earlier_point_does_not_use_saved_values(engine, memo_dir):
+    case, counter = uuid.uuid4(), Counter()
+    write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 1)', c=case)
+    call(engine, saved_view(counter, saved_memo()), case)
+    assert counter.calls == 1
+    # As if the database went back in time: the store has seen later transaction ids than the database hands out.
+    saved = json.loads((memo_dir / 'saved.json').read_text())
+    saved['xmax'] += 10 ** 6
+    (memo_dir / 'saved.json').write_text(json.dumps(saved))
+    view_cache.clear()
+    call(engine, saved_view(counter, saved_memo()), case)
+    assert counter.calls == 2
+
+
+def test_a_changed_setting_is_another_identity(monkeypatch):
+    before = view_cache._identity_now()
+    monkeypatch.setenv('LOUPE_FINANCIAL_SUMMARY_PAGES', 'synthetic')
+    assert view_cache._identity_now() not in (before, None)
+    monkeypatch.setenv('INVOCATION_ID', 'another start')
+    monkeypatch.delenv('LOUPE_FINANCIAL_SUMMARY_PAGES')
+    assert view_cache._identity_now() == before
+
+
+def test_a_temporary_file_left_by_a_killed_writer_is_removed(engine, memo_dir):
+    case, counter = uuid.uuid4(), Counter()
+    (memo_dir / 'saved.json.4242.tmp').write_text('partial')
+    write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 1)', c=case)
+    call(engine, saved_view(counter, saved_memo()), case)
+    assert not (memo_dir / 'saved.json.4242.tmp').exists() and (memo_dir / 'saved.json').exists()
