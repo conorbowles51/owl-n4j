@@ -1,0 +1,45 @@
+NEST
+  ('CalendarEntry', 'Attendees', 'multiModelField', 'Party') 3
+  ('Call', 'Parties', 'multiModelField', 'Party') 2500
+  ('Chat', 'ActivityLog', 'multiModelField', 'ChatActivity') 34
+  ('Chat', 'Messages', 'multiModelField', 'InstantMessage') 2716
+  ('Chat', 'Participants', 'multiModelField', 'Party') 983
+  ('Chat', 'Photos', 'multiModelField', 'ContactPhoto') 55
+  ('ChatActivity', 'Participant', 'modelField', 'Party') 34
+  ('Contact', 'AdditionalInfo', 'multiModelField', 'KeyValueModel') 861
+  ('Contact', 'Addresses', 'multiModelField', 'StreetAddress') 11
+  ('Contact', 'Entries', 'multiModelField', 'EmailAddress') 15
+  ('Contact', 'Entries', 'multiModelField', 'PhoneNumber') 615
+  ('Contact', 'Entries', 'multiModelField', 'ProfilePicture') 408
+  ('Contact', 'Entries', 'multiModelField', 'UserID') 1619
+  ('Contact', 'Entries', 'multiModelField', 'WebAddress') 7
+  ('Contact', 'Photos', 'multiModelField', 'ContactPhoto') 497
+  ('DeviceEvent', 'Additional_Info', 'multiModelField', 'KeyValueModel') 2
+  ('Email', 'Attachments', 'multiModelField', 'Attachment') 2
+  ('Email', 'From', 'modelField', 'Party') 294
+  ('Email', 'To', 'multiModelField', 'Party') 293
+  ('InstantMessage', 'Attachments', 'multiModelField', 'Attachment') 454
+  ('InstantMessage', 'From', 'modelField', 'Party') 2917
+  ('InstantMessage', 'MessageExtraData', 'multiModelField', 'ForwardedMessageData') 11
+  ('InstantMessage', 'MessageExtraData', 'multiModelField', 'MessageLabel') 158
+  ('InstantMessage', 'MessageExtraData', 'multiModelField', 'ReplyMessageData') 22
+  ('InstantMessage', 'SharedContacts', 'multiModelField', 'Contact') 5
+  ('InstantMessage', 'To', 'multiModelField', 'Party') 480
+  ('Location', 'Address', 'modelField', 'StreetAddress') 3
+  ('Location', 'Position', 'modelField', 'Coordinate') 31
+  ('NetworkUsage', 'AdditionalInfo', 'multiModelField', 'KeyValueModel') 39303
+  ('RecognizedDevice', 'AdditionalInfo', 'multiModelField', 'KeyValueModel') 5
+  ('RecognizedDevice', 'DeviceIdentifiers', 'multiModelField', 'KeyValueModel') 5
+  ('UserAccount', 'AdditionalInfo', 'multiModelField', 'KeyValueModel') 2
+  ('UserAccount', 'Entries', 'multiModelField', 'EmailAddress') 1
+  ('UserAccount', 'Entries', 'multiModelField', 'PhoneNumber') 10
+  ('UserAccount', 'Entries', 'multiModelField', 'ProfilePicture') 16
+  ('UserAccount', 'Entries', 'multiModelField', 'UserID') 8
+  ('UserAccount', 'Photos', 'multiModelField', 'ContactPhoto') 2
+USERMAP Counter({'Decoding': 11737})
+ROLE Counter({'From': 4249, 'To': 2019, 'General': 2})
+OWNER Counter({'False': 3157, 'True': 2548})
+TSATTRS Counter({('format', 'formattedTimestamp', 'type'): 22881})
+TSFMT [('9999-99-99T99:99:99.999+99:99', 22859), ('9999-99-99T99:99:99.999', 22)]
+IDSHAPE Counter({'wa-jid': 3360, 'phone-like': 2174, 'UserID:wa-jid': 1031, 'other': 885, 'email-like': 589, 'PhoneNumber:phone-like': 488, 'UserID:phone-like': 327, 'UserID:other': 248, 'PhoneNumber:other': 136, 'digits': 48, 'UserID:wa-group': 20, 'EmailAddress:email-like': 16, 'PhoneNumber:digits': 1, 'UserID:digits': 1})
+CONF Counter({'High': 71045})

@@ -1,0 +1,4824 @@
+{
+ "source": "local samples C3, C9, C8 (C8: .xmlModel section only); structure only",
+ "phones": [
+  {
+   "phone_label": "local C3",
+   "parse_error": null,
+   "model_types": {
+    "Autofill": 8,
+    "CalendarEntry": 80,
+    "Party": 7504,
+    "Call": 1657,
+    "Chat": 303,
+    "InstantMessage": 2917,
+    "Attachment": 456,
+    "ContactPhoto": 554,
+    "MessageLabel": 158,
+    "ChatActivity": 34,
+    "Contact": 1617,
+    "PhoneNumber": 625,
+    "ReplyMessageData": 22,
+    "ForwardedMessageData": 11,
+    "UserID": 1627,
+    "ProfilePicture": 424,
+    "WebAddress": 7,
+    "StreetAddress": 14,
+    "KeyValueModel": 40178,
+    "EmailAddress": 16,
+    "DeviceEvent": 2,
+    "User": 1,
+    "RecognizedDevice": 5,
+    "Email": 294,
+    "Location": 31,
+    "Coordinate": 31,
+    "NetworkUsage": 5181,
+    "Password": 273,
+    "SearchedItem": 19,
+    "SIMData": 9,
+    "UserAccount": 34,
+    "WebBookmark": 7,
+    "VisitedPage": 6936,
+    "WirelessNetwork": 8,
+    "PoweringEvent": 2
+   },
+   "catalog": [
+    [
+     "Autofill",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 8
+     }
+    ],
+    [
+     "Autofill",
+     "Source",
+     "field",
+     {
+      "String": 8
+     }
+    ],
+    [
+     "Autofill",
+     "Key",
+     "field",
+     {
+      "String": 8
+     }
+    ],
+    [
+     "Autofill",
+     "Value",
+     "field",
+     {
+      "String": 8
+     }
+    ],
+    [
+     "Autofill",
+     "TimeStamp",
+     "field",
+     {
+      "TimeStamp": 8
+     }
+    ],
+    [
+     "Autofill",
+     "LastUsedDate",
+     "field",
+     {
+      "TimeStamp": 8
+     }
+    ],
+    [
+     "CalendarEntry",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 80
+     }
+    ],
+    [
+     "CalendarEntry",
+     "Source",
+     "field",
+     {
+      "String": 80
+     }
+    ],
+    [
+     "CalendarEntry",
+     "Category",
+     "field",
+     {
+      "String": 80
+     }
+    ],
+    [
+     "CalendarEntry",
+     "Subject",
+     "field",
+     {
+      "String": 79
+     }
+    ],
+    [
+     "CalendarEntry",
+     "Details",
+     "field",
+     {
+      "String": 79
+     }
+    ],
+    [
+     "CalendarEntry",
+     "StartDate",
+     "field",
+     {
+      "TimeStamp": 80
+     }
+    ],
+    [
+     "CalendarEntry",
+     "EndDate",
+     "field",
+     {
+      "TimeStamp": 79
+     }
+    ],
+    [
+     "CalendarEntry",
+     "RepeatRule",
+     "field",
+     {
+      "RepeatRule": 1
+     }
+    ],
+    [
+     "CalendarEntry",
+     "RepeatUntil",
+     "field",
+     {
+      "TimeStamp": 1
+     }
+    ],
+    [
+     "CalendarEntry",
+     "Location",
+     "field",
+     {
+      "String": 3
+     }
+    ],
+    [
+     "Party",
+     "Identifier",
+     "field",
+     {
+      "String": 7056
+     }
+    ],
+    [
+     "Call",
+     "Source",
+     "field",
+     {
+      "String": 795
+     }
+    ],
+    [
+     "Call",
+     "Direction",
+     "field",
+     {
+      "ModelDirections": 1657
+     }
+    ],
+    [
+     "Call",
+     "Type",
+     "field",
+     {
+      "CallType": 42
+     }
+    ],
+    [
+     "Call",
+     "Status",
+     "field",
+     {
+      "TelephonyCallStatus": 1657
+     }
+    ],
+    [
+     "Call",
+     "TimeStamp",
+     "field",
+     {
+      "TimeStamp": 1657
+     }
+    ],
+    [
+     "Call",
+     "Duration",
+     "field",
+     {
+      "TimeSpan": 1258
+     }
+    ],
+    [
+     "Party",
+     "Role",
+     "field",
+     {
+      "PartyRole": 6270
+     }
+    ],
+    [
+     "Party",
+     "Name",
+     "field",
+     {
+      "String": 5697
+     }
+    ],
+    [
+     "Party",
+     "IsPhoneOwner",
+     "field",
+     {
+      "Boolean": 5705
+     }
+    ],
+    [
+     "Call",
+     "VideoCall",
+     "field",
+     {
+      "Boolean": 774
+     }
+    ],
+    [
+     "Call",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 1592
+     }
+    ],
+    [
+     "Party",
+     "IsGroupAdmin",
+     "field",
+     {
+      "Boolean": 4267
+     }
+    ],
+    [
+     "Call",
+     "Account",
+     "field",
+     {
+      "String": 730
+     }
+    ],
+    [
+     "Chat",
+     "Source",
+     "field",
+     {
+      "String": 303
+     }
+    ],
+    [
+     "Chat",
+     "Id",
+     "field",
+     {
+      "String": 302
+     }
+    ],
+    [
+     "Chat",
+     "StartTime",
+     "field",
+     {
+      "TimeStamp": 254
+     }
+    ],
+    [
+     "Chat",
+     "LastActivity",
+     "field",
+     {
+      "TimeStamp": 289
+     }
+    ],
+    [
+     "InstantMessage",
+     "Source",
+     "field",
+     {
+      "String": 2917
+     }
+    ],
+    [
+     "InstantMessage",
+     "Body",
+     "field",
+     {
+      "String": 2439
+     }
+    ],
+    [
+     "InstantMessage",
+     "TimeStamp",
+     "field",
+     {
+      "TimeStamp": 2889
+     }
+    ],
+    [
+     "InstantMessage",
+     "Type",
+     "field",
+     {
+      "InstantMessageType": 2917
+     }
+    ],
+    [
+     "InstantMessage",
+     "SourceApplication",
+     "field",
+     {
+      "String": 2917
+     }
+    ],
+    [
+     "InstantMessage",
+     "Platform",
+     "field",
+     {
+      "Platform": 1441
+     }
+    ],
+    [
+     "Attachment",
+     "Filename",
+     "field",
+     {
+      "String": 424
+     }
+    ],
+    [
+     "Attachment",
+     "ContentType",
+     "field",
+     {
+      "String": 438
+     }
+    ],
+    [
+     "Chat",
+     "Name",
+     "field",
+     {
+      "String": 23
+     }
+    ],
+    [
+     "Chat",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 182
+     }
+    ],
+    [
+     "InstantMessage",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 2338
+     }
+    ],
+    [
+     "InstantMessage",
+     "Identifier",
+     "field",
+     {
+      "String": 1628
+     }
+    ],
+    [
+     "InstantMessage",
+     "Status",
+     "field",
+     {
+      "MessageStatus": 701
+     }
+    ],
+    [
+     "Attachment",
+     "attachment_extracted_path",
+     "field",
+     {
+      "String": 417
+     }
+    ],
+    [
+     "InstantMessage",
+     "Folder",
+     "field",
+     {
+      "String": 257
+     }
+    ],
+    [
+     "InstantMessage",
+     "SMSC",
+     "field",
+     {
+      "String": 129
+     }
+    ],
+    [
+     "Party",
+     "Status",
+     "field",
+     {
+      "PartyStatus": 26
+     }
+    ],
+    [
+     "InstantMessage",
+     "Subject",
+     "field",
+     {
+      "String": 10
+     }
+    ],
+    [
+     "Attachment",
+     "Charset",
+     "field",
+     {
+      "String": 7
+     }
+    ],
+    [
+     "Attachment",
+     "URL",
+     "field",
+     {
+      "String": 416
+     }
+    ],
+    [
+     "Chat",
+     "Account",
+     "field",
+     {
+      "String": 169
+     }
+    ],
+    [
+     "MessageLabel",
+     "Label",
+     "field",
+     {
+      "Label": 158
+     }
+    ],
+    [
+     "ChatActivity",
+     "Action",
+     "field",
+     {
+      "ChatActivityAction": 34
+     }
+    ],
+    [
+     "Attachment",
+     "Title",
+     "field",
+     {
+      "String": 15
+     }
+    ],
+    [
+     "Chat",
+     "Description",
+     "field",
+     {
+      "String": 2
+     }
+    ],
+    [
+     "Contact",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 1573
+     }
+    ],
+    [
+     "Contact",
+     "Source",
+     "field",
+     {
+      "String": 1424
+     }
+    ],
+    [
+     "Contact",
+     "Name",
+     "field",
+     {
+      "String": 763
+     }
+    ],
+    [
+     "PhoneNumber",
+     "Category",
+     "field",
+     {
+      "String": 484
+     }
+    ],
+    [
+     "PhoneNumber",
+     "Value",
+     "field",
+     {
+      "String": 625
+     }
+    ],
+    [
+     "PhoneNumber",
+     "Domain",
+     "field",
+     {
+      "String": 625
+     }
+    ],
+    [
+     "Contact",
+     "Type",
+     "field",
+     {
+      "ContactType": 1072
+     }
+    ],
+    [
+     "Contact",
+     "Account",
+     "field",
+     {
+      "String": 1423
+     }
+    ],
+    [
+     "Contact",
+     "InteractionStatuses",
+     "multiField",
+     {
+      "ContactType": 1116
+     }
+    ],
+    [
+     "ReplyMessageData",
+     "Label",
+     "field",
+     {
+      "Label": 22
+     }
+    ],
+    [
+     "ReplyMessageData",
+     "OriginalMessageID",
+     "field",
+     {
+      "String": 22
+     }
+    ],
+    [
+     "ForwardedMessageData",
+     "Label",
+     "field",
+     {
+      "Label": 11
+     }
+    ],
+    [
+     "UserID",
+     "Category",
+     "field",
+     {
+      "String": 1626
+     }
+    ],
+    [
+     "UserID",
+     "Value",
+     "field",
+     {
+      "String": 1627
+     }
+    ],
+    [
+     "UserID",
+     "Domain",
+     "field",
+     {
+      "String": 1627
+     }
+    ],
+    [
+     "ProfilePicture",
+     "Category",
+     "field",
+     {
+      "String": 424
+     }
+    ],
+    [
+     "ProfilePicture",
+     "Value",
+     "field",
+     {
+      "String": 424
+     }
+    ],
+    [
+     "ProfilePicture",
+     "Domain",
+     "field",
+     {
+      "String": 424
+     }
+    ],
+    [
+     "ContactPhoto",
+     "Url",
+     "multiField",
+     {
+      "String": 276
+     }
+    ],
+    [
+     "WebAddress",
+     "Category",
+     "field",
+     {
+      "String": 7
+     }
+    ],
+    [
+     "WebAddress",
+     "Value",
+     "field",
+     {
+      "String": 7
+     }
+    ],
+    [
+     "WebAddress",
+     "Domain",
+     "field",
+     {
+      "String": 7
+     }
+    ],
+    [
+     "StreetAddress",
+     "Street1",
+     "field",
+     {
+      "String": 14
+     }
+    ],
+    [
+     "StreetAddress",
+     "City",
+     "field",
+     {
+      "String": 1
+     }
+    ],
+    [
+     "StreetAddress",
+     "State",
+     "field",
+     {
+      "String": 1
+     }
+    ],
+    [
+     "StreetAddress",
+     "Country",
+     "field",
+     {
+      "String": 1
+     }
+    ],
+    [
+     "StreetAddress",
+     "PostalCode",
+     "field",
+     {
+      "String": 1
+     }
+    ],
+    [
+     "StreetAddress",
+     "Category",
+     "field",
+     {
+      "String": 1
+     }
+    ],
+    [
+     "KeyValueModel",
+     "Key",
+     "field",
+     {
+      "String": 40178
+     }
+    ],
+    [
+     "KeyValueModel",
+     "Value",
+     "field",
+     {
+      "String": 40178
+     }
+    ],
+    [
+     "ContactPhoto",
+     "Name",
+     "field",
+     {
+      "String": 2
+     }
+    ],
+    [
+     "ContactPhoto",
+     "contactphoto_extracted_path",
+     "field",
+     {
+      "String": 2
+     }
+    ],
+    [
+     "EmailAddress",
+     "Category",
+     "field",
+     {
+      "String": 16
+     }
+    ],
+    [
+     "EmailAddress",
+     "Value",
+     "field",
+     {
+      "String": 16
+     }
+    ],
+    [
+     "EmailAddress",
+     "Domain",
+     "field",
+     {
+      "String": 16
+     }
+    ],
+    [
+     "DeviceEvent",
+     "StartTime",
+     "field",
+     {
+      "TimeStamp": 2
+     }
+    ],
+    [
+     "DeviceEvent",
+     "EventType",
+     "field",
+     {
+      "DeviceEventTypes": 2
+     }
+    ],
+    [
+     "DeviceEvent",
+     "Value",
+     "field",
+     {
+      "String": 2
+     }
+    ],
+    [
+     "User",
+     "Identifier",
+     "field",
+     {
+      "String": 1
+     }
+    ],
+    [
+     "User",
+     "SerialNumber",
+     "field",
+     {
+      "Int64": 1
+     }
+    ],
+    [
+     "User",
+     "TimeLastLoggedIn",
+     "field",
+     {
+      "TimeStamp": 1
+     }
+    ],
+    [
+     "User",
+     "UserType",
+     "field",
+     {
+      "UserType": 1
+     }
+    ],
+    [
+     "RecognizedDevice",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 5
+     }
+    ],
+    [
+     "RecognizedDevice",
+     "Source",
+     "field",
+     {
+      "String": 5
+     }
+    ],
+    [
+     "RecognizedDevice",
+     "Name",
+     "field",
+     {
+      "String": 5
+     }
+    ],
+    [
+     "Email",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 294
+     }
+    ],
+    [
+     "Email",
+     "Source",
+     "field",
+     {
+      "String": 294
+     }
+    ],
+    [
+     "Email",
+     "Folder",
+     "field",
+     {
+      "String": 293
+     }
+    ],
+    [
+     "Email",
+     "Status",
+     "field",
+     {
+      "MessageStatus": 292
+     }
+    ],
+    [
+     "Email",
+     "Subject",
+     "field",
+     {
+      "String": 293
+     }
+    ],
+    [
+     "Email",
+     "Body",
+     "field",
+     {
+      "String": 293
+     }
+    ],
+    [
+     "Email",
+     "TimeStamp",
+     "field",
+     {
+      "TimeStamp": 294
+     }
+    ],
+    [
+     "Email",
+     "Account",
+     "field",
+     {
+      "String": 293
+     }
+    ],
+    [
+     "Email",
+     "Labels",
+     "multiField",
+     {
+      "String": 586
+     }
+    ],
+    [
+     "InstantMessage",
+     "DateDelivered",
+     "field",
+     {
+      "TimeStamp": 4
+     }
+    ],
+    [
+     "Location",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 10
+     }
+    ],
+    [
+     "Location",
+     "Source",
+     "field",
+     {
+      "String": 10
+     }
+    ],
+    [
+     "Coordinate",
+     "Longitude",
+     "field",
+     {
+      "Double": 31
+     }
+    ],
+    [
+     "Coordinate",
+     "Latitude",
+     "field",
+     {
+      "Double": 31
+     }
+    ],
+    [
+     "Location",
+     "Type",
+     "field",
+     {
+      "String": 7
+     }
+    ],
+    [
+     "Location",
+     "Description",
+     "field",
+     {
+      "String": 3
+     }
+    ],
+    [
+     "Location",
+     "TimeStamp",
+     "field",
+     {
+      "TimeStamp": 21
+     }
+    ],
+    [
+     "Location",
+     "Name",
+     "field",
+     {
+      "String": 21
+     }
+    ],
+    [
+     "Location",
+     "Category",
+     "field",
+     {
+      "String": 21
+     }
+    ],
+    [
+     "NetworkUsage",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 5181
+     }
+    ],
+    [
+     "NetworkUsage",
+     "Source",
+     "field",
+     {
+      "String": 5181
+     }
+    ],
+    [
+     "NetworkUsage",
+     "SSId",
+     "field",
+     {
+      "String": 5181
+     }
+    ],
+    [
+     "NetworkUsage",
+     "DateStarted",
+     "field",
+     {
+      "TimeStamp": 5181
+     }
+    ],
+    [
+     "NetworkUsage",
+     "DateEnded",
+     "field",
+     {
+      "TimeStamp": 5181
+     }
+    ],
+    [
+     "NetworkUsage",
+     "NumberOfBytesReceived",
+     "field",
+     {
+      "Int64": 5181
+     }
+    ],
+    [
+     "NetworkUsage",
+     "NumberOfBytesSent",
+     "field",
+     {
+      "Int64": 5181
+     }
+    ],
+    [
+     "NetworkUsage",
+     "IsRoaming",
+     "field",
+     {
+      "Boolean": 5181
+     }
+    ],
+    [
+     "NetworkUsage",
+     "UsageMode",
+     "field",
+     {
+      "NetworkUsageMode": 5181
+     }
+    ],
+    [
+     "NetworkUsage",
+     "NetworkConnectionType",
+     "field",
+     {
+      "NWConnectionType": 5181
+     }
+    ],
+    [
+     "NetworkUsage",
+     "ApplicationId",
+     "multiField",
+     {
+      "String": 4866
+     }
+    ],
+    [
+     "Password",
+     "Data",
+     "field",
+     {
+      "String": 212
+     }
+    ],
+    [
+     "Password",
+     "Label",
+     "field",
+     {
+      "String": 270
+     }
+    ],
+    [
+     "Password",
+     "Type",
+     "field",
+     {
+      "PasswordType": 273
+     }
+    ],
+    [
+     "Password",
+     "Source",
+     "field",
+     {
+      "String": 269
+     }
+    ],
+    [
+     "Password",
+     "Account",
+     "field",
+     {
+      "String": 270
+     }
+    ],
+    [
+     "Password",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 268
+     }
+    ],
+    [
+     "Password",
+     "Service",
+     "field",
+     {
+      "String": 266
+     }
+    ],
+    [
+     "Password",
+     "AccessGroup",
+     "field",
+     {
+      "String": 264
+     }
+    ],
+    [
+     "SearchedItem",
+     "Source",
+     "field",
+     {
+      "String": 19
+     }
+    ],
+    [
+     "SearchedItem",
+     "TimeStamp",
+     "field",
+     {
+      "TimeStamp": 10
+     }
+    ],
+    [
+     "SearchedItem",
+     "Value",
+     "field",
+     {
+      "String": 19
+     }
+    ],
+    [
+     "SearchedItem",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 10
+     }
+    ],
+    [
+     "SearchedItem",
+     "SearchResults",
+     "multiField",
+     {
+      "String": 7
+     }
+    ],
+    [
+     "SIMData",
+     "Name",
+     "field",
+     {
+      "String": 9
+     }
+    ],
+    [
+     "SIMData",
+     "Value",
+     "field",
+     {
+      "String": 9
+     }
+    ],
+    [
+     "SIMData",
+     "Category",
+     "field",
+     {
+      "String": 9
+     }
+    ],
+    [
+     "UserAccount",
+     "Source",
+     "field",
+     {
+      "String": 24
+     }
+    ],
+    [
+     "UserAccount",
+     "Name",
+     "field",
+     {
+      "String": 11
+     }
+    ],
+    [
+     "UserAccount",
+     "Username",
+     "field",
+     {
+      "String": 28
+     }
+    ],
+    [
+     "UserAccount",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 25
+     }
+    ],
+    [
+     "UserAccount",
+     "ServiceType",
+     "field",
+     {
+      "String": 20
+     }
+    ],
+    [
+     "UserAccount",
+     "Password",
+     "field",
+     {
+      "String": 3
+     }
+    ],
+    [
+     "UserAccount",
+     "TimeCreated",
+     "field",
+     {
+      "TimeStamp": 2
+     }
+    ],
+    [
+     "WebBookmark",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 7
+     }
+    ],
+    [
+     "WebBookmark",
+     "Source",
+     "field",
+     {
+      "String": 7
+     }
+    ],
+    [
+     "WebBookmark",
+     "Title",
+     "field",
+     {
+      "String": 7
+     }
+    ],
+    [
+     "WebBookmark",
+     "Url",
+     "field",
+     {
+      "String": 5
+     }
+    ],
+    [
+     "VisitedPage",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 164
+     }
+    ],
+    [
+     "VisitedPage",
+     "Source",
+     "field",
+     {
+      "String": 6936
+     }
+    ],
+    [
+     "VisitedPage",
+     "Title",
+     "field",
+     {
+      "String": 137
+     }
+    ],
+    [
+     "VisitedPage",
+     "Url",
+     "field",
+     {
+      "String": 6936
+     }
+    ],
+    [
+     "VisitedPage",
+     "LastVisited",
+     "field",
+     {
+      "TimeStamp": 6910
+     }
+    ],
+    [
+     "VisitedPage",
+     "VisitCount",
+     "field",
+     {
+      "Int32": 8
+     }
+    ],
+    [
+     "VisitedPage",
+     "UrlCacheFile",
+     "field",
+     {
+      "String": 18
+     }
+    ],
+    [
+     "VisitedPage",
+     "CanRebuildCacheFile",
+     "field",
+     {
+      "Boolean": 18
+     }
+    ],
+    [
+     "WirelessNetwork",
+     "Source",
+     "field",
+     {
+      "String": 8
+     }
+    ],
+    [
+     "WirelessNetwork",
+     "SSId",
+     "field",
+     {
+      "String": 8
+     }
+    ],
+    [
+     "WirelessNetwork",
+     "SecurityMode",
+     "field",
+     {
+      "String": 5
+     }
+    ],
+    [
+     "WirelessNetwork",
+     "LastConnection",
+     "field",
+     {
+      "TimeStamp": 5
+     }
+    ],
+    [
+     "WirelessNetwork",
+     "TimeStamp",
+     "field",
+     {
+      "TimeStamp": 3
+     }
+    ],
+    [
+     "PoweringEvent",
+     "Element",
+     "field",
+     {
+      "PowerElementType": 2
+     }
+    ],
+    [
+     "PoweringEvent",
+     "TimeStamp",
+     "field",
+     {
+      "TimeStamp": 2
+     }
+    ],
+    [
+     "PoweringEvent",
+     "Event",
+     "field",
+     {
+      "PowerEventType": 2
+     }
+    ],
+    [
+     "PoweringEvent",
+     "Description",
+     "field",
+     {
+      "String": 2
+     }
+    ]
+   ],
+   "enums": {
+    "RepeatRule": [
+     "Daily"
+    ],
+    "ModelDirections": [
+     "Incoming",
+     "Outgoing"
+    ],
+    "CallType": [
+     "Cancelled",
+     "Incoming",
+     "Missed",
+     "Outgoing"
+    ],
+    "TelephonyCallStatus": [
+     "Canceled",
+     "Established",
+     "Missed",
+     "NotEstablishedUnknownReason",
+     "Rejected"
+    ],
+    "PartyRole": [
+     "From",
+     "General",
+     "To"
+    ],
+    "InstantMessageType": [
+     "AppMessage",
+     "Mms",
+     "Sms"
+    ],
+    "Platform": [
+     "Mobile",
+     "Web"
+    ],
+    "MessageStatus": [
+     "Default",
+     "Delivered",
+     "Read",
+     "Sent",
+     "Unread"
+    ],
+    "PartyStatus": [
+     "Unknown"
+    ],
+    "Label": [
+     "Forwarded",
+     "Reply",
+     "System"
+    ],
+    "ChatActivityAction": [
+     "ParticipantAdded",
+     "ParticipantJoined",
+     "ParticipantLeft"
+    ],
+    "ContactType": [
+     "ChatParticipant",
+     "Following",
+     "Friend",
+     "Group",
+     "Shared",
+     "Suggested"
+    ],
+    "DeviceEventTypes": [
+     "PowerEvent"
+    ],
+    "UserType": [
+     "Owner"
+    ],
+    "NetworkUsageMode": [
+     "Background",
+     "Foreground"
+    ],
+    "NWConnectionType": [
+     "Cellular",
+     "Wireless"
+    ],
+    "PasswordType": [
+     "Default",
+     "Key",
+     "Secret",
+     "Token"
+    ],
+    "PowerElementType": [
+     "Device"
+    ],
+    "PowerEventType": [
+     "On"
+    ]
+   }
+  },
+  {
+   "phone_label": "local C9",
+   "parse_error": null,
+   "model_types": {
+    "CalendarEntry": 1,
+    "Call": 1391,
+    "Party": 6143,
+    "Chat": 114,
+    "InstantMessage": 3421,
+    "ContactPhoto": 97,
+    "Attachment": 874,
+    "Contact": 249,
+    "UserID": 160,
+    "PhoneNumber": 219,
+    "KeyValueModel": 46,
+    "ForwardedMessageData": 35,
+    "ReplyMessageData": 13,
+    "MessageLabel": 46,
+    "WebAddress": 2,
+    "StreetAddress": 2,
+    "Email": 2,
+    "Location": 7,
+    "Coordinate": 9,
+    "Password": 288,
+    "SearchedItem": 13,
+    "UserAccount": 14,
+    "DictionaryWord": 640,
+    "WebBookmark": 4,
+    "VisitedPage": 213,
+    "WirelessNetwork": 2
+   },
+   "catalog": [
+    [
+     "CalendarEntry",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 1
+     }
+    ],
+    [
+     "CalendarEntry",
+     "Source",
+     "field",
+     {
+      "String": 1
+     }
+    ],
+    [
+     "CalendarEntry",
+     "Category",
+     "field",
+     {
+      "String": 1
+     }
+    ],
+    [
+     "CalendarEntry",
+     "StartDate",
+     "field",
+     {
+      "TimeStamp": 1
+     }
+    ],
+    [
+     "CalendarEntry",
+     "EndDate",
+     "field",
+     {
+      "TimeStamp": 1
+     }
+    ],
+    [
+     "Call",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 1391
+     }
+    ],
+    [
+     "Call",
+     "Source",
+     "field",
+     {
+      "String": 1022
+     }
+    ],
+    [
+     "Call",
+     "Direction",
+     "field",
+     {
+      "ModelDirections": 1391
+     }
+    ],
+    [
+     "Call",
+     "Status",
+     "field",
+     {
+      "TelephonyCallStatus": 1376
+     }
+    ],
+    [
+     "Call",
+     "TimeStamp",
+     "field",
+     {
+      "TimeStamp": 1391
+     }
+    ],
+    [
+     "Call",
+     "Duration",
+     "field",
+     {
+      "TimeSpan": 911
+     }
+    ],
+    [
+     "Party",
+     "Identifier",
+     "field",
+     {
+      "String": 6076
+     }
+    ],
+    [
+     "Party",
+     "Role",
+     "field",
+     {
+      "PartyRole": 5885
+     }
+    ],
+    [
+     "Party",
+     "Name",
+     "field",
+     {
+      "String": 5990
+     }
+    ],
+    [
+     "Party",
+     "IsPhoneOwner",
+     "field",
+     {
+      "Boolean": 5705
+     }
+    ],
+    [
+     "Call",
+     "VideoCall",
+     "field",
+     {
+      "Boolean": 1022
+     }
+    ],
+    [
+     "Call",
+     "Account",
+     "field",
+     {
+      "String": 1022
+     }
+    ],
+    [
+     "Party",
+     "IsGroupAdmin",
+     "field",
+     {
+      "Boolean": 1848
+     }
+    ],
+    [
+     "Chat",
+     "Source",
+     "field",
+     {
+      "String": 114
+     }
+    ],
+    [
+     "Chat",
+     "Id",
+     "field",
+     {
+      "String": 114
+     }
+    ],
+    [
+     "Chat",
+     "StartTime",
+     "field",
+     {
+      "TimeStamp": 112
+     }
+    ],
+    [
+     "Chat",
+     "LastActivity",
+     "field",
+     {
+      "TimeStamp": 112
+     }
+    ],
+    [
+     "InstantMessage",
+     "Source",
+     "field",
+     {
+      "String": 3421
+     }
+    ],
+    [
+     "InstantMessage",
+     "Body",
+     "field",
+     {
+      "String": 2540
+     }
+    ],
+    [
+     "InstantMessage",
+     "TimeStamp",
+     "field",
+     {
+      "TimeStamp": 3420
+     }
+    ],
+    [
+     "InstantMessage",
+     "Status",
+     "field",
+     {
+      "MessageStatus": 1944
+     }
+    ],
+    [
+     "InstantMessage",
+     "Type",
+     "field",
+     {
+      "InstantMessageType": 3421
+     }
+    ],
+    [
+     "InstantMessage",
+     "Folder",
+     "field",
+     {
+      "String": 19
+     }
+    ],
+    [
+     "InstantMessage",
+     "SMSC",
+     "field",
+     {
+      "String": 16
+     }
+    ],
+    [
+     "InstantMessage",
+     "SourceApplication",
+     "field",
+     {
+      "String": 3421
+     }
+    ],
+    [
+     "Chat",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 104
+     }
+    ],
+    [
+     "Chat",
+     "Name",
+     "field",
+     {
+      "String": 6
+     }
+    ],
+    [
+     "InstantMessage",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 3402
+     }
+    ],
+    [
+     "InstantMessage",
+     "Identifier",
+     "field",
+     {
+      "String": 2966
+     }
+    ],
+    [
+     "Attachment",
+     "Filename",
+     "field",
+     {
+      "String": 869
+     }
+    ],
+    [
+     "Attachment",
+     "ContentType",
+     "field",
+     {
+      "String": 864
+     }
+    ],
+    [
+     "Attachment",
+     "attachment_extracted_path",
+     "field",
+     {
+      "String": 760
+     }
+    ],
+    [
+     "Chat",
+     "Account",
+     "field",
+     {
+      "String": 104
+     }
+    ],
+    [
+     "Contact",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 246
+     }
+    ],
+    [
+     "Contact",
+     "Source",
+     "field",
+     {
+      "String": 176
+     }
+    ],
+    [
+     "Contact",
+     "Name",
+     "field",
+     {
+      "String": 227
+     }
+    ],
+    [
+     "UserID",
+     "Category",
+     "field",
+     {
+      "String": 159
+     }
+    ],
+    [
+     "UserID",
+     "Value",
+     "field",
+     {
+      "String": 160
+     }
+    ],
+    [
+     "UserID",
+     "Domain",
+     "field",
+     {
+      "String": 160
+     }
+    ],
+    [
+     "PhoneNumber",
+     "Category",
+     "field",
+     {
+      "String": 190
+     }
+    ],
+    [
+     "PhoneNumber",
+     "Value",
+     "field",
+     {
+      "String": 219
+     }
+    ],
+    [
+     "PhoneNumber",
+     "Domain",
+     "field",
+     {
+      "String": 219
+     }
+    ],
+    [
+     "Contact",
+     "Notes",
+     "multiField",
+     {
+      "String": 69
+     }
+    ],
+    [
+     "Contact",
+     "Type",
+     "field",
+     {
+      "ContactType": 144
+     }
+    ],
+    [
+     "Contact",
+     "Account",
+     "field",
+     {
+      "String": 173
+     }
+    ],
+    [
+     "Contact",
+     "InteractionStatuses",
+     "multiField",
+     {
+      "ContactType": 150
+     }
+    ],
+    [
+     "KeyValueModel",
+     "Key",
+     "field",
+     {
+      "String": 46
+     }
+    ],
+    [
+     "KeyValueModel",
+     "Value",
+     "field",
+     {
+      "String": 46
+     }
+    ],
+    [
+     "ForwardedMessageData",
+     "Label",
+     "field",
+     {
+      "Label": 35
+     }
+    ],
+    [
+     "ForwardedMessageData",
+     "TimeCreated",
+     "field",
+     {
+      "TimeStamp": 8
+     }
+    ],
+    [
+     "ContactPhoto",
+     "contactphoto_extracted_path",
+     "field",
+     {
+      "String": 92
+     }
+    ],
+    [
+     "ReplyMessageData",
+     "Label",
+     "field",
+     {
+      "Label": 13
+     }
+    ],
+    [
+     "ReplyMessageData",
+     "OriginalMessageID",
+     "field",
+     {
+      "String": 13
+     }
+    ],
+    [
+     "Attachment",
+     "URL",
+     "field",
+     {
+      "String": 577
+     }
+    ],
+    [
+     "MessageLabel",
+     "Label",
+     "field",
+     {
+      "Label": 46
+     }
+    ],
+    [
+     "InstantMessage",
+     "Platform",
+     "field",
+     {
+      "Platform": 1429
+     }
+    ],
+    [
+     "Attachment",
+     "Title",
+     "field",
+     {
+      "String": 5
+     }
+    ],
+    [
+     "Party",
+     "DateDelivered",
+     "field",
+     {
+      "TimeStamp": 18
+     }
+    ],
+    [
+     "Party",
+     "DateRead",
+     "field",
+     {
+      "TimeStamp": 9
+     }
+    ],
+    [
+     "WebAddress",
+     "Category",
+     "field",
+     {
+      "String": 2
+     }
+    ],
+    [
+     "WebAddress",
+     "Value",
+     "field",
+     {
+      "String": 2
+     }
+    ],
+    [
+     "WebAddress",
+     "Domain",
+     "field",
+     {
+      "String": 2
+     }
+    ],
+    [
+     "StreetAddress",
+     "Street1",
+     "field",
+     {
+      "String": 2
+     }
+    ],
+    [
+     "Email",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 2
+     }
+    ],
+    [
+     "Email",
+     "Source",
+     "field",
+     {
+      "String": 2
+     }
+    ],
+    [
+     "Email",
+     "Folder",
+     "field",
+     {
+      "String": 2
+     }
+    ],
+    [
+     "Email",
+     "Subject",
+     "field",
+     {
+      "String": 2
+     }
+    ],
+    [
+     "Email",
+     "Body",
+     "field",
+     {
+      "String": 2
+     }
+    ],
+    [
+     "Email",
+     "TimeStamp",
+     "field",
+     {
+      "TimeStamp": 2
+     }
+    ],
+    [
+     "Email",
+     "Account",
+     "field",
+     {
+      "String": 2
+     }
+    ],
+    [
+     "Email",
+     "Labels",
+     "multiField",
+     {
+      "String": 4
+     }
+    ],
+    [
+     "Location",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 7
+     }
+    ],
+    [
+     "Location",
+     "Source",
+     "field",
+     {
+      "String": 7
+     }
+    ],
+    [
+     "Coordinate",
+     "Longitude",
+     "field",
+     {
+      "Double": 9
+     }
+    ],
+    [
+     "Coordinate",
+     "Latitude",
+     "field",
+     {
+      "Double": 9
+     }
+    ],
+    [
+     "Location",
+     "Type",
+     "field",
+     {
+      "String": 6
+     }
+    ],
+    [
+     "Password",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 288
+     }
+    ],
+    [
+     "Password",
+     "Source",
+     "field",
+     {
+      "String": 288
+     }
+    ],
+    [
+     "Password",
+     "Data",
+     "field",
+     {
+      "String": 245
+     }
+    ],
+    [
+     "Password",
+     "Label",
+     "field",
+     {
+      "String": 287
+     }
+    ],
+    [
+     "Password",
+     "Type",
+     "field",
+     {
+      "PasswordType": 288
+     }
+    ],
+    [
+     "Password",
+     "ServiceIdentifier",
+     "field",
+     {
+      "String": 286
+     }
+    ],
+    [
+     "Password",
+     "AccessGroup",
+     "field",
+     {
+      "String": 284
+     }
+    ],
+    [
+     "Password",
+     "Account",
+     "field",
+     {
+      "String": 287
+     }
+    ],
+    [
+     "Password",
+     "Service",
+     "field",
+     {
+      "String": 286
+     }
+    ],
+    [
+     "SearchedItem",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 8
+     }
+    ],
+    [
+     "SearchedItem",
+     "Source",
+     "field",
+     {
+      "String": 13
+     }
+    ],
+    [
+     "SearchedItem",
+     "TimeStamp",
+     "field",
+     {
+      "TimeStamp": 5
+     }
+    ],
+    [
+     "SearchedItem",
+     "Value",
+     "field",
+     {
+      "String": 13
+     }
+    ],
+    [
+     "SearchedItem",
+     "Origin",
+     "field",
+     {
+      "SearchItemOrigin": 3
+     }
+    ],
+    [
+     "SearchedItem",
+     "SearchResults",
+     "multiField",
+     {
+      "String": 6
+     }
+    ],
+    [
+     "UserAccount",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 12
+     }
+    ],
+    [
+     "UserAccount",
+     "Source",
+     "field",
+     {
+      "String": 9
+     }
+    ],
+    [
+     "UserAccount",
+     "ServiceIdentifier",
+     "field",
+     {
+      "String": 8
+     }
+    ],
+    [
+     "UserAccount",
+     "Username",
+     "field",
+     {
+      "String": 11
+     }
+    ],
+    [
+     "UserAccount",
+     "ServiceType",
+     "field",
+     {
+      "String": 8
+     }
+    ],
+    [
+     "UserAccount",
+     "Name",
+     "field",
+     {
+      "String": 6
+     }
+    ],
+    [
+     "UserAccount",
+     "Password",
+     "field",
+     {
+      "String": 1
+     }
+    ],
+    [
+     "UserAccount",
+     "Notes",
+     "multiField",
+     {
+      "String": 1
+     }
+    ],
+    [
+     "DictionaryWord",
+     "Word",
+     "field",
+     {
+      "String": 639
+     }
+    ],
+    [
+     "DictionaryWord",
+     "Frequency",
+     "field",
+     {
+      "Int32": 640
+     }
+    ],
+    [
+     "DictionaryWord",
+     "Source",
+     "field",
+     {
+      "String": 1
+     }
+    ],
+    [
+     "WebBookmark",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 4
+     }
+    ],
+    [
+     "WebBookmark",
+     "Source",
+     "field",
+     {
+      "String": 4
+     }
+    ],
+    [
+     "WebBookmark",
+     "Title",
+     "field",
+     {
+      "String": 4
+     }
+    ],
+    [
+     "WebBookmark",
+     "Url",
+     "field",
+     {
+      "String": 2
+     }
+    ],
+    [
+     "VisitedPage",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 202
+     }
+    ],
+    [
+     "VisitedPage",
+     "Source",
+     "field",
+     {
+      "String": 213
+     }
+    ],
+    [
+     "VisitedPage",
+     "Title",
+     "field",
+     {
+      "String": 123
+     }
+    ],
+    [
+     "VisitedPage",
+     "Url",
+     "field",
+     {
+      "String": 213
+     }
+    ],
+    [
+     "VisitedPage",
+     "LastVisited",
+     "field",
+     {
+      "TimeStamp": 137
+     }
+    ],
+    [
+     "VisitedPage",
+     "UsagePattern",
+     "multiField",
+     {
+      "UsagePattern": 2
+     }
+    ],
+    [
+     "VisitedPage",
+     "VisitCount",
+     "field",
+     {
+      "Int32": 9
+     }
+    ],
+    [
+     "VisitedPage",
+     "UrlCacheFile",
+     "field",
+     {
+      "String": 65
+     }
+    ],
+    [
+     "VisitedPage",
+     "CanRebuildCacheFile",
+     "field",
+     {
+      "Boolean": 65
+     }
+    ],
+    [
+     "WirelessNetwork",
+     "Source",
+     "field",
+     {
+      "String": 2
+     }
+    ],
+    [
+     "WirelessNetwork",
+     "SSId",
+     "field",
+     {
+      "String": 2
+     }
+    ],
+    [
+     "WirelessNetwork",
+     "TimeStamp",
+     "field",
+     {
+      "TimeStamp": 2
+     }
+    ]
+   ],
+   "enums": {
+    "ModelDirections": [
+     "Incoming",
+     "Outgoing"
+    ],
+    "TelephonyCallStatus": [
+     "BusyLine",
+     "Canceled",
+     "Established",
+     "Missed",
+     "NotEstablishedUnknownReason",
+     "Rejected"
+    ],
+    "PartyRole": [
+     "From",
+     "To"
+    ],
+    "MessageStatus": [
+     "Default",
+     "Delivered",
+     "Read",
+     "Sent",
+     "Unread"
+    ],
+    "InstantMessageType": [
+     "AppMessage",
+     "Sms"
+    ],
+    "ContactType": [
+     "Blocked",
+     "ChatParticipant",
+     "Group",
+     "PhoneBook",
+     "Shared",
+     "Suggested"
+    ],
+    "Label": [
+     "Edited",
+     "Forwarded",
+     "Reply",
+     "System"
+    ],
+    "Platform": [
+     "Mobile"
+    ],
+    "PasswordType": [
+     "Default",
+     "Key",
+     "Token"
+    ],
+    "SearchItemOrigin": [
+     "Unknown"
+    ],
+    "UsagePattern": [
+     "Frequent"
+    ]
+   }
+  },
+  {
+   "phone_label": "local C8",
+   "parse_error": null,
+   "model_types": {
+    "Autofill": 26,
+    "Call": 269,
+    "Party": 5300,
+    "Chat": 94,
+    "InstantMessage": 2829,
+    "Attachment": 3770,
+    "QuotedMessageData": 38,
+    "MessageLabel": 2,
+    "Contact": 241,
+    "UserID": 285,
+    "ContactPhoto": 220,
+    "PhoneNumber": 59,
+    "KeyValueModel": 24041,
+    "Cookie": 3302,
+    "DeviceConnectivity": 5,
+    "DeviceEvent": 3,
+    "DeviceInfoEntry": 30,
+    "RecognizedDevice": 5,
+    "FileDownload": 6,
+    "Email": 108,
+    "InstalledApplication": 440,
+    "Location": 206,
+    "Coordinate": 38,
+    "WirelessNetwork": 284,
+    "NetworkUsage": 20961,
+    "Note": 2,
+    "Password": 517,
+    "SearchedItem": 752,
+    "SIMData": 9,
+    "SocialMediaActivity": 934,
+    "FileUpload": 18,
+    "UserAccount": 42,
+    "EmailAddress": 5,
+    "ProfilePicture": 12,
+    "DictionaryWord": 4648,
+    "WebBookmark": 5,
+    "VisitedPage": 4129,
+    "PoweringEvent": 2
+   },
+   "catalog": [
+    [
+     "Autofill",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 26
+     }
+    ],
+    [
+     "Autofill",
+     "Source",
+     "field",
+     {
+      "String": 26
+     }
+    ],
+    [
+     "Autofill",
+     "Key",
+     "field",
+     {
+      "String": 26
+     }
+    ],
+    [
+     "Autofill",
+     "Value",
+     "field",
+     {
+      "String": 26
+     }
+    ],
+    [
+     "Autofill",
+     "TimeStamp",
+     "field",
+     {
+      "TimeStamp": 26
+     }
+    ],
+    [
+     "Autofill",
+     "LastUsedDate",
+     "field",
+     {
+      "TimeStamp": 26
+     }
+    ],
+    [
+     "Call",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 269
+     }
+    ],
+    [
+     "Call",
+     "Source",
+     "field",
+     {
+      "String": 197
+     }
+    ],
+    [
+     "Call",
+     "Direction",
+     "field",
+     {
+      "ModelDirections": 269
+     }
+    ],
+    [
+     "Call",
+     "Status",
+     "field",
+     {
+      "TelephonyCallStatus": 264
+     }
+    ],
+    [
+     "Call",
+     "TimeStamp",
+     "field",
+     {
+      "TimeStamp": 269
+     }
+    ],
+    [
+     "Party",
+     "Identifier",
+     "field",
+     {
+      "String": 4772
+     }
+    ],
+    [
+     "Party",
+     "Role",
+     "field",
+     {
+      "PartyRole": 5300
+     }
+    ],
+    [
+     "Party",
+     "Status",
+     "field",
+     {
+      "PartyStatus": 5300
+     }
+    ],
+    [
+     "Party",
+     "Name",
+     "field",
+     {
+      "String": 4247
+     }
+    ],
+    [
+     "Party",
+     "Distance",
+     "field",
+     {
+      "Double": 5300
+     }
+    ],
+    [
+     "Party",
+     "IsPhoneOwner",
+     "field",
+     {
+      "Boolean": 4015
+     }
+    ],
+    [
+     "Party",
+     "IsGroupAdmin",
+     "field",
+     {
+      "Boolean": 5300
+     }
+    ],
+    [
+     "Call",
+     "VideoCall",
+     "field",
+     {
+      "Boolean": 166
+     }
+    ],
+    [
+     "Call",
+     "Account",
+     "field",
+     {
+      "String": 190
+     }
+    ],
+    [
+     "Call",
+     "DisconnectionCause",
+     "field",
+     {
+      "CallDisconnectionCause": 269
+     }
+    ],
+    [
+     "Call",
+     "Duration",
+     "field",
+     {
+      "TimeSpan": 132
+     }
+    ],
+    [
+     "Chat",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 94
+     }
+    ],
+    [
+     "Chat",
+     "Source",
+     "field",
+     {
+      "String": 94
+     }
+    ],
+    [
+     "Chat",
+     "Id",
+     "field",
+     {
+      "String": 75
+     }
+    ],
+    [
+     "Chat",
+     "StartTime",
+     "field",
+     {
+      "TimeStamp": 91
+     }
+    ],
+    [
+     "Chat",
+     "LastActivity",
+     "field",
+     {
+      "TimeStamp": 92
+     }
+    ],
+    [
+     "InstantMessage",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 2829
+     }
+    ],
+    [
+     "InstantMessage",
+     "Source",
+     "field",
+     {
+      "String": 2829
+     }
+    ],
+    [
+     "InstantMessage",
+     "Body",
+     "field",
+     {
+      "String": 2566
+     }
+    ],
+    [
+     "InstantMessage",
+     "TimeStamp",
+     "field",
+     {
+      "TimeStamp": 2814
+     }
+    ],
+    [
+     "InstantMessage",
+     "Status",
+     "field",
+     {
+      "MessageStatus": 2383
+     }
+    ],
+    [
+     "InstantMessage",
+     "Label",
+     "field",
+     {
+      "Label": 2829
+     }
+    ],
+    [
+     "InstantMessage",
+     "Platform",
+     "field",
+     {
+      "Platform": 2829
+     }
+    ],
+    [
+     "InstantMessage",
+     "Type",
+     "field",
+     {
+      "InstantMessageType": 2829
+     }
+    ],
+    [
+     "InstantMessage",
+     "Priority",
+     "field",
+     {
+      "MailPriority": 2829
+     }
+    ],
+    [
+     "InstantMessage",
+     "SelfDestructDuration",
+     "field",
+     {
+      "TimeSpan": 2829
+     }
+    ],
+    [
+     "InstantMessage",
+     "IsLocationSharing",
+     "field",
+     {
+      "Boolean": 2829
+     }
+    ],
+    [
+     "InstantMessage",
+     "Identifier",
+     "field",
+     {
+      "String": 1993
+     }
+    ],
+    [
+     "InstantMessage",
+     "SourceApplication",
+     "field",
+     {
+      "String": 2829
+     }
+    ],
+    [
+     "Attachment",
+     "Filename",
+     "field",
+     {
+      "String": 228
+     }
+    ],
+    [
+     "Attachment",
+     "ContentType",
+     "field",
+     {
+      "String": 207
+     }
+    ],
+    [
+     "Chat",
+     "Account",
+     "field",
+     {
+      "String": 29
+     }
+    ],
+    [
+     "Chat",
+     "ChatType",
+     "field",
+     {
+      "ChatType": 94
+     }
+    ],
+    [
+     "Attachment",
+     "attachment_extracted_path",
+     "field",
+     {
+      "String": 127
+     }
+    ],
+    [
+     "Party",
+     "DateRead",
+     "field",
+     {
+      "TimeStamp": 49
+     }
+    ],
+    [
+     "Attachment",
+     "URL",
+     "field",
+     {
+      "String": 3556
+     }
+    ],
+    [
+     "QuotedMessageData",
+     "Label",
+     "field",
+     {
+      "Label": 76
+     }
+    ],
+    [
+     "QuotedMessageData",
+     "OriginalMessageID",
+     "field",
+     {
+      "String": 35
+     }
+    ],
+    [
+     "Attachment",
+     "Title",
+     "field",
+     {
+      "String": 5
+     }
+    ],
+    [
+     "InstantMessage",
+     "DateDelivered",
+     "field",
+     {
+      "TimeStamp": 115
+     }
+    ],
+    [
+     "InstantMessage",
+     "Folder",
+     "field",
+     {
+      "String": 556
+     }
+    ],
+    [
+     "InstantMessage",
+     "SMSC",
+     "field",
+     {
+      "String": 11
+     }
+    ],
+    [
+     "MessageLabel",
+     "Label",
+     "field",
+     {
+      "Label": 2
+     }
+    ],
+    [
+     "Contact",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 241
+     }
+    ],
+    [
+     "Contact",
+     "Source",
+     "field",
+     {
+      "String": 191
+     }
+    ],
+    [
+     "Contact",
+     "Name",
+     "field",
+     {
+      "String": 241
+     }
+    ],
+    [
+     "UserID",
+     "Value",
+     "field",
+     {
+      "String": 285
+     }
+    ],
+    [
+     "UserID",
+     "Domain",
+     "field",
+     {
+      "String": 285
+     }
+    ],
+    [
+     "Contact",
+     "Type",
+     "field",
+     {
+      "ContactType": 241
+     }
+    ],
+    [
+     "UserID",
+     "Category",
+     "field",
+     {
+      "String": 280
+     }
+    ],
+    [
+     "Contact",
+     "Account",
+     "field",
+     {
+      "String": 188
+     }
+    ],
+    [
+     "Contact",
+     "InteractionStatuses",
+     "multiField",
+     {
+      "ContactType": 169
+     }
+    ],
+    [
+     "Contact",
+     "Notes",
+     "multiField",
+     {
+      "String": 40
+     }
+    ],
+    [
+     "Contact",
+     "TimeCreated",
+     "field",
+     {
+      "TimeStamp": 10
+     }
+    ],
+    [
+     "ContactPhoto",
+     "Url",
+     "multiField",
+     {
+      "String": 201
+     }
+    ],
+    [
+     "PhoneNumber",
+     "Category",
+     "field",
+     {
+      "String": 59
+     }
+    ],
+    [
+     "PhoneNumber",
+     "Value",
+     "field",
+     {
+      "String": 59
+     }
+    ],
+    [
+     "PhoneNumber",
+     "Domain",
+     "field",
+     {
+      "String": 59
+     }
+    ],
+    [
+     "ContactPhoto",
+     "contactphoto_extracted_path",
+     "field",
+     {
+      "String": 16
+     }
+    ],
+    [
+     "KeyValueModel",
+     "Key",
+     "field",
+     {
+      "String": 24041
+     }
+    ],
+    [
+     "KeyValueModel",
+     "Value",
+     "field",
+     {
+      "String": 24041
+     }
+    ],
+    [
+     "Cookie",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 3302
+     }
+    ],
+    [
+     "Cookie",
+     "Source",
+     "field",
+     {
+      "String": 3302
+     }
+    ],
+    [
+     "Cookie",
+     "Name",
+     "field",
+     {
+      "String": 3301
+     }
+    ],
+    [
+     "Cookie",
+     "Value",
+     "field",
+     {
+      "String": 3292
+     }
+    ],
+    [
+     "Cookie",
+     "Domain",
+     "field",
+     {
+      "String": 3302
+     }
+    ],
+    [
+     "Cookie",
+     "Path",
+     "field",
+     {
+      "String": 3302
+     }
+    ],
+    [
+     "Cookie",
+     "CreationTime",
+     "field",
+     {
+      "TimeStamp": 3059
+     }
+    ],
+    [
+     "Cookie",
+     "LastAccessTime",
+     "field",
+     {
+      "TimeStamp": 3056
+     }
+    ],
+    [
+     "Cookie",
+     "Expiry",
+     "field",
+     {
+      "TimeStamp": 2093
+     }
+    ],
+    [
+     "Cookie",
+     "RelatedApplication",
+     "field",
+     {
+      "String": 3302
+     }
+    ],
+    [
+     "DeviceConnectivity",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 5
+     }
+    ],
+    [
+     "DeviceConnectivity",
+     "Source",
+     "field",
+     {
+      "String": 5
+     }
+    ],
+    [
+     "DeviceConnectivity",
+     "DeviceName",
+     "field",
+     {
+      "String": 5
+     }
+    ],
+    [
+     "DeviceConnectivity",
+     "DeviceType",
+     "field",
+     {
+      "DeviceType": 5
+     }
+    ],
+    [
+     "DeviceConnectivity",
+     "StartTime",
+     "field",
+     {
+      "TimeStamp": 5
+     }
+    ],
+    [
+     "DeviceConnectivity",
+     "ConnectivityMethod",
+     "field",
+     {
+      "ConnectivityMethod": 5
+     }
+    ],
+    [
+     "DeviceConnectivity",
+     "ConnectivityNature",
+     "field",
+     {
+      "ConnectivityNature": 5
+     }
+    ],
+    [
+     "DeviceEvent",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 3
+     }
+    ],
+    [
+     "DeviceEvent",
+     "StartTime",
+     "field",
+     {
+      "TimeStamp": 3
+     }
+    ],
+    [
+     "DeviceEvent",
+     "EventType",
+     "field",
+     {
+      "DeviceEventTypes": 3
+     }
+    ],
+    [
+     "DeviceEvent",
+     "Value",
+     "field",
+     {
+      "String": 3
+     }
+    ],
+    [
+     "DeviceEvent",
+     "AdditionalInfo",
+     "multiField",
+     {
+      "String": 1
+     }
+    ],
+    [
+     "DeviceEvent",
+     "Source",
+     "field",
+     {
+      "String": 1
+     }
+    ],
+    [
+     "DeviceInfoEntry",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 30
+     }
+    ],
+    [
+     "DeviceInfoEntry",
+     "Source",
+     "field",
+     {
+      "String": 30
+     }
+    ],
+    [
+     "DeviceInfoEntry",
+     "EntryName",
+     "field",
+     {
+      "String": 30
+     }
+    ],
+    [
+     "DeviceInfoEntry",
+     "EntryValue",
+     "field",
+     {
+      "String": 30
+     }
+    ],
+    [
+     "DeviceInfoEntry",
+     "EntryCategory",
+     "field",
+     {
+      "String": 30
+     }
+    ],
+    [
+     "RecognizedDevice",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 5
+     }
+    ],
+    [
+     "RecognizedDevice",
+     "Source",
+     "field",
+     {
+      "String": 5
+     }
+    ],
+    [
+     "RecognizedDevice",
+     "Name",
+     "field",
+     {
+      "String": 5
+     }
+    ],
+    [
+     "FileDownload",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 6
+     }
+    ],
+    [
+     "FileDownload",
+     "Source",
+     "field",
+     {
+      "String": 6
+     }
+    ],
+    [
+     "FileDownload",
+     "Url",
+     "field",
+     {
+      "String": 6
+     }
+    ],
+    [
+     "FileDownload",
+     "TargetPath",
+     "field",
+     {
+      "String": 6
+     }
+    ],
+    [
+     "FileDownload",
+     "StartTime",
+     "field",
+     {
+      "TimeStamp": 6
+     }
+    ],
+    [
+     "FileDownload",
+     "EndTime",
+     "field",
+     {
+      "TimeStamp": 6
+     }
+    ],
+    [
+     "FileDownload",
+     "LastAccessed",
+     "field",
+     {
+      "TimeStamp": 3
+     }
+    ],
+    [
+     "FileDownload",
+     "FileSize",
+     "field",
+     {
+      "Int64": 6
+     }
+    ],
+    [
+     "FileDownload",
+     "BytesReceived",
+     "field",
+     {
+      "Int64": 6
+     }
+    ],
+    [
+     "FileDownload",
+     "DownloadState",
+     "field",
+     {
+      "FileDownloadState": 6
+     }
+    ],
+    [
+     "FileDownload",
+     "DownloadURLChains",
+     "multiField",
+     {
+      "String": 12
+     }
+    ],
+    [
+     "Email",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 108
+     }
+    ],
+    [
+     "Email",
+     "Source",
+     "field",
+     {
+      "String": 108
+     }
+    ],
+    [
+     "Email",
+     "Folder",
+     "field",
+     {
+      "String": 108
+     }
+    ],
+    [
+     "Email",
+     "Status",
+     "field",
+     {
+      "MessageStatus": 108
+     }
+    ],
+    [
+     "Email",
+     "Subject",
+     "field",
+     {
+      "String": 108
+     }
+    ],
+    [
+     "Email",
+     "Body",
+     "field",
+     {
+      "String": 108
+     }
+    ],
+    [
+     "Email",
+     "TimeStamp",
+     "field",
+     {
+      "TimeStamp": 108
+     }
+    ],
+    [
+     "Email",
+     "Priority",
+     "field",
+     {
+      "MailPriority": 108
+     }
+    ],
+    [
+     "Email",
+     "Account",
+     "field",
+     {
+      "String": 108
+     }
+    ],
+    [
+     "Email",
+     "Labels",
+     "multiField",
+     {
+      "String": 216
+     }
+    ],
+    [
+     "InstalledApplication",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 440
+     }
+    ],
+    [
+     "InstalledApplication",
+     "Name",
+     "field",
+     {
+      "String": 99
+     }
+    ],
+    [
+     "InstalledApplication",
+     "Version",
+     "field",
+     {
+      "String": 420
+     }
+    ],
+    [
+     "InstalledApplication",
+     "Identifier",
+     "field",
+     {
+      "String": 440
+     }
+    ],
+    [
+     "InstalledApplication",
+     "PurchaseDate",
+     "field",
+     {
+      "TimeStamp": 79
+     }
+    ],
+    [
+     "InstalledApplication",
+     "DecodingStatus",
+     "field",
+     {
+      "DecodingStatus": 440
+     }
+    ],
+    [
+     "InstalledApplication",
+     "IsEmulatable",
+     "field",
+     {
+      "Boolean": 440
+     }
+    ],
+    [
+     "InstalledApplication",
+     "OperationMode",
+     "field",
+     {
+      "ApplicationOperationMode": 440
+     }
+    ],
+    [
+     "InstalledApplication",
+     "Categories",
+     "multiField",
+     {
+      "String": 277
+     }
+    ],
+    [
+     "InstalledApplication",
+     "AssociatedDirectoryPaths",
+     "multiField",
+     {
+      "String": 2165
+     }
+    ],
+    [
+     "Location",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 206
+     }
+    ],
+    [
+     "Coordinate",
+     "Longitude",
+     "field",
+     {
+      "Double": 38
+     }
+    ],
+    [
+     "Coordinate",
+     "Latitude",
+     "field",
+     {
+      "Double": 38
+     }
+    ],
+    [
+     "Location",
+     "TimeStamp",
+     "field",
+     {
+      "TimeStamp": 6
+     }
+    ],
+    [
+     "Location",
+     "Name",
+     "field",
+     {
+      "String": 202
+     }
+    ],
+    [
+     "Location",
+     "Category",
+     "field",
+     {
+      "String": 30
+     }
+    ],
+    [
+     "Location",
+     "Origin",
+     "field",
+     {
+      "LocationOrigin": 206
+     }
+    ],
+    [
+     "Location",
+     "AggregatedLocationsCount",
+     "field",
+     {
+      "Int32": 206
+     }
+    ],
+    [
+     "Location",
+     "AccountLocationAffiliation",
+     "field",
+     {
+      "AccountLocationAffiliation": 206
+     }
+    ],
+    [
+     "Location",
+     "DeviceLocationAffiliation",
+     "field",
+     {
+      "DeviceLocationAffiliation": 206
+     }
+    ],
+    [
+     "Location",
+     "Source",
+     "field",
+     {
+      "String": 176
+     }
+    ],
+    [
+     "Location",
+     "Type",
+     "field",
+     {
+      "String": 4
+     }
+    ],
+    [
+     "Location",
+     "Description",
+     "field",
+     {
+      "String": 97
+     }
+    ],
+    [
+     "WirelessNetwork",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 284
+     }
+    ],
+    [
+     "WirelessNetwork",
+     "Source",
+     "field",
+     {
+      "String": 284
+     }
+    ],
+    [
+     "WirelessNetwork",
+     "BSSId",
+     "field",
+     {
+      "String": 281
+     }
+    ],
+    [
+     "WirelessNetwork",
+     "TimeStamp",
+     "field",
+     {
+      "TimeStamp": 284
+     }
+    ],
+    [
+     "WirelessNetwork",
+     "NWConnectionType",
+     "field",
+     {
+      "NWConnectionType": 284
+     }
+    ],
+    [
+     "WirelessNetwork",
+     "SSId",
+     "field",
+     {
+      "String": 3
+     }
+    ],
+    [
+     "NetworkUsage",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 20961
+     }
+    ],
+    [
+     "NetworkUsage",
+     "Source",
+     "field",
+     {
+      "String": 20961
+     }
+    ],
+    [
+     "NetworkUsage",
+     "SSId",
+     "field",
+     {
+      "String": 20961
+     }
+    ],
+    [
+     "NetworkUsage",
+     "DateStarted",
+     "field",
+     {
+      "TimeStamp": 20961
+     }
+    ],
+    [
+     "NetworkUsage",
+     "DateEnded",
+     "field",
+     {
+      "TimeStamp": 20961
+     }
+    ],
+    [
+     "NetworkUsage",
+     "NumberOfBytesReceived",
+     "field",
+     {
+      "Int64": 20961
+     }
+    ],
+    [
+     "NetworkUsage",
+     "NumberOfBytesSent",
+     "field",
+     {
+      "Int64": 20961
+     }
+    ],
+    [
+     "NetworkUsage",
+     "IsRoaming",
+     "field",
+     {
+      "Boolean": 20961
+     }
+    ],
+    [
+     "NetworkUsage",
+     "UsageMode",
+     "field",
+     {
+      "NetworkUsageMode": 20961
+     }
+    ],
+    [
+     "NetworkUsage",
+     "NetworkConnectionType",
+     "field",
+     {
+      "NWConnectionType": 20961
+     }
+    ],
+    [
+     "NetworkUsage",
+     "ApplicationId",
+     "multiField",
+     {
+      "String": 14562
+     }
+    ],
+    [
+     "Note",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 2
+     }
+    ],
+    [
+     "Note",
+     "Source",
+     "field",
+     {
+      "String": 2
+     }
+    ],
+    [
+     "Note",
+     "Body",
+     "field",
+     {
+      "String": 2
+     }
+    ],
+    [
+     "Note",
+     "Creation",
+     "field",
+     {
+      "TimeStamp": 2
+     }
+    ],
+    [
+     "Note",
+     "Modification",
+     "field",
+     {
+      "TimeStamp": 2
+     }
+    ],
+    [
+     "Note",
+     "Title",
+     "field",
+     {
+      "String": 1
+     }
+    ],
+    [
+     "Password",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 517
+     }
+    ],
+    [
+     "Password",
+     "Data",
+     "field",
+     {
+      "String": 363
+     }
+    ],
+    [
+     "Password",
+     "Type",
+     "field",
+     {
+      "PasswordType": 517
+     }
+    ],
+    [
+     "Password",
+     "Source",
+     "field",
+     {
+      "String": 512
+     }
+    ],
+    [
+     "Password",
+     "Account",
+     "field",
+     {
+      "String": 515
+     }
+    ],
+    [
+     "Password",
+     "Label",
+     "field",
+     {
+      "String": 514
+     }
+    ],
+    [
+     "Password",
+     "AccessGroup",
+     "field",
+     {
+      "String": 505
+     }
+    ],
+    [
+     "Password",
+     "Service",
+     "field",
+     {
+      "String": 509
+     }
+    ],
+    [
+     "SearchedItem",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 752
+     }
+    ],
+    [
+     "SearchedItem",
+     "Source",
+     "field",
+     {
+      "String": 752
+     }
+    ],
+    [
+     "SearchedItem",
+     "TimeStamp",
+     "field",
+     {
+      "TimeStamp": 739
+     }
+    ],
+    [
+     "SearchedItem",
+     "Value",
+     "field",
+     {
+      "String": 752
+     }
+    ],
+    [
+     "SearchedItem",
+     "Origin",
+     "field",
+     {
+      "SearchItemOrigin": 752
+     }
+    ],
+    [
+     "SearchedItem",
+     "SearchResults",
+     "multiField",
+     {
+      "String": 6
+     }
+    ],
+    [
+     "SIMData",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 9
+     }
+    ],
+    [
+     "SIMData",
+     "Name",
+     "field",
+     {
+      "String": 9
+     }
+    ],
+    [
+     "SIMData",
+     "Value",
+     "field",
+     {
+      "String": 9
+     }
+    ],
+    [
+     "SIMData",
+     "Category",
+     "field",
+     {
+      "String": 9
+     }
+    ],
+    [
+     "SocialMediaActivity",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 934
+     }
+    ],
+    [
+     "SocialMediaActivity",
+     "Source",
+     "field",
+     {
+      "String": 934
+     }
+    ],
+    [
+     "SocialMediaActivity",
+     "TimeStamp",
+     "field",
+     {
+      "TimeStamp": 899
+     }
+    ],
+    [
+     "SocialMediaActivity",
+     "Status",
+     "field",
+     {
+      "PostStatus": 934
+     }
+    ],
+    [
+     "SocialMediaActivity",
+     "Platform",
+     "field",
+     {
+      "Platform": 934
+     }
+    ],
+    [
+     "SocialMediaActivity",
+     "ReactionsCount",
+     "field",
+     {
+      "Int32": 934
+     }
+    ],
+    [
+     "SocialMediaActivity",
+     "SharesCount",
+     "field",
+     {
+      "Int32": 934
+     }
+    ],
+    [
+     "SocialMediaActivity",
+     "SocialActivityType",
+     "field",
+     {
+      "SocialMediaActivityType": 934
+     }
+    ],
+    [
+     "SocialMediaActivity",
+     "CommentCount",
+     "field",
+     {
+      "Int32": 934
+     }
+    ],
+    [
+     "SocialMediaActivity",
+     "Account",
+     "field",
+     {
+      "String": 934
+     }
+    ],
+    [
+     "SocialMediaActivity",
+     "IsFromActivityLog",
+     "field",
+     {
+      "Boolean": 934
+     }
+    ],
+    [
+     "SocialMediaActivity",
+     "ChannelType",
+     "field",
+     {
+      "SocialMediaChannelType": 934
+     }
+    ],
+    [
+     "SocialMediaActivity",
+     "Url",
+     "field",
+     {
+      "String": 797
+     }
+    ],
+    [
+     "SocialMediaActivity",
+     "IdInOrigin",
+     "field",
+     {
+      "String": 930
+     }
+    ],
+    [
+     "SocialMediaActivity",
+     "Body",
+     "field",
+     {
+      "String": 677
+     }
+    ],
+    [
+     "SocialMediaActivity",
+     "PrivacySetting",
+     "field",
+     {
+      "String": 832
+     }
+    ],
+    [
+     "SocialMediaActivity",
+     "Title",
+     "field",
+     {
+      "String": 45
+     }
+    ],
+    [
+     "FileUpload",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 18
+     }
+    ],
+    [
+     "FileUpload",
+     "Source",
+     "field",
+     {
+      "String": 18
+     }
+    ],
+    [
+     "FileUpload",
+     "Url",
+     "field",
+     {
+      "String": 18
+     }
+    ],
+    [
+     "FileUpload",
+     "FileType",
+     "field",
+     {
+      "String": 18
+     }
+    ],
+    [
+     "FileUpload",
+     "DateUploaded",
+     "field",
+     {
+      "TimeStamp": 18
+     }
+    ],
+    [
+     "FileUpload",
+     "DateLastModified",
+     "field",
+     {
+      "TimeStamp": 18
+     }
+    ],
+    [
+     "FileUpload",
+     "ShareSettings",
+     "field",
+     {
+      "ShareSettings": 18
+     }
+    ],
+    [
+     "FileUpload",
+     "Account",
+     "field",
+     {
+      "String": 18
+     }
+    ],
+    [
+     "UserAccount",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 42
+     }
+    ],
+    [
+     "UserAccount",
+     "Source",
+     "field",
+     {
+      "String": 31
+     }
+    ],
+    [
+     "UserAccount",
+     "Username",
+     "field",
+     {
+      "String": 29
+     }
+    ],
+    [
+     "UserAccount",
+     "Password",
+     "field",
+     {
+      "String": 3
+     }
+    ],
+    [
+     "UserAccount",
+     "ServiceType",
+     "field",
+     {
+      "String": 24
+     }
+    ],
+    [
+     "UserAccount",
+     "TimeCreated",
+     "field",
+     {
+      "TimeStamp": 2
+     }
+    ],
+    [
+     "UserAccount",
+     "Name",
+     "field",
+     {
+      "String": 18
+     }
+    ],
+    [
+     "EmailAddress",
+     "Category",
+     "field",
+     {
+      "String": 4
+     }
+    ],
+    [
+     "EmailAddress",
+     "Value",
+     "field",
+     {
+      "String": 5
+     }
+    ],
+    [
+     "EmailAddress",
+     "Domain",
+     "field",
+     {
+      "String": 5
+     }
+    ],
+    [
+     "ProfilePicture",
+     "Category",
+     "field",
+     {
+      "String": 12
+     }
+    ],
+    [
+     "ProfilePicture",
+     "Value",
+     "field",
+     {
+      "String": 12
+     }
+    ],
+    [
+     "ProfilePicture",
+     "Domain",
+     "field",
+     {
+      "String": 12
+     }
+    ],
+    [
+     "UserAccount",
+     "Notes",
+     "multiField",
+     {
+      "String": 1
+     }
+    ],
+    [
+     "DictionaryWord",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 4648
+     }
+    ],
+    [
+     "DictionaryWord",
+     "Source",
+     "field",
+     {
+      "String": 1
+     }
+    ],
+    [
+     "DictionaryWord",
+     "Frequency",
+     "field",
+     {
+      "Int32": 4648
+     }
+    ],
+    [
+     "DictionaryWord",
+     "UsagePattern",
+     "field",
+     {
+      "UsagePattern": 4648
+     }
+    ],
+    [
+     "DictionaryWord",
+     "Word",
+     "field",
+     {
+      "String": 4647
+     }
+    ],
+    [
+     "WebBookmark",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 5
+     }
+    ],
+    [
+     "WebBookmark",
+     "Source",
+     "field",
+     {
+      "String": 5
+     }
+    ],
+    [
+     "WebBookmark",
+     "Title",
+     "field",
+     {
+      "String": 5
+     }
+    ],
+    [
+     "WebBookmark",
+     "VisitCount",
+     "field",
+     {
+      "Int32": 5
+     }
+    ],
+    [
+     "WebBookmark",
+     "Url",
+     "field",
+     {
+      "String": 3
+     }
+    ],
+    [
+     "VisitedPage",
+     "UserMapping",
+     "field",
+     {
+      "DecodingSourceOptions": 4129
+     }
+    ],
+    [
+     "VisitedPage",
+     "Source",
+     "field",
+     {
+      "String": 4129
+     }
+    ],
+    [
+     "VisitedPage",
+     "Title",
+     "field",
+     {
+      "String": 2621
+     }
+    ],
+    [
+     "VisitedPage",
+     "Url",
+     "field",
+     {
+      "String": 4129
+     }
+    ],
+    [
+     "VisitedPage",
+     "LastVisited",
+     "field",
+     {
+      "TimeStamp": 3868
+     }
+    ],
+    [
+     "VisitedPage",
+     "VisitCount",
+     "field",
+     {
+      "Int32": 4129
+     }
+    ],
+    [
+     "VisitedPage",
+     "CanRebuildCacheFile",
+     "field",
+     {
+      "Boolean": 4129
+     }
+    ],
+    [
+     "VisitedPage",
+     "UrlCacheFile",
+     "field",
+     {
+      "String": 205
+     }
+    ],
+    [
+     "VisitedPage",
+     "UsagePattern",
+     "multiField",
+     {
+      "UsagePattern": 10
+     }
+    ],
+    [
+     "PoweringEvent",
+     "Element",
+     "field",
+     {
+      "PowerElementType": 2
+     }
+    ],
+    [
+     "PoweringEvent",
+     "TimeStamp",
+     "field",
+     {
+      "TimeStamp": 2
+     }
+    ],
+    [
+     "PoweringEvent",
+     "Event",
+     "field",
+     {
+      "PowerEventType": 2
+     }
+    ],
+    [
+     "PoweringEvent",
+     "Description",
+     "field",
+     {
+      "String": 1
+     }
+    ]
+   ],
+   "enums": {
+    "ModelDirections": [
+     "Incoming",
+     "Outgoing"
+    ],
+    "TelephonyCallStatus": [
+     "BusyLine",
+     "Canceled",
+     "Established",
+     "Missed",
+     "NotEstablishedUnknownReason",
+     "Rejected",
+     "Unknown"
+    ],
+    "PartyRole": [
+     "From",
+     "General",
+     "To"
+    ],
+    "PartyStatus": [
+     "Unknown"
+    ],
+    "CallDisconnectionCause": [
+     "Unknown"
+    ],
+    "MessageStatus": [
+     "Default",
+     "Read",
+     "Sent",
+     "Unread",
+     "Unsent"
+    ],
+    "Label": [
+     "Default",
+     "Edited",
+     "Forwarded",
+     "Reply"
+    ],
+    "Platform": [
+     "Mobile",
+     "Unknown"
+    ],
+    "InstantMessageType": [
+     "AppMessage",
+     "Mms",
+     "Sms"
+    ],
+    "MailPriority": [
+     "Normal"
+    ],
+    "ChatType": [
+     "Unknown"
+    ],
+    "ContactType": [
+     "ChatParticipant",
+     "Follower",
+     "Following",
+     "FollowingAndFollower",
+     "Friend",
+     "PendingRequest",
+     "PhoneBook",
+     "Unknown"
+    ],
+    "DeviceType": [
+     "Unknown"
+    ],
+    "ConnectivityMethod": [
+     "Bluetooth"
+    ],
+    "ConnectivityNature": [
+     "Paired"
+    ],
+    "DeviceEventTypes": [
+     "PowerEvent",
+     "Wipe"
+    ],
+    "FileDownloadState": [
+     "Completed"
+    ],
+    "DecodingStatus": [
+     "Decoded",
+     "NotDecoded"
+    ],
+    "ApplicationOperationMode": [
+     "Background",
+     "Foreground"
+    ],
+    "LocationOrigin": [
+     "Unknown"
+    ],
+    "AccountLocationAffiliation": [
+     "Unknown"
+    ],
+    "DeviceLocationAffiliation": [
+     "Unknown"
+    ],
+    "NWConnectionType": [
+     "Cellular",
+     "Unknown",
+     "Wireless"
+    ],
+    "NetworkUsageMode": [
+     "Background",
+     "Foreground"
+    ],
+    "PasswordType": [
+     "Default",
+     "Key",
+     "Secret",
+     "Token"
+    ],
+    "SearchItemOrigin": [
+     "Default",
+     "Unknown"
+    ],
+    "PostStatus": [
+     "Unknown"
+    ],
+    "SocialMediaActivityType": [
+     "CheckIn",
+     "Comment",
+     "Post",
+     "Update"
+    ],
+    "SocialMediaChannelType": [
+     "Unknown"
+    ],
+    "ShareSettings": [
+     "Unknown"
+    ],
+    "UsagePattern": [
+     "Frequent",
+     "Unknown"
+    ],
+    "PowerElementType": [
+     "Device"
+    ],
+    "PowerEventType": [
+     "On"
+    ]
+   }
+  }
+ ]
+}

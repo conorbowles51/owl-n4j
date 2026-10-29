@@ -1,0 +1,1973 @@
+{
+ "source": "v1 owl_ingest_report.json per phone (report key, case id and report name removed)",
+ "phones": [
+  {
+   "p_label": "P01",
+   "phone_label": "1P",
+   "duration_minutes": 39.3,
+   "reconciliation": {
+    "summary": {
+     "total_xml_models": 2151,
+     "types_seen": 8,
+     "types_under": 1,
+     "types_not_supported": 0
+    },
+    "rows": [
+     {
+      "model_type": "Location",
+      "xml_count": 1220,
+      "persisted_count": 1784,
+      "status": "ok"
+     },
+     {
+      "model_type": "Call",
+      "xml_count": 359,
+      "persisted_count": 359,
+      "status": "ok"
+     },
+     {
+      "model_type": "Cookie",
+      "xml_count": 335,
+      "persisted_count": 335,
+      "status": "ok"
+     },
+     {
+      "model_type": "Chat",
+      "xml_count": 137,
+      "persisted_count": 137,
+      "status": "ok"
+     },
+     {
+      "model_type": "SearchedItem",
+      "xml_count": 71,
+      "persisted_count": 37,
+      "status": "under"
+     },
+     {
+      "model_type": "Note",
+      "xml_count": 13,
+      "persisted_count": 13,
+      "status": "ok"
+     },
+     {
+      "model_type": "CalendarEntry",
+      "xml_count": 9,
+      "persisted_count": 9,
+      "status": "ok"
+     },
+     {
+      "model_type": "Autofill",
+      "xml_count": 7,
+      "persisted_count": 7,
+      "status": "ok"
+     }
+    ]
+   }
+  },
+  {
+   "p_label": "P02",
+   "phone_label": "A-C8",
+   "duration_minutes": 4.5,
+   "reconciliation": {
+    "summary": {
+     "total_xml_models": 36979,
+     "types_seen": 26,
+     "types_under": 4,
+     "types_not_supported": 5
+    },
+    "rows": [
+     {
+      "model_type": "NetworkUsage",
+      "xml_count": 20961,
+      "persisted_count": 20961,
+      "status": "ok"
+     },
+     {
+      "model_type": "DictionaryWord",
+      "xml_count": 4648,
+      "persisted_count": 4611,
+      "status": "under"
+     },
+     {
+      "model_type": "VisitedPage",
+      "xml_count": 4129,
+      "persisted_count": 4129,
+      "status": "ok"
+     },
+     {
+      "model_type": "Cookie",
+      "xml_count": 3302,
+      "persisted_count": 0,
+      "status": "not_supported"
+     },
+     {
+      "model_type": "SocialMediaActivity",
+      "xml_count": 825,
+      "persisted_count": 0,
+      "status": "not_supported"
+     },
+     {
+      "model_type": "SearchedItem",
+      "xml_count": 752,
+      "persisted_count": 752,
+      "status": "ok"
+     },
+     {
+      "model_type": "Password",
+      "xml_count": 517,
+      "persisted_count": 517,
+      "status": "ok"
+     },
+     {
+      "model_type": "InstalledApplication",
+      "xml_count": 440,
+      "persisted_count": 440,
+      "status": "ok"
+     },
+     {
+      "model_type": "WirelessNetwork",
+      "xml_count": 284,
+      "persisted_count": 284,
+      "status": "ok"
+     },
+     {
+      "model_type": "Call",
+      "xml_count": 269,
+      "persisted_count": 269,
+      "status": "ok"
+     },
+     {
+      "model_type": "Contact",
+      "xml_count": 241,
+      "persisted_count": 239,
+      "status": "under"
+     },
+     {
+      "model_type": "Location",
+      "xml_count": 206,
+      "persisted_count": 35,
+      "status": "under"
+     },
+     {
+      "model_type": "Email",
+      "xml_count": 108,
+      "persisted_count": 108,
+      "status": "ok"
+     },
+     {
+      "model_type": "Chat",
+      "xml_count": 94,
+      "persisted_count": 94,
+      "status": "ok"
+     },
+     {
+      "model_type": "InstantMessage",
+      "xml_count": 84,
+      "persisted_count": 2829,
+      "status": "nested"
+     },
+     {
+      "model_type": "UserAccount",
+      "xml_count": 40,
+      "persisted_count": 40,
+      "status": "ok"
+     },
+     {
+      "model_type": "Autofill",
+      "xml_count": 26,
+      "persisted_count": 26,
+      "status": "ok"
+     },
+     {
+      "model_type": "FileUpload",
+      "xml_count": 18,
+      "persisted_count": 0,
+      "status": "not_supported"
+     },
+     {
+      "model_type": "SIMData",
+      "xml_count": 9,
+      "persisted_count": 7,
+      "status": "under"
+     },
+     {
+      "model_type": "FileDownload",
+      "xml_count": 6,
+      "persisted_count": 6,
+      "status": "ok"
+     },
+     {
+      "model_type": "DeviceConnectivity",
+      "xml_count": 5,
+      "persisted_count": 0,
+      "status": "not_supported"
+     },
+     {
+      "model_type": "RecognizedDevice",
+      "xml_count": 5,
+      "persisted_count": 5,
+      "status": "ok"
+     },
+     {
+      "model_type": "WebBookmark",
+      "xml_count": 5,
+      "persisted_count": 5,
+      "status": "ok"
+     },
+     {
+      "model_type": "DeviceEvent",
+      "xml_count": 2,
+      "persisted_count": 0,
+      "status": "ok"
+     },
+     {
+      "model_type": "Note",
+      "xml_count": 2,
+      "persisted_count": 0,
+      "status": "not_supported"
+     },
+     {
+      "model_type": "PoweringEvent",
+      "xml_count": 1,
+      "persisted_count": 0,
+      "status": "ok"
+     }
+    ]
+   }
+  },
+  {
+   "p_label": "P03",
+   "phone_label": "A-C1a",
+   "duration_minutes": 50.2,
+   "reconciliation": {
+    "summary": {
+     "total_xml_models": 9910,
+     "types_seen": 22,
+     "types_under": 3,
+     "types_not_supported": 6
+    },
+    "rows": [
+     {
+      "model_type": "Contact",
+      "xml_count": 3983,
+      "persisted_count": 3971,
+      "status": "under"
+     },
+     {
+      "model_type": "DeviceConnectivity",
+      "xml_count": 1215,
+      "persisted_count": 0,
+      "status": "not_supported"
+     },
+     {
+      "model_type": "Password",
+      "xml_count": 915,
+      "persisted_count": 915,
+      "status": "ok"
+     },
+     {
+      "model_type": "VisitedPage",
+      "xml_count": 838,
+      "persisted_count": 838,
+      "status": "ok"
+     },
+     {
+      "model_type": "SearchedItem",
+      "xml_count": 777,
+      "persisted_count": 436,
+      "status": "under"
+     },
+     {
+      "model_type": "Cookie",
+      "xml_count": 720,
+      "persisted_count": 0,
+      "status": "not_supported"
+     },
+     {
+      "model_type": "Location",
+      "xml_count": 508,
+      "persisted_count": 488,
+      "status": "under"
+     },
+     {
+      "model_type": "Chat",
+      "xml_count": 296,
+      "persisted_count": 296,
+      "status": "ok"
+     },
+     {
+      "model_type": "DeviceEvent",
+      "xml_count": 208,
+      "persisted_count": 0,
+      "status": "ok"
+     },
+     {
+      "model_type": "Call",
+      "xml_count": 146,
+      "persisted_count": 146,
+      "status": "ok"
+     },
+     {
+      "model_type": "CalendarEntry",
+      "xml_count": 129,
+      "persisted_count": 129,
+      "status": "ok"
+     },
+     {
+      "model_type": "Email",
+      "xml_count": 74,
+      "persisted_count": 74,
+      "status": "ok"
+     },
+     {
+      "model_type": "UserAccount",
+      "xml_count": 25,
+      "persisted_count": 25,
+      "status": "ok"
+     },
+     {
+      "model_type": "Journey",
+      "xml_count": 22,
+      "persisted_count": 0,
+      "status": "not_supported"
+     },
+     {
+      "model_type": "InstantMessage",
+      "xml_count": 15,
+      "persisted_count": 2696,
+      "status": "nested"
+     },
+     {
+      "model_type": "WebBookmark",
+      "xml_count": 15,
+      "persisted_count": 15,
+      "status": "ok"
+     },
+     {
+      "model_type": "FileUpload",
+      "xml_count": 9,
+      "persisted_count": 0,
+      "status": "not_supported"
+     },
+     {
+      "model_type": "CellTower",
+      "xml_count": 8,
+      "persisted_count": 0,
+      "status": "ok"
+     },
+     {
+      "model_type": "WirelessNetwork",
+      "xml_count": 4,
+      "persisted_count": 4,
+      "status": "ok"
+     },
+     {
+      "model_type": "RecognizedDevice",
+      "xml_count": 1,
+      "persisted_count": 1,
+      "status": "ok"
+     },
+     {
+      "model_type": "MobileCard",
+      "xml_count": 1,
+      "persisted_count": 0,
+      "status": "not_supported"
+     },
+     {
+      "model_type": "Note",
+      "xml_count": 1,
+      "persisted_count": 0,
+      "status": "not_supported"
+     }
+    ]
+   }
+  },
+  {
+   "p_label": "P04",
+   "phone_label": "A-C2",
+   "duration_minutes": 19.1,
+   "reconciliation": {
+    "summary": {
+     "total_xml_models": 121076,
+     "types_seen": 25,
+     "types_under": 4,
+     "types_not_supported": 8
+    },
+    "rows": [
+     {
+      "model_type": "Location",
+      "xml_count": 42545,
+      "persisted_count": 42717,
+      "status": "ok"
+     },
+     {
+      "model_type": "WirelessNetwork",
+      "xml_count": 24390,
+      "persisted_count": 24390,
+      "status": "ok"
+     },
+     {
+      "model_type": "DeviceEvent",
+      "xml_count": 21718,
+      "persisted_count": 0,
+      "status": "ok"
+     },
+     {
+      "model_type": "LogEntry",
+      "xml_count": 11809,
+      "persisted_count": 0,
+      "status": "not_supported"
+     },
+     {
+      "model_type": "Email",
+      "xml_count": 7253,
+      "persisted_count": 7253,
+      "status": "ok"
+     },
+     {
+      "model_type": "FileUpload",
+      "xml_count": 3259,
+      "persisted_count": 0,
+      "status": "not_supported"
+     },
+     {
+      "model_type": "Contact",
+      "xml_count": 2303,
+      "persisted_count": 2267,
+      "status": "under"
+     },
+     {
+      "model_type": "VisitedPage",
+      "xml_count": 1703,
+      "persisted_count": 1703,
+      "status": "ok"
+     },
+     {
+      "model_type": "DeviceConnectivity",
+      "xml_count": 1630,
+      "persisted_count": 0,
+      "status": "not_supported"
+     },
+     {
+      "model_type": "Chat",
+      "xml_count": 869,
+      "persisted_count": 869,
+      "status": "ok"
+     },
+     {
+      "model_type": "CellTower",
+      "xml_count": 860,
+      "persisted_count": 0,
+      "status": "ok"
+     },
+     {
+      "model_type": "Password",
+      "xml_count": 773,
+      "persisted_count": 773,
+      "status": "ok"
+     },
+     {
+      "model_type": "SearchedItem",
+      "xml_count": 560,
+      "persisted_count": 452,
+      "status": "under"
+     },
+     {
+      "model_type": "Call",
+      "xml_count": 527,
+      "persisted_count": 527,
+      "status": "ok"
+     },
+     {
+      "model_type": "Cookie",
+      "xml_count": 309,
+      "persisted_count": 0,
+      "status": "not_supported"
+     },
+     {
+      "model_type": "CalendarEntry",
+      "xml_count": 249,
+      "persisted_count": 248,
+      "status": "under"
+     },
+     {
+      "model_type": "SocialMediaActivity",
+      "xml_count": 176,
+      "persisted_count": 0,
+      "status": "not_supported"
+     },
+     {
+      "model_type": "InstantMessage",
+      "xml_count": 71,
+      "persisted_count": 9733,
+      "status": "nested"
+     },
+     {
+      "model_type": "UserAccount",
+      "xml_count": 24,
+      "persisted_count": 24,
+      "status": "ok"
+     },
+     {
+      "model_type": "Journey",
+      "xml_count": 16,
+      "persisted_count": 0,
+      "status": "not_supported"
+     },
+     {
+      "model_type": "SIMData",
+      "xml_count": 9,
+      "persisted_count": 7,
+      "status": "under"
+     },
+     {
+      "model_type": "RecognizedDevice",
+      "xml_count": 8,
+      "persisted_count": 8,
+      "status": "ok"
+     },
+     {
+      "model_type": "WebBookmark",
+      "xml_count": 8,
+      "persisted_count": 8,
+      "status": "ok"
+     },
+     {
+      "model_type": "Note",
+      "xml_count": 6,
+      "persisted_count": 0,
+      "status": "not_supported"
+     },
+     {
+      "model_type": "MobileCard",
+      "xml_count": 1,
+      "persisted_count": 0,
+      "status": "not_supported"
+     }
+    ]
+   }
+  },
+  {
+   "p_label": "P05",
+   "phone_label": "A-C5",
+   "duration_minutes": 200.4,
+   "reconciliation": {
+    "summary": {
+     "total_xml_models": 25596,
+     "types_seen": 18,
+     "types_under": 4,
+     "types_not_supported": 0
+    },
+    "rows": [
+     {
+      "model_type": "VisitedPage",
+      "xml_count": 9658,
+      "persisted_count": 9658,
+      "status": "ok"
+     },
+     {
+      "model_type": "DictionaryWord",
+      "xml_count": 6540,
+      "persisted_count": 6512,
+      "status": "under"
+     },
+     {
+      "model_type": "Call",
+      "xml_count": 4848,
+      "persisted_count": 4848,
+      "status": "ok"
+     },
+     {
+      "model_type": "Contact",
+      "xml_count": 1517,
+      "persisted_count": 1516,
+      "status": "under"
+     },
+     {
+      "model_type": "WirelessNetwork",
+      "xml_count": 667,
+      "persisted_count": 667,
+      "status": "ok"
+     },
+     {
+      "model_type": "InstantMessage",
+      "xml_count": 621,
+      "persisted_count": 13032,
+      "status": "nested"
+     },
+     {
+      "model_type": "InstalledApplication",
+      "xml_count": 588,
+      "persisted_count": 588,
+      "status": "ok"
+     },
+     {
+      "model_type": "Chat",
+      "xml_count": 578,
+      "persisted_count": 578,
+      "status": "ok"
+     },
+     {
+      "model_type": "Email",
+      "xml_count": 408,
+      "persisted_count": 408,
+      "status": "ok"
+     },
+     {
+      "model_type": "Location",
+      "xml_count": 110,
+      "persisted_count": 110,
+      "status": "ok"
+     },
+     {
+      "model_type": "UserAccount",
+      "xml_count": 39,
+      "persisted_count": 39,
+      "status": "ok"
+     },
+     {
+      "model_type": "WebBookmark",
+      "xml_count": 14,
+      "persisted_count": 14,
+      "status": "ok"
+     },
+     {
+      "model_type": "CalendarEntry",
+      "xml_count": 3,
+      "persisted_count": 1,
+      "status": "under"
+     },
+     {
+      "model_type": "DeviceEvent",
+      "xml_count": 1,
+      "persisted_count": 0,
+      "status": "ok"
+     },
+     {
+      "model_type": "User",
+      "xml_count": 1,
+      "persisted_count": 1,
+      "status": "ok"
+     },
+     {
+      "model_type": "RecognizedDevice",
+      "xml_count": 1,
+      "persisted_count": 0,
+      "status": "under"
+     },
+     {
+      "model_type": "FileDownload",
+      "xml_count": 1,
+      "persisted_count": 1,
+      "status": "ok"
+     },
+     {
+      "model_type": "PoweringEvent",
+      "xml_count": 1,
+      "persisted_count": 0,
+      "status": "ok"
+     }
+    ]
+   }
+  },
+  {
+   "p_label": "P06",
+   "phone_label": "A-C3",
+   "duration_minutes": 63.5,
+   "reconciliation": {
+    "summary": {
+     "total_xml_models": 16663,
+     "types_seen": 20,
+     "types_under": 2,
+     "types_not_supported": 0
+    },
+    "rows": [
+     {
+      "model_type": "VisitedPage",
+      "xml_count": 6936,
+      "persisted_count": 6936,
+      "status": "ok"
+     },
+     {
+      "model_type": "NetworkUsage",
+      "xml_count": 5181,
+      "persisted_count": 5181,
+      "status": "ok"
+     },
+     {
+      "model_type": "Call",
+      "xml_count": 1657,
+      "persisted_count": 1657,
+      "status": "ok"
+     },
+     {
+      "model_type": "Contact",
+      "xml_count": 1612,
+      "persisted_count": 1610,
+      "status": "under"
+     },
+     {
+      "model_type": "Chat",
+      "xml_count": 303,
+      "persisted_count": 303,
+      "status": "ok"
+     },
+     {
+      "model_type": "Email",
+      "xml_count": 294,
+      "persisted_count": 294,
+      "status": "ok"
+     },
+     {
+      "model_type": "Password",
+      "xml_count": 273,
+      "persisted_count": 273,
+      "status": "ok"
+     },
+     {
+      "model_type": "InstantMessage",
+      "xml_count": 201,
+      "persisted_count": 2917,
+      "status": "nested"
+     },
+     {
+      "model_type": "CalendarEntry",
+      "xml_count": 80,
+      "persisted_count": 79,
+      "status": "under"
+     },
+     {
+      "model_type": "UserAccount",
+      "xml_count": 34,
+      "persisted_count": 34,
+      "status": "ok"
+     },
+     {
+      "model_type": "Location",
+      "xml_count": 31,
+      "persisted_count": 31,
+      "status": "ok"
+     },
+     {
+      "model_type": "SearchedItem",
+      "xml_count": 19,
+      "persisted_count": 19,
+      "status": "ok"
+     },
+     {
+      "model_type": "SIMData",
+      "xml_count": 9,
+      "persisted_count": 9,
+      "status": "ok"
+     },
+     {
+      "model_type": "Autofill",
+      "xml_count": 8,
+      "persisted_count": 8,
+      "status": "ok"
+     },
+     {
+      "model_type": "WirelessNetwork",
+      "xml_count": 8,
+      "persisted_count": 8,
+      "status": "ok"
+     },
+     {
+      "model_type": "WebBookmark",
+      "xml_count": 7,
+      "persisted_count": 7,
+      "status": "ok"
+     },
+     {
+      "model_type": "RecognizedDevice",
+      "xml_count": 5,
+      "persisted_count": 5,
+      "status": "ok"
+     },
+     {
+      "model_type": "DeviceEvent",
+      "xml_count": 2,
+      "persisted_count": 0,
+      "status": "ok"
+     },
+     {
+      "model_type": "PoweringEvent",
+      "xml_count": 2,
+      "persisted_count": 0,
+      "status": "ok"
+     },
+     {
+      "model_type": "User",
+      "xml_count": 1,
+      "persisted_count": 1,
+      "status": "ok"
+     }
+    ]
+   }
+  },
+  {
+   "p_label": "P07",
+   "phone_label": "A-C7",
+   "duration_minutes": 53.0,
+   "reconciliation": {
+    "summary": {
+     "total_xml_models": 20863,
+     "types_seen": 26,
+     "types_under": 5,
+     "types_not_supported": 5
+    },
+    "rows": [
+     {
+      "model_type": "NetworkUsage",
+      "xml_count": 9357,
+      "persisted_count": 9357,
+      "status": "ok"
+     },
+     {
+      "model_type": "VisitedPage",
+      "xml_count": 4255,
+      "persisted_count": 4255,
+      "status": "ok"
+     },
+     {
+      "model_type": "DictionaryWord",
+      "xml_count": 2432,
+      "persisted_count": 2411,
+      "status": "under"
+     },
+     {
+      "model_type": "Cookie",
+      "xml_count": 1157,
+      "persisted_count": 0,
+      "status": "not_supported"
+     },
+     {
+      "model_type": "Call",
+      "xml_count": 734,
+      "persisted_count": 734,
+      "status": "ok"
+     },
+     {
+      "model_type": "InstantMessage",
+      "xml_count": 477,
+      "persisted_count": 8527,
+      "status": "nested"
+     },
+     {
+      "model_type": "Location",
+      "xml_count": 474,
+      "persisted_count": 471,
+      "status": "under"
+     },
+     {
+      "model_type": "Contact",
+      "xml_count": 464,
+      "persisted_count": 461,
+      "status": "under"
+     },
+     {
+      "model_type": "Password",
+      "xml_count": 463,
+      "persisted_count": 463,
+      "status": "ok"
+     },
+     {
+      "model_type": "InstalledApplication",
+      "xml_count": 427,
+      "persisted_count": 427,
+      "status": "ok"
+     },
+     {
+      "model_type": "Email",
+      "xml_count": 201,
+      "persisted_count": 201,
+      "status": "ok"
+     },
+     {
+      "model_type": "Chat",
+      "xml_count": 173,
+      "persisted_count": 173,
+      "status": "ok"
+     },
+     {
+      "model_type": "CalendarEntry",
+      "xml_count": 81,
+      "persisted_count": 81,
+      "status": "ok"
+     },
+     {
+      "model_type": "FileUpload",
+      "xml_count": 46,
+      "persisted_count": 0,
+      "status": "not_supported"
+     },
+     {
+      "model_type": "UserAccount",
+      "xml_count": 40,
+      "persisted_count": 40,
+      "status": "ok"
+     },
+     {
+      "model_type": "SearchedItem",
+      "xml_count": 32,
+      "persisted_count": 24,
+      "status": "under"
+     },
+     {
+      "model_type": "Autofill",
+      "xml_count": 18,
+      "persisted_count": 18,
+      "status": "ok"
+     },
+     {
+      "model_type": "SIMData",
+      "xml_count": 9,
+      "persisted_count": 7,
+      "status": "under"
+     },
+     {
+      "model_type": "WebBookmark",
+      "xml_count": 8,
+      "persisted_count": 8,
+      "status": "ok"
+     },
+     {
+      "model_type": "DeviceConnectivity",
+      "xml_count": 4,
+      "persisted_count": 0,
+      "status": "not_supported"
+     },
+     {
+      "model_type": "RecognizedDevice",
+      "xml_count": 4,
+      "persisted_count": 4,
+      "status": "ok"
+     },
+     {
+      "model_type": "FileDownload",
+      "xml_count": 2,
+      "persisted_count": 2,
+      "status": "ok"
+     },
+     {
+      "model_type": "Note",
+      "xml_count": 2,
+      "persisted_count": 0,
+      "status": "not_supported"
+     },
+     {
+      "model_type": "DeviceEvent",
+      "xml_count": 1,
+      "persisted_count": 0,
+      "status": "ok"
+     },
+     {
+      "model_type": "Journey",
+      "xml_count": 1,
+      "persisted_count": 0,
+      "status": "not_supported"
+     },
+     {
+      "model_type": "WirelessNetwork",
+      "xml_count": 1,
+      "persisted_count": 1,
+      "status": "ok"
+     }
+    ]
+   }
+  },
+  {
+   "p_label": "P08",
+   "phone_label": "A-C6",
+   "duration_minutes": 31.9,
+   "reconciliation": {
+    "summary": {
+     "total_xml_models": 59835,
+     "types_seen": 26,
+     "types_under": 4,
+     "types_not_supported": 4
+    },
+    "rows": [
+     {
+      "model_type": "NetworkUsage",
+      "xml_count": 17532,
+      "persisted_count": 17532,
+      "status": "ok"
+     },
+     {
+      "model_type": "Call",
+      "xml_count": 13573,
+      "persisted_count": 13573,
+      "status": "ok"
+     },
+     {
+      "model_type": "Contact",
+      "xml_count": 13005,
+      "persisted_count": 13004,
+      "status": "under"
+     },
+     {
+      "model_type": "Chat",
+      "xml_count": 4491,
+      "persisted_count": 4491,
+      "status": "ok"
+     },
+     {
+      "model_type": "VisitedPage",
+      "xml_count": 4282,
+      "persisted_count": 4282,
+      "status": "ok"
+     },
+     {
+      "model_type": "Cookie",
+      "xml_count": 3984,
+      "persisted_count": 0,
+      "status": "not_supported"
+     },
+     {
+      "model_type": "InstantMessage",
+      "xml_count": 928,
+      "persisted_count": 186787,
+      "status": "nested"
+     },
+     {
+      "model_type": "Password",
+      "xml_count": 690,
+      "persisted_count": 690,
+      "status": "ok"
+     },
+     {
+      "model_type": "InstalledApplication",
+      "xml_count": 668,
+      "persisted_count": 668,
+      "status": "ok"
+     },
+     {
+      "model_type": "Email",
+      "xml_count": 476,
+      "persisted_count": 476,
+      "status": "ok"
+     },
+     {
+      "model_type": "SearchedItem",
+      "xml_count": 71,
+      "persisted_count": 71,
+      "status": "ok"
+     },
+     {
+      "model_type": "CalendarEntry",
+      "xml_count": 40,
+      "persisted_count": 39,
+      "status": "under"
+     },
+     {
+      "model_type": "UserAccount",
+      "xml_count": 24,
+      "persisted_count": 24,
+      "status": "ok"
+     },
+     {
+      "model_type": "Location",
+      "xml_count": 17,
+      "persisted_count": 16,
+      "status": "under"
+     },
+     {
+      "model_type": "WirelessNetwork",
+      "xml_count": 14,
+      "persisted_count": 14,
+      "status": "ok"
+     },
+     {
+      "model_type": "Autofill",
+      "xml_count": 9,
+      "persisted_count": 9,
+      "status": "ok"
+     },
+     {
+      "model_type": "SIMData",
+      "xml_count": 9,
+      "persisted_count": 7,
+      "status": "under"
+     },
+     {
+      "model_type": "WebBookmark",
+      "xml_count": 6,
+      "persisted_count": 6,
+      "status": "ok"
+     },
+     {
+      "model_type": "SocialMediaActivity",
+      "xml_count": 5,
+      "persisted_count": 0,
+      "status": "not_supported"
+     },
+     {
+      "model_type": "DeviceEvent",
+      "xml_count": 2,
+      "persisted_count": 0,
+      "status": "ok"
+     },
+     {
+      "model_type": "FileDownload",
+      "xml_count": 2,
+      "persisted_count": 2,
+      "status": "ok"
+     },
+     {
+      "model_type": "Note",
+      "xml_count": 2,
+      "persisted_count": 0,
+      "status": "not_supported"
+     },
+     {
+      "model_type": "PoweringEvent",
+      "xml_count": 2,
+      "persisted_count": 0,
+      "status": "ok"
+     },
+     {
+      "model_type": "DeviceConnectivity",
+      "xml_count": 1,
+      "persisted_count": 0,
+      "status": "not_supported"
+     },
+     {
+      "model_type": "User",
+      "xml_count": 1,
+      "persisted_count": 1,
+      "status": "ok"
+     },
+     {
+      "model_type": "RecognizedDevice",
+      "xml_count": 1,
+      "persisted_count": 1,
+      "status": "ok"
+     }
+    ]
+   }
+  },
+  {
+   "p_label": "P09",
+   "phone_label": "A-C9",
+   "duration_minutes": 1.1,
+   "reconciliation": {
+    "summary": {
+     "total_xml_models": 2941,
+     "types_seen": 14,
+     "types_under": 3,
+     "types_not_supported": 0
+    },
+    "rows": [
+     {
+      "model_type": "Call",
+      "xml_count": 1391,
+      "persisted_count": 1391,
+      "status": "ok"
+     },
+     {
+      "model_type": "DictionaryWord",
+      "xml_count": 640,
+      "persisted_count": 635,
+      "status": "under"
+     },
+     {
+      "model_type": "Password",
+      "xml_count": 288,
+      "persisted_count": 288,
+      "status": "ok"
+     },
+     {
+      "model_type": "Contact",
+      "xml_count": 235,
+      "persisted_count": 231,
+      "status": "under"
+     },
+     {
+      "model_type": "VisitedPage",
+      "xml_count": 213,
+      "persisted_count": 213,
+      "status": "ok"
+     },
+     {
+      "model_type": "Chat",
+      "xml_count": 114,
+      "persisted_count": 114,
+      "status": "ok"
+     },
+     {
+      "model_type": "InstantMessage",
+      "xml_count": 17,
+      "persisted_count": 3421,
+      "status": "nested"
+     },
+     {
+      "model_type": "UserAccount",
+      "xml_count": 14,
+      "persisted_count": 14,
+      "status": "ok"
+     },
+     {
+      "model_type": "SearchedItem",
+      "xml_count": 13,
+      "persisted_count": 13,
+      "status": "ok"
+     },
+     {
+      "model_type": "Location",
+      "xml_count": 7,
+      "persisted_count": 7,
+      "status": "ok"
+     },
+     {
+      "model_type": "WebBookmark",
+      "xml_count": 4,
+      "persisted_count": 4,
+      "status": "ok"
+     },
+     {
+      "model_type": "Email",
+      "xml_count": 2,
+      "persisted_count": 2,
+      "status": "ok"
+     },
+     {
+      "model_type": "WirelessNetwork",
+      "xml_count": 2,
+      "persisted_count": 2,
+      "status": "ok"
+     },
+     {
+      "model_type": "CalendarEntry",
+      "xml_count": 1,
+      "persisted_count": 0,
+      "status": "under"
+     }
+    ]
+   }
+  },
+  {
+   "p_label": "P10",
+   "phone_label": "A-C1b",
+   "duration_minutes": 7.8,
+   "reconciliation": {
+    "summary": {
+     "total_xml_models": 15206,
+     "types_seen": 7,
+     "types_under": 2,
+     "types_not_supported": 0
+    },
+    "rows": [
+     {
+      "model_type": "Email",
+      "xml_count": 10890,
+      "persisted_count": 10890,
+      "status": "ok"
+     },
+     {
+      "model_type": "Contact",
+      "xml_count": 2940,
+      "persisted_count": 2217,
+      "status": "under"
+     },
+     {
+      "model_type": "Chat",
+      "xml_count": 655,
+      "persisted_count": 655,
+      "status": "ok"
+     },
+     {
+      "model_type": "Call",
+      "xml_count": 602,
+      "persisted_count": 602,
+      "status": "ok"
+     },
+     {
+      "model_type": "InstantMessage",
+      "xml_count": 86,
+      "persisted_count": 33084,
+      "status": "nested"
+     },
+     {
+      "model_type": "UserAccount",
+      "xml_count": 24,
+      "persisted_count": 24,
+      "status": "ok"
+     },
+     {
+      "model_type": "SIMData",
+      "xml_count": 9,
+      "persisted_count": 7,
+      "status": "under"
+     }
+    ]
+   }
+  },
+  {
+   "p_label": "P11",
+   "phone_label": "A-C4",
+   "duration_minutes": 10.6,
+   "reconciliation": {
+    "summary": {
+     "total_xml_models": 117803,
+     "types_seen": 25,
+     "types_under": 4,
+     "types_not_supported": 6
+    },
+    "rows": [
+     {
+      "model_type": "VisitedPage",
+      "xml_count": 55590,
+      "persisted_count": 55590,
+      "status": "ok"
+     },
+     {
+      "model_type": "ActivitySensorData",
+      "xml_count": 17082,
+      "persisted_count": 0,
+      "status": "not_supported"
+     },
+     {
+      "model_type": "AppsUsageLog",
+      "xml_count": 8960,
+      "persisted_count": 0,
+      "status": "not_supported"
+     },
+     {
+      "model_type": "DeviceEvent",
+      "xml_count": 8928,
+      "persisted_count": 0,
+      "status": "ok"
+     },
+     {
+      "model_type": "SearchedItem",
+      "xml_count": 8781,
+      "persisted_count": 8768,
+      "status": "under"
+     },
+     {
+      "model_type": "Email",
+      "xml_count": 5592,
+      "persisted_count": 5592,
+      "status": "ok"
+     },
+     {
+      "model_type": "LogEntry",
+      "xml_count": 4502,
+      "persisted_count": 0,
+      "status": "not_supported"
+     },
+     {
+      "model_type": "Contact",
+      "xml_count": 2552,
+      "persisted_count": 1397,
+      "status": "under"
+     },
+     {
+      "model_type": "Password",
+      "xml_count": 1566,
+      "persisted_count": 1566,
+      "status": "ok"
+     },
+     {
+      "model_type": "Location",
+      "xml_count": 1352,
+      "persisted_count": 111,
+      "status": "under"
+     },
+     {
+      "model_type": "DeviceConnectivity",
+      "xml_count": 1228,
+      "persisted_count": 0,
+      "status": "not_supported"
+     },
+     {
+      "model_type": "Cookie",
+      "xml_count": 643,
+      "persisted_count": 0,
+      "status": "not_supported"
+     },
+     {
+      "model_type": "ApplicationUsage",
+      "xml_count": 350,
+      "persisted_count": 0,
+      "status": "ok"
+     },
+     {
+      "model_type": "Call",
+      "xml_count": 220,
+      "persisted_count": 220,
+      "status": "ok"
+     },
+     {
+      "model_type": "InstalledApplication",
+      "xml_count": 183,
+      "persisted_count": 183,
+      "status": "ok"
+     },
+     {
+      "model_type": "CalendarEntry",
+      "xml_count": 133,
+      "persisted_count": 133,
+      "status": "ok"
+     },
+     {
+      "model_type": "Journey",
+      "xml_count": 36,
+      "persisted_count": 0,
+      "status": "not_supported"
+     },
+     {
+      "model_type": "WirelessNetwork",
+      "xml_count": 26,
+      "persisted_count": 26,
+      "status": "ok"
+     },
+     {
+      "model_type": "UserAccount",
+      "xml_count": 25,
+      "persisted_count": 25,
+      "status": "ok"
+     },
+     {
+      "model_type": "InstantMessage",
+      "xml_count": 14,
+      "persisted_count": 51,
+      "status": "nested"
+     },
+     {
+      "model_type": "Chat",
+      "xml_count": 11,
+      "persisted_count": 11,
+      "status": "ok"
+     },
+     {
+      "model_type": "CellTower",
+      "xml_count": 10,
+      "persisted_count": 0,
+      "status": "ok"
+     },
+     {
+      "model_type": "SIMData",
+      "xml_count": 9,
+      "persisted_count": 7,
+      "status": "under"
+     },
+     {
+      "model_type": "RecognizedDevice",
+      "xml_count": 5,
+      "persisted_count": 5,
+      "status": "ok"
+     },
+     {
+      "model_type": "WebBookmark",
+      "xml_count": 5,
+      "persisted_count": 5,
+      "status": "ok"
+     }
+    ]
+   }
+  },
+  {
+   "p_label": "P12",
+   "phone_label": "B-C3",
+   "duration_minutes": 21.5,
+   "reconciliation": {
+    "summary": {
+     "total_xml_models": 6915,
+     "types_seen": 15,
+     "types_under": 2,
+     "types_not_supported": 1
+    },
+    "rows": [
+     {
+      "model_type": "Cookie",
+      "xml_count": 2310,
+      "persisted_count": 2310,
+      "status": "ok"
+     },
+     {
+      "model_type": "VisitedPage",
+      "xml_count": 1771,
+      "persisted_count": 1771,
+      "status": "ok"
+     },
+     {
+      "model_type": "Contact",
+      "xml_count": 1447,
+      "persisted_count": 1447,
+      "status": "ok"
+     },
+     {
+      "model_type": "InstalledApplication",
+      "xml_count": 416,
+      "persisted_count": 416,
+      "status": "ok"
+     },
+     {
+      "model_type": "Call",
+      "xml_count": 413,
+      "persisted_count": 413,
+      "status": "ok"
+     },
+     {
+      "model_type": "SearchedItem",
+      "xml_count": 223,
+      "persisted_count": 222,
+      "status": "under"
+     },
+     {
+      "model_type": "Chat",
+      "xml_count": 181,
+      "persisted_count": 181,
+      "status": "ok"
+     },
+     {
+      "model_type": "Location",
+      "xml_count": 103,
+      "persisted_count": 108,
+      "status": "ok"
+     },
+     {
+      "model_type": "UserAccount",
+      "xml_count": 19,
+      "persisted_count": 19,
+      "status": "ok"
+     },
+     {
+      "model_type": "WebBookmark",
+      "xml_count": 12,
+      "persisted_count": 12,
+      "status": "ok"
+     },
+     {
+      "model_type": "SIMData",
+      "xml_count": 9,
+      "persisted_count": 7,
+      "status": "under"
+     },
+     {
+      "model_type": "WirelessNetwork",
+      "xml_count": 6,
+      "persisted_count": 6,
+      "status": "ok"
+     },
+     {
+      "model_type": "Autofill",
+      "xml_count": 2,
+      "persisted_count": 2,
+      "status": "ok"
+     },
+     {
+      "model_type": "InstantMessage",
+      "xml_count": 2,
+      "persisted_count": 2144,
+      "status": "nested"
+     },
+     {
+      "model_type": "CreditCard",
+      "xml_count": 1,
+      "persisted_count": 0,
+      "status": "not_supported"
+     }
+    ]
+   }
+  },
+  {
+   "p_label": "P13",
+   "phone_label": "B-C2",
+   "duration_minutes": 292.1,
+   "reconciliation": {
+    "summary": {
+     "total_xml_models": 116967,
+     "types_seen": 32,
+     "types_under": 2,
+     "types_not_supported": 4
+    },
+    "rows": [
+     {
+      "model_type": "DeviceEvent",
+      "xml_count": 52886,
+      "persisted_count": 0,
+      "status": "ok"
+     },
+     {
+      "model_type": "AppsUsageLog",
+      "xml_count": 17486,
+      "persisted_count": 0,
+      "status": "ok"
+     },
+     {
+      "model_type": "ActivitySensorData",
+      "xml_count": 15311,
+      "persisted_count": 15311,
+      "status": "ok"
+     },
+     {
+      "model_type": "Contact",
+      "xml_count": 8497,
+      "persisted_count": 8416,
+      "status": "under"
+     },
+     {
+      "model_type": "LogEntry",
+      "xml_count": 6157,
+      "persisted_count": 6157,
+      "status": "ok"
+     },
+     {
+      "model_type": "Notification",
+      "xml_count": 3951,
+      "persisted_count": 0,
+      "status": "not_supported"
+     },
+     {
+      "model_type": "Location",
+      "xml_count": 2813,
+      "persisted_count": 2868,
+      "status": "ok"
+     },
+     {
+      "model_type": "VisitedPage",
+      "xml_count": 2137,
+      "persisted_count": 2137,
+      "status": "ok"
+     },
+     {
+      "model_type": "Password",
+      "xml_count": 1687,
+      "persisted_count": 1687,
+      "status": "ok"
+     },
+     {
+      "model_type": "Call",
+      "xml_count": 1540,
+      "persisted_count": 1540,
+      "status": "ok"
+     },
+     {
+      "model_type": "DeviceConnectivity",
+      "xml_count": 1338,
+      "persisted_count": 1338,
+      "status": "ok"
+     },
+     {
+      "model_type": "Cookie",
+      "xml_count": 1064,
+      "persisted_count": 1064,
+      "status": "ok"
+     },
+     {
+      "model_type": "Chat",
+      "xml_count": 659,
+      "persisted_count": 659,
+      "status": "ok"
+     },
+     {
+      "model_type": "Email",
+      "xml_count": 392,
+      "persisted_count": 392,
+      "status": "ok"
+     },
+     {
+      "model_type": "InstalledApplication",
+      "xml_count": 262,
+      "persisted_count": 262,
+      "status": "ok"
+     },
+     {
+      "model_type": "SocialMediaActivity",
+      "xml_count": 150,
+      "persisted_count": 150,
+      "status": "ok"
+     },
+     {
+      "model_type": "CalendarEntry",
+      "xml_count": 137,
+      "persisted_count": 137,
+      "status": "ok"
+     },
+     {
+      "model_type": "PoweringEvent",
+      "xml_count": 122,
+      "persisted_count": 0,
+      "status": "ok"
+     },
+     {
+      "model_type": "SearchedItem",
+      "xml_count": 94,
+      "persisted_count": 81,
+      "status": "under"
+     },
+     {
+      "model_type": "Voicemail",
+      "xml_count": 76,
+      "persisted_count": 0,
+      "status": "not_supported"
+     },
+     {
+      "model_type": "WirelessNetwork",
+      "xml_count": 56,
+      "persisted_count": 56,
+      "status": "ok"
+     },
+     {
+      "model_type": "InstantMessage",
+      "xml_count": 53,
+      "persisted_count": 44064,
+      "status": "nested"
+     },
+     {
+      "model_type": "UserAccount",
+      "xml_count": 28,
+      "persisted_count": 28,
+      "status": "ok"
+     },
+     {
+      "model_type": "Journey",
+      "xml_count": 19,
+      "persisted_count": 19,
+      "status": "ok"
+     },
+     {
+      "model_type": "ApplicationUsage",
+      "xml_count": 10,
+      "persisted_count": 0,
+      "status": "ok"
+     },
+     {
+      "model_type": "RecognizedDevice",
+      "xml_count": 10,
+      "persisted_count": 10,
+      "status": "ok"
+     },
+     {
+      "model_type": "Recording",
+      "xml_count": 7,
+      "persisted_count": 0,
+      "status": "not_supported"
+     },
+     {
+      "model_type": "WebBookmark",
+      "xml_count": 7,
+      "persisted_count": 7,
+      "status": "ok"
+     },
+     {
+      "model_type": "CellTower",
+      "xml_count": 6,
+      "persisted_count": 0,
+      "status": "ok"
+     },
+     {
+      "model_type": "SIMData",
+      "xml_count": 6,
+      "persisted_count": 6,
+      "status": "ok"
+     },
+     {
+      "model_type": "Note",
+      "xml_count": 5,
+      "persisted_count": 5,
+      "status": "ok"
+     },
+     {
+      "model_type": "MobileCard",
+      "xml_count": 1,
+      "persisted_count": 0,
+      "status": "not_supported"
+     }
+    ]
+   }
+  },
+  {
+   "p_label": "P14",
+   "phone_label": "B-C1",
+   "duration_minutes": 173.0,
+   "reconciliation": {
+    "summary": {
+     "total_xml_models": 338715,
+     "types_seen": 29,
+     "types_under": 5,
+     "types_not_supported": 4
+    },
+    "rows": [
+     {
+      "model_type": "DeviceConnectivity",
+      "xml_count": 187649,
+      "persisted_count": 187649,
+      "status": "ok"
+     },
+     {
+      "model_type": "DeviceEvent",
+      "xml_count": 50999,
+      "persisted_count": 0,
+      "status": "ok"
+     },
+     {
+      "model_type": "AppsUsageLog",
+      "xml_count": 41277,
+      "persisted_count": 0,
+      "status": "ok"
+     },
+     {
+      "model_type": "ActivitySensorData",
+      "xml_count": 13125,
+      "persisted_count": 13125,
+      "status": "ok"
+     },
+     {
+      "model_type": "Location",
+      "xml_count": 12848,
+      "persisted_count": 12821,
+      "status": "under"
+     },
+     {
+      "model_type": "VisitedPage",
+      "xml_count": 9269,
+      "persisted_count": 9269,
+      "status": "ok"
+     },
+     {
+      "model_type": "Contact",
+      "xml_count": 4679,
+      "persisted_count": 4674,
+      "status": "under"
+     },
+     {
+      "model_type": "LogEntry",
+      "xml_count": 3469,
+      "persisted_count": 3469,
+      "status": "ok"
+     },
+     {
+      "model_type": "Call",
+      "xml_count": 3177,
+      "persisted_count": 3177,
+      "status": "ok"
+     },
+     {
+      "model_type": "Notification",
+      "xml_count": 3089,
+      "persisted_count": 0,
+      "status": "not_supported"
+     },
+     {
+      "model_type": "ApplicationUsage",
+      "xml_count": 2246,
+      "persisted_count": 0,
+      "status": "ok"
+     },
+     {
+      "model_type": "SearchedItem",
+      "xml_count": 1519,
+      "persisted_count": 1322,
+      "status": "under"
+     },
+     {
+      "model_type": "Password",
+      "xml_count": 1401,
+      "persisted_count": 1401,
+      "status": "ok"
+     },
+     {
+      "model_type": "Chat",
+      "xml_count": 1228,
+      "persisted_count": 1228,
+      "status": "ok"
+     },
+     {
+      "model_type": "Cookie",
+      "xml_count": 1109,
+      "persisted_count": 1109,
+      "status": "ok"
+     },
+     {
+      "model_type": "SocialMediaActivity",
+      "xml_count": 822,
+      "persisted_count": 822,
+      "status": "ok"
+     },
+     {
+      "model_type": "InstalledApplication",
+      "xml_count": 342,
+      "persisted_count": 342,
+      "status": "ok"
+     },
+     {
+      "model_type": "CalendarEntry",
+      "xml_count": 138,
+      "persisted_count": 137,
+      "status": "under"
+     },
+     {
+      "model_type": "WirelessNetwork",
+      "xml_count": 111,
+      "persisted_count": 111,
+      "status": "ok"
+     },
+     {
+      "model_type": "DeviceInfoEntry",
+      "xml_count": 45,
+      "persisted_count": 0,
+      "status": "not_supported"
+     },
+     {
+      "model_type": "UserAccount",
+      "xml_count": 45,
+      "persisted_count": 45,
+      "status": "ok"
+     },
+     {
+      "model_type": "Email",
+      "xml_count": 37,
+      "persisted_count": 37,
+      "status": "ok"
+     },
+     {
+      "model_type": "Journey",
+      "xml_count": 28,
+      "persisted_count": 28,
+      "status": "ok"
+     },
+     {
+      "model_type": "InstantMessage",
+      "xml_count": 22,
+      "persisted_count": 55828,
+      "status": "nested"
+     },
+     {
+      "model_type": "CellTower",
+      "xml_count": 17,
+      "persisted_count": 0,
+      "status": "ok"
+     },
+     {
+      "model_type": "RecognizedDevice",
+      "xml_count": 11,
+      "persisted_count": 10,
+      "status": "under"
+     },
+     {
+      "model_type": "RemoteServiceSession",
+      "xml_count": 6,
+      "persisted_count": 0,
+      "status": "not_supported"
+     },
+     {
+      "model_type": "WebBookmark",
+      "xml_count": 6,
+      "persisted_count": 6,
+      "status": "ok"
+     },
+     {
+      "model_type": "MobileCard",
+      "xml_count": 1,
+      "persisted_count": 0,
+      "status": "not_supported"
+     }
+    ]
+   }
+  }
+ ]
+}
