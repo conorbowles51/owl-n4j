@@ -45,7 +45,7 @@ from services.financial.candidate_materialization import preview_candidate_final
 from services.financial.candidate_statement_scopes import StatementScopesRequest
 from services.financial.account_parties import _account_party_state
 from routers.evidence import _resolve_stored_path
-from services.financial.ledger_snapshot import capture_ledger_export, ledger_export_archive
+from services.financial.ledger_snapshot import capture_ledger_export, capture_ledger_scope, ledger_export_archive
 from services.financial.ledger_summary import ledger_summary, LedgerSummaryError
 from services.financial.export_audit import record_prepared_export
 from services.financial.statement_balances import capture_statement_running_balances
@@ -1173,7 +1173,7 @@ def get_ledger_transfer_candidates(case_id: UUID = Query(...), start_date: Optio
         end_date: Optional[date] = Query(None), population: Literal['working', 'verified'] = Query('working'),
         tolerance_days: int = Query(3, ge=0, le=7), db: Session = Depends(get_db)):
     try:
-        captured = capture_ledger_export(db.get_bind(), case_id=case_id, start_date=start_date, end_date=end_date)
+        captured = capture_ledger_scope(db.get_bind(), case_id=case_id, start_date=start_date, end_date=end_date)
         return ledger_transfer_candidates(captured, population=population, tolerance_days=tolerance_days)
     except LedgerSummaryError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -1201,7 +1201,7 @@ def get_ledger_posting_graph(case_id: UUID = Query(...), account_id: Optional[UU
         population: Literal['working', 'verified'] = Query('working'), db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
     from services.financial.ledger_graph import ledger_posting_graph
     try:
-        captured = capture_ledger_export(db.get_bind(), case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders, start_date=start_date, end_date=end_date)
+        captured = capture_ledger_scope(db.get_bind(), case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders, start_date=start_date, end_date=end_date)
         return ledger_posting_graph(captured, population=population)
     except LedgerSummaryError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -1277,7 +1277,7 @@ def get_ledger_timeline(case_id: UUID = Query(...), account_id: Optional[UUID] =
         population: Literal['working', 'verified'] = Query('working'), db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
     from services.financial.ledger_timeline import ledger_timeline
     try:
-        captured = capture_ledger_export(db.get_bind(), case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders, start_date=start_date, end_date=end_date)
+        captured = capture_ledger_scope(db.get_bind(), case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders, start_date=start_date, end_date=end_date)
         return ledger_timeline(captured, population=population)
     except LedgerSummaryError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -1296,7 +1296,7 @@ def get_pattern_review(case_id: UUID = Query(...), account_id: Optional[UUID] = 
         threshold_currency: Optional[str] = Query(None,pattern='^[A-Z]{3}$'), db: Session = Depends(get_db), cross_account: bool = False, account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
     from services.financial.pattern_review import screen_ledger_patterns
     try:
-        captured = capture_ledger_export(db.get_bind(), case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders, start_date=start_date, end_date=end_date)
+        captured = capture_ledger_scope(db.get_bind(), case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders, start_date=start_date, end_date=end_date)
         return screen_ledger_patterns(captured, population=population, window_days=window_days, threshold_minor=threshold_minor, threshold_currency=threshold_currency, **(dict(cross_account=True) if cross_account else {}))
     except LedgerSummaryError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -1357,7 +1357,7 @@ def get_counterparty_party_analysis(case_id: UUID = Query(...),account_id: Optio
         population: Literal['working','verified'] = Query('working'),db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
     from services.financial.counterparty_parties import counterparty_party_analysis
     try:
-        return counterparty_party_analysis(capture_ledger_export(db.get_bind(),case_id=case_id,account_id=account_id, account_ids=account_ids, account_holders=account_holders,start_date=start_date,end_date=end_date),population=population)
+        return counterparty_party_analysis(capture_ledger_scope(db.get_bind(),case_id=case_id,account_id=account_id, account_ids=account_ids, account_holders=account_holders,start_date=start_date,end_date=end_date),population=population)
     except (AccountPartyError,LedgerSummaryError) as exc:
         raise HTTPException(status_code=getattr(exc,'status_code',422),detail=str(exc))
     except Exception:

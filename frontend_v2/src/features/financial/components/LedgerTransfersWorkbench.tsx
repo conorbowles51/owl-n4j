@@ -512,6 +512,7 @@ function TransferScope({
                 summary: `Saves ${selected.length} selected transfer pairs, your explanation and the calculated totals.`,
                 details: {
                   snapshot_sha256: load.data.snapshot_sha256,
+                  digest_covers: load.data.digest_covers,
                   scenario_sha256: scenario.data.scenario_sha256,
                   pairs: selected.map((i) => load.data!.candidates[i]),
                   basis,

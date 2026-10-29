@@ -369,6 +369,7 @@ function TimelineScope({
                 "Saves the selected payments and case events together with your explanation. Nearby dates alone do not establish a connection.",
               details: {
                 snapshot_sha256: data.ledger.snapshot_sha256,
+                digest_covers: data.ledger.digest_covers,
                 captured_at: data.capturedAt,
                 population,
                 scope: params,
