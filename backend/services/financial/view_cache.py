@@ -332,7 +332,8 @@ class VersionMemo:
                 logger.warning('Saved %s values unavailable; computing in memory only', self.name, exc_info=True)
         with self._lock:
             self._scope = scope
-            self._xmax = xmax if scope is not None else None
+            # The highest transaction mark any bind has seen: an older snapshot binding later must not lower it.
+            self._xmax = max(xmax, self._xmax or 0) if scope is not None else None
             if scope is None:
                 self._pending.clear()
                 return
