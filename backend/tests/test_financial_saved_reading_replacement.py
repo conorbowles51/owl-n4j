@@ -682,6 +682,34 @@ class DescriptionRefreshTests(TestCase):
                              str(new.id))
         self.assertEqual(self.t.assess(old_id)['code'], 'corrected_payments', 'done once; never again by itself')
 
+    def test_a_model_suggested_category_with_its_confidence_is_carried_and_recorded(self):
+        """A payment the category model placed (a float confidence in its label sources) is described like any other;
+        the decision log keeps the confidence as text."""
+        from postgres.models.financial_payment_category import FinancialPaymentCategory
+        old_id = self.save()
+        with self.f.SessionLocal() as db:
+            FinancialPaymentCategory.__table__.create(bind=db.get_bind(), checkfirst=True)
+        from services.financial import payment_categories
+        payment_categories._HAS_TABLE.clear()  # the fixture built no categories table; the check is cached per engine
+        self.addCleanup(payment_categories._HAS_TABLE.clear)
+        with self.f.SessionLocal() as db:
+            row = next(row for row in db.scalars(select(FinancialTransaction).where(
+                FinancialTransaction.source_document_id == old_id)) if replacement._saved_key(row) == '1:0:%d' % self.row)
+            db.add(FinancialPaymentCategory(transaction_id=row.id, case_id=row.case_id, category='Supplier payments',
+                                            origin='model', basis='example-model', confidence=0.08, why='Example.'))
+            db.commit()
+            row_id = row.id
+        result = self.t.replace(old_id)
+        self.assertTrue(result['applied'], result)
+        from services.financial.payment_categories import stored_for
+        with self.f.SessionLocal() as db:
+            new_id = db.get(FinancialTransaction, row_id).superseded_by_id
+            carried = stored_for(db, [new_id])[new_id]
+            self.assertEqual((carried.category, carried.origin, carried.confidence), ('Supplier payments', 'model', 0.08))
+            event = db.scalar(select(AdjudicationEvent).where(AdjudicationEvent.subject_id == row_id,
+                                                              AdjudicationEvent.decision == 'correct_transaction'))
+            self.assertEqual(event.before['row']['label_sources']['category']['confidence'], '0.08')
+
     def test_a_reading_dropping_saved_text_leaves_the_payment_as_saved(self):
         old_id = self.save(now='Wire 72605624 EXAMPLE SUPPLIER')
         with self.f.SessionLocal() as db:

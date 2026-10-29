@@ -762,6 +762,19 @@ def assess_descriptions(session, document, *, cache=None):
             'differs': ['descriptions'], 'revision': proposal.get('revision')}
 
 
+def _event_text(value):
+    """A payment view as an adjudication may hold it. The decision log refuses floats; a view's money is integer
+    minor units (and written as text by the caller), so a float here is a score such as a model's category confidence
+    (label_sources.category.confidence), kept as its exact text."""
+    if isinstance(value, float):
+        return repr(value)
+    if isinstance(value, dict):
+        return {key: _event_text(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_event_text(item) for item in value]
+    return value
+
+
 def refresh_descriptions(*, session_factory, case_id, document_id):
     """Give each payment of this saved copy the description its current reading prints (assess_descriptions, judged
     again under the case lock), in one transaction: each changed payment is superseded by the same payment with the
@@ -822,7 +835,7 @@ def refresh_descriptions(*, session_factory, case_id, document_id):
                 'reader_descriptions': dict(previous_description=row.description, statement_id=verdict['statement_id'],
                                             reading_revision=verdict.get('revision'), row_id=change['row_id'], at=now)}
             replacement = FinancialTransaction(**values)
-            view = to_view(row).to_json()
+            view = _event_text(to_view(row).to_json())
             view.update(amount_minor=str(row.amount_minor),
                         running_balance_minor=str(row.running_balance_minor) if row.running_balance_minor is not None else None)
             session.add(replacement)
