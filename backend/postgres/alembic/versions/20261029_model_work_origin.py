@@ -8,7 +8,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 revision = "20261029_model_work_origin"
-down_revision = "20261028_request_speed"
+down_revision = "20261029_keep_printed_holders"
 branch_labels = None
 depends_on = None
 
