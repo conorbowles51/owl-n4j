@@ -184,6 +184,29 @@ class ModelLabelTests(unittest.TestCase):
         self.assertFalse(any('not yet confirmed by a person' in v for v in document['limitations']))
         self.assertEqual(build_expert_support(document, snapshot_sha256='x')['model_work']['confirmed_names'], 1)
 
+    def test_pending_reads_load_as_model_readings_and_refused_lines_stay(self):
+        import json
+        from services.financial.model_reads import load_model_reads as load
+        person_row = self.rows[1]
+        self.save([person_row], self.f.actor, counterparty_name='Person Name')
+        line = lambda row, value: json.dumps(dict(case=str(self.f.case.id), payment_id=str(row.id), value=value,
+                                                  page=2, file='statement.pdf', why='Printed under the amount.',
+                                                  **{'for': 'Neil Byrne'}, for_email='neil@example.test')) + '\n'
+        lines = [line(self.row, 'ACME LTD'), line(person_row, 'Model Name'), '{"case": "x"}\n']
+        results, keep = load(self.f.db, lines, apply=False)
+        self.assertEqual([r['status'] for r in results], ['would_save', 'refused', 'refused'])
+        self.assertEqual(self.source(self.row)[1]['label_sources'][self.side].get('source'), 'missing'
+                         if not self.row.counterparty_raw else 'statement')
+        results, keep = load(self.f.db, lines, apply=True)
+        self.assertEqual([r['status'] for r in results], ['saved', 'refused', 'refused'])
+        self.assertEqual(keep, lines[1:])
+        _, view = self.source(self.row)
+        source = view['label_sources'][self.side]
+        self.assertEqual((view[self.side], source['source'], source['origin']['citation']['page']),
+                         ('ACME LTD', 'model_reading', 2))
+        _, view = self.source(person_row)
+        self.assertEqual(view['to_name' if person_row.direction == 'debit' else 'from_name'], 'Person Name')
+
     def test_a_model_reads_names_only(self):
         for changes in (dict(category='Travel'), dict(counterparty_name='')):
             with self.assertRaises(PaymentLabelsError):

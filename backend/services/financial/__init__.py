@@ -2274,3 +2274,5 @@ from services.financial.model_work import model_actor, model_origin, origin_of, 
 __all__ += ["model_actor", "model_origin", "origin_of", "require_person"]
 from services.financial.model_work_migration import legacy_person, record_statement_calls
 __all__ += ["legacy_person", "record_statement_calls"]
+from services.financial.model_reads import load_model_reads
+__all__ += ["load_model_reads"]
