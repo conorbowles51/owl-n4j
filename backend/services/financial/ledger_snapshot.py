@@ -222,6 +222,10 @@ def capture_ledger_scope(engine, *, case_id, account_id=None, start_date=None, e
             end_date=end_date,capture_readings=True)
         if not ledger['available']:
             raise LedgerSummaryError(ledger['reason'])
+        # The export's working totals check every working reading (amount, direction, currency) and refuse an
+        # invalid one; the views must refuse the same readings, not show them.
+        from services.financial.working_totals import working_totals_from_readings
+        working_totals_from_readings(ledger)
         digest=LedgerScopeDigest()
         for reading in ledger['readings']:
             digest.reading(reading)

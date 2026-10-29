@@ -148,3 +148,10 @@ class LedgerScopeTests(LedgerSummaryTests):
     def test_the_view_capture_refuses_a_connection_outside_a_consistent_read(self):
         with self.assertRaises(LedgerSummaryError):
             capture_ledger_scope(self.db.get_bind(), case_id=self.case.id)
+
+    def test_a_working_reading_the_export_refuses_is_refused_by_the_views_too(self):
+        row, _ = self.add(700); row.proof_class = 'p3'; row.currency = 'XXQ'; self.db.commit()
+        with self.assertRaises(LedgerSummaryError):
+            self.export()
+        with self.assertRaises(LedgerSummaryError):
+            self.scope()
