@@ -26,14 +26,10 @@ export const statementDuplicateDisposition = z
     reason: z.string(),
     current: z.boolean(),
     matched_fields: z.array(z.string()).default([]),
-    basis: z
-      .enum([
-        "identical_bytes",
-        "identical_pages",
-        "identical_financial_reading",
-        "investigator_decision",
-      ])
-      .nullish(),
+    // Why the copy was recognised. The server adds new reasons over time
+    // (saved_ledger_copy, part_of_saved_statement, ...), so any reason is kept
+    // as text: an unfamiliar one must never fail the whole file register.
+    basis: z.string().nullish(),
     retained: retainedStatement.nullish(),
   })
   .passthrough()

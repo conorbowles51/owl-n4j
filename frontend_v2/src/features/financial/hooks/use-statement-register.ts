@@ -74,7 +74,7 @@ const readyPeriod = z.object({
   problem_count: z.number().int().nonnegative(),
 })
 export type ReadyStatementPeriod = z.infer<typeof readyPeriod>
-const importStates = z.object({
+export const statementImportStates = z.object({
   case_id: z.string(),
   truncated: z.boolean(),
   files: z.array(
@@ -222,7 +222,7 @@ export function useStatementRegister(
         ),
       }),
     queryFn: async () => {
-      const result = importStates.parse(
+      const result = statementImportStates.parse(
         await fetchAPI(
           `/api/financial/statement-import/files?${new URLSearchParams({ case_id: caseId })}`
         )
