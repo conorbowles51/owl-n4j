@@ -386,6 +386,19 @@ export function readDecidedBy(record: DecisionRecord): DecidedBy {
 
   const name = record.actor_name.trim()
   const email = record.actor_email.trim()
+  if (record.actor_origin?.kind === "model") {
+    // A model decided for a person: never presented as that person's decision.
+    const model = record.actor_origin.model || "A model"
+    const person = record.actor_origin.for?.name || "a person"
+    return {
+      byMachine: false,
+      label: `${model} (for ${person}) · not confirmed`,
+      email: email || null,
+      description:
+        `${model} took this decision while working for ${person}, under their account. ` +
+        "It is the model's decision, not theirs, until a person confirms it.",
+    }
+  }
   const label = name || email || "Not recorded"
   return {
     byMachine: false,

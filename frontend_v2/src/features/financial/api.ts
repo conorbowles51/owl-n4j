@@ -903,6 +903,12 @@ export interface DecisionRecord {
   recorded_at: string | null
   /** Whether the reconciliation stage wrote this, rather than a person. */
   by_machine: boolean
+  /**
+   * Present when a model (Claude) took this decision for the person named in
+   * actor_name: the decision is the model's, not that person's. Absent for a
+   * person's or a rule's decision.
+   */
+  actor_origin?: ModelOrigin
 }
 
 /**
@@ -931,6 +937,7 @@ export const DECISION_FIELDS: readonly (keyof DecisionRecord)[] = [
   "ingestion_run_id",
   "recorded_at",
   "by_machine",
+  "actor_origin",
 ]
 
 /**

@@ -42,7 +42,8 @@ import { hasPendingStatementImport, importWithReceiptRecovery, ImportStillSaving
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { z } from "zod"
-import { StatementModelWorkMark, statementModelWork } from "./StatementModelWork"
+import { StatementModelWorkMark } from "./StatementModelWork"
+import { statementModelWork } from "../lib/statement-model-work"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import {
   readStatementDraft,

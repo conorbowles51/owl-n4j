@@ -1,36 +1,7 @@
 import { useState } from "react"
 import { useMutation } from "@tanstack/react-query"
-import { z } from "zod"
-import { fetchAPI } from "@/lib/api-client"
+import { confirmStatement, type StatementModelWork } from "../lib/statement-model-work"
 import { Button } from "@/components/ui/button"
-
-/** A saved statement Claude saved or entered for a person, and whether a person has confirmed it. */
-export const statementModelWork = z.object({
-  status: z.enum(["not_confirmed", "confirmed", "corrected"]),
-  model: z.string(),
-  for_person: z.string().nullable().optional(),
-  confirmed_by: z.string().nullable().optional(),
-  confirmed_at: z.string().nullable().optional(),
-  calls: z.array(
-    z.object({
-      id: z.string(),
-      rule_id: z.string(),
-      status: z.string(),
-      summary: z.string(),
-      resolved_by: z.string().nullable().optional(),
-    })
-  ),
-})
-export type StatementModelWork = z.infer<typeof statementModelWork>
-
-export async function confirmStatement(caseId: string, sourceDocumentId: string) {
-  return statementModelWork.parse(
-    await fetchAPI(
-      `/api/financial/judgements/statements/${encodeURIComponent(sourceDocumentId)}/confirm?${new URLSearchParams({ case_id: caseId })}`,
-      { method: "POST", body: {} }
-    )
-  )
-}
 
 /**
  * The statement-level marker: "Saved by Claude for <person> · not confirmed", what Claude did, and one action that
