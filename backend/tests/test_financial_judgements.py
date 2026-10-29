@@ -97,8 +97,8 @@ class RecordingTests(unittest.TestCase):
                                         subject_id=uuid.uuid4(), rule_id=rule, summary=summary, origin=origin)
         self.db.commit()
         page = judgements.search(self.db, self.case.id)
-        self.assertEqual([i['rule_id'] for i in page['items']],
-                         ['agent.page_entry', 'L8.unprinted_opening', 'L1.glyph_cell'])  # hand, inferred, checked
+        self.assertEqual([i['rule_id'] for i in page['items']],  # all "Check first": inferred, then hand entry
+                         ['L8.unprinted_opening', 'agent.page_entry', 'L1.glyph_cell'])
         typed = judgements.search(self.db, self.case.id, categories=['damaged_scan'])
         self.assertEqual(typed['total'], 1)
         # Each facet counts under the other filters, never its own.
@@ -107,8 +107,53 @@ class RecordingTests(unittest.TestCase):
         self.assertEqual(judgements.search(self.db, self.case.id, q='HAND entered')['total'], 1)
         self.assertEqual(len(judgements.search(self.db, self.case.id, offset=1, limit=1)['items']), 1)
 
+    def test_calls_come_focus_first_by_priority_and_amount(self):
+        calls = (('category.model', 'transaction', 900_00), ('L30c.contract_refile', 'statement_period', None),
+                 ('L1.glyph_cell', 'transaction', 5_00), ('L9.scan_amount_marks', 'transaction', 70_000_00),
+                 ('autofill.detail', 'statement_period', None))
+        for rule, subject_type, amount in calls:
+            judgements.record_judgement(self.db, case_id=self.case.id, subject_type=subject_type,
+                                        subject_id=uuid.uuid4(), rule_id=rule, summary=f'{rule} call.',
+                                        evidence={'amount_minor': amount} if amount is not None else None)
+        self.db.commit()
+        page = judgements.search(self.db, self.case.id)
+        # Check first (larger amount first), then Check soon (inferred before checked), then When convenient.
+        self.assertEqual([(i['priority'], i['rule_id']) for i in page['items']],
+                         [(1, 'L9.scan_amount_marks'), (1, 'L1.glyph_cell'), (2, 'L30c.contract_refile'),
+                          (2, 'autofill.detail'), (3, 'category.model')])
+        self.assertEqual(page['items'][0]['priority_label'], 'Check first')
+        self.assertEqual(page['facets']['priority'], {'all': 5, '1': 2, '2': 2, '3': 1})
+        soon = judgements.search(self.db, self.case.id, priorities=['2'])
+        self.assertEqual([i['rule_id'] for i in soon['items']], ['L30c.contract_refile', 'autofill.detail'])
+        self.assertEqual(soon['facets']['priority'], {'all': 5, '1': 2, '2': 2, '3': 1})  # its own filter not applied
+        # Paging keeps the order; the export carries the tier and every matching call, not one page.
+        self.assertEqual([i['rule_id'] for i in judgements.search(self.db, self.case.id, offset=2, limit=2)['items']],
+                         ['L30c.contract_refile', 'autofill.detail'])
+        lines = judgements.export_csv(judgements.search(self.db, self.case.id, limit=1, everything=True)
+                                      ).decode('utf-8-sig').splitlines()
+        self.assertEqual(len(lines), 6)
+        self.assertTrue(lines[0].startswith('Priority,Why this priority,Status'))
+        self.assertTrue(lines[1].startswith('1 Check first,'))
+        self.assertTrue(lines[5].startswith('3 When convenient,'))
+        self.assertEqual(judgements.counts(self.db, self.case.id)['case']['priority_1'], 2)
+
 
 class DetectionTests(unittest.TestCase):
+    def test_every_rule_has_a_priority(self):
+        import re
+        self.assertEqual(set(judgements.RULES) - set(judgements.RULE_PRIORITY), set())
+        self.assertEqual(set(judgements.RULE_PRIORITY) - set(judgements.RULES), set())
+        self.assertTrue(all(tier in judgements.PRIORITIES and why for tier, why in judgements.RULE_PRIORITY.values()))
+        # Every rule id a module records by name is in the table too.
+        root = Path(judgements.__file__).resolve().parent
+        named = set()
+        for path in root.glob('*.py'):
+            text = path.read_text()
+            named |= set(re.findall(r"rule_id=['\"]([A-Za-z0-9_.]+)['\"]", text))
+            named |= set(re.findall(r"record_on_document\([^'\"]*?['\"]([A-Za-z0-9_]+\.[A-Za-z0-9_.]+)['\"]", text))
+        named |= set(judgements.FIELD_BASIS.values()) | set(judgements.GLYPH_BASIS.values())
+        self.assertEqual(named - set(judgements.RULE_PRIORITY), set())
+
     def test_a_reading_previews_its_calls_before_it_is_saved(self):
         reading = [dict(id='4:1:7', kind='transaction', page_number=4, excluded=False,
                         fields=dict(amount_minor='229342', date='2023-08-03', credit_column='2'),

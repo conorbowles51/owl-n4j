@@ -6,7 +6,20 @@ import type { LedgerTransaction } from "../api"
 import { formatLedgerAmount } from "../lib/ledger-format"
 import { party, type PartySide } from "../lib/transaction-analysis"
 import { PaymentLabelOrigin } from "./PaymentLabelOrigin"
-import { RowJudgementMarkers } from "./JudgementCalls"
+import { RowJudgementMarkers, priorityRowClass } from "./JudgementCalls"
+import { useRowPriority } from "../hooks/use-judgement-rows"
+import type { ReactNode } from "react"
+import { cn } from "@/lib/cn"
+
+/** A payment row; in a list of judgement calls it carries its tier's tint and left border. */
+function PriorityRow({ row, className, children }: { row: LedgerTransaction; className: string; children: ReactNode }) {
+  const priority = useRowPriority(row)
+  return (
+    <tr data-priority={priority || undefined} className={priority ? cn(className, priorityRowClass(priority)) : className}>
+      {children}
+    </tr>
+  )
+}
 import {
   absentPaymentBalance,
   paymentBalanceExplanation,
@@ -174,7 +187,8 @@ export function TransactionExplorerTable({
             const open = expandedIds.has(row.key)
             return (
               <Fragment key={row.key}>
-                <tr
+                <PriorityRow
+                  row={row}
                   className={`border-t align-top ${selectedIds.has(row.key) ? "bg-primary/5" : ""}`}
                 >
                   <td className="p-2">
@@ -356,7 +370,7 @@ export function TransactionExplorerTable({
                                   : row.currency}
                     </td>
                   ))}
-                </tr>
+                </PriorityRow>
                 {open && (
                   <tr className="border-t bg-muted/30">
                     <td colSpan={6 + columns.length} className="p-3">

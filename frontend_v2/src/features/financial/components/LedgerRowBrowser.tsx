@@ -56,16 +56,19 @@ import { SavePaymentSelection } from "./SavePaymentSelection"
 import { useFinancialDraft } from "../stores/financial-drafts"
 import { correctionMinor } from "../lib/correction-contract"
 import { LedgerExportButton } from "./LedgerExportButton"
-import { useRowJudgementLookup } from "../hooks/use-judgement-rows"
+import { RowJudgements, useRowJudgementLookup } from "../hooks/use-judgement-rows"
 import { useJudgementRowMap } from "../hooks/use-judgements"
 import {
+  PRIORITY_LABELS,
   STATUS_LABELS,
   STRENGTH_LABELS,
   ORIGIN_LABELS,
+  topPriority,
   type Judgement,
 } from "../lib/judgements"
+import { PriorityLegend } from "./JudgementCalls"
 import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
-import { useCallback, useRef, useState, type ComponentProps } from "react"
+import { useCallback, useContext, useMemo, useRef, useState, type ComponentProps } from "react"
 import { Button } from "@/components/ui/button"
 import { LedgerTable } from "./LedgerTable"
 import { PaymentNamingPanel } from "./PaymentNamingPanel"
@@ -269,10 +272,12 @@ export function LedgerRowBrowser({
     trails.data?.trails ?? []
   )
   const judgementsOf = useRowJudgementLookup()
+  const judgementContext = useContext(RowJudgements)
   const judgementMap = useJudgementRowMap(
     judgementsOf ? exportContext?.caseId : undefined
   )
   const judgementFilter = {
+    priority: view.judgementPriority,
     category: view.judgementCategory,
     strength: view.judgementStrength,
     origin: view.judgementOrigin,
@@ -290,7 +295,7 @@ export function LedgerRowBrowser({
         (key) =>
           key === except ||
           !judgementFilter[key] ||
-          judgement[key] === judgementFilter[key]
+          String(judgement[key]) === judgementFilter[key]
       )
     )
   const judgementMatches = (row: LedgerTransaction) =>
@@ -340,7 +345,7 @@ export function LedgerRowBrowser({
         matchingCalls(row, key).map((judgement) => judgement[key])
       )
       for (const value of values)
-        counts.set(value, (counts.get(value) || 0) + 1)
+        counts.set(String(value), (counts.get(String(value)) || 0) + 1)
     }
     return counts
   }
@@ -351,6 +356,7 @@ export function LedgerRowBrowser({
     ? `/cases/${exportContext.caseId}/financial?${new URLSearchParams({
         view: "statements",
         judgements: "1",
+        ...(view.judgementPriority ? { jPriority: view.judgementPriority } : {}),
         ...(view.judgementCategory ? { jType: view.judgementCategory } : {}),
         ...(view.judgementStrength
           ? { jStrength: view.judgementStrength }
@@ -376,6 +382,32 @@ export function LedgerRowBrowser({
       const order = compareDisplayedAmounts(a, b)
       return sort === "amount-desc" ? -order : order
     })
+  // Focus first: in a list of judgement calls the recorded order gives way to the calls' tiers ("Check first" on
+  // top), then inferred before checked, then the larger amount; the sort stays stable so dates order each tie.
+  const listingCalls = !!judgementsOf && judgementWanted === "any"
+  const focusFirst = listingCalls && sort === "ledger"
+  if (focusFirst) {
+    const rank = (row: LedgerTransaction) => {
+      const calls = matchingCalls(row)
+      return [topPriority(calls) || 9, calls.some((call) => call.strength === "inferred") ? 0 : 1] as const
+    }
+    const ranks = new Map(rows.map((row) => [row.key, rank(row)]))
+    rows.sort((a, b) => {
+      const [tierA, strengthA] = ranks.get(a.key)!
+      const [tierB, strengthB] = ranks.get(b.key)!
+      return tierA - tierB || strengthA - strengthB || -compareDisplayedAmounts(a, b)
+    })
+  }
+  // Rows in a list of judgement calls carry their tier's tint, counting only the calls the sub-filters keep.
+  const tintedContext = useMemo(
+    () =>
+      judgementContext && listingCalls
+        ? { ...judgementContext, tint: true, calls: (row: LedgerTransaction) => matchingCalls(row) }
+        : judgementContext,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [judgementContext, listingCalls, view.judgementPriority, view.judgementCategory, view.judgementStrength,
+      view.judgementOrigin, view.judgementStatus]
+  )
   // Every payment in view before "Not identified only", so a payment just named stays open beside the table.
   const namingRows = rows
   const unnamedRows = investigation && exportContext ? rows.filter(needsName) : []
@@ -580,7 +612,9 @@ export function LedgerRowBrowser({
                   changeView({ sort: e.target.value })
                 }}
               >
-                <option value="ledger">Recorded date order</option>
+                <option value="ledger">
+                  {listingCalls ? "Check first, then recorded date" : "Recorded date order"}
+                </option>
                 <option value="oldest">Oldest first</option>
                 <option value="newest">Newest first</option>
                 <option value="description-asc">Description A–Z</option>
@@ -666,6 +700,7 @@ export function LedgerRowBrowser({
                         judgement: e.target.value,
                         ...(e.target.value === "none"
                           ? {
+                              judgementPriority: "",
                               judgementCategory: "",
                               judgementStrength: "",
                               judgementOrigin: "",
@@ -685,8 +720,29 @@ export function LedgerRowBrowser({
                     </option>
                   </select>
                 </label>
+                {view.judgement !== "none" && (
+                  <PriorityLegend
+                    className="basis-full"
+                    counts={Object.fromEntries(judgementCounts("priority"))}
+                    value={view.judgementPriority}
+                    onChoose={(value) =>
+                      changeView({
+                        judgementPriority: value,
+                        ...(value && !view.judgement ? { judgement: "any" } : {}),
+                        page: 0,
+                      })
+                    }
+                  />
+                )}
                 {(
                   [
+                    [
+                      "judgementPriority",
+                      "priority",
+                      "Priority",
+                      "Every priority",
+                      PRIORITY_LABELS,
+                    ],
                     [
                       "judgementCategory",
                       "category",
@@ -1501,6 +1557,7 @@ export function LedgerRowBrowser({
         }
       >
       <div className="min-w-0">
+      <RowJudgements.Provider value={tintedContext}>
       {!rows.length ? (
         <p>
           No payments match these filters. Clear the filters or choose another
@@ -1600,6 +1657,7 @@ export function LedgerRowBrowser({
           {...actions}
         />
       )}
+      </RowJudgements.Provider>
       </div>
       {naming && exportContext && (
         // Beside the table (xl) the panel sticks just below the sticky tools bar; above it, it scrolls with the page.

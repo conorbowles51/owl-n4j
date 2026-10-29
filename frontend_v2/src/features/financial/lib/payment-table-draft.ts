@@ -33,6 +33,7 @@ export const emptyPaymentTableView = {
   importStatementCount: 0,
   // Judgement calls: "any" or "none"; the sub-filters narrow "any".
   judgement: "",
+  judgementPriority: "",
   judgementCategory: "",
   judgementStrength: "",
   judgementOrigin: "",

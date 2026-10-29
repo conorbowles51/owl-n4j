@@ -7,7 +7,7 @@ correction path, which writes its own adjudication; this router links it and kee
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -61,6 +61,7 @@ def list_judgement_calls(case_id: UUID = Query(...), source_document_id: UUID | 
                                strength: list[str] | None = Query(None), origin: list[str] | None = Query(None),
                                category: list[str] | None = Query(None), rule_id: list[str] | None = Query(None),
                                file_id: list[UUID] | None = Query(None), account_id: list[UUID] | None = Query(None),
+                               priority: list[int] | None = Query(None),
                                offset: int = Query(0, ge=0), limit: int = Query(500, ge=1, le=5000),
                                db: Session = Depends(get_db)):
     """One page of the case's judgement calls with counts per status, type, strength and maker (each counted
@@ -69,7 +70,24 @@ def list_judgement_calls(case_id: UUID = Query(...), source_document_id: UUID | 
                              origins=origin or (), categories=category or (), rule_ids=rule_id or (),
                              file_ids=file_id or (), account_ids=account_id or (),
                              source_document_id=source_document_id, statement_period_id=statement_period_id,
-                             subject_ids=subject_id, offset=offset, limit=limit)
+                             subject_ids=subject_id, priorities=priority or (), offset=offset, limit=limit)
+
+
+@router.get("/export")
+def export_judgement_calls(case_id: UUID = Query(...), q: str = Query('', max_length=256),
+                           status: list[str] | None = Query(None), strength: list[str] | None = Query(None),
+                           origin: list[str] | None = Query(None), category: list[str] | None = Query(None),
+                           rule_id: list[str] | None = Query(None), file_id: list[UUID] | None = Query(None),
+                           account_id: list[UUID] | None = Query(None), priority: list[int] | None = Query(None),
+                           db: Session = Depends(get_db)):
+    """Every call matching the page's filters (not one page of them), focus-first, with its priority (CSV)."""
+    page = judgements.search(db, case_id, q=q, statuses=status or (), strengths=strength or (),
+                             origins=origin or (), categories=category or (), rule_ids=rule_id or (),
+                             file_ids=file_id or (), account_ids=account_id or (), priorities=priority or (),
+                             everything=True)
+    return Response(content=judgements.export_csv(page), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition":
+                             f'attachment; filename="judgement-calls-{str(case_id)[:8]}.csv"'})
 
 
 @router.get("/rows")

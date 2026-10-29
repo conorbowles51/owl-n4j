@@ -17,6 +17,8 @@ import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { useFinancialDraftStore } from "../stores/financial-drafts"
 import { LedgerRowBrowser } from "./LedgerRowBrowser"
 import type { LedgerTransaction } from "../api"
+import { RowJudgements } from "../hooks/use-judgement-rows"
+import type { Judgement } from "../lib/judgements"
 function render(children: ReactNode) {
   const client = new QueryClient()
   return originalRender(children, {
@@ -569,4 +571,26 @@ it("opens a viewer the statement line of a payment without a name instead of fil
   // The table is not narrowed to the reason as if it were a party.
   expect(within(list).getAllByRole("checkbox")).toHaveLength(2)
   expect(screen.getByRole("button", { name: "See their statement lines one by one" })).toBeInTheDocument()
+})
+it("lists payments with judgement calls focus first and filters them by priority", () => {
+  const call = (priority: number, strength = "proved") =>
+    ({ id: `j${priority}${strength}`, priority, strength, category: "x", origin: "processor", status: "open" }) as unknown as Judgement
+  const calls: Record<string, Judgement[]> = {
+    describe: [call(3)],
+    money: [call(1)],
+    account: [call(2, "inferred")],
+  }
+  render(
+    <RowJudgements.Provider value={{ caseId: "case-1", lookup: (r) => calls[r.key] || [] }}>
+      <LedgerRowBrowser
+        transactions={[row("describe"), row("plain"), row("account"), row("money")]}
+      />
+    </RowJudgements.Provider>
+  )
+  fireEvent.change(screen.getByLabelText("Judgement calls"), { target: { value: "any" } })
+  expect(screen.getAllByRole("listitem").map((r) => r.textContent)).toEqual(["money", "account", "describe"])
+  const legend = screen.getByRole("group", { name: "Priority" })
+  expect(legend).toHaveTextContent("Check first (1)")
+  fireEvent.click(within(legend).getByRole("button", { name: /Check soon/ }))
+  expect(screen.getAllByRole("listitem").map((r) => r.textContent)).toEqual(["account"])
 })

@@ -4,8 +4,21 @@ import { categoryTone } from "../lib/category-palette"
 import { formatLedgerAmount } from "../lib/ledger-format"
 import { absentPaymentBalance, paymentBalanceExplanation } from "../lib/payment-balance"
 import { party, type PartySide } from "../lib/transaction-analysis"
-import { RowJudgementMarkers } from "./JudgementCalls"
+import { RowJudgementMarkers, priorityRowClass } from "./JudgementCalls"
+import { useRowPriority } from "../hooks/use-judgement-rows"
+import { cn } from "@/lib/cn"
+import type { ReactNode } from "react"
 import { PaymentLabelOrigin } from "./PaymentLabelOrigin"
+
+/** A payment card; in a list of judgement calls it carries its tier's tint and left border. */
+function PriorityCard({ row, className, children }: { row: LedgerTransaction; className: string; children: ReactNode }) {
+  const priority = useRowPriority(row)
+  return (
+    <li data-priority={priority || undefined} className={priority ? cn(className, priorityRowClass(priority)) : className}>
+      {children}
+    </li>
+  )
+}
 
 const AVATARS = ["#3a6fd8", "#0f8a7e", "#7b52c7", "#c67a10", "#c4456b", "#2f9353", "#1789a6", "#4b5bd6"]
 const initials = (name: string) =>
@@ -96,8 +109,9 @@ export function PaymentCardList({
               const rowFindings = findings.filter((f) => f.payment_ids.includes(row.key))
               const label = row.description || row.ref_id
               return (
-                <li
+                <PriorityCard
                   key={row.key}
+                  row={row}
                   className={`rounded-xl border bg-card shadow-sm transition-colors ${checked ? "border-[#3a6fd8] bg-[#3a6fd8]/5" : "hover:border-foreground/25"}`}
                 >
                   <div className="grid grid-cols-[auto_auto_minmax(0,1fr)] items-start gap-3 p-3 sm:grid-cols-[auto_auto_minmax(0,1fr)_auto_auto] sm:items-center sm:p-4">
@@ -265,7 +279,7 @@ export function PaymentCardList({
                       </div>
                     </div>
                   )}
-                </li>
+                </PriorityCard>
               )
             })}
           </ul>

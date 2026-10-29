@@ -29,6 +29,9 @@ const judgement: Judgement = {
   page: 2,
   category: "balance",
   category_label: "Balance or opening worked out",
+  priority: 1,
+  priority_label: "Check first",
+  priority_reason: "an opening balance was worked out, not printed",
   status: "open",
   resolved_by: null,
   resolved_at: null,
@@ -51,6 +54,9 @@ it("shows the call in plain words and answers it at the right endpoints", async 
   const onCorrect = show()
   fireEvent.click(screen.getByRole("button", { name: /Inferred/ }))
   expect(screen.getByText(/Opening 12,340.00 is not printed/)).toBeVisible()
+  // The tier is said in words, not colour alone, with why it sits there.
+  expect(screen.getAllByTestId("judgement-priority")[0]).toHaveTextContent("Check first")
+  expect(screen.getByText(/Here, an opening balance was worked out, not printed\./)).toBeVisible()
   expect(screen.queryByText(/L8/)).toBeNull()
   expect(screen.getByTitle(/L8.unprinted_opening/)).toBeVisible()
   fireEvent.click(screen.getByRole("button", { name: "Looks right" }))

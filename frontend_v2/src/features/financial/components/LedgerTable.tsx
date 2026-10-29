@@ -61,7 +61,8 @@
  */
 
 import { CircleHelp, TriangleAlert } from "lucide-react"
-import { RowJudgementMarkers } from "./JudgementCalls"
+import { RowJudgementMarkers, priorityRowClass } from "./JudgementCalls"
+import { useRowPriority } from "../hooks/use-judgement-rows"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -305,6 +306,7 @@ function LedgerRow({
     transaction.amount_minor,
     transaction.currency
   )
+  const priority = useRowPriority(transaction)
   const direction = readDirection(transaction.direction)
   const status = readLedgerStatus(transaction.ledger_status)
   const proofClass = readProofClass(transaction.proof_class)
@@ -332,7 +334,12 @@ function LedgerRow({
         )
 
   return (
-    <TableRow data-testid="ledger-row" data-row-key={transaction.key}>
+    <TableRow
+      data-testid="ledger-row"
+      data-row-key={transaction.key}
+      data-priority={priority || undefined}
+      className={priority ? priorityRowClass(priority) : undefined}
+    >
       <TableCell className="align-top whitespace-nowrap">
         <div className="font-mono text-xs">{transaction.ordering_date}</div>
         <Badge

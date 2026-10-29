@@ -6,12 +6,15 @@ import {
   ORIGIN_LABELS,
   STATUS_LABELS,
   STRENGTH_LABELS,
+  PRIORITY_LABELS,
   countLine,
+  judgementExportUrl,
   processorRules,
   type Judgement,
 } from "../lib/judgements"
+import { downloadProtectedFile } from "@/lib/protected-file"
 import { AccountMultiSelect } from "./AccountMultiSelect"
-import { JudgementMarker } from "./JudgementCalls"
+import { JudgementMarker, PriorityLabel, PriorityLegend, priorityRowClass } from "./JudgementCalls"
 import { useJudgementCounts, useJudgementSearch } from "../hooks/use-judgements"
 import { ImportedStatementDetails } from "./ImportedStatementDetails"
 import { SavedStatementPayments } from "./SavedStatementPayments"
@@ -73,6 +76,7 @@ export function JudgementCallsPanel({ caseId }: { caseId: string }) {
   const list = (key: string) => (params.get(key) || "").split(",").filter(Boolean)
   const statusParam = params.get("jStatus") || "open"
   const status = statusParam === "all" ? "" : statusParam
+  const tier = params.get("jPriority") || ""
   const type = params.get("jType") || ""
   const strength = params.get("jStrength") || ""
   const origin = params.get("jBy") || ""
@@ -82,6 +86,7 @@ export function JudgementCallsPanel({ caseId }: { caseId: string }) {
   const urlSearch = params.get("jq") || ""
   const [search, setSearch] = useState(urlSearch)
   const [opened, setOpened] = useState<string | null>(null)
+  const [downloadError, setDownloadError] = useState<string | null>(null)
   const update = (changes: Record<string, string | string[]>, keepPage = false) =>
     setParams((current) => {
       const next = new URLSearchParams(current)
@@ -101,22 +106,24 @@ export function JudgementCallsPanel({ caseId }: { caseId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search])
   const counts = useJudgementCounts(caseId)
-  const query = useJudgementSearch(caseId, {
+  const filter = {
     q: urlSearch,
     status: status ? [status] : [],
+    priority: tier ? [tier] : [],
     category: type ? [type] : [],
     strength: strength ? [strength] : [],
     origin: origin ? [origin] : [],
     fileIds,
     accountIds,
-    offset,
-    limit: PAGE_SIZE,
-  })
+  }
+  const query = useJudgementSearch(caseId, { ...filter, offset, limit: PAGE_SIZE })
   const page = query.data
+  // The server's order is focus-first (priority, then inferred, then amount); a statement's calls are grouped
+  // within their tier, so a "When convenient" call never rides up the list beside a "Check first" one.
   const groups = useMemo(() => {
     const byStatement = new Map<string, Judgement[]>()
     for (const judgement of page?.items || []) {
-      const key = judgement.source_document_id || judgement.subject_id
+      const key = `${judgement.priority}:${judgement.source_document_id || judgement.subject_id}`
       byStatement.set(key, [...(byStatement.get(key) || []), judgement])
     }
     return [...byStatement.entries()]
@@ -124,7 +131,7 @@ export function JudgementCallsPanel({ caseId }: { caseId: string }) {
   const facets = page?.facets
   const caseTotal = Number(counts.data?.case.total || 0)
   const checked = Number(counts.data?.case.confirmed || 0) + Number(counts.data?.case.corrected || 0)
-  const openGuesses = Number(counts.data?.case.inferred || 0) > 0 && Number(counts.data?.case.open || 0) > 0
+  const checkFirst = Number(counts.data?.case.priority_1 || 0)
   // The rule types inside the chosen type, with their case-wide counts.
   const typeRules = type
     ? (page?.rules || [])
@@ -143,7 +150,8 @@ export function JudgementCallsPanel({ caseId }: { caseId: string }) {
             {caseTotal ? ` · ${caseTotal.toLocaleString()} on this case.` : ""}
             {caseTotal ? (
               <span className="block text-muted-foreground">
-                You've checked {checked.toLocaleString()}.{openGuesses ? " Start with the guesses." : ""}
+                You've checked {checked.toLocaleString()}.
+                {checkFirst ? ` Start with the ${checkFirst.toLocaleString()} to check first: they can change the money itself.` : ""}
               </span>
             ) : null}
             <InfoTip text="Places where the processor chose a value the page does not print outright, or chose between two readings. Nothing is held for these. Check any of them in the flow of work: Looks right keeps the rule as it is; a correction with its reason is sent back as a proposed improvement to the processor." />
@@ -184,6 +192,11 @@ export function JudgementCallsPanel({ caseId }: { caseId: string }) {
           onChange={(values) => update({ jAccounts: values })}
         />
       </div>
+      <PriorityLegend
+        counts={facets?.priority}
+        value={tier}
+        onChoose={(value) => update({ jPriority: value })}
+      />
       <ChipRow
         label="Show"
         allLabel="All"
@@ -240,9 +253,11 @@ export function JudgementCallsPanel({ caseId }: { caseId: string }) {
       ) : (
         <ul className="space-y-3" aria-busy={query.isFetching}>
           {groups.map(([documentId, items]) => (
-            <li key={documentId} className="space-y-2 rounded-[14px] bg-card p-4 shadow-[0_1px_0_#e4e3df,0_8px_24px_rgba(20,22,27,.05)] dark:border">
+            <li key={documentId} data-testid="judgement-group" data-priority={items[0].priority}
+              className={`space-y-2 rounded-[14px] p-4 shadow-[0_1px_0_#e4e3df,0_8px_24px_rgba(20,22,27,.05)] dark:border ${priorityRowClass(items[0].priority)}`}>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-[15px] font-semibold" style={heading}>
+                  <PriorityLabel priority={items[0].priority} className="mr-2 align-middle" />
                   {items[0].filename || "Saved statement"}
                   {items[0].period_start ? ` · ${items[0].period_start} to ${items[0].period_end || "?"}` : ""}
                   {items[0].account_label ? ` · ${items[0].account_label}` : ""}{" "}
@@ -273,6 +288,7 @@ export function JudgementCallsPanel({ caseId }: { caseId: string }) {
                   key={judgement.id}
                   caseId={caseId}
                   judgement={judgement}
+                  hidePriority
                   defaultOpen={items.length <= 2}
                   onCorrect={() => setOpened(documentId)}
                 />
@@ -288,6 +304,25 @@ export function JudgementCallsPanel({ caseId }: { caseId: string }) {
           ))}
         </ul>
       )}
+      <div className="space-y-1">
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!total}
+          onClick={() => {
+            setDownloadError(null)
+            void downloadProtectedFile(judgementExportUrl(caseId, filter), `judgement-calls-${caseId.slice(0, 8)}.csv`)
+              .catch(() => setDownloadError("The list could not be prepared. Try again."))
+          }}
+        >
+          Download these {total.toLocaleString()} calls (CSV)
+        </Button>
+        <p className="text-xs text-muted-foreground">
+          Every call matching these filters, in this order, with its priority
+          {tier ? ` (${PRIORITY_LABELS[tier]} only)` : ""}.
+        </p>
+        {downloadError && <p className="text-xs text-destructive">{downloadError}</p>}
+      </div>
       {total > PAGE_SIZE || offset > 0 ? (
         <nav aria-label="Pages of this list" className="flex flex-wrap items-center gap-2 text-sm">
           <Button size="sm" variant="outline" disabled={offset === 0}

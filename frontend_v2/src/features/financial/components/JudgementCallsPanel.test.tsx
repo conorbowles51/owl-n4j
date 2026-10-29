@@ -11,20 +11,25 @@ const judgement: Judgement = {
   rule_id: "L8.unprinted_opening", rule_label: "Opening balance worked back from the closing", rule_source: "fin-queue3 L8",
   target_key: "opening_balance", origin: "processor", strength: "inferred",
   summary: "Opening 12,340.00 is not printed in these pages.", page: 2, category: "balance",
-  category_label: "Balance or opening worked out", status: "open", resolved_by: null, resolved_at: null,
+  category_label: "Balance or opening worked out", priority: 1, priority_label: "Check first", status: "open", resolved_by: null, resolved_at: null,
   resolution_reason: null, adjudication_id: null,
+}
+const described: Judgement = {
+  ...judgement, id: "j-2", source_document_id: "d-1", rule_id: "category.model", rule_label: "Category suggested by the model",
+  subject_type: "transaction", subject_id: "t-1", category: "payment_category", category_label: "Category suggested by the model",
+  priority: 3, priority_label: "When convenient", summary: "Category Fuel suggested by the model.",
 }
 vi.mock("../hooks/use-financial-access", () => ({ useFinancialAccess: () => ({ canEdit: true }) }))
 vi.mock("../hooks/use-judgements", async (original) => ({
   ...(await original<typeof import("../hooks/use-judgements")>()),
   useJudgementCounts: () => ({
-    data: { case: { total: 404, inferred: 198, open: 403, confirmed: 1 }, statements: {}, periods: {}, accounts: {}, rules: [{ rule_id: "L8.unprinted_opening", label: "Opening worked back", total: 37 }] },
+    data: { case: { total: 404, inferred: 198, open: 403, confirmed: 1, priority_1: 250 }, statements: {}, periods: {}, accounts: {}, rules: [{ rule_id: "L8.unprinted_opening", label: "Opening worked back", total: 37 }] },
   }),
   useJudgementSearch: () => ({
     isPending: false, isError: false, isFetching: false,
     data: {
-      items: [judgement], total: 1, offset: 0,
-      facets: { status: { all: 404, open: 403, confirmed: 1 }, category: { all: 404, balance: 37 }, strength: { all: 404, inferred: 198, proved: 206 }, origin: { all: 404, processor: 404 } },
+      items: [judgement, described], total: 2, offset: 0,
+      facets: { priority: { all: 403, "1": 250, "2": 100, "3": 53 }, status: { all: 404, open: 403, confirmed: 1 }, category: { all: 404, balance: 37 }, strength: { all: 404, inferred: 198, proved: 206 }, origin: { all: 404, processor: 404 } },
       categories: [{ key: "balance", label: "Balance or opening worked out" }],
       rules: [["L8.unprinted_opening", "Opening worked back", "balance"]], accounts: [], files: [],
     },
@@ -37,21 +42,34 @@ vi.mock("@/lib/api-client", () => ({ fetchAPI: vi.fn(async () => ({ case: [], al
 it("keeps search, every filter row with counts, rule types under a type, the raw rule id and processor rules", () => {
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <MemoryRouter initialEntries={["/?jType=balance"]}>
+      <MemoryRouter initialEntries={["/?jType=balance&jPriority=1"]}>
         <JudgementCallsPanel caseId="case-a" />
       </MemoryRouter>
     </QueryClientProvider>
   )
-  expect(screen.getByRole("heading", { name: /404 on this case\.\s*You've checked 1\. Start with the guesses\./ })).toBeTruthy()
+  expect(screen.getByRole("heading", { name: /404 on this case\.\s*You've checked 1\.\s*Start with the 250 to check first/ })).toBeTruthy()
   expect(screen.getByRole("searchbox", { name: "Search judgement calls" })).toBeTruthy()
   for (const group of ["Show", "Type", "Strength", "Made by"]) expect(screen.getByRole("group", { name: group })).toBeTruthy()
   expect(screen.getByRole("button", { name: /Inferred \(198\)/ })).toBeTruthy()
+  // Legend with counts per tier; the tier in the address is the one pressed.
+  const legend = screen.getByRole("group", { name: "Priority" })
+  expect(legend.textContent).toContain("Check first (250)")
+  expect(legend.textContent).toContain("Check soon (100)")
+  expect(legend.textContent).toContain("When convenient (53)")
+  expect(screen.getByRole("button", { name: /Check first \(250\)/ }).getAttribute("aria-pressed")).toBe("true")
+  // Focus first: one statement's calls are grouped within their tier, each group tinted and labelled in words.
+  const groups = screen.getAllByTestId("judgement-group")
+  expect(groups.map((group) => group.getAttribute("data-priority"))).toEqual(["1", "3"])
+  expect(groups[0].className).toContain("border-l-4")
+  expect(groups[0].textContent).toContain("Check first")
+  expect(groups[1].textContent).toContain("When convenient")
+  expect(screen.getByRole("button", { name: /Download these 2 calls \(CSV\)/ })).toBeTruthy()
   expect(screen.getByRole("button", { name: /Balance or opening worked out \(37\)/ }).getAttribute("aria-pressed")).toBe("true")
   expect(screen.getByLabelText("Rule types in this type").textContent).toContain("Opening worked back 37")
   // a single call in its statement opens by default and shows the raw rule id
-  fireEvent.click(screen.getByRole("button", { name: "Technical details" }))
+  fireEvent.click(screen.getAllByRole("button", { name: "Technical details" })[0])
   expect(screen.getByText(/Rule L8\.unprinted_opening/)).toBeTruthy()
-  expect(screen.getByRole("button", { name: "Looks right" })).toBeTruthy()
+  expect(screen.getAllByRole("button", { name: "Looks right" }).length).toBe(2)
   const rules = screen.getByRole("button", { name: /Processor rules/ })
   expect(rules.getAttribute("aria-expanded")).toBe("false")
   fireEvent.click(rules)

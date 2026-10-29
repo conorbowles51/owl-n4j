@@ -194,6 +194,76 @@ _CATEGORY_RULES = {
                'reader.replacement', 'L22.vanished_key', 'erica.receipt_settled'),
 }
 RULE_CATEGORY = {rule: key for key, rules in _CATEGORY_RULES.items() for rule in rules}
+
+# Priority: computed from what a call can change if it is wrong, never set by hand (like proof class). Every rule id
+# has a tier here; a rule id without one fails test_financial_judgements. An unknown id is treated as "Check first"
+# so a new rule is never quietly put at the back of the list.
+PRIORITIES = {1: 'Check first', 2: 'Check soon', 3: 'When convenient'}
+PRIORITY_HELP = {
+    1: 'Can change the money itself: an amount, its direction, a balance, a payment date or a payment entered by hand.',
+    2: 'Can change whose money it is, which account or statement it is filed in, or which copy counts.',
+    3: 'Can change only how a payment is described.',
+}
+RULE_PRIORITY = {
+    # 1 · the money itself
+    'agent.page_entry': (1, 'every amount of the statement was entered by hand'),
+    'agent.correction': (1, 'a saved amount or field was changed by hand'),
+    'image.page_reading': (1, "the statement's payments come from the page images, not the text layer"),
+    'image.printed_total': (1, 'a printed total the balance check relies on was read from the image'),
+    'image.date': (1, 'a payment date was read from the page image'),
+    'reader.replacement': (1, "a saved statement's payments were replaced by another reading"),
+    'L1.glyph_cell': (1, 'a damaged money cell was read; the amount is the call'),
+    'L12.adjacent_cells': (1, 'damaged neighbouring money cells were read together'),
+    'L16.one_glyph': (1, 'one unreadable character of an amount was filled'),
+    'L19.both_neighbours': (1, 'a running balance was fixed from the payments either side'),
+    'L12.balance_digits': (1, "an amount's lost decimal mark was put back"),
+    'L9.scan_amount_marks': (1, 'a scan mark inside an amount was read past'),
+    'amount.daily_balance': (1, 'an amount figure was fixed by the daily balance'),
+    'amount.balance_step': (1, 'an amount was taken from the balance step'),
+    'L18.direction_from_balances': (1, 'money in or out was decided from the balances'),
+    'card.payment_sign': (1, "a card payment's sign was decided from the totals"),
+    'L31.scan_day_letter': (1, "a payment's day was read from a damaged digit"),
+    'L10.one_date': (1, "one of a payment's two printed dates is used"),
+    'erica.date_month': (1, "a payment date's month was fixed by the period"),
+    'erica.date_ordering': (1, 'a payment date was placed by line order only'),
+    'date.from_neighbour_line': (1, 'a payment date was taken from the line above or below'),
+    'merrick.date_glyphs': (1, 'a damaged payment date was read within the billing cycle'),
+    'merrick.interest_date': (1, 'an interest payment was dated on the closing date'),
+    'L8.unprinted_opening': (1, 'an opening balance was worked out, not printed'),
+    'IC.cover_opening': (1, 'a balance was read from the cover summary'),
+    'opening.after_first_movement': (1, 'an opening balance was read from below the first movement'),
+    'opening.before_kept_dates': (1, 'an opening balance was taken from the running balance'),
+    'closing.last_kept_movement': (1, 'a closing balance was taken from the running balance'),
+    'L17.zero_opening': (1, 'an opening balance of zero was worked out'),
+    'credit_line.opening': (1, 'a credit-line opening balance was worked out'),
+    'L5.blank_closing': (1, 'a blank closing balance was read as unchanged'),
+    'total.less_covered': (1, 'a printed total was reduced by movements saved elsewhere'),
+    'santander.integral_balance': (1, 'balances were read from a special layout'),
+    'merrick.summary_order': (1, 'summary balances were taken by their position'),
+    # 2 · whose money, which account, which statement
+    'autofill.detail': (2, "the account holder or bank was taken from the account's saved statements"),
+    'L4.currency_from_name': (2, 'the currency came from the file name'),
+    'autofill.currency_account': (2, "the currency came from the account's saved statements"),
+    'autofill.currency_case': (2, "the currency came from the case's usual currency"),
+    'L30c.contract_refile': (2, "the statement was filed in the contract's currency account"),
+    'agent.refile': (2, 'the statement was moved to another account by hand'),
+    'agent.currency_refile': (2, 'the currency was changed by hand'),
+    'period.start_derived': (2, 'the period start was taken from the previous statement'),
+    'guard.neighbour_check': (2, 'the statement was saved on a comparison with its neighbours'),
+    'L26.duplicate_set_aside': (2, 'one of two saved copies was set aside'),
+    'L19.unreadable_copy': (2, 'an unreadable copy was matched to a saved statement'),
+    'copies.held_copy': (2, 'a held copy was matched to a saved statement'),
+    'L20.part_of_saved': (2, 'a leftover was counted as part of a saved statement'),
+    'L22.vanished_key': (2, 'an earlier reading was retired in favour of the saved one'),
+    'erica.receipt_settled': (2, 'a deposit receipt was left out as already recorded'),
+    # 3 · description only
+    'category.model': (3, "a payment's category was suggested by the model"),
+}
+
+
+def priority(rule_id):
+    return RULE_PRIORITY.get(rule_id, (1, ''))[0]
+
 # Calls about a whole statement that touch every one of its payments (who entered them, which reading, which
 # account or currency they are filed in). A balance or a set-aside copy does not touch the payments themselves.
 STATEMENT_ROW_RULES = frozenset({'agent.page_entry', 'model.statement_save', 'image.page_reading', 'reader.replacement',
@@ -512,7 +582,9 @@ def preview(reading_rows, review_rows=(), *, currency='', statement_id=''):
                         row_id=str(found['subject_id']) if found['subject_type'] == 'transaction' else None,
                         strength=found.get('strength') or rule[2], rule_label=rule[0], rule_source=rule[1],
                         category=category(found['rule_id']), category_label=CATEGORIES[category(found['rule_id'])],
+                        priority=priority(found['rule_id']), priority_label=PRIORITIES[priority(found['rule_id'])],
                         page=(found.get('evidence') or {}).get('page')))
+    out.sort(key=lambda item: (item['priority'], STRENGTH_ORDER.get(item['strength'], 2)))
     return out
 
 
@@ -753,6 +825,8 @@ def as_dict(row, *, file_id=None, filename=None, extra=None):
                filename=filename or evidence.get('filename'),
                rule_id=row.rule_id, rule_label=rule[0], rule_source=rule[1], target_key=row.target_key,
                category=category(row.rule_id), category_label=CATEGORIES[category(row.rule_id)],
+               priority=priority(row.rule_id), priority_label=PRIORITIES[priority(row.rule_id)],
+               priority_reason=RULE_PRIORITY.get(row.rule_id, (1, ''))[1] or None,
                origin=row.origin, strength=row.strength, summary=row.summary, evidence=evidence,
                page=evidence.get('page') or evidence.get('first_page'),
                working_notes=evidence.get('log_line') or None, status=row.status, resolved_by=row.resolved_by,
@@ -777,7 +851,7 @@ def _current(query):
         (J.source_document_id.is_(None)) | (D.status != 'superseded'))
 
 
-FACETS = ('status', 'category', 'strength', 'origin')
+FACETS = ('status', 'priority', 'category', 'strength', 'origin')
 
 
 def _search_rows(session, case_id, *, source_document_id=None, statement_period_id=None, subject_ids=None):
@@ -819,15 +893,29 @@ def _search_rows(session, case_id, *, source_document_id=None, statement_period_
     return out
 
 
+def _amount(row, extra):
+    """How much money the call touches, for ordering within a tier: the payment's amount, else the value chosen."""
+    evidence = row.evidence or {}
+    for value in (extra.get('payment_amount_minor'), evidence.get('amount_minor'), evidence.get('value')):
+        try:
+            return abs(int(value))
+        except (TypeError, ValueError):
+            continue
+    return 0
+
+
 def _sort_key(entry):
+    """Focus first: priority tier, then inferred before checked, then the larger amount, then hand entries, then
+    file and period (so one statement's calls stay together)."""
     row, _, filename, extra, _ = entry
-    return (ORIGIN_ORDER.get(row.origin, 2), STRENGTH_ORDER.get(row.strength, 2), (filename or '').lower(),
-            extra.get('period_start') or '', row.created_at or datetime.min.replace(tzinfo=timezone.utc))
+    return (priority(row.rule_id), STRENGTH_ORDER.get(row.strength, 2), -_amount(row, extra),
+            ORIGIN_ORDER.get(row.origin, 2), (filename or '').lower(), extra.get('period_start') or '',
+            row.created_at or datetime.min.replace(tzinfo=timezone.utc), str(row.id))
 
 
 def search(session, case_id, *, q='', statuses=(), categories=(), strengths=(), origins=(), rule_ids=(),
            file_ids=(), account_ids=(), source_document_id=None, statement_period_id=None, subject_ids=None,
-           offset=0, limit=50):
+           priorities=(), offset=0, limit=50, everything=False):
     """One page of a case's judgement calls, with counts per status, type, strength and maker; each facet counts
     the calls matching every other active filter, as the review queue's issue counts do. Sorted: hand entries,
     then inferred, then checked guesses; within that by file, then period."""
@@ -837,11 +925,15 @@ def search(session, case_id, *, q='', statuses=(), categories=(), strengths=(), 
     files = {str(f) for f in file_ids or ()}
     accounts = {str(a) for a in account_ids or ()}
     rules = set(rule_ids or ())
-    wanted = dict(status=set(statuses or ()), category=set(categories or ()), strength=set(strengths or ()),
-                  origin=set(origins or ()))
+    wanted = dict(status=set(statuses or ()), priority={int(p) for p in priorities or () if str(p).isdigit()},
+                  category=set(categories or ()), strength=set(strengths or ()), origin=set(origins or ()))
 
     def value(row, facet):
-        return category(row.rule_id) if facet == 'category' else getattr(row, facet)
+        if facet == 'category':
+            return category(row.rule_id)
+        if facet == 'priority':
+            return priority(row.rule_id)
+        return getattr(row, facet)
 
     scoped = [e for e in entries
               if all(w in e[4] for w in words)
@@ -856,14 +948,17 @@ def search(session, case_id, *, q='', statuses=(), categories=(), strengths=(), 
                    for other, chosen in wanted.items() if other != facet):
                 tally[value(entry[0], facet)] += 1
                 tally['all'] += 1
-        facets[facet] = dict(tally)
+        facets[facet] = {str(k): v for k, v in tally.items()}
     matched = [e for e in scoped if all(not chosen or value(e[0], facet) in chosen for facet, chosen in wanted.items())]
     matched.sort(key=_sort_key)
     offset, limit = max(0, int(offset or 0)), max(1, min(int(limit or 50), 5000))
+    if everything:  # the export: every matching call, never a page of them
+        offset, limit = 0, max(1, len(matched))
     return dict(items=[as_dict(row, file_id=file_id, filename=filename, extra=extra)
                        for row, file_id, filename, extra, _ in matched[offset:offset + limit]],
                 total=len(matched), offset=offset, limit=limit, facets=facets,
                 categories=[dict(key=k, label=v) for k, v in CATEGORIES.items()],
+                priorities=[dict(key=k, label=v, help=PRIORITY_HELP[k]) for k, v in PRIORITIES.items()],
                 rules=sorted({(e[0].rule_id, RULES.get(e[0].rule_id, (e[0].rule_id,))[0], category(e[0].rule_id))
                                for e in entries}),
                 accounts=sorted(({'value': a, 'label': l} for a, l in {(e[3]['account_id'], e[3]['account_label'] or 'Account')
@@ -918,8 +1013,11 @@ def counts(session, case_id):
             buckets.append(periods.setdefault(str(period_id), Counter()))
         if account_id:
             buckets.append(accounts.setdefault(str(account_id), Counter()))
+        tier = f'priority_{priority(rule_id)}'
         for bucket in buckets:
             bucket['total'] += 1
+            if status == 'open':
+                bucket[tier] += 1
             bucket[strength] += 1
             bucket[status] += 1
             bucket[origin] += 1
@@ -1229,3 +1327,36 @@ def record_held_copy(session, *, case_id, file, statement_key, saved, agreement,
     except Exception:  # noqa: BLE001
         log.exception('Recording a held copy judgement failed; the set-aside stands')
         return None
+
+
+EXPORT_COLUMNS = ('Priority', 'Why this priority', 'Status', 'Type', 'Call', 'Strength', 'Made by', 'File', 'Page',
+                  'Account', 'Period start', 'Period end', 'Payment', 'Amount', 'Sentence', 'Checked by',
+                  'Checked reason', 'Rule')
+
+
+def export_csv(page):
+    """The calls of one search, every one of them in focus-first order, as CSV (UTF-8 with a byte-order mark so a
+    spreadsheet opens accents correctly). A cell a spreadsheet would run as a formula is kept as text."""
+    import csv
+    import io
+
+    def cell(value):
+        value = '' if value is None else str(value)
+        return "'" + value if value[:1] in ('=', '+', '-', '@') else value
+
+    out = io.StringIO()
+    writer = csv.writer(out, lineterminator='\r\n')
+    writer.writerow(EXPORT_COLUMNS)
+    strengths = {'inferred': 'Inferred', 'proved': 'Checked guess'}
+    statuses = {'open': 'Not yet checked', 'confirmed': 'Looks right', 'corrected': 'Corrected'}
+    for item in page['items']:
+        amount = item.get('payment_amount_minor')
+        writer.writerow([cell(v) for v in (
+            f"{item['priority']} {item['priority_label']}", item.get('priority_reason'), statuses.get(item['status']),
+            item['category_label'], item['rule_label'],
+            'Hand entry' if item['origin'] == 'agent' else strengths.get(item['strength']),
+            'Processing agent (by hand)' if item['origin'] == 'agent' else 'Processor', item.get('filename'),
+            item.get('page'), item.get('account_label'), item.get('period_start'), item.get('period_end'),
+            item.get('payment_description'), money(int(amount)) if amount is not None else '', item['summary'],
+            item.get('resolved_by'), item.get('resolution_reason'), item['rule_id'])])
+    return ('﻿' + out.getvalue()).encode('utf-8')
