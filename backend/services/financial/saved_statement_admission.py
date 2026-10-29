@@ -5,6 +5,29 @@ from postgres.models.financial import FinancialTransaction
 from services.financial.statement_details import saved_details
 from services.financial.statement_import import StatementImportRequest
 from services.financial.statement_admission import assess_admission, explain_blockers, POLICY
+from services.financial.ledger_summary import _json_copy
+
+
+def _digest_matches(value, expected):
+    """_digest(value) == expected, with the same errors.
+
+    orjson writes the same bytes as _digest's json.dumps for most stored JSON (sorted keys, no spaces, UTF-8)
+    and ten times faster, but not always (some floats, for one), so only a match is taken from it: equal
+    SHA-256 means the bytes _digest hashed. Anything else is decided by _digest itself. orjson also writes
+    a few values json.dumps refuses (UUID, NaN); a JSON column cannot hold those, so stored metadata never
+    has them.
+    """
+    import hashlib
+    import orjson
+    try:
+        fast = orjson.dumps(value, option=orjson.OPT_SORT_KEYS | orjson.OPT_PASSTHROUGH_DATETIME
+                            | orjson.OPT_PASSTHROUGH_DATACLASS | orjson.OPT_PASSTHROUGH_SUBCLASS)
+    except (TypeError, ValueError):
+        fast = None
+    if fast is not None and isinstance(expected, str) and hashlib.sha256(fast).hexdigest() == expected:
+        return True
+    from services.financial.pdf_candidates import _digest
+    return _digest(value) == expected
 
 
 def assess_saved_additions(session, document, period, metadata, currency, *, no_activity_confirmed=False, transactions=None, include=None):
@@ -59,7 +82,7 @@ def assess_saved_additions(session, document, period, metadata, currency, *, no_
     sign = -1 if proposal['metadata'].get('balance_convention') == 'liability_owed' else 1
     controls = metadata.get('statement_details_review', {}).get('balances', {})
     for i, row in enumerate(raw['rows']):
-        row = deepcopy(corrections.get(row['id'],row)); raw['rows'][i]=row
+        row = _json_copy(corrections.get(row['id'],row)); raw['rows'][i]=row
         tx=current.get(row['id'])
         if tx:
             day=tx.transaction_date or tx.posted_date or tx.value_date or tx.effective_date
@@ -131,11 +154,11 @@ def current_saved_assessment(session, document, period, *, transactions=None):
     current_snapshot = snapshot(period, rows) if period else None
     current = bool(current_snapshot and prior.get('ledger_snapshot') == current_snapshot)
     try:
-        if not period or any(_digest(metadata.get(name)) != metadata.get(name + '_sha256')
+        if not period or any(not _digest_matches(metadata.get(name), metadata.get(name + '_sha256'))
                 for name in ('statement_import_original', 'statement_import_request')):
             raise ValueError('Saved source review is unavailable or changed.')
         review = metadata.get('statement_details_review')
-        if review and _digest(review) != metadata.get('statement_details_review_sha256'):
+        if review and not _digest_matches(review, metadata.get('statement_details_review_sha256')):
             raise ValueError('Saved detail review is changed.')
         result = assess_saved_additions(session, document, period, metadata, period.currency,
             no_activity_confirmed=current and bool(prior.get('no_activity_confirmed')), transactions=rows)
