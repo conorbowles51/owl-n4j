@@ -11,7 +11,9 @@ from postgres.models.financial import FinancialTransaction
 from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item
 from services.financial import import_batches, statement_row_assignment
 from services.financial.pdf_candidates import PdfMappingError
-from services.financial.statement_import import read_statement_import, confirm_statement_import
+from services.financial.statement_import import read_statement_import, confirm_statement_import, StatementReviewDraft
+from services.financial.effective_statement_review import batch_review_revision
+from services.financial.statement_progress import review_progress
 from tests import test_financial_statement_import as fixture
 from tests.test_financial_statement_import_andrews import source
 from tests.test_financial_pdf_geometry_candidates import rectangle
@@ -45,6 +47,14 @@ def orphan_file(f):
         dict(kind='page', page_number=2, start_char=len(contents[0])+1, end_char=len(text.content), text_origin='digital_text_layer')]
     f.db.commit()
     return grids
+
+
+def with_closing_balance(request):
+    """The investigator's page-cited entry of the ending balance printed on page 2."""
+    request = deepcopy(request)
+    request['rows'].append(dict(id='manual:closing-balance', excluded=True, manual_page=2,
+        balance_minor='7000', reason='Ending balance printed on the assigned page'))
+    return request
 
 
 class UnassignedStatementTests(TestCase):
@@ -100,6 +110,11 @@ class UnassignedStatementTests(TestCase):
         saved = target['saved_review']['request']
         self.assertEqual(next(r for r in saved['rows'] if r['id'] == row['id'])['description'], 'Checked shop description')
         self.assertIn(body.reason, next(r for r in saved['rows'] if r['id'] == row['id'])['reason'])
+        # Balances stay with the page review they were read in, so the destination
+        # does not reconcile until its closing balance is entered, cited to the
+        # assigned page that prints it (reconciled-statement admission).
+        self.assertEqual(import_batches.assess(target, saved)[0], 'attention')
+        saved = with_closing_balance(saved)
         self.assertEqual(import_batches.assess(target, saved)[0], 'ready')
         result = confirm_statement_import(session_factory=self.f.SessionLocal, case_id=self.f.case.id,
             evidence_file_id=self.f.file.id, request=saved, actor=self.f.actor, resolve_path=Path)
@@ -151,6 +166,22 @@ class UnassignedStatementTests(TestCase):
             reason='Checked printed account', expected_review_revision='initial'))
         preview = self.call(body)
         self.call(body.model_copy(update={'expected_preview':preview['revision']}), True)
+        with f.SessionLocal() as db:
+            status = import_batches.batch_status(db, case_id=f.case.id, batch_id=batch_id)
+        self.assertEqual(status['counts']['assigned'], 1)
+        # The destination reconciles once its closing balance, printed on the
+        # assigned page, is entered and saved through the batch review.
+        self.assertEqual(status['counts']['ready'], 0)
+        target = self.read(self.target)
+        with f.SessionLocal() as db:
+            item = db.scalar(select(Item).where(Item.batch_id == batch_id, Item.statement_key == self.target))
+            revision = batch_review_revision(item.review_request,
+                review_progress(db.get(type(f.file), f.file.id), self.target))
+            item_id = item.id
+        with f.SessionLocal() as db:
+            import_batches.save_review(db, case_id=f.case.id, batch_id=batch_id, item_id=item_id,
+                request=StatementReviewDraft.model_validate(with_closing_balance(target['saved_review']['request'])),
+                expected_review_revision=revision, actor=f.actor)
         with f.SessionLocal() as db:
             status = import_batches.batch_status(db, case_id=f.case.id, batch_id=batch_id)
         self.assertEqual(status['counts']['assigned'], 1)

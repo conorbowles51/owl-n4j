@@ -490,7 +490,11 @@ class SavedCounterpartTests(TestCase):
         self.refused(lambda request: request.update(_saved_balance_corrections=[dict(role='opening')]), 'other_value')
         self.refused(lambda request: request.update(account_number='99999999'), 'account')
         self.refused(lambda request: request.update(account_number='TEST999123'), 'account')
-        self.refused(lambda request: request.update(institution='Synthetic'), 'details')
+        # Institution: the same words, bank words aside. Another bank, or a name the saved one is only part of,
+        # is not the saved institution; the saved name without its bank word is.
+        self.refused(lambda request: request.update(institution='Another Bank'), 'details')
+        self.refused(lambda request: request.update(institution='Synthetic Trust Bank'), 'details')
+        self.assertGreater(self.judge(lambda request: request.update(institution='SYNTHETIC'))['her_payments'], 0)
         self.refused(lambda request: request.update(currency='EUR' if request.get('currency') != 'EUR' else 'GBP'),
                      'currency')
 

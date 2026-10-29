@@ -5,6 +5,7 @@ from unittest.mock import patch
 from services.financial.ledger_snapshot import capture_ledger_snapshot
 from services.financial.ledger_summary import LedgerSummaryError
 from tests.test_financial_ledger_summary import LedgerSummaryTests
+from postgres.models.enums import TransactionDirection
 
 class LedgerSnapshotTests(LedgerSummaryTests):
     def capture(self):return capture_ledger_snapshot(self.db,case_id=self.case.id)
@@ -13,9 +14,17 @@ class LedgerSnapshotTests(LedgerSummaryTests):
         row,doc=self.add(9007199254740993)
         row.provenance={'note':'Original £ source'};self.db.commit()
         case_id=self.case.id  # Resolve the expired test fixture before measuring capture reads.
-        with patch.object(self.db,'execute',wraps=self.db.execute) as read:
-            first=capture_ledger_snapshot(self.db,case_id=case_id)
-            self.assertEqual(read.call_count,1)
+        def measured():
+            # The ledger's rows and totals come from one scoped query; the other reads (account parties, stored
+            # categories, matched names across the case) are per case, so the count must not grow with the rows.
+            # Consistency across these reads is the caller's single repeatable-read transaction (capture_ledger_export).
+            from sqlalchemy.sql.elements import TextClause
+            with patch.object(self.db,'execute',wraps=self.db.execute) as read, patch.object(self.db,'scalars',wraps=self.db.scalars) as scalars:
+                snapshot=capture_ledger_snapshot(self.db,case_id=case_id)
+            ledger_reads=[call for call in read.call_args_list if not isinstance(call.args[0],TextClause)]
+            self.assertEqual(len(ledger_reads),1)
+            return snapshot,read.call_count+scalars.call_count
+        first,reads=measured()
         second=self.capture()
         self.assertEqual(first,second)
         self.assertEqual(first.sha256,hashlib.sha256(first.content.encode('utf-8')).hexdigest())
@@ -31,6 +40,8 @@ class LedgerSnapshotTests(LedgerSummaryTests):
         row.provenance={'note':'later'};self.db.commit()
         self.assertNotEqual(first.sha256,self.capture().sha256)
         self.assertIn('Original £ source',first.content)
+        self.add(5);self.add(7,TransactionDirection.debit)
+        self.assertEqual(measured()[1],reads)
 
     def test_excluded_reading_is_preserved_without_entering_totals(self):
         row,_=self.add();row.proof_class='p3';self.db.commit()

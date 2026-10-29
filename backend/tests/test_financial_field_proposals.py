@@ -154,9 +154,33 @@ class DetailTests(TestCase):
                             knowledge(account(*MONTHS)))['holder']
         self.assertEqual((holder['value'], holder['confirmed']), ('ACME SA DE CV', False))
 
-    def test_renamed_account_proposes_no_holder(self):
+    def test_renamed_account_proposes_no_holder_with_the_neighbours_switch_off(self):
         renamed = account(*MONTHS, saved(holder='NEW NAME SA DE CV', start='2021-12-01', end='2021-12-31'))
-        self.assertNotIn('holder', fp.propose(values(holder='', currency='MXN'), knowledge(renamed)))
+        with patch.dict(os.environ, {'LOUPE_FINANCIAL_AUTOFILL_HOLDER_NEIGHBOURS': '0'}):
+            self.assertNotIn('holder', fp.propose(values(holder='', currency='MXN'), knowledge(renamed)))
+
+    def test_renamed_account_proposes_the_holder_its_nearest_statements_agree_on(self):
+        # The holder changed once, after this period: the nearest saved statements on both sides print one holder.
+        renamed = account(*MONTHS, saved(holder='NEW NAME SA DE CV', start='2021-12-01', end='2021-12-31'))
+        holder = fp.propose(values(holder='', currency='MXN'), knowledge(renamed))['holder']
+        self.assertEqual((holder['value'], holder['basis'], holder['confirmed']),
+                         ('ACME SA DE CV', fp.NEAREST_HOLDER_BASIS, True))
+
+    def test_renamed_account_proposes_no_holder_for_a_period_between_the_two_holders(self):
+        renamed = account(*MONTHS, saved(holder='NEW NAME SA DE CV', start='2021-12-01', end='2021-12-31'))
+        result = fp.propose(values(holder='', currency='MXN', period_start='2021-11-01', period_end='2021-11-30'),
+                            knowledge(renamed))
+        self.assertNotIn('holder', result)
+
+    def test_holder_changing_twice_proposes_no_holder(self):
+        twice = account(*MONTHS, saved(holder='NEW NAME SA DE CV', start='2021-12-01', end='2021-12-31'),
+                        saved(start='2022-01-01', end='2022-01-31'))
+        self.assertNotIn('holder', fp.propose(values(holder='', currency='MXN'), knowledge(twice)))
+
+    def test_renamed_account_matched_on_a_masked_number_proposes_no_holder(self):
+        renamed = account(*MONTHS, saved(holder='NEW NAME SA DE CV', start='2021-12-01', end='2021-12-31'))
+        result = fp.propose(values(holder='', currency='MXN', account_number='****5678'), knowledge(renamed))
+        self.assertNotIn('holder', result)
 
     def test_statement_holder_conflicting_with_the_account_matches_nothing(self):
         result = fp.propose(values(holder='OTHER COMPANY', institution=''), knowledge(account(*MONTHS)))
