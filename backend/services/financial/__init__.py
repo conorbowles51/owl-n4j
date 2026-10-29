@@ -2278,3 +2278,59 @@ from services.financial.model_work_migration import legacy_person, record_statem
 __all__ += ["legacy_person", "record_statement_calls"]
 from services.financial.model_reads import load_model_reads
 __all__ += ["load_model_reads"]
+from services.financial.account_details_correction import (
+    AccountDetailsRequest, UndoAccountDetailsRequest, preview_account_details, save_account_details, undo_account_details,
+)
+__all__ += ["AccountDetailsRequest", "UndoAccountDetailsRequest", "preview_account_details", "save_account_details",
+            "undo_account_details"]
+from services.financial.autofill_reapply import held_candidates, sweep as reapply_autofills
+__all__ += ["held_candidates", "reapply_autofills"]
+from services.financial.credit_line_summary import add_rows, prove as prove_credit_line_summary
+__all__ += ["add_rows", "prove_credit_line_summary"]
+from services.financial.held_reprepare import exact_copies_rekeyed, preparation_stamp
+__all__ += ["exact_copies_rekeyed", "preparation_stamp"]
+from services.financial.held_settlement import settle_held_statements, settle_vanished_key
+__all__ += ["settle_held_statements", "settle_vanished_key"]
+# The function shadows the submodule attribute; `from services.financial.journal import journal` is unaffected.
+from services.financial.journal import journal
+__all__ += ["journal"]
+from services.financial.judgement_inbox import append_correction, sync as sync_judgement_inbox
+__all__ += ["append_correction", "sync_judgement_inbox"]
+from services.financial.judgements import record_judgement
+__all__ += ["record_judgement"]
+from services.financial.metadata_once import read_once
+__all__ += ["read_once"]
+from services.financial.not_payment_statements import reassess_items
+__all__ += ["reassess_items"]
+from services.financial.party_coverage import cases_for_admin, tally as party_coverage_tally
+__all__ += ["cases_for_admin", "party_coverage_tally"]
+from services.financial.party_requests import request_rows, requests_csv
+__all__ += ["request_rows", "requests_csv"]
+from services.financial.payment_parties import printed_party
+__all__ += ["printed_party"]
+from services.financial.payment_party_matches import case_party_matches, match_parties
+__all__ += ["case_party_matches", "match_parties"]
+from services.financial.payment_party_reasons import unnamed_reason
+__all__ += ["unnamed_reason"]
+from services.financial.printed_page_count import missing_pages, page_numbering
+__all__ += ["missing_pages", "page_numbering"]
+from services.financial.reprepare_carry import saved_counterpart, saved_statement_holds
+__all__ += ["saved_counterpart", "saved_statement_holds"]
+from services.financial.reread_carry import carried_record
+__all__ += ["carried_record"]
+from services.financial.santander_integral import recover_held
+__all__ += ["recover_held"]
+from services.financial.santander_subaccounts import another_product
+__all__ += ["another_product"]
+from services.financial.saved_copies import saved_periods, settle_item as settle_saved_copy
+__all__ += ["saved_periods", "settle_saved_copy"]
+from services.financial.saved_reading_replacement import refiled
+__all__ += ["refiled"]
+from services.financial.statement_import_santander_query import propose_santander_query, santander_query_catalog
+__all__ += ["propose_santander_query", "santander_query_catalog"]
+from services.financial.statement_overlap_trim import overlap_trim
+__all__ += ["overlap_trim"]
+from services.financial.statement_page import payment_page, payment_page_png
+__all__ += ["payment_page", "payment_page_png"]
+from services.financial.summary_pages import statement_summary_pages
+__all__ += ["statement_summary_pages"]
