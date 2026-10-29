@@ -38,12 +38,14 @@ class ExtractionReleaseTests(unittest.TestCase):
             for name, value in [('review',record), ('baseline',baseline), ('current',current)]:
                 (directory / (name + '.json')).write_text(json.dumps(value))
             digest = hashlib.sha256((directory / 'baseline.json').read_bytes()).hexdigest()
+            # A hang guard, not a speed check: the script imports the whole financial package, measured at
+            # 9.3 s to start on the shared box alone and over 20 s inside the full suite.
             result = subprocess.run([sys.executable,
                 str(Path(__file__).resolve().parents[2] / 'scripts/check_financial_extraction_release.py'),
                 '--review-record', str(directory / 'review.json'), '--expected-review-sha256', record['review_record_sha256'],
                 '--baseline', str(directory / 'baseline.json'), '--expected-baseline-sha256', '0'*64 if wrong_pin else digest,
                 '--current', str(directory / 'current.json'), '--output', str(directory / 'result.json')],
-                capture_output=True, text=True, timeout=20)
+                capture_output=True, text=True, timeout=180)
             report = json.loads((directory / 'result.json').read_text()) if (directory / 'result.json').exists() else None
             return result, report
 

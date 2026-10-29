@@ -15,11 +15,13 @@ from unittest.mock import AsyncMock, patch
 from uuid import UUID, uuid4
 import hashlib
 
-from sqlalchemy import select
+from datetime import timedelta
+
+from sqlalchemy import func, select
 
 from postgres.models.evidence import EvidenceDocumentText, EvidenceFile, EvidenceTableGeometry
 from postgres.models.financial import FinancialSourceDocument, FinancialTransaction
-from postgres.models.financial_import_batches import FinancialImportBatchItem as Item
+from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item
 from services.financial import import_batches as batches
 from services.financial import page_identity
 from services.financial import queue_save
@@ -154,8 +156,18 @@ class PageCopyTests(TestCase):
 
     def batch(self, *files):
         with self.f.SessionLocal() as db:
-            return batches.create_batch(db, case_id=self.f.case.id, request_id=uuid4(),
+            batch_id = batches.create_batch(db, case_id=self.f.case.id, request_id=uuid4(),
                 file_ids=[file.id for file in files], folder_ids=[], actor=self.f.actor)
+        # SQLite's server default stamps whole seconds, so batches made in one second tie on created_at and a random
+        # id decides which is newest; Postgres stamps microseconds. Each batch is created after the ones before it.
+        with self.f.SessionLocal() as db:
+            created = db.get(Batch, batch_id)
+            latest = db.scalar(select(func.max(Batch.created_at)).where(Batch.case_id == self.f.case.id,
+                                                                        Batch.id != batch_id))
+            if latest is not None:
+                created.created_at = latest + timedelta(microseconds=1)
+                db.commit()
+        return batch_id
 
     def drain(self, batch, limit=40):
         for _ in range(limit):
