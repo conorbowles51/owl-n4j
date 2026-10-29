@@ -5,6 +5,7 @@ from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from uuid import UUID
 from sqlalchemy import select, func, true
+from services.financial.metadata_once import read_once as _read_once
 from pydantic import BaseModel, ConfigDict, Field
 from postgres.models.financial import FinancialSourceDocument, FinancialStatementPeriod, FinancialTransaction
 from postgres.models.evidence import EvidenceFile
@@ -18,21 +19,6 @@ class CompleteImportedRecord(BaseModel):
     row: ImportRow
     version: int = Field(ge=0)
     currency: str = Field(pattern=r'^[A-Z]{3}$')
-
-
-def _read_once(session, column):
-    """The saved metadata as PostgreSQL decompresses it once per row, and how to join it.
-
-    Each field read from a large stored JSON value decompresses the whole value again (d5b330d1: 1,367 saved
-    statements, 120 MB stored, 0.7 s per field, 4.8 s for these seven). Concatenating an empty object makes one
-    in-memory copy per row, equal to the stored object, made once in a lateral subquery that every field then
-    reads (1.1 s). A value that is not an object is read as stored. Other databases read the column as before."""
-    if session.get_bind().dialect.name != 'postgresql':
-        return column, None
-    from sqlalchemy import case, literal, type_coerce
-    copy = case((func.jsonb_typeof(column) == 'object', column.op('||')(literal({}, column.type))), else_=column)
-    once = select(type_coerce(copy, column.type).label('metadata')).correlate(column.table).offset(0).lateral('metadata_once')
-    return once.c.metadata, once
 
 
 def imported_records(session, *, case_id, account_id=None, start_date=None, end_date=None, offset=0, limit=50, account_ids=None, account_holders=None, source_document_id=None, evidence_file_ids=None):

@@ -338,17 +338,23 @@ def _case_knowledge(session, case_id, evidence_file_ids=None):
     """
     from postgres.models.financial import (FinancialAccount as Account, FinancialSourceDocument as Source,
                                            FinancialStatementPeriod as Period)
-    request, review = Source.metadata_['statement_import_request'], Source.metadata_['statement_details_review']
-    rows = session.execute(select(Account.id, Account.identifier_as_printed, Account.identifier_normalised,
+    from sqlalchemy import true
+    from services.financial.metadata_once import read_once
+    metadata, once = read_once(session, Source.metadata_)
+    request, review = metadata['statement_import_request'], metadata['statement_details_review']
+    query = (select(Account.id, Account.identifier_as_printed, Account.identifier_normalised,
             Account.institution_name, Account.currency, Period.currency, Period.period_start, Period.period_end,
             Period.opening_balance_minor, Period.closing_balance_minor, request['holder'].as_string(), request['institution'].as_string(), request['account_number'].as_string(),
             review['details']['holder'].as_string(), review['details']['institution'].as_string(),
             review['details']['account_number'].as_string())
-        .join(Period, Period.account_id == Account.id).join(Source, Source.id == Period.source_document_id)
+        .select_from(Account).join(Period, Period.account_id == Account.id).join(Source, Source.id == Period.source_document_id)
         .where(Period.case_id == case_id, Account.case_id == case_id, Source.status == 'admitted',
                Source.document_type == 'statement_review',
                Source.metadata_['financial_import_removal'].as_string().is_(None),
-               *([Source.evidence_file_id.in_(list(evidence_file_ids))] if evidence_file_ids is not None else []))).all()
+               *([Source.evidence_file_id.in_(list(evidence_file_ids))] if evidence_file_ids is not None else [])))
+    if once is not None:
+        query = query.join(once, true())
+    rows = session.execute(query).all()
     accounts, currencies = {}, Counter()
     for (account_id, printed, normalised, institution, account_currency, currency, start, end, opening, closing,
          holder, saved_institution, saved_account, reviewed_holder, reviewed_institution, reviewed_account) in rows:

@@ -31,6 +31,7 @@ import os
 import re
 import unicodedata
 from dataclasses import dataclass, replace
+from functools import lru_cache
 from datetime import date
 
 ENABLED = os.environ.get('LOUPE_FINANCIAL_AUTO_SAVE_GUARD', '1').strip().lower() not in ('0', 'false', 'off', 'no')
@@ -123,6 +124,13 @@ _BANK_WORDS = frozenset({'BANCO', 'BANK', 'THE', 'GRUPO', 'FINANCIERO', 'CASA', 
 
 
 def _bank(text):
+    # Compared for every pair of saved periods (misread_account, chain_problem): the same few bank names are
+    # folded once each, not once per pair (d5b330d1: 22 s of a 67 s queue build).
+    return _bank_of(text) if text is None or isinstance(text, str) else _bank_of.__wrapped__(text)
+
+
+@lru_cache(maxsize=4096)
+def _bank_of(text):
     words = [word.strip('.,') for word in _fold(text).split()]
     return next((word for word in words if word and word not in _BANK_WORDS), words[0] if words else '')
 
