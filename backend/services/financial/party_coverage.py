@@ -50,24 +50,40 @@ def tally(rows, matched_ids=frozenset()):
     """{'banks': {bank: counts}, 'layouts': {bank/account type: counts}, 'cases': {case: counts}, 'total': counts}.
 
     ``rows``: dicts with case_id, description, direction, account_type, institution_name, counterparty_raw, labels
-    and optionally reviewed_counterparty and id. ``matched_ids``: rows named from their matching payment in another
+    and optionally reviewed_counterparty, id and superseded_by. A reading that a later reading replaced is counted
+    as its replacement shows it, since Transactions shows the replacement in its place (a bare replacement keeps it
+    bare); a replaced reading whose replacement is not stored is counted as itself. ``matched_ids``: rows named from their matching payment in another
     account of the case (services.financial.payment_party_matches). Counts are {named, reason, bare, rows}."""
     def blank():
         return {NAMED: 0, REASON: 0, BARE: 0, 'rows': 0}
     banks, layouts, cases = (collections.defaultdict(blank) for _ in range(3))
     total = blank()
-    for row in rows:
-        kind = classify(description=row.get('description'), direction=row.get('direction'),
-                        account_type=row.get('account_type'), institution=row.get('institution_name'),
-                        counterparty_raw=row.get('counterparty_raw'), labels=row.get('labels'),
-                        reviewed_counterparty=row.get('reviewed_counterparty'),
-                        matched=str(row.get('id')) in matched_ids)
+    rows = list(rows)
+    kinds = [classify(description=row.get('description'), direction=row.get('direction'),
+                      account_type=row.get('account_type'), institution=row.get('institution_name'),
+                      counterparty_raw=row.get('counterparty_raw'), labels=row.get('labels'),
+                      reviewed_counterparty=row.get('reviewed_counterparty'),
+                      matched=str(row.get('id')) in matched_ids)
+             for row in rows]
+    position = {str(row['id']): at for at, row in enumerate(rows) if row.get('id') is not None}
+    for at, row in enumerate(rows):
+        kind = kinds[_shown_reading(at, rows, position)]
         bank = bank_of(row.get('institution_name'))
         for counts in (banks[bank], layouts[f"{bank}/{row.get('account_type') or 'unknown'}"],
                        cases[str(row.get('case_id'))], total):
             counts[kind] += 1
             counts['rows'] += 1
     return dict(banks=dict(banks), layouts=dict(layouts), cases=dict(cases), total=total)
+
+
+def _shown_reading(at, rows, position):
+    """The position of the reading Transactions shows for ``rows[at]``: the end of its replacement chain among
+    the stored rows (a replacement that is not stored, or a loop, ends it)."""
+    seen = {at}
+    while rows[at].get('superseded_by') and position.get(str(rows[at]['superseded_by'])) not in (None, *seen):
+        at = position[str(rows[at]['superseded_by'])]
+        seen.add(at)
+    return at
 
 
 def bare_share(counts):
@@ -101,11 +117,12 @@ def load_rows(session):
     result = session.execute(text(
         "select t.id, t.case_id, t.description, t.direction, t.counterparty_raw, "
         "t.metadata->'investigation_labels' as labels, t.provenance->'reviewed_counterparty' as reviewed, "
-        "a.account_type, a.institution_name "
+        "t.superseded_by_id, a.account_type, a.institution_name "
         "from financial_transactions t left join financial_accounts a on a.id = t.account_id"))
-    for id, case_id, description, direction, raw, labels, reviewed, account_type, institution in result:
+    for id, case_id, description, direction, raw, labels, reviewed, superseded_by, account_type, institution in result:
         yield dict(id=str(id), case_id=case_id, description=description, direction=str(direction.value if hasattr(direction, 'value') else direction),
                    counterparty_raw=raw, labels=labels, reviewed_counterparty=reviewed,
+                   superseded_by=str(superseded_by) if superseded_by else None,
                    account_type=str(account_type.value if hasattr(account_type, 'value') else account_type) if account_type else None,
                    institution_name=institution)
 

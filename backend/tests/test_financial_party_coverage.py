@@ -38,6 +38,19 @@ class PartyCoverageTests(unittest.TestCase):
         # Small banks never fail.
         self.assertEqual(compare(tally([row('XQZ 1', institution='Tiny Bank')] * 5), baseline), [])
 
+    def test_a_replaced_reading_counts_as_its_replacement_shows(self):
+        def r(id, description, superseded_by=None, **kw):
+            return dict(row(description, **kw), id=id, superseded_by=superseded_by)
+        # The first reading kept only a reference; the re-read printed the payee and replaced it.
+        counted = tally([r('old', '9001', superseded_by='new'), r('new', 'XQZ 9001', raw='ACME LLC')])
+        self.assertEqual(counted['total'], {NAMED: 2, REASON: 0, BARE: 0, 'rows': 2})
+        # A bare replacement keeps the replaced reading bare, along a chain of re-reads.
+        counted = tally([r('a', 'ACME', raw='ACME', superseded_by='b'), r('b', 'XQZ 1', superseded_by='c'), r('c', 'XQZ 2')])
+        self.assertEqual(counted['total'][BARE], 3)
+        # A replacement that is not stored, or a loop, leaves the reading counted as itself.
+        self.assertEqual(tally([r('a', 'XQZ 1', superseded_by='gone')])['total'][BARE], 1)
+        self.assertEqual(tally([r('a', 'XQZ 1', superseded_by='b'), r('b', 'ACME', raw='ACME', superseded_by='a')])['total']['rows'], 2)
+
 
 def _args(r):
     return dict(description=r['description'], direction=r['direction'], account_type=r['account_type'],
