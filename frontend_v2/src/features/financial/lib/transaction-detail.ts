@@ -83,6 +83,19 @@ export const transactionDetail = z.object({
   locator: z.unknown().optional(),
 })
 
+const modelOrigin = z
+  .object({
+    kind: z.literal("model"),
+    model: z.string(),
+    model_id: z.string().optional(),
+    at: z.string().optional(),
+    for: z.object({ name: z.string(), user_id: z.string().nullable().optional() }).partial().optional(),
+    citation: z.record(z.string(), z.unknown()).optional(),
+    how: z.string().optional(),
+    recorded_as: z.string().optional(),
+  })
+  .passthrough()
+
 function labelOrigin() {
   return z.object({
     source: z.enum([
@@ -91,8 +104,18 @@ function labelOrigin() {
       "account",
       "investigator",
       "missing",
+      "model",
+      "learned",
+      "matched_payment",
+      "printed_account",
+      "model_reading",
     ]),
     explanation: z.string().optional(),
+    /** A name a model read, not yet confirmed by a person: "Read by Claude · not confirmed". */
+    label: z.string().optional(),
+    origin: modelOrigin.optional(),
+    /** The model reading a person confirmed. */
+    confirmed_model_reading: modelOrigin.optional(),
     reason: z.string().optional(),
     rule: z.string().optional(),
     version: z.string().optional(),

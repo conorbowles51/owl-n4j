@@ -14,10 +14,12 @@ import {
   cropWindow,
   lineBand,
   missingNameReason,
+  modelReadingField,
   needsName,
   otherSide,
   showNextPageTop,
   similarPayments,
+  withConfirmedName,
   withPersonName,
   type LineBand,
   type SimilarGroup,
@@ -64,6 +66,10 @@ function patchLedger(client: ReturnType<typeof useQueryClient>, caseId: string, 
  * page's last), the payment's facts and why it has no name; saves a typed name as a person's label through
  * PUT /ledger/payment-labels (origin "Named by <person> from the statement") and moves to the next payment
  * without a name. After a save it offers, never applies, the same name for similar payments.
+ *
+ * ``mode="confirm"`` works the names Claude read that no person has confirmed: the reading is shown with its
+ * citation and filled in; Enter on the unchanged name confirms it (POST /ledger/payment-labels/confirm, the person
+ * becomes its actor and the reading stays in the history), a changed name saves the person's correction.
  */
 export function PaymentNamingPanel({
   caseId,
@@ -75,6 +81,7 @@ export function PaymentNamingPanel({
   onOpenDetails,
   readOnly = false,
   stickyTop = 0,
+  mode = "name",
 }: {
   caseId: string
   /** Every payment in view: names offered while typing and similar payments come from these. */
@@ -89,11 +96,18 @@ export function PaymentNamingPanel({
   readOnly?: boolean
   /** Height in px of the sticky bar above the table; beside the table the panel's height leaves room for it. */
   stickyTop?: number
+  /** "name": payments without a name; "confirm": names a model read that no person has confirmed. */
+  mode?: "name" | "confirm"
 }) {
   const client = useQueryClient()
   const user = useAuthStore((state) => state.user)
   const row = rows.find((item) => item.key === currentId)
+  const confirming = mode === "confirm"
+  const readField = row && confirming ? modelReadingField(row) : null
+  const reading = row && readField ? row.label_sources?.[readField] : undefined
   const [name, setName] = useState("")
+  // Set when a changed reading on the account's own side is submitted: that side is confirmed here, not renamed.
+  const [ownSideNote, setOwnSideNote] = useState(false)
   const [offer, setOffer] = useState<{ source: LedgerTransaction; name: string; groups: SimilarGroup[]; ticked: Set<string> } | null>(null)
   const [last, setLast] = useState<{ originals: LedgerTransaction[]; name: string } | null>(null)
   const input = useRef<HTMLInputElement>(null)
@@ -110,9 +124,12 @@ export function PaymentNamingPanel({
   const next = neighbour(1)
   const previous = neighbour(-1)
   useEffect(() => {
-    setName("")
+    // In confirm mode the model's reading is filled in: Enter on it unchanged confirms it.
+    setName(readField && row ? (row[readField] ?? "") : "")
+    setOwnSideNote(false)
     // A viewer has no name field; the panel itself takes the keys.
     ;(readOnly ? panel.current : input.current)?.focus({ preventScroll: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentId, readOnly])
   useEffect(() => {
     if (next) void client.prefetchQuery(pageQuery(caseId, next))
@@ -187,10 +204,42 @@ export function PaymentNamingPanel({
       toast.success(`Removed the name from ${originals.length} ${originals.length === 1 ? "payment" : "payments"}.`)
     },
   })
-  const busy = save.isPending || undo.isPending
+  const confirmedText = () =>
+    `Confirmed by ${user?.name || user?.username || "you"} from the statement on ${new Date().toISOString().slice(0, 10)}. Read first by ${reading?.origin?.model || "Claude"}.`
+  const confirm = useMutation({
+    mutationFn: async ({ target, field }: { target: LedgerTransaction; field: "from_name" | "to_name" }) => {
+      const result = await fetchAPI<{ case_id: string; confirmed: number; skipped: number }>(
+        `/api/financial/ledger/payment-labels/confirm?${new URLSearchParams({ case_id: caseId })}`,
+        {
+          method: "POST",
+          body: { transactions: [{ id: target.key, version: target.label_version ?? 0 }], fields: [field] },
+        }
+      )
+      if (result.case_id !== caseId || result.confirmed !== 1)
+        throw Error("The name was not confirmed. Reload the transactions to see what is saved.")
+      return { target, field }
+    },
+    onSuccess: ({ target, field }) => {
+      patchLedger(client, caseId, [withConfirmedName(target, field, confirmedText())])
+      void client.invalidateQueries({ queryKey: ["financial-ledger", caseId], refetchType: "none" })
+      void client.invalidateQueries({ queryKey: ["ledger-source", caseId] })
+      setOffer(null)
+    },
+  })
+  const busy = save.isPending || undo.isPending || confirm.isPending
   const submit = () => {
     const value = name.trim().replace(/\s+/g, " ")
-    if (readOnly || !row || !value || busy || row.counterparty_link) return
+    if (readOnly || !row) return
+    if (readField && value && !busy && value === (row[readField] ?? "").trim()) {
+      confirm.mutate({ target: row, field: readField }, { onSuccess: () => next && onMove(next) })
+      return
+    }
+    if (!value || busy || row.counterparty_link) return
+    // A correction is saved on the other side; a reading on the account's own side can only be confirmed here.
+    if (readField && readField !== otherSide(row)) {
+      setOwnSideNote(true)
+      return
+    }
     if (value === (row[otherSide(row)] ?? "").trim()) {
       if (next) onMove(next)
       return
@@ -235,13 +284,17 @@ export function PaymentNamingPanel({
     >
       <header className="flex items-start justify-between gap-2">
         <div>
-          <h2 className="font-semibold">{readOnly ? "Payment without a name" : "Name this payment"}</h2>
+          <h2 className="font-semibold">
+            {readOnly ? "Payment without a name" : confirming ? "Confirm what Claude read" : "Name this payment"}
+          </h2>
           <p className="text-xs text-muted-foreground" role="status">
             {queue.length === 0
-              ? "Every payment in view has a name."
+              ? confirming
+                ? "Every name in view is confirmed by a person."
+                : "Every payment in view has a name."
               : position >= 0
-                ? `${position + 1} of ${queue.length} without a name in view`
-                : `${queue.length} without a name in view`}
+                ? `${position + 1} of ${queue.length} ${confirming ? "not confirmed" : "without a name"} in view`
+                : `${queue.length} ${confirming ? "not confirmed" : "without a name"} in view`}
           </p>
         </div>
         <Button variant="ghost" size="sm" onClick={onClose}>
@@ -289,6 +342,13 @@ export function PaymentNamingPanel({
             </p>
             <p className="text-xs text-muted-foreground">{row.account_label || row.account_holder || row.account_id}</p>
             <p className="break-words font-mono text-[13px]">{row.description || "No description recorded"}</p>
+            {reading?.source === "model_reading" ? (
+              <p className="rounded border border-[#e7c66b] bg-[#fdf6dd] p-2 text-xs text-[#5c3d00] dark:bg-amber-950 dark:text-amber-100" data-testid="model-reading">
+                <span className="font-semibold">{reading.label || "Read by Claude · not confirmed"}: </span>
+                {row[readField as "from_name" | "to_name"]}
+                {reading.explanation ? <span className="mt-1 block">{reading.explanation}</span> : null}
+              </p>
+            ) : (
             <p className="text-xs">
               <span className="font-semibold">Why there is no name: </span>
               {reason
@@ -297,6 +357,7 @@ export function PaymentNamingPanel({
                   ? `Named ${row[otherSide(row)]}.`
                   : "The printed line does not give a name the ledger could read. Check the statement below."}
             </p>
+            )}
           </section>
           <StatementView key={row.key} caseId={caseId} row={row} />
           {readOnly ? (
@@ -339,7 +400,10 @@ export function PaymentNamingPanel({
                 placeholder="Type the name printed on the statement"
                 value={name}
                 disabled={busy || !!row.counterparty_link}
-                onChange={(event) => setName(event.target.value)}
+                onChange={(event) => {
+                  setName(event.target.value)
+                  setOwnSideNote(false)
+                }}
               />
             </label>
             <datalist id="payment-naming-names">
@@ -349,7 +413,11 @@ export function PaymentNamingPanel({
             </datalist>
             <div className="flex flex-wrap gap-2">
               <Button type="submit" disabled={busy || !name.trim()}>
-                {save.isPending ? "Saving…" : "Save and next (Enter)"}
+                {save.isPending || confirm.isPending
+                  ? "Saving…"
+                  : readField && row && name.trim().replace(/\s+/g, " ") === (row[readField] ?? "").trim()
+                    ? "Confirm and next (Enter)"
+                    : "Save and next (Enter)"}
               </Button>
               <Button type="button" variant="outline" disabled={!previous || busy} onClick={() => previous && onMove(previous)}>
                 ← Previous
@@ -367,11 +435,22 @@ export function PaymentNamingPanel({
               )}
             </div>
             <p className="text-xs text-muted-foreground">
-              Enter saves and opens the next payment without a name. ← and → move between them when the name field is
-              empty, S skips when the cursor is outside the field, Esc closes. The name is saved as yours, marked as read
-              from the statement; nothing else about the payment changes.
+              {confirming
+                ? "Check the name against the statement line. Enter on the name as read confirms it as yours; change it first to save your correction instead. Claude's reading stays in the payment's history. S skips when the cursor is outside the field, Esc closes; nothing else about the payment changes."
+                : "Enter saves and opens the next payment without a name. ← and → move between them when the name field is empty, S skips when the cursor is outside the field, Esc closes. The name is saved as yours, marked as read from the statement; nothing else about the payment changes."}
             </p>
           </form>
+)}
+          {confirm.isError && (
+            <p role="alert" className="text-sm">
+              {confirm.error.message}
+            </p>
+          )}
+          {ownSideNote && (
+            <p role="alert" className="text-sm">
+              This name is on the account's own side of the payment: here it can only be confirmed as Claude read it. Put
+              the name back as read to confirm it; a different name for this side is not saved from this panel.
+            </p>
           )}
           {save.isError && (
             <p role="alert" className="text-sm">

@@ -179,17 +179,20 @@ export async function correctJudgement(caseId: string, id: string, reason: strin
   )
 }
 
-/** The marker's short label: plain words, no rule ids. Hand entries by the processing agent have their own. */
-export function strengthLabel(judgement: Pick<Judgement, "strength"> & { origin?: string }) {
-  if (judgement.origin === "agent") return "Hand entry"
+/** The marker's short label: plain words, no rule ids. Work Claude did for a person has its own. */
+export function strengthLabel(judgement: Pick<Judgement, "strength"> & { origin?: string; rule_id?: string }) {
+  if (judgement.origin === "agent")
+    return judgement.rule_id === "model.statement_save" ? "Saved by Claude · not confirmed" : "Hand entry by Claude"
   return judgement.strength === "inferred" ? "Inferred" : "Checked guess"
 }
 
-export function strengthHelp(judgement: Pick<Judgement, "strength"> & { origin?: string }) {
+export function strengthHelp(judgement: Pick<Judgement, "strength"> & { origin?: string; rule_id?: string }) {
+  if (judgement.origin === "agent" && judgement.rule_id === "model.statement_save")
+    return "Claude saved this statement's payments for a person. No person has confirmed them against the statement yet."
   if (judgement.origin === "agent")
     return judgement.strength === "inferred"
-      ? "Entered by hand by the processing agent from the page images; the printed balances alone do not prove it."
-      : "Entered by hand by the processing agent from the page images; checked against the printed balances and totals."
+      ? "Entered by hand by Claude, for a person, from the page images; the printed balances alone do not prove it. Not a person's entry until a person confirms it."
+      : "Entered by hand by Claude, for a person, from the page images; checked against the printed balances and totals. Not a person's entry until a person confirms it."
   return judgement.strength === "inferred"
     ? "The page does not print this value; the processor worked it out."
     : "The processor chose this reading, and the printed balances or totals still prove it."
@@ -200,7 +203,7 @@ export const STRENGTH_LABELS: Record<string, string> = {
   proved: "Checked guess",
 }
 export const ORIGIN_LABELS: Record<string, string> = {
-  agent: "Processing agent (by hand)",
+  agent: "Claude, for a person",
   processor: "Processor",
 }
 export const STATUS_LABELS: Record<string, string> = {

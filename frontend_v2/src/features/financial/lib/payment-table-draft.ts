@@ -39,6 +39,8 @@ export const emptyPaymentTableView = {
   judgementStatus: "",
   // Only payments whose other side has no name yet, to work through them beside their statement lines.
   unnamedOnly: false,
+  // Only payments with a name Claude read that no person has confirmed, to confirm them beside the statement.
+  unconfirmedOnly: false,
 }
 
 export function showAllImportedPayments(caseId: string) {

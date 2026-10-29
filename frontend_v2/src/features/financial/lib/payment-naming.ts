@@ -178,3 +178,33 @@ export function withPersonName(row: LedgerTransaction, name: string, explanation
     label_sources: { ...row.label_sources, [field]: { source: "investigator", explanation } },
   }
 }
+
+/**
+ * The name field holding a model's reading that no person has confirmed, preferring the other side; null when
+ * every name on the payment is a person's, a rule's or the statement's.
+ */
+export function modelReadingField(row: LedgerTransaction): NameField | null {
+  const other = otherSide(row)
+  const own: NameField = other === "from_name" ? "to_name" : "from_name"
+  for (const field of [other, own])
+    if (row.label_sources?.[field]?.source === "model_reading") return field
+  return null
+}
+
+/** True while a name on the payment was read by a model and no person has confirmed it. */
+export function needsConfirm(row: LedgerTransaction) {
+  return modelReadingField(row) !== null
+}
+
+/** The row as the table shows it once a person confirms the model's reading in ``field``: the name is unchanged. */
+export function withConfirmedName(row: LedgerTransaction, field: NameField, explanation: string): LedgerTransaction {
+  const read = row.label_sources?.[field]
+  return {
+    ...row,
+    label_version: (row.label_version ?? 0) + 1,
+    label_sources: {
+      ...row.label_sources,
+      [field]: { source: "investigator", explanation, confirmed_model_reading: read?.origin },
+    },
+  }
+}

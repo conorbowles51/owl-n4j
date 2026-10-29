@@ -69,7 +69,7 @@ import { useCallback, useRef, useState, type ComponentProps } from "react"
 import { Button } from "@/components/ui/button"
 import { LedgerTable } from "./LedgerTable"
 import { PaymentNamingPanel } from "./PaymentNamingPanel"
-import { needsName } from "../lib/payment-naming"
+import { needsConfirm, needsName } from "../lib/payment-naming"
 import type { LedgerTransaction } from "../api"
 const TABLE_VIEW_KEY = "financial-transactions-table-view"
 function readTableView() {
@@ -156,6 +156,8 @@ export function LedgerRowBrowser({
     toolbarWatch.current = new ResizeObserver(() => setToolbarHeight(node.offsetHeight))
     toolbarWatch.current.observe(node)
   }, [])
+  // "confirm": the panel works names Claude read that no person has confirmed.
+  const [namingMode, setNamingMode] = useState<"name" | "confirm">("name")
   const [labelIds, setLabelIds] = useState<string[] | null>(null)
   // The quick Categorise dialog; "Edit other fields…" swaps in the full editor.
   const [fullEditor, setFullEditor] = useState(false)
@@ -377,13 +379,17 @@ export function LedgerRowBrowser({
   // Every payment in view before "Not identified only", so a payment just named stays open beside the table.
   const namingRows = rows
   const unnamedRows = investigation && exportContext ? rows.filter(needsName) : []
+  // Names Claude read for a person that no person has confirmed: shown as Claude's until confirmed.
+  const unconfirmedRows = investigation && exportContext ? rows.filter(needsConfirm) : []
   if (view.unnamedOnly && investigation && exportContext) rows = unnamedRows
+  else if (view.unconfirmedOnly && investigation && exportContext) rows = unconfirmedRows
   const index = Math.min(
     page,
     Math.max(0, Math.ceil(rows.length / pageSize) - 1)
   )
   // Open a payment beside the table for naming, and turn the table to the page it is on.
-  const openNaming = (id: string) => {
+  const openNaming = (id: string, mode?: "name" | "confirm") => {
+    if (mode) setNamingMode(mode)
     setNaming(id)
     const at = rows.findIndex((row) => row.key === id)
     if (at >= 0 && Math.floor(at / pageSize) !== index)
@@ -1432,7 +1438,7 @@ export function LedgerRowBrowser({
             size="sm"
             variant="outline"
             aria-pressed={view.unnamedOnly}
-            onClick={() => changeView({ unnamedOnly: !view.unnamedOnly })}
+            onClick={() => changeView({ unnamedOnly: !view.unnamedOnly, unconfirmedOnly: false })}
           >
             {view.unnamedOnly ? "Show all payments" : "Show only these"}
           </Button>
@@ -1443,10 +1449,46 @@ export function LedgerRowBrowser({
                 const first = unnamedRows.find((row) =>
                   rows.slice(index * pageSize, (index + 1) * pageSize).includes(row)
                 ) ?? unnamedRows[0]
-                openNaming(first.key)
+                openNaming(first.key, "name")
               }}
             >
               {canEdit ? "Name them one by one" : "See their statement lines one by one"}
+            </Button>
+          )}
+        </div>
+      )}
+      {investigation && exportContext && (unconfirmedRows.length > 0 || view.unconfirmedOnly) && (
+        <div
+          className="flex flex-wrap items-center gap-2 rounded border border-[#e7c66b] bg-[#fdf6dd] px-3 py-2 text-sm text-[#5c3d00] dark:bg-amber-950 dark:text-amber-100"
+          role="group"
+          aria-label="Names read by Claude, not confirmed"
+        >
+          <span role="status">
+            <strong>{unconfirmedRows.length.toLocaleString()}</strong>{" "}
+            {unconfirmedRows.length === 1 ? "name" : "names"} in view read
+            by Claude and not confirmed by a person
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            aria-pressed={view.unconfirmedOnly}
+            onClick={() =>
+              changeView({ unconfirmedOnly: !view.unconfirmedOnly, unnamedOnly: false })
+            }
+          >
+            {view.unconfirmedOnly ? "Show all payments" : "Show only these"}
+          </Button>
+          {canEdit && unconfirmedRows.length > 0 && (
+            <Button
+              size="sm"
+              onClick={() => {
+                const first = unconfirmedRows.find((row) =>
+                  rows.slice(index * pageSize, (index + 1) * pageSize).includes(row)
+                ) ?? unconfirmedRows[0]
+                openNaming(first.key, "confirm")
+              }}
+            >
+              Confirm them one by one
             </Button>
           )}
         </div>
@@ -1495,7 +1537,7 @@ export function LedgerRowBrowser({
                 }
               : undefined
           }
-          onName={(row) => openNaming(row.key)}
+          onName={(row) => openNaming(row.key, canEdit && needsConfirm(row) ? "confirm" : "name")}
           nameAction={canEdit ? "Name it" : "See the line"}
           onParty={(side, key) => {
             const field = side === "from" ? "fromNames" : "toNames"
@@ -1541,7 +1583,7 @@ export function LedgerRowBrowser({
                 }
               : undefined
           }
-          onName={(row) => openNaming(row.key)}
+          onName={(row) => openNaming(row.key, canEdit && needsConfirm(row) ? "confirm" : "name")}
           nameAction={canEdit ? "Name it" : "See the line"}
           onParty={(side, key) => {
             const field = side === "from" ? "fromNames" : "toNames"
@@ -1566,7 +1608,8 @@ export function LedgerRowBrowser({
             key={exportContext.caseId}
             caseId={exportContext.caseId}
             rows={namingRows}
-            queue={unnamedRows}
+            queue={namingMode === "confirm" ? unconfirmedRows : unnamedRows}
+            mode={namingMode}
             currentId={naming}
             onMove={openNaming}
             onClose={() => setNaming(null)}

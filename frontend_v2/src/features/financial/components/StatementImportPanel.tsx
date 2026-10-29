@@ -42,6 +42,7 @@ import { hasPendingStatementImport, importWithReceiptRecovery, ImportStillSaving
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { z } from "zod"
+import { StatementModelWorkMark, statementModelWork } from "./StatementModelWork"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import {
   readStatementDraft,
@@ -265,6 +266,7 @@ const proposalSchema = z.object({
         })
         .optional(),
       excluded_as_duplicate: z.boolean().default(false),
+      model_work: statementModelWork.nullish(),
       retained_filename: z.string().nullable().optional(),
       duplicate_disposition: statementDuplicateDisposition.nullish(),
       duplicate_copies: z.array(retainedStatement).default([]),
@@ -779,6 +781,15 @@ function StatementReview({
                   ? "This statement records balances and no transactions. Save its account and balances below; no payments need to be added."
                   : "This period has no usable imported payments yet. Review its readings below, then save the payments to Transactions."}
         </p>
+        {query.data.current_import?.model_work && (
+          <StatementModelWorkMark
+            caseId={caseId}
+            sourceDocumentId={query.data.current_import.source_document_id}
+            work={query.data.current_import.model_work}
+            canEdit={canEdit}
+            onConfirmed={() => void query.refetch()}
+          />
+        )}
         {query.data.current_import &&
           query.data.current_import.transaction_count > 0 &&
           !query.data.current_import.excluded_as_duplicate && (
