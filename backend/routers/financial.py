@@ -18,6 +18,7 @@ from routers.case_access import case_access_dependency
 from routers.users import get_current_db_user
 from services.financial import attach_transaction_locators
 from services.neo4j_service import neo4j_service
+from services.neo4j.driver import is_transaction_timeout
 from services.case_service import CaseAccessDenied, CaseNotFound, check_case_access
 from services.financial_export_service import render_financial_export
 from services.financial_record_amounts import recorded_amount
@@ -27,6 +28,25 @@ import re
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def _graph_read_failed(exc: Exception, what: str, case_id: str) -> HTTPException:
+    """Log a failed graph read and say plainly what happened.
+
+    A read the graph database ended at its time limit is a busy server, not a
+    fault in the request: it is answered 503 with a retry message. Anything
+    else stays a 500 with its message, as before, and is now logged.
+    """
+    logger.exception("Financial %s failed for case %s", what, case_id)
+    if is_transaction_timeout(exc):
+        return HTTPException(
+            status_code=503,
+            detail=(
+                f"The graph database is busy and the {what} did not load within its time limit. "
+                "Nothing was changed; please try again."
+            ),
+        )
+    return HTTPException(status_code=500, detail=str(exc))
 
 
 def _financial_case_permission(request, payload: dict) -> tuple[str, str] | None:
@@ -280,7 +300,7 @@ def get_financial_transactions(
                 logger.exception("Attaching transaction locators failed for case %s", case_id)
         return transactions
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _graph_read_failed(e, "transactions", case_id)
 
 
 @router.get("/entities")
@@ -292,7 +312,7 @@ def get_financial_entities(
         entities = neo4j_service.get_financial_entities(case_id)
         return {"entities": entities}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _graph_read_failed(e, "entity list", case_id)
 
 
 @router.get("/summary")
@@ -309,7 +329,7 @@ def get_financial_summary(
     try:
         return neo4j_service.get_financial_summary(case_id=case_id, entity_key=entity_key, mode=mode)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _graph_read_failed(e, "summary", case_id)
 
 
 @router.get("/volume")
@@ -323,7 +343,7 @@ def get_financial_volume(
     try:
         return neo4j_service.get_financial_volume_over_time(case_id=case_id, mode=mode)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _graph_read_failed(e, "volume chart", case_id)
 
 
 @router.put("/categorize/{node_key}")

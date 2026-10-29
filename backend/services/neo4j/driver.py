@@ -11,6 +11,7 @@ import math
 from typing import Any, Dict, List, Optional
 
 from neo4j import GraphDatabase
+from neo4j.exceptions import Neo4jError
 
 from config import NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD
 
@@ -50,6 +51,32 @@ def safe_float(value, default=0) -> float:
         return default if math.isnan(f) or math.isinf(f) else round(f, 2)
     except (TypeError, ValueError):
         return default
+
+
+# ── Bounded reads ──────────────────────────────────────────────────────────
+
+
+def is_transaction_timeout(exc: BaseException) -> bool:
+    """True when Neo4j ended the transaction at its time limit (db.transaction.timeout)."""
+    return isinstance(exc, Neo4jError) and "TransactionTimedOut" in (exc.code or "")
+
+
+def read_all_rows(session, query: str, **params) -> list:
+    """Read every row of a query before the caller converts any of them.
+
+    The server keeps a transaction open while its rows are being read and ends
+    it at db.transaction.timeout (25 s on the deployed server; a client timeout
+    cannot exceed it), so per-row work done while reading counts against that
+    limit. A transaction ended at the limit is retried once, as Neo4j advises;
+    a second timeout is raised to the caller. The rows are always all of them.
+    """
+    try:
+        return list(session.run(query, **params))
+    except Exception as exc:
+        if not is_transaction_timeout(exc):
+            raise
+        logger.warning("Neo4j read reached the transaction time limit; retrying once")
+        return list(session.run(query, **params))
 
 
 # ── Driver singleton ───────────────────────────────────────────────────────

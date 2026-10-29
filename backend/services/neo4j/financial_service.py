@@ -12,7 +12,7 @@ import re
 from services.financial_record_dates import financial_record_day, validate_financial_date_range
 from typing import Dict, List, Optional
 
-from services.neo4j.driver import driver, safe_float
+from services.neo4j.driver import driver, read_all_rows, safe_float
 
 logger = logging.getLogger(__name__)
 
@@ -274,9 +274,9 @@ class FinancialService:
                 ORDER BY n.date ASC, n.time ASC
             """
 
-            result = session.run(query, **params)
+            records = read_all_rows(session, query, **params)
             deduped_transactions = {}
-            for record in result:
+            for record in records:
                 transaction = self._record_to_transaction(
                     record, uses_legacy=uses_legacy, mode=normalized_mode
                 )
@@ -295,7 +295,8 @@ class FinancialService:
     def get_financial_entities(self, case_id: str) -> List[Dict]:
         """Return all non-transaction entities in a case for from/to entity pickers."""
         with driver.session() as session:
-            result = session.run(
+            records = read_all_rows(
+                session,
                 """
                 MATCH (n {case_id: $case_id})
                 WHERE NOT n:Document AND NOT n:Case
@@ -306,7 +307,7 @@ class FinancialService:
                 """,
                 case_id=case_id,
             )
-            return [{"key": r["key"], "name": r["name"], "type": r["type"]} for r in result]
+            return [{"key": r["key"], "name": r["name"], "type": r["type"]} for r in records]
 
     def get_financial_summary(self, case_id: str, entity_key: str = None, mode: str = "transactions") -> Dict:
         """Get aggregated financial summary stats for a case."""
