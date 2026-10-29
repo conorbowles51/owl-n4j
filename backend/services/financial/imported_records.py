@@ -4,7 +4,7 @@ from copy import deepcopy
 from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from uuid import UUID
-from sqlalchemy import select, func
+from sqlalchemy import select, func, true
 from pydantic import BaseModel, ConfigDict, Field
 from postgres.models.financial import FinancialSourceDocument, FinancialStatementPeriod, FinancialTransaction
 from postgres.models.evidence import EvidenceFile
@@ -20,18 +20,36 @@ class CompleteImportedRecord(BaseModel):
     currency: str = Field(pattern=r'^[A-Z]{3}$')
 
 
+def _read_once(session, column):
+    """The saved metadata as PostgreSQL decompresses it once per row, and how to join it.
+
+    Each field read from a large stored JSON value decompresses the whole value again (d5b330d1: 1,367 saved
+    statements, 120 MB stored, 0.7 s per field, 4.8 s for these seven). Concatenating an empty object makes one
+    in-memory copy per row, equal to the stored object, made once in a lateral subquery that every field then
+    reads (1.1 s). A value that is not an object is read as stored. Other databases read the column as before."""
+    if session.get_bind().dialect.name != 'postgresql':
+        return column, None
+    from sqlalchemy import case, literal, type_coerce
+    copy = case((func.jsonb_typeof(column) == 'object', column.op('||')(literal({}, column.type))), else_=column)
+    once = select(type_coerce(copy, column.type).label('metadata')).correlate(column.table).offset(0).lateral('metadata_once')
+    return once.c.metadata, once
+
+
 def imported_records(session, *, case_id, account_id=None, start_date=None, end_date=None, offset=0, limit=50, account_ids=None, account_holders=None, source_document_id=None, evidence_file_ids=None):
     # Select only the small retained-record arrays, never each full PDF proposal.
+    metadata, once = _read_once(session, FinancialSourceDocument.metadata_)
     query = select(FinancialSourceDocument.id, FinancialSourceDocument.evidence_file_id,
-        FinancialSourceDocument.metadata_['statement_account_id'].as_string(),
-        FinancialSourceDocument.metadata_['statement_incomplete_records'],
-        func.coalesce(FinancialSourceDocument.metadata_['statement_details_review']['currency'].as_string(),
-            FinancialSourceDocument.metadata_['statement_import_request']['currency'].as_string()),
-        EvidenceFile.original_filename, FinancialSourceDocument.metadata_['statement_admission']['blockers'],
-        FinancialSourceDocument.metadata_['statement_import_request']['period_start'].as_string(),
-        FinancialSourceDocument.metadata_['statement_import_request']['period_end'].as_string()).join(EvidenceFile, EvidenceFile.id == FinancialSourceDocument.evidence_file_id).where(
+        metadata['statement_account_id'].as_string(),
+        metadata['statement_incomplete_records'],
+        func.coalesce(metadata['statement_details_review']['currency'].as_string(),
+            metadata['statement_import_request']['currency'].as_string()),
+        EvidenceFile.original_filename, metadata['statement_admission']['blockers'],
+        metadata['statement_import_request']['period_start'].as_string(),
+        metadata['statement_import_request']['period_end'].as_string()).select_from(FinancialSourceDocument).join(EvidenceFile, EvidenceFile.id == FinancialSourceDocument.evidence_file_id).where(
             FinancialSourceDocument.case_id == case_id, EvidenceFile.case_id == case_id,
             FinancialSourceDocument.status == 'admitted').order_by(FinancialSourceDocument.id)
+    if once is not None:
+        query = query.join(once, true())
     if source_document_id:
         query = query.where(FinancialSourceDocument.id == source_document_id)
     if evidence_file_ids:
