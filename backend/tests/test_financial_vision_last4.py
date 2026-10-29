@@ -178,7 +178,7 @@ class LastFourProofTest(unittest.TestCase):
 
     def test_the_proof_version_counts_the_rule(self):
         self.assertTrue(vr.LAST4_FIRST_STATEMENT)
-        self.assertEqual(vr.PROOF_VERSION, 21)
+        self.assertEqual(vr.PROOF_VERSION, 22)
 
 
 class FullNumberReasonTest(unittest.TestCase):

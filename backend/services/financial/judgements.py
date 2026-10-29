@@ -83,6 +83,8 @@ RULES = {
     'L22.vanished_key': ('Held earlier reading retired; the statement is saved', 'fin-queue3 L22', 'proved'),
     'erica.receipt_settled': ('Deposit receipt matched to a saved payment', 'fin-erica L3/L23', 'proved'),
     'category.model': ('Category suggested by the model', 'fin-categories', 'inferred'),
+    'holder.printed_on_statement': ('Holder taken as printed on this statement', 'printed_holders (Neil, 2026-10-29)',
+                                    'inferred'),
     'agent.page_entry': ('Entered by hand from the page (agent)', 'fin-queue*/fin-erica hand work', 'proved'),
     'agent.correction': ('Corrected by hand (agent)', 'fin-queue*/fin-erica hand work', 'proved'),
     'agent.refile': ('Refiled by hand (agent)', 'fin-accounts / fin-queue3 L30c', 'inferred'),
@@ -165,6 +167,7 @@ CATEGORIES = {
     'balance': 'Balance or opening worked out',
     'date_sign': 'Date or sign worked out',
     'currency_account': 'Currency or account assigned',
+    'holder': 'Holder name as printed',
     'copies': 'Copies, duplicates and replacements',
     'payment_category': 'Category suggested by the model',
 }
@@ -183,6 +186,7 @@ _CATEGORY_RULES = {
     'currency_account': ('L4.currency_from_name', 'autofill.currency_account', 'autofill.currency_case',
                          'autofill.detail', 'L30c.contract_refile', 'agent.refile', 'agent.currency_refile'),
     'payment_category': ('category.model',),
+    'holder': ('holder.printed_on_statement',),
     'copies': ('L26.duplicate_set_aside', 'L19.unreadable_copy', 'copies.held_copy', 'L20.part_of_saved',
                'reader.replacement', 'L22.vanished_key', 'erica.receipt_settled'),
 }
@@ -191,7 +195,8 @@ RULE_CATEGORY = {rule: key for key, rules in _CATEGORY_RULES.items() for rule in
 # account or currency they are filed in). A balance or a set-aside copy does not touch the payments themselves.
 STATEMENT_ROW_RULES = frozenset({'agent.page_entry', 'image.page_reading', 'reader.replacement',
                                  'L30c.contract_refile', 'agent.refile', 'agent.currency_refile',
-                                 'L4.currency_from_name', 'autofill.currency_account', 'autofill.currency_case'})
+                                 'L4.currency_from_name', 'autofill.currency_account', 'autofill.currency_case',
+                                 'holder.printed_on_statement'})
 
 
 def category(rule_id):
@@ -286,6 +291,21 @@ def _repaired_part(held, chosen, amount_minor):
     return 'amount' if digits and digits == str(abs(int(amount_minor or 0))) else 'balance'
 
 
+def _printed_holder_outcome(meta, request, file):
+    """The page-image outcome that admitted this statement under the holder printed on it (printed_holders), or None."""
+    if file is None:
+        return None
+    from services.financial.field_proposals import same_holder
+    from services.financial.printed_holders import HOLDER_BASIS
+    from services.financial.vision_reader import METADATA_KEY
+    key = meta.get('statement_import_statement_id') or ''
+    outcome = (((file.metadata_ or {}).get(METADATA_KEY) or {}).get(key) or {}) if key else {}
+    if (outcome.get('status') == 'proved' and outcome.get('holder_basis') == HOLDER_BASIS
+            and len(outcome.get('holder_names') or []) > 1 and same_holder(outcome.get('holder'), request.get('holder'))):
+        return outcome
+    return None
+
+
 def detect(document, period, transactions, *, file=None):
     """[judgement dict] the saved statement's own record shows the processor decided. Pure: reads the document's
     stored reading and review, its transactions' provenance and the file's System detail fills."""
@@ -341,6 +361,18 @@ def detect(document, period, transactions, *, file=None):
             + (f" in place of {replaced} lines the text layer read" if replaced else '')
             + "; they reconcile with the printed opening and closing balances.",
             target_key='payments', evidence=dict(rows=image_rows, text_rows_set_aside=replaced))
+    # An account printed under different holder names, filed by a person's decision under the name this statement
+    # prints (printed_holders): the page-image outcome that admitted it says so.
+    held_as_printed = _printed_holder_outcome(meta, request, file)
+    if held_as_printed:
+        from services.financial.printed_holders import RULE_ID, judgement_sentence
+        decision = held_as_printed.get('holder_decision') or {}
+        add(*period_subject, RULE_ID,
+            judgement_sentence(held_as_printed['holder_names'], request.get('holder'), held_as_printed.get('holder_page')),
+            target_key='holder',
+            evidence=dict(page=held_as_printed.get('holder_page'), printed=request.get('holder'),
+                          holders=held_as_printed['holder_names'], decision_id=decision.get('decision_id'),
+                          decided_by=decision.get('actor_name'), decided_at=decision.get('at')))
     # Period values a reading rule chose (balance and total rows kept as controls, not payments).
     for rid, first in originals.items():
         fields = first.get('fields') or {}

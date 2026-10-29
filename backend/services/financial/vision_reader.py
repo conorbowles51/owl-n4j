@@ -65,6 +65,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import select
 
+from services.financial import printed_holders
 from services.financial.journal import journal
 
 # Every outcome is a journal line (journal: INFO lines reach the service journal under uvicorn).
@@ -269,11 +270,16 @@ FORM_NUMBERS = _switch('LOUPE_FINANCIAL_VISION_FORM_NUMBERS')
 # reading of the same file dates it Jun 9 too). On any card (liability) statement, not only one whose period is its
 # closing date and days, a row dated up to POSTING_DAYS before the start is a posting of this cycle. Off: only there.
 CARD_POSTING = _switch('LOUPE_FINANCIAL_VISION_CARD_POSTING')
+# An account a person decided keeps, per statement, the holder printed on it (printed_holders: the names it covers):
+# a statement printing one of those names passes the holder check against the account's saved statements, recorded as
+# a judgement call where the account is printed under more than one name. Every other proof unchanged. Off: such a
+# statement is held, as before ("This card (ending 8160) is saved for ERICA MCCAULEY; this statement prints ...").
+PRINTED_HOLDERS = _switch('LOUPE_FINANCIAL_VISION_PRINTED_HOLDERS')
 PROOF_VERSION = 1
 for _switched in (SPLIT_SPELLINGS, SECTION_NUMBER, PRINTED_COUNTS, QUIET_PRINTED, CLABE_ACCOUNT, SECTION_BY_TEXT,
                   SIGNED_DEBITS, DATES_FROM_IMAGE, OPENING_FROM_PREVIOUS, IMAGE_TOTALS, CLOSING_DAYS, TEXT_MISREADS,
                   FIRST_STATEMENT, ROW_DATES, PRINTED_ORDER, LAST4_FIRST_STATEMENT, FORM_NUMBERS, CARD_POSTING,
-                  SIGNED_CARD_CREDITS, FULL_NUMBER_FROM_IMAGES):
+                  SIGNED_CARD_CREDITS, FULL_NUMBER_FROM_IMAGES, PRINTED_HOLDERS):
     # Each switch on top of the one before; with one off, the rules are the version before it.
     if not _switched:
         break
@@ -697,6 +703,7 @@ def combine(pages):
                 value = str(section.get(key) or '').strip()
                 if value and not target['header'][key]:
                     target['header'][key] = value
+                    target.setdefault('header_pages', {})[key] = page_number
             for key in ('opening_balance', 'closing_balance', 'total_credits', 'total_debits', 'count_credits', 'count_debits',
                         'days_in_period', 'total_fees', 'total_interest'):
                 value = section.get(key)
@@ -1281,8 +1288,14 @@ def prove(proposal, section, knowledge):
         # A partial number is confirmed only by a printed holder and bank the saved statements also record.
         raise NotProved('The account could not be confirmed from a partial number: the saved statements of this '
                         'account do not record the holder and bank to compare.')
-    if holder and saved_holders and not any(fp.same_holder(holder, h) for h in saved_holders):
+    # A person's decision that this account keeps, per statement, the holder printed on it (printed_holders):
+    # a printed name it covers is this statement's holder, recorded as a judgement call where the account is printed
+    # under more than one name. Every other check stands.
+    decided = candidates[0].printed_holders if PRINTED_HOLDERS and len(candidates) == 1 else []
+    by_decision = bool(decided) and printed_holders.covers(decided, holder_printed, saved_holders)
+    if holder and saved_holders and not any(fp.same_holder(holder, h) for h in saved_holders) and not by_decision:
         raise NotProved(holder_differs_reason(account_text, saved_holders, holder, liability, proposal))
+    holder_basis = by_decision and printed_holders.split(decided, holder_printed, saved_holders)
     if not holder:
         raise NotProved('The account holder could not be confirmed against the saved statements of this account.')
     if not institution or (saved_institutions and not all(fp.same_institution(institution, i) for i in saved_institutions)):
@@ -1355,6 +1368,9 @@ def prove(proposal, section, knowledge):
     return dict(account_keys=[k.key for k in candidates], currency=currency, holder=holder, institution=institution,
                 account_number=account_text, charge_totals=charges,
                 **(dict(account_basis=basis) if basis else {}),
+                **(dict(holder_basis=printed_holders.HOLDER_BASIS, holder_names=list(decided),
+                        holder_decision=dict(candidates[0].printed_holders_decision),
+                        holder_page=(section.get('header_pages') or {}).get('holder')) if holder_basis else {}),
                 # The complete number the page images read beside a masked one (FULL_NUMBER_FROM_IMAGES).
                 **(dict(full_account_number=_digits(header.get('full_account_number'))) if basis == LAST4_BASIS
                    and _digits(header.get('full_account_number')) else {}),
@@ -2912,6 +2928,14 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
                     record['card'] = last4_card(reading)
                     if full:
                         record['card']['full_number'] = full
+            if reading.get('holder_basis'):
+                # Filed under the holder printed on it, by a person's decision for its account (printed_holders): the
+                # saved statement's judgement call reads this (judgements.detect).
+                record.update(holder_basis=reading['holder_basis'], holder=reading['holder'],
+                              holder_names=reading['holder_names'], holder_page=reading.get('holder_page'),
+                              holder_decision=reading.get('holder_decision') or {})
+                record['message'] = record['message'] + printed_holders.outcome_note(
+                    _one_line(reading['holder']), [_one_line(h) for h in reading['holder_names']])
             if controls:
                 record['printed_controls'] = controls
             if reading.get('charge_totals') and CLOSING_DAYS:

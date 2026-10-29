@@ -59,6 +59,16 @@ def _statement_reading(session, document, period, current):
     return admission, convention, len(admitted), activity, undated
 
 
+def _printed_holders(session, document_ids):
+    """{source document id: the holder its saved review records (as corrected)} read without the rest of metadata."""
+    if not document_ids:
+        return {}
+    request, review = Source.metadata_['statement_import_request'], Source.metadata_['statement_details_review']
+    rows = session.execute(select(Source.id, request['holder'].as_string(), review['details']['holder'].as_string())
+                           .where(Source.id.in_(list(document_ids))))
+    return {id: ' '.join(str((reviewed if reviewed is not None else saved) or '').split()) for id, saved, reviewed in rows}
+
+
 def account_history(session, *, case_id, account_id=None, account_ids=None, account_holders=None, start_date=None, end_date=None):
     if start_date and end_date and start_date > end_date:
         raise PdfMappingError('The start date must be on or before the end date.', 422)
@@ -109,6 +119,7 @@ def account_history(session, *, case_id, account_id=None, account_ids=None, acco
         if missing:
             list(session.scalars(select(Source).where(Source.id.in_({d.id for _, d in missing})).options(undefer(Source.metadata_))))
             list(session.scalars(payments({p.id for p, _ in missing}).options(undefer(Transaction.provenance), undefer(Transaction.metadata_))))
+    holders = _printed_holders(session, {d.id for _, d, _, _ in pairs})
     groups = {}
     for period, document, account, filename in pairs:
         if document.evidence_file_id and filename is None:
@@ -135,7 +146,13 @@ def account_history(session, *, case_id, account_id=None, account_ids=None, acco
             closing_minor=str(sign * period.closing_balance_minor) if period.closing_balance_minor is not None else None,
             status='confirmed_no_activity' if quiet else 'reconciled' if verified else 'needs_review',
             assessment_current=bool(admission.get('assessment_current')), blockers=admission.get('blockers', []),
-            transaction_count=admitted_count, undated_count=undated,
+            transaction_count=admitted_count, undated_count=undated, holder=holders.get(document.id) or None,
             activity=[{**entry, 'credit_minor':str(entry['credit_minor']), 'debit_minor':str(entry['debit_minor'])} for _, entry in sorted(activity.items())]))
     if reuse: _readings.flush()
+    from services.financial.printed_holders import holders_by_statement
+    for group in groups.values():
+        # Every holder name its statements print, with the statements that print each: an account printed under
+        # different names shows them all and is never shown as one name (printed_holders).
+        names = holders_by_statement([(p['holder'], p['start'], p['end']) for p in group['periods']])
+        group['printed_holders'] = names if len(names) > 1 else []
     return dict(case_id=str(case_id), groups=sorted(groups.values(), key=lambda g:(g['currency'],g['balance_kind'],g['label'],g['key'])), applied=False)

@@ -2266,3 +2266,5 @@ from services.financial.view_cache import cached_view
 __all__ += ["cached_view"]
 from services.financial.view_warmup import warm_account_history, warm_views_once
 __all__ += ["warm_account_history", "warm_views_once"]
+from services.financial.printed_holders import PrintedHoldersError, holders_by_statement
+__all__ += ["PrintedHoldersError", "holders_by_statement"]

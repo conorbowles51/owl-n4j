@@ -14,6 +14,7 @@ export const historyPeriod = z.object({
   undated_count: z.number(),
   blockers: z.array(z.object({ message: z.string() }).passthrough()).optional(),
   assessment_current: z.boolean().optional(),
+  holder: z.string().nullable().optional(),
   activity: z.array(
     z.object({
       date: z.string(),
@@ -33,6 +34,16 @@ export const historyResponse = z.object({
       currency: z.string(),
       balance_kind: z.enum(["asset", "liability"]),
       label: z.string(),
+      printed_holders: z
+        .array(
+          z.object({
+            name: z.string(),
+            statements: z.number(),
+            first: z.string(),
+            last: z.string(),
+          })
+        )
+        .optional(),
       periods: z.array(historyPeriod),
     })
   ),

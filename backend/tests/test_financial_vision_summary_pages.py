@@ -135,7 +135,7 @@ class FormNumberAndPostingTest(unittest.TestCase):
 
     def test_the_proof_version_counts_the_rules(self):
         self.assertTrue(vr.FORM_NUMBERS and vr.CARD_POSTING)
-        self.assertEqual(vr.PROOF_VERSION, 21)
+        self.assertEqual(vr.PROOF_VERSION, 22)
 
 
 class SummaryPagesFlowTest(unittest.TestCase):

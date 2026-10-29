@@ -1,0 +1,183 @@
+"""An account printed under different holder names on different statements: each statement keeps the name printed on it.
+
+The page-image proof refuses a statement whose printed holder differs from every holder its account's saved statements
+print ("This card (ending 8160) is saved for ERICA MCCAULEY; this statement prints ERICA HOPPER"), because Loupe never
+treats two printed names as one person by itself. A person may decide, for one account, that its statements are
+filed with it under the name each one prints. That decision is recorded here (an ``adjudications`` row on the account,
+decision ``keep_printed_holders``, with the names it covers) before anything changes; nothing else is written.
+
+What follows from it runs through the normal paths:
+
+* the proof (vision_reader.prove) admits a statement of that account whose printed holder is one of the decided names,
+  every other check unchanged, and marks the reading ``holder_basis = HOLDER_BASIS``;
+* the saved statement keeps the holder it prints (its review's ``holder``), and its judgement call
+  (``holder.printed_on_statement``) says the account is printed under different names, that this statement is
+  attributed to the name printed on it, and that who holds the account has not been established;
+* the account's history lists each printed name with the statements that print it (account_history).
+
+The decision never says who holds the account and never renames anything: the account's own holder field and every
+saved statement stay as printed.
+"""
+from __future__ import annotations
+
+import uuid
+
+from sqlalchemy import select
+
+HOLDER_BASIS = 'printed_holder_decision'
+RULE_ID = 'holder.printed_on_statement'
+
+
+class PrintedHoldersError(ValueError):
+    pass
+
+
+def _key(name):
+    from services.financial.field_proposals import holder_key
+    return holder_key(name)
+
+
+def _distinct(names):
+    """The names, one per holder key (first spelling kept), in the order given."""
+    seen, out = set(), []
+    for name in names:
+        name = ' '.join(str(name or '').split())
+        if name and _key(name) not in seen:
+            seen.add(_key(name))
+            out.append(name)
+    return out
+
+
+def decisions(session, case_id):
+    """{account id (str): {'holders': [...], 'decision_id', 'actor_name', 'at', 'reason'}}: the latest decision of each
+    account of the case (a later one replaces an earlier one)."""
+    from postgres.models.financial import AdjudicationEvent
+    rows = session.execute(select(AdjudicationEvent.subject_id, AdjudicationEvent.id, AdjudicationEvent.after,
+                                  AdjudicationEvent.actor_name, AdjudicationEvent.created_at,
+                                  AdjudicationEvent.reason)
+                           .where(AdjudicationEvent.case_id == case_id,
+                                  AdjudicationEvent.decision == 'keep_printed_holders',
+                                  AdjudicationEvent.subject_type == 'account')
+                           .order_by(AdjudicationEvent.subject_id, AdjudicationEvent.subject_sequence)).all()
+    out = {}
+    for account_id, decision_id, after, actor, at, reason in rows:
+        holders = _distinct((after or {}).get('holders') or [])
+        out[str(account_id)] = dict(holders=holders if (after or {}).get('rule') == 'as_printed' else [],
+                                    decision_id=str(decision_id), actor_name=actor or '',
+                                    at=at.isoformat() if at else '', reason=reason or '')
+    return {k: v for k, v in out.items() if len(v['holders']) > 1}
+
+
+def fingerprint(session, case_id):
+    """Changes whenever a decision of the case is recorded (case_knowledge's cache key)."""
+    from sqlalchemy import func
+    from postgres.models.financial import AdjudicationEvent
+    return tuple(str(v) for v in session.execute(select(func.count(AdjudicationEvent.id),
+                                                        func.max(AdjudicationEvent.created_at))
+                                                 .where(AdjudicationEvent.case_id == case_id,
+                                                        AdjudicationEvent.decision == 'keep_printed_holders')).one())
+
+
+def covers(holders, printed, saved):
+    """The decided names cover the statement's printed holder and every holder its account's saved statements print."""
+    from services.financial.field_proposals import same_holder
+    if len(holders) < 2 or not printed:
+        return False
+    return all(any(same_holder(name, h) for h in holders) for name in [printed, *saved])
+
+
+def split(holders, printed, saved):
+    """The account is printed under more than one of the decided names (this statement included)."""
+    from services.financial.field_proposals import same_holder
+    names = [printed, *saved]
+    return len({next(i for i, h in enumerate(holders) if same_holder(name, h)) for name in names}) > 1
+
+
+def judgement_sentence(holders, printed, page=None):
+    """The 'Why?' sentence of a statement filed under the name printed on it."""
+    shown = ' / '.join(holders)
+    where = f' (page {page})' if page else ''
+    return (f'This card or account is printed under different holder names on different statements ({shown}). '
+            f'This statement is attributed to {printed}, the name printed on it{where}; which person holds the '
+            f'account has not been established.')
+
+
+def outcome_note(printed, holders):
+    """Added to the page-image outcome of a statement filed under the name printed on it (queue line and journal)."""
+    return (f' Filed under {printed}, the holder printed on it: this account is printed under different names '
+            f'({" / ".join(holders)}), and a person decided each statement keeps its own. A judgement call; who holds '
+            f'the account is not established.')
+
+
+def record_decision(session, *, case_id, account_id, holders, actor, reason):
+    """Record that the account's statements keep the holder printed on each (``holders``: every name it covers, at
+    least two different holders). Returns the decision (an existing one covering the same names is returned as is).
+    Raises PrintedHoldersError when the account is not in the case or the names are not two different holders."""
+    from postgres.models.enums import AdjudicationDecision, AdjudicationSubject
+    from postgres.models.financial import FinancialAccount
+    from services.financial.decisions import record
+    account = session.get(FinancialAccount, uuid.UUID(str(account_id)))
+    if account is None or str(account.case_id) != str(case_id):
+        raise PrintedHoldersError('The account is not in this case.')
+    names = _distinct(holders)
+    if len(names) < 2:
+        raise PrintedHoldersError('Name at least two different printed holder names.')
+    current = decisions(session, case_id).get(str(account.id))
+    if current and {_key(h) for h in current['holders']} == {_key(h) for h in names}:
+        return current
+    before = dict(rule='one_holder', holders=current['holders'] if current else [])
+    after = dict(rule='as_printed', holders=names)
+    event = record(session, case_id=account.case_id, subject=account, subject_type=AdjudicationSubject.account,
+                   decision=AdjudicationDecision.keep_printed_holders, reason=reason, actor=actor,
+                   before=before, after=after)
+    return dict(holders=names, decision_id=str(event.id), actor_name=event.actor_name,
+                at=event.created_at.isoformat() if event.created_at else '', reason=reason)
+
+
+def holders_by_statement(statements):
+    """[{'name', 'statements', 'first', 'last'}] in first-printed order, one per holder: from [(holder, start, end)]."""
+    groups = {}
+    for holder, start, end in sorted(statements, key=lambda s: (s[1] or '', s[2] or '')):
+        name = ' '.join(str(holder or '').split())
+        if not name:
+            continue
+        key = _key(name)
+        group = groups.setdefault(key, dict(name=name, statements=0, first=start or '', last=end or ''))
+        group['statements'] += 1
+        group['last'] = end or group['last']
+    return list(groups.values())
+
+
+def main(argv=None):
+    """python -m services.financial.printed_holders --case C --account A --holder X --holder Y --decided-by NAME
+    --decided-by-email EMAIL [--recorded-by NAME] --why TEXT [--apply]: record a decision (dry run without --apply)."""
+    import argparse
+    import json
+    from services.financial.decisions import Actor
+    from postgres.session import _get_session_local
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--case', required=True)
+    parser.add_argument('--account', required=True)
+    parser.add_argument('--holder', action='append', required=True)
+    parser.add_argument('--decided-by', required=True)
+    parser.add_argument('--decided-by-email', required=True)
+    parser.add_argument('--decided-by-user-id', default=None)
+    parser.add_argument('--recorded-by', default='', help='who carried the decision out for the person deciding')
+    parser.add_argument('--why', required=True)
+    parser.add_argument('--apply', action='store_true')
+    args = parser.parse_args(argv)
+    name = f'{args.recorded_by} (for {args.decided_by})' if args.recorded_by else args.decided_by
+    actor = Actor(name=name, email=args.decided_by_email,
+                  user_id=uuid.UUID(args.decided_by_user_id) if args.decided_by_user_id else None)
+    with _get_session_local()() as session:
+        result = record_decision(session, case_id=args.case, account_id=args.account, holders=args.holder,
+                                 actor=actor, reason=args.why)
+        if args.apply:
+            session.commit()
+        else:
+            session.rollback()
+    print(json.dumps(dict(result, applied=args.apply)))
+
+
+if __name__ == '__main__':
+    main()

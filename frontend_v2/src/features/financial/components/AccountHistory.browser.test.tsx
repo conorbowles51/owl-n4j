@@ -152,3 +152,50 @@ for (const width of [1280, 390]) {
     })
   }
 }
+
+it("shows every holder name an account is printed under, with its statements, as a judgement call", async () => {
+  await page.viewport(1280, 1000)
+  useInvestigationScopeStore.getState().reset()
+  vi.mocked(fetchAPI).mockImplementation(async (url) => {
+    if (!String(url).includes("account-history")) return { items: [], total: 0 }
+    return {
+      case_id: "synthetic",
+      applied: false,
+      groups: [
+        {
+          key: "card:USD:liability",
+          account_id: "card",
+          currency: "USD",
+          balance_kind: "liability",
+          label: "ERICA MCCAULEY · Capital One · ****8160",
+          printed_holders: [
+            { name: "ERICA MCCAULEY", statements: 1, first: "2021-12-11", last: "2022-01-10" },
+            { name: "ERICA HOPPER", statements: 1, first: "2022-01-11", last: "2022-02-07" },
+          ],
+          periods: [
+            { ...period("m", "2021-12-11", "2022-01-10", "10000"), holder: "ERICA MCCAULEY" },
+            { ...period("h", "2022-01-11", "2022-02-07", "10000"), holder: "ERICA HOPPER" },
+          ],
+        },
+      ],
+    }
+  })
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  await act(async () => {
+    render(
+      <QueryClientProvider client={client}>
+        <main className="p-4">
+          <AccountHistory caseId="synthetic" />
+        </main>
+      </QueryClientProvider>
+    )
+  })
+  const notice = await screen.findByTestId("printed-holders")
+  expect(notice.textContent).toContain("Judgement call:")
+  expect(notice.textContent).toContain(
+    "ERICA MCCAULEY on 1 statement (2021-12-11 to 2022-01-10); ERICA HOPPER on 1 statement (2022-01-11 to 2022-02-07)"
+  )
+  expect(notice.textContent).toContain("Which person holds the account has not been established.")
+  expect(screen.getByText("Printed holder: ERICA HOPPER")).toBeTruthy()
+  expect(screen.getByText("Printed holder: ERICA MCCAULEY")).toBeTruthy()
+})

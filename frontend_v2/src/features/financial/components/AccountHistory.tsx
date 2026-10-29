@@ -141,6 +141,26 @@ export function AccountHistory({
                 label={groups.length > 1 ? group.label : undefined}
               />
             ))}
+          {groups
+            .filter((group) => (group.printed_holders || []).length > 1)
+            .map((group) => (
+              <p
+                key={`holders-${group.key}`}
+                className="text-sm mt-2 rounded border border-amber-300 bg-amber-50 p-2"
+                data-testid="printed-holders"
+              >
+                <strong>Judgement call:</strong> {group.label} is printed
+                under {group.printed_holders!.length} different holder names:{" "}
+                {group.printed_holders!
+                  .map(
+                    (h) =>
+                      `${h.name} on ${h.statements} statement${h.statements === 1 ? "" : "s"} (${h.first || "start not read"} to ${h.last || "end not read"})`
+                  )
+                  .join("; ")}
+                . Each statement is filed under the name printed on it. Which
+                person holds the account has not been established.
+              </p>
+            ))}
         </div>
         <Button
           variant="outline"
@@ -406,6 +426,12 @@ export function AccountHistory({
                               ●{" "}
                             </span>
                             {g.label} · {g.currency}
+                            {(g.printed_holders || []).length > 1 &&
+                              p.holder && (
+                                <span className="block text-xs text-muted-foreground">
+                                  Printed holder: {p.holder}
+                                </span>
+                              )}
                           </td>
                           <td className="p-2">
                             {p.start || "Start missing"} →{" "}

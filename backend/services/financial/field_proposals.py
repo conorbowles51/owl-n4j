@@ -278,6 +278,10 @@ class KnownAccount:
     institution: str
     currency: str
     statements: list = field(default_factory=list)  # [SavedStatement]
+    # A person's decision that this account keeps, per statement, the holder printed on it (printed_holders): the
+    # names it covers ([] without one).
+    printed_holders: list = field(default_factory=list)
+    printed_holders_decision: dict = field(default_factory=dict)  # {'decision_id', 'actor_name', 'at'}
 
     def values(self, name):
         return [getattr(s, name) for s in self.statements if (getattr(s, name) or '').strip()]
@@ -307,7 +311,8 @@ def _fingerprint(session, case_id):
         Period.case_id == case_id)).one()
     accounts = session.execute(select(func.count(Account.id), func.max(Account.updated_at)).where(
         Account.case_id == case_id)).one()
-    return tuple(str(value) for value in (*documents, *periods, *accounts))
+    from services.financial.printed_holders import fingerprint as decided
+    return tuple(str(value) for value in (*documents, *periods, *accounts)) + decided(session, case_id)
 
 
 def case_knowledge(session, case_id, evidence_file_ids=None, use_cache=True):
@@ -371,6 +376,14 @@ def _case_knowledge(session, case_id, evidence_file_ids=None):
             opening_minor=opening, closing_minor=closing))
         if currency:
             currencies[currency] += 1
+    if accounts:
+        from services.financial.printed_holders import decisions
+        by_id = {str(k): v for k, v in accounts.items()}
+        for account_id, decision in decisions(session, case_id).items():
+            known = by_id.get(account_id)
+            if known is not None:
+                known.printed_holders = list(decision['holders'])
+                known.printed_holders_decision = {k: decision[k] for k in ('decision_id', 'actor_name', 'at')}
     knowledge = CaseKnowledge(accounts=list(accounts.values()), saved_total=sum(currencies.values()))
     if currencies:
         (top, count), *rest = currencies.most_common(2) + [(None, 0)]
