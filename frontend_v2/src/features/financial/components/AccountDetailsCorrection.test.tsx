@@ -179,3 +179,61 @@ it("shows a correction Claude made as Claude's until a person confirms it with w
   expect(await screen.findByText(/Confirmed by Alex on 2026-10-29: Checked page 1/)).toBeTruthy()
   await waitFor(() => expect(screen.queryByText(/not confirmed/)).toBeNull())
 })
+
+it("corrects the account number to the printed one and shows the CLABE kept with it", async () => {
+  let current: unknown = state({ account_number: "128180000000238632" })
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (url.includes("/details/preview"))
+      return {
+        case_id: "case",
+        account_id: "acct",
+        before: {
+          holder: "ING R2",
+          institution: "Kapital",
+          account_number: "128180000000238632",
+        },
+        after: {
+          holder: "ING R2",
+          institution: "Kapital",
+          account_number: "194-98075-001-8",
+        },
+        statements: [statement("s1", "ING R2")],
+        rejoin: [],
+        revision: "b".repeat(64),
+      } as never
+    if (options?.method === "POST")
+      current = state({
+        account_number: "194-98075-001-8",
+        account_clabe: "128180000000238632",
+      })
+    return current as never
+  })
+  mount()
+  const review = await screen.findByRole("button", {
+    name: "Review account correction",
+  })
+  fireEvent.change(screen.getByLabelText(/Account number as printed/), {
+    target: { value: "194-98075-001-8" },
+  })
+  fireEvent.change(screen.getByLabelText("Reason (where it is printed)"), {
+    target: { value: "Page 1 prints 194-98075-001-8" },
+  })
+  fireEvent.click(review)
+  expect(
+    await screen.findByText(/account 128180000000238632 → 194-98075-001-8/)
+  ).toBeInTheDocument()
+  fireEvent.click(screen.getByRole("button", { name: "Correct the account" }))
+  expect(
+    await screen.findByText(/CLABE 128180000000238632/)
+  ).toBeInTheDocument()
+  const saved = vi
+    .mocked(fetchAPI)
+    .mock.calls.find(
+      ([url, options]) => options?.method === "POST" && !url.includes("preview")
+    )!
+  expect(saved[1]!.body).toMatchObject({
+    holder: null,
+    institution: null,
+    account_number: "194-98075-001-8",
+  })
+})

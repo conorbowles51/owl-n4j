@@ -72,6 +72,7 @@ everywhere else.
 
 from __future__ import annotations
 
+import os
 import re
 import unicodedata
 from dataclasses import dataclass, field
@@ -238,6 +239,22 @@ def digits_only(value: Optional[str]) -> str:
     if value is None:
         return ""
     return _DIGITS.sub("", value)
+
+
+#: Metadata key: the 18-digit interbank number (CLABE) a statement printed beside the account number.
+#: The account is the printed account number; the CLABE is kept with it as an alias, never as the
+#: identifier. When it is known it builds the account's key, so a statement saved with the CLABE as its
+#: number and one saved with the printed number land on one account (Neil, 2026-10-25).
+CLABE_ALIAS = "account_clabe"
+
+
+def clabe_alias(value: Optional[str]) -> Optional[str]:
+    """``value`` as a CLABE (18 digits whose control digit holds, weights 3, 7, 1), or ``None``."""
+    digits = digits_only(value)
+    if len(digits) != 18 or digits.startswith("000"):
+        return None
+    total = sum(int(d) * w % 10 for d, w in zip(digits[:17], (3, 7, 1) * 6))
+    return digits if (10 - total % 10) % 10 == int(digits[17]) else None
 
 
 def is_masked(value: Optional[str]) -> bool:
@@ -577,8 +594,11 @@ class AccountDraft:
                 return AccountIdentity(
                     key=_build_key(TIER_CONTRACT_CURRENCY, institution, digits, self.currency),
                     tier=TIER_CONTRACT_CURRENCY, verdicts=verdicts)
+            # A CLABE printed beside the account number keys the account, as it did when the CLABE was
+            # saved as the number: one account however a statement recorded it.
             return AccountIdentity(
-                key=_build_key(TIER_INSTITUTION_ACCOUNT, institution, digits),
+                key=_build_key(TIER_INSTITUTION_ACCOUNT, institution,
+                               clabe_alias(self.metadata.get(CLABE_ALIAS)) or digits),
                 tier=TIER_INSTITUTION_ACCOUNT,
                 verdicts=verdicts,
             )
@@ -701,6 +721,8 @@ def record_account(
         )
         .one_or_none()
     )
+    if existing is None:
+        existing = _alias_account(session, run.case_id, draft, identity)
     if existing is not None:
         _reconcile(existing, draft, identity, run)
         session.flush()
@@ -726,6 +748,34 @@ def record_account(
     # that caused it is still in hand, rather than at some later commit.
     session.flush()
     return account
+
+
+def _alias_account(session, case_id, draft: AccountDraft, identity: AccountIdentity) -> Optional[FinancialAccount]:
+    """The account a statement's printed account number names when no CLABE came with it: the one account of
+    the same bank, number and currency (and holder, when both name one) whose CLABE alias is recorded. With a
+    CLABE: the account an earlier statement keyed on the printed number alone, unless it records another CLABE."""
+    if identity.tier != TIER_INSTITUTION_ACCOUNT:
+        return None
+    digits = draft.identifier_normalised
+    alias = clabe_alias(draft.metadata.get(CLABE_ALIAS))
+    if alias:
+        if alias == digits:
+            return None
+        institution = _fold(draft.institution_name)
+        printed = (session.query(FinancialAccount)
+                   .filter(FinancialAccount.case_id == case_id,
+                           FinancialAccount.identity_key == _build_key(TIER_INSTITUTION_ACCOUNT, institution, digits))
+                   .one_or_none())
+        if printed is not None and clabe_alias((printed.metadata_ or {}).get(CLABE_ALIAS)) in (None, alias):
+            return printed
+        return None
+    found = [a for a in session.query(FinancialAccount).filter(
+                 FinancialAccount.case_id == case_id, FinancialAccount.identifier_normalised == digits)
+             if clabe_alias((a.metadata_ or {}).get(CLABE_ALIAS))
+             and _fold(a.institution_name) == _fold(draft.institution_name)
+             and (a.currency or None) == (draft.currency or None)
+             and not (a.holder_name and draft.holder_name and _fold(a.holder_name) != _fold(draft.holder_name))]
+    return found[0] if len(found) == 1 else None
 
 
 #: Fields filled from a later document when the first left them empty.
@@ -764,6 +814,23 @@ def _initial_metadata(
     return meta
 
 
+def _address_holder(stored: str, offered: str) -> bool:
+    """Whether a stored holder is a line of a postal address and the offered one is a name (A8).
+    Off (LOUPE_FINANCIAL_ACCOUNT_ADDRESS_HOLDER=0): the first holder stays, the later one is a conflict."""
+    if os.environ.get("LOUPE_FINANCIAL_ACCOUNT_ADDRESS_HOLDER", "1").strip().lower() in ("0", "false", "off", "no"):
+        return False
+    from services.financial.statement_engine import address_line
+
+    def address(value):
+        return address_line(value) or bool(set(_fold(value).upper().replace(",", " ").split()) & _DISTRICT_WORDS)
+    return address(stored) and not address(offered)
+
+
+#: Words of a Mexican district or municipality line ('LOMAS DE CHAPULTEPEC III SECCION, MIGUEL HIDALGO'). Used only
+#: to let a later printed name replace a stored holder; the reader's own address rule (statement_engine) is wider.
+_DISTRICT_WORDS = frozenset({"SECCION", "DELEGACION", "ALCALDIA", "MUNICIPIO", "CDMX", "LOMAS", "FRACCIONAMIENTO"})
+
+
 def _reconcile(
     account: FinancialAccount,
     draft: AccountDraft,
@@ -783,6 +850,14 @@ def _reconcile(
         if stored is None:
             setattr(account, name, offered)
             filled.append(name)
+        elif name == "holder_name" and stored != offered and _address_holder(stored, offered):
+            # The first statement saved an address line as the holder (a reading made before the reader skipped
+            # the address block); a later statement printing the holder's name names the account. The address
+            # stays visible as the replaced value.
+            setattr(account, name, offered)
+            filled.append(name)
+            conflicts.append({"field": name, "stored": stored, "offered": offered, "run_id": str(run.run_id),
+                              "replaced": "address_line"})
         elif stored != offered:
             conflicts.append(
                 {
@@ -807,6 +882,11 @@ def _reconcile(
                 }
             )
 
+    alias = clabe_alias(draft.metadata.get(CLABE_ALIAS))
+    if alias and not meta.get(CLABE_ALIAS):
+        # The account was saved with this CLABE as its number: the alias is recorded beside it.
+        meta[CLABE_ALIAS] = alias
+        filled.append(CLABE_ALIAS)
     if identity.verdicts:
         merged = dict(meta.get("check_digits", {}))
         merged.update(identity.verdicts)

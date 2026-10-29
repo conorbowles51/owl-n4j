@@ -30,6 +30,14 @@ class AccountIdentityTests(DuplicateTestCase):
         self.assertFalse(matches_identifier(self.account, 'clabe', '012345678901234567'))
         self.assertEqual(len(identity_state(self.db, self.case.id)['identity_history']), 2)
 
+    def test_the_clabe_kept_beside_a_printed_account_number_still_names_the_account(self):
+        self.account.identifier_as_printed = '194-98075-001-8'
+        self.account.metadata_ = {**(self.account.metadata_ or {}), 'account_clabe': '128180000000238632'}
+        self.assertTrue(matches_identifier(self.account, 'clabe', '128180000000238632'))
+        self.assertTrue(matches_identifier(self.account, 'account', '128180000000238632'))
+        self.assertTrue(matches_identifier(self.account, 'account', '194-98075-001-8'))
+        self.assertFalse(matches_identifier(self.account, 'iban', '128180000000238632'))
+
     def test_reference_creates_no_transactions_or_periods_and_can_gain_reviewed_owner(self):
         before = [self.db.scalar(select(func.count()).select_from(model)) for model in (FinancialTransaction, FinancialStatementPeriod)]
         identifier = uuid4()

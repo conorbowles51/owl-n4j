@@ -3576,6 +3576,51 @@ def _printed_over_interbank(account, rows):
     return account, 'interbank_number'
 
 
+# The account is the printed account number, never the CLABE; the CLABE is kept as its alias (Neil, 2026-10-25).
+# Where the rule above finds no exact printing, two printings still name the account: a product heading that prints
+# the account number right before 'CLABE <the CLABE>' (Kapital, Intercam: the number is not inside the CLABE), and
+# an account-number line whose number is the CLABE's account field but for one digit (a scan's recognition misreads
+# one digit of 'No. de Cuenta 0118467374' as 0118167374; the CLABE, its control digit holding, proves the digits).
+# Off: the CLABE stays the account, as before.
+PRINTED_BESIDE_INTERBANK = os.environ.get('LOUPE_FINANCIAL_PRINTED_BESIDE_INTERBANK', '1').strip().lower() not in ('0', 'false', 'off', 'no')
+_HEADING_BEFORE_CLABE = re.compile(r'(?<![\d-])(\d{3}\s*-\s*\d{3,6}\s*-\s*\d{3}\s*-\s*\d)\s+CLABE\s*(\d{18})\b')
+_ACCOUNT_LINE = re.compile(r'\bNO\.?\s*DE\b|\bCUENTA\b|\bACCOUNT\b')
+
+
+def _printed_beside_interbank(account, rows):
+    """(printed account number, CLABE) for a CLABE ``account`` the rule above kept, or None. One number or none."""
+    from services.financial.accounts import clabe_alias
+    clabe = clabe_alias(account)
+    if not PRINTED_BESIDE_INTERBANK or not clabe:
+        return None
+    headed = {re.sub(r'\s', '', m[1]) for row in rows if row['tokens']
+              for m in _HEADING_BEFORE_CLABE.finditer(row['text'].upper()) if m[2] == clabe}
+    if headed:
+        return (headed.pop(), clabe) if len(headed) == 1 else None
+    field = clabe[6:17]
+    own = re.compile(r'[\s-]?'.join(clabe))
+    found = set()
+    for row in rows:
+        text = row['text'].upper() if row['tokens'] else ''
+        if 'CLABE' in text or not _ACCOUNT_LINE.search(text):
+            continue
+        for m in _PRINTED_NUMBER.finditer(own.sub(' ', text)):
+            number = re.sub(r'\D', '', m[0])
+            tail = field[len(field) - len(number):]
+            if (8 <= len(number) <= 11 and '-' not in m[0] and field[:len(field) - len(number)].strip('0') == ''
+                    and sum(a != b for a, b in zip(number, tail)) == 1):
+                found.add(tail)
+    if not found and clabe.startswith(_BBVA_CLABE_BANK) and field.startswith('0'):
+        # BBVA Mexico prints its 10-digit account number ('No. de Cuenta') as the CLABE's account field less its
+        # leading zero; a scan whose account line was not recognised still names it through the CLABE.
+        found.add(field[1:])
+    return (found.pop(), clabe) if len(found) == 1 else None
+
+
+#: The CLABE bank code of BBVA Mexico (Banxico participant 012).
+_BBVA_CLABE_BANK = '012'
+
+
 def layout_key(header_words, convention):
     """The layout as a person recognises it: its movement headings and balance convention.
 
@@ -3653,6 +3698,7 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
         found = {_heading_account(row) for row in scope if row['tokens']} - {''}
         account = found.pop() if len(found) == 1 else ''
     account_basis = ''
+    beside = None
     if profile and profile.get('account_suffix_heading'):
         # Library profile (data): each section names its own account in its heading, after the product
         # name ('<product name> - 1234'); numbers on the statement's other pages (a deposit slip listing
@@ -3680,6 +3726,8 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
     elif account:
         scope = head if shared else [row for page in _heading_pages(segment['pages'], facts) for row in pages[page]]
         account, account_basis = _printed_over_interbank(account, scope)
+        if account_basis == 'interbank_number':
+            beside = _printed_beside_interbank(account, scope)
     client_number, client_name = _client_line(segment['pages'], pages) if profile and profile.get('client_line') else ('', '')
     if client_number and not account:
         account, account_basis = client_number, 'client_line'
@@ -3763,6 +3811,10 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
                      balance_convention='liability_owed' if liability else 'asset_balance',
                      page_numbers=section_pages,
                      identity_evidence=identity_evidence(segment, section_pages, rows, pages, facts, style))
+    if beside:
+        # The printed account number is the account, the CLABE its alias. The statement's id (below) stays the one
+        # its CLABE gave it, so a saved reading still finds its statement.
+        statement.update(account_reference=beside[0], account_clabe=beside[1], account_basis='printed_beside_interbank')
     statement['sources'] = [dict(page_number=s['page_number'], table_index=s['table_index'],
                                  source_revision=s['source_revision'])
                             for s in sources if s['page_number'] in section_pages]

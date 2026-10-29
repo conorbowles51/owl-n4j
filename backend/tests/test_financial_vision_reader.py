@@ -108,6 +108,18 @@ class ProofTest(unittest.TestCase):
                 _proved(_proposal([dict(kind=kind, fields={}, source_cells=cells)], account_number=clabe),
                         _knowledge(account=clabe), pages)
 
+    def test_the_images_reading_the_clabe_match_a_statement_read_by_its_printed_number(self):
+        # The text reading names the account by the printed '194-99292-001-6' and keeps the CLABE beside it.
+        clabe = '128180000000109664'
+        heading = dict(kind='header', fields={}, source_cells=[
+            dict(expected_text='SERVICIO EMPRESARIAL FX KAPITAL 194-99292-001-6'), dict(expected_text='CLABE ' + clabe)])
+        proposal = _proposal([heading], account_number='194-99292-001-6', account_clabe=clabe)
+        for printed in (clabe, '194-99292-001-6'):
+            pages = _balanced_pages()
+            pages[0][1]['sections'][0]['account_number'] = printed
+            reading = _proved(proposal, _knowledge(account='194992920016'), pages)
+            self.assertEqual(len(reading['rows']), 3)
+
     def test_a_section_printing_zero_counts_and_totals_proves_a_quiet_period(self):
         # Live: ECO Feb..Nov 2023 DOLARES and BBVA 23 USD, one page of a "PAGINA n/5" printing: 0 deposits,
         # 0 withdrawals, totals 0.00, 60.25 at both ends.

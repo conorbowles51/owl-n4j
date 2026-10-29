@@ -511,6 +511,8 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
                     metadata[field] = label_value
         if selected.get('account_reference_kind'):
             metadata['account_reference_kind'] = selected['account_reference_kind']
+        if selected.get('account_clabe'):
+            metadata['account_clabe'] = selected['account_clabe']
         if selected.get('statement_reference'):
             metadata['statement_reference'] = selected['statement_reference']
         holders = set()
@@ -1112,6 +1114,8 @@ class StatementReviewDraft(_Contract):
     replacement_revision: _Digest | None = None
     currency: Annotated[str, Field(pattern=r'^[A-Z]{3}$')]
     account_number: Annotated[str, Field(max_length=128)]
+    # The CLABE the statement printed beside its account number: kept as the account's alias, never its number.
+    account_clabe: Annotated[str, Field(pattern=r'^(?:\d{18})?$')] = ''
     institution: Annotated[str, Field(max_length=128)] = ''
     holder: Annotated[str, Field(max_length=128)]
     period_start: Annotated[str, Field(max_length=32)] = ''
@@ -1263,6 +1267,17 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
     return receipt
 
 
+def with_printed_clabe(request, proposal):
+    """The request with the CLABE its statement printed beside the account number (the reader's account_clabe),
+    when the request keeps the printed account number; a number a person changed takes no CLABE from the page."""
+    from services.financial.accounts import clabe_alias, digits_only
+    clabe = clabe_alias((proposal.get('metadata') or {}).get('account_clabe'))
+    if (request.account_clabe or not clabe
+            or digits_only(request.account_number) != digits_only(proposal['metadata'].get('account_number'))):
+        return request
+    return request.model_copy(update=dict(account_clabe=clabe))
+
+
 def statement_account_draft(request, proposal, file):
     """The ledger account a statement import is filed in (the writer's own rule)."""
     from services.financial.accounts import AccountDraft, AccountIdentityError
@@ -1271,7 +1286,8 @@ def statement_account_draft(request, proposal, file):
         account_type=proposal['metadata'].get('account_type'),
         currency=request.currency or None, metadata=dict(display_label=' · '.join(filter(None, [request.holder, request.account_number])) or file.original_filename,
             statement_source_file_id=str(file.id),
-            account_reference_kind=proposal['metadata'].get('account_reference_kind')))
+            account_reference_kind=proposal['metadata'].get('account_reference_kind'),
+            **({'account_clabe': request.account_clabe} if getattr(request, 'account_clabe', '') else {})))
     try:
         return AccountDraft.observed(**account_fields)
     except AccountIdentityError:
@@ -1457,6 +1473,7 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                 elif saved_reading_replacement.is_replacement(actor):
                     raise PdfMappingError('A reader replacement replaces a saved statement only.', 409)
                 originals = check_import_request(proposal, request)
+                request = with_printed_clabe(request, proposal)
                 if replacing is None:
                     disposition = apply_duplicate_disposition(session, case_id=case_id, file=file,
                         proposal=proposal, request=request.model_dump(mode='json'), actor=actor, sources=case_comparison)

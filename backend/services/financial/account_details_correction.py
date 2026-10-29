@@ -36,6 +36,7 @@ from services.financial.model_work import origin_field, origin_of
 HISTORY = 'account_details_history'
 SPLIT_PREFIX = 'statement-details:'
 FIELDS = (('holder', 'holder_name'), ('institution', 'institution_name'))
+NUMBER = 'account_number'
 
 
 class AccountDetailsRequest(BaseModel):
@@ -43,6 +44,8 @@ class AccountDetailsRequest(BaseModel):
     expected_revision: str = Field(pattern=r'^[a-f0-9]{64}$')
     holder: str | None = Field(default=None, max_length=255)
     institution: str | None = Field(default=None, max_length=128)
+    # The account number as the statements print it. A CLABE the account was saved with is kept as its alias.
+    account_number: str | None = Field(default=None, max_length=128)
     reason: str = Field(max_length=2000)
 
 
@@ -97,16 +100,22 @@ def _split_off(session, case_id, account, values):
     """Accounts a per-statement edit split off this one, differing only in the
     corrected field: same number (digits), currency and type; holder and bank
     equal to the corrected values when folded."""
-    from services.financial.accounts import _fold, digits_only
-    digits = digits_only(account.identifier_as_printed)
+    from services.financial.accounts import CLABE_ALIAS, _fold, digits_only
+    digits = {digits_only(account.identifier_as_printed), digits_only(values.get(NUMBER))} - {''}
     if not digits:
         return []
+    # The CLABE the account keeps after the correction (a preview's account does not record it yet).
+    alias = (account.metadata_ or {}).get(CLABE_ALIAS) or (_alias_after(account, values) if NUMBER in values else None)
     found = []
     for other in session.scalars(select(FinancialAccount).where(FinancialAccount.case_id == case_id,
-            FinancialAccount.id != account.id, FinancialAccount.identifier_normalised == digits)
+            FinancialAccount.id != account.id, FinancialAccount.identifier_normalised.in_(digits))
             .order_by(FinancialAccount.created_at, FinancialAccount.id)):
         meta = other.metadata_ or {}
-        if not str(meta.get('identity_distinguisher') or '').startswith(SPLIT_PREFIX):
+        # An identified account of the printed number (saved without the CLABE) is the same account when its
+        # bank, holder, currency and type agree and it records no other CLABE.
+        printed = (alias and other.identifier_normalised == digits_only(values.get(NUMBER))
+                   and not meta.get('identity_distinguisher') and meta.get(CLABE_ALIAS) in (None, alias))
+        if not printed and not str(meta.get('identity_distinguisher') or '').startswith(SPLIT_PREFIX):
             continue
         if (other.currency != account.currency or other.account_type != account.account_type
                 or meta.get('account_reference_kind') != (account.metadata_ or {}).get('account_reference_kind')):
@@ -131,6 +140,10 @@ def _values(account):
     return dict(holder=account.holder_name or '', institution=account.institution_name or '')
 
 
+def _with_number(account):
+    return dict(_values(account), **{NUMBER: account.identifier_as_printed or ''})
+
+
 def _revision(account, statements):
     return _digest(dict(account=str(account.id), identity=account.identity_key, values=_values(account),
         number=account.identifier_as_printed, currency=account.currency, account_type=account.account_type,
@@ -141,13 +154,14 @@ def account_details_state(session, *, case_id, account_id):
     account = _account(session, case_id, account_id)
     statements = _statement_rows(session, case_id, _statements(session, case_id, account))
     return dict(case_id=str(case_id), account_id=str(account.id), **_values(account),
-        account_number=account.identifier_as_printed or '', currency=account.currency or '',
+        account_number=account.identifier_as_printed or '', account_clabe=(account.metadata_ or {}).get('account_clabe') or '',
+        currency=account.currency or '',
         statements=statements, history=(account.metadata_ or {}).get(HISTORY, []),
         revision=_revision(account, statements))
 
 
 def _requested(account, request):
-    current = _values(account)
+    current = _with_number(account) if request.account_number is not None else _values(account)
     after = dict(current)
     for key, _ in FIELDS:
         value = getattr(request, key)
@@ -159,9 +173,28 @@ def _requested(account, request):
         if any(ord(c) < 32 for c in value):
             raise PdfMappingError('Account details must be on a single line.', 422)
         after[key] = value
+    if request.account_number is not None:
+        from services.financial.accounts import clabe_alias
+        value = request.account_number.strip()
+        if not value or any(ord(c) < 32 for c in value):
+            raise PdfMappingError('Enter the account number as printed, on a single line.', 422)
+        if clabe_alias(value) and value != current[NUMBER]:
+            raise PdfMappingError('A CLABE is not the account number. Enter the account number the statements print; '
+                                  'the CLABE stays recorded with the account.', 422)
+        after[NUMBER] = value
     if after == current:
-        raise PdfMappingError('These are already the account\'s holder and bank. Nothing to change.', 422)
+        raise PdfMappingError('These are already the account\'s details. Nothing to change.', 422)
     return current, after
+
+
+def _alias_after(account, after):
+    """The CLABE the account keeps once its number is ``after``: the one it records, or its number as saved
+    when that is a CLABE and the corrected number is not."""
+    from services.financial.accounts import CLABE_ALIAS, clabe_alias
+    recorded = (account.metadata_ or {}).get(CLABE_ALIAS)
+    if recorded or NUMBER not in after:
+        return recorded
+    return clabe_alias(account.identifier_as_printed) if after[NUMBER] != account.identifier_as_printed else None
 
 
 def preview_account_details(session, *, case_id, account_id, request):
@@ -175,7 +208,7 @@ def preview_account_details(session, *, case_id, account_id, request):
         revision=_revision(account, statements))
 
 
-def _new_identity(session, case_id, account, after):
+def _new_identity(session, case_id, account, after, alias=None):
     """The identity key with the corrected bank (the holder takes no part in it).
     An account given its own key (unidentified) keeps that key."""
     meta = account.metadata_ or {}
@@ -184,9 +217,10 @@ def _new_identity(session, case_id, account, after):
     from services.financial.accounts import AccountDraft, AccountIdentityError
     try:
         draft = AccountDraft.observed(institution_name=after['institution'] or None,
-            identifier_as_printed=account.identifier_as_printed, account_type=account.account_type,
+            identifier_as_printed=after.get(NUMBER, account.identifier_as_printed), account_type=account.account_type,
             holder_name=after['holder'] or None, currency=account.currency, iban=account.iban, bic=account.bic,
-            routing_number=account.routing_number, metadata=dict(account_reference_kind=meta.get('account_reference_kind')))
+            routing_number=account.routing_number, metadata=dict(account_reference_kind=meta.get('account_reference_kind'),
+                                                                 **({'account_clabe': alias} if alias else {})))
         key = draft.identity().key
     except AccountIdentityError as exc:
         raise PdfMappingError('The corrected bank does not identify this account. Nothing was changed.', 422) from exc
@@ -203,41 +237,55 @@ def _edit_statement(session, case_id, document, overrides, actor, resolve_accoun
     from services.financial.statement_details import StatementDetailsRequest, read_statement_details, update_statement_details
     view = read_statement_details(session, case_id=case_id, source_id=document.id)
     details = view['details']
-    values = {key: overrides.get(key, details.get(key, '')) for key, _ in FIELDS}
-    if not resolve_account and all(details.get(key, '') == values[key] for key, _ in FIELDS):
+    keys = [key for key, _ in FIELDS] + [NUMBER, 'account_clabe']
+    values = {key: overrides.get(key, details.get(key, '')) for key in keys}
+    if not resolve_account and all(details.get(key, '') == values[key] for key in keys):
         return None
     request = StatementDetailsRequest(expected_revision=view['revision'], holder=values['holder'],
-        account_number=details.get('account_number', ''), institution=values['institution'])
+        account_number=values[NUMBER], institution=values['institution'], account_clabe=values['account_clabe'])
     result = update_statement_details(session, case_id=case_id, source_id=document.id, request=request,
         actor=actor, commit=False, resolve_account=resolve_account)
-    return dict(source_document_id=str(document.id), before={key: details.get(key, '') for key, _ in FIELDS},
+    changed = [key for key, _ in FIELDS] + [key for key in (NUMBER, 'account_clabe') if key in overrides]
+    return dict(source_document_id=str(document.id), before={key: details.get(key, '') for key in changed},
                 from_account_id=view['account_id'], to_account_id=result['account_id'])
 
 
 def _apply(session, *, case_id, account, before, after, reason, actor, now, entry, rejoin_details=None):
     """Write the account record, then every statement; then re-join splits."""
-    account.identity_key = _new_identity(session, case_id, account, after)
+    from services.financial.accounts import CLABE_ALIAS, digits_only
+    alias = _alias_after(account, after)
+    account.identity_key = _new_identity(session, case_id, account, after, alias)
     account.holder_name, account.institution_name = after['holder'] or None, after['institution'] or None
     meta = deepcopy(account.metadata_ or {})
     label = meta.get('display_label')
     if label and before['holder'] and label.startswith(before['holder']):
-        meta['display_label'] = after['holder'] + label[len(before['holder']):]
+        meta['display_label'] = label = after['holder'] + label[len(before['holder']):]
+    if NUMBER in after and after[NUMBER] != before[NUMBER]:
+        account.identifier_as_printed, account.identifier_normalised = after[NUMBER], digits_only(after[NUMBER]) or None
+        if label and before[NUMBER] and before[NUMBER] in label:
+            meta['display_label'] = label.replace(before[NUMBER], after[NUMBER])
+        if alias and not meta.get(CLABE_ALIAS):
+            meta[CLABE_ALIAS] = alias
+            entry['clabe_alias_added'] = alias
     account.metadata_ = meta
     session.flush()
+    overrides = {key: after[key] for key, _ in FIELDS if after[key] != before[key]}
+    if NUMBER in after and after[NUMBER] != before[NUMBER]:
+        overrides.update({NUMBER: after[NUMBER], 'account_clabe': alias or ''})
     for document, period in _statements(session, case_id, account, lock=True):
         if _period_counts(session, case_id, [(document, period)]).get(document.id) != 1:
             entry['not_edited'].append(dict(source_document_id=str(document.id),
                 reason='The PDF holds several statement periods; its account record is corrected, its own details are not.'))
             continue
-        changed = _edit_statement(session, case_id, document,
-                                  {key: after[key] for key, _ in FIELDS if after[key] != before[key]}, actor)
+        changed = _edit_statement(session, case_id, document, overrides, actor)
         if changed:
             entry['statements'].append(changed)
     for other in _split_off(session, case_id, account, after):
         for document, period in _statements(session, case_id, other, lock=True):
             if _period_counts(session, case_id, [(document, period)]).get(document.id) != 1:
                 continue
-            moved = _edit_statement(session, case_id, document, {}, actor, resolve_account=True)
+            moved = _edit_statement(session, case_id, document, {'account_clabe': alias} if alias else {}, actor,
+                                    resolve_account=True)
             if moved and moved['to_account_id'] == str(account.id):
                 entry['rejoined'].append(moved)
                 other_meta = deepcopy(other.metadata_ or {})
@@ -293,7 +341,7 @@ def undo_account_details(session, *, case_id, account_id, request, actor):
             raise PdfMappingError('This correction is not in the account history or was already undone.', 409)
         if target is not active[-1]:
             raise PdfMappingError('Undo the later account correction first; nothing was changed.', 409)
-        if _values(account) != target['after']:
+        if any(_with_number(account).get(key) != value for key, value in target['after'].items()):
             raise PdfMappingError('The account was changed after this correction. Reload; nothing was changed.', 409)
         now = datetime.now(timezone.utc).isoformat()
         restored = target['before']
@@ -304,6 +352,14 @@ def undo_account_details(session, *, case_id, account_id, request, actor):
         account.identity_key = key
         account.holder_name, account.institution_name = restored['holder'] or None, restored['institution'] or None
         meta = deepcopy(account.metadata_ or {})
+        if NUMBER in restored:
+            from services.financial.accounts import CLABE_ALIAS, digits_only
+            account.identifier_as_printed = restored[NUMBER] or None
+            account.identifier_normalised = digits_only(restored[NUMBER]) or None
+            if target.get('clabe_alias_added'):
+                meta.pop(CLABE_ALIAS, None)
+            if meta.get('display_label') and target['after'][NUMBER] in meta['display_label']:
+                meta['display_label'] = meta['display_label'].replace(target['after'][NUMBER], restored[NUMBER])
         label = meta.get('display_label')
         if label and target['after']['holder'] and label.startswith(target['after']['holder']):
             meta['display_label'] = restored['holder'] + label[len(target['after']['holder']):]
@@ -325,7 +381,9 @@ def undo_account_details(session, *, case_id, account_id, request, actor):
             document = session.get(FinancialSourceDocument, UUID(source_id))
             if document is None or document.status != 'admitted':
                 continue
-            moved = _edit_statement(session, case_id, document, {}, actor, resolve_account=True)
+            # A statement re-joined by the CLABE it was given takes its earlier details back.
+            earlier = {key: value for key, value in item.get('before', {}).items() if key == 'account_clabe'}
+            moved = _edit_statement(session, case_id, document, earlier, actor, resolve_account=True)
             if moved:
                 entry['split_again'].append(moved)
         meta = deepcopy(account.metadata_ or {})

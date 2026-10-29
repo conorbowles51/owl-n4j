@@ -893,7 +893,8 @@ def _clabe_account(digits):
 
 def _heading_numbers(proposal):
     """Numbers printed on a non-payment line of the text reading beside "CLABE <the statement's account>"."""
-    account = _digits(_rule_metadata(proposal)['account_number'])
+    # The CLABE the text reading kept beside a printed account number is the statement's CLABE.
+    account = _digits((proposal.get('metadata') or {}).get('account_clabe')) or _digits(_rule_metadata(proposal)['account_number'])
     if not SECTION_NUMBER or len(account) != 18:
         return set()
     numbers = set()
@@ -914,7 +915,9 @@ def same_account(number, proposal):
     """The number read from the page images names the statement's account: the same number, or the
     section heading's own number printed beside the statement's CLABE."""
     account = _rule_metadata(proposal)['account_number']
-    return same_number(number, account) or (_digits(number) and _digits(number) in _heading_numbers(proposal))
+    clabe = (proposal.get('metadata') or {}).get('account_clabe')
+    return (same_number(number, account) or bool(clabe and _digits(number) == _digits(clabe))
+            or (_digits(number) and _digits(number) in _heading_numbers(proposal)))
 
 
 def _period_end(section):

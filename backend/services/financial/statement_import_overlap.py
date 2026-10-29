@@ -11,7 +11,7 @@ from sqlalchemy import select
 from postgres.models.evidence import EvidenceFile
 from postgres.models.financial import FinancialAccount, FinancialSourceDocument, FinancialStatementPeriod
 from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item
-from services.financial.accounts import AccountDraft, AccountError, _fold, NON_VALUES
+from services.financial.accounts import AccountDraft, AccountError, _fold, NON_VALUES, clabe_alias
 from services.financial.pdf_candidates import _digest, PdfMappingError
 
 
@@ -67,6 +67,9 @@ def scope(raw):
     except (ValueError, TypeError):
         return None
     institution, account_number, currency = raw.get('institution'), raw.get('account_number'), raw.get('currency')
+    # A statement that printed a CLABE beside its account number is compared on the CLABE, as one saved with the
+    # CLABE as its number is (the ledger key does the same): a reading and its saved copy stay one statement.
+    account_number = clabe_alias(raw.get('account_clabe')) or account_number
     # The same reference kind as the ledger key (a credit line sharing its deposit account's number).
     kind = raw.get('account_reference_kind') or None
     try:

@@ -13,6 +13,8 @@ from services.financial.currency_correction import CurrencyCode, rescale_minor
 from services.financial.model_work import origin_field
 
 DETAIL_KEYS = ('holder', 'account_number', 'institution')
+# The CLABE a statement printed beside its account number (accounts.CLABE_ALIAS); present only when known.
+CLABE_KEY = 'account_clabe'
 # A holder or bank printed in another letter case or spacing ('BBVA MEXICO' /
 # 'BBVA Mexico') is the same account: compared folded, as the identity key is.
 FOLDED_ACCOUNT_FIELDS = ('holder_name', 'institution_name')
@@ -23,6 +25,16 @@ def _number(value):
     ('0123-456' and '0123 456' are one account), else the folded text."""
     from services.financial.accounts import _fold, digits_only
     return digits_only(value) or _fold(value)
+def _same_number(account, draft):
+    """The draft's number is the account's: the same digits, or the CLABE the draft keeps beside its printed
+    number is the account's own (its number as first saved, or its recorded alias)."""
+    from services.financial.accounts import CLABE_ALIAS, clabe_alias
+    if _number(account.identifier_as_printed) == _number(draft.identifier_as_printed):
+        return True
+    alias = clabe_alias(draft.metadata.get(CLABE_ALIAS))
+    return bool(alias and alias in (_number(account.identifier_as_printed), (account.metadata_ or {}).get(CLABE_ALIAS)))
+
+
 # An investigator's later decision on how this statement's printed balances
 # read (account type changed after import). The sealed reading is untouched;
 # this reviewed value, when present, is the one every saved-statement path uses.
@@ -55,6 +67,9 @@ class StatementDetailsRequest(BaseModel):
     holder: str = Field(max_length=255)
     account_number: str = Field(max_length=128)
     institution: str = Field(max_length=128)
+    # The CLABE printed beside the account number, kept as the account's alias (accounts.CLABE_ALIAS).
+    # Omitted: the statement keeps the one it has.
+    account_clabe: str | None = Field(default=None, pattern=r'^(\d{18})?$')
     currency: CurrencyCode | None = None
     period_start: str | None = Field(default=None, pattern=r'^(\d{4}-\d{2}-\d{2})?$')
     period_end: str | None = Field(default=None, pattern=r'^(\d{4}-\d{2}-\d{2})?$')
@@ -67,8 +82,11 @@ def saved_details(document):
     metadata = document.metadata_ or {}
     raw = metadata.get('statement_import_request', {})
     review = metadata.get('statement_details_review', {})
-    return {**{key: raw.get(key, '') for key in (*DETAIL_KEYS, 'period_start', 'period_end')},
-            **review.get('details', {})}
+    details = {**{key: raw.get(key, '') for key in (*DETAIL_KEYS, 'period_start', 'period_end')},
+               **({CLABE_KEY: raw[CLABE_KEY]} if raw.get(CLABE_KEY) else {}), **review.get('details', {})}
+    if not details.get(CLABE_KEY):
+        details.pop(CLABE_KEY, None)
+    return details
 
 
 def saved_currency(document):
@@ -170,6 +188,9 @@ def update_statement_details(session, *, case_id, source_id, request, actor, com
                 return before
             raise PdfMappingError('These details changed since you opened them. Reload before saving; your edits have not overwritten them.', 409)
         details = {key: getattr(request, key).strip() for key in DETAIL_KEYS}
+        clabe = before['details'].get(CLABE_KEY, '') if request.account_clabe is None else request.account_clabe
+        if clabe:
+            details[CLABE_KEY] = clabe
         if any(any(ord(c) < 32 for c in value) for value in details.values()):
             raise PdfMappingError('Account details must be on a single line.', 422)
         # Omitted fields preserve legacy clients' dates; an explicit blank means
@@ -204,13 +225,14 @@ def update_statement_details(session, *, case_id, source_id, request, actor, com
         old_account_id = account.id
         reference_kind = (account.metadata_ or {}).get('account_reference_kind')
         compartment_currency_changed = reference_kind == 'multi_currency_contract' and request.currency and request.currency != before['currency']
-        if any(details[key] != before['details'][key] for key in DETAIL_KEYS) or compartment_currency_changed or resolve_account:
+        if any(details.get(key, '') != before['details'].get(key, '') for key in (*DETAIL_KEYS, CLABE_KEY)) \
+                or compartment_currency_changed or resolve_account:
             from services.financial.accounts import AccountDraft, AccountIdentityError, _fold, record_account
             fields = dict(holder_name=details['holder'] or None, identifier_as_printed=details['account_number'] or None,
                 institution_name=details['institution'] or None, currency=(request.currency or before['currency']) if reference_kind == 'multi_currency_contract' else account.currency,
                 account_type=account.account_type, metadata=dict(display_label=' · '.join(filter(None,
                     [details['holder'], details['account_number']])) or 'Account details not recorded',
-                    account_reference_kind=reference_kind))
+                    account_reference_kind=reference_kind, **({CLABE_KEY: clabe} if clabe else {})))
             try:
                 draft = AccountDraft.observed(**fields)
             except AccountIdentityError:
@@ -218,7 +240,7 @@ def update_statement_details(session, *, case_id, source_id, request, actor, com
             existing = session.scalar(select(FinancialAccount).where(
                 FinancialAccount.case_id == case_id, FinancialAccount.identity_key == draft.identity().key))
             if existing is not None and (any(_fold(getattr(existing, key)) != _fold(getattr(draft, key))
-                    for key in FOLDED_ACCOUNT_FIELDS) or _number(existing.identifier_as_printed) != _number(draft.identifier_as_printed)
+                    for key in FOLDED_ACCOUNT_FIELDS) or not _same_number(existing, draft)
                     or any(getattr(existing, key) != getattr(draft, key) for key in ('currency', 'account_type'))):
                 # The ingestion writer deliberately retains conflicting values.
                 # A reviewed correction must instead resolve to its exact saved

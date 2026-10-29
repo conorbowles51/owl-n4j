@@ -1468,6 +1468,38 @@ class HolderAndInterbankTests(unittest.TestCase):
                                                           ('CLABE', 260000, 300000), ('002180123456789017', 310000, 420000)]))
         self.assertEqual((st['account_reference'], st['account_basis']), ('002180123456789017', 'interbank_number'))
 
+    def test_the_number_a_product_heading_prints_before_its_clabe_is_the_account_and_the_clabe_its_alias(self):
+        clabe = '128180000000123459'
+        line = [('SERVICIO EMPRESARIAL EJEMPLO USD194-12345-002-6', 20000, 250000), ('CLABE', 260000, 300000),
+                (clabe, 310000, 420000)]
+        st = self.first(transfer_statement(account_line=line))
+        self.assertEqual((st['account_reference'], st['account_clabe'], st['account_basis']),
+                         ('194-12345-002-6', clabe, 'printed_beside_interbank'))
+        # The statement keeps the id its CLABE gave it (as when no number was printed beside the CLABE), so a
+        # saved reading still finds it.
+        before = self.first(transfer_statement(account_line=[('SERVICIO EMPRESARIAL EJEMPLO USD', 20000, 250000),
+                                                             ('CLABE', 260000, 300000), (clabe, 310000, 420000)]))
+        self.assertEqual((before['account_reference'], before['account_basis']), (clabe, 'interbank_number'))
+        self.assertEqual(st['id'], before['id'])
+
+    def test_an_account_line_read_one_digit_wrong_is_named_by_the_clabe_account_field(self):
+        clabe = '012180001234567899'
+        rows = E._pages([page(1, [[('No. de 0123467789', 20000, 300000)], [('Cuenta', 20000, 100000)],
+                                  [('No. Cuenta CLABE ' + clabe, 20000, 300000)]])])[1]
+        self.assertEqual(E._printed_beside_interbank(clabe, rows), ('0123456789', clabe))
+        # Two digits apart is another number; a bank whose CLABE does not carry it gives none.
+        other = '002180012345678906'
+        rows = E._pages([page(1, [[('No. de Cuenta 0123456700', 20000, 300000)],
+                                  [('No. Cuenta CLABE ' + other, 20000, 300000)]])])[1]
+        self.assertIsNone(E._printed_beside_interbank(other, rows))
+
+    def test_a_bbva_clabe_names_its_ten_digit_account_when_the_account_line_is_unreadable(self):
+        clabe = '012180001234567899'
+        rows = E._pages([page(1, [[('EMPRESA DE PRUEBA SA DE CV habeas onibe0id24', 20000, 300000)],
+                                  [('No. Cuenta CLABE ' + clabe, 20000, 300000)]])])[1]
+        self.assertEqual(E._printed_beside_interbank(clabe, rows), ('0123456789', clabe))
+        self.assertIsNone(E._printed_beside_interbank('012180001234567898', rows))  # control digit fails
+
     def test_the_interbank_numbers_own_digit_groups_are_not_a_printed_account(self):
         self.assertEqual(E._printed_over_interbank('002180012345678901', E._pages([page(1, [
             [('CLABE 002 180 01234567890 1', 20000, 300000)]])])[1]), ('002180012345678901', 'interbank_number'))

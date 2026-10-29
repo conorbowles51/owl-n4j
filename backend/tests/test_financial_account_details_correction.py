@@ -228,6 +228,70 @@ class AccountDetailsCorrectionTests(TestCase):
         self.assertEqual(self.details(self.first)['details']['institution'], 'Other Synthetic Bank')
 
 
+CLABE = '128180000000238632'
+
+
+class AccountNumberCorrectionTests(AccountDetailsCorrectionTests):
+    """Two statements saved with the CLABE as the account number: the account becomes the printed account
+    number, the CLABE is kept as its alias, and statements saved either way stay on one account."""
+
+    def setUp(self):
+        real = statement_import_tests.StatementImportTests.request
+        def with_clabe(fixture):
+            return {**real(fixture), 'account_number': CLABE}
+        from unittest.mock import patch
+        with patch.object(statement_import_tests.StatementImportTests, 'request', with_clabe):
+            super().setUp()
+
+    def test_the_printed_number_replaces_the_clabe_which_is_kept_and_undo_restores_it(self):
+        with self.f.SessionLocal() as db:
+            key = db.get(FinancialAccount, self.account_id).identity_key
+        result = self.correct(account_number='194-98075-001-8', reason='Page 1 prints 194-98075-001-8 beside the CLABE')
+        self.assertEqual((result['account_number'], result['account_clabe']), ('194-98075-001-8', CLABE))
+        with self.f.SessionLocal() as db:
+            account = db.get(FinancialAccount, self.account_id)
+            self.assertEqual((account.identifier_normalised, account.identity_key), ('194980750018', key))
+        for source in (self.first, self.second):
+            details = self.details(source)['details']
+            self.assertEqual((details['account_number'], details['account_clabe']), ('194-98075-001-8', CLABE))
+        self.assertEqual(self.accounts_of(self.first, self.second), {self.account_id})
+        # A later edit of one statement, a holder spelling, stays on the account.
+        view = self.details(self.first)
+        with self.f.SessionLocal() as db:
+            update_statement_details(db, case_id=self.f.case.id, source_id=self.first, actor=self.f.actor,
+                request=StatementDetailsRequest(expected_revision=view['revision'], holder='TEST COMPANY',
+                    account_number=view['details']['account_number'], institution=view['details']['institution']))
+        self.assertEqual(self.accounts_of(self.first, self.second), {self.account_id})
+        restored = self.undo(result['correction']['id'])
+        self.assertEqual((restored['account_number'], restored['account_clabe']), (CLABE, ''))
+        self.assertEqual(self.details(self.second)['details']['account_number'], CLABE)
+        self.assertNotIn('account_clabe', self.details(self.second)['details'])
+        self.assertEqual(self.accounts_of(self.first, self.second), {self.account_id})
+
+    def test_a_clabe_is_refused_as_the_corrected_number(self):
+        self.correct(account_number='194-98075-001-8')
+        self.account_id = self.account_id
+        with self.assertRaisesRegex(PdfMappingError, 'A CLABE is not the account number'):
+            self.correct(account_number='012180001184673749')
+
+    def test_a_split_saved_with_the_printed_number_rejoins_the_account(self):
+        view = self.details(self.second)
+        with self.f.SessionLocal() as db:
+            update_statement_details(db, case_id=self.f.case.id, source_id=self.second, actor=self.f.actor,
+                request=StatementDetailsRequest(expected_revision=view['revision'], holder=view['details']['holder'],
+                    account_number='194-98075-001-8', institution=view['details']['institution']))
+        split = UUID(self.details(self.second)['account_id'])
+        self.assertNotEqual(split, self.account_id)
+        with self.f.SessionLocal() as db:
+            preview = service.preview_account_details(db, case_id=self.f.case.id, account_id=self.account_id,
+                request=service.AccountDetailsRequest(expected_revision=self.state()['revision'], reason='Page 1',
+                                                      account_number='194-98075-001-8'))
+        self.assertEqual([item['account_id'] for item in preview['rejoin']], [str(split)])
+        result = self.correct(account_number='194-98075-001-8')
+        self.assertEqual([s['source_document_id'] for s in result['correction']['rejoined']], [str(self.second)])
+        self.assertEqual(self.accounts_of(self.first, self.second), {self.account_id})
+
+
 class AccountDetailsRouteTests(TestCase):
     def test_routes_read_preview_save_and_undo_with_edit_access_for_changes(self):
         from routers.financial_statement_import import router

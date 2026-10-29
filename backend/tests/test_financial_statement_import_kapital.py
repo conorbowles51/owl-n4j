@@ -1,6 +1,9 @@
 """Synthetic Kapital product tables, including continuation and currency scopes."""
 from copy import deepcopy
 from unittest import TestCase
+from unittest.mock import patch
+from uuid import UUID
+from services.financial import statement_import_kapital as kapital
 from services.financial.statement_import_kapital import kapital_catalog, propose_kapital_statement
 from services.financial.statement_currency import currencies_by_statement
 from services.financial.statement_review_checks import check_statement_rows
@@ -19,7 +22,7 @@ def header():
 
 def product(currency='MN',clabe='128000000000000001',top=300000):
     return [
-        [(40000,top,205000,'SERVICIO EMPRESARIAL FX KAPITAL 123-456-001-6'),(260000,top,170000,'CLABE '+clabe)],
+        [(40000,top,205000,'SERVICIO EMPRESARIAL FX KAPITAL 123-456-00%s-6'%('1' if currency=='MN' else '2')),(260000,top,170000,'CLABE '+clabe)],
         [(40000,top+20000,170000,'Moneda'),(220000,top+20000,40000,currency)],
         [(40000,top+40000,170000,'Saldo Inicial'),(220000,top+40000,40000,'0.00 '+currency)],
         [(40000,top+60000,170000,'+ Depositos'),(220000,top+60000,40000,('0.01 ' if currency=='MN' else '0.00 ')+currency)],
@@ -48,7 +51,14 @@ class KapitalProposalTests(TestCase):
         s=statement();before=deepcopy(s)
         choices=currencies_by_statement(kapital_catalog(s)[0],s)
         self.assertEqual([c['currency'] for c in choices],['MXN','USD'])
-        self.assertEqual([c['account_reference'] for c in choices],['128000000000000001','128000000000000002'])
+        # The account is the printed number; the CLABE beside it is kept as its alias (Neil, 2026-10-25).
+        self.assertEqual([c['account_reference'] for c in choices],['123-456-001-6','123-456-002-6'])
+        self.assertEqual([c['account_clabe'] for c in choices],['128000000000000001','128000000000000002'])
+        with patch.object(kapital,'PRINTED_NUMBER',False):
+            old=currencies_by_statement(kapital_catalog(s)[0],s)
+        self.assertEqual([c['account_reference'] for c in old],['128000000000000001','128000000000000002'])
+        # The statement keeps the id its CLABE gave it, so a saved reading still finds its statement.
+        self.assertEqual([c['id'] for c in old],[c['id'] for c in choices])
         self.assertTrue(all(c['holder']=='EXAMPLE SERVICES' for c in choices))
         rows=propose_kapital_statement(s,'MXN',choices[0])['rows']
         tx=[r for r in rows if not r['excluded']]
@@ -196,6 +206,49 @@ class KapitalImportTests(TestCase):
             self.assertFalse(self.f.confirm(request)['created'])
         self.assertNotEqual(receipts[0]['account_id'],receipts[1]['account_id'])
 
+
+class KapitalPrintedNumberImportTests(TestCase):
+    """A statement saved with its CLABE as the account number, read again by its printed number (Neil, 2026-10-25)."""
+    CLABES=('128000000000000005','128000000000000018')
+    def setUp(self):
+        from tests.test_financial_statement_import import StatementImportTests
+        from tests.test_financial_statement_import_scotiabank import ScotiabankImportTests
+        self.f=StatementImportTests('test_existing_import_and_same_request_keep_the_saved_account_for_navigation');self.f.setUp()
+        sources=[source(1,header()+[[(30000,120000,160000,'EXAMPLE SERVICES')],[(30000,150000,160000,'Persona Moral')]]
+            +product(clabe=self.CLABES[0])+table()),source(2,header()+product('USD',self.CLABES[1]))]
+        ScotiabankImportTests.prepare(self,sources)
+    def tearDown(self):self.f.tearDown()
+    def read(self):
+        from services.financial.statement_import import read_statement_import
+        with self.f.SessionLocal() as db:
+            choice=read_statement_import(db,case_id=self.f.case.id,evidence_file_id=self.f.file.id)['statement_choices'][0]
+            return read_statement_import(db,case_id=self.f.case.id,evidence_file_id=self.f.file.id,statement_id=choice['id'])
+    def test_a_statement_saved_with_its_clabe_is_not_imported_again_when_read_by_its_printed_number(self):
+        from services.financial.import_batches import initial_request
+        from services.financial.pdf_candidates import PdfMappingError
+        from services.financial.statement_import import forget_shared_readings
+        from postgres.models.financial import FinancialStatementPeriod
+        from sqlalchemy import func, select
+        with patch.object(kapital,'PRINTED_NUMBER',False):
+            forget_shared_readings()
+            self.f.confirm(initial_request(self.read()))
+        forget_shared_readings()
+        proposal=self.read()
+        self.assertEqual((proposal['metadata']['account_number'],proposal['metadata']['account_clabe']),('123-456-001-6',self.CLABES[0]))
+        with self.assertRaisesRegex(PdfMappingError,'already has imported transactions'):
+            self.f.confirm(initial_request(proposal))
+        with self.f.SessionLocal() as db:
+            self.assertEqual(db.scalar(select(func.count()).select_from(FinancialStatementPeriod)),1)
+
+    def test_an_import_saves_the_printed_number_as_the_account_and_keeps_the_clabe(self):
+        from postgres.models.financial import FinancialAccount, FinancialSourceDocument
+        from services.financial.import_batches import initial_request
+        receipt=self.f.confirm(initial_request(self.read()))
+        with self.f.SessionLocal() as db:
+            account=db.get(FinancialAccount,UUID(receipt['account_id']))
+            self.assertEqual((account.identifier_as_printed,account.metadata_['account_clabe']),('123-456-001-6',self.CLABES[0]))
+            document=db.get(FinancialSourceDocument,UUID(receipt['source_document_id']))
+            self.assertEqual(document.metadata_['statement_import_request']['account_clabe'],self.CLABES[0])
 
 class IntercamProposalTests(TestCase):
     def test_shared_product_reader_keeps_bank_and_currency_scopes(self):

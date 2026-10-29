@@ -55,8 +55,9 @@ def holder_identifiers(sources, *, account_reference, holder):
         if c['account_reference'] == account_reference and normalise_name(c['holder']) == name}
     from services.financial.statement_import_kapital import kapital_catalog
     kapital, _ = kapital_catalog(sources)
+    # A statement saved with its CLABE as the account number is the product printing that CLABE.
     kapital_covers = {min(c['page_numbers']) for c in kapital
-        if c['account_reference'] == account_reference and normalise_name(c['holder']) == name}
+        if account_reference in (c['account_reference'], c.get('account_clabe')) and normalise_name(c['holder']) == name}
     for source in sources:
         if source['page_number'] not in covers | kapital_covers:
             continue

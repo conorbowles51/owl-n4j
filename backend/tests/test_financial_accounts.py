@@ -801,5 +801,59 @@ class RecordAccountTests(AccountPersistenceTestCase):
         self.assertIn("ingestion_run_id", str(caught.exception))
 
 
+
+class PrintedNumberAndClabeTests(AccountPersistenceTestCase):
+    """The account is the printed account number; a CLABE printed beside it is its alias (Neil, 2026-10-25)."""
+
+    CLABE = "128180000000238632"
+
+    def kapital(self, number, clabe=None, holder="INGENIERIA APLICADA R2"):
+        return AccountDraft.observed(institution_name="Kapital", identifier_as_printed=number, holder_name=holder,
+            currency="MXN", metadata={"account_clabe": clabe} if clabe else None)
+
+    def test_the_printed_number_with_its_clabe_keys_the_account_the_clabe_alone_keyed(self):
+        self.assertEqual(self.kapital("194-98075-001-8", self.CLABE).identity().key,
+                         self.kapital(self.CLABE).identity().key)
+
+    def test_a_statement_saved_with_the_clabe_and_one_read_with_the_printed_number_are_one_account(self):
+        old = record_account(self.db, self.run, self.kapital(self.CLABE))
+        new = record_account(self.db, self.second_run(), self.kapital("194-98075-001-8", self.CLABE))
+        self.db.commit()
+        self.assertEqual(new.id, old.id)
+        self.assertEqual(new.metadata_["account_clabe"], self.CLABE)
+
+    def test_the_printed_number_alone_reaches_the_account_that_records_its_clabe(self):
+        first = record_account(self.db, self.run, self.kapital("194-98075-001-8", self.CLABE))
+        typed = record_account(self.db, self.second_run(), self.kapital("194-98075-001-8"))
+        other_holder = record_account(self.db, self.second_run(), self.kapital("194-98075-001-8", holder="ARRENDO SERV"))
+        self.db.commit()
+        self.assertEqual(first.identifier_as_printed, "194-98075-001-8")
+        self.assertEqual(typed.id, first.id)
+        self.assertNotEqual(other_holder.id, first.id)
+
+    def test_the_printed_number_with_its_clabe_reaches_the_account_keyed_on_the_printed_number_alone(self):
+        first = record_account(self.db, self.run, self.kapital("194-98075-001-8"))
+        later = record_account(self.db, self.second_run(), self.kapital("194-98075-001-8", self.CLABE))
+        self.db.commit()
+        self.assertEqual(later.id, first.id)
+        self.assertEqual(first.metadata_["account_clabe"], self.CLABE)
+
+    def test_a_printed_name_replaces_an_address_line_saved_as_the_holder_and_the_address_stays_visible(self):
+        first = record_account(self.db, self.run, self.kapital(self.CLABE, holder="LOMAS DE EJEMPLO III SECCION, MIGUEL HIDALGO"))
+        later = record_account(self.db, self.second_run(), self.kapital(self.CLABE))
+        other = record_account(self.db, self.second_run(), self.kapital(self.CLABE, holder="OTRA EMPRESA SA DE CV"))
+        self.db.commit()
+        self.assertEqual({later.id, other.id}, {first.id})
+        # The name replaces the address; a second name does not replace the first (a conflict, recorded).
+        self.assertEqual(first.holder_name, "INGENIERIA APLICADA R2")
+        conflicts = first.metadata_["identity_conflicts"]
+        self.assertEqual([(c["stored"], c.get("replaced")) for c in conflicts],
+                         [("LOMAS DE EJEMPLO III SECCION, MIGUEL HIDALGO", "address_line"), ("INGENIERIA APLICADA R2", None)])
+
+    def test_a_number_failing_the_clabe_control_digit_is_no_alias(self):
+        self.assertNotEqual(self.kapital("194-98075-001-8", "128180000000238633").identity().key,
+                            self.kapital("128180000000238633").identity().key)
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

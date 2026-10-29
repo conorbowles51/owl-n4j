@@ -101,7 +101,10 @@ def matches_identifier(account, kind, value):
     allowed = {'iban': {'iban'}, 'clabe': {'clabe'}, 'account': {'account_number', 'clabe'}, 'account_number': {'account_number'}}.get(kind, set())
     # A printed statement's main account reference is not automatically a CLABE.
     original = account.iban if kind == 'iban' else account.identifier_as_printed if kind in ('account', 'account_number') else account.identifier_as_printed if kind == 'clabe' and re.fullmatch(r'\d{18}', compact(account.identifier_as_printed)) else None
-    return bool(original and compact(original) == token) or any(p['kind'] in allowed and compact(p['value']) == token for p in reviewed_identifiers(account))
+    # The CLABE kept beside a printed account number (accounts.CLABE_ALIAS) is still that account's CLABE.
+    alias = (account.metadata_ or {}).get('account_clabe') if kind in ('clabe', 'account') else None
+    return bool(original and compact(original) == token) or bool(alias and compact(alias) == token) \
+        or any(p['kind'] in allowed and compact(p['value']) == token for p in reviewed_identifiers(account))
 
 
 def save_identity(session, *, case_id, request, actor, entity_lookup=None):

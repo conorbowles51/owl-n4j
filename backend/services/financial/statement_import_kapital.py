@@ -109,6 +109,19 @@ def _client_misreads(contexts):
     return out
 
 
+# The account is the number the product heading prints before its CLABE ('SERVICIO EMPRESARIAL FX KAPITAL
+# 194-98075-001-8 CLABE 128180000000238632'), never the CLABE; the CLABE is kept as the account's alias
+# (Neil, 2026-10-25). Off: the CLABE stays the account reference, as before.
+PRINTED_NUMBER = _switch('LOUPE_FINANCIAL_KAPITAL_PRINTED_NUMBER')
+_HEADING_NUMBER = re.compile(r'(?<![\d-])(\d{3})\s*-\s*(\d{3,6})\s*-\s*(\d{3})\s*-\s*(\d)\s+CLABE\s*(\d{18})\b')
+
+
+def _printed_number(line, clabe):
+    """The account number printed right before ``clabe`` on its product heading, as printed ('194-98075-001-8')."""
+    m = next((m for m in _HEADING_NUMBER.finditer(line) if m[5] == clabe), None)
+    return '-'.join(m.groups()[:4]) if m else ''
+
+
 def kapital_catalog(sources, *, institution='Kapital', product=PRODUCT, layout=LAYOUT):
     pages={}
     for s in sources: pages.setdefault(s['page_number'],[]).append(s)
@@ -152,7 +165,7 @@ def kapital_catalog(sources, *, institution='Kapital', product=PRODUCT, layout=L
         headings=[]
         for s,r in located:
             if product.search(norm(text(r))) and (m:=re.search(r'\bCLABE\s*(\d{18})\b',norm(text(r)))):
-                headings.append((min(box(c)[1] for c in r['cells'] if box(c)),m[1],s,r))
+                headings.append((min(box(c)[1] for c in r['cells'] if box(c)),m[1],s,r,_printed_number(norm(text(r)),m[1])))
         headings.sort(key=lambda v:v[0])
         # A continued payment table can precede the next product on a page.
         if previous and previous[0]==context and previous[1]==page-1:
@@ -168,7 +181,7 @@ def kapital_catalog(sources, *, institution='Kapital', product=PRODUCT, layout=L
                 previous=(context,page,target)
                 handled.update((page,s['table_index']) for s in items)
         recognised = 0
-        for index,(top,clabe,_,_) in enumerate(headings):
+        for index,(top,clabe,_,_,printed_number) in enumerate(headings):
             bottom=headings[index+1][0] if index+1<len(headings) else float('inf')
             scoped=[(s,r) for s,r in located if top<=min(box(c)[1] for c in r['cells'] if box(c))<bottom]
             # The product's currency is the first Moneda line under its own heading; a later product on
@@ -188,7 +201,12 @@ def kapital_catalog(sources, *, institution='Kapital', product=PRODUCT, layout=L
             currency=next(iter(currencies))
             identity=dict(layout_id=layout,institution=institution,account_reference=clabe,currency=currency,
                 period_start=context[3],period_end=context[4])
-            group=dict(id=_digest(identity),**identity,account_type='checking',
+            group_id=_digest(identity)
+            if PRINTED_NUMBER and printed_number:
+                # The account is the printed account number; the CLABE beside it is kept as its alias. The
+                # statement's id stays the one its CLABE gave it, so a saved reading still finds its statement.
+                identity=dict(identity,account_reference=printed_number,account_clabe=clabe)
+            group=dict(id=group_id,**identity,account_type='checking',
                 holder=next(iter(holders[context])) if len(holders.get(context,set()))==1 else '',
                 statement_reference=context[0],customer_reference=context[1],currency_source='printed_account_section',
                 sources=[dict(page_number=page,table_index=s['table_index'],source_revision=s['source_revision']) for s in items],

@@ -41,6 +41,13 @@ class StatementOverlapTests(TestCase):
         self.assertEqual(overlap.summary_request(dict(account_reference_kind='credit_line'))['account_reference_kind'],
                          'credit_line')
 
+    def test_a_reading_with_the_printed_number_and_clabe_is_the_statement_saved_with_the_clabe(self):
+        saved = dict(institution='Kapital', account_number='128180000000238632', currency='MXN', holder='ING R2',
+                     account_type='checking', period_start='2026-06-01', period_end='2026-06-30')
+        read = {**saved, 'account_number': '194-98075-001-8', 'account_clabe': '128180000000238632'}
+        self.assertTrue(overlap.same_statement(overlap.scope(saved), overlap.scope(read)))
+        self.assertTrue(overlap.same_printed_period(overlap.scope(saved), overlap.scope(read)))
+
     def test_coverage_reuses_case_files_without_per_period_queries(self):
         request = dict(institution='Synthetic Bank', account_number='123456789',
             holder='Synthetic business', currency='USD', period_start='2023-01-01',

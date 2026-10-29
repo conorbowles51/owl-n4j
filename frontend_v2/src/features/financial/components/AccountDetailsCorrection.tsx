@@ -13,7 +13,11 @@ const statement = z.object({
   holder: z.string(),
   institution: z.string(),
 })
-const values = z.object({ holder: z.string(), institution: z.string() })
+const values = z.object({
+  holder: z.string(),
+  institution: z.string(),
+  account_number: z.string().optional(),
+})
 const historyEntry = z.object({
   id: z.string(),
   kind: z.string(),
@@ -33,6 +37,7 @@ const state = z.object({
   holder: z.string(),
   institution: z.string(),
   account_number: z.string(),
+  account_clabe: z.string().optional(),
   currency: z.string(),
   statements: z.array(statement),
   history: z.array(historyEntry),
@@ -75,6 +80,7 @@ export function AccountDetailsCorrection({
   const client = useQueryClient()
   const [holder, setHolder] = useState("")
   const [institution, setInstitution] = useState("")
+  const [number, setNumber] = useState("")
   const [reason, setReason] = useState("")
   const [proposal, setProposal] = useState<z.infer<typeof preview> | null>(null)
   const [notice, setNotice] = useState("")
@@ -96,6 +102,7 @@ export function AccountDetailsCorrection({
     expected_revision: query.data!.revision,
     holder: holder.trim() || null,
     institution: institution.trim() || null,
+    account_number: number.trim() || null,
     reason,
   })
   const review = useMutation({
@@ -128,6 +135,7 @@ export function AccountDetailsCorrection({
       setProposal(null)
       setHolder("")
       setInstitution("")
+      setNumber("")
       setReason("")
       setNotice(
         `Account corrected for ${count(result.statements.length, "statement", "statements")}. The earlier values remain in the account history.`
@@ -150,7 +158,7 @@ export function AccountDetailsCorrection({
       ),
     onSuccess: (result) => {
       client.setQueryData(key, result)
-      setNotice("Correction undone. The earlier holder and bank are back.")
+      setNotice("Correction undone. The earlier account details are back.")
       void client.invalidateQueries()
     },
   })
@@ -187,19 +195,21 @@ export function AccountDetailsCorrection({
   const ready =
     reason.trim() !== "" &&
     ((holder.trim() !== "" && holder.trim() !== data.holder) ||
-      (institution.trim() !== "" && institution.trim() !== data.institution))
+      (institution.trim() !== "" && institution.trim() !== data.institution) ||
+      (number.trim() !== "" && number.trim() !== data.account_number))
   return (
     <section
-      aria-label="Account holder and bank"
+      aria-label="Account holder, bank and number"
       className="space-y-2 rounded border p-3 text-sm"
     >
-      <h3 className="font-semibold">Account holder and bank</h3>
+      <h3 className="font-semibold">Account holder, bank and number</h3>
       <p>
         <span className="font-medium">
           {data.holder || "Holder not recorded"}
         </span>
         {data.institution ? ` · ${data.institution}` : ""}
-        {data.account_number ? ` · ${data.account_number}` : ""} ·{" "}
+        {data.account_number ? ` · ${data.account_number}` : ""}
+        {data.account_clabe ? ` · CLABE ${data.account_clabe}` : ""} ·{" "}
         {count(data.statements.length, "statement", "statements")}
       </p>
       <p className="text-muted-foreground">
@@ -229,6 +239,19 @@ export function AccountDetailsCorrection({
               placeholder={data.institution}
               onChange={(event) => {
                 setInstitution(event.target.value)
+                setProposal(null)
+              }}
+            />
+          </label>
+          <label className="flex flex-col gap-1 sm:col-span-2">
+            Account number as printed (not the CLABE; a CLABE saved as the
+            number is kept with the account)
+            <input
+              className="rounded border bg-background p-1"
+              value={number}
+              placeholder={data.account_number}
+              onChange={(event) => {
+                setNumber(event.target.value)
                 setProposal(null)
               }}
             />
@@ -265,6 +288,10 @@ export function AccountDetailsCorrection({
             {proposal.before.institution !== proposal.after.institution
               ? ` · ${proposal.before.institution || "No bank"} → ${proposal.after.institution}`
               : ""}
+            {proposal.after.account_number !== undefined &&
+            proposal.before.account_number !== proposal.after.account_number
+              ? ` · account ${proposal.before.account_number || "not recorded"} → ${proposal.after.account_number}`
+              : ""}
           </p>
           <p>
             {count(proposal.statements.length, "statement", "statements")} of
@@ -296,7 +323,12 @@ export function AccountDetailsCorrection({
         <div className="space-y-1">
           <p>
             Last corrected by {latest.origin ? `${latest.origin.model} for ${latest.origin.for?.name || "a person"}` : latest.actor_name}:{" "}
-            {latest.before.holder} → {latest.after.holder}. Reason: {latest.reason}
+            {latest.before.holder} → {latest.after.holder}
+            {latest.after.account_number !== undefined &&
+            latest.before.account_number !== latest.after.account_number
+              ? `, account ${latest.before.account_number} → ${latest.after.account_number}`
+              : ""}
+            . Reason: {latest.reason}
           </p>
           {latest.origin &&
             (latest.confirmed ? (
