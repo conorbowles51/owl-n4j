@@ -1560,7 +1560,8 @@ export function LedgerRowBrowser({
       )}
       </div>
       {naming && exportContext && (
-        <div className="order-first min-w-0 xl:order-none">
+        // Beside the table (xl) the panel sticks just below the sticky tools bar; above it, it scrolls with the page.
+        <div className="order-first min-w-0 xl:sticky xl:order-none" style={{ top: toolbarHeight + 8 }}>
           <PaymentNamingPanel
             key={exportContext.caseId}
             caseId={exportContext.caseId}

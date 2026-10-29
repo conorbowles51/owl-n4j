@@ -236,11 +236,11 @@ it("does not ask again about a payment a person already named or linked", () => 
   expect(needsName(payment("a", { direction: "credit", from_name: "", label_sources: { from_name: { source: "missing" } } }))).toBe(true)
 })
 
-it("sticks below the tools bar so its header and the payment stay visible when the table is scrolled", async () => {
+it("leaves room for the sticky tools bar above it when it sits beside the table", async () => {
   mount([payment("a")])
   const panel = await screen.findByRole("complementary", { name: "Name payments from the statement" })
-  expect(panel.style.top).toBe("248px")
-  expect(panel.style.maxHeight).toBe("calc(100vh - 256px)")
+  expect(panel.style.getPropertyValue("--naming-top")).toBe("248px")
+  expect(panel.className).toContain("xl:max-h-[calc(100vh-var(--naming-top)-8px)]")
 })
 
 it("shows a viewer the statement line and the queue with no name field, and never saves", async () => {

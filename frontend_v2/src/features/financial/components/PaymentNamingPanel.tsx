@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react"
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { fetchAPI } from "@/lib/api-client"
@@ -87,7 +87,7 @@ export function PaymentNamingPanel({
   onOpenDetails?: (row: LedgerTransaction) => void
   /** A viewer of the case: the statement line, the queue and the keys, without the name field. */
   readOnly?: boolean
-  /** Height in px of the sticky bar above the table, so the panel sticks below it rather than under it. */
+  /** Height in px of the sticky bar above the table; beside the table the panel's height leaves room for it. */
   stickyTop?: number
 }) {
   const client = useQueryClient()
@@ -228,8 +228,8 @@ export function PaymentNamingPanel({
       ref={panel}
       tabIndex={-1}
       aria-label={readOnly ? "Statement lines of payments without a name" : "Name payments from the statement"}
-      className="finance-panel sticky min-w-0 space-y-3 overflow-auto rounded-lg border p-4 outline-none"
-      style={{ top: stickyTop + 8, maxHeight: `calc(100vh - ${stickyTop + 16}px)` }}
+      className="finance-panel min-w-0 space-y-3 overflow-auto rounded-lg border p-4 outline-none xl:max-h-[calc(100vh-var(--naming-top)-8px)]"
+      style={{ "--naming-top": `${stickyTop + 8}px` } as CSSProperties}
       data-finance-tone="info"
       onKeyDown={keys}
     >
