@@ -1,12 +1,16 @@
 ## 29 October: Cellebrite rebuild planned (resume here for phone work)
 
-Head: `7cc14970` "docs: plan to rebuild Cellebrite phone extractions in Loupe", local on
-`integration/evidence-main-reunion`, not pushed (Neil: no push). Before it, `e4eb33f4` merged 260 commits
-from origin so the Mac matches the VM checkout (`68d95b20` at the time).
+Head: `a90ee878` "docs: research and measurements behind the Cellebrite plan", on top of `7cc14970`
+(the plan and six specs); local on `integration/evidence-main-reunion`, not pushed (Neil: no push). Before
+them, `e4eb33f4` merged 260 commits from origin so the Mac matches the VM checkout (`68d95b20` at the time).
 
 - **Plan:** `docs/cellebrite-rebuild-plan.md` (standing decisions, evidence, index) and specs
   `docs/cellebrite/01` to `06`. Where they differ in detail the spec governs; on a standing decision
   the plan governs. Nothing built yet.
+- **Behind the plan:** `docs/cellebrite/research/` (eight reports, a snapshot superseded by the plan where
+  they differ) and `docs/cellebrite/measurements/` (14-phone structure catalogue, v1 reconciliation and
+  durations, all measurement scripts with placeholders for paths; README maps phone labels P01-P14 to
+  A-C1a ... B-C3, 1P). Read the research README before re-researching anything.
 - **Next unit:** `06-build-order.md` row 1 (01-0.1 reference corpus manifest), then row 2 (counter),
   then row 3 (read-only server measurement batch, 06 section 5). Several mapping rows wait on row 3.
 - **Waiting on Neil (not blocking stage A):** OpenCelliD licence ruling (04, 06 row 44).
