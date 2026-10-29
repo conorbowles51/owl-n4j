@@ -1,26 +1,6 @@
 import { Disclosure } from "./Disclosure"
-import { z } from "zod"
+import type { BatchFileOverviewEntry } from "../lib/batch-file-overview"
 import { copyLine } from "../lib/statement-copies"
-
-export const batchFileOverview = z.array(
-  z.object({
-    file_id: z.string(),
-    filename: z.string(),
-    statements: z.number().int().nonnegative(),
-    copies: z.number().int().nonnegative(),
-    unfinished: z.number().int().nonnegative(),
-    saved: z.number().int().nonnegative(),
-    all_copies: z.boolean(),
-    retained: z.array(
-      z.object({
-        filename: z.string(),
-        evidence_file_id: z.string().nullish(),
-        copies: z.number().int().nonnegative(),
-      })
-    ),
-  })
-)
-export type BatchFileOverviewEntry = z.infer<typeof batchFileOverview>[number]
 
 const names = (entry: BatchFileOverviewEntry) =>
   entry.retained.map((retained) => retained.filename)

@@ -6,7 +6,7 @@ import { fetchAPI } from "@/lib/api-client"
 import { ReviewQueuePanel } from "./ReviewQueuePanel"
 import { useBatchReview } from "../lib/batch-review-context"
 import { importOutcome } from "../lib/review-queue"
-import { recordStatus } from "./ImportedRecordsPanel"
+import { recordStatus } from "../lib/record-status"
 
 vi.mock("@/lib/api-client", () => ({ fetchAPI: vi.fn() }))
 vi.mock("../hooks/use-financial-access", () => ({
@@ -133,12 +133,11 @@ const batchItem = (id: string) => ({
   problems: [{ message: "Check this row.", row_id: "7:0:17", page: 7 }],
 })
 
-let location = ""
+// The router's current search, rendered so a test reads what was committed.
 function Where() {
-  const current = useLocation()
-  location = current.search
-  return null
+  return <output data-testid="where">{useLocation().search}</output>
 }
+const where = () => screen.getByTestId("where").textContent ?? ""
 
 function mount(path: string, onOpenBatch = vi.fn()) {
   render(
@@ -210,7 +209,7 @@ it("opens the statement itself at its problem, and Next moves to the next one wi
   await waitFor(() =>
     expect(screen.getByLabelText("What needs fixing")).toHaveTextContent("The currency is not printed where Loupe looks")
   )
-  expect(location).toContain("queueItem=i2")
+  expect(where()).toContain("queueItem=i2")
   expect(await screen.findByText("Focused field: holder")).toBeVisible()
   // Next was computed from the list already on screen.
   expect(queueCalls()).toBe(before)
@@ -222,7 +221,7 @@ it("says plainly what a save did and moves on", async () => {
   expect(await screen.findByLabelText("Result of your last save")).toHaveTextContent(
     "Card statements.pdf (2020-10-08 to 2020-11-09): Imported: now in the ledger (12 payments)."
   )
-  await waitFor(() => expect(location).toContain("queueItem=i2"))
+  await waitFor(() => expect(where()).toContain("queueItem=i2"))
   fireEvent.click(await screen.findByRole("button", { name: "Import with held records" }))
   expect(await screen.findByLabelText("Result of your last save")).toHaveTextContent(
     "Saved but held: 2 records are missing a value and stay outside totals (10 payments are in the ledger). One more step:"

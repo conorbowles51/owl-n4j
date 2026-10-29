@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import type { QueueEntry } from "../lib/review-queue"
 import { BatchStatementImportChoice } from "./BatchStatementImportChoice"
-import { batchItemQuery } from "./FinancialBatchPanel"
+import { batchItemQuery } from "../lib/batch-item"
 
 export const LEFT_OUT_MESSAGE =
   "Left out of the import: not a statement. The PDF and its reading are kept and count under Left out by you. To put it back, open its batch and choose Restore to review."

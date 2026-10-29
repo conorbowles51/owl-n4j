@@ -14,6 +14,7 @@ import { ManualTransactionPosition } from "./ManualTransactionPosition"
 import { savedStatementPosition } from "../lib/saved-statement-position"
 import { sourceOrderAnchor } from "../lib/statement-review-draft"
 import { statementBlocker } from "../lib/statement-assessment"
+import { recordStatus } from "../lib/record-status"
 
 function recordPeriod(record: {
   period_start?: string | null
@@ -510,23 +511,6 @@ type RecordOutcome = {
 
 function recordLabel(record: ImportedRecord) {
   return `${record.filename} · page ${record.page_number ?? "unknown"} · ${record.fields.date || "date unreadable"}`
-}
-
-/** One plain status per record: is it in the ledger, and if not, what is still needed. */
-export function recordStatus(record: {
-  awaiting_reconciliation: boolean
-  can_enter_now: boolean
-  missing_fields: string[]
-  hold_reason?: string | null
-  repeat_of?: unknown
-}) {
-  if (!record.awaiting_reconciliation)
-    return `Not in the ledger: ${record.missing_fields.join(", ") || "a value"} missing. Open the record to fix it.`
-  if (record.can_enter_now)
-    return "Fixed and it checks out: not in the ledger yet. One click: Add to ledger."
-  if (record.repeat_of)
-    return "Saved but held: it looks like a repeat of another row."
-  return `Saved but held outside totals${record.hold_reason ? `: ${record.hold_reason}` : " until the statement reconciles."}`
 }
 
 function heldMessage(message: string | undefined, blockers: string[]) {

@@ -289,6 +289,10 @@ export function useReviewQueuePage(
       return result
     },
   })
+  // react-hooks/refs reads the closure handed to Object.assign as a render-time
+  // read of wantFresh. It is not: the ref is written only when refetchFresh is
+  // called (from a save or fix handler) and read only inside queryFn.
+  // eslint-disable-next-line react-hooks/refs
   return Object.assign(query, {
     /** Refetch, waiting for a queue built from the current data. */
     refetchFresh: () => {

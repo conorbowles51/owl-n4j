@@ -252,7 +252,7 @@ it("says when loading the statement periods ran past the time limit and offers t
 })
 
 it("offers one shared proposal for a missing detail, with its source", async () => {
-  const { commonProposal } = await import("./BulkStatementDetails")
+  const { commonProposal } = await import("../lib/common-proposal")
   const usd = { value: "USD", basis: "case_default", label: "the case's usual currency (9 of 9 saved statements)", confirmed: false }
   const statement = (currency: string, proposal?: typeof usd) => ({
     ...items[1],

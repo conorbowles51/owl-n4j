@@ -19,6 +19,7 @@ import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { statementMonth } from "../lib/statement-month"
 import { AccountTypeEditor } from "./AccountTypeEditor"
 import { requestFailure, useElapsedSeconds } from "../lib/request-wait"
+import { commonProposal } from "../lib/common-proposal"
 
 const fields = [
   ["holder", "Account holder"],
@@ -55,21 +56,6 @@ const statement = z.object({
 })
 type Statement = z.infer<typeof statement>
 
-/** The one value proposed for a field to every listed statement that lacks it, or null. */
-export function commonProposal(items: Statement[], field: string) {
-  const lacking = items.filter((item) => !item.values[field]?.trim())
-  if (!lacking.length) return null
-  const proposals = lacking.map((item) => item.proposals?.[field])
-  if (proposals.some((proposal) => !proposal)) return null
-  const values = new Set(proposals.map((proposal) => proposal!.value))
-  if (values.size !== 1) return null
-  const labels = new Set(proposals.map((proposal) => proposal!.label))
-  return {
-    value: proposals[0]!.value,
-    label: labels.size === 1 ? proposals[0]!.label : "the case's saved statements",
-    statements: lacking.length,
-  }
-}
 const listing = z.object({
   case_id: z.string(),
   items: z.array(statement),
