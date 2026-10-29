@@ -140,6 +140,10 @@ async def lifespan(app: FastAPI):
     from services.financial.payment_categories import run_category_model_forever
     category_task = asyncio.create_task(run_category_model_forever(), name="financial-payment-categories")
 
+    # One worker computes each case's account history once after start (services.financial.view_warmup).
+    from services.financial.view_warmup import warm_views_once
+    view_warmup_task = asyncio.create_task(warm_views_once(), name="financial-view-warmup")
+
     # The application loaded so far lives as long as the process: keep it out
     # of every later garbage-collector pass (services.process_memory).
     from services.process_memory import freeze_startup_objects
@@ -153,7 +157,7 @@ async def lifespan(app: FastAPI):
     # back when the process ends, and its durable record (leased batch,
     # pending recovery item, revisioned graph sweep) resumes on the next start.
     await process_shutdown.stop_background_tasks(
-        [recovery_task, identity_graph_task, financial_batches_task, category_task,
+        [recovery_task, identity_graph_task, financial_batches_task, category_task, view_warmup_task,
          cleanup_task, run_reaper_task, platform_update_task],
         timeout=process_shutdown.BACKGROUND_STOP_SECONDS,
     )

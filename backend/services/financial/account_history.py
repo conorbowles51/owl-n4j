@@ -31,7 +31,7 @@ def record_admission_snapshot(session, document, period):
 
 
 # Each statement's reading by the row versions it was computed from (see account_history).
-_readings = view_cache.VersionMemo('statement-readings', 20000)
+_readings = view_cache.VersionMemo('statement-readings', 20000, decode=lambda saved: None if saved is None else tuple(saved))
 
 
 def _statement_reading(session, document, period, current):
@@ -102,6 +102,7 @@ def account_history(session, *, case_id, account_id=None, account_ids=None, acco
                 tuple((t.id, versions['payment'].get(t.id)) for t in current[period.id, document.id]))
             if None not in (key[1], key[3]) and all(version is not None for _, version in key[4]):
                 keys[period.id, document.id] = key
+        _readings.bind(session)
         # One read each of what the statements not reused need (a deferred column read row by row is the same
         # value, only slower).
         missing = [(p, d) for p, d, _, _ in pairs if not _readings.has(keys.get((p.id, d.id)))]
@@ -136,4 +137,5 @@ def account_history(session, *, case_id, account_id=None, account_ids=None, acco
             assessment_current=bool(admission.get('assessment_current')), blockers=admission.get('blockers', []),
             transaction_count=admitted_count, undated_count=undated,
             activity=[{**entry, 'credit_minor':str(entry['credit_minor']), 'debit_minor':str(entry['debit_minor'])} for _, entry in sorted(activity.items())]))
+    if reuse: _readings.flush()
     return dict(case_id=str(case_id), groups=sorted(groups.values(), key=lambda g:(g['currency'],g['balance_kind'],g['label'],g['key'])), applied=False)

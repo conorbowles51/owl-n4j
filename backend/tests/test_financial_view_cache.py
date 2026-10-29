@@ -3,6 +3,7 @@
 Set FINANCIAL_VIEW_CACHE_TEST_DATABASE_URL to a local test PostgreSQL connection. No existing application
 tables are read or changed.
 """
+import json
 import os
 import threading
 import uuid
@@ -477,7 +478,7 @@ def test_a_row_version_memo_is_not_used_outside_a_view_snapshot(engine):
         db.execute(text('UPDATE payments SET amount = 50 WHERE case_id = :c'), dict(c=case))
         assert handler(case_id=case, db=db) == [dict(double=100)]
         db.rollback()
-    assert memo.stats == dict(hits=0, misses=0)
+    assert memo.stats == dict(hits=0, misses=0, saved_hits=0)
     assert call(engine, memo_view(counter, memo), case).body == b'[{"double":2}]'
 
 
@@ -572,3 +573,98 @@ def test_other_refusals_are_not_kept(engine):
         with pytest.raises(HTTPException):
             call(engine, handler, case)
     assert counter.calls == 4 and not view_cache._entries
+
+
+def saved_memo(name='saved', decode=lambda saved: saved):
+    return view_cache.VersionMemo(name, 100, decode=decode)
+
+
+def saved_view(counter, memo):
+    """memo_view, saving the memo's values the way account_history does (bind in the snapshot, flush after)."""
+    inner = memo_view(counter, memo).__wrapped__
+
+    @view_cache.cached_view('saved-' + memo.name)
+    def handler(case_id, db):
+        memo.bind(db)
+        try:
+            return inner(case_id=case_id, db=db)
+        finally:
+            memo.flush()
+    return handler
+
+
+@pytest.fixture
+def memo_dir(tmp_path, monkeypatch):
+    monkeypatch.setenv('FINANCIAL_VIEW_MEMO_DIR', str(tmp_path))
+    return tmp_path
+
+
+def test_saved_values_survive_a_restart_and_a_changed_row_still_recomputes(engine, memo_dir):
+    case, counter = uuid.uuid4(), Counter()
+    write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 1), (:c, 2)', c=case)
+    assert call(engine, saved_view(counter, saved_memo()), case).body == b'[{"double":2},{"double":4}]'
+    assert counter.calls == 2 and (memo_dir / 'saved.json').exists()
+    # A new process: empty memory, empty view cache. The saved values are used, nothing is computed.
+    view_cache.clear()
+    restarted = saved_memo()
+    assert call(engine, saved_view(counter, restarted), case).body == b'[{"double":2},{"double":4}]'
+    assert counter.calls == 2 and restarted.stats['saved_hits'] == 2
+    view_cache.clear()
+    write(engine, 'UPDATE payments SET amount = 10 WHERE case_id = :c AND amount = 2', c=case)
+    again = saved_memo()
+    assert call(engine, saved_view(counter, again), case).body == b'[{"double":2},{"double":20}]'
+    assert counter.calls == 3 and again.stats['saved_hits'] == 1
+
+
+def test_saved_values_are_not_used_by_other_code_or_another_database(engine, memo_dir, monkeypatch):
+    case, counter = uuid.uuid4(), Counter()
+    write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 1)', c=case)
+    call(engine, saved_view(counter, saved_memo()), case)
+    assert counter.calls == 1
+    view_cache.clear()
+    monkeypatch.setattr(view_cache, '_code_identity', 'another release')
+    call(engine, saved_view(counter, saved_memo()), case)
+    assert counter.calls == 2
+    view_cache.clear()
+    saved = json.loads((memo_dir / 'saved.json').read_text())
+    saved['scope']['database'] = 'another database'
+    (memo_dir / 'saved.json').write_text(json.dumps(saved))
+    call(engine, saved_view(counter, saved_memo()), case)
+    assert counter.calls == 3
+
+
+def test_nothing_is_saved_once_transaction_ids_could_have_wrapped(engine, memo_dir, monkeypatch):
+    case, counter = uuid.uuid4(), Counter()
+    write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 1)', c=case)
+    monkeypatch.setattr(view_cache, 'MEMO_XID_LIMIT', 1)
+    call(engine, saved_view(counter, saved_memo()), case)
+    assert not (memo_dir / 'saved.json').exists()
+
+
+def test_a_value_that_json_would_change_is_not_saved(engine, memo_dir):
+    case, counter = uuid.uuid4(), Counter()
+    write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 1)', c=case)
+    # The decoder gives a list back for the computed dict: not exactly the value, so it stays in memory only.
+    call(engine, saved_view(counter, saved_memo(decode=lambda saved: [saved])), case)
+    assert json.loads((memo_dir / 'saved.json').read_text())['entries'] == [] if (memo_dir / 'saved.json').exists() else True
+    view_cache.clear()
+    call(engine, saved_view(counter, saved_memo(decode=lambda saved: [saved])), case)
+    assert counter.calls == 2
+
+
+def test_an_unreadable_saved_file_is_computed_again(engine, memo_dir):
+    case, counter = uuid.uuid4(), Counter()
+    write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 3)', c=case)
+    (memo_dir / 'saved.json').write_text('{not json')
+    assert call(engine, saved_view(counter, saved_memo()), case).body == b'[{"double":6}]'
+    assert counter.calls == 1 and json.loads((memo_dir / 'saved.json').read_text())['entries']
+
+
+def test_exact_json_keeps_types():
+    same = view_cache._exact_json
+    as_tuple = lambda saved: tuple(saved)
+    assert same((dict(a=1), 'x', 2), as_tuple) == [dict(a=1), 'x', 2]
+    assert same((True,), lambda saved: tuple(saved)) == [True]
+    assert same((1.0,), as_tuple) is not view_cache._MISSING
+    assert same(({1: 'int key'},), as_tuple) is view_cache._MISSING
+    assert same((object(),), as_tuple) is view_cache._MISSING

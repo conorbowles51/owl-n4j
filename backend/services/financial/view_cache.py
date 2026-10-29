@@ -258,17 +258,30 @@ class VersionMemo:
     """A value computed from fixed row versions only (see row_versions), reused while those versions are current.
 
     Filled only inside a computing view's read-only snapshot, so no uncommitted or in-request change is ever
-    stored. Bounded; least recently used entries go first. Callers get a deep copy, never the stored value."""
+    stored. Bounded; least recently used entries go first. Callers get a deep copy, never the stored value.
 
-    def __init__(self, name, max_entries):
+    With ``decode`` (stored JSON -> value), values are also saved to disk and survive a restart, under the same
+    row-version keys, and only for the same database and the same code: the store names the database's system
+    identifier and a fingerprint of every backend source file and installed library (``code_identity``), so a
+    release or another database starts empty. A row's (id, xmin) names one version only while transaction ids
+    have not wrapped around, so values are saved and reused only while the database's transaction counter is
+    below 2**32. A value is saved only if it comes back from JSON exactly as computed. ``bind`` (inside the
+    view's snapshot) loads the saved values; ``flush`` writes the new ones."""
+
+    def __init__(self, name, max_entries, decode=None):
         self.name, self.max_entries = name, max_entries
         self._values: OrderedDict = OrderedDict()
         self._lock = threading.Lock()
-        self.stats = dict(hits=0, misses=0)
+        self.stats = dict(hits=0, misses=0, saved_hits=0)
+        self._decode = decode
+        self._scope = None
+        self._saved: dict = {}
+        self._saved_stamp = None
+        self._pending: dict = {}
 
     def has(self, key):
         with self._lock:
-            return key is not None and key in self._values
+            return key is not None and (key in self._values or (self._scope is not None and _memo_key(key) in self._saved))
 
     def get(self, key, compute):
         from copy import deepcopy
@@ -278,18 +291,167 @@ class VersionMemo:
                 self._values.move_to_end(key)
                 self.stats['hits'] += 1
                 return deepcopy(found)
+            if self._scope is not None:
+                saved = self._saved.get(_memo_key(key), _MISSING)
+                if saved is not _MISSING:
+                    found = self._decode(deepcopy(saved))
+                    self._remember(key, found)
+                    self.stats['saved_hits'] += 1
+                    return deepcopy(found)
             self.stats['misses'] += 1
         value = compute()
         with self._lock:
-            self._values[key] = deepcopy(value)
-            self._values.move_to_end(key)
-            while len(self._values) > self.max_entries:
-                self._values.popitem(last=False)
+            self._remember(key, deepcopy(value))
+            if self._scope is not None:
+                encoded = _exact_json(value, self._decode)
+                if encoded is not _MISSING:
+                    self._pending[_memo_key(key)] = encoded
         return value
+
+    def _remember(self, key, value):
+        self._values[key] = value
+        self._values.move_to_end(key)
+        while len(self._values) > self.max_entries:
+            self._values.popitem(last=False)
+
+    def bind(self, session):
+        """Inside a computing view's snapshot: use the values saved for this database and this code, if any."""
+        scope = None
+        directory = _memo_dir()
+        if self._decode is not None and directory is not None and in_snapshot():
+            try:
+                database, xmax = session.execute(text('SELECT (SELECT system_identifier::text FROM pg_control_system()), '
+                    'pg_snapshot_xmax(pg_current_snapshot())::text')).one()
+                if int(xmax) < MEMO_XID_LIMIT:
+                    scope = dict(format=1, memo=self.name, database=database, code=code_identity())
+            except Exception:
+                logger.warning('Saved %s values unavailable; computing in memory only', self.name, exc_info=True)
+        with self._lock:
+            self._scope = scope
+            if scope is None:
+                self._pending.clear()
+                return
+            try:
+                path = directory / (self.name + '.json')
+                stat = path.stat()
+                stamp = (stat.st_mtime_ns, stat.st_size, json.dumps(scope, sort_keys=True))
+                if stamp != self._saved_stamp:
+                    document = json.loads(path.read_text(encoding='utf-8'))
+                    self._saved = dict(document['entries']) if document.get('scope') == scope else {}
+                    self._saved_stamp = stamp
+            except FileNotFoundError:
+                self._saved, self._saved_stamp = {}, None
+            except Exception:
+                logger.warning('Saved %s values unreadable; computing them again', self.name, exc_info=True)
+                self._saved, self._saved_stamp = {}, None
+
+    def flush(self):
+        """Save the values computed since ``bind`` (merged with what other processes saved). Never raises."""
+        import fcntl
+        import os
+        with self._lock:
+            scope, pending = self._scope, dict(self._pending)
+            self._pending.clear()
+        directory = _memo_dir()
+        if scope is None or not pending or directory is None:
+            return
+        try:
+            directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+            path = directory / (self.name + '.json')
+            with open(directory / (self.name + '.lock'), 'a') as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX)
+                entries = {}
+                try:
+                    document = json.loads(path.read_text(encoding='utf-8'))
+                    if document.get('scope') == scope:
+                        entries = dict(document['entries'])
+                except FileNotFoundError:
+                    pass
+                except Exception:
+                    logger.warning('Saved %s values unreadable; replacing them', self.name, exc_info=True)
+                for key, value in pending.items():
+                    entries.pop(key, None)
+                    entries[key] = value
+                kept = list(entries.items())[-self.max_entries:]
+                temporary = path.with_name(path.name + '.%d.tmp' % os.getpid())
+                descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                with os.fdopen(descriptor, 'w', encoding='utf-8') as out:
+                    json.dump(dict(scope=scope, entries=kept), out, ensure_ascii=False, separators=(',', ':'))
+                os.replace(temporary, path)
+                stat = path.stat()
+            with self._lock:
+                if self._scope == scope:
+                    self._saved = dict(kept)
+                    self._saved_stamp = (stat.st_mtime_ns, stat.st_size, json.dumps(scope, sort_keys=True))
+        except Exception:
+            logger.warning('Could not save %s values; they stay in memory only', self.name, exc_info=True)
 
     def clear(self):
         with self._lock:
             self._values.clear()
+            self._saved, self._saved_stamp, self._scope = {}, None, None
+            self._pending.clear()
+
+
+# Below this many transactions a row version's xmin is unique in the database's life (no wraparound yet).
+MEMO_XID_LIMIT = 2 ** 32
+_code_identity = None
+
+
+def _memo_dir():
+    """Where values survive a restart: FINANCIAL_VIEW_MEMO_DIR, else the user's cache; empty turns it off."""
+    import os
+    from pathlib import Path
+    configured = os.environ.get('FINANCIAL_VIEW_MEMO_DIR')
+    if configured is not None:
+        return Path(configured) if configured else None
+    return Path.home() / '.cache' / 'loupe-financial-view-memo'
+
+
+def code_identity():
+    """sha256 over every backend source file (tests aside), the Python version and every installed library."""
+    global _code_identity
+    if _code_identity is None:
+        import hashlib
+        import os
+        import sys
+        from importlib import metadata
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[2]
+        digest = hashlib.sha256(sys.version.encode())
+        for line in sorted(f"{dist.metadata['Name']}=={dist.version}" for dist in metadata.distributions()):
+            digest.update(line.encode() + b'\n')
+        files = []
+        for folder, folders, names in os.walk(root):
+            folders[:] = [name for name in folders if not name.startswith('.') and name not in ('__pycache__', 'tests', 'node_modules', 'venv', 'logs')]
+            files.extend(Path(folder) / name for name in names if name.endswith('.py'))
+        for path in sorted(files, key=lambda path: path.relative_to(root).as_posix()):
+            digest.update(path.relative_to(root).as_posix().encode() + b'\0' + hashlib.sha256(path.read_bytes()).digest())
+        _code_identity = digest.hexdigest()
+    return _code_identity
+
+
+def _memo_key(key):
+    return json.dumps(key, default=str, ensure_ascii=False, separators=(',', ':'))
+
+
+def _exact_json(value, decode):
+    """The JSON form of ``value`` if decoding it gives back exactly ``value`` (types included), else _MISSING."""
+    try:
+        encoded = json.loads(json.dumps(value, ensure_ascii=False, allow_nan=False))
+        return encoded if _same(decode(json.loads(json.dumps(encoded))), value) else _MISSING
+    except (TypeError, ValueError):
+        return _MISSING
+
+
+def _same(left, right):
+    if type(left) is not type(right):
+        return False
+    if isinstance(left, dict):
+        return list(left) == list(right) and all(_same(left[key], right[key]) for key in left)
+    if isinstance(left, (list, tuple)):
+        return len(left) == len(right) and all(_same(a, b) for a, b in zip(left, right))
+    return left == right
 
 
 _MISSING = object()
