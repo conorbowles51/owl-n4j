@@ -786,7 +786,7 @@ def refresh_descriptions(*, session_factory, case_id, document_id):
         # Lock and reload the payments before judging them: a label saved meanwhile (payment_labels locks only the
         # payment rows) is either committed and copied here, or waits for this transaction.
         rows = list(session.scalars(select(FinancialTransaction).where(
-            FinancialTransaction.source_document_id == document.id).with_for_update()
+            FinancialTransaction.source_document_id == document.id).order_by(FinancialTransaction.id).with_for_update()
             .execution_options(populate_existing=True)))
         verdict = assess_descriptions(session, document)
         if verdict['outcome'] != 'describe':
