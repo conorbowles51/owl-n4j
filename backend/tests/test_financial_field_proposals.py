@@ -178,8 +178,9 @@ class DetailTests(TestCase):
         self.assertNotIn('holder', fp.propose(values(holder='', currency='MXN'), knowledge(twice)))
 
     def test_renamed_account_matched_on_a_masked_number_proposes_no_holder(self):
+        # Six digits shown, so the number alone proves the account; only the masked-number guard refuses.
         renamed = account(*MONTHS, saved(holder='NEW NAME SA DE CV', start='2021-12-01', end='2021-12-31'))
-        result = fp.propose(values(holder='', currency='MXN', account_number='****5678'), knowledge(renamed))
+        result = fp.propose(values(holder='', currency='MXN', account_number='****345678'), knowledge(renamed))
         self.assertNotIn('holder', result)
 
     def test_statement_holder_conflicting_with_the_account_matches_nothing(self):
