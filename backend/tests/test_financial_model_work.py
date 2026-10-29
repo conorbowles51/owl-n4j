@@ -206,6 +206,9 @@ class ModelLabelTests(unittest.TestCase):
                          ('ACME LTD', 'model_reading', 2))
         _, view = self.source(person_row)
         self.assertEqual(view['to_name' if person_row.direction == 'debit' else 'from_name'], 'Person Name')
+        # The same reading again: the payment already carries it, so nothing is recorded and it is reported.
+        results, keep = load(self.f.db, lines[:1], apply=True)
+        self.assertEqual(([r['status'] for r in results], keep), (['unchanged'], []))
 
     def test_a_model_reads_names_only(self):
         for changes in (dict(category='Travel'), dict(counterparty_name='')):
@@ -357,6 +360,58 @@ class LegacyMigrationTests(unittest.TestCase):
         again = migrate(self.f.db, case_ids=[self.f.case.id], apply=True)
         self.assertEqual((again['records'], again['statement_calls']), ({}, {}))
         self.assertEqual(before, self.snapshot())
+
+    def test_a_sealed_original_keeps_its_bytes_and_its_origin_is_stored_beside_it(self):
+        from postgres.models.financial import FinancialSourceDocument
+        from services.financial.model_work_migration import SEALED_KEY, migrate, remaining
+        from services.financial.pdf_candidates import _digest
+        document = self.f.db.get(FinancialSourceDocument, self.document_id)
+        metadata = dict(document.metadata_ or {})
+        original = dict(metadata.get('statement_import_original') or {})
+        original['saved_review'] = dict(saved_by=self.legacy.name, saved_at='2026-10-25T10:00:00+00:00')
+        metadata['statement_import_original'] = original
+        metadata['statement_import_original_sha256'] = _digest(original)
+        metadata['account_refiles'] = [dict(by=self.legacy.name, at='2026-10-25T11:00:00+00:00')]
+        document.metadata_ = metadata
+        self.f.db.commit()
+        result = migrate(self.f.db, case_ids=[self.f.case.id], apply=True)
+        self.assertEqual(result['actors']['source_document.sealed'], 1)
+        self.f.db.expire_all()
+        stored = self.f.db.get(FinancialSourceDocument, self.document_id).metadata_
+        # The sealed original is byte for byte what was recorded, and its digest still verifies.
+        self.assertEqual(stored['statement_import_original'], original)
+        self.assertEqual(_digest(stored['statement_import_original']), stored['statement_import_original_sha256'])
+        note, = stored[SEALED_KEY]
+        self.assertEqual((note['path'], note['name']), (['statement_import_original', 'saved_review', 'saved_by'],
+                                                        f'Claude (for {self.f.user.name})'))
+        self.assertEqual(note['origin']['recorded_as'], self.legacy.name)
+        # An unsealed record moves to the origin as usual.
+        self.assertEqual(stored['account_refiles'][0]['by'], f'Claude (for {self.f.user.name})')
+        self.assertEqual(remaining(self.f.db)['financial_source_documents.metadata'], 0) \
+            if self.f.db.bind.dialect.name == 'postgresql' else None
+        again = migrate(self.f.db, case_ids=[self.f.case.id], apply=True)
+        self.assertEqual(again['records'], {})
+
+    def test_a_statement_with_a_persons_payment_first_still_gets_its_call(self):
+        from services.financial import judgements
+        from services.financial.model_work_migration import migrate
+        first = self.rows[0]
+        provenance = dict(first.provenance)
+        provenance['confirmed_by'] = dict(name=self.f.user.name, email=self.f.user.email, user_id=str(self.f.user.id))
+        first.provenance = provenance
+        self.f.db.commit()
+        result = migrate(self.f.db, case_ids=[self.f.case.id], apply=True)
+        self.assertEqual(result['statement_calls'], {'recorded': 1})
+        work = judgements.statement_model_work(self.f.db, self.f.case.id, self.document_id)
+        self.assertEqual(work['status'], 'not_confirmed')
+
+    def test_a_first_name_names_the_account_only_when_one_account_has_it(self):
+        from services.financial.model_work_migration import _Run
+        run = _Run(now='x', users={'1': 'Neil Byrne', '2': 'Neil Other'}, people={'Neil Byrne': '1', 'Neil Other': '2'})
+        self.assertEqual(run.person('claude (for Neil)', None), ('Neil', None))
+        self.assertEqual(run.person('claude (for Neil Byrne)', None), ('Neil Byrne', '1'))
+        run = _Run(now='x', users={'1': 'Neil Byrne'}, people={'Neil Byrne': '1'})
+        self.assertEqual(run.person('claude (for Neil)', None), ('Neil Byrne', '1'))
 
     def test_dry_run_writes_nothing(self):
         from services.financial.model_work_migration import migrate

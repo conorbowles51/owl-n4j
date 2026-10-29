@@ -91,6 +91,7 @@ def update_payment_labels(session, *, case_id, request, actor, commit=True, reas
             changes['category'] = ensure_category(session, name=changes['category'], actor=actor)['name']
         if 'counterparty_link' in changes:
             changes['counterparty_link'] = resolve_link(session, case_id=case_id, link=request.counterparty_link) if request.counterparty_link else None
+        changed = 0
         for row in rows:
             metadata = dict(row.metadata_ or {})
             current = dict(metadata.get('investigation_labels', {}))
@@ -99,6 +100,7 @@ def update_payment_labels(session, *, case_id, request, actor, commit=True, reas
                 row_changes['from_name' if row.direction == 'credit' else 'to_name'] = row_changes.pop('counterparty_name')
             if all(key in current and current[key] == value for key, value in row_changes.items()):
                 continue
+            changed += 1
             effective = payment_label_view(row, row.account)
             if model:
                 # A person's entry or confirmation outranks a model reading: never replace it, or a link, with one.
@@ -135,7 +137,7 @@ def update_payment_labels(session, *, case_id, request, actor, commit=True, reas
             session.commit()
         else:
             session.flush()
-        return dict(case_id=str(case_id), updated=len(rows))
+        return dict(case_id=str(case_id), updated=len(rows), changed=changed)
     except Exception:
         session.rollback()
         raise

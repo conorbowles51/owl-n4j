@@ -11,6 +11,10 @@ legacy name (the only place a name is read; services.financial.model_work.LEGACY
   saved, so a person can confirm the statement in one action. A statement whose hand entry a person already
   confirmed ("Looks right") carries that confirmation, with its person and time.
 
+A value sealed by a digest beside it (the statement's original reading and request, ``<key>_sha256``) is never
+rewritten: it keeps the legacy name as recorded, and the origin of each model actor inside it is stored beside it
+under ``model_work_sealed`` (path, model name, origin).
+
 Every record goes through the ORM, so the transaction audit trigger records each changed payment. The financial
 audit log itself is hash-chained and immutable: its events keep the legacy name as the original record.
 Running it again changes nothing (idempotent): a migrated record no longer carries the legacy name.
@@ -45,6 +49,30 @@ NAME_KEYS = ('name', 'actor_name')
 # Keys whose value is the actor's name as a bare string (judgement evidence, account refiles).
 STRING_ACTOR_KEYS = ('saved_by', 'by')
 TIME_KEYS = ('at', 'saved_at', 'created_at', 'decided_at', 'withdrawn_at')
+# Beside a sealed value: where a model actor sits inside it, with the origin (the sealed value is not rewritten).
+SEALED_KEY = 'model_work_sealed'
+
+
+def sealed_keys(value: dict) -> set:
+    """Keys whose value a digest beside it seals (``<key>_sha256`` or ``<key>_full_sha256``): the statement's
+    original reading, request, controls, catalogue, details review. Rewriting one would break its digest."""
+    return {key for key in value if f'{key}_sha256' in value or f'{key}_full_sha256' in value}
+
+
+def _legacy_actors(value: Any, path: tuple = (), at: Any = None):
+    """(path, legacy name, user id, time) for every legacy model actor inside ``value``."""
+    if isinstance(value, list):
+        for index, item in enumerate(value):
+            yield from _legacy_actors(item, path + (index,), at)
+    elif isinstance(value, dict):
+        when = next((value[k] for k in TIME_KEYS if isinstance(value.get(k), str) and value.get(k)), at)
+        own = isinstance(value.get('origin'), dict)
+        for key in NAME_KEYS + STRING_ACTOR_KEYS:
+            if not own and legacy_person(value.get(key)):
+                yield path + (key,), value[key], value.get('user_id') or value.get('actor_id'), when
+                break
+        for key, item in value.items():
+            yield from _legacy_actors(item, path + (key,), when)
 
 
 def legacy_person(name: Any) -> Optional[str]:
@@ -70,8 +98,9 @@ class _Run:
             return self.users[uid], uid
         if short in self.people:
             return short, self.people[short]
-        full = next((name for name in self.people if name.split()[0].lower() == short.lower()), None)
-        return (full, self.people[full]) if full else (short, None)
+        # A first name alone ("claude (for Neil)") names the account only when exactly one account has it.
+        matches = [name for name in self.people if name.split() and name.split()[0].lower() == short.lower()]
+        return (matches[0], self.people[matches[0]]) if len(matches) == 1 else (short, None)
 
     def origin(self, legacy: str, *, user_id: Any = None, at: Any = None, citation: Optional[dict] = None) -> dict:
         person, uid = self.person(legacy, user_id)
@@ -91,7 +120,22 @@ class _Run:
         if not isinstance(value, dict):
             return value
         when = next((value[k] for k in TIME_KEYS if isinstance(value.get(k), str) and value.get(k)), at)
-        out = {key: self.walk(item, kind, citation=citation, at=when) for key, item in value.items()}
+        sealed = sealed_keys(value)
+        out = {key: item if key in sealed else self.walk(item, kind, citation=citation, at=when)
+               for key, item in value.items()}
+        # A sealed value keeps the legacy name as recorded; its origin is stored beside it, once per actor.
+        notes = list(out.get(SEALED_KEY) or [])
+        noted = {tuple(note.get('path') or ()) for note in notes if isinstance(note, dict)}
+        for key in sorted(sealed):
+            for path, legacy, user_id, actor_at in _legacy_actors(value[key], (key,), when):
+                if tuple(path) in noted:
+                    continue
+                origin = self.origin(legacy, user_id=user_id, at=actor_at, citation=citation)
+                origin['sealed'] = f'{key} is sealed by its digest; it keeps the name as recorded.'
+                notes.append({'path': list(path), 'name': model_name(origin), 'origin': origin})
+                self.changed[kind + '.sealed'] += 1
+        if notes:
+            out[SEALED_KEY] = notes
         for key in NAME_KEYS:
             if legacy_person(out.get(key)) and not isinstance(out.get('origin'), dict):
                 legacy = out[key]
@@ -262,6 +306,10 @@ def record_statement_calls(session, document_ids) -> dict:
         counts['recorded'] += 1
         confirmed = session.scalar(select(J).where(J.source_document_id == document.id, J.rule_id == 'agent.page_entry',
                                                    J.status == 'confirmed').order_by(J.resolved_at).limit(1))
+        # Only a person's confirmation carries: a resolver named as a model (legacy or current) does not.
+        if confirmed is not None and (legacy_person(confirmed.resolved_by) or _model_named(confirmed.resolved_by)):
+            counts['confirmation_not_by_person'] += 1
+            confirmed = None
         if confirmed is not None:
             row.status, row.resolved_by, row.resolved_by_email = 'confirmed', confirmed.resolved_by, confirmed.resolved_by_email
             row.resolved_at = confirmed.resolved_at
@@ -270,6 +318,11 @@ def record_statement_calls(session, document_ids) -> dict:
             counts['carried_confirmation'] += 1
     session.flush()
     return dict(counts)
+
+
+def _model_named(name: Any) -> bool:
+    """A name the model origin gives its actor ("Claude (for <person>)")."""
+    return isinstance(name, str) and bool(_FOR.match(name))
 
 
 def remaining(session) -> dict:
@@ -309,8 +362,14 @@ def _has_legacy_name(value) -> bool:
         return any(_has_legacy_name(v) for v in value)
     if isinstance(value, dict):
         has_origin = isinstance(value.get('origin'), dict)
+        noted = {tuple(note.get('path') or ()) for note in value.get(SEALED_KEY) or [] if isinstance(note, dict)}
+        for key in sealed_keys(value):
+            # A sealed value keeps the recorded name; it counts until its origin is stored beside it.
+            if any(tuple(path) not in noted for path, *_ in _legacy_actors(value[key], (key,))):
+                return True
         return any(_has_legacy_name(v) for k, v in value.items()
-                   if k != 'origin' and not (has_origin and k in NAME_KEYS + STRING_ACTOR_KEYS))
+                   if k not in ('origin', SEALED_KEY) and k not in sealed_keys(value)
+                   and not (has_origin and k in NAME_KEYS + STRING_ACTOR_KEYS))
     return False
 
 

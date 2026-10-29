@@ -7,7 +7,8 @@ A line: {"case": <uuid>, "payment_id": <uuid>, "value": <name>, "page": <n>, "fi
 
 Each line goes through the payment label path (services.financial.payment_labels.update_payment_labels) with a
 model actor, so a person's name or link is never replaced (the line is refused and reported), and the label
-history keeps the reading. Lines that were saved are removed from the file; refused or broken lines stay in it
+history keeps the reading. Lines that were saved, or name a payment that already carries that name (reported
+as unchanged), are removed from the file; refused or broken lines stay in it
 with nothing changed, and the report says why.
 
     python -m services.financial.model_reads <file.jsonl> [--apply]
@@ -51,15 +52,16 @@ def load_model_reads(session, lines, *, apply=False):
             request = PaymentLabelsRequest(transactions=[dict(id=payment_id, version=version)],
                                            counterparty_name=str(item['value']))
             if apply:
-                update_payment_labels(session, case_id=case_id, request=request, actor=actor,
-                                      reason=item.get('why') or None)
+                outcome = update_payment_labels(session, case_id=case_id, request=request, actor=actor,
+                                                reason=item.get('why') or None)
             else:
                 # Same path, nothing kept: the precedence checks run and the session is rolled back.
-                update_payment_labels(session, case_id=case_id, request=request, actor=actor,
-                                      reason=item.get('why') or None, commit=False)
+                outcome = update_payment_labels(session, case_id=case_id, request=request, actor=actor,
+                                                reason=item.get('why') or None, commit=False)
                 session.rollback()
-            results.append(dict(line=number, payment_id=str(payment_id), value=item['value'],
-                                status='saved' if apply else 'would_save'))
+            # The payment already carries this name: nothing is recorded, and the report says so.
+            status = ('saved' if apply else 'would_save') if outcome.get('changed') else 'unchanged'
+            results.append(dict(line=number, payment_id=str(payment_id), value=item['value'], status=status))
             if not apply:
                 keep.append(raw)
         except (PaymentLabelsError, ModelWorkError, ValueError, TypeError) as exc:

@@ -455,17 +455,21 @@ def detect(document, period, transactions, *, file=None):
     # Saved to the case by a model for a person (services.financial.model_work): one call on the statement, open
     # until a person confirms the statement. Read from the stored origin, never from the saver's name.
     from services.financial.model_work import origin_of
-    saver = ((transactions[0].provenance or {}).get('confirmed_by') or {}) if transactions else {}
+    # Any payment the model saved counts (a statement saved in parts may have a person's payment first).
+    savers = [((row.provenance or {}).get('confirmed_by') or {}) for row in transactions]
+    saver = next((one for one in savers if origin_of(one)), {})
     origin = origin_of(saver)
     if origin:
         model = origin.get('model') or 'A model'
         person = (origin.get('for') or {}).get('name') or 'a person'
         found.append(dict(subject_type=period_subject[0], subject_id=period_subject[1], rule_id='model.statement_save',
-                          summary=f"{model} saved this statement's {len(transactions)} payments to the case for {person}"
+                          summary=f"{model} saved {sum(1 for one in savers if origin_of(one))} of this statement's "
+                                  f"{len(transactions)} payments to the case for {person}"
                                   f" on {str(origin.get('at') or '')[:10]}. No person has confirmed them against the "
                                   "statement yet.",
                           target_key='', strength='inferred', origin='agent',
-                          evidence=dict(origin=origin, saved_by=saver.get('name'), rows=len(transactions))))
+                          evidence=dict(origin=origin, saved_by=saver.get('name'), rows=len(transactions),
+                                        model_rows=sum(1 for one in savers if origin_of(one)))))
     return found
 
 
