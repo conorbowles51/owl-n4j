@@ -98,7 +98,7 @@ recorded cause of "Comms Center showing one call where the Timeline shows many" 
 
 ## 2. Measurements this spec is sized against
 
-All figures from `server_catalog.jsonl` (14 server phones, counts of every model, nested included) unless
+All figures from `measurements/catalogue-14-phones.json` (14 server phones, counts of every model, nested included) unless
 marked v1-report (top-level counts from `owl_ingest_report.json`) or local (the C3, C9, C8 structural
 stats in `c3.json`, `c9.json`, `c8.json`).
 
@@ -1475,7 +1475,7 @@ case-scoped endpoint (11.4).
 ## 16. v1 to Loupe screen mapping
 
 Source: the v1 frontend on `origin/main`, `frontend/src/components/cellebrite/**` (28,660 lines), read
-through a verified copy (the scratchpad copy of `CellebriteView.jsx`, `CellebriteCommsCenter.jsx` and
+through a verified copy (the `origin/main` copy of `CellebriteView.jsx`, `CellebriteCommsCenter.jsx` and
 `utils/cellebritePdfExport.js` are byte-identical to `git show origin/main:`). All paths in this section
 are relative to `origin/main`. v1 has 11 tabs (`frontend/src/components/cellebrite/CellebriteView.jsx:26-51`);
 the default is Overview (`:63`).

@@ -19,6 +19,12 @@ specification is corrected.
 | [05 Investigative approaches](cellebrite/05-investigative-approaches.md) | All thirteen approaches with method, measurement gate and tests; closing the gaps with other tools | 12, 13 |
 | [06 Build order](cellebrite/06-build-order.md) | Every unit in one sequence with dependencies, gates, the server measurement batch, cross-cutting fixes, removal of old code, risks | 7 |
 
+Behind them: [eight research reports](cellebrite/research/README.md) (v1 code, v1 history, sample
+structure, formats and market, Loupe landing zone, v1 screens and Alex's feedback, competitor features,
+Loupe's case-wide screens), a snapshot that the plan and specifications supersede where they differ; and
+[structure-only measurements](cellebrite/measurements/README.md) (the 14-phone catalogue, v1's per-phone
+reconciliation and durations, and every measurement script with paths replaced by placeholders).
+
 Settled while the specifications were written (2026-10-29): the device zone comes only from the
 device's own setting in the report or a recorded decision, and the examiner's selected zone is shown as
 the examiner's setting (01 section 9.3, 02 section 4.2); "between two people" means one-to-one threads

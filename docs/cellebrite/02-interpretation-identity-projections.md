@@ -123,7 +123,7 @@ the dedicated phone worker of plan 6.1.
 
 ## 2. Measurements this file rests on
 
-All from structure only. "Catalogue" is the union of `server_catalog.jsonl` (14 phones) and `cat_c3.json`,
+All from structure only. "Catalogue" is the union of `measurements/catalogue-14-phones.json` (14 phones) and `cat_c3.json`,
 `cat_c9.json`, `cat_c8.json`, aggregated for this file. "Stream" is a streamed iterparse of the local
 sample taken for this file.
 
@@ -131,7 +131,7 @@ sample taken for this file.
 |---|---|---|
 | Report files, record types, total records | 17 files, 62 types, 3,405,526 records (nested included) | catalogue |
 | Distinct (type, field, kind) | 470; as (type, field, kind, value type) 471, because one field has two value types | catalogue |
-| Field kinds present in the catalogue | `field` 3,300 rows and `multiField` 122 rows across files; no `modelField`, `multiModelField`, `nodeField` or `dataField` rows, because the catalogue script records a combination only when a `<value>` is directly inside it (`catalog.py` in the scratchpad, lines 13-20) | catalogue script |
+| Field kinds present in the catalogue | `field` 3,300 rows and `multiField` 122 rows across files; no `modelField`, `multiModelField`, `nodeField` or `dataField` rows, because the catalogue script records a combination only when a `<value>` is directly inside it (`measurements/scripts/catalog.py`, lines 13-20) | catalogue script |
 | Value types | 65: 9 basic (String, TimeStamp, TimeSpan, Guid, Boolean, Int32, Int64, Double, UInt32) and 56 named sets | catalogue |
 | Named sets with values recorded | 55 sets, 210 values. The catalogue's 57 "enums" include `Guid` (61 identifiers) and `UInt32` (0, 1), which are basic types, and exclude `DecodingSourceOptions`, which `catalog.py` skips | catalogue, `catalog.py` line 17 |
 | `DecodingSourceOptions` (field `UserMapping`) values | `Decoding` only: C3 11,737, C9 5,667, C8 39,865 | stream |
@@ -292,10 +292,10 @@ global (the role check reuses the existing admin dependency used by `routers/adm
 
 The seed is a derived, structure-only file committed to the repo:
 `backend/services/phone/data/registry_seed_2026-10-29.json`. It is produced once by
-`backend/scripts/phone_registry_seed_build.py` from `server_catalog.jsonl` and `cat_c3.json`, `cat_c9.json`,
+`backend/scripts/phone_registry_seed_build.py` from `measurements/catalogue-14-phones.json` and `cat_c3.json`, `cat_c9.json`,
 `cat_c8.json`, and contains no path, no per-phone breakdown and no value of a basic type. Steps:
 
-1. Read the 17 documents (14 lines of `server_catalog.jsonl`, 3 local files). The 3 local files are kept as
+1. Read the 17 documents (14 lines of `measurements/catalogue-14-phones.json`, 3 local files). The 3 local files are kept as
    separate reports, not deduplicated against their server copies, because they are different exports
    (local C8 is report version 8.5 with 250 combinations; its server counterpart has 221).
 2. Types: for each `model_types` entry add `seed_record_count` and 1 to `seed_report_count`.

@@ -43,7 +43,7 @@ set), 6 (Postgres is the record), 7 (flag, don't refuse) and 8 (evidence stays i
 
 ### 1.1 Phone labels
 
-The 14 server phone reports are in `server_catalog.jsonl` order. The C labels are the exhibit labels in
+The 14 server phone reports are in `measurements/catalogue-14-phones.json` order. The C labels are the exhibit labels in
 the report names; they repeat across cases, so this file uses P01 to P14.
 
 | Id | Case | Exhibit label | Local copy | Model elements (all levels) |
@@ -74,10 +74,10 @@ All counts come from these, run read-only and structure-only (no content printed
 
 | Name | What | Where |
 |---|---|---|
-| CAT | `server_catalog.jsonl`: per phone, model counts, (type, field, kind, value type) counts, named-set values up to 50 | scratchpad |
-| POL-S | `pol_samples.py` over the three local samples: distinct short values of selected fields (guarded by a pattern; free text reported as `<other>`), timestamp shape (digits replaced by 9), `deleted_state` and `decoding_confidence` per type, (EventType, Value) and (Direction, Status) pairs | scratchpad, outputs `pol_c3.txt`, `pol_c8.txt`, `pol_c9.txt` |
-| POL-P | `pol_party.py`: Party models carrying DateRead / DateDelivered / DatePlayed, by parent type, Role, IsPhoneOwner | scratchpad |
-| POL-N | `pol_nest.py`: (parent type, container field, child type) for nested models | scratchpad |
+| CAT | `measurements/catalogue-14-phones.json`: per phone, model counts, (type, field, kind, value type) counts, named-set values up to 50 | `measurements/` |
+| POL-S | `pol_samples.py` over the three local samples: distinct short values of selected fields (guarded by a pattern; free text reported as `<other>`), timestamp shape (digits replaced by 9), `deleted_state` and `decoding_confidence` per type, (EventType, Value) and (Direction, Status) pairs | `measurements/scripts/pol_samples.py`; its outputs are not committed because they list short field values |
+| POL-P | `pol_party.py`: Party models carrying DateRead / DateDelivered / DatePlayed, by parent type, Role, IsPhoneOwner | `measurements/` |
+| POL-N | `pol_nest.py`: (parent type, container field, child type) for nested models | `measurements/` |
 | HDR | header `item` names in C3 and C9 (`DeviceInfoExtractionStartDateTime`, `DeviceInfoExtractionEndDateTime`, `Time zone settings (ID)` and others) | grep over the first 60 kB |
 
 CAT records only value-bearing field kinds (`field`, `multiField`); nesting is therefore not in CAT and
@@ -527,7 +527,7 @@ observations (6.2).
 
 The meaning of `UserMapping` values other than `Decoding`, and of `Synced` versus `Extracted`, is not
 documented in anything read for this file. v1 treated UserMapping as a multi-user profile marker in a
-comment only (`v1/neo4j_writer.py:451-458` in the scratchpad copy). M2 measures the full value set and
+comment only (`ingestion/scripts/cellebrite/neo4j_writer.py:451-458` on `origin/main`). M2 measures the full value set and
 cross-tabulates it with Source.
 
 ### 4.2 Rules

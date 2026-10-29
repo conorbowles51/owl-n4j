@@ -1,0 +1,35 @@
+NEST
+  ('Call', 'Parties', 'multiModelField', 'Party') 2418
+  ('Chat', 'Messages', 'multiModelField', 'InstantMessage') 3404
+  ('Chat', 'Participants', 'multiModelField', 'Party') 239
+  ('Chat', 'Photos', 'multiModelField', 'ContactPhoto') 29
+  ('Contact', 'AdditionalInfo', 'multiModelField', 'KeyValueModel') 45
+  ('Contact', 'Addresses', 'multiModelField', 'StreetAddress') 1
+  ('Contact', 'Entries', 'multiModelField', 'PhoneNumber') 217
+  ('Contact', 'Entries', 'multiModelField', 'UserID') 158
+  ('Contact', 'Entries', 'multiModelField', 'WebAddress') 2
+  ('Contact', 'Photos', 'multiModelField', 'ContactPhoto') 67
+  ('Email', 'From', 'modelField', 'Party') 2
+  ('Email', 'To', 'multiModelField', 'Party') 2
+  ('ForwardedMessageData', 'OriginalSender', 'modelField', 'Party') 8
+  ('InstantMessage', 'Attachments', 'multiModelField', 'Attachment') 874
+  ('InstantMessage', 'From', 'modelField', 'Party') 3420
+  ('InstantMessage', 'MessageExtraData', 'multiModelField', 'ForwardedMessageData') 35
+  ('InstantMessage', 'MessageExtraData', 'multiModelField', 'MessageLabel') 46
+  ('InstantMessage', 'MessageExtraData', 'multiModelField', 'ReplyMessageData') 13
+  ('InstantMessage', 'SharedContacts', 'multiModelField', 'Contact') 14
+  ('InstantMessage', 'To', 'multiModelField', 'Party') 54
+  ('Location', 'Address', 'modelField', 'StreetAddress') 1
+  ('Location', 'Position', 'modelField', 'Coordinate') 7
+  ('UserAccount', 'AdditionalInfo', 'multiModelField', 'KeyValueModel') 1
+  ('UserAccount', 'Entries', 'multiModelField', 'PhoneNumber') 2
+  ('UserAccount', 'Entries', 'multiModelField', 'UserID') 2
+  ('UserAccount', 'Photos', 'multiModelField', 'ContactPhoto') 1
+  ('WirelessNetwork', 'Position', 'modelField', 'Coordinate') 2
+USERMAP Counter({'Decoding': 5667})
+ROLE Counter({'From': 4649, 'To': 1236})
+OWNER Counter({'False': 3163, 'True': 2542})
+TSATTRS Counter({('format', 'formattedTimestamp', 'type'): 5218})
+TSFMT [('9999-99-99T99:99:99.999+99:99', 5218)]
+IDSHAPE Counter({'phone-like': 3213, 'wa-jid': 2375, 'other': 484, 'PhoneNumber:phone-like': 185, 'UserID:phone-like': 83, 'UserID:wa-jid': 64, 'PhoneNumber:other': 29, 'UserID:other': 13, 'PhoneNumber:digits': 5, 'email-like': 4})
+CONF Counter({'High': 14005})

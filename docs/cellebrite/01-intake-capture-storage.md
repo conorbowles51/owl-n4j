@@ -16,7 +16,7 @@ stored, the dedicated queue and worker that run all of it, and which existing Lo
 ingestion code is removed. Interpretation, projections and views are in later files. Every claim
 about code carries a `path:line` read on branch `integration/evidence-main-reunion` on 2026-10-29.
 Every claim about data comes from a measurement on the local samples (C3, C9, C8), from the
-scratchpad catalogues of the 14 server phones, or from v1's `owl_ingest_report.json` files. No
+the catalogues of the 14 server phones in `measurements/`, or from v1's `owl_ingest_report.json` files. No
 measurement script printed or stored evidence content.
 
 ## Contents
@@ -41,7 +41,7 @@ measurement script printed or stored evidence content.
 ## 1. Measurements this specification rests on
 
 All measured on Neil's Mac (Apple Silicon, 10 cores, 16 GB), system Python 3.14 with stdlib
-`xml.etree.ElementTree` (expat) and `lxml` 6.0.2 (libxml2). Scripts are in the session scratchpad
+`xml.etree.ElementTree` (expat) and `lxml` 6.0.2 (libxml2). Scripts are in `measurements/scripts/` (paths replaced by placeholders)
 (`measure_counter.py`, `proto_capture.py`, `lxml_counter.py`, `verify.py`, `verify2.py`,
 `tsshape.py`, `tsoff.py`, `dupids.py`, `measure_records.py`); they print counts only.
 
@@ -125,7 +125,7 @@ Repeated ids are nested `Party`, `PhoneNumber`, `UserID`, `KeyValueModel` repeat
 So **the Cellebrite model id is not a key**, and **a field name does not identify a field within
 a record**. Both facts drive the locator design (section 6.4).
 
-Across the 14 server phones (scratchpad `server_catalog.jsonl`), total models (top-level and
+Across the 14 server phones (`measurements/catalogue-14-phones.json`), total models (top-level and
 nested) and values:
 
 | Phone | Models | Values |
@@ -183,7 +183,7 @@ The 21,664 zero-byte C3 files are mostly Image (5,373 without extension, 3,869 `
 `.0`, 776 `.jpg`), Text, Video and Audio: the production contains a placeholder where the report
 describes a real file. This is a fourth outcome, distinct from a mismatch (section 7.2).
 
-Attachment references (scratchpad `c*.json`): jump targets with `ismodel="false"` 709, 879, 491;
+Attachment references (the research session's per-sample structure stats (not committed: they hold extraction folder names)): jump targets with `ismodel="false"` 709, 879, 491;
 of the jump target ids, those matching a tagged file id 709, 877, 166; Attachment records 456, 874,
 3,770; `attachment_extracted_path` fields 417, 760, 127; record values that are paths under
 `chats/`, `files/`, `contacts/`, `photos/`, `useraccounts/`, `socialmedia/` 419, 852, 143, all
@@ -834,7 +834,7 @@ Built from `phone_files` after capture: `source_file_id`, `local_path` (normalis
 compared case-sensitively first, then case-insensitively with a flag when only the latter
 matches), declared size and hashes, `tags`. In all three samples every `file` has a Local Path,
 an MD5 item and a SHA256 item (the SHA256 item is empty except for 224, 80, 3 files), a Tags item
-and timestamps (1.5, scratchpad `c*.json` `file_hash`, and the `file` shape measurement).
+and timestamps (1.5, the research session's per-sample structure stats `file_hash` (not committed: they hold extraction folder names), and the `file` shape measurement).
 
 ### 7.2 Verification outcomes
 

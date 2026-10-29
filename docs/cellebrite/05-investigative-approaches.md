@@ -64,15 +64,15 @@ dated 2026-05-06; both carry 2,829 InstantMessage and 3,770 Attachment records).
 
 ### 1.2 Data used
 
-- `server_catalog.jsonl`: per phone, record type counts and `(type, field, kind, valueType counts)` for
+- `measurements/catalogue-14-phones.json`: per phone, record type counts and `(type, field, kind, valueType counts)` for
   value-bearing fields (`field`, `multiField`). It does **not** record which nested model sits under which
-  parent field. Aggregated for this file with a script (`scratchpad/s05/agg.py`) into totals and phone
+  parent field. Aggregated for this file with a script (`measurements/scripts/s05/agg.py`) into totals and phone
   counts; every "N on P phones" below comes from that aggregation.
 - `c3.json`, `c9.json`, `c8.json`: structural statistics, including nested model field names
   (`<modelField>From`, `<multiModelField>To`, `<multiModelField>Messages`, `<multiModelField>ActivityLog`).
 - New read-only measurements on the three local samples, run for this file. Every script streams with
   `iterparse`, prints counts only, and stores only salted SHA-256 prefixes (salt generated per run, kept in
-  the scratchpad, never in the repo). Scripts: `scratchpad/s05/measure.py`, `cross.py`, `attmd5.py`,
+  a private scratch directory, never in the repo). Scripts: `measurements/scripts/s05/measure.py`, `cross.py`, `attmd5.py`,
   `ids.py`, `fileid.py`, `fmeta.py`, `dbfiles.py`, `chatmedia.py`.
 
 ### 1.3 Measurements taken for this file (local samples, 10-report case)
@@ -1422,7 +1422,7 @@ WiFi BSSIDs; every captured record.
 
 Corpus case: A-C1a and A-C1b. Also the two exports of A-C8 (local and server), which give a control: same
 extraction, different export and producer (the local export carries `SelfDestructDuration` on all 2,829 messages,
-the server export's catalogue does not list that field: `cat_c8.json` against `server_catalog.jsonl`).
+the server export's catalogue does not list that field: `cat_c8.json` against `measurements/catalogue-14-phones.json`).
 
 ### 15.3 Method
 
@@ -1547,7 +1547,7 @@ the report, not present in the production".
 | Well-known app databases by original file name (e.g. `msgstore.db`, `mmssms.db`, `contacts2.db`, `History`, `Cookies`) | 0 | 0 | 81 |
 | Database files present on disk | n/a | n/a | **0**: `files/Database/` exists and is empty; only `files/Application` (1,734 files), `files/Image` (32), `files/Video` (2) are populated |
 | Record-to-source sections | `extraInfos` empty | `extraInfos` empty | `.xmlExtra`, `.xmlModelSource`, `.xmlNodeSource` are zero bytes |
-| Top-level records with a file jump target | | | 163 of 37,013; none resolves to a Database file (`scratchpad/s05/fileid.py`) |
+| Top-level records with a file jump target | | | 163 of 37,013; none resolves to a Database file (`measurements/scripts/s05/fileid.py`) |
 
 The plan's statement that "C8 has a database folder" is true of the folder and not of its contents. No local
 sample allows opening the source row of any record.
