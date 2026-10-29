@@ -1,3 +1,26 @@
+## 29 October: Cellebrite rebuild planned (phone work resumes here)
+
+Plan only; nothing built. Written on Neil's Mac and pushed as documents only (no code changed).
+
+- **Plan:** `docs/cellebrite-rebuild-plan.md` (standing decisions, evidence, index) and specs
+  `docs/cellebrite/01` to `06`. Where they differ in detail the spec governs; on a standing decision the
+  plan governs.
+- **Behind the plan:** `docs/cellebrite/research/` (eight reports, a snapshot the plan supersedes where they
+  differ) and `docs/cellebrite/measurements/` (structure-only catalogue of the 14 phones v1 ingested, v1
+  reconciliation and durations, measurement scripts with placeholders for paths; README maps phone labels
+  P01-P14 to A-C1a ... B-C3, 1P). Read the research README before re-researching anything.
+- **Next unit:** `docs/cellebrite/06-build-order.md` row 1 (reference corpus manifest), row 2 (element
+  counter), row 3 (read-only server measurement batch, 06 section 5). Several mapping rows wait on row 3.
+- **Waiting on Neil (not blocking stage A):** OpenCelliD licence ruling (04, 06 row 44).
+- **Defects found outside this plan, not fixed:** `/api/query` fallback is not case-scoped and runs in a
+  write transaction; the Reports page calls `/api/reports`, which no route serves (06 section 6).
+- **Facts a fresh session would otherwise rediscover:** v1's 14 ingested phones are under
+  `/mnt/owl-data/ingestion-data/` (three cases holding 10, 3 and 1 reports, each with v1's
+  `owl_ingest_report.json`); Alex's own v1 feedback is `/home/conorbowles51/app_v2/data/testing-feedback.json`;
+  v1-era Claude transcripts are gone (30-day default retention) but v1 memory notes survive in
+  `/root/.claude/projects/-home-conorbowles51-app-v2/memory/`; the VM ran out of memory on 24 October under
+  the job fleet plus benchmarks, so run measurements with `nice -n 19 ionice -c3`.
+
 ## 25 October fin-accounts: account-wide holder/bank correction; Kapital ING R2 holder corrected
 
 Live `9aa1bf01` (23:07 UTC). Full record: `/mnt/owl-data/fin-wt/headless/FIN-ACCOUNTS-STATUS.md`, `fin-accounts-progress.md`.
