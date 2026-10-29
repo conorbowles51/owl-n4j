@@ -93,6 +93,35 @@ class ProofTest(unittest.TestCase):
             self.assertIn('PRINTED_HOLDERS', source.read().split('PROOF_VERSION = 1', 1)[1].split('METADATA_KEY', 1)[0])
 
 
+class HolderWaitTest(unittest.TestCase):
+    """A statement held on its printed holder is judged again from its stored reading once a person records a decision
+    for its account (the decision may come after the release that judged it)."""
+
+    def test_the_refusal_names_the_account_and_the_decision_seen(self):
+        known = _known()
+        with self.assertRaises(vr.NotProved) as caught:
+            _prove(knowledge=CaseKnowledge(accounts=[known]))
+        self.assertEqual(caught.exception.holder, f'{known.key}|')
+        decided = _decided(['ERICA MCCAULEY', 'SOMEONE ELSE'])
+        with self.assertRaises(vr.NotProved) as caught:
+            _prove(knowledge=CaseKnowledge(accounts=[decided]))
+        self.assertEqual(caught.exception.holder, f'{decided.key}|d-1')
+
+    def test_due_again_once_a_new_decision_is_recorded_and_not_before(self):
+        known = _known()
+        stored = dict(status='not_proved', holder_wait=f'{known.key}|')
+        self.assertFalse(vr.due_again(stored, lambda: CaseKnowledge(accounts=[known])))
+        decided = _decided()
+        decided.key = known.key
+        self.assertTrue(vr.due_again(stored, lambda: CaseKnowledge(accounts=[decided])))
+        # Judged with that decision already (it did not cover the name): not again until another decision.
+        self.assertFalse(vr.due_again(dict(stored, holder_wait=f'{known.key}|d-1'),
+                                      lambda: CaseKnowledge(accounts=[decided])))
+        with mock.patch.object(vr, 'PRINTED_HOLDERS', False):
+            self.assertFalse(vr.due_again(stored, lambda: CaseKnowledge(accounts=[decided])))
+        self.assertFalse(vr.due_again(dict(stored, status='proved'), lambda: CaseKnowledge(accounts=[decided])))
+
+
 class HelpersTest(unittest.TestCase):
     def test_covers_and_split(self):
         self.assertTrue(ph.covers(BOTH, 'ERICA HOPPER', ['ERICA MCCAULEY']))

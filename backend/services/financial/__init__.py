@@ -2268,3 +2268,5 @@ from services.financial.view_warmup import warm_account_history, warm_views_once
 __all__ += ["warm_account_history", "warm_views_once"]
 from services.financial.printed_holders import PrintedHoldersError, holders_by_statement
 __all__ += ["PrintedHoldersError", "holders_by_statement"]
+from services.financial.summary_pages import balance_pages, statement_summary_pages
+__all__ += ["balance_pages", "statement_summary_pages"]

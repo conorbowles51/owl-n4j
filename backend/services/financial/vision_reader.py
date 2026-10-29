@@ -623,11 +623,14 @@ def _exponent(currency):
 class NotProved(Exception):
     """The image reading does not prove; ``str`` is the plain reason recorded for the investigator. ``card`` (a
     card_key) names the account it waits on: no statement of it is confirmed in the case yet, so it is judged again
-    once the case holds that card's account (due_again)."""
+    once the case holds that card's account (due_again). ``holder`` (an account key and the id of the decision seen,
+    'account|decision') names the saved account whose printed holder differs: judged again once a person records a
+    printed-holders decision for it (printed_holders, due_again)."""
 
-    def __init__(self, message='', card=None):
+    def __init__(self, message='', card=None, holder=None):
         super().__init__(message)
         self.card = card
+        self.holder = holder
 
 
 class WaitsForCard(NotProved):
@@ -1294,7 +1297,9 @@ def prove(proposal, section, knowledge):
     decided = candidates[0].printed_holders if PRINTED_HOLDERS and len(candidates) == 1 else []
     by_decision = bool(decided) and printed_holders.covers(decided, holder_printed, saved_holders)
     if holder and saved_holders and not any(fp.same_holder(holder, h) for h in saved_holders) and not by_decision:
-        raise NotProved(holder_differs_reason(account_text, saved_holders, holder, liability, proposal))
+        raise NotProved(holder_differs_reason(account_text, saved_holders, holder, liability, proposal),
+                        holder='%s|%s' % (candidates[0].key, (candidates[0].printed_holders_decision or {})
+                                          .get('decision_id', '')) if len(candidates) == 1 else None)
     holder_basis = by_decision and printed_holders.split(decided, holder_printed, saved_holders)
     if not holder:
         raise NotProved('The account holder could not be confirmed against the saved statements of this account.')
@@ -2892,7 +2897,8 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
                         reading, controls = None, None
                         break
                     attempts.append(dict(attempt, status='not_proved', message=str(reason),
-                                         **({'account_wait': reason.card} if reason.card else {})))
+                                         **({'account_wait': reason.card} if reason.card else {}),
+                                         **({'holder_wait': reason.holder} if reason.holder else {})))
                     if isinstance(reason, WaitsForCard):
                         # Not this statement's turn: judged again later, once the card's earlier statement is.
                         waiting = reason
@@ -2913,6 +2919,9 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
             wait = next((a['account_wait'] for a in attempts if a.get('account_wait')), None)
             if wait:
                 record['account_wait'] = wait  # judged again once the card's first statement is accepted
+            holder_wait = next((a['holder_wait'] for a in attempts if a.get('holder_wait')), None)
+            if holder_wait and PRINTED_HOLDERS:
+                record['holder_wait'] = holder_wait  # judged again once a person decides its account's holders
             return _finish(factory, item_id, file_id, key, record, apply)
         if accepted.get('basis') == 'dates_from_page_images':
             record['basis'] = 'dates_from_page_images'
@@ -3239,12 +3248,24 @@ def due_again(stored, knowledge):
     """(LAST4_FIRST_STATEMENT) A not-proved outcome judged under these rules that is judged again from its stored
     reading all the same: it waited on another statement of its card (WaitsForCard, never final), or it was refused
     only because no statement of its card was confirmed yet and the case now holds the card's account (accepted by
-    this rule, or confirmed by a person). ``knowledge``: a callable giving the case's knowledge, called only then."""
+    this rule, or confirmed by a person), or it was refused only because its printed holder differs from its saved
+    account's and a person has since recorded a printed-holders decision for that account (holder_decided).
+    ``knowledge``: a callable giving the case's knowledge, called only then."""
     if not (stored and stored.get('status') == 'not_proved'):
         return False
     if stored.get('waiting'):
         return True
+    if stored.get('holder_wait') and PRINTED_HOLDERS and holder_decided(knowledge(), stored['holder_wait']):
+        return True
     return bool(stored.get('account_wait')) and card_known(knowledge(), stored['account_wait'])
+
+
+def holder_decided(knowledge, holder_wait):
+    """The saved account a held statement's printed holder differed from now carries a printed-holders decision other
+    than the one it was judged with (``holder_wait``: 'account key|decision id seen')."""
+    key, _, seen = str(holder_wait or '').partition('|')
+    return any(k.key == key and k.printed_holders and (k.printed_holders_decision or {}).get('decision_id') != seen
+               for k in getattr(knowledge, 'accounts', []) or [])
 
 
 def _finish(factory, item_id, file_id, key, record, apply):
