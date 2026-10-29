@@ -44,6 +44,25 @@ export const emptyPaymentTableView = {
   unconfirmedOnly: false,
 }
 
+/** Parts of the view that only change what is on screen, never which payments match. */
+export const DISPLAY_ONLY_VIEW_FIELDS = [
+  "chartsOpen",
+  "partiesOpen",
+  "flowOpen",
+  "expandedRows",
+  "page",
+  "pageSize",
+  "unnamedOnly",
+  "unconfirmedOnly",
+] as const
+
+/** The view's filters as one value: equal keys mean the same matching payments. */
+export function paymentFilterKey(view: Partial<typeof emptyPaymentTableView>) {
+  const filters: Record<string, unknown> = { ...view }
+  for (const field of DISPLAY_ONLY_VIEW_FIELDS) delete filters[field]
+  return JSON.stringify(filters)
+}
+
 export function showAllImportedPayments(caseId: string) {
   resetPaymentTableView(caseId, {})
   useFinancialDraftStore

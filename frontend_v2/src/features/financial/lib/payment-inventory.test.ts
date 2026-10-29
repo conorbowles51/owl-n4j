@@ -38,3 +38,19 @@ it("counts the complete dataset using canonical IDs, preserving unknowns and cur
   expect(data.unknownBanks).toBe(1)
   expect(data.unidentifiedCounterparties).toBeGreaterThanOrEqual(1)
 })
+
+it("counts a known account's bank as unknown only when none of its payments names one", () => {
+  const known = (id: string, institution = "") => ({ id, label: id, currency: "USD", institution, periods: [] })
+  const data = paymentInventory(
+    [
+      { ...paymentFixture, key: "1", account_id: "named", account_institution: "" },
+      { ...paymentFixture, key: "2", account_id: "named", account_institution: "Bank One" },
+      { ...paymentFixture, key: "3", account_id: "canonical-alias", canonical_account_id: "via-alias", account_institution: "Bank Two" },
+      { ...paymentFixture, key: "4", account_id: "blank", account_institution: " " },
+    ],
+    [known("named"), known("via-alias"), known("blank"), known("no-payments"), known("directory", "Bank Three")] as never
+  )
+  // "named" still counts once from its blank row; "blank" and "no-payments" have no bank anywhere.
+  expect(data.unknownBanks).toBe(3)
+  expect(data.banks).toEqual(["Bank One", "Bank Three", "Bank Two"])
+})

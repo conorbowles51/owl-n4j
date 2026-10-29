@@ -71,6 +71,7 @@ import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
 import { useCallback, useContext, useMemo, useRef, useState, type ComponentProps } from "react"
 import { Button } from "@/components/ui/button"
 import { LedgerTable } from "./LedgerTable"
+import { paymentFilterKey } from "../lib/payment-table-draft"
 import { PaymentNamingPanel } from "./PaymentNamingPanel"
 import { needsConfirm, needsName } from "../lib/payment-naming"
 import type { LedgerTransaction } from "../api"
@@ -224,7 +225,15 @@ export function LedgerRowBrowser({
         ? [...new Set([...previous, row.key])]
         : previous.filter((id) => id !== row.key)
     )
-  const searchResult = transactionSearch(search, searchMode)
+  // Which payments match depends on the filters only. Showing or hiding a section, opening a row or turning
+  // the page changes none of it, so the passes over every payment below run once per change of the filters,
+  // not on every click: on a case with tens of thousands of payments each pass took seconds, and a section
+  // toggle looked dead until it finished.
+  const filterKey = paymentFilterKey(view)
+  const searchResult = useMemo(
+    () => transactionSearch(search, searchMode),
+    [search, searchMode]
+  )
   const minMinor = minimum.trim() ? correctionMinor(minimum, currency) : ""
   const maxMinor = maximum.trim() ? correctionMinor(maximum, currency) : ""
   const invalidRange =
@@ -232,16 +241,22 @@ export function LedgerRowBrowser({
     maxMinor === null ||
     (!!minMinor && !!maxMinor && BigInt(minMinor) > BigInt(maxMinor))
   const batchSources = new Set(importSourceIds)
-  const knownScope = knownPaymentAccounts(
-    accountDirectory.isError ? [] : (accountDirectory.data?.items ?? []),
-    { ...exportContext?.params, ...accountScope },
-    sourceDocumentId
-      ? [sourceDocumentId]
-      : importBatchId
-        ? importSourceIds
-        : undefined
+  const scopeParamsKey = JSON.stringify(exportContext?.params ?? {})
+  const knownScope = useMemo(
+    () =>
+      knownPaymentAccounts(
+        accountDirectory.isError ? [] : (accountDirectory.data?.items ?? []),
+        { ...exportContext?.params, ...accountScope },
+        sourceDocumentId
+          ? [sourceDocumentId]
+          : importBatchId
+            ? importSourceIds
+            : undefined
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [accountDirectory.data, accountDirectory.isError, scopeParamsKey, accountScope, filterKey]
   )
-  const knownAccounts = knownScope.accounts.filter(
+  const knownAccounts = useMemo(() => knownScope.accounts.filter(
     (account) =>
       (!currency || account.currency === currency) &&
       (!view.analysisGroup ||
@@ -255,7 +270,8 @@ export function LedgerRowBrowser({
               period.start.slice(0, 7) <= view.analysisPeriod &&
               period.end.slice(0, 7) >= view.analysisPeriod
           )))
-  )
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ), [knownScope, filterKey])
   const currencyOptions = [
     ...new Set(
       [
@@ -267,9 +283,13 @@ export function LedgerRowBrowser({
   const unknownDateCount = knownScope.unknownDateAccounts.filter(
     (account) => !currency || account.currencies.includes(currency)
   ).length
-  const internal = internalActivity(
-    transactions.filter((row) => matchesAccountSelection(row, accountScope)),
-    trails.data?.trails ?? []
+  const internal = useMemo(
+    () =>
+      internalActivity(
+        transactions.filter((row) => matchesAccountSelection(row, accountScope)),
+        trails.data?.trails ?? []
+      ),
+    [transactions, accountScope, trails.data]
   )
   const judgementsOf = useRowJudgementLookup()
   const judgementContext = useContext(RowJudgements)
@@ -304,6 +324,8 @@ export function LedgerRowBrowser({
     (judgementWanted === "none"
       ? !(judgementsOf(row) || []).length
       : matchingCalls(row).length > 0)
+  const listingCalls = !!judgementsOf && judgementWanted === "any"
+  const { preRows, scopeRows, baseRows, categoryRows, namingRows, mixedCurrencies } = useMemo(() => {
   const preRows = transactions.filter(
     (row) =>
       !invalidRange &&
@@ -325,33 +347,75 @@ export function LedgerRowBrowser({
   )
   const scopeRows = preRows.filter(judgementMatches)
   const baseRows = scopeRows.filter((row) => matchesCategories(row, categories))
-  const categoryBar = exportContext && (
-    <PaymentCategoryFilter
-      caseId={exportContext.caseId}
-      rows={investigation ? filterAnalysis(scopeRows, view) : scopeRows}
-      value={categories}
-      onChange={setCategories}
-      onManage={canEdit ? () => setManageCategories(true) : undefined}
-    />
-  )
   const categoryRows = preRows.filter((row) =>
     matchesCategories(row, categories)
   )
-  // Payments per choice of each judgement sub-filter, under the other active filters (as the queue counts issues).
-  const judgementCounts = (key: keyof typeof judgementFilter) => {
-    const counts = new Map<string, number>()
-    for (const row of categoryRows) {
-      const values = new Set(
-        matchingCalls(row, key).map((judgement) => judgement[key])
-      )
-      for (const value of values)
-        counts.set(String(value), (counts.get(String(value)) || 0) + 1)
+  const rows = investigation ? filterAnalysis(baseRows, view) : baseRows
+  sortAnalysisRows(rows, sort)
+  const mixedCurrencies = new Set(rows.map((row) => row.currency)).size > 1
+  if (sort === "newest")
+    rows.sort((a, b) => b.ordering_date.localeCompare(a.ordering_date))
+  if (sort === "oldest")
+    rows.sort((a, b) => a.ordering_date.localeCompare(b.ordering_date))
+  if (sort.startsWith("amount"))
+    rows.sort((a, b) => {
+      const order = compareDisplayedAmounts(a, b)
+      return sort === "amount-desc" ? -order : order
+    })
+  // Focus first: in a list of judgement calls the recorded order gives way to the calls' tiers ("Check first" on
+  // top), then inferred before checked, then the larger amount; the sort stays stable so dates order each tie.
+  const focusFirst = listingCalls && sort === "ledger"
+  if (focusFirst) {
+    const rank = (row: LedgerTransaction) => {
+      const calls = matchingCalls(row)
+      return [topPriority(calls) || 9, calls.some((call) => call.strength === "inferred") ? 0 : 1] as const
     }
-    return counts
+    const ranks = new Map(rows.map((row) => [row.key, rank(row)]))
+    rows.sort((a, b) => {
+      const [tierA, strengthA] = ranks.get(a.key)!
+      const [tierB, strengthB] = ranks.get(b.key)!
+      return tierA - tierB || strengthA - strengthB || -compareDisplayedAmounts(a, b)
+    })
   }
-  const touchedRows = categoryRows.filter(
-    (row) => (judgementsOf?.(row) || []).length > 0
-  ).length
+  return { preRows, scopeRows, baseRows, categoryRows, namingRows: rows, mixedCurrencies }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transactions, filterKey, accountScope, categories, trails.data, trails.error, internal, judgementsOf, investigation, searchResult, listingCalls])
+  // Rows in a list of judgement calls carry their tier's tint, counting only the calls the sub-filters keep.
+  const tintedContext = useMemo(
+    () =>
+      judgementContext && listingCalls
+        ? { ...judgementContext, tint: true, calls: (row: LedgerTransaction) => matchingCalls(row) }
+        : judgementContext,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [judgementContext, listingCalls, view.judgementPriority, view.judgementCategory, view.judgementStrength,
+      view.judgementOrigin, view.judgementStatus]
+  )
+  // Payments per choice of each judgement sub-filter, under the other active filters (as the queue counts issues).
+  const judgementCountsByKey = useMemo(() => {
+    const byKey = new Map<keyof typeof judgementFilter, Map<string, number>>()
+    if (!judgementsOf) return byKey
+    for (const key of Object.keys(judgementFilter) as (keyof typeof judgementFilter)[]) {
+      const counts = new Map<string, number>()
+      for (const row of categoryRows) {
+        const values = new Set(
+          matchingCalls(row, key).map((judgement) => judgement[key])
+        )
+        for (const value of values)
+          counts.set(String(value), (counts.get(String(value)) || 0) + 1)
+      }
+      byKey.set(key, counts)
+    }
+    return byKey
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [categoryRows, judgementsOf, filterKey])
+  const judgementCounts = (key: keyof typeof judgementFilter) =>
+    judgementCountsByKey.get(key) ?? new Map<string, number>()
+  const touchedRows = useMemo(
+    () =>
+      categoryRows.filter((row) => (judgementsOf?.(row) || []).length > 0)
+        .length,
+    [categoryRows, judgementsOf]
+  )
   const judgementsLink = exportContext
     ? `/cases/${exportContext.caseId}/financial?${new URLSearchParams({
         view: "statements",
@@ -370,51 +434,49 @@ export function LedgerRowBrowser({
       ...row,
       amount_minor: String(activityAmount(row, view.activity, internal)),
     }))
-  let rows = investigation ? filterAnalysis(baseRows, view) : baseRows
-  sortAnalysisRows(rows, sort)
-  const mixedCurrencies = new Set(rows.map((row) => row.currency)).size > 1
-  if (sort === "newest")
-    rows.sort((a, b) => b.ordering_date.localeCompare(a.ordering_date))
-  if (sort === "oldest")
-    rows.sort((a, b) => a.ordering_date.localeCompare(b.ordering_date))
-  if (sort.startsWith("amount"))
-    rows.sort((a, b) => {
-      const order = compareDisplayedAmounts(a, b)
-      return sort === "amount-desc" ? -order : order
-    })
-  // Focus first: in a list of judgement calls the recorded order gives way to the calls' tiers ("Check first" on
-  // top), then inferred before checked, then the larger amount; the sort stays stable so dates order each tie.
-  const listingCalls = !!judgementsOf && judgementWanted === "any"
-  const focusFirst = listingCalls && sort === "ledger"
-  if (focusFirst) {
-    const rank = (row: LedgerTransaction) => {
-      const calls = matchingCalls(row)
-      return [topPriority(calls) || 9, calls.some((call) => call.strength === "inferred") ? 0 : 1] as const
-    }
-    const ranks = new Map(rows.map((row) => [row.key, rank(row)]))
-    rows.sort((a, b) => {
-      const [tierA, strengthA] = ranks.get(a.key)!
-      const [tierB, strengthB] = ranks.get(b.key)!
-      return tierA - tierB || strengthA - strengthB || -compareDisplayedAmounts(a, b)
-    })
-  }
-  // Rows in a list of judgement calls carry their tier's tint, counting only the calls the sub-filters keep.
-  const tintedContext = useMemo(
-    () =>
-      judgementContext && listingCalls
-        ? { ...judgementContext, tint: true, calls: (row: LedgerTransaction) => matchingCalls(row) }
-        : judgementContext,
+  // What each section is given, worked out with the rows above (amounts per activity view, as shown).
+  const showing = !!(investigation && exportContext)
+  const sectionRows = useMemo(
+    () => ({
+      categoryBar: investigation ? filterAnalysis(scopeRows, view) : scopeRows,
+      months: showing
+        ? analysisAmounts(filterAnalysis(baseRows, { ...view, analysisPeriod: "" }))
+        : [],
+      tiles: showing ? analysisAmounts(filterAnalysis(scopeRows, view)) : [],
+      analysis: showing ? analysisAmounts(baseRows) : [],
+    }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [judgementContext, listingCalls, view.judgementPriority, view.judgementCategory, view.judgementStrength,
-      view.judgementOrigin, view.judgementStatus]
+    [scopeRows, baseRows, filterKey, internal, investigation, showing]
   )
-  // Every payment in view before "Not identified only", so a payment just named stays open beside the table.
-  const namingRows = rows
-  const unnamedRows = investigation && exportContext ? rows.filter(needsName) : []
+  const categoryBar = exportContext && (
+    <PaymentCategoryFilter
+      caseId={exportContext.caseId}
+      rows={sectionRows.categoryBar}
+      value={categories}
+      onChange={setCategories}
+      onManage={canEdit ? () => setManageCategories(true) : undefined}
+    />
+  )
+  const unnamedRows = useMemo(
+    () => (showing ? namingRows.filter(needsName) : []),
+    [namingRows, showing]
+  )
   // Names Claude read for a person that no person has confirmed: shown as Claude's until confirmed.
-  const unconfirmedRows = investigation && exportContext ? rows.filter(needsConfirm) : []
-  if (view.unnamedOnly && investigation && exportContext) rows = unnamedRows
-  else if (view.unconfirmedOnly && investigation && exportContext) rows = unconfirmedRows
+  const unconfirmedRows = useMemo(
+    () => (showing ? namingRows.filter(needsConfirm) : []),
+    [namingRows, showing]
+  )
+  const rows =
+    view.unnamedOnly && showing
+      ? unnamedRows
+      : view.unconfirmedOnly && showing
+        ? unconfirmedRows
+        : namingRows
+  const shownAmounts = useMemo(
+    () => (showing ? analysisAmounts(rows) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rows, internal, showing, filterKey]
+  )
   const index = Math.min(
     page,
     Math.max(0, Math.ceil(rows.length / pageSize) - 1)
@@ -852,7 +914,8 @@ export function LedgerRowBrowser({
         <TransactionAnalysisControls
           filters={view}
           panels={view}
-          onChange={changeView}
+          // Showing or hiding a section keeps the table on the page it is on.
+          onChange={(changes) => setView((previous) => ({ ...previous, ...changes }))}
         />
       )}
     </div>
@@ -1025,11 +1088,9 @@ export function LedgerRowBrowser({
         <>
           <TransactionsOverview
             caseId={exportContext.caseId}
-            rows={analysisAmounts(rows)}
-            monthRows={analysisAmounts(
-              filterAnalysis(baseRows, { ...view, analysisPeriod: "" })
-            )}
-            tileRows={analysisAmounts(filterAnalysis(scopeRows, view))}
+            rows={shownAmounts}
+            monthRows={sectionRows.months}
+            tileRows={sectionRows.tiles}
             colors={categoryColors}
             categories={categories}
             onCategories={setCategories}
@@ -1160,7 +1221,7 @@ export function LedgerRowBrowser({
           {categoryBar}
           <AnalysisFilterChips filters={view} onChange={changeView} />
           <PaymentTotals
-            rows={analysisAmounts(rows)}
+            rows={shownAmounts}
             knownAccounts={knownAccounts}
             caseId={exportContext.caseId}
             label={
@@ -1201,7 +1262,7 @@ export function LedgerRowBrowser({
           )}
           <TransactionAnalysisPanels
             hideControls
-            rows={analysisAmounts(baseRows)}
+            rows={sectionRows.analysis}
             filters={view}
             panels={view}
             onChange={changeView}

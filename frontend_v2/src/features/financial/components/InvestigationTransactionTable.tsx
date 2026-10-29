@@ -7,7 +7,7 @@ import { amountGroupName, amountOf, unnamedParty } from "../lib/transaction-anal
 import type { LedgerTransaction } from "../api"
 import { formatLedgerAmount } from "../lib/ledger-format"
 import { Button } from "@/components/ui/button"
-import { useRef, useState } from "react"
+import { memo, useMemo, useRef, useState } from "react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { AccountHistory } from "./AccountHistory"
 import { PaymentLabelOrigin } from "./PaymentLabelOrigin"
@@ -16,11 +16,14 @@ import {
   paymentBalanceExplanation,
 } from "../lib/payment-balance"
 
-export function PaymentTotals({
+const NO_KNOWN_ACCOUNTS: KnownPaymentAccount[] = []
+
+/** Totals for every matching payment. Redrawn only when its payments or accounts change, not on every click nearby. */
+export const PaymentTotals = memo(function PaymentTotals({
   rows,
   label,
   expandAccounts = true,
-  knownAccounts = [],
+  knownAccounts = NO_KNOWN_ACCOUNTS,
   caseId,
 }: {
   rows: LedgerTransaction[]
@@ -29,7 +32,7 @@ export function PaymentTotals({
   knownAccounts?: KnownPaymentAccount[]
   caseId?: string
 }) {
-  const inventory = paymentInventory(rows, knownAccounts)
+  const inventory = useMemo(() => paymentInventory(rows, knownAccounts), [rows, knownAccounts])
   const totals = new Map<
     string,
     {
@@ -211,7 +214,7 @@ export function PaymentTotals({
       )}
     </section>
   )
-}
+})
 
 function KnownAccountHistory({ caseId, accountId, label }: { caseId: string; accountId: string; label: string }) {
   const [open, setOpen] = useState(false)

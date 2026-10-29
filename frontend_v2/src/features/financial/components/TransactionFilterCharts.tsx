@@ -1,9 +1,10 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import type { LedgerTransaction } from "../api"
 import { chartRatio, paymentGroup } from "../lib/investigator-workspace"
 import { formatLedgerAmount } from "../lib/ledger-format"
 import {
   activitySeries,
+  analysisFilterKey,
   amountGroupName,
   filterAnalysis,
   type AnalysisFilters,
@@ -33,43 +34,49 @@ export function TransactionFilterCharts({
   const [categorySearch, setCategorySearch] = useState("")
   const [categoryPage, setCategoryPage] = useState(0)
   const [monthPage, setMonthPage] = useState(0)
-  const counts = new Map<string, number>()
-  rows.forEach((r) =>
-    counts.set(paymentGroup(r), (counts.get(paymentGroup(r)) || 0) + 1)
-  )
-  const groups = [...counts]
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .map(([g]) => g)
-  const group = groups.includes(filters.analysisGroup)
-    ? filters.analysisGroup
-    : groups[0] || ""
-  const groupRows = rows.filter((r) => paymentGroup(r) === group)
+  // Sums over every payment in the chart group: worked out again only when the payments or filters change.
+  const filterKey = analysisFilterKey(filters)
+  const { groups, group, groupRows, monthData, categoryData, matched, allCategories } = useMemo(() => {
+    const counts = new Map<string, number>()
+    rows.forEach((r) =>
+      counts.set(paymentGroup(r), (counts.get(paymentGroup(r)) || 0) + 1)
+    )
+    const groups = [...counts]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([g]) => g)
+    const group = groups.includes(filters.analysisGroup)
+      ? filters.analysisGroup
+      : groups[0] || ""
+    const groupRows = rows.filter((r) => paymentGroup(r) === group)
+    // Each chart responds to the other chart's selection while retaining its own
+    // alternatives, so choosing another month/category remains possible.
+    const monthData = activitySeries(
+      filterAnalysis(groupRows, {
+        ...filters,
+        analysisGroup: group,
+        analysisPeriod: "",
+        analysisDirection: "",
+      })
+    )
+    const categoryData = activitySeries(
+      filterAnalysis(groupRows, {
+        ...filters,
+        analysisGroup: group,
+        analysisCategories: [],
+      })
+    )
+    const matched = filterAnalysis(groupRows, {
+      ...filters,
+      analysisGroup: group,
+    }).length
+    const allCategories = [
+      ...new Set(groupRows.map((r) => r.category || "Uncategorized")),
+    ].sort()
+    return { groups, group, groupRows, monthData, categoryData, matched, allCategories }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, filterKey])
   const money = (value: bigint) =>
     `${formatLedgerAmount(value.toString(), group.split(":")[0]).text} ${group.split(":")[0]}`
-  // Each chart responds to the other chart's selection while retaining its own
-  // alternatives, so choosing another month/category remains possible.
-  const monthData = activitySeries(
-    filterAnalysis(groupRows, {
-      ...filters,
-      analysisGroup: group,
-      analysisPeriod: "",
-      analysisDirection: "",
-    })
-  )
-  const categoryData = activitySeries(
-    filterAnalysis(groupRows, {
-      ...filters,
-      analysisGroup: group,
-      analysisCategories: [],
-    })
-  )
-  const matched = filterAnalysis(groupRows, {
-    ...filters,
-    analysisGroup: group,
-  }).length
-  const allCategories = [
-    ...new Set(groupRows.map((r) => r.category || "Uncategorized")),
-  ].sort()
   const color = (category: string) =>
     `hsl(${(allCategories.indexOf(category) * 137.508 + 160) % 360} 54% 43%)`
   const mi = Math.min(

@@ -1,10 +1,11 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { TransactionFilterCharts } from "./TransactionFilterCharts"
 import type { LedgerTransaction } from "../api"
 import { formatLedgerAmount } from "../lib/ledger-format"
 import { chartRatio } from "../lib/investigator-workspace"
 import {
   amountGroupName,
+  analysisFilterKey,
   emptyAnalysisFilters,
   filterAnalysis,
   partyName,
@@ -192,7 +193,10 @@ function FlowChart({
   filters: AnalysisFilters
   onChange: (value: Partial<AnalysisFilters>) => void
 }) {
-  const result = perspectiveSummary(rows, filters.perspectiveNames)
+  const result = useMemo(
+    () => perspectiveSummary(rows, filters.perspectiveNames),
+    [rows, filters.perspectiveNames]
+  )
   const [limit, setLimit] = useState(12)
   return (
     <div className="min-w-0 space-y-3">
@@ -500,13 +504,42 @@ export function TransactionAnalysisPanels({
   panels: PanelState
   onChange: (value: Partial<AnalysisFilters & PanelState>) => void
 }) {
-  const flowRows = panels.flowOpen
-    ? filterAnalysis(rows, {
-        ...filters,
-        flowKind: "",
-        flowParty: "",
-      })
-    : []
+  // Names and sums over every matching payment, worked out only for an open section and only when its
+  // payments or filters change, so showing or hiding another section stays instant.
+  const filterKey = analysisFilterKey(filters)
+  const flowRows = useMemo(
+    () =>
+      panels.flowOpen
+        ? filterAnalysis(rows, {
+            ...filters,
+            flowKind: "",
+            flowParty: "",
+          })
+        : [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rows, filterKey, panels.flowOpen]
+  )
+  const parties = useMemo(
+    () =>
+      panels.partiesOpen
+        ? {
+            from: partySummaries(filterAnalysis(rows, filters, "from"), "from"),
+            to: partySummaries(filterAnalysis(rows, filters, "to"), "to"),
+          }
+        : null,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rows, filterKey, panels.partiesOpen]
+  )
+  const perspectiveNames = useMemo(
+    () =>
+      panels.flowOpen
+        ? partySummaries(filterAnalysis(rows, filters, "perspective")).filter(
+            (entry) => entry.key.startsWith("name:")
+          )
+        : [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rows, filterKey, panels.flowOpen]
+  )
   return (
     <section
       aria-label="Transaction analysis"
@@ -538,19 +571,13 @@ export function TransactionAnalysisPanels({
           <div className="grid gap-3 lg:grid-cols-2">
             <PartyList
               title="Senders (From)"
-              entries={partySummaries(
-                filterAnalysis(rows, filters, "from"),
-                "from"
-              )}
+              entries={parties?.from ?? []}
               selected={filters.fromNames}
               onChange={(fromNames) => onChange({ fromNames })}
             />
             <PartyList
               title="Recipients (To)"
-              entries={partySummaries(
-                filterAnalysis(rows, filters, "to"),
-                "to"
-              )}
+              entries={parties?.to ?? []}
               selected={filters.toNames}
               onChange={(toNames) => onChange({ toNames })}
             />
@@ -574,9 +601,7 @@ export function TransactionAnalysisPanels({
           <div className="grid items-start gap-3 xl:grid-cols-[minmax(260px,2fr)_3fr]">
             <PartyList
               title="Perspective names"
-              entries={partySummaries(
-                filterAnalysis(rows, filters, "perspective")
-              ).filter((entry) => entry.key.startsWith("name:"))}
+              entries={perspectiveNames}
               selected={filters.perspectiveNames}
               onChange={(perspectiveNames) =>
                 onChange({ perspectiveNames, flowKind: "", flowParty: "" })

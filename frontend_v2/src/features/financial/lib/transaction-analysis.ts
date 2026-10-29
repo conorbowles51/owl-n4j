@@ -25,6 +25,14 @@ export const emptyAnalysisFilters: AnalysisFilters = {
   flowParty: "",
   flowKind: "",
 }
+/** The analysis filters as one value, for working sums out again only when they change. */
+export function analysisFilterKey(filters: AnalysisFilters) {
+  return JSON.stringify(
+    (Object.keys(emptyAnalysisFilters) as (keyof AnalysisFilters)[]).map(
+      (key) => filters[key]
+    )
+  )
+}
 /** What an empty From or To shows: why no name is printed when that is known, else "Not identified". */
 export function unnamedParty(
   row: Pick<LedgerTransaction, "label_sources">,

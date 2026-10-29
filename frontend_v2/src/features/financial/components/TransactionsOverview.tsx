@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { Info } from "lucide-react"
 import type { LedgerTransaction } from "../api"
 import { categoryName, useStatementNames } from "../hooks/use-payment-categories"
@@ -73,26 +73,37 @@ export function TransactionsOverview({
   onCategorise?: (rows: LedgerTransaction[]) => void
   modeSwitch?: React.ReactNode
 }) {
-  const currencies = [...new Set(tileRows.map((row) => row.currency))]
-  const counts = new Map(currencies.map((c) => [c, tileRows.filter((row) => row.currency === c).length]))
-  currencies.sort((a, b) => (counts.get(b) ?? 0) - (counts.get(a) ?? 0) || a.localeCompare(b))
+  // Sums over every matching payment: worked out again only when those payments change.
+  const { currencies, counts } = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const row of tileRows) counts.set(row.currency, (counts.get(row.currency) ?? 0) + 1)
+    const currencies = [...counts.keys()]
+    currencies.sort((a, b) => (counts.get(b) ?? 0) - (counts.get(a) ?? 0) || a.localeCompare(b))
+    return { currencies, counts }
+  }, [tileRows])
   const [chosen, setChosen] = useState("")
   const currency = currencies.includes(chosen) ? chosen : currencies[0] || ""
   const [group, setGroup] = useState<OverviewGroup>("category")
   const [all, setAll] = useState(false)
-  const statementNames = useStatementNames(group === "statement" ? caseId : "none").data ?? new Map<string, string>()
-  const inCurrency = rows.filter((row) => row.currency === currency)
-  const tilesIn = tileRows.filter((row) => row.currency === currency)
-  const [total] = groupMoney(inCurrency, () => ["all", "all"])
+  const statementNameData = useStatementNames(group === "statement" ? caseId : "none").data
+  const { inCurrency, total, months, groups } = useMemo(() => {
+    const statementNames = statementNameData ?? new Map<string, string>()
+    const inCurrency = rows.filter((row) => row.currency === currency)
+    const tilesIn = tileRows.filter((row) => row.currency === currency)
+    return {
+      inCurrency,
+      total: groupMoney(inCurrency, () => ["all", "all"])[0],
+      months: monthSeries(monthRows.filter((row) => row.currency === currency)),
+      groups:
+        group === "category"
+          ? groupMoney(tilesIn, (row) => [categoryName(row), categoryName(row)])
+          : groupMoney(inCurrency, keyOf(statementNames)[group]),
+    }
+  }, [rows, tileRows, monthRows, currency, group, statementNameData])
   const credit = total?.credit ?? 0n
   const debit = total?.debit ?? 0n
-  const months = monthSeries(monthRows.filter((row) => row.currency === currency))
   const peak = months.reduce((max, m) => Math.max(max, m.group ? minorToNumber(m.group.credit, currency) : 0, m.group ? minorToNumber(m.group.debit, currency) : 0), 1)
   const money = (minor: bigint) => compactMoney(minorToNumber(minor, currency))
-  const groups =
-    group === "category"
-      ? groupMoney(tilesIn, (row) => [categoryName(row), categoryName(row)])
-      : groupMoney(inCurrency, keyOf(statementNames)[group])
   const uncategorized = group === "category" ? groups.find((g) => g.key === "Uncategorized") : undefined
   const tiles = groups.filter((g) => g !== uncategorized)
   const toggle = (name: string) =>
