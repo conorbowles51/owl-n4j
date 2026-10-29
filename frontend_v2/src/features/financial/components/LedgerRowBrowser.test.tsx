@@ -536,3 +536,37 @@ it("shows every set filter as a removable chip and removing one clears only it",
   fireEvent.click(screen.getByRole("button", { name: "Remove filter GBP" }))
   expect(screen.getByLabelText("Currency")).toHaveValue("")
 })
+
+vi.mock("./PaymentNamingPanel", () => ({
+  PaymentNamingPanel: ({ currentId, readOnly }: { currentId: string; readOnly?: boolean }) => (
+    <aside aria-label="naming panel">
+      {currentId} {readOnly ? "read-only" : "editable"}
+    </aside>
+  ),
+}))
+
+it("opens a viewer the statement line of a payment without a name instead of filtering by the reason", () => {
+  localStorage.removeItem("financial-transactions-table-view")
+  const reason = "Cheque deposit — the statement doesn’t name who wrote the cheque"
+  render(
+    <LedgerRowBrowser
+      investigation
+      exportContext={{ caseId: "case", params: {} }}
+      transactions={[
+        row("cheque", {
+          direction: "credit",
+          from_name: "",
+          to_name: "HOLDER",
+          label_sources: { from_name: { source: "missing", reason, explanation: reason } },
+        } as Partial<LedgerTransaction>),
+        row("other", { direction: "credit", from_name: "", to_name: "HOLDER" }),
+      ]}
+    />
+  )
+  const list = screen.getByRole("list", { name: "Investigation transactions" })
+  fireEvent.click(within(list).getAllByRole("button", { name: /See the line who paid/ })[0])
+  expect(screen.getByRole("complementary", { name: "naming panel" })).toHaveTextContent("cheque read-only")
+  // The table is not narrowed to the reason as if it were a party.
+  expect(within(list).getAllByRole("checkbox")).toHaveLength(2)
+  expect(screen.getByRole("button", { name: "See their statement lines one by one" })).toBeInTheDocument()
+})

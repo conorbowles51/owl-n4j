@@ -74,7 +74,7 @@ beforeEach(() => {
   })
 })
 
-function Harness({ rows, start }: { rows: LedgerTransaction[]; start: string }) {
+function Harness({ rows, start, readOnly }: { rows: LedgerTransaction[]; start: string; readOnly?: boolean }) {
   const [current, setCurrent] = useState(start)
   const [closed, setClosed] = useState(false)
   if (closed) return <p>panel closed</p>
@@ -88,17 +88,19 @@ function Harness({ rows, start }: { rows: LedgerTransaction[]; start: string }) 
         currentId={current}
         onMove={setCurrent}
         onClose={() => setClosed(true)}
+        readOnly={readOnly}
+        stickyTop={240}
       />
     </>
   )
 }
 
-function mount(rows: LedgerTransaction[], start = rows[0].key) {
+function mount(rows: LedgerTransaction[], start = rows[0].key, readOnly = false) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   client.setQueryData(["financial-ledger", "case", null], { transactions: rows, total: rows.length })
   render(
     <QueryClientProvider client={client}>
-      <Harness rows={rows} start={start} />
+      <Harness rows={rows} start={start} readOnly={readOnly} />
     </QueryClientProvider>
   )
   return client
@@ -232,4 +234,31 @@ it("does not ask again about a payment a person already named or linked", () => 
   expect(needsName(payment("a", { to_name: "ACME" }))).toBe(false)
   expect(needsName(payment("a", { counterparty_link: { kind: "party", id: "p", label: "ACME" } }))).toBe(false)
   expect(needsName(payment("a", { direction: "credit", from_name: "", label_sources: { from_name: { source: "missing" } } }))).toBe(true)
+})
+
+it("sticks below the tools bar so its header and the payment stay visible when the table is scrolled", async () => {
+  mount([payment("a")])
+  const panel = await screen.findByRole("complementary", { name: "Name payments from the statement" })
+  expect(panel.style.top).toBe("248px")
+  expect(panel.style.maxHeight).toBe("calc(100vh - 256px)")
+})
+
+it("shows a viewer the statement line and the queue with no name field, and never saves", async () => {
+  mount([payment("a"), payment("b"), payment("c")], "a", true)
+  const panel = await screen.findByRole("complementary", { name: "Statement lines of payments without a name" })
+  expect(await screen.findByTestId("statement-line-highlight")).toBeTruthy()
+  expect(screen.queryByRole("combobox")).toBeNull()
+  expect(screen.queryByRole("button", { name: /Save and next/ })).toBeNull()
+  expect(screen.getByText("1 of 3 without a name in view")).toBeTruthy()
+  expect(screen.getByText(/Why there is no name/).parentElement?.textContent).toMatch(/Transfer line printed without a name/)
+  fireEvent.keyDown(panel, { key: "ArrowRight" })
+  expect(screen.getByTestId("current").textContent).toBe("b")
+  fireEvent.keyDown(panel, { key: "s" })
+  expect(screen.getByTestId("current").textContent).toBe("c")
+  fireEvent.click(screen.getByRole("button", { name: "← Previous" }))
+  expect(screen.getByTestId("current").textContent).toBe("b")
+  fireEvent.keyDown(panel, { key: "Enter" })
+  expect(puts()).toHaveLength(0)
+  fireEvent.keyDown(panel, { key: "Escape" })
+  expect(screen.getByText("panel closed")).toBeTruthy()
 })

@@ -73,6 +73,7 @@ export function TransactionExplorerTable({
   categoryColors,
   onParty,
   onName,
+  nameAction = "Name it",
   findings = [],
   amountAllowed = true,
   columns = [],
@@ -95,6 +96,8 @@ export function TransactionExplorerTable({
   categoryColors?: Map<string, string>
   onParty: (side: PartySide, key: string) => void
   onName?: (row: LedgerTransaction) => void
+  /** The inline action on a side without a name: "Name it", or "See the line" for a viewer. */
+  nameAction?: string
   findings?: { title?: string | null; tags: string[]; payment_ids: string[] }[]
 }) {
   const selectedIds = new Set(selected),
@@ -253,7 +256,11 @@ export function TransactionExplorerTable({
                         </span>
                         <button
                           className="text-left hover:underline"
-                          title={`Filter ${side}: ${party(row, side).name}`}
+                          title={
+                            onName && needsName(row) && otherSide(row) === (side === "from" ? "from_name" : "to_name")
+                              ? `${nameAction}: open the statement line beside the table`
+                              : `Filter ${side}: ${party(row, side).name}`
+                          }
                           onClick={() =>
                             onName && needsName(row) && otherSide(row) === (side === "from" ? "from_name" : "to_name")
                               ? onName(row)
@@ -269,10 +276,10 @@ export function TransactionExplorerTable({
                         {onName && needsName(row) && otherSide(row) === (side === "from" ? "from_name" : "to_name") && (
                           <button
                             className="ml-1 text-xs font-medium text-[#1d4aa6] hover:underline dark:text-blue-300"
-                            aria-label={`Name ${side === "from" ? "who paid" : "who was paid"}: ${row.description || row.ref_id} on ${row.ordering_date}`}
+                            aria-label={`${nameAction} ${side === "from" ? "who paid" : "who was paid"}: ${row.description || row.ref_id} on ${row.ordering_date}`}
                             onClick={() => onName(row)}
                           >
-                            Name it
+                            {nameAction}
                           </button>
                         )}
                       </div>

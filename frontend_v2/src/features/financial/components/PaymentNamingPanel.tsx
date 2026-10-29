@@ -37,9 +37,9 @@ export interface StatementPage {
   text_layer: boolean | null
 }
 
-export const statementPageUrl = (caseId: string, id: string) =>
+const statementPageUrl = (caseId: string, id: string) =>
   `/api/financial/ledger/${encodeURIComponent(id)}/statement-page?${new URLSearchParams({ case_id: caseId })}`
-export const statementImageUrl = (caseId: string, id: string, page: number) =>
+const statementImageUrl = (caseId: string, id: string, page: number) =>
   `/api/financial/ledger/${encodeURIComponent(id)}/statement-page/${page}/image?${new URLSearchParams({ case_id: caseId, width: "1400" })}`
 
 const pageQuery = (caseId: string, id: string) => ({
@@ -73,6 +73,8 @@ export function PaymentNamingPanel({
   onMove,
   onClose,
   onOpenDetails,
+  readOnly = false,
+  stickyTop = 0,
 }: {
   caseId: string
   /** Every payment in view: names offered while typing and similar payments come from these. */
@@ -83,6 +85,10 @@ export function PaymentNamingPanel({
   onMove: (id: string) => void
   onClose: () => void
   onOpenDetails?: (row: LedgerTransaction) => void
+  /** A viewer of the case: the statement line, the queue and the keys, without the name field. */
+  readOnly?: boolean
+  /** Height in px of the sticky bar above the table, so the panel sticks below it rather than under it. */
+  stickyTop?: number
 }) {
   const client = useQueryClient()
   const user = useAuthStore((state) => state.user)
@@ -91,6 +97,7 @@ export function PaymentNamingPanel({
   const [offer, setOffer] = useState<{ source: LedgerTransaction; name: string; groups: SimilarGroup[]; ticked: Set<string> } | null>(null)
   const [last, setLast] = useState<{ originals: LedgerTransaction[]; name: string } | null>(null)
   const input = useRef<HTMLInputElement>(null)
+  const panel = useRef<HTMLElement>(null)
   const position = queue.findIndex((item) => item.key === currentId)
   const neighbour = (step: 1 | -1) => {
     if (position >= 0) return queue[position + step]?.key ?? null
@@ -104,8 +111,9 @@ export function PaymentNamingPanel({
   const previous = neighbour(-1)
   useEffect(() => {
     setName("")
-    input.current?.focus({ preventScroll: true })
-  }, [currentId])
+    // A viewer has no name field; the panel itself takes the keys.
+    ;(readOnly ? panel.current : input.current)?.focus({ preventScroll: true })
+  }, [currentId, readOnly])
   useEffect(() => {
     if (next) void client.prefetchQuery(pageQuery(caseId, next))
   }, [client, caseId, next])
@@ -182,7 +190,7 @@ export function PaymentNamingPanel({
   const busy = save.isPending || undo.isPending
   const submit = () => {
     const value = name.trim().replace(/\s+/g, " ")
-    if (!row || !value || busy || row.counterparty_link) return
+    if (readOnly || !row || !value || busy || row.counterparty_link) return
     if (value === (row[otherSide(row)] ?? "").trim()) {
       if (next) onMove(next)
       return
@@ -217,14 +225,17 @@ export function PaymentNamingPanel({
   const incoming = row?.direction === "credit"
   return (
     <aside
-      aria-label="Name payments from the statement"
-      className="finance-panel sticky top-2 max-h-[calc(100vh-1rem)] min-w-0 space-y-3 overflow-auto rounded-lg border p-4"
+      ref={panel}
+      tabIndex={-1}
+      aria-label={readOnly ? "Statement lines of payments without a name" : "Name payments from the statement"}
+      className="finance-panel sticky min-w-0 space-y-3 overflow-auto rounded-lg border p-4 outline-none"
+      style={{ top: stickyTop + 8, maxHeight: `calc(100vh - ${stickyTop + 16}px)` }}
       data-finance-tone="info"
       onKeyDown={keys}
     >
       <header className="flex items-start justify-between gap-2">
         <div>
-          <h2 className="font-semibold">Name this payment</h2>
+          <h2 className="font-semibold">{readOnly ? "Payment without a name" : "Name this payment"}</h2>
           <p className="text-xs text-muted-foreground" role="status">
             {queue.length === 0
               ? "Every payment in view has a name."
@@ -241,7 +252,7 @@ export function PaymentNamingPanel({
         <p role="status">This payment is not in the current view. Choose another payment or close this panel.</p>
       ) : (
         <>
-          {offer && (
+          {offer && !readOnly && (
             <SimilarOffer
               offer={offer}
               busy={busy}
@@ -288,6 +299,27 @@ export function PaymentNamingPanel({
             </p>
           </section>
           <StatementView key={row.key} caseId={caseId} row={row} />
+          {readOnly ? (
+            <div className="space-y-2">
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="outline" disabled={!previous} onClick={() => previous && onMove(previous)}>
+                  ← Previous
+                </Button>
+                <Button type="button" variant="outline" disabled={!next} onClick={() => next && onMove(next)}>
+                  Next →
+                </Button>
+                {onOpenDetails && (
+                  <Button type="button" variant="ghost" onClick={() => onOpenDetails(row)}>
+                    Payment details
+                  </Button>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                You can view this case but not change it, so there is no name field. ← and → (or S) move between the
+                payments without a name, Esc closes. Someone with edit access to the case can name them here.
+              </p>
+            </div>
+          ) : (
           <form
             className="space-y-2"
             onSubmit={(event) => {
@@ -340,6 +372,7 @@ export function PaymentNamingPanel({
               from the statement; nothing else about the payment changes.
             </p>
           </form>
+          )}
           {save.isError && (
             <p role="alert" className="text-sm">
               {save.error.message}{" "}
@@ -356,7 +389,7 @@ export function PaymentNamingPanel({
           )}
         </>
       )}
-      {last && (
+      {last && !readOnly && (
         <p className="flex flex-wrap items-center gap-2 border-t pt-2 text-sm" aria-label="Last saved name">
           Saved “{last.name}” on {last.originals.length} {last.originals.length === 1 ? "payment" : "payments"}.
           <Button size="sm" variant="outline" disabled={busy} onClick={() => undo.mutate(last.originals)}>

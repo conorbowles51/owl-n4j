@@ -45,6 +45,7 @@ export function PaymentCardList({
   categoryColors,
   onParty,
   onName,
+  nameAction = "Name it",
   findings = [],
 }: {
   rows: LedgerTransaction[]
@@ -60,6 +61,8 @@ export function PaymentCardList({
   onParty: (side: PartySide, key: string) => void
   /** Name the other side beside the table, from the statement line. Clicking "Not identified" opens it too. */
   onName?: (row: LedgerTransaction) => void
+  /** The inline action on a side without a name: "Name it", or "See the line" for a viewer. */
+  nameAction?: string
   findings?: { title?: string | null; tags: string[]; payment_ids: string[] }[]
 }) {
   const selectedIds = new Set(selected)
@@ -117,7 +120,11 @@ export function PaymentCardList({
                         <button
                           type="button"
                           className="truncate text-left text-[15px] font-semibold hover:underline"
-                          title={`Filter ${incoming ? "from" : "to"}: ${other.name}`}
+                          title={
+                            onName && needsName(row)
+                              ? `${nameAction}: open the statement line beside the table`
+                              : `Filter ${incoming ? "from" : "to"}: ${other.name}`
+                          }
                           onClick={() =>
                             onName && needsName(row) ? onName(row) : onParty(incoming ? "from" : "to", other.key)
                           }
@@ -129,10 +136,10 @@ export function PaymentCardList({
                           <button
                             type="button"
                             className="text-[12px] font-medium text-[#1d4aa6] hover:underline dark:text-blue-300"
-                            aria-label={`Name ${incoming ? "who paid" : "who was paid"}: ${label} on ${row.ordering_date}`}
+                            aria-label={`${nameAction} ${incoming ? "who paid" : "who was paid"}: ${label} on ${row.ordering_date}`}
                             onClick={() => onName(row)}
                           >
-                            Name it
+                            {nameAction}
                           </button>
                         )}
                       </div>

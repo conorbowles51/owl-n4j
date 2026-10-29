@@ -65,7 +65,7 @@ import {
   type Judgement,
 } from "../lib/judgements"
 import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
-import { useState, type ComponentProps } from "react"
+import { useCallback, useRef, useState, type ComponentProps } from "react"
 import { Button } from "@/components/ui/button"
 import { LedgerTable } from "./LedgerTable"
 import { PaymentNamingPanel } from "./PaymentNamingPanel"
@@ -144,6 +144,18 @@ export function LedgerRowBrowser({
   const [manageCategories, setManageCategories] = useState(false)
   const [editNames, setEditNames] = useState(false)
   const [naming, setNaming] = useState<string | null>(null)
+  // The tools bar sticks over the table; the naming panel sticks just below it so its header stays visible.
+  const [toolbarHeight, setToolbarHeight] = useState(0)
+  const toolbarWatch = useRef<ResizeObserver | null>(null)
+  const toolbarRef = useCallback((node: HTMLDivElement | null) => {
+    toolbarWatch.current?.disconnect()
+    toolbarWatch.current = null
+    if (!node) return
+    setToolbarHeight(node.offsetHeight)
+    if (typeof ResizeObserver === "undefined") return
+    toolbarWatch.current = new ResizeObserver(() => setToolbarHeight(node.offsetHeight))
+    toolbarWatch.current.observe(node)
+  }, [])
   const [labelIds, setLabelIds] = useState<string[] | null>(null)
   // The quick Categorise dialog; "Edit other fields…" swaps in the full editor.
   const [fullEditor, setFullEditor] = useState(false)
@@ -379,6 +391,7 @@ export function LedgerRowBrowser({
   }
   const transactionToolbar = (
     <div
+      ref={toolbarRef}
       className="sticky top-0 z-20 max-h-[55vh] overflow-y-auto rounded border bg-background p-3 shadow-sm"
       role="region"
       aria-label="Transaction tools and filters"
@@ -1423,7 +1436,7 @@ export function LedgerRowBrowser({
           >
             {view.unnamedOnly ? "Show all payments" : "Show only these"}
           </Button>
-          {canEdit && unnamedRows.length > 0 && (
+          {unnamedRows.length > 0 && (
             <Button
               size="sm"
               onClick={() => {
@@ -1433,7 +1446,7 @@ export function LedgerRowBrowser({
                 openNaming(first.key)
               }}
             >
-              Name them one by one
+              {canEdit ? "Name them one by one" : "See their statement lines one by one"}
             </Button>
           )}
         </div>
@@ -1482,7 +1495,8 @@ export function LedgerRowBrowser({
                 }
               : undefined
           }
-          onName={canEdit ? (row) => openNaming(row.key) : undefined}
+          onName={(row) => openNaming(row.key)}
+          nameAction={canEdit ? "Name it" : "See the line"}
           onParty={(side, key) => {
             const field = side === "from" ? "fromNames" : "toNames"
             changeView({
@@ -1527,7 +1541,8 @@ export function LedgerRowBrowser({
                 }
               : undefined
           }
-          onName={canEdit ? (row) => openNaming(row.key) : undefined}
+          onName={(row) => openNaming(row.key)}
+          nameAction={canEdit ? "Name it" : "See the line"}
           onParty={(side, key) => {
             const field = side === "from" ? "fromNames" : "toNames"
             changeView({
@@ -1555,6 +1570,8 @@ export function LedgerRowBrowser({
             onMove={openNaming}
             onClose={() => setNaming(null)}
             onOpenDetails={actions.onSource}
+            readOnly={!canEdit}
+            stickyTop={toolbarHeight}
           />
         </div>
       )}

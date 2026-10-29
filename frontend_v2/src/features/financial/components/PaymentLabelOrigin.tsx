@@ -6,9 +6,19 @@ const SHORT: Record<string, string> = {
   learned: "Learned",
   matched_payment: "Matched payment",
   printed_account: "Account printed on the line",
+  investigator: "Saved by a person",
 }
 
-/** A quiet note of who set an automatic label: rules, the model, or a person's choice applied to similar payments. */
+/** A person's label, shortened to who set it: "Named by Ana from the statement", "Saved by Ana". */
+function personShort(explanation?: string | null) {
+  const text = (explanation || "")
+    .replace(/ on \d{4}-\d{2}-\d{2}[\s\S]*$/, "")
+    .replace(/ to an existing [\s\S]*$/, "")
+    .replace(/\.$/, "")
+  return text || SHORT.investigator
+}
+
+/** A quiet note of who set a label: rules, the model, a person's choice applied to similar payments, or the person. */
 export function PaymentLabelOrigin({
   row,
   field,
@@ -27,9 +37,11 @@ export function PaymentLabelOrigin({
     )
   if (!origin || !SHORT[origin.source]) return null
   const short =
-    origin.source === "description" && field !== "category"
-      ? "Suggested"
-      : SHORT[origin.source]
+    origin.source === "investigator"
+      ? personShort(origin.explanation)
+      : origin.source === "description" && field !== "category"
+        ? "Suggested"
+        : SHORT[origin.source]
   return (
     <span
       className="block text-xs font-normal text-muted-foreground"
