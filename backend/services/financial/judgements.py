@@ -208,6 +208,7 @@ RULE_PRIORITY = {
     # 1 · the money itself
     'agent.page_entry': (1, 'every amount of the statement was entered by hand'),
     'agent.correction': (1, 'a saved amount or field was changed by hand'),
+    'model.statement_save': (1, "the statement's payments were saved by Claude and no person has confirmed them"),
     'image.page_reading': (1, "the statement's payments come from the page images, not the text layer"),
     'image.printed_total': (1, 'a printed total the balance check relies on was read from the image'),
     'image.date': (1, 'a payment date was read from the page image'),
@@ -248,6 +249,7 @@ RULE_PRIORITY = {
     'L30c.contract_refile': (2, "the statement was filed in the contract's currency account"),
     'agent.refile': (2, 'the statement was moved to another account by hand'),
     'agent.currency_refile': (2, 'the currency was changed by hand'),
+    'holder.printed_on_statement': (2, 'the account holder was kept as printed on the statement'),
     'period.start_derived': (2, 'the period start was taken from the previous statement'),
     'guard.neighbour_check': (2, 'the statement was saved on a comparison with its neighbours'),
     'L26.duplicate_set_aside': (2, 'one of two saved copies was set aside'),
