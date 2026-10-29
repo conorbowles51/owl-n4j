@@ -15,6 +15,7 @@ from postgres.models.evidence import EvidenceFile
 from postgres.models.financial import FinancialSourceDocument
 from services.financial.pdf_candidates import PdfMappingError, _digest
 from services.financial.statement_import_overlap import scope, same_statement, same_printed_period, comparison_sources
+from services.financial.model_work import origin_field
 
 POLICY = 'pending-statement-duplicate-v1'
 # A copy is also another file printing the same account reference, currency and
@@ -186,7 +187,7 @@ def _persist(file, proposal, request, decision, actor, matched_fields=None):
     if previous and previous.get('revision') == revision:
         return {key: deepcopy(value) for key, value in previous.items() if key != 'history'} | {'current': True}
     value.update(revision=revision, at=datetime.now(timezone.utc).isoformat(),
-        actor=dict(user_id=str(actor.user_id), name=actor.name) if actor else dict(name='System'))
+        actor=dict(user_id=str(actor.user_id), name=actor.name, **origin_field(actor)) if actor else dict(name='System'))
     history = deepcopy((previous or {}).get('history', []))
     if previous:
         history.append({key: deepcopy(item) for key, item in previous.items() if key != 'history'})

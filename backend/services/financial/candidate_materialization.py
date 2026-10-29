@@ -30,6 +30,7 @@ from services.financial.proof_class import SourceShape
 from services.financial.references import RowReading
 from services.financial.runs import ingestion_run
 from services.financial.transactions import TransactionDraft, record_transactions
+from services.financial.model_work import origin_field
 
 
 class CandidateFinalizationRequest(StatementScopesRequest):
@@ -278,7 +279,7 @@ def finalize_candidates(*, session_factory, case_id, evidence_file_id, request, 
                 receipt = FinancialCandidateFinalization(case_id=case_id, evidence_file_id=evidence_file_id,
                     source_document_id=document.id, ingestion_run_id=run.run_id,
                     source_sha256=manifest["source_sha256"], snapshot=snapshot, snapshot_sha256=_digest(snapshot),
-                    actor=dict(name=actor.name, email=actor.email, user_id=str(actor.user_id) if actor.user_id else None),
+                    actor=dict(name=actor.name, email=actor.email, user_id=str(actor.user_id) if actor.user_id else None, **origin_field(actor)),
                     reason=request.reason, transaction_count=len(transactions))
                 session.add(receipt)
                 session.flush()

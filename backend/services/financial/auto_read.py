@@ -52,6 +52,7 @@ from sqlalchemy import select, text, func
 
 from postgres.models.evidence import EvidenceFile, IngestionLog
 from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item
+from services.financial.model_work import origin_field
 
 log = logging.getLogger(__name__)
 
@@ -552,7 +553,7 @@ def read_unread(session, *, case_id, actor=None):
     if not _lock_case(session, case_id):
         raise PdfMappingError('Another save is using this case. Nothing was started; try again in a moment.', 409)
     keep, copies = plan_unread(session, case_id=case_id)
-    requested = dict(name=actor.name, email=actor.email, user_id=str(actor.user_id)) if actor else None
+    requested = dict(name=actor.name, email=actor.email, user_id=str(actor.user_id), **origin_field(actor)) if actor else None
     for file, retained in copies:
         _record_copy(session, file, retained, 'unread_action')
     batch_id = enroll(session, case_id=case_id, files=keep, reason='unread_action', requested_by=requested, commit=False)

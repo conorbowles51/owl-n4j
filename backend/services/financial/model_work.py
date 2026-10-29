@@ -89,6 +89,13 @@ def origin_of(record: Any) -> Optional[dict]:
     return None
 
 
+def origin_field(actor) -> dict:
+    """``{'origin': ...}`` for a model actor and ``{}`` for anyone else, to spread into a stored actor record so a
+    person's record stays exactly as it was."""
+    origin = getattr(actor, 'origin', None)
+    return {'origin': dict(origin)} if origin else {}
+
+
 def actor_record(actor, **extra) -> dict:
     """An actor as stored on a record: user id, name, address, and the origin when a model did the work."""
     record = dict(user_id=str(actor.user_id) if actor.user_id else None, name=actor.name, **extra)

@@ -175,6 +175,10 @@ def _capture_history(session, document, *, case_id):
         'Decision history covers the captured rows and their accounts, source documents, statement periods and evidence files. It is not a complete case history.',
         'PDF review history covers all saved candidates for referenced source files, including other rows outside the ledger filters. Review history is context, not additional transactions.',
     ]
+    from services.financial.expert_support import model_work_inventory
+    work = model_work_inventory(document)
+    if work['unconfirmed_names'] or work['unconfirmed_saved_payments']:
+        document['limitations'].append(work['limitation'])
     return document
 
 
@@ -390,10 +394,29 @@ def render_ledger_report(snapshot):
             value += ' (model guess)'
         elif source == 'learned':
             value += ' (applied from a similar payment)'
-        elif source == 'investigator' and value and str(origin.get('explanation') or '').startswith('Named by '):
-            # A name a person read off the statement page: who named it and when travel with it.
+        elif source == 'model_reading' and value:
+            # A name Claude read for a person that no person has confirmed: the model, the citation and "not
+            # confirmed" travel with it, so the report never shows it as a person's.
+            value += f" ({origin.get('label') or 'read by a model, not confirmed'}: {str(origin.get('explanation') or '').rstrip('.')})"
+        elif source == 'investigator' and value and str(origin.get('explanation') or '').startswith(('Named by ', 'Confirmed by ')):
+            # A name a person read off the statement page, or a model reading a person confirmed: who and when.
             value += f" ({origin['explanation'].rstrip('.')})"
         return value
+
+    # Payments a model saved to the case for a person: the source reference says so, with whether a person has
+    # confirmed the statement, so the report never presents the model's work as a person's.
+    model_saved = {reading['row']['key']: reading['model_work'] for reading in ledger['readings']
+                   if isinstance(reading.get('row'), dict) and reading.get('model_work')}
+
+    def source_reference(row):
+        work = model_saved.get(row.get('key'))
+        if not work:
+            return row['ref_id']
+        origin = work.get('origin') or {}
+        saved = f"saved by {origin.get('model') or 'a model'} for {(origin.get('for') or {}).get('name') or 'a person'}"
+        state = 'statement confirmed by a person' if work.get('statement_status') == 'confirmed' else (
+            'statement corrected by a person' if work.get('statement_status') == 'corrected' else 'not confirmed')
+        return f"{row['ref_id']} ({saved}; {state})"
 
     def absent_balance(row):
         return 'Not printed' if row.get('balance_status') == 'not_printed' else 'Not available'
@@ -458,7 +481,7 @@ def render_ledger_report(snapshot):
         '<p>' + text(ledger['limitation']) + '</p>',
         '<p>The transaction table shows currency amounts. Detailed readings retain exact integer minor units in brackets. '
         'Unsupported values remain explicitly unscaled. No exchange-rate conversion or transfer matching is applied.</p>',
-        '<p>Names and categories marked “suggested” are inferred from transaction descriptions; categories marked “model guess” were chosen by a model from the description, and “applied from a similar payment” were copied from a payment an investigator categorised. None of these are confirmed identities or printed categories. Original readings and label origins are retained in the captured data.</p>',
+        '<p>Names and categories marked “suggested” are inferred from transaction descriptions; categories marked “model guess” were chosen by a model from the description, and “applied from a similar payment” were copied from a payment an investigator categorised. None of these are confirmed identities or printed categories. Original readings and label origins are retained in the captured data. Names marked “Read by Claude · not confirmed” were read from the cited page by Claude, working for the person named, and no person has confirmed them; “Confirmed by” names the person who did.</p>',
         ]
     verification_parts = [
         '<p>Rows in verified totals: ' + text(ledger['included_rows']) + '; other captured readings: ' + text(ledger['excluded_rows']) + '.</p>',
@@ -517,7 +540,7 @@ def render_ledger_report(snapshot):
                 money_display(indexed[key]['amount_minor'], indexed[key]['currency'], exact=False) if indexed[key]['direction'] == 'credit' else '',
                 money_display(indexed[key]['amount_minor'], indexed[key]['currency'], exact=False) if indexed[key]['direction'] == 'debit' else '',
                 money_display(indexed[key]['running_balance_minor'], indexed[key]['currency'], exact=False) if indexed[key]['running_balance_minor'] is not None else absent_balance(indexed[key]),
-                indexed[key]['ref_id']] for key in view['row_ids']], widths=[9,19,10,10,10,11,11,10,10])]
+                source_reference(indexed[key])] for key in view['row_ids']], widths=[9,19,10,10,10,11,11,10,10])]
     else:
         current = [reading['row'] for reading in ledger['readings']
                    if reading['exclusion_reason'] in (None, 'proof_class_not_included')]
@@ -528,7 +551,7 @@ def render_ledger_report(snapshot):
                 money_display(row['amount_minor'], row['currency'], exact=False) if row['direction'] == 'credit' else '',
                 money_display(row['amount_minor'], row['currency'], exact=False) if row['direction'] == 'debit' else '',
                 money_display(row['running_balance_minor'], row['currency'], exact=False) if row['running_balance_minor'] is not None else absent_balance(row),
-                row['ref_id']] for row in current])]
+                source_reference(row)] for row in current])]
     notes = document.get('investigation_notes', [])
     if notes:
         parts += ['<h2>Investigation notes</h2><p>Current Workspace notes linked to captured transaction readings. These are the authors’ observations, not additional transactions. Notes may discuss other evidence.</p>']

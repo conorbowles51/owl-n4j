@@ -18,6 +18,7 @@ from services.process_shutdown import shutdown_requested
 from services.financial.evidence_intake import resolve_financial_selection, prepare_existing_financial_file
 from services.financial.statement_import import read_statement_import, StatementImportRequest, check_import_request, confirm_statement_import, _date_roles, _primary_date_role
 from services.financial.review_arithmetic import check_proposed_rows, arithmetic_problems, accepted_difference
+from services.financial.model_work import origin_field, origin_of
 
 log = logging.getLogger(__name__)
 TERMINAL_FILES = {'checked', 'error'}
@@ -77,7 +78,7 @@ def create_batch(session, *, case_id, request_id, file_ids, folder_ids, actor, s
             if covering:
                 return UUID(covering[0]['id'])
     session.add(Batch(id=request_id, case_id=case_id, created_by=actor.user_id, status='preparing',
-        actor=dict(name=actor.name, email=actor.email, user_id=str(actor.user_id)),
+        actor=dict(name=actor.name, email=actor.email, user_id=str(actor.user_id), **origin_field(actor)),
         files=[dict(source_id=f['id'], file_id=f['id'], filename=f['original_filename'],
                     expected_revision=f['financial_visibility_revision'], status='waiting') for f in selection['files']]))
     session.commit()
@@ -1507,7 +1508,7 @@ def set_selected_currency(session, *, case_id, batch_id, selections, currency, a
             # A currency decision also saves the current draft for individual
             # review, so leaving the batch cannot restore the old currency.
             record = dict(request=merged, review_revision=_digest(merged), saved_at=datetime.now(timezone.utc).isoformat(),
-                saved_by=dict(user_id=str(actor.user_id), name=actor.name))
+                saved_by=dict(user_id=str(actor.user_id), name=actor.name, **origin_field(actor)))
             metadata = deepcopy(file.metadata_ or {})
             previous = metadata.get('financial_review_progress', {}).get(item.statement_key or '')
             if previous:
@@ -1732,7 +1733,7 @@ def save_review(session, *, case_id, batch_id, item_id, request, expected_review
             'initial_request_signature': (saved or {}).get('initial_request_signature') or request_signature(initial_request(proposal)),
             'superseded_request_signatures': sorted(set([*(saved or {}).get('superseded_request_signatures', []),
                 *([request_signature(saved['request'])] if saved else [])]))}
-        updated['saved_by'] = (dict(user_id=str(actor.user_id), name=actor.name) if actor else
+        updated['saved_by'] = (dict(user_id=str(actor.user_id), name=actor.name, **origin_field(actor)) if actor else
             dict(name='Batch review', batch_id=str(batch_id)))
         if answered:
             # The carried record with its question stays in the review history (appended above).
@@ -1784,7 +1785,7 @@ def confirm_review(*, session_factory, case_id, batch_id, item_id, request,
                     raise PdfMappingError('This statement cannot be imported yet. ' + ' '.join(
                         p['message'] for p in item.summary.get('problems', [])[:3]), 422)
                 item.status = 'pending_import'
-                item.summary = {**item.summary, 'import_actor':dict(name=actor.name, email=actor.email, user_id=str(actor.user_id))}
+                item.summary = {**item.summary, 'import_actor':dict(name=actor.name, email=actor.email, user_id=str(actor.user_id), **origin_field(actor))}
                 batch.status = 'preparing'
         session.commit()
     with session_factory() as session:
@@ -1867,7 +1868,7 @@ def claim_ready(session, *, case_id, batch, ready, checked, operation_id, expect
         session.rollback()
         return None
     operation = Operation(id=operation_id, case_id=case_id, batch_id=batch_id, expected_revision=expected_revision,
-        actor=dict(name=actor.name, user_id=_actor_id(actor)),
+        actor=dict(name=actor.name, user_id=_actor_id(actor), **origin_field(actor)),
         outcomes=[dict(item_id=str(i.id), file_id=str(i.file_id), filename=i.summary.get('filename', ''),
             period_start=i.summary.get('period_start', ''), period_end=i.summary.get('period_end', ''),
             status='queued') for i in ready])
@@ -1882,7 +1883,7 @@ def claim_ready(session, *, case_id, batch, ready, checked, operation_id, expect
             item.summary = metadata
             item.review_request = projection.review_request
         checked_summary = {key: value for key, value in {**item.summary, **projection.summary}.items() if key != 'readiness'}
-        item.summary={**checked_summary,'import_operation_id':str(operation_id), 'import_actor':dict(name=actor.name,email=actor.email,user_id=_actor_id(actor))}
+        item.summary={**checked_summary,'import_operation_id':str(operation_id), 'import_actor':dict(name=actor.name,email=actor.email,user_id=_actor_id(actor), **origin_field(actor))}
     batch.status='preparing'
     return operation
 
@@ -1902,7 +1903,7 @@ def leave_unimported(session, *, case_id, batch_id, item_id, action, reason, exp
     if action not in ('skip','restore') or not reason.strip():
         raise PdfMappingError('Choose whether to leave this statement unimported and record the reason.', 422)
     history = list(item.summary.get('import_decision_history', []))
-    decision = dict(action=action, reason=reason.strip(), actor=dict(user_id=str(actor.user_id), name=actor.name),
+    decision = dict(action=action, reason=reason.strip(), actor=dict(user_id=str(actor.user_id), name=actor.name, **origin_field(actor)),
                     at=datetime.now(timezone.utc).isoformat())
     history.append(decision)
     item.summary = {**item.summary, 'import_decision': decision, 'import_decision_history': history}
@@ -2174,7 +2175,7 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
             try:
                 with factory() as session, _bounded_lock_waits(session) as db:
                     batch=batch_for(db,case_id,batch_id)
-                    actor=Actor(name=batch.actor['name'],email=batch.actor['email'],user_id=UUID(batch.actor['user_id']))
+                    actor=Actor(name=batch.actor['name'],email=batch.actor['email'],user_id=UUID(batch.actor['user_id']),origin=origin_of(batch.actor))
                     if file['status']=='waiting':
                         from services.financial.auto_read import detected_only, prepare_detected
                         if file.get('recovery'):
@@ -2911,7 +2912,7 @@ def recover_retained_source(session, *, case_id, batch_id, source_id, expected_r
         message='Preparing a new reading from this retained PDF. Its bytes will be verified before reading; earlier removals and reviews remain in history.',
         fresh_reading=True, read_from_file_id=str(source.id), reading_file_id=str(source.id),
         review_file_id=None, reading_mode='automatic', reset_revision=reset['id'],
-        requested_by=dict(name=actor.name, email=actor.email, user_id=str(actor.user_id)))
+        requested_by=dict(name=actor.name, email=actor.email, user_id=str(actor.user_id), **origin_field(actor)))
     target.update(status='waiting', expected_revision=expected_revision, recovery=result)
     target.pop('error', None)
     batch.files = files

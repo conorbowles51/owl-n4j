@@ -6,6 +6,7 @@ from postgres.models.evidence import EvidenceFile, EvidenceFolder, EvidenceDocum
 from services.financial.pdf_candidates import PdfMappingError
 from services.financial.file_visibility import financial_file_visibility, set_financial_file_visibility, require_financial_file
 from services.financial.statement_reprocessing import create_statement_version
+from services.financial.model_work import origin_field
 
 # Switch LOUPE_FINANCIAL_ALREADY_READING_IS_PROGRESS (default on; '0' turns it off): a preparation whose reading
 # another worker started a moment earlier reports that reading instead of failing the file.
@@ -79,7 +80,7 @@ def include_financial_sources(session, *, case_id, selections, actor):
         if enrolled and not current['financial_removed']:
             continue
         mark_financial_workspace(file, user_id=actor.user_id)
-        actor_data = dict(user_id=str(actor.user_id), name=actor.name, email=actor.email)
+        actor_data = dict(user_id=str(actor.user_id), name=actor.name, email=actor.email, **origin_field(actor))
         if current['financial_removed']:
             file.metadata_ = {**file.metadata_, 'financial_file_visibility': dict(
                 removed=False, revision=str(uuid4()), changed_at=datetime.now(timezone.utc).isoformat(), actor=actor_data)}

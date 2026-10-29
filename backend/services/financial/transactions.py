@@ -746,6 +746,8 @@ def record_transactions(
         link = (row.provenance or {}).get('reviewed_counterparty')
         if link:
             confirmed = row.provenance['confirmed_by']
-            actor = Actor(name=confirmed['name'], email=confirmed['email'], user_id=uuid.UUID(confirmed['user_id']) if confirmed.get('user_id') not in (None, 'None') else None)
+            from services.financial.model_work import origin_of
+            actor = Actor(name=confirmed['name'], email=confirmed['email'], user_id=uuid.UUID(confirmed['user_id']) if confirmed.get('user_id') not in (None, 'None') else None,
+                          origin=origin_of(confirmed))
             record_link(session, row=row, link=link, actor=actor, reason='Counterparty selected while reviewing the source payment.')
     return rows

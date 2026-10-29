@@ -85,10 +85,11 @@ RULES = {
     'category.model': ('Category suggested by the model', 'fin-categories', 'inferred'),
     'holder.printed_on_statement': ('Holder taken as printed on this statement', 'printed_holders (Neil, 2026-10-29)',
                                     'inferred'),
-    'agent.page_entry': ('Entered by hand from the page (agent)', 'fin-queue*/fin-erica hand work', 'proved'),
-    'agent.correction': ('Corrected by hand (agent)', 'fin-queue*/fin-erica hand work', 'proved'),
-    'agent.refile': ('Refiled by hand (agent)', 'fin-accounts / fin-queue3 L30c', 'inferred'),
-    'agent.currency_refile': ('Currency changed by hand (agent)', 'fin-queue3 L27', 'inferred'),
+    'agent.page_entry': ('Entered by hand from the page (Claude, for a person)', 'fin-queue*/fin-erica hand work', 'proved'),
+    'agent.correction': ('Corrected by hand (Claude, for a person)', 'fin-queue*/fin-erica hand work', 'proved'),
+    'agent.refile': ('Refiled by hand (Claude, for a person)', 'fin-accounts / fin-queue3 L30c', 'inferred'),
+    'agent.currency_refile': ('Currency changed by hand (Claude, for a person)', 'fin-queue3 L27', 'inferred'),
+    'model.statement_save': ('Saved by Claude for a person; not confirmed by a person', 'fin-provenance', 'inferred'),
 }
 
 # Field basis written by a reading rule -> rule id. Only bases that choose a value the page does not print outright
@@ -161,7 +162,7 @@ FIELD_WORDS = {'date_basis': 'date', 'direction_basis': 'direction', 'amount_bas
 # Plain-language types of judgement call: the sub-filters of the ledger's "Judgement calls" filter and of the
 # Judgement calls page. One table, so the two never disagree. Rule ids stay in tooltips.
 CATEGORIES = {
-    'hand_entry': 'Entered by hand by the processing agent',
+    'hand_entry': 'Entered by hand by Claude for a person',
     'damaged_scan': 'Damaged scan reading',
     'page_image': 'Value read from the page image',
     'balance': 'Balance or opening worked out',
@@ -170,6 +171,7 @@ CATEGORIES = {
     'holder': 'Holder name as printed',
     'copies': 'Copies, duplicates and replacements',
     'payment_category': 'Category suggested by the model',
+    'model_work': 'Saved by Claude, not yet confirmed by a person',
 }
 _CATEGORY_RULES = {
     'hand_entry': ('agent.page_entry', 'agent.correction'),
@@ -187,13 +189,14 @@ _CATEGORY_RULES = {
                          'autofill.detail', 'L30c.contract_refile', 'agent.refile', 'agent.currency_refile'),
     'payment_category': ('category.model',),
     'holder': ('holder.printed_on_statement',),
+    'model_work': ('model.statement_save',),
     'copies': ('L26.duplicate_set_aside', 'L19.unreadable_copy', 'copies.held_copy', 'L20.part_of_saved',
                'reader.replacement', 'L22.vanished_key', 'erica.receipt_settled'),
 }
 RULE_CATEGORY = {rule: key for key, rules in _CATEGORY_RULES.items() for rule in rules}
 # Calls about a whole statement that touch every one of its payments (who entered them, which reading, which
 # account or currency they are filed in). A balance or a set-aside copy does not touch the payments themselves.
-STATEMENT_ROW_RULES = frozenset({'agent.page_entry', 'image.page_reading', 'reader.replacement',
+STATEMENT_ROW_RULES = frozenset({'agent.page_entry', 'model.statement_save', 'image.page_reading', 'reader.replacement',
                                  'L30c.contract_refile', 'agent.refile', 'agent.currency_refile',
                                  'L4.currency_from_name', 'autofill.currency_account', 'autofill.currency_case',
                                  'holder.printed_on_statement'})
@@ -449,6 +452,20 @@ def detect(document, period, transactions, *, file=None):
                 if rule:
                     add(*period_subject, rule, f"{name.strip()} is not printed as the statement's own: {why.strip()}.",
                         target_key=target, evidence=dict(basis=part.strip(), at=entry.get('at')))
+    # Saved to the case by a model for a person (services.financial.model_work): one call on the statement, open
+    # until a person confirms the statement. Read from the stored origin, never from the saver's name.
+    from services.financial.model_work import origin_of
+    saver = ((transactions[0].provenance or {}).get('confirmed_by') or {}) if transactions else {}
+    origin = origin_of(saver)
+    if origin:
+        model = origin.get('model') or 'A model'
+        person = (origin.get('for') or {}).get('name') or 'a person'
+        found.append(dict(subject_type=period_subject[0], subject_id=period_subject[1], rule_id='model.statement_save',
+                          summary=f"{model} saved this statement's {len(transactions)} payments to the case for {person}"
+                                  f" on {str(origin.get('at') or '')[:10]}. No person has confirmed them against the "
+                                  "statement yet.",
+                          target_key='', strength='inferred', origin='agent',
+                          evidence=dict(origin=origin, saved_by=saver.get('name'), rows=len(transactions))))
     return found
 
 
@@ -570,7 +587,7 @@ def record_saved(session, document, *, period=None, transactions=None, file=None
         for found in detect(document, period, transactions, file=file):
             row = record_judgement(session, case_id=document.case_id, reading=str(document.id),
                                    source_document_id=document.id, statement_period_id=getattr(period, 'id', None),
-                                   origin=origin, **found)
+                                   **{'origin': origin, **found})
             if row is not None:
                 rows.append(row)
         return rows
@@ -599,7 +616,7 @@ def record_on_document(session, document, rule_id, summary, *, target_key='', ev
 
 
 # ---------------------------------------------------------------------------
-# Hand work by the processing agent, said plainly
+# Hand work by Claude for a person, said plainly
 # ---------------------------------------------------------------------------
 
 # What the agent's working notes say about why the processor could not save the statement itself -> plain words.
@@ -653,15 +670,15 @@ def agent_entry_summary(*, rows, period=None, line=None, previous_closing=None, 
     payments = f"{rows} payment{'s' if rows != 1 else ''}"
     were, them = ('were', 'them') if rows != 1 else ('was', 'it')
     if _SAVED_CURRENT.search(line) and not _ENTERED.search(line):
-        first = f"The processing agent checked Loupe's current reading of this statement's {payments} and saved it"
+        first = f"Claude, working for a person, checked Loupe's current reading of this statement's {payments} and saved it"
         first += f", because {why}." if why else '.'
     elif _ENTERED.search(line) or 'read nothing' in line.lower():
         first = (f"{why[:1].upper() + why[1:]}, so its {payments} {were} entered by hand from the page images."
                  if why else f"Its {payments} {were} entered by hand from the page images.")
     else:
-        first = (f"Loupe held this statement for review ({why}); the processing agent checked its {payments} against "
+        first = (f"Loupe held this statement for review ({why}); Claude, working for a person, checked its {payments} against "
                  f"the pages and saved {them}." if why else
-                 f"Loupe held this statement for review; the processing agent checked its {payments} against the "
+                 f"Loupe held this statement for review; Claude, working for a person, checked its {payments} against the "
                  f"pages and saved {them}.")
     if re.search(r'saved account as printed|set holder', line, re.I):
         first += ' The account details are taken from the page header.'
@@ -700,16 +717,16 @@ def agent_entry_summary(*, rows, period=None, line=None, previous_closing=None, 
 def agent_correction_summary(reason):
     found = re.search(r'currency corrected from ([A-Z]{3}) to ([A-Z]{3})', reason or '')
     if found:
-        return (f"The processing agent changed this statement's currency by hand from {found.group(1)} to "
+        return (f"Claude, working for a person, changed this statement's currency by hand from {found.group(1)} to "
                 f"{found.group(2)}, because the statement is in {found.group(2)}. The printed amounts are unchanged; "
                 f"only the currency they count in changed.")
-    return f"The processing agent corrected this by hand. Its reason: {reason}"
+    return f"Claude, working for a person, corrected this by hand. Its reason: {reason}"
 
 
 def agent_refile_summary(reason, account=''):
     contract = re.search(r'contract (\d+)', reason or '')
     where = f" for contract {contract.group(1)}" if contract else ''
-    return (f"The processing agent filed this statement by hand in the {account + ' ' if account else ''}account"
+    return (f"Claude, working for a person, filed this statement by hand in the {account + ' ' if account else ''}account"
             f"{where} that holds the contract's statements in this currency; it had been saved in an older account "
             f"of the same contract. Its payments and balances are unchanged.")
 
@@ -937,6 +954,15 @@ class JudgementError(ValueError):
         self.status_code = status_code
 
 
+def _require_person(actor):
+    """A judgement call is checked by a person; a model checking work (its own or a rule's) checks nothing."""
+    from services.financial.model_work import ModelWorkError, require_person
+    try:
+        require_person(actor, 'check a judgement call')
+    except ModelWorkError as exc:
+        raise JudgementError(str(exc), exc.status_code) from exc
+
+
 def _get(session, case_id, judgement_id):
     from postgres.models.financial_judgements import FinancialJudgement as J
     row = session.scalar(select(J).where(J.id == judgement_id, J.case_id == case_id).with_for_update())
@@ -947,6 +973,7 @@ def _get(session, case_id, judgement_id):
 
 def confirm(session, *, case_id, judgement_id, actor, reason=''):
     """'Looks right': one click, no reason needed. The reinforcement signal for the rule."""
+    _require_person(actor)
     row = _get(session, case_id, judgement_id)
     if row.status == 'corrected':
         raise JudgementError('This judgement call was already corrected.', 409)
@@ -961,6 +988,7 @@ def correct(session, *, case_id, judgement_id, actor, reason, adjudication_id=No
     and records the reason. Without an adjudication id, the latest adjudication on the same subject (or on the
     statement's transactions/period) by this person since the judgement was recorded is linked."""
     from postgres.models.financial import AdjudicationEvent
+    _require_person(actor)
     reason = (reason or '').strip()
     if not reason:
         raise JudgementError('Say why the processor was wrong; the reason is what improves the rule.')
@@ -988,7 +1016,102 @@ def correct(session, *, case_id, judgement_id, actor, reason, adjudication_id=No
     return as_dict(row)
 
 
+# Statement-level work a model did for a person: a person confirms the whole statement with one action.
+MODEL_STATEMENT_RULES = ('model.statement_save', 'agent.page_entry')
+
+
+def statement_model_work(session, case_id, source_document_id):
+    """The model's work on one saved statement and whether a person has confirmed it, or None when a person or
+    the System saved it. ``status``: not_confirmed while any of its calls is open; else confirmed or corrected."""
+    from postgres.models.financial_judgements import FinancialJudgement as J
+    rows = list(session.scalars(select(J).where(J.case_id == case_id, J.source_document_id == source_document_id,
+                                                J.origin == 'agent', J.rule_id.in_(MODEL_STATEMENT_RULES))
+                                .order_by(J.created_at, J.id)))
+    if not rows:
+        return None
+    origin = next(((r.evidence or {}).get('origin') for r in rows if (r.evidence or {}).get('origin')), None)
+    settled = [r for r in rows if r.status != 'open']
+    last = max(settled, key=lambda r: r.resolved_at or r.created_at) if settled else None
+    status = 'not_confirmed' if len(settled) < len(rows) else (
+        'corrected' if any(r.status == 'corrected' for r in rows) else 'confirmed')
+    return dict(status=status, origin=origin, model=(origin or {}).get('model') or 'Claude',
+                for_person=((origin or {}).get('for') or {}).get('name'),
+                confirmed_by=last.resolved_by if last is not None and status != 'not_confirmed' else None,
+                confirmed_at=last.resolved_at.isoformat() if last is not None and last.resolved_at and
+                status != 'not_confirmed' else None,
+                calls=[dict(id=str(r.id), rule_id=r.rule_id, status=r.status, summary=r.summary,
+                            resolved_by=r.resolved_by) for r in rows])
+
+
+def statement_model_work_view(session, case_id, source_document_id):
+    """statement_model_work for a statement view: a database without the judgements table yet (an older schema)
+    shows the statement without the marker, and a failed read is logged rather than failing the whole view."""
+    from contextlib import nullcontext
+    from services.financial.payment_categories import _table_ready
+    try:
+        connection = session.connection()
+        if not _table_ready(connection, 'financial_judgements'):
+            return None
+        # A savepoint keeps a failed read from aborting a Postgres transaction; on SQLite it would hold a read
+        # transaction open and lock out writers, and SQLite survives a failed statement anyway.
+        with connection.begin_nested() if connection.dialect.name != 'sqlite' else nullcontext():
+            return statement_model_work(session, case_id, source_document_id)
+    except Exception:  # noqa: BLE001 - the statement itself still shows
+        log.exception('Reading the model work of statement %s failed; it is shown without its marker',
+                      source_document_id)
+        return None
+
+
+def confirm_statement(session, *, case_id, source_document_id, actor, reason=''):
+    """A person confirms a statement a model saved or entered by hand: every open model call on it is marked
+    'Looks right' by that person, in one action. Nothing about the statement or its payments changes."""
+    from postgres.models.financial_judgements import FinancialJudgement as J
+    _require_person(actor)
+    rows = list(session.scalars(select(J).where(J.case_id == case_id, J.source_document_id == source_document_id,
+                                                J.origin == 'agent', J.rule_id.in_(MODEL_STATEMENT_RULES),
+                                                J.status == 'open').order_by(J.id).with_for_update()))
+    if not rows:
+        raise JudgementError('Nothing on this statement is waiting for a person to confirm.', 409)
+    now = datetime.now(timezone.utc)
+    for row in rows:
+        row.status, row.resolved_by, row.resolved_by_email = 'confirmed', actor.name, actor.email
+        row.resolved_at, row.resolution_reason = now, (reason or '').strip() or 'Confirmed from the statement.'
+    session.commit()
+    return statement_model_work(session, case_id, source_document_id)
+
+
+def model_work_statements(session, case_id):
+    """{source_document_id: status} for every statement with model work in the case (the statements' queue)."""
+    from postgres.models.financial_judgements import FinancialJudgement as J
+    out = {}
+    for document_id, status in session.execute(select(J.source_document_id, J.status).where(
+            J.case_id == case_id, J.origin == 'agent', J.rule_id.in_(MODEL_STATEMENT_RULES),
+            J.source_document_id.is_not(None))):
+        key = str(document_id)
+        if status == 'open' or out.get(key) == 'not_confirmed':
+            out[key] = 'not_confirmed'
+        else:
+            out[key] = 'corrected' if status == 'corrected' or out.get(key) == 'corrected' else 'confirmed'
+    return out
+
+
+def model_work_statements_view(session, case_id):
+    """model_work_statements for a read that must not fail on a database without the judgements table."""
+    from contextlib import nullcontext
+    from services.financial.payment_categories import _table_ready
+    try:
+        connection = session.connection()
+        if not _table_ready(connection, 'financial_judgements'):
+            return {}
+        with connection.begin_nested() if connection.dialect.name != 'sqlite' else nullcontext():
+            return model_work_statements(session, case_id)
+    except Exception:  # noqa: BLE001 - the ledger still reads; each model reading then says "not confirmed"
+        log.exception('Reading the statements with model work in case %s failed', case_id)
+        return {}
+
+
 def reopen(session, *, case_id, judgement_id, actor):
+    _require_person(actor)
     row = _get(session, case_id, judgement_id)
     row.status, row.resolved_by, row.resolved_by_email, row.resolved_at = 'open', None, None, None
     row.resolution_reason, row.adjudication_id = None, None

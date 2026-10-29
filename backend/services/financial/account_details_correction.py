@@ -31,6 +31,7 @@ from sqlalchemy import select
 
 from postgres.models.financial import FinancialAccount, FinancialStatementPeriod
 from services.financial.pdf_candidates import PdfMappingError, _digest
+from services.financial.model_work import origin_field
 
 HISTORY = 'account_details_history'
 SPLIT_PREFIX = 'statement-details:'
@@ -251,7 +252,7 @@ def save_account_details(session, *, case_id, account_id, request, actor):
         now = datetime.now(timezone.utc).isoformat()
         entry = dict(id=uuid4().hex, kind='correction', at=now, reason=reason, before=before, after=after,
             identity_key_before=account.identity_key, actor_id=str(actor.user_id), actor_name=actor.name,
-            actor_email=actor.email, statements=[], rejoined=[], not_edited=[])
+            actor_email=actor.email, statements=[], rejoined=[], not_edited=[], **origin_field(actor))
         _apply(session, case_id=case_id, account=account, before=before, after=after, reason=reason, actor=actor,
                now=now, entry=entry)
         entry['identity_key_after'] = account.identity_key
@@ -303,7 +304,7 @@ def undo_account_details(session, *, case_id, account_id, request, actor):
         session.flush()
         entry = dict(id=uuid4().hex, kind='undo', undo_of=target['id'], at=now, reason=reason,
             before=target['after'], after=restored, actor_id=str(actor.user_id), actor_name=actor.name,
-            actor_email=actor.email, statements=[], rejoined=[], split_again=[])
+            actor_email=actor.email, statements=[], rejoined=[], split_again=[], **origin_field(actor))
         from postgres.models.financial import FinancialSourceDocument
         rejoined = {item['source_document_id']: item for item in target.get('rejoined', [])}
         for item in target.get('statements', []):

@@ -44,6 +44,7 @@ from sqlalchemy import String, cast, select
 
 from postgres.models.evidence import EvidenceDocumentText, EvidenceFile, EvidenceTableGeometry
 from services.financial.pdf_candidates import PdfMappingError, _digest
+from services.financial.model_work import origin_field
 
 FIELDS = ('holder', 'institution', 'currency')
 METADATA_KEY = 'financial_layout_memory'
@@ -347,7 +348,7 @@ def confirm(session, *, case_id, file_id, statement_id, field, value, expected_k
                      layout_key=statement.get('layout_key', ''), layout_fingerprint=statement.get('layout_fingerprint', ''),
                      evidence=(statement.get('identity_evidence') or {}).get(field, []), statement_id=statement_id,
                      confirmed_at=datetime.now(timezone.utc).isoformat(),
-                     confirmed_by=dict(user_id=str(actor.user_id), name=actor.name),
+                     confirmed_by=dict(user_id=str(actor.user_id), name=actor.name, **origin_field(actor)),
                      request_id=str(request_id) if request_id else None, withdrawn_at=None, withdrawn_by=None)
         metadata = deepcopy(file.metadata_ or {})
         metadata.setdefault(METADATA_KEY, []).append(entry)
@@ -376,7 +377,7 @@ def withdraw(session, *, case_id, confirmation_id, reason, actor):
             for stored in metadata.get(METADATA_KEY, []):
                 if stored['id'] == entry['id']:
                     stored.update(withdrawn_at=datetime.now(timezone.utc).isoformat(),
-                                  withdrawn_by=dict(user_id=str(actor.user_id), name=actor.name), withdrawal_reason=reason)
+                                  withdrawn_by=dict(user_id=str(actor.user_id), name=actor.name, **origin_field(actor)), withdrawal_reason=reason)
                     entry = stored
             file.metadata_ = metadata
             session.commit()

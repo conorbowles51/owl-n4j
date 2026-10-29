@@ -623,6 +623,9 @@ def read_statement_import(session, *, case_id, evidence_file_id, currency=None, 
         current_import['incomplete_count'] = sum(not r.get('resolved_transaction_id') for r in (current.metadata_ or {}).get('statement_incomplete_records', []))
         current_import['record_count'] = current_import['transaction_count'] + current_import['incomplete_count']
         current_import['excluded_as_duplicate'] = excluded_copy is not None
+        # Saved or entered by a model for a person: shown as the model's until a person confirms the statement.
+        from services.financial.judgements import statement_model_work_view
+        current_import['model_work'] = statement_model_work_view(session, current.case_id, current.id)
         if excluded_copy is not None:
             retained = session.scalar(select(FinancialSourceDocument).where(
                 FinancialSourceDocument.id == excluded_copy.superseded_by_id,

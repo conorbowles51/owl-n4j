@@ -39,6 +39,7 @@ import os
 import re
 from copy import deepcopy
 from datetime import datetime, timezone
+from services.financial.model_work import origin_field
 
 ENABLED = os.environ.get('LOUPE_FINANCIAL_NOT_PAYMENT_STATEMENTS', '1').strip().lower() not in (
     '0', 'false', 'no', 'off')
@@ -166,7 +167,7 @@ def _persist(file, statement_id, status, actor, reason):
     if previous:
         history.append({key: value for key, value in previous.items() if key != 'history'})
     decisions[statement_id or ''] = dict(status=status, reason=reason, at=datetime.now(timezone.utc).isoformat(),
-        actor=dict(user_id=str(actor.user_id), name=actor.name) if actor else dict(name='System'), history=history)
+        actor=dict(user_id=str(actor.user_id), name=actor.name, **origin_field(actor)) if actor else dict(name='System'), history=history)
     file.metadata_ = metadata
 
 

@@ -14,6 +14,7 @@ from services.financial.candidate_store import CandidateStoreError
 from services.financial.decisions import Actor
 from services.financial.money import MoneyError, get_currency
 from services.financial.pdf_candidates import _Contract, _Digest, _digest
+from services.financial.model_work import origin_field
 
 
 class CandidateResolvedReading(_Contract):
@@ -159,7 +160,7 @@ def review_candidate(session, *, case_id, candidate_id, request, actor):
         event = FinancialCandidateReview(candidate_id=candidate.id, sequence=len(state["history"])+1,
             status=request.status, reason=request.reason, reading=reading,
             original_sha256=candidate.snapshot_sha256, previous_revision=state["review_revision"],
-            actor=dict(name=actor.name, email=actor.email, user_id=str(actor.user_id) if actor.user_id else None))
+            actor=dict(name=actor.name, email=actor.email, user_id=str(actor.user_id) if actor.user_id else None, **origin_field(actor)))
         session.add(event)
         session.flush()
         result = read_candidate_review(session, case_id=case_id, candidate_id=candidate.id)

@@ -116,6 +116,16 @@ def ledger_summary(session, *, case_id, account_id=None, start_date=None, end_da
         account_labels = account_label_index(parties)
         from services.financial.payment_party_matches import case_party_matches
         party_matches = case_party_matches(session, case_id)
+        # Statements a model saved for a person, and whether a person has confirmed each (judgements): read once,
+        # and only when a captured payment was saved by a model, so other captures read nothing more.
+        from services.financial.judgements import model_work_statements_view
+        from services.financial.model_work import origin_of
+        statement_work = []
+
+        def statement_status(document_id):
+            if not statement_work:
+                statement_work.append(model_work_statements_view(session, case_id))
+            return statement_work[0].get(str(document_id))
         # Stored categories in bounded queries, not one query per payment in to_view.
         from services.financial.payment_categories import attach_stored
         attach_stored(session, [row for row, _, _ in pairs])
@@ -143,7 +153,8 @@ def ledger_summary(session, *, case_id, account_id=None, start_date=None, end_da
                 account=dict(id=str(account.id), account_type=account.account_type, label=(account.metadata_ or {}).get('display_label') or account.identifier_as_printed or account.holder_name),
                 source=dict(id=str(document.id), evidence_file_id=str(document.evidence_file_id) if document.evidence_file_id else None,
                     sha256_at_ingestion=document.sha256_at_ingestion, proof_class=source_class.value,
-                    status=source_status.value, parser_name=document.parser_name, parser_version=document.parser_version)))
+                    status=source_status.value, parser_name=document.parser_name, parser_version=document.parser_version),
+                **_model_work(origin_of((row.provenance or {}).get('confirmed_by') or {}), lambda: statement_status(document.id))))
         if status.value == 'admitted' and row.superseded_by_id is not None:
             raise LedgerSummaryError("An admitted row references a replacement; summary unavailable.")
         if status.value != 'admitted':
@@ -225,3 +236,12 @@ def ledger_counterparties(session, *, case_id, account_id=None, start_date=None,
         group['source_document_ids'] = sorted(group['source_document_ids'])
         result['counterparties'].append(group)
     return result
+
+
+def _model_work(origin, status):
+    """A reading saved to the case by a model for a person: its origin and whether a person has confirmed the
+    statement (``status`` is called only then). Left out entirely for a person's or the System's save, so those
+    readings are captured as before."""
+    if not origin:
+        return {}
+    return dict(model_work=dict(origin=origin, statement_status=status() or 'not_confirmed'))

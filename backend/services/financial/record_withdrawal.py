@@ -33,6 +33,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from postgres.models.financial import FinancialSourceDocument
 from services.financial.pdf_candidates import PdfMappingError
+from services.financial.model_work import origin_field
 
 WITHDRAW_REASON = 'Withdrawn by the investigator.'
 PRINTED_ZERO = os.environ.get('LOUPE_FINANCIAL_WITHDRAW_PRINTED_ZERO', '1') != '0'
@@ -113,7 +114,7 @@ def change(*, session_factory, case_id, source_id, request, actor, restore=False
             if record.get('version', 0) != request.version:
                 raise PdfMappingError('Another investigator changed this record. Reload it before withdrawing it.', 409)
             entry = dict(action='restored' if restore else 'withdrawn', by=str(actor.user_id), name=actor.name,
-                         email=actor.email, at=datetime.now(timezone.utc).isoformat(), reason=reason)
+                         email=actor.email, at=datetime.now(timezone.utc).isoformat(), reason=reason, **origin_field(actor))
             record.setdefault('withdrawal_history', []).append(entry)
             if restore:
                 record.pop('withdrawn', None)

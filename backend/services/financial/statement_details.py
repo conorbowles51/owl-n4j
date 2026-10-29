@@ -10,6 +10,7 @@ from postgres.models.financial import FinancialAccount, FinancialSourceDocument,
 from services.financial.pdf_candidates import PdfMappingError, _digest
 
 from services.financial.currency_correction import CurrencyCode, rescale_minor
+from services.financial.model_work import origin_field
 
 DETAIL_KEYS = ('holder', 'account_number', 'institution')
 # A holder or bank printed in another letter case or spacing ('BBVA MEXICO' /
@@ -284,7 +285,7 @@ def update_statement_details(session, *, case_id, source_id, request, actor, com
         metadata['statement_details_review_sha256'] = _digest(review)
         metadata.setdefault('statement_details_history', []).append(dict(
             at=datetime.now(timezone.utc).isoformat(), actor_id=str(actor.user_id), actor_name=actor.name,
-            before=before, after=review))
+            before=before, after=review, **origin_field(actor)))
         metadata['statement_details_last_request'] = request.model_dump(mode='json')
         document.metadata_ = metadata
         session.flush()

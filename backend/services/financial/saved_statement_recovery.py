@@ -25,6 +25,7 @@ from services.financial.duplicate_decisions import duplicate_revision
 from services.financial.pdf_candidates import PdfMappingError, _digest
 from services.financial.statement_details import BalanceEdit, _load, _view
 from services.financial.transaction_query import to_view
+from services.financial.model_work import origin_field
 
 
 class RecoverySection(BaseModel):
@@ -373,7 +374,7 @@ def save_recovery(session, *, case_id, source_id, request, actor):
         document.quarantine_reason = None
         document.metadata_ = {**document.metadata_, 'statement_recovery_receipt': dict(
             request=payload, result=result, preview=preview, saved_at=now.isoformat(),
-            saved_by=dict(user_id=str(actor.user_id), name=actor.name))}
+            saved_by=dict(user_id=str(actor.user_id), name=actor.name, **origin_field(actor)))}
         session.commit()
         return result
     except Exception as error:

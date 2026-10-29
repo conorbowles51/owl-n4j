@@ -2270,3 +2270,7 @@ from services.financial.printed_holders import PrintedHoldersError, holders_by_s
 __all__ += ["PrintedHoldersError", "holders_by_statement"]
 from services.financial.summary_pages import balance_pages, statement_summary_pages
 __all__ += ["balance_pages", "statement_summary_pages"]
+from services.financial.model_work import model_actor, model_origin, origin_of, require_person
+__all__ += ["model_actor", "model_origin", "origin_of", "require_person"]
+from services.financial.model_work_migration import legacy_person, record_statement_calls
+__all__ += ["legacy_person", "record_statement_calls"]

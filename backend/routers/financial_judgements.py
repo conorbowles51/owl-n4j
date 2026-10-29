@@ -96,6 +96,24 @@ def processor_rules(case_id: UUID = Query(...), db: Session = Depends(get_db)):
     return dict(case=judgements.track_record(db, case_id), all_cases=judgements.track_record(db, None))
 
 
+@router.get("/statements")
+def model_work_statements(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    """Every statement a model saved or entered for a person, with whether a person has confirmed it."""
+    return dict(case_id=str(case_id), statements=judgements.model_work_statements(db, case_id))
+
+
+@router.post("/statements/{source_document_id}/confirm")
+async def confirm_statement(source_document_id: UUID, body: Confirm | None = None, case_id: UUID = Query(...),
+                            current_user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    """A person confirms, in one action, a statement Claude saved or entered for a person."""
+    try:
+        return judgements.confirm_statement(db, case_id=case_id, source_document_id=source_document_id,
+                                            actor=_actor(current_user), reason=(body.reason if body else ''))
+    except judgements.JudgementError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
 @router.post("/{judgement_id}/confirm")
 async def confirm_judgement(judgement_id: UUID, body: Confirm | None = None, case_id: UUID = Query(...),
                             current_user=Depends(get_current_db_user), db: Session = Depends(get_db)):

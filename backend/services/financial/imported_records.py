@@ -12,6 +12,7 @@ from postgres.models.evidence import EvidenceFile
 from services.financial.pdf_candidates import PdfMappingError
 from services.financial.statement_import import ImportRow, StatementImportRequest, _reading_dates, _date_roles, _primary_date_role
 from services.financial.import_issues import usable_currency, incomplete_fields
+from services.financial.model_work import origin_field
 
 
 class CompleteImportedRecord(BaseModel):
@@ -234,7 +235,7 @@ def transaction_draft(row, original, *, account_id, period_id, currency, positio
             running_balance_minor=balance_sign * int(row.balance_minor) if row.balance_minor is not None else None),
         provenance=dict(**(dict(reviewed_counterparty=link) if link else {}), statement_import_original=original, statement_import_review=row.model_dump(mode='json'),
             **(dict(date_basis='statement_end_ordering_only', statement_end_date=period_end) if row.date_unprinted else {}),
-            confirmed_by=dict(user_id=str(actor.user_id), name=actor.name, email=actor.email)))
+            confirmed_by=dict(user_id=str(actor.user_id), name=actor.name, email=actor.email, **origin_field(actor))))
 
 
 def complete_record(*, session_factory, case_id, source_id, request, actor):
@@ -299,7 +300,8 @@ def complete_record(*, session_factory, case_id, source_id, request, actor):
                 # A new correction replaces the withdrawn one; the history stays.
                 record.pop('withdrawn')
                 record.setdefault('withdrawal_history', []).append(dict(action='replaced_by_correction',
-                    by=str(actor.user_id), name=actor.name, email=actor.email, at=datetime.now(timezone.utc).isoformat(), reason=''))
+                    by=str(actor.user_id), name=actor.name, email=actor.email, at=datetime.now(timezone.utc).isoformat(), reason='',
+                    **origin_field(actor)))
             record.update(correction=request.row.model_dump(mode='json'), correction_currency=currency,
                 version=request.version + 1, corrected_by=str(actor.user_id),
                 corrected_at=datetime.now(timezone.utc).isoformat(), missing_fields=[])

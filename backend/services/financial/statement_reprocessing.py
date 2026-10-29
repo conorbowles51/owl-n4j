@@ -6,6 +6,7 @@ from uuid import uuid4
 from sqlalchemy import select
 from postgres.models.evidence import EvidenceFile
 from services.financial.pdf_candidates import PdfMappingError
+from services.financial.model_work import origin_field
 
 
 def create_statement_version(session, *, case_id, evidence_file_id, request_id, actor, resolve_path,
@@ -59,7 +60,7 @@ def create_statement_version(session, *, case_id, evidence_file_id, request_id, 
             metadata_=dict(statement_root_evidence_id=(original.metadata_ or {}).get('statement_root_evidence_id', str(evidence_file_id)), statement_parent_evidence_id=str(evidence_file_id), statement_version_request=str(request_id),
                 statement_pdf_reading_mode=reading_mode,
                 **({'statement_reset_revision': reset_revision} if reset_revision and retained_source_recovery else {}),
-                statement_version_actor=dict(user_id=str(actor.user_id), name=actor.name, email=actor.email)))
+                statement_version_actor=dict(user_id=str(actor.user_id), name=actor.name, email=actor.email, **origin_field(actor))))
         session.add(version)
         session.commit()
         return version

@@ -13,6 +13,7 @@ from postgres.models.evidence import EvidenceFile
 from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item
 from services.financial.pdf_candidates import PdfMappingError, _Contract, _Digest, _digest
 from services.financial.statement_import import StatementReviewDraft
+from services.financial.model_work import origin_field
 
 
 class RowAssignmentRequest(_Contract):
@@ -193,7 +194,7 @@ def reassign_rows(session, *, case_id, evidence_file_id, body, actor, apply=Fals
     for key in (source_id, target_id):
         state['base_revisions'][key] = _base(session, file, body.request.currency, key, cache)['revision']
     event = dict(from_statement_id=source_id, to_statement_id=target_id, reason=body.reason.strip(),
-                 saved_at=datetime.now(timezone.utc).isoformat(), saved_by=dict(user_id=str(actor.user_id), name=actor.name))
+                 saved_at=datetime.now(timezone.utc).isoformat(), saved_by=dict(user_id=str(actor.user_id), name=actor.name, **origin_field(actor)))
     for key in sorted(selected):
         previous = state['rows'].get(key)
         state['rows'][key] = dict(row_id=key, original_statement_id=previous['original_statement_id'] if previous else source_id,

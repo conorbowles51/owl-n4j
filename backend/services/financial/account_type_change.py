@@ -35,6 +35,7 @@ from postgres.models.financial import (
 )
 from services.financial.pdf_candidates import PdfMappingError, _digest
 from services.financial.statement_details import CONVENTION_REVIEW, effective_convention
+from services.financial.model_work import origin_field
 
 ACCOUNT_TYPES = {'credit_card': 'liability_owed', 'checking': 'asset_balance', 'savings': 'asset_balance'}
 TYPE_LABELS = {'credit_card': 'credit card', 'checking': 'bank account (checking)',
@@ -232,7 +233,7 @@ def save_account_type(session, *, case_id, account_id, request, actor):
         before_type = account.account_type
         after = ACCOUNT_TYPES[request.account_type]
         now = datetime.now(timezone.utc).isoformat()
-        who = dict(actor_id=str(actor.user_id) if actor.user_id else None, actor_name=actor.name, actor_email=actor.email)
+        who = dict(actor_id=str(actor.user_id) if actor.user_id else None, actor_name=actor.name, actor_email=actor.email, **origin_field(actor))
         for document, period in pairs:
             metadata = deepcopy(document.metadata_ or {})
             previous = effective_convention(metadata, before_type) or 'asset_balance'

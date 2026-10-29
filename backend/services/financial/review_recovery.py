@@ -12,6 +12,7 @@ from postgres.models.evidence import EvidenceFile
 from postgres.models.financial import FinancialSourceDocument
 from postgres.models.financial_import_batches import FinancialImportBatch, FinancialImportBatchItem
 from services.financial.pdf_candidates import PdfMappingError, _digest
+from services.financial.model_work import origin_field
 
 
 def _ancestors(session, file):
@@ -444,7 +445,7 @@ def acknowledge_recovery(session, *, case_id, evidence_file_id, expected_revisio
     if not recovery or recovery['revision'] != expected_revision:
         raise PdfMappingError('The saved reviews or new reading changed. Reload and compare them before continuing.', 409)
     saved = dict(revision=expected_revision, saved_at=datetime.now(timezone.utc).isoformat(),
-        saved_by=dict(user_id=str(actor.user_id), name=actor.name))
+        saved_by=dict(user_id=str(actor.user_id), name=actor.name, **origin_field(actor)))
     metadata = deepcopy(file.metadata_ or {})
     metadata.setdefault('financial_review_comparison_history', []).append(saved)
     metadata['financial_review_comparison'] = saved

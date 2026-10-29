@@ -142,6 +142,48 @@ class ModelLabelTests(unittest.TestCase):
         # Confirming again finds nothing unconfirmed.
         self.assertEqual(self.confirm([row], self.f.actor)['skipped'], 1)
 
+    def test_export_carries_the_origin_and_lists_unconfirmed_work_as_a_limitation(self):
+        import json
+        from services.financial.expert_support import build_expert_support
+        from services.financial.ledger_snapshot import (LedgerSnapshot, _capture_history, capture_ledger_snapshot,
+                                                        render_ledger_report)
+
+        from postgres.base import Base
+        import postgres.models.financial_candidates  # noqa: F401 - registers the review-history tables
+        Base.metadata.create_all(self.f.db.connection(), tables=[t for name, t in Base.metadata.tables.items()
+                                                                  if name.startswith('financial_candidate')])
+        self.f.db.commit()
+
+        def capture_ledger_export(_bind, case_id):
+            # The export's own capture needs PostgreSQL; this is the same snapshot and history capture on SQLite.
+            document = _capture_history(self.f.db, json.loads(capture_ledger_snapshot(self.f.db, case_id=case_id).content),
+                                        case_id=case_id)
+            from types import SimpleNamespace
+            return SimpleNamespace(snapshot=LedgerSnapshot(json.dumps(document), 'a' * 64, 0))
+        self.save([self.row], claude(), counterparty_name='ACME LTD', reason='Printed under the amount.')
+        self.f.db.commit()
+        export = capture_ledger_export(self.f.db.get_bind(), case_id=self.f.case.id)
+        document = json.loads(export.snapshot.content)
+        reading = next(r for r in document['ledger']['readings'] if r['row']['key'] == str(self.row.id))
+        self.assertEqual(reading['row']['label_sources'][self.side]['source'], 'model_reading')
+        self.assertEqual(reading['investigation_label_history'][-1]['origin']['kind'], 'model')
+        self.assertTrue(any('not yet confirmed by a person: 1 names' in v for v in document['limitations']))
+        report = render_ledger_report(export.snapshot)
+        self.assertIn('ACME LTD (Read by Claude · not confirmed: Read by Claude for Neil Byrne', report)
+        self.assertIn('page 3', report)
+        support = build_expert_support(document, snapshot_sha256=export.snapshot.sha256)
+        self.assertEqual((support['model_work']['unconfirmed_names'], support['model_work']['names'][0]['page']), (1, 3))
+        # Confirmed: the report names the person and the model's reading stays in the captured history.
+        row = self.f.db.get(FinancialTransaction, self.row.id)
+        self.confirm([row], self.f.actor)
+        self.f.db.commit()
+        export = capture_ledger_export(self.f.db.get_bind(), case_id=self.f.case.id)
+        report = render_ledger_report(export.snapshot)
+        self.assertIn(f'ACME LTD (Confirmed by {self.f.actor.name} from the statement on', report)
+        document = json.loads(export.snapshot.content)
+        self.assertFalse(any('not yet confirmed by a person' in v for v in document['limitations']))
+        self.assertEqual(build_expert_support(document, snapshot_sha256='x')['model_work']['confirmed_names'], 1)
+
     def test_a_model_reads_names_only(self):
         for changes in (dict(category='Travel'), dict(counterparty_name='')):
             with self.assertRaises(PaymentLabelsError):
@@ -155,3 +197,160 @@ class ModelLabelTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ModelStatementSaveTests(unittest.TestCase):
+    """A statement saved to the case by a model: every payment's save records the model's origin, the statement
+    carries one open call until a person confirms it, and the proof class is the one a person's save gets."""
+
+    def setUp(self):
+        from tests.test_financial_statement_import import StatementImportTests
+        self.f = StatementImportTests()
+        self.f.setUp()
+        from postgres.models.financial_judgements import FinancialJudgement
+        from postgres.base import Base
+        Base.metadata.create_all(self.f.db.connection(), tables=[FinancialJudgement.__table__])
+        self.f.db.commit()
+
+    def tearDown(self):
+        self.f.tearDown()
+
+    def save_as(self, actor):
+        self.f.actor = actor
+        receipt = self.f.confirm()
+        return receipt, list(self.f.db.scalars(select(FinancialTransaction).where(
+            FinancialTransaction.source_document_id == UUID(receipt['source_document_id']))))
+
+    def model(self):
+        return model_actor(for_name=self.f.user.name, for_email=self.f.user.email, for_user_id=self.f.user.id,
+                           citation=dict(file='statement.pdf'))
+
+    def test_model_save_stores_origin_and_one_open_statement_call(self):
+        from services.financial import judgements
+        receipt, rows = self.save_as(self.model())
+        self.assertTrue(rows)
+        for row in rows:
+            saver = row.provenance['confirmed_by']
+            self.assertEqual(saver['name'], f'Claude (for {self.f.user.name})')
+            self.assertEqual(saver['origin']['kind'], 'model')
+        document_id = UUID(receipt['source_document_id'])
+        work = judgements.statement_model_work(self.f.db, self.f.case.id, document_id)
+        self.assertEqual((work['status'], work['model'], work['for_person']), ('not_confirmed', 'Claude', self.f.user.name))
+        self.assertEqual([c['rule_id'] for c in work['calls']], ['model.statement_save'])
+        self.assertEqual(judgements.model_work_statements(self.f.db, self.f.case.id), {str(document_id): 'not_confirmed'})
+        # Only a person confirms; one action confirms the statement and names the person.
+        with self.assertRaises(judgements.JudgementError) as caught:
+            judgements.confirm_statement(self.f.db, case_id=self.f.case.id, source_document_id=document_id,
+                                         actor=self.model())
+        self.assertEqual(caught.exception.status_code, 403)
+        person = Actor(name='Alex Person', email='alex@example.test')
+        work = judgements.confirm_statement(self.f.db, case_id=self.f.case.id, source_document_id=document_id,
+                                           actor=person)
+        self.assertEqual((work['status'], work['confirmed_by']), ('confirmed', 'Alex Person'))
+        with self.assertRaises(judgements.JudgementError):
+            judgements.confirm_statement(self.f.db, case_id=self.f.case.id, source_document_id=document_id,
+                                         actor=person)
+
+    def test_proof_class_and_values_are_the_same_as_a_persons_save(self):
+        _, by_model = self.save_as(self.model())
+        model_rows = sorted((r.amount_minor, r.direction, r.description, r.proof_class, r.transaction_date)
+                            for r in by_model)
+        self.f.tearDown()
+        self.setUp()
+        _, by_person = self.save_as(Actor(self.f.user.name, self.f.user.email, self.f.user.id))
+        person_rows = sorted((r.amount_minor, r.direction, r.description, r.proof_class, r.transaction_date)
+                             for r in by_person)
+        self.assertEqual(model_rows, person_rows)
+        self.assertNotIn('origin', by_person[0].provenance['confirmed_by'])
+
+    def test_a_persons_save_records_no_model_call(self):
+        from services.financial import judgements
+        receipt, _ = self.save_as(Actor(self.f.user.name, self.f.user.email, self.f.user.id))
+        self.assertIsNone(judgements.statement_model_work(self.f.db, self.f.case.id,
+                                                          UUID(receipt['source_document_id'])))
+
+
+class LegacyMigrationTests(unittest.TestCase):
+    """Records saved as '<person> (via Claude)' move to the model origin; nothing else changes; twice is once."""
+
+    def setUp(self):
+        from tests.test_financial_statement_import import StatementImportTests
+        from postgres.models.financial_judgements import FinancialJudgement
+        from postgres.base import Base
+        self.f = StatementImportTests()
+        self.f.setUp()
+        Base.metadata.create_all(self.f.db.connection(), tables=[FinancialJudgement.__table__])
+        self.f.db.commit()
+        self.legacy = Actor(name=f'{self.f.user.name} (via Claude)', email=self.f.user.email, user_id=self.f.user.id)
+        self.f.actor = self.legacy
+        self.receipt = self.f.confirm()
+        self.document_id = UUID(self.receipt['source_document_id'])
+        self.rows = list(self.f.db.scalars(select(FinancialTransaction).where(
+            FinancialTransaction.source_document_id == self.document_id).order_by(FinancialTransaction.id)))
+        self.row = self.rows[0]
+        self.side = 'from_name' if self.row.direction == 'credit' else 'to_name'
+        update_payment_labels(self.f.db, case_id=self.f.case.id, actor=self.legacy, reason='Read from page 1.',
+                              request=PaymentLabelsRequest(transactions=[dict(id=self.row.id, version=0)],
+                                                           counterparty_name='ACME LTD'))
+
+    def tearDown(self):
+        self.f.tearDown()
+
+    def snapshot(self):
+        self.f.db.expire_all()
+        rows = self.f.db.scalars(select(FinancialTransaction).where(
+            FinancialTransaction.case_id == self.f.case.id).order_by(FinancialTransaction.id))
+        out = []
+        for row in rows:
+            view = payment_label_view(row, row.account)
+            out.append((str(row.id), row.amount_minor, row.direction, row.description, row.proof_class,
+                        row.transaction_date, row.ledger_status, row.content_hash, view['from_name'], view['to_name'],
+                        view['category'], (row.metadata_ or {}).get('investigation_labels', {}).get(self.side)))
+        return out
+
+    def test_migration_moves_names_to_the_origin_and_changes_no_value(self):
+        from services.financial import judgements
+        from services.financial.model_work_migration import migrate
+        before = self.snapshot()
+        _, view = self.source()
+        self.assertEqual(view['label_sources'][self.side]['source'], 'investigator')  # the legacy presentation
+        result = migrate(self.f.db, case_ids=[self.f.case.id], apply=True)
+        self.assertEqual(result['records']['transaction.saved_by'], len(self.rows))
+        self.assertEqual(result['records']['transaction.label'], 1)
+        self.assertEqual(result['statement_calls'], {'recorded': 1})
+        self.assertEqual(before, self.snapshot())
+        row, view = self.source()
+        source = view['label_sources'][self.side]
+        self.assertEqual((view[self.side], source['source']), ('ACME LTD', 'model_reading'))
+        self.assertIn('Read from page 1.', source['explanation'])
+        saver = row.provenance['confirmed_by']
+        self.assertEqual(saver['name'], f'Claude (for {self.f.user.name})')
+        self.assertEqual(saver['origin']['recorded_as'], f'{self.f.user.name} (via Claude)')
+        self.assertEqual(saver['origin']['migrated']['by'], 'Loupe model-work origin migration')
+        self.assertEqual(saver['origin']['for']['user_id'], str(self.f.user.id))
+        work = judgements.statement_model_work(self.f.db, self.f.case.id, self.document_id)
+        self.assertEqual(work['status'], 'not_confirmed')
+        # Idempotent: a second run finds nothing to move and records nothing.
+        again = migrate(self.f.db, case_ids=[self.f.case.id], apply=True)
+        self.assertEqual((again['records'], again['statement_calls']), ({}, {}))
+        self.assertEqual(before, self.snapshot())
+
+    def test_dry_run_writes_nothing(self):
+        from services.financial.model_work_migration import migrate
+        result = migrate(self.f.db, case_ids=[self.f.case.id], apply=False)
+        self.assertEqual(result['records']['transaction.saved_by'], len(self.rows))
+        self.f.db.expire_all()
+        row = self.f.db.get(FinancialTransaction, self.row.id)
+        self.assertEqual(row.provenance['confirmed_by']['name'], f'{self.f.user.name} (via Claude)')
+
+    def test_legacy_names_are_recognised_and_people_are_not(self):
+        from services.financial.model_work_migration import legacy_person
+        self.assertEqual(legacy_person('Neil Byrne (via Claude)'), 'Neil Byrne')
+        self.assertEqual(legacy_person('claude (for Neil)'), 'Neil')
+        for name in ('Neil Byrne', 'System', 'Claude (for Neil Byrne)x', None, 'Alexandra Solórzano'):
+            self.assertIsNone(legacy_person(name), name)
+
+    def source(self):
+        self.f.db.expire_all()
+        row = self.f.db.get(FinancialTransaction, self.row.id)
+        return row, payment_label_view(row, row.account)
