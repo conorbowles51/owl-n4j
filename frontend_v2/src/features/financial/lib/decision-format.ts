@@ -155,6 +155,11 @@ export function readDecisionSubject(
  * proved.
  */
 const DECISION_COPY: Record<AdjudicationDecision, TermCopy> = {
+  keep_printed_holders: {
+    label: "Each statement keeps the holder printed on it",
+    description:
+      "This card or account is printed under different holder names on different statements. A person decided that each statement is filed under the name printed on it, and each such statement carries a judgement call. Who holds the account is not decided, and no name is merged or changed.",
+  },
   set_account_identity: {
     label: "Account identifiers and case connections reviewed",
     description:
@@ -246,6 +251,7 @@ const DECISION_VARIANT: Record<AdjudicationDecision, BadgeVariant> = {
   set_account_party: "info",
   set_counterparty_party: "info",
   set_account_identity: "info",
+  keep_printed_holders: "info",
   admit_financial_document: "danger",
 }
 
@@ -280,6 +286,7 @@ const CHANGED_STORED_STATE: Record<AdjudicationDecision, boolean> = {
   set_account_party: true,
   set_counterparty_party: true,
   set_account_identity: true,
+  keep_printed_holders: true,
   admit_financial_document: false,
 }
 

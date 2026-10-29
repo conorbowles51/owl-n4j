@@ -136,16 +136,20 @@ def record_decision(session, *, case_id, account_id, holders, actor, reason):
 
 def holders_by_statement(statements):
     """[{'name', 'statements', 'first', 'last'}] in first-printed order, one per holder: from [(holder, start, end)]."""
-    groups = {}
+    from services.financial.field_proposals import same_holder
+    groups = []
     for holder, start, end in sorted(statements, key=lambda s: (s[1] or '', s[2] or '')):
         name = ' '.join(str(holder or '').split())
         if not name:
             continue
-        key = _key(name)
-        group = groups.setdefault(key, dict(name=name, statements=0, first=start or '', last=end or ''))
+        # One holder however it is spelt (same_holder, as the proof compares names).
+        group = next((g for g in groups if same_holder(g['name'], name)), None)
+        if group is None:
+            group = dict(name=name, statements=0, first=start or '', last=end or '')
+            groups.append(group)
         group['statements'] += 1
         group['last'] = end or group['last']
-    return list(groups.values())
+    return groups
 
 
 def main(argv=None):

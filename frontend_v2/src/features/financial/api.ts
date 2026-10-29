@@ -829,6 +829,7 @@ export const ADJUDICATION_DECISIONS = [
   "set_account_party",
   "set_counterparty_party",
   "set_account_identity",
+  "keep_printed_holders",
 ] as const
 export type AdjudicationDecision = (typeof ADJUDICATION_DECISIONS)[number]
 

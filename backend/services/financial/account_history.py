@@ -5,6 +5,7 @@ from sqlalchemy.orm import defer, undefer
 from postgres.models.financial import FinancialStatementPeriod as Period, FinancialSourceDocument as Source, FinancialAccount as Account, FinancialTransaction as Transaction
 from postgres.models.evidence import EvidenceFile
 from services.financial.pdf_candidates import _digest, PdfMappingError
+from uuid import UUID
 from services.financial.account_selection import holder_account_ids
 from services.financial.account_consolidation import canonical_map, expand_account_ids
 from services.financial import view_cache
@@ -67,6 +68,18 @@ def _printed_holders(session, document_ids):
     rows = session.execute(select(Source.id, request['holder'].as_string(), review['details']['holder'].as_string())
                            .where(Source.id.in_(list(document_ids))))
     return {id: ' '.join(str((reviewed if reviewed is not None else saved) or '').split()) for id, saved, reviewed in rows}
+
+
+def _group_printed_holders(session, case_id, groups, canonical):
+    """An account a person decided keeps, per statement, the holder printed on it (printed_holders): its group lists
+    every name its statements print, with the statements that print each, never shown as one name. Without such a
+    decision nothing is listed: no judgement call is presented that nobody made."""
+    from services.financial.printed_holders import decisions, holders_by_statement
+    decided = {canonical.get(UUID(k), UUID(k)) for k in decisions(session, case_id)} if groups else set()
+    for group in groups:
+        names = holders_by_statement([(p['holder'], p['start'], p['end']) for p in group['periods']]) \
+            if UUID(group['account_id']) in decided else []
+        group['printed_holders'] = names if len(names) > 1 else []
 
 
 def account_history(session, *, case_id, account_id=None, account_ids=None, account_holders=None, start_date=None, end_date=None):
@@ -149,10 +162,5 @@ def account_history(session, *, case_id, account_id=None, account_ids=None, acco
             transaction_count=admitted_count, undated_count=undated, holder=holders.get(document.id) or None,
             activity=[{**entry, 'credit_minor':str(entry['credit_minor']), 'debit_minor':str(entry['debit_minor'])} for _, entry in sorted(activity.items())]))
     if reuse: _readings.flush()
-    from services.financial.printed_holders import holders_by_statement
-    for group in groups.values():
-        # Every holder name its statements print, with the statements that print each: an account printed under
-        # different names shows them all and is never shown as one name (printed_holders).
-        names = holders_by_statement([(p['holder'], p['start'], p['end']) for p in group['periods']])
-        group['printed_holders'] = names if len(names) > 1 else []
+    _group_printed_holders(session, case_id, groups.values(), canonical)
     return dict(case_id=str(case_id), groups=sorted(groups.values(), key=lambda g:(g['currency'],g['balance_kind'],g['label'],g['key'])), applied=False)

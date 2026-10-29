@@ -245,5 +245,30 @@ class DecisionTest(fixture.DuplicateTestCase):
                          {first.id: 'ERICA MCCAULEY', second.id: 'ERICA HOPPER', reviewed.id: 'E HOPPER'})
 
 
+    def test_the_account_view_lists_the_names_only_where_a_person_decided(self):
+        from services.financial.account_history import _group_printed_holders
+
+        def groups():
+            return [dict(account_id=str(self.account.id), periods=[
+                dict(holder='ERICA MCCAULEY', start='2026-01-01', end='2026-01-31'),
+                dict(holder='ERICA HOPPER', start='2026-02-01', end='2026-02-28'),
+                dict(holder='Erica  Hopper', start='2026-03-01', end='2026-03-31')])]
+        canonical = {self.account.id: self.account.id}
+        undecided = groups()
+        _group_printed_holders(self.db, self.case.id, undecided, canonical)
+        self.assertEqual(undecided[0]['printed_holders'], [])
+        ph.record_decision(self.db, case_id=self.case.id, account_id=self.account.id, holders=BOTH,
+                           actor=self._actor(), reason='Neil Byrne decided.')
+        self.db.commit()
+        decided = groups()
+        _group_printed_holders(self.db, self.case.id, decided, canonical)
+        self.assertEqual([(g['name'], g['statements']) for g in decided[0]['printed_holders']],
+                         [('ERICA MCCAULEY', 1), ('ERICA HOPPER', 2)])
+        # Another case's account is never shown under this case's decision.
+        other = groups()
+        other[0]['account_id'] = str(self.other_account.id)
+        _group_printed_holders(self.db, self.case.id, other, {self.other_account.id: self.other_account.id})
+        self.assertEqual(other[0]['printed_holders'], [])
+
 if __name__ == '__main__':
     unittest.main()
