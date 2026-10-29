@@ -117,6 +117,7 @@ class PermissionResolverTests(unittest.TestCase):
                 "/api/financial/money-trails/{trail_id}/remove": ["POST"],
                 "/api/financial/candidates/{candidate_id}/review": ["POST"],
                 "/api/financial/ledger/payment-labels": ["PUT"],
+                "/api/financial/ledger/payment-labels/confirm": ["POST"],
                 "/api/financial/ledger/payment-labels/remove": ["POST"],
                 "/api/financial/ledger/payment-categories/apply-like": ["POST"],
                 "/api/financial/ledger/payment-categories/rules": ["POST"],

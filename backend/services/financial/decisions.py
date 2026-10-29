@@ -58,7 +58,7 @@ from __future__ import annotations
 
 import datetime as _datetime
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Mapping, Optional
 
@@ -136,6 +136,10 @@ class Actor:
     name: str
     email: str
     user_id: Optional[uuid.UUID] = None
+    # Set when a model did the work for the person whose account it ran under
+    # (services.financial.model_work): the record shows the model's work, not
+    # the person's, until a person confirms it.  None for a person or a rule.
+    origin: Optional[dict] = field(default=None, compare=False, hash=False)
 
     def __post_init__(self) -> None:
         for field_name in ("name", "email"):
@@ -145,6 +149,15 @@ class Actor:
                     f"an actor needs a {field_name}; a decision with nobody's "
                     "name on it cannot be reviewed"
                 )
+        if self.origin is not None and (
+            not isinstance(self.origin, dict)
+            or self.origin.get("kind") != "model"
+            or not self.origin.get("model")
+        ):
+            raise DecisionError(
+                "an actor's origin names the model that did the work; "
+                "anything else is not an origin"
+            )
 
 
 def _jsonable(value: Any, path: str) -> Any:
@@ -331,6 +344,7 @@ def record(
         actor_user_id=actor.user_id,
         actor_name=actor.name,
         actor_email=actor.email,
+        actor_origin=dict(actor.origin) if actor.origin else None,
         ingestion_run_id=ingestion_run_id,
     )
     session.add(adjudication)
