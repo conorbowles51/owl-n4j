@@ -23,6 +23,9 @@ const historyEntry = z.object({
   before: values,
   after: values,
   undone_at: z.string().optional(),
+  // Set when Claude made the correction for a person (model work, services.financial.model_work).
+  origin: z.object({ model: z.string(), for: z.object({ name: z.string().nullish() }).nullish() }).passthrough().nullish(),
+  confirmed: z.object({ by: z.string(), at: z.string(), basis: z.string() }).passthrough().nullish(),
 })
 const state = z.object({
   case_id: z.string(),
@@ -151,6 +154,24 @@ export function AccountDetailsCorrection({
       void client.invalidateQueries()
     },
   })
+  const confirm = useMutation({
+    retry: false,
+    mutationFn: async (correctionId: string) =>
+      state.parse(
+        await fetchAPI(`${base}/confirm?case_id=${encodeURIComponent(caseId)}`, {
+          method: "POST",
+          body: {
+            expected_revision: query.data!.revision,
+            correction_id: correctionId,
+            basis: reason,
+          },
+        })
+      ),
+    onSuccess: (result) => {
+      client.setQueryData(key, result)
+      setNotice("Correction confirmed as yours. Claude's correction stays in the account history.")
+    },
+  })
   if (query.isPending) return <p role="status">Loading account…</p>
   if (query.isError)
     return (
@@ -159,7 +180,7 @@ export function AccountDetailsCorrection({
       </p>
     )
   const data = query.data
-  const failure = review.error || save.error || undo.error
+  const failure = review.error || save.error || undo.error || confirm.error
   const latest = [...data.history]
     .reverse()
     .find((item) => item.kind === "correction" && !item.undone_at)
@@ -274,9 +295,31 @@ export function AccountDetailsCorrection({
       {latest && (
         <div className="space-y-1">
           <p>
-            Last corrected by {latest.actor_name}: {latest.before.holder} →{" "}
-            {latest.after.holder}. Reason: {latest.reason}
+            Last corrected by {latest.origin ? `${latest.origin.model} for ${latest.origin.for?.name || "a person"}` : latest.actor_name}:{" "}
+            {latest.before.holder} → {latest.after.holder}. Reason: {latest.reason}
           </p>
+          {latest.origin &&
+            (latest.confirmed ? (
+              <p>
+                Confirmed by {latest.confirmed.by} on {latest.confirmed.at.slice(0, 10)}: {latest.confirmed.basis}
+              </p>
+            ) : (
+              <p>
+                <strong>Corrected by {latest.origin.model} · not confirmed.</strong> A person confirms it after checking
+                the statement.
+              </p>
+            ))}
+          {canEdit && latest.origin && !latest.confirmed && (
+            <Button
+              type="button"
+              size="sm"
+              disabled={confirm.isPending || !reason.trim()}
+              title={reason.trim() ? undefined : "Enter what you checked first"}
+              onClick={() => confirm.mutate(latest.id)}
+            >
+              Confirm this correction (say what you checked above)
+            </Button>
+          )}
           {canEdit && (
             <Button
               type="button"

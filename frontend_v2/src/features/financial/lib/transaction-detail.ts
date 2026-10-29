@@ -24,6 +24,20 @@ const transferDetails = z.object({
   ownership_established: z.literal(false),
 })
 export type TransferDetails = z.infer<typeof transferDetails>
+// Declared before transactionDetail, which calls labelOrigin() as it is built.
+const modelOrigin = z
+  .object({
+    kind: z.literal("model"),
+    model: z.string(),
+    model_id: z.string().optional(),
+    at: z.string().optional(),
+    for: z.object({ name: z.string(), user_id: z.string().nullable().optional() }).partial().optional(),
+    citation: z.record(z.string(), z.unknown()).optional(),
+    how: z.string().optional(),
+    recorded_as: z.string().optional(),
+  })
+  .passthrough()
+
 export const transactionDetail = z.object({
   counterparty_link: z
     .object({
@@ -82,19 +96,6 @@ export const transactionDetail = z.object({
   superseded_by_id: z.string().nullable(),
   locator: z.unknown().optional(),
 })
-
-const modelOrigin = z
-  .object({
-    kind: z.literal("model"),
-    model: z.string(),
-    model_id: z.string().optional(),
-    at: z.string().optional(),
-    for: z.object({ name: z.string(), user_id: z.string().nullable().optional() }).partial().optional(),
-    citation: z.record(z.string(), z.unknown()).optional(),
-    how: z.string().optional(),
-    recorded_as: z.string().optional(),
-  })
-  .passthrough()
 
 function labelOrigin() {
   return z.object({

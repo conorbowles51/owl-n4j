@@ -143,3 +143,39 @@ it("previews the re-joined statement, saves with the reason, and undoes", async 
   )
   expect(await screen.findByText(/Correction undone/)).toBeInTheDocument()
 })
+
+it("shows a correction Claude made as Claude's until a person confirms it with what they checked", async () => {
+  const byClaude = {
+    id: "c2",
+    kind: "correction",
+    at: "2026-10-25T23:09:00Z",
+    reason: "Page 1 prints the holder",
+    actor_name: "Claude (for Neil Byrne)",
+    origin: { kind: "model", model: "Claude", for: { name: "Neil Byrne" } },
+    before: { holder: "LOMAS DE CHAPULTEPEC III SECCION", institution: "Kapital" },
+    after: { holder: "INGENIERIA APLICADA R2", institution: "Kapital" },
+  }
+  let current: unknown = state({ holder: "INGENIERIA APLICADA R2", history: [byClaude] })
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (url.includes("/details/confirm")) {
+      expect((options as { body: { basis: string; correction_id: string } }).body).toMatchObject({
+        correction_id: "c2",
+        basis: "Checked page 1",
+      })
+      current = state({
+        holder: "INGENIERIA APLICADA R2",
+        history: [{ ...byClaude, confirmed: { by: "Alex", at: "2026-10-29T10:00:00Z", basis: "Checked page 1" } }],
+      })
+    }
+    return current
+  })
+  mount()
+  expect(await screen.findByText(/Last corrected by Claude for Neil Byrne/)).toBeTruthy()
+  expect(screen.getByText(/Corrected by Claude · not confirmed/)).toBeTruthy()
+  const button = screen.getByRole("button", { name: /Confirm this correction/ })
+  expect((button as HTMLButtonElement).disabled).toBe(true)
+  fireEvent.change(screen.getByLabelText(/reason/i), { target: { value: "Checked page 1" } })
+  fireEvent.click(button)
+  expect(await screen.findByText(/Confirmed by Alex on 2026-10-29: Checked page 1/)).toBeTruthy()
+  await waitFor(() => expect(screen.queryByText(/not confirmed/)).toBeNull())
+})

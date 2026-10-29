@@ -231,6 +231,16 @@ def save_account_details(account_id: UUID, body: account_details_correction.Acco
         raise HTTPException(status_code=500, detail='The account could not be corrected. Nothing was changed.')
 
 
+@router.post('/accounts/{account_id}/details/confirm', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+def confirm_account_details(account_id: UUID, body: account_details_correction.ConfirmAccountDetailsRequest,
+        case_id: UUID = Query(...), user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    try:
+        return account_details_correction.confirm_account_details(db, case_id=case_id, account_id=account_id,
+                                                                  request=body, actor=actor_from_user(user))
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
 @router.post('/accounts/{account_id}/details/undo', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
 def undo_account_details(account_id: UUID, body: account_details_correction.UndoAccountDetailsRequest, case_id: UUID = Query(...),
         user=Depends(get_current_db_user), db: Session = Depends(get_db)):

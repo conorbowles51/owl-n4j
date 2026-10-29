@@ -182,6 +182,32 @@ class AccountDetailsCorrectionTests(TestCase):
             self.undo(correction['id'])
         self.assertEqual(self.holder_filter('Test Company'), {self.first})
 
+    def test_a_person_confirms_a_correction_claude_made_and_it_stays_claudes(self):
+        from services.financial.model_work import model_actor
+        claude = model_actor(for_name=self.f.actor.name, for_email=self.f.actor.email, for_user_id=self.f.actor.user_id,
+                             citation=dict(page=1))
+        correction = self.correct(actor=claude, holder=CORRECTED)['correction']
+        self.assertEqual(correction['origin']['kind'], 'model')
+
+        def confirm(actor, correction_id=correction['id'], basis='Page 1 prints the holder above the address.'):
+            with self.f.SessionLocal() as db:
+                return service.confirm_account_details(db, case_id=self.f.case.id, account_id=self.account_id,
+                    actor=actor, request=service.ConfirmAccountDetailsRequest(
+                        expected_revision=self.state()['revision'], correction_id=correction_id, basis=basis))
+        before = self.state()
+        for actor, basis, status in ((claude, 'x', 403), (self.f.actor, ' ', 422)):
+            with self.assertRaises(PdfMappingError) as raised:
+                confirm(actor, basis=basis)
+            self.assertEqual(raised.exception.status_code, status)
+        self.assertEqual(self.state(), before)
+        result = confirm(self.f.actor)
+        entry = result['history'][-1]
+        self.assertEqual((entry['actor_name'], entry['confirmed']['by'], entry['after']['holder'], result['holder']),
+                         (claude.name, self.f.actor.name, CORRECTED, CORRECTED))
+        with self.assertRaises(PdfMappingError) as raised:
+            confirm(self.f.actor)
+        self.assertEqual(raised.exception.status_code, 409)
+
     def test_bank_correction_rekeys_the_account_and_refuses_another_accounts_key(self):
         with self.f.SessionLocal() as db:
             old_key = db.get(FinancialAccount, self.account_id).identity_key

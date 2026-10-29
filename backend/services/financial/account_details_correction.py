@@ -31,7 +31,7 @@ from sqlalchemy import select
 
 from postgres.models.financial import FinancialAccount, FinancialStatementPeriod
 from services.financial.pdf_candidates import PdfMappingError, _digest
-from services.financial.model_work import origin_field
+from services.financial.model_work import origin_field, origin_of
 
 HISTORY = 'account_details_history'
 SPLIT_PREFIX = 'statement-details:'
@@ -51,6 +51,13 @@ class UndoAccountDetailsRequest(BaseModel):
     expected_revision: str = Field(pattern=r'^[a-f0-9]{64}$')
     correction_id: str = Field(max_length=64)
     reason: str = Field(max_length=2000)
+
+
+class ConfirmAccountDetailsRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    expected_revision: str = Field(pattern=r'^[a-f0-9]{64}$')
+    correction_id: str = Field(max_length=64)
+    basis: str = Field(max_length=2000)
 
 
 def _person(actor):
@@ -330,6 +337,44 @@ def undo_account_details(session, *, case_id, account_id, request, actor):
         session.flush()
         result = account_details_state(session, case_id=case_id, account_id=account.id)
         result['correction'] = entry
+        session.commit()
+        return result
+    except Exception:
+        session.rollback()
+        raise
+
+
+def confirm_account_details(session, *, case_id, account_id, request, actor, at=None, relayed=None):
+    """A person confirms a correction a model made (services.financial.model_work): the correction keeps its model
+    origin and values; the confirmation (who, when, on what basis) is stored on it. Nothing else changes.
+    ``relayed`` records who entered a confirmation the person gave elsewhere (for example by message)."""
+    from services.financial.model_work import is_model
+    try:
+        _person(actor)
+        if is_model(actor):
+            raise PdfMappingError(f'Only a person can confirm a correction; {actor.name} made it.', 403)
+        basis = (request.basis or '').strip()
+        if not basis:
+            raise PdfMappingError('Say what you checked (for example the page that prints the holder).', 422)
+        account = _account(session, case_id, account_id, lock=True)
+        statements = _statement_rows(session, case_id, _statements(session, case_id, account, lock=True))
+        if _revision(account, statements) != request.expected_revision:
+            raise PdfMappingError('This account changed since you opened it. Reload; nothing was changed.', 409)
+        meta = deepcopy(account.metadata_ or {})
+        target = next((item for item in meta.get(HISTORY, []) if item.get('id') == request.correction_id), None)
+        if target is None or target.get('kind') != 'correction' or target.get('undone_at'):
+            raise PdfMappingError('This correction is not in the account history or was undone.', 409)
+        if not origin_of(target):
+            raise PdfMappingError('A person made this correction; there is nothing to confirm.', 409)
+        if target.get('confirmed'):
+            raise PdfMappingError('This correction is already confirmed.', 409)
+        target['confirmed'] = dict(by=actor.name, by_email=actor.email, user_id=str(actor.user_id),
+                                   at=at or datetime.now(timezone.utc).isoformat(), basis=basis,
+                                   **({'relayed': relayed} if relayed else {}))
+        account.metadata_ = meta
+        session.flush()
+        result = account_details_state(session, case_id=case_id, account_id=account.id)
+        result['confirmed'] = target['confirmed']
         session.commit()
         return result
     except Exception:
