@@ -13,6 +13,9 @@ export function paymentInventory(rows: LedgerTransaction[], knownAccounts: Known
   const unknownBanks = new Set<string>()
   const currencies = new Set<string>()
   const dates: string[] = []
+  // Accounts whose payments name their bank: one pass, so a case with hundreds
+  // of known accounts and tens of thousands of payments stays instant.
+  const namedBank = new Set<string>()
   let undated = 0,
     unidentifiedCounterparties = 0
   for (const row of rows) {
@@ -28,8 +31,10 @@ export function paymentInventory(rows: LedgerTransaction[], knownAccounts: Known
     account.currencies.add(row.currency)
     accounts.set(id, account)
     const bank = row.account_institution?.trim()
-    if (bank) banks.set(bankKey(bank), bank)
-    else unknownBanks.add(id)
+    if (bank) {
+      banks.set(bankKey(bank), bank)
+      namedBank.add(id)
+    } else unknownBanks.add(id)
     currencies.add(row.currency)
     const day = paymentDay(row)
     if (day) dates.push(day)
@@ -47,7 +52,7 @@ export function paymentInventory(rows: LedgerTransaction[], knownAccounts: Known
     if (known.institution?.trim()) {
       banks.set(bankKey(known.institution), known.institution.trim())
       unknownBanks.delete(known.id)
-    } else if (!rows.some((row) => (row.canonical_account_id || row.account_id) === known.id && row.account_institution?.trim())) {
+    } else if (!namedBank.has(known.id)) {
       unknownBanks.add(known.id)
     }
   }
