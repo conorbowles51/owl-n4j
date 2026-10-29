@@ -2264,3 +2264,5 @@ from services.financial.layout_learning import corpus_gate, prove_example, truth
 __all__ += ["corpus_gate", "prove_example", "truth_gate"]
 from services.financial.view_cache import cached_view
 __all__ += ["cached_view"]
+from services.financial.view_warmup import warm_account_history, warm_views_once
+__all__ += ["warm_account_history", "warm_views_once"]
