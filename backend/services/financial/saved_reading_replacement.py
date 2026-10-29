@@ -783,14 +783,17 @@ def refresh_descriptions(*, session_factory, case_id, document_id):
             .execution_options(populate_existing=True))
         if document is None or str(document.case_id) != str(case_id):
             raise ReplacementError('Saved statement not found in this case.', 404)
+        # Lock and reload the payments before judging them: a label saved meanwhile (payment_labels locks only the
+        # payment rows) is either committed and copied here, or waits for this transaction.
+        rows = list(session.scalars(select(FinancialTransaction).where(
+            FinancialTransaction.source_document_id == document.id).with_for_update()
+            .execution_options(populate_existing=True)))
         verdict = assess_descriptions(session, document)
         if verdict['outcome'] != 'describe':
             session.rollback()
             return verdict
         period = session.get(FinancialStatementPeriod, uuid.UUID(verdict['period_id']))
         before_admission = (document.metadata_ or {}).get('statement_admission') or {}
-        rows = list(session.scalars(select(FinancialTransaction).where(
-            FinancialTransaction.source_document_id == document.id).with_for_update()))
         by_id = {str(row.id): row for row in rows}
         hashes = {row.content_hash for row in rows}
         references = set(session.scalars(select(FinancialTransaction.ref_id).where(
