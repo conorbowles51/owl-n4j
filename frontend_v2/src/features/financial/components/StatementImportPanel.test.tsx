@@ -5,7 +5,12 @@ vi.mock("../hooks/use-statement-coverage-review", async (original) => ({
   >()),
   useStatementCoverageReview: vi.fn(),
 }))
-const accessState = vi.hoisted(() => ({ canEdit: true, canUpload: true, ready: true, error: false }))
+const accessState = vi.hoisted(() => ({
+  canEdit: true,
+  canUpload: true,
+  ready: true,
+  error: false,
+}))
 // This existing workflow fixture has case editing and upload access.
 vi.mock("../hooks/use-financial-access", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../hooks/use-financial-access")>()),
@@ -136,7 +141,12 @@ async function open(corrections = true) {
     )
 }
 beforeEach(() => {
-  Object.assign(accessState, { canEdit: true, canUpload: true, ready: true, error: false })
+  Object.assign(accessState, {
+    canEdit: true,
+    canUpload: true,
+    ready: true,
+    error: false,
+  })
   useFinancialDraftStore.setState({ drafts: {} })
   vi.mocked(useStatementCoverageReview).mockReturnValue({
     data: { available: true, candidates: [], revision: "d".repeat(64) },
@@ -283,8 +293,12 @@ it("imports directly from a batch review, carrying account edits into the visibl
     target: { value: "Reviewed holder" },
   })
   // The top summary and the bottom confirmation offer the same two actions.
-  expect(screen.getAllByRole("button", { name: "Import 1 transaction" })).toHaveLength(2)
-  expect(screen.getAllByRole("button", { name: "Save for bulk import" })).toHaveLength(2)
+  expect(
+    screen.getAllByRole("button", { name: "Import 1 transaction" })
+  ).toHaveLength(2)
+  expect(
+    screen.getAllByRole("button", { name: "Save for bulk import" })
+  ).toHaveLength(2)
   fireEvent.click(
     screen.getAllByRole("button", {
       name: "Import 1 transaction",
@@ -1106,7 +1120,9 @@ it("offers the same import action at the top and bottom and reports beside the o
   failure = true
   mount()
   await open()
-  const buttons = screen.getAllByRole("button", { name: "Import 1 transaction" })
+  const buttons = screen.getAllByRole("button", {
+    name: "Import 1 transaction",
+  })
   expect(buttons).toHaveLength(2)
   const summary = screen.getByRole("region", { name: "Statement checks" })
   expect(summary).toContainElement(buttons[0])
@@ -1114,10 +1130,14 @@ it("offers the same import action at the top and bottom and reports beside the o
   fireEvent.click(buttons[1])
   const alert = await screen.findByText("Source changed. Reload review.")
   expect(buttons[1].parentElement).toContainElement(alert)
-  expect(within(summary).queryByText("Source changed. Reload review.")).toBeNull()
+  expect(
+    within(summary).queryByText("Source changed. Reload review.")
+  ).toBeNull()
   fireEvent.click(buttons[0])
   await waitFor(() =>
-    expect(within(summary).getByRole("alert")).toHaveTextContent("Source changed. Reload review.")
+    expect(within(summary).getByRole("alert")).toHaveTextContent(
+      "Source changed. Reload review."
+    )
   )
   expect(buttons[1].parentElement).not.toHaveTextContent("Source changed")
 })
@@ -1127,22 +1147,41 @@ it("shows an accepted import that is still saving as progress, not an error", as
     const base = vi.mocked(fetchAPI).getMockImplementation()!
     vi.mocked(fetchAPI).mockImplementation(async (url, options) =>
       String(url).includes("/confirm-result?")
-        ? ({ receipt: null, operation: { batch_id: "job", status: "in_progress", outcomes: [] } } as never)
+        ? ({
+            receipt: null,
+            operation: { batch_id: "job", status: "in_progress", outcomes: [] },
+          } as never)
         : String(url).includes("/queue-import?")
-          ? ({ operation: { batch_id: "job", status: "in_progress", outcomes: [] } } as never)
+          ? ({
+              operation: {
+                batch_id: "job",
+                status: "in_progress",
+                outcomes: [],
+              },
+            } as never)
           : base(url, options)
     )
     const done = mount()
     await open()
     const summary = screen.getByRole("region", { name: "Statement checks" })
-    fireEvent.click(within(summary).getByRole("button", { name: "Import 1 transaction" }))
+    fireEvent.click(
+      within(summary).getByRole("button", { name: "Import 1 transaction" })
+    )
     await act(() => vi.advanceTimersByTimeAsync(30000))
     await waitFor(() =>
-      expect(within(summary).getAllByRole("status").map((node) => node.textContent).join(" "))
-        .toMatch(/Import accepted — still saving/)
+      expect(
+        within(summary)
+          .getAllByRole("status")
+          .map((node) => node.textContent)
+          .join(" ")
+      ).toMatch(/Import accepted — still saving/)
     )
     expect(screen.queryByRole("alert")).toBeNull()
-    expect(within(summary).getByRole("link", { name: "Open processing batch and saved result" })).toBeVisible()
+    expect(
+      within(summary).getByRole("link", {
+        name: "Open processing batch and saved result",
+      })
+    ).toBeVisible()
     expect(done).not.toHaveBeenCalled()
   } finally {
     vi.useRealTimers()
@@ -2110,7 +2149,7 @@ it("does not offer to import the same active reading twice", async () => {
     screen.getByText("These payments have not reached Transactions")
   ).toBeVisible()
   expect(
-    (screen.queryAllByRole("button", { name: "Import 1 transaction" })[0] ?? null)
+    screen.queryAllByRole("button", { name: "Import 1 transaction" })[0] ?? null
   ).not.toBeInTheDocument()
   expect(
     screen.getByText(/those readings are not payments in Transactions/)
@@ -2196,7 +2235,9 @@ it("takes a balance-only review directly to its missing balance and saves it to 
     </QueryClientProvider>
   )
   await screen.findByText("Review statement.pdf")
-  const submit = screen.getAllByRole("button", { name: "Save statement balances" })[0]
+  const submit = screen.getAllByRole("button", {
+    name: "Save statement balances",
+  })[0]
   expect(submit).toBeDisabled()
   fireEvent.click(screen.getByRole("button", { name: "Show items to check" }))
   expect(
@@ -2278,7 +2319,9 @@ it("saves a statement with matching balances and no payments, with a clear confi
   })
   const done = mount()
   await open()
-  const save = screen.getAllByRole("button", { name: "Save statement balances" })[0]
+  const save = screen.getAllByRole("button", {
+    name: "Save statement balances",
+  })[0]
   expect(save).toBeEnabled()
   fireEvent.click(save)
   await waitFor(() => expect(done).toHaveBeenCalledTimes(1))
@@ -2350,7 +2393,9 @@ it("records a closure notice with no payments and no invented closing balance", 
   expect(
     screen.getByRole("button", { name: "View account closure in PDF" })
   ).toBeVisible()
-  fireEvent.click(screen.getAllByRole("button", { name: "Save account closure" })[0])
+  fireEvent.click(
+    screen.getAllByRole("button", { name: "Save account closure" })[0]
+  )
   await waitFor(() => expect(done).toHaveBeenCalledTimes(1))
   expect(done).toHaveBeenCalledWith(
     expect.objectContaining({
@@ -2753,7 +2798,9 @@ it("restores a server-saved bulk review, focuses its row and saves without impor
     "Corrected description"
   )
   expect(screen.queryByLabelText("Uploaded statement")).not.toBeInTheDocument()
-  fireEvent.click(screen.getAllByRole("button", { name: "Save for bulk import" })[0])
+  fireEvent.click(
+    screen.getAllByRole("button", { name: "Save for bulk import" })[0]
+  )
   await waitFor(() => expect(saved).toHaveBeenCalled())
   expect(save).toHaveBeenCalledWith(
     expect.objectContaining({
@@ -3061,20 +3108,44 @@ it("keeps the original navigable until an unknown currency is chosen", async () 
   expect(sent).toHaveLength(0)
 })
 
-
 it.each([
-  { ready: false, error: false, message: "Checking case access before saving. Your review stays open." },
-  { ready: false, error: true, message: "Case access could not be checked. Your review is retained; check access again before saving." },
-  { ready: true, error: false, message: "You need editing access to this case to confirm an import." },
-])("explains access accurately without allowing an unverified import: $message", async ({ ready, error, message }) => {
-  mount()
-  await open(false)
-  Object.assign(accessState, { canEdit: false, ready, error })
-  fireEvent.change(screen.getByLabelText("Account holder"), { target: { value: "Reviewed holder" } })
-  await screen.findByText(message)
-  if (!ready) expect(screen.queryByText("You need editing access to this case to confirm an import.")).not.toBeInTheDocument()
-  expect(screen.getAllByRole("button", { name: /^Import \d+ transactions?$/ })[0]).toBeDisabled()
-})
+  {
+    ready: false,
+    error: false,
+    message: "Checking case access before saving. Your review stays open.",
+  },
+  {
+    ready: false,
+    error: true,
+    message:
+      "Case access could not be checked. Your review is retained; check access again before saving.",
+  },
+  {
+    ready: true,
+    error: false,
+    message: "You need editing access to this case to confirm an import.",
+  },
+])(
+  "explains access accurately without allowing an unverified import: $message",
+  async ({ ready, error, message }) => {
+    mount()
+    await open(false)
+    Object.assign(accessState, { canEdit: false, ready, error })
+    fireEvent.change(screen.getByLabelText("Account holder"), {
+      target: { value: "Reviewed holder" },
+    })
+    await screen.findByText(message)
+    if (!ready)
+      expect(
+        screen.queryByText(
+          "You need editing access to this case to confirm an import."
+        )
+      ).not.toBeInTheDocument()
+    expect(
+      screen.getAllByRole("button", { name: /^Import \d+ transactions?$/ })[0]
+    ).toBeDisabled()
+  }
+)
 
 it("saves and restores explicit unprinted start without inventing coverage", async () => {
   const base = vi.mocked(fetchAPI).getMockImplementation()!
@@ -3082,51 +3153,106 @@ it("saves and restores explicit unprinted start without inventing coverage", asy
   vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
     if (String(url).includes("/progress?")) {
       const body = options!.body as { request: Record<string, unknown> }
-      progress = { request: body.request, review_revision: "saved-revision", saved_at: "2026-09-28T00:00:00Z", saved_by: { name: "Reviewer" } }
+      progress = {
+        request: body.request,
+        review_revision: "saved-revision",
+        saved_at: "2026-09-28T00:00:00Z",
+        saved_by: { name: "Reviewer" },
+      }
       return { case_id: "case", evidence_file_id: "file", ...progress } as never
     }
     if (String(url).includes("statement-import/file?"))
-      return { ...data, metadata: { ...data.metadata, period_start: "" }, saved_review: progress } as never
+      return {
+        ...data,
+        metadata: { ...data.metadata, period_start: "" },
+        saved_review: progress,
+      } as never
     return base(url, options)
   })
   mount()
   await open(false)
   const label = "I checked this statement: no start date is printed."
-  fireEvent.click(screen.getByRole("checkbox", { name: new RegExp(label.replace(".", "\\.")) }))
+  fireEvent.click(
+    screen.getByRole("checkbox", {
+      name: new RegExp(label.replace(".", "\\.")),
+    })
+  )
   expect(screen.getByLabelText("Period start")).toHaveValue("")
-  expect(screen.getByText(/will not count this as a complete month/)).toBeVisible()
+  expect(
+    screen.getByText(/will not count this as a complete month/)
+  ).toBeVisible()
   fireEvent.click(screen.getByRole("button", { name: "Save progress" }))
-  await screen.findByText("Progress saved to the case. You can reopen this statement on another device.")
-  expect(progress).toMatchObject({ request: { period_start: "", period_start_unprinted: true, period_end: "2023-01-31" } })
+  await screen.findByText(
+    "Progress saved to the case. You can reopen this statement on another device."
+  )
+  expect(progress).toMatchObject({
+    request: {
+      period_start: "",
+      period_start_unprinted: true,
+      period_end: "2023-01-31",
+    },
+  })
   expect(sent).toHaveLength(0)
   cleanup()
   sessionStorage.clear()
   useFinancialDraftStore.setState({ drafts: {} })
   mount()
   await screen.findByText("Review statement.pdf")
-  expect(screen.getByRole("checkbox", { name: /no start date is printed/ })).toBeChecked()
-  fireEvent.change(screen.getByLabelText("Period start"), { target: { value: "2023-01-01" } })
-  expect(screen.queryByRole("checkbox", { name: /no start date is printed/ })).not.toBeInTheDocument()
+  expect(
+    screen.getByRole("checkbox", { name: /no start date is printed/ })
+  ).toBeChecked()
+  fireEvent.change(screen.getByLabelText("Period start"), {
+    target: { value: "2023-01-01" },
+  })
+  expect(
+    screen.queryByRole("checkbox", { name: /no start date is printed/ })
+  ).not.toBeInTheDocument()
 })
 
 it("keeps unreadable charges selected and shows their source before a review decision", async () => {
   const implementation = vi.mocked(fetchAPI).getMockImplementation()!
   vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
     const result = await implementation(url, options)
-    return result === data ? ({ ...data, rows: [...data.rows, {
-      id: "1:0:9", page_number: 1, table_index: 0, row_index: 9,
-      kind: "unresolved", excluded: false, fields: {}, issues: ["unreadable"],
-      source_cells: [{ column_index: 0, expected_text: "Interest Charge on Purchases 12.34", locator: {} }],
-    }] } as never) : result
+    return result === data
+      ? ({
+          ...data,
+          rows: [
+            ...data.rows,
+            {
+              id: "1:0:9",
+              page_number: 1,
+              table_index: 0,
+              row_index: 9,
+              kind: "unresolved",
+              excluded: false,
+              fields: {},
+              issues: ["unreadable"],
+              source_cells: [
+                {
+                  column_index: 0,
+                  expected_text: "Interest Charge on Purchases 12.34",
+                  locator: {},
+                },
+              ],
+            },
+          ],
+        } as never)
+      : result
   })
   mount()
   await open()
-  const region = screen.getByRole("region", { name: "Unreadable transaction rows" })
+  const region = screen.getByRole("region", {
+    name: "Unreadable transaction rows",
+  })
   expect(region).toHaveTextContent("Interest Charge on Purchases 12.34")
   expect(region).toHaveTextContent("may contain real payments or charges")
-  expect(screen.queryByRole("button", { name: /blank rows from import/ })).not.toBeInTheDocument()
+  expect(
+    screen.queryByRole("button", { name: /blank rows from import/ })
+  ).not.toBeInTheDocument()
   expect(screen.getByLabelText("Include row 1:0:9")).toBeChecked()
-  fireEvent.click(screen.getByRole("button", { name: "Review original row 10" }))
+  fireEvent.click(
+    screen.getByRole("button", { name: "Review original row 10" })
+  )
   expect(screen.getByLabelText("Include row 1:0:9")).toBeChecked()
   expect(screen.getByLabelText("Debit 1:0:9")).toBeVisible()
 })
@@ -3141,23 +3267,99 @@ it("shows a batch draft saved on an earlier reading for comparison and never app
     account_number: "12345",
     period_start: "2023-01-01",
     period_end: "2023-01-31",
-    rows: [{ id: "old-row", date: "2023-01-02", description: "Corrected on the earlier reading",
-      direction: "credit", amount_minor: "12500", balance_minor: null, counterparty: "", excluded: false,
-      reason: "Checked against the PDF" }],
+    rows: [
+      {
+        id: "old-row",
+        date: "2023-01-02",
+        description: "Corrected on the earlier reading",
+        direction: "credit",
+        amount_minor: "12500",
+        balance_minor: null,
+        counterparty: "",
+        excluded: false,
+        reason: "Checked against the PDF",
+      },
+    ],
   })!
   useStatementWorkspace.getState().select("anonymous:case", "file")
   render(
-    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <BatchReviewContext.Provider value={{ save: vi.fn(), saved: vi.fn(), draft, draftRevision: "d1" }}>
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
+      <BatchReviewContext.Provider
+        value={{ save: vi.fn(), saved: vi.fn(), draft, draftRevision: "d1" }}
+      >
         <StatementImportPanel caseId="case" onImported={vi.fn()} />
       </BatchReviewContext.Provider>
     </QueryClientProvider>
   )
   await screen.findByText("Review statement.pdf")
   const earlier = screen.getByRole("region", { name: "Previous saved review" })
-  expect(earlier).toHaveTextContent("The reading changed after this review was saved")
+  expect(earlier).toHaveTextContent(
+    "The reading changed after this review was saved"
+  )
   fireEvent.click(within(earlier).getByText(/Show previous saved values/))
   expect(earlier).toHaveTextContent("Corrected on the earlier reading")
   expect(screen.queryByLabelText("Description old-row")).toBeNull()
-  expect(screen.getByLabelText("I have compared the previous saved review")).not.toBeChecked()
+  expect(
+    screen.getByLabelText("I have compared the previous saved review")
+  ).not.toBeChecked()
+})
+
+it("opens a reading whose worked-out opening balance records what it rests on, and shows those figures", async () => {
+  const derived = {
+    ...data,
+    rows: [
+      ...data.rows,
+      {
+        ...data.rows[0],
+        id: "1:0:2",
+        row_index: 2,
+        kind: "balance",
+        excluded: true,
+        fields: {
+          description: "Opening Balance",
+          balance: "90000",
+          balance_column: "1",
+          balance_basis: "printed_opening_after_first_movement",
+          balance_derivation: {
+            printed_opening_minor: "100000",
+            first_movement_id: "1:0:1",
+            first_movement_minor: "10000",
+            first_balance_minor: "100000",
+          },
+        },
+        source_cells: [
+          {
+            column_index: 1,
+            expected_text: "$1,000.00",
+            locator: { kind: "page_only", page: 1 },
+          },
+        ],
+      },
+    ],
+  }
+  const base = vi.mocked(fetchAPI).getMockImplementation()!
+  vi.mocked(fetchAPI).mockImplementation((url, options) =>
+    String(url).includes("statement-import") && !importCall(url)
+      ? Promise.resolve(derived as never)
+      : base(url, options)
+  )
+  mount()
+  await open()
+  expect(
+    screen.queryByText(/Statement review unavailable/)
+  ).not.toBeInTheDocument()
+  fireEvent.click(screen.getByLabelText("Show excluded rows"))
+  expect(await screen.findByLabelText("Balance 1:0:2")).toHaveValue("900.00")
+  expect(
+    screen.getByText(
+      /Worked out, not printed \(printed opening after first movement\)/
+    )
+  ).toBeInTheDocument()
+  expect(
+    screen.getByText("printed opening minor:").nextSibling
+  ).toHaveTextContent("100000")
 })

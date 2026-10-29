@@ -21,7 +21,10 @@ import {
   StatementSectionPicker,
 } from "./StatementSectionPicker"
 import { useFinancialAccess } from "../hooks/use-financial-access"
-import { balanceCellLocator, statementRowLocator } from "../lib/statement-row-locator"
+import {
+  balanceCellLocator,
+  statementRowLocator,
+} from "../lib/statement-row-locator"
 import { useStatementChecks } from "../hooks/use-statement-checks"
 import { StatementArithmeticChecks } from "./StatementArithmeticChecks"
 import { StatementReconciliationSummary } from "./StatementReconciliationSummary"
@@ -38,7 +41,11 @@ import {
 } from "../lib/statement-assessment"
 import { ReprocessStatement } from "./ReprocessStatement"
 import { newReviewId } from "../lib/statement-review-id"
-import { hasPendingStatementImport, importWithReceiptRecovery, ImportStillSavingError } from "../lib/statement-import-recovery"
+import {
+  hasPendingStatementImport,
+  importWithReceiptRecovery,
+  ImportStillSavingError,
+} from "../lib/statement-import-recovery"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { z } from "zod"
@@ -95,30 +102,73 @@ const cell = z.object({
   expected_text: z.string(),
   locator: z.unknown(),
 })
-const row = z.object({
-  id: z.string(),
-  page_number: z.number(),
-  table_index: z.number(),
-  row_index: z.number(),
-  source_cells: z.array(cell),
-  value_sources: z
-    .record(
-      z.string(),
-      z.object({
-        page_number: z.number(),
-        table_index: z.number(),
-        row_index: z.number(),
-        source_cell: cell,
-      })
-    )
-    .optional(),
-  fields: z.record(z.string(), z.string()),
-  // How a reading rule repaired a damaged cell: shown as a judgement call before the statement is saved.
-  value_repairs: z.array(z.record(z.string(), z.unknown())).optional(),
-  issues: z.array(z.string()),
-  excluded: z.boolean(),
-  kind: z.string(),
-})
+const row = z
+  .object({
+    id: z.string(),
+    page_number: z.number(),
+    table_index: z.number(),
+    row_index: z.number(),
+    source_cells: z.array(cell),
+    value_sources: z
+      .record(
+        z.string(),
+        z.object({
+          page_number: z.number(),
+          table_index: z.number(),
+          row_index: z.number(),
+          source_cell: cell,
+        })
+      )
+      .optional(),
+    // A reading rule can record what a worked-out value rests on (balance_derivation, covered_by) as an object
+    // beside the printed strings; those are kept apart in field_details so they stay visible in review.
+    fields: z.record(z.string(), z.unknown()),
+    // How a reading rule repaired a damaged cell: shown as a judgement call before the statement is saved.
+    value_repairs: z.array(z.record(z.string(), z.unknown())).optional(),
+    issues: z.array(z.string()),
+    excluded: z.boolean(),
+    kind: z.string(),
+  })
+  .transform(({ fields, ...rest }) => {
+    const strings: Record<string, string> = {}
+    const details: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(fields)) {
+      if (typeof value === "string") strings[key] = value
+      else if (value !== null && value !== undefined) details[key] = value
+    }
+    return { ...rest, fields: strings, field_details: details }
+  })
+// The figures a worked-out balance rests on, as the reading rule recorded them.
+function BalanceDerivation({
+  basis,
+  derivation,
+}: {
+  basis?: string
+  derivation: unknown
+}) {
+  const entries = (value: unknown, prefix = ""): [string, string][] =>
+    value !== null && typeof value === "object"
+      ? Object.entries(value as Record<string, unknown>).flatMap(([key, v]) =>
+          entries(v, prefix ? `${prefix} ${key}` : key)
+        )
+      : [[prefix, String(value)]]
+  return (
+    <details className="mt-1 text-xs">
+      <summary>
+        Worked out, not printed{basis ? ` (${basis.replaceAll("_", " ")})` : ""}
+      </summary>
+      <dl>
+        {entries(derivation).map(([key, value]) => (
+          <div key={key} className="flex gap-1">
+            <dt>{key.replaceAll("_", " ")}:</dt>
+            <dd>{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </details>
+  )
+}
+
 const proposalSchema = z.object({
   recovered_saved_section: z.boolean().default(false),
   statement_page_numbers: z.array(z.number()).default([]),
@@ -951,8 +1001,8 @@ function StatementReview({
               <div aria-label="Copies set aside as duplicates">
                 <p>
                   The same statement was also saved from another copy. Those
-                  copies stay in the case as evidence and their payments are
-                  not counted:
+                  copies stay in the case as evidence and their payments are not
+                  counted:
                 </p>
                 <ul className="list-disc pl-5">
                   {query.data.current_import.duplicate_copies.map((copy) => (
@@ -1044,8 +1094,14 @@ function StatementReview({
               </p>
             )}
             {query.data.current_import.review_decisions.length > 0 && (
-              <Disclosure label={<>Recorded import decisions (
-                  {query.data.current_import.review_decisions.length})</>}>
+              <Disclosure
+                label={
+                  <>
+                    Recorded import decisions (
+                    {query.data.current_import.review_decisions.length})
+                  </>
+                }
+              >
                 <ul className="space-y-3 mt-3">
                   {query.data.current_import.review_decisions.map(
                     (decision, index) => (
@@ -1415,7 +1471,11 @@ function EditableStatement({
       else if (mode === "done") batchReview!.saved()
     },
   })
-  const { canEdit: caseCanEdit, ready: accessReady, error: accessError } = useFinancialAccess()
+  const {
+    canEdit: caseCanEdit,
+    ready: accessReady,
+    error: accessError,
+  } = useFinancialAccess()
   const [localDuplicate, setLocalDuplicate] =
     useState<z.infer<typeof statementDuplicateDisposition>>()
   const duplicateDecision = localDuplicate ?? data.duplicate_disposition
@@ -1587,7 +1647,9 @@ function EditableStatement({
       importedDetails?.period_end ?? saved?.periodEnd ?? proposedEnd
     ),
     [detailsReason, setDetailsReason] = useState(saved?.detailsReason ?? "")
-  const [periodStartUnprinted, setPeriodStartUnprinted] = useState(saved?.periodStartUnprinted ?? false)
+  const [periodStartUnprinted, setPeriodStartUnprinted] = useState(
+    saved?.periodStartUnprinted ?? false
+  )
   const [balanceException, setBalanceException] = useState(
     saved?.balanceException ?? { revision: "", reason: "" }
   )
@@ -1642,6 +1704,7 @@ function EditableStatement({
       table_index: 0,
       row_index: 0,
       source_cells: [],
+      field_details: {},
       fields:
         added.id === "manual:opening-balance" ||
         added.id === "manual:closing-balance"
@@ -1850,7 +1913,10 @@ function EditableStatement({
         "Enter the account number shown on the statement before importing payments.",
       field: "Account number",
     })
-  if (Boolean(periodStart) !== Boolean(periodEnd) && !(periodStartUnprinted && !periodStart && validDate(periodEnd)))
+  if (
+    Boolean(periodStart) !== Boolean(periodEnd) &&
+    !(periodStartUnprinted && !periodStart && validDate(periodEnd))
+  )
     detailProblems.push({
       message:
         "The statement period is incomplete. Its coverage will stay unknown until corrected.",
@@ -2031,30 +2097,45 @@ function EditableStatement({
     automaticDuplicateSnapshot.current = currentRequestSnapshot.current
     checkDuplicate(currentRequestSnapshot.current)
   }, [automaticDuplicateEligible, checkDuplicate])
-  const pendingImportKey = owner && !batchReview
-    ? `loupe-pending-statement:${owner}:${caseId}:${fileId}:${data.statement_id || "single"}` : null
+  const pendingImportKey =
+    owner && !batchReview
+      ? `loupe-pending-statement:${owner}:${caseId}:${fileId}:${data.statement_id || "single"}`
+      : null
   const [checkingImport, setCheckingImport] = useState(false)
-  const [backgroundImportBatch, setBackgroundImportBatch] = useState<string | null>(null)
-  const [backgroundImportStatus, setBackgroundImportStatus] = useState<string | null>(null)
+  const [backgroundImportBatch, setBackgroundImportBatch] = useState<
+    string | null
+  >(null)
+  const [backgroundImportStatus, setBackgroundImportStatus] = useState<
+    string | null
+  >(null)
   const confirm = useMutation({
     retry: false,
     mutationFn: async (recoverOnly?: boolean) => {
       setCheckingImport(false)
-      const recovered = batchReview?.confirm ? null : await importWithReceiptRecovery({
-        endpoint: `/api/financial/statement-import/${fileId}?${new URLSearchParams({ case_id: caseId })}`,
-        request: importRequest(), storageKey: pendingImportKey, recoverOnly,
-        onChecking: () => setCheckingImport(true),
-        onOperation: (operation) => {
-          setBackgroundImportBatch(operation.batch_id)
-          setBackgroundImportStatus(operation.status)
-        },
-      })
-      const result = receipt.parse(recovered ? recovered.result : await batchReview!.confirm!(importRequest()))
+      const recovered = batchReview?.confirm
+        ? null
+        : await importWithReceiptRecovery({
+            endpoint: `/api/financial/statement-import/${fileId}?${new URLSearchParams({ case_id: caseId })}`,
+            request: importRequest(),
+            storageKey: pendingImportKey,
+            recoverOnly,
+            onChecking: () => setCheckingImport(true),
+            onOperation: (operation) => {
+              setBackgroundImportBatch(operation.batch_id)
+              setBackgroundImportStatus(operation.status)
+            },
+          })
+      const result = receipt.parse(
+        recovered
+          ? recovered.result
+          : await batchReview!.confirm!(importRequest())
+      )
       if (
         result.case_id !== caseId ||
         result.evidence_file_id !== fileId ||
         (!result.ignored &&
-          (result.record_count ?? result.transaction_count) !== (recovered?.expectedCount ?? included.length))
+          (result.record_count ?? result.transaction_count) !==
+            (recovered?.expectedCount ?? included.length))
       )
         throw Error("The import result does not match the reviewed statement.")
       recovered?.clear()
@@ -2072,13 +2153,21 @@ function EditableStatement({
   const resumeImport = confirm.mutate
   const resumedImportKey = useRef<string | null>(null)
   const backgroundChecks = useRef(0)
-  useEffect(() => { backgroundChecks.current = 0 }, [pendingImportKey])
+  useEffect(() => {
+    backgroundChecks.current = 0
+  }, [pendingImportKey])
   // An accepted import can wait minutes behind another save on this case.
-  const stillSaving = confirm.isError &&
-    (confirm.error instanceof ImportStillSavingError || backgroundImportStatus === "in_progress") &&
+  const stillSaving =
+    confirm.isError &&
+    (confirm.error instanceof ImportStillSavingError ||
+      backgroundImportStatus === "in_progress") &&
     backgroundChecks.current < MAX_BACKGROUND_IMPORT_CHECKS
   useEffect(() => {
-    if (pendingImportKey && resumedImportKey.current !== pendingImportKey && hasPendingStatementImport(pendingImportKey)) {
+    if (
+      pendingImportKey &&
+      resumedImportKey.current !== pendingImportKey &&
+      hasPendingStatementImport(pendingImportKey)
+    ) {
       resumedImportKey.current = pendingImportKey
       resumeImport(true)
     }
@@ -2292,8 +2381,7 @@ function EditableStatement({
       )}
       {backgroundImportBatch && !confirm.isSuccess && (
         <p>
-          This import is saved as a background job. You can leave this
-          screen.{" "}
+          This import is saved as a background job. You can leave this screen.{" "}
           <a
             className="underline"
             href={`/cases/${caseId}/financial?view=statements&batch=${backgroundImportBatch}`}
@@ -3000,7 +3088,10 @@ function EditableStatement({
             readOnly={!canEdit}
             className="block border rounded p-2 bg-background"
             value={periodStart}
-            onChange={(e) => { setPeriodStart(e.target.value); setPeriodStartUnprinted(false) }}
+            onChange={(e) => {
+              setPeriodStart(e.target.value)
+              setPeriodStartUnprinted(false)
+            }}
           />
         </label>
         <label>
@@ -3015,14 +3106,24 @@ function EditableStatement({
             onChange={(e) => setPeriodEnd(e.target.value)}
           />
         </label>
-        {!data.current_import && !periodStart && !data.metadata.period_start && (
-          <label className="basis-full text-sm">
-            <input type="checkbox" checked={periodStartUnprinted} disabled={!canEdit}
-              onChange={(e) => setPeriodStartUnprinted(e.target.checked)} />
-            {" "}I checked this statement: no start date is printed.
-            <span className="block text-muted-foreground">Enter its printed closing date above. Loupe will keep the start date unknown and will not count this as a complete month of coverage.</span>
-          </label>
-        )}
+        {!data.current_import &&
+          !periodStart &&
+          !data.metadata.period_start && (
+            <label className="basis-full text-sm">
+              <input
+                type="checkbox"
+                checked={periodStartUnprinted}
+                disabled={!canEdit}
+                onChange={(e) => setPeriodStartUnprinted(e.target.checked)}
+              />{" "}
+              I checked this statement: no start date is printed.
+              <span className="block text-muted-foreground">
+                Enter its printed closing date above. Loupe will keep the start
+                date unknown and will not count this as a complete month of
+                coverage.
+              </span>
+            </label>
+          )}
         {!excludedCopy && (detailsChanged || data.current_import) && (
           <label>
             {replacePrevious
@@ -3558,30 +3659,51 @@ function EditableStatement({
           </div>
         </section>
       )}
-      {canEdit && (!data.current_import || replacePrevious) && emptyEntries.length > 0 && (
-        <section aria-label="Unreadable transaction rows" className="rounded border bg-card p-3 space-y-2 text-sm">
-          <p>
-            Loupe could not fill in {emptyEntries.length} rows. These may contain real
-            payments or charges. Check each original before correcting or excluding it.
-          </p>
-          <ul className="space-y-3">
-            {emptyEntries.map((row) => {
-              const original = originals.get(row.id)
-              const sourceText = original?.source_cells.map((cell) => cell.expected_text).filter(Boolean).join(" ")
-              return (
-                <li key={row.id}>
-                  <p>PDF page {original?.page_number}</p>
-                  <p className="whitespace-pre-wrap break-words">{sourceText || "No readable text. Inspect the original page."}</p>
-                  <Button variant="outline" disabled={confirm.isPending || saveBatchReview.isPending || assignmentSaving} onClick={() => reviewRow(row.id)}>
-                    Review original row {original ? original.row_index + 1 : row.id}
-                  </Button>
-                </li>
-              )
-            })}
-          </ul>
-          <p>Rows remain selected until you decide what each contains.</p>
-        </section>
-      )}
+      {canEdit &&
+        (!data.current_import || replacePrevious) &&
+        emptyEntries.length > 0 && (
+          <section
+            aria-label="Unreadable transaction rows"
+            className="rounded border bg-card p-3 space-y-2 text-sm"
+          >
+            <p>
+              Loupe could not fill in {emptyEntries.length} rows. These may
+              contain real payments or charges. Check each original before
+              correcting or excluding it.
+            </p>
+            <ul className="space-y-3">
+              {emptyEntries.map((row) => {
+                const original = originals.get(row.id)
+                const sourceText = original?.source_cells
+                  .map((cell) => cell.expected_text)
+                  .filter(Boolean)
+                  .join(" ")
+                return (
+                  <li key={row.id}>
+                    <p>PDF page {original?.page_number}</p>
+                    <p className="whitespace-pre-wrap break-words">
+                      {sourceText ||
+                        "No readable text. Inspect the original page."}
+                    </p>
+                    <Button
+                      variant="outline"
+                      disabled={
+                        confirm.isPending ||
+                        saveBatchReview.isPending ||
+                        assignmentSaving
+                      }
+                      onClick={() => reviewRow(row.id)}
+                    >
+                      Review original row{" "}
+                      {original ? original.row_index + 1 : row.id}
+                    </Button>
+                  </li>
+                )
+              })}
+            </ul>
+            <p>Rows remain selected until you decide what each contains.</p>
+          </section>
+        )}
       {problemIds.length > 0 && (
         <div
           role="group"
@@ -4472,6 +4594,15 @@ function EditableStatement({
                                 })
                               }}
                             />
+                            {original.field_details.balance_derivation !==
+                              undefined && (
+                              <BalanceDerivation
+                                basis={original.fields.balance_basis}
+                                derivation={
+                                  original.field_details.balance_derivation
+                                }
+                              />
+                            )}
                           </td>
                           <td className="p-2 border-b align-top">
                             <Button
@@ -4594,7 +4725,10 @@ function EditableStatement({
           </div>
         )}
         {statementNotes.length > 0 && (
-          <Disclosure className="rounded border p-3 text-sm" label="About this statement">
+          <Disclosure
+            className="rounded border p-3 text-sm"
+            label="About this statement"
+          >
             {statementNotes.map((message) => (
               <p key={message} className="mt-2">
                 {message}
@@ -4850,10 +4984,17 @@ function EditableStatement({
             : "Select an opening or closing amount to check its source."}
         </p>
 
-        <Disclosure className="border rounded p-3 text-sm" label={<>Inspect another page of the original PDF
-            {data.unassigned_page_numbers.length
-              ? ` (${data.unassigned_page_numbers.length} pages need a coverage check)`
-              : ""}</>}>
+        <Disclosure
+          className="border rounded p-3 text-sm"
+          label={
+            <>
+              Inspect another page of the original PDF
+              {data.unassigned_page_numbers.length
+                ? ` (${data.unassigned_page_numbers.length} pages need a coverage check)`
+                : ""}
+            </>
+          }
+        >
           {data.unassigned_page_numbers.length > 0 && (
             <p>
               These pages were not assigned to a statement or recognised as
@@ -4980,8 +5121,8 @@ function EditableStatement({
                     : batchReview?.confirm
                       ? `Import these ${included.length} records now, or save them for bulk import with the rest of the batch. Issues can be checked later.`
                       : batchReview
-                      ? `Save these ${included.length} records to the batch for import together. Issues can be checked later.`
-                      : `Import ${included.length} records with their originals. You can correct values later. Incomplete records stay visible outside calculated totals.`}
+                        ? `Save these ${included.length} records to the batch for import together. Issues can be checked later.`
+                        : `Import ${included.length} records with their originals. You can correct values later. Incomplete records stay visible outside calculated totals.`}
               </p>
               <div className="flex flex-wrap items-center gap-2">
                 {importActions("confirmation")}
