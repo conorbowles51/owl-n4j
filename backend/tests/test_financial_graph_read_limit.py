@@ -3,6 +3,7 @@ and a route answers a timed-out read with a logged, plain 503."""
 
 import importlib
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from fastapi import HTTPException
@@ -118,7 +119,10 @@ class TransactionsReadBeforeConvertTests(unittest.TestCase):
             return original(record, **kw)
 
         service._record_to_transaction = convert
-        with patch("services.neo4j.financial_service.driver") as drv:
+        with patch("services.neo4j.financial_service.driver") as drv, patch(
+            "services.neo4j.financial_service.financial_graph_reads",
+            SimpleNamespace(read=lambda session, key, compute: compute()),
+        ):
             drv.session.return_value = session
             result = service.get_financial_transactions(case_id="c")
         self.assertEqual(result["total"], 3)

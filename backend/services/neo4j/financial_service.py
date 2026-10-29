@@ -13,6 +13,7 @@ from services.financial_record_dates import financial_record_day, validate_finan
 from typing import Dict, List, Optional
 
 from services.neo4j.driver import driver, read_all_rows, safe_float
+from services.neo4j.graph_read_cache import financial_graph_reads
 
 logger = logging.getLogger(__name__)
 
@@ -187,127 +188,148 @@ class FinancialService:
     ) -> Dict:
         """Get financial records with strict provenance mode and legacy fallback."""
         validate_financial_date_range(start_date, end_date)
+        key = (
+            "transactions", case_id, self._normalize_mode(mode),
+            tuple(types) if types else None, start_date, end_date,
+            tuple(categories) if categories else None,
+        )
         with driver.session() as session:
-            normalized_mode = self._normalize_mode(mode)
-            metadata = self._get_dataset_metadata(session, case_id, normalized_mode)
-            uses_legacy = bool(metadata["uses_legacy_financial_model"])
-            params = {"case_id": case_id, "financial_types": LEGACY_FINANCIAL_EVENT_TYPES}
-            conditions = []
+            return financial_graph_reads.read(
+                session, key,
+                lambda: self._read_financial_transactions(
+                    session, case_id, types, start_date, end_date, categories, mode,
+                ),
+            )
 
-            if types:
-                conditions.append("labels(n)[0] IN $types")
-                params["types"] = types
-            if start_date:
-                conditions.append("substring(trim(toString(n.date)), 0, 10) >= $start_date")
-                params["start_date"] = start_date
-            if end_date:
-                conditions.append("substring(trim(toString(n.date)), 0, 10) <= $end_date")
-                params["end_date"] = end_date
-            if categories:
-                conditions.append("coalesce(n.financial_category, 'Uncategorized') IN $categories")
-                params["categories"] = categories
+    def _read_financial_transactions(
+        self, session, case_id, types, start_date, end_date, categories, mode,
+    ) -> Dict:
+        normalized_mode = self._normalize_mode(mode)
+        metadata = self._get_dataset_metadata(session, case_id, normalized_mode)
+        uses_legacy = bool(metadata["uses_legacy_financial_model"])
+        params = {"case_id": case_id, "financial_types": LEGACY_FINANCIAL_EVENT_TYPES}
+        conditions = []
 
-            extra_filter = (" AND " + " AND ".join(conditions)) if conditions else ""
+        if types:
+            conditions.append("labels(n)[0] IN $types")
+            params["types"] = types
+        if start_date:
+            conditions.append("substring(trim(toString(n.date)), 0, 10) >= $start_date")
+            params["start_date"] = start_date
+        if end_date:
+            conditions.append("substring(trim(toString(n.date)), 0, 10) <= $end_date")
+            params["end_date"] = end_date
+        if categories:
+            conditions.append("coalesce(n.financial_category, 'Uncategorized') IN $categories")
+            params["categories"] = categories
 
-            query = f"""
-                MATCH (n)
-                WHERE (n.amount IS NOT NULL OR coalesce(n.is_financial_event, false) = true)
-                AND n.case_id = $case_id
-                AND {self._mode_filter_clause("n", uses_legacy=uses_legacy, mode=normalized_mode)}
-                {extra_filter}
-                OPTIONAL MATCH (n)-[:TRANSFERRED_TO|SENT_TO|PAID_TO|ISSUED_TO]->(to_entity)
-                WHERE to_entity.case_id = $case_id AND NOT to_entity:Document AND NOT to_entity:Case
-                OPTIONAL MATCH (from_entity)-[:TRANSFERRED_TO|SENT_TO|PAID_TO|ISSUED_TO]->(n)
-                WHERE from_entity.case_id = $case_id AND NOT from_entity:Document AND NOT from_entity:Case
-                OPTIONAL MATCH (n)-[:RECEIVED_FROM]->(rf_entity)
-                WHERE rf_entity.case_id = $case_id AND NOT rf_entity:Document AND NOT rf_entity:Case
-                OPTIONAL MATCH (n)<-[:MADE_PAYMENT|INITIATED]-(initiator)
-                WHERE initiator.case_id = $case_id AND NOT initiator:Document AND NOT initiator:Case
-                RETURN
-                    n.key AS key,
-                    n.name AS name,
-                    labels(n)[0] AS type,
-                    n.date AS date,
-                    n.time AS time,
-                    toFloat(replace(replace(replace(replace(
-                      trim(toString(n.amount)), '$', ''), ',', ''), '€', ''), '£', '')) AS amount,
-                    n.amount AS raw_amount,
-                    n.currency AS currency,
-                    n.summary AS summary,
-                    n.financial_category AS financial_category,
-                    n.purpose AS purpose,
-                    n.counterparty_details AS counterparty_details,
-                    n.notes AS notes,
-                    n.from_entity_key AS from_entity_key,
-                    n.from_entity_name AS from_entity_name,
-                    n.to_entity_key AS to_entity_key,
-                    n.to_entity_name AS to_entity_name,
-                    n.sender AS prop_sender,
-                    n.receiver AS prop_receiver,
-                    collect(DISTINCT to_entity.key)[0] AS rel_to_key,
-                    collect(DISTINCT to_entity.name)[0] AS rel_to_name,
-                    collect(DISTINCT from_entity.key)[0] AS rel_from_key,
-                    collect(DISTINCT from_entity.name)[0] AS rel_from_name,
-                    collect(DISTINCT rf_entity.key)[0] AS rf_key,
-                    collect(DISTINCT rf_entity.name)[0] AS rf_name,
-                    collect(DISTINCT initiator.key)[0] AS initiator_key,
-                    collect(DISTINCT initiator.name)[0] AS initiator_name,
-                    n.is_parent AS is_parent,
-                    n.parent_transaction_key AS parent_transaction_key,
-                    n.amount_corrected AS amount_corrected,
-                    n.original_amount AS original_amount,
-                    n.correction_reason AS correction_reason,
-                    n.financial_record_kind AS financial_record_kind,
-                    coalesce(
-                        n.financial_view_mode,
-                        CASE WHEN coalesce(n.is_evidence_backed_transaction, false) THEN 'transaction' ELSE 'intelligence' END
-                    ) AS financial_view_mode,
-                    coalesce(n.is_financial_event, false) AS is_financial_event,
-                    coalesce(n.is_evidence_backed_transaction, false) AS is_evidence_backed_transaction,
-                    n.evidence_strength AS evidence_strength,
-                    n.evidence_source_type AS evidence_source_type,
-                    n.source_document_id AS source_document_id,
-                    n.source_filename AS source_filename,
-                    n.source_page AS source_page,
-                    n.source_excerpt AS source_excerpt,
-                    n.extraction_confidence AS extraction_confidence
-                ORDER BY n.date ASC, n.time ASC
-            """
+        extra_filter = (" AND " + " AND ".join(conditions)) if conditions else ""
 
-            records = read_all_rows(session, query, **params)
-            deduped_transactions = {}
-            for record in records:
-                transaction = self._record_to_transaction(
-                    record, uses_legacy=uses_legacy, mode=normalized_mode
-                )
-                transaction_key = transaction["key"]
-                if transaction_key in deduped_transactions:
-                    continue
-                deduped_transactions[transaction_key] = self._sanitize_transaction(transaction)
-            transactions = list(deduped_transactions.values())
-            if start_date or end_date:
-                transactions = [row for row in transactions
-                    if (day := financial_record_day(row.get("date"))) is not None
-                    and (not start_date or day >= start_date)
-                    and (not end_date or day <= end_date)]
-            return {"transactions": transactions, "total": len(transactions), **metadata}
+        query = f"""
+            MATCH (n)
+            WHERE (n.amount IS NOT NULL OR coalesce(n.is_financial_event, false) = true)
+            AND n.case_id = $case_id
+            AND {self._mode_filter_clause("n", uses_legacy=uses_legacy, mode=normalized_mode)}
+            {extra_filter}
+            OPTIONAL MATCH (n)-[:TRANSFERRED_TO|SENT_TO|PAID_TO|ISSUED_TO]->(to_entity)
+            WHERE to_entity.case_id = $case_id AND NOT to_entity:Document AND NOT to_entity:Case
+            OPTIONAL MATCH (from_entity)-[:TRANSFERRED_TO|SENT_TO|PAID_TO|ISSUED_TO]->(n)
+            WHERE from_entity.case_id = $case_id AND NOT from_entity:Document AND NOT from_entity:Case
+            OPTIONAL MATCH (n)-[:RECEIVED_FROM]->(rf_entity)
+            WHERE rf_entity.case_id = $case_id AND NOT rf_entity:Document AND NOT rf_entity:Case
+            OPTIONAL MATCH (n)<-[:MADE_PAYMENT|INITIATED]-(initiator)
+            WHERE initiator.case_id = $case_id AND NOT initiator:Document AND NOT initiator:Case
+            RETURN
+                n.key AS key,
+                n.name AS name,
+                labels(n)[0] AS type,
+                n.date AS date,
+                n.time AS time,
+                toFloat(replace(replace(replace(replace(
+                  trim(toString(n.amount)), '$', ''), ',', ''), '€', ''), '£', '')) AS amount,
+                n.amount AS raw_amount,
+                n.currency AS currency,
+                n.summary AS summary,
+                n.financial_category AS financial_category,
+                n.purpose AS purpose,
+                n.counterparty_details AS counterparty_details,
+                n.notes AS notes,
+                n.from_entity_key AS from_entity_key,
+                n.from_entity_name AS from_entity_name,
+                n.to_entity_key AS to_entity_key,
+                n.to_entity_name AS to_entity_name,
+                n.sender AS prop_sender,
+                n.receiver AS prop_receiver,
+                collect(DISTINCT to_entity.key)[0] AS rel_to_key,
+                collect(DISTINCT to_entity.name)[0] AS rel_to_name,
+                collect(DISTINCT from_entity.key)[0] AS rel_from_key,
+                collect(DISTINCT from_entity.name)[0] AS rel_from_name,
+                collect(DISTINCT rf_entity.key)[0] AS rf_key,
+                collect(DISTINCT rf_entity.name)[0] AS rf_name,
+                collect(DISTINCT initiator.key)[0] AS initiator_key,
+                collect(DISTINCT initiator.name)[0] AS initiator_name,
+                n.is_parent AS is_parent,
+                n.parent_transaction_key AS parent_transaction_key,
+                n.amount_corrected AS amount_corrected,
+                n.original_amount AS original_amount,
+                n.correction_reason AS correction_reason,
+                n.financial_record_kind AS financial_record_kind,
+                coalesce(
+                    n.financial_view_mode,
+                    CASE WHEN coalesce(n.is_evidence_backed_transaction, false) THEN 'transaction' ELSE 'intelligence' END
+                ) AS financial_view_mode,
+                coalesce(n.is_financial_event, false) AS is_financial_event,
+                coalesce(n.is_evidence_backed_transaction, false) AS is_evidence_backed_transaction,
+                n.evidence_strength AS evidence_strength,
+                n.evidence_source_type AS evidence_source_type,
+                n.source_document_id AS source_document_id,
+                n.source_filename AS source_filename,
+                n.source_page AS source_page,
+                n.source_excerpt AS source_excerpt,
+                n.extraction_confidence AS extraction_confidence
+            ORDER BY n.date ASC, n.time ASC
+        """
+
+        records = read_all_rows(session, query, **params)
+        deduped_transactions = {}
+        for record in records:
+            transaction = self._record_to_transaction(
+                record, uses_legacy=uses_legacy, mode=normalized_mode
+            )
+            transaction_key = transaction["key"]
+            if transaction_key in deduped_transactions:
+                continue
+            deduped_transactions[transaction_key] = self._sanitize_transaction(transaction)
+        transactions = list(deduped_transactions.values())
+        if start_date or end_date:
+            transactions = [row for row in transactions
+                if (day := financial_record_day(row.get("date"))) is not None
+                and (not start_date or day >= start_date)
+                and (not end_date or day <= end_date)]
+        return {"transactions": transactions, "total": len(transactions), **metadata}
 
     def get_financial_entities(self, case_id: str) -> List[Dict]:
         """Return all non-transaction entities in a case for from/to entity pickers."""
         with driver.session() as session:
-            records = read_all_rows(
-                session,
-                """
-                MATCH (n {case_id: $case_id})
-                WHERE NOT n:Document AND NOT n:Case
-                  AND n.amount IS NULL
-                  AND n.name IS NOT NULL
-                RETURN DISTINCT n.key AS key, n.name AS name, labels(n)[0] AS type
-                ORDER BY n.name
-                """,
-                case_id=case_id,
+            return financial_graph_reads.read(
+                session, ("entities", case_id),
+                lambda: self._read_financial_entities(session, case_id),
             )
-            return [{"key": r["key"], "name": r["name"], "type": r["type"]} for r in records]
+
+    def _read_financial_entities(self, session, case_id: str) -> List[Dict]:
+        records = read_all_rows(
+            session,
+            """
+            MATCH (n {case_id: $case_id})
+            WHERE NOT n:Document AND NOT n:Case
+              AND n.amount IS NULL
+              AND n.name IS NOT NULL
+            RETURN DISTINCT n.key AS key, n.name AS name, labels(n)[0] AS type
+            ORDER BY n.name
+            """,
+            case_id=case_id,
+        )
+        return [{"key": r["key"], "name": r["name"], "type": r["type"]} for r in records]
 
     def get_financial_summary(self, case_id: str, entity_key: str = None, mode: str = "transactions") -> Dict:
         """Get aggregated financial summary stats for a case."""

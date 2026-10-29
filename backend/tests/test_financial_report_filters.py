@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 import inspect
 import unittest
 from unittest.mock import patch
@@ -74,7 +75,7 @@ class ReportFilterTests(unittest.IsolatedAsyncioTestCase):
         connection.session.return_value.__enter__.return_value.run.return_value = [
             dict(key=str(i), date=value) for i, value in enumerate([
                 '2026-09-02', '2026-09-02T23:59:59-04:00', '2026-09-02T24:00', '2026-09-03', 'Sep 2'])]
-        with patch.object(module, 'driver', connection), patch.object(service, '_get_dataset_metadata', return_value={'uses_legacy_financial_model': False}), patch.object(service, '_record_to_transaction', side_effect=lambda row, **kw: row), patch.object(service, '_sanitize_transaction', side_effect=lambda row: row):
+        with patch.object(module, 'driver', connection), patch.object(module, 'financial_graph_reads', SimpleNamespace(read=lambda session, key, compute: compute())), patch.object(service, '_get_dataset_metadata', return_value={'uses_legacy_financial_model': False}), patch.object(service, '_record_to_transaction', side_effect=lambda row, **kw: row), patch.object(service, '_sanitize_transaction', side_effect=lambda row: row):
             result = service.get_financial_transactions(case_id='case-a', mode='intelligence', start_date='2026-09-02', end_date='2026-09-02')
         self.assertEqual([row['key'] for row in result['transactions']], ['0', '1'])
         self.assertEqual(result['total'], 2)
