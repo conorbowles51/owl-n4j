@@ -149,11 +149,16 @@ class GraphReadCache:
         self._count("miss")
         try:
             value = compute()
-            flight.blob = _pack(value)
-            if graph_bookmark(session) == before:
-                self._put(key, before, flight.blob)
-            else:
-                self._count("changed_during_read")
+            try:
+                flight.blob = _pack(value)
+                if graph_bookmark(session) == before:
+                    self._put(key, before, flight.blob)
+                else:
+                    self._count("changed_during_read")
+            except Exception:
+                # The read itself succeeded; only keeping it failed.
+                logger.exception("Could not keep a graph read for reuse")
+                flight.blob = None
             return value
         finally:
             with self._lock:

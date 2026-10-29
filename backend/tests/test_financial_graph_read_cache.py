@@ -114,6 +114,12 @@ class GraphReadCacheTests(unittest.TestCase):
         self.cache.read(self.session, "k", self.compute())
         self.assertEqual(self.calls, 1)
 
+    def test_a_value_that_cannot_be_kept_is_still_returned(self):
+        value = {"big": 2 ** 70}
+        with self.assertLogs("services.neo4j.graph_read_cache", level="ERROR"):
+            self.assertEqual(self.cache.read(self.session, "k", lambda: value), value)
+        self.assertEqual(self.cache.stats["saved"], 0)
+
     def test_a_call_after_a_commit_does_not_join_an_older_read(self):
         release = threading.Event()
         entered = threading.Event()
