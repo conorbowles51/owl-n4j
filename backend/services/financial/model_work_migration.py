@@ -53,10 +53,17 @@ TIME_KEYS = ('at', 'saved_at', 'created_at', 'decided_at', 'withdrawn_at')
 SEALED_KEY = 'model_work_sealed'
 
 
+# Values whose digest is recorded elsewhere: a re-read scheduled on a file records the digest of its saved review
+# progress (services.financial.reread_carry.work_fingerprint) and carries the work only while it is unchanged.
+FINGERPRINTED_KEYS = ('financial_review_progress',)
+
+
 def sealed_keys(value: dict) -> set:
-    """Keys whose value a digest beside it seals (``<key>_sha256`` or ``<key>_full_sha256``): the statement's
-    original reading, request, controls, catalogue, details review. Rewriting one would break its digest."""
-    return {key for key in value if f'{key}_sha256' in value or f'{key}_full_sha256' in value}
+    """Keys whose value a digest seals: beside it (``<key>_sha256`` or ``<key>_full_sha256``: the statement's
+    original reading, request, controls, catalogue, details review) or recorded elsewhere (FINGERPRINTED_KEYS).
+    Rewriting one would break its digest."""
+    return {key for key in value if f'{key}_sha256' in value or f'{key}_full_sha256' in value
+            or key in FINGERPRINTED_KEYS}
 
 
 def _legacy_actors(value: Any, path: tuple = (), at: Any = None):
@@ -131,7 +138,7 @@ class _Run:
                 if tuple(path) in noted:
                     continue
                 origin = self.origin(legacy, user_id=user_id, at=actor_at, citation=citation)
-                origin['sealed'] = f'{key} is sealed by its digest; it keeps the name as recorded.'
+                origin['sealed'] = f'{key} is sealed by a digest; it keeps the name as recorded.'
                 notes.append({'path': list(path), 'name': model_name(origin), 'origin': origin})
                 self.changed[kind + '.sealed'] += 1
         if notes:
@@ -289,7 +296,7 @@ def record_statement_calls(session, document_ids) -> dict:
             FinancialTransaction.ledger_status == 'admitted').order_by(FinancialTransaction.id)))
         calls = [c for c in judgements.detect(document, period, transactions) if c['rule_id'] == 'model.statement_save']
         if not calls:
-            counts['first_payment_not_model'] += 1
+            counts['no_model_payment'] += 1
             continue
         call = calls[0]
         existing = session.scalar(select(J).where(J.subject_type == call['subject_type'], J.subject_id == call['subject_id'],

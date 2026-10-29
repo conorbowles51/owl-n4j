@@ -392,6 +392,26 @@ class LegacyMigrationTests(unittest.TestCase):
         again = migrate(self.f.db, case_ids=[self.f.case.id], apply=True)
         self.assertEqual(again['records'], {})
 
+    def test_saved_review_progress_keeps_its_fingerprint_so_a_scheduled_reread_still_carries_it(self):
+        from postgres.models.evidence import EvidenceFile
+        from postgres.models.financial import FinancialSourceDocument
+        from services.financial.model_work_migration import SEALED_KEY, migrate
+        from services.financial.reread_carry import work_fingerprint
+        file_id = self.f.db.get(FinancialSourceDocument, self.document_id).evidence_file_id
+        evidence = self.f.db.get(EvidenceFile, file_id)
+        metadata = dict(evidence.metadata_ or {})
+        metadata['financial_review_progress'] = {'statement-1': dict(saved_by=self.legacy.name,
+                                                                     saved_at='2026-10-25T10:00:00+00:00')}
+        evidence.metadata_ = metadata
+        self.f.db.commit()
+        before = work_fingerprint(self.f.db, self.f.case.id, [file_id])
+        result = migrate(self.f.db, case_ids=[self.f.case.id], apply=True)
+        self.assertEqual(result['actors']['evidence_file.sealed'], 1)
+        self.f.db.expire_all()
+        self.assertEqual(work_fingerprint(self.f.db, self.f.case.id, [file_id]), before)
+        note, = self.f.db.get(EvidenceFile, file_id).metadata_[SEALED_KEY]
+        self.assertEqual(note['path'], ['financial_review_progress', 'statement-1', 'saved_by'])
+
     def test_a_statement_with_a_persons_payment_first_still_gets_its_call(self):
         from services.financial import judgements
         from services.financial.model_work_migration import migrate
