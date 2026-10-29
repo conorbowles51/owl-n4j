@@ -1,4 +1,31 @@
-## 2 October: plan audit, regression fixes, automation analysis (resume here)
+## 29 October: Cellebrite rebuild planned (resume here for phone work)
+
+Head: `7cc14970` "docs: plan to rebuild Cellebrite phone extractions in Loupe", local on
+`integration/evidence-main-reunion`, not pushed (Neil: no push). Before it, `e4eb33f4` merged 260 commits
+from origin so the Mac matches the VM checkout (`68d95b20` at the time).
+
+- **Plan:** `docs/cellebrite-rebuild-plan.md` (standing decisions, evidence, index) and specs
+  `docs/cellebrite/01` to `06`. Where they differ in detail the spec governs; on a standing decision
+  the plan governs. Nothing built yet.
+- **Next unit:** `06-build-order.md` row 1 (01-0.1 reference corpus manifest), then row 2 (counter),
+  then row 3 (read-only server measurement batch, 06 section 5). Several mapping rows wait on row 3.
+- **Waiting on Neil (not blocking stage A):** OpenCelliD licence ruling (04, 06 row 44).
+- **Defects found, outside this plan, not fixed:** `/api/query` fallback is not case-scoped and runs in
+  a write transaction; Reports page calls `/api/reports`, which no route serves (06 section 6).
+- **Facts a fresh session would otherwise rediscover:**
+  - SSH: `ssh loupe` (alias in `~/.ssh/config`) as `neil_byrne`; VM `investigation-platform`, project
+    `digital-waters-470220-a3`, gcloud account `neil@owlconsultancygroup.com`. Loupe checkout on the VM:
+    `/home/conorbowles51/app-v3/owl-n4j` (owned by conorbowles51; use sudo).
+  - v1's 14 ingested phones (reference corpus, read-only): `/mnt/owl-data/ingestion-data/` on the VM,
+    three cases holding 10, 3 and 1 reports; each has v1's `owl_ingest_report.json`.
+  - Alex's own v1 feedback: `/home/conorbowles51/app_v2/data/testing-feedback.json` on the VM.
+  - v1-era Claude transcripts on the VM are gone (30-day default retention); v1 memory notes survive
+    in `/root/.claude/projects/-home-conorbowles51-app-v2/memory/`.
+  - The VM ran out of memory on 24 October (SSH banner timeouts) under the server Claude jobs plus
+    benchmarks; run server measurements with `nice -n 19 ionice -c3`.
+  - Server job status board: `/mnt/owl-data/fin-wt/headless/STATUS-BOARD.md`.
+
+## 2 October: plan audit, regression fixes, automation analysis
 
 Head after this entry: see `git log -1`. Previous work entry is `ca8be046` (server measurement plan) on top of `54656ea5` (restored duplicate fix). Both unpushed at time of writing; pushing triggers deployment.
 
