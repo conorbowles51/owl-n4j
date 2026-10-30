@@ -16,3 +16,24 @@ def test_the_batch_list_is_registered_cached_at_its_path():
     path = next(path for path in endpoints if path.endswith('/batches/list'))
     assert endpoints[path] is financial_statement_import.list_financial_batches
     assert hasattr(endpoints[path], '__wrapped__')
+
+
+def test_a_list_without_its_send_sources_is_answered_but_not_kept(monkeypatch):
+    """A failed send-source lookup gives the list without them; the cache keeps only plain results, so the route
+    hands back its own encoded response (the same bytes) and the next call looks the sources up again."""
+    import json
+    import services.activity_trail
+    from fastapi.responses import Response
+
+    def failing(*args, **kwargs):
+        raise RuntimeError('synthetic lookup failure')
+    monkeypatch.setattr(services.activity_trail, 'batch_sources', failing)
+    monkeypatch.setattr(financial_statement_import.import_batches, 'available_batch_references', lambda *a: {})
+
+    class NoBatches:
+        def scalars(self, statement):
+            return []
+    case = '00000000-0000-0000-0000-000000000001'
+    result = financial_statement_import.list_financial_batches.__wrapped__(case_id=case, db=NoBatches())
+    assert isinstance(result, Response)
+    assert json.loads(result.body) == dict(case_id=case, batches=[])

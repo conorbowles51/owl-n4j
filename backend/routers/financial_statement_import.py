@@ -24,7 +24,7 @@ from services.financial.payment_document_review import (
 
 logger = logging.getLogger(__name__)
 _require_access = case_access_dependency(lambda request, payload: ('case', 'view'))
-from services.financial.view_cache import cached_view
+from services.financial.view_cache import cached_view, json_response
 
 router = APIRouter(prefix='/api/financial/statement-import', tags=['financial'],
                    dependencies=[Depends(get_current_db_user), Depends(_require_access)])
@@ -1045,7 +1045,7 @@ def list_financial_batches(case_id: UUID = Query(...), db: Session = Depends(get
     from services.financial.batch_review_summary import statement_summary
     from sqlalchemy import select
     from postgres.models.financial_import_batches import FinancialImportBatch, FinancialImportBatchItem
-    batches=list(db.scalars(select(FinancialImportBatch).where(FinancialImportBatch.case_id==case_id, FinancialImportBatch.status != 'removed').order_by(FinancialImportBatch.created_at.desc()).limit(100)))
+    batches=list(db.scalars(select(FinancialImportBatch).where(FinancialImportBatch.case_id==case_id, FinancialImportBatch.status != 'removed').order_by(FinancialImportBatch.created_at.desc(), FinancialImportBatch.id.desc()).limit(100)))
     references = import_batches.available_batch_references(db, case_id, [f for b in batches for f in b.files])
     files_by_batch = {b.id: import_batches.project_batch_files(b.files, references) for b in batches}
     by_batch = {b.id: [] for b in batches}
@@ -1065,17 +1065,21 @@ def list_financial_batches(case_id: UUID = Query(...), db: Session = Depends(get
         return dict(completed=complete, available_statements=ready, statements_with_checks=checks,
                     statement_summary=statement_summary(items))
     from services.activity_trail import batch_sources
+    partial = False
     try:
         sources = batch_sources(db, case_id=case_id, batch_ids=[b.id for b in batches])
     except Exception:
         logger.exception('Batch send sources unavailable; the list is shown without them')
-        sources = {}
-    return dict(case_id=str(case_id),batches=[dict(id=str(b.id),status=b.status,created_at=b.created_at.isoformat(),file_count=len(b.files), **counts(b),
+        sources, partial = {}, True
+    listing = dict(case_id=str(case_id),batches=[dict(id=str(b.id),status=b.status,created_at=b.created_at.isoformat(),file_count=len(b.files), **counts(b),
         created_by=(b.actor or {}).get('name', ''), filenames=[f['filename'] for f in b.files[:3]],
         automatic=bool((b.actor or {}).get('auto_read')), sent_from=sources.get(str(b.id)),
         superseded=bool(superseded.get(b.id)),
         checked_files=sum(f['status'] == 'checked' for f in files_by_batch[b.id]),
         failed_files=sum(f['status'] == 'error' for f in files_by_batch[b.id])) for b in batches])
+    # Without its send sources the list is answered as it stands but not kept by the view cache (it keeps only plain
+    # results): the next call reads them again instead of reusing this answer until a row changes.
+    return json_response(listing) if partial else listing
 
 
 @router.get('/batches/{batch_id}')
