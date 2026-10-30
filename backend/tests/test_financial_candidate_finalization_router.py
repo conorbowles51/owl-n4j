@@ -32,7 +32,7 @@ class FinalizationRouterTests(unittest.IsolatedAsyncioTestCase):
         body=CandidateFinalizationRequest(expected_revision="a"*64, documentary_financial_rows=True,
             accept_incomplete_coverage=True,reason="Reviewed source")
         with patch.object(write,"finalize_candidates",return_value={"applied":True}) as call:
-            self.assertTrue((await write.record_candidate_finalization(file,body,case,user,db))["applied"])
+            self.assertTrue((write.record_candidate_finalization(file,body,case,user,db))["applied"])
         args=call.call_args.kwargs
         self.assertEqual(args["case_id"],case);self.assertEqual(args["evidence_file_id"],file)
         self.assertEqual(args["actor"].user_id,user.id)

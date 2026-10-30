@@ -128,7 +128,7 @@ class CorrectionTests(DuplicateTestCase):
         self.assertIn(router._require_adjudication_case_access, dependencies)
         body = router.AmountCorrectionRequest(amount_minor="41000", direction="credit", reason="Reviewed", expected_revision="a" * 64)
         with patch.object(router, "correct_transaction", return_value={"applied": True}) as call:
-            result = asyncio.run(router.record_amount_correction(self.row.id, body, self.case.id, self.user, self.db))
+            result = router.record_amount_correction(self.row.id, body, self.case.id, self.user, self.db)
         self.assertTrue(result["applied"])
         self.assertEqual(call.call_args.kwargs["actor"].user_id, self.user.id)
         self.assertEqual(call.call_args.kwargs["amount_minor"], 41000)

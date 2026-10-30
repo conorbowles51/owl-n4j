@@ -93,7 +93,7 @@ router = APIRouter(
 
 
 @router.post("/candidates/{candidate_id}/review")
-async def record_candidate_review(candidate_id: UUID, body: CandidateReviewRequest,
+def record_candidate_review(candidate_id: UUID, body: CandidateReviewRequest,
                                   case_id: UUID = Query(...), current_user=Depends(get_current_db_user),
                                   db: Session = Depends(get_db)):
     try:
@@ -109,7 +109,7 @@ async def record_candidate_review(candidate_id: UUID, body: CandidateReviewReque
 
 
 @router.post("/candidate-mappings")
-async def record_candidate_mapping(body: PdfGridMapping | PdfMappingProposal,
+def record_candidate_mapping(body: PdfGridMapping | PdfMappingProposal,
                                    case_id: UUID = Query(...), current_user=Depends(get_current_db_user),
                                    db: Session = Depends(get_db)):
     try:
@@ -166,7 +166,7 @@ def _respond_admission(result) -> dict:
 
 
 @router.post("/transactions/{transaction_id}/quarantine")
-async def quarantine_transaction_row(
+def quarantine_transaction_row(
     transaction_id: UUID,
     case_id: UUID = Query(..., description="REQUIRED: Case ID"),
     reason: str = Body(
@@ -204,7 +204,7 @@ async def quarantine_transaction_row(
 
 
 @router.post("/transactions/{transaction_id}/release")
-async def release_transaction_row(
+def release_transaction_row(
     transaction_id: UUID,
     case_id: UUID = Query(..., description="REQUIRED: Case ID"),
     reason: str = Body(
@@ -237,7 +237,7 @@ async def release_transaction_row(
 
 
 @router.post("/files/{file_id}/admit")
-async def admit_file_to_document_pipeline(
+def admit_file_to_document_pipeline(
     file_id: UUID,
     case_id: UUID = Query(..., description="REQUIRED: Case ID"),
     reason: str = Body(
@@ -306,7 +306,7 @@ class AmountCorrectionRequest(AmountCorrectionPreviewRequest):
 
 
 @router.post("/transactions/{transaction_id}/correction")
-async def record_amount_correction(
+def record_amount_correction(
     transaction_id: UUID, payload: AmountCorrectionRequest,
     case_id: UUID = Query(...), current_user=Depends(get_current_db_user),
     db: Session = Depends(get_db),
@@ -324,7 +324,7 @@ async def record_amount_correction(
 
 
 @router.post("/transactions/{transaction_id}/correction-preview")
-async def amount_correction_preview(
+def amount_correction_preview(
     transaction_id: UUID, payload: AmountCorrectionPreviewRequest,
     case_id: UUID = Query(...), db: Session = Depends(get_db),
 ):
@@ -343,7 +343,7 @@ async def amount_correction_preview(
 
 
 @router.post("/documents/{document_id}/duplicate-decision")
-async def record_duplicate_decision(
+def record_duplicate_decision(
     document_id: UUID,
     payload: DuplicateDecisionRequest,
     case_id: UUID = Query(...),
@@ -368,7 +368,7 @@ class KeepDuplicateCopyRequest(BaseModel):
 
 
 @router.post("/documents/{document_id}/keep-duplicate-copy")
-async def keep_duplicate_copy(
+def keep_duplicate_copy(
     document_id: UUID,
     payload: KeepDuplicateCopyRequest,
     case_id: UUID = Query(...),
@@ -392,7 +392,7 @@ class RestoreReplacedStatementRequest(BaseModel):
 
 
 @router.post("/documents/{document_id}/restore-replaced-statement")
-async def restore_replaced_statement(
+def restore_replaced_statement(
     document_id: UUID,
     payload: RestoreReplacedStatementRequest,
     case_id: UUID = Query(...),
@@ -413,7 +413,7 @@ async def restore_replaced_statement(
 
 
 @router.post("/candidates/{candidate_id}/provisional-account")
-async def record_candidate_account(candidate_id: UUID, body: CandidateAccountRequest,
+def record_candidate_account(candidate_id: UUID, body: CandidateAccountRequest,
                                    case_id: UUID = Query(...), current_user=Depends(get_current_db_user),
                                    db: Session = Depends(get_db)):
     try:
@@ -429,7 +429,7 @@ async def record_candidate_account(candidate_id: UUID, body: CandidateAccountReq
 
 
 @router.post("/candidate-sources/{evidence_file_id}/finalize")
-async def record_candidate_finalization(evidence_file_id: UUID, body: CandidateFinalizationRequest,
+def record_candidate_finalization(evidence_file_id: UUID, body: CandidateFinalizationRequest,
                                         case_id: UUID = Query(...), current_user=Depends(get_current_db_user),
                                         db: Session = Depends(get_db)):
     try:
@@ -448,7 +448,7 @@ async def record_candidate_finalization(evidence_file_id: UUID, body: CandidateF
 from services.financial.statement_review_drafts import StatementDraftRequest, save_statement_draft
 
 @router.put("/candidate-sources/{evidence_file_id}/statement-draft")
-async def save_statement_review_draft(evidence_file_id: UUID, body: StatementDraftRequest,
+def save_statement_review_draft(evidence_file_id: UUID, body: StatementDraftRequest,
         case_id: UUID = Query(...), current_user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     try:
         return save_statement_draft(db, case_id=case_id, evidence_file_id=evidence_file_id,

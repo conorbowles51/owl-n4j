@@ -170,7 +170,7 @@ class QuarantineTransactionRowTests(unittest.IsolatedAsyncioTestCase):
                 rescues_period=True,
             ),
         ) as call:
-            result = await financial_adjudication.quarantine_transaction_row(
+            result = financial_adjudication.quarantine_transaction_row(
                 transaction_id=transaction_id,
                 case_id=case_id,
                 reason="Duplicate of the wire on the facing page",
@@ -216,7 +216,7 @@ class QuarantineTransactionRowTests(unittest.IsolatedAsyncioTestCase):
                 quarantine_reason="unreconciled_period",
             ),
         ):
-            result = await financial_adjudication.quarantine_transaction_row(
+            result = financial_adjudication.quarantine_transaction_row(
                 transaction_id=transaction_id,
                 case_id=uuid.uuid4(),
                 reason="Looks wrong",
@@ -243,7 +243,7 @@ class QuarantineTransactionRowTests(unittest.IsolatedAsyncioTestCase):
                 quarantine_reason="adjudicated",
             ),
         ):
-            result = await financial_adjudication.quarantine_transaction_row(
+            result = financial_adjudication.quarantine_transaction_row(
                 transaction_id=transaction_id,
                 case_id=uuid.uuid4(),
                 reason="Duplicate",
@@ -268,7 +268,7 @@ class QuarantineTransactionRowTests(unittest.IsolatedAsyncioTestCase):
             ),
         ):
             with self.assertRaises(HTTPException) as ctx:
-                await financial_adjudication.quarantine_transaction_row(
+                financial_adjudication.quarantine_transaction_row(
                     transaction_id=transaction_id,
                     case_id=uuid.uuid4(),
                     reason="Duplicate",
@@ -294,7 +294,7 @@ class QuarantineTransactionRowTests(unittest.IsolatedAsyncioTestCase):
             ),
         ):
             with self.assertRaises(HTTPException) as ctx:
-                await financial_adjudication.quarantine_transaction_row(
+                financial_adjudication.quarantine_transaction_row(
                     transaction_id=transaction_id,
                     case_id=uuid.uuid4(),
                     reason="Duplicate",
@@ -321,7 +321,7 @@ class ReleaseTransactionRowTests(unittest.IsolatedAsyncioTestCase):
                 adjudication_id="event-2",
             ),
         ) as call:
-            result = await financial_adjudication.release_transaction_row(
+            result = financial_adjudication.release_transaction_row(
                 transaction_id=transaction_id,
                 case_id=case_id,
                 reason="Second copy confirmed to be a different payment",
@@ -367,7 +367,7 @@ class ReleaseTransactionRowTests(unittest.IsolatedAsyncioTestCase):
                 ledger_status="admitted",
             ),
         ):
-            result = await financial_adjudication.release_transaction_row(
+            result = financial_adjudication.release_transaction_row(
                 transaction_id=transaction_id,
                 case_id=uuid.uuid4(),
                 reason="Let it back in",
@@ -392,7 +392,7 @@ class ReleaseTransactionRowTests(unittest.IsolatedAsyncioTestCase):
             ),
         ):
             with self.assertRaises(HTTPException) as ctx:
-                await financial_adjudication.release_transaction_row(
+                financial_adjudication.release_transaction_row(
                     transaction_id=transaction_id,
                     case_id=uuid.uuid4(),
                     reason="Let it back in",
@@ -415,7 +415,7 @@ class ReleaseTransactionRowTests(unittest.IsolatedAsyncioTestCase):
             ),
         ):
             with self.assertRaises(HTTPException) as ctx:
-                await financial_adjudication.release_transaction_row(
+                financial_adjudication.release_transaction_row(
                     transaction_id=transaction_id,
                     case_id=uuid.uuid4(),
                     reason="Let it back in",
@@ -446,7 +446,7 @@ class AdmitFileTests(unittest.IsolatedAsyncioTestCase):
                 adjudication_id="event-3",
             ),
         ) as call:
-            result = await financial_adjudication.admit_file_to_document_pipeline(
+            result = financial_adjudication.admit_file_to_document_pipeline(
                 file_id=file_id,
                 case_id=case_id,
                 reason="Ledger cannot parse it; index the text.",
@@ -515,7 +515,7 @@ class AdmitFileTests(unittest.IsolatedAsyncioTestCase):
                 claimants=("camt053",),
             ),
         ):
-            result = await financial_adjudication.admit_file_to_document_pipeline(
+            result = financial_adjudication.admit_file_to_document_pipeline(
                 file_id=file_id,
                 case_id=uuid.uuid4(),
                 reason=" ",
@@ -545,7 +545,7 @@ class AdmitFileTests(unittest.IsolatedAsyncioTestCase):
                 route_outcome="not_native",
             ),
         ):
-            result = await financial_adjudication.admit_file_to_document_pipeline(
+            result = financial_adjudication.admit_file_to_document_pipeline(
                 file_id=file_id,
                 case_id=uuid.uuid4(),
                 reason="Send it anyway",
@@ -570,7 +570,7 @@ class AdmitFileTests(unittest.IsolatedAsyncioTestCase):
             ),
         ):
             with self.assertRaises(HTTPException) as ctx:
-                await financial_adjudication.admit_file_to_document_pipeline(
+                financial_adjudication.admit_file_to_document_pipeline(
                     file_id=file_id,
                     case_id=uuid.uuid4(),
                     reason="Index the text",
@@ -594,7 +594,7 @@ class AdmitFileTests(unittest.IsolatedAsyncioTestCase):
             ),
         ):
             with self.assertRaises(HTTPException) as ctx:
-                await financial_adjudication.admit_file_to_document_pipeline(
+                financial_adjudication.admit_file_to_document_pipeline(
                     file_id=file_id,
                     case_id=uuid.uuid4(),
                     reason="Index the text",

@@ -144,7 +144,7 @@ class CorrectionPreviewTests(DuplicateTestCase):
         body = router.AmountCorrectionPreviewRequest(amount_minor="100", direction="credit")
         with patch.object(router, "preview_amount_correction", side_effect=RuntimeError("private SQL")), patch.object(self.db, "rollback") as rollback:
             with self.assertRaises(HTTPException) as exc:
-                asyncio.run(router.amount_correction_preview(self.row.id, body, self.case.id, self.db))
+                router.amount_correction_preview(self.row.id, body, self.case.id, self.db)
             self.assertEqual(exc.exception.status_code, 500)
             self.assertNotIn("private", exc.exception.detail)
             rollback.assert_called_once()

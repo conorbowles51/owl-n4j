@@ -238,7 +238,7 @@ class CandidateReviewRouterTests(unittest.IsolatedAsyncioTestCase):
         from routers import financial_adjudication as router
         case = uuid4()
         with patch.object(router, "actor_from_user", return_value="actor"), patch.object(router, "store_pdf_candidates", return_value={}) as call:
-            await router.record_candidate_mapping("proposal", case, "user", "db")
+            router.record_candidate_mapping("proposal", case, "user", "db")
         call.assert_called_once_with("db", case_id=case, proposal="proposal", actor="actor")
 
     async def test_write_requires_edit_and_uses_authenticated_actor(self):
@@ -246,7 +246,7 @@ class CandidateReviewRouterTests(unittest.IsolatedAsyncioTestCase):
         case, candidate = uuid4(), uuid4()
         body = CandidateReviewRequest(expected_revision="a"*64, status="rejected", reason="Checked")
         with patch.object(router, "actor_from_user", return_value="actor") as actor, patch.object(router, "review_candidate", return_value={}) as call:
-            await router.record_candidate_review(candidate, body, case, "user", "db")
+            router.record_candidate_review(candidate, body, case, "user", "db")
         actor.assert_called_once_with("user")
         call.assert_called_once_with("db", case_id=case, candidate_id=candidate, request=body, actor="actor")
         self.assertEqual(router._adjudication_case_permission(None, {}), ("case", "edit"))
@@ -257,7 +257,7 @@ class CandidateReviewRouterTests(unittest.IsolatedAsyncioTestCase):
         body = CandidateReviewRequest(expected_revision="a"*64, status="rejected", reason="Checked")
         with patch.object(router, "actor_from_user", return_value="actor"), patch.object(router, "review_candidate", side_effect=CandidateStoreError("Reload", 409)):
             with self.assertRaises(HTTPException) as error:
-                await router.record_candidate_review(uuid4(), body, uuid4(), "user", "db")
+                router.record_candidate_review(uuid4(), body, uuid4(), "user", "db")
         self.assertEqual(error.exception.status_code, 409)
 
     async def test_read_route_is_case_scoped(self):

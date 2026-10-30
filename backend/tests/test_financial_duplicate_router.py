@@ -45,7 +45,7 @@ class DuplicateDecisionRouterTests(unittest.IsolatedAsyncioTestCase):
         body = router.DuplicateDecisionRequest(action="exclude", reason="Confirmed copy",
             expected_revision="a" * 64, primary_id=primary_id, expected_primary_revision="b" * 64)
         with patch.object(router, "decide_duplicate", return_value={"applied": True}) as call:
-            result = await router.record_duplicate_decision(document_id, body, case_id, user, "db")
+            result = router.record_duplicate_decision(document_id, body, case_id, user, "db")
         self.assertTrue(result["applied"])
         self.assertEqual(call.call_args.kwargs["actor"].user_id, user.id)
         self.assertEqual(call.call_args.kwargs["expected_primary_revision"], "b" * 64)
@@ -60,7 +60,7 @@ class DuplicateDecisionRouterTests(unittest.IsolatedAsyncioTestCase):
         for error, status in [(DuplicateDecisionError("Refresh the comparison"), 409), (RuntimeError("private detail"), 500)]:
             with self.subTest(status=status), patch.object(router, "decide_duplicate", side_effect=error):
                 with self.assertRaises(HTTPException) as caught:
-                    await router.record_duplicate_decision(uuid.uuid4(), body, uuid.uuid4(), user, "db")
+                    router.record_duplicate_decision(uuid.uuid4(), body, uuid.uuid4(), user, "db")
                 self.assertEqual(caught.exception.status_code, status)
                 self.assertNotIn("private detail", caught.exception.detail)
 
@@ -83,13 +83,13 @@ class KeepDuplicateCopyRouterTests(unittest.IsolatedAsyncioTestCase):
         user = SimpleNamespace(id=uuid.uuid4(), name="Reviewer", email="reviewer@example.test")
         body = router.KeepDuplicateCopyRequest(reason="This production carries the cited range")
         with patch.object(admitted, "keep_copy", return_value={"applied": True}) as call:
-            self.assertTrue((await router.keep_duplicate_copy(document_id, body, case_id, user, "db"))["applied"])
+            self.assertTrue((router.keep_duplicate_copy(document_id, body, case_id, user, "db"))["applied"])
         self.assertEqual(call.call_args.kwargs["actor"].user_id, user.id)
         self.assertEqual((call.call_args.kwargs["case_id"], call.call_args.kwargs["document_id"]), (case_id, document_id))
         for error, status in [(admitted.AdmittedDuplicateError("Not set aside"), 409), (RuntimeError("private detail"), 500)]:
             with self.subTest(status=status), patch.object(admitted, "keep_copy", side_effect=error):
                 with self.assertRaises(HTTPException) as caught:
-                    await router.keep_duplicate_copy(document_id, body, case_id, user, "db")
+                    router.keep_duplicate_copy(document_id, body, case_id, user, "db")
                 self.assertEqual(caught.exception.status_code, status)
                 self.assertNotIn("private detail", caught.exception.detail)
 
@@ -102,7 +102,7 @@ class KeepDuplicateCopyRouterTests(unittest.IsolatedAsyncioTestCase):
         body = router.DuplicateDecisionRequest(action="restore", reason="Reviewed", expected_revision="a" * 64)
         with patch.object(router, "decide_duplicate", return_value={"applied": True}), \
                 patch.object(admitted, "sync_batch_items") as sync:
-            await router.record_duplicate_decision(document_id, body, case_id, user, "db")
+            router.record_duplicate_decision(document_id, body, case_id, user, "db")
         sync.assert_called_once_with("db", case_id=case_id, document_id=document_id)
 
     def test_keep_route_requires_adjudication_case_access(self):
