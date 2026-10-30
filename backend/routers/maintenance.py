@@ -27,7 +27,7 @@ class PurgeRequest(BaseModel):
 
 
 @router.get("/health")
-async def health_check(user: dict = Depends(get_current_user)):
+def health_check(user: dict = Depends(get_current_user)):
     """
     Quick health check of vector database integrity.
 
@@ -37,7 +37,7 @@ async def health_check(user: dict = Depends(get_current_user)):
 
 
 @router.post("/audit")
-async def run_audit(user: dict = Depends(get_current_user)):
+def run_audit(user: dict = Depends(get_current_user)):
     """
     Full integrity audit across all ChromaDB collections.
 
@@ -80,7 +80,7 @@ async def run_audit(user: dict = Depends(get_current_user)):
 
 
 @router.post("/repair")
-async def run_repair(request: RepairRequest, user: dict = Depends(get_current_user)):
+def run_repair(request: RepairRequest, user: dict = Depends(get_current_user)):
     """
     Repair missing case_id metadata across Neo4j and ChromaDB.
 
@@ -115,7 +115,7 @@ async def run_repair(request: RepairRequest, user: dict = Depends(get_current_us
 
 
 @router.post("/purge-orphans")
-async def purge_orphans(request: PurgeRequest, user: dict = Depends(get_current_user)):
+def purge_orphans(request: PurgeRequest, user: dict = Depends(get_current_user)):
     """
     Remove vector entries with no valid case association.
 
