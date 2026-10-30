@@ -845,6 +845,7 @@ def assess_first_line_fixes(session, document, only=None):
     result.update(period_id=str(period.id), currency=period.currency)
     stored = (document.metadata_ or {}).get(vision_descriptions.METADATA_KEY) or {}
     fixes, first_lines = stored.get('first_line_fixes') or {}, stored.get('first_lines') or {}
+    lines = stored.get('lines') or {}
     if not fixes:
         return {**result, 'code': 'no_first_line_fixes'}
     words = vision_descriptions._words
@@ -862,6 +863,12 @@ def assess_first_line_fixes(session, document, only=None):
             continue
         text = words(fix.get('text'))
         if not text or text.casefold() == first.casefold():
+            continue
+        if words(lines.get(str(row.id))) not in ('', old) and vision_descriptions.read_from_image(row):
+            # Its description lines are read and not yet added (assess_image_descriptions): they go first, or the
+            # corrected row would never gain them.
+            kept.append(dict(transaction_id=str(row.id), code='description_lines_pending', before=row.description,
+                             first_line_after=text))
             continue
         review = (row.provenance or {}).get('statement_import_review') or {}
         changes.append(dict(transaction_id=str(row.id), row_id=review.get('id'), before=row.description,
@@ -1020,7 +1027,8 @@ def refresh_descriptions(*, session_factory, case_id, document_id, from_images=F
         metadata = dict(document.metadata_ or {})
         metadata[basis] = list(metadata.get(basis) or []) + [dict(
             at=now, statement_id=verdict['statement_id'], reading_revision=verdict.get('revision'),
-            **({'read_by': verdict.get('reading')} if from_images else {}),
+            **({'read_by': verdict.get('reading') or sorted({(c.get('read_by') or {}).get('model') or ''
+                                                             for c in applied} - {''})} if from_images else {}),
             payments=[dict(previous_transaction_id=c['transaction_id'], transaction_id=c['replacement_id'],
                            row_id=c['row_id']) for c in applied])]
         document.metadata_ = metadata

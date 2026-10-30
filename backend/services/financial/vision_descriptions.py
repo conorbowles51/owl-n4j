@@ -398,9 +398,11 @@ def first_line_rows(session, document):
 def not_looked(stored, pairs):
     """The pairs (first_line_rows) not yet read with their printed first line (``looked``, kept from the first reading
     with that question on; a page whose request failed, was not rendered or was deferred is not looked at and is read
-    again). A statement read only before (no ``looked``) is read once more for its first lines."""
+    again). A payment whose earlier row was looked at (its lines added since) counts as looked. A statement read only
+    before (no ``looked``) is read once more for its first lines."""
     looked = set(stored.get('looked') or [])
-    return [(row, first) for row, first in pairs if str(row.id) not in looked]
+    return [(row, first) for row, first in pairs if str(row.id) not in looked
+            and ((row.provenance or {}).get('correction') or {}).get('previous_transaction_id') not in looked]
 
 
 def _reader(db, case_id):

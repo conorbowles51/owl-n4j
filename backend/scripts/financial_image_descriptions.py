@@ -145,9 +145,13 @@ def main(argv=None):
         results = applied + [r for r in results if r['outcome'] != 'describe']
     if args.first_lines:
         from services.financial.saved_reading_replacement import correct_first_lines
-        if args.apply:
-            results = survey(factory, args.case, args.document)
-        for entry in results:
+        scope = survey(factory, args.case, args.document) if args.apply else results
+        if args.payment:
+            proposed = {c['transaction_id'] for r in scope for c in (r.get('first_lines') or {}).get('changes') or []}
+            for payment in sorted(set(args.payment) - proposed):
+                print(f'  NO PROPOSAL for payment {payment}: not a current payment with a proposed first line (a '
+                      f'payment corrected since has a new id; the dry run lists the current ones)')
+        for entry in scope:
             if (entry.get('first_lines') or {}).get('outcome') != 'describe':
                 continue
             try:
@@ -161,7 +165,7 @@ def main(argv=None):
                   f"{entry['document_id']}: " + (f"{outcome.get('payments')} corrected (the model's reading, not "
                   f"confirmed)" if outcome.get('applied') else (outcome.get('refusal') or outcome.get('code') or '')),
                   flush=True)
-            entry['first_lines_applied'] = outcome
+            results.append(dict(document_id=entry['document_id'], first_lines_applied=outcome))
     if args.json:
         Path(args.json).write_text(json.dumps(results, indent=1, default=str))
     return 0

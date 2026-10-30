@@ -428,6 +428,22 @@ class SavedFirstLineTests(SavedImageDescriptionTests):
         self.assertNotIn('applied', result)
         self.assertEqual(self.first_lines()['outcome'], 'describe', 'still proposed')
 
+    def test_description_lines_waiting_are_added_first(self):
+        self.store_lines('Incoming transfer from EXAMPLE SUPPLIER SA')
+        self.store_fix(str(self.labelled), 'lncoming')
+        verdict = self.first_lines()
+        self.assertEqual((verdict['outcome'], [k['code'] for k in verdict['kept']]),
+                         ('same', ['description_lines_pending']))
+
+    def test_a_payment_whose_earlier_row_was_read_is_not_read_again(self):
+        self.store_lines('Incoming transfer from EXAMPLE SUPPLIER SA')
+        replacement.refresh_descriptions(session_factory=self.f.SessionLocal, case_id=self.d.t.case_id,
+                                         document_id=self.document_id, from_images=True)
+        with self.f.SessionLocal() as db:
+            pairs = vd.first_line_rows(db, db.get(FinancialSourceDocument, self.document_id))
+            self.assertEqual(len(vd.not_looked({'looked': [str(self.labelled)]}, pairs)), 0)
+            self.assertEqual(len(vd.not_looked({}, pairs)), 1)
+
     def test_a_first_line_changed_since_stays(self):
         self.store_fix(str(self.labelled), 'lncoming', first='Incoming wire')
         verdict = self.first_lines()
