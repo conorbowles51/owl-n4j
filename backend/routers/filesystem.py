@@ -54,7 +54,7 @@ class FileSystemListResponse(BaseModel):
 
 
 @router.get("/list", response_model=FileSystemListResponse)
-async def list_directory(
+def list_directory(
     case_id: Optional[str] = None,
     path: Optional[str] = None,
     user: dict = Depends(get_current_user),
@@ -168,7 +168,7 @@ async def list_directory(
 
 
 @router.get("/read")
-async def read_file(
+def read_file(
     case_id: str,
     path: str,
     user: dict = Depends(get_current_user),

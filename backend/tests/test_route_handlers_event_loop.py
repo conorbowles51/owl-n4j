@@ -37,8 +37,6 @@ NOT_YET_CONVERTED = {
     'routers/database.py:list_entities_status',
     'routers/database.py:list_entities',
     'routers/database.py:get_entity',
-    'routers/filesystem.py:list_directory',
-    'routers/filesystem.py:read_file',
     'routers/financial.py:categorize_transaction',
     'routers/financial.py:batch_categorize_transactions',
     'routers/financial.py:update_from_to',
