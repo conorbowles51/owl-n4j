@@ -1,16 +1,18 @@
 """Route handlers declared async that never await run their blocking work on the worker's event loop: every other
 request in that worker, Financial pages included, waits for them. Measured 2026-10-30 (request_speed_hourly, 7 days):
 16 such handlers in use held the loop for 1,268 s, e.g. an assistant message 85 s, sign-in password hashing 2.2 s on
-average. Those are plain functions now (FastAPI runs them in its thread pool). The handlers below are still async
-without an await and were not seen in use in those 7 days; this list may only shrink."""
+average. Those are plain functions now (FastAPI runs them in its thread pool), and so are 187 of the 189 others that
+were async without an await; the two that must stay async (a streaming answer that watches for the client leaving,
+and a chunked upload whose cache a loop task sweeps) await their blocking calls in the thread pool."""
 import ast
 import pathlib
 
 BACKEND = pathlib.Path(__file__).resolve().parents[1]
 
-NOT_YET_CONVERTED = {
-    'routers/query.py:execute_cypher',
-}
+# Empty since 2026-10-30 (fin-eventloop): every route handler that does blocking work is a plain function (run in
+# the thread pool) or awaits it off the loop (run_in_threadpool). A handler declared async without an await fails
+# the test below; make it a plain function instead.
+NOT_YET_CONVERTED = set()
 
 
 def _blocking_async_handlers():

@@ -47,7 +47,7 @@ def _is_write_refusal(error: Exception) -> bool:
 
 
 @router.post("", response_model=CypherResponse)
-async def execute_cypher(request: CypherRequest, current_user: User = Depends(require_admin)):
+def execute_cypher(request: CypherRequest, current_user: User = Depends(require_admin)):
     """
     Execute a read-only Cypher query (administrators only).
 
