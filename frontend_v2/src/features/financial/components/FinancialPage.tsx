@@ -103,6 +103,7 @@ import { PdfCandidatesPanel } from "./PdfCandidatesPanel"
 import { ProofStandingPanel } from "./ProofStandingPanel"
 import { CorrectableLedger } from "./CorrectableLedger"
 import { RecordsModeSwitch } from "./RecordsModeSwitch"
+import { InfoTip } from "./InfoTip"
 import { RowAdjudicationDialog } from "./RowAdjudicationDialog"
 import { IngestionRunNotice } from "./IngestionRunNotice"
 import { IngestionRunsPanel } from "./IngestionRunsPanel"
@@ -119,6 +120,9 @@ import type {
   LedgerTransaction,
   Transaction,
 } from "../api"
+
+// The views that show the statement payments / other records switch (the access notice sits on its line).
+const RECORDS_SWITCH_VIEWS = new Set<string>(["transactions", "counterparties", "trends"])
 
 export function FinancialPage() {
   const { id: caseId } = useParams()
@@ -787,7 +791,8 @@ function FinancialPageContent() {
           value={store.mainView}
           onChange={navigateFinancial}
         />
-        <FinancialAccessNotice />
+        {/* Views with the records switch show the access notice on its line. */}
+        {!RECORDS_SWITCH_VIEWS.has(store.mainView) && <FinancialAccessNotice />}
         {/* Categories are chosen and managed under Transactions (Alex: not at
             the top of every view). A category chosen there still narrows the
             analysis views, so they say so instead of filtering silently. */}
@@ -1233,19 +1238,17 @@ function FinancialPageContent() {
           <RecordsModeSwitch
             transactionsMode={isTransactionsMode}
             onChange={handleModeChange}
+            aside={<FinancialAccessNotice inline />}
           />
           <div
             className="min-h-0 flex-1 space-y-4 overflow-auto p-4"
             style={!isTransactionsMode ? { display: "none" } : undefined}
           >
             <header className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-semibold">Transactions</h2>
-                <p className="text-sm text-muted-foreground">
-                  All imported payments are available here. Filter by account or
-                  account holder, then open a payment to inspect its statement.
-                </p>
-              </div>
+              <h2 className="text-lg font-semibold">
+                Transactions
+                <InfoTip text="All imported payments are available here. Filter by account or account holder, then open a payment to inspect its statement." />
+              </h2>
               <div className="flex flex-wrap gap-2">
                 <Button variant="outline" onClick={openAllPayments}>
                   Show all imported payments
@@ -1380,6 +1383,7 @@ function FinancialPageContent() {
           <RecordsModeSwitch
             transactionsMode={isTransactionsMode}
             onChange={handleModeChange}
+            aside={<FinancialAccessNotice inline />}
           />
           {isTransactionsMode ? (
             <div className="min-h-0 flex-1 overflow-auto">
@@ -1467,6 +1471,7 @@ function FinancialPageContent() {
           <RecordsModeSwitch
             transactionsMode={isTransactionsMode}
             onChange={handleModeChange}
+            aside={<FinancialAccessNotice inline />}
           />
           {isTransactionsMode ? (
             <div className="min-h-0 flex-1 overflow-auto">
