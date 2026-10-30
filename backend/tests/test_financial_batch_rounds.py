@@ -282,3 +282,34 @@ def test_thread_dump_signals_do_not_stop_the_rounds_process():
         signal.pthread_sigmask(signal.SIG_SETMASK, previous)
     assert sent.is_set()  # still running after every dump signal; ended only by the SIGTERM
     assert ended == [0] and len(dumps) >= 1
+
+
+def test_every_thread_of_the_child_starts_with_stop_and_dump_signals_blocked(tmp_path):
+    """Threads started while the package imports, before main() runs, took SIGUSR1's default action and ended the
+    live process (2026-10-30 16:02, status -10). The launcher blocks the signals before exec."""
+    out = tmp_path / 'masks'
+    script = ("import sys, threading, time, glob\n"
+              "threading.Thread(target=time.sleep, args=(5,), daemon=True).start()  # as an import would\n"
+              "time.sleep(0.2)\n"
+              "masks = [int(open(t + '/status').read().split('SigBlk:')[1].split()[0], 16)\n"
+              "         for t in glob.glob('/proc/self/task/*')]\n"
+              "open(sys.argv[1], 'w').write(' '.join(map(str, masks)))\n")
+    blocked = batch_rounds.STOP_SIGNALS + (batch_rounds.DUMP_SIGNAL,)
+    asyncio.run(vision_rounds._run_child([sys.executable, '-c', script, str(out)], 'test', 5,
+                                         blocked_signals=blocked))
+    masks = [int(mask) for mask in out.read_text().split()]
+    assert len(masks) >= 2
+    for mask in masks:
+        assert all(mask & (1 << (int(number) - 1)) for number in blocked)
+
+
+def test_the_batch_child_is_started_with_the_signals_blocked(lock_dir, monkeypatch):
+    seen = []
+
+    async def run_child(command, label, stop_seconds, blocked_signals=()):
+        seen.append(set(blocked_signals))
+        raise asyncio.CancelledError
+    monkeypatch.setattr(vision_rounds, '_run_child', run_child)
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(batch_rounds.run_in_child_forever())
+    assert seen == [{signal.SIGTERM, signal.SIGINT, signal.SIGUSR1}]

@@ -180,8 +180,11 @@ async def run_in_child_forever():
         if lock is not None:
             with lock:
                 try:
+                    # Blocked from the start: threads started while the package imports (before main()) would
+                    # otherwise take a stop or dump signal's default action (immediate end; live 16:02, status -10).
                     await vision_rounds._run_child(_child_command(), 'Batch rounds',
-                                                   process_shutdown.BACKGROUND_STOP_SECONDS)
+                                                   process_shutdown.BACKGROUND_STOP_SECONDS,
+                                                   blocked_signals=STOP_SIGNALS + (DUMP_SIGNAL,))
                 except asyncio.CancelledError:
                     raise
                 except Exception:  # noqa: BLE001 - e.g. the fork failed: tried again after the pause
