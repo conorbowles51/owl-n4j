@@ -173,7 +173,13 @@ def _warm_cases(share=None):
     from routers.financial_statement_import import account_types as get_account_types
     from routers.financial_statement_import import list_financial_batches
     from services.financial.review_queue import warm as warm_review_queue
+    from routers.financial_ledger import (get_counterparty_party_analysis, get_ledger_posting_graph,
+                                          get_ledger_timeline, get_ledger_transfer_candidates, get_pattern_review,
+                                          get_working_ledger_analysis)
+    from fastapi import HTTPException
     from services import process_shutdown
+    full_range_dates = dict(account_id=None, start_date=None, end_date=None)
+    full_range = dict(full_range_dates, population='working')
     # Each route with its defaults, as FastAPI passes them for a first visit: the same cached-view key.
     views = (
         ('account history', get_account_history, dict(account_id=None, account_ids=None, account_holders=None,
@@ -196,24 +202,50 @@ def _warm_cases(share=None):
         # Every call recomputed it: d5b330d1 10-39 s live (request_speed, 6 h to 19:00 2026-10-30), 49494305 ~5 s.
         ('batch list', list_financial_batches, {}),
     )
-    task = -1
-    for case_id in cases:
-        for name, route, defaults in views:
-            task += 1
-            if share is not None and task % share[1] != share[0]:
-                continue
-            if process_shutdown.requested.is_set():
-                return warmed, failed
-            started = time.perf_counter()
-            try:
-                with SessionLocal() as db:
-                    # Each route gets case_id as FastAPI gives it (the evidence listing declares it as text).
-                    route(case_id=str(case_id) if route is list_evidence else case_id, **defaults, db=db)
-                logger.info('Financial %s warmed for case %s (%.1f s)', name, case_id, time.perf_counter() - started)
-                warmed += 1
-            except Exception:
-                logger.warning('Financial %s warm-up failed for case %s', name, case_id, exc_info=True)
+    # The full-range analyses as the page first asks for them (the counterparty tab opens on the working analysis
+    # by counterparty; the identities analysis is one tick away). First visit on d5b330d1 live 2026-10-30
+    # 20:22-20:26: 23.7 s (counterparty-party analysis) to 50.5 s (transfer candidates), mostly name inference in a
+    # request worker that starts empty; a refusal at the view's own row limit is kept and saved like a result.
+    # A second pass after every case's views above: the release's warm-up has a time cap, and these come last.
+    analyses = (
+        ('working counterparty analysis', get_working_ledger_analysis, dict(full_range_dates, grouping='counterparty',
+                                                                           account_ids=None, account_holders=None)),
+        ('posting graph', get_ledger_posting_graph, dict(full_range, account_ids=None, account_holders=None)),
+        ('counterparty-party analysis', get_counterparty_party_analysis, dict(full_range, account_ids=None,
+                                                                             account_holders=None)),
+        ('timeline', get_ledger_timeline, dict(full_range, account_ids=None, account_holders=None)),
+        ('transfer candidates', get_ledger_transfer_candidates, dict(start_date=None, end_date=None,
+                                                                     population='working', tolerance_days=3)),
+        ('pattern review', get_pattern_review, dict(full_range, window_days=3, threshold_minor=None,
+                                                    threshold_currency=None, cross_account=False, account_ids=None,
+                                                    account_holders=None)),
+    )
+    order = [(case_id, view) for group in (views, analyses) for case_id in cases for view in group]
+    for task, (case_id, (name, route, defaults)) in enumerate(order):
+        if share is not None and task % share[1] != share[0]:
+            continue
+        if process_shutdown.requested.is_set():
+            return warmed, failed
+        started = time.perf_counter()
+        try:
+            with SessionLocal() as db:
+                # Each route gets case_id as FastAPI gives it (the evidence listing declares it as text).
+                route(case_id=str(case_id) if route is list_evidence else case_id, **defaults, db=db)
+            logger.info('Financial %s warmed for case %s (%.1f s)', name, case_id, time.perf_counter() - started)
+            warmed += 1
+        except HTTPException as refusal:
+            if refusal.status_code != 422:
+                logger.warning('Financial %s warm-up failed for case %s (%s: %s)', name, case_id,
+                               refusal.status_code, refusal.detail)
                 failed += 1
+                continue
+            # The view's own answer for these rows (e.g. its row limit); kept like a result.
+            logger.info('Financial %s warmed for case %s (%.1f s, refused: %s)', name, case_id,
+                        time.perf_counter() - started, refusal.detail)
+            warmed += 1
+        except Exception:
+            logger.warning('Financial %s warm-up failed for case %s', name, case_id, exc_info=True)
+            failed += 1
     return warmed, failed
 
 

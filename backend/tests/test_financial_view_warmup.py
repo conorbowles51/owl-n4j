@@ -16,6 +16,12 @@ URL = os.environ.get('FINANCIAL_VIEW_CACHE_TEST_DATABASE_URL')
 needs_pg = pytest.mark.skipif(not URL, reason='Requires an explicit local PostgreSQL test connection')
 
 
+FULL_RANGE_VIEWS = (('get_working_ledger_analysis', 'working'), ('get_ledger_posting_graph', 'graph'), ('get_counterparty_party_analysis', 'cpa'),
+                    ('get_ledger_timeline', 'timeline'), ('get_ledger_transfer_candidates', 'transfers'),
+                    ('get_pattern_review', 'patterns'))
+PER_CASE = 15  # views warmed for each case
+
+
 @pytest.fixture
 def periods(tmp_path, monkeypatch):
     admin = create_engine(URL)
@@ -44,6 +50,8 @@ def periods(tmp_path, monkeypatch):
                         lambda **kw: calls.append(dict(kw, view='batches')))
     from services.financial import review_queue
     monkeypatch.setattr(review_queue, 'warm', lambda **kw: calls.append(dict(kw, view='queue')))
+    for route, view in FULL_RANGE_VIEWS:
+        monkeypatch.setattr(routers.financial_ledger, route, lambda view=view, **kw: calls.append(dict(kw, view=view)))
 
     def add(case, count):
         with engine.begin() as connection:
@@ -70,7 +78,12 @@ def test_every_case_is_warmed_largest_first_with_the_routes_defaults(periods):
         (str(large), 'batches'),
         (str(small), None), (str(small), 'transactions'), (str(small), 'files'), (str(small), 'evidence'),
         (str(small), 'parties'), (str(small), 'types'), (str(small), 'consolidations'), (str(small), 'queue'),
-        (str(small), 'batches')]
+        (str(small), 'batches'),
+        # The full-range analyses in a second pass, after every case's views above (the release warm-up's cap).
+        (str(large), 'working'), (str(large), 'graph'), (str(large), 'cpa'), (str(large), 'timeline'),
+        (str(large), 'transfers'), (str(large), 'patterns'),
+        (str(small), 'working'), (str(small), 'graph'), (str(small), 'cpa'), (str(small), 'timeline'),
+        (str(small), 'transfers'), (str(small), 'patterns')]
     # The batch list takes only the case, as a UUID (FastAPI's type for it): the same cached-view key.
     assert {key: value for key, value in calls[8].items() if key != 'db'} == dict(case_id=large, view='batches')
     # The three account views take only the case: the same cached-view key as a first visit.
@@ -84,6 +97,55 @@ def test_every_case_is_warmed_largest_first_with_the_routes_defaults(periods):
 
 
 @needs_pg
+def test_the_full_range_views_get_the_routes_own_defaults(periods):
+    # The page asks these with grouping=counterparty (working analysis), population=working, window_days=3, tolerance_days=3, cross_account=false and no
+    # dates or accounts: each route's own defaults. Any other value would warm a key no first visit asks for.
+    import inspect
+    import routers.financial_ledger as ledger
+    add, calls, _ = periods
+    case = uuid.uuid4()
+    add(case, 1)
+    paths = dict(working='/ledger-working-analysis', graph='/ledger-posting-graph', cpa='/counterparty-party-analysis', timeline='/ledger-timeline',
+                 transfers='/ledger-transfer-candidates', patterns='/pattern-review')
+    # The endpoints FastAPI serves (the fixture replaced the module's names).
+    served = {route.path.rsplit('/financial', 1)[-1]: route.endpoint for route in ledger.router.routes
+              if 'GET' in getattr(route, 'methods', ())}
+    routes = {view: served[path] for view, path in paths.items()}
+    view_warmup.warm_account_history()
+    by_view = {call['view']: call for call in calls if call.get('view') in routes}
+    assert set(by_view) == set(routes)
+    for view, route in routes.items():
+        expected = {name: getattr(parameter.default, 'default', parameter.default)
+                    for name, parameter in inspect.signature(inspect.unwrap(route)).parameters.items()
+                    if name not in ('case_id', 'db')}
+        if view == 'working':
+            expected['grouping'] = 'counterparty'  # the counterparty tab's first request: grouping=counterparty
+        assert {key: value for key, value in by_view[view].items() if key not in ('db', 'view', 'case_id')} == expected, view
+        assert by_view[view]['case_id'] == case
+    assert by_view['timeline']['population'] == 'working' and by_view['patterns']['window_days'] == 3
+    assert by_view['transfers']['tolerance_days'] == 3 and by_view['patterns']['cross_account'] is False
+
+
+@needs_pg
+def test_a_views_own_refusal_counts_as_warmed_and_other_errors_as_failed(periods, monkeypatch):
+    from fastapi import HTTPException
+    import routers.financial_ledger
+    add, calls, _ = periods
+    add(uuid.uuid4(), 1)
+
+    def refuses(**kw):
+        raise HTTPException(status_code=422, detail='More than 1,000 payments match these filters.')
+
+    def breaks(**kw):
+        raise HTTPException(status_code=500, detail='broken')
+    monkeypatch.setattr(routers.financial_ledger, 'get_ledger_timeline', refuses)
+    monkeypatch.setattr(routers.financial_ledger, 'get_pattern_review', breaks)
+    monkeypatch.setattr(view_warmup, '_migrations_pending', lambda: '')
+    summary = view_warmup.prepare(processes=1)
+    assert summary.startswith('prepare: %d views warmed in ' % (PER_CASE - 1)) and '(1 failed, 1 processes, code ' in summary
+
+
+@needs_pg
 def test_only_one_worker_warms_at_a_time(periods):
     add, calls, directory = periods
     add(uuid.uuid4(), 1)
@@ -92,7 +154,7 @@ def test_only_one_worker_warms_at_a_time(periods):
         view_warmup.warm_account_history()
     assert calls == []
     view_warmup.warm_account_history()
-    assert len(calls) == 9  # the views of one case
+    assert len(calls) == PER_CASE  # the views of one case
 
 
 @needs_pg
@@ -108,7 +170,7 @@ def test_a_failing_case_does_not_stop_the_others_and_shutdown_stops_the_rest(per
             raise RuntimeError('synthetic failure')
     monkeypatch.setattr(routers.financial_ledger, 'get_account_history', failing)
     view_warmup.warm_account_history()
-    assert [str(call['case_id']) for call in calls] == [str(first)] * 9 + [str(second)] * 9
+    assert sorted(str(call['case_id']) for call in calls) == sorted([str(first)] * PER_CASE + [str(second)] * PER_CASE)
     calls.clear()
     monkeypatch.setattr(process_shutdown, 'requested', type('Set', (), dict(is_set=lambda self: True))())
     view_warmup.warm_account_history()
@@ -130,8 +192,8 @@ def test_prepare_warms_every_view_and_reports_it(periods, monkeypatch):
     add(uuid.uuid4(), 1)
     monkeypatch.setattr(view_warmup, '_migrations_pending', lambda: '')
     summary = view_warmup.prepare(processes=1)
-    assert len(calls) == 9
-    assert summary.startswith('prepare: 9 views warmed in ') and '(0 failed, 1 processes, code ' in summary
+    assert len(calls) == PER_CASE
+    assert summary.startswith('prepare: %d views warmed in ' % PER_CASE) and '(0 failed, 1 processes, code ' in summary
 
 
 @needs_pg
@@ -155,7 +217,7 @@ def test_prepare_does_not_wait_for_the_old_services_warm_up_but_for_another_prep
         runner = threading.Thread(target=lambda: beside.append(view_warmup.prepare(processes=1)), daemon=True)
         runner.start()
         runner.join(30)
-        assert beside and beside[0].startswith('prepare: 9 views warmed')
+        assert beside and beside[0].startswith('prepare: %d views warmed' % PER_CASE)
     calls.clear()
     held = open(directory / view_warmup.PREPARE_LOCK, 'a')
     fcntl.flock(held, fcntl.LOCK_EX)
@@ -166,7 +228,7 @@ def test_prepare_does_not_wait_for_the_old_services_warm_up_but_for_another_prep
     assert done == [] and calls == []
     held.close()
     worker.join(30)
-    assert len(calls) == 9 and done[0].startswith('prepare: 9 views warmed')
+    assert len(calls) == PER_CASE and done[0].startswith('prepare: %d views warmed' % PER_CASE)
 
 
 @needs_pg
@@ -175,9 +237,9 @@ def test_split_shares_warm_every_view_exactly_once(periods):
     first, second = uuid.uuid4(), uuid.uuid4()
     add(first, 2); add(second, 1)
     totals = [view_warmup._warm_cases(share=(share, 3)) for share in range(3)]
-    assert sum(warmed for warmed, _ in totals) == 18
+    assert sum(warmed for warmed, _ in totals) == 2 * PER_CASE
     seen = sorted((str(call['case_id']), call.get('view') or 'history') for call in calls)
-    assert len(seen) == 18 and len(set(seen)) == 18
+    assert len(seen) == 2 * PER_CASE and len(set(seen)) == 2 * PER_CASE
 
 
 def test_prepare_splits_over_child_processes_and_sums_them(monkeypatch, tmp_path):
