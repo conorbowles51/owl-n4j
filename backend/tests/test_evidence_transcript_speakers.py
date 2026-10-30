@@ -27,8 +27,7 @@ def test_update_transcript_speakers_persists_trimmed_known_labels(monkeypatch) -
     db = FakeDb()
     monkeypatch.setattr(evidence, "_evidence_record_for_id", lambda *_args: record)
 
-    result = asyncio.run(
-        evidence.update_transcript_speakers(
+    result = evidence.update_transcript_speakers(
             "evidence-id",
             evidence.TranscriptSpeakersUpdate(
                 speakers={"A": "  Detective Byrne ", "B": ""},
@@ -36,7 +35,6 @@ def test_update_transcript_speakers_persists_trimmed_known_labels(monkeypatch) -
             ),
             db,
         )
-    )
 
     assert result == {
         "speakers": {"A": "Detective Byrne"},
@@ -58,13 +56,11 @@ def test_update_transcript_speakers_rejects_unknown_labels(monkeypatch) -> None:
     monkeypatch.setattr(evidence, "_evidence_record_for_id", lambda *_args: record)
 
     with pytest.raises(HTTPException) as exc_info:
-        asyncio.run(
-            evidence.update_transcript_speakers(
+        evidence.update_transcript_speakers(
                 "evidence-id",
                 evidence.TranscriptSpeakersUpdate(speakers={"C": "Unknown"}),
                 FakeDb(),
             )
-        )
 
     assert exc_info.value.status_code == 422
 
@@ -81,8 +77,7 @@ def test_update_transcript_speakers_flattens_merge_chains(monkeypatch) -> None:
     )
     monkeypatch.setattr(evidence, "_evidence_record_for_id", lambda *_args: record)
 
-    result = asyncio.run(
-        evidence.update_transcript_speakers(
+    result = evidence.update_transcript_speakers(
             "evidence-id",
             evidence.TranscriptSpeakersUpdate(
                 speakers={"C": "Caller"},
@@ -90,7 +85,6 @@ def test_update_transcript_speakers_flattens_merge_chains(monkeypatch) -> None:
             ),
             FakeDb(),
         )
-    )
 
     assert result["merges"] == {"A": "C", "B": "C"}
     assert record.transcription_speaker_merges == {"A": "C", "B": "C"}
@@ -108,8 +102,7 @@ def test_update_transcript_speakers_rejects_merge_cycles(monkeypatch) -> None:
     monkeypatch.setattr(evidence, "_evidence_record_for_id", lambda *_args: record)
 
     with pytest.raises(HTTPException) as exc_info:
-        asyncio.run(
-            evidence.update_transcript_speakers(
+        evidence.update_transcript_speakers(
                 "evidence-id",
                 evidence.TranscriptSpeakersUpdate(
                     speakers={},
@@ -117,7 +110,6 @@ def test_update_transcript_speakers_rejects_merge_cycles(monkeypatch) -> None:
                 ),
                 FakeDb(),
             )
-        )
 
     assert exc_info.value.status_code == 422
     assert "cycle" in str(exc_info.value.detail).lower()

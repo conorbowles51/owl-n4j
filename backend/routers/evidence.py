@@ -911,7 +911,7 @@ def document_text_matches(
 
 
 @router.put("/{evidence_id}/transcript-speakers")
-async def update_transcript_speakers(
+def update_transcript_speakers(
     evidence_id: str,
     update: TranscriptSpeakersUpdate,
     db: Session = Depends(get_db),
@@ -999,7 +999,7 @@ async def update_transcript_speakers(
 
 
 @router.post("/sync-filesystem")
-async def sync_filesystem(
+def sync_filesystem(
     case_id: str = Query(..., description="Case ID to sync"),
     current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
@@ -1130,7 +1130,7 @@ async def sync_filesystem(
 
 
 @router.get("/duplicates/{sha256}", response_model=EvidenceListResponse)
-async def find_duplicates(
+def find_duplicates(
     sha256: str,
     case_id: str = Query(..., description="Case ID"),
     current_user: User = Depends(get_current_db_user),
@@ -1588,7 +1588,7 @@ def _split_db_backed_legacy(file_ids: List[str], db: Session) -> tuple:
 
 
 @router.get("/logs", response_model=EvidenceLogListResponse)
-async def get_evidence_logs(
+def get_evidence_logs(
     case_id: str = Query(..., description="Case ID"),
     limit: int = 200,
     current_user: User = Depends(get_current_db_user),
@@ -1757,7 +1757,7 @@ async def clear_engine_jobs(
 
 
 @router.get("/wiretap/check")
-async def check_wiretap_folder(
+def check_wiretap_folder(
     case_id: str = Query(..., description="Case ID"),
     folder_path: str = Query(..., description="Relative folder path from case data directory"),
     current_user: User = Depends(get_current_db_user),
@@ -1829,7 +1829,7 @@ class CellebriteProcessResponse(BaseModel):
 
 
 @router.post("/wiretap/process", response_model=WiretapProcessResponse)
-async def process_wiretap_folders(
+def process_wiretap_folders(
     request: WiretapProcessRequest,
     background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_db_user),
@@ -2521,7 +2521,7 @@ async def get_video_frames(
 
 
 @router.get("/{evidence_id}/frames/{filename}")
-async def get_video_frame_image(
+def get_video_frame_image(
     evidence_id: str,
     filename: str,
     user: dict = Depends(get_current_user),
@@ -2583,7 +2583,7 @@ def _verify_evidence_case_access(
 
 
 @router.put("/relevance")
-async def set_evidence_relevance(
+def set_evidence_relevance(
     body: SetRelevanceRequest,
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -2660,7 +2660,7 @@ def get_case_tags(
 
 
 @router.get("/wiretap/processed")
-async def list_wiretap_processed(
+def list_wiretap_processed(
     case_id: str = Query(..., description="Case ID"),
     user: dict = Depends(get_current_user),
 ):
@@ -2714,7 +2714,7 @@ def get_evidence_by_filename(
 
 
 @router.get("/summary/{filename}")
-async def get_document_summary(
+def get_document_summary(
     filename: str,
     case_id: str = Query(..., description="Case ID"),
     user: dict = Depends(get_current_user),
@@ -2743,7 +2743,7 @@ async def get_document_summary(
 
 
 @router.get("/folder-summary/{folder_name}")
-async def get_folder_summary(
+def get_folder_summary(
     folder_name: str,
     case_id: str = Query(..., description="Case ID"),
     user: dict = Depends(get_current_user),
@@ -2771,7 +2771,7 @@ async def get_folder_summary(
 
 
 @router.get("/transcription-translation")
-async def get_transcription_translation(
+def get_transcription_translation(
     case_id: str = Query(..., description="Case ID"),
     folder_name: str = Query(..., description="Wiretap folder name (e.g. 00000128)"),
     user: dict = Depends(get_current_user),
@@ -2818,7 +2818,7 @@ class FolderProfileTestRequest(BaseModel):
 
 
 @router.get("/folder/files", response_model=FolderFilesResponse)
-async def list_folder_files(
+def list_folder_files(
     case_id: str = Query(..., description="Case ID"),
     folder_path: str = Query(..., description="Relative folder path from case data directory"),
     current_user: User = Depends(get_current_db_user),
@@ -3027,7 +3027,7 @@ Respond with valid JSON only, matching this structure:
 
 
 @router.post("/folder/profile/test")
-async def test_folder_profile(
+def test_folder_profile(
     request: FolderProfileTestRequest,
     background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_db_user),
@@ -3064,7 +3064,7 @@ async def test_folder_profile(
 
 
 @router.get("/{evidence_id}/entities")
-async def get_file_entities(
+def get_file_entities(
     evidence_id: str,
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user),
@@ -3110,7 +3110,7 @@ async def get_file_entities(
 
 
 @router.get("/{evidence_id}/relationships")
-async def get_file_relationships(
+def get_file_relationships(
     evidence_id: str,
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user),
