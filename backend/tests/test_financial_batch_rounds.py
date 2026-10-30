@@ -244,8 +244,6 @@ def test_the_real_child_stops_on_sigterm_after_its_running_step(tmp_path):
 
 
 def test_the_child_command_starts_the_rounds_module():
-    command = batch_rounds._child_command()
-    assert command[1:] == ['-m', 'services.financial.batch_rounds', batch_rounds.CHILD_FLAG]
     # Without the flag the module only imports: proves it starts in a fresh process.
     done = subprocess.run([sys.executable, '-m', 'services.financial.batch_rounds'], cwd=BACKEND,
                           capture_output=True, text=True, timeout=120)
@@ -286,30 +284,32 @@ def test_thread_dump_signals_do_not_stop_the_rounds_process():
 
 def test_every_thread_of_the_child_starts_with_stop_and_dump_signals_blocked(tmp_path):
     """Threads started while the package imports, before main() runs, took SIGUSR1's default action and ended the
-    live process (2026-10-30 16:02, status -10). The launcher blocks the signals before exec."""
+    live process (2026-10-30 16:02 and 16:13, status -10). The child's first statement blocks the signals, before any
+    import; started by uvloop as the live workers do (it clears a launcher-set mask)."""
+    import uvloop
     out = tmp_path / 'masks'
-    script = ("import sys, threading, time, glob\n"
-              "threading.Thread(target=time.sleep, args=(5,), daemon=True).start()  # as an import would\n"
-              "time.sleep(0.2)\n"
-              "masks = [int(open(t + '/status').read().split('SigBlk:')[1].split()[0], 16)\n"
-              "         for t in glob.glob('/proc/self/task/*')]\n"
-              "open(sys.argv[1], 'w').write(' '.join(map(str, masks)))\n")
-    blocked = batch_rounds.STOP_SIGNALS + (batch_rounds.DUMP_SIGNAL,)
-    asyncio.run(vision_rounds._run_child([sys.executable, '-c', script, str(out)], 'test', 5,
-                                         blocked_signals=blocked))
-    masks = [int(mask) for mask in out.read_text().split()]
-    assert len(masks) >= 2
-    for mask in masks:
-        assert all(mask & (1 << (int(number) - 1)) for number in blocked)
+    (tmp_path / 'probe_module.py').write_text(
+        "import sys, threading, time, glob\n"
+        "threading.Thread(target=time.sleep, args=(5,), daemon=True).start()  # as an import would\n"
+        "if __name__ == '__main__':\n"
+        "    time.sleep(0.2)\n"
+        "    masks = [int(open(t + '/status').read().split('SigBlk:')[1].split()[0], 16)\n"
+        "             for t in glob.glob('/proc/self/task/*')]\n"
+        "    open(sys.argv[1], 'w').write(' '.join(map(str, masks)) + ' ' + sys.argv[2])\n")
+
+    async def run():
+        child = await asyncio.create_subprocess_exec(*batch_rounds._bootstrap_command('probe_module', str(out), 'flag'),
+                                                     cwd=str(tmp_path))
+        await child.wait()
+    uvloop.run(run())
+    *masks, flag = out.read_text().split()
+    assert flag == 'flag' and len(masks) >= 2
+    for mask in map(int, masks):
+        assert all(mask & (1 << (int(number) - 1)) for number in (signal.SIGTERM, signal.SIGINT, signal.SIGUSR1))
 
 
-def test_the_batch_child_is_started_with_the_signals_blocked(lock_dir, monkeypatch):
-    seen = []
-
-    async def run_child(command, label, stop_seconds, blocked_signals=()):
-        seen.append(set(blocked_signals))
-        raise asyncio.CancelledError
-    monkeypatch.setattr(vision_rounds, '_run_child', run_child)
-    with pytest.raises(asyncio.CancelledError):
-        asyncio.run(batch_rounds.run_in_child_forever())
-    assert seen == [{signal.SIGTERM, signal.SIGINT, signal.SIGUSR1}]
+def test_the_child_command_bootstraps_the_rounds_module_with_its_flag():
+    command = batch_rounds._child_command()
+    assert command[1] == '-c' and command[-1] == batch_rounds.CHILD_FLAG
+    assert "'services.financial.batch_rounds'" in command[2] and 'pthread_sigmask' in command[2]
+    assert command[2].index('pthread_sigmask') < command[2].index('run_module')

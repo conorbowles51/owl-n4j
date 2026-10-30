@@ -12,7 +12,6 @@ lock lives) the rounds run in the worker as before.
 import asyncio
 import functools
 import os
-import signal
 import time
 
 from services.financial.journal import journal
@@ -54,16 +53,7 @@ def _child_command():
     return [sys.executable, '-m', 'services.financial.vision_rounds', CHILD_FLAG]
 
 
-def _start_child(end_with_parent, parent, blocked_signals):
-    """In the forked child before exec (no imports here: another thread may have held the import lock at the fork):
-    end with the worker, and start with ``blocked_signals`` blocked (a signal mask survives exec, so every thread
-    the program starts, during its imports too, has them blocked)."""
-    end_with_parent(parent)
-    if blocked_signals:
-        signal.pthread_sigmask(signal.SIG_BLOCK, blocked_signals)
-
-
-async def _run_child(command=None, label='Page-image rounds', stop_seconds=10, blocked_signals=()):
+async def _run_child(command=None, label='Page-image rounds', stop_seconds=10):
     """The rounds in a child process with this worker's interpreter, code and environment, until it ends or the
     worker stops (then it is asked to stop, and killed after ``stop_seconds``). Its exit status is logged, never
     raised."""
@@ -71,8 +61,7 @@ async def _run_child(command=None, label='Page-image rounds', stop_seconds=10, b
     from services.financial.view_warmup import _end_with_parent
     backend = Path(__file__).resolve().parents[2]
     child = await asyncio.create_subprocess_exec(*(command or _child_command()), cwd=str(backend),
-                                                 preexec_fn=functools.partial(_start_child, _end_with_parent, os.getpid(),
-                                                                           tuple(blocked_signals)))
+                                                 preexec_fn=functools.partial(_end_with_parent, os.getpid()))
     try:
         code = await child.wait()
     except asyncio.CancelledError:

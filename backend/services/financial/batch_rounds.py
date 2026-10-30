@@ -166,9 +166,21 @@ async def rounds_forever(factory_source, resolve_path, finish_atomic):
         await asyncio.sleep(PAUSE_SECONDS)
 
 
-def _child_command():
+# The child's first statement blocks the stop and dump signals, before any package import: threads started while
+# the package imports (before main()) otherwise keep an empty mask and take a signal's default action, an immediate
+# end (live 2026-10-30 16:02 and 16:13, status -10). Blocking it in the launcher is not enough: the workers' event
+# loop (uvloop/libuv) clears the mask of a process it starts (measured: SigBlk 0 under uvloop, 0x200 under asyncio).
+BOOTSTRAP = ("import signal, runpy; signal.pthread_sigmask(signal.SIG_BLOCK, (signal.SIGTERM, signal.SIGINT, "
+             "signal.SIGUSR1)); runpy.run_module({module!r}, run_name='__main__', alter_sys=True)")
+
+
+def _bootstrap_command(module, *arguments):
     import sys
-    return [sys.executable, '-m', 'services.financial.batch_rounds', CHILD_FLAG]
+    return [sys.executable, '-c', BOOTSTRAP.format(module=module), *arguments]
+
+
+def _child_command():
+    return _bootstrap_command('services.financial.batch_rounds', CHILD_FLAG)
 
 
 async def run_in_child_forever():
@@ -180,11 +192,8 @@ async def run_in_child_forever():
         if lock is not None:
             with lock:
                 try:
-                    # Blocked from the start: threads started while the package imports (before main()) would
-                    # otherwise take a stop or dump signal's default action (immediate end; live 16:02, status -10).
                     await vision_rounds._run_child(_child_command(), 'Batch rounds',
-                                                   process_shutdown.BACKGROUND_STOP_SECONDS,
-                                                   blocked_signals=STOP_SIGNALS + (DUMP_SIGNAL,))
+                                                   process_shutdown.BACKGROUND_STOP_SECONDS)
                 except asyncio.CancelledError:
                     raise
                 except Exception:  # noqa: BLE001 - e.g. the fork failed: tried again after the pause
