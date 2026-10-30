@@ -34,6 +34,9 @@ def enter_relayed_confirmation(session, *, case_id, account_id, correction_id, u
     user = session.get(User, uuid.UUID(str(user_id)))
     if user is None or user.email.strip().lower() != email.strip().lower() or user.name.strip() != name.strip():
         raise PdfMappingError('The person is not a user with that name and address. Nothing was changed.', 422)
+    if ' '.join((entered_by or '').split()).casefold() in ('', user.name.strip().casefold()):
+        raise PdfMappingError('Name who entered it (for example Claude), not the person who confirmed. Nothing was '
+                              'changed.', 422)
     actor = Actor(name=user.name, email=user.email, user_id=user.id)
     state = adc.account_details_state(session, case_id=case_id, account_id=account_id)
     request = adc.ConfirmAccountDetailsRequest(expected_revision=state['revision'], correction_id=correction_id,

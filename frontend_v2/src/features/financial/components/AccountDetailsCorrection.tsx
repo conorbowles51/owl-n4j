@@ -104,9 +104,11 @@ function confirmationLine(confirmed: Confirmation) {
   const relayed = confirmed.relayed
   if (!relayed)
     return `Confirmed by ${confirmed.by} on ${confirmed.at.slice(0, 10)}: ${confirmed.basis}`
-  return `Confirmed by ${confirmed.by} · entered by ${relayed.by} on ${confirmed.by}'s instruction, ${dayOf(
-    relayed.at || confirmed.at
-  )}: ${confirmed.basis}`
+  // A relay stored without a note does not say on whose instruction it was entered: shown as such, not assumed.
+  const how = relayed.note ? `on ${confirmed.by}'s instruction` : "(no relay note recorded)"
+  return `Confirmed by ${confirmed.by} · entered by ${relayed.by} ${how}, ${dayOf(relayed.at || confirmed.at)}: ${
+    confirmed.basis
+  }`
 }
 
 function RelayDetails({ confirmed }: { confirmed: Confirmation }) {

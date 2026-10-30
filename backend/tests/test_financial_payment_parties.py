@@ -552,6 +552,10 @@ class PhaseTwoPartyTests(unittest.TestCase):
                             'W01 TRASPASO A TERCEROS PAGO A CTA OC 054 BMRCASH REF. REFBNTC00509957',
                             'W01 TRASPASO A TERCEROS DEV CLIENTE COT CR023 BMRCASH REF. REFBNTC00509957'):
             self.assertIn('no payee field', unnamed_reason(description, direction='debit')[0], description)
+        # Wording that says no name is printed is not a name (review follow-up).
+        for description in ('W01 TRASPASO A TERCEROS NOMBRE DEL BENEFICIARIO', 'W01 TRASPASO A TERCEROS BENEFICIARIO NO IDENTIFICADO',
+                            'W01 TRASPASO A TERCEROS A FAVOR DE TERCEROS', 'W01 TRASPASO A TERCEROS BENEFICIARIO DESCONOCIDO'):
+            self.assertIn('no payee field', unnamed_reason(description, direction='debit')[0], description)
 
     def test_no_reason_where_a_name_is_printed(self):
         for description, direction, kind in [

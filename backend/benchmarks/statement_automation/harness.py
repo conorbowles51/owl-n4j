@@ -121,6 +121,8 @@ def upgrade_database(path, *, apply=False):
     from alembic.operations import Operations
     from sqlalchemy import create_engine, inspect
     from postgres.base import Base
+    if not Path(path).is_file():
+        raise SchemaUpgradeError(f'{path} is not a benchmark database file. Nothing was created.')
     _load_models()
     engine = create_engine(f'sqlite+pysqlite:///{path}', future=True)
     present = inspect(engine)
@@ -153,8 +155,9 @@ def upgrade_database(path, *, apply=False):
                     raise
                 skipped.append(f'{table.name}: {type(error).__name__}')
     engine.dispose()
-    return dict(tables=[table.name for table in tables], columns=[f'{name}.{column.name}' for name, column in columns],
-                skipped=skipped)
+    skipped_names = {item.split(':')[0] for item in skipped}
+    return dict(tables=[table.name for table in tables if table.name not in skipped_names],
+                columns=[f'{name}.{column.name}' for name, column in columns], skipped=skipped)
 
 
 def _digits(value):
