@@ -9,7 +9,6 @@ import pathlib
 BACKEND = pathlib.Path(__file__).resolve().parents[1]
 
 NOT_YET_CONVERTED = {
-    'routers/auth.py:change_password',
     'routers/query.py:execute_cypher',
 }
 

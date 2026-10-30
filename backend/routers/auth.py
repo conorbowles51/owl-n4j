@@ -146,7 +146,7 @@ def me(
 
 
 @router.put("/change-password")
-async def change_password(
+def change_password(
     request: ChangePasswordRequest,
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
