@@ -108,9 +108,10 @@ class RecordingTests(unittest.TestCase):
         self.assertEqual(len(judgements.search(self.db, self.case.id, offset=1, limit=1)['items']), 1)
 
     def test_calls_come_focus_first_by_priority_and_amount(self):
-        calls = (('category.model', 'transaction', 900_00), ('L30c.contract_refile', 'statement_period', None),
+        # Check soon: an inferred call and a proved one, recorded proved first, so only the strength orders them.
+        calls = (('category.model', 'transaction', 900_00), ('L26.duplicate_set_aside', 'statement_period', None),
                  ('L1.glyph_cell', 'transaction', 5_00), ('L9.scan_amount_marks', 'transaction', 70_000_00),
-                 ('autofill.detail', 'statement_period', None))
+                 ('L30c.contract_refile', 'statement_period', None))
         for rule, subject_type, amount in calls:
             judgements.record_judgement(self.db, case_id=self.case.id, subject_type=subject_type,
                                         subject_id=uuid.uuid4(), rule_id=rule, summary=f'{rule} call.',
@@ -120,15 +121,15 @@ class RecordingTests(unittest.TestCase):
         # Check first (larger amount first), then Check soon (inferred before checked), then When convenient.
         self.assertEqual([(i['priority'], i['rule_id']) for i in page['items']],
                          [(1, 'L9.scan_amount_marks'), (1, 'L1.glyph_cell'), (2, 'L30c.contract_refile'),
-                          (2, 'autofill.detail'), (3, 'category.model')])
+                          (2, 'L26.duplicate_set_aside'), (3, 'category.model')])
         self.assertEqual(page['items'][0]['priority_label'], 'Check first')
         self.assertEqual(page['facets']['priority'], {'all': 5, '1': 2, '2': 2, '3': 1})
         soon = judgements.search(self.db, self.case.id, priorities=['2'])
-        self.assertEqual([i['rule_id'] for i in soon['items']], ['L30c.contract_refile', 'autofill.detail'])
+        self.assertEqual([i['rule_id'] for i in soon['items']], ['L30c.contract_refile', 'L26.duplicate_set_aside'])
         self.assertEqual(soon['facets']['priority'], {'all': 5, '1': 2, '2': 2, '3': 1})  # its own filter not applied
         # Paging keeps the order; the export carries the tier and every matching call, not one page.
         self.assertEqual([i['rule_id'] for i in judgements.search(self.db, self.case.id, offset=2, limit=2)['items']],
-                         ['L30c.contract_refile', 'autofill.detail'])
+                         ['L30c.contract_refile', 'L26.duplicate_set_aside'])
         lines = judgements.export_csv(judgements.search(self.db, self.case.id, limit=1, everything=True)
                                       ).decode('utf-8-sig').splitlines()
         self.assertEqual(len(lines), 6)
