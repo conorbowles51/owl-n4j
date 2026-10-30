@@ -46,4 +46,21 @@ cd "${scratch}/deploy"
 if update_deploy_checkout main; then echo 'Expected divergence rejection'; exit 1; fi
 test "$(git rev-parse HEAD)" = "${local_head}"
 test -f local
+# A pinned release lands on exactly the pinned commit, not on newer commits on origin.
+git clone -q -b main "${scratch}/origin.git" "${scratch}/pinned"
+cd "${scratch}/writer"
+pinned="$(git rev-parse HEAD)"
+echo newer >> file
+git commit -qam newer
+git push -q origin main
+cd "${scratch}/pinned"
+git reset -q --hard HEAD~1
+DEPLOY_TARGET_SHA="${pinned}" update_deploy_checkout main
+test "$(git rev-parse HEAD)" = "${pinned}"
+if DEPLOY_TARGET_SHA=0123456789abcdef0123456789abcdef01234567 update_deploy_checkout main; then
+    echo 'Expected an unknown pinned commit to be refused'; exit 1
+fi
+test "$(git rev-parse HEAD)" = "${pinned}"
+update_deploy_checkout main
+test "$(git rev-parse HEAD)" = "$(git -C "${scratch}/writer" rev-parse HEAD)"
 echo 'Git update regression checks passed'
