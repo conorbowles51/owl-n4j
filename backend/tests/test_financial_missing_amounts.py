@@ -37,7 +37,7 @@ def test_individual_route_passes_explicit_null_and_reports_a_stale_value_as_conf
     request = financial.UpdateAmountRequest(case_id="case", new_amount=120, correction_reason="Checked", expected_raw_amount=None)
     with patch.object(financial.neo4j_service, "update_transaction_amount", side_effect=ValueError("changed")) as write:
         with pytest.raises(HTTPException) as error:
-            asyncio.run(financial.update_transaction_amount("r", request))
+            financial.update_transaction_amount("r", request)
         assert error.value.status_code == 409
         assert "expected_raw_amount" in write.call_args.kwargs and write.call_args.kwargs["expected_raw_amount"] is None
 
@@ -48,10 +48,10 @@ def test_file_correction_checks_explicit_absence_before_any_writes(raw, amount, 
     with patch.object(financial.neo4j_service, "get_financial_transactions", return_value={"transactions": [{"key": "r", "amount": amount, "raw_amount": raw}]}), patch.object(financial.neo4j_service, "update_transaction_amount", return_value={"success": True, "key": "r", "amount": 120}) as write:
         if refused:
             with pytest.raises(HTTPException) as error:
-                asyncio.run(financial.bulk_correct_transactions(request))
+                financial.bulk_correct_transactions(request)
             assert error.value.status_code == 409
             write.assert_not_called()
         else:
-            result = asyncio.run(financial.bulk_correct_transactions(request))
+            result = financial.bulk_correct_transactions(request)
             assert result["results"][0]["old_raw_amount"] is None
             assert "expected_raw_amount" in write.call_args.kwargs and write.call_args.kwargs["expected_raw_amount"] is None

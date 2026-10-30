@@ -16,11 +16,11 @@ class CategoryRequestTests(unittest.IsolatedAsyncioTestCase):
     async def test_refused_creation_is_not_reported_as_saved(self):
         with patch.object(financial.neo4j_service,'create_financial_category',return_value=dict(success=False,error='Not saved')):
             with self.assertRaises(HTTPException) as failure:
-                await financial.create_category(financial.CreateCategoryRequest(case_id='case-a',name='Review',color='#b41624'))
+                financial.create_category(financial.CreateCategoryRequest(case_id='case-a',name='Review',color='#b41624'))
             self.assertEqual(failure.exception.status_code,500)
 
     async def test_assigning_a_category_to_a_missing_record_is_not_successful(self):
         with patch.object(financial.neo4j_service,'update_transaction_category',return_value=dict(success=False,error='Node not found')):
             with self.assertRaises(HTTPException) as failure:
-                await financial.categorize_transaction('missing',financial.CategorizeRequest(case_id='case-a',category='Review'))
+                financial.categorize_transaction('missing',financial.CategorizeRequest(case_id='case-a',category='Review'))
             self.assertEqual(failure.exception.status_code,404)

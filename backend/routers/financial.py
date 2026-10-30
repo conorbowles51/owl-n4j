@@ -350,7 +350,7 @@ def get_financial_volume(
 
 
 @router.put("/categorize/{node_key}")
-async def categorize_transaction(node_key: str, body: CategorizeRequest):
+def categorize_transaction(node_key: str, body: CategorizeRequest):
     """
     Set the financial category on a transaction node.
     """
@@ -370,7 +370,7 @@ async def categorize_transaction(node_key: str, body: CategorizeRequest):
 
 
 @router.put("/batch-categorize")
-async def batch_categorize_transactions(body: BatchCategorizeRequest):
+def batch_categorize_transactions(body: BatchCategorizeRequest):
     """
     Set the financial category on multiple transaction nodes at once.
     """
@@ -390,7 +390,7 @@ async def batch_categorize_transactions(body: BatchCategorizeRequest):
 
 
 @router.put("/from-to/{node_key}")
-async def update_from_to(node_key: str, body: FromToRequest):
+def update_from_to(node_key: str, body: FromToRequest):
     """
     Set manual from/to entity override on a transaction node.
     """
@@ -413,7 +413,7 @@ async def update_from_to(node_key: str, body: FromToRequest):
 
 
 @router.put("/details/{node_key}")
-async def update_transaction_details(node_key: str, body: DetailsRequest):
+def update_transaction_details(node_key: str, body: DetailsRequest):
     """
     Set purpose, counterparty_details, and/or notes on a transaction node.
     """
@@ -435,7 +435,7 @@ async def update_transaction_details(node_key: str, body: DetailsRequest):
 
 
 @router.put("/batch-from-to")
-async def batch_update_from_to(body: BatchFromToRequest):
+def batch_update_from_to(body: BatchFromToRequest):
     """
     Set from/to entity on multiple transaction nodes at once.
     """
@@ -476,7 +476,7 @@ PREDEFINED_CATEGORY_NAMES = {
 
 
 @router.post("/categories")
-async def create_category(body: CreateCategoryRequest):
+def create_category(body: CreateCategoryRequest):
     """
     Create a custom financial category for a case (persisted as a FinancialCategory node).
     """
@@ -501,7 +501,7 @@ async def create_category(body: CreateCategoryRequest):
 
 
 @router.post("/auto-extract-from-to")
-async def auto_extract_from_to(
+def auto_extract_from_to(
     body: AutoExtractFromToRequest,
     current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
@@ -594,7 +594,7 @@ class UpdateAmountRequest(BaseModel):
 
 
 @router.put("/transactions/{node_key}/amount")
-async def update_transaction_amount(node_key: str, body: UpdateAmountRequest):
+def update_transaction_amount(node_key: str, body: UpdateAmountRequest):
     """Update a transaction amount with audit trail."""
     if body.new_amount == 0:
         raise HTTPException(status_code=400, detail="Amount cannot be zero")
@@ -615,7 +615,7 @@ async def update_transaction_amount(node_key: str, body: UpdateAmountRequest):
 
 
 @router.post("/transactions/bulk-correct")
-async def bulk_correct_transactions(body: BulkCorrectRequest):
+def bulk_correct_transactions(body: BulkCorrectRequest):
     """Correct exact record keys; older name-based requests must identify one record."""
     try:
         by_key = {}
@@ -680,7 +680,7 @@ class LinkSubTransactionRequest(BaseModel):
 
 
 @router.post("/transactions/{parent_key}/sub-transactions")
-async def link_sub_transaction(parent_key: str, body: LinkSubTransactionRequest):
+def link_sub_transaction(parent_key: str, body: LinkSubTransactionRequest):
     """Link a child transaction to a parent."""
     if parent_key == body.child_key:
         raise HTTPException(status_code=400, detail="Cannot link a transaction to itself")
@@ -694,7 +694,7 @@ async def link_sub_transaction(parent_key: str, body: LinkSubTransactionRequest)
 
 
 @router.delete("/transactions/{child_key}/parent")
-async def unlink_sub_transaction(
+def unlink_sub_transaction(
     child_key: str,
     case_id: str = Query(..., description="REQUIRED: Case ID"),
 ):

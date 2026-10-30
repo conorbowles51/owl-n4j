@@ -23,7 +23,7 @@ class FinancialBulkCorrectionTests(unittest.IsolatedAsyncioTestCase):
         return dict(node_key=key, new_amount=125, correction_reason='Checked original receipt', **changes)
 
     async def test_exact_keys_do_not_match_every_record_with_the_same_name(self):
-        result = await financial.bulk_correct_transactions(self.request(self.row(expected_amount=100)))
+        result = financial.bulk_correct_transactions(self.request(self.row(expected_amount=100)))
         self.assertEqual(result['corrected'], 1)
         self.assertEqual([r['key'] for r in result['results']], ['a'])
         self.write.assert_called_once_with(node_key='a', case_id='case-a', new_amount=125,
@@ -32,34 +32,34 @@ class FinancialBulkCorrectionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_missing_key_rejects_the_whole_file_before_writes(self):
         with self.assertRaises(HTTPException) as error:
-            await financial.bulk_correct_transactions(self.request(self.row(), self.row('missing')))
+            financial.bulk_correct_transactions(self.request(self.row(), self.row('missing')))
         self.assertEqual(error.exception.status_code, 404)
         self.write.assert_not_called()
 
     async def test_repeated_keys_reject_before_writes(self):
         with self.assertRaises(HTTPException) as error:
-            await financial.bulk_correct_transactions(self.request(self.row(), self.row()))
+            financial.bulk_correct_transactions(self.request(self.row(), self.row()))
         self.assertEqual(error.exception.status_code, 400)
         self.write.assert_not_called()
 
     async def test_old_name_format_requires_an_unambiguous_record(self):
         with self.assertRaises(HTTPException) as error:
-            await financial.bulk_correct_transactions(self.request(dict(name='Same payment', new_amount=125, correction_reason='Check')))
+            financial.bulk_correct_transactions(self.request(dict(name='Same payment', new_amount=125, correction_reason='Check')))
         self.assertEqual(error.exception.status_code, 409)
         self.write.assert_not_called()
         self.records[1]['name'] = 'Other payment'
-        result = await financial.bulk_correct_transactions(self.request(dict(name='same payment', new_amount=125, correction_reason='Check')))
+        result = financial.bulk_correct_transactions(self.request(dict(name='same payment', new_amount=125, correction_reason='Check')))
         self.assertEqual(result['results'][0]['key'], 'a')
 
     async def test_changed_amount_rejects_before_any_correction(self):
         with self.assertRaises(HTTPException) as error:
-            await financial.bulk_correct_transactions(self.request(self.row(expected_amount=100), self.row('b', expected_amount=199)))
+            financial.bulk_correct_transactions(self.request(self.row(expected_amount=100), self.row('b', expected_amount=199)))
         self.assertEqual(error.exception.status_code, 409)
         self.write.assert_not_called()
 
     async def test_write_failure_reports_saved_and_failed_records_separately(self):
         self.write.side_effect = [dict(success=True, key='a', amount=125), ValueError('Record changed')]
-        result = await financial.bulk_correct_transactions(self.request(self.row(), self.row('b')))
+        result = financial.bulk_correct_transactions(self.request(self.row(), self.row('b')))
         self.assertFalse(result['success'])
         self.assertEqual((result['corrected'], result['errors'], result['total']), (1, 1, 2))
         self.assertEqual([r['status'] for r in result['results']], ['corrected', 'error'])
@@ -67,7 +67,7 @@ class FinancialBulkCorrectionTests(unittest.IsolatedAsyncioTestCase):
     async def test_unconfirmed_response_is_not_counted_as_saved(self):
         self.write.side_effect = None
         self.write.return_value = dict(success=True, key='another-key', amount=125)
-        result = await financial.bulk_correct_transactions(self.request(self.row()))
+        result = financial.bulk_correct_transactions(self.request(self.row()))
         self.assertEqual(result['corrected'], 0)
         self.assertEqual(result['errors'], 1)
 
