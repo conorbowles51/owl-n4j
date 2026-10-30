@@ -5,12 +5,17 @@ Financial graph requests waiting five minutes before reaching the database) coul
 stopping it or attaching a debugger. The process carries on. The stacks go to
 ``$LOUPE_THREAD_DUMP_DIR/threads-<pid>.txt`` (default /tmp/loupe-thread-dumps), replaced at each signal: written
 to the journal, two workers' dumps arrived in fragments interleaved with each other and could not be read.
+
+The stacks are read in a Python signal handler (main thread, holding the interpreter lock: sys._current_frames),
+not by faulthandler. faulthandler walks other threads' frames from the C signal handler while they run, which
+Python documents as unsafe: live 2026-10-30 15:36 a batch rounds process ended with SIGSEGV half-way through such
+a dump. The cost: the dump waits until the main thread next runs Python code (an event loop wakes for it).
 """
-import faulthandler
 import os
 import signal
-
-_files = []
+import sys
+import threading
+import traceback
 
 
 def dump_path(pid=None):
@@ -18,15 +23,34 @@ def dump_path(pid=None):
     return os.path.join(directory, f'threads-{pid or os.getpid()}.txt')
 
 
+def format_threads():
+    """Every thread's stack, most recent call first (as faulthandler printed it)."""
+    names = {thread.ident: thread.name for thread in threading.enumerate()}
+    current = threading.get_ident()
+    blocks = []
+    for ident, frame in sys._current_frames().items():
+        head = ('Current thread' if ident == current else 'Thread') + f' 0x{ident:016x} ({names.get(ident, "?")}, most recent call first):'
+        lines = [f'  File "{entry.filename}", line {entry.lineno} in {entry.name}'
+                 for entry in reversed(traceback.extract_stack(frame))]
+        blocks.append('\n'.join([head] + lines))
+    return '\n\n'.join(blocks) + '\n\n'
+
+
+def _write(path):
+    try:
+        with open(path, 'a') as dump:
+            dump.write(format_threads())
+    except OSError:
+        sys.stderr.write(format_threads())
+
+
 def install():
-    if not hasattr(signal, 'SIGUSR1'):
+    if not hasattr(signal, 'SIGUSR1') or threading.current_thread() is not threading.main_thread():
         return
     path = dump_path()
     try:
         os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
-        dump = open(path, 'w')
+        open(path, 'w').close()
     except OSError:
-        faulthandler.register(signal.SIGUSR1, all_threads=True, chain=False)  # stderr, as a last resort
-        return
-    _files.append(dump)  # kept open for the process's life: faulthandler writes to its descriptor
-    faulthandler.register(signal.SIGUSR1, file=dump, all_threads=True, chain=False)
+        path = None
+    signal.signal(signal.SIGUSR1, lambda signum, frame: _write(path) if path else sys.stderr.write(format_threads()))
