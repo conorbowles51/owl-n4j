@@ -98,6 +98,7 @@ class _Recording:
     snapshot: str
     tables: set = field(default_factory=set)
     paused: bool = False
+    keep: bool = True
 
 
 @dataclass(frozen=True)
@@ -125,6 +126,14 @@ def _load_tables(connection):
             "WHERE t.table_schema = current_schema() AND t.table_type = 'BASE TABLE' GROUP BY t.table_name")).all()
         _tables_cache.update(rows)
     return _tables_cache
+
+
+def not_kept():
+    """Called by a view whose answer is shown but incomplete for a passing reason (a lookup that failed): the answer
+    is returned as computed and not kept, so the next request computes it again. No effect outside a cached view."""
+    recording = _recording.get()
+    if recording is not None:
+        recording.keep = False
 
 
 def _mapped_tables():
@@ -630,6 +639,11 @@ def _serve(handler, key, engine, case_id, kwargs, state):
                 recording.paused = True
                 _recording.reset(token)
                 session.close()
+            if not recording.keep:
+                stats['not_stored'] += 1
+                if refusal is not None:
+                    raise refusal
+                return response
             if refusal is not None:
                 # Only the route's plain 422 with a text reason: the same rows give the same refusal.
                 tables = tuple(sorted(recording.tables))

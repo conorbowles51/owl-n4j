@@ -19,15 +19,15 @@ def test_the_batch_list_is_registered_cached_at_its_path():
 
 
 def test_a_list_without_its_send_sources_is_answered_but_not_kept(monkeypatch):
-    """A failed send-source lookup gives the list without them; the cache keeps only plain results, so the route
-    hands back its own encoded response (the same bytes) and the next call looks the sources up again."""
-    import json
+    """A failed send-source lookup gives the list without them, as before, and marks the answer not to be kept by the
+    view cache, so the next call looks the sources up again."""
     import services.activity_trail
-    from fastapi.responses import Response
 
     def failing(*args, **kwargs):
         raise RuntimeError('synthetic lookup failure')
+    marked = []
     monkeypatch.setattr(services.activity_trail, 'batch_sources', failing)
+    monkeypatch.setattr(financial_statement_import, 'not_kept', lambda: marked.append(True))
     monkeypatch.setattr(financial_statement_import.import_batches, 'available_batch_references', lambda *a: {})
 
     class NoBatches:
@@ -35,5 +35,5 @@ def test_a_list_without_its_send_sources_is_answered_but_not_kept(monkeypatch):
             return []
     case = '00000000-0000-0000-0000-000000000001'
     result = financial_statement_import.list_financial_batches.__wrapped__(case_id=case, db=NoBatches())
-    assert isinstance(result, Response)
-    assert json.loads(result.body) == dict(case_id=case, batches=[])
+    assert result == dict(case_id=case, batches=[])
+    assert marked == [True]

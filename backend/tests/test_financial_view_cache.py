@@ -588,6 +588,30 @@ def test_a_refusal_through_the_app_has_the_same_bytes_as_without_the_cache(engin
             expected.status_code, expected.content, expected.headers['content-type'])
 
 
+def test_an_answer_marked_not_kept_is_returned_and_computed_again(engine):
+    """A view that answers without a part it could not read (view_cache.not_kept) is not reused: the next call
+    computes it again, and once the part reads again the answer is kept as usual."""
+    case, counter = uuid.uuid4(), Counter()
+    write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 5)', c=case)
+    failing = [True, True, False]
+
+    @view_cache.cached_view('not-kept')
+    def partial(case_id, db):
+        counter.calls += 1
+        total = db.execute(text('SELECT sum(amount) FROM payments WHERE case_id = :c'), dict(c=case_id)).scalar()
+        if failing.pop(0):
+            view_cache.not_kept()
+            return dict(total=total, extra=None)
+        return dict(total=total, extra='read')
+    bodies = [call(engine, partial, case).body for _ in range(4)]
+    assert counter.calls == 3, 'the two answers without their part were computed each time; the third was kept'
+    assert bodies == [b'{"total":5,"extra":null}'] * 2 + [b'{"total":5,"extra":"read"}'] * 2
+
+
+def test_not_kept_outside_a_view_changes_nothing():
+    view_cache.not_kept()
+
+
 def test_other_refusals_are_not_kept(engine):
     from fastapi import HTTPException
     case, counter = uuid.uuid4(), Counter()
