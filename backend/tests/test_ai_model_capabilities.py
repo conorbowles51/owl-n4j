@@ -1,5 +1,6 @@
 """Page images only go to a model that takes images (services/ai_model_capabilities), in every image path."""
 import json
+import threading
 import unittest
 from unittest import mock
 
@@ -126,10 +127,16 @@ class ImagePathTests(unittest.TestCase):
         import services.llm_service as llm
         response = mock.Mock()
         response.iter_content.side_effect = lambda chunk_size: iter([b'\n'] * 5)
-        clock = iter([0, 1, 2, 50, 100, 200, 300])
+        ticks = iter([0, 1, 2, 50, 100, 200, 300])
+        # time.monotonic is patched process-wide: other threads still running in a full suite read it
+        # too, so only this test's thread follows the script and the rest keep the real clock.
+        real_monotonic, caller = llm.time.monotonic, threading.get_ident()
+
+        def clock():
+            return next(ticks) if threading.get_ident() == caller else real_monotonic()
         context = LLMExecutionContext('deepseek', 'deepseek-flash', api_key='k')
         with mock.patch('requests.post', return_value=response), \
-                mock.patch.object(llm.time, 'monotonic', lambda: next(clock)), \
+                mock.patch.object(llm.time, 'monotonic', clock), \
                 self.assertRaises(llm.requests.exceptions.ReadTimeout):
             context._call_deepseek_vision('p', [b'png'], schema={}, timeout=60, max_output_tokens=10)
         response.close.assert_called()
