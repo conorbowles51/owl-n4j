@@ -3,6 +3,7 @@
 A correction proposes; a lesson job builds and measures; Neil releases. Nothing here changes a rule. Lines are
 appended once per judgement (the judgement id is on the line); ``sync`` rewrites nothing, it adds what is missing.
 """
+import fcntl
 import json
 import logging
 import os
@@ -55,13 +56,22 @@ def _known():
 def append_correction(session, item):
     if item.get('status') != 'corrected':
         return False
-    known = _known()
-    if f"judgement {item['id']}" in known:
+    if f"judgement {item['id']}" in _known():
         return False
+    text = line(item, _statement(session, item))
+    # Two corrections at once (two workers, or two threads in one) must not both write the header or the same line:
+    # the check and the write happen under one exclusive lock on the file, and the header goes in only when empty.
     with INBOX.open('a') as out:
-        if not known:
-            out.write(HEADER)
-        out.write(line(item, _statement(session, item)))
+        fcntl.flock(out.fileno(), fcntl.LOCK_EX)
+        try:
+            if f"judgement {item['id']}" in _known():
+                return False
+            if out.seek(0, os.SEEK_END) == 0:
+                out.write(HEADER)
+            out.write(text)
+            out.flush()
+        finally:
+            fcntl.flock(out.fileno(), fcntl.LOCK_UN)
     return True
 
 
