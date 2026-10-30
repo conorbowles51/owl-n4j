@@ -43,11 +43,21 @@ def _norm(name: str) -> str:
     return re.sub(r"[-_.]+", "-", name).lower()
 
 
-def _bootstrap_pins() -> dict[str, str]:
+def _bootstrap_line() -> str:
     lines = [line for line in CLAUDE_MD.read_text().splitlines()
              if line.startswith("pip install --break-system-packages")]
     assert len(lines) == 1, f"expected one bootstrap pip line in CLAUDE.md, found {len(lines)}"
-    return {_norm(name): version for name, version in PIN.findall(lines[0])}
+    return lines[0]
+
+
+def _bootstrap_pins() -> dict[str, str]:
+    return {_norm(name): version for name, version in PIN.findall(_bootstrap_line())}
+
+
+def _bootstrap_extras() -> dict[str, set[str]]:
+    """``psycopg[binary]`` -> {"psycopg": {"binary"}}: the extras the line asks pip for."""
+    return {_norm(name): {_norm(extra) for extra in extras.split(",")}
+            for name, extras in re.findall(r'"([A-Za-z0-9._-]+)\[([^\]]*)\]==', _bootstrap_line())}
 
 
 def _requirement_specs() -> dict[str, str]:
@@ -60,7 +70,7 @@ def _requirement_specs() -> dict[str, str]:
     return specs
 
 
-def _with_dependencies(names: set[str]) -> set[str]:
+def _with_dependencies(names: set[str], extras: dict[str, set[str]]) -> set[str]:
     seen, todo = set(), list(names)
     while todo:
         name = todo.pop()
@@ -72,7 +82,8 @@ def _with_dependencies(names: set[str]) -> set[str]:
         except metadata.PackageNotFoundError:
             continue
         for requirement in requires:
-            if "extra ==" in requirement:
+            wanted = re.search(r"extra\s*==\s*['\"]([^'\"]+)['\"]", requirement)
+            if wanted and _norm(wanted.group(1)) not in extras.get(name, set()):
                 continue
             match = re.match(r"[A-Za-z0-9._-]+", requirement)
             if match:
@@ -94,11 +105,19 @@ class BootstrapLineTests(unittest.TestCase):
                 wrong[name] = (version, specs[name])
         self.assertEqual(wrong, {}, "bootstrap pin -> (line version, requirements.txt)")
 
+    def test_extras_on_the_line_are_followed(self):
+        self.assertEqual(_bootstrap_extras().get("psycopg"), {"binary"})
+        try:
+            metadata.distribution("psycopg-binary")
+        except metadata.PackageNotFoundError:
+            self.skipTest("psycopg-binary not installed here")
+        self.assertIn("psycopg-binary", _with_dependencies({"psycopg"}, _bootstrap_extras()))
+
     def test_suite_imports_with_only_what_the_line_installs(self):
         # A fresh sandbox has only the line and its dependencies. Simulate it: in a child interpreter,
         # refuse every installed distribution outside that set, then import what the suite imports.
         # Optional imports (chromadb, python-magic) degrade on ImportError exactly as they do there.
-        covered = sorted(_with_dependencies(set(_bootstrap_pins())))
+        covered = sorted(_with_dependencies(set(_bootstrap_pins()), _bootstrap_extras()))
         modules = sorted(f"tests.{path.stem}" for path in (BACKEND / "tests").glob("test_financial_*.py"))
         child = subprocess.run([sys.executable, "-c", _CHILD, json.dumps(covered), json.dumps(modules)],
                                cwd=BACKEND, capture_output=True, text=True, timeout=900)
