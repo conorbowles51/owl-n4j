@@ -61,6 +61,14 @@ def is_transaction_timeout(exc: BaseException) -> bool:
     return isinstance(exc, Neo4jError) and "TransactionTimedOut" in (exc.code or "")
 
 
+# Session fetch size for a read of every row: the server sends the whole result
+# at once and ends its transaction, so a busy client converting rows slowly is
+# not cut off by db.transaction.timeout. Measured on the deployed server
+# (d5b330d1 transactions, 27,926 rows read over 57 s): batches of 1000 ended at
+# the time limit, the whole result at once read every row.
+WHOLE_RESULT = -1
+
+
 def read_all_rows(session, query: str, **params) -> list:
     """Read every row of a query before the caller converts any of them.
 
@@ -69,6 +77,8 @@ def read_all_rows(session, query: str, **params) -> list:
     cannot exceed it), so per-row work done while reading counts against that
     limit. A transaction ended at the limit is retried once, as Neo4j advises;
     a second timeout is raised to the caller. The rows are always all of them.
+    Open the session with fetch_size=WHOLE_RESULT so the limit covers only the
+    server's own work.
     """
     try:
         return list(session.run(query, **params))

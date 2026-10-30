@@ -291,7 +291,7 @@ class FinancialServiceUsesTheCacheTests(unittest.TestCase):
             return {"transactions": [], "total": 0}
 
         class _Driver:
-            def session(self):
+            def session(self, **kwargs):
                 return _CM()
 
         class _CM:

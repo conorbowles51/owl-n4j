@@ -12,7 +12,7 @@ import re
 from services.financial_record_dates import financial_record_day, validate_financial_date_range
 from typing import Dict, List, Optional
 
-from services.neo4j.driver import driver, read_all_rows, safe_float
+from services.neo4j.driver import WHOLE_RESULT, driver, read_all_rows, safe_float
 from services.neo4j.graph_read_cache import financial_graph_reads
 
 logger = logging.getLogger(__name__)
@@ -193,7 +193,7 @@ class FinancialService:
             tuple(types) if types else None, start_date, end_date,
             tuple(categories) if categories else None,
         )
-        with driver.session() as session:
+        with driver.session(fetch_size=WHOLE_RESULT) as session:
             return financial_graph_reads.read(
                 session, key,
                 lambda: self._read_financial_transactions(
@@ -310,7 +310,7 @@ class FinancialService:
 
     def get_financial_entities(self, case_id: str) -> List[Dict]:
         """Return all non-transaction entities in a case for from/to entity pickers."""
-        with driver.session() as session:
+        with driver.session(fetch_size=WHOLE_RESULT) as session:
             return financial_graph_reads.read(
                 session, ("entities", case_id),
                 lambda: self._read_financial_entities(session, case_id),

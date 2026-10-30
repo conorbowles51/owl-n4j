@@ -162,3 +162,30 @@ class RouteAnswerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WholeResultSessionTests(unittest.TestCase):
+    """Live d5b330d1: a worker busy elsewhere converted the 27,926 rows so slowly that the server's
+    25 s limit ended the read while rows were still arriving; fetched whole, the server is done at once."""
+
+    def test_financial_reads_ask_for_the_whole_result_at_once(self):
+        module = importlib.import_module("services.neo4j.financial_service")
+        from services.neo4j.graph_read_cache import financial_graph_reads
+        opened = []
+
+        class Session:
+            def __init__(self, **kwargs):
+                opened.append(kwargs)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        with patch.object(module.driver, "session", side_effect=lambda **kw: Session(**kw)), \
+                patch.object(financial_graph_reads, "read", lambda session, key, compute: None):
+            FinancialService().get_financial_transactions("case")
+            FinancialService().get_financial_entities("case")
+        self.assertEqual(opened, [{"fetch_size": neo4j_driver.WHOLE_RESULT}] * 2)
+        self.assertEqual(neo4j_driver.WHOLE_RESULT, -1)
