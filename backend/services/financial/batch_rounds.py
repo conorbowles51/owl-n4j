@@ -211,27 +211,44 @@ def rounds(stop, factory=None, resolve_path=None):
         stop.wait(PAUSE_SECONDS)
 
 
-def _stop_on_signal(stop, deadline_seconds, exit_process):
-    """SIGTERM/SIGINT: finish the running step, then end; past the deadline end anyway (its transaction rolls back)."""
-    def handler(signum, frame):
-        if not stop.is_set():
-            stop.set()
-            timer = threading.Timer(deadline_seconds, exit_process, args=(0,))
-            timer.daemon = True
-            timer.start()
-    signal.signal(signal.SIGTERM, handler)
-    signal.signal(signal.SIGINT, handler)
+STOP_SIGNALS = (signal.SIGTERM, signal.SIGINT)
+
+
+def _block_stop_signals():
+    """Blocked in the calling thread and every thread it starts later, so only sigwait receives them."""
+    signal.pthread_sigmask(signal.SIG_BLOCK, STOP_SIGNALS)
+    return set(STOP_SIGNALS)
+
+
+def _serve_until_signalled(stop, deadline_seconds, exit_process, run):
+    """``run(stop)`` in a thread; this (main) thread only waits for SIGTERM/SIGINT, then sets ``stop``, lets the
+    running step finish for at most ``deadline_seconds`` and ends the process (an unfinished step's transaction
+    rolls back). The signals are taken with sigwait, not a handler: a handler could interrupt Event.wait while it
+    holds the event's lock and deadlock in set(), and a handler waits for a blocking call on the main thread."""
+    signals = _block_stop_signals()  # before the thread starts: it inherits the mask
+    worker = threading.Thread(target=run, args=(stop,), name='batch-rounds', daemon=True)
+    worker.start()
+    while worker.is_alive():
+        if signal.sigtimedwait(signals, 1.0) is not None:
+            break
+    stop.set()
+    worker.join(deadline_seconds)
+    exit_process(0)
 
 
 def main():
     import os
+    # First: threads started by the imports below (e.g. analytics consumers) inherit the blocked mask, so a stop
+    # signal never takes its default action (immediate end) in one of them.
+    _block_stop_signals()
     from postgres.session import _get_session_local
     from routers.evidence import _resolve_stored_path
-    from services import process_shutdown
-    stop = threading.Event()
-    # After the imports, so no module imported later replaces the handlers.
-    _stop_on_signal(stop, process_shutdown.BACKGROUND_STOP_SECONDS, os._exit)
-    rounds(stop, _get_session_local(), _resolve_stored_path)
+    from services import process_shutdown, thread_dump
+    # kill -USR1 <child> writes its threads' stacks, as for the workers (services/thread_dump.py).
+    thread_dump.install()
+    factory = _get_session_local()
+    _serve_until_signalled(threading.Event(), process_shutdown.BACKGROUND_STOP_SECONDS, os._exit,
+                           lambda stop: rounds(stop, factory, _resolve_stored_path))
 
 
 if __name__ == '__main__':

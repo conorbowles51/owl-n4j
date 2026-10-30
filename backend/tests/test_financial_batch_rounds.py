@@ -43,6 +43,10 @@ def test_every_round_the_worker_loop_ran_is_in_a_group():
                      '_sweep_save', '_autofill_reapply', '_sweep_backlog']
     first = {name: delay for name, _, delay, _, _ in batch_rounds.GROUPS}
     assert first == dict(auto_read=0, reader_release=60, held_reprepare=60, reader_gaps=60, readiness=60)
+    every = {name: interval() for name, interval, _, _, _ in batch_rounds.GROUPS}
+    from services.financial import reader_gaps
+    assert every == dict(auto_read=10, reader_release=120, held_reprepare=120, reader_gaps=reader_gaps.SWEEP_SECONDS,
+                         readiness=60)
 
 
 def test_the_worker_loop_no_longer_runs_the_rounds(monkeypatch):
@@ -123,18 +127,27 @@ def test_a_stop_lets_the_running_step_finish_and_starts_no_other(monkeypatch):
     assert calls == ['slow-start', 'slow-end']
 
 
-def test_the_signal_handler_sets_the_stop_and_ends_the_process_after_the_deadline():
-    stop, ended = threading.Event(), []
-    previous = signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGINT)
+def test_a_signal_stops_the_rounds_thread_and_ends_the_process_after_the_deadline():
+    """A step that outlives the deadline does not keep the process: it ends anyway (its transaction rolls back)."""
+    ended, entered = [], threading.Event()
+
+    def run(stop):
+        entered.set()
+        time.sleep(5)  # a step that does not finish in time
+    previous = signal.pthread_sigmask(signal.SIG_BLOCK, [])
+
+    main = threading.main_thread().ident
+
+    def send():
+        entered.wait(5)
+        signal.pthread_kill(main, signal.SIGTERM)
+    threading.Thread(target=send, daemon=True).start()
+    started = time.monotonic()
     try:
-        batch_rounds._stop_on_signal(stop, 0.05, ended.append)
-        os.kill(os.getpid(), signal.SIGTERM)
-        assert stop.wait(2)
-        time.sleep(0.3)
-        assert ended == [0]
+        batch_rounds._serve_until_signalled(threading.Event(), 0.2, ended.append, run)
     finally:
-        signal.signal(signal.SIGTERM, previous[0])
-        signal.signal(signal.SIGINT, previous[1])
+        signal.pthread_sigmask(signal.SIG_SETMASK, previous)
+    assert ended == [0] and time.monotonic() - started < 3
 
 
 def test_the_rounds_run_in_a_child_holding_the_batch_lock(lock_dir, monkeypatch):
