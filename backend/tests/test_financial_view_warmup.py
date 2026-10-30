@@ -31,6 +31,7 @@ def periods(tmp_path, monkeypatch):
     calls = []
     import routers.financial_ledger
     monkeypatch.setattr(routers.financial_ledger, 'get_account_history', lambda **kw: calls.append(kw))
+    monkeypatch.setattr(routers.financial_ledger, 'get_ledger_transactions', lambda **kw: calls.append(dict(kw, view='transactions')))
 
     def add(case, count):
         with engine.begin() as connection:
@@ -51,9 +52,13 @@ def test_every_case_is_warmed_largest_first_with_the_routes_defaults(periods):
     small, large = uuid.uuid4(), uuid.uuid4()
     add(small, 1); add(large, 3)
     view_warmup.warm_account_history()
-    assert [call['case_id'] for call in calls] == [large, small]
+    assert [(call['case_id'], call.get('view')) for call in calls] == [
+        (large, None), (large, 'transactions'), (small, None), (small, 'transactions')]
     assert {key: value for key, value in calls[0].items() if key != 'db'} == dict(
         case_id=large, account_id=None, account_ids=None, account_holders=None, start_date=None, end_date=None)
+    assert {key: value for key, value in calls[1].items() if key != 'db'} == dict(
+        case_id=large, source_document_id=None, account_id=None, ledger_status=None, start_date=None, end_date=None,
+        account_ids=None, account_holders=None, view='transactions')
 
 
 @needs_pg
@@ -65,7 +70,7 @@ def test_only_one_worker_warms_at_a_time(periods):
         view_warmup.warm_account_history()
     assert calls == []
     view_warmup.warm_account_history()
-    assert len(calls) == 1
+    assert len(calls) == 2
 
 
 @needs_pg
@@ -81,7 +86,7 @@ def test_a_failing_case_does_not_stop_the_others_and_shutdown_stops_the_rest(per
             raise RuntimeError('synthetic failure')
     monkeypatch.setattr(routers.financial_ledger, 'get_account_history', failing)
     view_warmup.warm_account_history()
-    assert [call['case_id'] for call in calls] == [first, second]
+    assert [call['case_id'] for call in calls] == [first, first, second, second]
     calls.clear()
     monkeypatch.setattr(process_shutdown, 'requested', type('Set', (), dict(is_set=lambda self: True))())
     view_warmup.warm_account_history()
@@ -180,3 +185,43 @@ def test_the_child_ends_when_its_worker_is_killed(tmp_path):
     else:
         os.kill(child, 9)
         raise AssertionError('the warm-up child outlived its killed worker')
+
+
+def test_the_warm_up_passes_every_route_parameter_with_the_value_fastapi_gives_a_first_visit(monkeypatch):
+    """The cached-view key is every parameter but db: a missing or different one would warm another key."""
+    import inspect
+    import routers.financial_ledger
+    calls = []
+    for name in ('get_account_history', 'get_ledger_transactions'):
+        route = getattr(routers.financial_ledger, name)
+        expected = {}
+        for parameter in inspect.signature(route).parameters.values():
+            if parameter.name in ('case_id', 'db'):
+                continue
+            default = getattr(parameter.default, 'default', parameter.default)  # Query(None) -> None
+            expected[parameter.name] = default
+        calls.append((name, expected))
+    seen = {}
+
+    class Session:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def get_bind(self):
+            return type('Bind', (), dict(dialect=type('Dialect', (), dict(name='postgresql'))()))()
+
+        def execute(self, *args, **kwargs):
+            return [('case', 1)]
+    import postgres.session
+    monkeypatch.setattr(postgres.session, '_get_session_local', lambda: Session)
+    for name, _ in calls:
+        monkeypatch.setattr(routers.financial_ledger, name,
+                            lambda _name=name, **kw: seen.setdefault(_name, {k: v for k, v in kw.items() if k not in ('db', 'case_id')}))
+    view_warmup._warm_cases()
+    assert seen == dict(calls)
