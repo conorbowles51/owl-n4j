@@ -86,6 +86,9 @@ async def lifespan(app: FastAPI):
     # hard-deadline watchdog, so no task, thread or blocked loop can hold a
     # stop open for systemd's whole stop window.
     process_shutdown.install_signal_handlers()
+    # kill -USR1 <worker> writes every thread's stack to the journal (services/thread_dump.py).
+    from services import thread_dump
+    thread_dump.install()
     # What this process runs, for /health (deploy records it as last good).
     from services.runtime_version import record_started_commit
     record_started_commit()
