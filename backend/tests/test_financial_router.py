@@ -1,3 +1,4 @@
+import json
 import unittest
 from unittest.mock import patch
 
@@ -27,7 +28,9 @@ class FinancialRouterTests(unittest.IsolatedAsyncioTestCase):
                 categories=None,
             )
 
-        self.assertEqual(result, response)
+        # The route writes the JSON body itself (view_cache.json_response): the same bytes FastAPI would.
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(json.loads(result.body), response)
         get_transactions.assert_called_once_with(
             case_id="case-1",
             mode="transactions",
