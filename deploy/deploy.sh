@@ -337,6 +337,11 @@ success "Docker stack refreshed"
 
 step "Restarting services"
 configure_ingestion_shutdown
+# Defined by ingestion-safety.sh, which this run sourced before the update: the
+# release that introduces the switch was sourced without it.
+if declare -F configure_backend_allocator >/dev/null; then
+    configure_backend_allocator
+fi
 check_ingestion_idle
 # Bounded: a backend that will not stop is escalated (SIGINT, then SIGKILL)
 # and the release always reaches its health check, last-good marker and summary.
@@ -412,6 +417,11 @@ docker compose up -d --no-build --remove-orphans || true
 
 step "Rollback: restarting services"
 configure_ingestion_shutdown
+# Defined by ingestion-safety.sh, which this run sourced before the update: the
+# release that introduces the switch was sourced without it.
+if declare -F configure_backend_allocator >/dev/null; then
+    configure_backend_allocator
+fi
 check_ingestion_idle
 restart_backend_bounded || true
 $SYSTEMCTL restart owl-frontend-v2 || true

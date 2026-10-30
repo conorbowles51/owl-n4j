@@ -151,6 +151,17 @@ real `install`/`mv` commands in a temporary directory with closed stdin,
 permissions, repeated installation and destination failure. The same test was
 validated on Linux with GNU coreutils and no `/dev/stdin` symlink.
 
+The backend's memory allocator is a host switch, off by default. Writing
+`mimalloc` to `/etc/default/owl-backend-allocator` makes the next release or
+rollback install the `backend-allocator.conf` drop-in
+(`Environment=PYTHONMALLOC=mimalloc`); removing the file, or any other content,
+removes the drop-in, and the backend runs Python's default allocator again from
+its next restart. The switch is outside the checkout, so no release or rollback
+changes it. Measured in a fresh process on one large account history: the
+default allocator keeps 1.6 GB resident afterwards, mimalloc 0.5 GB, at about
+30% more CPU. `bash deploy/tests/test-backend-allocator.sh` exercises off,
+on, repeat, switching off and an unavailable unit directory.
+
 If a release fails after building the frontend, its recovery trap restarts the
 frontend using the bundle currently on disk. That bundle may already be new;
 the restart does not prove that the backend or the whole release was updated.

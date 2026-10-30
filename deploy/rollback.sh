@@ -117,6 +117,7 @@ success "Docker stack refreshed"
 
 step "Restarting services"
 configure_ingestion_shutdown
+configure_backend_allocator
 check_ingestion_idle
 if ! restart_backend_bounded; then
     fail "owl-backend-v2 did not restart; the health check below will report it"
