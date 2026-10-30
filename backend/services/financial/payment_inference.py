@@ -7,7 +7,7 @@ payment. Explicit investigator labels always take precedence in payment_labels.
 import re
 import unicodedata
 
-VERSION = 'description-labels/11'
+VERSION = 'description-labels/12'
 
 
 _FOLDED = {}

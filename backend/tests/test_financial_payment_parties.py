@@ -484,6 +484,11 @@ class PhaseTwoPartyTests(unittest.TestCase):
         # The same layouts with only their own wording keep their reason.
         self.assertEqual(reason('T17 SPEI ENVIADO BANAMEX 0100125NOMINA 1A QNA ENE25 Ref. 0000000001 002'), 'bbva-transfer-no-name')
         self.assertEqual(reason('ABONO TRANSFERENCIA SPEI HORA 10:11:12', 'credit'), 'type-only')
+        # A returned attempt whose page-image description gained its concept lines (BBVA ARRENDO DIC 2024 p10-11):
+        # the concept words are the payer's, and the page prints no name for either line.
+        self.assertEqual(reason('T17 SPEI ENVIADO BANAMEX 1012248PAGO CARTA PORTE 90917149 Ref. 0000939799 002'), 'bbva-transfer-no-name')
+        self.assertEqual(reason('T22 SPEI DEVUELTOBANAMEX 1012248PAGO CARTA PORTE 90917149 Ref. 0000939799 002', 'credit'), 'returned-transfer')
+        self.assertEqual(reason('T17 SPEI ENVIADO BANORTE 1712248PAGO SEGURO CREDITO 9806 Ref. 0000709202 072'), 'bbva-transfer-no-name')
         # Layouts with only a free-text concept and no payee field say exactly that, whatever the concept holds.
         self.assertEqual(reason('0000001 CARGO TRANSFERENCIA ENLACE PAGO PROVEEDOR EJEMPLO SA DE CV'), 'enlace-transfer')
         self.assertIn('no payee field', unnamed_reason('W01 TRASPASO A TERCEROS JUAN EJEMPLO LOPEZ BMRCASH', direction='debit')[0])
