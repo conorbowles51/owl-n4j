@@ -142,6 +142,8 @@ def _warm_cases():
     from routers.financial_ledger import get_ledger_transactions
     from routers.financial_statement_import import files as get_statement_files
     from routers.evidence import list_evidence
+    from routers.financial_ledger import get_account_consolidations, get_account_parties
+    from routers.financial_statement_import import account_types as get_account_types
     from services import process_shutdown
     # Each route with its defaults, as FastAPI passes them for a first visit: the same cached-view key.
     views = (
@@ -154,6 +156,11 @@ def _warm_cases():
         # The Financial page's statement register asks for every reading version of its files.
         ('statement register files', list_evidence, dict(status_filter=None, include_cellebrite_artifacts=False,
                                                          include_reading_versions=True, financial_only=True)),
+        # Measured live 2026-10-30 17:52-18:00, first call after a start (load 12-19): d5b330d1 58 / 43 / 38 s,
+        # 49494305 63 / 34 / 25 s; then 0.1-1.2 s. Saved copies do not outlive a release (new code identity).
+        ('account parties', get_account_parties, {}),
+        ('account types', get_account_types, {}),
+        ('account consolidations', get_account_consolidations, {}),
     )
     for case_id in cases:
         for name, route, defaults in views:

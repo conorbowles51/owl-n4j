@@ -36,6 +36,10 @@ def periods(tmp_path, monkeypatch):
     monkeypatch.setattr(routers.financial_statement_import, 'files', lambda **kw: calls.append(dict(kw, view='files')))
     import routers.evidence
     monkeypatch.setattr(routers.evidence, 'list_evidence', lambda **kw: calls.append(dict(kw, view='evidence')))
+    monkeypatch.setattr(routers.financial_ledger, 'get_account_parties', lambda **kw: calls.append(dict(kw, view='parties')))
+    monkeypatch.setattr(routers.financial_statement_import, 'account_types', lambda **kw: calls.append(dict(kw, view='types')))
+    monkeypatch.setattr(routers.financial_ledger, 'get_account_consolidations',
+                        lambda **kw: calls.append(dict(kw, view='consolidations')))
 
     def add(case, count):
         with engine.begin() as connection:
@@ -58,7 +62,11 @@ def test_every_case_is_warmed_largest_first_with_the_routes_defaults(periods):
     view_warmup.warm_account_history()
     assert [(str(call['case_id']), call.get('view')) for call in calls] == [
         (str(large), None), (str(large), 'transactions'), (str(large), 'files'), (str(large), 'evidence'),
-        (str(small), None), (str(small), 'transactions'), (str(small), 'files'), (str(small), 'evidence')]
+        (str(large), 'parties'), (str(large), 'types'), (str(large), 'consolidations'),
+        (str(small), None), (str(small), 'transactions'), (str(small), 'files'), (str(small), 'evidence'),
+        (str(small), 'parties'), (str(small), 'types'), (str(small), 'consolidations')]
+    # The three account views take only the case: the same cached-view key as a first visit.
+    assert {key for key in calls[4] if key != 'db'} == {'case_id', 'view'}
     assert calls[3]['case_id'] == str(large)  # as text, as FastAPI gives the evidence listing
     assert {key: value for key, value in calls[0].items() if key != 'db'} == dict(
         case_id=large, account_id=None, account_ids=None, account_holders=None, start_date=None, end_date=None)
@@ -76,7 +84,7 @@ def test_only_one_worker_warms_at_a_time(periods):
         view_warmup.warm_account_history()
     assert calls == []
     view_warmup.warm_account_history()
-    assert len(calls) == 4
+    assert len(calls) == 7  # the views of one case
 
 
 @needs_pg
@@ -92,7 +100,7 @@ def test_a_failing_case_does_not_stop_the_others_and_shutdown_stops_the_rest(per
             raise RuntimeError('synthetic failure')
     monkeypatch.setattr(routers.financial_ledger, 'get_account_history', failing)
     view_warmup.warm_account_history()
-    assert [str(call['case_id']) for call in calls] == [str(first)] * 4 + [str(second)] * 4
+    assert [str(call['case_id']) for call in calls] == [str(first)] * 7 + [str(second)] * 7
     calls.clear()
     monkeypatch.setattr(process_shutdown, 'requested', type('Set', (), dict(is_set=lambda self: True))())
     view_warmup.warm_account_history()
