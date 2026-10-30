@@ -37,9 +37,9 @@ def f():
 def listing(f, financial=False, versions=True):
     from routers.evidence import list_evidence
     with f.SessionLocal() as db:
-        rows = asyncio.run(list_evidence(case_id=str(f.case.id), status_filter=None,
+        rows = list_evidence(case_id=str(f.case.id), status_filter=None,
             include_cellebrite_artifacts=False, include_reading_versions=versions,
-            financial_only=financial, user={}, db=db))['files']
+            financial_only=financial, user={}, db=db)["files"]
         return [row for row in rows if row['id'] not in {str(value) for value in f.seeded_file_ids}]
 
 

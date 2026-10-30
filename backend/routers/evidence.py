@@ -804,8 +804,11 @@ def _validated_text_query(q: str) -> str:
     return query
 
 
+# These reads await nothing: as plain functions they run in the thread pool. As async functions they ran on the
+# worker's event loop, and listing d5b330d1's statement files (12-20 s) held every other request of that worker
+# until it finished.
 @router.get("", response_model=EvidenceListResponse)
-async def list_evidence(
+def list_evidence(
     case_id: str = Query(..., description="Case ID"),
     status_filter: Optional[str] = Query(None, alias="status"),
     include_cellebrite_artifacts: bool = False,
@@ -842,7 +845,7 @@ async def list_evidence(
 
 
 @router.get("/text-search", response_model=CaseTextSearchResponse)
-async def text_search(
+def text_search(
     response: Response,
     case_id: UUID = Query(..., description="Case ID"),
     q: str = Query(..., min_length=2, max_length=256),
@@ -863,7 +866,7 @@ async def text_search(
 
 
 @router.get("/{evidence_id}", response_model=EvidenceRecord)
-async def get_evidence_record(
+def get_evidence_record(
     evidence_id: str,
     db: Session = Depends(get_db),
 ):
@@ -877,7 +880,7 @@ async def get_evidence_record(
 
 
 @router.get("/{evidence_id}/text-matches", response_model=DocumentTextMatchesResponse)
-async def document_text_matches(
+def document_text_matches(
     evidence_id: str,
     response: Response,
     q: str = Query(..., min_length=2, max_length=256),

@@ -342,7 +342,8 @@ class EvidenceDBStorage:
         if owner:
             conditions.append(EvidenceFile.owner == owner)
 
-        q = select(EvidenceFile).where(*conditions).order_by(EvidenceFile.created_at.desc())
+        # Files added in one batch share created_at; the id keeps their order the same from one listing to the next.
+        q = select(EvidenceFile).where(*conditions).order_by(EvidenceFile.created_at.desc(), EvidenceFile.id)
         return list(db.scalars(q).all())
 
     @staticmethod
