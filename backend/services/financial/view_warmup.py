@@ -144,6 +144,7 @@ def _warm_cases():
     from routers.evidence import list_evidence
     from routers.financial_ledger import get_account_consolidations, get_account_parties
     from routers.financial_statement_import import account_types as get_account_types
+    from services.financial.review_queue import warm as warm_review_queue
     from services import process_shutdown
     # Each route with its defaults, as FastAPI passes them for a first visit: the same cached-view key.
     views = (
@@ -161,6 +162,9 @@ def _warm_cases():
         ('account parties', get_account_parties, {}),
         ('account types', get_account_types, {}),
         ('account consolidations', get_account_consolidations, {}),
+        # Its own cache (review_queue), saved to disk for the workers; first read after a start was 54.1 s on
+        # d5b330d1 and 15.7 s on 49494305 (live 2026-10-30 18:29).
+        ('review queue', warm_review_queue, {}),
     )
     for case_id in cases:
         for name, route, defaults in views:

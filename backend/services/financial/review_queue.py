@@ -793,6 +793,64 @@ def _store(key, fingerprint, view):
             _cache.popitem(last=False)
 
 
+# The whole-case view is also saved to disk (view_cache's store and rules: one database, one code identity, a
+# transaction counter that never went back), keyed on the case and holding the fingerprint it was built at, so the
+# other worker and the next start reuse it while the case's rows are unchanged. Measured live 2026-10-30 18:29: the
+# first read after a start took 54.1 s on d5b330d1 and 15.7 s on 49494305 (then 0.3-0.9 s). The after-start warm-up
+# builds it for every case (view_warmup). Saved only when it reads back exactly (JSON types) and only from a
+# transaction that has written nothing.
+def _saved_key(key):
+    import json
+    return ('review-queue', json.dumps({'case_id': key}))
+
+
+def _plain(fingerprint):
+    import json
+    return json.loads(json.dumps(fingerprint, default=str))
+
+
+def _load_saved_view(session, key, fingerprint):
+    """The saved whole-case view built at exactly ``fingerprint``, or None. Never raises."""
+    import json
+    from services.financial import view_cache
+    try:
+        scope, xmax = view_cache._saved_scope(session.connection())
+        if scope is None:
+            return None
+        entry = view_cache._load_saved(_saved_key(key), scope, xmax)
+        if entry is None or _plain(entry.fingerprint) != _plain(fingerprint):
+            return None
+        return json.loads(entry.body)
+    except Exception:  # noqa: BLE001 - built again instead
+        import logging
+        logging.getLogger(__name__).warning('Saved review queue unreadable; building it', exc_info=True)
+        return None
+
+
+def _save_view(session, key, fingerprint, view, started):
+    """Save a whole-case view built at ``fingerprint`` for the other worker and the next start. Never raises."""
+    import json
+    from services.financial import view_cache
+    from services.financial.row_versions import own_write_floor
+    try:
+        if own_write_floor(session) is not None:
+            return
+        if view_cache._exact_json(view, lambda value: value) is view_cache._MISSING:
+            import logging
+            logging.getLogger(__name__).info('Review queue of case %s not saved: it does not read back exactly', key)
+            return
+        scope, xmax = view_cache._saved_scope(session.connection())
+        if scope is None:
+            return
+        body = json.dumps(view, ensure_ascii=False, separators=(',', ':')).encode()
+        entry = view_cache._Entry(tables=(), fingerprint=tuple(tuple(part) for part in _plain(fingerprint)), body=body,
+                                  status_code=200, media_type='application/json')
+        view_cache._save_if_slow(_saved_key(key), entry, scope, xmax, started)
+    except Exception:  # noqa: BLE001 - the view stays cached in memory
+        import logging
+        logging.getLogger(__name__).warning('Could not save the review queue of case %s', key, exc_info=True)
+
+
 def _build_once(session, key, case_id, fingerprint):
     """Build and cache, one build per case at a time; a concurrent caller waits for it. Returns the view."""
     with _lock:
@@ -810,8 +868,10 @@ def _build_once(session, key, case_id, fingerprint):
             return hit[1]
         return _compute(session, case_id)  # that build was of older inputs (or timed out)
     try:
+        started = time.perf_counter()
         view = _compute(session, case_id)
         _store(key, fingerprint, view)
+        _save_view(session, key, fingerprint, view, started)
         return view
     finally:
         with _lock:
@@ -863,10 +923,22 @@ def _view(session, case_id, use_cache=True, note=True, stale_ok=False):
             _cache.move_to_end(key)
     if hit and hit[0] == fingerprint:
         return hit[1], False
+    saved = _load_saved_view(session, key, fingerprint)
+    if saved is not None:
+        _store(key, fingerprint, saved)
+        return saved, False
     if hit and stale_ok:
         _refresh_in_background(session.get_bind(), key, case_id)
         return hit[1], True
     return _build_once(session, key, case_id, fingerprint), False
+
+
+def warm(*, case_id, db):
+    """Build (or load) and save the case's whole-case view without counting it as a read (after-start warm-up)."""
+    try:
+        _view(db, case_id, note=False)
+    finally:
+        db.rollback()
 
 
 def _entries(session, case_id, use_cache=True, note=True):
