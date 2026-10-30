@@ -107,6 +107,56 @@ def _database(path):
     return engine, sessionmaker(bind=engine, autoflush=False, autocommit=False), skipped
 
 
+class SchemaUpgradeError(RuntimeError):
+    pass
+
+
+def upgrade_database(path, *, apply=False):
+    """Bring a benchmark database made by an earlier ``_database`` to the current models: the same models create what
+    is missing (a table, through ``_database``'s table create; a column, through alembic's add_column with the model's
+    own column). Nothing existing is changed or dropped. A missing column that cannot be added to rows already there
+    (NOT NULL without a default) is refused before anything is written. Returns {'tables': [...], 'columns': [...]}
+    (what was, or with apply=False would be, added)."""
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+    from sqlalchemy import create_engine, inspect
+    from postgres.base import Base
+    _load_models()
+    engine = create_engine(f'sqlite+pysqlite:///{path}', future=True)
+    present = inspect(engine)
+    existing = set(present.get_table_names())
+    tables, columns = [], []
+    for table in Base.metadata.sorted_tables:
+        if table.name not in existing:
+            tables.append(table)
+            continue
+        have = {column['name'] for column in present.get_columns(table.name)}
+        for column in table.columns:
+            if column.name in have:
+                continue
+            if not column.nullable and column.server_default is None:
+                raise SchemaUpgradeError(f'{table.name}.{column.name} is NOT NULL without a default: it cannot be '
+                                         'added to the rows already there. Nothing was changed.')
+            columns.append((table.name, column))
+    if apply:
+        with engine.begin() as connection:
+            operations = Operations(MigrationContext.configure(connection))
+            for name, column in columns:
+                operations.add_column(name, column.copy())
+    skipped = []
+    if apply:
+        for table in tables:
+            try:
+                table.create(engine)
+            except Exception as error:  # Postgres-only column types outside finance, as _database.
+                if table.name.startswith(('financial', 'evidence')):
+                    raise
+                skipped.append(f'{table.name}: {type(error).__name__}')
+    engine.dispose()
+    return dict(tables=[table.name for table in tables], columns=[f'{name}.{column.name}' for name, column in columns],
+                skipped=skipped)
+
+
 def _digits(value):
     return re.sub(r'\D', '', value or '')
 
@@ -1647,7 +1697,13 @@ def main(argv=None):
                                           '<corpus>/../compare; none for the synthetic corpus)')
     parser.add_argument('--score', default='verified,incomplete',
                         help='comma-separated real truth statuses to score (default: verified,incomplete)')
+    parser.add_argument('--upgrade-db', metavar='DB',
+                        help='add what the current models have and this benchmark database lacks (dry run unless --apply)')
+    parser.add_argument('--apply', action='store_true', help='with --upgrade-db: write the additions')
     args = parser.parse_args(argv)
+    if args.upgrade_db:
+        print(json.dumps(dict(upgrade_database(args.upgrade_db, apply=args.apply), applied=args.apply)))
+        return 0
     SCORED_TRUTH.clear()
     SCORED_TRUTH.update(s.strip() for s in args.score.split(',') if s.strip())
     if args.rescore:

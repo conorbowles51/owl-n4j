@@ -372,3 +372,39 @@ class SimulatedCorrectionTests(TestCase):
         result = harness.simulate_correction(self.proposal(readable=True), self.truth, self.assess,
                                              self.initial_request, reread=lambda currency: self.fail('read again'))
         self.assertEqual(result['actions'], [])
+
+
+class UpgradeDatabaseTests(TestCase):
+    def setUp(self):
+        import tempfile
+        self._directory = tempfile.TemporaryDirectory()
+        self.path = f'{self._directory.name}/benchmark.db'
+        engine, _, _ = harness._database(self.path)
+        engine.dispose()
+
+    def tearDown(self):
+        self._directory.cleanup()
+
+    def _sql(self, statement):
+        import sqlite3
+        with sqlite3.connect(self.path) as connection:
+            return connection.execute(statement).fetchall()
+
+    def test_a_database_made_before_a_column_was_added_gains_it_and_keeps_its_rows(self):
+        # As the truth benchmark database made before adjudications.actor_origin (model work origin).
+        self._sql('ALTER TABLE adjudications DROP COLUMN actor_origin')
+        before = self._sql('SELECT count(*) FROM sqlite_master')
+        self.assertEqual(harness.upgrade_database(self.path)['columns'], ['adjudications.actor_origin'])
+        self.assertNotIn('actor_origin', [row[1] for row in self._sql('PRAGMA table_info(adjudications)')])  # dry run
+        added = harness.upgrade_database(self.path, apply=True)
+        self.assertEqual(added['columns'], ['adjudications.actor_origin'])
+        self.assertIn('actor_origin', [row[1] for row in self._sql('PRAGMA table_info(adjudications)')])
+        self.assertEqual(self._sql('SELECT count(*) FROM sqlite_master'), before)
+        self.assertEqual(harness.upgrade_database(self.path, apply=True)['columns'], [])
+
+    def test_a_column_the_rows_there_cannot_take_is_refused_before_anything_is_written(self):
+        self._sql('ALTER TABLE adjudications DROP COLUMN actor_origin')
+        self._sql('ALTER TABLE adjudications DROP COLUMN actor_email')
+        with self.assertRaises(harness.SchemaUpgradeError):
+            harness.upgrade_database(self.path, apply=True)
+        self.assertNotIn('actor_origin', [row[1] for row in self._sql('PRAGMA table_info(adjudications)')])
