@@ -541,6 +541,18 @@ class PhaseTwoPartyTests(unittest.TestCase):
         # The card issuer named in a card payment is the payee.
         self.assertEqual(party('RECURRING INTERNET PAYMENT CRCARDPMT CAPITAL ONE 3ABCDEFGHIJ1234')[0], 'CAPITAL ONE')
 
+    def test_a_name_after_a_layout_word_behind_the_label_is_still_a_name(self):
+        # BENEFICIARIO / PAGO A / PARA followed by a layout word, then the name (fin-parties review of e79a15ca).
+        for description in ('W01 TRASPASO A TERCEROS BENEFICIARIO CREDITO REAL', 'W01 TRASPASO A TERCEROS BENEFICIARIO: CUENTA DE ACME',
+                            'CARGO TRANSFERENCIA ENLACE A FAVOR DE PAGO EXPRESS SA'):
+            self.assertIsNone(unnamed_reason(description, direction='debit'), description)
+        # Layout words, references and an account nickname after the label: still no name printed (as live BNB2 prints).
+        for description in ('W01 TRASPASO A TERCEROS BENEFICIARIO CUENTA BMRCASH REF. REFBNTC00509957',
+                            'W01 TRASPASO A TERCEROS BENEFICIARIO CTA CR023', 'W01 TRASPASO A TERCEROS PAGO A CTA PLATAFORMA PM83 SKYBMRCASH',
+                            'W01 TRASPASO A TERCEROS PAGO A CTA OC 054 BMRCASH REF. REFBNTC00509957',
+                            'W01 TRASPASO A TERCEROS DEV CLIENTE COT CR023 BMRCASH REF. REFBNTC00509957'):
+            self.assertIn('no payee field', unnamed_reason(description, direction='debit')[0], description)
+
     def test_no_reason_where_a_name_is_printed(self):
         for description, direction, kind in [
             ('CARGO TRANSFERENCIA ENLACE BENEFICIARIO JUAN EJEMPLO', 'debit', 'checking'),
