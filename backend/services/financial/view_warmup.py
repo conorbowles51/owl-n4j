@@ -1,12 +1,13 @@
 """After a start, compute the slowest first-load Financial views once in the background.
 
 Every release restarts the backend, and the first account history afterwards read every saved statement again
-(d5b330d1: 53 s); the first Transactions read took 53-184 s. One worker process computes each case's account
-history and Transactions, shortly after start, through the routes' own cached views: the same code, parameters
-and snapshot as a person's first request, so the same bytes. The computed views are saved (view_cache saves every
-slow view) and the account history's per-statement results too (view_cache.VersionMemo), so every worker serves
-them after checking that no row they were computed from has changed. One worker at a time, one case at a time,
-largest first; a failure is logged and the next view continues. Nothing is written to the database.
+(d5b330d1: 53 s); the first Transactions read took 53-184 s and the statement file list 46-104 s. One worker
+process computes each case's account history, Transactions and statement file list, shortly after start, through
+the routes' own cached views: the same code, parameters and snapshot as a person's first request, so the same
+bytes. The computed views are saved (view_cache saves every slow view) and the account history's per-statement
+results too (view_cache.VersionMemo), so every worker serves them after checking that no row they were computed
+from has changed. One worker at a time, one case at a time, largest first; a failure is logged and the next view
+continues. Nothing is written to the database.
 FINANCIAL_VIEW_WARMUP=0 turns it off.
 
 The computing runs in a short-lived child process (``python -m services.financial.view_warmup``) that only fills
@@ -136,6 +137,7 @@ def _warm_cases():
         cases = [case for case, _ in db.execute(select(Period.case_id, func.count()).group_by(Period.case_id)
             .order_by(func.count().desc(), Period.case_id))]
     from routers.financial_ledger import get_ledger_transactions
+    from routers.financial_statement_import import files as get_statement_files
     from services import process_shutdown
     # Each route with its defaults, as FastAPI passes them for a first visit: the same cached-view key.
     views = (
@@ -144,6 +146,7 @@ def _warm_cases():
         ('transactions', get_ledger_transactions, dict(source_document_id=None, account_id=None, ledger_status=None,
                                                        start_date=None, end_date=None, account_ids=None,
                                                        account_holders=None)),
+        ('statement files', get_statement_files, {}),
     )
     for case_id in cases:
         for name, route, defaults in views:
