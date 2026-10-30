@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import ast
 import pathlib
+import types
 import unittest
 
 import services.financial as package
@@ -59,6 +60,20 @@ def _definitions(path: pathlib.Path) -> list[str]:
         elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
             names.append(node.target.id)
     return names
+
+
+# A module whose public name is its own module name is exported under an alias, so the package attribute of that
+# name stays the submodule: ``mock.patch('services.financial.journal.X')`` resolves by attribute on Python 3.10 and
+# would otherwise patch an attribute of the function.
+ALIASED_EXPORTS = {"journal": "journal_logger"}
+# Exports that already replace their submodule attribute. Frozen: the list may only shrink; a new one is aliased
+# as above instead.
+KNOWN_SHADOWING = frozenset({
+    "account_parties", "category_breakdown", "category_library", "correction_fields", "correction_verification",
+    "counterparty_parties", "ledger_source", "ledger_summary", "ledger_timeline", "reconcile_case",
+    "statement_delta_hints", "statement_file_status", "statement_layout_context", "summary_contributions",
+    "transaction_search", "unread_pages",
+})
 
 
 def _public_definitions(path: pathlib.Path) -> list[str]:
@@ -99,11 +114,28 @@ class PackageSurfaceTests(unittest.TestCase):
                     defined,
                     f"{path.name} defines no public names at all",
                 )
+                alias = ALIASED_EXPORTS.get(path.stem)
+                if alias is not None:
+                    self.assertIn(alias, exported)
+                    self.assertIs(getattr(package, alias), getattr(package, path.stem).__dict__[path.stem])
+                    continue
                 self.assertTrue(
                     exported.intersection(defined),
                     f"{path.name} contributes nothing to services.financial.__all__; "
                     "it can only be reached by importing the module directly",
                 )
+
+    def test_no_new_export_replaces_its_submodule(self):
+        """``services.financial.<module>`` is the module, except for the frozen list above."""
+        import importlib
+        shadowing = set()
+        for path in _module_paths():
+            importlib.import_module(f"services.financial.{path.stem}")
+            if not isinstance(getattr(package, path.stem), types.ModuleType):
+                shadowing.add(path.stem)
+        self.assertEqual(shadowing - KNOWN_SHADOWING, set())
+        self.assertIsInstance(package.journal, types.ModuleType)
+        self.assertNotIn("journal", package.__all__)
 
     def test_every_exported_name_resolves(self):
         """A name in ``__all__`` that does not exist breaks ``import *`` only.

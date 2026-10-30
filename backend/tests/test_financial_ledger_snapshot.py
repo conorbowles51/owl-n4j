@@ -19,11 +19,13 @@ class LedgerSnapshotTests(LedgerSummaryTests):
             # categories, matched names across the case) are per case, so the count must not grow with the rows.
             # Consistency across these reads is the caller's single repeatable-read transaction (capture_ledger_export).
             from sqlalchemy.sql.elements import TextClause
-            with patch.object(self.db,'execute',wraps=self.db.execute) as read, patch.object(self.db,'scalars',wraps=self.db.scalars) as scalars:
+            # Every way the session reads: a per-row session.get or session.scalar grows the count as surely as execute.
+            with patch.object(self.db,'execute',wraps=self.db.execute) as read, patch.object(self.db,'scalars',wraps=self.db.scalars) as scalars, \
+                    patch.object(self.db,'scalar',wraps=self.db.scalar) as scalar, patch.object(self.db,'get',wraps=self.db.get) as get:
                 snapshot=capture_ledger_snapshot(self.db,case_id=case_id)
             ledger_reads=[call for call in read.call_args_list if not isinstance(call.args[0],TextClause)]
             self.assertEqual(len(ledger_reads),1)
-            return snapshot,read.call_count+scalars.call_count
+            return snapshot,read.call_count+scalars.call_count+scalar.call_count+get.call_count
         first,reads=measured()
         second=self.capture()
         self.assertEqual(first,second)
