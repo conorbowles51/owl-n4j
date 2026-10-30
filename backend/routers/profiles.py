@@ -70,12 +70,12 @@ def _to_response(profile) -> ProcessingProfileSummary:
 
 
 @router.get("", response_model=List[ProcessingProfileSummary])
-async def list_profiles(db: Session = Depends(get_db)):
+def list_profiles(db: Session = Depends(get_db)):
     return [_to_response(profile) for profile in list_processing_profiles(db)]
 
 
 @router.get("/{profile_name}", response_model=ProcessingProfileSummary)
-async def get_profile(profile_name: str, db: Session = Depends(get_db)):
+def get_profile(profile_name: str, db: Session = Depends(get_db)):
     profile = get_processing_profile(db, profile_name)
     if profile is None:
         raise HTTPException(status_code=404, detail=f"Profile '{profile_name}' not found")
@@ -83,7 +83,7 @@ async def get_profile(profile_name: str, db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=ProcessingProfileSummary)
-async def create_or_update_profile(
+def create_or_update_profile(
     profile: ProcessingProfileCreate,
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
@@ -111,7 +111,7 @@ async def create_or_update_profile(
 
 
 @router.delete("/{profile_name}")
-async def delete_profile(profile_name: str, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+def delete_profile(profile_name: str, db: Session = Depends(get_db), _: User = Depends(require_admin)):
     if not delete_processing_profile(db, profile_name):
         raise HTTPException(status_code=404, detail=f"Profile '{profile_name}' not found")
     db.commit()
