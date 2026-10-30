@@ -49,6 +49,23 @@ class ProofTest(unittest.TestCase):
         self.assertEqual(reading['holder_decision'], DECISION)
         self.assertEqual((reading['opening'], reading['closing'], len(reading['rows'])), (100000, 100000, 3))
 
+    def test_a_statement_printing_the_saved_name_after_the_other_name_was_saved_is_a_judgement_too(self):
+        # Review #6 F3: once a HOPPER statement is saved on the decided card, a MCCAULEY statement filed after it is
+        # filed under its printed name by the same decision, and carries the same call.
+        from services.financial.field_proposals import SavedStatement
+        known = _decided()
+        known.statements.append(SavedStatement(currency='USD', period_start='2022-02-08', period_end='2022-03-10',
+                                               institution='Capital One', holder='ERICA HOPPER',
+                                               account_number='****8160'))
+        reading = _prove(_card_pages(holder='ERICA MCCAULEY'), knowledge=CaseKnowledge(accounts=[known]),
+                         holder='ERICA MCCAULEY')
+        self.assertEqual(reading['holder'], 'ERICA MCCAULEY')
+        self.assertEqual(reading['holder_basis'], ph.HOLDER_BASIS)
+        # Before any statement of the other name is saved, nothing differs: no call.
+        plain = _prove(_card_pages(holder='ERICA MCCAULEY'), knowledge=CaseKnowledge(accounts=[_decided()]),
+                       holder='ERICA MCCAULEY')
+        self.assertFalse(plain.get('holder_basis'))
+
     def test_switched_off_it_is_held_as_before(self):
         with mock.patch.object(vr, 'PRINTED_HOLDERS', False), self.assertRaisesRegex(vr.NotProved, 'is saved for ERICA'):
             _prove(knowledge=CaseKnowledge(accounts=[_decided()]))
