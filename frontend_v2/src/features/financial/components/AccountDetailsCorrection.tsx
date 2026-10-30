@@ -18,6 +18,15 @@ const values = z.object({
   institution: z.string(),
   account_number: z.string().optional(),
 })
+const relay = z
+  .object({
+    by: z.string(),
+    note: z.string().nullish(),
+    at: z.string().nullish(),
+    via: z.string().nullish(),
+    at_given: z.string().nullish(),
+  })
+  .passthrough()
 const historyEntry = z.object({
   id: z.string(),
   kind: z.string(),
@@ -29,7 +38,18 @@ const historyEntry = z.object({
   undone_at: z.string().optional(),
   // Set when Claude made the correction for a person (model work, services.financial.model_work).
   origin: z.object({ model: z.string(), for: z.object({ name: z.string().nullish() }).nullish() }).passthrough().nullish(),
-  confirmed: z.object({ by: z.string(), at: z.string(), basis: z.string() }).passthrough().nullish(),
+  confirmed: z
+    .object({
+      by: z.string(),
+      at: z.string(),
+      basis: z.string(),
+      // Set when someone else entered the confirmation on the person's instruction
+      // (services.financial.relayed_confirmation): the confirmation is the person's, entered by them.
+      relayed: relay.nullish(),
+      later_relays: z.array(relay.extend({ basis: z.string().nullish() })).nullish(),
+    })
+    .passthrough()
+    .nullish(),
 })
 const state = z.object({
   case_id: z.string(),
@@ -55,6 +75,66 @@ const preview = z.object({
   revision: z.string(),
 })
 type Statement = z.infer<typeof statement>
+type HistoryEntry = z.infer<typeof historyEntry>
+type Confirmation = NonNullable<HistoryEntry["confirmed"]>
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+/** "30 Oct 2026" from an ISO date or timestamp (UTC), or the text as given when it is not one. */
+const dayOf = (value: string) => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value)
+  return match ? `${Number(match[3])} ${MONTHS[Number(match[2]) - 1]} ${match[1]}` : value
+}
+
+/** What changed in one correction, in words. */
+const changeOf = (item: HistoryEntry) =>
+  [
+    item.before.holder !== item.after.holder ? `holder ${item.before.holder} → ${item.after.holder}` : "",
+    item.before.institution !== item.after.institution
+      ? `bank ${item.before.institution} → ${item.after.institution}`
+      : "",
+    item.after.account_number !== undefined && item.before.account_number !== item.after.account_number
+      ? `account ${item.before.account_number} → ${item.after.account_number}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join(", ") || "no change of value"
+
+/** Who confirmed and, when someone else entered it on their instruction, who entered it and when. */
+function confirmationLine(confirmed: Confirmation) {
+  const relayed = confirmed.relayed
+  if (!relayed)
+    return `Confirmed by ${confirmed.by} on ${confirmed.at.slice(0, 10)}: ${confirmed.basis}`
+  return `Confirmed by ${confirmed.by} · entered by ${relayed.by} on ${confirmed.by}'s instruction, ${dayOf(
+    relayed.at || confirmed.at
+  )}: ${confirmed.basis}`
+}
+
+function RelayDetails({ confirmed }: { confirmed: Confirmation }) {
+  const relays = [
+    ...(confirmed.relayed ? [{ ...confirmed.relayed, basis: undefined as string | null | undefined }] : []),
+    ...(confirmed.later_relays ?? []),
+  ]
+  if (!relays.length) return null
+  return (
+    <details className="text-xs text-muted-foreground">
+      <summary className="cursor-pointer">
+        How this confirmation was entered ({confirmed.by} did not press Confirm in Loupe)
+      </summary>
+      <ul className="list-disc pl-5">
+        {relays.map((item, index) => (
+          <li key={index}>
+            Entered by {item.by}
+            {item.at ? ` on ${dayOf(item.at)}` : ` on ${dayOf(confirmed.at)}`}
+            {item.note ? `: ${item.note}` : ""}
+            {item.via ? `. Instruction came by ${item.via}` : ""}
+            {item.at_given ? `, given ${dayOf(item.at_given)}` : ""}
+            {item.basis ? `. ${item.basis}` : ""}
+          </li>
+        ))}
+      </ul>
+    </details>
+  )
+}
 
 const period = (s: Statement) =>
   `${s.period_start || "start not read"} to ${s.period_end || "end not read"}`
@@ -192,6 +272,8 @@ export function AccountDetailsCorrection({
   const latest = [...data.history]
     .reverse()
     .find((item) => item.kind === "correction" && !item.undone_at)
+  // Every correction Claude made that stands, each with its own confirmation (the latest is not the only one).
+  const byModel = data.history.filter((item) => item.kind === "correction" && !item.undone_at && item.origin)
   const ready =
     reason.trim() !== "" &&
     ((holder.trim() !== "" && holder.trim() !== data.holder) ||
@@ -330,28 +412,6 @@ export function AccountDetailsCorrection({
               : ""}
             . Reason: {latest.reason}
           </p>
-          {latest.origin &&
-            (latest.confirmed ? (
-              <p>
-                Confirmed by {latest.confirmed.by} on {latest.confirmed.at.slice(0, 10)}: {latest.confirmed.basis}
-              </p>
-            ) : (
-              <p>
-                <strong>Corrected by {latest.origin.model} · not confirmed.</strong> A person confirms it after checking
-                the statement.
-              </p>
-            ))}
-          {canEdit && latest.origin && !latest.confirmed && (
-            <Button
-              type="button"
-              size="sm"
-              disabled={confirm.isPending || !reason.trim()}
-              title={reason.trim() ? undefined : "Enter what you checked first"}
-              onClick={() => confirm.mutate(latest.id)}
-            >
-              Confirm this correction (say what you checked above)
-            </Button>
-          )}
           {canEdit && (
             <Button
               type="button"
@@ -365,6 +425,39 @@ export function AccountDetailsCorrection({
             </Button>
           )}
         </div>
+      )}
+      {byModel.length > 0 && (
+        <ul className="space-y-2" aria-label={`Corrections ${byModel[0].origin!.model} made`}>
+          {byModel.map((item) => (
+            <li key={item.id} className="space-y-1">
+              <p>
+                {item.origin!.model} for {item.origin!.for?.name || "a person"} on {dayOf(item.at)}: {changeOf(item)}.
+              </p>
+              {item.confirmed ? (
+                <>
+                  <p>{confirmationLine(item.confirmed)}</p>
+                  <RelayDetails confirmed={item.confirmed} />
+                </>
+              ) : (
+                <p>
+                  <strong>Corrected by {item.origin!.model} · not confirmed.</strong> A person confirms it after
+                  checking the statement.
+                </p>
+              )}
+              {canEdit && !item.confirmed && (
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={confirm.isPending || !reason.trim()}
+                  title={reason.trim() ? undefined : "Enter what you checked first"}
+                  onClick={() => confirm.mutate(item.id)}
+                >
+                  Confirm this correction (say what you checked above)
+                </Button>
+              )}
+            </li>
+          ))}
+        </ul>
       )}
       {notice && <p role="status">{notice}</p>}
       {failure && (

@@ -209,6 +209,69 @@ class AccountDetailsCorrectionTests(TestCase):
             confirm(self.f.actor)
         self.assertEqual(raised.exception.status_code, 409)
 
+    def claude_correction(self):
+        from services.financial.model_work import model_actor
+        claude = model_actor(for_name=self.f.actor.name, for_email=self.f.actor.email, for_user_id=self.f.actor.user_id,
+                             citation=dict(page=1))
+        return self.correct(actor=claude, holder=CORRECTED)['correction']
+
+    def relay(self, correction_id, apply=True, note='Entered by Claude on the person\'s instruction of 2026-10-30',
+              basis='Approved by message; page 1 prints the holder.', **person):
+        from services.financial.relayed_confirmation import enter_relayed_confirmation
+        who = dict(dict(user_id=self.f.actor.user_id, name=self.f.actor.name, email=self.f.actor.email), **person)
+        with self.f.SessionLocal() as db:
+            return enter_relayed_confirmation(db, case_id=self.f.case.id, account_id=self.account_id,
+                correction_id=correction_id, basis=basis, relay_note=note, apply=apply, **who)
+
+    def test_a_relayed_confirmation_is_the_persons_and_says_who_entered_it(self):
+        correction = self.claude_correction()
+        before = self.state()
+        # A dry run goes through the same path and keeps nothing.
+        dry = self.relay(correction['id'], apply=False)
+        self.assertEqual(dry['confirmed']['relayed']['by'], 'Claude')
+        self.assertEqual(self.state(), before)
+        # Refused without a relay note, and for anyone the users table does not have under that name and address.
+        for kwargs in (dict(note='  '), dict(name='Someone Else'), dict(email='other@example.com')):
+            with self.assertRaises(PdfMappingError):
+                self.relay(correction['id'], **kwargs)
+            self.assertEqual(self.state(), before)
+        confirmed = self.relay(correction['id'])['confirmed']
+        self.assertEqual((confirmed['by'], confirmed['user_id'], confirmed['relayed']['by'], confirmed['relayed']['note']),
+                         (self.f.actor.name, str(self.f.actor.user_id), 'Claude',
+                          'Entered by Claude on the person\'s instruction of 2026-10-30'))
+        after = self.state()
+        entry = after['history'][-1]
+        # Returned with the account, values and the model origin unchanged.
+        self.assertEqual(entry['confirmed'], confirmed)
+        self.assertEqual((entry['origin']['kind'], entry['actor_name'], after['holder']),
+                         ('model', correction['actor_name'], CORRECTED))
+        self.assertEqual({k: v for k, v in after.items() if k not in ('history', 'revision')},
+                         {k: v for k, v in before.items() if k not in ('history', 'revision')})
+        # A later instruction from the same person sits beside the first relay, which stays as it was.
+        again = self.relay(correction['id'], note='Second instruction', basis='Asked again on 2026-10-31.')['confirmed']
+        self.assertEqual({k: v for k, v in again.items() if k != 'later_relays'}, confirmed)
+        self.assertEqual([(item['note'], item['basis']) for item in again['later_relays']],
+                         [('Second instruction', 'Asked again on 2026-10-31.')])
+
+    def test_a_relay_never_adds_to_a_confirmation_the_person_made_themselves(self):
+        correction = self.claude_correction()
+        with self.f.SessionLocal() as db:
+            service.confirm_account_details(db, case_id=self.f.case.id, account_id=self.account_id, actor=self.f.actor,
+                request=service.ConfirmAccountDetailsRequest(expected_revision=self.state()['revision'],
+                    correction_id=correction['id'], basis='Checked page 1'))
+        before = self.state()
+        with self.assertRaises(PdfMappingError) as raised:
+            self.relay(correction['id'])
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertEqual(self.state(), before)
+        self.assertNotIn('relayed', before['history'][-1]['confirmed'])
+
+    def test_no_route_can_enter_a_relayed_confirmation(self):
+        import inspect
+        from routers import financial_statement_import as routes
+        self.assertNotIn('relayed', inspect.getsource(routes))
+        self.assertNotIn('relayed', service.ConfirmAccountDetailsRequest.model_fields)
+
     def test_bank_correction_rekeys_the_account_and_refuses_another_accounts_key(self):
         with self.f.SessionLocal() as db:
             old_key = db.get(FinancialAccount, self.account_id).identity_key

@@ -517,10 +517,32 @@ def undo_account_details(session, *, case_id, account_id, request, actor):
     return result
 
 
-def confirm_account_details(session, *, case_id, account_id, request, actor, at=None, relayed=None):
+def _relay(relayed, now):
+    """A relayed confirmation's record: who entered it (``by``), the note saying on whose instruction (``note``),
+    when it was entered, and anything else given (for example the message it came by)."""
+    if relayed is None:
+        return None
+    if isinstance(relayed, str):
+        relayed = dict(note=relayed)
+    record = {key: value for key, value in dict(relayed).items() if value not in (None, '')}
+    record['note'] = str(record.get('note') or '').strip()
+    record['by'] = str(record.get('by') or '').strip()
+    if not record['note'] or not record['by']:
+        raise PdfMappingError('A confirmation entered for someone else says who entered it and on whose instruction '
+                              '(the relay note). Nothing was changed.', 422)
+    record.setdefault('at', now)
+    return record
+
+
+def confirm_account_details(session, *, case_id, account_id, request, actor, at=None, relayed=None, commit=True):
     """A person confirms a correction a model made (services.financial.model_work): the correction keeps its model
     origin and values; the confirmation (who, when, on what basis) is stored on it. Nothing else changes.
-    ``relayed`` records who entered a confirmation the person gave elsewhere (for example by message)."""
+
+    ``relayed`` records that someone else entered a confirmation the person gave elsewhere (for example by
+    message): ``{'by': who entered it, 'note': on whose instruction}``; the person stays the one who confirmed.
+    It is reached only from ``services.financial.relayed_confirmation`` (no HTTP route passes it). A correction
+    the same person already confirmed through a relay takes a later relayed instruction beside the first, which
+    stays as it was. ``commit=False`` leaves the transaction to the caller (a dry run rolls it back)."""
     from services.financial.model_work import is_model
     try:
         _person(actor)
@@ -529,6 +551,8 @@ def confirm_account_details(session, *, case_id, account_id, request, actor, at=
         basis = (request.basis or '').strip()
         if not basis:
             raise PdfMappingError('Say what you checked (for example the page that prints the holder).', 422)
+        now = datetime.now(timezone.utc).isoformat()
+        relay = _relay(relayed, now)
         account = _account(session, case_id, account_id, lock=True)
         statements = _statement_rows(session, case_id, _statements(session, case_id, account, lock=True))
         if _revision(account, statements) != request.expected_revision:
@@ -539,16 +563,20 @@ def confirm_account_details(session, *, case_id, account_id, request, actor, at=
             raise PdfMappingError('This correction is not in the account history or was undone.', 409)
         if not origin_of(target):
             raise PdfMappingError('A person made this correction; there is nothing to confirm.', 409)
-        if target.get('confirmed'):
-            raise PdfMappingError('This correction is already confirmed.', 409)
-        target['confirmed'] = dict(by=actor.name, by_email=actor.email, user_id=str(actor.user_id),
-                                   at=at or datetime.now(timezone.utc).isoformat(), basis=basis,
-                                   **({'relayed': relayed} if relayed else {}))
+        confirmed = target.get('confirmed')
+        if confirmed:
+            if not (relay and confirmed.get('relayed') and confirmed.get('user_id') == str(actor.user_id)):
+                raise PdfMappingError('This correction is already confirmed.', 409)
+            confirmed.setdefault('later_relays', []).append(dict(relay, basis=basis))
+        else:
+            target['confirmed'] = dict(by=actor.name, by_email=actor.email, user_id=str(actor.user_id),
+                                       at=at or now, basis=basis, **({'relayed': relay} if relay else {}))
         account.metadata_ = meta
         session.flush()
         result = account_details_state(session, case_id=case_id, account_id=account.id)
         result['confirmed'] = target['confirmed']
-        session.commit()
+        if commit:
+            session.commit()
         return result
     except Exception:
         session.rollback()
