@@ -93,6 +93,26 @@ class SweepSaveTests(TestCase):
         with patch.object(queue_save, '_auto_save_once', side_effect=AssertionError('unchanged file read again')):
             self.assertEqual(self.sweep()['queued'], 0)
 
+    def test_a_file_held_while_another_statement_is_pending_is_looked_at_once_that_save_ends(self):
+        # fdaf956c 2026-10-30 (Capital One 2023-01-11, ready 03:16-04:40 until a restart): the sweep's one look came
+        # while another statement of the case was pending_import; that item leaving pending_import changed nothing
+        # the sweep compared, so the ready statement was never looked at again.
+        from uuid import uuid4
+        batch = self.batch(self.primary)
+        self.prepare(batch)
+        with self.f.SessionLocal() as db:
+            other = Item(id=uuid4(), batch_id=batch, file_id=self.primary.id, statement_key='another-statement',
+                         status='pending_import', summary={})
+            db.add(other)
+            db.commit()
+            other_id = other.id
+        with patch.object(queue_save, 'fully_reconciled', return_value=False):
+            self.assertEqual(self.sweep()['queued'], 0)
+        with self.f.SessionLocal() as db:
+            db.get(Item, other_id).status = 'imported'
+            db.commit()
+        self.assertEqual(self.sweep()['queued'], 1)
+
     def test_two_workers_save_it_once(self):
         batch = self.batch(self.primary)
         self.prepare(batch)

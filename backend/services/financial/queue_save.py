@@ -463,12 +463,26 @@ def _stored_check(item):
 REVISIT_AFTER_SAVES = True
 
 
+# 2026-10-30 (fdaf956c, Capital One 2023-01-11, ready 03:16-04:40 until a restart): a statement is held while
+# another statement of the same bytes is pending_import ("Already saved through another batch"). That save's saved
+# document can exist before its item leaves pending_import; a look in between found the statement held and the
+# case's saved mark already changed, and the item finishing changed nothing the sweep compared, so the statement
+# was not looked at again. The case's pending_import statements are therefore part of the mark: any statement
+# entering or leaving pending_import makes the sweep look again. Reverse: False.
+REVISIT_AFTER_PENDING = True
+
+
 def _saved_marks(db, case_ids):
     """{case id: what changes when a statement of the case is saved}, or {} with the switch off."""
-    if not REVISIT_AFTER_SAVES:
+    if not REVISIT_AFTER_SAVES or not case_ids:
         return {}
     from services.financial.field_proposals import _fingerprint
-    return {case_id: _fingerprint(db, case_id) for case_id in case_ids}
+    pending = {}
+    if REVISIT_AFTER_PENDING:
+        for case_id, item_id in db.execute(select(Batch.case_id, Item.id).join(Item, Item.batch_id == Batch.id).where(
+                Batch.case_id.in_(list(case_ids)), Batch.status != 'removed', Item.status == 'pending_import')):
+            pending.setdefault(case_id, []).append(str(item_id))
+    return {case_id: (_fingerprint(db, case_id), tuple(sorted(pending.get(case_id, ())))) for case_id in case_ids}
 
 
 def _signature(rows):
