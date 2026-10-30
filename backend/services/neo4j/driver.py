@@ -10,7 +10,7 @@ import logging
 import math
 from typing import Any, Dict, List, Optional
 
-from neo4j import GraphDatabase
+from neo4j import READ_ACCESS, GraphDatabase
 from neo4j.exceptions import Neo4jError
 
 from config import NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD
@@ -138,6 +138,14 @@ class Neo4jDriver:
                 result = tx.run(query, params or {})
                 return [dict(r) for r in result]
             return session.execute_write(work)
+
+    def run_cypher_read(self, query: str, params: Optional[Dict] = None) -> List[Dict]:
+        """Run a Cypher query in a READ session and transaction: the database refuses any write it attempts."""
+        with self._driver.session(default_access_mode=READ_ACCESS) as session:
+            def work(tx):
+                result = tx.run(query, params or {})
+                return [dict(r) for r in result]
+            return session.execute_read(work)
 
     def validate_cypher_batch(self, queries: List[str]) -> List[str]:
         """Dry-run a batch of Cypher queries (always rolls back). Returns error list."""
