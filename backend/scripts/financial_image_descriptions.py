@@ -16,11 +16,19 @@ applied by it.
 completed description, through the correction chain (names, category, link and notes go with it; the earlier row is
 kept, linked; amount, direction, date and balance unchanged), one transaction per statement.
 
+The same reading gives each payment's first line as the page prints it; where every read agrees on a first line that
+differs from the saved one by a few characters, it is stored as a proposed correction (the dry run lists them).
+--first-lines --for-name <person> --for-email <address> [--for-user-id <uuid>]: applies those corrections after any
+--apply (only the payments named by --payment, when given), through the same correction chain, as the reading model's work for that person, shown as the model's reading
+and not confirmed (saved_reading_replacement.correct_first_lines).
+
 From ``backend/`` with the service environment loaded:
 
     python3 scripts/financial_image_descriptions.py --case <case uuid>               # dry run
     python3 scripts/financial_image_descriptions.py --document <source document uuid> --read
     python3 scripts/financial_image_descriptions.py --document <source document uuid> --apply
+    python3 scripts/financial_image_descriptions.py --case <case uuid> --first-lines --for-name "Neil Byrne" \\
+        --for-email neil@owlconsultancygroup.com --for-user-id <uuid>
 """
 import argparse
 import json
@@ -55,21 +63,20 @@ def documents(session, case_ids, document_ids):
 def survey(factory, case_ids, document_ids):
     from scripts.financial_reader_recovery_estimate import read_only
     from services.financial import vision_descriptions
-    from services.financial.saved_reading_replacement import assess_image_descriptions
+    from services.financial.saved_reading_replacement import assess_first_line_fixes, assess_image_descriptions
     results = []
     with factory() as session:
         read_only(session)
         for document in documents(session, case_ids, document_ids):
-            rows = vision_descriptions.saved_rows(session, document)
-            if not rows:
+            pairs = vision_descriptions.first_line_rows(session, document)
+            if not pairs:
                 continue
             stored = (document.metadata_ or {}).get(vision_descriptions.METADATA_KEY) or {}
-            looked = set(stored.get('lines') or {}) | {key for key, why in (stored.get('kept') or {}).items()
-                                                       if why not in vision_descriptions.RETRIED}
             verdict = assess_image_descriptions(session, document)
-            results.append(dict(verdict, page_image_payments=len(rows),
-                                not_read=sum(1 for row in rows if str(row.id) not in looked),
-                                kept_by_reading=dict(Counter(stored.get('kept', {}).values()))))
+            results.append(dict(verdict, page_image_payments=len(pairs),
+                                not_read=len(vision_descriptions.not_looked(stored, pairs)),
+                                kept_by_reading=dict(Counter(stored.get('kept', {}).values())),
+                                first_lines=assess_first_line_fixes(session, document)))
         session.rollback()
     return results
 
@@ -80,10 +87,18 @@ def main(argv=None):
     parser.add_argument('--document', action='append', default=[])
     parser.add_argument('--read', action='store_true')
     parser.add_argument('--apply', action='store_true')
+    parser.add_argument('--first-lines', action='store_true')
+    parser.add_argument('--for-name')
+    parser.add_argument('--for-email')
+    parser.add_argument('--for-user-id')
+    parser.add_argument('--payment', action='append', default=[],
+                        help='with --first-lines: correct only these payments (repeatable); the others stay proposed')
     parser.add_argument('--json', help='write the per-statement results to this file')
     args = parser.parse_args(argv)
     if not (args.case or args.document):
         parser.error('name --case or --document')
+    if args.first_lines and not (args.for_name and args.for_email):
+        parser.error('--first-lines needs --for-name and --for-email: the model reads for a person, never as them')
     from postgres.session import _get_session_local
     factory = _get_session_local()
     results = survey(factory, args.case, args.document)
@@ -102,13 +117,18 @@ def main(argv=None):
         results = survey(factory, args.case, args.document)
     outcomes = Counter((r['outcome'], r.get('code')) for r in results)
     print(f'saved statements with page-image payments: {len(results)} ({sum(r["page_image_payments"] for r in results)} '
-          f'payments, {sum(r["not_read"] for r in results)} not read for description lines)')
+          f'payments, {sum(r["not_read"] for r in results)} not yet read for their description lines and printed first line)')
     for (outcome, code), count in sorted(outcomes.items(), key=lambda item: (item[0][0], str(item[0][1]))):
         print(f'  {outcome}{" (" + code + ")" if code and outcome != "same" else ""}: {count}')
     for r in results:
         if r['outcome'] == 'describe':
             print(f"  DESCRIBE document {r['document_id']}: {len(r['changes'])} of {r['page_image_payments']} "
                   f"payment descriptions gain printed lines; money untouched")
+    for r in results:
+        for change in (r.get('first_lines') or {}).get('changes') or []:
+            print(f"  FIRST LINE document {r['document_id']} page {change['page']} payment "
+                  f"{change['transaction_id']}: {change['first_line_before']!r} -> {change['first_line_after']!r} "
+                  f"(read by {(change.get('read_by') or {}).get('model')})")
     if args.apply:
         from services.financial.saved_reading_replacement import refresh_descriptions
         applied = []
@@ -123,6 +143,25 @@ def main(argv=None):
                      else (outcome.get('refusal') or outcome.get('code') or '')), flush=True)
             applied.append(outcome)
         results = applied + [r for r in results if r['outcome'] != 'describe']
+    if args.first_lines:
+        from services.financial.saved_reading_replacement import correct_first_lines
+        if args.apply:
+            results = survey(factory, args.case, args.document)
+        for entry in results:
+            if (entry.get('first_lines') or {}).get('outcome') != 'describe':
+                continue
+            try:
+                outcome = correct_first_lines(session_factory=factory, case_id=entry['case_id'],
+                                              document_id=entry['document_id'], for_name=args.for_name,
+                                              for_email=args.for_email, for_user_id=args.for_user_id,
+                                              only=set(args.payment) or None)
+            except Exception as error:  # Reported per statement; nothing of that statement was written.
+                outcome = dict(applied=False, refusal=str(error)[:300])
+            print(f"  {'APPLIED' if outcome.get('applied') else 'NOT APPLIED'} first lines, document "
+                  f"{entry['document_id']}: " + (f"{outcome.get('payments')} corrected (the model's reading, not "
+                  f"confirmed)" if outcome.get('applied') else (outcome.get('refusal') or outcome.get('code') or '')),
+                  flush=True)
+            entry['first_lines_applied'] = outcome
     if args.json:
         Path(args.json).write_text(json.dumps(results, indent=1, default=str))
     return 0

@@ -285,3 +285,154 @@ class SavedImageDescriptionTests(TestCase):
         self.store_lines('Incoming transfer from EXAMPLE SUPPLIER SA')
         with patch.object(vd, 'LINES', False):
             self.assertEqual(self.assess()['code'], 'disabled')
+
+
+def printed(**texts):
+    """An answer giving each payment's first line as printed (its description being that line)."""
+    return {'rows': [{'id': key, 'description': value, 'printed_first_line': value} for key, value in texts.items()]}
+
+
+class PrintedFirstLineTests(TestCase):
+    """A misread first line (fin-parties 2026-10-30: printed RECIBIDOBANORTE saved as RECIDOBANORTE) is proposed for
+    correction only when the printed line is the same line with a few characters misread."""
+
+    def listed(self, first=FIRST, other=NEXT_FIRST):
+        return vd.listed([dict(id='a', page=2, date='2024-12-02', amount='1.00', direction='debit', balance=None,
+                               description=first),
+                          dict(id='b', page=2, date='2024-12-04', amount='2.00', direction='debit', balance=None,
+                               description=other)])
+
+    def test_the_five_measured_misreads_are_proposed(self):
+        for saved, page in (('T20 SPEI RECIDOBANORTE', 'T20 SPEI RECIBIDOBANORTE'),
+                            ('SUNOCC 0831782800', 'SUNOCO 0831782800'),
+                            ('CAPITAL ONE MOBILE PMT AuthDate', 'CAPITAL ONE MOBILE PYMTAuthDate'),
+                            ('Withdrawal Online Banking Transfer To HOPPER, SKYLAR G XXXXXXXX Share 0040',
+                             'Withdrawal Online Banking Transfer To HOPPER,SKYLAR G XXXXXXXXXX Share 0040')):
+            self.assertEqual(vd.printed_first_lines(self.listed(saved), printed(a=page, b=NEXT_FIRST)), {'a': page})
+
+    def test_the_same_line_or_a_case_difference_is_no_correction(self):
+        self.assertEqual(vd.printed_first_lines(self.listed(), printed(a=FIRST, b=NEXT_FIRST)), {})
+        self.assertEqual(vd.printed_first_lines(self.listed(), printed(a=FIRST.lower(), b=NEXT_FIRST)), {})
+
+    def test_another_payments_line_or_a_different_line_is_never_a_correction(self):
+        self.assertEqual(vd.printed_first_lines(self.listed(), printed(a=NEXT_FIRST, b=NEXT_FIRST)), {},
+                         'the next entry, 0.84 alike')
+        self.assertEqual(vd.printed_first_lines(self.listed('T17 SPEI ENVIADO SANTANDER', 'X'),
+                                                printed(a='T17 SPEI ENVIADO BANORTE', b='X')), {},
+                         'not listed, but 7 characters changed')
+
+    def test_an_answer_missing_a_payment_gives_nothing(self):
+        self.assertEqual(vd.printed_first_lines(self.listed('SUNOCC 0831782800'), printed(a='SUNOCO 0831782800')), {})
+
+    def test_four_agreeing_reads_propose_and_reads_that_differ_do_not(self):
+        import threading
+        listed = self.listed('SUNOCC 0831782800')
+        answers, lock = ([printed(a='SUNOCO 0831782800', b='T17 SPEI ENVIADO BANORTF')] * 3
+                         + [printed(a='SUNOCO 0831782800', b=NEXT_FIRST)]), threading.Lock()
+
+        def read(shown, listed_rows):
+            with lock:
+                return answers.pop(), {}
+        record, found = vd.read_lines(read, [(2, [b'p2'])], [dict(r, description=r['first_line']) for r in listed])
+        self.assertEqual(record['first_line_fixes'], {'a': 'SUNOCO 0831782800'})
+        self.assertEqual(sorted(record['first_line_differ']['b'], key=str),
+                         sorted(['T17 SPEI ENVIADO BANORTF'] * 3 + [None], key=str))
+        self.assertEqual(record['first_lines'], {'a': 'SUNOCC 0831782800'})
+        self.assertEqual(record['looked'], ['a', 'b'])
+
+    def test_the_request_asks_for_the_printed_first_line(self):
+        self.assertIn('printed_first_line', vd.SCHEMA['properties']['rows']['items']['required'])
+        self.assertIn('never copy first_line', vd.PROMPT)
+
+
+class SavedFirstLineTests(SavedImageDescriptionTests):
+    """A proposed first-line correction is applied through the correction chain as the reading model's work for a
+    person, never as theirs; the earlier row and its text stay."""
+    WHO = dict(for_name='Neil Byrne', for_email='neil@owlconsultancygroup.com')
+
+    def store_fix(self, key, text, first='Incoming'):
+        with self.f.SessionLocal() as db:
+            document = db.get(FinancialSourceDocument, self.document_id)
+            metadata = dict(document.metadata_ or {})
+            stored = dict(metadata.get(vd.METADATA_KEY) or dict(provider='deepseek', model='deepseek-flash', lines={},
+                                                                 kept={}, first_lines={}))
+            stored['first_lines'] = {**stored.get('first_lines', {}), key: first}
+            stored['first_line_fixes'] = {key: dict(text=text, provider='deepseek', model='deepseek-flash',
+                                                    at='2026-10-30T22:00:00+00:00', prompt_version=vd.PROMPT_VERSION)}
+            metadata[vd.METADATA_KEY] = stored
+            document.metadata_ = metadata
+            db.commit()
+
+    def first_lines(self):
+        with self.f.SessionLocal() as db:
+            return replacement.assess_first_line_fixes(db, db.get(FinancialSourceDocument, self.document_id))
+
+    def correct(self):
+        return replacement.correct_first_lines(session_factory=self.f.SessionLocal, case_id=self.d.t.case_id,
+                                               document_id=self.document_id, **self.WHO)
+
+    def test_a_read_payment_gets_its_printed_first_line_as_the_models_reading(self):
+        self.store_fix(str(self.labelled), 'lncoming')
+        saved_rows = self.d.t.admitted_rows()
+        verdict = self.first_lines()
+        self.assertEqual([(c['first_line_before'], c['first_line_after'], c['after']) for c in verdict['changes']],
+                         [('Incoming', 'lncoming', 'lncoming')])
+        result = self.correct()
+        self.assertTrue(result['applied'], result)
+        self.assertEqual(self.d.t.admitted_rows(), saved_rows, 'the same payments count, once')
+        with self.f.SessionLocal() as db:
+            old = db.get(FinancialTransaction, self.labelled)
+            new = db.get(FinancialTransaction, old.superseded_by_id)
+            self.assertEqual((old.ledger_status, old.description, new.description), ('superseded', 'Incoming', 'lncoming'))
+            self.assertEqual((new.amount_minor, new.direction, new.transaction_date, new.running_balance_minor),
+                             (old.amount_minor, old.direction, old.transaction_date, old.running_balance_minor))
+            provenance = new.provenance['reader_descriptions']
+            self.assertEqual((provenance['basis'], provenance['first_line'], provenance['read_by']['model']),
+                             (replacement.FIRST_LINE_BASIS, {'before': 'Incoming', 'after': 'lncoming'},
+                              'deepseek-flash'))
+            event = db.scalar(select(AdjudicationEvent).where(AdjudicationEvent.subject_id == old.id,
+                                                              AdjudicationEvent.decision == 'correct_transaction'))
+            self.assertEqual(event.reason, replacement.FIRST_LINE_REASON)
+            self.assertNotEqual(event.actor_name, 'Neil Byrne', 'never as the person')
+            self.assertEqual((event.actor_origin['kind'], event.actor_origin['model'],
+                              event.actor_origin['model_id'], event.actor_origin['for']['name']),
+                             ('model', 'DeepSeek', 'deepseek-flash', 'Neil Byrne'))
+            self.assertEqual(event.actor_origin['citation']['page'], 1)
+        self.assertEqual(self.first_lines()['outcome'], 'same', 'done once')
+
+    def test_a_completed_payment_keeps_its_added_lines(self):
+        self.store_lines('Incoming transfer from EXAMPLE SUPPLIER SA')
+        replacement.refresh_descriptions(session_factory=self.f.SessionLocal, case_id=self.d.t.case_id,
+                                         document_id=self.document_id, from_images=True)
+        with self.f.SessionLocal() as db:
+            document = db.get(FinancialSourceDocument, self.document_id)
+            pairs = vd.first_line_rows(db, document)
+            completed = db.get(FinancialTransaction, self.labelled).superseded_by_id
+            self.assertEqual([(row.id, first) for row, first in pairs], [(completed, 'Incoming')],
+                             'read again for its first line, as read from the page image')
+        self.store_fix(str(completed), 'lncoming')
+        self.assertTrue(self.correct()['applied'])
+        with self.f.SessionLocal() as db:
+            new = db.get(FinancialTransaction, db.get(FinancialTransaction, completed).superseded_by_id)
+            self.assertEqual(new.description, 'lncoming transfer from EXAMPLE SUPPLIER SA')
+            self.assertEqual(vd.first_line_rows(db, db.get(FinancialSourceDocument, self.document_id)), [],
+                             'a corrected first line is not read again')
+
+    def test_only_the_named_payments_are_corrected(self):
+        self.store_fix(str(self.labelled), 'lncoming')
+        with self.f.SessionLocal() as db:
+            document = db.get(FinancialSourceDocument, self.document_id)
+            self.assertEqual(replacement.assess_first_line_fixes(db, document, only={'other'})['outcome'], 'same')
+        result = replacement.correct_first_lines(session_factory=self.f.SessionLocal, case_id=self.d.t.case_id,
+                                                 document_id=self.document_id, only={'other'}, **self.WHO)
+        self.assertNotIn('applied', result)
+        self.assertEqual(self.first_lines()['outcome'], 'describe', 'still proposed')
+
+    def test_a_first_line_changed_since_stays(self):
+        self.store_fix(str(self.labelled), 'lncoming', first='Incoming wire')
+        verdict = self.first_lines()
+        self.assertEqual((verdict['outcome'], [k['code'] for k in verdict['kept']]), ('same', ['first_line_changed']))
+
+    def test_no_fix_stored_changes_nothing(self):
+        self.store_lines('Incoming transfer from EXAMPLE SUPPLIER SA')
+        self.assertEqual(self.first_lines()['code'], 'no_first_line_fixes')
