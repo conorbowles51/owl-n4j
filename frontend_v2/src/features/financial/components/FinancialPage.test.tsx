@@ -38,10 +38,7 @@ import { useFinancialStore } from "../stores/financial.store"
 import { FinancialPage } from "./FinancialPage"
 import { useStatementWorkspace } from "../stores/statement-workspace"
 
-const graph = vi.hoisted(() => ({
-  useTransactions: vi.fn(),
-  useFinancialSummary: vi.fn(() => ({ data: undefined })),
-}))
+const graph = vi.hoisted(() => ({ useTransactions: vi.fn() }))
 const ledger = vi.hoisted(() => ({ useLedgerTransactions: vi.fn() }))
 const runs = vi.hoisted(() => ({ useIngestionRuns: vi.fn() }))
 const adjudication = vi.hoisted(() => ({ useRowAdjudication: vi.fn() }))
@@ -59,7 +56,6 @@ const idleMutation = { mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }
 
 vi.mock("../hooks/use-financial-data", () => ({
   useTransactions: graph.useTransactions,
-  useFinancialSummary: graph.useFinancialSummary,
   useFinancialCategories: () => ({ data: [] }),
   useFinancialEntities: () => ({ data: [] }),
   useCategorize: () => idleMutation,
@@ -528,10 +524,7 @@ describe("FinancialPage", () => {
     ).toBeInTheDocument()
   })
 
-  it("says how many other records it is loading, and a failed load is not shown as no records", () => {
-    graph.useFinancialSummary.mockReturnValue({
-      data: { transaction_count: 1234 },
-    } as never)
+  it("says it is loading other records, and a failed load is not shown as no records", () => {
     graphLoading()
     const view = renderPage()
     selectTab("Transactions")
@@ -539,7 +532,7 @@ describe("FinancialPage", () => {
       screen.getByRole("button", { name: "Other financial records" })
     )
     expect(screen.getByTestId("records-loading").textContent).toContain(
-      "Loading 1,234 records…"
+      "Loading other financial records…"
     )
     graph.useTransactions.mockReturnValue({
       data: undefined,
@@ -549,12 +542,11 @@ describe("FinancialPage", () => {
     })
     view.rerender(pageTree())
     const failure = screen.getByTestId("records-error").textContent
-    expect(failure).toContain("could not be loaded (1,234 records in this view)")
+    expect(failure).toContain("These records could not be loaded")
     expect(failure).toContain("The server took too long")
     expect(
       screen.queryByText("No other financial records")
     ).not.toBeInTheDocument()
-    graph.useFinancialSummary.mockReturnValue({ data: undefined })
   })
 
   it("shows the graph's empty state inside the graph tab, not over the page", () => {

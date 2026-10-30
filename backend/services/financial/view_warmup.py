@@ -41,7 +41,7 @@ async def _run_child():
     keyed on all three). Stopped with the worker; its exit status is logged, never raised."""
     from pathlib import Path
     backend = Path(__file__).resolve().parents[2]
-    child = await asyncio.create_subprocess_exec(*_child_command(), cwd=str(backend))
+    child = await asyncio.create_subprocess_exec(*_child_command(), cwd=str(backend), preexec_fn=_end_with_parent)
     try:
         code = await child.wait()
     except asyncio.CancelledError:
@@ -54,6 +54,17 @@ async def _run_child():
         raise
     if code:
         logger.warning('Financial view warm-up process ended with status %s', code)
+
+
+def _end_with_parent():
+    """In the child before it starts: end it if the worker dies (a killed worker cannot terminate it, and its
+    lock is gone, so a restarted worker would start a second warm-up beside it)."""
+    import ctypes
+    import signal
+    try:
+        ctypes.CDLL('libc.so.6', use_errno=True).prctl(1, signal.SIGTERM)  # PR_SET_PDEATHSIG
+    except OSError:
+        pass
 
 
 def _child_command():

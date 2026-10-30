@@ -12,19 +12,21 @@ export function InAppLink({
   to,
   className,
   children,
+  onClick,
 }: {
   to: string
   className?: string
   children: ReactNode
+  onClick?: () => void
 }) {
   if (!useInRouterContext())
     return (
-      <a className={className} href={to}>
+      <a className={className} href={to} onClick={onClick}>
         {children}
       </a>
     )
   return (
-    <Link className={className} to={to}>
+    <Link className={className} to={to} onClick={onClick}>
       {children}
     </Link>
   )

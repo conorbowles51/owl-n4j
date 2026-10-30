@@ -212,6 +212,7 @@ export function LedgerSourceDialog({
                 <PaymentJudgements
                   caseId={caseId}
                   transaction={data.transaction}
+                  onLeave={onClose}
                 />
                 <DrawerSection title="Who">
                   <dl className="grid grid-cols-2 gap-3 text-sm">
@@ -734,9 +735,12 @@ function PaymentHeader({
 function PaymentJudgements({
   caseId,
   transaction,
+  onLeave,
 }: {
   caseId: string
   transaction: LedgerTransaction
+  /** The link stays inside the app, so the dialog is closed rather than left open over the judgement calls. */
+  onLeave?: () => void
 }) {
   const lookup = useRowJudgementLookup()
   const count = lookup?.(transaction).length ?? 0
@@ -747,6 +751,7 @@ function PaymentJudgements({
       action={
         <InAppLink
           className="text-sm underline"
+          onClick={onLeave}
           to={`/cases/${caseId}/financial?${new URLSearchParams({ view: "statements", judgements: "1" })}`}
         >
           See all judgement calls →
