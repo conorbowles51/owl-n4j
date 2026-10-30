@@ -558,10 +558,9 @@ def _printed_numbers(session, case_id, target, state, cache):
         except PdfMappingError:
             return set()
     elif proposal is None:
-        try:
-            proposal = _load(session, case_id, target, cache)[1].get('proposal')
-        except PdfMappingError:
-            return set()
+        # An unimported statement listed from its batch's stored reading: the save reads it (and checks) anyway;
+        # a preview does not read every selected PDF for this.
+        return set()
     metadata = (proposal or {}).get('metadata') or {}
     return {digits_only(metadata.get(key)) for key in ('account_number', CLABE_ALIAS)} - {''}
 
@@ -575,8 +574,14 @@ def _same_number(session, case_id, value, printed):
     digits = digits_only(value)
     if not digits or digits in printed:
         return True
+    # A masked number ('****1234') keeps only its last digits: the full number ending in them is that account.
+    if any(len(number) <= 6 and len(digits) > len(number) and digits.endswith(number) for number in printed):
+        return True
     clabes = {number for number in printed if clabe_alias(number)}
     if any(number[6:17].lstrip('0') == digits.lstrip('0') for number in clabes):
+        return True
+    # The CLABE of the printed account (its 11 account digits after bank and branch).
+    if clabe_alias(digits) and digits[6:17].lstrip('0') in {number.lstrip('0') for number in printed}:
         return True
     return bool(clabes) and session.scalar(select(FinancialAccount.id).where(FinancialAccount.case_id == case_id,
         FinancialAccount.identifier_normalised == digits,

@@ -100,6 +100,9 @@ class BulkStatementDetailsTests(TestCase):
             self.assertTrue(service._same_number(db, self.f.case.id, '0110274593', {'012790001102745939'}))
             self.assertTrue(service._same_number(db, self.f.case.id, '011-027-4593', {'0110274593'}))
             self.assertFalse(service._same_number(db, self.f.case.id, '194-99208-001-8', {'1949929200016', '128180000000109664'}))
+            self.assertTrue(service._same_number(db, self.f.case.id, '012790001102745939', {'0110274593'}))
+            self.assertTrue(service._same_number(db, self.f.case.id, '4111 1111 1111 1234', {'1234'}))
+            self.assertFalse(service._same_number(db, self.f.case.id, '4111 1111 1111 9999', {'1234'}))
 
     def test_saved_retry_returns_same_receipt_and_no_duplicate_history(self):
         first = self.f.confirm(); self.import_second()
