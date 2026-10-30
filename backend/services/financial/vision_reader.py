@@ -3753,11 +3753,17 @@ def saved_image_request(db, document, statement_id, proposal):
 # Which statements: held ones of prepared files
 # ---------------------------------------------------------------------------
 
+class Pending(list):
+    """The statements listed, with ``clipped``: how many more were due but left off by the limit (0 when none)."""
+    clipped = 0
+
+
 def pending(db, limit=50):
     """Held, untouched statements of prepared files (batch entry ``MARK``, or finished preparing).
 
     Order: statements due to be judged again (due_again) first, those waiting on another statement of their card
-    after the other due ones (they may wait long), then the rest; each part oldest first."""
+    after the other due ones (they may wait long), then the rest; each part oldest first. Never silently short: the
+    result's ``clipped`` says how many more were due beyond ``limit``."""
     from postgres.models.evidence import EvidenceFile
     from postgres.models.financial_import_batches import (FinancialImportBatch as Batch,
                                                           FinancialImportBatchItem as Item)
@@ -3781,7 +3787,7 @@ def pending(db, limit=50):
                     held_reprepare.ENABLED and held_reprepare.stale(entry, stamp))):
                 marked.setdefault(batch_id, set()).add(entry['file_id'])
     if not marked:
-        return []
+        return Pending()
     from services.financial.field_proposals import case_knowledge
     cases, knowledge = dict(db.execute(select(Batch.id, Batch.case_id).where(Batch.id.in_(list(marked)))).all()), {}
 
@@ -3810,9 +3816,10 @@ def pending(db, limit=50):
         # Due again (judged anew from its stored reading, nothing requested) goes first: a round's time is
         # spent on the statements listed ahead, and those come back every round after a restart.
         (found if not due else due_waiting if stored.get('waiting') else due_first).append(item_id)
-        if len(due_first) >= limit:
-            break
-    return (due_first + due_waiting + found)[:limit]
+    listed = due_first + due_waiting + found
+    result = Pending(listed[:limit])
+    result.clipped = len(listed) - len(result)
+    return result
 
 
 _skip_until = {}
@@ -3841,6 +3848,11 @@ def sweep(factory, resolve_path, *, budget_seconds=SWEEP_SECONDS, concurrency=No
     except Exception:
         log.exception('Finding statements to read from page images failed; the next round retries')
         return report
+    if getattr(ids, 'clipped', 0):
+        # Said, never silent: these wait for a later round once the listed ones are decided.
+        report['not_listed'] = ids.clipped
+        log.warning('Page-image reading: %d statements due were not listed this round (limit %d)',
+                    ids.clipped, PENDING_LIMIT)
     now = time.monotonic()
     ids = [item_id for item_id in ids if _skip_until.get(item_id, 0) <= now]
 

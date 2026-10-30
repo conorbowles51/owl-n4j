@@ -167,8 +167,10 @@ class HelpersTest(unittest.TestCase):
         self.assertEqual(ph.holders_by_statement([
             ('ERICA HOPPER', '2022-02-08', '2022-03-10'), ('ERICA MCCAULEY', '2020-10-08', '2020-11-09'),
             ('ERICA  MCCAULEY', '2021-01-11', '2021-02-07'), ('', '2021-03-01', '2021-03-31')]), [
-            dict(name='ERICA MCCAULEY', statements=2, first='2020-10-08', last='2021-02-07'),
-            dict(name='ERICA HOPPER', statements=1, first='2022-02-08', last='2022-03-10')])
+            dict(name='ERICA MCCAULEY', statements=2, first='2020-10-08', last='2021-02-07',
+                 printed=[dict(name='ERICA MCCAULEY', statements=2)]),
+            dict(name='ERICA HOPPER', statements=1, first='2022-02-08', last='2022-03-10',
+                 printed=[dict(name='ERICA HOPPER', statements=1)])])
 
     def test_with_the_decided_names_the_grouping_does_not_depend_on_which_spelling_came_first(self):
         # Review #6 F-c: each printed name is shown as the decided name it matches, in any order.
@@ -240,6 +242,13 @@ class DetectTest(unittest.TestCase):
                     if c['rule_id'] == ph.RULE_ID]
         self.assertEqual(len(calls(case_id)), 1)
         self.assertEqual(calls(uuid.uuid4()), [])  # another case's file is never read
+
+    def test_the_preview_route_treats_a_file_that_does_not_exist_as_no_file(self):
+        from routers import financial_judgements as route
+        body = route.Preview(statement_id='k1', currency='USD', file_id=uuid.uuid4(), holder='ERICA HOPPER')
+        db = SimpleNamespace(get=lambda model, ident: None)
+        items = route.preview_judgement_calls(body, case_id=uuid.uuid4(), db=db)['items']
+        self.assertEqual([c for c in items if c['rule_id'] == ph.RULE_ID], [])
 
     def test_no_call_without_the_basis_or_when_a_person_changed_the_holder(self):
         period = SimpleNamespace(id=uuid.uuid4(), currency='USD', opening_balance_minor=0, closing_balance_minor=0)
@@ -365,6 +374,36 @@ class DecisionTest(fixture.DuplicateTestCase):
         _group_printed_holders(self.db, self.case.id, groups, {self.account.id: self.account.id, member: self.account.id})
         self.assertEqual([g['name'] for g in groups[0]['printed_holders']], BOTH)
 
+    def test_two_merged_accounts_each_decided_say_which_decision_applies_and_which_is_overridden(self):
+        from datetime import datetime, timezone
+        from postgres.models.financial import AdjudicationEvent, FinancialAccount
+        from services.financial.account_history import _group_printed_holders
+        member = FinancialAccount(id=uuid.uuid4(), case_id=self.case.id, identity_key='member-8160',
+                                  institution_name='Barclays', identifier_as_printed=self.account.identifier_as_printed,
+                                  holder_name='ERICA MCCAULEY', metadata_=dict(canonical_account_id=str(self.account.id)))
+        self.db.add(member)
+        self.db.commit()
+        earlier = ph.record_decision(self.db, case_id=self.case.id, account_id=member.id, holders=BOTH,
+                                     actor=self._actor(), reason='First decision.')
+        later = ph.record_decision(self.db, case_id=self.case.id, account_id=self.account.id,
+                                   holders=['ERICA MCCAULEY', 'E HOPPER'], actor=self._actor(), reason='Second decision.')
+        for decision, at in ((earlier, datetime(2026, 1, 1, tzinfo=timezone.utc)),
+                             (later, datetime(2026, 2, 1, tzinfo=timezone.utc))):
+            self.db.get(AdjudicationEvent, uuid.UUID(decision['decision_id'])).created_at = at
+        self.db.commit()
+        groups = [dict(account_id=str(self.account.id), periods=[
+            dict(holder='ERICA MCCAULEY', start='2026-01-01', end='2026-01-31'),
+            dict(holder='E HOPPER', start='2026-02-01', end='2026-02-28')])]
+        _group_printed_holders(self.db, self.case.id, groups, {self.account.id: self.account.id, member.id: self.account.id})
+        applied = groups[0]['printed_holders_decision']
+        self.assertEqual((applied['decision_id'], applied['account_id']), (later['decision_id'], str(self.account.id)))
+        self.assertEqual([(o['decision_id'], o['account_id'], o['holders']) for o in applied['overridden']],
+                         [(earlier['decision_id'], str(member.id), BOTH)])
+        # The proof reads the same decision.
+        self._saved('ERICA MCCAULEY', date(2026, 1, 1), date(2026, 1, 31))
+        known = case_knowledge(self.db, self.case.id, use_cache=False).accounts
+        self.assertEqual([k.printed_holders_decision['decision_id'] for k in known], [later['decision_id']])
+
     def test_a_merge_history_needing_review_leaves_each_decision_on_its_own_account(self):
         # Review #10 follow-up: a broken merge history is logged, never raised into the proof or the judgement list.
         from postgres.models.financial import FinancialAccount
@@ -466,6 +505,10 @@ class DecisionTest(fixture.DuplicateTestCase):
         _group_printed_holders(self.db, self.case.id, decided, canonical)
         self.assertEqual([(g['name'], g['statements']) for g in decided[0]['printed_holders']],
                          [('ERICA MCCAULEY', 1), ('ERICA HOPPER', 2)])
+        # Each exact spelling printed stays visible under the decided name it is grouped with.
+        self.assertEqual([[(p['name'], p['statements']) for p in g['printed']] for g in decided[0]['printed_holders']],
+                         [[('ERICA MCCAULEY', 1)], [('ERICA HOPPER', 1), ('Erica Hopper', 1)]])
+        self.assertEqual(decided[0]['printed_holders_decision']['overridden'], [])
         # Another case's account is never shown under this case's decision.
         other = groups()
         other[0]['account_id'] = str(self.other_account.id)

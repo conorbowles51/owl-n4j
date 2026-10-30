@@ -149,26 +149,51 @@ def merged_accounts(session, case_id):
         return {}
 
 
+def decisions_by_root(decided, canonical):
+    """{root account id (UUID): the decision that applies to it} where a decision on any account merged into one reaches
+    the whole merged account. Where two of them carry one, the latest recorded applies (ties: the decision id), and
+    the decision lists the others as ``overridden`` (account, names, who, when), so that is said, never silent."""
+    by_root = {}
+    for account_id, decision in sorted(decided.items(), key=lambda pair: (str(pair[1].get('at') or ''),
+                                                                          str(pair[1].get('decision_id') or ''))):
+        account = uuid.UUID(str(account_id))
+        root = canonical.get(account, account)
+        earlier = by_root.get(root)
+        entry = dict(decision, account_id=str(account), overridden=[])
+        if earlier is not None:
+            entry['overridden'] = earlier['overridden'] + [{k: earlier[k] for k in (
+                'account_id', 'holders', 'decision_id', 'actor_name', 'at')}]
+        by_root[root] = entry
+    return by_root
+
+
 def holders_by_statement(statements, names=()):
     """[{'name', 'statements', 'first', 'last'}] in first-printed order, one per holder: from [(holder, start, end)].
 
     ``names``: the decided names. A printed name is grouped under the first decided name it matches (same_holder),
     shown as decided, so the grouping does not depend on which spelling was printed first; a name matching none is
-    grouped as before."""
+    grouped as before. ``printed`` lists each exact spelling printed in the group with its count, so a spelling that
+    differs from the group's name stays visible."""
     from services.financial.field_proposals import same_holder
     groups = []
     for holder, start, end in sorted(statements, key=lambda s: (s[1] or '', s[2] or '')):
         name = ' '.join(str(holder or '').split())
         if not name:
             continue
+        spelling = name
         name = next((decided for decided in names if same_holder(decided, name)), name)
         # One holder however it is spelt (same_holder, as the proof compares names).
         group = next((g for g in groups if g['name'] == name), None) or \
             next((g for g in groups if g['name'] not in names and name not in names and same_holder(g['name'], name)), None)
         if group is None:
-            group = dict(name=name, statements=0, first=start or '', last=end or '')
+            group = dict(name=name, statements=0, first=start or '', last=end or '', printed=[])
             groups.append(group)
         group['statements'] += 1
+        seen = next((item for item in group['printed'] if item['name'] == spelling), None)
+        if seen is None:
+            group['printed'].append(dict(name=spelling, statements=1))
+        else:
+            seen['statements'] += 1
         group['last'] = end or group['last']
     return groups
 

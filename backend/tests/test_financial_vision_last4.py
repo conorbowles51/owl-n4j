@@ -586,7 +586,15 @@ class LastFourFlowTest(unittest.TestCase):
                                               currency='EUR')])
         with self.f.SessionLocal() as db, patch('services.financial.field_proposals.case_knowledge', lambda *a, **k: same):
             self.assertEqual(vr.pending(db)[:2], [self.held.id, other])
-            self.assertEqual(vr.pending(db, limit=1), [self.held.id])
+            clipped = vr.pending(db, limit=1)
+            # The one left off by the limit is counted, never silently dropped.
+            self.assertEqual((clipped, clipped.clipped), ([self.held.id], 1))
+            self.assertEqual(vr.pending(db).clipped, 0)
+            with patch.object(vr, 'PENDING_LIMIT', 1), patch.object(vr, 'read_item', lambda *a, **k: dict(status='skipped', reason='not_eligible')), \
+                    self.assertLogs(vr.log, 'WARNING') as logged:
+                report = vr.sweep(self.f.SessionLocal, lambda path: path, budget_seconds=5)
+            self.assertEqual(report['not_listed'], 1)
+            self.assertIn('1 statements due were not listed', logged.output[0])
         with self.f.SessionLocal() as db:
             self.assertEqual(vr.pending(db), [other])  # not due: listed in its turn only
 

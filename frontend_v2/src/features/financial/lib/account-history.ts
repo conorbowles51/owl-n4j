@@ -41,8 +41,28 @@ export const historyResponse = z.object({
             statements: z.number(),
             first: z.string(),
             last: z.string(),
+            // Each exact spelling printed among these statements (the name above is the decided spelling).
+            printed: z.array(z.object({ name: z.string(), statements: z.number() })).optional(),
           })
         )
+        .optional(),
+      // The decision that applies; where merged accounts each carried one, the ones it overrides.
+      printed_holders_decision: z
+        .object({
+          decision_id: z.string(),
+          account_id: z.string(),
+          actor_name: z.string(),
+          at: z.string(),
+          overridden: z.array(
+            z.object({
+              decision_id: z.string(),
+              account_id: z.string(),
+              actor_name: z.string(),
+              at: z.string(),
+              holders: z.array(z.string()),
+            })
+          ),
+        })
         .optional(),
       periods: z.array(historyPeriod),
     })
