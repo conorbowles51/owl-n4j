@@ -274,7 +274,7 @@ it("shows a relayed confirmation as the person's, entered by someone else, besid
   mount()
   expect(
     await screen.findByText(
-      "Confirmed by Neil Byrne · entered by Claude (fin-provenance job) on Neil Byrne's instruction, 29 Oct 2026: Approved by message; page 1 prints the holder."
+      "Confirmed by Neil Byrne · entered by Claude (fin-provenance job) (no relay note recorded), 29 Oct 2026: Approved by message; page 1 prints the holder."
     )
   ).toBeTruthy()
   expect(screen.getByText(/How this confirmation was entered \(Neil Byrne did not press Confirm in Loupe\)/)).toBeTruthy()

@@ -402,6 +402,13 @@ class UpgradeDatabaseTests(TestCase):
         self.assertEqual(self._sql('SELECT count(*) FROM sqlite_master'), before)
         self.assertEqual(harness.upgrade_database(self.path, apply=True)['columns'], [])
 
+    def test_a_path_that_is_not_a_database_is_refused_and_not_created(self):
+        import os
+        missing = self.path + '.typo'
+        with self.assertRaises(harness.SchemaUpgradeError):
+            harness.upgrade_database(missing)
+        self.assertFalse(os.path.exists(missing))
+
     def test_a_column_the_rows_there_cannot_take_is_refused_before_anything_is_written(self):
         self._sql('ALTER TABLE adjudications DROP COLUMN actor_origin')
         self._sql('ALTER TABLE adjudications DROP COLUMN actor_email')

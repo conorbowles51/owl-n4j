@@ -216,12 +216,12 @@ class AccountDetailsCorrectionTests(TestCase):
         return self.correct(actor=claude, holder=CORRECTED)['correction']
 
     def relay(self, correction_id, apply=True, note='Entered by Claude on the person\'s instruction of 2026-10-30',
-              basis='Approved by message; page 1 prints the holder.', **person):
+              basis='Approved by message; page 1 prints the holder.', entered_by='Claude', **person):
         from services.financial.relayed_confirmation import enter_relayed_confirmation
         who = dict(dict(user_id=self.f.actor.user_id, name=self.f.actor.name, email=self.f.actor.email), **person)
         with self.f.SessionLocal() as db:
             return enter_relayed_confirmation(db, case_id=self.f.case.id, account_id=self.account_id,
-                correction_id=correction_id, basis=basis, relay_note=note, apply=apply, **who)
+                correction_id=correction_id, basis=basis, relay_note=note, apply=apply, entered_by=entered_by, **who)
 
     def test_a_relayed_confirmation_is_the_persons_and_says_who_entered_it(self):
         correction = self.claude_correction()
@@ -231,7 +231,8 @@ class AccountDetailsCorrectionTests(TestCase):
         self.assertEqual(dry['confirmed']['relayed']['by'], 'Claude')
         self.assertEqual(self.state(), before)
         # Refused without a relay note, and for anyone the users table does not have under that name and address.
-        for kwargs in (dict(note='  '), dict(name='Someone Else'), dict(email='other@example.com')):
+        for kwargs in (dict(note='  '), dict(name='Someone Else'), dict(email='other@example.com'),
+                       dict(entered_by=self.f.actor.name)):
             with self.assertRaises(PdfMappingError):
                 self.relay(correction['id'], **kwargs)
             self.assertEqual(self.state(), before)

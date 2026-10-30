@@ -85,7 +85,11 @@ export function FinancialAccessNotice({ inline = false }: { inline?: boolean } =
   if (access.ready && access.canEdit && access.canUpload) return null
   return (
     <div
-      className={inline ? "min-w-0 flex-1 text-sm text-muted-foreground" : "border-b px-4 py-2 text-sm"}
+      className={
+        inline
+          ? `min-w-0 flex-1 text-sm ${access.error ? "font-medium text-foreground" : "text-muted-foreground"}`
+          : "border-b px-4 py-2 text-sm"
+      }
       role={access.error ? "alert" : "status"}
       data-testid="financial-access-notice"
     >
