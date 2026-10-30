@@ -33,6 +33,7 @@ from services.ai_model_policy import (
     save_policy,
 )
 from services.llm_service import llm_service
+from services import vector_search_settings
 
 router = APIRouter(prefix="/api/llm-config", tags=["llm-config"])
 
@@ -279,17 +280,12 @@ class SetConfidenceThresholdRequest(BaseModel):
 
 @router.get("/confidence-threshold", response_model=ConfidenceThresholdResponse)
 async def get_confidence_threshold(
+    db: Session = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
-    """
-    Get the current confidence threshold for vector search.
-    
-    Args:
-        user: Current authenticated user
-    """
+    """The vector-search confidence threshold in force now (services.vector_search_settings)."""
     try:
-        from config import VECTOR_SEARCH_CONFIDENCE_THRESHOLD
-        return ConfidenceThresholdResponse(threshold=VECTOR_SEARCH_CONFIDENCE_THRESHOLD)
+        return ConfidenceThresholdResponse(threshold=vector_search_settings.get_confidence_threshold(db))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -297,28 +293,21 @@ async def get_confidence_threshold(
 @router.post("/confidence-threshold", response_model=ConfidenceThresholdResponse)
 async def set_confidence_threshold(
     request: SetConfidenceThresholdRequest,
-    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
 ):
     """
-    Set the confidence threshold for vector search.
-    
-    Args:
-        request: Request with threshold value (0.0-1.0)
-        user: Current authenticated user
+    Set the deployment-wide vector-search confidence threshold (0.0-5.0, administrators only).
+
+    Saved in the database, so every API process uses it from the next search on, and it survives a restart.
     """
     try:
-        if not (0.0 <= request.threshold <= 5.0):
-            raise HTTPException(status_code=400, detail="Confidence threshold must be between 0.0 and 5.0")
-        
-        # Update the environment variable for future requests
-        import os
-        os.environ["VECTOR_SEARCH_CONFIDENCE_THRESHOLD"] = str(request.threshold)
-        
-        # Update the config module directly for immediate effect
-        import config
-        config.VECTOR_SEARCH_CONFIDENCE_THRESHOLD = request.threshold
-        
-        return ConfidenceThresholdResponse(threshold=request.threshold)
+        try:
+            threshold = vector_search_settings.set_confidence_threshold(
+                db, request.threshold, updated_by=current_user.email)
+        except ValueError as err:
+            raise HTTPException(status_code=400, detail=str(err)) from err
+        return ConfidenceThresholdResponse(threshold=threshold)
     except HTTPException:
         raise
     except Exception as e:

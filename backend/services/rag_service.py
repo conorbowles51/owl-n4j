@@ -18,7 +18,7 @@ from typing import Dict, List, Optional, Any
 from services.neo4j_service import neo4j_service
 from services.llm_service import llm_service
 from config import (
-    VECTOR_SEARCH_ENABLED, VECTOR_SEARCH_TOP_K, VECTOR_SEARCH_CONFIDENCE_THRESHOLD,
+    VECTOR_SEARCH_ENABLED, VECTOR_SEARCH_TOP_K,
     HYBRID_FILTERING_ENABLED,
     CHUNK_SEARCH_ENABLED, CHUNK_SEARCH_TOP_K,
     ENTITY_SEARCH_ENABLED, ENTITY_SEARCH_TOP_K, GRAPH_TRAVERSAL_DEPTH,
@@ -26,6 +26,7 @@ from config import (
     RERANK_ENABLED, RERANK_METHOD, RERANK_TOP_CHUNKS, RERANK_TOP_ENTITIES, CONTEXT_TOKEN_BUDGET,
     EMBEDDING_PROVIDER, EMBEDDING_MODEL,
 )
+from services.vector_search_settings import get_confidence_threshold
 from utils.prompt_trace import log_section
 
 # Try to import vector DB services (optional)
@@ -642,7 +643,8 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                     debug_log["chunk_search"] = {"enabled": False, "reason": "No case_id provided"}
                 return []
             vector_filter = {"case_id": case_id}
-            threshold = confidence_threshold if confidence_threshold is not None else VECTOR_SEARCH_CONFIDENCE_THRESHOLD
+            # Read now, not at import: a change saved by an administrator applies from the next search.
+            threshold = confidence_threshold if confidence_threshold is not None else get_confidence_threshold()
 
             if strict_doc_scope and not doc_keys:
                 if debug_log is not None:
@@ -1895,7 +1897,7 @@ Only include candidates with score >= 5."""
                 "question": question[:200],
                 "case_id": case_id,
                 "doc_keys": doc_keys if doc_keys else None,
-                "confidence_threshold": confidence_threshold or VECTOR_SEARCH_CONFIDENCE_THRESHOLD,
+                "confidence_threshold": chunk_search_info.get("confidence_threshold", confidence_threshold),
                 "skipped": question_type == "structural" and bool(cypher_context),
             },
             output={
