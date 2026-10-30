@@ -10,12 +10,6 @@ BACKEND = pathlib.Path(__file__).resolve().parents[1]
 
 NOT_YET_CONVERTED = {
     'routers/auth.py:change_password',
-    'routers/backfill.py:backfill_embeddings',
-    'routers/backfill.py:backfill_chunks',
-    'routers/backfill.py:backfill_entity_metadata',
-    'routers/backfill.py:backfill_document_summaries_endpoint',
-    'routers/backfill.py:backfill_case_ids_endpoint',
-    'routers/backfill.py:get_backfill_status',
     'routers/chat.py:chat',
     'routers/chat.py:extract_nodes_from_answer',
     'routers/database.py:list_entities_status',

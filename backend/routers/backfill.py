@@ -488,7 +488,7 @@ def backfill_documents_for_user(
 
 
 @router.post("", response_model=BackfillResponse)
-async def backfill_embeddings(
+def backfill_embeddings(
     request: BackfillRequest,
     background_tasks: BackgroundTasks,
     user: dict = Depends(get_current_user),
@@ -599,7 +599,7 @@ async def backfill_embeddings(
 
 
 @router.post("/chunks", response_model=BackfillResponse)
-async def backfill_chunks(
+def backfill_chunks(
     request: ChunkBackfillRequest,
     background_tasks: BackgroundTasks,
     user: dict = Depends(get_current_user),
@@ -698,7 +698,7 @@ async def backfill_chunks(
 
 
 @router.post("/entity-metadata", response_model=BackfillResponse)
-async def backfill_entity_metadata(
+def backfill_entity_metadata(
     request: EntityMetadataBackfillRequest,
     user: dict = Depends(get_current_user),
 ):
@@ -766,7 +766,7 @@ async def backfill_entity_metadata(
 
 
 @router.post("/document-summaries", response_model=BackfillResponse)
-async def backfill_document_summaries_endpoint(
+def backfill_document_summaries_endpoint(
     request: DocumentSummaryBackfillRequest,
     user: dict = Depends(get_current_user),
 ):
@@ -844,7 +844,7 @@ async def backfill_document_summaries_endpoint(
 
 
 @router.post("/case-ids", response_model=BackfillResponse)
-async def backfill_case_ids_endpoint(
+def backfill_case_ids_endpoint(
     request: CaseIdBackfillRequest,
     user: dict = Depends(get_current_user),
 ):
@@ -933,7 +933,7 @@ async def backfill_case_ids_endpoint(
 
 
 @router.get("/status", response_model=BackfillStatusResponse)
-async def get_backfill_status(
+def get_backfill_status(
     user: dict = Depends(get_current_user),
 ):
     """
