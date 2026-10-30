@@ -89,7 +89,7 @@ def list_tasks(
 
 
 @router.get("/{task_id}", response_model=TaskResponse)
-async def get_task(
+def get_task(
     task_id: str,
     user: dict = Depends(get_current_user),
 ):
@@ -114,7 +114,7 @@ async def get_task(
 
 
 @router.delete("/{task_id}")
-async def delete_task(
+def delete_task(
     task_id: str,
     user: dict = Depends(get_current_user),
 ):

@@ -22,8 +22,6 @@ NOT_YET_CONVERTED = {
     'routers/backfill.py:backfill_document_summaries_endpoint',
     'routers/backfill.py:backfill_case_ids_endpoint',
     'routers/backfill.py:get_backfill_status',
-    'routers/background_tasks.py:get_task',
-    'routers/background_tasks.py:delete_task',
     'routers/chat.py:chat',
     'routers/chat.py:extract_nodes_from_answer',
     'routers/chat_history.py:create_chat_history',
