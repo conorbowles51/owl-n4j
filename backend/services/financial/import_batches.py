@@ -2650,7 +2650,10 @@ VISION_SWEEP_PAUSE_SECONDS = 30
 
 async def _vision_forever(resolve_path):
     from postgres.session import _get_session_local
-    from services.financial import vision_reader
+    from services.financial import vision_reader, vision_rounds
+    # One child process per host runs the rounds (vision_rounds); here only without a lock location.
+    if await vision_rounds.run_in_child_forever():
+        return
     while vision_reader.ENABLED:
         try:
             await asyncio.to_thread(vision_reader.sweep, _get_session_local(), resolve_path)
