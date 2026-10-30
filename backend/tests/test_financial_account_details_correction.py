@@ -400,6 +400,31 @@ class AccountNumberCorrectionTests(AccountDetailsCorrectionTests):
         self.assertEqual(self.accounts_of(copy), own)
         self.assertEqual(self.ledger(), before)
 
+    def test_copies_kept_by_a_statement_of_the_corrected_account_are_decided_again(self):
+        # BNB2 2026-10-30: a correction changed the kept statement's details, which made its copies' decisions out of
+        # date, and nothing decided them again: two byte-identical copies asked a person for an account number.
+        from unittest.mock import patch
+        from uuid import uuid4
+        from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item
+        from services.financial import pending_statement_duplicates
+        f = self.f
+        batch = Batch(id=uuid4(), case_id=f.case.id, created_by=f.user.id, status='review', files=[], actor={})
+        f.db.add(batch)
+        f.db.flush()
+        disposition = dict(status='ignored', retained=dict(source_document_id=str(self.first)))
+        f.db.add_all([Item(id=uuid4(), batch_id=batch.id, file_id=f.file.id, statement_key='copy', status='duplicate_ignored',
+                           summary=dict(duplicate_disposition=disposition)),
+                      Item(id=uuid4(), batch_id=batch.id, file_id=f.file.id, statement_key='other', status='duplicate_ignored',
+                           summary=dict(duplicate_disposition=dict(status='ignored', retained=dict(source_document_id=str(uuid4())))))])
+        f.db.commit()
+        calls = []
+        with patch.object(pending_statement_duplicates, 'prepare_batch_dispositions',
+                          side_effect=lambda session, batch, file_id, **_: calls.append((batch.id, file_id))):
+            correction = self.correct(account_number='194-98075-001-8')['correction']
+            self.assertEqual(calls, [(batch.id, f.file.id)])
+            self.undo(correction['id'])
+            self.assertEqual(calls, [(batch.id, f.file.id)] * 2)
+
     def test_switched_off_the_copy_stays_saved(self):
         from unittest.mock import patch
         from services.financial import admitted_statement_duplicates as admitted

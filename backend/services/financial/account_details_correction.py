@@ -335,6 +335,7 @@ def save_account_details(session, *, case_id, account_id, request, actor):
         session.rollback()
         raise
     copies = copies_set_aside(session, case_id=case_id, account_id=account_id, correction_id=entry['id'])
+    copies_rechecked(session, case_id=case_id, account_id=account_id)
     if copies:
         result = account_details_state(session, case_id=case_id, account_id=account_id)
         result['correction'] = {**entry, 'copies_set_aside': copies}
@@ -370,6 +371,46 @@ def copies_set_aside(session, *, case_id, account_id, correction_id):
                                               correction_id)
         session.rollback()
         return []
+
+
+def copies_rechecked(session, *, case_id, account_id):
+    """The copy rule decides again for every unsaved copy whose kept statement is on this account.
+
+    A correction changes the kept statement's details, which makes the copy decision out of date: the copy is then
+    listed as work (BNB2 2026-10-30: two byte-identical Intercam USD sections asked for an account number although
+    their kept statements were saved). The batch re-check (``prepare_batch_dispositions``) decides again with the
+    corrected details, one file at a time under the case lock. After the correction committed; a failure is logged
+    and leaves the decision as it was. Reverse: LOUPE_FINANCIAL_DUPLICATE_AFTER_ACCOUNT_CHANGE=0."""
+    from postgres.models.financial import FinancialSourceDocument
+    from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item
+    from services.financial import admitted_statement_duplicates as admitted
+    from services.financial.pending_statement_duplicates import prepare_batch_dispositions
+    if not admitted.AFTER_ACCOUNT_CHANGE:
+        return []
+    rechecked = []
+    try:
+        kept = {str(value) for value in session.scalars(select(FinancialStatementPeriod.source_document_id).join(
+            FinancialSourceDocument, FinancialSourceDocument.id == FinancialStatementPeriod.source_document_id).where(
+            FinancialStatementPeriod.case_id == case_id, FinancialStatementPeriod.account_id == account_id))}
+        files = sorted({(item.batch_id, item.file_id) for item in session.scalars(select(Item).join(Batch, Batch.id == Item.batch_id)
+            .where(Batch.case_id == case_id, Batch.status != 'removed', Item.status.in_(('duplicate_ignored', 'ready', 'attention'))))
+            if (((item.summary or {}).get('duplicate_disposition') or {}).get('retained') or {}).get('source_document_id') in kept},
+            key=str)
+        session.rollback()
+    except Exception:
+        logging.getLogger(__name__).exception('Copies of the corrected account were not checked again')
+        session.rollback()
+        return []
+    for batch_id, file_id in files:
+        try:
+            admitted._lock_case(session, case_id)
+            prepare_batch_dispositions(session, session.get(Batch, batch_id), file_id)
+            session.commit()
+            rechecked.append((str(batch_id), str(file_id)))
+        except Exception:
+            logging.getLogger(__name__).exception('Copy decisions of file %s were not checked again', file_id)
+            session.rollback()
+    return rechecked
 
 
 def _restore_copies(session, case_id, target, actor, reason):
@@ -467,6 +508,7 @@ def undo_account_details(session, *, case_id, account_id, request, actor):
     except Exception:
         session.rollback()
         raise
+    copies_rechecked(session, case_id=case_id, account_id=account_id)
     if touched:
         # Batch lists reuse stored readiness; best effort, as after any duplicate decision.
         from services.financial.import_batches import refresh_file_readiness
