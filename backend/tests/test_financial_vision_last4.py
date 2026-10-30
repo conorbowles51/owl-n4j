@@ -571,5 +571,24 @@ class LastFourFlowTest(unittest.TestCase):
         with self.f.SessionLocal() as db, patch('services.financial.field_proposals.case_knowledge', lambda *a, **k: same):
             self.assertIn(self.held.id, vr.pending(db))
 
+    def test_statements_due_again_are_listed_before_the_rest(self):
+        # A round has a time budget; statements re-judged from their stored reading (nothing requested) go first, so
+        # the ones a person's decision released are never left behind statements listed ahead of them every round.
+        from datetime import datetime, timezone
+        from postgres.models.financial_import_batches import FinancialImportBatchItem as Item
+        self.read(numbers={'99990123'})
+        other, _ = self.sibling(period_start='2020-01-01')
+        with self.f.SessionLocal() as db:
+            db.get(Item, other).updated_at = datetime(2000, 1, 1, tzinfo=timezone.utc)
+            db.get(Item, self.held.id).updated_at = datetime.now(timezone.utc)
+            db.commit()
+        same = CaseKnowledge(accounts=[_known(account='****0123', holder='ERICA HOPPER', institution='Synthetic Bank',
+                                              currency='EUR')])
+        with self.f.SessionLocal() as db, patch('services.financial.field_proposals.case_knowledge', lambda *a, **k: same):
+            self.assertEqual(vr.pending(db)[:2], [self.held.id, other])
+            self.assertEqual(vr.pending(db, limit=1), [self.held.id])
+        with self.f.SessionLocal() as db:
+            self.assertEqual(vr.pending(db), [other])  # not due: listed in its turn only
+
 if __name__ == '__main__':
     unittest.main()

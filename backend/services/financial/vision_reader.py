@@ -3750,7 +3750,7 @@ def pending(db, limit=50):
         if case_id not in knowledge:
             knowledge[case_id] = case_knowledge(db, case_id)
         return knowledge[case_id]
-    found = []
+    found, due_first = [], []
     for item_id, batch_id, file_id, key, draft, metadata in db.execute(
             select(Item.id, Item.batch_id, Item.file_id, Item.statement_key, Item.review_request, EvidenceFile.metadata_)
             .join(EvidenceFile, EvidenceFile.id == Item.file_id)
@@ -3767,10 +3767,12 @@ def pending(db, limit=50):
                 stored.get('status') == 'failed' and (stored.get('failures') or 0) >= MAX_FAILURES)):
             # Read once per reading of the file (a new reading is a new file, with its own statements).
             continue
-        found.append(item_id)
-        if len(found) >= limit:
+        # Due again (judged anew from its stored reading, nothing requested) goes first: a round's time is
+        # spent on the statements listed ahead, and those come back every round after a restart.
+        (due_first if due else found).append(item_id)
+        if len(due_first) >= limit:
             break
-    return found
+    return (due_first + found)[:limit]
 
 
 _skip_until = {}
