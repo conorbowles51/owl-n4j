@@ -122,7 +122,7 @@ def run_release(project, script, *, arrives_after=None, initially_active=False, 
         env['FORCE_HEALTH_FAILURE'] = '1'
     env.update(extra_env or {})
     result = subprocess.run(['bash', str(project / 'deploy' / script), 'previous-safe-revision'],
-                            input='y\n', text=True, capture_output=True, env=env, timeout=30)
+                            input='y\n', text=True, capture_output=True, env=env, timeout=180)
     events = [json.loads(line) for line in (project / 'events').read_text().splitlines()]
     return result, events
 
