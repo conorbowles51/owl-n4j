@@ -108,7 +108,7 @@ def statement_source(session, *, case_id, period_id):
     if not isinstance(statement_id, str) or re.fullmatch(r'[a-f0-9]{64}', statement_id) is None:
         statement_id = None
     return dict(case_id=str(case_id), period_id=str(period.id), source_document_id=str(document.id),
-        statement_id=statement_id,
+        statement_id=statement_id, account_id=str(period.account_id),
         evidence_file_id=str(evidence.id), filename=evidence.original_filename,
         can_edit_import_details=document.document_type == 'statement_review' and document.status == 'admitted',
         recorded_digest_matches=True, file_bytes_verified=False,

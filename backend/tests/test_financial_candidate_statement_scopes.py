@@ -97,6 +97,9 @@ class StatementScopeTests(MaterializationFixture):
         self.assertEqual(controls['controls'][2]['original_text'],'1234')
         self.assertEqual(controls['controls'][2]['locator']['page'],1)
         self.assertFalse(source['file_bytes_verified'])
+        # The account the period is filed under, so a viewer can see its holder and who corrected it.
+        from postgres.models.financial import FinancialStatementPeriod
+        self.assertEqual(source['account_id'], str(self.db.get(FinancialStatementPeriod, self.transactions()[0].statement_period_id).account_id))
     def test_statement_source_refuses_tampered_control_receipt(self):
         from services.financial.ledger_source import statement_source, LedgerSourceError
         self.finalize(self.scoped_request())

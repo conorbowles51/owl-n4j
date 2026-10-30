@@ -296,11 +296,13 @@ export function AccountDetailsCorrection({
         {data.account_clabe ? ` · CLABE ${data.account_clabe}` : ""} ·{" "}
         {count(data.statements.length, "statement", "statements")}
       </p>
-      <p className="text-muted-foreground">
-        Use this when the account itself is wrong, for example a holder read
-        from the address. It corrects every statement of this account at once.
-        To change only this statement, use its details above.
-      </p>
+      {canEdit && (
+        <p className="text-muted-foreground">
+          Use this when the account itself is wrong, for example a holder read
+          from the address. It corrects every statement of this account at once.
+          To change only this statement, use its details above.
+        </p>
+      )}
       {canEdit && (
         <div className="grid gap-2 sm:grid-cols-2">
           <label className="flex flex-col gap-1">
