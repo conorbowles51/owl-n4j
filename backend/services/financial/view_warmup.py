@@ -132,7 +132,8 @@ def warm_account_history(lock_held=False):
         _warm_cases()
 
 
-def _warm_cases():
+def _warm_cases(share=None):
+    """``share`` (k, n): only every n-th case-and-view task from the k-th, for a prepare split over n processes."""
     from sqlalchemy import func, select
     from postgres.models.financial import FinancialStatementPeriod as Period
     from postgres.session import _get_session_local
@@ -174,8 +175,12 @@ def _warm_cases():
         # Every call recomputed it: d5b330d1 10-39 s live (request_speed, 6 h to 19:00 2026-10-30), 49494305 ~5 s.
         ('batch list', list_financial_batches, {}),
     )
+    task = -1
     for case_id in cases:
         for name, route, defaults in views:
+            task += 1
+            if share is not None and task % share[1] != share[0]:
+                continue
             if process_shutdown.requested.is_set():
                 return warmed, failed
             started = time.perf_counter()
@@ -194,7 +199,7 @@ def _warm_cases():
 PREPARE_FLAG = '--prepare'
 
 
-def prepare():
+def prepare(processes=None):
     """Before a release restarts the service: the same warm-up for the code now on disk, so the saved copies exist
     when the new service starts (otherwise the first visits after every release wait minutes, d5b330d1 account
     history 61 s). Run in a unit of its own with the service's user, environment file and settings
@@ -207,6 +212,7 @@ def prepare():
     2026-10-30 21:33-21:41, a prepare queued 8.7 min behind one (then ran 18 s), which would use up the release's
     10-minute cap on back-to-back releases. Returns the summary line; never raises."""
     started = time.perf_counter()
+    processes = PREPARE_PROCESSES if processes is None else processes
     try:
         from services.financial import view_cache
         if view_cache._memo_dir() is None or view_cache.code_identity() is None:
@@ -218,12 +224,41 @@ def prepare():
         if lock is None:
             return 'prepare: skipped, no memo directory'
         with lock:
-            warmed, failed = _warm_cases()
-        return 'prepare: %d views warmed in %d s (%d failed, code %s)' % (
-            warmed, round(time.perf_counter() - started), failed, view_cache.code_identity()[:12])
+            warmed, failed = _warm_cases() if processes == 1 else _warm_in_processes(processes)
+        return 'prepare: %d views warmed in %d s (%d failed, %d processes, code %s)' % (
+            warmed, round(time.perf_counter() - started), failed, processes, view_cache.code_identity()[:12])
     except Exception:
         logger.warning('Financial view prepare failed', exc_info=True)
         return 'prepare: failed after %d s (see the unit journal)' % round(time.perf_counter() - started)
+
+
+# The release waits for the prepare (deploy.sh, before the frontend stops). Run as one process it took 420 s on
+# 2026-10-30 21:47 (deploy.sh waited 393 s); the views are independent, so the tasks are split over processes.
+PREPARE_PROCESSES = 3
+SHARE_FLAG = '--prepare-share'
+
+
+def _warm_in_processes(processes):
+    """Every case-and-view task once, split over ``processes`` children (each has this process's interpreter,
+    code and environment, so the same code identity); returns the summed (warmed, failed)."""
+    import subprocess
+    import sys
+    from pathlib import Path
+    backend = Path(__file__).resolve().parents[2]
+    children = [subprocess.Popen([sys.executable, '-m', 'services.financial.view_warmup', SHARE_FLAG,
+                                  '%d/%d' % (share, processes)], cwd=str(backend), stdout=subprocess.PIPE, text=True)
+                for share in range(processes)]
+    warmed = failed = 0
+    for child in children:
+        out, _ = child.communicate()
+        counts = [line.split() for line in out.splitlines() if line.startswith('share ')]
+        if child.returncode or not counts:
+            logger.warning('Financial view prepare share ended with status %s', child.returncode)
+            failed += 1
+            continue
+        warmed += int(counts[-1][1])
+        failed += int(counts[-1][2])
+    return warmed, failed
 
 
 def _migrations_pending():
@@ -245,5 +280,8 @@ if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(levelname)s %(name)s: %(message)s')
     if PREPARE_FLAG in sys.argv[1:]:
         print(prepare(), flush=True)
+    elif SHARE_FLAG in sys.argv[1:]:
+        share, processes = map(int, sys.argv[sys.argv.index(SHARE_FLAG) + 1].split('/'))
+        print('share %d %d' % _warm_cases(share=(share, processes)), flush=True)
     else:
         warm_account_history(lock_held=CHILD_FLAG in sys.argv[1:])

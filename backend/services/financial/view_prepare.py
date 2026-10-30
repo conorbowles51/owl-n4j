@@ -62,7 +62,9 @@ def prepare_command(settings):
             '--property=User=' + settings['user'], '--property=Group=' + settings['group'],
             '--property=WorkingDirectory=' + settings['workingdirectory'],
             '--property=RuntimeMaxSec=%d' % PREPARE_CAP_SECONDS,
-            '--property=Nice=10', '--property=IOSchedulingClass=best-effort', '--property=IOSchedulingPriority=7']
+            '--property=Nice=10', '--property=IOSchedulingClass=best-effort', '--property=IOSchedulingPriority=7',
+            # Under memory pressure the kernel ends the prepare before a serving worker.
+            '--property=OOMScoreAdjust=500']
     argv += ['--property=EnvironmentFile=' + path for path in settings['environment_files']]
     # systemd splits an Environment= value on spaces: each assignment is passed quoted, as systemctl shows it.
     argv += ['--property=Environment=' + _quoted(assignment) for assignment in settings['environment']]

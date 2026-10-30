@@ -129,9 +129,9 @@ def test_prepare_warms_every_view_and_reports_it(periods, monkeypatch):
     add, calls, _ = periods
     add(uuid.uuid4(), 1)
     monkeypatch.setattr(view_warmup, '_migrations_pending', lambda: '')
-    summary = view_warmup.prepare()
+    summary = view_warmup.prepare(processes=1)
     assert len(calls) == 9
-    assert summary.startswith('prepare: 9 views warmed in ') and '(0 failed, code ' in summary
+    assert summary.startswith('prepare: 9 views warmed in ') and '(0 failed, 1 processes, code ' in summary
 
 
 @needs_pg
@@ -152,7 +152,7 @@ def test_prepare_does_not_wait_for_the_old_services_warm_up_but_for_another_prep
     with open(directory / 'warmup.lock', 'a') as old_service:
         fcntl.flock(old_service, fcntl.LOCK_EX)
         beside = []
-        runner = threading.Thread(target=lambda: beside.append(view_warmup.prepare()), daemon=True)
+        runner = threading.Thread(target=lambda: beside.append(view_warmup.prepare(processes=1)), daemon=True)
         runner.start()
         runner.join(30)
         assert beside and beside[0].startswith('prepare: 9 views warmed')
@@ -160,13 +160,43 @@ def test_prepare_does_not_wait_for_the_old_services_warm_up_but_for_another_prep
     held = open(directory / view_warmup.PREPARE_LOCK, 'a')
     fcntl.flock(held, fcntl.LOCK_EX)
     done = []
-    worker = threading.Thread(target=lambda: done.append(view_warmup.prepare()))
+    worker = threading.Thread(target=lambda: done.append(view_warmup.prepare(processes=1)))
     worker.start()
     worker.join(1.0)
     assert done == [] and calls == []
     held.close()
     worker.join(30)
     assert len(calls) == 9 and done[0].startswith('prepare: 9 views warmed')
+
+
+@needs_pg
+def test_split_shares_warm_every_view_exactly_once(periods):
+    add, calls, _ = periods
+    first, second = uuid.uuid4(), uuid.uuid4()
+    add(first, 2); add(second, 1)
+    totals = [view_warmup._warm_cases(share=(share, 3)) for share in range(3)]
+    assert sum(warmed for warmed, _ in totals) == 18
+    seen = sorted((str(call['case_id']), call.get('view') or 'history') for call in calls)
+    assert len(seen) == 18 and len(set(seen)) == 18
+
+
+def test_prepare_splits_over_child_processes_and_sums_them(monkeypatch, tmp_path):
+    import subprocess
+    monkeypatch.setenv('FINANCIAL_VIEW_MEMO_DIR', str(tmp_path))
+    monkeypatch.setattr(view_warmup, '_migrations_pending', lambda: '')
+    started = []
+
+    class Child:
+        def __init__(self, argv, **kw):
+            started.append(argv)
+            self.returncode = 0 if len(started) < 3 else 1
+
+        def communicate(self):
+            return ('INFO x\nshare 4 1\n' if self.returncode == 0 else ''), None
+    monkeypatch.setattr(subprocess, 'Popen', Child)
+    summary = view_warmup.prepare(processes=3)
+    assert [argv[-2:] for argv in started] == [[view_warmup.SHARE_FLAG, '%d/3' % k] for k in range(3)]
+    assert summary.startswith('prepare: 8 views warmed in ') and '(3 failed, 3 processes, code ' in summary
 
 
 def test_prepare_never_raises(monkeypatch, tmp_path):
