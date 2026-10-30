@@ -44,7 +44,7 @@ class LogStatisticsResponse(BaseModel):
 
 
 @router.get("", response_model=LogsResponse)
-async def get_logs(
+def get_logs(
     log_type: Optional[str] = Query(None, description="Filter by log type (comma-separated for multiple)"),
     origin: Optional[str] = Query(None, description="Filter by origin (comma-separated for multiple)"),
     start_time: Optional[str] = Query(None, description="Start time (ISO format)"),
@@ -124,7 +124,7 @@ async def get_logs(
 
 
 @router.get("/statistics", response_model=LogStatisticsResponse)
-async def get_log_statistics(current_user: dict = Depends(get_current_user)):
+def get_log_statistics(current_user: dict = Depends(get_current_user)):
     """
     Get log statistics.
     
@@ -139,7 +139,7 @@ async def get_log_statistics(current_user: dict = Depends(get_current_user)):
 
 
 @router.delete("")
-async def clear_logs(current_user: dict = Depends(get_current_user)):
+def clear_logs(current_user: dict = Depends(get_current_user)):
     """
     Clear all system logs.
     
