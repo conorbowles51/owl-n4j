@@ -237,3 +237,55 @@ it("corrects the account number to the printed one and shows the CLABE kept with
     account_number: "194-98075-001-8",
   })
 })
+
+it("shows a relayed confirmation as the person's, entered by someone else, beside every correction Claude made", async () => {
+  const origin = { kind: "model", model: "Claude", for: { name: "Neil Byrne" } }
+  const holder = {
+    id: "h1",
+    kind: "correction",
+    at: "2026-10-25T23:09:00Z",
+    reason: "Page 1 prints the holder",
+    actor_name: "Claude (for Neil Byrne)",
+    origin,
+    before: { holder: "LOMAS DE CHAPULTEPEC III SECCION", institution: "Kapital" },
+    after: { holder: "INGENIERIA APLICADA R2", institution: "Kapital" },
+    confirmed: {
+      by: "Neil Byrne",
+      at: "2026-10-29T23:31:41Z",
+      basis: "Approved by message; page 1 prints the holder.",
+      // The shape an earlier relay stored: who entered it, the message, when it was given.
+      relayed: { by: "Claude (fin-provenance job)", via: "coordinator message m1", at_given: "2026-10-29T05:45:00Z" },
+      later_relays: [
+        { by: "Claude", note: "Entered by Claude on Neil Byrne's instruction of 2026-10-30", at: "2026-10-30T17:00:00Z", basis: "Page 1 checked again." },
+      ],
+    },
+  }
+  const number = {
+    id: "n1",
+    kind: "correction",
+    at: "2026-10-30T02:47:00Z",
+    reason: "Page 1 prints the number",
+    actor_name: "Claude (for Neil Byrne)",
+    origin,
+    before: { holder: "INGENIERIA APLICADA R2", institution: "Kapital", account_number: "1281" },
+    after: { holder: "INGENIERIA APLICADA R2", institution: "Kapital", account_number: "194-98075-001-8" },
+  }
+  vi.mocked(fetchAPI).mockResolvedValue(state({ holder: "INGENIERIA APLICADA R2", history: [holder, number] }))
+  mount()
+  expect(
+    await screen.findByText(
+      "Confirmed by Neil Byrne · entered by Claude (fin-provenance job) on Neil Byrne's instruction, 29 Oct 2026: Approved by message; page 1 prints the holder."
+    )
+  ).toBeTruthy()
+  expect(screen.getByText(/How this confirmation was entered \(Neil Byrne did not press Confirm in Loupe\)/)).toBeTruthy()
+  expect(screen.getByText(/Entered by Claude \(fin-provenance job\) on 29 Oct 2026\. Instruction came by coordinator message m1, given 29 Oct 2026/)).toBeTruthy()
+  expect(screen.getByText(/Entered by Claude on 30 Oct 2026: Entered by Claude on Neil Byrne's instruction of 2026-10-30\. Page 1 checked again\./)).toBeTruthy()
+  // The later number correction is listed with its own status, and only it can still be confirmed.
+  const items = Array.from(screen.getByRole("list", { name: "Corrections Claude made" }).children)
+  expect(items.map((item) => item.textContent?.split(".")[0])).toEqual([
+    "Claude for Neil Byrne on 25 Oct 2026: holder LOMAS DE CHAPULTEPEC III SECCION → INGENIERIA APLICADA R2",
+    "Claude for Neil Byrne on 30 Oct 2026: account 1281 → 194-98075-001-8",
+  ])
+  expect(screen.getAllByText(/Corrected by Claude · not confirmed/)).toHaveLength(1)
+  expect(screen.getAllByRole("button", { name: /Confirm this correction/ })).toHaveLength(1)
+})

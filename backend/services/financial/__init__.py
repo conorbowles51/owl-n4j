@@ -2278,6 +2278,8 @@ from services.financial.model_work_migration import legacy_person, record_statem
 __all__ += ["legacy_person", "record_statement_calls"]
 from services.financial.model_reads import load_model_reads
 __all__ += ["load_model_reads"]
+from services.financial.relayed_confirmation import enter_relayed_confirmation
+__all__ += ["enter_relayed_confirmation"]
 from services.financial.account_details_correction import (
     AccountDetailsRequest, UndoAccountDetailsRequest, preview_account_details, save_account_details, undo_account_details,
 )
