@@ -112,7 +112,7 @@ def _handle_error(exc: Exception) -> None:
 
 
 @router.get("")
-async def get_timeline(
+def get_timeline(
     types: Optional[str] = Query(
         None,
         description="Comma-separated event types to include (e.g., 'Transaction,Payment')"
@@ -314,7 +314,7 @@ def export_case_timeline(
 
 
 @router.get("/types")
-async def get_event_types(_: User = Depends(get_current_db_user)):
+def get_event_types(_: User = Depends(get_current_db_user)):
     """
     Get available event types that can appear on the timeline.
     

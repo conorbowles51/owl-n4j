@@ -12,7 +12,7 @@ class TimelineRouterTests(unittest.IsolatedAsyncioTestCase):
             patch.object(timeline, "get_case_if_allowed") as check_access,
             patch.object(timeline.neo4j_service, "get_timeline_page", return_value=page) as get_page,
         ):
-            result = await timeline.get_timeline(
+            result = timeline.get_timeline(
                 types=None,
                 start_date=None,
                 end_date=None,
