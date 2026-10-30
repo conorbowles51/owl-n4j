@@ -199,3 +199,42 @@ it.each(["b".repeat(64), null])(
     })
   }
 )
+
+it("shows a viewer the account's holder, bank and number with who corrected them, read only", async () => {
+  const details = {
+    case_id: "case",
+    account_id: "acct",
+    holder: "INGENIERIA APLICADA R2",
+    institution: "Kapital",
+    account_number: "194-98075-001-8",
+    account_clabe: "128180000000238632",
+    currency: "MXN",
+    statements: [],
+    revision: "a".repeat(64),
+    history: [
+      {
+        id: "c1",
+        kind: "correction",
+        at: "2026-10-30T02:47:00Z",
+        reason: "Page 1 prints the number",
+        actor_name: "Claude (for Neil Byrne)",
+        origin: { kind: "model", model: "Claude", for: { name: "Neil Byrne" } },
+        before: { holder: "INGENIERIA APLICADA R2", institution: "Kapital", account_number: "128180000000238632" },
+        after: { holder: "INGENIERIA APLICADA R2", institution: "Kapital", account_number: "194-98075-001-8" },
+      },
+    ],
+  }
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (url) =>
+    new Response(JSON.stringify(String(url).includes("/accounts/acct/details") ? details : { ...answer, account_id: "acct" }))
+  )
+  render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <StatementSourceButton caseId="case" periodId="period" sourceDocumentId="document" />
+    </QueryClientProvider>
+  )
+  fireEvent.click(screen.getByRole("button", { name: "Inspect statement source" }))
+  const panel = await screen.findByRole("region", { name: "Account holder, bank and number" })
+  expect(panel).toHaveTextContent("INGENIERIA APLICADA R2 · Kapital · 194-98075-001-8 · CLABE 128180000000238632")
+  expect(panel).toHaveTextContent("Corrected by Claude · not confirmed.")
+  expect(screen.queryByRole("button", { name: /Confirm this correction|Undo this correction|Review/ })).toBeNull()
+})

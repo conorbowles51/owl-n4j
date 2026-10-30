@@ -1,5 +1,6 @@
 import { Disclosure } from "./Disclosure"
 import { ImportedStatementDetails } from "./ImportedStatementDetails"
+import { AccountDetailsCorrection } from "./AccountDetailsCorrection"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { SourceCustodyPanel } from "./SourceCustodyPanel"
 import { useRef, useState } from "react"
@@ -69,6 +70,7 @@ const source = z.object({
   limitation: z.string(),
   reviewed_controls: retainedControls.nullable().optional(),
   can_edit_import_details: z.boolean().default(false),
+  account_id: z.string().optional(),
 })
 export function StatementSourceButton({
   caseId,
@@ -171,12 +173,18 @@ export function StatementSourceButton({
                   freshly verify the file bytes or its financial readings.
                 </p>
               </Disclosure>
-              {canEdit && query.data.can_edit_import_details && (
+              {canEdit && query.data.can_edit_import_details ? (
                 <ImportedStatementDetails
                   caseId={caseId}
                   sourceId={sourceDocumentId}
                   withSource
                 />
+              ) : (
+                // Without editing access the account's holder, bank and number are still shown with who corrected
+                // them (Claude's corrections as Claude's, and any confirmation), read only.
+                query.data.account_id && (
+                  <AccountDetailsCorrection caseId={caseId} accountId={query.data.account_id} />
+                )
               )}
               {query.data.reviewed_controls && (
                 <section
