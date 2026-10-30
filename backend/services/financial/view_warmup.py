@@ -13,6 +13,7 @@ life (memory freed by Python stays with the process); the child's memory goes ba
 Each worker's first account history then reads the saved results.
 """
 import asyncio
+import functools
 import logging
 import os
 import time
@@ -41,7 +42,7 @@ async def _run_child():
     keyed on all three). Stopped with the worker; its exit status is logged, never raised."""
     from pathlib import Path
     backend = Path(__file__).resolve().parents[2]
-    child = await asyncio.create_subprocess_exec(*_child_command(), cwd=str(backend), preexec_fn=_end_with_parent)
+    child = await asyncio.create_subprocess_exec(*_child_command(), cwd=str(backend), preexec_fn=functools.partial(_end_with_parent, os.getpid()))
     try:
         code = await child.wait()
     except asyncio.CancelledError:
@@ -56,15 +57,27 @@ async def _run_child():
         logger.warning('Financial view warm-up process ended with status %s', code)
 
 
-def _end_with_parent():
+def _load_prctl():
+    import ctypes
+    try:
+        return ctypes.CDLL('libc.so.6', use_errno=True).prctl
+    except OSError:
+        return None
+
+
+# Resolved once in the worker: the child must not ask the loader for libc between fork and exec (another worker
+# thread may have held the loader's lock at the fork).
+_PRCTL = _load_prctl()
+
+
+def _end_with_parent(parent=None):
     """In the child before it starts: end it if the worker dies (a killed worker cannot terminate it, and its
     lock is gone, so a restarted worker would start a second warm-up beside it)."""
-    import ctypes
     import signal
-    try:
-        ctypes.CDLL('libc.so.6', use_errno=True).prctl(1, signal.SIGTERM)  # PR_SET_PDEATHSIG
-    except OSError:
-        pass
+    if _PRCTL is not None:
+        _PRCTL(1, signal.SIGTERM)  # PR_SET_PDEATHSIG
+    if parent is not None and os.getppid() != parent:
+        os._exit(0)  # the worker died before the signal was set
 
 
 def _child_command():
