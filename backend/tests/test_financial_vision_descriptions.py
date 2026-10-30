@@ -67,19 +67,22 @@ class CompletedTests(TestCase):
 class ReadLinesTests(TestCase):
     pages = [(2, [b'p2']), (3, [b'p3'])]
 
-    def test_two_reads_agreeing_complete_and_a_name_read_two_ways_stays_as_read(self):
-        answers = iter([answer(a=FULL, b=NEXT_FULL), answer(a=FULL, b=MISREAD)])
+    def test_reads_agreeing_complete_and_a_name_read_two_ways_stays_as_read(self):
+        import threading
+        answers, lock = [answer(a=FULL, b=NEXT_FULL)] * 3 + [answer(a=FULL, b=MISREAD)], threading.Lock()
         sent = []
 
         def read(shown, listed_rows):
-            sent.append(([number for number, _ in shown], [row['id'] for row in listed_rows]))
-            return next(answers), {'prompt_tokens': 10, 'completion_tokens': 5}
+            with lock:
+                sent.append(([number for number, _ in shown], [row['id'] for row in listed_rows]))
+                return answers.pop(), {'prompt_tokens': 10, 'completion_tokens': 5}
         record, found = vd.read_lines(read, self.pages, [dict(r, description=r['first_line']) for r in rows()])
+        self.assertEqual(vd.READS, 4)
         self.assertEqual(found, {'a': FULL})
         self.assertEqual(record['kept'], {'b': 'reads_differ'})
-        self.assertEqual(record['differ'], {'b': [NEXT_FULL, MISREAD]})
-        self.assertEqual(sent, [([2, 3], ['a', 'b'])] * 2, 'its page and the next one, read twice')
-        self.assertEqual(record['usage'], {'prompt_tokens': 20, 'completion_tokens': 10})
+        self.assertEqual(sorted(record['differ']['b']), sorted([NEXT_FULL] * 3 + [MISREAD]))
+        self.assertEqual(sent, [([2, 3], ['a', 'b'])] * 4, 'its page and the next one, read four times')
+        self.assertEqual(record['usage'], {'prompt_tokens': 40, 'completion_tokens': 20})
         self.assertEqual(record['first_lines'], {'a': FIRST})
 
     def test_a_failed_request_leaves_the_page_as_read(self):

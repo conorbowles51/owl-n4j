@@ -29,9 +29,11 @@ LINES = os.environ.get('LOUPE_FINANCIAL_VISION_DESCRIPTION_LINES', '1').strip().
 PROMPT_VERSION = 'statement-descriptions-v1'
 # A description longer than this is not a statement line's text (the reader ran on).
 MAX_CHARS = 600
-# Independent reads of each page that must give the same text, word for word, before a description is completed: one
-# read was measured to write a printed name in its more common spelling (BENGOCHEA as BENGOECHEA, DIC 2024 BBVA p3).
-READS = 2
+# Independent reads of each page that must give the same text, word for word, before a description is completed. One
+# read was measured to write a printed name in its more common spelling (BENGOCHEA as BENGOECHEA, DIC 2024 BBVA p3),
+# and two reads were measured to agree on a wrong reference (0212248 for the printed 02122248, same statement p2);
+# four agreeing reads gave 0 wrong of the 66 names read by hand from those page images (fin-parties 2026-10-30).
+READS = 4
 # One page's request is short (its payments' lines): a request running longer than this is dropped, retried once
 # when the connection or server failed. A request is not started when it could end after the caller's deadline.
 TIMEOUT_SECONDS = 300
@@ -189,21 +191,25 @@ def read_lines(read, pages, rows, reads=READS, deadline=None):
         if not shown or shown[0][0] != page:
             kept.update({row['id']: 'page_not_rendered' for row in on_page})
             continue
+        if deadline is not None and time.monotonic() + request_seconds() > deadline:
+            kept.update({row['id']: 'deferred' for row in on_page})
+            continue
+        # The page's reads are sent together (each independent of the others).
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=reads) as pool:
+            futures = [pool.submit(read, shown, on_page) for _ in range(reads)]
         answers = []
-        for _ in range(reads):
-            if deadline is not None and time.monotonic() + request_seconds() > deadline:
-                answers = None
-                kept.update({row['id']: 'deferred' for row in on_page})
-                break
+        for future in futures:
             try:
-                answer, used = read(shown, on_page)
+                answer, used = future.result()
             except Exception as error:  # noqa: BLE001 - this page's payments stay as read
                 _add(usage, getattr(error, 'usage', None))
                 errors.append(dict(page=page, error=type(error).__name__, message=str(error)[:200]))
                 answers = None
-                break
+                continue
             _add(usage, used)
-            answers.append(completed(on_page, answer))
+            if answers is not None:
+                answers.append(completed(on_page, answer))
         if answers is None:
             for row in on_page:
                 kept.setdefault(row['id'], 'request_failed')
