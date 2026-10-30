@@ -2,14 +2,20 @@
 
 CLAUDE.md "Tests" gives one ``pip install`` line instead of ``requirements.txt``
 (which pulls torch through ``openai-whisper``).  The line is a hand-kept copy, so
-it drifts: ``orjson`` became a load-time import of ``services.neo4j.graph_read_cache``
-and a fresh sandbox following the line could no longer import the suite.
+it drifts: a fresh venv built from it could not import ``config`` (python-dotenv),
+the auth chain (bcrypt, cryptography), or the test modules that use pytest,
+PyMuPDF and pypdf, and the suite reported those as dozens of import errors.
 
 Two invariants:
-- every pin on the line is the pin in ``requirements.txt`` (same package, same version);
-- the package surface (``routers`` and ``services.financial``, the import chain
-  every router-level test drags in) imports when every installed distribution
-  outside the line and its dependencies is refused, as in a fresh sandbox.
+- every pin on the line agrees with ``requirements.txt`` (the same pin, or inside its
+  range); a package ``requirements.txt`` does not name must be in ``TEST_ONLY``;
+- the package surface (``routers``, ``services.financial``) and every
+  ``test_financial_*`` module import when every installed distribution outside the
+  line and its dependencies is refused, as in a fresh sandbox.
+
+An import inside a function body (``fitz`` in the PDF tests) is not reached by
+importing the module, so this cannot see it; a full suite run in a fresh venv
+built from the line can.
 """
 from __future__ import annotations
 
@@ -21,10 +27,16 @@ import subprocess
 import sys
 import unittest
 
+from packaging.specifiers import SpecifierSet
+
 BACKEND = pathlib.Path(__file__).resolve().parents[1]
 CLAUDE_MD = BACKEND.parent / "CLAUDE.md"
 REQUIREMENTS = BACKEND / "requirements.txt"
 PIN = re.compile(r'"([A-Za-z0-9._-]+)(?:\[[^\]]*\])?==([^"]+)"')
+REQUIREMENT = re.compile(r"^([A-Za-z0-9._-]+)(?:\[[^\]]*\])?\s*(.*)$")
+
+# On the line but not in requirements.txt, with the reason.
+TEST_ONLY = {"pytest": "test runner; test modules import it, the app does not"}
 
 
 def _norm(name: str) -> str:
@@ -38,14 +50,14 @@ def _bootstrap_pins() -> dict[str, str]:
     return {_norm(name): version for name, version in PIN.findall(lines[0])}
 
 
-def _requirement_pins() -> dict[str, str]:
-    pins = {}
+def _requirement_specs() -> dict[str, str]:
+    specs = {}
     for line in REQUIREMENTS.read_text().splitlines():
         line = line.split("#", 1)[0].strip()
-        if "==" in line:
-            name, version = line.split("==", 1)
-            pins[_norm(name.split("[", 1)[0])] = version.strip()
-    return pins
+        match = REQUIREMENT.match(line)
+        if match:
+            specs[_norm(match.group(1))] = match.group(2).split(";", 1)[0].strip()
+    return specs
 
 
 def _with_dependencies(names: set[str]) -> set[str]:
@@ -69,21 +81,29 @@ def _with_dependencies(names: set[str]) -> set[str]:
 
 
 class BootstrapLineTests(unittest.TestCase):
-    def test_every_pin_matches_requirements(self):
-        requirements = _requirement_pins()
-        wrong = {name: (version, requirements.get(name))
-                 for name, version in _bootstrap_pins().items() if requirements.get(name) != version}
-        self.assertEqual(wrong, {}, "bootstrap pin -> (line version, requirements.txt version)")
+    def test_every_pin_agrees_with_requirements(self):
+        specs = _requirement_specs()
+        wrong = {}
+        for name, version in _bootstrap_pins().items():
+            if name in TEST_ONLY:
+                if name in specs:
+                    wrong[name] = (version, f"listed as test-only but requirements.txt has {specs[name]!r}")
+            elif name not in specs:
+                wrong[name] = (version, "not in requirements.txt")
+            elif version not in SpecifierSet(specs[name]):
+                wrong[name] = (version, specs[name])
+        self.assertEqual(wrong, {}, "bootstrap pin -> (line version, requirements.txt)")
 
-    def test_package_surface_imports_with_only_what_the_line_installs(self):
+    def test_suite_imports_with_only_what_the_line_installs(self):
         # A fresh sandbox has only the line and its dependencies. Simulate it: in a child interpreter,
-        # refuse every installed distribution outside that set, then import the surface the suite loads.
+        # refuse every installed distribution outside that set, then import what the suite imports.
         # Optional imports (chromadb, python-magic) degrade on ImportError exactly as they do there.
         covered = sorted(_with_dependencies(set(_bootstrap_pins())))
-        child = subprocess.run([sys.executable, "-c", _CHILD, json.dumps(covered)], cwd=BACKEND,
-                               capture_output=True, text=True, timeout=600)
-        refused = re.findall(r"BOOTSTRAP-REFUSED (\S+) \((.+?)\)", child.stderr)
-        self.assertEqual(child.returncode, 0, f"import failed; refused: {refused}\n{child.stderr[-2000:]}")
+        modules = sorted(f"tests.{path.stem}" for path in (BACKEND / "tests").glob("test_financial_*.py"))
+        child = subprocess.run([sys.executable, "-c", _CHILD, json.dumps(covered), json.dumps(modules)],
+                               cwd=BACKEND, capture_output=True, text=True, timeout=900)
+        failed = re.findall(r"^BOOTSTRAP-FAILED (.+)$", child.stderr, re.M)
+        self.assertEqual((child.returncode, failed), (0, []), child.stderr[-3000:])
 
 
 _CHILD = """
@@ -96,14 +116,16 @@ class Refuse(importlib.abc.MetaPathFinder):
     def find_spec(self, name, path=None, target=None):
         if "." in name or name in sys.stdlib_module_names or name not in dists_of:
             return None
-        dists = {norm(d) for d in dists_of[name]}
-        if dists & covered:
+        if {norm(d) for d in dists_of[name]} & covered:
             return None
-        print(f"BOOTSTRAP-REFUSED {name} ({', '.join(sorted(dists))})", file=sys.stderr)
-        raise ModuleNotFoundError(f"No module named {name!r}", name=name)
+        raise ModuleNotFoundError(f"No module named {name!r} (not installed by the bootstrap line)", name=name)
 
 sys.meta_path.insert(0, Refuse())
-import routers, services.financial
+for module in ["routers", "services.financial"] + json.loads(sys.argv[2]):
+    try:
+        importlib.import_module(module)
+    except ImportError as error:
+        print(f"BOOTSTRAP-FAILED {module}: {error}", file=sys.stderr)
 """
 
 
