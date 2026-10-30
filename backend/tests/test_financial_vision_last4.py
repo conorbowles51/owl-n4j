@@ -590,5 +590,24 @@ class LastFourFlowTest(unittest.TestCase):
         with self.f.SessionLocal() as db:
             self.assertEqual(vr.pending(db), [other])  # not due: listed in its turn only
 
+    def test_a_statement_waiting_on_its_card_follows_the_other_statements_due_again(self):
+        # It may wait long (its card's statement waits to be imported): it does not head every round.
+        from datetime import datetime, timezone
+        from postgres.models.financial_import_batches import FinancialImportBatchItem as Item
+        self.read(numbers={'99990123'})
+        waiting, _ = self.sibling(period_start='2020-01-01', record=dict(
+            version=vr.VERSION, proof=vr.PROOF_VERSION, status='not_proved', waiting=True, pages_rule=vr.PAGES_RULE,
+            message='waits', raw={}))
+        fresh, _ = self.sibling(period_start='2019-01-01')
+        with self.f.SessionLocal() as db:
+            db.get(Item, waiting).updated_at = datetime(2000, 1, 1, tzinfo=timezone.utc)
+            db.get(Item, fresh).updated_at = datetime(1999, 1, 1, tzinfo=timezone.utc)
+            db.get(Item, self.held.id).updated_at = datetime.now(timezone.utc)
+            db.commit()
+        same = CaseKnowledge(accounts=[_known(account='****0123', holder='ERICA HOPPER', institution='Synthetic Bank',
+                                              currency='EUR')])
+        with self.f.SessionLocal() as db, patch('services.financial.field_proposals.case_knowledge', lambda *a, **k: same):
+            self.assertEqual(vr.pending(db)[:3], [self.held.id, waiting, fresh])
+
 if __name__ == '__main__':
     unittest.main()

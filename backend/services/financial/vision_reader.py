@@ -3742,7 +3742,10 @@ def saved_image_request(db, document, statement_id, proposal):
 # ---------------------------------------------------------------------------
 
 def pending(db, limit=50):
-    """Held, untouched statements of prepared files (batch entry ``MARK``, or finished preparing)."""
+    """Held, untouched statements of prepared files (batch entry ``MARK``, or finished preparing).
+
+    Order: statements due to be judged again (due_again) first, those waiting on another statement of their card
+    after the other due ones (they may wait long), then the rest; each part oldest first."""
     from postgres.models.evidence import EvidenceFile
     from postgres.models.financial_import_batches import (FinancialImportBatch as Batch,
                                                           FinancialImportBatchItem as Item)
@@ -3775,7 +3778,7 @@ def pending(db, limit=50):
         if case_id not in knowledge:
             knowledge[case_id] = case_knowledge(db, case_id)
         return knowledge[case_id]
-    found, due_first = [], []
+    found, due_first, due_waiting = [], [], []
     for item_id, batch_id, file_id, key, draft, metadata in db.execute(
             select(Item.id, Item.batch_id, Item.file_id, Item.statement_key, Item.review_request, EvidenceFile.metadata_)
             .join(EvidenceFile, EvidenceFile.id == Item.file_id)
@@ -3794,10 +3797,10 @@ def pending(db, limit=50):
             continue
         # Due again (judged anew from its stored reading, nothing requested) goes first: a round's time is
         # spent on the statements listed ahead, and those come back every round after a restart.
-        (due_first if due else found).append(item_id)
+        (found if not due else due_waiting if stored.get('waiting') else due_first).append(item_id)
         if len(due_first) >= limit:
             break
-    return (due_first + found)[:limit]
+    return (due_first + due_waiting + found)[:limit]
 
 
 _skip_until = {}
