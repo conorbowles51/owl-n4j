@@ -161,11 +161,32 @@ _DIRECTED = re.compile(r'\b(?:TO|FROM|FOR|BY|PAY|PAID|PAYEE|PARA|FAVOR|BENEFICIA
 
 # A labelled name field (BENEFICIARIO JUAN PEREZ, DEL CLIENTE ACME): a name is printed, whatever the layout.
 _LABELLED = re.compile(r'\b(?:BENEF\w*|ORDENANTE|CLIENTE|A FAVOR DE|DESTINATARIO|NOMBRE|PAGO A|PARA|PAYEE|NAME|PAID TO|PAY TO|TO|FROM)\b\s*:?\s*([A-Z]{2,})')
+# Labels that only ever introduce the other side's name: the whole run of words after one is read (a name may begin
+# with a layout word: BENEFICIARIO CREDITO REAL). After PAGO A, PARA, CLIENTE, TO, FROM the layouts print an account
+# nickname or a concept (PAGO A CTA PLATAFORMA, PAGO A CTA OC 054: 10 BNB2 payments, 2026-10-30), so only the first
+# word counts there, as before.
+_NAME_LABEL = re.compile(r'\b(?:BENEF\w*|ORDENANTE|A FAVOR DE|DESTINATARIO|NOMBRE|PAYEE|PAID TO|PAY TO|NAME)\b\s*:?')
+LABELLED_WORDS = 5
+
+
+def _named_after(text):
+    """The whole words after a name label, up to the first token holding a digit or a bank reference code."""
+    words = []
+    for token in text.split()[:LABELLED_WORDS]:
+        token = token.strip(".,:;'&-")
+        if not token.isalpha() or token in _REFERENCE_CODES or any(code in token for code in ('BMRCASH', 'REFBNTC')):
+            break
+        words.append(token)
+    return words
 
 
 def _labelled(text):
-    """True when a name label (BENEFICIARIO, PAGO A, PARA ..) is followed by a word that is not the layout's own."""
-    return any(match[1] not in _LAYOUT_WORDS for match in _LABELLED.finditer(text))
+    """True when a name label (BENEFICIARIO, PAGO A, PARA ..) is followed by a word that is not the layout's own;
+    after a label that only introduces a name, any of the words that follow it."""
+    if any(match[1] not in _LAYOUT_WORDS for match in _LABELLED.finditer(text)):
+        return True
+    return any(len(w) >= 2 and w not in _LAYOUT_WORDS
+               for match in _NAME_LABEL.finditer(text) for w in _named_after(text[match.end():]))
 
 
 def _only_layout_words(text):
