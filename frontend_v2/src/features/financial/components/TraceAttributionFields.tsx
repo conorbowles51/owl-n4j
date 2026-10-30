@@ -14,10 +14,16 @@ export function TraceAttributionFields({
   currency: string
   credits: { id: string; label: string }[]
   value: DraftAttribution[]
-  onChange: (value: DraftAttribution[]) => void
+  // An edit is applied to the latest stored list, never to the list of the
+  // last render, so edits made before a re-render cannot undo each other.
+  onChange: (
+    update: (current: DraftAttribution[]) => DraftAttribution[]
+  ) => void
 }) {
   const change = (index: number, field: keyof DraftAttribution, text: string) =>
-    onChange(value.map((a, i) => (i === index ? { ...a, [field]: text } : a)))
+    onChange((current) =>
+      current.map((a, i) => (i === index ? { ...a, [field]: text } : a))
+    )
   return (
     <>
       <p>
@@ -97,7 +103,9 @@ export function TraceAttributionFields({
             <Button
               type="button"
               variant="outline"
-              onClick={() => onChange(value.filter((_, index) => index !== i))}
+              onClick={() =>
+                onChange((current) => current.filter((_, index) => index !== i))
+              }
             >
               Remove attribution {i + 1}
             </Button>
@@ -109,8 +117,8 @@ export function TraceAttributionFields({
         variant="outline"
         disabled={value.length >= 50}
         onClick={() =>
-          onChange([
-            ...value,
+          onChange((current) => [
+            ...current,
             { transaction_id: "", claim_id: "", amount_input: "", basis: "" },
           ])
         }

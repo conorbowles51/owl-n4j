@@ -8,7 +8,9 @@ export function TraceAssetFields({
   receipts = [],
 }: {
   value: TraceAssetUse[]
-  onChange: (value: TraceAssetUse[]) => void
+  // An edit is applied to the latest stored list, never to the list of the
+  // last render, so edits made before a re-render cannot undo each other.
+  onChange: (update: (current: TraceAssetUse[]) => TraceAssetUse[]) => void
   withdrawals: Array<{ id: string; label: string }>
   receipts?: Array<{ id: string; label: string }>
 }) {
@@ -32,10 +34,10 @@ export function TraceAssetFields({
               required
               className="block max-w-full border bg-background p-2"
               value={use.transaction_id}
-              onChange={(e) =>
-                onChange(
-                  value.map((v, n) =>
-                    n === i ? { ...v, transaction_id: e.target.value } : v
+              onChange={({ target: { value: text } }) =>
+                onChange((current) =>
+                  current.map((v, n) =>
+                    n === i ? { ...v, transaction_id: text } : v
                   )
                 )
               }
@@ -53,13 +55,13 @@ export function TraceAssetFields({
               type="checkbox"
               aria-label={`Use a proportional part of withdrawal ${i + 1}`}
               checked={use.asset_amount_input !== undefined}
-              onChange={(e) =>
-                onChange(
-                  value.map((v, n) =>
+              onChange={({ target: { checked } }) =>
+                onChange((current) =>
+                  current.map((v, n) =>
                     n === i
                       ? {
                           ...v,
-                          asset_amount_input: e.target.checked ? "" : undefined,
+                          asset_amount_input: checked ? "" : undefined,
                         }
                       : v
                   )
@@ -77,10 +79,10 @@ export function TraceAssetFields({
                 inputMode="decimal"
                 className="block w-full border bg-background p-2"
                 value={use.asset_amount_input}
-                onChange={(e) =>
-                  onChange(
-                    value.map((v, n) =>
-                      n === i ? { ...v, asset_amount_input: e.target.value } : v
+                onChange={({ target: { value: text } }) =>
+                  onChange((current) =>
+                    current.map((v, n) =>
+                      n === i ? { ...v, asset_amount_input: text } : v
                     )
                   )
                 }
@@ -100,10 +102,10 @@ export function TraceAssetFields({
               maxLength={256}
               className="block w-full border bg-background p-2"
               value={use.asset_label}
-              onChange={(e) =>
-                onChange(
-                  value.map((v, n) =>
-                    n === i ? { ...v, asset_label: e.target.value } : v
+              onChange={({ target: { value: text } }) =>
+                onChange((current) =>
+                  current.map((v, n) =>
+                    n === i ? { ...v, asset_label: text } : v
                   )
                 )
               }
@@ -117,11 +119,9 @@ export function TraceAssetFields({
               maxLength={4096}
               className="block w-full border bg-background p-2"
               value={use.basis}
-              onChange={(e) =>
-                onChange(
-                  value.map((v, n) =>
-                    n === i ? { ...v, basis: e.target.value } : v
-                  )
+              onChange={({ target: { value: text } }) =>
+                onChange((current) =>
+                  current.map((v, n) => (n === i ? { ...v, basis: text } : v))
                 )
               }
             />
@@ -131,13 +131,13 @@ export function TraceAssetFields({
               type="checkbox"
               aria-label={`Interpret full resale ${i + 1}`}
               checked={!!use.resale}
-              onChange={(e) =>
-                onChange(
-                  value.map((v, n) =>
+              onChange={({ target: { checked } }) =>
+                onChange((current) =>
+                  current.map((v, n) =>
                     n === i
                       ? {
                           ...v,
-                          resale: e.target.checked
+                          resale: checked
                             ? {
                                 transaction_id: "",
                                 proceeds_input: "",
@@ -170,15 +170,15 @@ export function TraceAssetFields({
                   required
                   className="block max-w-full border bg-background p-2"
                   value={use.resale.transaction_id}
-                  onChange={(e) =>
-                    onChange(
-                      value.map((v, n) =>
+                  onChange={({ target: { value: text } }) =>
+                    onChange((current) =>
+                      current.map((v, n) =>
                         n === i
                           ? {
                               ...v,
                               resale: {
                                 ...v.resale!,
-                                transaction_id: e.target.value,
+                                transaction_id: text,
                               },
                             }
                           : v
@@ -202,15 +202,15 @@ export function TraceAssetFields({
                   inputMode="decimal"
                   className="block w-full border bg-background p-2"
                   value={use.resale.proceeds_input}
-                  onChange={(e) =>
-                    onChange(
-                      value.map((v, n) =>
+                  onChange={({ target: { value: text } }) =>
+                    onChange((current) =>
+                      current.map((v, n) =>
                         n === i
                           ? {
                               ...v,
                               resale: {
                                 ...v.resale!,
-                                proceeds_input: e.target.value,
+                                proceeds_input: text,
                               },
                             }
                           : v
@@ -227,13 +227,13 @@ export function TraceAssetFields({
                   maxLength={4096}
                   className="block w-full border bg-background p-2"
                   value={use.resale.basis}
-                  onChange={(e) =>
-                    onChange(
-                      value.map((v, n) =>
+                  onChange={({ target: { value: text } }) =>
+                    onChange((current) =>
+                      current.map((v, n) =>
                         n === i
                           ? {
                               ...v,
-                              resale: { ...v.resale!, basis: e.target.value },
+                              resale: { ...v.resale!, basis: text },
                             }
                           : v
                       )
@@ -246,7 +246,9 @@ export function TraceAssetFields({
           <Button
             type="button"
             variant="outline"
-            onClick={() => onChange(value.filter((_, n) => n !== i))}
+            onClick={() =>
+              onChange((current) => current.filter((_, n) => n !== i))
+            }
           >
             Remove asset interpretation {i + 1}
           </Button>
@@ -257,8 +259,8 @@ export function TraceAssetFields({
         variant="outline"
         disabled={value.length >= 50 || !withdrawals.length}
         onClick={() =>
-          onChange([
-            ...value,
+          onChange((current) => [
+            ...current,
             { transaction_id: "", asset_label: "", basis: "" },
           ])
         }
