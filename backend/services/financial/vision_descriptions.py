@@ -34,6 +34,10 @@ MAX_CHARS = 600
 # and two reads were measured to agree on a wrong reference (0212248 for the printed 02122248, same statement p2);
 # four agreeing reads gave 0 wrong of the 66 names read by hand from those page images (fin-parties 2026-10-30).
 READS = 4
+# Each page is sent in this many overlapping strips: narrower strips are read with fewer dropped characters in long
+# digit runs (measured on 4 pages of the BBVA and Santander statements: 6 strips 3 wrong of 43 completed, 12 strips 1
+# of 41). The money reading keeps its own strips.
+STRIPS = 12
 # One page's request is short (its payments' lines): a request running longer than this is dropped, retried once
 # when the connection or server failed. A request is not started when it could end after the caller's deadline.
 TIMEOUT_SECONDS = 300
@@ -341,7 +345,7 @@ def read_saved_lines(factory, document_id, resolve_path, *, request_for=None):
     with fitz.open(str(path)) as pdf:
         file_pages = pdf.page_count
     pages = sorted({p for item in items for p in (item['page'], item['page'] + 1) if 1 <= p <= file_pages})
-    images = vr.render_pages(path, pages, strips=(vr.READER_SETTINGS.get(provider) or {}).get('strips'))
+    images = vr.render_pages(path, pages, strips=STRIPS)
     shown = dict(images)
     # The most it can cost: each page's requests (its page and the next one) at the reader's output cap.
     reserved = READS * sum(vr.reserve_usd(model, [(p, shown[p]) for p in (page, page + 1) if p in shown], None)
@@ -404,7 +408,7 @@ def complete_request(factory, case_id, path, request, *, request_for=None, deadl
     with fitz.open(str(path)) as pdf:
         last = pdf.page_count
     pages = sorted({p for item in items for p in (item['page'], item['page'] + 1) if 1 <= p <= last})
-    images = vr.render_pages(path, pages, strips=(vr.READER_SETTINGS.get(provider) or {}).get('strips'))
+    images = vr.render_pages(path, pages, strips=STRIPS)
     shown = dict(images)
     reserved = READS * sum(vr.reserve_usd(model, [(p, shown[p]) for p in (page, page + 1) if p in shown], None)
                            for page in sorted({item['page'] for item in items}))
