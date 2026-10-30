@@ -13,6 +13,7 @@ from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
 
 from services.agent.cypher_safety import UnsafeCypherError, repair_common_cypher, run_readonly_cypher
+from services.agent.citations import link_document_citations
 from services.agent.json_utils import sanitize_text, to_jsonable, truncate_payload, truncate_text
 from services.neo4j.driver import driver
 from services.neo4j.financial_service import financial_service
@@ -744,7 +745,7 @@ def _normalize_report_sections(
             {
                 "id": section_id,
                 "heading": truncate_text(section.heading, 160),
-                "content": truncate_text(section.content, 12000),
+                "content": link_document_citations(truncate_text(section.content, 12000)),
                 "level": max(1, min(int(section.level or 2), 3)),
                 "embeds": section_embeds,
             }
@@ -1920,6 +1921,8 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         keys = set(entity_keys or [])
         if keys:
             locations = [location for location in locations if location.get("key") in keys]
+        # A stable order, so pages by offset neither skip nor repeat a place.
+        locations = sorted(locations, key=lambda location: str(location.get("key") or ""))
         total = len(locations)
         page = locations[offset:offset + limit]
         more = offset + len(page) < total

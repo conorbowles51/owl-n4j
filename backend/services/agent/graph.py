@@ -14,6 +14,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph, add_messages
 
 from config import ANTHROPIC_API_KEY, DEEPSEEK_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY
+from services.agent.citations import link_document_citations
 from services.agent.json_utils import to_jsonable, truncate_payload, truncate_text
 from services.agent.model_payloads import (
     context_window_for,
@@ -667,7 +668,7 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
                     "final_answer": "",
                 }
             if not _used_tools(state) and isinstance(last_message, AIMessage) and not tool_calls and last_message.content:
-                return {"final_answer": message_content_to_text(last_message.content)}
+                return {"final_answer": link_document_citations(message_content_to_text(last_message.content))}
 
             final_messages = _messages_for_finalizer(state)
             response = self.base_model.invoke(
@@ -676,7 +677,7 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
                     *final_messages,
                 ]
             )
-            return {"messages": [response], "final_answer": message_content_to_text(response.content)}
+            return {"messages": [response], "final_answer": link_document_citations(message_content_to_text(response.content))}
 
         workflow = StateGraph(AgentState)
         workflow.add_node("agent", agent_node)
@@ -919,7 +920,7 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
                     "final_answer": "",
                 }
             if not _used_tools(state) and isinstance(last_message, AIMessage) and not tool_calls and last_message.content:
-                return {"final_answer": message_content_to_text(last_message.content)}
+                return {"final_answer": link_document_citations(message_content_to_text(last_message.content))}
 
             final_messages = _messages_for_finalizer(state)
             response = self.base_model.invoke(
@@ -928,7 +929,7 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
                     *final_messages,
                 ]
             )
-            return {"messages": [response], "final_answer": message_content_to_text(response.content)}
+            return {"messages": [response], "final_answer": link_document_citations(message_content_to_text(response.content))}
 
         workflow = StateGraph(AgentState)
         workflow.add_node("agent", agent_node)

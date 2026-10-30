@@ -484,3 +484,30 @@ class CorrectedRowProvenanceTests(unittest.TestCase):
             self.assertEqual(sum(int(t['credits_minor']) + int(t['debits_minor']) for t in totals.values()), 12345)
         finally:
             fixture.tearDown()
+
+    def test_a_correction_names_its_corrector_and_a_model_correction_is_the_models(self):
+        from tests.test_financial_payment_edits import PaymentEditTests
+        from postgres.models.financial import AdjudicationEvent
+        from services.financial.model_work import model_origin, model_name
+        fixture = PaymentEditTests()
+        fixture.setUp()
+        try:
+            fixture.save(fixture.request(ids=fixture.ids[:1], amount='123.45', category='Reviewed travel'))
+            fixture.f.db.expire_all()
+            read = lambda: read_financial_ledger(fixture.f.db, case_id=fixture.f.case.id,
+                filters={'category': 'Reviewed travel'})['items'][0]['provenance']
+            person = read()
+            self.assertEqual(person['origin'], 'person')
+            self.assertTrue(person['correction']['corrected_by']['name'])
+            self.assertIn('original_reading_origin', person['correction'])
+            # The same correction recorded as Claude's, for a person: the row is the model's, not a person's.
+            origin = model_origin(for_name='Jobs Reviewer')
+            for event in fixture.f.db.query(AdjudicationEvent).filter_by(decision='correct_transaction'):
+                event.actor_name, event.actor_origin = model_name(origin), origin
+            fixture.f.db.commit()
+            model = read()
+            self.assertEqual((model['origin'], model['confirmation']), ('model', 'model_not_confirmed'))
+            self.assertIn('not a person', model['origin_text'])
+        finally:
+            fixture.tearDown()
+

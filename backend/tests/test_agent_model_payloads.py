@@ -162,3 +162,20 @@ class MapTotalTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RecordAndCitationTests(unittest.TestCase):
+    def test_a_tools_data_record_is_never_cut_by_key(self):
+        data = {"nodes": [{"key": f"n{i}", "t": "z" * 300} for i in range(60)],
+                "links": [{"source": f"n{i}", "target": f"n{i + 1}"} for i in range(59)]}
+        page = tool_message_payload(result_id="r", summary="", data=data, budget_chars=MIN_MESSAGE_CHARS)
+        self.assertEqual(set(page["data"]), {"nodes", "links"})
+        self.assertTrue(all(note["path"][0] == "data" and len(note["path"]) == 2 for note in page["_paging"]))
+
+    def test_document_citations_with_spaces_become_links(self):
+        from services.agent.citations import link_document_citations
+        text = ("See [March statement.pdf, p.4](doc://March statement.pdf/4) and [Ledger.pdf](doc://Ledger.pdf) "
+                "and [Already.pdf, p.2](doc://Already%20done.pdf/2).")
+        self.assertEqual(link_document_citations(text),
+            "See [March statement.pdf, p.4](doc://March%20statement.pdf/4) and [Ledger.pdf](doc://Ledger.pdf) "
+            "and [Already.pdf, p.2](doc://Already%20done.pdf/2).")

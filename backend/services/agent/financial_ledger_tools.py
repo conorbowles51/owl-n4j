@@ -278,6 +278,24 @@ def _row_judgements(index, row):
         resolved=sum(c['status'] != 'open' for c in calls), calls=calls)
 
 
+def _correctors(session, case_id, readings):
+    """Who made each correction on these rows: {replacement row id: adjudication actor}, from the correction's own
+    adjudication record (services.financial.corrections records it with the actor and any model origin)."""
+    from postgres.models.financial import AdjudicationEvent
+    previous = {str((r.get('provenance') or {})['correction']['previous_transaction_id']): r['row']['key']
+        for r in readings if ((r.get('provenance') or {}).get('correction') or {}).get('previous_transaction_id')}
+    found, ids = {}, sorted(previous)
+    for start in range(0, len(ids), 5000):
+        for event in session.scalars(select(AdjudicationEvent).where(AdjudicationEvent.case_id == case_id,
+                AdjudicationEvent.decision == 'correct_transaction',
+                AdjudicationEvent.subject_id.in_([_uuid(i) for i in ids[start:start + 5000]]))):
+            replacement = str((event.after or {}).get('replacement_id') or '')
+            if replacement and replacement == previous.get(str(event.subject_id)):
+                found[replacement] = dict(name=event.actor_name, origin=event.actor_origin or None,
+                    reason=event.reason, at=event.created_at.isoformat() if event.created_at else None)
+    return found
+
+
 def _correction(reading, by_id, load_row):
     """A corrected payment: the reading it replaced (first and immediately previous), beside the corrected values
     that the ledger uses. None for a payment never corrected."""
@@ -295,7 +313,8 @@ def _correction(reading, by_id, load_row):
     if not chain:
         return None
     row = reading['row']
-    original = chain[-1]
+    readable = [entry for entry in chain if entry.get('available')]
+    original = readable[-1] if readable else chain[-1]
     changed = [key for key in CORRECTED_FIELDS if original.get('available') and original.get(key) != row.get(key)]
     return dict(corrected=True, uses='corrected', versions_replaced=len(chain), changed_fields=changed,
         original=original, previous=chain[0] if len(chain) > 1 else None,
@@ -319,7 +338,7 @@ def _names(row):
     return model_read, person_set
 
 
-def _row_provenance(reading, judgements, by_id, load_row):
+def _row_provenance(reading, judgements, by_id, load_row, correctors=None):
     """Who the row's reading comes from, its confirmation state, proof class, judgement calls and corrections. Reads
     the ledger's own fields (ledger_summary: model_work, provenance.confirmed_by, provenance.correction) and the
     judgement calls' row map; nothing is inferred a second way."""
@@ -342,9 +361,31 @@ def _row_provenance(reading, judgements, by_id, load_row):
         out = dict(origin='processor', confirmation='processor_reading',
             origin_text='Printed on the statement and read by the processor.')
     model_read, person_set = _names(row)
+    calls = _row_judgements(judgements, row)
+    correction = _correction(reading, by_id, load_row)
+    if correction is not None:
+        # The values the ledger uses are the corrector's: the row's origin follows whoever made the correction,
+        # and the reading it replaced keeps its own origin beside it.
+        corrector = (correctors or {}).get(row['key'])
+        correction['original_reading_origin'] = dict(out)
+        correction['corrected_by'] = corrector
+        if corrector is None:
+            out = dict(origin='unknown', confirmation='corrector_not_recorded',
+                origin_text='Corrected after the original reading; who made the correction could not be read.')
+        elif isinstance(corrector.get('origin'), dict) and corrector['origin'].get('kind') == 'model':
+            origin = corrector['origin']
+            model, person = origin.get('model') or 'a model', (origin.get('for') or {}).get('name') or 'a person'
+            resolved = [c['status'] for c in calls['calls'] if c['rule_id'] == 'agent.correction' and c['status'] != 'open']
+            status = resolved[0] if resolved else 'not_confirmed'
+            out = dict(origin='model', confirmation=f'model_{status}', model=model, saved_for=person,
+                model_id=origin.get('model_id'), saved_at=corrector.get('at'), citation=origin.get('citation'),
+                origin_text=f'Corrected by {model} for {person}: a model correction, not a person\'s. '
+                    + ('No person has confirmed it.' if status == 'not_confirmed' else f'A person has {status} it.'))
+        else:
+            out = dict(origin='person', confirmation='person_saved', saved_by=corrector.get('name'),
+                origin_text=f"Corrected by a person ({corrector.get('name') or 'name not recorded'}).")
     out.update(proof_class=row.get('proof_class'), source_proof_class=(reading.get('source') or {}).get('proof_class'),
-        judgement_calls=_row_judgements(judgements, row), correction=_correction(reading, by_id, load_row),
-        model_read_names=model_read, person_set_names=person_set)
+        judgement_calls=calls, correction=correction, model_read_names=model_read, person_set_names=person_set)
     return out
 
 
@@ -491,8 +532,9 @@ def read_financial_ledger(session, *, case_id, account_ids=None, account_holders
         account['matching_payments_for_canonical_account'] = counts[account['canonical_account_id']]
     scope_coverage['registered_accounts_without_matching_payments'] = len({
         a['canonical_account_id'] for a in context if not counts[a['canonical_account_id']]})
-    judgements = None
+    judgements, correctors = None, {}
     if view in ('transactions', 'excluded'):
+        correctors = _correctors(session, case_id, ledger['readings'])
         judgements = _judgement_index(session, case_id)
         if judgements is not None:
             judgements['by_id'] = {item['id']: item for item in judgements['judgements']}
@@ -513,7 +555,7 @@ def read_financial_ledger(session, *, case_id, account_ids=None, account_holders
         return dict(**row, transaction_id=row['key'], source=source,
             currency_exponent=_currency_exponent(row['currency']),
             included_in_totals=eligible(reading), exclusion_reason=None if eligible(reading) else reading['exclusion_reason'],
-            provenance=_row_provenance(reading, judgements, by_id, load_row),
+            provenance=_row_provenance(reading, judgements, by_id, load_row, correctors),
             financial_href=f'/cases/{case_id}/financial?view=transactions&payment={row["key"]}')
     if view == 'groups':
         items = _totals(matching, group_by)

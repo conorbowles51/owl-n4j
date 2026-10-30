@@ -47,7 +47,7 @@ def _pageable(value):
     with fields of different kinds is a record (a result envelope with its totals): never cut."""
     if isinstance(value, list):
         return True
-    if not isinstance(value, dict) or len(value) < 2:
+    if not isinstance(value, dict) or len(value) < 3:
         return False
     kinds = {type(item) for item in value.values()}
     return len(kinds) == 1 and kinds <= {dict, list, int, float}
@@ -56,7 +56,9 @@ def _pageable(value):
 def _sequences(value, path=()):
     """Every list and uniform mapping in a payload with its path."""
     found = []
-    if path and _pageable(value):
+    # The top of a tool's data or artifact is its record: never cut by key (its lists still page).
+    record = isinstance(value, dict) and path in (("data",), ("artifact",))
+    if path and not record and _pageable(value):
         found.append((path, value))
     children = value.items() if isinstance(value, dict) else enumerate(value) if isinstance(value, list) else ()
     for key, child in children:
