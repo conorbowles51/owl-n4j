@@ -133,7 +133,7 @@ class ExtractNodesResponse(BaseModel):
 
 
 @router.post("", response_model=ChatResponse)
-async def chat(
+def chat(
     request: ChatRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
@@ -476,7 +476,7 @@ def get_suggestions(
 
 
 @router.post("/extract-nodes", response_model=ExtractNodesResponse)
-async def extract_nodes_from_answer(
+def extract_nodes_from_answer(
     request: ExtractNodesRequest,
     current_user: User = Depends(get_current_db_user),
 ):

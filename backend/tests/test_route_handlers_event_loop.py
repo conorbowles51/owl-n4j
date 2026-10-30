@@ -10,8 +10,6 @@ BACKEND = pathlib.Path(__file__).resolve().parents[1]
 
 NOT_YET_CONVERTED = {
     'routers/auth.py:change_password',
-    'routers/chat.py:chat',
-    'routers/chat.py:extract_nodes_from_answer',
     'routers/query.py:execute_cypher',
     'routers/timeline.py:get_timeline',
     'routers/timeline.py:get_event_types',
