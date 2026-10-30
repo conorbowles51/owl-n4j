@@ -199,3 +199,57 @@ it("shows every holder name an account is printed under, with its statements, as
   expect(screen.getByText("Printed holder: ERICA HOPPER")).toBeTruthy()
   expect(screen.getByText("Printed holder: ERICA MCCAULEY")).toBeTruthy()
 })
+
+it("keeps each printed spelling visible under the decided name and says which merged decision applies", async () => {
+  await page.viewport(1280, 1000)
+  useInvestigationScopeStore.getState().reset()
+  vi.mocked(fetchAPI).mockImplementation(async (url) => {
+    if (!String(url).includes("account-history")) return { items: [], total: 0 }
+    return {
+      case_id: "synthetic",
+      applied: false,
+      groups: [
+        {
+          key: "card:USD:liability",
+          account_id: "card",
+          currency: "USD",
+          balance_kind: "liability",
+          label: "ERICA MCCAULEY · Capital One · ****8160",
+          printed_holders: [
+            { name: "ERICA MCCAULEY", statements: 1, first: "2021-12-11", last: "2022-01-10",
+              printed: [{ name: "ERICA MCCAULEY", statements: 1 }] },
+            { name: "ERICA HOPPER", statements: 2, first: "2022-01-11", last: "2022-03-07",
+              printed: [{ name: "ERICA HOPPER", statements: 1 }, { name: "Erica Hopper", statements: 1 }] },
+          ],
+          printed_holders_decision: {
+            decision_id: "d2", account_id: "card", actor_name: "Claude (for Neil Byrne)", at: "2026-02-01T00:00:00Z",
+            overridden: [{ decision_id: "d1", account_id: "member", actor_name: "Neil Byrne",
+                           at: "2026-01-01T00:00:00Z", holders: ["ERICA MCCAULEY", "E HOPPER"] }],
+          },
+          periods: [
+            { ...period("m", "2021-12-11", "2022-01-10", "10000"), holder: "ERICA MCCAULEY" },
+            { ...period("h", "2022-01-11", "2022-02-07", "10000"), holder: "ERICA HOPPER" },
+            { ...period("h2", "2022-02-08", "2022-03-07", "10000"), holder: "Erica Hopper" },
+          ],
+        },
+      ],
+    }
+  })
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  await act(async () => {
+    render(
+      <QueryClientProvider client={client}>
+        <main className="p-4">
+          <AccountHistory caseId="synthetic" />
+        </main>
+      </QueryClientProvider>
+    )
+  })
+  const notice = await screen.findByTestId("printed-holders")
+  expect(notice.textContent).toContain(
+    'ERICA MCCAULEY on 1 statement (2021-12-11 to 2022-01-10); ERICA HOPPER on 2 statements (2022-01-11 to 2022-03-07), printed as "ERICA HOPPER" on 1 and "Erica Hopper" on 1'
+  )
+  expect(screen.getByTestId("printed-holders-overridden").textContent).toBe(
+    "The decision recorded 2026-02-01 by Claude (for Neil Byrne) applies. This account is merged from accounts that each carried a decision; overridden by it: the decision recorded 2026-01-01 by Neil Byrne (ERICA MCCAULEY / E HOPPER)."
+  )
+})

@@ -152,13 +152,33 @@ export function AccountHistory({
                 <strong>Judgement call:</strong> {group.label} is printed
                 under {group.printed_holders!.length} different holder names:{" "}
                 {group.printed_holders!
-                  .map(
-                    (h) =>
-                      `${h.name} on ${h.statements} statement${h.statements === 1 ? "" : "s"} (${h.first || "start not read"} to ${h.last || "end not read"})`
-                  )
+                  .map((h) => {
+                    const spellings = (h.printed || []).filter((p) => p.name !== h.name)
+                    return `${h.name} on ${h.statements} statement${h.statements === 1 ? "" : "s"} (${h.first || "start not read"} to ${h.last || "end not read"})${
+                      spellings.length
+                        ? `, printed as ${(h.printed || [])
+                            .map((p) => `"${p.name}" on ${p.statements}`)
+                            .join(" and ")}`
+                        : ""
+                    }`
+                  })
                   .join("; ")}
                 . Each statement is filed under the name printed on it. Which
                 person holds the account has not been established.
+                {(group.printed_holders_decision?.overridden || []).length > 0 && (
+                  <span className="block mt-1" data-testid="printed-holders-overridden">
+                    The decision recorded {group.printed_holders_decision!.at.slice(0, 10)} by{" "}
+                    {group.printed_holders_decision!.actor_name} applies. This account is merged from
+                    accounts that each carried a decision; overridden by it:{" "}
+                    {group.printed_holders_decision!.overridden
+                      .map(
+                        (o) =>
+                          `the decision recorded ${o.at.slice(0, 10)} by ${o.actor_name} (${o.holders.join(" / ")})`
+                      )
+                      .join("; ")}
+                    .
+                  </span>
+                )}
               </p>
             ))}
         </div>

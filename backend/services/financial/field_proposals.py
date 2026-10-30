@@ -381,14 +381,12 @@ def _case_knowledge(session, case_id, evidence_file_ids=None):
         decided = decisions(session, case_id)
         if decided:
             # A decision reaches every account merged with the decided one (one account, as the account view shows
-            # it); where two of them carry one, the latest stands.
+            # it); where two of them carry one, the latest applies (the account view says which it overrides).
             from uuid import UUID
-            from services.financial.printed_holders import merged_accounts
+            from services.financial.printed_holders import decisions_by_root, merged_accounts
             canonical = merged_accounts(session, case_id)
             root = lambda account: canonical.get(account, account)
-            by_root = {}
-            for account_id, decision in sorted(decided.items(), key=lambda pair: str(pair[1].get('at') or '')):
-                by_root[root(UUID(account_id))] = decision
+            by_root = decisions_by_root(decided, canonical)
             for account_id, known in accounts.items():
                 decision = by_root.get(root(UUID(str(account_id))))
                 if decision is not None:

@@ -74,16 +74,18 @@ def _group_printed_holders(session, case_id, groups, canonical):
     """An account a person decided keeps, per statement, the holder printed on it (printed_holders): its group lists
     every name its statements print, with the statements that print each, never shown as one name. Without such a
     decision nothing is listed: no judgement call is presented that nobody made."""
-    from services.financial.printed_holders import decisions, holders_by_statement
-    decided = {}
-    for account, decision in sorted((decisions(session, case_id) if groups else {}).items(),
-                                    key=lambda pair: str(pair[1].get('at') or '')):
-        decided[canonical.get(UUID(account), UUID(account))] = decision.get('holders') or []  # the latest stands
+    from services.financial.printed_holders import decisions, decisions_by_root, holders_by_statement
+    # Where merged accounts each carry a decision, the latest applies and the group says which it overrides.
+    decided = decisions_by_root(decisions(session, case_id) if groups else {}, canonical)
     for group in groups:
-        holders = decided.get(UUID(group['account_id']))
+        decision = decided.get(UUID(group['account_id']))
+        holders = (decision or {}).get('holders')
         names = holders_by_statement([(p['holder'], p['start'], p['end']) for p in group['periods']], holders) \
             if holders else []
         group['printed_holders'] = names if len(names) > 1 else []
+        if group['printed_holders']:
+            group['printed_holders_decision'] = {k: decision[k] for k in (
+                'decision_id', 'account_id', 'actor_name', 'at', 'overridden')}
 
 
 def account_history(session, *, case_id, account_id=None, account_ids=None, account_holders=None, start_date=None, end_date=None):
