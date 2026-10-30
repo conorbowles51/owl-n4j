@@ -61,7 +61,8 @@
  */
 
 import { CircleHelp, TriangleAlert } from "lucide-react"
-import { RowJudgementMarkers, priorityRowClass } from "./JudgementCalls"
+import { RowJudgementMarkers } from "./JudgementCalls"
+import { priorityRowClass } from "../lib/judgements"
 import { useRowPriority } from "../hooks/use-judgement-rows"
 
 import { Badge } from "@/components/ui/badge"

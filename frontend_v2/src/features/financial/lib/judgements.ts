@@ -309,6 +309,11 @@ export const PRIORITY_BADGE: Record<string, string> = {
   "3": "bg-[#e9ecf1] text-[#334155] dark:bg-[#2a303a] dark:text-[#d6dde8]",
 }
 
+/** The row's background tint and left border for its tier. */
+export function priorityRowClass(priority: number) {
+  return PRIORITY_ROW[String(priority || 1)] || PRIORITY_ROW["1"]
+}
+
 /** The most urgent tier among a row's calls (1 is most urgent); 0 when it has none. */
 export function topPriority(items: Pick<Judgement, "priority">[]) {
   return items.length ? Math.min(...items.map((item) => item.priority || 1)) : 0

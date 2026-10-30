@@ -17,6 +17,7 @@ import {
   PRIORITY_HELP,
   PRIORITY_LABELS,
   PRIORITY_ROW,
+  priorityRowClass,
   statusLabel,
   strengthHelp,
   strengthLabel,
@@ -42,11 +43,6 @@ export function PriorityLabel({ priority, reason, className }: { priority: numbe
       {PRIORITY_LABELS[key]}
     </span>
   )
-}
-
-/** The row's background tint and left border for its tier. */
-export function priorityRowClass(priority: number) {
-  return PRIORITY_ROW[String(priority || 1)] || PRIORITY_ROW["1"]
 }
 
 /**
