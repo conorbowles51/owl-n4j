@@ -57,7 +57,7 @@ class CostSummaryResponse(BaseModel):
 
 
 @router.get("", response_model=CostLedgerResponse)
-async def get_cost_ledger(
+def get_cost_ledger(
     case_id: Optional[str] = Query(None, description="Filter by case ID"),
     job_type: Optional[str] = Query(None, description="Filter by job type (ingestion, ai_assistant)"),
     model_id: Optional[str] = Query(None, description="Filter by model ID"),
@@ -159,7 +159,7 @@ async def get_cost_ledger(
 
 
 @router.get("/summary", response_model=CostSummaryResponse)
-async def get_cost_summary(
+def get_cost_summary(
     case_id: Optional[str] = Query(None, description="Filter by case ID"),
     job_type: Optional[str] = Query(None, description="Filter by job type (ingestion, ai_assistant)"),
     model_id: Optional[str] = Query(None, description="Filter by model ID"),

@@ -30,8 +30,6 @@ NOT_YET_CONVERTED = {
     'routers/chat_history.py:adopt_current_mandate',
     'routers/chat_history.py:update_chat_history',
     'routers/chat_history.py:delete_chat_history',
-    'routers/cost_ledger.py:get_cost_ledger',
-    'routers/cost_ledger.py:get_cost_summary',
     'routers/database.py:list_entities_status',
     'routers/database.py:list_entities',
     'routers/database.py:get_entity',
