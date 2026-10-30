@@ -154,7 +154,7 @@ def get_case_reconciliation(
 
 
 @router.post("/reconciliation/run")
-async def run_case_reconciliation(
+def run_case_reconciliation(
     case_id: UUID = Query(..., description="REQUIRED: Case ID"),
     account_id: UUID | None = Query(
         None, description="Restrict the sweep to one account"

@@ -241,7 +241,7 @@ class RunCaseReconciliationTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(
             financial_reconciliation, "reconcile_case", return_value=outcome
         ) as run_call:
-            result = await financial_reconciliation.run_case_reconciliation(
+            result = financial_reconciliation.run_case_reconciliation(
                 case_id=case_id,
                 account_id=account_id,
                 db="fake-session",
@@ -268,7 +268,7 @@ class RunCaseReconciliationTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(
             financial_reconciliation, "reconcile_case", return_value=outcome
         ):
-            result = await financial_reconciliation.run_case_reconciliation(
+            result = financial_reconciliation.run_case_reconciliation(
                 case_id=outcome.case_id, account_id=None, db="fake-session"
             )
 
@@ -288,7 +288,7 @@ class RunCaseReconciliationTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(
             financial_reconciliation, "reconcile_case", return_value=outcome
         ):
-            result = await financial_reconciliation.run_case_reconciliation(
+            result = financial_reconciliation.run_case_reconciliation(
                 case_id=outcome.case_id, account_id=None, db="fake-session"
             )
 
@@ -308,7 +308,7 @@ class RunCaseReconciliationTests(unittest.IsolatedAsyncioTestCase):
             financial_reconciliation, "reconcile_case", return_value=outcome
         ):
             with self.assertRaises(HTTPException) as ctx:
-                await financial_reconciliation.run_case_reconciliation(
+                financial_reconciliation.run_case_reconciliation(
                     case_id=outcome.case_id, account_id=None, db="fake-session"
                 )
 
