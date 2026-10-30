@@ -185,6 +185,39 @@ class CompleteRequestTests(TestCase):
             self.assertEqual(request['rows'][1][key], before['rows'][1][key], key)
         self.assertEqual((request['rows'][0], request['rows'][2]), (before['rows'][0], before['rows'][2]))
 
+    def test_a_new_reading_is_asked_for_its_lines_only_as_before(self):
+        asked = []
+
+        def description_request(model, key, provider, first_lines=True):
+            asked.append(first_lines)
+
+            def read(shown, listed_rows):
+                return answer(**{row['id']: row['first_line'] for row in listed_rows}), {}
+            return read
+        with patch.object(vd, '_reader', return_value=('deepseek', 'deepseek-flash', 'key')), \
+                patch.object(vd, 'description_request', side_effect=description_request), \
+                patch('services.financial.vision_reader.render_pages',
+                      side_effect=lambda path, pages, strips=None: [(p, [b'png']) for p in pages]), \
+                patch('services.financial.vision_reader._reserve', return_value=True), \
+                patch('services.financial.vision_reader._add_spend'):
+            record = vd.complete_request(self._session(), 'case', self.path, self.request())
+        self.assertEqual((asked, record['prompt_version']), ([False], vd.LINES_PROMPT_VERSION))
+        self.assertNotIn('printed_first_line', vd.instructions([], first_lines=False))
+        self.assertNotIn('printed_first_line', str(vd.LINES_SCHEMA))
+
+    @staticmethod
+    def _session():
+        class Session:
+            def rollback(self):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+        return Session
+
     def test_switched_off_nothing_is_sent(self):
         request = self.request()
         with patch.object(vd, 'LINES', False):

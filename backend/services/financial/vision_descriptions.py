@@ -33,7 +33,12 @@ log = journal(__name__)
 
 LINES = os.environ.get('LOUPE_FINANCIAL_VISION_DESCRIPTION_LINES', '1').strip().lower() not in (
     '0', 'false', 'off', 'no')
+# A new reading (complete_request) is asked for its description lines only (LINES_PROMPT_VERSION, the question as it
+# was): asking for the printed first line too was measured to complete fewer descriptions (fin-smalls 2026-10-30, the
+# same 557 saved payments read both ways: 168 completed by the first question, 157 with the first line asked too; 145
+# the same). A saved statement's payments are read with the first line asked (PROMPT_VERSION), for its corrections.
 PROMPT_VERSION = 'statement-descriptions-v2'
+LINES_PROMPT_VERSION = 'statement-descriptions-v1'
 # A description longer than this is not a statement line's text (the reader ran on).
 MAX_CHARS = 600
 # A printed first line is taken as a correction of the saved one only when it is the same line with a few characters
@@ -58,6 +63,10 @@ TIMEOUT_SECONDS = 300
 RETRIES = 1
 REASON = 'Description lines read from page image, page {page}, by {by}; amount, date and direction as read before.'
 
+LINES_SCHEMA = {'type': 'object', 'additionalProperties': False, 'required': ['rows'],
+                'properties': {'rows': {'type': 'array', 'items': {
+                    'type': 'object', 'additionalProperties': False, 'required': ['id', 'description'],
+                    'properties': {'id': {'type': 'string'}, 'description': {'type': 'string'}}}}}}
 SCHEMA = {'type': 'object', 'additionalProperties': False, 'required': ['rows'],
           'properties': {'rows': {'type': 'array', 'items': {
               'type': 'object', 'additionalProperties': False, 'required': ['id', 'description', 'printed_first_line'],
@@ -87,6 +96,9 @@ Return one JSON object only, no markdown: {"rows": [{"id": "<id>", "description"
 
 MOVEMENTS
 """
+# The question as it was before the first line was asked (LINES_PROMPT_VERSION), word for word.
+LINES_PROMPT = PROMPT.replace(PROMPT[PROMPT.index('THE FIRST LINE AS PRINTED'):PROMPT.index('Return one JSON')], '').replace(
+    ', "printed_first_line": "<first line as printed>"', '')
 
 
 def _words(text):
@@ -97,9 +109,9 @@ def _key(text):
     return _words(text).casefold()
 
 
-def instructions(rows):
+def instructions(rows, first_lines=True):
     """The request text for ``rows`` ([{id, page, date, amount, direction, balance, first_line}])."""
-    return PROMPT + json.dumps(rows, ensure_ascii=False, indent=0)
+    return (PROMPT if first_lines else LINES_PROMPT) + json.dumps(rows, ensure_ascii=False, indent=0)
 
 
 def listed(rows):
@@ -181,7 +193,7 @@ def printed_first_lines(rows, answer, everyone=None):
     return fixes
 
 
-def description_request(model_id, api_key, provider):
+def description_request(model_id, api_key, provider, first_lines=True):
     """read(pages, rows) -> (answer json, usage): one request with the page images and the listed movements. Raises on
     any failure (the descriptions then stay as read)."""
     from services.financial import vision_reader as vr
@@ -195,11 +207,11 @@ def description_request(model_id, api_key, provider):
             for index, image in enumerate(parts):
                 labels.append(f'Page {number}' if len(parts) == 1 else f'Page {number}, part {index + 1} of {len(parts)}')
                 images.append(image)
-        prompt = instructions(rows)
+        prompt = instructions(rows, first_lines)
         for attempt in range(settings['retries'] + 1):
             context = LLMExecutionContext(provider, model_id, api_key=api_key)
             try:
-                text = context.call_vision_json(prompt, images, image_labels=labels, schema=SCHEMA,
+                text = context.call_vision_json(prompt, images, image_labels=labels, schema=SCHEMA if first_lines else LINES_SCHEMA,
                                                 schema_name='statement_descriptions', timeout=settings['timeout'],
                                                 max_output_tokens=settings['max_output_tokens'])
                 break
@@ -235,7 +247,7 @@ def request_seconds():
     return (RETRIES + 1) * max(deepseek, openai) + vr.RETRY_PAUSE_SECONDS * RETRIES
 
 
-def read_lines(read, pages, rows, reads=READS, deadline=None):
+def read_lines(read, pages, rows, reads=READS, deadline=None, prompt_version=PROMPT_VERSION):
     """(record, {id: completed description}): ask ``read`` for the listed ``rows`` over the rendered ``pages``
     ([(page, [png, ...])]) and keep only what ``completed`` takes from every one of ``reads`` independent answers, word
     for word the same. One request per page that has payments, with that page and the next one (where an entry's last
@@ -298,7 +310,7 @@ def read_lines(read, pages, rows, reads=READS, deadline=None):
                 why = next((answer[1][row['id']] for answer in answers if row['id'] in answer[1]), None)
                 if why:
                     kept[row['id']] = why
-    record = dict(prompt_version=PROMPT_VERSION, reads=reads, seconds=round(time.monotonic() - started, 1),
+    record = dict(prompt_version=prompt_version, reads=reads, seconds=round(time.monotonic() - started, 1),
                   usage=usage, rows=len(sent), completed=len(found), kept=kept, differ=differ, errors=errors,
                   lines=found, first_lines={row['id']: row['first_line'] for row in sent
                                             if row['id'] in found or row['id'] in fixes},
@@ -517,7 +529,7 @@ def complete_request(factory, case_id, path, request, *, request_for=None, deadl
         reader = _reader(db, case_id)
         db.rollback()
     if isinstance(reader, str):
-        return dict(prompt_version=PROMPT_VERSION, status='unavailable', message=reader[:300])
+        return dict(prompt_version=LINES_PROMPT_VERSION, status='unavailable', message=reader[:300])
     provider, model, key = reader
     exponent = vr._exponent(request.get('currency'))
     exponent = 2 if exponent is None else exponent
@@ -534,8 +546,10 @@ def complete_request(factory, case_id, path, request, *, request_for=None, deadl
     reserved = READS * sum(vr.reserve_usd(model, [(p, shown[p]) for p in (page, page + 1) if p in shown], None)
                            for page in sorted({item['page'] for item in items}))
     if not vr._reserve(case_id, reserved):
-        return dict(prompt_version=PROMPT_VERSION, status='budget', provider=provider, model=model)
-    record, found = read_lines((request_for or description_request)(model, key, provider), images, items,
+        return dict(prompt_version=LINES_PROMPT_VERSION, status='budget', provider=provider, model=model)
+    read = (request_for or description_request)(model, key, provider, first_lines=False) if request_for is None \
+        else request_for(model, key, provider)
+    record, found = read_lines(read, images, items, prompt_version=LINES_PROMPT_VERSION,
                                deadline=deadline)
     cost = vr.cost_usd(model, record.get('usage') or {})
     vr._add_spend(case_id, cost - reserved)
