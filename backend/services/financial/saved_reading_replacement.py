@@ -118,6 +118,10 @@ STORED_REJUDGE = os.environ.get('LOUPE_FINANCIAL_REPLACE_STORED_REJUDGE', '1').s
 # payment. Off: such periods stay 'same'.
 DESCRIPTIONS = os.environ.get('LOUPE_FINANCIAL_REPLACE_DESCRIPTIONS', '1').strip().lower() not in ('0', 'false', 'off', 'no')
 DESCRIPTION_BASIS = 'reader_descriptions'
+IMAGE_DESCRIPTION_BASIS = 'page_image_descriptions'
+IMAGE_DESCRIPTION_REASON = ('The page image of this payment was read again for its description lines only (who paid or '
+                            'was paid, references); its amount, direction, date and balance are the saved ones. The '
+                            'earlier row is kept, linked.')
 DESCRIPTION_REASON = ('The current reader reads more of this payment\'s printed description; its amount, direction, '
                       'date and balance are the saved ones. The earlier row is kept, linked.')
 IMAGE_BASIS = 'page_image'
@@ -762,6 +766,57 @@ def assess_descriptions(session, document, *, cache=None):
             'differs': ['descriptions'], 'revision': proposal.get('revision')}
 
 
+def assess_image_descriptions(session, document):
+    """What completing this saved copy's page-image payment descriptions from the description lines read for them
+    (vision_descriptions.read_saved_lines, stored on the copy) would do. Reads only. Same verdict shape as
+    assess_descriptions. A payment changes only while it is still the payment read (vision_descriptions
+    .read_from_image: a page-image row, its description as read, no correction since), its description is still the
+    first line the lines were read for, and every word of it is kept. Its money is not looked at: only its
+    description is ever taken from the lines."""
+    from services.financial import vision_descriptions
+    result = dict(document_id=str(document.id), evidence_file_id=str(document.evidence_file_id),
+                  case_id=str(document.case_id), outcome='refused', code=None, basis=IMAGE_DESCRIPTION_BASIS)
+    if not (ENABLED and DESCRIPTIONS and vision_descriptions.LINES):
+        return {**result, 'code': 'disabled'}
+    if document.status != 'admitted':
+        return {**result, 'code': 'not_admitted'}
+    if (document.metadata_ or {}).get('financial_import_removal'):
+        return {**result, 'code': 'removed'}
+    period = session.scalar(select(FinancialStatementPeriod).where(
+        FinancialStatementPeriod.source_document_id == document.id))
+    if period is None:
+        return {**result, 'code': 'no_single_period'}
+    result.update(period_id=str(period.id), currency=period.currency)
+    stored = (document.metadata_ or {}).get(vision_descriptions.METADATA_KEY) or {}
+    lines, first = stored.get('lines') or {}, stored.get('first_lines') or {}
+    if not lines:
+        return {**result, 'code': 'no_description_lines'}
+    changes, kept = [], []
+    for row in vision_descriptions.saved_rows(session, document):
+        new = lines.get(str(row.id))
+        if not new:
+            continue
+        old = ' '.join((row.description or '').split())
+        if ' '.join(str(first.get(str(row.id)) or '').split()) != old:
+            kept.append(dict(transaction_id=str(row.id), code='description_changed', before=row.description, after=new))
+            continue
+        if old == new:
+            continue
+        if not keeps_words(old, new):
+            kept.append(dict(transaction_id=str(row.id), code='description_loses_text', before=row.description,
+                             after=new))
+            continue
+        review = (row.provenance or {}).get('statement_import_review') or {}
+        changes.append(dict(transaction_id=str(row.id), row_id=review.get('id'), before=row.description, after=new,
+                            page=vision_descriptions.page_of(row)))
+    reading = {k: stored.get(k) for k in ('at', 'provider', 'model', 'prompt_version')}
+    if not changes:
+        return {**result, 'outcome': 'same', 'code': 'same', 'kept': kept}
+    return {**result, 'outcome': 'describe', 'code': None, 'changes': changes, 'kept': kept,
+            'differs': ['descriptions'], 'statement_id': (document.metadata_ or {}).get('statement_import_statement_id'),
+            'revision': None, 'reading': reading}
+
+
 def _event_text(value):
     """A payment view as an adjudication may hold it. The decision log refuses floats; a view's money is integer
     minor units (and written as text by the caller), so a float here is a score such as a model's category confidence
@@ -775,7 +830,7 @@ def _event_text(value):
     return value
 
 
-def refresh_descriptions(*, session_factory, case_id, document_id):
+def refresh_descriptions(*, session_factory, case_id, document_id, from_images=False):
     """Give each payment of this saved copy the description its current reading prints (assess_descriptions, judged
     again under the case lock), in one transaction: each changed payment is superseded by the same payment with the
     new description through the correction chain (names, category, link and notes go with it), with an adjudication
@@ -801,7 +856,7 @@ def refresh_descriptions(*, session_factory, case_id, document_id):
         rows = list(session.scalars(select(FinancialTransaction).where(
             FinancialTransaction.source_document_id == document.id).order_by(FinancialTransaction.id).with_for_update()
             .execution_options(populate_existing=True)))
-        verdict = assess_descriptions(session, document)
+        verdict = assess_image_descriptions(session, document) if from_images else assess_descriptions(session, document)
         if verdict['outcome'] != 'describe':
             session.rollback()
             return verdict
@@ -812,6 +867,8 @@ def refresh_descriptions(*, session_factory, case_id, document_id):
         references = set(session.scalars(select(FinancialTransaction.ref_id).where(
             FinancialTransaction.case_id == document.case_id)))
         now = datetime.now(timezone.utc).isoformat()
+        basis, why = ((IMAGE_DESCRIPTION_BASIS, IMAGE_DESCRIPTION_REASON) if from_images else
+                      (DESCRIPTION_BASIS, DESCRIPTION_REASON))
         applied = []
         for change in verdict['changes']:
             row = by_id[change['transaction_id']]
@@ -833,7 +890,9 @@ def refresh_descriptions(*, session_factory, case_id, document_id):
             values['provenance'] = {**(values['provenance'] or {}), 'correction': dict(
                 previous_transaction_id=str(row.id), previous_ref_id=row.ref_id, occurrence=occurrence, version=1),
                 'reader_descriptions': dict(previous_description=row.description, statement_id=verdict['statement_id'],
-                                            reading_revision=verdict.get('revision'), row_id=change['row_id'], at=now)}
+                                            reading_revision=verdict.get('revision'), row_id=change['row_id'], at=now,
+                                            **({'basis': basis, 'page': change.get('page'),
+                                                'read_by': verdict.get('reading')} if from_images else {}))}
             replacement = FinancialTransaction(**values)
             view = _event_text(to_view(row).to_json())
             view.update(amount_minor=str(row.amount_minor),
@@ -841,12 +900,12 @@ def refresh_descriptions(*, session_factory, case_id, document_id):
             session.add(replacement)
             session.flush()
             record(session, case_id=document.case_id, subject=row, subject_type=AdjudicationSubject.transaction,
-                   decision=AdjudicationDecision.correct_transaction, actor=ACTOR, reason=DESCRIPTION_REASON,
+                   decision=AdjudicationDecision.correct_transaction, actor=ACTOR, reason=why,
                    before=dict(row=view, replacement_id=None, original_status=row.ledger_status,
-                               original_quarantine_reason=row.quarantine_reason, basis=DESCRIPTION_BASIS),
+                               original_quarantine_reason=row.quarantine_reason, basis=basis),
                    after=dict(row={**view, 'key': str(replacement.id), 'ref_id': reference, 'description': change['after']},
                               replacement_id=str(replacement.id), original_status='superseded',
-                              original_quarantine_reason=None, basis=DESCRIPTION_BASIS))
+                              original_quarantine_reason=None, basis=basis))
             row.ledger_status = 'superseded'
             row.quarantine_reason = None
             row.superseded_by_id = replacement.id
@@ -860,14 +919,16 @@ def refresh_descriptions(*, session_factory, case_id, document_id):
             raise ReplacementError('Refreshing the descriptions would change how this statement is admitted. Nothing '
                                    'was changed.', 409)
         metadata = dict(document.metadata_ or {})
-        metadata[DESCRIPTION_BASIS] = list(metadata.get(DESCRIPTION_BASIS) or []) + [dict(
+        metadata[basis] = list(metadata.get(basis) or []) + [dict(
             at=now, statement_id=verdict['statement_id'], reading_revision=verdict.get('revision'),
+            **({'read_by': verdict.get('reading')} if from_images else {}),
             payments=[dict(previous_transaction_id=c['transaction_id'], transaction_id=c['replacement_id'],
                            row_id=c['row_id']) for c in applied])]
         document.metadata_ = metadata
         _log(session, document.case_id, document, f'{len(applied)} payment description(s) of this saved statement '
-             'completed from the current reading; amounts, dates and balances unchanged. The earlier rows are kept, '
-             'linked.', action='financial_reader_descriptions', payments=len(applied))
+             + ('completed from its page images (description lines only)' if from_images else
+                'completed from the current reading') + '; amounts, dates and balances unchanged. The earlier rows are '
+             'kept, linked.', action='financial_reader_descriptions', payments=len(applied))
         file_id, key = document.evidence_file_id, (document.metadata_ or {}).get('statement_import_statement_id') or ''
         session.commit()
     from services.financial.graph_followup import request_follow_up
