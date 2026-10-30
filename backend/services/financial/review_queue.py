@@ -645,9 +645,9 @@ def reader_files(entries):
 # copies only the entries it returns. Memory is bounded by cases and by
 # entries held in all, and one build per case runs at a time in a process.
 # The queue reads more than the register: unread statement files count PDFs with a review draft or a candidate
-# mapping (auto_read.unread_statement_files), and filled versus waiting and the proposals follow decisions in
-# adjudications (printed holders kept, accounts merged; field_proposals.case_knowledge). Those rows are in its key
-# too (review 2026-10-30: without them a saved queue could outlive such a change; measured 0.01 s on d5b330d1).
+# mapping (auto_read.unread_statement_files), and filled versus waiting and the proposals follow printed-holder
+# decisions in adjudications (field_proposals.case_knowledge; merged accounts are account rows, already in the
+# register's key). Those rows are in its key too (review 2026-10-30: without them a saved queue could outlive such a change; measured 0.01 s on d5b330d1).
 _QUEUE_EXTRA_SQL = text("""
 SELECT 'drafts', count(*), md5(string_agg(evidence_file_id::text || ':' || xmin::text, ',' ORDER BY evidence_file_id))
   FROM financial_statement_review_drafts WHERE case_id = :case_id
