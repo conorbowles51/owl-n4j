@@ -151,3 +151,32 @@ def test_stopping_the_worker_stops_the_child(memo_dir, monkeypatch):
     with pytest.raises(ProcessLookupError):
         os.kill(pid, 0)
     assert view_warmup._take_lock() is not None
+
+
+def test_the_child_ends_when_its_worker_is_killed(tmp_path):
+    """A worker killed outright (no cancel) must not leave its warm-up child running without the lock."""
+    import subprocess
+    import time
+    pid_file = tmp_path / 'child'
+    worker = ("import asyncio, sys; sys.path.insert(0, sys.argv[2])\n"
+              "from services.financial import view_warmup as w\n"
+              "w._child_command = lambda: [sys.executable, '-c', \"import os, sys, time; open(sys.argv[1], 'w').write(str(os.getpid())); time.sleep(600)\", sys.argv[1]]\n"
+              "asyncio.run(w._run_child())")
+    import pathlib
+    backend = str(pathlib.Path(view_warmup.__file__).resolve().parents[2])
+    process = subprocess.Popen([sys.executable, '-c', worker, str(pid_file), backend], cwd=backend)
+    for _ in range(600):
+        if pid_file.exists() and pid_file.read_text():
+            break
+        time.sleep(0.1)
+    child = int(pid_file.read_text())
+    process.kill(); process.wait()
+    for _ in range(50):
+        try:
+            os.kill(child, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.1)
+    else:
+        os.kill(child, 9)
+        raise AssertionError('the warm-up child outlived its killed worker')

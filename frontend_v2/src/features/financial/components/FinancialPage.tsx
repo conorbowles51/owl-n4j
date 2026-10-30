@@ -74,7 +74,6 @@ import {
   useTransactions,
   useFinancialEntities,
   useFinancialCategories,
-  useFinancialSummary,
   useCategorize,
   useBatchCategorize,
   useCreateCategory,
@@ -291,14 +290,7 @@ function FinancialPageContent() {
   } = useTransactions(caseId, {
     mode: store.mode,
   })
-  // The summary counts the records quickly, so a long first load says what it is loading.
-  const recordCount = useFinancialSummary(caseId, store.mode).data
-    ?.transaction_count
   const loadingSeconds = useElapsedSeconds(isLoading)
-  const recordsLoading =
-    recordCount === undefined
-      ? null
-      : `${recordCount.toLocaleString("en-GB")} ${recordCount === 1 ? "record" : "records"}`
   const { data: categories = [] } = useFinancialCategories(caseId, store.mode)
   const { data: caseEntities = [] } = useFinancialEntities(caseId)
   const transactions = transactionsResponse?.transactions ?? []
@@ -702,7 +694,7 @@ function FinancialPageContent() {
         >
           <LoadingSpinner size="lg" />
           <p role="status" className="text-sm text-muted-foreground">
-            {recordsLoading ? `Loading ${recordsLoading}…` : "Loading records…"}
+            Loading other financial records…
             {loadingSeconds > 0 && ` ${loadingSeconds} s`}
           </p>
         </div>
@@ -717,9 +709,7 @@ function FinancialPageContent() {
           role="alert"
           data-testid="records-error"
         >
-          These records could not be loaded
-          {recordsLoading ? ` (${recordsLoading} in this view)` : ""}. Refresh
-          this page to try again.
+          These records could not be loaded. Refresh this page to try again.
           {transactionsError instanceof Error
             ? ` ${transactionsError.message}`
             : ""}
