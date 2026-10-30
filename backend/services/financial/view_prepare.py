@@ -64,10 +64,17 @@ def prepare_command(settings):
             '--property=RuntimeMaxSec=%d' % PREPARE_CAP_SECONDS,
             '--property=Nice=10', '--property=IOSchedulingClass=best-effort', '--property=IOSchedulingPriority=7']
     argv += ['--property=EnvironmentFile=' + path for path in settings['environment_files']]
-    argv += ['--property=Environment=' + assignment for assignment in settings['environment']]
+    # systemd splits an Environment= value on spaces: each assignment is passed quoted, as systemctl shows it.
+    argv += ['--property=Environment=' + _quoted(assignment) for assignment in settings['environment']]
     # The backend's ExecStart is a login shell (bash -lc), which can set more of the environment.
     argv += ['/bin/bash', '-lc', 'exec python -m services.financial.view_warmup --prepare']
     return argv
+
+
+def _quoted(assignment):
+    if not any(character in assignment for character in ' \t"\'\\'):
+        return assignment
+    return '"%s"' % assignment.replace('\\', '\\\\').replace('"', '\\"')
 
 
 def _say(log, line):
@@ -107,6 +114,8 @@ def wait(log=None, run=_run, state=STATE, cap=PREPARE_CAP_SECONDS, poll=2.0, clo
         os.unlink(state)
     except OSError:
         pass
+    if clock() - started > cap + 3600:
+        return 0  # left by a release that ended before its wait (deferred, or stopped by a gate)
     began = clock()
     while run(['systemctl', 'is-active', '--quiet', UNIT]).returncode == 0:
         if clock() - started >= cap:

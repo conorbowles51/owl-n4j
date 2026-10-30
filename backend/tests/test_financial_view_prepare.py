@@ -1,8 +1,9 @@
 """The release's warm-up before the restart: started with the service's own settings, never holding a release up."""
 import json
 import subprocess
+from pathlib import Path
 
-from services.financial import view_prepare
+from services.financial import view_cache, view_prepare
 
 # `systemctl show owl-backend-v2.service` on the live host 2026-10-30, drop-in settings included.
 SHOWN = '\n'.join((
@@ -38,7 +39,9 @@ def test_the_prepare_unit_carries_every_service_setting_the_identity_reads():
     for assignment in ('PATH=/home/conorbowles51/app-v3/owl-n4j/.venv/bin:/usr/local/bin:/usr/bin:/bin',
                        'PYTHONMALLOC=mimalloc', 'UVICORN_TIMEOUT_GRACEFUL_SHUTDOWN=20',
                        'UVICORN_TIMEOUT_WORKER_HEALTHCHECK=120', 'SPACED=a b'):
-        assert 'Environment=' + assignment in properties
+        assert 'Environment=' + assignment in properties or 'Environment="%s"' % assignment in properties
+    # systemd splits an unquoted value on its spaces.
+    assert 'Environment="SPACED=a b"' in properties
     assert 'EnvironmentFile=/home/conorbowles51/app-v3/owl-n4j/.env' in properties
     assert 'User=conorbowles51' in properties and 'Group=conorbowles51' in properties
     assert 'WorkingDirectory=/home/conorbowles51/app-v3/owl-n4j/backend' in properties
@@ -83,3 +86,34 @@ def test_no_prepare_for_this_release_waits_for_nothing(tmp_path):
     system = FakeSystem(active_polls=10 ** 6)
     assert view_prepare.wait(run=system, state=str(tmp_path / 'absent.json')) == 0
     assert system.calls == []
+
+
+def test_a_state_file_left_by_an_earlier_release_is_not_reported(tmp_path):
+    state = tmp_path / 'state.json'
+    state.write_text(json.dumps(dict(started=1000.0)))
+    system = FakeSystem(active_polls=10 ** 6, journal='prepare: 63 views warmed in 312 s\n')
+    assert view_prepare.wait(log=str(tmp_path / 'log'), run=system, state=str(state), clock=lambda: 1000.0 + 86400,
+                             sleep=lambda s: None) == 0
+    assert system.calls == [] and not (tmp_path / 'log').exists() and not state.exists()
+
+
+def test_the_release_waits_before_the_frontend_stops_and_after_dependencies_are_installed():
+    script = (Path(__file__).resolve().parents[2] / 'deploy' / 'deploy.sh').read_text()
+    wait = script.index('"${PREPARE_VIEWS}" wait')
+    assert script.index('step "Installing backend dependencies"') < wait
+    assert wait < script.index('step "Stopping frontend for dependency installation"')
+    assert wait < script.index('restart_backend_bounded; then')
+    assert 'services/financial/view_prepare.py' in script
+
+
+def test_the_release_warm_up_unit_has_the_service_identity(monkeypatch):
+    # systemd names each unit's own cgroup here (measured 2026-10-30: the only difference between the service and
+    # a warm-up run with the service's user, environment file and settings in a unit of its own).
+    monkeypatch.setenv('MEMORY_PRESSURE_WATCH', '/sys/fs/cgroup/system.slice/owl-backend-v2.service/memory.pressure')
+    monkeypatch.setenv('MEMORY_PRESSURE_WRITE', 'c29tZSAyMDAwMDAgMjAwMDAwMAA=')
+    service = view_cache._identity_now()
+    assert service is not None
+    monkeypatch.setenv('MEMORY_PRESSURE_WATCH', '/sys/fs/cgroup/system.slice/loupe-financial-prepare.service/memory.pressure')
+    assert view_cache._identity_now() == service
+    monkeypatch.setenv('PYTHONMALLOC', 'not the service setting')
+    assert view_cache._identity_now() != service
