@@ -108,8 +108,8 @@ def test_sqlite_has_no_postgres_query_and_is_not_applicable():
 def test_optional_diagnostic_failure_keeps_original_blocking_count_and_exit(error, monkeypatch, capsys):
     engine = DiagnosticEngine(error=error)
     monkeypatch.setattr(gate, '_get_engine', lambda: engine)
-    monkeypatch.setattr(gate, 'active_work_report', lambda _: dict(total=3, observed_at='synthetic-time',
-        sample_limit=10, categories=[dict(category='recovery_items', count=3, records=[], omitted=3)]))
+    monkeypatch.setattr(gate, 'active_work_report', lambda _: dict(total=3, queued=0, observed_at='synthetic-time',
+        sample_limit=10, categories=[dict(category='recovery_items', count=3, records=[], omitted=3, blocking=True)]))
     assert gate.main() == 75
     output = capsys.readouterr()
     assert not output.out
@@ -124,7 +124,7 @@ def test_optional_diagnostic_failure_keeps_original_blocking_count_and_exit(erro
 def test_lock_report_cannot_turn_a_busy_gate_into_success(monkeypatch, capsys):
     engine = DiagnosticEngine()
     monkeypatch.setattr(gate, '_get_engine', lambda: engine)
-    monkeypatch.setattr(gate, 'active_work_report', lambda _: dict(total=3, observed_at='synthetic-time',
+    monkeypatch.setattr(gate, 'active_work_report', lambda _: dict(total=3, queued=0, observed_at='synthetic-time',
         sample_limit=10, categories=[]))
     assert gate.main() == 75
     assert '0 waiters shown' in capsys.readouterr().err
@@ -133,7 +133,7 @@ def test_lock_report_cannot_turn_a_busy_gate_into_success(monkeypatch, capsys):
 def test_idle_gate_preserves_existing_success_without_optional_diagnostics(monkeypatch, capsys):
     engine = DiagnosticEngine(error=AssertionError('Idle gate must not query lock metadata'))
     monkeypatch.setattr(gate, '_get_engine', lambda: engine)
-    monkeypatch.setattr(gate, 'active_work_report', lambda _: dict(total=0))
+    monkeypatch.setattr(gate, 'active_work_report', lambda _: dict(total=0, queued=0))
     assert gate.main() == 0
     assert engine.statements == []
     assert capsys.readouterr().err == ''
