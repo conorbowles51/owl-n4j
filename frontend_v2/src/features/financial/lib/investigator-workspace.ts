@@ -1,15 +1,31 @@
 import type { LedgerTransaction } from "../api"
 import type { AccountParties } from "./account-parties"
 
-export function paymentDay(row: LedgerTransaction): string | null {
-  if (row.ordering_date_context === "statement_end_ordering_only") return null
-  const date = row.ordering_date?.slice(0, 10)
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date || "")) return null
+function validDay(date: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null
   const parsed = new Date(`${date}T00:00:00Z`)
   return Number.isFinite(parsed.getTime()) &&
     parsed.toISOString().slice(0, 10) === date
     ? date
     : null
+}
+
+// Sorts and range checks call paymentDay inside their comparisons: d5b330d1's
+// 27,673 payments made about 800,000 calls on a first load (3-6 s of the
+// browser's time checking dates). Each distinct date text is checked once.
+const checkedDays = new Map<string, string | null>()
+const CHECKED_DAYS_LIMIT = 100_000
+
+export function paymentDay(row: LedgerTransaction): string | null {
+  if (row.ordering_date_context === "statement_end_ordering_only") return null
+  const date = row.ordering_date?.slice(0, 10)
+  if (!date) return null
+  let day = checkedDays.get(date)
+  if (day === undefined) {
+    day = validDay(date)
+    if (checkedDays.size < CHECKED_DAYS_LIMIT) checkedDays.set(date, day)
+  }
+  return day
 }
 
 export function minorAmount(value: string | number | null): bigint | null {

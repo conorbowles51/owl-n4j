@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import {
   nearbyPayments,
   paymentDay,
@@ -117,6 +117,32 @@ describe("investigator comparisons and charts", () => {
       credit: 9007199254740993n,
     })
     expect(chartRatio(9007199254740993n, 9007199254740993n)).toBe(1)
+  })
+  it("checks each date text once and answers every row as before", () => {
+    const reference = (r: LedgerTransaction) => {
+      if (r.ordering_date_context === "statement_end_ordering_only") return null
+      const date = r.ordering_date?.slice(0, 10)
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date || "")) return null
+      const parsed = new Date(`${date}T00:00:00Z`)
+      return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === date ? date : null
+    }
+    const dates = ["2024-01-31", "2024-02-30", "2023-02-29", "2024-02-29", "2024-1-01", "", "2024-03-05T10:00:00Z", "x"]
+    const rows = dates.flatMap((date, i) => [
+      row(`r${i}`, date, "credit"),
+      { ...row(`s${i}`, date, "debit"), ordering_date_context: "statement_end_ordering_only" as const },
+      { ...row(`n${i}`, date, "debit"), ordering_date: null as unknown as string },
+    ])
+    const expected = rows.map(reference)
+    expect(rows.map(paymentDay)).toEqual(expected)
+    const checks = vi.spyOn(RegExp.prototype, "test")
+    try {
+      const fresh = Array.from({ length: 1000 }, (_, i) => row(`f${i}`, "2019-07-14", "credit"))
+      expect(new Set(fresh.map(paymentDay))).toEqual(new Set(["2019-07-14"]))
+      expect(checks.mock.calls.length).toBeLessThanOrEqual(1)
+      expect(rows.map(paymentDay)).toEqual(expected)
+    } finally {
+      checks.mockRestore()
+    }
   })
   it("does not chart invalid dates or statement-end substitutes and flags unreadable amounts", () => {
     expect(paymentDay(row("bad", "2023-02-29", "credit"))).toBe(null)
