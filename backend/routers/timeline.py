@@ -314,7 +314,7 @@ def export_case_timeline(
 
 
 @router.get("/types")
-async def get_event_types():
+async def get_event_types(_: User = Depends(get_current_db_user)):
     """
     Get available event types that can appear on the timeline.
     

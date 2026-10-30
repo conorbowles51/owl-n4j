@@ -12,7 +12,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from postgres.models.user import User
 from postgres.session import get_db
+from routers.users import get_current_db_user, require_admin
 from services.processing_profile_service import (
     delete_processing_profile,
     get_processing_profile,
@@ -22,7 +24,9 @@ from services.processing_profile_service import (
     save_processing_profile,
 )
 
-router = APIRouter(prefix="/api/profiles", tags=["profiles"])
+# Every route needs a signed-in person; reading is open to anyone signed in (a case's processing dialog lists the
+# profiles), changing or deleting the shared library needs an administrator, like the other settings routers.
+router = APIRouter(prefix="/api/profiles", tags=["profiles"], dependencies=[Depends(get_current_db_user)])
 
 
 class SpecialEntityType(BaseModel):
@@ -82,6 +86,7 @@ async def get_profile(profile_name: str, db: Session = Depends(get_db)):
 async def create_or_update_profile(
     profile: ProcessingProfileCreate,
     db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
 ):
     if not profile.name or not profile.name.replace("-", "").replace("_", "").isalnum():
         raise HTTPException(
@@ -106,7 +111,7 @@ async def create_or_update_profile(
 
 
 @router.delete("/{profile_name}")
-async def delete_profile(profile_name: str, db: Session = Depends(get_db)):
+async def delete_profile(profile_name: str, db: Session = Depends(get_db), _: User = Depends(require_admin)):
     if not delete_processing_profile(db, profile_name):
         raise HTTPException(status_code=404, detail=f"Profile '{profile_name}' not found")
     db.commit()
