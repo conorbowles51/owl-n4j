@@ -88,7 +88,7 @@ def _to_summary(conversation: ChatConversation) -> ChatHistorySummary:
 
 
 @router.post("", response_model=ChatHistoryResponse)
-async def create_chat_history(
+def create_chat_history(
     chat: ChatHistoryCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
@@ -144,7 +144,7 @@ def list_chat_histories(
 
 
 @router.get("/by-snapshot/{snapshot_id}", response_model=List[ChatHistoryResponse])
-async def get_chat_histories_by_snapshot(
+def get_chat_histories_by_snapshot(
     snapshot_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
@@ -176,7 +176,7 @@ async def get_chat_histories_by_snapshot(
 
 
 @router.get("/{chat_id}", response_model=ChatHistoryResponse)
-async def get_chat_history(
+def get_chat_history(
     chat_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
@@ -189,7 +189,7 @@ async def get_chat_history(
 
 
 @router.post("/{chat_id}/adopt-current-mandate")
-async def adopt_current_mandate(
+def adopt_current_mandate(
     chat_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
@@ -207,7 +207,7 @@ async def adopt_current_mandate(
 
 
 @router.put("/{chat_id}", response_model=ChatHistoryResponse)
-async def update_chat_history(
+def update_chat_history(
     chat_id: UUID,
     update: ChatHistoryUpdate,
     db: Session = Depends(get_db),
@@ -237,7 +237,7 @@ async def update_chat_history(
 
 
 @router.delete("/{chat_id}")
-async def delete_chat_history(
+def delete_chat_history(
     chat_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
