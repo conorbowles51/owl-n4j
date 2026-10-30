@@ -56,7 +56,7 @@ class EntitiesStatusResponse(BaseModel):
 # =====================
 
 @router.get("/entities/status", response_model=EntitiesStatusResponse)
-async def list_entities_status(
+def list_entities_status(
     user: dict = Depends(get_current_user),
 ):
     """
@@ -120,7 +120,7 @@ async def list_entities_status(
 
 
 @router.get("/entities", response_model=EntitiesListResponse)
-async def list_entities(
+def list_entities(
     user: dict = Depends(get_current_user),
 ):
     """
@@ -185,7 +185,7 @@ async def list_entities(
 
 
 @router.get("/entities/{entity_key}")
-async def get_entity(
+def get_entity(
     entity_key: str,
     user: dict = Depends(get_current_user),
 ):
