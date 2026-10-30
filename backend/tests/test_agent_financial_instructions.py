@@ -134,6 +134,9 @@ class AgentProvenanceAndPagingInstructionsTests(unittest.TestCase):
                 self.assertIn("payment=<payment id>)", prompt)
                 for text in (prompt, final):
                     self.assertIn("never write the word financial_href", text)
+                # A live answer named "a party named Carmen" from the printed "Cd C armen" as the sender.
+                self.assertIn("Never name a party from words in the printed description", prompt)
+                self.assertIn("Never name a sender or recipient from words in a printed description", final)
 
     def test_the_finalizer_is_asked_for_the_answer_rather_than_left_to_continue_its_own_turn(self):
         for path in ("invoke", "stream"):
