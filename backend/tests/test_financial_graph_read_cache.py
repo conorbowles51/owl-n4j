@@ -120,25 +120,67 @@ class GraphReadCacheTests(unittest.TestCase):
             self.assertEqual(self.cache.read(self.session, "k", lambda: value), value)
         self.assertEqual(self.cache.stats["saved"], 0)
 
-    def test_a_call_after_a_commit_does_not_join_an_older_read(self):
+    def test_a_call_after_a_commit_waits_for_the_older_read_and_never_gets_its_result(self):
         release = threading.Event()
         entered = threading.Event()
+        running = []
 
         def slow():
+            running.append("old")
             entered.set()
             release.wait(5)
+            running.remove("old")
             return {"rows": ["old"]}
 
-        first = []
+        def new():
+            self.assertEqual(running, [], "two reads of one key ran at once")
+            return {"rows": ["new"]}
+
+        first, second = [], []
         t = threading.Thread(target=lambda: first.append(self.cache.read(_Session(self.graph), "k", slow)))
         t.start()
         entered.wait(5)
         self.graph.tx = 2  # a write committed while the first read is running
-        second = self.cache.read(_Session(self.graph), "k", lambda: {"rows": ["new"]})
+        u = threading.Thread(target=lambda: second.append(self.cache.read(_Session(self.graph), "k", new)))
+        u.start()
+        time.sleep(0.2)
+        self.assertEqual(second, [])  # still waiting for the older read
         release.set()
-        t.join()
-        self.assertEqual(second, {"rows": ["new"]})
+        t.join(); u.join()
         self.assertEqual(first, [{"rows": ["old"]}])
+        self.assertEqual(second, [{"rows": ["new"]}])
+
+    def test_a_failed_read_is_shared_with_its_waiters_instead_of_read_again_by_each(self):
+        """Live d5b330d1: each waiter of a timed-out read read again at once, and the concurrent
+        reads timed out in turn, so the case's financial graph kept answering 503."""
+        started = threading.Event()
+
+        def failing():
+            self.calls += 1
+            started.set()
+            time.sleep(0.3)
+            raise RuntimeError("transaction time limit")
+
+        errors = []
+
+        def call():
+            try:
+                self.cache.read(_Session(self.graph), "k", failing)
+            except RuntimeError as exc:
+                errors.append(str(exc))
+
+        leader = threading.Thread(target=call)
+        leader.start()
+        started.wait(5)
+        waiters = [threading.Thread(target=call) for _ in range(3)]
+        for t in waiters:
+            t.start()
+        for t in [leader, *waiters]:
+            t.join()
+        self.assertEqual(self.calls, 1)
+        self.assertEqual(errors, ["transaction time limit"] * 4)
+        self.assertEqual(self.cache.stats["joined_failure"], 3)
+        self.assertEqual(self.cache.read(self.session, "k", self.compute())["calls"], 2)  # the next call reads
 
     def test_concurrent_identical_reads_cost_one_read(self):
         started = threading.Event()

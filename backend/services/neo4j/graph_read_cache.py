@@ -13,10 +13,18 @@ acknowledged to its client is never older than that write, also while another
 large write is being committed (141 checks during 1.6-4.6 s commits, 0 older).
 
 Results are kept compressed and handed out as fresh copies, so a caller may
-change what it receives. A call that finds the same read already running, from
-the same bookmark, waits for it and takes a copy of its result, so a burst of
-identical page loads costs one database read. A call whose bookmark differs
-(something committed since that read started) reads for itself.
+change what it receives. At most one read per key runs at a time in a process.
+A call that finds the same read already running, from the same bookmark, waits
+for it and takes a copy of its result, or its error when it failed, so a burst
+of identical page loads costs one database read. A call whose bookmark differs
+(something committed since that read started) waits for it to end and then
+looks again, so it is never given a result older than its own bookmark.
+
+Measured live (d5b330d1, 2026-10-30): when a read that callers had joined
+failed, every one of them read for itself at once; the concurrent reads slowed
+each other past the server's time limit, failed and were asked again, so the
+case's financial graph answered 503 for hours (33 slow failures in 3 hours,
+up to 894 s each) while one read alone takes about 7 s.
 """
 
 import logging
@@ -44,6 +52,7 @@ class _Flight:
         self.bookmark = bookmark
         self.done = threading.Event()
         self.blob: Optional[bytes] = None
+        self.error: Optional[BaseException] = None
 
 
 _JSON_SCALARS = (str, int, float, bool, type(None))
@@ -92,7 +101,8 @@ class GraphReadCache:
         self._flights: Dict[Hashable, _Flight] = {}
         self._bytes = 0
         self._lock = threading.Lock()
-        self.stats = {"hit": 0, "joined": 0, "miss": 0, "saved": 0, "changed_during_read": 0, "too_large": 0}
+        self.stats = {"hit": 0, "joined": 0, "miss": 0, "saved": 0, "changed_during_read": 0, "too_large": 0,
+                      "joined_failure": 0}
 
     def _count(self, name: str) -> None:
         with self._lock:
@@ -127,23 +137,31 @@ class GraphReadCache:
         compute must read only from the graph database through `session`;
         anything read from elsewhere must be added by the caller afterwards.
         """
-        before = graph_bookmark(session)
-        blob = self._get(key, before)
-        if blob is not None:
-            self._count("hit")
-            return _unpack(blob)
-        with self._lock:
-            flight = self._flights.get(key)
-            joined = flight is not None and flight.bookmark == before
-            if not joined:
-                flight = _Flight(before)
-                self._flights[key] = flight
-        if joined:
+        while True:
+            before = graph_bookmark(session)
+            blob = self._get(key, before)
+            if blob is not None:
+                self._count("hit")
+                return _unpack(blob)
+            with self._lock:
+                flight = self._flights.get(key)
+                if flight is None:
+                    flight = _Flight(before)
+                    self._flights[key] = flight
+                    break
             flight.done.wait()
+            if flight.bookmark != before:
+                # A read from an older state ended; look again from now.
+                continue
             if flight.blob is not None:
                 self._count("joined")
                 return _unpack(flight.blob)
-            # The read it waited for failed; read for itself.
+            if flight.error is not None:
+                # The same read from the same state failed; reading it again
+                # alongside every other waiter is what made it fail.
+                self._count("joined_failure")
+                raise flight.error
+            # The read succeeded but could not be kept; read for itself.
             self._count("miss")
             return compute()
         self._count("miss")
@@ -160,6 +178,9 @@ class GraphReadCache:
                 logger.exception("Could not keep a graph read for reuse")
                 flight.blob = None
             return value
+        except Exception as exc:
+            flight.error = exc
+            raise
         finally:
             with self._lock:
                 if self._flights.get(key) is flight:
