@@ -378,12 +378,22 @@ def _case_knowledge(session, case_id, evidence_file_ids=None):
             currencies[currency] += 1
     if accounts:
         from services.financial.printed_holders import decisions
-        by_id = {str(k): v for k, v in accounts.items()}
-        for account_id, decision in decisions(session, case_id).items():
-            known = by_id.get(account_id)
-            if known is not None:
-                known.printed_holders = list(decision['holders'])
-                known.printed_holders_decision = {k: decision[k] for k in ('decision_id', 'actor_name', 'at')}
+        decided = decisions(session, case_id)
+        if decided:
+            # A decision reaches every account merged with the decided one (one account, as the account view shows
+            # it); where two of them carry one, the latest stands.
+            from uuid import UUID
+            from services.financial.account_consolidation import canonical_map
+            canonical = canonical_map(session, case_id)
+            root = lambda account: canonical.get(account, account)
+            by_root = {}
+            for account_id, decision in sorted(decided.items(), key=lambda pair: str(pair[1].get('at') or '')):
+                by_root[root(UUID(account_id))] = decision
+            for account_id, known in accounts.items():
+                decision = by_root.get(root(UUID(str(account_id))))
+                if decision is not None:
+                    known.printed_holders = list(decision['holders'])
+                    known.printed_holders_decision = {k: decision[k] for k in ('decision_id', 'actor_name', 'at')}
     knowledge = CaseKnowledge(accounts=list(accounts.values()), saved_total=sum(currencies.values()))
     if currencies:
         (top, count), *rest = currencies.most_common(2) + [(None, 0)]

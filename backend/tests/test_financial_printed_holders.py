@@ -203,6 +203,19 @@ class DetectTest(unittest.TestCase):
         self.assertEqual(judgements.category(ph.RULE_ID), 'holder')
         self.assertIn(ph.RULE_ID, judgements.STATEMENT_ROW_RULES)
 
+    def test_the_preview_before_saving_shows_the_call(self):
+        # Review #6 F4: the review queue's preview shows the call the save will record.
+        found = [c for c in judgements.preview([], [], currency='USD', statement_id='k1', file=self._file(),
+                                               holder='ERICA HOPPER') if c['rule_id'] == ph.RULE_ID]
+        self.assertEqual(len(found), 1)
+        self.assertIn('attributed to ERICA HOPPER, the name printed on it (page 197)', found[0]['summary'])
+        self.assertEqual(found[0]['priority'], judgements.priority(ph.RULE_ID))
+        # A person who changed the holder in the draft: no call; nor without the file.
+        self.assertFalse([c for c in judgements.preview([], [], currency='USD', statement_id='k1', file=self._file(),
+                                                        holder='SOMEONE ELSE') if c['rule_id'] == ph.RULE_ID])
+        self.assertFalse([c for c in judgements.preview([], [], currency='USD', statement_id='k1')
+                          if c['rule_id'] == ph.RULE_ID])
+
     def test_no_call_without_the_basis_or_when_a_person_changed_the_holder(self):
         period = SimpleNamespace(id=uuid.uuid4(), currency='USD', opening_balance_minor=0, closing_balance_minor=0)
         for document, file in ((self._document(), self._file(holder_basis=None)),
@@ -295,6 +308,37 @@ class DecisionTest(fixture.DuplicateTestCase):
         known = case_knowledge(self.db, self.case.id).accounts
         self.assertEqual([k.printed_holders for k in known], [BOTH])
         self.assertEqual(known[0].printed_holders_decision['actor_name'], 'Claude (for Neil Byrne)')
+
+    def test_a_decision_reaches_the_proof_through_merged_accounts(self):
+        # Review #6 F-b: recorded on a member of a merged account, it reaches every account of the merge.
+        from postgres.models.financial import FinancialAccount
+        member = FinancialAccount(id=uuid.uuid4(), case_id=self.case.id, identity_key='member-8160',
+                                  institution_name='Barclays', identifier_as_printed=self.account.identifier_as_printed,
+                                  holder_name='ERICA MCCAULEY', metadata_=dict(canonical_account_id=str(self.account.id)))
+        self.db.add(member)
+        self.db.commit()
+        self._saved('ERICA MCCAULEY', date(2026, 1, 1), date(2026, 1, 31))  # on the root account
+        ph.record_decision(self.db, case_id=self.case.id, account_id=member.id, holders=BOTH,
+                           actor=self._actor(), reason='Neil Byrne decided.')
+        self.db.commit()
+        known = case_knowledge(self.db, self.case.id, use_cache=False).accounts
+        self.assertEqual([(k.key, k.printed_holders) for k in known], [(str(self.account.id), BOTH)])
+        # An account of the case not merged with it is not reached.
+        self.assertEqual(ph.decisions(self.db, self.other_case.id), {})
+
+    def test_the_account_view_lists_every_statement_of_a_merged_decided_account(self):
+        # Review #6 F-a, decided: a merge says the accounts are one, so the decision covers the merged account and its
+        # view lists the names of all its statements (the judgement list and the proof read it the same way).
+        from services.financial.account_history import _group_printed_holders
+        member = uuid.uuid4()
+        groups = [dict(account_id=str(self.account.id), periods=[
+            dict(holder='ERICA MCCAULEY', start='2026-01-01', end='2026-01-31'),
+            dict(holder='ERICA HOPPER', start='2026-02-01', end='2026-02-28')])]
+        ph.record_decision(self.db, case_id=self.case.id, account_id=self.account.id, holders=BOTH,
+                           actor=self._actor(), reason='Neil Byrne decided.')
+        self.db.commit()
+        _group_printed_holders(self.db, self.case.id, groups, {self.account.id: self.account.id, member: self.account.id})
+        self.assertEqual([g['name'] for g in groups[0]['printed_holders']], BOTH)
 
     def test_the_account_history_reads_each_statements_printed_holder(self):
         from services.financial.account_history import _printed_holders
