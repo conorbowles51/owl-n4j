@@ -797,13 +797,15 @@ def test_an_unreadable_or_cut_saved_view_is_computed_again(engine, saved_views):
     write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 5)', c=case)
     call(engine, payments_view(counter), case)
     (path,) = saved_views.glob('*.view')
-    for damage in (b'{not json\n{"total":5}', path.read_bytes()[:-3]):
+    whole = path.read_bytes()
+    assert whole.endswith(b'5}')
+    for damage in (b'{not json\n{"total":5}', whole[:-3], whole[:-2] + b'6}'):
         path.write_bytes(damage)
         view_cache.clear()
         assert call(engine, payments_view(counter), case).body == b'{"total":5}'
-    assert counter.calls == 3
+    assert counter.calls == 4, 'a changed body of the same size is caught by its checksum'
     view_cache.clear()
-    assert call(engine, payments_view(counter), case).body == b'{"total":5}' and counter.calls == 3, 'rewritten whole'
+    assert call(engine, payments_view(counter), case).body == b'{"total":5}' and counter.calls == 4, 'rewritten whole'
 
 
 def test_saved_views_stay_within_their_budget_oldest_first(engine, saved_views, monkeypatch):
@@ -821,7 +823,7 @@ def test_saved_views_stay_within_their_budget_oldest_first(engine, saved_views, 
     for number, case in enumerate(cases):
         if number == 1:
             size = next(saved_views.glob('*.view')).stat().st_size
-            monkeypatch.setattr(view_cache, 'MAX_SAVED_BYTES', 2 * size + 1)
+            monkeypatch.setattr(view_cache, 'MAX_SAVED_BYTES', 2 * size + size // 2)
         call(engine, payments_view(counter), case)
         for path in set(saved_views.glob('*.view')) - seen:
             os.utime(path, (time.time() - 1000 + 100 * number,) * 2)  # saved in this order
@@ -834,3 +836,44 @@ def test_saved_views_stay_within_their_budget_oldest_first(engine, saved_views, 
     view_cache.clear()
     call(engine, payments_view(counter), cases[2])
     assert counter.calls == 4, 'the newest copy was kept'
+
+
+def test_no_saved_view_is_used_once_the_database_hands_out_ids_below_the_highest_seen(engine, saved_views):
+    case, other, counter = uuid.uuid4(), uuid.uuid4(), Counter()
+    write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 5), (:o, 1)', c=case, o=other)
+    call(engine, payments_view(counter), case)
+    # Another view was saved at a later counter than this database now hands out: it went back in time.
+    (saved_views / 'xmax').write_text(str(10 ** 9))
+    view_cache.clear()
+    call(engine, payments_view(counter), case)
+    assert counter.calls == 2
+
+
+def test_a_failed_save_leaves_no_partial_file_and_the_answer_stands(engine, saved_views, monkeypatch):
+    import os
+    case, counter = uuid.uuid4(), Counter()
+    write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 5)', c=case)
+    real_fdopen = os.fdopen
+
+    def full_disk(descriptor, *args, **kwargs):
+        handle = real_fdopen(descriptor, *args, **kwargs)
+        handle.write = lambda data: (_ for _ in ()).throw(OSError(28, 'No space left on device'))
+        return handle
+    monkeypatch.setattr(os, 'fdopen', full_disk)
+    assert call(engine, payments_view(counter), case).body == b'{"total":5}'
+    assert not list(saved_views.glob('*.tmp')) and not list(saved_views.glob('*.view'))
+
+
+def test_when_the_saved_scope_cannot_be_read_the_view_is_still_answered(engine, saved_views, monkeypatch):
+    case, counter = uuid.uuid4(), Counter()
+    write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 5)', c=case)
+    real_execute = view_cache.text
+
+    def refusing_text(sql):
+        if 'pg_control_system' in sql:
+            sql = 'SELECT * FROM no_such_table_for_this_test'
+        return real_execute(sql)
+    monkeypatch.setattr(view_cache, 'text', refusing_text)
+    assert call(engine, payments_view(counter), case).body == b'{"total":5}'
+    assert call(engine, payments_view(counter), case).body == b'{"total":5}' and counter.calls == 1, 'kept in memory'
+    assert not list(saved_views.glob('*.view'))
