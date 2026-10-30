@@ -209,6 +209,8 @@ export async function correctJudgement(caseId: string, id: string, reason: strin
 
 /** The marker's short label: plain words, no rule ids. Work Claude did for a person has its own. */
 export function strengthLabel(judgement: Pick<Judgement, "strength"> & { origin?: string; rule_id?: string }) {
+  if (judgement.origin === "agent" && judgement.rule_id === "holder.printed_on_statement")
+    return "Kept as printed by Claude · not confirmed"
   if (judgement.origin === "agent")
     return judgement.rule_id === "model.statement_save" ? "Saved by Claude · not confirmed" : "Hand entry by Claude"
   return judgement.strength === "inferred" ? "Inferred" : "Checked guess"

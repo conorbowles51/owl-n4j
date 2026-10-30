@@ -1,5 +1,5 @@
 import { expect, it } from "vitest"
-import { strengthHelp } from "./judgements"
+import { strengthHelp, strengthLabel } from "./judgements"
 
 it("a holder kept as printed says the page prints the name and the holder is not established", () => {
   const help = strengthHelp({ strength: "inferred", origin: "processor", rule_id: "holder.printed_on_statement" })
@@ -17,4 +17,10 @@ it("a holder kept as printed by Claude keeps the holder sentence", () => {
   const help = strengthHelp({ strength: "inferred", origin: "agent", rule_id: "holder.printed_on_statement" })
   expect(help).toContain("The page prints this name.")
   expect(help).not.toContain("Entered by hand")
+})
+
+it("a holder call made by Claude is not labelled a hand entry, and says no person confirmed it", () => {
+  const label = strengthLabel({ strength: "inferred", origin: "agent", rule_id: "holder.printed_on_statement" })
+  expect(label).toBe("Kept as printed by Claude · not confirmed")
+  expect(strengthLabel({ strength: "inferred", origin: "agent", rule_id: "agent.page_entry" })).toBe("Hand entry by Claude")
 })
