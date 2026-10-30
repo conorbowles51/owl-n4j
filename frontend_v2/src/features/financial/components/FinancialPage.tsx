@@ -74,6 +74,7 @@ import {
   useTransactions,
   useFinancialEntities,
   useFinancialCategories,
+  useFinancialSummary,
   useCategorize,
   useBatchCategorize,
   useCreateCategory,
@@ -86,6 +87,7 @@ import {
   useUnlinkSubTransaction,
 } from "../hooks/use-financial-data"
 import { useFilteredTransactions } from "../hooks/use-filtered-transactions"
+import { useElapsedSeconds } from "../lib/request-wait"
 import { buildEntityFlowRows } from "../lib/filter-transactions"
 import { FinancialToolbar } from "./FinancialToolbar"
 import { FinancialFilterPanel } from "./FinancialFilterPanel"
@@ -281,9 +283,22 @@ function FinancialPageContent() {
     if (store.mainView !== "statements" && panel.graphPanelTab === "detail")
       panel.setGraphPanelCollapsed(true)
   }, [caseId, store.mainView])
-  const { data: transactionsResponse, isLoading } = useTransactions(caseId, {
+  const {
+    data: transactionsResponse,
+    isLoading,
+    isError: transactionsFailed,
+    error: transactionsError,
+  } = useTransactions(caseId, {
     mode: store.mode,
   })
+  // The summary counts the records quickly, so a long first load says what it is loading.
+  const recordCount = useFinancialSummary(caseId, store.mode).data
+    ?.transaction_count
+  const loadingSeconds = useElapsedSeconds(isLoading)
+  const recordsLoading =
+    recordCount === undefined
+      ? null
+      : `${recordCount.toLocaleString("en-GB")} ${recordCount === 1 ? "record" : "records"}`
   const { data: categories = [] } = useFinancialCategories(caseId, store.mode)
   const { data: caseEntities = [] } = useFinancialEntities(caseId)
   const transactions = transactionsResponse?.transactions ?? []
@@ -681,8 +696,33 @@ function FinancialPageContent() {
   const graphTab = (content: ReactNode) => {
     if (isLoading) {
       return (
-        <div className="flex flex-1 items-center justify-center">
+        <div
+          className="flex flex-1 flex-col items-center justify-center gap-3"
+          data-testid="records-loading"
+        >
           <LoadingSpinner size="lg" />
+          <p role="status" className="text-sm text-muted-foreground">
+            {recordsLoading ? `Loading ${recordsLoading}…` : "Loading records…"}
+            {loadingSeconds > 0 && ` ${loadingSeconds} s`}
+          </p>
+        </div>
+      )
+    }
+
+    // A failed read is never shown as an empty case.
+    if (transactionsFailed) {
+      return (
+        <div
+          className="flex flex-1 items-center justify-center p-4 text-sm text-destructive"
+          role="alert"
+          data-testid="records-error"
+        >
+          These records could not be loaded
+          {recordsLoading ? ` (${recordsLoading} in this view)` : ""}. Refresh
+          this page to try again.
+          {transactionsError instanceof Error
+            ? ` ${transactionsError.message}`
+            : ""}
         </div>
       )
     }

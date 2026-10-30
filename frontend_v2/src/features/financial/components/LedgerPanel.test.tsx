@@ -11,7 +11,7 @@
  * transactions" would assert something the request never checked.
  */
 
-import { render as originalRender, screen } from "@testing-library/react"
+import { act, render as originalRender, screen } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { ReactNode } from "react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
@@ -20,6 +20,8 @@ import type { LedgerResponse, LedgerTransaction } from "../api"
 import { LedgerPanel } from "./LedgerPanel"
 
 const useLedgerTransactions = vi.hoisted(() => vi.fn())
+const useLedgerCount = vi.hoisted(() => vi.fn())
+vi.mock("../hooks/use-ledger-count", () => ({ useLedgerCount }))
 
 function render(children: ReactNode) {
   const client = new QueryClient({
@@ -108,6 +110,8 @@ function settled(transactions: LedgerTransaction[], total?: number) {
 
 beforeEach(() => {
   useLedgerTransactions.mockReset()
+  useLedgerCount.mockReset()
+  useLedgerCount.mockReturnValue({ data: undefined })
 })
 
 describe("LedgerPanel states before there are rows", () => {
@@ -140,6 +144,40 @@ describe("LedgerPanel states before there are rows", () => {
       "Reading the ledger"
     )
     expect(screen.queryByTestId("ledger-table")).toBeNull()
+  })
+
+  it("says how many payments it is reading and for how long, and keeps the count if the read fails", () => {
+    vi.useFakeTimers()
+    try {
+      useLedgerCount.mockReturnValue({ data: { case_id: "case-1", total: 27926 } })
+      useLedgerTransactions.mockReturnValue({
+        data: undefined,
+        isPending: true,
+        isError: false,
+        error: null,
+      })
+      const view = render(<LedgerPanel caseId="case-1" investigation />)
+      act(() => {
+        vi.advanceTimersByTime(3000)
+      })
+      const loading = screen.getByTestId("ledger-loading").textContent
+      expect(loading).toContain("Reading the ledger: 27,926 payments…")
+      expect(loading).toContain("3 s")
+      expect(useLedgerCount).toHaveBeenCalledWith("case-1", undefined)
+
+      useLedgerTransactions.mockReturnValue({
+        data: undefined,
+        isPending: false,
+        isError: true,
+        error: new Error("The server took too long"),
+      })
+      view.rerender(<LedgerPanel caseId="case-1" investigation />)
+      const failure = screen.getByTestId("ledger-error").textContent
+      expect(failure).toContain("could not be loaded (27,926 payments in this view)")
+      expect(failure).toContain("The server took too long")
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("shows the loading failure and its reason without rendering transaction counts", () => {

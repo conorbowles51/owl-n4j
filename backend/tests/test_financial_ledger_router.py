@@ -163,6 +163,34 @@ class GetLedgerTransactionsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ctx.exception.status_code, 500)
 
 
+class GetLedgerCountTests(unittest.IsolatedAsyncioTestCase):
+    """The count the Transactions page shows while the ledger rows load: same filters as ``/ledger``."""
+
+    async def test_passes_the_ledger_filters_through_and_returns_the_count(self):
+        case_id, account = uuid.uuid4(), uuid.uuid4()
+        with patch.object(financial_ledger, "count_transactions", return_value=27926) as count_call:
+            result = financial_ledger.get_ledger_count(
+                case_id=case_id, source_document_id=None, account_id=account, ledger_status="quarantined",
+                start_date=None, end_date=None, db="fake-session", account_ids=None, account_holders=["A"])
+        self.assertEqual(result, {"case_id": str(case_id), "total": 27926})
+        count_call.assert_called_once_with(
+            "fake-session", case_id, source_document_id=None, account_id=account, account_ids=None,
+            account_holders=["A"], ledger_status=LedgerStatus.quarantined, start_date=None, end_date=None)
+
+    async def test_an_unknown_status_or_a_bad_range_is_a_400(self):
+        with self.assertRaises(HTTPException) as ctx:
+            financial_ledger.get_ledger_count(
+                case_id=uuid.uuid4(), source_document_id=None, account_id=None, ledger_status="nope",
+                start_date=None, end_date=None, db="fake-session", account_ids=None, account_holders=None)
+        self.assertEqual(ctx.exception.status_code, 400)
+        with patch.object(financial_ledger, "count_transactions", side_effect=LedgerQueryError("after")):
+            with self.assertRaises(HTTPException) as ctx:
+                financial_ledger.get_ledger_count(
+                    case_id=uuid.uuid4(), source_document_id=None, account_id=None, ledger_status=None,
+                    start_date=None, end_date=None, db="fake-session", account_ids=None, account_holders=None)
+        self.assertEqual(ctx.exception.status_code, 400)
+
+
 class GetCaseDecisionsTests(unittest.IsolatedAsyncioTestCase):
     """The decision log's first reader over HTTP.
 

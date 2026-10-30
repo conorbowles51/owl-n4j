@@ -45,7 +45,7 @@ from datetime import date
 from typing import Any, Optional
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from postgres.models.enums import LedgerStatus
@@ -55,6 +55,56 @@ from services.financial.transactions import LOCATOR_PROVENANCE_KEY
 
 class LedgerQueryError(ValueError):
     """A ledger read was asked for something it cannot honestly answer."""
+
+
+def _ledger_rows_where(stmt, session, case_id, *, account_id, account_ids, account_holders, ledger_status,
+                       start_date, end_date, source_document_id):
+    """The rows ``list_transactions`` returns, as a WHERE on ``stmt``; ``count_transactions`` counts the same rows."""
+    if start_date is not None and end_date is not None and start_date > end_date:
+        raise LedgerQueryError(
+            f"start_date {start_date.isoformat()} is after end_date "
+            f"{end_date.isoformat()}"
+        )
+
+    status = ledger_status if ledger_status is not None else LedgerStatus.admitted
+
+    stmt = stmt.where(
+        FinancialTransaction.case_id == case_id,
+        FinancialTransaction.ledger_status == status.value,
+    )
+    if account_id is not None:
+        stmt = stmt.where(FinancialTransaction.account_id.in_(expand_account_ids(session, case_id, [account_id])))
+    if source_document_id is not None:
+        stmt = stmt.where(FinancialTransaction.source_document_id == source_document_id)
+    from services.financial.account_selection import apply_account_selection
+    stmt = apply_account_selection(stmt, session, case_id, account_ids, account_holders)
+    if start_date is not None:
+        stmt = stmt.where(FinancialTransaction.ordering_date >= start_date)
+    if end_date is not None:
+        stmt = stmt.where(FinancialTransaction.ordering_date <= end_date)
+    return stmt
+
+
+def count_transactions(
+    session: Session,
+    case_id: UUID,
+    *,
+    account_id: Optional[UUID] = None,
+    account_ids=None, account_holders=None,
+    ledger_status: Optional[LedgerStatus] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    source_document_id: Optional[UUID] = None,
+) -> int:
+    """How many rows ``list_transactions`` returns for the same arguments, counted in the database.
+
+    Read first so a page can say how many payments it is loading while the rows themselves are read."""
+    stmt = _ledger_rows_where(
+        select(func.count()).select_from(FinancialTransaction), session, case_id,
+        account_id=account_id, account_ids=account_ids, account_holders=account_holders,
+        ledger_status=ledger_status, start_date=start_date, end_date=end_date,
+        source_document_id=source_document_id)
+    return int(session.scalar(stmt))
 
 
 def list_transactions(
@@ -75,30 +125,13 @@ def list_transactions(
     ``ordering_date``, the column the ledger itself orders and reconciles by,
     not any one of the four printed dates a row may also carry.
     """
-    if start_date is not None and end_date is not None and start_date > end_date:
-        raise LedgerQueryError(
-            f"start_date {start_date.isoformat()} is after end_date "
-            f"{end_date.isoformat()}"
-        )
-
-    status = ledger_status if ledger_status is not None else LedgerStatus.admitted
-
     # Each account is loaded once (selectinload). Joined to every payment, its metadata JSON was read and
     # decoded again for each of the account's payments.
-    stmt = select(FinancialTransaction).options(selectinload(FinancialTransaction.account)).where(
-        FinancialTransaction.case_id == case_id,
-        FinancialTransaction.ledger_status == status.value,
-    )
-    if account_id is not None:
-        stmt = stmt.where(FinancialTransaction.account_id.in_(expand_account_ids(session, case_id, [account_id])))
-    if source_document_id is not None:
-        stmt = stmt.where(FinancialTransaction.source_document_id == source_document_id)
-    from services.financial.account_selection import apply_account_selection
-    stmt = apply_account_selection(stmt, session, case_id, account_ids, account_holders)
-    if start_date is not None:
-        stmt = stmt.where(FinancialTransaction.ordering_date >= start_date)
-    if end_date is not None:
-        stmt = stmt.where(FinancialTransaction.ordering_date <= end_date)
+    stmt = _ledger_rows_where(
+        select(FinancialTransaction).options(selectinload(FinancialTransaction.account)), session, case_id,
+        account_id=account_id, account_ids=account_ids, account_holders=account_holders,
+        ledger_status=ledger_status, start_date=start_date, end_date=end_date,
+        source_document_id=source_document_id)
     stmt = stmt.order_by(
         FinancialTransaction.ordering_date.asc(),
         FinancialTransaction.row_index.asc(),

@@ -65,6 +65,7 @@ from services.financial.references import RowReading
 from services.financial.runs import open_ingestion_run
 from services.financial.transaction_query import (
     LedgerQueryError,
+    count_transactions,
     list_transactions,
     to_view,
 )
@@ -321,6 +322,29 @@ class ListTransactionsTests(LedgerQueryTestCase):
             list_transactions(
                 self.db, self.case.id, start_date=FEBRUARY, end_date=JANUARY
             )
+
+    def test_count_is_the_number_of_rows_the_same_query_lists(self):
+        """The Transactions page shows this count while the rows load; it must be the same population."""
+        other_account = self.account()
+        self.write([
+            self.draft(reading=reading(posted_date=JANUARY), row_index=0),
+            self.draft(reading=reading(posted_date=FEBRUARY), row_index=1),
+            self.draft(reading=reading(posted_date=MARCH), row_index=2, account_id=other_account.id),
+        ])
+        (quarantined,) = self.write([self.draft(row_index=3, reading=reading(amount_minor=13_50))])
+        quarantined.ledger_status = LedgerStatus.quarantined.value
+        quarantined.quarantine_reason = "unreadable_row"
+        self.db.commit()
+        for query in ({}, {'ledger_status': LedgerStatus.quarantined}, {'account_id': self.acct.id},
+                      {'account_ids': [other_account.id]}, {'start_date': FEBRUARY},
+                      {'start_date': FEBRUARY, 'end_date': FEBRUARY}, {'source_document_id': uuid.uuid4()}):
+            with self.subTest(**{k: str(v) for k, v in query.items()}):
+                self.assertEqual(count_transactions(self.db, self.case.id, **query),
+                                 len(list_transactions(self.db, self.case.id, **query)))
+        self.assertEqual(count_transactions(self.db, self.case.id), 3)
+        self.assertEqual(count_transactions(self.db, self.other_case.id), 0)
+        with self.assertRaises(LedgerQueryError):
+            count_transactions(self.db, self.case.id, start_date=FEBRUARY, end_date=JANUARY)
 
     def test_a_row_in_another_case_is_not_returned(self):
         other_evidence = EvidenceFile(

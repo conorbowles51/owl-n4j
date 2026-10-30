@@ -2,6 +2,7 @@ import { PaymentLabelsEditor } from "./PaymentLabelsEditor"
 import { PaymentLabelOrigin } from "./PaymentLabelOrigin"
 import { unnamedParty } from "../lib/transaction-analysis"
 import { Disclosure } from "./Disclosure"
+import { InAppLink } from "./InAppLink"
 import { InfoTip } from "./InfoTip"
 import { RowJudgementMarkers } from "./JudgementCalls"
 import { useRowJudgementLookup } from "../hooks/use-judgement-rows"
@@ -744,12 +745,12 @@ function PaymentJudgements({
     <DrawerSection
       title={`Judgement calls on this payment (${count})`}
       action={
-        <a
+        <InAppLink
           className="text-sm underline"
-          href={`/cases/${caseId}/financial?${new URLSearchParams({ view: "statements", judgements: "1" })}`}
+          to={`/cases/${caseId}/financial?${new URLSearchParams({ view: "statements", judgements: "1" })}`}
         >
           See all judgement calls →
-        </a>
+        </InAppLink>
       }
     >
       <RowJudgementMarkers transaction={transaction} />

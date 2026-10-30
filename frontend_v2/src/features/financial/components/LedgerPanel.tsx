@@ -35,7 +35,9 @@ import {
   useLedgerTransactions,
   type LedgerQueryParams,
 } from "../hooks/use-ledger-transactions"
+import { useLedgerCount } from "../hooks/use-ledger-count"
 import { readLedgerStatus } from "../lib/ledger-format"
+import { useElapsedSeconds } from "../lib/request-wait"
 import { LedgerRowBrowser } from "./LedgerRowBrowser"
 
 /** The endpoint's default when no status is sent. See the module docstring. */
@@ -73,6 +75,13 @@ export function LedgerPanel({
     caseId,
     params
   )
+  // Counted by the server without reading the rows, so a long first load can say what it is loading.
+  const count = useLedgerCount(caseId, params).data?.total
+  const elapsed = useElapsedSeconds(!!caseId && isPending)
+  const loading =
+    count === undefined
+      ? null
+      : `${count.toLocaleString("en-GB")} ${investigation ? "payment" : "row"}${count === 1 ? "" : "s"}`
 
   if (!caseId) {
     return (
@@ -89,7 +98,8 @@ export function LedgerPanel({
         data-testid="ledger-loading"
       >
         <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-        Reading the ledger...
+        {loading ? `Reading the ledger: ${loading}…` : "Reading the ledger..."}
+        {elapsed > 0 && ` ${elapsed} s`}
       </div>
     )
   }
@@ -102,7 +112,9 @@ export function LedgerPanel({
       >
         <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
         <span>
-          Transactions could not be loaded. Refresh this page to try again.
+          Transactions could not be loaded
+          {loading ? ` (${loading} in this view)` : ""}. Refresh this page to
+          try again.
           {error instanceof Error ? ` ${error.message}` : ""}
         </span>
       </div>
