@@ -250,3 +250,35 @@ def test_the_child_command_starts_the_rounds_module():
     done = subprocess.run([sys.executable, '-m', 'services.financial.batch_rounds'], cwd=BACKEND,
                           capture_output=True, text=True, timeout=120)
     assert done.returncode == 0, done.stderr[-2000:]
+
+
+def test_thread_dump_signals_do_not_stop_the_rounds_process():
+    """Repeated SIGUSR1 while the rounds thread is busy: each is a dump, never a stop (review 2026-10-30: a Python
+    handler interrupting sigtimedwait made it return garbage that read as a stop)."""
+    dumps, ended, sent = [], [], threading.Event()
+
+    def run(stop):
+        while not stop.is_set():
+            sorted(str(i) for i in range(5000))
+
+    def dump():
+        dumps.append(1)
+        time.sleep(0.05)
+    main = threading.main_thread().ident
+
+    def send():
+        for _ in range(40):
+            signal.pthread_kill(main, signal.SIGUSR1)
+            time.sleep(0.03)
+        sent.set()
+        time.sleep(1.5)
+        signal.pthread_kill(main, signal.SIGTERM)
+    # Blocked before the sender starts (as main() does before anything else), so none takes its default action.
+    previous = signal.pthread_sigmask(signal.SIG_BLOCK, [signal.SIGUSR1, signal.SIGTERM, signal.SIGINT])
+    threading.Thread(target=send, daemon=True).start()
+    try:
+        batch_rounds._serve_until_signalled(threading.Event(), 2, ended.append, run, dump=dump)
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK, previous)
+    assert sent.is_set()  # still running after every dump signal; ended only by the SIGTERM
+    assert ended == [0] and len(dumps) >= 1

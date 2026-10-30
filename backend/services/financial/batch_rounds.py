@@ -212,24 +212,38 @@ def rounds(stop, factory=None, resolve_path=None):
 
 
 STOP_SIGNALS = (signal.SIGTERM, signal.SIGINT)
+# Taken in the same wait as the stop signals, so no asynchronous handler runs in this process: a Python handler
+# interrupting sigtimedwait past its timeout made it return a struct built from uninitialised memory (CPython 3.13,
+# measured in review), which was then read as a stop.
+DUMP_SIGNAL = signal.SIGUSR1
 
 
 def _block_stop_signals():
     """Blocked in the calling thread and every thread it starts later, so only sigwait receives them."""
-    signal.pthread_sigmask(signal.SIG_BLOCK, STOP_SIGNALS)
-    return set(STOP_SIGNALS)
+    signal.pthread_sigmask(signal.SIG_BLOCK, STOP_SIGNALS + (DUMP_SIGNAL,))
+    return set(STOP_SIGNALS) | {DUMP_SIGNAL}
 
 
-def _serve_until_signalled(stop, deadline_seconds, exit_process, run):
-    """``run(stop)`` in a thread; this (main) thread only waits for SIGTERM/SIGINT, then sets ``stop``, lets the
-    running step finish for at most ``deadline_seconds`` and ends the process (an unfinished step's transaction
-    rolls back). The signals are taken with sigwait, not a handler: a handler could interrupt Event.wait while it
-    holds the event's lock and deadlock in set(), and a handler waits for a blocking call on the main thread."""
+def _serve_until_signalled(stop, deadline_seconds, exit_process, run, dump=None):
+    """``run(stop)`` in a thread; this (main) thread only waits for signals. SIGUSR1 calls ``dump()`` (every
+    thread's stack, written from this thread); SIGTERM/SIGINT set ``stop``, let the running step finish for at most
+    ``deadline_seconds`` and end the process (an unfinished step's transaction rolls back). The signals are taken
+    with sigwait, not a handler: a handler could interrupt Event.wait while it holds the event's lock and deadlock in
+    set(), and a handler waits for a blocking call on the main thread."""
     signals = _block_stop_signals()  # before the thread starts: it inherits the mask
     worker = threading.Thread(target=run, args=(stop,), name='batch-rounds', daemon=True)
     worker.start()
     while worker.is_alive():
-        if signal.sigtimedwait(signals, 1.0) is not None:
+        received = signal.sigtimedwait(signals, 1.0)
+        if received is None:
+            continue
+        if received.si_signo == DUMP_SIGNAL:
+            if dump is not None:
+                try:
+                    dump()
+                except Exception:  # noqa: BLE001 - a failed dump never stops the rounds
+                    log.exception('Thread dump failed')
+        elif received.si_signo in STOP_SIGNALS:
             break
     stop.set()
     worker.join(deadline_seconds)
@@ -244,11 +258,10 @@ def main():
     from postgres.session import _get_session_local
     from routers.evidence import _resolve_stored_path
     from services import process_shutdown, thread_dump
-    # kill -USR1 <child> writes its threads' stacks, as for the workers (services/thread_dump.py).
-    thread_dump.install()
     factory = _get_session_local()
+    # kill -USR1 <child> writes its threads' stacks to the same file as for the workers (services/thread_dump.py).
     _serve_until_signalled(threading.Event(), process_shutdown.BACKGROUND_STOP_SECONDS, os._exit,
-                           lambda stop: rounds(stop, factory, _resolve_stored_path))
+                           lambda stop: rounds(stop, factory, _resolve_stored_path), dump=thread_dump.write_dump)
 
 
 if __name__ == '__main__':

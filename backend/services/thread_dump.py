@@ -36,8 +36,11 @@ def format_threads():
     return '\n\n'.join(blocks) + '\n\n'
 
 
-def _write(path):
+def write_dump(path=None):
+    """Append every thread's stack to this process's file (stderr only if the file cannot be written)."""
+    path = path or dump_path()
     try:
+        os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
         with open(path, 'a') as dump:
             dump.write(format_threads())
     except OSError:
@@ -52,5 +55,5 @@ def install():
         os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
         open(path, 'w').close()
     except OSError:
-        path = None
-    signal.signal(signal.SIGUSR1, lambda signum, frame: _write(path) if path else sys.stderr.write(format_threads()))
+        pass
+    signal.signal(signal.SIGUSR1, lambda signum, frame: write_dump(path))
