@@ -214,6 +214,8 @@ export function strengthHelp(judgement: Pick<Judgement, "strength"> & { origin?:
     return judgement.strength === "inferred"
       ? "Entered by hand by Claude, for a person, from the page images; the printed balances alone do not prove it. Not a person's entry until a person confirms it."
       : "Entered by hand by Claude, for a person, from the page images; checked against the printed balances and totals. Not a person's entry until a person confirms it."
+  if (judgement.rule_id === "holder.printed_on_statement")
+    return "The page prints this name. Which person holds the account has not been established, so filing the statement under the name printed on it is a judgement call."
   return judgement.strength === "inferred"
     ? "The page does not print this value; the processor worked it out."
     : "The processor chose this reading, and the printed balances or totals still prove it."

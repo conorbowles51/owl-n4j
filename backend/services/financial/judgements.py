@@ -856,6 +856,17 @@ def _current(query):
 FACETS = ('status', 'priority', 'category', 'strength', 'origin')
 
 
+def _printed_names(session, case_id, rows):
+    """{source document id: the holder printed on that statement} for statements of accounts a person decided keep the
+    holder printed on each statement (printed_holders); other accounts keep their saved holder."""
+    from services.financial.account_history import _printed_holders
+    from services.financial.printed_holders import decisions
+    decided = {account for account, decision in decisions(session, case_id).items() if decision.get('holders')}
+    documents = {row[0].source_document_id for row in rows
+                 if row[0].source_document_id and row[5] is not None and str(row[5]) in decided}
+    return {document: name for document, name in _printed_holders(session, documents).items() if name}
+
+
 def _search_rows(session, case_id, *, source_document_id=None, statement_period_id=None, subject_ids=None):
     """Every current judgement of the case with what a person searches it by (file, account, period, payment)."""
     from postgres.models.evidence import EvidenceFile as F
@@ -874,11 +885,16 @@ def _search_rows(session, case_id, *, source_document_id=None, statement_period_
         query = query.where(J.statement_period_id == statement_period_id)
     if subject_ids:
         query = query.where(J.subject_id.in_(subject_ids))
+    rows = session.execute(query).all()
+    printed_names = _printed_names(session, case_id, rows)
     out = []
     for (row, file_id, filename, start, end, account_id, holder, printed, normalised, bank, description, amount,
-         counterparty) in session.execute(query):
+         counterparty) in rows:
         if row.subject_type == 'account' and account_id is None:
             account_id = row.subject_id
+        saved_holder = holder
+        # An account decided to keep the holder printed on each statement is headed by that statement's own name.
+        holder = printed_names.get(row.source_document_id) or holder
         account_label = ' · '.join(x for x in (holder, printed or normalised, bank) if x)
         file_id = file_id or (row.evidence or {}).get('evidence_file_id')
         filename = filename or (row.evidence or {}).get('filename')
@@ -886,7 +902,8 @@ def _search_rows(session, case_id, *, source_document_id=None, statement_period_
                      account_id=str(account_id) if account_id else None, account_label=account_label or None,
                      payment_description=description, payment_amount_minor=str(amount) if amount is not None else None)
         months = ' '.join(d.strftime('%b %B %Y') for d in (start, end) if d)
-        text = ' '.join(str(x) for x in (filename, holder, printed, normalised, bank, start, end, months, description,
+        text = ' '.join(str(x) for x in (filename, holder, saved_holder if saved_holder != holder else None, printed,
+                                         normalised, bank, start, end, months, description,
                                          counterparty, row.summary, RULES.get(row.rule_id, ('',))[0],
                                          CATEGORIES[category(row.rule_id)]) if x).lower()
         if amount is not None:

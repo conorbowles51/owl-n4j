@@ -259,6 +259,33 @@ class DecisionTest(fixture.DuplicateTestCase):
                          {first.id: 'ERICA MCCAULEY', second.id: 'ERICA HOPPER', reviewed.id: 'E HOPPER'})
 
 
+    def test_the_judgement_list_heads_a_decided_accounts_statement_with_the_name_it_prints(self):
+        from postgres.models.financial_judgements import FinancialJudgement
+        FinancialJudgement.__table__.create(self.db.get_bind(), checkfirst=True)
+        self.account.holder_name = 'ERICA MCCAULEY'
+        document = self.make_document()
+        period = self.make_period(document, bounds=PeriodBounds.printed(date(2026, 2, 1), date(2026, 2, 28)))
+        document.document_type = 'statement_review'
+        document.metadata_ = dict(statement_import_request=dict(holder='ERICA HOPPER', institution='Barclays',
+                                                                account_number=self.account.identifier_as_printed))
+        self.db.commit()
+        judgements.record_judgement(self.db, case_id=self.case.id, subject_type='statement_period',
+                                    subject_id=period.id, rule_id=ph.RULE_ID, summary='Kept as printed.',
+                                    target_key='holder', source_document_id=document.id, statement_period_id=period.id)
+        self.db.commit()
+
+        def heading(q=''):
+            return [item['account_label'] for item in judgements.search(self.db, self.case.id, q=q)['items']]
+        # No decision: the account's saved holder heads it, as for every other account.
+        self.assertTrue(heading()[0].startswith('ERICA MCCAULEY'))
+        ph.record_decision(self.db, case_id=self.case.id, account_id=self.account.id, holders=BOTH,
+                           actor=self._actor(), reason='Neil Byrne decided.')
+        self.db.commit()
+        # Decided: the statement is headed by the name printed on it, and found by either name.
+        self.assertTrue(heading()[0].startswith('ERICA HOPPER'))
+        self.assertEqual(len(heading('mccauley')), 1)
+        self.assertEqual(len(heading('hopper')), 1)
+
     def test_the_account_view_lists_the_names_only_where_a_person_decided(self):
         from services.financial.account_history import _group_printed_holders
 
