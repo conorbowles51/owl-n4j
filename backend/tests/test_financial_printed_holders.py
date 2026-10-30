@@ -227,6 +227,20 @@ class DetectTest(unittest.TestCase):
         self.assertFalse([c for c in judgements.preview([], [], currency='USD', statement_id='k1')
                           if c['rule_id'] == ph.RULE_ID])
 
+    def test_the_preview_route_reads_only_a_file_of_the_same_case(self):
+        from routers import financial_judgements as route
+        case_id = uuid.uuid4()
+        file = self._file()
+        body = route.Preview(statement_id='k1', currency='USD', file_id=uuid.uuid4(), holder='ERICA HOPPER')
+
+        def calls(owner):
+            file.case_id = owner
+            db = SimpleNamespace(get=lambda model, ident: file)
+            return [c for c in route.preview_judgement_calls(body, case_id=case_id, db=db)['items']
+                    if c['rule_id'] == ph.RULE_ID]
+        self.assertEqual(len(calls(case_id)), 1)
+        self.assertEqual(calls(uuid.uuid4()), [])  # another case's file is never read
+
     def test_no_call_without_the_basis_or_when_a_person_changed_the_holder(self):
         period = SimpleNamespace(id=uuid.uuid4(), currency='USD', opening_balance_minor=0, closing_balance_minor=0)
         for document, file in ((self._document(), self._file(holder_basis=None)),
