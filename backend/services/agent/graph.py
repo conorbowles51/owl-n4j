@@ -15,7 +15,13 @@ from langgraph.graph import END, START, StateGraph, add_messages
 
 from config import ANTHROPIC_API_KEY, DEEPSEEK_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY
 from services.agent.json_utils import to_jsonable, truncate_payload, truncate_text
-from services.agent.model_payloads import tool_data_for_model
+from services.agent.model_payloads import (
+    context_window_for,
+    message_budget_chars,
+    model_view,
+    run_budget_chars,
+    tool_message_payload,
+)
 from services.agent.tools import AgentToolContext, make_agent_tools
 
 
@@ -106,6 +112,7 @@ _INTERNAL_TOOL_MARKERS = (
     "build_report_artifact",
     "build_map_artifact",
     "request_clarification",
+    "read_tool_result_page",
 )
 
 _FINANCIAL_ANALYSIS_PROMPT = """Financial investigation:
@@ -119,6 +126,9 @@ _FINANCIAL_ANALYSIS_PROMPT = """Financial investigation:
 - Cite returned source references, filenames and exact page/statement-period/transaction identifiers when available. Use only returned links and locators; do not invent source pages, links or citations or pick a same-named file. Retain source_result_ids when building artifacts.
 - A request to analyse all transactions already defines the scope: all available imported payments in this case, using the returned default population and visibly stating it. Proceed with a useful investigator report covering scope/coverage, currency-separated account summaries, observed activity, supported counterparties/categories, anomalies needing review, sources and open questions. Do not ask the user to repeat the scope, choose arbitrary filters, or specify obvious headings. Ask only if a genuinely unresolved choice materially changes the requested conclusion.
 - Build ledger tables from returned rows or full-population grouped results with build_table_artifact_from_rows; do not query Neo4j to recreate relational ledger totals. Use build_chart_artifact and build_report_artifact for supporting views. Put coverage and exclusions in report_scope and the opening report section, and in table/chart notes. Direct table artifacts accept at most 100 rows and chart artifacts at most 250 rows; larger requests are rejected, not silently truncated. Prefer full-population grouped summaries for a large analysis. Label sampled, selected, top-ranked or paginated supporting rows with displayed and matching counts; their CSV exports contain only artifact rows and displayed fields, not a raw ledger export. A complete raw transaction CSV belongs to the Financial Transactions export workflow.
+- Every ledger row carries provenance. provenance.origin is "processor" (printed on the statement and read by the processor), "model" (saved by a model for a person: a model reading, not a person's entry) or "person" (entered or reviewed and saved by a person); provenance.confirmation says whether a person has confirmed it. When an answer relies on a row that a model saved, that no person has confirmed, or that has open judgement calls, say so beside the figure in plain words, e.g. "saved by Claude for <name>, not confirmed by a person" or "1 open judgement call: <rule_label> (<strength>)". The page's judgement_calls give each call's sentence. If provenance.judgement_calls.available is false, say the judgement calls could not be checked; never present such a row as having none.
+- A corrected row (provenance.correction) is used at its corrected value; state the original value beside it when it matters to the answer. Never add a p4 row (proof_class or source_proof_class "p4") into any total, and never add excluded rows (included_in_totals false) into totals; use the tools' totals.
+- Link each ledger row you cite with its financial_href, e.g. [12 Mar payment to Acme](financial_href); never build a payment link yourself.
 - Separate observed facts from hypotheses and investigative leads. Unusual amounts, repeated counterparties or timing patterns alone do not establish wrongdoing. Do not infer ownership, beneficiary identity, intent, or criminal conduct beyond the returned evidence.
 - If financial access is unavailable or the run is restricted to the Significant layer, explain the coverage boundary. Do not bypass that boundary through graph queries or another case's data.
 """
@@ -134,7 +144,12 @@ _FINAL_ANSWER_SYSTEM_PROMPT = (
     "For financial results, preserve the returned population, dates, filters, coverage, exclusions and staleness limits. "
     "Keep currencies and bank/card account types separate. Do not turn a page or sample into full-population totals, "
     "claim every source was processed, invent missing months, or infer wrongdoing without evidence. "
-    "Retain returned source citations and distinguish observed facts from hypotheses. Artifact CSV contains only artifact rows and displayed fields; do not call it the complete raw ledger."
+    "Retain returned source citations and distinguish observed facts from hypotheses. Artifact CSV contains only artifact rows and displayed fields; do not call it the complete raw ledger. "
+    "When a figure relies on a ledger row a model saved, that no person has confirmed, or that has open judgement calls, "
+    "say so beside it in plain words; use a corrected row's corrected value and give its original value; never add p4 or "
+    "excluded rows into a total. Keep ledger-row links (financial_href) and document links (doc://filename/page) as "
+    "Markdown links. If any tool result was shown in part (_paging) and not read in full, say the answer covers "
+    "<returned> of <total> for that result."
 )
 
 
@@ -247,6 +262,9 @@ def activity_for_tool_call(name: str | None, args: dict[str, Any] | None, call_i
     elif safe_name == "analyze_financial_transactions":
         title = "Analysed imported payments"
         detail = "I'm calculating across all matching payments, keeping currencies and bank/card accounts separate."
+    elif safe_name == "read_tool_result_page":
+        title = "Read the rest of an earlier result"
+        detail = "The earlier result was too large to show at once, so I'm reading the part not yet shown."
     elif safe_name == "get_financial_coverage":
         title = "Checked financial coverage"
         detail = "I'm checking which saved accounts, periods and payments are represented, and what remains outside this analysis."
@@ -387,6 +405,11 @@ def _budget_continuation_clarification(max_tool_calls: int) -> dict[str, Any]:
     }
 
 
+def _tool_message_chars(messages: list[Any]) -> int:
+    """Characters of tool results already sent to the model in this run."""
+    return sum(len(str(message.content)) for message in messages if isinstance(message, ToolMessage))
+
+
 class AgentGraphRunner:
     def __init__(self, *, provider: str, model_id: str, api_key: str | None = None):
         self.provider = provider
@@ -466,6 +489,8 @@ class AgentGraphRunner:
         )
         tools = make_agent_tools(tool_context)
         tools_by_name = {tool.name: tool for tool in tools}
+        # Tool results may use a share of the model's context over the run; each result is whole when it fits.
+        run_budget = run_budget_chars(context_window_for(getattr(self, "model_id", None)))
         model_with_tools = self.base_model.bind_tools(tools)
 
         def build_system_prompt(state: AgentState) -> str:
@@ -505,7 +530,8 @@ Your job:
 - If the user asks for CSV export, build the relevant artifact and say it can be downloaded with the artifact CSV button. Do not claim you attached a file or wrote a local file.
 - Do not claim evidence exists unless a tool result supports it.
 - Keep final answers professional, concise, and specific. Mention artifact titles when you create them.
-- When using document search results, cite filename/page metadata when available.
+- When using document search results, cite each document as a link: [filename, p.N](doc://<filename>/N) with the page from its metadata, or [filename](doc://<filename>) when no page is known. Never invent a page.
+- A tool message with a _paging note is shown in part: _paging states total, returned and next_page. Read the rest with read_tool_result_page before drawing a conclusion that depends on the whole result. If you stop before reading every page (for example, the tool budget), the answer must say it covers <returned> of <total> and which result is partial.
 
 {_FINANCIAL_ANALYSIS_PROMPT}
 
@@ -544,6 +570,7 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
             artifacts: list[dict[str, Any]] = []
             clarifications: list[dict[str, Any]] = []
             tool_results: dict[str, Any] = {}
+            used_chars = _tool_message_chars(state["messages"])
 
             for tool_call in tool_calls:
                 name = tool_call.get("name")
@@ -556,6 +583,8 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
                 output: dict[str, Any]
 
                 try:
+                    budget = message_budget_chars(run_budget, used_chars)
+                    tool_context.page_budget_chars = budget
                     if name not in tools_by_name:
                         raise ValueError(f"Unknown tool: {name}")
                     raw = tools_by_name[name].invoke(args)
@@ -594,21 +623,19 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
                         "activity": activity,
                     }
                 )
+                if result_id:
+                    tool_context.model_views[result_id] = model_view(output.get("data"), artifact)
+                content = json.dumps(
+                    tool_message_payload(result_id=result_id, summary=summary, data=output.get("data"),
+                                         artifact=artifact, budget_chars=budget),
+                    ensure_ascii=False,
+                )
+                used_chars += len(content)
                 tool_messages.append(
                     ToolMessage(
                         tool_call_id=call_id,
                         name=name,
-                        content=json.dumps(
-                            {
-                                "result_id": result_id,
-                                "summary": summary,
-                                "data": tool_data_for_model(name, output.get("data")),
-                                "artifact": truncate_payload(artifact, max_items=20, max_text_chars=1500)
-                                if artifact
-                                else None,
-                            },
-                            ensure_ascii=False,
-                        ),
+                        content=content,
                     )
                 )
 
@@ -706,6 +733,8 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
         )
         tools = make_agent_tools(tool_context)
         tools_by_name = {tool.name: tool for tool in tools}
+        # Tool results may use a share of the model's context over the run; each result is whole when it fits.
+        run_budget = run_budget_chars(context_window_for(getattr(self, "model_id", None)))
         model_with_tools = self.base_model.bind_tools(tools)
 
         def build_system_prompt(state: AgentState) -> str:
@@ -745,7 +774,8 @@ Your job:
 - If the user asks for CSV export, build the relevant artifact and say it can be downloaded with the artifact CSV button. Do not claim you attached a file or wrote a local file.
 - Do not claim evidence exists unless a tool result supports it.
 - Keep final answers professional, concise, and specific. Mention artifact titles when you create them.
-- When using document search results, cite filename/page metadata when available.
+- When using document search results, cite each document as a link: [filename, p.N](doc://<filename>/N) with the page from its metadata, or [filename](doc://<filename>) when no page is known. Never invent a page.
+- A tool message with a _paging note is shown in part: _paging states total, returned and next_page. Read the rest with read_tool_result_page before drawing a conclusion that depends on the whole result. If you stop before reading every page (for example, the tool budget), the answer must say it covers <returned> of <total> and which result is partial.
 
 {_FINANCIAL_ANALYSIS_PROMPT}
 
@@ -786,6 +816,7 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
             artifacts: list[dict[str, Any]] = []
             clarifications: list[dict[str, Any]] = []
             tool_results: dict[str, Any] = {}
+            used_chars = _tool_message_chars(state["messages"])
 
             for tool_call in tool_calls:
                 if should_cancel and should_cancel():
@@ -800,6 +831,8 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
                 output: dict[str, Any]
 
                 try:
+                    budget = message_budget_chars(run_budget, used_chars)
+                    tool_context.page_budget_chars = budget
                     if name not in tools_by_name:
                         raise ValueError(f"Unknown tool: {name}")
                     raw = tools_by_name[name].invoke(args)
@@ -838,21 +871,19 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
                         "activity": activity,
                     }
                 )
+                if result_id:
+                    tool_context.model_views[result_id] = model_view(output.get("data"), artifact)
+                content = json.dumps(
+                    tool_message_payload(result_id=result_id, summary=summary, data=output.get("data"),
+                                         artifact=artifact, budget_chars=budget),
+                    ensure_ascii=False,
+                )
+                used_chars += len(content)
                 tool_messages.append(
                     ToolMessage(
                         tool_call_id=call_id,
                         name=name,
-                        content=json.dumps(
-                            {
-                                "result_id": result_id,
-                                "summary": summary,
-                                "data": tool_data_for_model(name, output.get("data")),
-                                "artifact": truncate_payload(artifact, max_items=20, max_text_chars=1500)
-                                if artifact
-                                else None,
-                            },
-                            ensure_ascii=False,
-                        ),
+                        content=content,
                     )
                 )
 

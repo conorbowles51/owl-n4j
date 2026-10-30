@@ -9,6 +9,7 @@ from collections import Counter
 from datetime import date
 from hashlib import sha256
 import json
+import logging
 from uuid import UUID
 
 from sqlalchemy import select
@@ -22,6 +23,8 @@ from services.financial.ledger_summary import LedgerSummaryError, ledger_summary
 from services.financial.ledger_table_view import LedgerTableView, capture_table_view, _period
 from services.financial.working_totals import working_totals_from_readings
 from services.financial.money import get_currency, MoneyError
+
+log = logging.getLogger(__name__)
 
 MAX_CONTEXT_ROWS = 10000
 MAX_INCOMPLETE_RECORDS = 100000
@@ -240,6 +243,121 @@ def _context(session, case_id, account_ids, account_holders, start, end, filters
     return context, incomplete, source_index, selected
 
 
+# The fields a correction can change (services.financial.corrections), shown original beside corrected.
+CORRECTED_FIELDS = ('amount_minor', 'direction', 'currency', 'transaction_date', 'posted_date', 'value_date',
+                    'ordering_date', 'description', 'counterparty_raw', 'transaction_type', 'bank_reference')
+MAX_CORRECTION_CHAIN = 50
+
+
+def _judgement_index(session, case_id):
+    """The case's current judgement calls and the payments each touches (services.financial.judgements.row_map,
+    the same read that marks the Financial ledger's rows), or None when they cannot be read."""
+    from contextlib import nullcontext
+    from services.financial.judgements import row_map
+    try:
+        # Only reads: a savepoint keeps a failed read from ending the read transaction (SQLite has no such abort).
+        connection = session.connection()
+        with connection.begin_nested() if connection.dialect.name != 'sqlite' else nullcontext():
+            return row_map(session, case_id)
+    except Exception:  # noqa: BLE001 - the rows still read; each then says its judgement calls are unknown
+        log.warning('Judgement calls could not be read for the agent in case %s', case_id, exc_info=True)
+        return None
+
+
+def _row_judgements(index, row):
+    """Every current judgement call that touches this payment: on the payment, or on its whole statement."""
+    if index is None:
+        return dict(available=False, open=None, resolved=None, calls=[],
+            note='Judgement calls could not be read for this answer; do not treat this row as having none.')
+    ids = [*index['transactions'].get(row['key'], []), *index['documents'].get(row['source_document_id'], [])]
+    by_id = index['by_id']
+    calls = [dict(id=item['id'], rule_id=item['rule_id'], rule_label=item['rule_label'], strength=item['strength'],
+        status=item['status'], made_by=item['origin'], priority=item['priority_label'])
+        for item in (by_id[i] for i in dict.fromkeys(ids) if i in by_id)]
+    return dict(available=True, open=sum(c['status'] == 'open' for c in calls),
+        resolved=sum(c['status'] != 'open' for c in calls), calls=calls)
+
+
+def _correction(reading, by_id, load_row):
+    """A corrected payment: the reading it replaced (first and immediately previous), beside the corrected values
+    that the ledger uses. None for a payment never corrected."""
+    chain, record = [], (reading.get('provenance') or {}).get('correction')
+    while record and record.get('previous_transaction_id') and len(chain) < MAX_CORRECTION_CHAIN:
+        previous_id = str(record['previous_transaction_id'])
+        found = by_id.get(previous_id)
+        previous = (found['row'], found.get('provenance') or {}) if found else load_row(previous_id)
+        if previous is None:
+            chain.append(dict(transaction_id=previous_id, available=False))
+            break
+        chain.append(dict(transaction_id=previous_id, available=True,
+            **{key: previous[0].get(key) for key in ('ref_id', *CORRECTED_FIELDS)}))
+        record = previous[1].get('correction')
+    if not chain:
+        return None
+    row = reading['row']
+    original = chain[-1]
+    changed = [key for key in CORRECTED_FIELDS if original.get('available') and original.get(key) != row.get(key)]
+    return dict(corrected=True, uses='corrected', versions_replaced=len(chain), changed_fields=changed,
+        original=original, previous=chain[0] if len(chain) > 1 else None,
+        corrected_values={key: row.get(key) for key in changed},
+        text=('Corrected after the original reading; the ledger uses the corrected value. Original: '
+            + ('; '.join(f'{key} {original.get(key)!r}' for key in changed) if changed else 'not available')
+            + '.'))
+
+
+def _names(row):
+    """Names on the row that a model read and no person confirmed, and names a person set over the printed text."""
+    model_read, person_set = [], []
+    for field, source in (row.get('label_sources') or {}).items():
+        source = source or {}
+        if source.get('source') == 'model_reading':
+            model_read.append(dict(field=field, value=row.get(field), label=source.get('label'),
+                explanation=source.get('explanation')))
+        elif source.get('source') == 'investigator' and field in ('from_name', 'to_name', 'category'):
+            person_set.append(dict(field=field, value=row.get(field), printed_counterparty=row.get('counterparty_raw'),
+                explanation=source.get('explanation')))
+    return model_read, person_set
+
+
+def _row_provenance(reading, judgements, by_id, load_row):
+    """Who the row's reading comes from, its confirmation state, proof class, judgement calls and corrections. Reads
+    the ledger's own fields (ledger_summary: model_work, provenance.confirmed_by, provenance.correction) and the
+    judgement calls' row map; nothing is inferred a second way."""
+    from services.financial.model_work import origin_of
+    row, stored = reading['row'], reading.get('provenance') or {}
+    work = reading.get('model_work')
+    saver = stored.get('confirmed_by') or {}
+    if work:
+        origin, status = work['origin'], work['statement_status']
+        model, person = origin.get('model') or 'a model', (origin.get('for') or {}).get('name') or 'a person'
+        out = dict(origin='model', confirmation=f'model_{status}', model=model, saved_for=person,
+            model_id=origin.get('model_id'), saved_at=origin.get('at'), citation=origin.get('citation'),
+            origin_text=f'Saved by {model} for {person}: a model reading, not a person\'s entry. '
+                + ('No person has confirmed this statement.' if status == 'not_confirmed'
+                   else f'A person has {status} this statement.'))
+    elif saver and not origin_of(saver):
+        out = dict(origin='person', confirmation='person_saved', saved_by=saver.get('name'),
+            origin_text=f"Entered or reviewed and saved by a person ({saver.get('name') or 'name not recorded'}).")
+    else:
+        out = dict(origin='processor', confirmation='processor_reading',
+            origin_text='Printed on the statement and read by the processor.')
+    model_read, person_set = _names(row)
+    out.update(proof_class=row.get('proof_class'), source_proof_class=(reading.get('source') or {}).get('proof_class'),
+        judgement_calls=_row_judgements(judgements, row), correction=_correction(reading, by_id, load_row),
+        model_read_names=model_read, person_set_names=person_set)
+    return out
+
+
+def _page_judgements(index, items):
+    """The sentence and page of each judgement call the page's rows carry, once per call (rows list them by id)."""
+    if index is None:
+        return None
+    ids = dict.fromkeys(call['id'] for item in items for call in item['provenance']['judgement_calls']['calls'])
+    return {i: dict(rule_label=index['by_id'][i]['rule_label'], summary=index['by_id'][i]['summary'],
+        page=index['by_id'][i]['page'], filename=index['by_id'][i]['filename'], made_by=index['by_id'][i]['origin'],
+        strength=index['by_id'][i]['strength'], status=index['by_id'][i]['status']) for i in ids}
+
+
 def _validate_period_ownership(session, case_id, readings):
     """A malformed historical FK must not expose another case's period ID."""
     wanted = {r['row']['statement_period_id'] for r in readings if r['row'].get('statement_period_id')}
@@ -373,6 +491,20 @@ def read_financial_ledger(session, *, case_id, account_ids=None, account_holders
         account['matching_payments_for_canonical_account'] = counts[account['canonical_account_id']]
     scope_coverage['registered_accounts_without_matching_payments'] = len({
         a['canonical_account_id'] for a in context if not counts[a['canonical_account_id']]})
+    judgements = None
+    if view in ('transactions', 'excluded'):
+        judgements = _judgement_index(session, case_id)
+        if judgements is not None:
+            judgements['by_id'] = {item['id']: item for item in judgements['judgements']}
+
+    def load_row(transaction_id):
+        from postgres.models.financial import FinancialTransaction
+        from services.financial.transaction_query import to_view
+        stored = session.get(FinancialTransaction, _uuid(transaction_id))
+        if stored is None or stored.case_id != case_id:
+            return None
+        return to_view(stored).to_json(), stored.provenance or {}
+
     def row_item(reading):
         row = reading['row']
         source = source_index.get(row['source_document_id'])
@@ -381,7 +513,8 @@ def read_financial_ledger(session, *, case_id, account_ids=None, account_holders
         return dict(**row, transaction_id=row['key'], source=source,
             currency_exponent=_currency_exponent(row['currency']),
             included_in_totals=eligible(reading), exclusion_reason=None if eligible(reading) else reading['exclusion_reason'],
-            financial_href=f'/cases/{case_id}/financial')
+            provenance=_row_provenance(reading, judgements, by_id, load_row),
+            financial_href=f'/cases/{case_id}/financial?view=transactions&payment={row["key"]}')
     if view == 'groups':
         items = _totals(matching, group_by)
     elif view == 'coverage':
@@ -417,4 +550,5 @@ def read_financial_ledger(session, *, case_id, account_ids=None, account_holders
         total_matching=total, returned=len(items[offset:offset+limit]), offset=offset,
         has_more=offset+limit < total, next_offset=offset+limit if offset+limit < total else None,
         items=items[offset:offset+limit], totals=totals, coverage=scope_coverage,
+        judgement_calls=_page_judgements(judgements, items[offset:offset+limit]),
         applied=False, limitation=LIMITATION)

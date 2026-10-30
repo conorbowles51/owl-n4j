@@ -66,6 +66,8 @@ class AgentFinancialJourneyTests(unittest.TestCase):
         model = ScriptedFinancialModel(steps)
         runner = object.__new__(AgentGraphRunner)
         runner.base_model = model
+        # The live Agent model (1M-token context): its run budget decides what reaches the model whole.
+        runner.model_id = "deepseek-v4-pro"
         opened = []
 
         @contextmanager

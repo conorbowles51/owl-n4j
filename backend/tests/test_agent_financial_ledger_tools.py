@@ -17,7 +17,7 @@ from services.agent.financial_ledger_tools import read_financial_ledger, Financi
 from tests.test_financial_duplicates import DuplicateTestCase
 
 
-class FinancialAgentLedgerTests(DuplicateTestCase):
+class LedgerToolFixture(DuplicateTestCase):
     def setUp(self):
         super().setUp()
         Base.metadata.create_all(self.engine, tables=[model.__table__ for model in (
@@ -54,6 +54,9 @@ class FinancialAgentLedgerTests(DuplicateTestCase):
 
     def read(self, **options):
         return read_financial_ledger(self.db, case_id=self.case.id, **options)
+
+
+class FinancialAgentLedgerTests(LedgerToolFixture):
 
     def test_complete_pages_exact_mixed_totals_and_no_writes_or_graph(self):
         self.source(rows=121, amount=9007199254740993)
@@ -379,5 +382,105 @@ class CorrectedFinancialAgentLedgerTests(unittest.TestCase):
             self.assertIn(original_id, {item['transaction_id'] for item in excluded['items']})
             self.assertFalse(read_financial_ledger(fixture.f.db, case_id=fixture.f.case.id,
                 offset=1, expected_revision=before['revision'])['available'])
+        finally:
+            fixture.tearDown()
+
+
+class FinancialAgentRowProvenanceTests(LedgerToolFixture):
+    """What the agent reads of each ledger row: who the reading comes from, its confirmation state, proof class,
+    judgement calls and corrections (lx-agent item A). Each failed on the code that sent bare rows."""
+
+    def judgements_table(self):
+        from postgres.models.financial_judgements import FinancialJudgement
+        Base.metadata.create_all(self.engine, tables=[FinancialJudgement.__table__])
+
+    def test_model_saved_unconfirmed_row_carries_origin_and_state(self):
+        from services.financial.model_work import model_origin, model_name
+        document, _, rows = self.source(rows=2)
+        origin = model_origin(for_name='Jobs Reviewer', model_id='claude-opus-5-5', citation={'page': 3})
+        rows[0].provenance = {**(rows[0].provenance or {}),
+            'confirmed_by': dict(user_id=None, name=model_name(origin), email='jobs@example.org', origin=origin)}
+        rows[1].provenance = {**(rows[1].provenance or {}),
+            'confirmed_by': dict(user_id=None, name='Ada Person', email='ada@example.org')}
+        self.db.commit()
+        result = self.read()
+        by_id = {item['transaction_id']: item['provenance'] for item in result['items']}
+        model, person = by_id[str(rows[0].id)], by_id[str(rows[1].id)]
+        self.assertEqual(model['origin'], 'model')
+        self.assertEqual(model['confirmation'], 'model_not_confirmed')
+        self.assertEqual(model['saved_for'], 'Jobs Reviewer')
+        self.assertEqual(model['citation'], {'page': 3})
+        self.assertIn('not a person', model['origin_text'])
+        self.assertEqual(person['origin'], 'person')
+        self.assertEqual(person['saved_by'], 'Ada Person')
+        self.assertEqual(model['proof_class'], 'p2')
+
+    def test_processor_row_says_so_and_states_unreadable_judgements(self):
+        _, _, rows = self.source(rows=1)
+        provenance = self.read()['items'][0]['provenance']
+        self.assertEqual(provenance['origin'], 'processor')
+        self.assertEqual(provenance['confirmation'], 'processor_reading')
+        self.assertIsNone(provenance['correction'])
+        # No judgements table here: unknown, never "none".
+        self.assertFalse(provenance['judgement_calls']['available'])
+        self.assertIsNone(provenance['judgement_calls']['open'])
+
+    def test_open_judgement_call_on_row_and_on_its_statement_reach_the_row(self):
+        from services.financial.judgements import record_judgement
+        self.judgements_table()
+        document, _, rows = self.source(rows=2)
+        record_judgement(self.db, case_id=self.case.id, subject_type='transaction', subject_id=rows[0].id,
+            rule_id='L12.balance_digits', summary='Amount digits taken from the running balance.',
+            source_document_id=document.id)
+        record_judgement(self.db, case_id=self.case.id, subject_type='source_document', subject_id=document.id,
+            rule_id='model.statement_save', summary='Statement saved by Claude for a person.', origin='agent',
+            source_document_id=document.id)
+        self.db.commit()
+        result = self.read()
+        by_id = {item['transaction_id']: item['provenance']['judgement_calls'] for item in result['items']}
+        first, second = by_id[str(rows[0].id)], by_id[str(rows[1].id)]
+        self.assertTrue(first['available'])
+        self.assertEqual(first['open'], 2)
+        self.assertEqual({c['rule_id'] for c in first['calls']}, {'L12.balance_digits', 'model.statement_save'})
+        self.assertTrue(all(c['rule_label'] and c['strength'] for c in first['calls']))
+        self.assertEqual(second['open'], 1)
+        self.assertEqual({c['rule_id'] for c in second['calls']}, {'model.statement_save'})
+        # Each call's sentence is given once for the page.
+        self.assertEqual(len(result['judgement_calls']), 2)
+        self.assertTrue(all(call['summary'] for call in result['judgement_calls'].values()))
+
+    def test_row_links_to_its_own_payment_on_the_financial_page(self):
+        _, _, rows = self.source(rows=1)
+        item = self.read()['items'][0]
+        self.assertEqual(item['financial_href'],
+            f'/cases/{self.case.id}/financial?view=transactions&payment={rows[0].id}')
+
+
+class CorrectedRowProvenanceTests(unittest.TestCase):
+    def test_corrected_row_shows_original_and_uses_corrected(self):
+        from tests.test_financial_payment_edits import PaymentEditTests
+        fixture = PaymentEditTests()
+        fixture.setUp()
+        try:
+            from postgres.models.financial import FinancialTransaction
+            original = fixture.f.db.get(FinancialTransaction, fixture.ids[0])
+            original_id, original_amount = str(original.id), str(original.amount_minor)
+            fixture.save(fixture.request(ids=fixture.ids[:1], amount='123.45',
+                description='Reviewed synthetic payment', category='Reviewed travel'))
+            fixture.f.db.expire_all()
+            result = read_financial_ledger(fixture.f.db, case_id=fixture.f.case.id,
+                filters={'category': 'Reviewed travel'})
+            item = result['items'][0]
+            correction = item['provenance']['correction']
+            self.assertEqual(item['amount_minor'], '12345')
+            self.assertTrue(correction['corrected'])
+            self.assertEqual(correction['uses'], 'corrected')
+            self.assertEqual(correction['original']['transaction_id'], original_id)
+            self.assertEqual(str(correction['original']['amount_minor']), original_amount)
+            self.assertIn('amount_minor', correction['changed_fields'])
+            self.assertEqual(correction['corrected_values']['amount_minor'], '12345')
+            self.assertIn(original_amount, correction['text'])
+            totals = {t['currency']: t for t in result['totals']}
+            self.assertEqual(sum(int(t['credits_minor']) + int(t['debits_minor']) for t in totals.values()), 12345)
         finally:
             fixture.tearDown()

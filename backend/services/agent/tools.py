@@ -13,7 +13,7 @@ from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
 
 from services.agent.cypher_safety import UnsafeCypherError, repair_common_cypher, run_readonly_cypher
-from services.agent.json_utils import to_jsonable, truncate_payload, truncate_text
+from services.agent.json_utils import sanitize_text, to_jsonable, truncate_payload, truncate_text
 from services.neo4j.driver import driver
 from services.neo4j.financial_service import financial_service
 from services.neo4j.geo_service import geo_service
@@ -57,6 +57,11 @@ class AgentToolContext:
     # A fresh read session per call sees committed investigator corrections.
     # The runner's case access check supplies case_id; models cannot override it.
     ledger_session_factory: Callable[[], ContextManager] | None = None
+    # What each tool call put before the model (data and artifact, unpaged), by result id, so a page the model was
+    # not shown can be read with read_tool_result_page. Set by the runner.
+    model_views: dict[str, Any] = field(default_factory=dict)
+    # Characters the next tool message may use (the runner sets it from the run's context budget).
+    page_budget_chars: int | None = None
 
     @property
     def significant_scope(self) -> bool:
@@ -203,6 +208,13 @@ class MapArgs(BaseModel):
     entity_types: list[str] | None = None
     entity_keys: list[str] | None = None
     limit: int = Field(50, ge=1, le=200)
+    offset: int = Field(0, ge=0)
+
+
+class ResultPageArgs(BaseModel):
+    result_id: str = Field(..., description="The result_id named in a _paging note.")
+    path: list[str | int] = Field(..., description="The path named in the _paging note, e.g. [\"data\", \"rows\"].")
+    offset: int = Field(..., ge=0, description="The offset named in next_page.")
 
 
 class GraphArtifactArgs(BaseModel):
@@ -702,7 +714,8 @@ def _snapshot_report_embed(context: AgentToolContext, embed: ReportEmbedArgs) ->
         "available": True,
         "type": artifact_type,
         "title": str(artifact.get("title") or "Embedded artifact"),
-        "data": truncate_payload(artifact.get("data") or {}, max_items=120, max_text_chars=2000),
+        # 250: the most rows or nodes any builder accepts (charts, graphs), so an embed never drops any.
+        "data": truncate_payload(artifact.get("data") or {}, max_items=250, max_text_chars=2000),
         "metadata": truncate_payload(artifact.get("metadata") or {}, max_items=30, max_text_chars=1000),
     }
 
@@ -1614,6 +1627,10 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                 "relationship_types": summary.get("relationship_types", {}),
                 "sample_entities": (summary.get("entities") or [])[:25],
             }
+        compact["sample_note"] = (
+            f"sample_entities shows {len(compact['sample_entities'])} of {compact['total_nodes']} entities, as a "
+            "sample; search or query the graph for the others."
+        )
         return context.result(
             "get_case_overview",
             compact,
@@ -1740,7 +1757,7 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         compact = [
             {
                 "id": chunk.get("id"),
-                "text": truncate_text(chunk.get("text"), 1200),
+                "text": sanitize_text(chunk.get("text")),
                 "metadata": chunk.get("metadata") or {},
                 "distance": chunk.get("distance"),
             }
@@ -1866,10 +1883,30 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
     def get_financial_coverage(**kwargs) -> dict[str, Any]:
         return read_ledger("get_financial_coverage", view="coverage", **kwargs)
 
+    def read_tool_result_page(result_id: str, path: list[str | int], offset: int) -> dict[str, Any]:
+        from services.agent.model_payloads import MAX_MESSAGE_CHARS, page_for_model
+        view = context.model_views.get(result_id)
+        if view is None:
+            return context.result("read_tool_result_page", {"error": "No result with that id in this run."},
+                summary="That result is not in this run; repeat the original tool call.", status="error",
+                error="Unknown result_id.")
+        try:
+            page = page_for_model(view, budget_chars=(context.page_budget_chars or MAX_MESSAGE_CHARS) - 2_000,
+                result_id=result_id, offset=offset, path=list(path))
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
+            return context.result("read_tool_result_page", {"error": str(exc) or "That path is not in the result."},
+                summary="That page could not be read; use the path and offset from the _paging note.",
+                status="error", error=str(exc) or "Invalid path.")
+        note = page["_paging"][0]
+        return context.result("read_tool_result_page", {"page_of": result_id, **page},
+            summary=(f"Read items {note['offset']} to {note['offset'] + note['returned'] - 1} of {note['total']} "
+                     f"at {'/'.join(map(str, note['path']))}; {note['remaining']} remain."))
+
     def get_map_locations(
         entity_types: list[str] | None = None,
         entity_keys: list[str] | None = None,
         limit: int = 50,
+        offset: int = 0,
     ) -> dict[str, Any]:
         locations = geo_service.get_entities_with_locations(
             entity_types=entity_types,
@@ -1883,11 +1920,15 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         keys = set(entity_keys or [])
         if keys:
             locations = [location for location in locations if location.get("key") in keys]
-        locations = locations[:limit]
+        total = len(locations)
+        page = locations[offset:offset + limit]
+        more = offset + len(page) < total
         return context.result(
             "get_map_locations",
-            {"locations": locations, "count": len(locations)},
-            summary=f"Loaded {len(locations)} mapped location(s).",
+            {"locations": page, "count": len(page), "total": total, "returned": len(page), "offset": offset,
+             "has_more": more, "next_offset": offset + len(page) if more else None},
+            summary=(f"Loaded {len(page)} of {total} mapped location(s)"
+                     + (f"; {total - offset - len(page)} more from offset {offset + len(page)}." if more else ".")),
         )
 
     def build_graph_artifact(
@@ -2281,17 +2322,19 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         keys = set(entity_keys or [])
         if keys:
             locations = [location for location in locations if location.get("key") in keys]
+        total = len(locations)
         locations = locations[:limit]
         artifact = _artifact(
             "map",
             title or "Agent map",
             {"locations": locations},
-            {"location_count": len(locations)},
+            {"location_count": len(locations), "total_locations": total},
         )
         return context.result(
             "build_map_artifact",
-            {"artifact_id": artifact["id"], "location_count": len(locations)},
-            summary=f"Built map artifact with {len(locations)} location(s).",
+            {"artifact_id": artifact["id"], "location_count": len(locations), "total_locations": total},
+            summary=(f"Built map artifact with {len(locations)} of {total} location(s)"
+                     + (f"; the map shows the first {len(locations)} (limit {limit})." if total > len(locations) else ".")),
             artifact=artifact,
         )
 
@@ -2417,8 +2460,17 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         wrap(
             get_map_locations,
             name="get_map_locations",
-            description="Retrieve geocoded case entities for map reasoning.",
+            description=("Retrieve geocoded case entities for map reasoning. States total, returned and next_offset; "
+                "read further pages with offset."),
             args_schema=MapArgs,
+        ),
+        wrap(
+            read_tool_result_page,
+            name="read_tool_result_page",
+            description=("Read the part of an earlier tool result that was not shown. When a tool message has a "
+                "_paging note with next_page, call this with its result_id, path and offset. Do not repeat the "
+                "original tool call to see more."),
+            args_schema=ResultPageArgs,
         ),
         wrap(
             build_graph_artifact,
