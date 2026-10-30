@@ -30,6 +30,10 @@ class _Session:
         return SimpleNamespace(raw_values=[f"FB:{self._seen}"])
 
 
+class _TimedOut(RuntimeError):
+    code = "Neo.ClientError.Transaction.TransactionTimedOutClientConfiguration"
+
+
 class GraphReadCacheTests(unittest.TestCase):
     def setUp(self):
         self.graph = _Graph()
@@ -158,15 +162,15 @@ class GraphReadCacheTests(unittest.TestCase):
         def failing():
             self.calls += 1
             started.set()
-            time.sleep(0.3)
-            raise RuntimeError("transaction time limit")
+            time.sleep(1.0)
+            raise _TimedOut("transaction time limit")
 
         errors = []
 
         def call():
             try:
                 self.cache.read(_Session(self.graph), "k", failing)
-            except RuntimeError as exc:
+            except _TimedOut as exc:
                 errors.append(str(exc))
 
         leader = threading.Thread(target=call)
@@ -181,6 +185,47 @@ class GraphReadCacheTests(unittest.TestCase):
         self.assertEqual(errors, ["transaction time limit"] * 4)
         self.assertEqual(self.cache.stats["joined_failure"], 3)
         self.assertEqual(self.cache.read(self.session, "k", self.compute())["calls"], 2)  # the next call reads
+
+    def _leader_fails(self, error, waiter_bookmark_moves=False):
+        started, release = threading.Event(), threading.Event()
+        results, errors = [], []
+
+        def leader():
+            started.set()
+            release.wait(5)
+            raise error
+
+        def call(compute):
+            try:
+                results.append(self.cache.read(_Session(self.graph), "k", compute))
+            except Exception as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        first = threading.Thread(target=call, args=(leader,))
+        first.start()
+        started.wait(5)
+        if waiter_bookmark_moves:
+            self.graph.tx = 2
+        waiters = [threading.Thread(target=call, args=(self.compute(),)) for _ in range(2)]
+        for t in waiters:
+            t.start()
+        time.sleep(0.3)
+        release.set()
+        for t in [first, *waiters]:
+            t.join()
+        return results, errors
+
+    def test_a_failure_other_than_the_time_limit_leaves_each_waiter_to_read(self):
+        results, errors = self._leader_fails(RuntimeError("this session's connection dropped"))
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(len(results), 2)
+        self.assertEqual(self.cache.stats["joined_failure"], 0)
+
+    def test_a_waiter_from_a_newer_bookmark_reads_after_an_older_read_timed_out(self):
+        results, errors = self._leader_fails(_TimedOut("transaction time limit"), waiter_bookmark_moves=True)
+        self.assertEqual(len(errors), 1)
+        self.assertEqual([r["rows"][0]["n"] for r in results], [2, 2])
+        self.assertEqual(self.calls, 1)  # one waiter read, the other reused it
 
     def test_concurrent_identical_reads_cost_one_read(self):
         started = threading.Event()

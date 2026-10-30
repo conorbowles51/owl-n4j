@@ -16,7 +16,8 @@ Results are kept compressed and handed out as fresh copies, so a caller may
 change what it receives. At most one read per key runs at a time in a process.
 A call that finds the same read already running, from the same bookmark, waits
 for it and takes a copy of its result, or its error when it failed, so a burst
-of identical page loads costs one database read. A call whose bookmark differs
+of identical page loads costs one database read (an error is shared only when
+the server ended the read at its time limit). A call whose bookmark differs
 (something committed since that read started) waits for it to end and then
 looks again, so it is never given a result older than its own bookmark.
 
@@ -45,6 +46,11 @@ def graph_bookmark(session) -> Bookmark:
     """The database's last committed transaction, as seen by this session now."""
     session.run("RETURN 1").consume()
     return tuple(sorted(session.last_bookmarks().raw_values))
+
+
+def _timed_out(exc: BaseException) -> bool:
+    # As services.neo4j.driver.is_transaction_timeout, without opening the driver.
+    return "TransactionTimedOut" in (getattr(exc, "code", None) or "")
 
 
 class _Flight:
@@ -161,7 +167,7 @@ class GraphReadCache:
                 # alongside every other waiter is what made it fail.
                 self._count("joined_failure")
                 raise flight.error
-            # The read succeeded but could not be kept; read for itself.
+            # The read could not be kept, or failed in a way of its own; read for itself.
             self._count("miss")
             return compute()
         self._count("miss")
@@ -179,7 +185,11 @@ class GraphReadCache:
                 flight.blob = None
             return value
         except Exception as exc:
-            flight.error = exc
+            # Only the server's time limit is shared: it is the load of many
+            # identical reads. Any other failure (this session's connection, say)
+            # leaves each waiter to read for itself.
+            if _timed_out(exc):
+                flight.error = exc
             raise
         finally:
             with self._lock:
