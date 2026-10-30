@@ -115,10 +115,10 @@ def review_saved_statement_recovery(source_id: UUID, action: Literal['preview', 
 @router.get('/files')
 @cached_view('statement-import-files')
 def files(case_id: UUID = Query(...), db: Session = Depends(get_db)):
-    # Inside the cached view every table it reads is fingerprinted; the register's own cache checks a fixed list
-    # of tables, so it is left out there and a copy can never be older than the rows the view reads.
-    from services.financial.view_cache import in_snapshot
-    return statement_file_status(db, case_id=case_id, use_cache=not in_snapshot())
+    # The register's own cache stays: it checks this case's rows of every table the view reads (measured on six
+    # cases), whereas the view checks three of them whole (no case_id), so another case's import makes the view
+    # compute again and the register's cache then answers as before.
+    return statement_file_status(db, case_id=case_id)
 
 
 from services.financial.statement_details import StatementDetailsRequest, read_statement_details, update_statement_details
