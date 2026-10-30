@@ -485,6 +485,40 @@ class CorrectedRowProvenanceTests(unittest.TestCase):
         finally:
             fixture.tearDown()
 
+    def test_reading_corrected_rows_originals_takes_the_same_queries_for_one_row_or_many(self):
+        from tests.test_financial_payment_edits import PaymentEditTests
+        fixture = PaymentEditTests()
+        fixture.setUp()
+        try:
+            self.assertGreaterEqual(len(fixture.ids), 3)
+            engine = fixture.f.db.get_bind()
+
+            def corrected_page():
+                queries = []
+                record = lambda _connection, _cursor, statement, *_: queries.append(statement)
+                fixture.f.db.expire_all()
+                event.listen(engine, 'before_cursor_execute', record)
+                try:
+                    items = read_financial_ledger(fixture.f.db, case_id=fixture.f.case.id, start_date='2021-02-12',
+                        end_date='2021-02-12', filters={'category': 'Reviewed travel'})['items']
+                finally:
+                    event.remove(engine, 'before_cursor_execute', record)
+                return items, len(queries)
+
+            # Each correction moves its payment to a day its original is not on, so the originals are outside the
+            # read's date scope and are read separately.
+            fixture.save(fixture.request(ids=fixture.ids[:1], amount='123.45', category='Reviewed travel',
+                transaction_date='2021-02-12'))
+            one, one_queries = corrected_page()
+            fixture.save(fixture.request(ids=fixture.ids[1:], amount='67.89', category='Reviewed travel',
+                transaction_date='2021-02-12'))
+            many, many_queries = corrected_page()
+            self.assertEqual((len(one), len(many)), (1, len(fixture.ids)))
+            self.assertTrue(all(item['provenance']['correction']['original']['available'] for item in many))
+            self.assertEqual(many_queries, one_queries)
+        finally:
+            fixture.tearDown()
+
     def test_a_correction_names_its_corrector_and_a_model_correction_is_the_models(self):
         from tests.test_financial_payment_edits import PaymentEditTests
         from postgres.models.financial import AdjudicationEvent

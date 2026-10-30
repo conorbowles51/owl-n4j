@@ -25,6 +25,7 @@ MAX_MESSAGE_CHARS = 600_000
 MIN_MESSAGE_CHARS = 12_000
 # A single text value larger than this is shown in part with its length stated (only when it alone cannot fit).
 MAX_TEXT_CHARS = 20_000
+NOTE_ROOM = 400  # characters kept for the note a cut adds
 
 
 def run_budget_chars(context_window_tokens=None):
@@ -86,13 +87,13 @@ def _slice(sequence, offset, count):
     return {key: sequence[key] for key in keys}
 
 
-def _fit_count(sequence, offset, room):
-    """How many items from ``offset`` fit in ``room`` characters (at least one when any remain)."""
+def _fit_count(sequence, offset, room, at_least_one=True):
+    """How many items from ``offset`` fit in ``room`` characters (at least one when any remain, unless told not to)."""
     items = list(sequence.items())[offset:] if isinstance(sequence, dict) else sequence[offset:]
     used, count = 2, 0
     for item in items:
         used += _size(item if isinstance(sequence, list) else {item[0]: item[1]}) + 1
-        if used > room and count:
+        if used > room and (count or not at_least_one):
             break
         count += 1
         if used > room:
@@ -105,10 +106,8 @@ def _note(path, total, offset, returned, result_id):
     note = dict(path=list(path), total=total, offset=offset, returned=returned, remaining=remaining)
     if remaining > 0:
         note["next_page"] = dict(tool=PAGE_TOOL, result_id=result_id, path=list(path), offset=offset + returned)
-        note["message"] = (
-            f"Showing {returned} of {total} items at {'/'.join(map(str, path))} (from item {offset}). "
-            f"{remaining} more exist in this result: call {PAGE_TOOL} with this result_id, path and offset to read "
-            "them. An answer built only on the items shown must say it covers part of the result.")
+        note["message"] = (f"Showing {returned} of {total} from item {offset}; {remaining} more: call {PAGE_TOOL} "
+                           "with next_page, or say the answer covers part of the result.")
     return note
 
 
@@ -143,19 +142,20 @@ def page_for_model(data, *, budget_chars, result_id=None, offset=0, path=None):
         safe = {"value": safe}
     notes = []
     done = set()
-    while _size(safe) > budget_chars:
+    # The notes are part of the message, so every size check counts them, with room kept for the next note.
+    while _size(safe) + _size(notes) > budget_chars:
         candidates = [(p, s) for p, s in _sequences(safe) if p not in done and len(s) > 1]
         if not candidates:
             break
         sequence_path, sequence = max(candidates, key=lambda item: _size(item[1]))
         done.add(sequence_path)
-        room = budget_chars - (_size(safe) - _size(sequence)) - 600
-        count = _fit_count(sequence, 0, max(room, 0)) if room > 0 else 1
+        room = budget_chars - (_size(safe) - _size(sequence)) - _size(notes) - NOTE_ROOM
+        count = _fit_count(sequence, 0, room, at_least_one=False) if room > 0 else 0
         if count >= len(sequence):
             continue
         _set(safe, sequence_path, _slice(sequence, 0, count))
         notes.append(_note(sequence_path, len(sequence), 0, count, result_id))
-    if _size(safe) > budget_chars:
+    if _size(safe) + _size(notes) > budget_chars:
         safe = _cut_texts(safe, min(MAX_TEXT_CHARS, max(1_000, budget_chars // 4)))
         notes.append(dict(message="Some long text values are shown in part; each states how many characters are "
                                   "not shown."))

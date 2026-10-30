@@ -129,7 +129,7 @@ _FINANCIAL_ANALYSIS_PROMPT = """Financial investigation:
 - Build ledger tables from returned rows or full-population grouped results with build_table_artifact_from_rows; do not query Neo4j to recreate relational ledger totals. Use build_chart_artifact and build_report_artifact for supporting views. Put coverage and exclusions in report_scope and the opening report section, and in table/chart notes. Direct table artifacts accept at most 100 rows and chart artifacts at most 250 rows; larger requests are rejected, not silently truncated. Prefer full-population grouped summaries for a large analysis. Label sampled, selected, top-ranked or paginated supporting rows with displayed and matching counts; their CSV exports contain only artifact rows and displayed fields, not a raw ledger export. A complete raw transaction CSV belongs to the Financial Transactions export workflow.
 - Every ledger row carries provenance. provenance.origin is "processor" (printed on the statement and read by the processor), "model" (saved by a model for a person: a model reading, not a person's entry) or "person" (entered or reviewed and saved by a person); provenance.confirmation says whether a person has confirmed it. When an answer relies on a row that a model saved, that no person has confirmed, that carries a name a model read (provenance.model_read_names), or that has open judgement calls, say so beside the figure in plain words, e.g. "saved by Claude for <name>, not confirmed by a person" or "1 open judgement call: <rule_label> (<strength>)". The page's judgement_calls give each call's sentence. If provenance.judgement_calls.available is false, say the judgement calls could not be checked; never present such a row as having none.
 - A corrected row (provenance.correction) is used at its corrected value; state the original value beside it when it matters to the answer. Never add a p4 row (proof_class or source_proof_class "p4") into any total, and never add excluded rows (included_in_totals false) into totals; use the tools' totals.
-- Link each ledger row you cite with its financial_href, e.g. [12 Mar payment to Acme](financial_href); never build a payment link yourself. Cite the statement it was read from as a document link with source.filename and the row's locator page: [filename, p.N](doc://<filename>/N), or [filename](doc://<filename>) when the row has no page.
+- Link each ledger row you cite to the path in its financial_href field, e.g. [12 Mar payment to Acme](/cases/<case id>/financial?view=transactions&payment=<payment id>) copied from that field; never write the word financial_href as text or as a link, and never build a payment link yourself. Cite the statement it was read from as a document link with source.filename and the row's locator page: [filename, p.N](doc://<filename>/N), or [filename](doc://<filename>) when the row has no page.
 - Separate observed facts from hypotheses and investigative leads. Unusual amounts, repeated counterparties or timing patterns alone do not establish wrongdoing. Do not infer ownership, beneficiary identity, intent, or criminal conduct beyond the returned evidence.
 - If financial access is unavailable or the run is restricted to the Significant layer, explain the coverage boundary. Do not bypass that boundary through graph queries or another case's data.
 """
@@ -157,8 +157,8 @@ _FINAL_ANSWER_SYSTEM_PROMPT = (
     "When a figure relies on a ledger row a model saved, that no person has confirmed, that carries a name a model read, "
     "or that has open judgement calls, "
     "say so beside it in plain words; use a corrected row's corrected value and give its original value; never add p4 or "
-    "excluded rows into a total. Keep ledger-row links (financial_href) and document links (doc://filename/page) as "
-    "Markdown links. If any tool result was shown in part (_paging) and not read in full, say the answer covers "
+    "excluded rows into a total. Keep ledger-row links (the path in each row's financial_href) and document links "
+    "(doc://filename/page) as Markdown links; never write the word financial_href in the answer. If any tool result was shown in part (_paging) and not read in full, say the answer covers "
     "<returned> of <total> for that result."
 )
 
@@ -638,7 +638,7 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
                 content = json.dumps(
                     tool_message_payload(result_id=result_id, summary=summary, data=output.get("data"),
                                          artifact=artifact, budget_chars=budget),
-                    ensure_ascii=False,
+                    ensure_ascii=False, separators=(",", ":"),
                 )
                 used_chars += len(content)
                 tool_messages.append(
@@ -887,7 +887,7 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
                 content = json.dumps(
                     tool_message_payload(result_id=result_id, summary=summary, data=output.get("data"),
                                          artifact=artifact, budget_chars=budget),
-                    ensure_ascii=False,
+                    ensure_ascii=False, separators=(",", ":"),
                 )
                 used_chars += len(content)
                 tool_messages.append(

@@ -296,6 +296,27 @@ def _correctors(session, case_id, readings):
     return found
 
 
+def _originals(session, case_id, readings, by_id):
+    """The rows these corrections replaced that are not in the ledger read (outside the date scope, or superseded):
+    {transaction id: (row view, provenance)}, read one IN query per step back along the chains, so the number of
+    queries follows the longest chain, not the number of corrected rows."""
+    from postgres.models.financial import FinancialTransaction
+    from services.financial.transaction_query import to_view
+    loaded, records = {}, [(r.get('provenance') or {}).get('correction') for r in readings]
+    for _ in range(MAX_CORRECTION_CHAIN):
+        wanted = sorted({str(record['previous_transaction_id']) for record in records
+            if record and record.get('previous_transaction_id')} - set(by_id) - set(loaded))
+        if not wanted:
+            break
+        records = []
+        for start in range(0, len(wanted), 5000):
+            for stored in session.scalars(select(FinancialTransaction).where(FinancialTransaction.case_id == case_id,
+                    FinancialTransaction.id.in_([_uuid(i) for i in wanted[start:start + 5000]]))):
+                loaded[str(stored.id)] = (to_view(stored).to_json(), stored.provenance or {})
+                records.append((stored.provenance or {}).get('correction'))
+    return loaded
+
+
 def _correction(reading, by_id, load_row):
     """A corrected payment: the reading it replaced (first and immediately previous), beside the corrected values
     that the ledger uses. None for a payment never corrected."""
@@ -532,20 +553,15 @@ def read_financial_ledger(session, *, case_id, account_ids=None, account_holders
         account['matching_payments_for_canonical_account'] = counts[account['canonical_account_id']]
     scope_coverage['registered_accounts_without_matching_payments'] = len({
         a['canonical_account_id'] for a in context if not counts[a['canonical_account_id']]})
-    judgements, correctors = None, {}
+    judgements, correctors, originals = None, {}, {}
     if view in ('transactions', 'excluded'):
         correctors = _correctors(session, case_id, ledger['readings'])
+        originals = _originals(session, case_id, ledger['readings'], by_id)
         judgements = _judgement_index(session, case_id)
         if judgements is not None:
             judgements['by_id'] = {item['id']: item for item in judgements['judgements']}
 
-    def load_row(transaction_id):
-        from postgres.models.financial import FinancialTransaction
-        from services.financial.transaction_query import to_view
-        stored = session.get(FinancialTransaction, _uuid(transaction_id))
-        if stored is None or stored.case_id != case_id:
-            return None
-        return to_view(stored).to_json(), stored.provenance or {}
+    load_row = originals.get
 
     def row_item(reading):
         row = reading['row']

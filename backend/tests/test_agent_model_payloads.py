@@ -135,6 +135,16 @@ class ModelPayloadTests(unittest.TestCase):
             if "total" in note:
                 self.assertEqual(note["returned"] + note["remaining"], note["total"] - note["offset"])
 
+    def test_the_paging_notes_count_toward_the_budget(self):
+        # Forty lists each cut to fit: the notes stating their totals are part of the message the model reads.
+        data = {f"list{i:02d}": [{"k": j, "t": "z" * 200} for j in range(30)] for i in range(40)}
+        for budget in (30_000, 60_000):
+            with self.subTest(budget=budget):
+                page = page_for_model(data, budget_chars=budget)
+                self.assertLessEqual(len(json.dumps(page, ensure_ascii=False, separators=(",", ":"))), budget)
+                for note in page["_paging"]:
+                    self.assertEqual((note["total"], note["returned"] + note["remaining"]), (30, 30))
+
     def test_inspected_properties_are_not_cut_at_twenty(self):
         schema = {"labels": {"FinancialTransaction": {"count": 5, "properties": {f"p{i}": {"type": "str"} for i in range(32)}}}}
         page = tool_message_payload(result_id="r", summary="", data=schema)
@@ -144,6 +154,13 @@ class ModelPayloadTests(unittest.TestCase):
         self.assertEqual(run_budget_chars(1_000_000), 1_800_000)
         self.assertEqual(run_budget_chars(None), run_budget_chars(128_000))
         self.assertEqual(message_budget_chars(100_000, 99_000), MIN_MESSAGE_CHARS)
+
+    def test_claude_and_gemini_models_page_on_their_recorded_context_window(self):
+        # Anthropic's and Google's published input limits; unrecorded, they fell back to 128k tokens.
+        from services.agent.model_payloads import context_window_for
+        expected = {"claude-sonnet-5": 1_000_000, "claude-opus-4-8": 1_000_000, "claude-haiku-4-5": 200_000,
+                    "gemini-3.6-flash": 1_048_576, "gemini-3.5-flash": 1_048_576, "gemini-3.5-flash-lite": 1_048_576}
+        self.assertEqual({model: context_window_for(model) for model in expected}, expected)
 
 
 class MapTotalTests(unittest.TestCase):

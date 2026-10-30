@@ -129,6 +129,11 @@ class AgentProvenanceAndPagingInstructionsTests(unittest.TestCase):
                 for rule in ("no person has confirmed", "a name a model read", "never add p4", "_paging",
                              "doc://filename/page"):
                     self.assertIn(rule, final)
+                # The row link's example is a real path, so the model copies a path, not the field's name.
+                self.assertNotIn("](financial_href)", prompt)
+                self.assertIn("payment=<payment id>)", prompt)
+                for text in (prompt, final):
+                    self.assertIn("never write the word financial_href", text)
 
     def test_the_finalizer_is_asked_for_the_answer_rather_than_left_to_continue_its_own_turn(self):
         for path in ("invoke", "stream"):
