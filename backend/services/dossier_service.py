@@ -101,6 +101,35 @@ def _graph_identity(case_id: uuid.UUID, key: str) -> dict[str, Any] | None:
         return None
 
 
+def _graph_list_identities(case_id: uuid.UUID, keys: Iterable[str]) -> dict[str, dict[str, Any]]:
+    """Name and type of every listed dossier's graph entity, in one read.
+
+    The list shows only the name; the full identity with its connections stays on the detail route.
+    The node filter is the one get_node_details applies, and the first record per key is kept, as
+    result.single() keeps the first. A failed read leaves every identity out, as _graph_identity does.
+    """
+    wanted = sorted({key for key in keys if key})
+    if not wanted:
+        return {}
+    try:
+        from services.neo4j.driver import active_node_predicate, driver
+        with driver.session() as session:
+            records = session.run(
+                f"""
+                MATCH (n)
+                WHERE n.case_id = $case_id AND n.key IN $keys AND {active_node_predicate("n")}
+                RETURN n.key AS key, n.name AS name, labels(n)[0] AS type
+                """,
+                case_id=str(case_id), keys=wanted,
+            )
+            found: dict[str, dict[str, Any]] = {}
+            for record in records:
+                found.setdefault(record["key"], {"key": record["key"], "name": record["name"], "type": record["type"]})
+            return found
+    except Exception:
+        return {}
+
+
 def _require_graph_identity(case_id: uuid.UUID, key: str) -> dict[str, Any]:
     identity = _graph_identity(case_id, key)
     if not identity:
@@ -176,9 +205,18 @@ def _serialize_interview(db: Session, item: DossierInterview) -> dict[str, Any]:
     }
 
 
-def serialize_dossier(db: Session, dossier: CaseProfile, *, detail: bool = True) -> dict[str, Any]:
-    identity = _graph_identity(dossier.case_id, dossier.canonical_entity_key) if dossier.canonical_entity_key and not dossier.graph_entity_deleted else None
-    roles = db.scalars(select(DossierRole).where(DossierRole.dossier_id == dossier.id).order_by(DossierRole.name)).all()
+def _graph_linked(dossier: CaseProfile) -> bool:
+    return bool(dossier.canonical_entity_key) and not dossier.graph_entity_deleted
+
+
+def serialize_dossier(db: Session, dossier: CaseProfile, *, detail: bool = True,
+                      identity: dict[str, Any] | None = None,
+                      roles: list[DossierRole] | None = None) -> dict[str, Any]:
+    """identity and roles are passed by list_dossiers, which reads them for the whole page at once."""
+    if detail:
+        identity = _graph_identity(dossier.case_id, dossier.canonical_entity_key) if _graph_linked(dossier) else None
+    if roles is None:
+        roles = db.scalars(select(DossierRole).where(DossierRole.dossier_id == dossier.id).order_by(DossierRole.name)).all()
     result = {
         "id": str(dossier.id), "case_id": str(dossier.case_id),
         "dossier_type": dossier.profile_type,
@@ -240,7 +278,22 @@ def list_dossiers(db: Session, *, case_id: uuid.UUID, user: User, query: str | N
         conditions.append(or_(CaseProfile.display_name.ilike(pattern), CaseProfile.summary.ilike(pattern)))
     total = db.scalar(select(func.count()).select_from(CaseProfile).where(*conditions)) or 0
     rows = db.scalars(select(CaseProfile).where(*conditions).order_by(CaseProfile.updated_at.desc()).limit(limit).offset(offset)).all()
-    return {"dossiers": [serialize_dossier(db, row, detail=False) for row in rows], "total": total, "limit": limit, "offset": offset}
+    identities = _graph_list_identities(case_id, (row.canonical_entity_key for row in rows if _graph_linked(row)))
+    roles_by_dossier: dict[uuid.UUID, list[DossierRole]] = {row.id: [] for row in rows}
+    if rows:
+        for role in db.scalars(select(DossierRole).where(DossierRole.dossier_id.in_(list(roles_by_dossier))).order_by(DossierRole.name)).all():
+            roles_by_dossier[role.dossier_id].append(role)
+    return {
+        "dossiers": [
+            serialize_dossier(
+                db, row, detail=False,
+                identity=identities.get(row.canonical_entity_key) if _graph_linked(row) else None,
+                roles=roles_by_dossier[row.id],
+            )
+            for row in rows
+        ],
+        "total": total, "limit": limit, "offset": offset,
+    }
 
 
 def _replace_roles(db: Session, dossier: CaseProfile, roles: Iterable[dict[str, Any] | str], user: User) -> None:

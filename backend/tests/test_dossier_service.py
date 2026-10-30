@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import uuid
 from datetime import date
 from unittest.mock import patch
@@ -365,8 +366,78 @@ def test_canonical_lookup_finds_a_dossier_after_its_graph_name_changes(setup_db)
         user = db.get(User, user_id)
         dossier = dossier_service.create_dossier(db, case_id=case_id, user=user, data={"canonical_entity_key": "person:stable"})
         identity["name"] = "Current name"
-        result = dossier_service.list_dossiers(db, case_id=case_id, user=user, canonical_entity_key="person:stable")
+        with patch.object(dossier_service, "_graph_list_identities", side_effect=lambda _case, keys: {key: dict(identity) for key in keys if key == identity["key"]}):
+            result = dossier_service.list_dossiers(db, case_id=case_id, user=user, canonical_entity_key="person:stable")
         assert result["total"] == 1
         assert result["dossiers"][0]["id"] == dossier["id"]
         assert result["dossiers"][0]["display_name"] == "Current name"
         assert dossier_service.list_dossiers(db, case_id=case_id, user=user, canonical_entity_key="person:other")["total"] == 0
+
+
+class _FakeRecords(list):
+    pass
+
+
+class _FakeSession:
+    def __init__(self, nodes, calls):
+        self.nodes, self.calls = nodes, calls
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        return False
+
+    def run(self, query, **params):
+        self.calls.append((query, params))
+        return _FakeRecords(
+            {"key": node["key"], "name": node["name"], "type": node["type"]}
+            for node in self.nodes if node["case_id"] == params["case_id"] and node["key"] in params["keys"]
+        )
+
+
+def test_list_reads_graph_names_and_roles_once_per_page_not_once_per_dossier(setup_db):
+    neo4j_driver = importlib.import_module("services.neo4j.driver")
+    factory, user_id, case_id, *_ = setup_db
+    with factory() as db:
+        user = db.get(User, user_id)
+        graph = {"person:henry": {"key": "person:henry", "name": "Henry Current", "type": "Person", "connections": [{"key": "x"}] * 3},
+                 "org:acme": {"key": "org:acme", "name": "Acme Ltd", "type": "Organisation", "connections": []}}
+        with patch.object(dossier_service, "_graph_identity", side_effect=lambda _case, key: graph.get(key)), patch.object(dossier_service, "add_significant_entities"):
+            henry = dossier_service.create_dossier(db, case_id=case_id, user=user, data={"canonical_entity_key": "person:henry", "roles": [{"name": "Witness"}, {"name": "Subject"}]})
+            acme = dossier_service.create_dossier(db, case_id=case_id, user=user, data={"canonical_entity_key": "org:acme", "roles": [{"name": "Custodian"}]})
+        unlinked = dossier_service.create_dossier(db, case_id=case_id, user=user, data={"display_name": "Unknown caller", "roles": [{"name": "Source"}]})
+        # The graph name has changed since the dossiers were made; the list shows the current one.
+        nodes = [{"case_id": str(case_id), "key": "person:henry", "name": "Henry Renamed", "type": "Person"},
+                 {"case_id": str(case_id), "key": "org:acme", "name": "Acme Ltd", "type": "Organisation"},
+                 {"case_id": str(uuid.uuid4()), "key": "person:henry", "name": "Other case", "type": "Person"}]
+        calls: list = []
+        with patch.object(dossier_service, "_graph_identity", side_effect=AssertionError("per-dossier graph read")), \
+                patch.object(neo4j_driver.driver, "session", side_effect=lambda: _FakeSession(nodes, calls)):
+            result = dossier_service.list_dossiers(db, case_id=case_id, user=user)
+        assert len(calls) == 1
+        assert sorted(calls[0][1]["keys"]) == ["org:acme", "person:henry"]
+        by_id = {item["id"]: item for item in result["dossiers"]}
+        assert by_id[henry["id"]]["display_name"] == "Henry Renamed"
+        assert by_id[henry["id"]]["canonical_identity"] == {"key": "person:henry", "name": "Henry Renamed", "type": "Person"}
+        assert [role["name"] for role in by_id[henry["id"]]["roles"]] == ["Subject", "Witness"]
+        assert by_id[acme["id"]]["display_name"] == "Acme Ltd"
+        assert [role["name"] for role in by_id[acme["id"]]["roles"]] == ["Custodian"]
+        assert by_id[unlinked["id"]]["canonical_identity"] is None
+        assert by_id[unlinked["id"]]["display_name"] == "Unknown caller"
+        assert [role["name"] for role in by_id[unlinked["id"]]["roles"]] == ["Source"]
+        assert "links" not in by_id[henry["id"]]
+
+
+def test_list_falls_back_to_the_saved_name_when_the_graph_read_fails(setup_db):
+    neo4j_driver = importlib.import_module("services.neo4j.driver")
+    factory, user_id, case_id, *_ = setup_db
+    with factory() as db:
+        user = db.get(User, user_id)
+        with patch.object(dossier_service, "_graph_identity", return_value={"key": "person:henry", "name": "Henry", "type": "Person"}), patch.object(dossier_service, "add_significant_entities"):
+            dossier = dossier_service.create_dossier(db, case_id=case_id, user=user, data={"canonical_entity_key": "person:henry"})
+        with patch.object(neo4j_driver.driver, "session", side_effect=RuntimeError("graph down")):
+            result = dossier_service.list_dossiers(db, case_id=case_id, user=user)
+        assert result["dossiers"][0]["id"] == dossier["id"]
+        assert result["dossiers"][0]["canonical_identity"] is None
+        assert result["dossiers"][0]["display_name"] == "Henry"
