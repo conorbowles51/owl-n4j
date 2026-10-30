@@ -58,6 +58,8 @@ RULES = {
     'amount.daily_balance': ('Amount fixed by the printed daily balance', 'fin-erica L2', 'proved'),
     'amount.balance_step': ('Amount taken from the printed balance step', 'statement_engine', 'proved'),
     'IC.cover_opening': ('Balance read from the cover summary', 'fin-queue3 IC', 'proved'),
+    'moved.printed_closing': ('Closing printed on a page moved into this statement', 'statement_row_assignment',
+                              'proved'),
     'opening.after_first_movement': ('Opening printed after the first movement', 'statement_engine', 'proved'),
     'opening.before_kept_dates': ('Opening from the running balance before the kept dates', 'statement_overlap_trim',
                                   'inferred'),
@@ -181,7 +183,8 @@ _CATEGORY_RULES = {
     'page_image': ('image.page_reading', 'image.printed_total', 'image.date'),
     'balance': ('L8.unprinted_opening', 'IC.cover_opening', 'opening.after_first_movement',
                 'opening.before_kept_dates', 'closing.last_kept_movement', 'L17.zero_opening', 'credit_line.opening',
-                'L5.blank_closing', 'total.less_covered', 'santander.integral_balance', 'guard.neighbour_check'),
+                'L5.blank_closing', 'total.less_covered', 'santander.integral_balance', 'guard.neighbour_check',
+                'moved.printed_closing'),
     'date_sign': ('L10.one_date', 'erica.date_month', 'erica.date_ordering', 'date.from_neighbour_line',
                   'merrick.date_glyphs', 'merrick.interest_date', 'L18.direction_from_balances', 'card.payment_sign',
                   'period.start_derived'),
@@ -238,6 +241,7 @@ RULE_PRIORITY = {
     'L17.zero_opening': (1, 'an opening balance of zero was worked out'),
     'credit_line.opening': (1, 'a credit-line opening balance was worked out'),
     'L5.blank_closing': (1, 'a blank closing balance was read as unchanged'),
+    'moved.printed_closing': (1, 'the closing balance was taken from a page moved in from another statement'),
     'total.less_covered': (1, 'a printed total was reduced by movements saved elsewhere'),
     'santander.integral_balance': (1, 'balances were read from a special layout'),
     'merrick.summary_order': (1, 'summary balances were taken by their position'),
@@ -280,6 +284,7 @@ def category(rule_id):
 
 OPENING_REASON_START = 'Opening balance not printed in these pages'
 TOTAL_REASON_START = 'Printed total read from page image'
+MOVED_CLOSING_REASON_START = 'Closing balance printed on the moved page'
 DATE_REASON_START = 'Date read from page image'
 IMAGE_ROW_PREFIX = 'manual:vision-'
 SYSTEM_NAMES = ('System',)
@@ -414,6 +419,13 @@ def detect(document, period, transactions, *, file=None):
                 target_key='opening_balance',
                 evidence=dict(page=row.get('manual_page'), chosen=row.get('balance_minor'), confirmed_by=confirmed,
                               reason=reason))
+        elif reason.startswith(MOVED_CLOSING_REASON_START):
+            add(*period_subject, 'moved.printed_closing',
+                f"Closing {money(row.get('balance_minor'), currency)} is printed on page {row.get('manual_page')}, "
+                f"a page whose payments were moved into this statement; their running balances end on it and the "
+                f"statement reconciles to it.",
+                target_key='closing_balance', strength='proved',
+                evidence=dict(page=row.get('manual_page'), chosen=row.get('balance_minor'), reason=reason))
         elif reason.startswith(TOTAL_REASON_START):
             first = originals.get(rid) or {}
             before = (first.get('fields') or {}).get('balance')

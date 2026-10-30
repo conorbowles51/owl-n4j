@@ -9,11 +9,9 @@ from sqlalchemy import select
 from postgres.models.evidence import EvidenceDocumentText, EvidenceTableGeometry
 from postgres.models.financial import FinancialTransaction
 from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item
-from services.financial import import_batches, statement_row_assignment
+from services.financial import import_batches, judgements, statement_row_assignment
 from services.financial.pdf_candidates import PdfMappingError
-from services.financial.statement_import import read_statement_import, confirm_statement_import, StatementReviewDraft
-from services.financial.effective_statement_review import batch_review_revision
-from services.financial.statement_progress import review_progress
+from services.financial.statement_import import read_statement_import, confirm_statement_import
 from tests import test_financial_statement_import as fixture
 from tests.test_financial_statement_import_andrews import source
 from tests.test_financial_pdf_geometry_candidates import rectangle
@@ -47,14 +45,6 @@ def orphan_file(f):
         dict(kind='page', page_number=2, start_char=len(contents[0])+1, end_char=len(text.content), text_origin='digital_text_layer')]
     f.db.commit()
     return grids
-
-
-def with_closing_balance(request):
-    """The investigator's page-cited entry of the ending balance printed on page 2."""
-    request = deepcopy(request)
-    request['rows'].append(dict(id='manual:closing-balance', excluded=True, manual_page=2,
-        balance_minor='7000', reason='Ending balance printed on the assigned page'))
-    return request
 
 
 class UnassignedStatementTests(TestCase):
@@ -110,11 +100,9 @@ class UnassignedStatementTests(TestCase):
         saved = target['saved_review']['request']
         self.assertEqual(next(r for r in saved['rows'] if r['id'] == row['id'])['description'], 'Checked shop description')
         self.assertIn(body.reason, next(r for r in saved['rows'] if r['id'] == row['id'])['reason'])
-        # Balances stay with the page review they were read in, so the destination
-        # does not reconcile until its closing balance is entered, cited to the
-        # assigned page that prints it (reconciled-statement admission).
-        self.assertEqual(import_batches.assess(target, saved)[0], 'attention')
-        saved = with_closing_balance(saved)
+        carried = next(r for r in saved['rows'] if r['id'] == 'manual:closing-balance')
+        self.assertEqual((carried['manual_page'], carried['balance_minor']), (2, '7000'))
+        self.assertTrue(carried['reason'].startswith(judgements.MOVED_CLOSING_REASON_START))
         self.assertEqual(import_batches.assess(target, saved)[0], 'ready')
         result = confirm_statement_import(session_factory=self.f.SessionLocal, case_id=self.f.case.id,
             evidence_file_id=self.f.file.id, request=saved, actor=self.f.actor, resolve_path=Path)
@@ -169,22 +157,6 @@ class UnassignedStatementTests(TestCase):
         with f.SessionLocal() as db:
             status = import_batches.batch_status(db, case_id=f.case.id, batch_id=batch_id)
         self.assertEqual(status['counts']['assigned'], 1)
-        # The destination reconciles once its closing balance, printed on the
-        # assigned page, is entered and saved through the batch review.
-        self.assertEqual(status['counts']['ready'], 0)
-        target = self.read(self.target)
-        with f.SessionLocal() as db:
-            item = db.scalar(select(Item).where(Item.batch_id == batch_id, Item.statement_key == self.target))
-            revision = batch_review_revision(item.review_request,
-                review_progress(db.get(type(f.file), f.file.id), self.target))
-            item_id = item.id
-        with f.SessionLocal() as db:
-            import_batches.save_review(db, case_id=f.case.id, batch_id=batch_id, item_id=item_id,
-                request=StatementReviewDraft.model_validate(with_closing_balance(target['saved_review']['request'])),
-                expected_review_revision=revision, actor=f.actor)
-        with f.SessionLocal() as db:
-            status = import_batches.batch_status(db, case_id=f.case.id, batch_id=batch_id)
-        self.assertEqual(status['counts']['assigned'], 1)
         self.assertEqual(status['counts']['ready'], 1)
         self.assertEqual(status['ready_transactions'], 2)
         with f.SessionLocal() as db:
@@ -194,3 +166,38 @@ class UnassignedStatementTests(TestCase):
             with self.assertRaisesRegex(PdfMappingError, 'statement changed'):
                 import_batches.leave_unimported(db, case_id=f.case.id, batch_id=batch_id, item_id=item.id,
                     action='skip', reason='Cannot skip completed assignment', expected_revision=revision, actor=f.actor)
+
+    def test_moved_closing_is_carried_only_when_the_balances_agree_and_never_over_an_entered_one(self):
+        source = self.read(self.source)
+        moved = {r['id'] for r in source['rows'] if not r['excluded']}
+        body = statement_row_assignment.RowAssignmentRequest.model_validate(dict(
+            request=import_batches.initial_request(source), target_statement_id=self.target, row_ids=sorted(moved),
+            reason='Checked printed account', expected_review_revision='initial'))
+        preview = self.call(body)
+        self.assertEqual(preview['statements'][1]['after']['balance_status'], 'matches')
+        self.call(body.model_copy(update={'expected_preview': preview['revision']}), True)
+        target = self.read(self.target)
+        request = deepcopy(target['saved_review']['request'])
+        request['rows'] = [r for r in request['rows'] if r['id'] != 'manual:closing-balance']
+        carry = statement_row_assignment.carry_moved_closing
+        self.assertIn('manual:closing-balance', [r['id'] for r in carry(source, target, request, moved)['rows']])
+        # A closing the moved payments do not run to is not carried: the statement stays for a person.
+        wrong = deepcopy(source)
+        next(r for r in wrong['rows'] if r['kind'] == 'balance')['fields']['balance'] = '6900'
+        self.assertIs(carry(wrong, target, request, moved), request)
+        # A closing a person entered is never replaced.
+        entered = deepcopy(request)
+        entered['rows'].append(dict(id='manual:closing-balance', excluded=True, manual_page=2, balance_minor='7000',
+                                    reason='Typed from page 2'))
+        self.assertIs(carry(source, target, entered, moved), entered)
+        # Saved, it is a judgement call on the statement: proved by the printed balances, citing the page.
+        from types import SimpleNamespace
+        saved = target['saved_review']['request']
+        document = SimpleNamespace(id='doc', metadata_=dict(statement_import_request=saved,
+            statement_import_original=dict(rows=target['rows'])))
+        period = SimpleNamespace(id='period', currency='USD', opening_balance_minor=10000, closing_balance_minor=7000,
+                                 period_start_source='', period_start=None)
+        calls = [c for c in judgements.detect(document, period, []) if c['rule_id'] == 'moved.printed_closing']
+        self.assertEqual(len(calls), 1)
+        self.assertEqual((calls[0]['strength'], calls[0]['evidence']['page']), ('proved', 2))
+        self.assertIn('page 2', calls[0]['summary'])

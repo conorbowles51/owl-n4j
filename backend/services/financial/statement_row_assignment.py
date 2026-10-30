@@ -117,6 +117,53 @@ def _label(request):
         ' to '.join(filter(None, (request.get('period_start'), request.get('period_end')))))))
 
 
+def _check(checks, kind):
+    return next((c.get('status') for c in checks.get('checks', []) if c.get('kind') == kind), None)
+
+
+def carry_moved_closing(source, target, request, moved_ids):
+    """The destination's closing, carried from the printed closing on a page whose payments moved into it.
+
+    Balances stay with the reading they were printed in, so a destination that receives a statement's last page
+    has no closing to compare. When that page prints one closing balance, keeps no payment of its own, and the
+    destination's running balances and closing then both agree, it is entered exactly as a person would enter it:
+    a page-cited closing balance with its reason, which a person can still change. Returns the request unchanged
+    otherwise. The reason marks it as a judgement call when the statement is saved."""
+    from services.financial.review_arithmetic import check_proposed_rows
+    from services.financial.judgements import MOVED_CLOSING_REASON_START, money
+    if any(row['id'] == 'manual:closing-balance' for row in request['rows']):
+        return request
+    try:
+        if _check(check_proposed_rows(target, request['rows']), 'closing_balance') != 'unavailable':
+            return request
+    except PdfMappingError:
+        return request
+    pages = {row['page_number'] for row in source['rows'] if row['id'] in moved_ids}
+    closings = [row for row in source['rows'] if row['kind'] == 'balance' and row['page_number'] in pages
+                and (row['fields'].get('description') or '').lower() == 'closing balance'
+                and str(row['fields'].get('balance') or '').lstrip('-').isdigit()]
+    if len(closings) != 1:
+        return request
+    closing = closings[0]
+    page = closing['page_number']
+    kept = {row['id'] for row in request['rows']}
+    if any(row['page_number'] == page and row['kind'] in ('transaction', 'unresolved') and not row['excluded']
+           and row['id'] not in moved_ids and row['id'] not in kept for row in source['rows']):
+        return request  # The page still prints payments of the statement it came from.
+    balance = str(closing['fields']['balance'])
+    carried = deepcopy(request)
+    carried['rows'].append(dict(id='manual:closing-balance', excluded=True, manual_page=page, balance_minor=balance,
+        reason=f"{MOVED_CLOSING_REASON_START} {page}: {money(balance, request.get('currency') or '')}. "
+               "The moved payments' running balances end on it and the statement reconciles to it."))
+    try:
+        checks = check_proposed_rows(target, carried['rows'])
+    except PdfMappingError:
+        return request
+    if _check(checks, 'closing_balance') != 'matches' or _check(checks, 'running_balance') != 'matches':
+        return request
+    return carried
+
+
 def reassign_rows(session, *, case_id, evidence_file_id, body, actor, apply=False):
     from services.financial.statement_import import read_statement_import
     from services.financial.import_batches import initial_request, assess
@@ -215,6 +262,8 @@ def reassign_rows(session, *, case_id, evidence_file_id, body, actor, apply=Fals
                 raise PdfMappingError('A selected row has a long correction history. Shorten its explanation before moving it.', 422)
         requests[source_id]['rows'] = [r for r in requests[source_id]['rows'] if r['id'] not in selected]
         requests[target_id]['rows'].extend(moving)
+        requests[target_id] = carry_moved_closing(_base(session, file, body.request.currency, source_id, cache),
+            after[target_id], requests[target_id], selected)
         for key, request in requests.items():
             request['expected_revision'] = after[key]['revision']
             request['balance_exception_revision'] = None
@@ -260,4 +309,8 @@ def reassign_rows(session, *, case_id, evidence_file_id, body, actor, apply=Fals
             item.review_request = request
     file.metadata_ = deepcopy(metadata)
     session.commit()
+    if items:
+        # Keep the stored readiness of both statements current for every batch view, as a saved review does.
+        from services.financial.import_batches import refresh_file_readiness
+        refresh_file_readiness(session, case_id=case_id, file_id=file.id)
     return {**result, 'applied': True}
