@@ -648,7 +648,7 @@ export function LedgerRowBrowser({
   const searchControls = (
     <>
         <label>
-          Search payments
+          <span className={investigation && exportContext ? "sr-only" : ""}>Search payments</span>
           <input
             aria-label="Search payments"
             className="block w-full min-w-52 rounded border bg-background p-2"
@@ -666,7 +666,7 @@ export function LedgerRowBrowser({
           />
         </label>
         <label className="text-sm">
-          Search mode
+          <span className={investigation && exportContext ? "sr-only" : ""}>Search mode</span>
           <select
             aria-label="Transaction search mode"
             className="block rounded border bg-background p-2"
@@ -1061,13 +1061,23 @@ export function LedgerRowBrowser({
   const searchBar = (
     <div
       ref={toolbarRef}
-      className="sticky top-0 z-20 rounded border bg-background p-3 shadow-sm"
+      className="sticky top-0 z-20 rounded border bg-background px-3 py-2 shadow-sm"
       role="region"
       aria-label="Transaction tools and filters"
     >
-      <div className="flex flex-wrap items-end gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         {searchControls}
         {csvButtons}
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={!rows.length || rows.every((row) => selectedIds.has(row.key))}
+          onClick={() =>
+            setSelection((previous) => [...new Set([...previous, ...rows.map((row) => row.key)])])
+          }
+        >
+          Select all {rows.length} matching payments
+        </Button>
         <Button
           variant="outline"
           size="sm"
@@ -1075,7 +1085,7 @@ export function LedgerRowBrowser({
           aria-controls="transaction-controls"
           onClick={() => setControlsOpen(!controlsOpen)}
         >
-          Filters and page controls{activeFilterCount > 0 ? ` (${activeFilterCount} on)` : ""}
+          Controls{activeFilterCount > 0 ? ` (${activeFilterCount} on)` : ""}
         </Button>
       </div>
       {searchHelp}
@@ -1405,35 +1415,14 @@ export function LedgerRowBrowser({
             onChange={changeView}
           />
           <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <span>
-                {selection.length
-                  ? `${selection.length} payments selected`
-                  : `${rows.length} matching payments`}
-              </span>
-              <Button
-                variant="outline"
-                disabled={
-                  !rows.length || rows.every((row) => selectedIds.has(row.key))
-                }
-                onClick={() =>
-                  setSelection((previous) => [
-                    ...new Set([...previous, ...rows.map((row) => row.key)]),
-                  ])
-                }
-              >
-                Select all {rows.length} matching payments
-              </Button>
-              {selection.length > 0 && (
-                <Button
-                  variant="ghost"
-                  disabled={!selection.length}
-                  onClick={() => setSelection([])}
-                >
+            {selection.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span>{selection.length} payments selected</span>
+                <Button variant="ghost" onClick={() => setSelection([])}>
                   Clear selection
                 </Button>
-              )}
-            </div>
+              </div>
+            )}
             {selection.length > 0 && (
               <>
                 <div className="flex flex-wrap items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 p-3">

@@ -531,6 +531,8 @@ export function TransactionAnalysisPanels({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [rows, filterKey, panels.flowOpen]
   )
+  // Below the control panel's switches nothing shows until a panel is switched on.
+  if (hideControls && !panels.chartsOpen && !panels.partiesOpen && !panels.flowOpen) return null
   return (
     <section
       aria-label="Transaction analysis"

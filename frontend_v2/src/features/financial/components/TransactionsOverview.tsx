@@ -119,7 +119,7 @@ export function TransactionsOverview({
       <section
         aria-label="This view at a glance"
         // Totals on their own (no month chart) take one compact band.
-        className={`rounded-2xl text-[#f7f7f8] ${showMonths ? "p-5 sm:p-7" : "px-5 py-3"}`}
+        className={`rounded-2xl text-[#f7f7f8] ${showMonths ? "p-5 sm:p-7" : "flex flex-wrap items-center gap-x-8 gap-y-2 px-5 py-3"}`}
         style={{ background: "radial-gradient(1200px 400px at 85% -10%, #2a1216 0%, #0b0c0f 60%)" }}
       >
         <div className="flex flex-wrap items-center gap-3">
@@ -142,7 +142,7 @@ export function TransactionsOverview({
           {modeSwitch}
         </div>
         {showTotals && (
-        <div className={`flex flex-wrap gap-x-10 gap-y-2 ${showMonths ? "mt-5" : "mt-2"}`} aria-label={`Totals in ${currency}`}>
+        <div className={`flex flex-wrap gap-y-2 ${showMonths ? "mt-5 gap-x-10" : "gap-x-8"}`} aria-label={`Totals in ${currency}`}>
           {[
             ["Money in", `+${money(credit)}`, "text-[#5fd39a]", credit],
             ["Money out", `−${money(debit)}`, "text-[#f7f7f8]", debit],
@@ -157,12 +157,15 @@ export function TransactionsOverview({
               </div>
             </div>
           ))}
+          {/* In the compact band each currency's tab already says how many payments it holds. */}
+          {(showMonths || currencies.length < 2) && (
           <div>
             <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-[#9a9da5]">Payments</span>
             <div className={`font-semibold tabular-nums text-[#bfc1c8] ${showMonths ? "text-4xl sm:text-[44px]" : "text-2xl sm:text-3xl"}`} style={heading}>
               {inCurrency.length.toLocaleString()}
             </div>
           </div>
+          )}
         </div>
         )}
         {showMonths && months.length > 0 && (
