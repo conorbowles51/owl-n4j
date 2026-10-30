@@ -107,9 +107,22 @@ class ReadItemRecordsTest(unittest.TestCase):
         with mock.patch.object(vr, '_read_item', return_value=skip), self.assertLogs(vr.log, level='INFO'):
             vr.read_item(lambda: db, 'i1', None)
             db.objects[Item].summary = {'vision_reading': dict(db.objects[Item].summary['vision_reading'], marker=1)}
+            before = db.objects[EvidenceFile].metadata_
             vr.read_item(lambda: db, 'i1', None)
         self.assertEqual(db.objects[Item].summary['vision_reading'].get('marker'), 1)
-        self.assertEqual(vr.outcomes(db.objects[EvidenceFile], 'k1')[0]['times'], 2)
+        # The same skip found again (as after every restart) leaves the file as it was: no row change, so the
+        # case's cached Financial views stay valid. Its journal line is still written.
+        self.assertIs(db.objects[EvidenceFile].metadata_, before)
+        self.assertEqual(vr.outcomes(db.objects[EvidenceFile], 'k1')[0]['times'], 1)
+
+    def test_a_repeated_skip_is_journalled_but_a_new_skip_reason_is_recorded(self):
+        db = _setup()
+        with self.assertLogs(vr.log, level='INFO') as logs:
+            for reason in ('not_payment', 'not_payment', 'no_pages'):
+                with mock.patch.object(vr, '_read_item', return_value=dict(status='skipped', reason=reason, at='t')):
+                    vr.read_item(lambda: db, 'i1', None)
+        self.assertEqual(sum('(not_payment)' in line for line in logs.output), 2)
+        self.assertEqual([h['reason'] for h in vr.outcomes(db.objects[EvidenceFile], 'k1')], ['not_payment', 'no_pages'])
 
     def test_a_final_outcome_is_recorded_but_its_note_left_to_finish(self):
         db = _setup(summary={'vision_reading': {'status': 'not_proved', 'message': 'kept'}})

@@ -2393,7 +2393,13 @@ def _same_outcome(a, b):
 
 
 def _record_outcome(db, file_id, key, record):
-    """Append the outcome to the statement's history under the file's lock; False when it repeats the last one."""
+    """Append the outcome to the statement's history under the file's lock; False when it repeats the last one.
+
+    A repeated reading outcome counts up on the last entry (times, last_at). A repeated skip (the same reason,
+    found again: after every restart each worker's round looks at every skipped statement again) leaves the file
+    unchanged; its journal line is still written by _decided. Rewriting the file for it changed the file's row on
+    every restart (d5b330d1: about 30 files per worker within minutes of each start), which made every Financial
+    view of the case compute again although nothing about the case had changed."""
     from postgres.models.evidence import EvidenceFile
     file = db.scalar(select(EvidenceFile).where(EvidenceFile.id == file_id).with_for_update()
                      .execution_options(populate_existing=True))
@@ -2402,6 +2408,8 @@ def _record_outcome(db, file_id, key, record):
     metadata = deepcopy(file.metadata_ or {})
     history = list((metadata.get(OUTCOMES_KEY) or {}).get(key or '') or [])
     entry = _history_entry(record)
+    if history and _same_outcome(history[-1], entry) and entry.get('status') == 'skipped':
+        return False
     if history and _same_outcome(history[-1], entry):
         last = dict(history[-1])
         last.update(times=(last.get('times') or 1) + 1, last_at=entry.get('at'))
