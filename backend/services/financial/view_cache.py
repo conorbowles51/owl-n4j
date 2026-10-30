@@ -130,7 +130,8 @@ def _load_tables(connection):
 
 def not_kept():
     """Called by a view whose answer is shown but incomplete for a passing reason (a lookup that failed): the answer
-    is returned as computed and not kept, so the next request computes it again. No effect outside a cached view."""
+    is returned as computed and not kept, so the next request computes it again. Called in the view's own thread (a
+    thread the view starts does not see the recording). No effect outside a cached view."""
     recording = _recording.get()
     if recording is not None:
         recording.keep = False
