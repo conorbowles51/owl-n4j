@@ -144,12 +144,20 @@ def test_prepare_computes_nothing_while_migrations_are_pending(periods, monkeypa
 
 
 @needs_pg
-def test_prepare_waits_for_a_warm_up_already_running(periods, monkeypatch):
+def test_prepare_does_not_wait_for_the_old_services_warm_up_but_for_another_prepare(periods, monkeypatch):
     import threading
     add, calls, directory = periods
     add(uuid.uuid4(), 1)
     monkeypatch.setattr(view_warmup, '_migrations_pending', lambda: '')
-    held = open(directory / 'warmup.lock', 'a')
+    with open(directory / 'warmup.lock', 'a') as old_service:
+        fcntl.flock(old_service, fcntl.LOCK_EX)
+        beside = []
+        runner = threading.Thread(target=lambda: beside.append(view_warmup.prepare()), daemon=True)
+        runner.start()
+        runner.join(30)
+        assert beside and beside[0].startswith('prepare: 9 views warmed')
+    calls.clear()
+    held = open(directory / view_warmup.PREPARE_LOCK, 'a')
     fcntl.flock(held, fcntl.LOCK_EX)
     done = []
     worker = threading.Thread(target=lambda: done.append(view_warmup.prepare()))

@@ -11,7 +11,7 @@ SHOWN = '\n'.join((
     'Group=conorbowles51',
     'WorkingDirectory=/home/conorbowles51/app-v3/owl-n4j/backend',
     'Environment=PATH=/home/conorbowles51/app-v3/owl-n4j/.venv/bin:/usr/local/bin:/usr/bin:/bin PYTHONMALLOC=mimalloc '
-    'UVICORN_TIMEOUT_GRACEFUL_SHUTDOWN=20 UVICORN_TIMEOUT_WORKER_HEALTHCHECK=120 "SPACED=a b"',
+    'UVICORN_TIMEOUT_GRACEFUL_SHUTDOWN=20 UVICORN_TIMEOUT_WORKER_HEALTHCHECK=120 "SPACED=a b" PERCENT=50%h',
     'EnvironmentFiles=/home/conorbowles51/app-v3/owl-n4j/.env (ignore_errors=no)',
 ))
 
@@ -42,6 +42,8 @@ def test_the_prepare_unit_carries_every_service_setting_the_identity_reads():
         assert 'Environment=' + assignment in properties or 'Environment="%s"' % assignment in properties
     # systemd splits an unquoted value on its spaces.
     assert 'Environment="SPACED=a b"' in properties
+    # systemd-run passes % as written (measured: Environment=P=50%h gives 50%h; 50%%h gives 50%%h).
+    assert 'Environment=PERCENT=50%h' in properties
     assert 'EnvironmentFile=/home/conorbowles51/app-v3/owl-n4j/.env' in properties
     assert 'User=conorbowles51' in properties and 'Group=conorbowles51' in properties
     assert 'WorkingDirectory=/home/conorbowles51/app-v3/owl-n4j/backend' in properties

@@ -91,7 +91,10 @@ def _child_command():
     return [sys.executable, '-m', 'services.financial.view_warmup', CHILD_FLAG]
 
 
-def _take_lock(wait=False):
+PREPARE_LOCK = 'prepare.lock'
+
+
+def _take_lock(wait=False, name='warmup.lock'):
     """The host-wide warm-up lock, held open, or None if the memo is off or another worker holds it (``wait``:
     wait for it instead)."""
     import fcntl
@@ -101,7 +104,7 @@ def _take_lock(wait=False):
         return None
     try:
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-        lock = open(directory / 'warmup.lock', 'a')
+        lock = open(directory / name, 'a')
     except OSError:
         logger.warning('Financial view warm-up skipped: no memo directory', exc_info=True)
         return None
@@ -199,8 +202,10 @@ def prepare():
     code identity, which this process takes from the files on disk, as the started service will.
 
     Skipped while the database is behind the code's migrations: deploy.sh migrates after this runs, and views computed
-    against the old schema must not be saved under the new code. Waits for a warm-up already running (the old
-    service's, after a recent start) rather than computing beside it. Returns the summary line; never raises."""
+    against the old schema must not be saved under the new code. One prepare at a time (its own lock); it does not
+    wait for the old service's after-start warm-up, which computes views for the code being replaced: measured live
+    2026-10-30 21:33-21:41, a prepare queued 8.7 min behind one (then ran 18 s), which would use up the release's
+    10-minute cap on back-to-back releases. Returns the summary line; never raises."""
     started = time.perf_counter()
     try:
         from services.financial import view_cache
@@ -209,7 +214,7 @@ def prepare():
         pending = _migrations_pending()
         if pending:
             return 'prepare: skipped, database migrations pending (%s)' % pending
-        lock = _take_lock(wait=True)
+        lock = _take_lock(wait=True, name=PREPARE_LOCK)
         if lock is None:
             return 'prepare: skipped, no memo directory'
         with lock:
