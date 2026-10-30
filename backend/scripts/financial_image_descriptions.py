@@ -64,7 +64,8 @@ def survey(factory, case_ids, document_ids):
             if not rows:
                 continue
             stored = (document.metadata_ or {}).get(vision_descriptions.METADATA_KEY) or {}
-            looked = set(stored.get('lines') or {}) | set(stored.get('kept') or {})
+            looked = set(stored.get('lines') or {}) | {key for key, why in (stored.get('kept') or {}).items()
+                                                       if why not in vision_descriptions.RETRIED}
             verdict = assess_image_descriptions(session, document)
             results.append(dict(verdict, page_image_payments=len(rows),
                                 not_read=sum(1 for row in rows if str(row.id) not in looked),

@@ -2952,8 +2952,10 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
                 record['printed_controls'] = controls
             if reading.get('charge_totals') and CLOSING_DAYS:
                 record['charge_totals'] = reading['charge_totals']
-        if accepted.get('basis') != 'dates_from_page_images' and accepted.get('provider'):
+        if (accepted.get('basis') != 'dates_from_page_images' and accepted.get('provider') and apply and not force
+                and not again):
             # The payments' description lines (who paid or was paid), read on their own: only descriptions change.
+            # Only for a new reading being saved: a re-judged stored reading or a measurement sends nothing more.
             from services.financial import vision_descriptions
             try:
                 # Within the claim: a page whose requests could end after it keeps its first lines ('deferred'); the

@@ -16,7 +16,7 @@ from services.financial import saved_reading_replacement as replacement
 from services.financial import vision_descriptions as vd
 
 FIRST = 'T17 SPEI ENVIADO SANTANDER'
-FULL = ('T17 SPEI ENVIADO SANTANDER 0212248TJZA PENSION ALIMENTICIA 2A Q Ref. 0000259567 014 0001485460571777977 '
+FULL = ('T17 SPEI ENVIADO SANTANDER 0212248TJZA PENSIONA ALIMENTICIA 2A Q Ref. 0000259567 014 0001485460571777977 '
         '002601002412020000259567 JULLY LEONOR VAZQUEZ VAZQUEZ')
 NEXT_FIRST = 'T17 SPEI ENVIADO BANORTE'
 NEXT_FULL = ('T17 SPEI ENVIADO BANORTE 0412248PAGO REC A143 RENTA DIC24 Ref. 0000772484 072 00072180000130110734 '
@@ -64,6 +64,18 @@ class CompletedTests(TestCase):
         self.assertEqual(kept, {'a': 'too_long'})
 
 
+    def test_lines_reaching_into_a_payment_printing_the_same_first_line_are_not_taken(self):
+        same = vd.listed([dict(id=k, page=2, date='2024-12-04', amount='1.00', direction='debit', balance=None,
+                               description=FIRST) for k in ('a', 'b')])
+        found, kept = vd.completed(same, answer(a=FULL + ' ' + FIRST + ' 0412248PAGO', b=FIRST))
+        self.assertEqual((found, kept), ({}, {'a': 'reaches_another_payment'}))
+
+    def test_the_first_line_keeps_its_saved_text(self):
+        found, _ = vd.completed(rows(), answer(a=FULL.replace('T17 SPEI ENVIADO SANTANDER', 't17 spei enviado santander'),
+                                               b=NEXT_FIRST))
+        self.assertEqual(found, {'a': FULL})
+
+
 class ReadLinesTests(TestCase):
     pages = [(2, [b'p2']), (3, [b'p3'])]
 
@@ -84,6 +96,19 @@ class ReadLinesTests(TestCase):
         self.assertEqual(sent, [([2, 3], ['a', 'b'])] * 4, 'its page and the next one, read four times')
         self.assertEqual(record['usage'], {'prompt_tokens': 40, 'completion_tokens': 20})
         self.assertEqual(record['first_lines'], {'a': FIRST})
+
+    def test_lines_reaching_into_the_next_pages_first_payment_are_not_taken(self):
+        listed = [dict(id='a', page=2, date='2024-12-02', amount='2386.61', direction='debit', balance=None,
+                       description=FIRST),
+                  dict(id='b', page=3, date='2024-12-04', amount='163931.35', direction='debit', balance=None,
+                       description=NEXT_FIRST)]
+
+        def read(shown, listed_rows):
+            return answer(**{row['id']: (FULL + ' ' + NEXT_FIRST + ' 0412248PAGO REC' if row['id'] == 'a'
+                                         else row['first_line']) for row in listed_rows}), {}
+        record, found = vd.read_lines(read, self.pages + [(4, [b'p4'])], listed)
+        self.assertEqual(found, {})
+        self.assertEqual(record['kept'], {'a': 'reaches_another_payment'})
 
     def test_a_failed_request_leaves_the_page_as_read(self):
         def read(shown, listed_rows):

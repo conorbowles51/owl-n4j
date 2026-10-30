@@ -91,12 +91,14 @@ def listed(rows):
                  first_line=_words(row['description'])) for row in rows]
 
 
-def completed(rows, answer):
+def completed(rows, answer, everyone=None):
     """({id: completed description}, {id: why left as read}) from the answer, for ``rows`` as listed (``listed``).
 
     Taken only when the answer begins with the description already read and adds to it, is not longer than MAX_CHARS,
-    and what it adds is not the first line of another movement on the same page or the next one (a neighbouring
-    entry). Every listed id must be answered exactly once, or nothing is taken."""
+    and what it adds is not the first line of another movement (``everyone``: every movement listed for the statement,
+    default ``rows``) on the same page or the next one, a neighbouring entry, even one printing the same first line.
+    The first line keeps its saved text; only the lines added come from the answer. Every listed id must be answered
+    exactly once, or nothing is taken."""
     found, kept = {}, {}
     answered = (answer or {}).get('rows') if isinstance(answer, dict) else None
     if not isinstance(answered, list):
@@ -106,8 +108,8 @@ def completed(rows, answer):
         return {}, {row['id']: 'answer_ids_differ' for row in rows}
     text = {str(item['id']): _words(item.get('description')) for item in answered}
     starts = {}
-    for row in rows:
-        starts.setdefault(row['page'], []).append(_key(row['first_line']))
+    for row in everyone or rows:
+        starts.setdefault(row['page'], []).append((row['id'], _key(row['first_line'])))
     for row in rows:
         old, new = row['first_line'], text[row['id']]
         if _key(new) == _key(old):
@@ -118,13 +120,14 @@ def completed(rows, answer):
         if len(new) > MAX_CHARS:
             kept[row['id']] = 'too_long'
             continue
-        added = _key(new)[len(_key(old)):]
-        others = [start for page in (row['page'], row['page'] + 1) for start in starts.get(page, [])
-                  if start != _key(old) and len(start) >= 8]
-        if any(start in added for start in others):
+        lines = new.split()[len(old.split()):]
+        added = ' ' + _key(' '.join(lines))
+        others = [start for page in (row['page'], row['page'] + 1) for other, start in starts.get(page, [])
+                  if other != row['id'] and len(start) >= 8]
+        if any(' ' + start in added for start in others):
             kept[row['id']] = 'reaches_another_payment'
             continue
-        found[row['id']] = new
+        found[row['id']] = _words(old) + ' ' + ' '.join(lines)
     return found, kept
 
 
@@ -172,9 +175,14 @@ def _add(total, usage):
 
 
 def request_seconds():
-    """The longest one page's request can take: every try at its full allowance, with the pauses between."""
+    """The longest one page's request can take, by any provider: every try at its full allowance (OpenAI's client
+    tries each request up to OPENAI_CLIENT_TRIES times, its timeout applying to connecting and to reading; DeepSeek's
+    read may run on by its silence allowance), with the pauses between."""
     from services.financial import vision_reader as vr
-    return (RETRIES + 1) * (TIMEOUT_SECONDS + 60 + vr.CONNECT_SECONDS) + vr.RETRY_PAUSE_SECONDS * RETRIES
+    from services.llm_service import LLMExecutionContext
+    deepseek = TIMEOUT_SECONDS + LLMExecutionContext.DEEPSEEK_READ_GAP_SECONDS + vr.CONNECT_SECONDS
+    openai = vr.OPENAI_CLIENT_TRIES * 2 * TIMEOUT_SECONDS + (vr.OPENAI_CLIENT_TRIES - 1) * vr.OPENAI_RETRY_PAUSE_SECONDS
+    return (RETRIES + 1) * max(deepseek, openai) + vr.RETRY_PAUSE_SECONDS * RETRIES
 
 
 def read_lines(read, pages, rows, reads=READS, deadline=None):
@@ -213,7 +221,7 @@ def read_lines(read, pages, rows, reads=READS, deadline=None):
                 continue
             _add(usage, used)
             if answers is not None:
-                answers.append(completed(on_page, answer))
+                answers.append(completed(on_page, answer, sent))
         if answers is None:
             for row in on_page:
                 kept.setdefault(row['id'], 'request_failed')
@@ -244,6 +252,8 @@ def read_lines(read, pages, rows, reads=READS, deadline=None):
 # Saved statements: the description lines of payments already saved from page images
 # ---------------------------------------------------------------------------
 
+# Why a payment stayed as read that a later --read tries again (nothing was read for it).
+RETRIED = ('request_failed', 'page_not_rendered', 'deferred')
 # Stored on the saved statement (financial_source_documents.metadata) by read_saved_lines, applied by
 # saved_reading_replacement.refresh_descriptions(from_images=True).
 METADATA_KEY = 'vision_description_lines'
@@ -324,7 +334,8 @@ def read_saved_lines(factory, document_id, resolve_path, *, request_for=None):
         if not vr.approved(document.case_id):
             return dict(record, reason='case_not_approved')
         stored = ((document.metadata_ or {}).get(METADATA_KEY) or {})
-        looked = set(stored.get('lines') or {}) | set(stored.get('kept') or {})
+        looked = set(stored.get('lines') or {}) | {key for key, why in (stored.get('kept') or {}).items()
+                                                   if why not in RETRIED}
         rows = [row for row in saved_rows(db, document) if str(row.id) not in looked]
         if not rows:
             return dict(record, reason='nothing_to_read')
