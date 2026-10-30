@@ -2356,9 +2356,11 @@ def _grow_block(located, index, x, style):
         beside = any(earlier['y0'] < other['y0'] < block[-1]['y0'] for other in located)
         if gap > max(height * (4 if beside else 2.6), previous_gap * 1.6):
             break
-        if BLANK_LINE_LIMIT and beside and previous_gap and gap > previous_gap * 2.5:
+        if BLANK_LINE_LIMIT and beside and previous_gap and gap > max(previous_gap, height * 1.5) * 2.5:
             # More than one blank line above a block whose own lines are evenly spaced: what is above (a scanned
-            # logo read as 'F3' over BBVA's 'CAAL ENERGY SYSTEMS SA DE CV' block) is not its name line.
+            # logo read as 'F3' over BBVA's 'CAAL ENERGY SYSTEMS SA DE CV' block) is not its name line. The spacing
+            # is never taken as under one and a half text heights, so a postal line printed tight under the line
+            # above it does not make an ordinary line spacing look like a blank line.
             break
         block.append(earlier)
         if len(block) >= 7:

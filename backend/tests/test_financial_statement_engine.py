@@ -1458,6 +1458,19 @@ class HolderAndInterbankTests(unittest.TestCase):
         with mock.patch.object(E, 'BLANK_LINE_LIMIT', False):
             self.assertEqual(E.address_holder(rows), '')
 
+    def test_a_postal_line_printed_tight_under_the_line_above_does_not_cut_the_block(self):
+        # The blank-line limit compares a gap with the block's own spacing; a postal line 4000 under the line above
+        # must not make the ordinary 12000 spacing above that look like a blank line (review of the 'F3' fix).
+        placed = [(40000, 'EMPRESA DE PRUEBA SA DE CV', 48240, 180000), (46000, 'No. de Cliente D2409724', 320400, 590000),
+                  (52000, 'CALLE EJEMPLO 843 B', 48240, 151440), (58000, 'R.F.C XAXX010101000', 320400, 590000),
+                  (64000, 'GRANADA', 48240, 120000), (68000, 'CIUDAD DE MEXICO CP 11520', 48000, 240000)]
+        sheet = page(1, [[(text, x0, x1)] for _, text, x0, x1 in placed])
+        for row, (y, text, *_rest) in zip(sheet['rows'], placed):
+            # Text 7000 high; the postal line in a small font, 3000 high.
+            row['cells'][0]['locator']['rect'][1:4:2] = [y, y + (3000 if text.startswith('CIUDAD') else 7000)]
+        rows = E._pages([sheet])[1]
+        self.assertEqual(E.address_holder(rows), 'EMPRESA DE PRUEBA SA DE CV')
+
     def test_a_line_with_money_or_a_date_at_the_block_edge_is_not_part_of_an_address(self):
         lines = [[('EMPRESA DE PRUEBA SA DE CV', 20000, 200000)],
                  [('05/03/2024 PAGO RECIBIDO', 20000, 200000)],
