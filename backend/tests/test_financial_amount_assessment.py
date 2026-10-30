@@ -126,12 +126,12 @@ class AssessmentRouterTests(unittest.IsolatedAsyncioTestCase):
         case, file = uuid4(), uuid4()
         body = self.body()
         with patch.object(financial_ledger, "assess_source_amount", return_value={"applied": False}) as call:
-            result = await financial_ledger.assess_evidence_amount(file, body, case, "session")
+            result = financial_ledger.assess_evidence_amount(file, body, case, "session")
         call.assert_called_once_with("session", case_id=case, evidence_file_id=file, **body.model_dump())
         self.assertFalse(result["applied"])
 
     async def test_refusal_status_is_preserved(self):
         with patch.object(financial_ledger, "assess_source_amount", side_effect=AmountAssessmentError("Reload", 409)):
             with self.assertRaises(HTTPException) as ctx:
-                await financial_ledger.assess_evidence_amount(uuid4(), self.body(), uuid4(), "session")
+                financial_ledger.assess_evidence_amount(uuid4(), self.body(), uuid4(), "session")
         self.assertEqual(ctx.exception.status_code, 409)

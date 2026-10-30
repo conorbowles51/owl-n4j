@@ -143,12 +143,12 @@ class CandidateSuggestionRouterTests(unittest.IsolatedAsyncioTestCase):
         file, case = uuid4(), uuid4()
         body=router.CandidateRowSuggestionRequest(expected_revision='a'*64,date_column=0,amount_column=1,currency='GBP')
         with patch('services.financial.candidate_sources.suggest_candidate_rows',return_value={'applied':False}) as call:
-            result=await router.suggest_saved_source_rows(file,1,body,case,0,'db')
+            result=router.suggest_saved_source_rows(file,1,body,case,0,'db')
             self.assertFalse(result['applied'])
             call.assert_called_once_with('db',case_id=case,evidence_file_id=file,page_number=1,table_index=0,**body.model_dump())
         for error,status in ((PdfMappingError('Changed',409),409),(RuntimeError('private'),500)):
             with patch('services.financial.candidate_sources.suggest_candidate_rows',side_effect=error):
                 with self.assertRaises(HTTPException) as caught:
-                    await router.suggest_saved_source_rows(file,1,body,case,0,'db')
+                    router.suggest_saved_source_rows(file,1,body,case,0,'db')
                 self.assertEqual(caught.exception.status_code,status)
                 self.assertNotIn('private',caught.exception.detail)

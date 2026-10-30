@@ -176,7 +176,7 @@ class CandidateAssessmentRouterTests(unittest.IsolatedAsyncioTestCase):
         from routers import financial_ledger as router
         case, candidate = uuid4(), uuid4()
         with patch.object(router, "assess_candidate_amounts", return_value={"applied": False}) as call:
-            result = await router.assess_saved_candidate(candidate, router.CandidateAmountAssessmentRequest(currency="GBP"), case, "db")
+            result = router.assess_saved_candidate(candidate, router.CandidateAmountAssessmentRequest(currency="GBP"), case, "db")
         call.assert_called_once_with("db", case_id=case, candidate_id=candidate, currency="GBP")
         self.assertFalse(result["applied"])
         self.assertEqual(router._ledger_case_permission(None, {}), ("case", "view"))
@@ -193,7 +193,7 @@ class CandidateAssessmentRouterTests(unittest.IsolatedAsyncioTestCase):
         from routers import financial_ledger as router
         with patch.object(router, "assess_candidate_amounts", side_effect=CandidateStoreError("Reload", 409)):
             with self.assertRaises(HTTPException) as error:
-                await router.assess_saved_candidate(uuid4(), router.CandidateAmountAssessmentRequest(currency="GBP"), uuid4(), "db")
+                router.assess_saved_candidate(uuid4(), router.CandidateAmountAssessmentRequest(currency="GBP"), uuid4(), "db")
         self.assertEqual(error.exception.status_code, 409)
 
     async def test_unexpected_errors_do_not_disclose_database_details(self):

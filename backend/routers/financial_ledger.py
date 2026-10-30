@@ -640,7 +640,7 @@ def assess_saved_candidate_dates(candidate_id: UUID, case_id: UUID = Query(...),
 
 
 @router.post("/candidates/{candidate_id}/amount-assessment")
-async def assess_saved_candidate(candidate_id: UUID, body: CandidateAmountAssessmentRequest,
+def assess_saved_candidate(candidate_id: UUID, body: CandidateAmountAssessmentRequest,
                                  case_id: UUID = Query(...), db: Session = Depends(get_db)):
     try:
         return assess_candidate_amounts(db, case_id=case_id, candidate_id=candidate_id, currency=body.currency)
@@ -745,7 +745,7 @@ def get_amount_source_text(
 
 
 @router.post("/source-files/{evidence_file_id}/amount-assessment")
-async def assess_evidence_amount(
+def assess_evidence_amount(
     evidence_file_id: UUID,
     body: AmountAssessmentRequest,
     case_id: UUID = Query(...),
@@ -1105,7 +1105,7 @@ class CandidateRowSuggestionRequest(BaseModel):
 
 
 @router.post("/candidate-sources/{evidence_file_id}/pages/{page_number}/row-suggestions")
-async def suggest_saved_source_rows(evidence_file_id: UUID, page_number: int, body: CandidateRowSuggestionRequest,
+def suggest_saved_source_rows(evidence_file_id: UUID, page_number: int, body: CandidateRowSuggestionRequest,
         case_id: UUID = Query(...), table_index: int = 0, db: Session = Depends(get_db)):
     from services.financial.candidate_sources import suggest_candidate_rows
     try:
@@ -1155,7 +1155,7 @@ def get_candidate_source_reuse(evidence_file_id: UUID, case_id: UUID = Query(...
 
 
 @router.post("/candidate-sources/{evidence_file_id}/finalization-preview")
-async def preview_candidate_statement_scopes(evidence_file_id: UUID, body: StatementScopesRequest,
+def preview_candidate_statement_scopes(evidence_file_id: UUID, body: StatementScopesRequest,
                                             case_id: UUID = Query(...), db: Session = Depends(get_db)):
     try:
         return preview_candidate_finalization(db, case_id=case_id, evidence_file_id=evidence_file_id,
