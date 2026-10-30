@@ -34,6 +34,8 @@ def periods(tmp_path, monkeypatch):
     monkeypatch.setattr(routers.financial_ledger, 'get_ledger_transactions', lambda **kw: calls.append(dict(kw, view='transactions')))
     import routers.financial_statement_import
     monkeypatch.setattr(routers.financial_statement_import, 'files', lambda **kw: calls.append(dict(kw, view='files')))
+    import routers.evidence
+    monkeypatch.setattr(routers.evidence, 'list_evidence', lambda **kw: calls.append(dict(kw, view='evidence')))
 
     def add(case, count):
         with engine.begin() as connection:
@@ -54,8 +56,10 @@ def test_every_case_is_warmed_largest_first_with_the_routes_defaults(periods):
     small, large = uuid.uuid4(), uuid.uuid4()
     add(small, 1); add(large, 3)
     view_warmup.warm_account_history()
-    assert [(call['case_id'], call.get('view')) for call in calls] == [
-        (large, None), (large, 'transactions'), (large, 'files'), (small, None), (small, 'transactions'), (small, 'files')]
+    assert [(str(call['case_id']), call.get('view')) for call in calls] == [
+        (str(large), None), (str(large), 'transactions'), (str(large), 'files'), (str(large), 'evidence'),
+        (str(small), None), (str(small), 'transactions'), (str(small), 'files'), (str(small), 'evidence')]
+    assert calls[3]['case_id'] == str(large)  # as text, as FastAPI gives the evidence listing
     assert {key: value for key, value in calls[0].items() if key != 'db'} == dict(
         case_id=large, account_id=None, account_ids=None, account_holders=None, start_date=None, end_date=None)
     assert {key: value for key, value in calls[1].items() if key != 'db'} == dict(
@@ -72,7 +76,7 @@ def test_only_one_worker_warms_at_a_time(periods):
         view_warmup.warm_account_history()
     assert calls == []
     view_warmup.warm_account_history()
-    assert len(calls) == 3
+    assert len(calls) == 4
 
 
 @needs_pg
@@ -88,7 +92,7 @@ def test_a_failing_case_does_not_stop_the_others_and_shutdown_stops_the_rest(per
             raise RuntimeError('synthetic failure')
     monkeypatch.setattr(routers.financial_ledger, 'get_account_history', failing)
     view_warmup.warm_account_history()
-    assert [call['case_id'] for call in calls] == [first] * 3 + [second] * 3
+    assert [str(call['case_id']) for call in calls] == [str(first)] * 4 + [str(second)] * 4
     calls.clear()
     monkeypatch.setattr(process_shutdown, 'requested', type('Set', (), dict(is_set=lambda self: True))())
     view_warmup.warm_account_history()
@@ -195,8 +199,11 @@ def test_the_warm_up_passes_every_route_parameter_with_the_value_fastapi_gives_a
     import routers.financial_ledger
     import routers.financial_statement_import
     calls = []
+    import routers.evidence
     routes = dict(get_account_history=routers.financial_ledger, get_ledger_transactions=routers.financial_ledger,
-                  files=routers.financial_statement_import)
+                  files=routers.financial_statement_import, list_evidence=routers.evidence)
+    # What the Financial page asks for where it does not use the route's defaults.
+    page = dict(list_evidence=dict(include_reading_versions=True, financial_only=True))
     for name, module in routes.items():
         route = getattr(module, name)
         expected = {}
@@ -205,7 +212,7 @@ def test_the_warm_up_passes_every_route_parameter_with_the_value_fastapi_gives_a
                 continue
             default = getattr(parameter.default, 'default', parameter.default)  # Query(None) -> None
             expected[parameter.name] = default
-        calls.append((name, expected))
+        calls.append((name, {**expected, **page.get(name, {})}))
     seen = {}
 
     class Session:

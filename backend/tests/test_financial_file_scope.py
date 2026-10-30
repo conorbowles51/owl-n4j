@@ -39,7 +39,7 @@ def listing(f, financial=False, versions=True):
     with f.SessionLocal() as db:
         rows = list_evidence(case_id=str(f.case.id), status_filter=None,
             include_cellebrite_artifacts=False, include_reading_versions=versions,
-            financial_only=financial, user={}, db=db)["files"]
+            financial_only=financial, db=db)["files"]
         return [row for row in rows if row['id'] not in {str(value) for value in f.seeded_file_ids}]
 
 

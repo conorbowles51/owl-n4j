@@ -121,6 +121,8 @@ async def _require_evidence_object_access(
         authorize_case(db, record.case_id, current_user, permission)
 
 
+from services.financial.view_cache import cached_view  # noqa: E402
+
 router = APIRouter(
     prefix="/api/evidence",
     tags=["evidence"],
@@ -807,14 +809,17 @@ def _validated_text_query(q: str) -> str:
 # These reads await nothing: as plain functions they run in the thread pool. As async functions they ran on the
 # worker's event loop, and listing d5b330d1's statement files (12-20 s) held every other request of that worker
 # until it finished.
-@router.get("", response_model=EvidenceListResponse)
+# Computed once and served again while no row it read has changed (view_cache: the Financial page's statement
+# register lists d5b330d1's 3,158 files in 10-20 s). The sign-in check is a route dependency, not a parameter, so
+# the person's token is not part of what is saved.
+@router.get("", response_model=EvidenceListResponse, dependencies=[Depends(get_current_user)])
+@cached_view('evidence-list')
 def list_evidence(
     case_id: str = Query(..., description="Case ID"),
     status_filter: Optional[str] = Query(None, alias="status"),
     include_cellebrite_artifacts: bool = False,
     include_reading_versions: bool = False,
     financial_only: bool = False,
-    user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
@@ -837,9 +842,11 @@ def list_evidence(
         history = reading_history(db, db_files)
         # Financial's full version list may group only validated source families.
         roots = {str(file.id): root for root, versions in case_lineage(db, UUID(case_id)).items() for file in versions} if include_reading_versions else {}
-        return {"files": [{**_evidence_record_from_db(f),
+        listing = {"files": [{**_evidence_record_from_db(f),
             'statement_root_evidence_id': roots.get(str(f.id), str(f.id)),
             'reading_versions': history.get(str(f.id), [])} for f in db_files]}
+        # What FastAPI sends for the response model: a saved answer is sent as it is, past the model.
+        return EvidenceListResponse.model_validate(listing).model_dump(mode='json')
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -141,6 +141,7 @@ def _warm_cases():
             .order_by(func.count().desc(), Period.case_id))]
     from routers.financial_ledger import get_ledger_transactions
     from routers.financial_statement_import import files as get_statement_files
+    from routers.evidence import list_evidence
     from services import process_shutdown
     # Each route with its defaults, as FastAPI passes them for a first visit: the same cached-view key.
     views = (
@@ -150,6 +151,9 @@ def _warm_cases():
                                                        start_date=None, end_date=None, account_ids=None,
                                                        account_holders=None)),
         ('statement files', get_statement_files, {}),
+        # The Financial page's statement register asks for every reading version of its files.
+        ('statement register files', list_evidence, dict(status_filter=None, include_cellebrite_artifacts=False,
+                                                         include_reading_versions=True, financial_only=True)),
     )
     for case_id in cases:
         for name, route, defaults in views:
@@ -158,7 +162,8 @@ def _warm_cases():
             started = time.perf_counter()
             try:
                 with SessionLocal() as db:
-                    route(case_id=case_id, **defaults, db=db)
+                    # Each route gets case_id as FastAPI gives it (the evidence listing declares it as text).
+                    route(case_id=str(case_id) if route is list_evidence else case_id, **defaults, db=db)
                 logger.info('Financial %s warmed for case %s (%.1f s)', name, case_id, time.perf_counter() - started)
             except Exception:
                 logger.warning('Financial %s warm-up failed for case %s', name, case_id, exc_info=True)
