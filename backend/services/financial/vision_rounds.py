@@ -28,7 +28,7 @@ def _lock_directory():
     return view_cache._memo_dir()
 
 
-def _take_lock():
+def _take_lock(name=LOCK_NAME):
     """The host-wide rounds lock, held open, or None if another worker holds it or there is nowhere to keep it."""
     import fcntl
     directory = _lock_directory()
@@ -36,9 +36,9 @@ def _take_lock():
         return None
     try:
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-        lock = open(directory / LOCK_NAME, 'a')
+        lock = open(directory / name, 'a')
     except OSError:
-        log.warning('Page-image rounds: the lock could not be opened; trying again after a pause', exc_info=True)
+        log.warning('Rounds lock %s could not be opened; trying again after a pause', name, exc_info=True)
         return None
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -53,13 +53,14 @@ def _child_command():
     return [sys.executable, '-m', 'services.financial.vision_rounds', CHILD_FLAG]
 
 
-async def _run_child():
+async def _run_child(command=None, label='Page-image rounds', stop_seconds=10):
     """The rounds in a child process with this worker's interpreter, code and environment, until it ends or the
-    worker stops (then it is stopped too). Its exit status is logged, never raised."""
+    worker stops (then it is asked to stop, and killed after ``stop_seconds``). Its exit status is logged, never
+    raised."""
     from pathlib import Path
     from services.financial.view_warmup import _end_with_parent
     backend = Path(__file__).resolve().parents[2]
-    child = await asyncio.create_subprocess_exec(*_child_command(), cwd=str(backend),
+    child = await asyncio.create_subprocess_exec(*(command or _child_command()), cwd=str(backend),
                                                  preexec_fn=functools.partial(_end_with_parent, os.getpid()))
     try:
         code = await child.wait()
@@ -67,11 +68,11 @@ async def _run_child():
         if child.returncode is None:
             child.terminate()
             try:
-                await asyncio.wait_for(child.wait(), 10)
+                await asyncio.wait_for(child.wait(), stop_seconds)
             except (asyncio.TimeoutError, asyncio.CancelledError):
                 child.kill()
         raise
-    log.warning('Page-image rounds process ended with status %s; started again after a pause', code)
+    log.warning('%s process ended with status %s; started again after a pause', label, code)
 
 
 async def run_in_child_forever():
@@ -94,16 +95,16 @@ async def run_in_child_forever():
     return True
 
 
-def _lock_usable():
+def _lock_usable(name=LOCK_NAME):
     """A lock file can be opened (held by another worker or not); otherwise the worker runs the rounds itself."""
     directory = _lock_directory()
     if directory is None:
         return False
     try:
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-        open(directory / LOCK_NAME, 'a').close()
+        open(directory / name, 'a').close()
     except OSError:
-        log.warning('Page-image rounds: no lock directory; they run in this worker', exc_info=True)
+        log.warning('Rounds lock %s: no lock directory; the rounds run in this worker', name, exc_info=True)
         return False
     return True
 

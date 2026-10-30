@@ -2640,8 +2640,6 @@ def _import_item_steps(factory,case_id,batch_id,item_id,resolve_path):
 
 
 READINESS_SWEEP_SECONDS = 60
-AUTO_READ_SWEEP_SECONDS = 10
-READER_RELEASE_SWEEP_SECONDS = 120
 READINESS_SWEEP_BUDGET = 20.0
 
 
@@ -2668,14 +2666,26 @@ async def run_batches_forever():
     from postgres.session import _get_session_local
     from routers.evidence import _resolve_stored_path
     from services.evidence_processing_service import process_db_files
-    next_sweep = time.monotonic() + READINESS_SWEEP_SECONDS
-    next_auto_read = time.monotonic()
-    next_reader_release = time.monotonic() + READINESS_SWEEP_SECONDS
-    next_reader_gaps = time.monotonic() + READINESS_SWEEP_SECONDS
     # Held statements read from their page images: its own task, so a slow
     # image reading never delays batch turns (vision_reader; switch
     # LOUPE_FINANCIAL_VISION_FALLBACK).
     vision_task = asyncio.create_task(_vision_forever(_resolve_stored_path))
+    # Automatic reading, release re-checks, held re-preparation, reader gaps,
+    # readiness and the save sweeps: one child process per host (batch_rounds).
+    from services.financial import batch_rounds
+    rounds_task = asyncio.create_task(batch_rounds.rounds_forever(_get_session_local, _resolve_stored_path,
+                                                                  _finish_atomic))
+    try:
+        await _turns_forever(_get_session_local, _resolve_stored_path, process_db_files)
+    finally:
+        # Stopping the worker stops the rounds too: their running step finishes (in this worker) or the child is
+        # asked to stop and given the same bounded time (batch_rounds).
+        rounds_task.cancel()
+        await asyncio.gather(rounds_task, return_exceptions=True)
+
+
+async def _turns_forever(_get_session_local, _resolve_stored_path, process_db_files):
+    next_prewarm = time.monotonic() + READINESS_SWEEP_SECONDS
     while True:
         try:
             factory=_get_session_local()
@@ -2701,78 +2711,16 @@ async def run_batches_forever():
                 except Exception:
                     log.exception('Financial graph follow-up round failed; it will retry')
             await asyncio.gather(*(advance(identifier) for identifier in ids), graph_follow_up())
-            if time.monotonic() >= next_auto_read:
-                # Statement files that entered Financial (or were recognised in
-                # an Evidence upload) join the case's automatic batch.
-                next_auto_read = time.monotonic() + AUTO_READ_SWEEP_SECONDS
-                from services.financial.auto_read import sweep as auto_read_sweep
-                try:
-                    swept = await _finish_atomic(auto_read_sweep, factory, _resolve_stored_path)
-                    if swept['checked'] or swept['added']:
-                        log.info('Automatic statement reading: %s', swept)
-                except asyncio.CancelledError:
-                    raise
-                except Exception:
-                    log.exception('Automatic statement reading round failed; it will retry')
-            if time.monotonic() >= next_reader_release:
-                # After a release that reads statements differently, prepared
-                # files of unfinished batches are prepared again (no click).
-                next_reader_release = time.monotonic() + READER_RELEASE_SWEEP_SECONDS
-                from services.financial.reader_release import sweep as reader_release_sweep
-                try:
-                    released = await _finish_atomic(reader_release_sweep, factory)
-                    if released['rechecked'] or released['compared']:
-                        log.info('Statement files checked again after a release: %s', released)
-                except asyncio.CancelledError:
-                    raise
-                except Exception:
-                    log.exception('Re-checking statement files after a release failed; it will retry')
-                # Held statements prepared by an earlier backend reader are prepared again from their
-                # saved reading, a few at a time (held_reprepare).
-                from services.financial.held_reprepare import sweep as held_reprepare_sweep
-                try:
-                    reprepared = await _finish_atomic(held_reprepare_sweep, factory)
-                    if reprepared['handed'] or reprepared['verdicts']:
-                        log.info('Held statements checked against the deployed reader: %s', reprepared)
-                except asyncio.CancelledError:
-                    raise
-                except Exception:
-                    log.exception('Preparing held statements again after a reader change failed; it will retry')
-            if time.monotonic() >= next_reader_gaps:
-                # Held statements the reader got nothing out of (pages with text): registered and reported to us
-                # (reader_gaps; journal WARNING for each newly seen one).
-                from services.financial import reader_gaps
-                next_reader_gaps = time.monotonic() + reader_gaps.SWEEP_SECONDS
-                try:
-                    await _finish_atomic(reader_gaps.sweep, factory)
-                except asyncio.CancelledError:
-                    raise
-                except Exception:
-                    log.exception('Reader-gap round failed; it will retry')
-            if time.monotonic() >= next_sweep:
-                # Batch reads never re-read PDFs. Inputs changed by paths
-                # without their own refresh are brought current here.
-                next_sweep = time.monotonic() + READINESS_SWEEP_SECONDS
-                refreshed = await _finish_atomic(refresh_stale_readiness, factory)
-                if refreshed:
-                    log.info('Stored batch readiness refreshed: %s', refreshed)
-                # Statements that became ready since their file was prepared,
-                # or whose automatic save failed, are saved as at preparation.
-                from services.financial.queue_save import sweep_backlog, sweep_save
-                await _finish_atomic(sweep_save, factory)
-                # Held statements whose reading is current and whose only questions their account's saved
-                # statements answer are filled as System (autofill_reapply); the backlog round below saves
-                # those that then check out completely.
-                from services.financial.autofill_reapply import sweep as autofill_reapply_sweep
-                await _finish_atomic(autofill_reapply_sweep, factory)
-                # Statements ready from before automatic save (no preparation
-                # mark): saved under the same rule, a few per round.
-                await _finish_atomic(sweep_backlog, factory)
+            if time.monotonic() >= next_prewarm:
                 # Precompute the review queue of recently opened cases whose
-                # inputs changed, so the next open reads it from the cache.
+                # inputs changed, so the next open reads it from the cache
+                # (this worker's own cache: stays here, not in batch_rounds).
+                next_prewarm = time.monotonic() + READINESS_SWEEP_SECONDS
                 try:
                     from services.financial.review_queue import prewarm
                     await _finish_atomic(prewarm, factory)
+                except asyncio.CancelledError:
+                    raise
                 except Exception:
                     log.exception('Review queue precompute failed; queues are built on open instead')
         except asyncio.CancelledError:
