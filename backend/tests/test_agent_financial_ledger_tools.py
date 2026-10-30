@@ -1,4 +1,5 @@
 """Synthetic complete-population agent reads; no graph or client fixtures."""
+import re
 from copy import deepcopy
 from datetime import date
 from unittest.mock import patch
@@ -345,7 +346,12 @@ class FinancialAgentLedgerTests(LedgerToolFixture):
         self.assertEqual(len(small_queries), len(large_queries))
         # Every read is once per case, none per row. 9 at e886aff6, then one each: matched names across accounts
         # (a6f9ec57), the case's accounts for the party state (6da5b5b4), the judgement calls' row map (340f9292).
-        self.assertLessEqual(len(large_queries), 12)
+        # The case's accounts are then read once for the party state, the matched names and the coverage: 12 -> 10.
+        self.assertLessEqual(len(large_queries), 10)
+        # Whole-case reads of the accounts (ORM or the matcher's raw SQL); the read of the rows' own accounts by id is not one.
+        case_account_reads = [sql for sql in large_queries if re.search(
+            r'from financial_accounts( a)? where (financial_accounts|a)\.case_id', ' '.join(sql.lower().split()))]
+        self.assertEqual(len(case_account_reads), 1)
         self.assertTrue(last['items'][0]['provenance']['judgement_calls']['available'])
         self.assertTrue(all(sql.lstrip().upper().startswith('SELECT') for sql in large_queries))
 

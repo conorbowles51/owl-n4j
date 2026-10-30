@@ -40,10 +40,12 @@ def _totals_row(row):
         superseded_by_id=str(row.superseded_by_id) if row.superseded_by_id is not None else None)
 
 
-def ledger_summary(session, *, case_id, account_id=None, start_date=None, end_date=None, grouping=None, capture_readings=False, account_ids=None, account_holders=None, totals_only_readings=False):
+def ledger_summary(session, *, case_id, account_id=None, start_date=None, end_date=None, grouping=None, capture_readings=False, account_ids=None, account_holders=None, totals_only_readings=False, case_accounts=None):
     """``totals_only_readings``: each captured reading's row carries only the stored fields that totals, groups and
     contributions read (see _totals_row), with no payment view, provenance or label history. Callers that never
-    return the readings use it; the same rows are included and excluded either way."""
+    return the readings use it; the same rows are included and excluded either way.
+    ``case_accounts``: the case's FinancialAccount rows ordered by id, when the caller has already read them; the party
+    state and the matched names use them instead of reading the case's accounts again."""
     if type(capture_readings) is not bool or type(totals_only_readings) is not bool or (totals_only_readings and not capture_readings):
         raise LedgerSummaryError("Reading capture must be explicit.")
     if grouping not in (None, "daily", "monthly"):
@@ -112,10 +114,10 @@ def ledger_summary(session, *, case_id, account_id=None, start_date=None, end_da
     if capture_readings and not totals_only_readings:
         from services.financial.account_parties import _account_party_state
         from services.financial.transaction_query import account_label_index
-        parties = {a['id']: a for a in _account_party_state(session, case_id=case_id)['accounts']}
+        parties = {a['id']: a for a in _account_party_state(session, case_id=case_id, accounts=case_accounts)['accounts']}
         account_labels = account_label_index(parties)
         from services.financial.payment_party_matches import case_party_matches
-        party_matches = case_party_matches(session, case_id)
+        party_matches = case_party_matches(session, case_id, accounts=case_accounts)
         # Statements a model saved for a person, and whether a person has confirmed each (judgements): read once,
         # and only when a captured payment was saved by a model, so other captures read nothing more.
         from services.financial.judgements import model_work_statements_view

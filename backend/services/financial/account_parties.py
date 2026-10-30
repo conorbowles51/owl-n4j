@@ -51,9 +51,11 @@ class AccountPartyRequest(BaseModel):
         return self
 
 
-def _account_party_state(session, *, case_id):
-    accounts = list(session.scalars(select(FinancialAccount).where(
-        FinancialAccount.case_id == case_id).order_by(FinancialAccount.id).limit(1001)))
+def _account_party_state(session, *, case_id, accounts=None):
+    """``accounts``: the case's FinancialAccount rows ordered by id, when the caller has already read them."""
+    if accounts is None:
+        accounts = list(session.scalars(select(FinancialAccount).where(
+            FinancialAccount.case_id == case_id).order_by(FinancialAccount.id).limit(1001)))
     if len(accounts) > 1000:
         raise AccountPartyError('More than 1,000 accounts; no incomplete party directory was returned.')
     events = list(session.scalars(select(AdjudicationEvent).where(

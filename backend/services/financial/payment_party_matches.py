@@ -276,15 +276,18 @@ def disputed_holders(holder, conflicts):
     return found
 
 
-def case_rows(session, case_id, *, dated_only=True):
+def case_rows(session, case_id, *, dated_only=True, accounts=None):
     """Every current admitted payment of the case, reduced to what match_parties reads, with the other side's
     effective name as the Transactions table shows it (statement, person label or link, description).
-    ``dated_only``: leave out payments dated only by their statement's end (they cannot be matched by date)."""
+    ``dated_only``: leave out payments dated only by their statement's end (they cannot be matched by date).
+    ``accounts``: the case's FinancialAccount rows, when the caller has already read them."""
     from sqlalchemy import text
     from services.financial.payment_labels import _inferred_labels
+    listed = session.execute(text(_CASE_ACCOUNTS), dict(case_id=str(case_id))) if accounts is None else (
+        (a.id, (a.metadata_ or {}).get('canonical_account_id'), a.holder_name, a.institution_name, a.identifier_as_printed,
+         a.account_type, (a.metadata_ or {}).get('identity_conflicts')) for a in accounts)
     accounts = {str(id): (str(canonical or id), holder, institution, identifier, _plain(account_type), disputed_holders(holder, conflicts))
-                for id, canonical, holder, institution, identifier, account_type, conflicts in session.execute(
-                    text(_CASE_ACCOUNTS), dict(case_id=str(case_id)))}
+                for id, canonical, holder, institution, identifier, account_type, conflicts in listed}
     rows = []
     for (id, account_id, document, amount, currency, direction, ordering, ordering_source, td, pd, vd, ed,
          description, raw, labels, reviewed, date_basis) in session.execute(text(_CASE_ROWS), dict(case_id=str(case_id))):
@@ -351,10 +354,10 @@ def printed_accounts(rows, named=frozenset()):
     return found
 
 
-def case_party_matches(session, case_id):
+def case_party_matches(session, case_id, *, accounts=None):
     """Row id -> other side for every unnamed payment of the case: its matching payment in another account
     (match_parties), else an account of the case its line prints (printed_accounts)."""
-    rows = case_rows(session, case_id)
+    rows = case_rows(session, case_id, accounts=accounts)
     found = match_parties(rows)
     found.update(printed_accounts(rows, frozenset(found)))
     return found

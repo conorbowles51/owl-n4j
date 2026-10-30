@@ -144,9 +144,14 @@ def _totals(readings, group_by=None):
     return result
 
 
-def _context(session, case_id, account_ids, account_holders, start, end, filters):
-    accounts = list(session.scalars(select(FinancialAccount).where(
+def _case_accounts(session, case_id):
+    return list(session.scalars(select(FinancialAccount).where(
         FinancialAccount.case_id == case_id).order_by(FinancialAccount.id).limit(MAX_CONTEXT_ROWS + 1)))
+
+
+def _context(session, case_id, account_ids, account_holders, start, end, filters, accounts=None):
+    if accounts is None:
+        accounts = _case_accounts(session, case_id)
     if len(accounts) > MAX_CONTEXT_ROWS:
         raise FinancialLedgerToolError('Account coverage exceeds the bounded capture; no partial result was calculated.')
     by_id = {str(account.id): account for account in accounts}
@@ -485,14 +490,16 @@ def read_financial_ledger(session, *, case_id, account_ids=None, account_holders
             any(not isinstance(value, str) or len(value) > 512 for value in account_holders)):
         raise FinancialLedgerToolError('Use a list of account-holder selections.')
     with session.no_autoflush:
+        # The case's accounts, read once for the ledger's party state, its matched names and the coverage below.
+        accounts = _case_accounts(session, case_id)
         ledger = ledger_summary(session, case_id=case_id, account_ids=account_ids,
-            account_holders=account_holders, start_date=start, end_date=end, capture_readings=True)
+            account_holders=account_holders, start_date=start, end_date=end, capture_readings=True, case_accounts=accounts)
         if not ledger['available']:
             return _unavailable(case_id, ledger['reason'])
         working = working_totals_from_readings(ledger)
         try:
             base_context, base_incomplete, source_index, selected_account_ids = _context(session, case_id, account_ids,
-                account_holders, start, end, LedgerTableView())
+                account_holders, start, end, LedgerTableView(), accounts=accounts)
             _validate_period_ownership(session, case_id, ledger['readings'])
         except CandidateStoreError as exc:
             return _unavailable(case_id, str(exc))
