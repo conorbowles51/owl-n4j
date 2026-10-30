@@ -1244,7 +1244,8 @@ function FinancialPageContent() {
             className="min-h-0 flex-1 space-y-4 overflow-auto p-4"
             style={!isTransactionsMode ? { display: "none" } : undefined}
           >
-            <header className="flex flex-wrap items-center justify-between gap-3">
+            {/* Buttons follow the title on its line, clear of the Controls tab at the right edge. */}
+            <header className="flex flex-wrap items-center gap-3">
               <h2 className="text-lg font-semibold">
                 Transactions
                 <InfoTip text="All imported payments are available here. Filter by account or account holder, then open a payment to inspect its statement." />
