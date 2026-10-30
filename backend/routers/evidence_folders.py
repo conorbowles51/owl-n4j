@@ -116,7 +116,7 @@ def get_folder_tree(
 
 
 @router.get("/search")
-async def search_files(
+def search_files(
     case_id: uuid.UUID,
     query: str = Query(..., min_length=1, max_length=1000),
     scope: Literal["case", "subtree"] = Query("case"),
@@ -142,7 +142,7 @@ async def search_files(
 
 
 @router.get("/files/{file_id}/location")
-async def get_file_location(
+def get_file_location(
     file_id: uuid.UUID,
     case_id: uuid.UUID = Query(...),
     sort_by: Literal["name", "date"] = Query("name"),
@@ -229,7 +229,7 @@ def get_folder_contents(
 
 
 @router.post("", status_code=201)
-async def create_folder(
+def create_folder(
     req: CreateFolderRequest,
     current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
@@ -265,7 +265,7 @@ async def create_folder(
 
 
 @router.put("/{folder_id}")
-async def rename_folder(
+def rename_folder(
     folder_id: str,
     req: RenameFolderRequest,
     current_user: User = Depends(get_current_db_user),
@@ -295,7 +295,7 @@ async def rename_folder(
 
 
 @router.delete("/{folder_id}")
-async def delete_folder(
+def delete_folder(
     folder_id: str,
     case_id: str = Query(..., description="Case ID"),
     current_user: User = Depends(get_current_db_user),
@@ -333,7 +333,7 @@ async def delete_folder(
 
 
 @router.put("/{folder_id}/move")
-async def move_folder(
+def move_folder(
     folder_id: str,
     req: MoveFolderRequest,
     current_user: User = Depends(get_current_db_user),
@@ -374,7 +374,7 @@ async def move_folder(
 
 
 @router.get("/{folder_id}/profile")
-async def get_folder_profile(
+def get_folder_profile(
     folder_id: str,
     current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
@@ -390,7 +390,7 @@ async def get_folder_profile(
 
 
 @router.put("/{folder_id}/profile")
-async def update_folder_profile(
+def update_folder_profile(
     folder_id: str,
     req: UpdateProfileRequest,
     current_user: User = Depends(get_current_db_user),
@@ -421,7 +421,7 @@ async def update_folder_profile(
 
 
 @router.get("/{folder_id}/effective-profile")
-async def get_effective_profile(
+def get_effective_profile(
     folder_id: str,
     case_id: str = Query(..., description="Case ID"),
     current_user: User = Depends(get_current_db_user),
@@ -529,7 +529,7 @@ async def process_folder(
 
 
 @router.put("/files/{file_id}/move")
-async def move_file(
+def move_file(
     file_id: str,
     new_folder_id: Optional[str] = Query(None, description="Target folder ID, or null for root"),
     current_user: User = Depends(get_current_db_user),
@@ -563,7 +563,7 @@ async def move_file(
 
 
 @router.put("/files/move-batch")
-async def move_files_batch(
+def move_files_batch(
     file_ids: List[str],
     new_folder_id: Optional[str] = Query(None),
     current_user: User = Depends(get_current_db_user),
