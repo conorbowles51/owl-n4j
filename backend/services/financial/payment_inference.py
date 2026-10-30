@@ -7,7 +7,7 @@ payment. Explicit investigator labels always take precedence in payment_labels.
 import re
 import unicodedata
 
-VERSION = 'description-labels/10'
+VERSION = 'description-labels/11'
 
 
 _FOLDED = {}
@@ -236,6 +236,10 @@ def _infer(raw, value, *, direction, account_type, institution):
         category('Payroll', 'payroll', 'the payroll wording')
     elif re.search(r'\b(?:ATM WITHDRAWAL|CASH WITHDRAWAL|RETIRO (?:DE )?EFECTIVO|RETIRO CAJERO)\b', value):
         category('Cash withdrawals', 'cash-withdrawal', 'the cash withdrawal wording')
+    elif direction == 'credit' and re.match(r'COMPENSACION\b', value):
+        # The bank's compensation for a delayed transfer ("Y45 COMPENSACION POR RETRASO Ref. COMP SPEI"): the SPEI in
+        # its reference names what was late, not a transfer.
+        category('Refunds and adjustments', 'refund-wording', 'the refund, return or adjustment wording')
     elif direction == 'credit' and re.match(r'(?:SPEI|SPID)\s+DEVUELTO', value):
         category('Returned transfers', 'returned-transfer', 'the returned transfer wording; this is a return of an earlier payment, not a new payer')
     elif re.search(r'\b(?:TRANSFER|TRASPASO|SPEI|SPID|ORDEN DE PAGO|WIRE|ZELLE)\b', value):
@@ -278,7 +282,10 @@ def _infer(raw, value, *, direction, account_type, institution):
             if endpoint['party']['qualifier'] else 'Sender or recipient printed in the SPEI party field. This is a source-name suggestion, not an ownership decision.')
     elif direction == 'debit' and account_type != 'credit_card' and cie and _name(cie[1]):
         suggest('counterparty', cie[1].strip(), 'bbva-cie-payee', 'Payee label printed before the REF and CIE references in the payment description. This label does not establish the ultimate beneficiary.')
-        if 'category' not in result:
+        if 'category' not in result and re.search(r'\b(?:' + _CARD_ISSUERS + r')\b', cie[1].upper()):
+            # A CIE payment to a card issuer pays that card ("P14 AMERICAN EXPRESS REF:... CIE:...").
+            category('Card payments', 'card-issuer-payment', 'the card issuer named on a payment from this account')
+        elif 'category' not in result:
             category('Payments', 'cie-payment', 'the CIE payment reference')
     elif named and _name(named[1]):
         suggest('counterparty', named[1].strip(), 'named-payment-party', f'The description explicitly says “{cue.lower()} {named[1].strip()}”. Verify the name against the source before linking an identity.')

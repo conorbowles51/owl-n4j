@@ -196,3 +196,19 @@ class BankWordingCategoryTests(unittest.TestCase):
     def test_bare_reference_numbers_stay_open_for_review(self):
         from services.financial.payment_inference import infer_payment_labels
         self.assertNotIn('category', infer_payment_labels('105413834', direction='debit', account_type='checking'))
+
+    def test_a_whole_printed_description_keeps_the_category_of_its_first_line(self):
+        """Page-image payments now keep every printed line (vision_descriptions): the lines under the first one must
+        not move the category. Real BBVA Mexico descriptions, December 2024."""
+        for first, whole, direction, expected, payee in [
+            ('Y45 COMPENSACION POR RETRASO', 'Y45 COMPENSACION POR RETRASO Ref. COMP SPEI', 'credit',
+             'Refunds and adjustments', None),
+            ('P14 AMERICAN EXPRESS', 'P14 AMERICAN EXPRESS REF:00000376693213862004 CIE:0081306 Ref. GUIA:6403555',
+             'debit', 'Card payments', 'AMERICAN EXPRESS'),
+        ]:
+            with self.subTest(description=whole):
+                before = infer_payment_labels(first, direction=direction, account_type='checking')
+                after = infer_payment_labels(whole, direction=direction, account_type='checking')
+                self.assertEqual((before['category']['value'], after['category']['value']), (expected, expected))
+                if payee:
+                    self.assertEqual(after['counterparty']['value'], payee)
