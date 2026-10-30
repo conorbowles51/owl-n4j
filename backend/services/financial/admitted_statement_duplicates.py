@@ -535,7 +535,7 @@ def _account_merge(session, copy, retained):
         blockers=blockers, other_saved_periods_in_copy_account=int(others))
 
 
-def find_admitted_duplicates(session, case_id, *, identities=None):
+def find_admitted_duplicates(session, case_id, *, identities=None, document_ids=None):
     """What a set-aside would do in this case. Reads only.
 
     ``set_aside``: copies equal to their retained copy; ``split_across_accounts``:
@@ -547,8 +547,9 @@ def find_admitted_duplicates(session, case_id, *, identities=None):
     ``restored``: periods where a copy was restored, left as decided;
     ``already_set_aside``: copies set aside by an earlier decision.
     ``identities``: page identities computed by a dry run (see ``_load``).
+    ``document_ids``: compare only these saved statements with each other.
     """
-    copies = _load(session, case_id, identities=identities)
+    copies = _load(session, case_id, identities=identities, document_ids=document_ids)
     by_id = {c.document.id: c for c in copies}
     report = dict(case_id=str(case_id), saved_copies=sum(c.document.status == 'admitted' for c in copies),
         set_aside=[], split_across_accounts=[], held=[], kept=[], restored=[], already_set_aside=[],
@@ -838,7 +839,11 @@ def set_aside_admitted_duplicates(session, case_id, *, actor=SYSTEM_ACTOR, acros
     ``across_accounts`` and only when ``automatic`` (one document); the account
     merge they need is never made here.
     """
-    plan = find_admitted_duplicates(session, case_id)
+    return _apply_plan(session, case_id, find_admitted_duplicates(session, case_id), actor=actor,
+                       across_accounts=across_accounts)
+
+
+def _apply_plan(session, case_id, plan, *, actor, across_accounts=False):
     session.rollback()
     applied, refused = [], []
     entries = [(entry, False) for entry in plan['set_aside']]
@@ -853,3 +858,25 @@ def set_aside_admitted_duplicates(session, case_id, *, actor=SYSTEM_ACTOR, acros
             continue
         (applied if not result.get('already') else refused).append({**entry, **result})
     return dict(plan=plan, applied=applied, refused=refused)
+
+
+# Re-produced evidence is set aside automatically, linked to the copy kept (Neil's product rule). An account
+# correction can bring two saved copies of one printed statement onto one account: BNB2 2026-10-30, ECOTERRA BBVA
+# USD Sep-Dec 2022, one production saved under the CLABE and one under the printed number, on two accounts until the
+# number was corrected; both copies then counted on the one account (4 overlaps) until someone ran this rule by hand.
+# The correction now runs it over the statements of the corrected account. Reverse:
+# LOUPE_FINANCIAL_DUPLICATE_AFTER_ACCOUNT_CHANGE=0.
+AFTER_ACCOUNT_CHANGE = os.environ.get('LOUPE_FINANCIAL_DUPLICATE_AFTER_ACCOUNT_CHANGE', '1').strip().lower() not in (
+    '0', 'false', 'off', 'no')
+
+
+def set_aside_on_accounts(session, case_id, account_ids, *, actor=SYSTEM_ACTOR):
+    """Apply ``find_admitted_duplicates`` to the saved statements of these accounts only. Each copy commits on its
+    own; copies split across accounts are never set aside here."""
+    ids = list(session.scalars(select(FinancialStatementPeriod.source_document_id).join(
+        FinancialSourceDocument, FinancialSourceDocument.id == FinancialStatementPeriod.source_document_id).where(
+        FinancialStatementPeriod.case_id == case_id, FinancialStatementPeriod.account_id.in_(list(account_ids)),
+        FinancialSourceDocument.status == 'admitted').distinct()))
+    if len(ids) < 2:
+        return dict(plan=None, applied=[], refused=[])
+    return _apply_plan(session, case_id, find_admitted_duplicates(session, case_id, document_ids=ids), actor=actor)

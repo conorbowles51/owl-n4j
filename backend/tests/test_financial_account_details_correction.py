@@ -1,6 +1,7 @@
 """An account's holder or bank corrected for all its statements, split statements re-joined, reversible."""
 import hashlib
 import json
+from collections import Counter
 from pathlib import Path
 from unittest import TestCase
 from uuid import UUID
@@ -330,6 +331,85 @@ class AccountNumberCorrectionTests(AccountDetailsCorrectionTests):
         self.assertEqual([s['source_document_id'] for s in result['correction']['rejoined']], [str(self.second)])
         self.assertEqual(self.accounts_of(self.first, self.second), {self.account_id})
         self.assertEqual(self.details(self.second)['details']['institution'], bank + ', S.A., INSTITUCION DE BANCA MULTIPLE')
+
+    # BNB2 2026-10-30, ECOTERRA BBVA USD Sep-Dec 2022: one statement produced twice, one copy saved under the CLABE
+    # and one under the printed number, so on two accounts. The number correction joins them; the copy is set aside at
+    # once by the duplicates rule, linked to the copy kept, and undoing the correction restores it.
+    def saved_copy(self, number):
+        from postgres.models.evidence import IngestionLog
+        from postgres.models.financial_judgements import FinancialJudgement
+        f, original = self.f, self.f.file
+        for table in (IngestionLog.__table__, FinancialJudgement.__table__):
+            table.create(f.db.get_bind(), checkfirst=True)
+        path = Path(f._directory) / 'statement-copy.pdf'
+        path.write_bytes(b'%PDF-1.4\nThe same statement, produced again')
+        copy = f.evidence(hashlib.sha256(path.read_bytes()).hexdigest())
+        copy.stored_path = str(path)
+        # The other production prints (and its reading gives) the account number; the first gave the CLABE.
+        text = f.db.get(EvidenceDocumentText, original.id)
+        content = text.content.replace('TEST123', number)
+        f.db.add(EvidenceDocumentText(evidence_file_id=copy.id, content=content,
+            content_sha256=hashlib.sha256(content.encode()).hexdigest(), character_count=len(content),
+            engine_job_id=text.engine_job_id, source_locations=json.loads(json.dumps(text.source_locations).replace('TEST123', number))))
+        geometry = f.db.get(EvidenceTableGeometry, (original.id, 1))
+        f.db.add(EvidenceTableGeometry(evidence_file_id=copy.id, page_number=1, engine_job_id=geometry.engine_job_id,
+            payload=json.loads(json.dumps(geometry.payload).replace('TEST123', number))))
+        f.db.commit()
+        f.file = copy
+        try:
+            return UUID(f.confirm({**f.request(), 'account_number': number})['source_document_id'])
+        finally:
+            f.file = original
+
+    def ledger(self):
+        with self.f.SessionLocal() as db:
+            periods = db.execute(select(FinancialStatementPeriod.account_id, FinancialStatementPeriod.period_start)
+                .join(FinancialSourceDocument, FinancialSourceDocument.id == FinancialStatementPeriod.source_document_id)
+                .where(FinancialStatementPeriod.case_id == self.f.case.id, FinancialSourceDocument.status == 'admitted')).all()
+            rows = db.scalars(select(FinancialTransaction.amount_minor).where(FinancialTransaction.case_id == self.f.case.id,
+                FinancialTransaction.ledger_status == 'admitted')).all()
+            return sorted((str(a), str(p)) for a, p in periods), sorted(rows)
+
+    def test_the_correction_sets_aside_a_copy_it_brings_onto_the_account_and_undo_restores_it(self):
+        number = '194-98075-001-8'
+        copy = self.saved_copy(number)
+        own = self.accounts_of(copy)
+        self.assertNotIn(self.account_id, own)
+        before = self.ledger()
+        with self.f.SessionLocal() as db:
+            copy_rows = db.scalars(select(FinancialTransaction.amount_minor).where(
+                FinancialTransaction.source_document_id == copy, FinancialTransaction.ledger_status == 'admitted')).all()
+        result = self.correct(account_number=number, reason='Page 1 prints 194-98075-001-8 beside the CLABE')
+        self.assertEqual([item['source_document_id'] for item in result['correction']['rejoined']], [str(copy)])
+        self.assertEqual([(item['source_document_id'], item['retained_source_document_id'])
+                          for item in result['correction']['copies_set_aside']], [(str(copy), str(self.first))])
+        with self.f.SessionLocal() as db:
+            document = db.get(FinancialSourceDocument, copy)
+            self.assertEqual((document.status, document.superseded_by_id), ('superseded', self.first))
+            entry = db.get(FinancialAccount, self.account_id).metadata_['account_details_history'][-1]
+            self.assertEqual([item['source_document_id'] for item in entry['copies_set_aside']], [str(copy)])
+        # The account holds each period once; the copy's payments no longer count twice.
+        periods, rows = self.ledger()
+        self.assertEqual(len(periods), len(set(periods)))
+        self.assertEqual(len(periods), len(before[0]) - 1)
+        self.assertEqual(Counter(before[1]) - Counter(copy_rows), Counter(rows))
+        restored = self.undo(result['correction']['id'])
+        self.assertEqual(restored['correction']['copies_restored'], [str(copy)])
+        with self.f.SessionLocal() as db:
+            self.assertEqual(db.get(FinancialSourceDocument, copy).status, 'admitted')
+        self.assertEqual(self.accounts_of(copy), own)
+        self.assertEqual(self.ledger(), before)
+
+    def test_switched_off_the_copy_stays_saved(self):
+        from unittest.mock import patch
+        from services.financial import admitted_statement_duplicates as admitted
+        copy = self.saved_copy('194-98075-001-8')
+        with patch.object(admitted, 'AFTER_ACCOUNT_CHANGE', False):
+            result = self.correct(account_number='194-98075-001-8')
+        self.assertNotIn('copies_set_aside', result['correction'])
+        with self.f.SessionLocal() as db:
+            self.assertEqual(db.get(FinancialSourceDocument, copy).status, 'admitted')
+
 
 class AccountDetailsRouteTests(TestCase):
     def test_routes_read_preview_save_and_undo_with_edit_access_for_changes(self):

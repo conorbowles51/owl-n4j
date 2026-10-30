@@ -17,11 +17,15 @@ This correction rewrites the account record once, then:
   and type equal; holder and bank compared folded);
 - keeps every earlier value in the account history, so the correction can be
   undone, which restores the previous values (and splits re-joined statements
-  back onto their own account).
+  back onto their own account);
+- sets aside, by the duplicates rule, a saved copy of a printed statement the
+  account already holds once the correction brings both onto the account
+  (``copies_set_aside``), and undoing the correction restores those copies.
 
 Only a person can make it, with a reason, against the revision they reviewed.
 The ledger holder filter reads the account record, so it follows at once.
 """
+import logging
 from copy import deepcopy
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
@@ -327,10 +331,62 @@ def save_account_details(session, *, case_id, account_id, request, actor):
         result = account_details_state(session, case_id=case_id, account_id=account.id)
         result['correction'] = entry
         session.commit()
-        return result
     except Exception:
         session.rollback()
         raise
+    copies = copies_set_aside(session, case_id=case_id, account_id=account_id, correction_id=entry['id'])
+    if copies:
+        result = account_details_state(session, case_id=case_id, account_id=account_id)
+        result['correction'] = {**entry, 'copies_set_aside': copies}
+    return result
+
+
+def copies_set_aside(session, *, case_id, account_id, correction_id):
+    """Set aside the saved copies of one printed statement that this account now holds twice
+    (``admitted_statement_duplicates.set_aside_on_accounts``) and record them on the correction, so undoing it
+    restores them. Runs after the correction committed: a failure leaves the correction as saved, is logged, and the
+    copies stay for the duplicates script, which finds the same ones."""
+    from services.financial import admitted_statement_duplicates as admitted
+    if not admitted.AFTER_ACCOUNT_CHANGE:
+        return []
+    try:
+        outcome = admitted.set_aside_on_accounts(session, case_id, [account_id])
+        copies = [dict(source_document_id=item['document_id'], retained_source_document_id=item['retained_document_id'],
+                       adjudication_id=item.get('adjudication_id')) for item in outcome['applied']]
+        if copies:
+            account = _account(session, case_id, account_id, lock=True)
+            meta = deepcopy(account.metadata_ or {})
+            for item in meta.get(HISTORY, []):
+                if item.get('id') == correction_id:
+                    item['copies_set_aside'] = item.get('copies_set_aside', []) + copies
+            account.metadata_ = meta
+            session.commit()
+        for item in outcome['refused']:
+            logging.getLogger(__name__).warning('Account correction %s: copy %s not set aside: %s', correction_id,
+                                                item.get('document_id'), item.get('refusal') or 'already set aside')
+        return copies
+    except Exception:
+        logging.getLogger(__name__).exception('Account correction %s: copies on the account were not set aside',
+                                              correction_id)
+        session.rollback()
+        return []
+
+
+def _restore_copies(session, case_id, target, actor, reason):
+    """Copies the correction set aside count again (each restore is the set-aside's exact reversal)."""
+    from postgres.models.financial import FinancialSourceDocument
+    from services.financial import admitted_statement_duplicates as admitted
+    restored, touched = [], []
+    for item in target.get('copies_set_aside', []):
+        document = session.get(FinancialSourceDocument, UUID(item['source_document_id']))
+        if document is None or document.status != 'superseded' or str(document.superseded_by_id) != item['retained_source_document_id']:
+            continue  # Restored or decided again since: left as it stands.
+        if not restored:
+            admitted._lock_case(session, case_id)
+        admitted._restore(session, case_id, document, actor, reason, touched)
+        restored.append(item['source_document_id'])
+    session.flush()
+    return restored, touched
 
 
 def undo_account_details(session, *, case_id, account_id, request, actor):
@@ -378,6 +434,7 @@ def undo_account_details(session, *, case_id, account_id, request, actor):
             before=target['after'], after=restored, actor_id=str(actor.user_id), actor_name=actor.name,
             actor_email=actor.email, statements=[], rejoined=[], split_again=[], **origin_field(actor))
         from postgres.models.financial import FinancialSourceDocument
+        entry['copies_restored'], touched = _restore_copies(session, case_id, target, actor, reason)
         rejoined = {item['source_document_id']: item for item in target.get('rejoined', [])}
         for item in target.get('statements', []):
             document = session.get(FinancialSourceDocument, UUID(item['source_document_id']))
@@ -405,10 +462,15 @@ def undo_account_details(session, *, case_id, account_id, request, actor):
         result = account_details_state(session, case_id=case_id, account_id=account.id)
         result['correction'] = entry
         session.commit()
-        return result
     except Exception:
         session.rollback()
         raise
+    if touched:
+        # Batch lists reuse stored readiness; best effort, as after any duplicate decision.
+        from services.financial.import_batches import refresh_file_readiness
+        for file_id, statement_key in dict.fromkeys(touched):
+            refresh_file_readiness(session, case_id=case_id, file_id=file_id, statement_key=statement_key)
+    return result
 
 
 def confirm_account_details(session, *, case_id, account_id, request, actor, at=None, relayed=None):
