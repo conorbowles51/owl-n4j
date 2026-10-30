@@ -57,7 +57,7 @@ _lock = threading.Lock()
 _entries: OrderedDict = OrderedDict()
 _total_bytes = 0
 _key_locks: dict = {}
-stats = dict(hits=0, misses=0, stored=0, not_stored=0)
+stats = dict(hits=0, misses=0, stored=0, not_stored=0, saved_hits=0)
 _Encoded = None
 _gc_lock = threading.Lock()
 _gc_pauses = 0
@@ -595,11 +595,14 @@ def _serve(handler, key, engine, case_id, kwargs, state):
             if entry is not None and fingerprint(owner, entry.tables, case_id) == entry.fingerprint:
                 stats['hits'] += 1
                 logger.info('Financial view %s served unchanged (%.2f s)', key[0], time.perf_counter() - started)
-                if entry.refusal is not None:
-                    from fastapi import HTTPException
-                    state['handler_started'] = True
-                    raise HTTPException(status_code=422, detail=entry.refusal)
-                return _response(entry)
+                return _kept(entry, state)
+            scope, xmax = _saved_scope(owner)
+            saved = _load_saved(key, scope, xmax) if scope is not None else None
+            if saved is not None and saved != entry and fingerprint(owner, saved.tables, case_id) == saved.fingerprint:
+                _store(key, saved)
+                stats['saved_hits'] += 1
+                logger.info('Financial view %s served from the saved copy (%.2f s)', key[0], time.perf_counter() - started)
+                return _kept(saved, state)
             stats['misses'] += 1
             recording = _Recording(owner=_dbapi(owner), snapshot=snapshot)
             token = _recording.set(recording)
@@ -625,8 +628,10 @@ def _serve(handler, key, engine, case_id, kwargs, state):
                 if refusal.status_code == 422 and refusal.headers is None and isinstance(refusal.detail, str) and tables:
                     current = fingerprint(owner, tables, case_id)
                     if current is not None:
-                        _store(key, _Entry(tables, current, b'', 422, 'application/json', refusal=refusal.detail))
+                        kept = _Entry(tables, current, b'', 422, 'application/json', refusal=refusal.detail)
+                        _store(key, kept)
                         stats['stored'] += 1
+                        _save_if_slow(key, kept, scope, xmax, started)
                         logger.info('Financial view %s refusal kept (%.2f s, %d tables)', key[0],
                                     time.perf_counter() - started, len(tables))
                         raise refusal
@@ -641,8 +646,129 @@ def _serve(handler, key, engine, case_id, kwargs, state):
             if current is None or len(response.body) > MAX_ENTRY_BYTES:
                 stats['not_stored'] += 1
                 return response
-            _store(key, _Entry(tables, current, bytes(response.body), response.status_code, response.media_type))
+            kept = _Entry(tables, current, bytes(response.body), response.status_code, response.media_type)
+            _store(key, kept)
             stats['stored'] += 1
             logger.info('Financial view %s computed (%.2f s, %d bytes, %d tables)', key[0],
                         time.perf_counter() - started, len(response.body), len(tables))
+            _save_if_slow(key, kept, scope, xmax, started)
             return response
+
+
+def _kept(entry, state):
+    """A kept entry's answer: its response, or its refusal raised again with the same text."""
+    if entry.refusal is not None:
+        from fastapi import HTTPException
+        state['handler_started'] = True
+        raise HTTPException(status_code=422, detail=entry.refusal)
+    return _response(entry)
+
+
+# Views that took at least this long to compute are also saved to disk (_save_if_slow), so the other worker
+# processes and the next start reuse them instead of computing them again; the saved copies take at most
+# MAX_SAVED_BYTES, oldest removed first.
+SAVE_MIN_SECONDS = 1.0
+MAX_SAVED_BYTES = 1024 * 1024 * 1024
+
+
+def _saved_dir():
+    directory = _memo_dir()
+    return None if directory is None else directory / 'views'
+
+
+def _saved_scope(connection):
+    """(scope, xmax) under which this snapshot may read and save views on disk, or (None, None).
+
+    The same rules as VersionMemo's saved values: one database (its system identifier) and one code identity
+    (a release, a changed setting or another database starts empty), and only while the transaction counter is
+    below 2**32 and not below the one a saved view was computed at, so a fingerprint's xmin values still name
+    the same row versions. ``xmax`` is this snapshot's own."""
+    if _saved_dir() is None or code_identity() is None:
+        return None, None
+    try:
+        with connection.begin_nested():
+            database, xmax = connection.execute(text('SELECT (SELECT system_identifier::text FROM pg_control_system()), '
+                'pg_snapshot_xmax(pg_current_snapshot())::text')).one()
+    except Exception:  # noqa: BLE001 - views are then reused in memory only
+        logger.warning('Saved Financial views unavailable; reusing views in memory only', exc_info=True)
+        return None, None
+    xmax = int(xmax)
+    if xmax >= MEMO_XID_LIMIT:
+        return None, None
+    return dict(format=1, database=database, code=code_identity()), xmax
+
+
+def _saved_path(key, scope):
+    import hashlib
+    name = hashlib.sha256(json.dumps([list(key), scope], sort_keys=True).encode()).hexdigest()
+    return _saved_dir() / (name + '.view')
+
+
+def _load_saved(key, scope, xmax):
+    """The entry saved for this key, database and code, if it was computed no later than this snapshot. Its
+    fingerprint is still to be compared in this snapshot. Never raises."""
+    try:
+        with open(_saved_path(key, scope), 'rb') as saved:
+            header = json.loads(saved.readline())
+            body = saved.read()
+    except FileNotFoundError:
+        return None
+    except Exception:  # noqa: BLE001 - an unreadable copy is computed again
+        logger.warning('Saved Financial view %s unreadable; computing it again', key[0], exc_info=True)
+        return None
+    try:
+        if (header.get('scope') != scope or header.get('key') != list(key) or type(header.get('xmax')) is not int
+                or header['xmax'] > xmax or header.get('size') != len(body)):
+            return None
+        return _Entry(tuple(header['tables']), tuple(tuple(part) for part in header['fingerprint']), body,
+                      header['status_code'], header['media_type'], header.get('refusal'))
+    except Exception:  # noqa: BLE001
+        logger.warning('Saved Financial view %s unreadable; computing it again', key[0], exc_info=True)
+        return None
+
+
+def _save_if_slow(key, entry, scope, xmax, started):
+    """Save a slow view's entry for the other workers and the next start. Never raises."""
+    import os
+    if scope is None or time.perf_counter() - started < SAVE_MIN_SECONDS or len(entry.body) > MAX_SAVED_BYTES:
+        return
+    try:
+        directory = _saved_dir()
+        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        path = _saved_path(key, scope)
+        header = dict(scope=scope, key=list(key), xmax=xmax, tables=list(entry.tables),
+                      fingerprint=[list(part) for part in entry.fingerprint], status_code=entry.status_code,
+                      media_type=entry.media_type, refusal=entry.refusal, size=len(entry.body))
+        temporary = path.with_name('%s.%d.%d.tmp' % (path.name, os.getpid(), threading.get_ident()))
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(descriptor, 'wb') as out:
+            out.write(json.dumps(header, ensure_ascii=True, separators=(',', ':')).encode() + b'\n')
+            out.write(entry.body)
+        os.replace(temporary, path)
+        _trim_saved(directory, keep=path)
+    except Exception:  # noqa: BLE001 - the view stays reused in memory
+        logger.warning('Could not save Financial view %s; it stays in memory only', key[0], exc_info=True)
+
+
+def _trim_saved(directory, keep):
+    """Oldest saved views first, until the rest fit MAX_SAVED_BYTES; temporary files left over an hour ago
+    (by a killed writer) go too. The copy just written is kept."""
+    files = []
+    now = time.time()
+    for path in directory.iterdir():
+        try:
+            stat = path.stat()
+        except FileNotFoundError:
+            continue
+        if path.name.endswith('.tmp'):
+            if now - stat.st_mtime > 3600:
+                path.unlink(missing_ok=True)
+        elif path.name.endswith('.view'):
+            files.append((stat.st_mtime_ns, stat.st_size, path))
+    total = sum(size for _, size, _ in files)
+    for _, size, path in sorted(files):
+        if total <= MAX_SAVED_BYTES:
+            break
+        if path != keep:
+            path.unlink(missing_ok=True)
+            total -= size

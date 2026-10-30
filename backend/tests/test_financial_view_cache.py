@@ -18,6 +18,12 @@ URL = os.environ.get('FINANCIAL_VIEW_CACHE_TEST_DATABASE_URL')
 pytestmark = pytest.mark.skipif(not URL, reason='Requires an explicit local PostgreSQL test connection')
 
 
+@pytest.fixture(autouse=True)
+def _saved_copies_stay_in_the_test(tmp_path, monkeypatch):
+    """Saved values and views go to this test's own directory, never the user's cache."""
+    monkeypatch.setenv('FINANCIAL_VIEW_MEMO_DIR', str(tmp_path))
+
+
 @pytest.fixture
 def engine():
     assert URL.startswith('postgresql'), 'This test requires PostgreSQL'
@@ -699,3 +705,132 @@ def test_a_temporary_file_left_by_a_killed_writer_is_removed(engine, memo_dir):
     write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 1)', c=case)
     call(engine, saved_view(counter, saved_memo()), case)
     assert not (memo_dir / 'saved.json.4242.tmp').exists() and (memo_dir / 'saved.json').exists()
+
+
+@pytest.fixture
+def saved_views(memo_dir, monkeypatch):
+    """Every computed view counts as slow, so it is saved."""
+    monkeypatch.setattr(view_cache, 'SAVE_MIN_SECONDS', 0)
+    return memo_dir / 'views'
+
+
+def test_a_saved_view_serves_another_worker_and_the_next_start_until_its_rows_change(engine, saved_views):
+    case, counter = uuid.uuid4(), Counter()
+    write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 5), (:c, 7)', c=case)
+    first = call(engine, payments_view(counter), case)
+    assert counter.calls == 1 and len(list(saved_views.glob('*.view'))) == 1
+    # Another process (or this one after a restart): nothing in memory. The saved copy answers, same bytes.
+    view_cache.clear()
+    saved_hits = view_cache.stats['saved_hits']
+    again = call(engine, payments_view(counter), case)
+    assert (again.body, again.status_code, again.media_type) == (first.body, first.status_code, first.media_type)
+    assert counter.calls == 1 and view_cache.stats['saved_hits'] == saved_hits + 1
+    assert call(engine, payments_view(counter), case).body == first.body and counter.calls == 1, 'then from memory'
+    view_cache.clear()
+    write(engine, 'UPDATE payments SET amount = amount WHERE case_id = :c AND amount = 5', c=case)
+    assert call(engine, payments_view(counter), case).body == b'{"total":12}' and counter.calls == 2
+    write(engine, 'DELETE FROM payments WHERE case_id = :c AND amount = 5', c=case)
+    view_cache.clear()
+    assert call(engine, payments_view(counter), case).body == b'{"total":7}' and counter.calls == 3
+    view_cache.clear()
+    assert call(engine, payments_view(counter), case).body == b'{"total":7}' and counter.calls == 3, 'the new copy replaced the old'
+    assert len(list(saved_views.glob('*.view'))) == 1
+
+
+def test_a_saved_view_is_not_used_by_other_code_another_database_or_a_database_gone_back(engine, saved_views, monkeypatch):
+    case, counter = uuid.uuid4(), Counter()
+    write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 5)', c=case)
+    call(engine, payments_view(counter), case)
+    view_cache.clear()
+    with monkeypatch.context() as other:
+        other.setattr(view_cache, '_code_identity', 'another release')
+        call(engine, payments_view(counter), case)
+    assert counter.calls == 2
+    for change in ('database', 'xmax'):
+        for path in saved_views.glob('*.view'):
+            header, body = path.read_bytes().split(b'\n', 1)
+            header = json.loads(header)
+            if change == 'database':
+                header['scope']['database'] = 'another database'
+            else:
+                header['xmax'] += 10 ** 6  # computed at transaction ids this database has not handed out yet
+            path.write_bytes(json.dumps(header).encode() + b'\n' + body)
+        view_cache.clear()
+        assert call(engine, payments_view(counter), case).body == b'{"total":5}'
+    assert counter.calls == 4
+
+
+def test_fast_views_and_wrapped_transaction_ids_are_not_saved(engine, memo_dir, monkeypatch):
+    case, counter = uuid.uuid4(), Counter()
+    write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 5)', c=case)
+    monkeypatch.setattr(view_cache, 'SAVE_MIN_SECONDS', 3600)
+    call(engine, payments_view(counter), case)
+    assert not list(memo_dir.glob('views/*.view'))
+    monkeypatch.setattr(view_cache, 'SAVE_MIN_SECONDS', 0)
+    monkeypatch.setattr(view_cache, 'MEMO_XID_LIMIT', 1)
+    view_cache.clear()
+    call(engine, payments_view(counter), case)
+    assert not list(memo_dir.glob('views/*.view')) and counter.calls == 2
+
+
+def test_a_saved_refusal_is_raised_again_after_a_restart(engine, saved_views):
+    from fastapi import HTTPException
+    case, counter = uuid.uuid4(), Counter()
+    write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 5)', c=case)
+
+    @view_cache.cached_view('refusing-saved')
+    def refusing(case_id, db):
+        counter.calls += 1
+        db.execute(text('SELECT count(*) FROM payments WHERE case_id = :c'), dict(c=case_id))
+        raise HTTPException(status_code=422, detail='More than 1,000 payments match these filters.')
+
+    for _ in range(2):
+        with pytest.raises(HTTPException) as caught:
+            call(engine, refusing, case)
+        assert (caught.value.status_code, caught.value.detail) == (422, 'More than 1,000 payments match these filters.')
+        view_cache.clear()
+    assert counter.calls == 1
+
+
+def test_an_unreadable_or_cut_saved_view_is_computed_again(engine, saved_views):
+    case, counter = uuid.uuid4(), Counter()
+    write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 5)', c=case)
+    call(engine, payments_view(counter), case)
+    (path,) = saved_views.glob('*.view')
+    for damage in (b'{not json\n{"total":5}', path.read_bytes()[:-3]):
+        path.write_bytes(damage)
+        view_cache.clear()
+        assert call(engine, payments_view(counter), case).body == b'{"total":5}'
+    assert counter.calls == 3
+    view_cache.clear()
+    assert call(engine, payments_view(counter), case).body == b'{"total":5}' and counter.calls == 3, 'rewritten whole'
+
+
+def test_saved_views_stay_within_their_budget_oldest_first(engine, saved_views, monkeypatch):
+    import os
+    import time
+    counter = Counter()
+    cases = [uuid.uuid4() for _ in range(3)]
+    for case in cases:
+        write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 5)', c=case)
+    saved_views.mkdir(parents=True)
+    (saved_views / 'old.view.1.1.tmp').write_text('partial')
+    os.utime(saved_views / 'old.view.1.1.tmp', (time.time() - 7200,) * 2)
+    (saved_views / 'recent.view.2.2.tmp').write_text('being written')
+    seen = set()
+    for number, case in enumerate(cases):
+        if number == 1:
+            size = next(saved_views.glob('*.view')).stat().st_size
+            monkeypatch.setattr(view_cache, 'MAX_SAVED_BYTES', 2 * size + 1)
+        call(engine, payments_view(counter), case)
+        for path in set(saved_views.glob('*.view')) - seen:
+            os.utime(path, (time.time() - 1000 + 100 * number,) * 2)  # saved in this order
+            seen.add(path)
+    assert len(list(saved_views.glob('*.view'))) == 2
+    assert not (saved_views / 'old.view.1.1.tmp').exists() and (saved_views / 'recent.view.2.2.tmp').exists()
+    view_cache.clear()
+    call(engine, payments_view(counter), cases[0])
+    assert counter.calls == 4, 'the oldest copy was the one removed'
+    view_cache.clear()
+    call(engine, payments_view(counter), cases[2])
+    assert counter.calls == 4, 'the newest copy was kept'

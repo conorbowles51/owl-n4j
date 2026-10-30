@@ -1,16 +1,18 @@
-"""After a start, compute the slowest first-load Financial view once in the background.
+"""After a start, compute the slowest first-load Financial views once in the background.
 
 Every release restarts the backend, and the first account history afterwards read every saved statement again
-(d5b330d1: 53 s). One worker process computes each case's account history once, shortly after start, through
-the route's own cached view: the same code, parameters and snapshot as a person's first request, so the same
-bytes. Its per-statement results are saved (view_cache.VersionMemo), so the other workers reuse them instead of
-reading every statement again. One worker at a time, one case at a time, largest first; a failure is logged and
-the next case continues. Nothing is written to the database. FINANCIAL_VIEW_WARMUP=0 turns it off.
+(d5b330d1: 53 s); the first Transactions read took 53-184 s. One worker process computes each case's account
+history and Transactions, shortly after start, through the routes' own cached views: the same code, parameters
+and snapshot as a person's first request, so the same bytes. The computed views are saved (view_cache saves every
+slow view) and the account history's per-statement results too (view_cache.VersionMemo), so every worker serves
+them after checking that no row they were computed from has changed. One worker at a time, one case at a time,
+largest first; a failure is logged and the next view continues. Nothing is written to the database.
+FINANCIAL_VIEW_WARMUP=0 turns it off.
 
 The computing runs in a short-lived child process (``python -m services.financial.view_warmup``) that only fills
-the saved per-statement results. Computed inside a worker it left that worker gigabytes larger for the rest of its
-life (memory freed by Python stays with the process); the child's memory goes back to the system when it exits.
-Each worker's first account history then reads the saved results.
+the saved views and per-statement results. Computed inside a worker it left that worker gigabytes larger for the
+rest of its life (memory freed by Python stays with the process); the child's memory goes back to the system when
+it exits. Each worker's first request then reads the saved copies.
 """
 import asyncio
 import functools
@@ -133,19 +135,27 @@ def _warm_cases():
             return
         cases = [case for case, _ in db.execute(select(Period.case_id, func.count()).group_by(Period.case_id)
             .order_by(func.count().desc(), Period.case_id))]
+    from routers.financial_ledger import get_ledger_transactions
     from services import process_shutdown
+    # Each route with its defaults, as FastAPI passes them for a first visit: the same cached-view key.
+    views = (
+        ('account history', get_account_history, dict(account_id=None, account_ids=None, account_holders=None,
+                                                       start_date=None, end_date=None)),
+        ('transactions', get_ledger_transactions, dict(source_document_id=None, account_id=None, ledger_status=None,
+                                                       start_date=None, end_date=None, account_ids=None,
+                                                       account_holders=None)),
+    )
     for case_id in cases:
-        if process_shutdown.requested.is_set():
-            return
-        started = time.perf_counter()
-        try:
-            with SessionLocal() as db:
-                # The route's defaults, as FastAPI passes them: the same cached-view key as a first visit.
-                get_account_history(case_id=case_id, account_id=None, account_ids=None, account_holders=None,
-                                    start_date=None, end_date=None, db=db)
-            logger.info('Financial account history warmed for case %s (%.1f s)', case_id, time.perf_counter() - started)
-        except Exception:
-            logger.warning('Financial account history warm-up failed for case %s', case_id, exc_info=True)
+        for name, route, defaults in views:
+            if process_shutdown.requested.is_set():
+                return
+            started = time.perf_counter()
+            try:
+                with SessionLocal() as db:
+                    route(case_id=case_id, **defaults, db=db)
+                logger.info('Financial %s warmed for case %s (%.1f s)', name, case_id, time.perf_counter() - started)
+            except Exception:
+                logger.warning('Financial %s warm-up failed for case %s', name, case_id, exc_info=True)
 
 
 if __name__ == '__main__':
