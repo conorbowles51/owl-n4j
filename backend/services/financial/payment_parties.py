@@ -10,9 +10,8 @@ description is never changed and a person's label always wins
 (services.financial.payment_labels).
 """
 import re
-import unicodedata
 
-from services.financial.payment_inference import normalized
+from services.financial.payment_inference import fold, normalized
 
 # Mexican banks as they are printed before the beneficiary in SPEI lines that
 # print no field separator. Longest names first so 'BBVA MEXICO' wins over 'BBVA'.
@@ -82,9 +81,14 @@ def bank_name(text):
     text = re.sub(r'^THE ', '', text)
     # A bank followed by bank wording or a legal form (WELLS FARGO BANK, BANCOMER SA); a merchant that only opens
     # with a bank's word (CITI TRENDS) is not a bank.
-    return any(text == bank or re.match(re.escape(bank) + r' (?:BANK|BANCO|MEXICO|ATM|NA|N A|CU|FCU|FEDERAL|CREDIT|INVERLAT|BANCOMER|IXE|'
-                                                       r'S ?A|SA DE CV|INSTITUCION|GRUPO FINANCIERO|GF|SUCURSAL|SUC|BRANCH|CAJERO|OFICINA|OFC|BRCH|PRACTICAJA|PRACTIC|CORRESPONSAL|SUPERMOVIL|MOVIL|NET|BNET|ONLINE|LINEA|EN LINEA|ENLACE|APP)\b', text) for bank in _BANK_NAMES) \
+    return any(text == bank or (text.startswith(bank + ' ') and _BANK_WORDING.match(text, len(bank) + 1)) for bank in _BANK_NAMES) \
         or bool(re.match(r'BANCO\b|BANK\b', text))
+
+
+# What follows a bank's name in a bank's own name. Compiled once: a pattern built per bank and call would crowd the
+# module's other patterns out of Python's pattern cache.
+_BANK_WORDING = re.compile(r'(?:BANK|BANCO|MEXICO|ATM|NA|N A|CU|FCU|FEDERAL|CREDIT|INVERLAT|BANCOMER|IXE|'
+                           r'S ?A|SA DE CV|INSTITUCION|GRUPO FINANCIERO|GF|SUCURSAL|SUC|BRANCH|CAJERO|OFICINA|OFC|BRCH|PRACTICAJA|PRACTIC|CORRESPONSAL|SUPERMOVIL|MOVIL|NET|BNET|ONLINE|LINEA|EN LINEA|ENLACE|APP)\b')
 
 
 def place_name(text):
@@ -283,15 +287,46 @@ def strip_date_prefix(value):
 
 def _as_printed(name, raw):
     """The name with the accents and capitals the statement prints (rules read an unaccented upper-case copy)."""
-    folded, at = [], []
-    for i, c in enumerate(raw):
-        for b in (' ' if c.isspace() else ''.join(x for x in unicodedata.normalize('NFKD', c) if not unicodedata.combining(x)).upper()):
-            folded.append(b)
-            at.append(i)
+    if raw.isascii():
+        # Plain ASCII folds one character to one: only capitals and whitespace change.
+        text, at = raw.upper().translate(_ASCII_SPACE), range(len(raw))
+    else:
+        pieces = [' ' if c.isspace() else fold(c) for c in raw]
+        text, at = ''.join(pieces), [i for i, piece in enumerate(pieces) for _ in piece]
     # The name field follows the layout's other wording, so its last printing is the field itself.
-    found = [*re.finditer(r'(?<![A-Z0-9])' + r'\s+'.join(re.escape(w) for w in name.upper().split()) + r'(?![A-Z0-9])', ''.join(folded))]
-    found = found[-1] if found else None
-    return ' '.join(raw[at[found.start()]:at[found.end() - 1] + 1].split()) if found else name
+    found = _last_printing(name.upper().split(), text)
+    return ' '.join(raw[at[found[0]]:at[found[1] - 1] + 1].split()) if found else name
+
+
+_ASCII_SPACE = str.maketrans({chr(i): ' ' for i in range(128) if chr(i).isspace()})
+_WORD_CHARS = frozenset('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789')
+
+
+def _last_printing(words, text):
+    """(start, end) of the last of the left-to-right, non-overlapping printings of the words in the text, each
+    separated by whitespace and the whole not inside a longer word or number; or None. This is what the last
+    match of re.finditer gives for that pattern, without compiling a pattern per name."""
+    if not words:
+        return None
+    first, size, pos, last = words[0], len(text), 0, None
+    while True:
+        start = text.find(first, pos)
+        if start < 0:
+            return last
+        end = start + len(first)
+        if start and text[start - 1] in _WORD_CHARS:
+            end = None
+        for word in words[1:]:
+            if end is None:
+                break
+            gap = end
+            while gap < size and text[gap].isspace():
+                gap += 1
+            end = gap + len(word) if gap > end and text.startswith(word, gap) else None
+        if end is not None and (end == size or text[end] not in _WORD_CHARS):
+            last, pos = (start, end), end
+        else:
+            pos = start + 1
 
 
 _UNVERIFIED_NOTE = ' The bank marks this name as not verified by it; check ownership separately.'
@@ -655,7 +690,7 @@ def _us_named_transfer(raw, value, direction):
 
 
 def _us_card_merchant(raw, value, direction):
-    from services.financial.payment_inference import _card_tail, MERCHANTS
+    from services.financial.payment_inference import _card_tail, merchant_match
     # Truist: DEBIT CARD PURCHASE <merchant> #<store> <terminal> <date> ..: the merchant comes before the store number.
     store = re.match(r'^DEBIT CARD PURCHASE\s+(\S+(?:\s+\S+)?)\s+#\d{6}\b', value)
     if store and re.search(r'[A-Z]{2}', store[1]) and not concept_or_place(store[1]) and not generic_words_only(store[1]):
@@ -685,10 +720,9 @@ def _us_card_merchant(raw, value, direction):
         if stripped == tail:
             break
         tail = stripped
-    for pattern, merchant, _ in MERCHANTS:
-        found = pattern.match(re.sub(r'^DD\s+(?=DOORDASH)', '', tail))
-        if found:
-            return merchant, 'debit-card-merchant', f'Merchant recognised from “{found[0]}” on this debit card line. This does not establish legal identity or ownership.'
+    found = merchant_match(re.sub(r'^DD\s+(?=DOORDASH)', '', tail))
+    if found:
+        return found[1], 'debit-card-merchant', f'Merchant recognised from “{found[0]}” on this debit card line. This does not establish legal identity or ownership.'
     words = tail.split()
     kept = []
     for token in words:
@@ -723,7 +757,7 @@ def _us_card_merchant(raw, value, direction):
 def _us_bar_line(raw, value, direction):
     # M&T prints each line after a bar: the merchant or ACH company, then its entry
     # wording and references (| EXAMPLEINSCO INSUR PREM, | SSA TREAS 310 XXSOC SEC).
-    from services.financial.payment_inference import MERCHANTS
+    from services.financial.payment_inference import merchant_match
     match = re.match(r'^(?:[|}\]~]\s*)+(?:PIN\s*)?(?:RETURN-\s*)?(?:PURCHASE (?:WITH CASH BACK )?ON\s+\d{2}/\d{2}\s+)?(.+)$', value)
     if match:
         # OCR splits the debit card prefix after the bar (~Wi thdrawal Debit Card ..): read it as that card line.
@@ -736,10 +770,9 @@ def _us_bar_line(raw, value, direction):
                              r'OVERDRAFT|EFT PAYMENT|ADVANCE|WITHDRAWAL|NON-|M&T|WAIVE|REVERSE|COBRO|COMISION|IVA|SPEI|SEL|TRANSF\S*)\b', match[1]):
         return None
     tail = re.sub(r'^DD\s*\*?\s*(?=DOORDASH)', '', match[1])
-    for pattern, merchant, _ in MERCHANTS:
-        found = pattern.match(tail)
-        if found:
-            return merchant, 'debit-card-merchant', f'Merchant recognised from “{found[0]}” on this line. This does not establish legal identity or ownership.'
+    found = merchant_match(tail)
+    if found:
+        return found[1], 'debit-card-merchant', f'Merchant recognised from “{found[0]}” on this line. This does not establish legal identity or ownership.'
     words = []
     for token in tail.split():
         if (re.search(r'\d', token) or re.match(r'(?:HTTPS?|WWW)|\S*\.(?:COM|NET|ORG)\b', token)

@@ -560,5 +560,54 @@ class PhaseTwoPartyTests(unittest.TestCase):
         self.assertEqual(reason('G30 RECIBO NO. Ref. P12Q34OB56CR'), 'bank-collected-premium')
         self.assertEqual(reason('W01 TRASPASO A TERCEROS SALDO A FAVOR BMRCASH Ref. REFBNTC00123'), 'bbva-batch-payment')
 
+
+class ReadingSpeedKeepsReadingsTests(unittest.TestCase):
+    """The faster readers give exactly what the pattern-per-call readers gave."""
+
+    def test_name_as_printed_is_the_last_regex_printing(self):
+        import random, re, unicodedata
+        from services.financial.payment_parties import _as_printed
+
+        def by_regex(name, raw):
+            folded, at = [], []
+            for i, c in enumerate(raw):
+                for b in (' ' if c.isspace() else ''.join(x for x in unicodedata.normalize('NFKD', c) if not unicodedata.combining(x)).upper()):
+                    folded.append(b)
+                    at.append(i)
+            found = [*re.finditer(r'(?<![A-Z0-9])' + r'\s+'.join(re.escape(w) for w in name.upper().split()) + r'(?![A-Z0-9])', ''.join(folded))]
+            return ' '.join(raw[at[found[-1].start()]:at[found[-1].end() - 1] + 1].split()) if found else name
+
+        cases = [('A A', 'a a a'), ('JOSE PEREZ', 'SPEI ENVIADO José  Pérez REF 1 José\u00a0Pérez'), ('ANA', 'ANAANA ANA1 ana.'),
+                 ('SS', 'Straße'), ('FI', 'ﬁ x'), ('J', 'ǰ'), ('A B', 'A\x1cB'), ('A', '¨A')]
+        rng = random.Random(7)
+        chars = ['A', 'B', 'a', 'á', 'É', ' ', '\t', '\x1c', '\u00a0', '¨', '.', '1', 'ß', 'ǰ', 'ﬁ', '*', '(']
+        for _ in range(3000):
+            raw = ''.join(rng.choice(chars) for _ in range(rng.randint(0, 12)))
+            name = ' '.join(''.join(rng.choice('AB1.*(J') for _ in range(rng.randint(1, 2))) for _ in range(rng.randint(1, 3)))
+            cases.append((name, raw))
+        for name, raw in cases:
+            self.assertEqual(_as_printed(name, raw), by_regex(name, raw), (name, raw))
+
+    def test_first_merchant_in_list_order_wins(self):
+        from services.financial.payment_inference import MERCHANTS, merchant_match
+
+        def by_loop(text):
+            for pattern, merchant, kind in MERCHANTS:
+                found = pattern.match(text)
+                if found:
+                    return found[0], merchant, kind
+            return None
+
+        for text in ['UBER EATS 123', 'UBER TRIP', 'UBERX', 'TRU BY HILTON DC', 'HILTON', 'DD *DOORDASH X', 'WAL-MART #1',
+                     'AMAZON.COM*AB1', 'AMZN MKTP', 'THE OLIVE GARD1', 'SHELLY', 'CVS/PHARMACY #02', 'NOTHING', '']:
+            self.assertEqual(merchant_match(text), by_loop(text), text)
+
+    def test_folding_character_by_character_matches_the_whole_string(self):
+        import unicodedata
+        from services.financial.payment_inference import normalized
+        for text in ['José  Pérez', 'Straße', 'ǰ', 'ﬁ', 'e\u0301\u0327', 'ÅNGSTRÖM\u00a0x', 'plain ascii', '', None]:
+            whole = ' '.join(''.join(c for c in unicodedata.normalize('NFKD', text or '') if not unicodedata.combining(c)).upper().split())
+            self.assertEqual(normalized(text), whole, text)
+
 if __name__ == '__main__':
     unittest.main()

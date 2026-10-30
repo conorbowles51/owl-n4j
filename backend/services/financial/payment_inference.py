@@ -10,9 +10,22 @@ import unicodedata
 VERSION = 'description-labels/10'
 
 
+_FOLDED = {}
+
+
+def fold(c):
+    """One character without accents, in capitals. Folding character by character gives what folding the whole
+    string gives: decomposition only reorders combining marks, and they are dropped; upper-casing has no context."""
+    folded = _FOLDED.get(c)
+    if folded is None:
+        folded = _FOLDED[c] = ''.join(x for x in unicodedata.normalize('NFKD', c) if not unicodedata.combining(x)).upper()
+    return folded
+
+
 def normalized(value):
-    return ' '.join(''.join(c for c in unicodedata.normalize('NFKD', value or '')
-                           if not unicodedata.combining(c)).upper().split())
+    value = value or ''
+    # Plain ASCII has no accents to remove.
+    return ' '.join((value.upper() if value.isascii() else ''.join(map(fold, value))).split())
 
 
 # Prefixes identify the merchant in a card descriptor, rather than finding a
@@ -113,6 +126,20 @@ MERCHANTS = [
     (r'ALLIANZ INSURANCE(?=[^A-Z]|$)', 'Allianz', 'Insurance'),
 ]
 MERCHANTS = [(re.compile(pattern), name, category) for pattern, name, category in MERCHANTS]
+# All merchants in one pattern, each its own group in list order: an alternation tries its branches in order at the
+# same place, so the branch that matches is the first merchant in the list whose pattern matches on its own.
+assert not any(pattern.groups for pattern, _, _ in MERCHANTS)
+_ANY_MERCHANT = re.compile('|'.join(f'({pattern.pattern})' for pattern, _, _ in MERCHANTS))
+
+
+def merchant_match(text):
+    """(text matched, merchant, category) of the first merchant in MERCHANTS whose pattern matches the start of
+    the text, or None."""
+    found = _ANY_MERCHANT.match(text)
+    if not found:
+        return None
+    _, merchant, kind = MERCHANTS[found.lastindex - 1]
+    return found[0], merchant, kind
 
 
 _CARD_POSTING_REFERENCE = re.compile(r'^(?=\S*\d)(?=\S*[A-Z])[0-9A-Z]{16,18}\s+(?=\S)')
@@ -179,12 +206,12 @@ def _infer(raw, value, *, direction, account_type, institution):
         return result
 
     descriptor = re.sub(r'^(?:(?:POS|CHECKCARD|CHECK CARD|DEBIT CARD|CARD PURCHASE)\s+(?:\d{4}\s+)?|(?:TST|SQ)\s*\*\s*)', '', value)
-    for pattern, merchant, kind in MERCHANTS:
-        match = pattern.match(descriptor)
-        if match:
-            suggest('counterparty', merchant, 'merchant-descriptor', f'Merchant suggested from “{match[0]}” in the description. This does not establish legal identity or ownership.')
-            category('Merchant credits' if direction == 'credit' else kind, 'merchant-category', f'the merchant {merchant}')
-            return result
+    found = merchant_match(descriptor)
+    if found:
+        printed, merchant, kind = found
+        suggest('counterparty', merchant, 'merchant-descriptor', f'Merchant suggested from “{printed}” in the description. This does not establish legal identity or ownership.')
+        category('Merchant credits' if direction == 'credit' else kind, 'merchant-category', f'the merchant {merchant}')
+        return result
 
     # Remove only the bank's transaction-type prefix; references stay intact.
     value = re.sub(r'^[A-Z]\d{2}\s+', '', value)
@@ -364,9 +391,10 @@ def bank_wording_category(value, *, direction, account_type=None):
     tail = _card_tail(value, direction)
     if tail is not None:
         tail = re.sub(r'^DD\s+(?=DOORDASH)', '', tail)
-        for pattern, merchant, kind in MERCHANTS:
-            if pattern.match(tail):
-                return ('Merchant credits' if direction == 'credit' else kind, 'debit-card-merchant', f'the merchant {merchant} on a debit card line')
+        found = merchant_match(tail)
+        if found:
+            _, merchant, kind = found
+            return ('Merchant credits' if direction == 'credit' else kind, 'debit-card-merchant', f'the merchant {merchant} on a debit card line')
         if re.search(r'\b(?:' + _P2P + r')', tail):
             return 'Peer-to-peer payments', 'p2p-app', 'the payment app name'
         for pattern, kind in [
