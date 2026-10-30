@@ -862,9 +862,11 @@ def _printed_names(session, case_id, rows):
     from services.financial.account_history import _printed_holders
     from services.financial.printed_holders import decisions
     decided = {account for account, decision in decisions(session, case_id).items() if decision.get('holders')}
-    documents = {row[0].source_document_id for row in rows
-                 if row[0].source_document_id and row[5] is not None and str(row[5]) in decided}
-    return {document: name for document, name in _printed_holders(session, documents).items() if name}
+    pairs = {(row[0].source_document_id, str(row[5])) for row in rows
+             if row[0].source_document_id and row[5] is not None and str(row[5]) in decided}
+    names = _printed_holders(session, {document for document, _ in pairs})
+    # Keyed by statement and account: another account's statement in the same file keeps its own heading.
+    return {(document, account): names[document] for document, account in pairs if names.get(document)}
 
 
 def _search_rows(session, case_id, *, source_document_id=None, statement_period_id=None, subject_ids=None):
@@ -894,7 +896,7 @@ def _search_rows(session, case_id, *, source_document_id=None, statement_period_
             account_id = row.subject_id
         saved_holder = holder
         # An account decided to keep the holder printed on each statement is headed by that statement's own name.
-        holder = printed_names.get(row.source_document_id) or holder
+        holder = printed_names.get((row.source_document_id, str(account_id))) or holder
         account_label = ' · '.join(x for x in (holder, printed or normalised, bank) if x)
         file_id = file_id or (row.evidence or {}).get('evidence_file_id')
         filename = filename or (row.evidence or {}).get('filename')
