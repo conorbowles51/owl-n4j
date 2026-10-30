@@ -70,7 +70,7 @@ def get_case_context(
 
 
 @router.put("/{case_id}/context", dependencies=[Depends(require_case_edit)])
-async def update_case_context(
+def update_case_context(
     case_id: str,
     context: CaseContextUpdate,
     db: Session = Depends(get_db),
@@ -133,7 +133,7 @@ def list_mandate_versions(
     "/{case_id}/context/mandates",
     dependencies=[Depends(require_case_edit)],
 )
-async def create_mandate_version(
+def create_mandate_version(
     case_id: str,
     mandate: MandateVersionCreate,
     db: Session = Depends(get_db),

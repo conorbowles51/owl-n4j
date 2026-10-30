@@ -29,8 +29,6 @@ NOT_YET_CONVERTED = {
     'routers/system_logs.py:clear_logs',
     'routers/timeline.py:get_timeline',
     'routers/timeline.py:get_event_types',
-    'routers/workspace.py:update_case_context',
-    'routers/workspace.py:create_mandate_version',
 }
 
 
