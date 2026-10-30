@@ -2952,16 +2952,14 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
                 record['printed_controls'] = controls
             if reading.get('charge_totals') and CLOSING_DAYS:
                 record['charge_totals'] = reading['charge_totals']
-        if (accepted.get('basis') != 'dates_from_page_images' and accepted.get('provider')
-                and time.monotonic() - chain_started > CHAIN_SECONDS / 2):
-            # Not enough of the claim left to read them safely: saved with first lines; the saved statement's lines
-            # are read later (scripts/financial_image_descriptions.py).
-            record['description_lines'] = dict(status='deferred')
-        elif accepted.get('basis') != 'dates_from_page_images' and accepted.get('provider'):
+        if accepted.get('basis') != 'dates_from_page_images' and accepted.get('provider'):
             # The payments' description lines (who paid or was paid), read on their own: only descriptions change.
             from services.financial import vision_descriptions
             try:
-                lines = vision_descriptions.complete_request(factory, case_id, path, request)
+                # Within the claim: a page whose requests could end after it keeps its first lines ('deferred'); the
+                # saved statement's lines are read later (scripts/financial_image_descriptions.py).
+                lines = vision_descriptions.complete_request(factory, case_id, path, request,
+                                                             deadline=chain_started + CHAIN_SECONDS)
             except Exception as error:  # noqa: BLE001 - the payments keep their first lines
                 log.warning('Description lines of file %s could not be read (%s: %s)', str(file_id)[:8],
                             type(error).__name__, str(error)[:200])

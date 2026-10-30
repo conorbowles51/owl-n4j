@@ -32,6 +32,10 @@ MAX_CHARS = 600
 # Independent reads of each page that must give the same text, word for word, before a description is completed: one
 # read was measured to write a printed name in its more common spelling (BENGOCHEA as BENGOECHEA, DIC 2024 BBVA p3).
 READS = 2
+# One page's request is short (its payments' lines): a request running longer than this is dropped, retried once
+# when the connection or server failed. A request is not started when it could end after the caller's deadline.
+TIMEOUT_SECONDS = 300
+RETRIES = 1
 REASON = 'Description lines read from page image, page {page}, by {by}; amount, date and direction as read before.'
 
 SCHEMA = {'type': 'object', 'additionalProperties': False, 'required': ['rows'],
@@ -123,7 +127,8 @@ def description_request(model_id, api_key, provider):
     any failure (the descriptions then stay as read)."""
     from services.financial import vision_reader as vr
     from services.llm_service import LLMExecutionContext
-    settings = vr.READER_SETTINGS.get(provider) or vr.READER_SETTINGS['openai']
+    settings = dict(vr.READER_SETTINGS.get(provider) or vr.READER_SETTINGS['openai'])
+    settings.update(timeout=min(settings['timeout'], TIMEOUT_SECONDS), retries=min(settings['retries'], RETRIES))
 
     def read(pages, rows):
         labels, images = [], []
@@ -160,13 +165,20 @@ def _add(total, usage):
             total[name] = total.get(name, 0) + value
 
 
-def read_lines(read, pages, rows, reads=READS):
+def request_seconds():
+    """The longest one page's request can take: every try at its full allowance, with the pauses between."""
+    from services.financial import vision_reader as vr
+    return (RETRIES + 1) * (TIMEOUT_SECONDS + 60 + vr.CONNECT_SECONDS) + vr.RETRY_PAUSE_SECONDS * RETRIES
+
+
+def read_lines(read, pages, rows, reads=READS, deadline=None):
     """(record, {id: completed description}): ask ``read`` for the listed ``rows`` over the rendered ``pages``
     ([(page, [png, ...])]) and keep only what ``completed`` takes from every one of ``reads`` independent answers, word
     for word the same. One request per page that has payments, with that page and the next one (where an entry's last
     lines may continue), so each answer stays short. A failed request leaves that page's payments as read (its error
-    is recorded). The record says who read what, what it cost, and why any payment stayed as read (answers that differ
-    are kept in it, both texts)."""
+    is recorded), as does a request that could end after ``deadline`` (time.monotonic()), which is not sent. The
+    record says who read what, what it cost, and why any payment stayed as read (answers that differ are kept in it,
+    both texts)."""
     images = dict(pages)
     sent = listed(rows)
     found, kept, differ, usage, errors = {}, {}, {}, {}, []
@@ -179,6 +191,10 @@ def read_lines(read, pages, rows, reads=READS):
             continue
         answers = []
         for _ in range(reads):
+            if deadline is not None and time.monotonic() + request_seconds() > deadline:
+                answers = None
+                kept.update({row['id']: 'deferred' for row in on_page})
+                break
             try:
                 answer, used = read(shown, on_page)
             except Exception as error:  # noqa: BLE001 - this page's payments stay as read
@@ -189,7 +205,8 @@ def read_lines(read, pages, rows, reads=READS):
             _add(usage, used)
             answers.append(completed(on_page, answer))
         if answers is None:
-            kept.update({row['id']: 'request_failed' for row in on_page})
+            for row in on_page:
+                kept.setdefault(row['id'], 'request_failed')
             continue
         for row in on_page:
             texts = [answer[0].get(row['id']) for answer in answers]
@@ -353,7 +370,7 @@ def read_saved_lines(factory, document_id, resolve_path, *, request_for=None):
 # A new reading: its payments' description lines, before it is saved
 # ---------------------------------------------------------------------------
 
-def complete_request(factory, case_id, path, request, *, request_for=None):
+def complete_request(factory, case_id, path, request, *, request_for=None, deadline=None):
     """Complete the descriptions of a proved page-image reading's payments (``request``: the statement review
     vision_reader.build_request made, before it is saved) in place, from their description lines (read_lines, by the
     first usable reader of the chain, within the case's budget). Only a payment row's description and reason change.
@@ -387,7 +404,8 @@ def complete_request(factory, case_id, path, request, *, request_for=None):
                            for page in sorted({item['page'] for item in items}))
     if not vr._reserve(case_id, reserved):
         return dict(prompt_version=PROMPT_VERSION, status='budget', provider=provider, model=model)
-    record, found = read_lines((request_for or description_request)(model, key, provider), images, items)
+    record, found = read_lines((request_for or description_request)(model, key, provider), images, items,
+                               deadline=deadline)
     cost = vr.cost_usd(model, record.get('usage') or {})
     vr._add_spend(case_id, cost - reserved)
     by = vr.provider_name(provider)

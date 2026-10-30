@@ -91,6 +91,16 @@ class ReadLinesTests(TestCase):
         self.assertEqual(record['errors'][0]['page'], 2)
 
 
+    def test_nothing_is_sent_that_could_end_after_the_deadline(self):
+        import time
+
+        def read(shown, listed_rows):
+            raise AssertionError('sent')
+        record, found = vd.read_lines(read, self.pages, [dict(r, description=r['first_line']) for r in rows()],
+                                      deadline=time.monotonic() + vd.request_seconds() - 1)
+        self.assertEqual((found, set(record['kept'].values())), ({}, {'deferred'}))
+
+
 class CompleteRequestTests(TestCase):
     """A new page-image reading: only its payment rows' descriptions and reasons change, before it is saved."""
 

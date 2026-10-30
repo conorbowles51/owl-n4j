@@ -443,14 +443,20 @@ class ChainTests(TestCase):
         self.assertEqual(rendered, [vr.READER_SETTINGS['deepseek']['strips'], vr.READER_SETTINGS['openai']['strips']])
 
     def test_no_other_page_image_instructions_exist(self):
-        """The page-image instruction text is built in one place (vision_reader.page_instructions)."""
+        """The page-image instruction text is built in one place (vision_reader.page_instructions). The one other
+        page-image request, the payments' description lines (vision_descriptions, read after the money reading), has
+        its own single builder (vision_descriptions.instructions), sent the same to every provider."""
         backend = Path(__file__).resolve().parents[1]
         callers = []
         for path in list((backend / 'services').rglob('*.py')) + list((backend / 'routers').rglob('*.py')):
             text = path.read_text(encoding='utf-8')
             if 'call_vision_json(' in text and path.name != 'llm_service.py':
                 callers.append(path.relative_to(backend).as_posix())
-        self.assertEqual(callers, ['services/financial/vision_reader.py'])
+        self.assertEqual(sorted(callers), ['services/financial/vision_descriptions.py',
+                                           'services/financial/vision_reader.py'])
+        lines = (backend / 'services/financial/vision_descriptions.py').read_text(encoding='utf-8')
+        self.assertEqual(lines.count('call_vision_json('), 1)
+        self.assertEqual(lines.count('instructions('), 2, 'defined once, used once (description_request)')
         source = (backend / 'services/financial/vision_reader.py').read_text(encoding='utf-8')
         tree = ast.parse(source)
         constants = [t.id for node in ast.walk(tree) if isinstance(node, ast.Assign) for t in node.targets
