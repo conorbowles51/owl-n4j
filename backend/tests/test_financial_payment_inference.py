@@ -46,6 +46,29 @@ class PaymentInferenceTests(unittest.TestCase):
                 self.assertEqual(result['category']['value'], category)
                 self.assertEqual(result.get('counterparty', {}).get('value'), party)
 
+    def test_renta_that_is_not_rent(self):
+        # BNB2 Monex 2018-07-02: interest received, with the income tax withheld on it ("Impuesto Sobre La Renta").
+        isr = ('Dep\u00f3sito de intereses por saldo Periodo del 01-JUN-2018 al 30-JUN-2018, saldo promedio $29,528.59, tasa '
+               'aplicada .8000% , d\u00edas en el mes 30 , d\u00edas en el a\u00f1o 360 Intereses $19.69 Impuesto Sobre La Renta $11.16')
+        for description, direction, category in [
+            (isr, 'credit', 'Interest income'),
+            ('COMPRA FONDO RENTA FIJA CORTO PLAZO', 'debit', None),
+            ('VENTA FONDO RENTA VARIABLE GLOBAL', 'credit', None),
+            ('REVERSE AVIS RENT-A-CAR WASHINGTO', 'debit', None),
+            # The bank's own service charges (BNB2 Santander and BBVA), not rent.
+            ('0000000 ADMINISTRACION RENTA MEMBRESIA', 'debit', 'Bank fees'),
+            ('S39 SERV BANCA INTERNET Ref. ADMON RENTA', 'debit', 'Bank fees'),
+            # Rent and leases stay rent and leases.
+            ('W01 TRASPASO A TERCEROS RENTA 21 DE 30 BMRCASH Ref. REFBNTC00000001', 'debit', 'Rent and leases'),
+            ('N06 PAGO CUENTA DE TERCERO BNET 0475949556 RENTA DE EQUIPO MO Ref. 0086111016', 'credit', 'Rent and leases'),
+            ('Deposit Online Banking Transfer Rent From EXAMPLE XXXXXXXXXX Share 0040', 'credit', 'Rent and leases'),
+        ]:
+            with self.subTest(description=description):
+                self.assertEqual(self.infer(description, direction, 'checking').get('category', {}).get('value'), category)
+        # On a card, a car rental is transport, and the city it was rented in is not a car wash.
+        self.assertEqual(self.infer('REVERSE AVIS RENT-A-CAR WASHINGTO', 'debit', 'credit_card')['category']['value'], 'Transport')
+        self.assertEqual(self.infer('SPARKLE CAR WASH #12', 'debit', 'credit_card')['category']['value'], 'Vehicle care')
+
     def test_transfer_beneficiary_comes_after_tracking_reference_not_bank(self):
         desc = 'T17 SPID ENVIADO BANORTE 0000007PAGO FACT CAMION Ref. 0000000001 072 00000000000000000001 000000000000000000000001 EXAMPLE TRUCKS DE MEXICO'
         self.assertEqual(self.infer(desc, kind='checking')['counterparty']['value'], 'EXAMPLE TRUCKS DE MEXICO')

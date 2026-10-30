@@ -133,6 +133,20 @@ class PaymentCategoryTests(LedgerQueryTestCase):
         self.assertIn('category.model', self.inbox.read_text())
         self.assertIn('Transfers -> Payroll', self.inbox.read_text())
 
+    def test_a_rule_category_no_rule_gives_any_more_is_removed_and_a_person_s_never_is(self):
+        stale, kept, chosen = self.rows('REVERSE AVIS RENT-A-CAR WASHINGTO', 'W01 TRASPASO A TERCEROS RENTA 21 DE 30',
+                                        'REVERSE AVIS RENT-A-CAR DULLES')
+        # Stored by an earlier version of the rent rule.
+        pc._upsert(self.db, stale, category='Rent and leases', origin='rule', basis='rent', confidence=None, why='x', set_by=None)
+        update_payment_labels(self.db, case_id=self.case.id, actor=ACTOR, request=PaymentLabelsRequest(
+            transactions=[dict(id=chosen.id, version=0)], category='Rent and leases'))
+        self.db.commit()
+        written = pc.backfill(self.db, self.case.id)
+        self.assertEqual(written.get('rule_removed'), 1)
+        self.assertIsNone(self.stored(stale))
+        self.assertEqual((self.stored(kept).category, self.stored(kept).origin), ('Rent and leases', 'rule'))
+        self.assertEqual((self.stored(chosen).category, self.stored(chosen).origin), ('Rent and leases', 'person'))
+
     def test_a_failed_inbox_append_is_reported_and_the_check_adds_the_line(self):
         from services.financial import judgement_inbox
         (row,) = self.rows('105413834')

@@ -178,6 +178,14 @@ def infer_payment_labels(description, *, direction, account_type=None, instituti
     return result
 
 
+# RENTA that is not rent: income tax ("Impuesto Sobre la Renta", printed on Monex interest lines), fixed or variable
+# income (investments), and a car rental company's name (fin-leftovers A, 2026-10-30).
+_NOT_RENT = re.compile(r'\bIMPUESTO SOBRE LA RENTA\b|\bRENTA (?:FIJA|VARIABLE)\b|\bRENT[- ]A[- ]CAR\b')
+# A bank's own service charge whose wording says RENTA: Santander's monthly "ADMINISTRACION RENTA MEMBRESIA" and BBVA's
+# "SERV BANCA INTERNET Ref. ADMON RENTA" (BNB2, beside the same banks' COM MEMBRESIA and SERV BANCA INTERNET fees).
+_BANK_SERVICE_RENTA = re.compile(r'\bADMINISTRACION RENTA MEMBRESIA\b|\bSERV BANCA INTERNET REF\.? ADMON RENTA\b')
+
+
 def _infer(raw, value, *, direction, account_type, institution):
     result = {}
 
@@ -218,7 +226,7 @@ def _infer(raw, value, *, direction, account_type, institution):
     # Tax on a commission is tax, rather than the commission itself.
     if re.search(r'\b(?:IVA|I\.?S\.?R\.?\s+RETENIDO|TAX(?:ES)?\s+(?:WITHHELD|PAYMENT))\b', value):
         category('Taxes', 'tax', 'the tax wording')
-    elif re.search(r'\b(?:INTERESES GANADOS|INTEREST (?:EARNED|PAID|CREDIT))\b', value) and direction == 'credit':
+    elif re.search(r'\b(?:INTERESES GANADOS|DEPOSITO DE INTERESES|INTEREST (?:EARNED|PAID|CREDIT))\b', value) and direction == 'credit':
         category('Interest income', 'interest-income', 'the interest wording')
         if institution:
             suggest('counterparty', institution, 'bank-interest', 'The description identifies bank interest; the bank name comes from the statement account.')
@@ -226,11 +234,11 @@ def _infer(raw, value, *, direction, account_type, institution):
         category('Interest charges', 'interest-charge', 'the interest charge wording')
         if institution:
             suggest('counterparty', institution, 'bank-charge', 'The description identifies interest charged by the statement bank.')
-    elif re.search(r'\b(?:COMISION|COM SDO|LATE FEE|PAST DUE FEE|ANNUAL FEE|OVERDRAFT FEE|SERVICE (?:CHARGE|FEE)|BANK FEE|FOREIGN TRANSACTION FEE)\b', value):
+    elif re.search(r'\b(?:COMISION|COM SDO|LATE FEE|PAST DUE FEE|ANNUAL FEE|OVERDRAFT FEE|SERVICE (?:CHARGE|FEE)|BANK FEE|FOREIGN TRANSACTION FEE)\b', value) or _BANK_SERVICE_RENTA.search(value):
         category('Bank fees', 'bank-fee', 'the fee or commission wording')
         if institution:
             suggest('counterparty', institution, 'bank-charge', 'The description identifies a bank fee; the bank name comes from the statement account.')
-    elif re.search(r'\b(?:RENTA|RENT|LEASE PAYMENT)\b', value):
+    elif re.search(r'\b(?:RENTA|RENT|LEASE PAYMENT)\b', _NOT_RENT.sub(' ', value)):
         category('Rent and leases', 'rent', 'the rent or lease wording')
     elif re.search(r'\b(?:PAYROLL|SALARY|NOMINA)\b', value):
         category('Payroll', 'payroll', 'the payroll wording')
@@ -256,10 +264,10 @@ def _infer(raw, value, *, direction, account_type, institution):
             (r'\b(?:HAIR|LASH|BROW|BARBER|SALON|SPORT CLIPS)', 'Personal care', 'the salon or grooming wording'),
             (r'\b(?:STORAGE|SELF STORAGE)', 'Storage', 'the storage wording'),
             (r'\b(?:RESTAURANT|PIZZA|CAFE|BAR AND GRIL|ICE CR)', 'Meals', 'the food-service wording'),
-            (r'\b(?:TAXI|SCOOTER|METRO\s+\d)', 'Transport', 'the transport wording'),
+            (r'\b(?:TAXI|SCOOTER|METRO\s+\d|RENT[- ]A[- ]CAR)', 'Transport', 'the transport wording'),
             (r'\b(?:MINI GOLF|AMUSEMENT|COUNTY FAIR|ADVENTURE PA)', 'Entertainment', 'the entertainment wording'),
             (r'\b(?:GOV[\x27’]?T PAYMENT|COURTS PAYMENTS)', 'Government payments', 'the government payment wording'),
-            (r'\b(?:CAR WASH|DETAILING)', 'Vehicle care', 'the vehicle-care wording'),
+            (r'\b(?:CAR WASH(?![A-Z])|DETAILING)', 'Vehicle care', 'the vehicle-care wording'),
             (r'\b(?:INSURANCE|SEGURO)', 'Insurance', 'the insurance wording'),
         ]:
             if re.search(pattern, descriptor):

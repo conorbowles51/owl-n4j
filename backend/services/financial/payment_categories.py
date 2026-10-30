@@ -146,6 +146,11 @@ def categorise(session, rows, *, existing=None):
             continue
         found = rule_category(row, row.account if row.account is not None and row.account.id == row.account_id else None)
         if found is None:
+            if current is not None and current.origin == 'rule':
+                # The rules no longer place it (a rule was corrected): its stale rule category goes, so the payment
+                # is placed again (model fallback) instead of keeping a category no rule gives.
+                session.delete(current)
+                written['rule_removed'] = written.get('rule_removed', 0) + 1
             continue
         if current is not None and current.origin == 'rule' and (current.category, current.basis) == (found['value'], found['rule']):
             continue
