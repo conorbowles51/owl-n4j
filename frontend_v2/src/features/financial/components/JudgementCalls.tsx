@@ -1,5 +1,5 @@
 import { Disclosure } from "./Disclosure"
-import { useContext, useMemo, useState, type ReactNode } from "react"
+import { useContext, useEffect, useMemo, useState, type ReactNode } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { judgementKeys, useJudgementCounts, useJudgementRowMap, useJudgements } from "../hooks/use-judgements"
 import { RowJudgements } from "../hooks/use-judgement-rows"
@@ -570,6 +570,8 @@ type ReviewRow = { id: string; reason?: string; excluded?: boolean; manual_page?
  * Before saving (the review queue): the calls the rules make on this reading, from the same detection that
  * records them on save. Nothing is stored here; once saved, each can be confirmed or corrected.
  */
+const PREVIEW_HOLDER_SETTLE_MS = 600
+
 export function ReadingJudgements({
   caseId,
   statementId,
@@ -608,17 +610,23 @@ export function ReadingJudgements({
       })),
     [readingRows]
   )
+  // The holder is sent once typing settles: each request carries the whole reading.
+  const [settledHolder, setSettledHolder] = useState(holder)
+  useEffect(() => {
+    const timer = setTimeout(() => setSettledHolder(holder), PREVIEW_HOLDER_SETTLE_MS)
+    return () => clearTimeout(timer)
+  }, [holder])
   const review = reviewRows.filter((row) => row.reason || row.excluded || row.manual_page)
   const reviewKey = JSON.stringify(review.map((row) => [row.id, row.reason || "", !!row.excluded]))
   const query = useQuery({
-    queryKey: ["financial-judgements", caseId, "preview", statementId, revision, currency, reviewKey, fileId, holder],
+    queryKey: ["financial-judgements", caseId, "preview", statementId, revision, currency, reviewKey, fileId, settledHolder],
     queryFn: () =>
       previewJudgements(caseId, {
         statement_id: statementId,
         currency,
         reading_rows: reading,
         review_rows: review,
-        ...(fileId ? { file_id: fileId, holder: holder || "" } : {}),
+        ...(fileId ? { file_id: fileId, holder: settledHolder || "" } : {}),
       }),
     retry: false,
     refetchOnWindowFocus: false,
