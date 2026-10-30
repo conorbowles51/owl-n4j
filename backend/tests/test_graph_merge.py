@@ -204,7 +204,7 @@ class GraphMergeTests(unittest.IsolatedAsyncioTestCase):
         current_user = SimpleNamespace(id=uuid4())
 
         with patch("routers.graph.check_case_access") as check_case_access:
-            result = await graph.get_merge_job(
+            result = graph.get_merge_job(
                 str(job.id),
                 current_user=current_user,
                 db=db,
@@ -234,7 +234,7 @@ class GraphMergeTests(unittest.IsolatedAsyncioTestCase):
         with patch("routers.graph.check_case_access") as check_case_access:
             check_case_access.side_effect = CaseAccessDenied("denied")
             with self.assertRaises(HTTPException) as ctx:
-                await graph.get_merge_job(
+                graph.get_merge_job(
                     str(job.id),
                     current_user=SimpleNamespace(id=uuid4()),
                     db=db,

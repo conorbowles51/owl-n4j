@@ -8,6 +8,7 @@ and writes the coordinates back to the matching entities in Neo4j
 """
 
 import json
+import threading
 import time
 import hashlib
 import urllib.request
@@ -27,6 +28,9 @@ from postgres.session import get_background_session
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 USER_AGENT = "InvestigationConsole/1.0"
 _last_request_time = 0.0
+# Nominatim allows one request a second. Geocoding route handlers run in FastAPI's thread pool, so the spacing is
+# kept under a lock (held through the wait), not by the event loop running them one at a time.
+_rate_lock = threading.Lock()
 
 def _get_cached_geocode(cache_key: str) -> tuple[bool, Optional[Dict]]:
     with get_background_session() as db:
@@ -73,10 +77,11 @@ def _save_geocode_cache(cache_key: str, original_query: str, result: Optional[Di
 
 def _rate_limit():
     global _last_request_time
-    elapsed = time.time() - _last_request_time
-    if elapsed < 1.0:
-        time.sleep(1.0 - elapsed)
-    _last_request_time = time.time()
+    with _rate_lock:
+        elapsed = time.time() - _last_request_time
+        if elapsed < 1.0:
+            time.sleep(1.0 - elapsed)
+        _last_request_time = time.time()
 
 
 def _location_granularity(result: Dict) -> Optional[str]:

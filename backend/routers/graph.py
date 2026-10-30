@@ -9,6 +9,7 @@ import json
 import asyncio
 from fastapi import APIRouter, HTTPException, Query, Depends, Request
 from fastapi.responses import StreamingResponse
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import select, text
@@ -357,7 +358,7 @@ class CreateRelationshipsResponse(BaseModel):
 
 
 @router.get("/entity-types")
-async def get_entity_types(
+def get_entity_types(
     case_id: str = Query(..., description="REQUIRED: Filter by case ID"),
 ):
     """
@@ -385,7 +386,7 @@ async def get_entity_types(
 
 
 @router.get("/edit-schema")
-async def get_graph_edit_schema():
+def get_graph_edit_schema():
     """Get ontology-backed metadata for investigator-facing graph edits."""
     try:
         return neo4j_service.get_graph_edit_schema()
@@ -394,7 +395,7 @@ async def get_graph_edit_schema():
 
 
 @router.get("")
-async def get_graph(
+def get_graph(
     case_id: str = Query(..., description="REQUIRED: Filter by case ID"),
     start_date: Optional[str] = Query(None, description="Filter start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="Filter end date (YYYY-MM-DD)"),
@@ -472,7 +473,7 @@ async def get_graph(
 
 
 @router.get("/node/{key}")
-async def get_node_details(
+def get_node_details(
     key: str,
     case_id: str = Query(..., description="REQUIRED: Filter by case ID"),
 ):
@@ -501,7 +502,7 @@ class BulkNodeDetailsRequest(BaseModel):
 
 
 @router.post("/nodes/bulk")
-async def get_bulk_node_details(request: BulkNodeDetailsRequest):
+def get_bulk_node_details(request: BulkNodeDetailsRequest):
     """
     Get detailed information about multiple nodes in a single request.
     """
@@ -517,7 +518,7 @@ async def get_bulk_node_details(request: BulkNodeDetailsRequest):
 
 
 @router.get("/node/{key}/neighbours")
-async def get_node_neighbours(
+def get_node_neighbours(
     key: str,
     depth: int = Query(default=1, ge=1, le=3),
     case_id: str = Query(..., description="REQUIRED: Filter by case ID"),
@@ -537,7 +538,7 @@ async def get_node_neighbours(
 
 
 @router.post("/expand-nodes")
-async def expand_nodes(
+def expand_nodes(
     request: ExpandNodesRequest,
     user: dict = Depends(get_current_user),
 ):
@@ -591,7 +592,7 @@ async def expand_nodes(
 
 
 @router.get("/search", response_model=GraphSearchResponse)
-async def search_nodes(
+def search_nodes(
     q: str = Query(..., min_length=1),
     limit: int = Query(default=20, ge=1, le=100),
     case_id: str = Query(..., description="REQUIRED: Filter by case ID"),
@@ -644,7 +645,7 @@ async def search_nodes(
 
 
 @router.get("/summary")
-async def get_graph_summary(
+def get_graph_summary(
     case_id: str = Query(..., description="REQUIRED: Filter by case ID"),
 ):
     """
@@ -657,7 +658,7 @@ async def get_graph_summary(
 
 
 @router.get("/locations")
-async def get_entities_with_locations(
+def get_entities_with_locations(
     types: Optional[str] = Query(None, description="Comma-separated entity types to filter"),
     case_id: str = Query(..., description="REQUIRED: Filter by case ID"),
     scope: Literal["all", "significant"] = Query("all", description="Case layer to project"),
@@ -692,7 +693,7 @@ async def get_entities_with_locations(
 
 
 @router.get("/locations/needs-review")
-async def get_locations_needing_review(
+def get_locations_needing_review(
     case_id: str = Query(..., description="REQUIRED: Filter by case ID"),
     scope: Literal["all", "significant"] = Query("all", description="Case layer to project"),
     db: Session = Depends(get_db),
@@ -717,7 +718,7 @@ async def get_locations_needing_review(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/shortest-paths")
-async def get_shortest_paths_subgraph(
+def get_shortest_paths_subgraph(
     request: ShortestPathsRequest,
     db: Session = Depends(get_db),
 ):
@@ -764,7 +765,7 @@ async def get_shortest_paths_subgraph(
 
 
 @router.post("/pagerank")
-async def get_pagerank(
+def get_pagerank(
     request: PageRankRequest,
     db: Session = Depends(get_db),
 ):
@@ -819,7 +820,7 @@ async def get_pagerank(
 
 
 @router.post("/louvain")
-async def get_louvain_communities(
+def get_louvain_communities(
     request: LouvainRequest,
     db: Session = Depends(get_db),
 ):
@@ -867,7 +868,7 @@ async def get_louvain_communities(
 
 
 @router.post("/betweenness-centrality")
-async def get_betweenness_centrality(
+def get_betweenness_centrality(
     request: BetweennessCentralityRequest,
     db: Session = Depends(get_db),
 ):
@@ -1143,7 +1144,7 @@ async def get_last_graph():
 
 
 @router.post("/create-node", response_model=CreateNodeResponse)
-async def create_node(request: CreateNodeRequest, user: dict = Depends(get_current_user)):
+def create_node(request: CreateNodeRequest, user: dict = Depends(get_current_user)):
     """
     Create a new node in the graph with description and summary.
 
@@ -1247,7 +1248,7 @@ async def create_node(request: CreateNodeRequest, user: dict = Depends(get_curre
 
 
 @router.post("/relationships", response_model=CreateRelationshipsResponse)
-async def create_relationships(request: CreateRelationshipsRequest, user: dict = Depends(get_current_user)):
+def create_relationships(request: CreateRelationshipsRequest, user: dict = Depends(get_current_user)):
     """
     Create relationships between nodes.
 
@@ -1342,7 +1343,7 @@ async def create_relationships(request: CreateRelationshipsRequest, user: dict =
 
 
 @router.post("/node/{node_key}/analyze-relationships")
-async def analyze_node_relationships(
+def analyze_node_relationships(
     node_key: str,
     request: AnalyzeRelationshipsRequest,
 ):
@@ -1418,7 +1419,7 @@ async def analyze_node_relationships(
 
 
 @router.put("/node/{node_key}", response_model=UpdateNodeResponse)
-async def update_node(node_key: str, request: UpdateNodeRequest, user: dict = Depends(get_current_user)):
+def update_node(node_key: str, request: UpdateNodeRequest, user: dict = Depends(get_current_user)):
     """
     Update investigator-facing fields on an existing node.
     """
@@ -1479,7 +1480,7 @@ async def update_node(node_key: str, request: UpdateNodeRequest, user: dict = De
 
 
 @router.put("/node/{node_key}/pin-fact")
-async def pin_fact(node_key: str, request: PinFactRequest):
+def pin_fact(node_key: str, request: PinFactRequest):
     """
     Toggle the pinned status of a verified fact.
 
@@ -1508,7 +1509,7 @@ async def pin_fact(node_key: str, request: PinFactRequest):
 
 
 @router.post("/node/{node_key}/verify-insight")
-async def verify_insight(node_key: str, request: VerifyInsightRequest):
+def verify_insight(node_key: str, request: VerifyInsightRequest):
     """
     Convert an AI insight to a verified fact with user attribution.
 
@@ -1539,7 +1540,7 @@ async def verify_insight(node_key: str, request: VerifyInsightRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/find-similar-entities")
-async def find_similar_entities(
+def find_similar_entities(
     request: FindSimilarEntitiesRequest,
     user: dict = Depends(get_current_user),
 ):
@@ -1613,7 +1614,7 @@ async def find_similar_entities_stream(
     # Fetch rejected pairs for this case to filter them out
     rejected_pairs_service = RejectedPairsService(db)
     try:
-        rejected_pairs = rejected_pairs_service.get_rejected_pairs_set(UUID(case_id))
+        rejected_pairs = await run_in_threadpool(rejected_pairs_service.get_rejected_pairs_set, UUID(case_id))
     except ValueError:
         rejected_pairs = set()  # Invalid UUID, use empty set
 
@@ -1650,7 +1651,8 @@ async def find_similar_entities_stream(
             )
 
     # Log the start of the streaming operation
-    system_log_service.log(
+    await run_in_threadpool(
+        system_log_service.log,
         log_type=LogType.GRAPH_OPERATION,
         origin=LogOrigin.FRONTEND,
         action="Find Similar Entities Stream Started",
@@ -1818,7 +1820,7 @@ async def merge_entities(
 
 
 @router.get("/merge-jobs/{merge_job_id}")
-async def get_merge_job(
+def get_merge_job(
     merge_job_id: str,
     current_user = Depends(get_current_db_user),
     db: Session = Depends(get_db),
@@ -1867,7 +1869,7 @@ class RejectedPairResponse(BaseModel):
 
 
 @router.post("/reject-merge")
-async def reject_merge_pair(
+def reject_merge_pair(
     request: RejectMergeRequest,
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -1937,7 +1939,7 @@ async def reject_merge_pair(
 
 
 @router.get("/rejected-merges")
-async def get_rejected_merges(
+def get_rejected_merges(
     case_id: str = Query(..., description="REQUIRED: Case ID to get rejected pairs for"),
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -1980,7 +1982,7 @@ async def get_rejected_merges(
 
 
 @router.delete("/rejected-merges/{rejection_id}")
-async def undo_rejection(
+def undo_rejection(
     rejection_id: str,
     user: dict = Depends(get_current_user),
     current_user = Depends(get_current_db_user),
@@ -2048,7 +2050,7 @@ async def undo_rejection(
 
 
 @router.delete("/node/{node_key}")
-async def delete_node(
+def delete_node(
     node_key: str,
     case_id: str = Query(..., description="REQUIRED: Verify node belongs to this case"),
     permanent: bool = Query(False, description="If True, permanently delete. If False, move to recycling bin."),
@@ -2170,7 +2172,7 @@ class UpdateLocationRequest(BaseModel):
 
 
 @router.put("/node/{node_key}/location")
-async def update_entity_location(
+def update_entity_location(
     node_key: str,
     request: UpdateLocationRequest,
     user: dict = Depends(get_current_user),
@@ -2208,7 +2210,7 @@ async def update_entity_location(
 
 
 @router.delete("/node/{node_key}/location")
-async def remove_entity_location(
+def remove_entity_location(
     node_key: str,
     case_id: str = Query(..., description="REQUIRED: Verify node belongs to this case"),
     user: dict = Depends(get_current_user),
@@ -2238,7 +2240,7 @@ async def remove_entity_location(
 
 
 @router.get("/cases/{case_id}/entity-summary")
-async def get_case_entity_summary(case_id: str):
+def get_case_entity_summary(case_id: str):
     """Get structured entity summary for the case dashboard."""
     try:
         entities = neo4j_service.get_case_entity_summary(case_id)
@@ -2253,7 +2255,7 @@ class BatchUpdateRequest(BaseModel):
 
 
 @router.put("/batch-update")
-async def batch_update_entities(
+def batch_update_entities(
     request: BatchUpdateRequest,
     user: dict = Depends(get_current_user),
 ):
@@ -2288,7 +2290,7 @@ async def batch_update_entities(
 
 
 @router.post("/cases/{case_id}/generate-insights")
-async def generate_insights(
+def generate_insights(
     case_id: str,
     max_entities: int = Query(10, description="Maximum entities to process"),
     user: dict = Depends(get_current_user),
@@ -2319,7 +2321,7 @@ async def generate_insights(
 
 
 @router.delete("/node/{node_key}/insights/{insight_index}")
-async def reject_insight(
+def reject_insight(
     node_key: str,
     insight_index: int,
     case_id: str = Query(..., description="REQUIRED: Case ID"),
@@ -2336,7 +2338,7 @@ async def reject_insight(
 
 
 @router.get("/cases/{case_id}/insights")
-async def get_case_insights(case_id: str):
+def get_case_insights(case_id: str):
     """Get all pending insights across a case."""
     try:
         insights = neo4j_service.get_all_pending_insights(case_id)
@@ -2350,7 +2352,7 @@ async def get_case_insights(case_id: str):
     deprecated=True,
     summary="Deprecated legacy location rescan",
 )
-async def rescan_locations(
+def rescan_locations(
     case_id: str,
     force_regeocode: bool = Query(False, description="Re-geocode entities that already have coordinates"),
     user: dict = Depends(get_current_user),
@@ -2386,7 +2388,7 @@ async def rescan_locations(
 
 
 @router.get("/recycle-bin")
-async def list_recycled_entities(
+def list_recycled_entities(
     case_id: str = Query(..., description="Case ID"),
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -2400,7 +2402,7 @@ async def list_recycled_entities(
 
 
 @router.post("/recycle-bin/{recycle_key}/restore")
-async def restore_recycled_entity(
+def restore_recycled_entity(
     recycle_key: str,
     case_id: str = Query(..., description="Case ID"),
     user: dict = Depends(get_current_user),
@@ -2448,7 +2450,7 @@ async def restore_recycled_entity(
 
 
 @router.delete("/recycle-bin/{recycle_key}")
-async def permanently_delete_recycled(
+def permanently_delete_recycled(
     recycle_key: str,
     case_id: str = Query(..., description="Case ID"),
     user: dict = Depends(get_current_user),
@@ -2492,7 +2494,7 @@ class GeocodeNodeRequest(BaseModel):
 
 @router.post("/node/{node_key}/geocode")
 @router.post("/nodes/{node_key}/geocode")
-async def geocode_node(
+def geocode_node(
     node_key: str,
     body: GeocodeNodeRequest,
     apply: bool = Query(True, description="If true, persist the geocoded location to the node"),
