@@ -225,7 +225,8 @@ def _blocking_async_handlers():
 
 
 def test_no_new_route_handler_blocks_the_event_loop():
-    assert _blocking_async_handlers() <= NOT_YET_CONVERTED
+    # Equal, not a subset: a converted handler leaves the list in the same change, so the list only shrinks.
+    assert _blocking_async_handlers() == NOT_YET_CONVERTED
 
 
 def test_the_handlers_measured_in_use_run_in_the_thread_pool():
@@ -239,3 +240,7 @@ def test_the_handlers_measured_in_use_run_in_the_thread_pool():
                 'routers/financial_ledger.py:get_ledger_sources'}
     assert not measured & _blocking_async_handlers()
     assert not measured & NOT_YET_CONVERTED
+    for entry in measured:  # each still exists, as a plain function
+        path, name = entry.split(':')
+        tree = ast.parse((BACKEND / path).read_text())
+        assert any(isinstance(node, ast.FunctionDef) and node.name == name for node in ast.walk(tree)), entry
