@@ -77,7 +77,7 @@ router = APIRouter(
 
 
 @router.post("/precheck")
-async def precheck_financial_file(
+def precheck_financial_file(
     case_id: UUID = Query(..., description="REQUIRED: Case ID"),
     file_id: UUID = Query(..., description="REQUIRED: Evidence file ID"),
     window_start: date = Query(
@@ -150,7 +150,7 @@ async def precheck_financial_file(
 
 
 @router.post("/ingest")
-async def ingest_financial_file(
+def ingest_financial_file(
     case_id: UUID = Query(..., description="REQUIRED: Case ID"),
     file_id: UUID = Query(..., description="REQUIRED: Evidence file ID"),
     window_start: date = Query(

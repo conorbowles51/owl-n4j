@@ -35,8 +35,6 @@ NOT_YET_CONVERTED = {
     'routers/database.py:list_entities_status',
     'routers/database.py:list_entities',
     'routers/database.py:get_entity',
-    'routers/financial_ingest.py:precheck_financial_file',
-    'routers/financial_ingest.py:ingest_financial_file',
     'routers/financial_reconciliation.py:run_case_reconciliation',
     'routers/llm_config.py:get_current_config',
     'routers/llm_config.py:set_llm_config',

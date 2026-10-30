@@ -68,7 +68,7 @@ class PrecheckEndpointTests(unittest.IsolatedAsyncioTestCase):
         kw.setdefault("window_end", D(2024, 12, 31))
         kw.setdefault("default_currency", None)
         kw.setdefault("db", "fake-session")
-        return await financial_ingest.precheck_financial_file(**kw)
+        return financial_ingest.precheck_financial_file(**kw)
 
     async def test_it_delegates_to_the_service_and_returns_its_description(self):
         described = result_of(PrecheckOutcome.readable, detected_format="camt053")
@@ -202,7 +202,7 @@ class IngestEndpointTests(unittest.IsolatedAsyncioTestCase):
         kw.setdefault("institution_name", None)
         kw.setdefault("current_user", self.user)
         kw.setdefault("db", FakeSession())
-        return await financial_ingest.ingest_financial_file(**kw)
+        return financial_ingest.ingest_financial_file(**kw)
 
     async def test_it_delegates_to_the_service_and_returns_its_description(self):
         stored = ingestion_of(
