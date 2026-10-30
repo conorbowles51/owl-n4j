@@ -130,3 +130,11 @@ class AgentProvenanceAndPagingInstructionsTests(unittest.TestCase):
                              "doc://filename/page"):
                     self.assertIn(rule, final)
 
+    def test_the_finalizer_is_asked_for_the_answer_rather_than_left_to_continue_its_own_turn(self):
+        for path in ("invoke", "stream"):
+            with self.subTest(path=path):
+                model = AgentFinancialInstructionsTests.run_path(AgentFinancialInstructionsTests(), path)
+                last = model.finalizer_messages[0][-1]
+                self.assertIsInstance(last, HumanMessage)
+                self.assertIn("write the final answer", last.content)
+

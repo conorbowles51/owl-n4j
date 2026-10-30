@@ -134,6 +134,14 @@ _FINANCIAL_ANALYSIS_PROMPT = """Financial investigation:
 - If financial access is unavailable or the run is restricted to the Significant layer, explain the coverage boundary. Do not bypass that boundary through graph queries or another case's data.
 """
 
+# The finalizer's conversation would otherwise end on the agent's own turn; asked to continue it, a model comments on
+# that turn ("Answer succeeded.") instead of answering. This closing request is the turn it answers.
+_FINAL_ANSWER_REQUEST = (
+    "Now write the final answer to my question for the investigator, from the tool results above. Any draft answer "
+    "above is yours: keep its facts, figures, tables and links, and apply the rules. Reply with the answer only, not "
+    "a comment about an earlier reply."
+)
+
 _FINAL_ANSWER_SYSTEM_PROMPT = (
     "Write the final answer from the completed tool results. "
     "Be concise, do not call tools, and mention any artifacts created. "
@@ -675,6 +683,7 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
                 [
                     SystemMessage(content=_FINAL_ANSWER_SYSTEM_PROMPT),
                     *final_messages,
+                    HumanMessage(content=_FINAL_ANSWER_REQUEST),
                 ]
             )
             return {"messages": [response], "final_answer": link_document_citations(message_content_to_text(response.content))}
@@ -927,6 +936,7 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
                 [
                     SystemMessage(content=_FINAL_ANSWER_SYSTEM_PROMPT),
                     *final_messages,
+                    HumanMessage(content=_FINAL_ANSWER_REQUEST),
                 ]
             )
             return {"messages": [response], "final_answer": link_document_citations(message_content_to_text(response.content))}
