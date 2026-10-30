@@ -26,7 +26,7 @@ from collections import OrderedDict
 from types import SimpleNamespace
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from postgres.models.evidence import EvidenceFile
 from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item
@@ -644,6 +644,32 @@ def reader_files(entries):
 # readings and saved records). Cached views are never mutated: a response
 # copies only the entries it returns. Memory is bounded by cases and by
 # entries held in all, and one build per case runs at a time in a process.
+# The queue reads more than the register: unread statement files count PDFs with a review draft or a candidate
+# mapping (auto_read.unread_statement_files), and filled versus waiting and the proposals follow decisions in
+# adjudications (printed holders kept, accounts merged; field_proposals.case_knowledge). Those rows are in its key
+# too (review 2026-10-30: without them a saved queue could outlive such a change; measured 0.01 s on d5b330d1).
+_QUEUE_EXTRA_SQL = text("""
+SELECT 'drafts', count(*), md5(string_agg(evidence_file_id::text || ':' || xmin::text, ',' ORDER BY evidence_file_id))
+  FROM financial_statement_review_drafts WHERE case_id = :case_id
+UNION ALL SELECT 'mappings', count(*), md5(string_agg(id::text || ':' || xmin::text, ',' ORDER BY id))
+  FROM financial_candidate_mappings WHERE case_id = :case_id
+UNION ALL SELECT 'decisions', count(*), md5(string_agg(id::text || ':' || xmin::text, ',' ORDER BY id))
+  FROM adjudications WHERE case_id = :case_id
+""")
+
+
+def queue_fingerprint(session, case_id):
+    """The register's fingerprint plus the rows only the queue reads, or None when not supported."""
+    from services.financial.statement_file_status import status_fingerprint
+    register = status_fingerprint(session, case_id)
+    if register is None:
+        return None
+    if session.get_bind().dialect.name != 'postgresql':
+        return register  # tests that stand a register fingerprint in on other databases
+    extra = sorted(tuple(row) for row in session.execute(_QUEUE_EXTRA_SQL, dict(case_id=str(case_id))))
+    return tuple(sorted(register + tuple(extra)))
+
+
 _CACHE_SIZE = 8
 CACHE_MAX_ENTRIES = 40_000
 _cache = OrderedDict()   # case -> (fingerprint, view)
@@ -662,7 +688,6 @@ _recent_reads = OrderedDict()
 
 def prewarm(factory, *, budget_seconds=20.0, now=None):
     """Rebuild the cached queue of recently read cases whose inputs changed. Returns the cases rebuilt."""
-    from services.financial.statement_file_status import status_fingerprint
     if not PREWARM:
         return []
     now = time.monotonic() if now is None else now
@@ -677,7 +702,7 @@ def prewarm(factory, *, budget_seconds=20.0, now=None):
             break
         with factory() as session:
             try:
-                fingerprint = status_fingerprint(session, UUID(key))
+                fingerprint = queue_fingerprint(session, UUID(key))
                 with _lock:
                     hit = _cache.get(key)
                 if fingerprint is None or (hit and hit[0] == fingerprint):
@@ -886,11 +911,10 @@ def _refresh_in_background(bind, key, case_id):
             return
     def run():
         from sqlalchemy.orm import sessionmaker
-        from services.financial.statement_file_status import status_fingerprint
         try:
             with sessionmaker(bind=bind, autoflush=False)() as session:
                 try:
-                    _build_once(session, key, case_id, status_fingerprint(session, case_id))
+                    _build_once(session, key, case_id, queue_fingerprint(session, case_id))
                 finally:
                     session.rollback()
         except Exception:
@@ -906,8 +930,7 @@ def _view(session, case_id, use_cache=True, note=True, stale_ok=False):
     view is returned at once (refreshing=True) and the current one is built
     in the background; a read never waits behind a rebuild it did not need.
     """
-    from services.financial.statement_file_status import status_fingerprint
-    fingerprint = status_fingerprint(session, case_id) if use_cache else None
+    fingerprint = queue_fingerprint(session, case_id) if use_cache else None
     if fingerprint is None:
         return _compute(session, case_id), False
     key = str(case_id)

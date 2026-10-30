@@ -31,9 +31,7 @@ def store(tmp_path, monkeypatch):
     monkeypatch.setattr(view_cache, '_saved_scope', lambda connection: (dict(format=1, database='db', code='code-1'), 100))
     monkeypatch.setattr(view_cache, 'SAVE_MIN_SECONDS', 0.0)
     state = dict(fingerprint=(('batches', '1', 5), ('items', '2', 7)), builds=0)
-    import importlib
-    status = importlib.import_module('services.financial.statement_file_status')  # the package's same-named function shadows it
-    monkeypatch.setattr(status, 'status_fingerprint', lambda session, case_id: state['fingerprint'])
+    monkeypatch.setattr(review_queue, 'queue_fingerprint', lambda session, case_id: state['fingerprint'])
 
     def compute(session, case_id):
         state['builds'] += 1
@@ -105,3 +103,25 @@ def test_the_warm_up_builds_without_counting_a_read_and_ends_its_transaction(sto
     _new_process()
     review_queue._view(_Session(), case)
     assert store['builds'] == 1
+
+
+def test_a_decision_draft_or_mapping_changes_the_queue_key(monkeypatch):
+    """The queue reads review drafts, candidate mappings and adjudications besides the register's rows (review
+    2026-10-30): a change to any of them is a new key, so neither the memory nor the saved copy is reused."""
+    import importlib
+    status = importlib.import_module('services.financial.statement_file_status')
+    monkeypatch.setattr(status, 'status_fingerprint', lambda session, case_id: (('batches', 1, 'x'),))
+    extra = {'rows': [('decisions', 3, 'a'), ('drafts', 0, None), ('mappings', 0, None)]}
+
+    class Session:
+        def get_bind(self):
+            return SimpleNamespace(dialect=SimpleNamespace(name='postgresql'))
+
+        def execute(self, statement, parameters):
+            assert {'financial_statement_review_drafts', 'financial_candidate_mappings', 'adjudications'} <= set(
+                str(statement).split())
+            return list(extra['rows'])
+    before = review_queue.queue_fingerprint(Session(), uuid4())
+    extra['rows'] = [('decisions', 4, 'b'), ('drafts', 0, None), ('mappings', 0, None)]
+    assert review_queue.queue_fingerprint(Session(), uuid4()) != before
+    assert ('batches', 1, 'x') in before
