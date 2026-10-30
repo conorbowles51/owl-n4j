@@ -82,6 +82,25 @@ class BulkStatementDetailsTests(TestCase):
             self.assertEqual({r.id: (r.amount_minor, r.transaction_date) for r in db.scalars(select(FinancialTransaction))}, payments)
             self.assertEqual(db.get(FinancialSourceDocument, UUID(receipt['source_document_id'])).metadata_['statement_import_original'], original)
 
+    def test_a_number_one_statement_prints_is_never_applied_to_a_statement_printing_another(self):
+        # 2026-09-23 BNB2: one bulk edit gave the MONETA and the ARRENDO Kapital files MONETA's number.
+        self.f.confirm()
+        before = self.listing()
+        for value in ('TEST123', 'TEST999'):
+            with self.assertRaisesRegex(PdfMappingError, r'prints account 456; the number being applied is TEST123'
+                                        if value == 'TEST123' else 'prints account (123|456); the number being applied is TEST999'):
+                self.save(self.request(dict(account_number=value)))
+        self.assertEqual(self.listing(), before)
+        # Each statement's own printed number, and every other field, still go through.
+        self.save(self.request(dict(institution='Reviewed Bank')))
+        self.assertEqual({row['values']['institution'] for row in self.listing()['items']}, {'Reviewed Bank'})
+
+    def test_the_printed_number_inside_a_printed_clabe_is_the_same_account(self):
+        with self.f.SessionLocal() as db:
+            self.assertTrue(service._same_number(db, self.f.case.id, '0110274593', {'012790001102745939'}))
+            self.assertTrue(service._same_number(db, self.f.case.id, '011-027-4593', {'0110274593'}))
+            self.assertFalse(service._same_number(db, self.f.case.id, '194-99208-001-8', {'1949929200016', '128180000000109664'}))
+
     def test_saved_retry_returns_same_receipt_and_no_duplicate_history(self):
         first = self.f.confirm(); self.import_second()
         request = self.request()

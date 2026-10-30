@@ -538,6 +538,56 @@ def _no_activity_plan(target, state, after):
     return None, admission['revision'], source_check
 
 
+def _printed_numbers(session, case_id, target, state, cache):
+    """The account number and CLABE the statement's own reading prints (the reader's values, before any person's
+    edit), as digit strings; empty when the reading names no number. A saved statement whose stored reading names
+    none is read again: its heading may print one the reading of the day missed (2026-09-23, BNB2 Kapital)."""
+    from services.financial.accounts import CLABE_ALIAS, digits_only
+    proposal = state.get('proposal')
+    if proposal is None and target.source_id:
+        document = session.get(Source, target.source_id)
+        meta = document.metadata_ or {}
+        found = {digits_only(((meta.get('statement_import_original') or {}).get('metadata') or {}).get(key))
+                 for key in ('account_number', CLABE_ALIAS)} - {''}
+        if found:
+            return found
+        try:
+            proposal = read_statement_import(session, case_id=case_id, evidence_file_id=target.file_id,
+                statement_id=meta.get('statement_import_statement_id') or None, _cache=cache,
+                _include_period_checks=False, _include_duplicate_disposition=False)
+        except PdfMappingError:
+            return set()
+    elif proposal is None:
+        try:
+            proposal = _load(session, case_id, target, cache)[1].get('proposal')
+        except PdfMappingError:
+            return set()
+    metadata = (proposal or {}).get('metadata') or {}
+    return {digits_only(metadata.get(key)) for key in ('account_number', CLABE_ALIAS)} - {''}
+
+
+def _same_number(session, case_id, value, printed):
+    """Whether ``value`` is the account the statement prints: the printed number itself, the account inside a
+    printed CLABE (11 digits after bank and branch), or the printed number of the case's account whose CLABE is
+    the printed one."""
+    from postgres.models.financial import FinancialAccount
+    from services.financial.accounts import CLABE_ALIAS, clabe_alias, digits_only
+    digits = digits_only(value)
+    if not digits or digits in printed:
+        return True
+    clabes = {number for number in printed if clabe_alias(number)}
+    if any(number[6:17].lstrip('0') == digits.lstrip('0') for number in clabes):
+        return True
+    return bool(clabes) and session.scalar(select(FinancialAccount.id).where(FinancialAccount.case_id == case_id,
+        FinancialAccount.identifier_normalised == digits,
+        FinancialAccount.metadata_[CLABE_ALIAS].as_string().in_(clabes)).limit(1)) is not None
+
+
+NUMBER_DIFFERS = ('{filename} prints account {printed}; the number being applied is {value}. A bulk change never gives '
+                  'a statement a number its own page does not print: correct this statement on its own, with your '
+                  'reason, if its page is misread.')
+
+
 def _plan(session, case_id, request, *, saving=False):
     if len({_key(t) for t in request.targets}) != len(request.targets):
         raise PdfMappingError('Select each statement once.', 422)
@@ -577,6 +627,11 @@ def _plan(session, case_id, request, *, saving=False):
                              and refreshed[key]['current'] and refreshed[key]['current'] != changes[key]]
         if after.get('period_start') and after.get('period_end') and after['period_start'] > after['period_end']:
             raise PdfMappingError(f'{row["filename"]}: statement start must be on or before statement end.', 422)
+        if 'account_number' in changed and not changed['account_number'].get('confirmed'):
+            printed = _printed_numbers(session, case_id, target, state, cache)
+            if printed and not _same_number(session, case_id, after['account_number'], printed):
+                raise PdfMappingError(NUMBER_DIFFERS.format(filename=row['filename'], value=after['account_number'],
+                                                            printed=' / '.join(sorted(printed))), 409)
         excluded_reason = None
         if unprinted:
             from services.financial.import_issues import calendar_date
