@@ -230,7 +230,7 @@ def _new_identity(session, case_id, account, after, alias=None):
     return key
 
 
-def _edit_statement(session, case_id, document, overrides, actor, resolve_account=False):
+def _edit_statement(session, case_id, document, overrides, actor, resolve_account=False, onto_account=None):
     """One statement through the ordinary details edit (history, checks,
     reconcile). ``overrides`` are the corrected fields; the statement keeps its
     own spelling of the others."""
@@ -244,7 +244,7 @@ def _edit_statement(session, case_id, document, overrides, actor, resolve_accoun
     request = StatementDetailsRequest(expected_revision=view['revision'], holder=values['holder'],
         account_number=values[NUMBER], institution=values['institution'], account_clabe=values['account_clabe'])
     result = update_statement_details(session, case_id=case_id, source_id=document.id, request=request,
-        actor=actor, commit=False, resolve_account=resolve_account)
+        actor=actor, commit=False, resolve_account=resolve_account, onto_account=onto_account)
     changed = [key for key, _ in FIELDS] + [key for key in (NUMBER, 'account_clabe') if key in overrides]
     return dict(source_document_id=str(document.id), before={key: details.get(key, '') for key in changed},
                 from_account_id=view['account_id'], to_account_id=result['account_id'])
@@ -277,15 +277,24 @@ def _apply(session, *, case_id, account, before, after, reason, actor, now, entr
             entry['not_edited'].append(dict(source_document_id=str(document.id),
                 reason='The PDF holds several statement periods; its account record is corrected, its own details are not.'))
             continue
-        changed = _edit_statement(session, case_id, document, overrides, actor)
+        changed = _edit_statement(session, case_id, document, overrides, actor, onto_account=account)
         if changed:
             entry['statements'].append(changed)
     for other in _split_off(session, case_id, account, after):
         for document, period in _statements(session, case_id, other, lock=True):
             if _period_counts(session, case_id, [(document, period)]).get(document.id) != 1:
                 continue
+            # A statement of an account found to be this one joins it, keeping its own spelling of the holder and
+            # bank; one that would resolve anywhere else stays where it is (never moved to a third account).
+            savepoint = session.begin_nested()
             moved = _edit_statement(session, case_id, document, {'account_clabe': alias} if alias else {}, actor,
-                                    resolve_account=True)
+                                    resolve_account=True, onto_account=account)
+            if moved and moved['to_account_id'] != str(account.id):
+                savepoint.rollback()
+                entry.setdefault('not_rejoined', []).append(dict(source_document_id=str(document.id),
+                    account_id=str(other.id), reason="Its own details name another account; it stays where it is."))
+                continue
+            savepoint.commit()
             if moved and moved['to_account_id'] == str(account.id):
                 entry['rejoined'].append(moved)
                 other_meta = deepcopy(other.metadata_ or {})
@@ -374,7 +383,7 @@ def undo_account_details(session, *, case_id, account_id, request, actor):
             document = session.get(FinancialSourceDocument, UUID(item['source_document_id']))
             if document is None or document.status != 'admitted':
                 continue
-            changed = _edit_statement(session, case_id, document, item['before'], actor)
+            changed = _edit_statement(session, case_id, document, item['before'], actor, onto_account=account)
             if changed:
                 entry['statements'].append(changed)
         for source_id, item in rejoined.items():

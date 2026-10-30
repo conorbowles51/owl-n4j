@@ -173,10 +173,15 @@ def read_statement_details(session, *, case_id, source_id, include_positions=Fal
     return result
 
 
-def update_statement_details(session, *, case_id, source_id, request, actor, commit=True, resolve_account=False):
+def update_statement_details(session, *, case_id, source_id, request, actor, commit=True, resolve_account=False,
+                             onto_account=None):
     """``resolve_account`` resolves the statement's account from its details
     even when they are unchanged: an account-wide correction uses it to re-join
-    a statement an earlier edit split off once its account agrees again."""
+    a statement an earlier edit split off once its account agrees again.
+    ``onto_account``: the account an account-wide correction is correcting. A
+    statement whose number (or CLABE), currency and type are that account's is
+    placed on it although it spells the holder or bank its own way: its own
+    spelling stays in its details, and it is never moved to a third account."""
     try:
         document, period, account = _load(session, case_id, source_id, lock=True)
         before = _view(document, period, account)
@@ -239,14 +244,18 @@ def update_statement_details(session, *, case_id, source_id, request, actor, com
                 draft = AccountDraft.unidentified(distinguisher='statement-details:' + str(document.id) + ':' + _digest(fields), **fields)
             existing = session.scalar(select(FinancialAccount).where(
                 FinancialAccount.case_id == case_id, FinancialAccount.identity_key == draft.identity().key))
-            if existing is not None and (any(_fold(getattr(existing, key)) != _fold(getattr(draft, key))
+            if onto_account is not None and onto_account.case_id == case_id and _same_number(onto_account, draft) \
+                    and (onto_account.currency, onto_account.account_type) == (draft.currency, draft.account_type):
+                draft = existing = None
+            elif existing is not None and (any(_fold(getattr(existing, key)) != _fold(getattr(draft, key))
                     for key in FOLDED_ACCOUNT_FIELDS) or not _same_number(existing, draft)
                     or any(getattr(existing, key) != getattr(draft, key) for key in ('currency', 'account_type'))):
                 # The ingestion writer deliberately retains conflicting values.
                 # A reviewed correction must instead resolve to its exact saved
                 # details without overwriting other statements sharing an account.
                 draft = AccountDraft.unidentified(distinguisher='statement-details:' + str(document.id) + ':' + _digest(fields), **fields)
-            target = record_account(session, SimpleNamespace(case_id=case_id, run_id=document.ingestion_run_id), draft)
+            target = onto_account if draft is None else record_account(
+                session, SimpleNamespace(case_id=case_id, run_id=document.ingestion_run_id), draft)
             # Keep other statements' identities untouched. Corrections belong
             # to this source; a matching identified account can be reused.
             account = target

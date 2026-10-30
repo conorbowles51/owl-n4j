@@ -292,6 +292,45 @@ class AccountNumberCorrectionTests(AccountDetailsCorrectionTests):
         self.assertEqual(self.accounts_of(self.first, self.second), {self.account_id})
 
 
+    def test_a_statement_saved_with_its_own_holder_spelling_stays_on_the_account_when_its_number_is_corrected(self):
+        # The account keeps the first spelling of the holder it was given; its statements print another (the
+        # ingestion writer records such a spelling as a conflict and never splits on it). The account-wide number
+        # correction must not split those statements off onto accounts of their own.
+        holder = self.details(self.first)['details']['holder']
+        with self.f.SessionLocal() as db:
+            db.get(FinancialAccount, self.account_id).holder_name = holder + ' S.A. DE C.V.'
+            db.commit()
+        result = self.correct(account_number='194-98075-001-8', reason='Page 1 prints 194-98075-001-8 beside the CLABE')
+        self.assertEqual(self.accounts_of(self.first, self.second), {self.account_id})
+        for source in (self.first, self.second):
+            details = self.details(source)['details']
+            self.assertEqual((details['holder'], details['account_number'], details['account_clabe']),
+                             (holder, '194-98075-001-8', CLABE))
+        self.undo(result['correction']['id'])
+        self.assertEqual(self.accounts_of(self.first, self.second), {self.account_id})
+        self.assertEqual(self.details(self.second)['details']['account_number'], CLABE)
+        self.assertEqual(len(result['correction']['statements']), 2)
+
+    def test_a_statement_spelling_the_bank_its_own_way_joins_with_its_account_and_goes_nowhere_else(self):
+        # A printed-number account whose record spells the bank as the account does, holding a statement whose own
+        # details spell it the long way (the record kept the first spelling it was given). The correction joins
+        # that statement to the corrected account; it is never moved to an account of its own.
+        view = self.details(self.second)
+        bank = view['details']['institution']
+        with self.f.SessionLocal() as db:
+            update_statement_details(db, case_id=self.f.case.id, source_id=self.second, actor=self.f.actor,
+                request=StatementDetailsRequest(expected_revision=view['revision'], holder=view['details']['holder'],
+                    account_number='194-98075-001-8', institution=bank + ', S.A., INSTITUCION DE BANCA MULTIPLE'))
+        split = UUID(self.details(self.second)['account_id'])
+        self.assertNotEqual(split, self.account_id)
+        with self.f.SessionLocal() as db:
+            db.get(FinancialAccount, split).institution_name = bank
+            db.commit()
+        result = self.correct(account_number='194-98075-001-8', reason='Page 1 prints 194-98075-001-8 beside the CLABE')
+        self.assertEqual([s['source_document_id'] for s in result['correction']['rejoined']], [str(self.second)])
+        self.assertEqual(self.accounts_of(self.first, self.second), {self.account_id})
+        self.assertEqual(self.details(self.second)['details']['institution'], bank + ', S.A., INSTITUCION DE BANCA MULTIPLE')
+
 class AccountDetailsRouteTests(TestCase):
     def test_routes_read_preview_save_and_undo_with_edit_access_for_changes(self):
         from routers.financial_statement_import import router
