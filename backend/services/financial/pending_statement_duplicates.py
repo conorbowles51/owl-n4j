@@ -236,6 +236,23 @@ def _candidate(session, case_id, entry, cache):
     return file, proposal, request
 
 
+# A saved copy is compared as its statement now stands: the holder, number, bank and currency corrected in its
+# statement details, not the values it was first saved with (as admitted_statement_duplicates.CORRECTED_DETAILS).
+# BNB2 2026-10-30: the account number corrections (CLABE -> printed number) left 402 saved periods whose saved
+# request still carried the CLABE; a byte-identical copy reading the printed number was then not matched to its saved
+# statement, and the rule found no duplicate. Only the identity compared changes; review edits are compared as saved.
+# Reverse: LOUPE_FINANCIAL_DUPLICATE_CORRECTED_DETAILS=0.
+def _standing(session, entry, request):
+    from services.financial.admitted_statement_duplicates import CORRECTED_DETAILS
+    if not CORRECTED_DETAILS or not entry.get('source_document_id'):
+        return request
+    from services.financial.statement_details import saved_currency, saved_details
+    source = session.get(FinancialSourceDocument, UUID(entry['source_document_id']))
+    if source is None:
+        return request
+    return {**request, **saved_details(source), 'currency': saved_currency(source) or request.get('currency')}
+
+
 def _printed_copy_fields(own, other):
     """What two copies of one printed statement share besides their money."""
     fields = ['account_reference', 'period_start', 'period_end', 'currency', 'account_type', 'payments_and_balances']
@@ -559,14 +576,19 @@ def apply_duplicate_disposition(session, *, case_id, file, proposal, request=Non
                 conflicts.append(entry)
             continue
         other_file, other_proposal, other_request = loaded
+        standing = _standing(session, entry, other_request)
         reviewed = bool((other_proposal.get('saved_review') or {}).get('request')) or bool(other_request.get('coverage_review_reason'))
         same_pages = by_pages = entry['file_id'] in documents and _page_copy(proposal, other_proposal)
         if entry['file_id'] in documents and not same_pages and own_key:
             # Two readers can group one printed statement's pages differently.
             # In the same document, the one statement each reading prints for
             # this account reference and period, on shared pages, is that statement.
-            other_key = _printed_key(scope({**other_request, 'account_type': ''}))
-            same_pages = bool(other_key == own_key and printed_counts[(entry['file_id'], own_key)] == 1
+            # A saved copy whose details keep a CLABE beside its printed number (an account number correction keeps
+            # the CLABE it was saved with) prints both: a reading of either is that statement's reference.
+            other_keys = {_printed_key(scope({**standing, 'account_type': ''}))}
+            if standing is not other_request:
+                other_keys.add(_printed_key(scope({**standing, 'account_clabe': '', 'account_type': ''})))
+            same_pages = bool(own_key in other_keys and printed_counts[(entry['file_id'], own_key)] == 1
                 and printed_counts[(str(file.id), own_key)] <= 1
                 and _section_pages(proposal) & _section_pages(other_proposal))
         if same_pages:
@@ -608,7 +630,7 @@ def apply_duplicate_disposition(session, *, case_id, file, proposal, request=Non
                 _edited(other_proposal, other_request), _proved(other_proposal, other_request)))
             continue
         # A corrected candidate identity must still match its current reading/review.
-        other_scope = scope({**other_request, 'account_type': other_proposal.get('metadata', {}).get('account_type') or ''})
+        other_scope = scope({**standing, 'account_type': other_proposal.get('metadata', {}).get('account_type') or ''})
         same_bytes = bool(file.sha256 and file.sha256 == other_file.sha256)
         strong_identity = same_statement(own, other_scope)
         printed_copy = same_printed_period(own, other_scope)

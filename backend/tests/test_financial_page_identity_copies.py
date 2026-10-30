@@ -284,6 +284,41 @@ class PageCopyTests(TestCase):
         disposition = self.assert_one_statement(self.primary, copy)
         self.assertIn('account_reference', disposition['matched_fields'])
 
+    def test_a_copy_reading_the_printed_number_of_a_statement_corrected_from_its_clabe_is_one_statement(self):
+        # BNB2 2026-10-30 (12 ARRENDO INTERCAM DIC 2022.pdf MXN): the statement was saved under its CLABE, then its
+        # number corrected to the printed one with the CLABE kept; a second production of the same pages, read with
+        # the printed number only and its pages grouped differently, was found "no duplicate" (compared on the
+        # CLABE alone) and would have counted the period twice.
+        from services.financial import account_details_correction as correction
+        from services.financial.statement_details import read_statement_details
+        clabe, printed = '128180000000238632', '194-99292-001-6'
+        real_read = statement_import.read_statement_import
+
+        def read(session, **kwargs):
+            proposal = real_read(session, **kwargs)
+            if proposal.get('metadata'):
+                number = clabe if str(kwargs.get('evidence_file_id')) == str(self.primary.id) else printed
+                proposal = {**proposal, 'metadata': {**proposal['metadata'], 'account_number': number}}
+                if str(kwargs.get('evidence_file_id')) != str(self.primary.id):
+                    proposal['statement_page_numbers'] = [1, 2]
+                    proposal['statement_choices'] = [dict(choice, page_numbers=[1, 2]) for choice in proposal.get('statement_choices') or []]
+            return proposal
+        with patch.multiple(statement_import, read_statement_import=read), patch.object(batches, 'read_statement_import', read):
+            self.drain(self.batch(self.primary))
+            (source,), _ = self.saved(self.primary)
+            with self.f.SessionLocal() as db:
+                self.assertEqual(read_statement_details(db, case_id=self.f.case.id, source_id=source.id)['details']['account_number'], clabe)
+                account_id = UUID(read_statement_details(db, case_id=self.f.case.id, source_id=source.id)['account_id'])
+                state = correction.account_details_state(db, case_id=self.f.case.id, account_id=account_id)
+                correction.save_account_details(db, case_id=self.f.case.id, account_id=account_id, actor=self.f.actor,
+                    request=correction.AccountDetailsRequest(expected_revision=state['revision'], account_number=printed,
+                                                             reason='Page 1 prints the account number beside the CLABE'))
+                details = read_statement_details(db, case_id=self.f.case.id, source_id=source.id)['details']
+                self.assertEqual((details['account_number'], details.get('account_clabe')), (printed, clabe))
+            copy = self.copy()
+            self.drain(self.batch(copy))
+        self.assert_one_statement(self.primary, copy)
+
     def test_without_page_identity_the_differently_read_copy_was_saved_twice(self):
         # The defect r10 fixed with page identity (r9-engine-santander finding 2)
         # and r15 with the printed facts: with both rules off it is saved twice,
