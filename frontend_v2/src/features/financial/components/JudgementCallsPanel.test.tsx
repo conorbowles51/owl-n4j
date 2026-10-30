@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MemoryRouter } from "react-router-dom"
 import { expect, it, vi } from "vitest"
@@ -74,4 +74,22 @@ it("keeps search, every filter row with counts, rule types under a type, the raw
   expect(rules.getAttribute("aria-expanded")).toBe("false")
   fireEvent.click(rules)
   expect(rules.getAttribute("aria-expanded")).toBe("true")
+})
+
+it("shows beside each rule type how often people confirmed and corrected it across all cases", async () => {
+  const { fetchAPI } = await import("@/lib/api-client")
+  vi.mocked(fetchAPI).mockImplementation(async (url: string) => (String(url).includes("/judgements/rules") ? {
+    case: [],
+    all_cases: [{ rule_id: "L8.unprinted_opening", label: "Opening worked back", source: "fin-queue3 L8", strength: "inferred",
+      open: 30, confirmed: 5, corrected: 2, total: 37 }],
+  } : { case: [], all_cases: [] }) as never)
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter initialEntries={["/?jType=balance"]}>
+        <JudgementCallsPanel caseId="case-a" />
+      </MemoryRouter>
+    </QueryClientProvider>
+  )
+  await waitFor(() => expect(screen.getByLabelText("Rule types in this type").textContent)
+    .toContain("Opening worked back 37 (all cases: 5 looks right, 2 corrected)"))
 })

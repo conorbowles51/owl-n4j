@@ -133,11 +133,23 @@ export function JudgementCallsPanel({ caseId }: { caseId: string }) {
   const caseTotal = Number(counts.data?.case.total || 0)
   const checked = Number(counts.data?.case.confirmed || 0) + Number(counts.data?.case.corrected || 0)
   const checkFirst = Number(counts.data?.case.priority_1 || 0)
+  // Each rule's track record across every case: how often a person confirmed it and how often corrected it.
+  const track = useQuery({
+    queryKey: ["financial-judgements", caseId, "rules"],
+    queryFn: () => processorRules(caseId),
+    retry: false,
+    refetchOnWindowFocus: false,
+    enabled: Boolean(type),
+  })
   // The rule types inside the chosen type, with their case-wide counts.
   const typeRules = type
     ? (page?.rules || [])
         .filter(([, , kind]) => kind === type)
-        .map(([rule, label]) => ({ rule, label, total: counts.data?.rules.find((item) => item.rule_id === rule)?.total ?? 0 }))
+        .map(([rule, label]) => {
+          const record = track.data?.all_cases.find((item) => item.rule_id === rule)
+          return { rule, label, total: counts.data?.rules.find((item) => item.rule_id === rule)?.total ?? 0,
+            confirmed: record?.confirmed, corrected: record?.corrected }
+        })
     : []
   const total = page?.total || 0
   const shown = page?.items.length || 0
@@ -225,7 +237,10 @@ export function JudgementCallsPanel({ caseId }: { caseId: string }) {
         <p className="pl-[5.5rem] text-[13px] text-muted-foreground" aria-label="Rule types in this type">
           In this type (whole case):{" "}
           {typeRules.length
-            ? typeRules.map((item) => `${item.label} ${item.total}`).join(" · ")
+            ? typeRules
+                .map((item) => `${item.label} ${item.total}` + (item.confirmed === undefined ? ""
+                  : ` (all cases: ${item.confirmed} looks right, ${item.corrected} corrected)`))
+                .join(" · ")
             : "no rule types listed"}
         </p>
       )}
