@@ -230,3 +230,13 @@ def test_the_warm_up_passes_every_route_parameter_with_the_value_fastapi_gives_a
                             lambda _name=name, **kw: seen.setdefault(_name, {k: v for k, v in kw.items() if k not in ('db', 'case_id')}))
     view_warmup._warm_cases()
     assert seen == dict(calls)
+
+
+def test_view_reuse_and_warm_up_lines_reach_the_service_journal():
+    """Under uvicorn the root logger has no handler, so a plain module logger's INFO lines were dropped in the
+    workers: the journal could not say whether a slow first load computed or reused a view."""
+    import logging
+    from services.financial import view_cache
+    for module in (view_cache, view_warmup):
+        assert module.logger.isEnabledFor(logging.INFO)
+        assert any(getattr(handler, '_loupe_journal', False) for handler in module.logger.handlers)

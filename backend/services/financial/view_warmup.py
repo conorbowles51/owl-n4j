@@ -21,7 +21,10 @@ import logging
 import os
 import time
 
-logger = logging.getLogger(__name__)
+# Its INFO lines (served unchanged / from the saved copy / computed, with times) reach the service journal, so a
+# slow first load can be explained from the journal.
+from services.financial.journal import journal  # noqa: E402
+logger = journal(__name__)
 
 WARM_DELAY_SECONDS = 20
 

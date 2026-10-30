@@ -43,7 +43,10 @@ from dataclasses import dataclass, field
 from sqlalchemy import event, text
 from sqlalchemy.engine import Engine
 
-logger = logging.getLogger(__name__)
+# Its INFO lines (served unchanged / from the saved copy / computed, with times) reach the service journal, so a
+# slow first load can be explained from the journal.
+from services.financial.journal import journal  # noqa: E402
+logger = journal(__name__)
 
 MAX_ENTRY_BYTES = 96 * 1024 * 1024
 MAX_TOTAL_BYTES = 384 * 1024 * 1024
