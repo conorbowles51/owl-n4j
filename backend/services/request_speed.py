@@ -9,7 +9,18 @@ Postgres (migration ``20261028_request_speed``):
   histogram (``BUCKET_EDGES_MS``, 15% wide buckets) is what makes p50 and p95 mergeable across
   flushes, both workers and any span of hours; ``p50_ms``/``p95_ms`` are kept on the row too.
 * ``request_speed_slow``: one row per request over ``SLOW_ROW_SECONDS``, kept for
-  ``SLOW_KEEP_DAYS`` days.
+  ``SLOW_KEEP_DAYS`` days. ``at`` is the completion time (queued after the last byte);
+  ``started_at`` is when the request reached this worker (``pid``). ``pg_ms``/``pg_count`` are
+  the Postgres statement time and count inside the request, ``gzip_ms`` the compression time and
+  ``cache`` the Financial view cache outcome (hit, saved, miss), so a slow request can be split
+  into database, cache and everything else, and joined by minute to ``request_speed_loop_lag``
+  (this worker's event-loop lag) and ``host_load_minute`` (scripts/host_recorder.py).
+* ``request_speed_pages``: one row per page view from the browser (every route), with
+  navigation, resource, long-task, memory and connection figures, kept ``PAGE_KEEP_DAYS``.
+* ``request_speed_loop_lag``: per worker and minute, how late the event loop woke a timer.
+
+Every /api response also carries a ``Server-Timing`` header (``app``: time to the response
+headers, ``pg``, ``gz``, ``cache``, ``w``: the worker pid) for the browser's devtools.
 
 A request over ``SLOW_LOG_SECONDS`` also logs one WARNING line. Only the route template,
 the case id and the person's id are kept: never a raw path, another query value or an email
@@ -36,6 +47,8 @@ FLUSH_SECONDS = 15
 SLOW_ROW_SECONDS = 2.0
 SLOW_LOG_SECONDS = 5.0
 SLOW_KEEP_DAYS = 30
+PAGE_KEEP_DAYS = 90
+LAG_KEEP_DAYS = 90
 QUEUE_LIMIT = 50000
 MAX_PENDING_KEYS = 20000
 UNMATCHED = '(no matching route)'
@@ -48,7 +61,13 @@ BUCKET_COUNT = len(BUCKET_EDGES_MS) + 1
 _UUID = re.compile(r'^[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}$')
 
 _queue = collections.deque(maxlen=QUEUE_LIMIT)
+_pages = collections.deque(maxlen=QUEUE_LIMIT)  # page-view detail rows
+_lag = collections.deque(maxlen=QUEUE_LIMIT)  # finished minutes of event-loop lag
+# One dict per request: the person (sign-in check), Postgres time and count, compression time and
+# cache state. Threads started for the request (sync dependencies and handlers) copy the context,
+# so they add to the same dict.
 _person = ContextVar('request_speed_person', default=None)
+CACHE_STATES = ('hit', 'saved', 'miss')
 
 
 def bucket_of(ms):
@@ -92,6 +111,66 @@ def note_person(email):
         holder['email'] = email
 
 
+def note_cache(state):
+    """Called by a cache serving this request: hit, saved (from the saved copy) or miss. A miss wins."""
+    holder = _person.get()
+    if holder is not None and state in CACHE_STATES:
+        if holder.get('cache') != 'miss':
+            holder['cache'] = state
+
+
+def note_gzip(seconds):
+    holder = _person.get()
+    if holder is not None:
+        holder['gzip_ms'] = holder.get('gzip_ms', 0.0) + seconds * 1000
+
+
+_SQL_TIMED = []
+
+
+def install_sql_timing():
+    """Time every Postgres statement inside a request (one listener pair for every engine, once).
+    Outside a request it costs one context-variable lookup per statement."""
+    if _SQL_TIMED:
+        return
+    from sqlalchemy import event
+    from sqlalchemy.engine import Engine
+
+    def before(conn, cursor, statement, parameters, context, executemany):
+        if _person.get() is not None:
+            conn.info.setdefault('request_speed_started', []).append(time.perf_counter())
+
+    def after(conn, cursor, statement, parameters, context, executemany):
+        holder = _person.get()
+        started = conn.info.get('request_speed_started')
+        if holder is None or not started:
+            return
+        holder['pg_ms'] = holder.get('pg_ms', 0.0) + (time.perf_counter() - started.pop()) * 1000
+        holder['pg_n'] = holder.get('pg_n', 0) + 1
+
+    def failed(context):
+        started = context.connection.info.get('request_speed_started') if context.connection is not None else None
+        if started:
+            started.pop()
+
+    event.listen(Engine, 'before_cursor_execute', before)
+    event.listen(Engine, 'after_cursor_execute', after)
+    event.listen(Engine, 'handle_error', failed)
+    _SQL_TIMED.append((before, after, failed))
+
+
+def server_timing(app_ms, holder):
+    parts = [f'app;dur={app_ms:.1f}']
+    if holder.get('pg_n'):
+        parts.append(f'pg;dur={holder["pg_ms"]:.1f};desc="{holder["pg_n"]} statements"')
+    if holder.get('gzip_ms'):
+        parts.append(f'gz;dur={holder["gzip_ms"]:.1f}')
+    if holder.get('cache'):
+        parts.append(f'cache;desc={holder["cache"]}')
+    parts.append(f'w;desc={os.getpid()}')
+    return ', '.join(parts).encode('latin-1')
+
+
 def _template(scope):
     route = scope.get('route')
     template = getattr(route, 'path_format', None) or getattr(route, 'path', None)
@@ -109,27 +188,33 @@ def _case(scope):
     return case_of(values[0]) if values else None
 
 
-def enqueue(kind, method, route, case_id, status, ms, size, email, at=None):
-    """Append one measurement. Never raises, never blocks."""
+def enqueue(kind, method, route, case_id, status, ms, size, email, at=None, extra=None):
+    """Append one measurement (``extra``: started_at, pid, pg_ms, pg_count, gzip_ms, cache). Never raises, never blocks."""
     try:
-        _queue.append((at or time.time(), kind, method, route, case_id, status, float(ms), int(size or 0), email))
+        _queue.append((at or time.time(), kind, method, route, case_id, status, float(ms), int(size or 0), email, extra))
         _writer.ensure_started()
     except Exception:  # pragma: no cover - a full deque drops the oldest; nothing else can fail here
         pass
 
 
 class RequestSpeedMiddleware:
-    """Pure ASGI; times every http request under ``prefix`` from arrival to the last body byte sent."""
+    """Pure ASGI; times every http request under ``prefix`` from arrival to the last body byte sent.
+
+    Arrival is when this worker's event loop first runs the request: time waiting in the socket
+    backlog while the loop is blocked, the frontend proxy and the browser's own queue are not in it
+    (the page rows and ``request_speed_loop_lag`` measure those)."""
 
     def __init__(self, app, prefix='/api'):
         self.app = app
         self.prefix = prefix
+        install_sql_timing()
 
     async def __call__(self, scope, receive, send):
         if scope.get('type') != 'http' or not scope.get('path', '').startswith(self.prefix):
             await self.app(scope, receive, send)
             return
         started = time.perf_counter()
+        started_at = time.time()
         outcome = [None, 0, False]
         person = {}
         token = _person.set(person)
@@ -141,6 +226,11 @@ class RequestSpeedMiddleware:
                 for name, value in message.get('headers') or ():
                     if name.lower() == b'content-type' and value.startswith(b'text/event-stream'):
                         outcome[2] = True
+                try:
+                    timing = server_timing((time.perf_counter() - started) * 1000, person)
+                    message = {**message, 'headers': [*(message.get('headers') or ()), (b'server-timing', timing)]}
+                except Exception:  # pragma: no cover - a header can never break a response
+                    pass
             elif kind == 'http.response.body':
                 outcome[1] += len(message.get('body') or b'')
             await send(message)
@@ -161,8 +251,10 @@ class RequestSpeedMiddleware:
                 # A case only for a matched route and a signed-in person: an anonymous caller
                 # cannot create rows for made-up cases.
                 case = _case(scope) if route != UNMATCHED and person.get('email') else None
+                extra = dict(started_at=started_at, pid=os.getpid(), pg_ms=person.get('pg_ms'),
+                             pg_count=person.get('pg_n'), gzip_ms=person.get('gzip_ms'), cache=person.get('cache'))
                 enqueue('api', method, route + STREAM if streamed else route, case, outcome[0] or 499,
-                        seconds * 1000, outcome[1], person.get('email'))
+                        seconds * 1000, outcome[1], person.get('email'), extra=extra)
                 if seconds > SLOW_LOG_SECONDS and not streamed:
                     log.warning('Slow request: %s %s case %s %.1f s (status %s)', method, route,
                                 case[:8] if case else '-', seconds, outcome[0] or 499)
@@ -207,7 +299,9 @@ class Group:
 def aggregate(items, user_ids):
     """(groups keyed by hour/kind/method/route/case/user, slow rows) from queued tuples."""
     groups, slow = {}, []
-    for at, kind, method, route, case, status, ms, size, email in items:
+    for item in items:
+        at, kind, method, route, case, status, ms, size, email = item[:9]
+        extra = (item[9] if len(item) > 9 else None) or {}
         user = user_ids.get(email) if email else None
         key = (hour_of(at), kind, method, route, case, user)
         group = groups.get(key)
@@ -215,8 +309,12 @@ def aggregate(items, user_ids):
             group = groups[key] = Group()
         group.add(ms, size, status)
         if ms > SLOW_ROW_SECONDS * 1000 and not route.endswith(STREAM):
+            begun = extra.get('started_at')
             slow.append(dict(at=datetime.fromtimestamp(at, tz=timezone.utc), kind=kind, method=method, route=route,
-                             case_id=case, user_id=user, status=status, duration_ms=ms, bytes=size))
+                             case_id=case, user_id=user, status=status, duration_ms=ms, bytes=size,
+                             started_at=datetime.fromtimestamp(begun, tz=timezone.utc) if begun else None,
+                             pid=extra.get('pid'), pg_ms=extra.get('pg_ms'), pg_count=extra.get('pg_count'),
+                             gzip_ms=extra.get('gzip_ms'), cache=extra.get('cache')))
     return groups, slow
 
 
@@ -244,13 +342,33 @@ UPDATE request_speed_hourly SET p50_ms = :p50_ms, p95_ms = :p95_ms
 WHERE id = :id AND buckets = CAST(:buckets AS integer[])
 '''
 INSERT_SLOW = '''
-INSERT INTO request_speed_slow (at, kind, method, route, case_id, user_id, status, duration_ms, bytes)
-VALUES (:at, :kind, :method, :route, CAST(:case_id AS uuid), CAST(:user_id AS uuid), :status, :duration_ms, :bytes)
+INSERT INTO request_speed_slow (at, kind, method, route, case_id, user_id, status, duration_ms, bytes,
+                                started_at, pid, pg_ms, pg_count, gzip_ms, cache)
+VALUES (:at, :kind, :method, :route, CAST(:case_id AS uuid), CAST(:user_id AS uuid), :status, :duration_ms, :bytes,
+        :started_at, :pid, :pg_ms, :pg_count, :gzip_ms, :cache)
 '''
-PRUNE_SLOW = f"DELETE FROM request_speed_slow WHERE at < now() - interval '{SLOW_KEEP_DAYS} days'"
+PRUNE = (f"DELETE FROM request_speed_slow WHERE at < now() - interval '{SLOW_KEEP_DAYS} days'",
+         f"DELETE FROM request_speed_pages WHERE at < now() - interval '{PAGE_KEEP_DAYS} days'",
+         f"DELETE FROM request_speed_loop_lag WHERE minute < now() - interval '{LAG_KEEP_DAYS} days'")
+PAGE_COLUMNS = ('nav_response_ms', 'nav_dom_ms', 'nav_load_ms', 'nav_bytes', 'resources', 'resource_bytes',
+                'queue_max_ms', 'queue_total_ms', 'transfer_total_ms', 'largest_ms', 'largest_route',
+                'largest_bytes', 'longest_task_ms', 'long_tasks', 'heap_used_mb', 'heap_limit_mb',
+                'effective_type', 'downlink_mbps', 'rtt_ms')
+INSERT_PAGE = f'''
+INSERT INTO request_speed_pages (at, page, method, case_id, user_id, ms, {', '.join(PAGE_COLUMNS)})
+VALUES (:at, :page, :method, CAST(:case_id AS uuid), CAST(:user_id AS uuid), :ms, {', '.join(':' + c for c in PAGE_COLUMNS)})
+'''
+INSERT_LAG = '''
+INSERT INTO request_speed_loop_lag AS l (minute, pid, samples, max_ms, total_ms, over_100ms, over_1s)
+VALUES (:minute, :pid, :samples, :max_ms, :total_ms, :over_100ms, :over_1s)
+ON CONFLICT (minute, pid) DO UPDATE SET
+  samples = l.samples + EXCLUDED.samples, max_ms = GREATEST(l.max_ms, EXCLUDED.max_ms),
+  total_ms = l.total_ms + EXCLUDED.total_ms, over_100ms = l.over_100ms + EXCLUDED.over_100ms,
+  over_1s = l.over_1s + EXCLUDED.over_1s
+'''
 
 
-def write(session, groups, slow):
+def write(session, groups, slow, pages=(), lags=()):
     from sqlalchemy import text
     session.execute(text("SET LOCAL statement_timeout = '10s'"))
     session.execute(text("SET LOCAL lock_timeout = '3s'"))
@@ -276,6 +394,18 @@ def write(session, groups, slow):
                 session.execute(text(INSERT_SLOW), one)
         except (DataError, IntegrityError) as error:
             log.warning('Request speed: dropped one refused slow row (%s)', type(error).__name__)
+    for page in pages:
+        try:
+            with session.begin_nested():
+                session.execute(text(INSERT_PAGE), page)
+        except (DataError, IntegrityError) as error:
+            log.warning('Request speed: dropped one refused page row (%s)', type(error).__name__)
+    for lag in lags:
+        try:
+            with session.begin_nested():
+                session.execute(text(INSERT_LAG), lag)
+        except (DataError, IntegrityError) as error:
+            log.warning('Request speed: dropped one refused loop-lag row (%s)', type(error).__name__)
     session.commit()
 
 
@@ -285,6 +415,8 @@ class Writer:
         self.interval = interval
         self.pending_groups = {}
         self.pending_slow = []
+        self.pending_pages = []
+        self.pending_lag = []
         self.user_ids = {}
         self.users_loaded = 0.0
         self.pruned = 0.0
@@ -338,17 +470,15 @@ class Writer:
             self._flush()
 
     def _flush(self):
-        items = []
-        while True:
-            try:
-                items.append(_queue.popleft())
-            except IndexError:
-                break
-        if not items and not self.pending_groups and not self.pending_slow:
+        items = _drain(_queue)
+        pages = _drain(_pages)
+        self.pending_lag.extend(_drain(_lag))
+        if not items and not pages and not self.pending_groups and not self.pending_slow and not self.pending_pages \
+                and not self.pending_lag:
             return
         try:
             with self._factory()() as session:
-                emails = {item[-1] for item in items if item[-1]}
+                emails = {item[8] for item in items if item[8]} | {p['email'] for p in pages if p.get('email')}
                 if emails:
                     self._resolve_users(session, emails)
                 groups, slow = aggregate(items, self.user_ids)
@@ -359,11 +489,14 @@ class Writer:
                     else:
                         self.pending_groups[key] = group
                 self.pending_slow.extend(slow)
-                write(session, self.pending_groups, self.pending_slow)
-                self.pending_groups, self.pending_slow = {}, []
+                self.pending_pages.extend(_page_row(p, self.user_ids) for p in pages)
+                pages = []
+                write(session, self.pending_groups, self.pending_slow, self.pending_pages, self.pending_lag)
+                self.pending_groups, self.pending_slow, self.pending_pages, self.pending_lag = {}, [], [], []
                 if time.time() - self.pruned > 3600:
                     from sqlalchemy import text
-                    session.execute(text(PRUNE_SLOW))
+                    for statement in PRUNE:
+                        session.execute(text(statement))
                     session.commit()
                     self.pruned = time.time()
         except Exception as error:
@@ -375,14 +508,32 @@ class Writer:
                     else:
                         self.pending_groups[key] = group
                 self.pending_slow.extend(slow)
-            if len(self.pending_groups) > MAX_PENDING_KEYS or len(self.pending_slow) > MAX_PENDING_KEYS:
-                log.warning('Request speed: dropped %d unsaved groups after repeated database failures',
-                            len(self.pending_groups))
-                self.pending_groups, self.pending_slow = {}, []
+            self.pending_pages.extend(_page_row(p, {}) for p in pages)
+            if (len(self.pending_groups) > MAX_PENDING_KEYS or len(self.pending_slow) > MAX_PENDING_KEYS
+                    or len(self.pending_pages) > MAX_PENDING_KEYS or len(self.pending_lag) > MAX_PENDING_KEYS):
+                log.warning('Request speed: dropped %d unsaved groups, %d slow, %d page and %d loop-lag rows after '
+                            'repeated database failures', len(self.pending_groups), len(self.pending_slow),
+                            len(self.pending_pages), len(self.pending_lag))
+                self.pending_groups, self.pending_slow, self.pending_pages, self.pending_lag = {}, [], [], []
             if time.time() - self.last_warning > 600:
                 self.last_warning = time.time()
                 log.warning('Request speed: could not save timings, will retry (%s: %s)',
                             type(error).__name__, str(error)[:200])
+
+
+def _drain(queue):
+    items = []
+    while True:
+        try:
+            items.append(queue.popleft())
+        except IndexError:
+            return items
+
+
+def _page_row(page, user_ids):
+    row = {k: v for k, v in page.items() if k != 'email'}
+    row['user_id'] = user_ids.get(page.get('email')) if page.get('email') else None
+    return row
 
 
 _writer = Writer()
@@ -398,19 +549,125 @@ def flush_now():
 FINANCIAL_VIEWS = ('overview', 'follow-money', 'findings', 'patterns', 'case-context', 'ledger', 'quarantine', 'runs',
                    'decisions', 'transactions', 'counterparties', 'trends', 'tracing', 'transfers', 'posting-graph')
 STATEMENT_SECTIONS = ('queue', 'files', 'accounts', 'batches', 'remove', 'judgements')
-# The page names the browser may report (frontend financialMainViews and statement sections).
-PAGES = frozenset([f'financial/{v}' for v in FINANCIAL_VIEWS] + [f'financial/statements/{s}' for s in STATEMENT_SECTIONS])
+# Every route of the app (frontend src/app/routes.tsx), reported by lib/page-timing.ts as "case/<view>",
+# "admin/<view>" and so on; a Financial view is also reported in detail by its own page-speed hook.
+CASE_ROUTES = ('graph', 'timeline', 'map', 'table', 'financial', 'cellebrite', 'dossiers', 'evidence', 'chat',
+               'agent', 'workspace', 'reports', 'settings')
+ADMIN_ROUTES = ('ai-costs', 'users', 'profiles', 'logs', 'activity', 'speed', 'tasks', 'updates')
+APP_PAGES = (['cases', 'triage', 'admin', 'settings', 'settings/ai', 'login', 'other']
+             + [f'case/{r}' for r in CASE_ROUTES] + [f'admin/{r}' for r in ADMIN_ROUTES])
+# The page names the browser may report (frontend financialMainViews and statement sections, and every route).
+PAGES = frozenset([f'financial/{v}' for v in FINANCIAL_VIEWS] + [f'financial/statements/{s}' for s in STATEMENT_SECTIONS]
+                  + APP_PAGES)
 PAGE_METHODS = ('LOAD', 'VIEW', 'LEFT')  # LEFT: left before the data was shown (time waited)
 PAGE_MAX_MS = 600000
+EFFECTIVE_TYPES = ('slow-2g', '2g', '3g', '4g')
+_ROUTE_TEXT = re.compile(r'^/[A-Za-z0-9_./{}-]{0,159}$')
 
 
-def enqueue_page_view(page, method, case_id, ms, email):
+def _number(value, high):
+    """A finite number in [0, high], else None (a browser figure is never trusted blindly)."""
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return None
+    return value if math.isfinite(value) and 0 <= value <= high else None
+
+
+def page_detail(detail):
+    """The browser's figures for one view, each checked; anything malformed is left out, never guessed."""
+    detail = detail or {}
+    row = {}
+    for name in ('nav_response_ms', 'nav_dom_ms', 'nav_load_ms', 'queue_max_ms', 'queue_total_ms',
+                 'transfer_total_ms', 'largest_ms', 'longest_task_ms', 'rtt_ms'):
+        row[name] = _number(detail.get(name), PAGE_MAX_MS * 10)
+    for name in ('nav_bytes', 'resource_bytes', 'largest_bytes'):
+        value = _number(detail.get(name), 2 ** 40)
+        row[name] = int(value) if value is not None else None
+    for name in ('resources', 'long_tasks'):
+        value = _number(detail.get(name), 10 ** 6)
+        row[name] = int(value) if value is not None else None
+    row['heap_used_mb'] = _number(detail.get('heap_used_mb'), 10 ** 6)
+    row['heap_limit_mb'] = _number(detail.get('heap_limit_mb'), 10 ** 6)
+    row['downlink_mbps'] = _number(detail.get('downlink_mbps'), 10 ** 5)
+    effective = detail.get('effective_type')
+    row['effective_type'] = effective if effective in EFFECTIVE_TYPES else None
+    route = detail.get('largest_route')
+    # Only a route shape the browser has already reduced (ids replaced by {id}, no query) is kept.
+    row['largest_route'] = route if isinstance(route, str) and _ROUTE_TEXT.match(route) and not _has_id(route) else None
+    return row
+
+
+def _has_id(route):
+    return any(_UUID.match(part) or (part.isdigit() and len(part) > 3) for part in route.split('/'))
+
+
+def enqueue_page_view(page, method, case_id, ms, email, detail=None):
     if page not in PAGES or method not in PAGE_METHODS:
         return False
     if not (0 <= ms <= PAGE_MAX_MS):
         return False
-    enqueue('page', method, page, case_of(case_id), 200, ms, 0, email)
+    case = case_of(case_id)
+    enqueue('page', method, page, case, 200, ms, 0, email)
+    if detail is not None:
+        try:
+            _pages.append(dict(at=datetime.now(timezone.utc), page=page, method=method, case_id=case, ms=float(ms),
+                               email=email, **page_detail(detail)))
+        except Exception:  # pragma: no cover - a full deque drops the oldest; nothing else can fail here
+            pass
     return True
+
+
+# --- event-loop lag --------------------------------------------------------------------------
+
+LAG_INTERVAL = 0.25
+
+
+class LoopLag:
+    """Per minute, how late this worker's event loop ran a timer due every LAG_INTERVAL seconds."""
+
+    def __init__(self):
+        self.minute = None
+        self.reset()
+
+    def reset(self):
+        self.samples, self.max_ms, self.total_ms, self.over_100ms, self.over_1s = 0, 0.0, 0.0, 0, 0
+
+    def add(self, at, lag_ms):
+        minute = at - at % 60
+        if self.minute is not None and minute != self.minute:
+            self.close()
+        self.minute = minute
+        self.samples += 1
+        self.max_ms = max(self.max_ms, lag_ms)
+        self.total_ms += lag_ms
+        self.over_100ms += lag_ms > 100
+        self.over_1s += lag_ms > 1000
+
+    def close(self):
+        if self.minute is not None and self.samples:
+            _lag.append(dict(minute=datetime.fromtimestamp(self.minute, tz=timezone.utc), pid=os.getpid(),
+                             samples=self.samples, max_ms=round(self.max_ms, 3), total_ms=round(self.total_ms, 3),
+                             over_100ms=self.over_100ms, over_1s=self.over_1s))
+            _writer.ensure_started()
+        self.reset()
+
+
+async def run_loop_lag_probe(interval=LAG_INTERVAL):
+    """Started by each web worker (main.py lifespan). One timer wake every ``interval``; never raises."""
+    import asyncio
+    lag = LoopLag()
+    try:
+        while True:
+            due = time.perf_counter() + interval
+            await asyncio.sleep(interval)
+            late = max(0.0, time.perf_counter() - due) * 1000
+            lag.add(time.time(), late)
+    except asyncio.CancelledError:
+        lag.close()
+        raise
+    except Exception:  # pragma: no cover - the probe must never take the worker down
+        log.exception('Request speed: loop-lag probe stopped')
 
 
 # --- reading ---------------------------------------------------------------------------------

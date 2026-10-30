@@ -1,0 +1,25 @@
+# Per-minute host load and a 10 s availability probe into Postgres (backend/scripts/host_recorder.py).
+# Install: cp deploy/loupe-host-recorder.service /etc/systemd/system/ && systemctl daemon-reload
+#          && systemctl enable --now loupe-host-recorder.service
+# Way back: systemctl disable --now loupe-host-recorder.service && rm /etc/systemd/system/loupe-host-recorder.service
+#           (the tables stay; nothing reads them on a request path)
+[Unit]
+Description=Loupe host load and availability recorder
+After=network-online.target docker.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/conorbowles51/app-v3/owl-n4j/backend
+EnvironmentFile=/home/conorbowles51/app-v3/owl-n4j/.env
+ExecStart=/home/conorbowles51/app-v3/owl-n4j/.venv/bin/python -I scripts/host_recorder.py
+Restart=always
+RestartSec=10
+# Low priority: a recorder must never compete with the app it measures.
+Nice=10
+CPUWeight=20
+IOWeight=20
+MemoryMax=128M
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=multi-user.target

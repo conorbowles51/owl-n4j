@@ -68,7 +68,7 @@ class Captured(TestCase):
         self.client = TestClient(build_app(), raise_server_exceptions=False)
 
     def drained(self):
-        items = list(rs._queue)
+        items = [item[:9] for item in rs._queue]  # the tenth, extra figures, is pinned in test_request_speed_measure
         rs._queue.clear()
         return items
 
@@ -187,7 +187,7 @@ class NeverBreaksARequest(Captured):
                 return Result()
         writer = rs.Writer(session_factory=Session)
         rs.enqueue('api', 'GET', '/api/x', CASE, 200, 3000, 10, 'alex@example.com')
-        with patch.object(rs, 'write', side_effect=lambda s, g, sl: calls.append((dict(g), list(sl)))):
+        with patch.object(rs, 'write', side_effect=lambda s, g, sl, *rest: calls.append((dict(g), list(sl)))):
             writer.flush()
         [(groups, slow)] = calls
         [key] = groups

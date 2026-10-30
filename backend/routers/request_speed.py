@@ -17,6 +17,9 @@ class PageView(BaseModel):
     method: str = Field(max_length=8)
     case_id: str | None = Field(None, max_length=64)
     ms: float
+    # Browser figures for the view (navigation, resources, long tasks, memory, connection);
+    # services.request_speed.page_detail checks each one.
+    detail: dict[str, float | int | str | None] | None = Field(None, max_length=32)
 
 
 class PageViews(BaseModel):
@@ -27,7 +30,7 @@ class PageViews(BaseModel):
 def page_views(body: PageViews, token: dict = Depends(get_current_user)):
     """Time from opening a page to its data being shown, measured in the browser. Queued, never awaited."""
     email = token.get('username')
-    accepted = sum(request_speed.enqueue_page_view(v.page, v.method, v.case_id, v.ms, email) for v in body.views)
+    accepted = sum(request_speed.enqueue_page_view(v.page, v.method, v.case_id, v.ms, email, v.detail) for v in body.views)
     return dict(accepted=accepted)
 
 

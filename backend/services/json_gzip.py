@@ -8,10 +8,13 @@ resumed downloads and streaming behave exactly as before. Level 1 keeps compress
 compressed in a worker thread so the event loop (event streams, other requests) never waits for it.
 """
 import gzip
+import time
 
 import anyio
 from starlette.datastructures import Headers, MutableHeaders
 from starlette.middleware.gzip import GZipMiddleware, GZipResponder, IdentityResponder
+
+from services.request_speed import note_gzip
 
 # Bodies at least this large are compressed off the event loop (60 MB takes ~0.4 s at level 1).
 THREAD_MINIMUM_SIZE = 256 * 1024
@@ -29,6 +32,13 @@ class _JSONGZipResponder(GZipResponder):
         super().__init__(app, minimum_size, compresslevel=compresslevel)
         self.compresslevel = compresslevel
 
+    def apply_compression(self, body, *, more_body):
+        began = time.perf_counter()
+        try:
+            return super().apply_compression(body, more_body=more_body)
+        finally:
+            note_gzip(time.perf_counter() - began)
+
     async def send_with_compression(self, message):
         if message['type'] == 'http.response.start':
             await super().send_with_compression(message)
@@ -39,7 +49,9 @@ class _JSONGZipResponder(GZipResponder):
         if (message['type'] == 'http.response.body' and not self.started and not message.get('more_body', False)
                 and not (self.content_encoding_set or self.content_type_is_excluded) and len(body) >= THREAD_MINIMUM_SIZE):
             self.started = True
+            began = time.perf_counter()
             compressed = await anyio.to_thread.run_sync(lambda: gzip.compress(body, compresslevel=self.compresslevel))
+            note_gzip(time.perf_counter() - began)
             headers = MutableHeaders(raw=self.initial_message['headers'])
             headers.add_vary_header('Accept-Encoding')
             headers['Content-Encoding'] = 'gzip'

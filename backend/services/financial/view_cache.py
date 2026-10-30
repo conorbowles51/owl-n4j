@@ -43,6 +43,8 @@ from dataclasses import dataclass, field
 from sqlalchemy import event, text
 from sqlalchemy.engine import Engine
 
+from services.request_speed import note_cache  # this request's Server-Timing and slow row: hit, saved or miss
+
 # Its INFO lines (served unchanged / from the saved copy / computed, with times) reach the service journal, so a
 # slow first load can be explained from the journal.
 from services.financial.journal import journal  # noqa: E402
@@ -615,6 +617,7 @@ def _serve(handler, key, engine, case_id, kwargs, state):
             entry = _lookup(key)
             if entry is not None and fingerprint(owner, entry.tables, case_id) == entry.fingerprint:
                 stats['hits'] += 1
+                note_cache('hit')
                 logger.info('Financial view %s served unchanged (%.2f s)', key[0], time.perf_counter() - started)
                 return _kept(entry, state)
             scope, xmax = _saved_scope(owner)
@@ -622,9 +625,11 @@ def _serve(handler, key, engine, case_id, kwargs, state):
             if saved is not None and saved != entry and fingerprint(owner, saved.tables, case_id) == saved.fingerprint:
                 _store(key, saved)
                 stats['saved_hits'] += 1
+                note_cache('saved')
                 logger.info('Financial view %s served from the saved copy (%.2f s)', key[0], time.perf_counter() - started)
                 return _kept(saved, state)
             stats['misses'] += 1
+            note_cache('miss')
             recording = _Recording(owner=_dbapi(owner), snapshot=snapshot)
             token = _recording.set(recording)
             session = Session(bind=owner, autoflush=False, join_transaction_mode='create_savepoint')

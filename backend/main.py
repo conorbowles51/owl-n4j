@@ -5,6 +5,7 @@ Main entry point for the API server.
 """
 
 import asyncio
+import os
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from fastapi import FastAPI
@@ -143,6 +144,10 @@ async def lifespan(app: FastAPI):
     from services.financial.payment_categories import run_category_model_forever
     category_task = asyncio.create_task(run_category_model_forever(), name="financial-payment-categories")
 
+    # How late this worker's event loop runs a 250 ms timer, max per minute (services.request_speed).
+    from services.request_speed import run_loop_lag_probe
+    loop_lag_task = asyncio.create_task(run_loop_lag_probe(), name="request-speed-loop-lag")
+
     # One worker computes each case's account history once after start (services.financial.view_warmup).
     from services.financial.view_warmup import warm_views_once
     view_warmup_task = asyncio.create_task(warm_views_once(), name="financial-view-warmup")
@@ -161,7 +166,7 @@ async def lifespan(app: FastAPI):
     # pending recovery item, revisioned graph sweep) resumes on the next start.
     await process_shutdown.stop_background_tasks(
         [recovery_task, identity_graph_task, financial_batches_task, category_task, view_warmup_task,
-         cleanup_task, run_reaper_task, platform_update_task],
+         cleanup_task, run_reaper_task, platform_update_task, loop_lag_task],
         timeout=process_shutdown.BACKGROUND_STOP_SECONDS,
     )
 
@@ -296,6 +301,13 @@ async def root():
         "service": "Loupe API",
         "version": "1.0.0",
     }
+
+
+@app.get("/api/health")
+async def api_health():
+    """Liveness through the frontend's /api proxy, for the availability probe (scripts/host_recorder.py).
+    No database or service call: it answers as soon as this worker's event loop runs it."""
+    return {"status": "ok", "pid": os.getpid(), **_started_commit()}
 
 
 @app.get("/health")
