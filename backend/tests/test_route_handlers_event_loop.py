@@ -9,12 +9,6 @@ import pathlib
 BACKEND = pathlib.Path(__file__).resolve().parents[1]
 
 NOT_YET_CONVERTED = {
-    'routers/agent.py:adopt_current_agent_mandate',
-    'routers/agent.py:stream_agent_message',
-    'routers/agent.py:get_agent_run',
-    'routers/agent.py:get_agent_cost_summary',
-    'routers/agent.py:cancel_agent_run',
-    'routers/agent.py:export_agent_artifact',
     'routers/auth.py:change_password',
     'routers/backfill.py:backfill_embeddings',
     'routers/backfill.py:backfill_chunks',

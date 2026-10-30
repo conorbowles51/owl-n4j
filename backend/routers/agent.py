@@ -60,7 +60,7 @@ def get_agent_thread(
 
 
 @router.post("/threads/{thread_id}/adopt-current-mandate")
-async def adopt_current_agent_mandate(
+def adopt_current_agent_mandate(
     thread_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
@@ -98,7 +98,7 @@ def create_agent_message(
 
 
 @router.post("/messages/stream")
-async def stream_agent_message(
+def stream_agent_message(
     request: AgentMessageRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
@@ -137,7 +137,7 @@ async def stream_agent_message(
 
 
 @router.get("/runs/{run_id}", response_model=AgentRunDetail)
-async def get_agent_run(
+def get_agent_run(
     run_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
@@ -155,7 +155,7 @@ async def get_agent_run(
 
 
 @router.get("/costs/summary")
-async def get_agent_cost_summary(
+def get_agent_cost_summary(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
@@ -163,7 +163,7 @@ async def get_agent_cost_summary(
 
 
 @router.post("/runs/{run_id}:cancel", response_model=AgentRunStatusResponse)
-async def cancel_agent_run(
+def cancel_agent_run(
     run_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
@@ -181,7 +181,7 @@ async def cancel_agent_run(
 
 
 @router.get("/artifacts/{artifact_id}/export")
-async def export_agent_artifact(
+def export_agent_artifact(
     artifact_id: UUID,
     format: Literal["csv", "pdf", "docx"] = Query(default="csv"),
     db: Session = Depends(get_db),
