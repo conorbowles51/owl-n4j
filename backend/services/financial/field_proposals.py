@@ -383,8 +383,8 @@ def _case_knowledge(session, case_id, evidence_file_ids=None):
             # A decision reaches every account merged with the decided one (one account, as the account view shows
             # it); where two of them carry one, the latest stands.
             from uuid import UUID
-            from services.financial.account_consolidation import canonical_map
-            canonical = canonical_map(session, case_id)
+            from services.financial.printed_holders import merged_accounts
+            canonical = merged_accounts(session, case_id)
             root = lambda account: canonical.get(account, account)
             by_root = {}
             for account_id, decision in sorted(decided.items(), key=lambda pair: str(pair[1].get('at') or '')):

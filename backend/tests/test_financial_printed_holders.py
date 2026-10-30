@@ -365,6 +365,25 @@ class DecisionTest(fixture.DuplicateTestCase):
         _group_printed_holders(self.db, self.case.id, groups, {self.account.id: self.account.id, member: self.account.id})
         self.assertEqual([g['name'] for g in groups[0]['printed_holders']], BOTH)
 
+    def test_a_merge_history_needing_review_leaves_each_decision_on_its_own_account(self):
+        # Review #10 follow-up: a broken merge history is logged, never raised into the proof or the judgement list.
+        from postgres.models.financial import FinancialAccount
+        broken = FinancialAccount(id=uuid.uuid4(), case_id=self.case.id, identity_key='loop',
+                                  institution_name='Barclays', identifier_as_printed='****9999',
+                                  metadata_=dict(canonical_account_id=str(uuid.uuid4())))  # merged into nothing
+        self.db.add(broken)
+        self._saved('ERICA MCCAULEY', date(2026, 1, 1), date(2026, 1, 31))
+        ph.record_decision(self.db, case_id=self.case.id, account_id=self.account.id, holders=BOTH,
+                           actor=self._actor(), reason='Neil Byrne decided.')
+        self.db.commit()
+        with self.assertLogs('services.financial.printed_holders', 'WARNING'):
+            known = case_knowledge(self.db, self.case.id, use_cache=False).accounts
+        self.assertEqual([(k.key, k.printed_holders) for k in known], [(str(self.account.id), BOTH)])
+        from postgres.models.financial_judgements import FinancialJudgement
+        FinancialJudgement.__table__.create(self.db.get_bind(), checkfirst=True)
+        with self.assertLogs('services.financial.printed_holders', 'WARNING'):
+            judgements.search(self.db, self.case.id)
+
     def test_the_account_history_reads_each_statements_printed_holder(self):
         from services.financial.account_history import _printed_holders
         first = self._saved('ERICA MCCAULEY', date(2026, 1, 1), date(2026, 1, 31))

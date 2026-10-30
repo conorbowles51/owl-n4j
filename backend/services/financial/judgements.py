@@ -872,14 +872,14 @@ def _printed_names(session, case_id, rows):
     """{source document id: the holder printed on that statement} for statements of accounts a person decided keep the
     holder printed on each statement (printed_holders); other accounts keep their saved holder."""
     from uuid import UUID
-    from services.financial.account_consolidation import canonical_map
     from services.financial.account_history import _printed_holders
     from services.financial.printed_holders import decisions
     decided = [UUID(account) for account, decision in decisions(session, case_id).items() if decision.get('holders')]
     if not decided:
         return {}
     # As the account view: a decision on any account merged into one reaches every statement of the merged account.
-    canonical = canonical_map(session, case_id)
+    from services.financial.printed_holders import merged_accounts
+    canonical = merged_accounts(session, case_id)
     root = lambda account: canonical.get(account, account)
     decided = {root(account) for account in decided}
     pairs = {(row[0].source_document_id, str(row[5])) for row in rows

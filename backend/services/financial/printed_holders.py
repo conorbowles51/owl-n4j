@@ -20,6 +20,7 @@ saved statement stay as printed.
 """
 from __future__ import annotations
 
+import logging
 import uuid
 
 from sqlalchemy import select
@@ -132,6 +133,20 @@ def record_decision(session, *, case_id, account_id, holders, actor, reason):
                    before=before, after=after)
     return dict(holders=names, decision_id=str(event.id), actor_name=event.actor_name,
                 at=event.created_at.isoformat() if event.created_at else '', reason=reason)
+
+
+def merged_accounts(session, case_id):
+    """{account id: the account it is merged into} for spreading a decision over a merge; {} (each account on its own,
+    as before merges were read here) when the case's merge history needs review, which is logged, never raised: the
+    proof and the judgement list keep working."""
+    from services.financial.account_consolidation import AccountPartyError, canonical_map
+    try:
+        return canonical_map(session, case_id)
+    except AccountPartyError:
+        logging.getLogger(__name__).warning(
+            'Case %s: account merge history needs review; printed-holders decisions apply to their own account only',
+            str(case_id)[:8])
+        return {}
 
 
 def holders_by_statement(statements, names=()):
