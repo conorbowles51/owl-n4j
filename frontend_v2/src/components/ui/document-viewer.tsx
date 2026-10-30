@@ -60,6 +60,8 @@ interface DocumentViewerProps {
   documentUrl?: string
   documentName?: string
   initialPage?: number
+  /** A line shown under the header, e.g. why the file opened at its start. */
+  notice?: string
   initialTime?: number
   navigationKey?: string
   transcription?: string | null
@@ -80,6 +82,7 @@ export function DocumentViewer({
   documentUrl,
   documentName,
   initialPage = 1,
+  notice,
   initialTime,
   navigationKey,
   transcription,
@@ -350,6 +353,11 @@ export function DocumentViewer({
           </div>
         </DialogHeader>
 
+        {notice && (
+          <p role="status" className="border-b px-4 py-2 text-sm text-muted-foreground">
+            {notice}
+          </p>
+        )}
         {openFileError && (
           <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2 text-sm">
             <p role="alert">{openFileError}</p>

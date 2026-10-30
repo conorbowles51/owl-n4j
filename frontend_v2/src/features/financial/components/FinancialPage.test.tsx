@@ -261,11 +261,11 @@ beforeEach(() => {
   })
 })
 
-function pageTree() {
+function pageTree(entry = "/cases/case-1/financial") {
   return (
     <QueryClientProvider client={pageQueries}>
       <TooltipProvider>
-        <MemoryRouter initialEntries={["/cases/case-1/financial"]}>
+        <MemoryRouter initialEntries={[entry]}>
           <Routes>
             <Route path="/cases/:id/financial" element={<FinancialPage />} />
           </Routes>
@@ -311,6 +311,12 @@ describe("FinancialPage", () => {
     ledgerEmpty()
     runsEmpty()
     adjudicationIdle()
+  })
+
+  it("opens the payment a link names, e.g. a ledger row the AI agent cited", async () => {
+    graphWithRows()
+    render(pageTree("/cases/case-1/financial?view=transactions&payment=row-7"))
+    expect(await screen.findByRole("dialog", { name: "Transaction details" })).toBeVisible()
   })
 
   it("retains Transactions on return and clears filters only with Reset view", () => {

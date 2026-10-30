@@ -48,6 +48,7 @@ import { InvestigatorFollowMoney } from "./InvestigatorFollowMoney"
 import { InvestigatorTrends } from "./InvestigatorTrends"
 import { StatementRegister } from "./StatementRegister"
 import { ReviewQueuePanel } from "./ReviewQueuePanel"
+import { LedgerSourceDialog } from "./LedgerSourceDialog"
 import { JudgementCallsLabel, JudgementCallsPanel } from "./JudgementCallsPanel"
 import { JUDGEMENT_KEYS } from "../lib/judgements"
 import { CaseReviewStatus } from "./CaseReviewStatus"
@@ -187,6 +188,7 @@ function FinancialPageContent() {
     (state) => state.selections[workspaceScope]
   )
   const routedReviewFile = params.get("reviewFile")
+  const linkedPayment = params.get("payment")
   const returnBatch = params.get("returnBatch")
   const savedBatchAccounts = reviewingAccounts && params.get("savedBatch") === "1" && !!returnBatch
   useEffect(() => {
@@ -1567,6 +1569,24 @@ function FinancialPageContent() {
         }
         onUnlink={(childKey) => unlinkSub.mutate({ childKey })}
       />
+
+      {/* A link to one payment (?payment=<id>, e.g. a ledger row the AI agent cited) opens that payment. */}
+      {linkedPayment && caseId && (
+        <LedgerSourceDialog
+          caseId={caseId}
+          transactionId={linkedPayment}
+          onClose={() =>
+            setParams(
+              (current) => {
+                const next = new URLSearchParams(current)
+                next.delete("payment")
+                return next
+              },
+              { replace: true }
+            )
+          }
+        />
+      )}
 
       <AmountEditDialog
         caseId={caseId!}

@@ -60,7 +60,7 @@ import {
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Markdown } from "@/components/ui/markdown"
+import { AgentCitationProvider, AgentMarkdown } from "./AgentCitations"
 import { AgentArtifactNotes } from "./AgentArtifactNotes"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Switch } from "@/components/ui/switch"
@@ -938,6 +938,7 @@ export function AgentPage() {
     threads.find((thread) => thread.id === activeThreadId)?.title ?? "New agent thread"
 
   return (
+    <AgentCitationProvider caseId={caseId ?? ""}>
     <div className="flex h-full min-h-0 bg-background">
       <aside className="hidden w-64 shrink-0 border-r border-border bg-panel md:flex md:flex-col">
         <div className="flex items-center justify-between border-b border-border px-3 py-3">
@@ -1192,6 +1193,7 @@ export function AgentPage() {
         />
       )}
     </div>
+    </AgentCitationProvider>
   )
 }
 
@@ -1233,7 +1235,7 @@ function MessageBubble({
       </div>
       <div className="min-w-0 flex-1 py-0.5 text-sm text-foreground">
         {!hideMessageBodyForPanel ? (
-          <Markdown
+          <AgentMarkdown
             content={message.content}
             className="max-w-none leading-6 [overflow-wrap:anywhere]"
           />
@@ -2450,7 +2452,7 @@ function ReportArtifact({
                     <h2 className="text-base font-semibold text-foreground">
                       {valueText(section.heading || `Section ${index + 1}`)}
                     </h2>
-                    <Markdown
+                    <AgentMarkdown
                       content={valueText(section.content)}
                       className="mt-2 max-w-none text-sm leading-6 text-foreground [overflow-wrap:anywhere]"
                     />
