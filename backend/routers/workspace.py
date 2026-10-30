@@ -55,7 +55,7 @@ def _case_id_or_404(case_id: str) -> UUID:
 
 
 @router.get("/{case_id}/context")
-async def get_case_context(
+def get_case_context(
     case_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
@@ -111,7 +111,7 @@ async def update_case_context(
 
 
 @router.get("/{case_id}/context/mandates")
-async def list_mandate_versions(
+def list_mandate_versions(
     case_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),

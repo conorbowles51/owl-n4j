@@ -455,7 +455,7 @@ async def chat(
 
 
 @router.post("/suggestions", response_model=SuggestionsResponse)
-async def get_suggestions(
+def get_suggestions(
     request: SuggestionsRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),

@@ -44,7 +44,7 @@ class TasksListResponse(BaseModel):
 
 
 @router.get("", response_model=TasksListResponse)
-async def list_tasks(
+def list_tasks(
     owner: Optional[str] = None,
     case_id: Optional[str] = None,
     status: Optional[str] = None,

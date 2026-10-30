@@ -140,7 +140,7 @@ async def create_snapshot(snapshot: SnapshotCreate, user: dict = Depends(get_cur
 
 
 @router.get("", response_model=List[SnapshotResponse])
-async def list_snapshots(user: dict = Depends(get_current_user)):
+def list_snapshots(user: dict = Depends(get_current_user)):
     """List all snapshots for the current user."""
     snapshots = []
     all_snapshots = snapshot_storage.get_all()

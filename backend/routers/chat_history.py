@@ -123,7 +123,7 @@ async def create_chat_history(
 
 
 @router.get("", response_model=List[ChatHistorySummary])
-async def list_chat_histories(
+def list_chat_histories(
     case_id: Optional[UUID] = Query(None),
     scope: Literal["mine", "case"] = Query("mine"),
     db: Session = Depends(get_db),

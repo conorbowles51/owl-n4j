@@ -99,7 +99,7 @@ def _normalize_folder_profile_payload(req: UpdateProfileRequest) -> dict[str, An
 # ---------------------------------------------------------------------------
 
 @router.get("/tree")
-async def get_folder_tree(
+def get_folder_tree(
     case_id: str = Query(..., description="Case ID"),
     current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
@@ -160,7 +160,7 @@ async def get_file_location(
 
 
 @router.get("/{folder_id}/contents")
-async def get_folder_contents(
+def get_folder_contents(
     folder_id: str,
     case_id: str = Query(..., description="Case ID"),
     sort_by: Literal["name", "date"] = Query("name"),

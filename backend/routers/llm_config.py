@@ -97,7 +97,7 @@ class UpdateAIModelPolicyRequest(BaseModel):
 
 
 @router.get("/models", response_model=ModelsListResponse)
-async def get_available_models(
+def get_available_models(
     provider: Optional[str] = None,
     user: dict = Depends(get_current_user),
 ):

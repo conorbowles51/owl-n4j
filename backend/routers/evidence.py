@@ -2286,7 +2286,7 @@ async def delete_evidence_file(
 
 
 @router.get("/{evidence_id}/file")
-async def get_evidence_file(
+def get_evidence_file(
     evidence_id: str,
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -2680,7 +2680,7 @@ async def list_wiretap_processed(
 
 
 @router.get("/by-filename/{filename}")
-async def get_evidence_by_filename(
+def get_evidence_by_filename(
     filename: str,
     case_id: str = Query(..., description="Case ID"),
     user: dict = Depends(get_current_user),

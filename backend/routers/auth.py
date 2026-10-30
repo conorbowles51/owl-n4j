@@ -83,7 +83,7 @@ def get_current_user(
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(request: LoginRequest, response: Response, db: Session = Depends(get_db)):
+def login(request: LoginRequest, response: Response, db: Session = Depends(get_db)):
     """Login endpoint - authenticates user and returns JWT token."""
     try:
         # username field is actually the email

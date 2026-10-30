@@ -657,7 +657,7 @@ class LedgerSourcesRequest(BaseModel):
 
 
 @router.post("/ledger/sources")
-async def get_ledger_sources(body: LedgerSourcesRequest, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+def get_ledger_sources(body: LedgerSourcesRequest, case_id: UUID = Query(...), db: Session = Depends(get_db)):
     try:
         return ledger_sources(db, case_id=case_id, transaction_ids=body.transaction_ids)
     except LedgerSourceError as exc:

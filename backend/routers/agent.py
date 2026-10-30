@@ -32,7 +32,7 @@ def _sse(event: dict) -> str:
 
 
 @router.get("/threads", response_model=list[AgentThreadSummary])
-async def list_agent_threads(
+def list_agent_threads(
     case_id: UUID | None = Query(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
@@ -46,7 +46,7 @@ async def list_agent_threads(
 
 
 @router.get("/threads/{thread_id}", response_model=AgentThreadDetail)
-async def get_agent_thread(
+def get_agent_thread(
     thread_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
@@ -78,7 +78,7 @@ async def adopt_current_agent_mandate(
 
 
 @router.post("/messages", response_model=AgentMessageResponse)
-async def create_agent_message(
+def create_agent_message(
     request: AgentMessageRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
