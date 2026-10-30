@@ -129,7 +129,7 @@ def model_work_statements(case_id: UUID = Query(...), db: Session = Depends(get_
 
 
 @router.post("/statements/{source_document_id}/confirm")
-async def confirm_statement(source_document_id: UUID, body: Confirm | None = None, case_id: UUID = Query(...),
+def confirm_statement(source_document_id: UUID, body: Confirm | None = None, case_id: UUID = Query(...),
                             current_user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     """A person confirms, in one action, a statement Claude saved or entered for a person."""
     try:
@@ -141,7 +141,7 @@ async def confirm_statement(source_document_id: UUID, body: Confirm | None = Non
 
 
 @router.post("/{judgement_id}/confirm")
-async def confirm_judgement(judgement_id: UUID, body: Confirm | None = None, case_id: UUID = Query(...),
+def confirm_judgement(judgement_id: UUID, body: Confirm | None = None, case_id: UUID = Query(...),
                             current_user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     try:
         return judgements.confirm(db, case_id=case_id, judgement_id=judgement_id, actor=_actor(current_user),
@@ -152,7 +152,7 @@ async def confirm_judgement(judgement_id: UUID, body: Confirm | None = None, cas
 
 
 @router.post("/{judgement_id}/correct")
-async def correct_judgement(judgement_id: UUID, body: Correct, case_id: UUID = Query(...),
+def correct_judgement(judgement_id: UUID, body: Correct, case_id: UUID = Query(...),
                             current_user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     try:
         result = judgements.correct(db, case_id=case_id, judgement_id=judgement_id, actor=_actor(current_user),
@@ -169,7 +169,7 @@ async def correct_judgement(judgement_id: UUID, body: Correct, case_id: UUID = Q
 
 
 @router.post("/{judgement_id}/reopen")
-async def reopen_judgement(judgement_id: UUID, case_id: UUID = Query(...),
+def reopen_judgement(judgement_id: UUID, case_id: UUID = Query(...),
                            current_user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     try:
         return judgements.reopen(db, case_id=case_id, judgement_id=judgement_id, actor=_actor(current_user))
