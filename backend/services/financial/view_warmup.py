@@ -63,27 +63,48 @@ async def _run_child():
         logger.warning('Financial view warm-up process ended with status %s', code)
 
 
-def _load_prctl():
+def _load_libc(name):
     import ctypes
     try:
-        return ctypes.CDLL('libc.so.6', use_errno=True).prctl
-    except OSError:
+        return getattr(ctypes.CDLL('libc.so.6', use_errno=True), name)
+    except (OSError, AttributeError):
         return None
 
 
 # Resolved once in the worker: the child must not ask the loader for libc between fork and exec (another worker
 # thread may have held the loader's lock at the fork).
-_PRCTL = _load_prctl()
+_PRCTL = _load_libc('prctl')
+_SYSCALL = _load_libc('syscall')
+
+# Background children (page-image rounds, batch rounds, view warm-up) share the web workers' cgroup, so only their
+# own priority ranks them below request threads: nice 15 weighs 36 against a request thread's 1024.
+BACKGROUND_NICE = 15
+_SYS_IOPRIO_SET = 251  # x86_64
+_IOPRIO_WHO_PROCESS = 1
+_IOPRIO_IDLE = 3 << 13
+
+
+def _lower_priority():
+    """Nice 15 and the idle IO class for this process (never raises; a nicer process stays as nice)."""
+    try:
+        if os.getpriority(os.PRIO_PROCESS, 0) < BACKGROUND_NICE:
+            os.setpriority(os.PRIO_PROCESS, 0, BACKGROUND_NICE)
+    except OSError:
+        pass
+    if _SYSCALL is not None:
+        _SYSCALL(_SYS_IOPRIO_SET, _IOPRIO_WHO_PROCESS, 0, _IOPRIO_IDLE)
 
 
 def _end_with_parent(parent=None):
     """In the child before it starts: end it if the worker dies (a killed worker cannot terminate it, and its
-    lock is gone, so a restarted worker would start a second warm-up beside it)."""
+    lock is gone, so a restarted worker would start a second warm-up beside it), and rank it below the request
+    threads it shares the service with."""
     import signal
     if _PRCTL is not None:
         _PRCTL(1, signal.SIGTERM)  # PR_SET_PDEATHSIG
     if parent is not None and os.getppid() != parent:
         os._exit(0)  # the worker died before the signal was set
+    _lower_priority()
 
 
 def _child_command():
