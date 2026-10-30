@@ -5,7 +5,7 @@ import { useSearchParams } from "react-router-dom"
 import { useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { BatchStatementReview, batchItemQuery } from "./FinancialBatchPanel"
-import { statementReadingQuery } from "./StatementImportPanel"
+import { statementReadingQuery } from "../lib/statement-reading"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import {
   entryBalances,

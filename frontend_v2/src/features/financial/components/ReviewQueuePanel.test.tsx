@@ -12,8 +12,7 @@ vi.mock("@/lib/api-client", () => ({ fetchAPI: vi.fn() }))
 vi.mock("../hooks/use-financial-access", () => ({
   useFinancialAccess: () => ({ canEdit: true, canUpload: true }),
 }))
-vi.mock("./StatementImportPanel", async (actual) => ({
-  statementReadingQuery: (await actual<typeof import("./StatementImportPanel")>()).statementReadingQuery,
+vi.mock("./StatementImportPanel", () => ({
   StatementImportPanel: ({
     onImported,
   }: {

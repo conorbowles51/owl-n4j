@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 import { entryPeriod, type QueueEntry } from "../lib/review-queue"
 import type { Guidance } from "../lib/queue-guidance"
 import { problemRowLocator } from "../lib/statement-row-locator"
-import { statementReadingQuery } from "./StatementImportPanel"
+import { statementReadingQuery } from "../lib/statement-reading"
 import { TransactionSourceHighlight } from "./TransactionSourceHighlight"
 
 /** True while the person is typing: J, K, arrows and Esc then belong to the field. */
