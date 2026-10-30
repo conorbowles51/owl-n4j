@@ -3,8 +3,11 @@
 A correction proposes; a lesson job builds and measures; Neil releases. Nothing here changes a rule. Lines are
 appended once per judgement (the judgement id is on the line); ``sync`` rewrites nothing, it adds what is missing.
 """
+import json
 import logging
 import os
+import re
+import sys
 from pathlib import Path
 
 from sqlalchemy import select
@@ -62,6 +65,14 @@ def append_correction(session, item):
     return True
 
 
+def missing(session):
+    """Ids of corrections in the database with no line in the inbox (an append that failed and was not caught up)."""
+    from postgres.models.financial_judgements import FinancialJudgement as J
+    known = set(re.findall(r'judgement ([0-9a-f-]{36})', _known()))
+    return [str(i) for i in session.scalars(select(J.id).where(J.status == 'corrected').order_by(J.resolved_at))
+            if str(i) not in known]
+
+
 def sync(session):
     """Append every correction not yet in the inbox (the periodic script). Returns the number appended."""
     from postgres.models.financial_judgements import FinancialJudgement as J
@@ -72,7 +83,21 @@ def sync(session):
     return added
 
 
+def check(session):
+    """The watchdog's view of the inbox: sync, then report what is still missing and why (one JSON object)."""
+    out = dict(inbox=str(INBOX), appended=0, error='')
+    try:
+        out['appended'] = sync(session)
+    except Exception as exc:  # noqa: BLE001 - reported on the status board, not swallowed
+        out['error'] = f'{type(exc).__name__}: {exc}'
+    out['missing'] = missing(session)
+    return out
+
+
 if __name__ == '__main__':
     from postgres.session import _get_session_local
     with _get_session_local()() as db:
-        print('appended', sync(db))
+        if '--check' in sys.argv:
+            print(json.dumps(check(db)))
+        else:
+            print('appended', sync(db))

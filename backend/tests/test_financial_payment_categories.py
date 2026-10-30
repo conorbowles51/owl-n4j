@@ -133,6 +133,25 @@ class PaymentCategoryTests(LedgerQueryTestCase):
         self.assertIn('category.model', self.inbox.read_text())
         self.assertIn('Transfers -> Payroll', self.inbox.read_text())
 
+    def test_a_failed_inbox_append_is_reported_and_the_check_adds_the_line(self):
+        from services.financial import judgement_inbox
+        (row,) = self.rows('105413834')
+        pc.classify_with_model(self.db, self.case.id, model_id='test-model', reader=lambda prompt: json.dumps(
+            {'items': [{'id': 0, 'category': 'Transfers', 'confidence': 0.4, 'why': 'Only a number.'}]}))
+        # The backend user cannot write the inbox (the live failure: the file belonged to root).
+        with mock.patch.object(judgement_inbox.Path, 'open', side_effect=PermissionError('Permission denied')):
+            update_payment_labels(self.db, case_id=self.case.id, actor=ACTOR, request=PaymentLabelsRequest(
+                transactions=[dict(id=row.id, version=0)], category='Payroll'))
+            self.db.commit()
+            report = judgement_inbox.check(self.db)
+        (call,) = self.db.query(FinancialJudgement).filter_by(rule_id='category.model').all()
+        self.assertEqual((call.status, self.stored(row).category), ('corrected', 'Payroll'))
+        self.assertEqual(report['missing'], [str(call.id)])
+        self.assertIn('Permission denied', report['error'])
+        report = judgement_inbox.check(self.db)
+        self.assertEqual((report['appended'], report['missing'], report['error']), (1, [], ''))
+        self.assertIn(f'judgement {call.id}', self.inbox.read_text())
+
     def test_cached_descriptions_are_not_sent_again_and_answers_outside_the_list_fall_back(self):
         self.rows('XYZZY 1')
         pc.classify_with_model(self.db, self.case.id, reader=lambda p: json.dumps(

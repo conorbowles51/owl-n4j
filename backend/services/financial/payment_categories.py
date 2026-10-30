@@ -190,11 +190,20 @@ def _correct_model_judgement(session, row, before, after, actor):
             judgement.evidence = {**(judgement.evidence or {}),
                                   'correction': dict(before=before, after=after or 'Uncategorized')}
             session.flush()
-            from services.financial.judgement_inbox import append_correction
-            from services.financial.judgements import as_dict
-            append_correction(session, as_dict(judgement))
-    except Exception:  # noqa: BLE001 - the person's category stands; the inbox script catches up
+            _append_to_inbox(session, judgement)
+    except Exception:  # noqa: BLE001 - the person's category stands
         log.exception('Recording the category correction on %s as a judgement correction failed', row.id)
+
+
+def _append_to_inbox(session, judgement):
+    # One failed append never stops the next call being marked corrected; the watchdog's sync adds the line later
+    # and the status board shows any correction still missing from the inbox.
+    try:
+        from services.financial.judgement_inbox import append_correction
+        from services.financial.judgements import as_dict
+        append_correction(session, as_dict(judgement))
+    except Exception:  # noqa: BLE001
+        log.exception('Appending judgement correction %s to the lessons inbox failed', judgement.id)
 
 
 def like_payments(session, case_id, transaction_id):
