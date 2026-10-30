@@ -2334,3 +2334,8 @@ from services.financial.statement_page import payment_page, payment_page_png
 __all__ += ["payment_page", "payment_page_png"]
 from services.financial.vision_descriptions import read_saved_lines
 __all__ += ["read_saved_lines"]
+from services.financial.batch_rounds import rounds_forever
+__all__ += ["rounds_forever"]
+# The page-image rounds child (batch_rounds has a function of the same name; this one is the page-image one).
+from services.financial.vision_rounds import run_in_child_forever
+__all__ += ["run_in_child_forever"]
