@@ -2293,9 +2293,9 @@ from services.financial.held_reprepare import exact_copies_rekeyed, preparation_
 __all__ += ["exact_copies_rekeyed", "preparation_stamp"]
 from services.financial.held_settlement import settle_held_statements, settle_vanished_key
 __all__ += ["settle_held_statements", "settle_vanished_key"]
-# The function shadows the submodule attribute; `from services.financial.journal import journal` is unaffected.
-from services.financial.journal import journal
-__all__ += ["journal"]
+# Aliased so the package attribute stays the submodule (mock.patch('services.financial.journal.X') must reach it).
+from services.financial.journal import journal as journal_logger
+__all__ += ["journal_logger"]
 from services.financial.judgement_inbox import append_correction, sync as sync_judgement_inbox
 __all__ += ["append_correction", "sync_judgement_inbox"]
 from services.financial.judgements import record_judgement

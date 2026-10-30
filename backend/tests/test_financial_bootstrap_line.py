@@ -27,6 +27,7 @@ import subprocess
 import sys
 import unittest
 
+from packaging.requirements import Requirement
 from packaging.specifiers import SpecifierSet
 
 BACKEND = pathlib.Path(__file__).resolve().parents[1]
@@ -71,6 +72,8 @@ def _requirement_specs() -> dict[str, str]:
 
 
 def _with_dependencies(names: set[str], extras: dict[str, set[str]]) -> set[str]:
+    """The distributions a real install of ``names`` brings in here: each requirement's environment marker is
+    evaluated (platform, python_version, and ``extra`` against the extras the line asks for), as pip does."""
     seen, todo = set(), list(names)
     while todo:
         name = todo.pop()
@@ -81,13 +84,12 @@ def _with_dependencies(names: set[str], extras: dict[str, set[str]]) -> set[str]
             requires = metadata.distribution(name).requires or []
         except metadata.PackageNotFoundError:
             continue
-        for requirement in requires:
-            wanted = re.search(r"extra\s*==\s*['\"]([^'\"]+)['\"]", requirement)
-            if wanted and _norm(wanted.group(1)) not in extras.get(name, set()):
+        for text in requires:
+            requirement = Requirement(text)
+            if requirement.marker is not None and not any(
+                    requirement.marker.evaluate({"extra": extra}) for extra in sorted(extras.get(name, set())) or [""]):
                 continue
-            match = re.match(r"[A-Za-z0-9._-]+", requirement)
-            if match:
-                todo.append(_norm(match.group(0)))
+            todo.append(_norm(requirement.name))
     return seen
 
 
@@ -112,6 +114,22 @@ class BootstrapLineTests(unittest.TestCase):
         except metadata.PackageNotFoundError:
             self.skipTest("psycopg-binary not installed here")
         self.assertIn("psycopg-binary", _with_dependencies({"psycopg"}, _bootstrap_extras()))
+
+    def test_requirements_a_real_install_skips_are_not_followed(self):
+        from types import SimpleNamespace
+        from unittest import mock
+        requires = {"top": ['winonly; sys_platform == "win32" and sys_platform != "' + sys.platform + '"',
+                            'oldpython; python_version < "3.0"', 'always', 'withbinary; extra == "binary"',
+                            'withother; extra == "other"', 'newpython; python_version >= "3.0"']}
+
+        def distribution(name):
+            if name not in requires:
+                raise metadata.PackageNotFoundError(name)
+            return SimpleNamespace(requires=requires[name])
+        with mock.patch.object(metadata, "distribution", distribution):
+            self.assertEqual(_with_dependencies({"top"}, {}), {"top", "always", "newpython"})
+            self.assertEqual(_with_dependencies({"top"}, {"top": {"binary"}}),
+                             {"top", "always", "newpython", "withbinary"})
 
     def test_suite_imports_with_only_what_the_line_installs(self):
         # A fresh sandbox has only the line and its dependencies. Simulate it: in a child interpreter,
