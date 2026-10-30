@@ -561,7 +561,7 @@ _SPACED = re.compile(r'\d ,\d|\d, \d{3}|\d \.\d\d|\d\?$')
 _DAY_LETTER = re.compile(r'(?=[0-9OolI|]{2}[/-])(?=.{0,1}[OolI|])[0-9OolI|]{2}[/-](?:\d\d|[A-Za-z]{3})')
 
 
-def preview(reading_rows, review_rows=(), *, currency='', statement_id=''):
+def preview(reading_rows, review_rows=(), *, currency='', statement_id='', file=None, holder=''):
     """The calls the rules make on one statement reading before anyone saves it (the review queue): the same
     detection as a saved statement, over the reading's rows and the review's draft. Pure; nothing is stored.
     Returns judgement dicts whose subject is the reading row id (``row_id``) or the statement."""
@@ -571,7 +571,7 @@ def preview(reading_rows, review_rows=(), *, currency='', statement_id=''):
     review = {str(r.get('id')): r for r in review_rows or () if isinstance(r, dict)}
     document = SimpleNamespace(id='statement', metadata_=dict(
         statement_import_statement_id=statement_id, statement_import_original=dict(rows=reading_rows),
-        statement_import_request=dict(rows=list(review.values()), currency=currency)))
+        statement_import_request=dict(rows=list(review.values()), currency=currency, holder=holder)))
     transactions = []
     for row in reading_rows:
         draft = review.get(str(row.get('id')), {})
@@ -590,7 +590,7 @@ def preview(reading_rows, review_rows=(), *, currency='', statement_id=''):
     period = SimpleNamespace(id='statement', currency=currency, opening_balance_minor=None, closing_balance_minor=None,
                              period_start_source='', period_start=None)
     out = []
-    for found in detect(document, period, transactions):
+    for found in detect(document, period, transactions, file=file):
         rule = RULES.get(found['rule_id'], (found['rule_id'], '', 'inferred'))
         out.append(dict(found, subject_id=str(found['subject_id']),
                         row_id=str(found['subject_id']) if found['subject_type'] == 'transaction' else None,

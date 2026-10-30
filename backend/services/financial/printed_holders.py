@@ -134,16 +134,22 @@ def record_decision(session, *, case_id, account_id, holders, actor, reason):
                 at=event.created_at.isoformat() if event.created_at else '', reason=reason)
 
 
-def holders_by_statement(statements):
-    """[{'name', 'statements', 'first', 'last'}] in first-printed order, one per holder: from [(holder, start, end)]."""
+def holders_by_statement(statements, names=()):
+    """[{'name', 'statements', 'first', 'last'}] in first-printed order, one per holder: from [(holder, start, end)].
+
+    ``names``: the decided names. A printed name is grouped under the first decided name it matches (same_holder),
+    shown as decided, so the grouping does not depend on which spelling was printed first; a name matching none is
+    grouped as before."""
     from services.financial.field_proposals import same_holder
     groups = []
     for holder, start, end in sorted(statements, key=lambda s: (s[1] or '', s[2] or '')):
         name = ' '.join(str(holder or '').split())
         if not name:
             continue
+        name = next((decided for decided in names if same_holder(decided, name)), name)
         # One holder however it is spelt (same_holder, as the proof compares names).
-        group = next((g for g in groups if same_holder(g['name'], name)), None)
+        group = next((g for g in groups if g['name'] == name), None) or \
+            next((g for g in groups if g['name'] not in names and name not in names and same_holder(g['name'], name)), None)
         if group is None:
             group = dict(name=name, statements=0, first=start or '', last=end or '')
             groups.append(group)

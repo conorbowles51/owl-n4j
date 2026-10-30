@@ -75,10 +75,14 @@ def _group_printed_holders(session, case_id, groups, canonical):
     every name its statements print, with the statements that print each, never shown as one name. Without such a
     decision nothing is listed: no judgement call is presented that nobody made."""
     from services.financial.printed_holders import decisions, holders_by_statement
-    decided = {canonical.get(UUID(k), UUID(k)) for k in decisions(session, case_id)} if groups else set()
+    decided = {}
+    for account, decision in sorted((decisions(session, case_id) if groups else {}).items(),
+                                    key=lambda pair: str(pair[1].get('at') or '')):
+        decided[canonical.get(UUID(account), UUID(account))] = decision.get('holders') or []  # the latest stands
     for group in groups:
-        names = holders_by_statement([(p['holder'], p['start'], p['end']) for p in group['periods']]) \
-            if UUID(group['account_id']) in decided else []
+        holders = decided.get(UUID(group['account_id']))
+        names = holders_by_statement([(p['holder'], p['start'], p['end']) for p in group['periods']], holders) \
+            if holders else []
         group['printed_holders'] = names if len(names) > 1 else []
 
 

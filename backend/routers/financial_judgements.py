@@ -40,6 +40,10 @@ class Preview(BaseModel):
     currency: str = Field(default='', max_length=3)
     reading_rows: list[dict] = Field(default_factory=list, max_length=20000)
     review_rows: list[dict] = Field(default_factory=list, max_length=20000)
+    # The statement's file and the holder being saved: a call read from the file's page-image outcome (the holder kept
+    # as printed, printed_holders) is shown before the save too.
+    file_id: UUID | None = None
+    holder: str = Field(default='', max_length=500)
 
 
 class Correct(BaseModel):
@@ -97,10 +101,14 @@ def judgement_rows(case_id: UUID = Query(...), db: Session = Depends(get_db)):
 
 
 @router.post("/preview")
-async def preview_judgement_calls(body: Preview, case_id: UUID = Query(...)):
+def preview_judgement_calls(body: Preview, case_id: UUID = Query(...), db: Session = Depends(get_db)):
     """The calls the rules make on a statement reading before it is saved (review queue). Stores nothing."""
+    from postgres.models.evidence import EvidenceFile
+    file = db.get(EvidenceFile, body.file_id) if body.file_id else None
+    if file is not None and file.case_id != case_id:
+        file = None  # another case's file is never read here
     return dict(items=judgements.preview(body.reading_rows, body.review_rows, currency=body.currency,
-                                         statement_id=body.statement_id))
+                                         statement_id=body.statement_id, file=file, holder=body.holder))
 
 
 @router.get("/counts")

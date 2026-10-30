@@ -170,6 +170,17 @@ class HelpersTest(unittest.TestCase):
             dict(name='ERICA MCCAULEY', statements=2, first='2020-10-08', last='2021-02-07'),
             dict(name='ERICA HOPPER', statements=1, first='2022-02-08', last='2022-03-10')])
 
+    def test_with_the_decided_names_the_grouping_does_not_depend_on_which_spelling_came_first(self):
+        # Review #6 F-c: each printed name is shown as the decided name it matches, in any order.
+        statements = [('Erica  Hopper', '2022-02-08', '2022-03-10'), ('ERICA HOPPER', '2022-03-11', '2022-04-09'),
+                      ('Erica McCauley', '2020-10-08', '2020-11-09')]
+        for order in (statements, list(reversed(statements))):
+            self.assertEqual([(g['name'], g['statements']) for g in ph.holders_by_statement(order, BOTH)],
+                             [('ERICA MCCAULEY', 1), ('ERICA HOPPER', 2)])
+        # A printed name the decision does not cover keeps its own group.
+        self.assertEqual([g['name'] for g in ph.holders_by_statement([('JOHN DOE', '2020-01-01', '')], BOTH)],
+                         ['JOHN DOE'])
+
     def test_the_sentence_says_it_is_a_judgement_and_decides_no_holder(self):
         text = ph.judgement_sentence(BOTH, 'ERICA HOPPER', 197)
         self.assertIn('printed under different holder names on different statements (ERICA MCCAULEY / ERICA HOPPER)', text)
