@@ -74,7 +74,7 @@ def _require_target_case_upload_access(target_case_id: str, current_user: User, 
 # ── Filesystem Browse ──────────────────────────────────────────────────
 
 @router.get("/browse")
-async def browse_directory(
+def browse_directory(
     path: str = Query("/", description="Directory path to list"),
     current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
@@ -122,7 +122,7 @@ async def browse_directory(
 # ── Case CRUD ──────────────────────────────────────────────────────────
 
 @router.post("/cases", response_model=TriageCaseResponse)
-async def create_triage_case(
+def create_triage_case(
     request: CreateTriageCaseRequest,
     current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
@@ -140,7 +140,7 @@ async def create_triage_case(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 @router.get("/cases")
-async def list_triage_cases(
+def list_triage_cases(
     current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
 ):
@@ -150,7 +150,7 @@ async def list_triage_cases(
 
 
 @router.get("/cases/{case_id}")
-async def get_triage_case(
+def get_triage_case(
     case_id: str,
     current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
@@ -165,7 +165,7 @@ async def get_triage_case(
 
 
 @router.delete("/cases/{case_id}")
-async def delete_triage_case(
+def delete_triage_case(
     case_id: str,
     current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
@@ -183,7 +183,7 @@ async def delete_triage_case(
 # ── Scan (Stage 0) ────────────────────────────────────────────────────
 
 @router.post("/cases/{case_id}/scan")
-async def start_scan(
+def start_scan(
     case_id: str,
     request: StartScanRequest = StartScanRequest(),
     current_user: User = Depends(get_current_db_user),
@@ -203,7 +203,7 @@ async def start_scan(
 
 
 @router.get("/cases/{case_id}/stats")
-async def get_scan_stats(
+def get_scan_stats(
     case_id: str,
     current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
@@ -222,7 +222,7 @@ async def get_scan_stats(
 
 
 @router.get("/cases/{case_id}/files")
-async def get_files(
+def get_files(
     case_id: str,
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=500),
@@ -267,7 +267,7 @@ async def get_files(
 # ── Classification (Stage 1) ─────────────────────────────────────────
 
 @router.post("/cases/{case_id}/classify")
-async def start_classification(
+def start_classification(
     case_id: str,
     current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
@@ -286,7 +286,7 @@ async def start_classification(
 
 
 @router.get("/cases/{case_id}/classification")
-async def get_classification_stats(
+def get_classification_stats(
     case_id: str,
     current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
@@ -305,7 +305,7 @@ async def get_classification_stats(
 
 
 @router.post("/cases/{case_id}/hash-sets")
-async def upload_hash_set(
+def upload_hash_set(
     case_id: str,
     request: UploadHashSetRequest,
     current_user: User = Depends(get_current_db_user),
@@ -327,7 +327,7 @@ async def upload_hash_set(
 
 
 @router.get("/hash-sets")
-async def list_hash_sets(
+def list_hash_sets(
     current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
 ):
@@ -339,7 +339,7 @@ async def list_hash_sets(
 # ── Profile (Stage 2) ────────────────────────────────────────────────
 
 @router.post("/cases/{case_id}/profile")
-async def generate_profile(
+def generate_profile(
     case_id: str,
     current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
@@ -358,7 +358,7 @@ async def generate_profile(
 
 
 @router.get("/cases/{case_id}/profile")
-async def get_profile(
+def get_profile(
     case_id: str,
     current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
@@ -376,7 +376,7 @@ async def get_profile(
 
 
 @router.get("/cases/{case_id}/timeline")
-async def get_timeline(
+def get_timeline(
     case_id: str,
     current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
@@ -391,7 +391,7 @@ async def get_timeline(
 
 
 @router.get("/cases/{case_id}/artifacts")
-async def get_artifacts(
+def get_artifacts(
     case_id: str,
     current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
@@ -406,7 +406,7 @@ async def get_artifacts(
 
 
 @router.get("/cases/{case_id}/mismatches")
-async def get_mismatches(
+def get_mismatches(
     case_id: str,
     current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
@@ -423,7 +423,7 @@ async def get_mismatches(
 # ── Processors & Custom Stages (Phase 4) ─────────────────────────────
 
 @router.get("/processors")
-async def list_processors(
+def list_processors(
     current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
 ):
@@ -432,7 +432,7 @@ async def list_processors(
 
 
 @router.post("/cases/{case_id}/stages")
-async def create_stage(
+def create_stage(
     case_id: str,
     request: CreateStageRequest,
     current_user: User = Depends(get_current_db_user),
@@ -459,7 +459,7 @@ async def create_stage(
 
 
 @router.post("/cases/{case_id}/stages/{stage_id}/execute")
-async def execute_stage(
+def execute_stage(
     case_id: str,
     stage_id: str,
     request: ExecuteStageRequest = ExecuteStageRequest(),
@@ -484,7 +484,7 @@ async def execute_stage(
 
 
 @router.get("/cases/{case_id}/stages/{stage_id}/results")
-async def get_stage_results(
+def get_stage_results(
     case_id: str,
     stage_id: str,
     current_user: User = Depends(get_current_db_user),
@@ -501,7 +501,7 @@ async def get_stage_results(
 
 
 @router.get("/cases/{case_id}/files/{file_path:path}/provenance")
-async def get_file_provenance(
+def get_file_provenance(
     case_id: str,
     file_path: str,
     current_user: User = Depends(get_current_db_user),
@@ -517,7 +517,7 @@ async def get_file_provenance(
 
 
 @router.get("/cases/{case_id}/files/{file_path:path}/artifacts")
-async def get_file_artifacts(
+def get_file_artifacts(
     case_id: str,
     file_path: str,
     current_user: User = Depends(get_current_db_user),
@@ -535,7 +535,7 @@ async def get_file_artifacts(
 # ── Advisor (Phase 5) ────────────────────────────────────────────────
 
 @router.post("/cases/{case_id}/advisor/chat")
-async def advisor_chat(
+def advisor_chat(
     case_id: str,
     request: AdvisorChatRequest,
     current_user: User = Depends(get_current_db_user),
@@ -555,7 +555,7 @@ async def advisor_chat(
 
 
 @router.get("/cases/{case_id}/advisor/suggest")
-async def advisor_suggest(
+def advisor_suggest(
     case_id: str,
     current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
@@ -573,7 +573,7 @@ async def advisor_suggest(
 # ── Templates (Phase 5) ──────────────────────────────────────────────
 
 @router.post("/cases/{case_id}/templates")
-async def save_template(
+def save_template(
     case_id: str,
     request: CreateTemplateRequest,
     current_user: User = Depends(get_current_db_user),
@@ -599,7 +599,7 @@ async def save_template(
 
 
 @router.get("/templates")
-async def list_templates(
+def list_templates(
     current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
 ):
@@ -608,7 +608,7 @@ async def list_templates(
 
 
 @router.post("/cases/{case_id}/apply-template")
-async def apply_template(
+def apply_template(
     case_id: str,
     request: ApplyTemplateRequest,
     current_user: User = Depends(get_current_db_user),
@@ -628,7 +628,7 @@ async def apply_template(
 
 
 @router.delete("/templates/{template_id}")
-async def delete_template(
+def delete_template(
     template_id: str,
     current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
@@ -643,7 +643,7 @@ async def delete_template(
 # ── Ingestion Bridge (Phase 6) ──────────────────────────────────────
 
 @router.post("/cases/{case_id}/ingest-preview")
-async def ingest_preview(
+def ingest_preview(
     case_id: str,
     request: IngestRequest,
     current_user: User = Depends(get_current_db_user),
@@ -667,7 +667,7 @@ async def ingest_preview(
 
 
 @router.post("/cases/{case_id}/ingest")
-async def ingest_to_case(
+def ingest_to_case(
     case_id: str,
     request: IngestRequest,
     current_user: User = Depends(get_current_db_user),

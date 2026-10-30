@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional
@@ -57,6 +58,8 @@ class ProcessorRegistry:
         self._processors: Dict[str, BaseTriageProcessor] = {}
         self._driver = None
         self._loaded = False
+        self._loading = False
+        self._load_lock = threading.RLock()
 
     def _get_driver(self):
         if self._driver is None:
@@ -73,10 +76,23 @@ class ProcessorRegistry:
         return self._driver
 
     def _ensure_loaded(self):
-        """Auto-discover and register all built-in processors."""
+        """Auto-discover and register all built-in processors, once. Route handlers call this from FastAPI's thread
+        pool: a second thread waits until the first has registered every processor (it used to see a part-filled
+        registry, as _loaded was set before registering). A re-entrant call during loading returns at once, as
+        before."""
         if self._loaded:
             return
-        self._loaded = True
+        with self._load_lock:
+            if self._loaded or self._loading:
+                return
+            self._loading = True
+            try:
+                self._load_all()
+            finally:
+                self._loading = False
+            self._loaded = True
+
+    def _load_all(self):
 
         # Import built-in processors
         try:
