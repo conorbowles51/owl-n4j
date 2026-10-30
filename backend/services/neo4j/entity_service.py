@@ -558,40 +558,45 @@ class EntityService:
             rejected_pairs = set()
 
         # Fetch data and close session immediately - we don't need the session
-        # held open during comparison loop, which can cause hanging issues
-        with driver.session() as session:
-            # Build type filter
-            type_filter = ""
-            params = {"case_id": case_id}
-            if entity_types:
-                type_filter = "AND labels(n)[0] IN $types"
-                params["types"] = entity_types
+        # held open during comparison loop, which can cause hanging issues. The read runs in a worker thread:
+        # this generator runs on the event loop, and a blocking read there holds every other request.
+        def fetch_entities():
+            with driver.session() as session:
+                # Build type filter
+                type_filter = ""
+                params = {"case_id": case_id}
+                if entity_types:
+                    type_filter = "AND labels(n)[0] IN $types"
+                    params["types"] = entity_types
 
-            # Get all entities (excluding Documents) for this case
-            query = f"""
-                MATCH (n)
-                WHERE n.key IS NOT NULL
-                  AND n.name IS NOT NULL
-                  AND NOT n:Document
-                  AND NONE(label IN labels(n) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
-                  AND coalesce(properties(n)['system_node'], false) <> true
-                  AND n.case_id = $case_id
-                  {type_filter}
-                RETURN
-                    n.key AS key,
-                    n.id AS id,
-                    n.name AS name,
-                    labels(n)[0] AS type,
-                    n.summary AS summary,
-                    n.notes AS notes,
-                    n.verified_facts AS verified_facts,
-                    n.ai_insights AS ai_insights,
-                    properties(n) AS properties
-                ORDER BY labels(n)[0], n.name
-            """
+                # Get all entities (excluding Documents) for this case
+                query = f"""
+                    MATCH (n)
+                    WHERE n.key IS NOT NULL
+                      AND n.name IS NOT NULL
+                      AND NOT n:Document
+                      AND NONE(label IN labels(n) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+                      AND coalesce(properties(n)['system_node'], false) <> true
+                      AND n.case_id = $case_id
+                      {type_filter}
+                    RETURN
+                        n.key AS key,
+                        n.id AS id,
+                        n.name AS name,
+                        labels(n)[0] AS type,
+                        n.summary AS summary,
+                        n.notes AS notes,
+                        n.verified_facts AS verified_facts,
+                        n.ai_insights AS ai_insights,
+                        properties(n) AS properties
+                    ORDER BY labels(n)[0], n.name
+                """
 
-            result = session.run(query, **params)
-            all_entities = [dict(record) for record in result]
+                result = session.run(query, **params)
+                all_entities = [dict(record) for record in result]
+            return all_entities
+
+        all_entities = await asyncio.to_thread(fetch_entities)
         # Session is now closed - all data fetched
 
         # Group entities by type (backend already only compares same-type entities)

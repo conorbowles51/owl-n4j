@@ -43,3 +43,34 @@ def test_concurrent_geocodes_keep_a_second_apart(monkeypatch):
         thread.join(10)
     finished.sort()
     assert finished[1] - finished[0] >= 0.95 and finished[2] - finished[1] >= 0.95
+
+
+def test_the_similar_entities_stream_reads_the_graph_off_the_event_loop(monkeypatch):
+    import asyncio
+    import importlib
+    entity_service = importlib.import_module('services.neo4j.entity_service')
+    seen = {}
+
+    class Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def run(self, query, **params):
+            seen['thread'] = threading.get_ident()
+            return [dict(key='a', id='a', name='Acme Ltd', type='Organization', summary=None, notes=None,
+                         verified_facts=None, ai_insights=None, properties={}),
+                    dict(key='b', id='b', name='Acme Ltd.', type='Organization', summary=None, notes=None,
+                         verified_facts=None, ai_insights=None, properties={})]
+
+    monkeypatch.setattr(entity_service, 'driver', type('Driver', (), dict(session=lambda self: Session()))())
+
+    async def collect():
+        seen['loop'] = threading.get_ident()
+        return [event async for event in entity_service.EntityService().find_similar_entities_streaming('case-1')]
+    events = asyncio.run(collect())
+    assert events[0] == {'event': 'start', 'data': {'total_entities': 2, 'entity_types': ['Organization'],
+                                                    'total_types': 1, 'total_comparisons': 1}}
+    assert seen['thread'] != seen['loop']
