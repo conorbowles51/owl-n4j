@@ -1040,6 +1040,7 @@ def financial_review_cases(user=Depends(get_current_db_user), db: Session = Depe
 
 
 @router.get('/batches/list')
+@cached_view('batches-list')
 def list_financial_batches(case_id: UUID = Query(...), db: Session = Depends(get_db)):
     from services.financial.batch_review_summary import statement_summary
     from sqlalchemy import select
