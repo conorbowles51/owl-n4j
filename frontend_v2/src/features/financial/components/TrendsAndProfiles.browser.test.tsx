@@ -197,7 +197,17 @@ it("gives each profile the transaction charts and filters without leaking anothe
       name: /Recorded payment name Software Co/,
     })
   )
-  expect(screen.getByRole("button", { name: "▾ Charts" })).toBeVisible()
+  // A profile opens with its charts shown; the switch for them is in the control panel.
+  expect(screen.getByRole("region", { name: "Transaction analysis" })).toBeVisible()
+  fireEvent.click(
+    document.querySelector<HTMLButtonElement>(
+      "[data-testid=transaction-controls-dock] > button"
+    )!
+  )
+  expect(screen.getByRole("switch", { name: /^Charts/ })).toHaveAttribute(
+    "aria-checked",
+    "true"
+  )
   expect(screen.getByText("3 of 3 imported transactions")).toBeVisible()
   fireEvent.click(
     screen.getByRole("button", {
@@ -231,7 +241,17 @@ it("gives each profile the transaction charts and filters without leaking anothe
   expect(
     screen.queryByRole("button", { name: "2021-02 ×" })
   ).not.toBeInTheDocument()
-  fireEvent.click(screen.getByRole("button", { name: "▸ From & To" }))
+  if (
+    document
+      .querySelector("[data-testid=transaction-controls-dock] > button")!
+      .getAttribute("aria-expanded") !== "true"
+  )
+    fireEvent.click(
+      document.querySelector<HTMLButtonElement>(
+        "[data-testid=transaction-controls-dock] > button"
+      )!
+    )
+  fireEvent.click(screen.getByRole("switch", { name: /^From & To/ }))
   expect(screen.getByRole("region", { name: "Recipients (To)" })).toBeVisible()
   await page.screenshot({
     path: "../../../../../output/financial-profile-analysis.png",

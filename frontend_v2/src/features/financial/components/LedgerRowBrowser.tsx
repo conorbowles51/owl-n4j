@@ -42,6 +42,7 @@ import { PaymentEditsEditor } from "./PaymentEditsEditor"
 import { CategorisePaymentDialog } from "./CategorisePaymentDialog"
 import { PaymentCategoryManager } from "./PaymentCategoryManager"
 import { TransactionAccountFilters } from "./TransactionAccountFilters"
+import { WorkspaceScope } from "./InvestigationWorkspaceParts"
 import { useLedgerAccountDirectory } from "../hooks/use-ledger-account-directory"
 import {
   knownAccountGroup,
@@ -577,6 +578,21 @@ export function LedgerRowBrowser({
       : []),
   ]
   const activeFilterCount = activeChips.length + analysisFilterCount(view)
+  const touchedInView = judgementsOf && !judgementWanted
+    ? rows.filter((row) => (judgementsOf(row) || []).length).length
+    : 0
+  const judgementNote = touchedInView > 0 && (
+    <p className="text-xs text-muted-foreground" data-testid="ledger-judgement-line">
+      Includes {touchedInView.toLocaleString()} payments touched by judgement calls.{" "}
+      <button
+        type="button"
+        className="underline"
+        onClick={() => changeView({ judgement: "any", page: 0 })}
+      >
+        Show only them
+      </button>
+    </p>
+  )
   const chipLine = (
     <div className="flex flex-wrap items-center gap-1.5 text-[13px]" role="group" aria-label="Active filters">
       <strong className="mr-2 text-sm">
@@ -610,6 +626,7 @@ export function LedgerRowBrowser({
         </button>
       ))}
       <AnalysisFilterChips filters={view} onChange={changeView} />
+      {judgementNote && <div className="ml-auto">{judgementNote}</div>}
     </div>
   )
   const activityControl = investigation && exportContext && (
@@ -1065,7 +1082,12 @@ export function LedgerRowBrowser({
     </div>
   )
   return (
-    <section ref={setSectionEl} aria-label="Browse ledger rows" className="space-y-3">
+    <section
+      ref={setSectionEl}
+      aria-label="Browse ledger rows"
+      // On the Transactions page a strip on the right holds the control panel's tab, so it never covers a control.
+      className={`space-y-3 ${investigation && exportContext ? "pr-8" : ""}`}
+    >
       {importBatchId && (
         <div
           className="flex flex-wrap items-center justify-between gap-3 rounded border bg-card p-3"
@@ -1198,27 +1220,7 @@ export function LedgerRowBrowser({
           {rows.length} payments match your filters.
         </p>
       )}
-      {judgementsOf &&
-        !judgementWanted &&
-        rows.some((row) => (judgementsOf(row) || []).length) && (
-          <p
-            className="text-xs text-muted-foreground"
-            data-testid="ledger-judgement-line"
-          >
-            Includes{" "}
-            {rows
-              .filter((row) => (judgementsOf(row) || []).length)
-              .length.toLocaleString()}{" "}
-            payments touched by judgement calls.{" "}
-            <button
-              type="button"
-              className="underline"
-              onClick={() => changeView({ judgement: "any", page: 0 })}
-            >
-              Show only them
-            </button>
-          </p>
-        )}
+      {!(investigation && exportContext) && judgementNote}
       {investigation && exportContext && (
         <>
           <TransactionsOverview
@@ -1329,6 +1331,9 @@ export function LedgerRowBrowser({
               })}
             </ControlGroup>
             <ControlGroup title="Accounts and dates">
+              {!independentFilters && !exportContext.profile && (
+                <WorkspaceScope caseId={exportContext.caseId} datesOnly />
+              )}
             <TransactionAccountFilters
               caseId={exportContext.caseId}
               selection={accountScope}

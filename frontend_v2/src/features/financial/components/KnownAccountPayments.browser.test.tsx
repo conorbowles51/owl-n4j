@@ -1,13 +1,12 @@
 import "@/styles/globals.css"
 import { page } from "vitest/browser"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react"
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react"
 import { MemoryRouter } from "react-router-dom"
 import { useState } from "react"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 import { fetchAPI } from "@/lib/api-client"
 import { LedgerPanel } from "./LedgerPanel"
-import { WorkspaceScope } from "./InvestigationWorkspaceParts"
 import { useInvestigationScope, useInvestigationScopeStore } from "../stores/investigation-scope"
 import { useFinancialDraftStore } from "../stores/financial-drafts"
 import { paymentFixture } from "../lib/payment-fixture.test-support"
@@ -33,6 +32,11 @@ const urls: string[] = []
 beforeEach(() => {
   localStorage.clear()
   sessionStorage.clear()
+  // Transactions keeps its filters and per-account totals in the control panel; the totals are switched on here.
+  for (const user of ["anyone", "reviewer"]) {
+    localStorage.setItem(`loupe:transactions:controls-open:v1:${user}`, "0")
+    localStorage.setItem(`loupe:transactions:sections:v1:${user}`, JSON.stringify({ accountTotals: true }))
+  }
   useFinancialDraftStore.setState({ drafts: {} })
   useInvestigationScopeStore.getState().reset()
   urls.length = 0
@@ -62,15 +66,18 @@ function Workspace() {
   return <main className="p-4 space-y-3">
     <button onClick={() => setAway(!away)}>{away ? "Return to Transactions" : "Open Findings"}</button>
     {away ? <h1>Findings</h1> : <>
-      <h1>Transactions</h1><WorkspaceScope caseId={caseId} datesOnly />
+      <h1>Transactions</h1>
       <LedgerPanel caseId={caseId} params={params} investigation />
     </>}
   </main>
 }
+// The currency, date range and account pickers are in the control panel on the right, which floats over the page.
+const controlsTab = () => document.querySelector<HTMLButtonElement>("[data-testid=transaction-controls-dock] > button")!
 async function openCurrencyFilters() {
-  // The filters panel is a labelled button (not <details>): open it only when hidden.
-  if (!screen.getByLabelText("Currency").checkVisibility())
-    await page.getByText(/^Filters/).click()
+  if (controlsTab().getAttribute("aria-expanded") !== "true") await act(async () => controlsTab().click())
+}
+async function closeControls() {
+  if (controlsTab().getAttribute("aria-expanded") === "true") await act(async () => controlsTab().click())
 }
 
 for (const width of [1280, 390]) it(`shows saved zero-payment currencies, preserves actual sums and returns from account history at ${width}px`, async () => {
@@ -84,6 +91,7 @@ for (const width of [1280, 390]) it(`shows saved zero-payment currencies, preser
   expect(screen.getByLabelText("Accounts with currency not recorded")).toHaveTextContent("1 known account")
   await openCurrencyFilters()
   await page.getByRole("combobox", { name: "Currency", exact: true }).selectOptions("EUR")
+  await closeControls()
   await screen.findByRole("heading", { name: "Payments matching your filters · 0 transactions · 2 accounts · 2 banks" })
   expect(screen.queryByLabelText("Accounts with currency not recorded")).not.toBeInTheDocument()
   expect(screen.getByRole("button", { name: "Download CSV (0)" })).toBeDisabled()
@@ -106,6 +114,7 @@ for (const width of [1280, 390]) it(`shows saved zero-payment currencies, preser
   expect(screen.getByRole("button", { name: historyName })).toHaveFocus()
   expect(screen.getByLabelText("Currency")).toHaveValue("EUR")
   if (width === 390) return
+  await openCurrencyFilters()
   await page.getByText(/^Date range/).click()
   await page.getByLabelText("Transactions from", { exact: true }).fill("2026-01-01")
   await page.getByLabelText("Transactions to", { exact: true }).fill("2026-01-31")

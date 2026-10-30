@@ -1,7 +1,6 @@
 import { Disclosure } from "./Disclosure"
 import { useMediaQuery } from "@/hooks/use-media-query"
 import { useFinancialDraft } from "../stores/financial-drafts"
-import { WorkspaceScope } from "./InvestigationWorkspaceParts"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { useState } from "react"
 import { useInvestigationScope } from "../stores/investigation-scope"
@@ -64,9 +63,9 @@ function CorrectableLedgerContent({
     <div className="space-y-3">
       {caseId && !heldOut && (
         <>
-          {investigation ? (
-            <WorkspaceScope caseId={caseId} datesOnly />
-          ) : (
+          {/* On the Transactions page the date range is in the control panel beside the table, which is there
+              even when nothing matches (and above the message when payments could not be loaded). */}
+          {!investigation && (
             <InvestigationFilters
               key={JSON.stringify(params)}
               caseId={caseId}

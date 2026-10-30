@@ -366,3 +366,42 @@ it("keeps an empty investigation scope understandable without inventing account 
     screen.getByText("No payments match these filters. Change the filters below to see other payments.")
   ).toBeInTheDocument()
 })
+
+describe("the Transactions date range when the table is not shown", () => {
+  // The date range is in the control panel beside the table, which stays even when nothing matches; while the
+  // payments load or when they cannot be loaded there is no panel, so the range is offered above the message.
+  it("keeps the date range reachable when nothing matches", () => {
+    useLedgerTransactions.mockReturnValue(settled([]))
+    render(
+      <LedgerPanel caseId="case-1" investigation params={{ startDate: "2031-01-01" }} />
+    )
+    const range = screen.getByRole("button", { name: /^Date range/ })
+    expect(range.closest("#transaction-controls")).not.toBeNull()
+  })
+
+  it("offers the date range while the payments load, so a large range can be narrowed", () => {
+    useLedgerTransactions.mockReturnValue({ data: undefined, isPending: true, isError: false, error: null })
+    render(<LedgerPanel caseId="case-1" investigation params={{}} />)
+    expect(screen.getByTestId("ledger-loading")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /^Date range/ })).toBeInTheDocument()
+  })
+
+  it("offers the date range when the payments could not be loaded", () => {
+    useLedgerTransactions.mockReturnValue({
+      data: undefined,
+      isPending: false,
+      isError: true,
+      error: new Error("timed out"),
+    })
+    render(<LedgerPanel caseId="case-1" investigation params={{}} />)
+    expect(screen.getByTestId("ledger-error")).toHaveTextContent("timed out")
+    expect(screen.getByRole("button", { name: /^Date range/ })).toBeInTheDocument()
+  })
+
+  it("leaves the count to the line above the table once payments are listed", () => {
+    useLedgerTransactions.mockReturnValue(settled([makeRow()]))
+    render(<LedgerPanel caseId="case-1" investigation params={{}} />)
+    expect(screen.queryByTestId("ledger-summary")).toBeNull()
+    expect(screen.getByRole("group", { name: "Active filters" })).toHaveTextContent("1 of 1 imported transactions")
+  })
+})

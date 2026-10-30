@@ -57,7 +57,7 @@ export function TransactionControlPanel({
   return (
     <div
       className="pointer-events-none fixed bottom-3 top-3 z-40 flex items-start"
-      style={{ right: Math.max(0, edge - 12) }}
+      style={{ right: edge }}
       data-testid="transaction-controls-dock"
     >
       <button
@@ -65,7 +65,7 @@ export function TransactionControlPanel({
         type="button"
         aria-expanded={open}
         aria-controls="transaction-controls"
-        aria-label={`${open ? "Collapse" : "Open"} filters and page controls${activeCount ? ` (${activeCount} filters on)` : ""}`}
+        aria-label={`${open ? "Collapse" : "Open"} filters and page controls${activeCount ? ` (${activeCount} ${activeCount === 1 ? "filter" : "filters"} on)` : ""}`}
         onClick={toggle}
         className="pointer-events-auto mt-40 flex flex-col items-center gap-2 rounded-l-lg border border-r-0 bg-background px-1.5 py-3 text-xs font-semibold shadow-md hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
       >

@@ -14,7 +14,6 @@ import {
 } from "@testing-library/react"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 import { page } from "vitest/browser"
-import { WorkspaceScope } from "./InvestigationWorkspaceParts"
 import { LedgerPanel } from "./LedgerPanel"
 import {
   useInvestigationScope,
@@ -25,7 +24,17 @@ import { paymentFixture } from "../lib/payment-fixture.test-support"
 import type { LedgerTransaction } from "../api"
 
 // These tests read the dense table view of Transactions.
-beforeEach(() => localStorage.setItem("financial-transactions-table-view", "1"))
+function seedControls(open: boolean) {
+  // Transactions keeps its date range, filters and per-account totals in the control panel on the right.
+  for (const user of ["anyone", "reviewer"]) {
+    localStorage.setItem(`loupe:transactions:controls-open:v1:${user}`, open ? "1" : "0")
+    localStorage.setItem(`loupe:transactions:sections:v1:${user}`, JSON.stringify({ accountTotals: true }))
+  }
+}
+beforeEach(() => {
+  localStorage.setItem("financial-transactions-table-view", "1")
+  seedControls(true)
+})
 
 const requests: URLSearchParams[] = []
 let currencyScopeFixture = false
@@ -145,10 +154,7 @@ function Workspace() {
         {visible ? "Go to findings" : "Return to transactions"}
       </button>
       {visible ? (
-        <>
-          <WorkspaceScope caseId={caseId} datesOnly />
-          <LedgerPanel caseId={caseId} params={params} investigation />
-        </>
+        <LedgerPanel caseId={caseId} params={params} investigation />
       ) : (
         <h1>Findings</h1>
       )}
@@ -178,7 +184,6 @@ it("shows the retained currency when a new date scope contains only EUR and clea
     </QueryClientProvider>
   )
   await screen.findByText("10 of 10 imported transactions")
-  await page.getByText("Filters", { exact: true }).click()
   await page
     .getByRole("combobox", { name: "Currency", exact: true })
     .selectOptions("USD")
@@ -205,7 +210,6 @@ it("shows the retained currency when a new date scope contains only EUR and clea
     .click()
   await screen.findByText("0 of 2 imported transactions")
   expect(screen.getByLabelText("Currency")).toHaveValue("USD")
-  await page.getByText("Filters (1)", { exact: true }).click()
   await page
     .getByRole("button", { name: "Clear payment filters", exact: true })
     .click()
@@ -255,7 +259,6 @@ it("applies native date inputs alongside bank, account, category and currency, r
       .getByRole("button", { name: /^Transfers, \d+ payments$/ })
       .click()
   })
-  fireEvent.click(screen.getByText("Filters (1)", { exact: true }))
   await act(async () => {
     await page
       .getByRole("combobox", { name: "Currency", exact: true })

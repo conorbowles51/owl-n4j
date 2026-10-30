@@ -39,6 +39,7 @@ import { useLedgerCount } from "../hooks/use-ledger-count"
 import { readLedgerStatus } from "../lib/ledger-format"
 import { useElapsedSeconds } from "../lib/request-wait"
 import { LedgerRowBrowser } from "./LedgerRowBrowser"
+import { WorkspaceScope } from "./InvestigationWorkspaceParts"
 
 /** The endpoint's default when no status is sent. See the module docstring. */
 const DEFAULT_LEDGER_STATUS = "admitted"
@@ -91,32 +92,44 @@ export function LedgerPanel({
     )
   }
 
+  // The Transactions page's date range sits in the control panel beside the table. While the payments load, or
+  // when they could not be, there is no table: the range is shown here so it can still be changed.
+  const dateRange = investigation && !independentFilters && (
+    <WorkspaceScope caseId={caseId} datesOnly />
+  )
+
   if (isPending) {
     return (
-      <div
-        className="flex items-center gap-2 text-sm text-muted-foreground"
-        data-testid="ledger-loading"
-      >
-        <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-        {loading ? `Reading the ledger: ${loading}…` : "Reading the ledger..."}
-        {elapsed > 0 && ` ${elapsed} s`}
+      <div className="space-y-3">
+        {dateRange}
+        <div
+          className="flex items-center gap-2 text-sm text-muted-foreground"
+          data-testid="ledger-loading"
+        >
+          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+          {loading ? `Reading the ledger: ${loading}…` : "Reading the ledger..."}
+          {elapsed > 0 && ` ${elapsed} s`}
+        </div>
       </div>
     )
   }
 
   if (isError) {
     return (
-      <div
-        className="flex items-start gap-2 text-sm text-destructive"
-        data-testid="ledger-error"
-      >
-        <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-        <span>
-          Transactions could not be loaded
-          {loading ? ` (${loading} in this view)` : ""}. Refresh this page to
-          try again.
-          {error instanceof Error ? ` ${error.message}` : ""}
-        </span>
+      <div className="space-y-3">
+        {dateRange}
+        <div
+          className="flex items-start gap-2 text-sm text-destructive"
+          data-testid="ledger-error"
+        >
+          <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          <span>
+            Transactions could not be loaded
+            {loading ? ` (${loading} in this view)` : ""}. Refresh this page to
+            try again.
+            {error instanceof Error ? ` ${error.message}` : ""}
+          </span>
+        </div>
       </div>
     )
   }
@@ -174,14 +187,12 @@ export function LedgerPanel({
             : "Date filters use the ledger ordering date, which may differ from a date printed on the statement."}
         </p>
       )}
-      {rows.length > 0 && (
+      {rows.length > 0 && !investigation && (
         <p
           className="text-xs text-muted-foreground"
           data-testid="ledger-summary"
         >
-          {investigation
-            ? `${rows.length} imported transactions`
-            : `${rows.length} ${rows.length === 1 ? "row" : "rows"}, ${status.label.toLowerCase()}.`}
+          {`${rows.length} ${rows.length === 1 ? "row" : "rows"}, ${status.label.toLowerCase()}.`}
         </p>
       )}
 
