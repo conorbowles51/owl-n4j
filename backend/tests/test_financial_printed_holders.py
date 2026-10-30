@@ -301,6 +301,31 @@ class DecisionTest(fixture.DuplicateTestCase):
         self.assertEqual(len(heading('mccauley')), 1)
         self.assertEqual(len(heading('hopper')), 1)
 
+    def test_the_judgement_list_follows_a_decision_across_merged_accounts(self):
+        from postgres.models.financial import FinancialAccount
+        from postgres.models.financial_judgements import FinancialJudgement
+        FinancialJudgement.__table__.create(self.db.get_bind(), checkfirst=True)
+        self.account.holder_name = 'ERICA MCCAULEY'
+        member = FinancialAccount(id=uuid.uuid4(), case_id=self.case.id, identity_key='member-8160',
+                                  institution_name='Barclays', identifier_as_printed=self.account.identifier_as_printed,
+                                  holder_name='ERICA MCCAULEY', metadata_=dict(canonical_account_id=str(self.account.id)))
+        self.db.add(member)
+        self.db.commit()
+        document = self.make_document()
+        period = self.make_period(document, account=member, bounds=PeriodBounds.printed(date(2026, 2, 1), date(2026, 2, 28)))
+        document.document_type = 'statement_review'
+        document.metadata_ = dict(statement_import_request=dict(holder='ERICA HOPPER', institution='Barclays',
+                                                                account_number=self.account.identifier_as_printed))
+        self.db.commit()
+        judgements.record_judgement(self.db, case_id=self.case.id, subject_type='statement_period',
+                                    subject_id=period.id, rule_id=ph.RULE_ID, summary='Kept as printed.',
+                                    target_key='holder', source_document_id=document.id, statement_period_id=period.id)
+        ph.record_decision(self.db, case_id=self.case.id, account_id=self.account.id, holders=BOTH,
+                           actor=self._actor(), reason='Neil Byrne decided.')
+        self.db.commit()
+        labels = [item['account_label'] for item in judgements.search(self.db, self.case.id)['items']]
+        self.assertTrue(labels[0].startswith('ERICA HOPPER'), labels)
+
     def test_the_account_view_lists_the_names_only_where_a_person_decided(self):
         from services.financial.account_history import _group_printed_holders
 
