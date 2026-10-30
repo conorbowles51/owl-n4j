@@ -175,7 +175,7 @@ def update_ai_model_policy(
 
 
 @router.get("/current", response_model=LLMConfigResponse)
-async def get_current_config(
+def get_current_config(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_db_user),
 ):
@@ -209,7 +209,7 @@ async def get_current_config(
 
 
 @router.post("/set", response_model=LLMConfigResponse)
-async def set_llm_config(
+def set_llm_config(
     request: SetLLMConfigRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
@@ -279,7 +279,7 @@ class SetConfidenceThresholdRequest(BaseModel):
 
 
 @router.get("/confidence-threshold", response_model=ConfidenceThresholdResponse)
-async def get_confidence_threshold(
+def get_confidence_threshold(
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
@@ -291,7 +291,7 @@ async def get_confidence_threshold(
 
 
 @router.post("/confidence-threshold", response_model=ConfidenceThresholdResponse)
-async def set_confidence_threshold(
+def set_confidence_threshold(
     request: SetConfidenceThresholdRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
