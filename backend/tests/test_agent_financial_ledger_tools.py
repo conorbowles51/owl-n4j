@@ -519,6 +519,11 @@ class CorrectedRowProvenanceTests(unittest.TestCase):
         finally:
             fixture.tearDown()
 
+    def test_a_correction_naming_no_row_id_reads_as_original_unavailable(self):
+        from services.agent.financial_ledger_tools import _originals
+        readings = [{'row': {'key': 'a'}, 'provenance': {'correction': {'previous_transaction_id': 'not-a-row-id'}}}]
+        self.assertEqual(_originals(None, None, readings, {}), {})
+
     def test_a_correction_names_its_corrector_and_a_model_correction_is_the_models(self):
         from tests.test_financial_payment_edits import PaymentEditTests
         from postgres.models.financial import AdjudicationEvent

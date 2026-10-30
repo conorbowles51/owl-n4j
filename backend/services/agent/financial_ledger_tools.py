@@ -53,6 +53,14 @@ def _uuid(value):
         raise FinancialLedgerToolError('Use a valid case or account identifier.') from exc
 
 
+def _is_uuid(value):
+    try:
+        UUID(str(value))
+    except ValueError:
+        return False
+    return True
+
+
 def _day(value):
     if value is None or value == '':
         return None
@@ -306,6 +314,8 @@ def _originals(session, case_id, readings, by_id):
     for _ in range(MAX_CORRECTION_CHAIN):
         wanted = sorted({str(record['previous_transaction_id']) for record in records
             if record and record.get('previous_transaction_id')} - set(by_id) - set(loaded))
+        # An id that is not a row id cannot be read; its correction states the original as unavailable.
+        wanted = [i for i in wanted if _is_uuid(i)]
         if not wanted:
             break
         records = []

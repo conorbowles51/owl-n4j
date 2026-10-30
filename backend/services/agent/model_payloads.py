@@ -26,6 +26,7 @@ MIN_MESSAGE_CHARS = 12_000
 # A single text value larger than this is shown in part with its length stated (only when it alone cannot fit).
 MAX_TEXT_CHARS = 20_000
 NOTE_ROOM = 400  # characters kept for the note a cut adds
+PAGED_SUMMARY = " This result is shown in part; _paging states what is not shown and how to read it."
 
 
 def run_budget_chars(context_window_tokens=None):
@@ -186,13 +187,17 @@ def tool_message_payload(*, result_id, summary, data, artifact=None, budget_char
 
     Every tool, ledger tools included, goes through the same budget. Ledger pages keep their own
     total_matching/next_offset; when even one ledger page is larger than the budget it is paged here too."""
-    view = page_for_model(model_view(data, artifact), budget_chars=budget_chars, result_id=result_id)
+    paged_summary = (summary + PAGED_SUMMARY).strip()
+    # The envelope around the page is part of the message too: the page gets what is left of the budget.
+    envelope = _size({"result_id": result_id, "summary": paged_summary, "data": None, "artifact": None,
+                      "_paging": None})
+    view = page_for_model(model_view(data, artifact), budget_chars=max(1_000, budget_chars - envelope),
+                          result_id=result_id)
     payload = {"result_id": result_id, "summary": summary, "data": view.get("data"),
                "artifact": view.get("artifact")}
     if view.get("_paging"):
         payload["_paging"] = view["_paging"]
-        payload["summary"] = (summary + " This result is shown in part; _paging states what is not shown and how "
-                              "to read it.").strip()
+        payload["summary"] = paged_summary
     return payload
 
 

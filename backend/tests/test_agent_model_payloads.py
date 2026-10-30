@@ -145,6 +145,16 @@ class ModelPayloadTests(unittest.TestCase):
                 for note in page["_paging"]:
                     self.assertEqual((note["total"], note["returned"] + note["remaining"]), (30, 30))
 
+    def test_the_whole_tool_message_fits_its_budget(self):
+        # The summary and ids around a page are part of what the model reads.
+        rows = [{"key": f"r{i}", "t": "z" * 2000} for i in range(40)]
+        for budget in (MIN_MESSAGE_CHARS, 20_000, 40_000):
+            with self.subTest(budget=budget):
+                message = tool_message_payload(result_id="res_0123456789", summary="Forty rows. " * 200,
+                                               data={"rows": rows, "count": 40}, budget_chars=budget)
+                self.assertIn("_paging", message)
+                self.assertLessEqual(len(json.dumps(message, ensure_ascii=False, separators=(",", ":"))), budget)
+
     def test_inspected_properties_are_not_cut_at_twenty(self):
         schema = {"labels": {"FinancialTransaction": {"count": 5, "properties": {f"p{i}": {"type": "str"} for i in range(32)}}}}
         page = tool_message_payload(result_id="r", summary="", data=schema)
