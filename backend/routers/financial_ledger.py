@@ -71,6 +71,7 @@ from services.financial import (
     case_proof_standing,
     list_case_decisions,
     list_runs,
+    count_transactions,
     list_transactions,
     to_run_view,
     to_view,
@@ -761,6 +762,43 @@ async def assess_evidence_amount(
         raise HTTPException(status_code=500, detail="Source amount assessment failed.")
 
 
+def _ledger_status_param(ledger_status: Optional[str]) -> Optional[LedgerStatus]:
+    if ledger_status is None:
+        return None
+    try:
+        return LedgerStatus(ledger_status)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Unknown ledger_status '{ledger_status}'. Valid values: "
+                f"{', '.join(s.value for s in LedgerStatus)}"
+            ),
+        )
+
+
+@router.get("/ledger-count")
+def get_ledger_count(
+    case_id: UUID = Query(..., description="REQUIRED: Case ID"),
+    source_document_id: UUID | None = None,
+    account_id: Optional[UUID] = None,
+    ledger_status: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
+    """How many rows ``/ledger`` returns for the same query, counted in the database without reading them.
+
+    The Transactions page shows this while the rows themselves load, so a long first load says what it is loading."""
+    status = _ledger_status_param(ledger_status)
+    try:
+        total = count_transactions(
+            db, case_id, source_document_id=source_document_id, account_id=account_id, account_ids=account_ids,
+            account_holders=account_holders, ledger_status=status, start_date=start_date, end_date=end_date)
+    except LedgerQueryError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"case_id": str(case_id), "total": total}
+
+
 @router.get("/ledger")
 @cached_view('ledger')
 def get_ledger_transactions(
@@ -789,19 +827,7 @@ def get_ledger_transactions(
     carry -- is what ``start_date``/``end_date`` bound, because it is the
     column the ledger itself orders and reconciles by.
     """
-    status: Optional[LedgerStatus] = None
-    if ledger_status is not None:
-        try:
-            status = LedgerStatus(ledger_status)
-        except ValueError:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"Unknown ledger_status '{ledger_status}'. Valid values: "
-                    f"{', '.join(s.value for s in LedgerStatus)}"
-                ),
-            )
-
+    status = _ledger_status_param(ledger_status)
     try:
         rows = list_transactions(
             db,

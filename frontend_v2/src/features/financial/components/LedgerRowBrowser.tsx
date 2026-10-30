@@ -6,6 +6,7 @@ import { matchesAccountSelection } from "../lib/account-selection"
 import { compareDisplayedAmounts } from "../lib/transaction-search"
 import { transactionSearch } from "../lib/transaction-search"
 import { TransactionAnalysisControls } from "./TransactionAnalysisPanels"
+import { InAppLink } from "./InAppLink"
 import { useInvestigationScope } from "../stores/investigation-scope"
 import { retainPaymentTableView } from "../lib/payment-table-draft"
 import { PaymentCategoryFilter } from "./PaymentCategoryFilter"
@@ -866,9 +867,9 @@ export function LedgerRowBrowser({
                   )
                 })}
                 {judgementsLink && (
-                  <a className="text-sm underline" href={judgementsLink}>
+                  <InAppLink className="text-sm underline" to={judgementsLink}>
                     See all judgement calls
-                  </a>
+                  </InAppLink>
                 )}
               </fieldset>
             )}

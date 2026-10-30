@@ -38,7 +38,10 @@ import { useFinancialStore } from "../stores/financial.store"
 import { FinancialPage } from "./FinancialPage"
 import { useStatementWorkspace } from "../stores/statement-workspace"
 
-const graph = vi.hoisted(() => ({ useTransactions: vi.fn() }))
+const graph = vi.hoisted(() => ({
+  useTransactions: vi.fn(),
+  useFinancialSummary: vi.fn(() => ({ data: undefined })),
+}))
 const ledger = vi.hoisted(() => ({ useLedgerTransactions: vi.fn() }))
 const runs = vi.hoisted(() => ({ useIngestionRuns: vi.fn() }))
 const adjudication = vi.hoisted(() => ({ useRowAdjudication: vi.fn() }))
@@ -56,6 +59,7 @@ const idleMutation = { mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }
 
 vi.mock("../hooks/use-financial-data", () => ({
   useTransactions: graph.useTransactions,
+  useFinancialSummary: graph.useFinancialSummary,
   useFinancialCategories: () => ({ data: [] }),
   useFinancialEntities: () => ({ data: [] }),
   useCategorize: () => idleMutation,
@@ -72,6 +76,9 @@ vi.mock("../hooks/use-financial-data", () => ({
 
 vi.mock("../hooks/use-ledger-transactions", () => ({
   useLedgerTransactions: ledger.useLedgerTransactions,
+}))
+vi.mock("../hooks/use-ledger-count", () => ({
+  useLedgerCount: () => ({ data: undefined }),
 }))
 
 // Control run-history results independently of the ledger and graph fixtures.
@@ -519,6 +526,35 @@ describe("FinancialPage", () => {
         /No (?:admitted rows in the ledger|imported payments yet)/i
       )[0]
     ).toBeInTheDocument()
+  })
+
+  it("says how many other records it is loading, and a failed load is not shown as no records", () => {
+    graph.useFinancialSummary.mockReturnValue({
+      data: { transaction_count: 1234 },
+    } as never)
+    graphLoading()
+    const view = renderPage()
+    selectTab("Transactions")
+    fireEvent.click(
+      screen.getByRole("button", { name: "Other financial records" })
+    )
+    expect(screen.getByTestId("records-loading").textContent).toContain(
+      "Loading 1,234 records…"
+    )
+    graph.useTransactions.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error("The server took too long"),
+    })
+    view.rerender(pageTree())
+    const failure = screen.getByTestId("records-error").textContent
+    expect(failure).toContain("could not be loaded (1,234 records in this view)")
+    expect(failure).toContain("The server took too long")
+    expect(
+      screen.queryByText("No other financial records")
+    ).not.toBeInTheDocument()
+    graph.useFinancialSummary.mockReturnValue({ data: undefined })
   })
 
   it("shows the graph's empty state inside the graph tab, not over the page", () => {

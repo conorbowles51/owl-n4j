@@ -1516,6 +1516,30 @@ export const financialAPI = {
     return fetchAPI<LedgerResponse>(`/api/financial/ledger?${qs}`)
   },
 
+  /** How many rows `getLedgerTransactions` returns for the same filters, counted without reading them. */
+  getLedgerCount: (params: {
+    caseId: string
+    sourceDocumentId?: string
+    accountIds?: string[]
+    accountHolders?: string[]
+    accountId?: string
+    ledgerStatus?: LedgerStatus
+    startDate?: string
+    endDate?: string
+  }) => {
+    const qs = new URLSearchParams({ case_id: params.caseId })
+    if (params.sourceDocumentId)
+      qs.set("source_document_id", params.sourceDocumentId)
+    appendAccountSelection(qs, params)
+    if (params.accountId) qs.set("account_id", params.accountId)
+    if (params.ledgerStatus) qs.set("ledger_status", params.ledgerStatus)
+    if (params.startDate) qs.set("start_date", params.startDate)
+    if (params.endDate) qs.set("end_date", params.endDate)
+    return fetchAPI<{ case_id: string; total: number }>(
+      `/api/financial/ledger-count?${qs}`
+    )
+  },
+
   /**
    * The ingestion runs for a case, newest first.
    *

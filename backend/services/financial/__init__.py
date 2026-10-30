@@ -902,6 +902,7 @@ from services.financial.transaction_locators import (
 from services.financial.transaction_query import (
     LedgerQueryError,
     TransactionView,
+    count_transactions,
     list_transactions,
     to_view,
 )
@@ -1794,6 +1795,7 @@ __all__ = [
     # a caller that wants quarantined or superseded rows says so explicitly.
     "LedgerQueryError",
     "TransactionView",
+    "count_transactions",
     "list_transactions",
     "to_view",
     # Cross-class correlation: what people said about money, against what the

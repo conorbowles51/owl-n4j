@@ -16,6 +16,7 @@ import { beforeEach, expect, it, vi } from "vitest"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { useFinancialDraftStore } from "../stores/financial-drafts"
 import { LedgerRowBrowser } from "./LedgerRowBrowser"
+import { MemoryRouter, useLocation } from "react-router-dom"
 import type { LedgerTransaction } from "../api"
 import { RowJudgements } from "../hooks/use-judgement-rows"
 import type { Judgement } from "../lib/judgements"
@@ -593,4 +594,41 @@ it("lists payments with judgement calls focus first and filters them by priority
   expect(legend).toHaveTextContent("Check first (1)")
   fireEvent.click(within(legend).getByRole("button", { name: /Check soon/ }))
   expect(screen.getAllByRole("listitem").map((r) => r.textContent)).toEqual(["account"])
+})
+
+it("opens all judgement calls inside the app, so Back finds the ledger it already read", () => {
+  // A plain anchor reloaded the whole app: Back then read the ledger from the server again.
+  const where: string[] = []
+  function Where() {
+    const location = useLocation()
+    where.push(location.pathname + location.search)
+    return null
+  }
+  render(
+    <MemoryRouter initialEntries={["/cases/case/financial?view=transactions"]}>
+      <Where />
+      <RowJudgements.Provider
+        value={{ caseId: "case", lookup: () => [{ id: "j1" } as Judgement] }}
+      >
+        <LedgerRowBrowser
+          transactions={[row("a")]}
+          exportContext={{ caseId: "case", params: {} }}
+        />
+      </RowJudgements.Provider>
+    </MemoryRouter>
+  )
+  const filters = screen.queryAllByRole("button", { name: /Filters/ })
+  if (filters.length) fireEvent.click(filters[0])
+  fireEvent.change(screen.getByLabelText("Judgement calls"), {
+    target: { value: "any" },
+  })
+  const link = screen.getByRole("link", { name: "See all judgement calls" })
+  const click = new MouseEvent("click", { bubbles: true, cancelable: true })
+  act(() => {
+    link.dispatchEvent(click)
+  })
+  expect(click.defaultPrevented).toBe(true)
+  expect(where.at(-1)).toBe(
+    "/cases/case/financial?view=statements&judgements=1&jStatus=all"
+  )
 })
