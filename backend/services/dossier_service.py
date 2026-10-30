@@ -105,8 +105,10 @@ def _graph_list_identities(case_id: uuid.UUID, keys: Iterable[str]) -> dict[str,
     """Name and type of every listed dossier's graph entity, in one read.
 
     The list shows only the name; the full identity with its connections stays on the detail route.
-    The node filter is the one get_node_details applies, and the first record per key is kept, as
-    result.single() keeps the first. A failed read leaves every identity out, as _graph_identity does.
+    The node filter is the one get_node_details applies. Should two active nodes share a key, the first
+    record returned is kept; Neo4j defines no order there, as it defines none for get_node_details
+    (0 of the 20 linked dossier keys had a duplicate on 30 Oct). A failed read leaves every identity
+    out, as _graph_identity does.
     """
     wanted = sorted({key for key in keys if key})
     if not wanted:
