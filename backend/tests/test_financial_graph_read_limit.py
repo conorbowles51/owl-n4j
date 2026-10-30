@@ -151,6 +151,30 @@ class RouteAnswerTests(unittest.TestCase):
                     )
         self.assertEqual(caught.exception.status_code, 503)
 
+    def test_the_graph_routes_answer_fastapis_own_bytes_without_its_slow_pass(self):
+        """jsonable_encoder took 2.7 s of d5b330d1's 33 MB transactions body; the answer is written directly,
+        byte for byte what FastAPI writes, and anything that is not plain JSON still takes FastAPI's path."""
+        import datetime
+        from fastapi.encoders import jsonable_encoder
+        from fastapi.responses import JSONResponse, Response
+        plain = {"transactions": [{"key": "t-1", "name": "Café €", "amount": 0.1, "big": 1e16, "small": 1e-05,
+                                   "none": None, "flag": True, "locator": {"page": 2}}], "total": 1,
+                 "uses_legacy_financial_model": False}
+        typed = {"transactions": [{"key": "t-2", "date": datetime.date(2024, 1, 2)}], "total": 1}
+        for value in (plain, typed):
+            expected = JSONResponse(content=jsonable_encoder(value)).body
+            with patch.object(financial.neo4j_service, "get_financial_transactions", return_value=value), \
+                    patch.object(financial, "attach_transaction_locators", lambda db, rows: None):
+                answer = financial.get_financial_transactions(
+                    case_id="case-1", mode="transactions", types=None, start_date=None, end_date=None,
+                    categories=None, db=None)
+            self.assertIsInstance(answer, Response)
+            self.assertEqual(answer.body, expected)
+            self.assertEqual(answer.media_type, "application/json")
+        with patch.object(financial.neo4j_service, "get_financial_entities", return_value=[{"key": "e", "name": "Ω"}]):
+            answer = financial.get_financial_entities(case_id="case-1")
+        self.assertEqual(answer.body, JSONResponse(content={"entities": [{"key": "e", "name": "Ω"}]}).body)
+
     def test_other_failures_stay_500_and_are_logged(self):
         with patch.object(financial.neo4j_service, "get_financial_entities", side_effect=RuntimeError("boom")):
             with self.assertLogs(financial.logger, level="ERROR"):

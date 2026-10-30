@@ -528,7 +528,7 @@ def _encoded_class():
     return Encoded
 
 
-def _json_response(result):
+def json_response(result):
     """FastAPI's own response for this result, without its slow pass over plain JSON.
 
     jsonable_encoder walks every value in Python (13.8 s for one case's 61 MB payment list) and changes
@@ -620,7 +620,7 @@ def _serve(handler, key, engine, case_id, kwargs, state):
                         refusal = exc
                     else:
                         # Lazy loads while encoding still belong to this snapshot and are recorded.
-                        response = result if isinstance(result, Response) else _json_response(result)
+                        response = result if isinstance(result, Response) else json_response(result)
             finally:
                 recording.paused = True
                 _recording.reset(token)

@@ -17,6 +17,7 @@ from postgres.session import get_db
 from routers.case_access import case_access_dependency
 from routers.users import get_current_db_user
 from services.financial import attach_transaction_locators
+from services.financial.view_cache import json_response
 from services.neo4j_service import neo4j_service
 from services.neo4j.driver import is_transaction_timeout
 from services.case_service import CaseAccessDenied, CaseNotFound, check_case_access
@@ -298,7 +299,9 @@ def get_financial_transactions(
                 attach_transaction_locators(db, rows)
             except Exception:
                 logger.exception("Attaching transaction locators failed for case %s", case_id)
-        return transactions
+        # The same bytes as FastAPI's own encoding, without its pass over every value
+        # (2.7 s of d5b330d1's 33 MB body, against 0.5 s to write it).
+        return json_response(transactions)
     except Exception as e:
         raise _graph_read_failed(e, "transactions", case_id)
 
@@ -310,7 +313,7 @@ def get_financial_entities(
     """Return all non-transaction entities in a case for from/to pickers."""
     try:
         entities = neo4j_service.get_financial_entities(case_id)
-        return {"entities": entities}
+        return json_response({"entities": entities})
     except Exception as e:
         raise _graph_read_failed(e, "entity list", case_id)
 
