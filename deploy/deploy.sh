@@ -61,7 +61,7 @@ release_is_healthy() {
         ! echo "${RESPONSE}" | grep -Eq '"neo4j":"error:|"evidence_engine":"(error:|unavailable)"' &&
         is_compiled_frontend "${FRONTEND_RESPONSE}" &&
         $SYSTEMCTL is-active --quiet owl-backend-v2 &&
-        $SYSTEMCTL is-active --quiet owl-frontend-v2
+        frontend_server_active
 }
 
 mkdir -p "${LOG_DIR}"
@@ -110,10 +110,16 @@ fi
 source "${PROJECT_DIR}/deploy/ingestion-safety.sh"
 # shellcheck source=deploy/backend-stop.sh
 source "${PROJECT_DIR}/deploy/backend-stop.sh"
+# shellcheck source=deploy/release-plan.sh
+source "${PROJECT_DIR}/deploy/release-plan.sh"
+# shellcheck source=deploy/frontend-release.sh
+source "${PROJECT_DIR}/deploy/frontend-release.sh"
+# shellcheck source=deploy/frontend-server.sh
+source "${PROJECT_DIR}/deploy/frontend-server.sh"
 
 FRONTEND_STOPPED=false
 restore_frontend_on_exit() {
-    if [ "${FRONTEND_STOPPED}" = true ]; then
+    if [ "${FRONTEND_STOPPED}" = true ] && ! frontend_served_by_nginx; then
         warn "Deployment exited while the frontend was stopped - attempting restart"
         $SYSTEMCTL start owl-frontend-v2 || true
         sleep 3
@@ -145,6 +151,13 @@ write_deploy_summary() {
         echo "  Last good:    $(cat "${LAST_GOOD_FILE:-/nonexistent}" 2>/dev/null || echo none)"
         echo "  Log:          ${LOG_FILE}"
     } | tee -a "${LOG_FILE}"
+    # One row in the releases table (deploy/record_release.py); never fails the release.
+    PYTHONDONTWRITEBYTECODE=1 timeout 60 "${VENV_DIR}/bin/python" "${PROJECT_DIR}/deploy/record_release.py" "${BACKEND_DIR}" \
+        sha="${NEW_COMMIT:-${DEPLOY_TARGET_SHA:-}}" live_before="${LIVE_COMMIT:-}" source="${DEPLOY_SOURCE:-deploy.sh}" \
+        outcome="${DEPLOY_OUTCOME}" plan="${RELEASE_PLAN:-}" frontend_build="$(frontend_current_build 2>/dev/null)" \
+        started_at="${DEPLOY_START:-}" finished_at="$(date +%s)" backend_restart_at="${BACKEND_RESTART_AT:-}" \
+        frontend_switch_at="${FRONTEND_SWITCH_AT:-}" healthy_at="${HEALTHY_AT:-}" log_file="${LOG_FILE}" \
+        2>&1 | tee -a "${LOG_FILE}" || true
 }
 on_deploy_exit() {
     local rc=$?
@@ -196,6 +209,11 @@ fi
 # on success below). PREV_COMMIT is NOT safe: the docket agent pulls the tree
 # before running this script, so on auto-deploys PREV == the commit under test.
 LAST_GOOD_FILE="${LOG_DIR}/.last-good-commit"
+# The component hashes of the last healthy release (deploy/release-plan.sh).
+COMPONENTS_FILE="${LOG_DIR}/.last-good-components"
+# The commit the running release reports, when it passes the health check with no local changes: the release that
+# is live now. Empty when the running release is not healthy, which makes this release do every step.
+LIVE_COMMIT=""
 # A backend restarted outside this script (systemctl, or a pull and restart by
 # hand) never passed a deploy's health check, so it was never recorded and a
 # failed deploy rolled back past it. When the running release passes the same
@@ -203,11 +221,15 @@ LAST_GOOD_FILE="${LOG_DIR}/.last-good-commit"
 # no local changes to tracked files, that commit is recorded as known good.
 if release_is_healthy; then
     RUNNING_COMMIT="$(echo "${RESPONSE}" | sed -n 's/.*"commit":"\([0-9a-f]\{40\}\)".*/\1/p')"
-    if [ -n "${RUNNING_COMMIT}" ] && echo "${RESPONSE}" | grep -q '"commit_clean":true' &&
-        git cat-file -e "${RUNNING_COMMIT}^{commit}" 2>/dev/null &&
-        [ "$(cat "${LAST_GOOD_FILE}" 2>/dev/null || true)" != "${RUNNING_COMMIT}" ]; then
-        echo "${RUNNING_COMMIT}" > "${LAST_GOOD_FILE}"
-        success "Running release ${RUNNING_COMMIT:0:12} is healthy (started outside a deploy): recorded as last known-good"
+    if [ -n "${RUNNING_COMMIT}" ] && echo "${RESPONSE}" | grep -q '"commit_clean":true'; then
+        # A release that changed no backend code leaves the backend running from an older commit; the record of the
+        # last-good release says so (deploy/release-plan.sh).
+        LIVE_COMMIT="$(release_live_commit "${RUNNING_COMMIT}" "${LAST_GOOD_FILE}" "${COMPONENTS_FILE}")"
+        if [ -z "${LIVE_COMMIT}" ] && git cat-file -e "${RUNNING_COMMIT}^{commit}" 2>/dev/null; then
+            echo "${RUNNING_COMMIT}" > "${LAST_GOOD_FILE}"
+            success "Running release ${RUNNING_COMMIT:0:12} is healthy (started outside a deploy): recorded as last known-good"
+            LIVE_COMMIT="${RUNNING_COMMIT}"
+        fi
     fi
 fi
 ROLLBACK_TARGET=""
@@ -222,8 +244,44 @@ if [ -z "${ROLLBACK_TARGET}" ]; then
 fi
 success "Rollback target: $(git rev-parse --short "${ROLLBACK_TARGET}") (last known-good) on branch ${CURRENT_BRANCH}"
 
+# A release of the commit that is already live and healthy changes nothing: stop here, before any check, install,
+# build or restart. deploy-now.sh pins the commit it wants in DEPLOY_TARGET_SHA.
+release_already_live() {
+    local target="$1"
+    [ -n "${LIVE_COMMIT}" ] && [ "${target}" = "${LIVE_COMMIT}" ] &&
+        [ "$(cat "${LAST_GOOD_FILE}" 2>/dev/null || true)" = "${LIVE_COMMIT}" ]
+}
+if [ -n "${DEPLOY_TARGET_SHA:-}" ] &&
+    release_already_live "$(git rev-parse --verify --quiet "${DEPLOY_TARGET_SHA}^{commit}" || true)"; then
+    NEW_COMMIT_SHORT="$(git rev-parse --short "${LIVE_COMMIT}")"
+    success "already live: ${NEW_COMMIT_SHORT} is running and healthy; nothing installed, built or restarted"
+    DEPLOY_OUTCOME="already live (nothing changed)"
+    exit 0
+fi
+
+# What this release has to do: a component is skipped only when its inputs equal those of the live release.
+plan_release() {
+    NEW_COMPONENTS="$(release_component_hashes "$1" "${ENV_FILE}")"
+    STEP_PIP="$(release_step pip "${COMPONENTS_FILE}" "${LIVE_COMMIT}" "${NEW_COMPONENTS}")"
+    STEP_BACKEND="$(release_step backend "${COMPONENTS_FILE}" "${LIVE_COMMIT}" "${NEW_COMPONENTS}")"
+    STEP_ENGINE="$(release_step engine "${COMPONENTS_FILE}" "${LIVE_COMMIT}" "${NEW_COMPONENTS}")"
+    FRONTEND_ID="$(echo "${NEW_COMPONENTS}" | sed -n 's/^frontend=//p')"
+    NPM_HASH="$(echo "${NEW_COMPONENTS}" | sed -n 's/^npm=//p')"
+}
+# Running ingestion matters only to a release that changes the backend, its packages or the engine: one that only
+# changes the frontend leaves every worker and its code alone. Unknown plan: always check.
+RELEASE_TOUCHES_BACKEND=true
+ingestion_gate() {
+    [ "${RELEASE_TOUCHES_BACKEND}" = false ] && return 0
+    check_ingestion_idle
+}
+if [ -n "${DEPLOY_TARGET_SHA:-}" ] && git rev-parse --verify --quiet "${DEPLOY_TARGET_SHA}^{commit}" >/dev/null; then
+    plan_release "${DEPLOY_TARGET_SHA}"
+    [ "${STEP_PIP}${STEP_BACKEND}${STEP_ENGINE}" = skipskipskip ] && RELEASE_TOUCHES_BACKEND=false
+fi
+
 step "Checking active ingestion before changing the checkout or dependencies"
-check_ingestion_idle
+ingestion_gate
 
 step "Checking for local changes"
 
@@ -255,6 +313,21 @@ if [ "${PREV_COMMIT}" = "${NEW_COMMIT}" ]; then
 else
     success "Updated ${PREV_COMMIT_SHORT} -> ${NEW_COMMIT_SHORT}"
 fi
+if release_already_live "${NEW_COMMIT}"; then
+    success "already live: ${NEW_COMMIT_SHORT} is running and healthy; nothing installed, built or restarted"
+    DEPLOY_OUTCOME="already live (nothing changed)"
+    exit 0
+fi
+
+plan_release "${NEW_COMMIT}"
+if [ "${STEP_PIP}${STEP_BACKEND}${STEP_ENGINE}" = skipskipskip ]; then
+    RELEASE_TOUCHES_BACKEND=false
+else
+    RELEASE_TOUCHES_BACKEND=true
+fi
+PREV_FRONTEND_ID="$(frontend_current_build)"
+RELEASE_PLAN="$(release_plan_summary "${COMPONENTS_FILE}" "${LIVE_COMMIT}" "${NEW_COMPONENTS}")"
+success "Release plan: ${RELEASE_PLAN} (frontend build ${FRONTEND_ID:0:12}, serving ${PREV_FRONTEND_ID:0:12})"
 
 # Party coverage: with the code being released, the share of stored payments that show a bare
 # "Not identified" (no name and no stated reason) may not rise on any bank, and a newly read layout may
@@ -285,13 +358,17 @@ if [ -f "${PARTY_GATE}" ]; then
     fi
 fi
 
-step "Installing backend dependencies"
-check_ingestion_idle
-$RUN_AS "${VENV_DIR}/bin/pip" install -r "${BACKEND_DIR}/requirements.txt" --quiet
-success "Backend dependencies installed"
+if [ "${STEP_PIP}" = run ]; then
+    step "Installing backend dependencies"
+    check_ingestion_idle
+    $RUN_AS "${VENV_DIR}/bin/pip" install -r "${BACKEND_DIR}/requirements.txt" --quiet
+    success "Backend dependencies installed"
+else
+    success "Backend dependencies unchanged; pip skipped"
+fi
 
 step "Checking active ingestion before service changes"
-check_ingestion_idle
+ingestion_gate
 
 # deploy-now.sh started the computing of this release's Financial views right after it pulled the code
 # (backend/services/financial/view_prepare.py), so the restarted service finds them saved instead of every
@@ -303,26 +380,17 @@ if [ -f "${PREPARE_VIEWS}" ] && [ "$(id -u)" -eq 0 ]; then
     python3 "${PREPARE_VIEWS}" wait || warn "Financial view prepare wait failed; release continues"
 fi
 
-step "Stopping frontend for dependency installation"
-$SYSTEMCTL stop owl-frontend-v2
-FRONTEND_STOPPED=true
-success "Frontend stopped"
-
-step "Installing and validating frontend dependencies"
-cd "${FRONTEND_DIR}"
-# Root-owned files from any past root npm/vitest run make npm ci as
-# ${DEPLOY_USER} half-fail (missing .bin links, missing lib files).
-if [ "$(id -u)" -eq 0 ] && [ -d "${FRONTEND_DIR}/node_modules" ]; then
-    ROOT_OWNED=$(find "${FRONTEND_DIR}/node_modules" "${FRONTEND_DIR}/dist" -uid 0 -print -quit 2>/dev/null || true)
-    if [ -n "${ROOT_OWNED}" ]; then
-        warn "Root-owned files in node_modules/dist (e.g. ${ROOT_OWNED}) - reclaiming for ${DEPLOY_USER}"
-        chown -R "${DEPLOY_USER}:" "${FRONTEND_DIR}/node_modules" "${FRONTEND_DIR}/dist" 2>/dev/null || true
+# Built beside the build being served (deploy/frontend-release.sh); the site stays up while it builds.
+step "Building the frontend aside"
+if ! frontend_build_aside "${NEW_COMMIT}" "${FRONTEND_ID}" "${NPM_HASH}"; then
+    fail "Frontend build failed; nothing was stopped or restarted."
+    if [ -n "${ROLLBACK_TARGET}" ] && [ "${ROLLBACK_TARGET}" != "${NEW_COMMIT}" ]; then
+        check_ingestion_idle
+        $RUN_AS git reset --hard "${ROLLBACK_TARGET}"
+        warn "Checkout returned to the running revision $(git rev-parse --short HEAD)."
     fi
+    exit 1
 fi
-$RUN_AS npm ci --silent
-$RUN_AS rm -rf "${FRONTEND_DIR}/node_modules/.vite"
-$RUN_AS npm run build
-success "Frontend V2 dependencies installed and production build passed"
 cd "${PROJECT_DIR}"
 
 step "Installing production frontend service"
@@ -334,48 +402,78 @@ fi
 success "Frontend service configured to serve the compiled bundle"
 
 step "Checking ingestion before migrations and service replacement"
-check_ingestion_idle
+ingestion_gate
 
-step "Running database migrations"
-cd "${BACKEND_DIR}"
-$RUN_AS "${VENV_DIR}/bin/alembic" upgrade head
-success "Database migrations complete"
-cd "${PROJECT_DIR}"
+if [ "${STEP_BACKEND}" = run ]; then
+    step "Running database migrations"
+    cd "${BACKEND_DIR}"
+    $RUN_AS "${VENV_DIR}/bin/alembic" upgrade head
+    success "Database migrations complete"
+    cd "${PROJECT_DIR}"
+else
+    success "Backend unchanged; migrations skipped"
+fi
 
-step "Building Docker images without replacing running containers"
-docker compose build
+if [ "${STEP_ENGINE}" = run ]; then
+    step "Building Docker images without replacing running containers"
+    docker compose build
 
-step "Refreshing Docker stack"
-check_ingestion_idle
-docker compose up -d --no-build --remove-orphans
-success "Docker stack refreshed"
+    step "Refreshing Docker stack"
+    check_ingestion_idle
+    docker compose up -d --no-build --remove-orphans
+    success "Docker stack refreshed"
+else
+    success "Evidence engine inputs unchanged; docker build and refresh skipped"
+fi
 
 step "Restarting services"
-configure_ingestion_shutdown
-# Defined by ingestion-safety.sh, which this run sourced before the update: the
-# release that introduces the switch was sourced without it.
-if declare -F configure_backend_allocator >/dev/null; then
-    configure_backend_allocator
+if [ "${STEP_BACKEND}" = run ]; then
+    configure_ingestion_shutdown
+    # Defined by ingestion-safety.sh, which this run sourced before the update: the
+    # release that introduces the switch was sourced without it.
+    if declare -F configure_backend_allocator >/dev/null; then
+        configure_backend_allocator
+    fi
+    check_ingestion_idle
+    BACKEND_RESTART_AT="$(date +%s)"
+    # Bounded: a backend that will not stop is escalated (SIGINT, then SIGKILL)
+    # and the release always reaches its health check, last-good marker and summary.
+    if ! restart_backend_bounded; then
+        fail "owl-backend-v2 did not restart; the health check will fail and roll back"
+    fi
+else
+    success "Backend unchanged; not restarted"
 fi
-check_ingestion_idle
-# Bounded: a backend that will not stop is escalated (SIGINT, then SIGKILL)
-# and the release always reaches its health check, last-good marker and summary.
-if ! restart_backend_bounded; then
-    fail "owl-backend-v2 did not restart; the health check will fail and roll back"
+# The frontend switches after the backend, so a new frontend never talks to the old backend.
+FRONTEND_CHANGED=false
+FRONTEND_SWITCH_FAILED=false
+if [ "${PREV_FRONTEND_ID}" != "${FRONTEND_ID}" ]; then
+    if frontend_switch "${FRONTEND_ID}"; then
+        FRONTEND_CHANGED=true
+    else
+        fail "The frontend did not switch to build ${FRONTEND_ID:0:12}; the release will roll back"
+        FRONTEND_SWITCH_FAILED=true
+    fi
 fi
-$SYSTEMCTL restart owl-frontend-v2
+FRONTEND_STOPPED=true
+frontend_server_apply "${FRONTEND_CHANGED}" || warn "The frontend server did not switch cleanly; the health check decides"
 FRONTEND_STOPPED=false
+[ "${FRONTEND_CHANGED}" = true ] && FRONTEND_SWITCH_AT="$(date +%s)"
 success "V2 services restarted"
 
 step "Running health check"
-echo "  Waiting 10s for backend initialization..."
-sleep 10
+if [ "${STEP_BACKEND}" = run ]; then
+    echo "  Waiting 10s for backend initialization..."
+    sleep 10
+fi
 
 HEALTHY=false
+[ "${FRONTEND_SWITCH_FAILED}" = true ] && HEALTH_RETRIES=0
 for i in $(seq 1 ${HEALTH_RETRIES}); do
     sleep "${HEALTH_DELAY}"
     if release_is_healthy; then
-        success "Health check passed (owl-backend-v2 + owl-frontend-v2 units active)"
+        HEALTHY_AT="$(date +%s)"
+        success "Health check passed (owl-backend-v2 and the frontend server active)"
         echo "  Backend: ${RESPONSE}"
         echo "  Frontend: compiled assets served on port ${FRONTEND_PORT}"
         HEALTHY=true
@@ -386,6 +484,13 @@ done
 
 if [ "${HEALTHY}" = true ]; then
     echo "${NEW_COMMIT}" > "${LAST_GOOD_FILE}"
+    if [ "${STEP_BACKEND}" = run ]; then
+        BACKEND_COMMIT="${NEW_COMMIT}"
+    else
+        BACKEND_COMMIT="$(release_record_value "${COMPONENTS_FILE}" backend_commit)"
+    fi
+    release_record_write "${COMPONENTS_FILE}" "${NEW_COMMIT}" "${BACKEND_COMMIT:-${LIVE_COMMIT}}" "${NEW_COMPONENTS}"
+    frontend_prune || warn "Old frontend builds could not be pruned"
     # The measure this healthy release passed with is the baseline the next release is held to.
     [ -f "${PARTY_CANDIDATE}" ] && mv -f "${PARTY_CANDIDATE}" "${PARTY_BASELINE}"
     DEPLOY_OUTCOME="deployed and healthy"
@@ -414,21 +519,27 @@ cd "${PROJECT_DIR}"
 check_ingestion_idle
 $RUN_AS git reset --hard "${ROLLBACK_TARGET}"
 
-step "Rollback: reinstalling dependencies"
-check_ingestion_idle
-$SYSTEMCTL stop owl-frontend-v2 || true
-FRONTEND_STOPPED=true
-$RUN_AS "${VENV_DIR}/bin/pip" install -r "${BACKEND_DIR}/requirements.txt" --quiet || true
-cd "${FRONTEND_DIR}"
-$RUN_AS npm ci --silent || true
-$RUN_AS rm -rf "${FRONTEND_DIR}/node_modules/.vite" || true
-$RUN_AS npm run build || true
-cd "${PROJECT_DIR}"
+# The rollback serves the previous frontend build again (kept on disk) and reinstalls or restarts only what this
+# release changed. A record of components is not written: the next release does every step.
+rm -f "${COMPONENTS_FILE}"
+step "Rollback: dependencies"
+if [ "${STEP_PIP}" = run ]; then
+    check_ingestion_idle
+    $RUN_AS "${VENV_DIR}/bin/pip" install -r "${BACKEND_DIR}/requirements.txt" --quiet || true
+fi
+ROLLBACK_FRONTEND_ID="${PREV_FRONTEND_ID}"
+if [ -z "${ROLLBACK_FRONTEND_ID}" ] || ! frontend_build_exists "${ROLLBACK_FRONTEND_ID}"; then
+    ROLLBACK_FRONTEND_ID="$(release_component_hashes HEAD "${ENV_FILE}" | sed -n 's/^frontend=//p')"
+    frontend_build_aside "$(git rev-parse HEAD)" "${ROLLBACK_FRONTEND_ID}" \
+        "$(release_component_hashes HEAD "${ENV_FILE}" | sed -n 's/^npm=//p')" || true
+fi
 
-step "Rollback: rebuilding Docker stack"
-docker compose build || true
-check_ingestion_idle
-docker compose up -d --no-build --remove-orphans || true
+if [ "${STEP_ENGINE}" = run ]; then
+    step "Rollback: rebuilding Docker stack"
+    docker compose build || true
+    check_ingestion_idle
+    docker compose up -d --no-build --remove-orphans || true
+fi
 
 step "Rollback: restarting services"
 configure_ingestion_shutdown
@@ -439,7 +550,13 @@ if declare -F configure_backend_allocator >/dev/null; then
 fi
 check_ingestion_idle
 restart_backend_bounded || true
-$SYSTEMCTL restart owl-frontend-v2 || true
+ROLLBACK_FRONTEND_CHANGED=false
+if [ "$(frontend_current_build)" != "${ROLLBACK_FRONTEND_ID}" ] && frontend_build_exists "${ROLLBACK_FRONTEND_ID}"; then
+    frontend_switch "${ROLLBACK_FRONTEND_ID}" || true
+    ROLLBACK_FRONTEND_CHANGED=true
+fi
+FRONTEND_STOPPED=true
+frontend_server_apply "${ROLLBACK_FRONTEND_CHANGED}" || true
 FRONTEND_STOPPED=false
 
 sleep 15
