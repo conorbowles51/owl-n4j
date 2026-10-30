@@ -229,6 +229,21 @@ class DecisionTest(fixture.DuplicateTestCase):
                          ('model', 'Claude', 'Neil Byrne'))
         self.assertIn('Recorded the decision Neil Byrne made', event.actor_origin['how'])
 
+    def test_the_command_states_who_runs_it(self):
+        # Without --model or --person-running it refuses: a model's run is never recorded under a person's name.
+        argv = ['--case', str(self.case.id), '--account', str(self.account.id), '--holder', BOTH[0], '--holder', BOTH[1],
+                '--decided-by', 'Neil Byrne', '--decided-by-email', self.user.email, '--why', 'x']
+        with self.assertRaises(SystemExit), mock.patch('sys.stderr'):
+            ph.main(argv)
+        with self.assertRaises(SystemExit), mock.patch('sys.stderr'):
+            ph.main(argv + ['--model', 'Claude', '--person-running'])
+        import contextlib
+        with mock.patch('postgres.session._get_session_local', return_value=lambda: contextlib.nullcontext(self.db)), \
+                mock.patch('builtins.print'):
+            ph.main(argv + ['--person-running', '--apply'])
+        event = self.db.scalar(select(AdjudicationEvent).where(AdjudicationEvent.decision == 'keep_printed_holders'))
+        self.assertEqual(event.actor_name, 'Neil Byrne')
+
     def test_it_refuses_one_name_and_an_account_of_another_case(self):
         with self.assertRaises(ph.PrintedHoldersError):
             ph.record_decision(self.db, case_id=self.case.id, account_id=self.account.id,

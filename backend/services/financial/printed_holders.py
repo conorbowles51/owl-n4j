@@ -154,9 +154,10 @@ def holders_by_statement(statements):
 
 def main(argv=None):
     """python -m services.financial.printed_holders --case C --account A --holder X --holder Y --decided-by NAME
-    --decided-by-email EMAIL [--model NAME --model-id ID] --why TEXT [--apply]: record a decision (dry run without
-    --apply). With --model the record is the model's work carrying out the person's decision (its origin names the
-    model, services.financial.model_work), shown as the model's until a person confirms it."""
+    --decided-by-email EMAIL (--model NAME --model-id ID | --person-running) --why TEXT [--apply]: record a decision
+    (dry run without --apply). With --model the record is the model's work carrying out the person's decision (its
+    origin names the model, services.financial.model_work), shown as the model's until a person confirms it. A record
+    under the person's own name needs --person-running: who runs it is always stated, never assumed."""
     import argparse
     import json
     from services.financial.decisions import Actor
@@ -168,7 +169,10 @@ def main(argv=None):
     parser.add_argument('--decided-by', required=True)
     parser.add_argument('--decided-by-email', required=True)
     parser.add_argument('--decided-by-user-id', default=None)
-    parser.add_argument('--model', default='', help='the model carrying the decision out for the person deciding')
+    runner = parser.add_mutually_exclusive_group(required=True)
+    runner.add_argument('--model', default='', help='the model carrying the decision out for the person deciding')
+    runner.add_argument('--person-running', action='store_true',
+                        help='the person deciding runs this command themselves (recorded under their name)')
     parser.add_argument('--model-id', default='')
     parser.add_argument('--why', required=True)
     parser.add_argument('--apply', action='store_true')
