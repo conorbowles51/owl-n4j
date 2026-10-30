@@ -2276,6 +2276,18 @@ def _judged(stored, **extra):
     return dict(record, status='not_proved', proof=PROOF_VERSION, **extra)
 
 
+def _rejudge_failed(stored, error):
+    """A stored outcome whose re-judging failed: its earlier outcome stands, judged under these rules. A wait on a
+    person's decision or on the card's account (holder_wait, account_wait) is kept for MAX_FAILURES failed tries, so a
+    passing fault does not strand it; after that it is final like any refusal, not tried again every round."""
+    failures = (stored.get('rejudge_failures') or 0) + 1
+    record = _judged(stored, rejudge_error=type(error).__name__, rejudge_failures=failures)
+    if failures >= MAX_FAILURES:
+        record.pop('holder_wait', None)
+        record.pop('account_wait', None)
+    return record
+
+
 def _stored(file, key):
     return ((file.metadata_ or {}).get(METADATA_KEY) or {}).get(key or '')
 
@@ -2991,7 +3003,7 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
             try:
                 if apply and file_id is not None:
                     with factory() as db:
-                        _store(db, file_id, key, _judged(stored, rejudge_error=type(error).__name__), owner=claim_id)
+                        _store(db, file_id, key, _rejudge_failed(stored, error), owner=claim_id)
                         db.commit()
             except Exception:  # noqa: BLE001
                 log.exception('Recording a failed re-judging failed')

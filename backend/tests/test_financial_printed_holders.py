@@ -122,6 +122,22 @@ class HolderWaitTest(unittest.TestCase):
         self.assertFalse(vr.due_again(dict(stored, status='proved'), lambda: CaseKnowledge(accounts=[decided])))
 
 
+    def test_a_failing_re_judge_keeps_its_wait_for_a_few_tries_then_stops(self):
+        decided = _decided()
+        stored = dict(version=vr.VERSION, status='not_proved', holder_wait=f'{decided.key}|', account_wait='0123|bank',
+                      raw={})
+        knowledge = lambda: CaseKnowledge(accounts=[decided])
+        for attempt in range(1, vr.MAX_FAILURES):
+            stored = vr._rejudge_failed(stored, RuntimeError('database gone'))
+            self.assertEqual(stored['rejudge_failures'], attempt)
+            self.assertTrue(vr.due_again(stored, knowledge))  # a passing fault: tried again
+        stored = vr._rejudge_failed(stored, RuntimeError('database gone'))
+        self.assertNotIn('holder_wait', stored)
+        self.assertNotIn('account_wait', stored)
+        self.assertFalse(vr.due_again(stored, knowledge))  # final: not tried every round
+        self.assertEqual(stored['status'], 'not_proved')
+
+
 class HelpersTest(unittest.TestCase):
     def test_covers_and_split(self):
         self.assertTrue(ph.covers(BOTH, 'ERICA HOPPER', ['ERICA MCCAULEY']))
