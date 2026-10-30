@@ -321,6 +321,9 @@ class FinancialAgentLedgerTests(LedgerToolFixture):
         self.assertEqual(result['totals'], [])
 
     def test_query_count_is_constant_as_the_payment_population_grows(self):
+        from postgres.models.financial_judgements import FinancialJudgement
+        # The judgement-call read is counted only if it runs; without its table it fails and the rows say "unknown".
+        Base.metadata.create_all(self.engine, tables=[FinancialJudgement.__table__])
         document, period, _ = self.source(rows=1)
         case_id = self.case.id
         def capture():
@@ -340,7 +343,10 @@ class FinancialAgentLedgerTests(LedgerToolFixture):
         last, large_queries = capture()
         self.assertEqual((first['total_matching'], last['total_matching']), (1, 201))
         self.assertEqual(len(small_queries), len(large_queries))
-        self.assertLessEqual(len(large_queries), 9)
+        # Every read is once per case, none per row. 9 at e886aff6, then one each: matched names across accounts
+        # (a6f9ec57), the case's accounts for the party state (6da5b5b4), the judgement calls' row map (340f9292).
+        self.assertLessEqual(len(large_queries), 12)
+        self.assertTrue(last['items'][0]['provenance']['judgement_calls']['available'])
         self.assertTrue(all(sql.lstrip().upper().startswith('SELECT') for sql in large_queries))
 
     def test_coverage_bounds_and_empty_foreign_selection_fail_closed(self):
