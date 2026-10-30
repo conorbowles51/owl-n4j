@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 from services.snapshot_storage import snapshot_storage
 from .auth import get_current_user
@@ -76,7 +77,7 @@ class SnapshotResponse(BaseModel):
 
 
 @router.post("", response_model=SnapshotResponse)
-async def create_snapshot(snapshot: SnapshotCreate, user: dict = Depends(get_current_user)):
+def create_snapshot(snapshot: SnapshotCreate, user: dict = Depends(get_current_user)):
     """
     Create a new snapshot.
     
@@ -175,7 +176,7 @@ def list_snapshots(user: dict = Depends(get_current_user)):
 
 
 @router.get("/{snapshot_id}", response_model=SnapshotData)
-async def get_snapshot(snapshot_id: str, user: dict = Depends(get_current_user)):
+def get_snapshot(snapshot_id: str, user: dict = Depends(get_current_user)):
     """Get a specific snapshot by ID."""
     try:
         snapshot = snapshot_storage.get(snapshot_id)
@@ -212,7 +213,7 @@ async def get_snapshot(snapshot_id: str, user: dict = Depends(get_current_user))
 
 
 @router.delete("/{snapshot_id}")
-async def delete_snapshot(snapshot_id: str, user: dict = Depends(get_current_user)):
+def delete_snapshot(snapshot_id: str, user: dict = Depends(get_current_user)):
     """Delete a snapshot owned by the current user."""
     all_snapshots = snapshot_storage.get_all()
     snapshot_data = None
@@ -239,7 +240,7 @@ async def delete_snapshot(snapshot_id: str, user: dict = Depends(get_current_use
 
 
 @router.delete("")
-async def delete_all_snapshots(user: dict = Depends(get_current_user)):
+def delete_all_snapshots(user: dict = Depends(get_current_user)):
     """Delete all snapshots owned by the current user."""
     all_snapshots = snapshot_storage.get_all()
     user_snapshot_ids = []
@@ -264,7 +265,7 @@ async def delete_all_snapshots(user: dict = Depends(get_current_user)):
 
 
 @router.post("/restore")
-async def restore_snapshot(snapshot_data: dict, user: dict = Depends(get_current_user)):
+def restore_snapshot(snapshot_data: dict, user: dict = Depends(get_current_user)):
     """
     Restore a snapshot from case data.
     This endpoint accepts full snapshot data and saves it directly.
@@ -378,7 +379,7 @@ async def upload_snapshot_chunk(
                     assembled["chat_history"].extend(chunk_data["chat_history"])
             
             # Save the assembled snapshot
-            snapshot_storage.save(snapshot_id, assembled)
+            await run_in_threadpool(snapshot_storage.save, snapshot_id, assembled)
             
             # Clean up cache
             del _chunk_upload_cache[snapshot_id]
