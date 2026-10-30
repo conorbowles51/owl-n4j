@@ -705,49 +705,88 @@ def _saved_path(key, scope):
 
 
 def _load_saved(key, scope, xmax):
-    """The entry saved for this key, database and code, if it was computed no later than this snapshot. Its
-    fingerprint is still to be compared in this snapshot. Never raises."""
+    """The entry saved for this key, database and code, if it was computed no later than this snapshot and the
+    store has never seen a later transaction counter (a database restored to an earlier point). Its fingerprint
+    is still to be compared in this snapshot. Never raises."""
+    import hashlib
     try:
+        if xmax < _saved_high_water():
+            return None
         with open(_saved_path(key, scope), 'rb') as saved:
             header = json.loads(saved.readline())
+            if (header.get('scope') != scope or header.get('key') != list(key) or type(header.get('xmax')) is not int
+                    or header['xmax'] > xmax):
+                return None
             body = saved.read()
+        if header.get('size') != len(body) or header.get('sha256') != hashlib.sha256(body).hexdigest():
+            return None
+        return _Entry(tuple(header['tables']), tuple(tuple(part) for part in header['fingerprint']), body,
+                      header['status_code'], header['media_type'], header.get('refusal'))
     except FileNotFoundError:
         return None
     except Exception:  # noqa: BLE001 - an unreadable copy is computed again
         logger.warning('Saved Financial view %s unreadable; computing it again', key[0], exc_info=True)
         return None
+
+
+def _saved_high_water():
+    """The highest transaction counter any saved view was computed at (0 if none)."""
     try:
-        if (header.get('scope') != scope or header.get('key') != list(key) or type(header.get('xmax')) is not int
-                or header['xmax'] > xmax or header.get('size') != len(body)):
-            return None
-        return _Entry(tuple(header['tables']), tuple(tuple(part) for part in header['fingerprint']), body,
-                      header['status_code'], header['media_type'], header.get('refusal'))
-    except Exception:  # noqa: BLE001
-        logger.warning('Saved Financial view %s unreadable; computing it again', key[0], exc_info=True)
-        return None
+        return int((_saved_dir() / 'xmax').read_text())
+    except FileNotFoundError:
+        return 0
+
+
+def _raise_high_water(directory, xmax):
+    import fcntl
+    import os
+    with open(directory / 'xmax.lock', 'a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            seen = int((directory / 'xmax').read_text())
+        except (FileNotFoundError, ValueError):
+            seen = 0
+        if xmax > seen:
+            temporary = directory / ('xmax.%d.tmp' % os.getpid())
+            temporary.write_text(str(xmax))
+            os.replace(temporary, directory / 'xmax')
 
 
 def _save_if_slow(key, entry, scope, xmax, started):
     """Save a slow view's entry for the other workers and the next start. Never raises."""
+    import hashlib
     import os
     if scope is None or time.perf_counter() - started < SAVE_MIN_SECONDS or len(entry.body) > MAX_SAVED_BYTES:
         return
+    temporary = None
     try:
         directory = _saved_dir()
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        _raise_high_water(directory, xmax)
         path = _saved_path(key, scope)
         header = dict(scope=scope, key=list(key), xmax=xmax, tables=list(entry.tables),
                       fingerprint=[list(part) for part in entry.fingerprint], status_code=entry.status_code,
-                      media_type=entry.media_type, refusal=entry.refusal, size=len(entry.body))
+                      media_type=entry.media_type, refusal=entry.refusal, size=len(entry.body),
+                      sha256=hashlib.sha256(entry.body).hexdigest())
         temporary = path.with_name('%s.%d.%d.tmp' % (path.name, os.getpid(), threading.get_ident()))
         descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(descriptor, 'wb') as out:
             out.write(json.dumps(header, ensure_ascii=True, separators=(',', ':')).encode() + b'\n')
             out.write(entry.body)
         os.replace(temporary, path)
-        _trim_saved(directory, keep=path)
+        temporary = None
     except Exception:  # noqa: BLE001 - the view stays reused in memory
         logger.warning('Could not save Financial view %s; it stays in memory only', key[0], exc_info=True)
+        if temporary is not None:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
+        return
+    try:
+        _trim_saved(directory, keep=path)
+    except Exception:  # noqa: BLE001
+        logger.warning('Could not trim saved Financial views', exc_info=True)
 
 
 def _trim_saved(directory, keep):
