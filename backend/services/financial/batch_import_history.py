@@ -136,8 +136,14 @@ def current_imports(session, case_id, source_ids):
         # next read sees the newer version and computes it again.
         fresh = {UUID(identifier): receipt for identifier, receipt in _current_imports(session, case_id, missing).items()}
         receipts.update(fresh)
+        from services.financial.row_versions import memoisable, own_write_floor
+        floor = own_write_floor(session)
         with _RECEIPTS_LOCK:
             for document_id, receipt in fresh.items():
+                versions = [found[str(document_id)].row_version, *(version for _, version in parts[document_id][0]),
+                            *(version for _, version in parts[document_id][1])]
+                if not all(memoisable(version, floor) for version in versions):
+                    continue  # a row this transaction wrote may change again before it commits under the same version
                 # A private copy: the receipt can share lists with this session's objects.
                 _RECEIPTS[document_id] = (keys[document_id], deepcopy(receipt))
                 _RECEIPTS.move_to_end(document_id)

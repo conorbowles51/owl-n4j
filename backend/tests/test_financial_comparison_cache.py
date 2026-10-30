@@ -151,6 +151,22 @@ class ComparisonCacheTests(TestCase):
         self.assertNotEqual(third[0][2], first[0][2])
         self.assertIn('changed', third[0][2])
 
+    def test_rows_this_transaction_wrote_are_returned_but_not_kept(self):
+        """A row written by the reading transaction can change again before commit under the same xmin
+        (row_versions.own_write_floor): case_files and the payload digests answer from it but keep nothing."""
+        from services.financial import row_versions
+        model = EvidenceTableGeometry
+        keys, columns = (model.evidence_file_id, model.page_number), (model.engine_job_id,)
+        with patch.object(row_versions, 'memoisable', lambda version, floor: False), self.f.SessionLocal() as db:
+            files = self.files(db)
+            with patch.object(projection, '_row_version', lambda model: cast(model.payload, String)):
+                digests = projection._digested(db, model, keys, columns, cast(model.payload, String),
+                                               model.evidence_file_id == self.f.file.id)
+        self.assertEqual(set(files), self.case_file_ids)
+        self.assertEqual(len(digests), 1)
+        self.assertEqual(source_lineage._CASE_FILES.get(str(self.f.case.id), {}), {})
+        self.assertEqual(len(projection._DIGESTS), 0)
+
 
 def all_columns_version(session, model):
     """Stand-in for xmin in SQLite: the row's whole content."""
@@ -222,3 +238,10 @@ class CachedReceiptHistoryTests(history_tests.CurrentBatchImportHistoryTests):
         self.assertEqual(run(), (3, 0))
         with self.f.SessionLocal() as db:
             self.assertEqual(batch_import_history.current_imports(db, uuid4(), [self.source_id]), {})
+
+    def test_a_receipt_built_from_rows_this_transaction_wrote_is_not_kept(self):
+        from services.financial import row_versions
+        with patch.object(row_versions, 'memoisable', lambda version, floor: False), self.f.SessionLocal() as db:
+            first = batch_import_history.current_imports(db, self.f.case.id, [self.source_id])
+        self.assertTrue(first)
+        self.assertEqual(len(batch_import_history._RECEIPTS), 0)

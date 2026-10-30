@@ -69,7 +69,9 @@ def statement_file_status(session, *, case_id, use_cache=True):
                 _cache.move_to_end(key)
                 return deepcopy(hit[1])
     result = _statement_file_status(session, case_id=case_id)
-    if fingerprint is not None:
+    from services.financial.row_versions import own_write_floor
+    if fingerprint is not None and own_write_floor(session) is None:
+        # Only a transaction that has written nothing: rows it wrote could change again under the same xmin.
         # The fingerprint was taken before the computation. A change committed
         # in between only makes the next poll recompute; it can never pin a
         # stale result.

@@ -25,9 +25,11 @@ def own_write_floor(session):
 
     None: the transaction has written nothing, so every row it sees is a committed version (another transaction's
     uncommitted rows are invisible; its own subtransactions have later ids than the transaction itself). 0: the
-    transaction counter has passed 2**32, where a 32-bit xmin no longer orders, so nothing is memoised."""
+    transaction counter has passed 2**32, where a 32-bit xmin no longer orders, so nothing is memoised. Databases
+    without transaction ids (SQLite, whose callers stand a row's content in for its version, so every write is a
+    new version) get None, as before."""
     if session.get_bind().dialect.name != 'postgresql':
-        return 0
+        return None
     own = session.execute(text('SELECT pg_current_xact_id_if_assigned()::text')).scalar()
     if own is None:
         return None
