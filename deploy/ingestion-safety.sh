@@ -67,12 +67,20 @@ configure_backend_allocator() {
     fi
     if [ -r "${switch}" ]; then
         choice="$(tr -d '[:space:]' < "${switch}")"
+    elif [ -e "${switch}" ]; then
+        echo "  [WARN] ${switch} exists but cannot be read; using the default allocator" >&2
+    fi
+    if [ "${choice}" = "mimalloc" ] && [ -n "${VENV_DIR:-}" ] &&
+       ! PYTHONMALLOC=mimalloc "${VENV_DIR}/bin/python" -c pass >/dev/null 2>&1; then
+        echo "  [WARN] ${VENV_DIR}/bin/python does not start with PYTHONMALLOC=mimalloc; using the default allocator" >&2
+        choice=""
     fi
     if [ "${choice}" != "mimalloc" ]; then
         if [ -e "${unit}" ]; then
             "${elevate[@]}" rm -f -- "${unit}" || return 1
             $SYSTEMCTL daemon-reload
         fi
+        echo "  [  OK] Backend memory allocator: Python default"
         return 0
     fi
     source_file="$(mktemp)" || return 1
@@ -82,6 +90,7 @@ configure_backend_allocator() {
     fi
     if cmp -s "${source_file}" "${unit}"; then
         rm -f -- "${source_file}"
+        echo "  [  OK] Backend memory allocator: mimalloc"
         return 0
     fi
     if ! "${elevate[@]}" install -d -m 0755 "${unit_dir}" ||
@@ -93,4 +102,5 @@ configure_backend_allocator() {
     fi
     rm -f -- "${source_file}"
     $SYSTEMCTL daemon-reload
+    echo "  [  OK] Backend memory allocator: mimalloc"
 }

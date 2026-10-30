@@ -57,6 +57,19 @@ test "$(calls)" = 2
 configure_backend_allocator <&-
 test "$(calls)" = 2
 
+# An interpreter that will not start with mimalloc keeps the default allocator.
+mkdir -p "${test_root}/venv/bin"
+printf '#!/usr/bin/env bash\n[ "${PYTHONMALLOC:-}" != mimalloc ]\n' > "${test_root}/venv/bin/python"
+chmod +x "${test_root}/venv/bin/python"
+printf 'mimalloc\n' > "${BACKEND_ALLOCATOR_SWITCH}"
+configure_backend_allocator <&-
+test -e "${unit}"
+test "$(calls)" = 3
+VENV_DIR="${test_root}/venv" configure_backend_allocator <&- 2> "${test_root}/stderr"
+test ! -e "${unit}"
+test "$(calls)" = 4
+grep -q 'does not start with PYTHONMALLOC=mimalloc' "${test_root}/stderr"
+
 # An unavailable unit directory fails without a reload or a leftover source.
 printf 'mimalloc\n' > "${BACKEND_ALLOCATOR_SWITCH}"
 rm -rf -- "${test_root}/units"
@@ -65,6 +78,6 @@ if configure_backend_allocator <&-; then
     echo 'Installer unexpectedly accepted an unavailable unit directory' >&2
     exit 1
 fi
-test "$(calls)" = 2
+test "$(calls)" = 4
 test -z "$(ls -A "${test_root}/scratch")"
 echo 'backend allocator checks passed'
