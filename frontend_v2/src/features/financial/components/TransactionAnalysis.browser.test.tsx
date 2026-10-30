@@ -131,6 +131,9 @@ function Workspace() {
   )
 }
 afterEach(() => {
+  // The control panel's remembered state must not reach other test files.
+  for (const key of Object.keys(localStorage))
+    if (key.startsWith("loupe:transactions:")) localStorage.removeItem(key)
   cleanup()
   useFinancialDraftStore.setState({ drafts: {} })
   document.documentElement.classList.remove("dark")

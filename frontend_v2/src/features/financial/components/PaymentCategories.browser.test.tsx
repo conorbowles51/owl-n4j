@@ -40,9 +40,11 @@ vi.mock("./LedgerExportButton", () => ({ LedgerExportButton: () => null }))
 
 // The category tools are in the control panel on the right, which floats over the table while open.
 async function controls(open: boolean) {
-  await act(async () => {
-    await page.getByRole("button", { name: new RegExp(`^${open ? "Open" : "Collapse"} filters and page controls`) }).first().click()
-  })
+  const tab = document.querySelector<HTMLButtonElement>("[data-testid=transaction-controls-dock] > button")!
+  if ((tab.getAttribute("aria-expanded") === "true") !== open)
+    await act(async () => {
+      await page.getByRole("button", { name: new RegExp(`^${open ? "Open" : "Collapse"} filters and page controls`) }).first().click()
+    })
 }
 afterEach(() => {
   cleanup()
