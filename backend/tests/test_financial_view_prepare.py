@@ -17,8 +17,8 @@ SHOWN = '\n'.join((
 
 
 class FakeSystem:
-    def __init__(self, active_polls=0, shown=SHOWN, journal=''):
-        self.calls, self.active_polls, self.shown, self.journal = [], active_polls, shown, journal
+    def __init__(self, active_polls=0, shown=SHOWN, journal='', commit='a' * 40):
+        self.calls, self.active_polls, self.shown, self.journal, self.commit = [], active_polls, shown, journal, commit
 
     def __call__(self, argv):
         self.calls.append(argv)
@@ -30,6 +30,8 @@ class FakeSystem:
             self.active_polls -= 1
         elif argv[0] == 'journalctl':
             out = self.journal
+        elif argv[0] == 'git':
+            out = self.commit + '\n'
         return subprocess.CompletedProcess(argv, code, out, '')
 
 
@@ -119,3 +121,30 @@ def test_the_release_warm_up_unit_has_the_service_identity(monkeypatch):
     assert view_cache._identity_now() == service
     monkeypatch.setenv('PYTHONMALLOC', 'not the service setting')
     assert view_cache._identity_now() != service
+
+
+def test_a_prepare_records_the_code_it_computes_and_follows_a_later_fetch(tmp_path):
+    state = tmp_path / 'state.json'
+    system = FakeSystem(commit='5f7e69f3' + '0' * 32)
+    view_prepare.start(log=str(tmp_path / 'log'), run=system, state=str(state))
+    assert json.loads(state.read_text())['commit'] == '5f7e69f3' + '0' * 32
+    started = sum(call[0] == 'systemd-run' for call in system.calls)
+    view_prepare.follow(log=str(tmp_path / 'log'), run=system, state=str(state))
+    assert sum(call[0] == 'systemd-run' for call in system.calls) == started  # same code: nothing
+    system.commit = '9ff80b1f' + '0' * 32  # deploy.sh fetched other code
+    view_prepare.follow(log=str(tmp_path / 'log'), run=system, state=str(state))
+    assert sum(call[0] == 'systemd-run' for call in system.calls) == started + 1
+    assert json.loads(state.read_text())['commit'].startswith('9ff80b1f')
+    assert 'code changed to 9ff80b1f' in (tmp_path / 'log').read_text()
+
+
+def test_follow_without_a_prepare_starts_nothing(tmp_path):
+    system = FakeSystem()
+    assert view_prepare.follow(run=system, state=str(tmp_path / 'absent.json')) == 0
+    assert system.calls == []
+
+
+def test_deploy_follows_its_own_fetch_before_the_party_gate():
+    script = (Path(__file__).resolve().parents[2] / 'deploy' / 'deploy.sh').read_text()
+    follow = script.index('view_prepare.py" follow')
+    assert script.index('NEW_COMMIT="$(git rev-parse HEAD)"') < follow < script.index('PARTY_GATE=')

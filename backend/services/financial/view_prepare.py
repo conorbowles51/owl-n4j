@@ -7,7 +7,8 @@ process environment, view_cache._identity_now), so they can be computed before t
 by a process with the service's own environment.
 
     python3 services/financial/view_prepare.py start   (deploy-now.sh, right after it pulls the release)
-    python3 services/financial/view_prepare.py wait    (deploy/deploy.sh, right before it restarts the service)
+    python3 services/financial/view_prepare.py follow  (deploy/deploy.sh, right after its own fetch: other code -> again)
+    python3 services/financial/view_prepare.py wait    (deploy/deploy.sh, before the frontend stops)
 
 ``start`` runs ``python -m services.financial.view_warmup --prepare`` as a unit of its own with the backend unit's
 user, group, working directory, environment file and environment settings (drop-ins included, read from systemd)
@@ -97,12 +98,38 @@ def start(log=None, run=_run, state=STATE):
         result = run(prepare_command(service_settings(run)))
         if result.returncode != 0:
             raise RuntimeError((result.stderr or result.stdout).strip()[:300])
+        commit = _checkout_commit(run)
         with open(state, 'w') as out:
-            json.dump(dict(started=started), out)
-        _say(log, 'prepare: started')
+            json.dump(dict(started=started, commit=commit), out)
+        _say(log, 'prepare: started for %s' % (commit or 'unknown commit')[:8])
     except Exception as error:  # noqa: BLE001 - the release goes on without it
         _say(log, 'prepare: not started (%s)' % error)
     return 0
+
+
+def _checkout_commit(run):
+    """The commit checked out in the tree this file belongs to (the live checkout), or None."""
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    result = run(['git', '-C', root, 'rev-parse', 'HEAD'])
+    commit = (result.stdout or '').strip()
+    return commit if result.returncode == 0 and commit else None
+
+
+def follow(log=None, run=_run, state=STATE):
+    """deploy.sh fetches again after deploy-now.sh started the prepare; when that brought other code (another job
+    pushed meanwhile; 2026-10-30 22:19 -> 22:29 the prepare computed 5f7e69f3 and 9ff80b1f was released), the
+    prepared views would be keyed on code that never runs. Start the prepare again for the code now checked out.
+    Nothing when no prepare was started or the code is the same. Returns 0 always."""
+    try:
+        with open(state) as saved:
+            prepared = json.load(saved).get('commit')
+    except (OSError, ValueError):
+        return 0
+    current = _checkout_commit(run)
+    if current is None or current == prepared:
+        return 0
+    _say(log, 'prepare: code changed to %s since the prepare started; starting it again' % current[:8])
+    return start(log, run=run, state=state)
 
 
 def wait(log=None, run=_run, state=STATE, cap=PREPARE_CAP_SECONDS, poll=2.0, clock=time.time, sleep=time.sleep):
@@ -141,5 +168,7 @@ if __name__ == '__main__':
         sys.exit(start(log))
     if action == 'wait':
         sys.exit(wait(log))
+    if action == 'follow':
+        sys.exit(follow(log))
     print(__doc__)
     sys.exit(2)

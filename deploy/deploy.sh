@@ -245,6 +245,11 @@ fi
 
 NEW_COMMIT="$(git rev-parse HEAD)"
 NEW_COMMIT_SHORT="$(git rev-parse --short HEAD)"
+# The release's Financial views are being computed for the code deploy-now.sh pulled; if this fetch brought other
+# code, compute them again for it (backend/services/financial/view_prepare.py). Never fails the release.
+if [ -f "${BACKEND_DIR}/services/financial/view_prepare.py" ] && [ "$(id -u)" -eq 0 ]; then
+    python3 "${BACKEND_DIR}/services/financial/view_prepare.py" follow || warn "Financial view prepare follow failed; release continues"
+fi
 if [ "${PREV_COMMIT}" = "${NEW_COMMIT}" ]; then
     warn "No new commits pulled"
 else
