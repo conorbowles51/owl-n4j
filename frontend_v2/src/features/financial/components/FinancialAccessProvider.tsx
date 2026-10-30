@@ -76,13 +76,18 @@ export function FinancialAccessProvider({
   )
 }
 
-export function FinancialAccessNotice() {
+/**
+ * What this account may do in the case. ``inline``: shown in a row of its own
+ * container (beside the records switch) instead of as a line of its own.
+ */
+export function FinancialAccessNotice({ inline = false }: { inline?: boolean } = {}) {
   const access = useFinancialAccess()
   if (access.ready && access.canEdit && access.canUpload) return null
   return (
     <div
-      className="border-b px-4 py-2 text-sm"
+      className={inline ? "min-w-0 flex-1 text-sm text-muted-foreground" : "border-b px-4 py-2 text-sm"}
       role={access.error ? "alert" : "status"}
+      data-testid="financial-access-notice"
     >
       {access.failure === "expired" ? (
         <>

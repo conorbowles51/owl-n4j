@@ -1,3 +1,4 @@
+import type { ReactNode } from "react"
 import { InfoTip } from "./InfoTip"
 import { FileSpreadsheet, FileSearch } from "lucide-react"
 
@@ -8,9 +9,12 @@ import { FileSpreadsheet, FileSearch } from "lucide-react"
 export function RecordsModeSwitch({
   transactionsMode,
   onChange,
+  aside,
 }: {
   transactionsMode: boolean
   onChange: (mode: "transactions" | "intelligence") => void
+  /** Shown on the same line, after the switch (the case access notice). */
+  aside?: ReactNode
 }) {
   const options = [
     {
@@ -27,7 +31,7 @@ export function RecordsModeSwitch({
     },
   ]
   return (
-    <div className="flex items-center gap-2 border-b px-4 py-2">
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b px-4 py-2">
       <div
         role="group"
         aria-label="Which financial records to show"
@@ -51,6 +55,7 @@ export function RecordsModeSwitch({
         ))}
       </div>
       <InfoTip text="Statement payments come from imported bank and card statements. Other financial records are amounts found elsewhere in case evidence; correcting a statement payment does not change them." />
+      {aside}
     </div>
   )
 }
