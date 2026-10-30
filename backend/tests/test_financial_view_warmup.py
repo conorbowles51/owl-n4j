@@ -124,6 +124,69 @@ def test_off_when_the_memo_directory_is_off(periods, monkeypatch):
     assert calls == []
 
 
+@needs_pg
+def test_prepare_warms_every_view_and_reports_it(periods, monkeypatch):
+    add, calls, _ = periods
+    add(uuid.uuid4(), 1)
+    monkeypatch.setattr(view_warmup, '_migrations_pending', lambda: '')
+    summary = view_warmup.prepare()
+    assert len(calls) == 9
+    assert summary.startswith('prepare: 9 views warmed in ') and '(0 failed, code ' in summary
+
+
+@needs_pg
+def test_prepare_computes_nothing_while_migrations_are_pending(periods, monkeypatch):
+    add, calls, _ = periods
+    add(uuid.uuid4(), 1)
+    monkeypatch.setattr(view_warmup, '_migrations_pending', lambda: 'abc123')
+    assert view_warmup.prepare() == 'prepare: skipped, database migrations pending (abc123)'
+    assert calls == []
+
+
+@needs_pg
+def test_prepare_waits_for_a_warm_up_already_running(periods, monkeypatch):
+    import threading
+    add, calls, directory = periods
+    add(uuid.uuid4(), 1)
+    monkeypatch.setattr(view_warmup, '_migrations_pending', lambda: '')
+    held = open(directory / 'warmup.lock', 'a')
+    fcntl.flock(held, fcntl.LOCK_EX)
+    done = []
+    worker = threading.Thread(target=lambda: done.append(view_warmup.prepare()))
+    worker.start()
+    worker.join(1.0)
+    assert done == [] and calls == []
+    held.close()
+    worker.join(30)
+    assert len(calls) == 9 and done[0].startswith('prepare: 9 views warmed')
+
+
+def test_prepare_never_raises(monkeypatch, tmp_path):
+    monkeypatch.setenv('FINANCIAL_VIEW_MEMO_DIR', str(tmp_path))
+
+    def broken():
+        raise RuntimeError('synthetic')
+    monkeypatch.setattr(view_warmup, '_migrations_pending', broken)
+    assert view_warmup.prepare().startswith('prepare: failed after ')
+
+
+def test_the_migration_check_reads_the_code_heads(monkeypatch):
+    # The real check against this tree's migrations, with a database that is at no revision at all.
+    from alembic.runtime import migration
+    monkeypatch.setattr(migration.MigrationContext, 'get_current_heads', lambda self: ())
+    import postgres.session
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+    monkeypatch.setattr(postgres.session, '_get_engine', lambda: type('E', (), dict(connect=lambda self: Connection()))())
+    monkeypatch.setattr(migration.MigrationContext, 'configure', classmethod(lambda cls, connection: cls.__new__(cls)))
+    assert view_warmup._migrations_pending() != ''
+
+
 # The warm-up runs in a child process so the worker does not keep its memory. No database needed below.
 import asyncio
 import sys

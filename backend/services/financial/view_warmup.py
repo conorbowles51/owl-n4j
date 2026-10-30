@@ -91,8 +91,9 @@ def _child_command():
     return [sys.executable, '-m', 'services.financial.view_warmup', CHILD_FLAG]
 
 
-def _take_lock():
-    """The host-wide warm-up lock, held open, or None if the memo is off or another worker holds it."""
+def _take_lock(wait=False):
+    """The host-wide warm-up lock, held open, or None if the memo is off or another worker holds it (``wait``:
+    wait for it instead)."""
     import fcntl
     from services.financial import view_cache
     directory = view_cache._memo_dir()
@@ -105,7 +106,7 @@ def _take_lock():
         logger.warning('Financial view warm-up skipped: no memo directory', exc_info=True)
         return None
     try:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fcntl.flock(lock, fcntl.LOCK_EX if wait else fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
         lock.close()
         return None  # another worker is warming
@@ -136,9 +137,10 @@ def _warm_cases():
     SessionLocal = _get_session_local()
     with SessionLocal() as db:
         if db.get_bind().dialect.name != 'postgresql':
-            return
+            return 0, 0
         cases = [case for case, _ in db.execute(select(Period.case_id, func.count()).group_by(Period.case_id)
             .order_by(func.count().desc(), Period.case_id))]
+    warmed = failed = 0
     from routers.financial_ledger import get_ledger_transactions
     from routers.financial_statement_import import files as get_statement_files
     from routers.evidence import list_evidence
@@ -172,18 +174,71 @@ def _warm_cases():
     for case_id in cases:
         for name, route, defaults in views:
             if process_shutdown.requested.is_set():
-                return
+                return warmed, failed
             started = time.perf_counter()
             try:
                 with SessionLocal() as db:
                     # Each route gets case_id as FastAPI gives it (the evidence listing declares it as text).
                     route(case_id=str(case_id) if route is list_evidence else case_id, **defaults, db=db)
                 logger.info('Financial %s warmed for case %s (%.1f s)', name, case_id, time.perf_counter() - started)
+                warmed += 1
             except Exception:
                 logger.warning('Financial %s warm-up failed for case %s', name, case_id, exc_info=True)
+                failed += 1
+    return warmed, failed
+
+
+PREPARE_FLAG = '--prepare'
+
+
+def prepare():
+    """Before a release restarts the service: the same warm-up for the code now on disk, so the saved copies exist
+    when the new service starts (otherwise the first visits after every release wait minutes, d5b330d1 account
+    history 61 s). Run in a unit of its own with the service's user, environment file and settings
+    (services/financial/view_prepare.py), while the old service still serves: the saved copies are keyed on the
+    code identity, which this process takes from the files on disk, as the started service will.
+
+    Skipped while the database is behind the code's migrations: deploy.sh migrates after this runs, and views computed
+    against the old schema must not be saved under the new code. Waits for a warm-up already running (the old
+    service's, after a recent start) rather than computing beside it. Returns the summary line; never raises."""
+    started = time.perf_counter()
+    try:
+        from services.financial import view_cache
+        if view_cache._memo_dir() is None or view_cache.code_identity() is None:
+            return 'prepare: skipped, saved views are off or the code identity is unreadable'
+        pending = _migrations_pending()
+        if pending:
+            return 'prepare: skipped, database migrations pending (%s)' % pending
+        lock = _take_lock(wait=True)
+        if lock is None:
+            return 'prepare: skipped, no memo directory'
+        with lock:
+            warmed, failed = _warm_cases()
+        return 'prepare: %d views warmed in %d s (%d failed, code %s)' % (
+            warmed, round(time.perf_counter() - started), failed, view_cache.code_identity()[:12])
+    except Exception:
+        logger.warning('Financial view prepare failed', exc_info=True)
+        return 'prepare: failed after %d s (see the unit journal)' % round(time.perf_counter() - started)
+
+
+def _migrations_pending():
+    """The code's migration heads the database has not reached yet, as text; empty if none."""
+    from pathlib import Path
+    from alembic.config import Config
+    from alembic.runtime.migration import MigrationContext
+    from alembic.script import ScriptDirectory
+    from postgres.session import _get_engine
+    backend = Path(__file__).resolve().parents[2]
+    heads = set(ScriptDirectory.from_config(Config(str(backend / 'alembic.ini'))).get_heads())
+    with _get_engine().connect() as connection:
+        current = set(MigrationContext.configure(connection).get_current_heads())
+    return ', '.join(sorted(heads - current))
 
 
 if __name__ == '__main__':
     import sys
     logging.basicConfig(level=logging.INFO, format='%(levelname)s %(name)s: %(message)s')
-    warm_account_history(lock_held=CHILD_FLAG in sys.argv[1:])
+    if PREPARE_FLAG in sys.argv[1:]:
+        print(prepare(), flush=True)
+    else:
+        warm_account_history(lock_held=CHILD_FLAG in sys.argv[1:])

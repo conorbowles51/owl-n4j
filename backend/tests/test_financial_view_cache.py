@@ -751,6 +751,19 @@ def test_a_changed_setting_is_another_identity(monkeypatch):
     assert view_cache._identity_now() == before
 
 
+def test_the_release_warm_up_unit_has_the_service_identity(monkeypatch):
+    # systemd names each unit's own cgroup here (measured 2026-10-30: the only difference between the service and
+    # a warm-up run with the service's user, environment file and settings in a unit of its own).
+    monkeypatch.setenv('MEMORY_PRESSURE_WATCH', '/sys/fs/cgroup/system.slice/owl-backend-v2.service/memory.pressure')
+    monkeypatch.setenv('MEMORY_PRESSURE_WRITE', 'c29tZSAyMDAwMDAgMjAwMDAwMAA=')
+    service = view_cache._identity_now()
+    monkeypatch.setenv('MEMORY_PRESSURE_WATCH', '/sys/fs/cgroup/system.slice/loupe-financial-prepare.service/memory.pressure')
+    assert view_cache._identity_now() == service
+    monkeypatch.delenv('PYTHONMALLOC', raising=False)
+    monkeypatch.setenv('PYTHONMALLOC', 'not the service setting')
+    assert view_cache._identity_now() != service
+
+
 def test_a_temporary_file_left_by_a_killed_writer_is_removed(engine, memo_dir):
     case, counter = uuid.uuid4(), Counter()
     (memo_dir / 'saved.json.4242.tmp').write_text('partial')

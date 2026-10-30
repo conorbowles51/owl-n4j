@@ -433,9 +433,12 @@ def _memo_dir():
     return Path.home() / '.cache' / 'loupe-financial-view-memo'
 
 
-# Set by systemd (or the shell) anew for every start; nothing in Loupe reads them.
+# Set by systemd (or the shell) anew for every start or for each unit; nothing in Loupe reads them. The
+# memory-pressure pair names the unit's own cgroup, so the release's warm-up, run in a unit of its own before the
+# restart (view_warmup --prepare), would otherwise save its views under an identity the service never looks up.
 _VOLATILE_ENVIRONMENT = frozenset(('INVOCATION_ID', 'JOURNAL_STREAM', 'SYSTEMD_EXEC_PID', 'MANAGERPID', 'LISTEN_PID',
-    'LISTEN_FDS', 'LISTEN_FDNAMES', 'WATCHDOG_PID', 'WATCHDOG_USEC', 'NOTIFY_SOCKET', '_', 'OLDPWD', 'SHLVL', 'PWD'))
+    'LISTEN_FDS', 'LISTEN_FDNAMES', 'WATCHDOG_PID', 'WATCHDOG_USEC', 'NOTIFY_SOCKET', '_', 'OLDPWD', 'SHLVL', 'PWD',
+    'MEMORY_PRESSURE_WATCH', 'MEMORY_PRESSURE_WRITE'))
 
 
 def _identity_now():

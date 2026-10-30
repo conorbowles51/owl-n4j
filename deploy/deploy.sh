@@ -318,6 +318,15 @@ else
 fi
 success "Frontend service configured to serve the compiled bundle"
 
+# deploy-now.sh started the computing of this release's Financial views right after it pulled the code
+# (backend/services/financial/view_prepare.py), so the restarted service finds them saved instead of every
+# first visit waiting minutes. Wait for it, at most until 10 minutes after it started; a release never fails on it.
+PREPARE_VIEWS="${BACKEND_DIR}/services/financial/view_prepare.py"
+if [ -f "${PREPARE_VIEWS}" ] && [ "$(id -u)" -eq 0 ]; then
+    step "Waiting for this release's Financial views"
+    python3 "${PREPARE_VIEWS}" wait || warn "Financial view prepare wait failed; release continues"
+fi
+
 step "Checking ingestion before migrations and service replacement"
 check_ingestion_idle
 
