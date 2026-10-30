@@ -147,6 +147,22 @@ class PaymentCategoryTests(LedgerQueryTestCase):
         self.assertEqual((self.stored(kept).category, self.stored(kept).origin), ('Rent and leases', 'rule'))
         self.assertEqual((self.stored(chosen).category, self.stored(chosen).origin), ('Rent and leases', 'person'))
 
+    def test_a_correction_rolled_back_never_reaches_the_lessons_inbox(self):
+        (row,) = self.rows('105413834')
+        pc.classify_with_model(self.db, self.case.id, model_id='test-model', reader=lambda prompt: json.dumps(
+            {'items': [{'id': 0, 'category': 'Transfers', 'confidence': 0.4, 'why': 'Only a number.'}]}))
+        self.db.commit()
+        update_payment_labels(self.db, case_id=self.case.id, actor=ACTOR, commit=False, request=PaymentLabelsRequest(
+            transactions=[dict(id=row.id, version=0)], category='Payroll'))
+        self.db.rollback()
+        self.db.commit()
+        self.assertFalse(self.inbox.exists() and 'category.model' in self.inbox.read_text())
+        (call,) = self.db.query(FinancialJudgement).filter_by(rule_id='category.model').all()
+        self.assertEqual(call.status, 'open')
+        update_payment_labels(self.db, case_id=self.case.id, actor=ACTOR, request=PaymentLabelsRequest(
+            transactions=[dict(id=row.id, version=0)], category='Payroll'))
+        self.assertEqual(self.inbox.read_text().count('category.model'), 1)
+
     def test_a_failed_inbox_append_is_reported_and_the_check_adds_the_line(self):
         from services.financial import judgement_inbox
         (row,) = self.rows('105413834')

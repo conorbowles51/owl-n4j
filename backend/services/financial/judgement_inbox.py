@@ -53,12 +53,12 @@ def _known():
         return ''
 
 
-def append_correction(session, item):
+def append_correction(session, item, statement=None):
     if item.get('status') != 'corrected':
         return False
     if f"judgement {item['id']}" in _known():
         return False
-    text = line(item, _statement(session, item))
+    text = line(item, _statement(session, item) if statement is None else statement)
     # Two corrections at once (two workers, or two threads in one) must not both write the header or the same line:
     # the check and the write happen under one exclusive lock on the file, and the header goes in only when empty.
     with INBOX.open('a') as out:
