@@ -111,3 +111,22 @@ class AgentFinancialInstructionsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AgentProvenanceAndPagingInstructionsTests(unittest.TestCase):
+    """lx-agent: both runner paths and the final answer carry the provenance, p4, paging and link rules."""
+
+    def test_both_paths_and_the_final_answer_carry_the_rules(self):
+        for path in ("invoke", "stream"):
+            with self.subTest(path=path):
+                model = AgentFinancialInstructionsTests.run_path(AgentFinancialInstructionsTests(), path)
+                prompt = model.agent_prompts[0]
+                for rule in ("not confirmed by a person", "open judgement call", "Never add a p4 row",
+                             "read_tool_result_page", "covers <returned> of <total>", "doc://<filename>/N",
+                             "financial_href", "could not be checked", "model_read_names"):
+                    self.assertIn(rule, prompt)
+                final = model.finalizer_messages[0][0].content
+                for rule in ("no person has confirmed", "a name a model read", "never add p4", "_paging",
+                             "doc://filename/page"):
+                    self.assertIn(rule, final)
+
