@@ -27,8 +27,8 @@ class Row(tuple):
 
 
 class FakePostgres:
-    """Answers the two reads RowValues makes: (id, owner, version) for every row, then (id, version, keys) for
-    the ids asked. ``table`` is {id: (owner, version, value)}; every keyed read is recorded."""
+    """Answers the reads RowValues makes: (id, owner, version) for every row, then (id, version, keys) for
+    the ids asked, and whether this transaction has written (it has not). ``table`` is {id: (owner, version, value)}; every keyed read is recorded."""
 
     def __init__(self, table):
         self.table, self.keyed = table, []
@@ -37,6 +37,8 @@ class FakePostgres:
         return SimpleNamespace(dialect=SimpleNamespace(name='postgresql'))
 
     def execute(self, query):
+        if 'pg_current_xact_id_if_assigned' in str(query):
+            return SimpleNamespace(scalar=lambda: None)  # this transaction has written nothing
         names = [column.name for column in query.selected_columns]
         if 'value' not in names:
             return SimpleNamespace(all=lambda: [Row((key, owner, version), row_version=version)

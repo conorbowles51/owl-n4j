@@ -126,9 +126,12 @@ def case_files(session, case_id, ids=None):
     result = {file_id: loaded[file_id][1] if file_id in loaded else known[file_id][1] for file_id in current
               if file_id in loaded or (file_id in known and known[file_id][0] == current[file_id])}
     if loaded or (ids is None and len(known) != len(current)):
+        from services.financial.row_versions import memoisable, own_write_floor
+        floor = own_write_floor(session) if loaded else None
         with _CASE_FILES_LOCK:
             entries = dict(_CASE_FILES.get(key, {}))
-            entries.update(loaded)
+            # A row this transaction wrote may change again before it commits under the same version: not kept.
+            entries.update({file_id: entry for file_id, entry in loaded.items() if memoisable(entry[0], floor)})
             if ids is None:
                 entries = {file_id: entry for file_id, entry in entries.items() if file_id in current}
             _CASE_FILES[key] = entries

@@ -14,9 +14,30 @@ from collections import OrderedDict
 from threading import Lock
 from types import SimpleNamespace
 
-from sqlalchemy import literal_column, select
+from sqlalchemy import literal_column, select, text
 
 from services.financial.request_timing import count
+
+
+def own_write_floor(session):
+    """Row versions at or above this number were written by this session's own transaction, which may still change
+    them again before it commits (both versions then carry the same xmin), so they are never memoised.
+
+    None: the transaction has written nothing, so every row it sees is a committed version (another transaction's
+    uncommitted rows are invisible; its own subtransactions have later ids than the transaction itself). 0: the
+    transaction counter has passed 2**32, where a 32-bit xmin no longer orders, so nothing is memoised."""
+    if session.get_bind().dialect.name != 'postgresql':
+        return 0
+    own = session.execute(text('SELECT pg_current_xact_id_if_assigned()::text')).scalar()
+    if own is None:
+        return None
+    own = int(own)
+    return own if own < 2 ** 32 else 0
+
+
+def memoisable(row_version, floor):
+    """A row version (xmin as text) that is final for every reader: see own_write_floor."""
+    return floor is None or (floor > 0 and int(row_version) < floor)
 
 
 class RowValues:
@@ -56,9 +77,10 @@ class RowValues:
                 # compared again on the next read.
                 known[row[0]] = (row.row_version, transform({name: getattr(row, name) for name in names}))
         if stale:
+            floor = own_write_floor(session)
             with self._lock:
                 for key in stale:
-                    if known.get(key) is not None:
+                    if known.get(key) is not None and memoisable(known[key][0], floor):
                         self._values[key] = known[key]
                         self._values.move_to_end(key)
                 while len(self._values) > self.kept:

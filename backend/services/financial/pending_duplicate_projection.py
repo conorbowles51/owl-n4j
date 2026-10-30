@@ -60,8 +60,12 @@ def _digested(session, model, keys, columns, digest, *conditions, kind=None):
             key = tuple(row[:width])
             if key in wanted:
                 hashed[key] = (tuple(row[width:-2]), row[-2], row[-1])
+        from services.financial.row_versions import memoisable, own_write_floor
+        floor = own_write_floor(session)
         with _DIGESTS_LOCK:
             for key, (values, row_version, value) in hashed.items():
+                if not memoisable(row_version, floor):
+                    continue  # written by this transaction, which may change it again under the same version
                 _DIGESTS[(table, key)] = (row_version, value)
                 _DIGESTS.move_to_end((table, key))
             while len(_DIGESTS) > DIGESTS_KEPT:
