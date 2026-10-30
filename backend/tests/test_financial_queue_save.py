@@ -528,3 +528,29 @@ class QueueCacheTests(Base):
                 self.assertEqual(rq.prewarm(self.f.SessionLocal), [])
             # Reads older than the window are forgotten.
             self.assertEqual(rq.prewarm(self.f.SessionLocal, now=10 ** 9), [])
+
+
+def test_the_already_saved_check_reads_only_keys_not_whole_file_rows_or_summaries():
+    """Whole evidence rows decoded every matching file's stored readings (49494305: +2.5 GB, 54 s; live backlog
+    round peaks of 5.2 GB, 2026-10-30). The check selects the bytes key, the page identity, the statement key, the
+    status and the saved document id, and nothing larger."""
+    from types import SimpleNamespace
+    from uuid import uuid4
+    from postgres.models.evidence import EvidenceFile
+    from postgres.models.financial_import_batches import FinancialImportBatchItem
+    from services.financial import queue_save
+    statements = []
+
+    class Session:
+        def execute(self, statement):
+            statements.append(statement)
+            return [('sha-a', {'identity': 'p1'}, 'k1', 'pending_import', None)]
+    busy = queue_save._busy_scopes(Session(), uuid4(), {'sha-a'}, set(),
+                                   lambda file: ('pages', 'r', file.metadata_.get('financial_page_identity', {}).get('identity')))
+    assert busy == {('sha-a', 'k1'), (('pages', 'r', 'p1'), 'k1')}
+    selected = statements[0].selected_columns
+    assert len(selected) == 5
+    for column in selected:
+        assert column is not EvidenceFile.metadata_.expression and column is not FinancialImportBatchItem.summary.expression
+        assert getattr(column, 'entity_namespace', None) is not EvidenceFile or getattr(column, 'key', '') != 'metadata'
+    assert not any(getattr(c, 'name', None) in ('metadata', 'summary') for c in selected)

@@ -38,6 +38,7 @@ import os
 import random
 import time
 from collections import Counter, OrderedDict
+from types import SimpleNamespace
 from uuid import UUID, uuid4, uuid5
 
 from sqlalchemy import select
@@ -175,6 +176,44 @@ def operation_id_for(request_id, batch_id):
     return uuid5(UUID(str(request_id)), f'queue-save:{batch_id}')
 
 
+def _busy_scopes(session, case_id, shas, identities, pages_of):
+    """(bytes key or page key, statement key) of every statement of the case already saved or being saved through a
+    batch whose file has one of ``shas`` or page ``identities``; an imported empty legacy shell does not count."""
+    from services.financial import page_identity
+    busy = set()
+    if not (shas or identities):
+        return busy
+    from sqlalchemy import or_
+    from services.financial import saved_reading_replacement
+    matching = ([EvidenceFile.sha256.in_(shas)] if shas else []) + ([EvidenceFile.metadata_[
+        page_identity.METADATA_KEY]['identity'].as_string().in_(identities)] if identities else [])
+    # Only what the check reads: each file's bytes key and stored page identity, and the saved document
+    # of an imported item. Whole file rows and summaries decoded every stored reading's metadata of every
+    # matching item (49494305: 1.48 GB decoded over 2,949 item rows), and the backlog round peaked at
+    # 5.2 GB (measured live 2026-10-30 16:37-16:42).
+    found = [(SimpleNamespace(sha256=sha256, metadata_={} if stored is None else
+                              {page_identity.METADATA_KEY: stored}), key, status, document)
+             for sha256, stored, key, status, document in session.execute(
+            select(EvidenceFile.sha256, EvidenceFile.metadata_[page_identity.METADATA_KEY], Item.statement_key,
+                   Item.status, Item.summary['source_document_id'])
+            .join(Item, Item.file_id == EvidenceFile.id).join(Batch, Batch.id == Item.batch_id)
+            .where(Batch.case_id == case_id, Batch.status != 'removed', or_(*matching),
+                   Item.status.in_(('pending_import', 'imported'))))]
+    # An item imported as an empty legacy import (a "shell": no statement, no dates, nothing paid)
+    # saved nothing of this statement; the writer saves the statement and sets the shell aside
+    # (saved_reading_replacement). Off with the replacement switch.
+    shells = saved_reading_replacement.shell_document_ids(session, case_id, {
+        document for _, _, status, document in found
+        if status == 'imported'} - {None}) if saved_reading_replacement.enabled() else set()
+    for file, key, status, document in found:
+        if status == 'imported' and document in shells:
+            continue
+        busy.add((file.sha256, key or ''))
+        if pages_of(file):
+            busy.add((pages_of(file), key or ''))
+    return busy
+
+
 def save_statements(session, *, case_id, item_ids, actor, request_id=None, only_reconciled=False):
     """Claim the requested ready statements for import with the batch save's checks. Commits.
 
@@ -241,28 +280,7 @@ def save_statements(session, *, case_id, item_ids, actor, request_id=None, only_
     page_key = lambda item: (pages_of(files[item.file_id]) if item.file_id in files else None, item.statement_key or '')
     shas = {identity(i)[0] for i in candidates} - {None}
     identities = {page_identity.stored(f)['identity'] for f in files.values() if page_identity.stored(f)}
-    busy = set()
-    if shas or identities:
-        from sqlalchemy import or_
-        from services.financial import saved_reading_replacement
-        matching = ([EvidenceFile.sha256.in_(shas)] if shas else []) + ([EvidenceFile.metadata_[
-            page_identity.METADATA_KEY]['identity'].as_string().in_(identities)] if identities else [])
-        found = list(session.execute(select(EvidenceFile, Item.statement_key, Item.status, Item.summary)
-                .join(Item, Item.file_id == EvidenceFile.id).join(Batch, Batch.id == Item.batch_id)
-                .where(Batch.case_id == case_id, Batch.status != 'removed', or_(*matching),
-                       Item.status.in_(('pending_import', 'imported')))))
-        # An item imported as an empty legacy import (a "shell": no statement, no dates, nothing paid)
-        # saved nothing of this statement; the writer saves the statement and sets the shell aside
-        # (saved_reading_replacement). Off with the replacement switch.
-        shells = saved_reading_replacement.shell_document_ids(session, case_id, {
-            (summary or {}).get('source_document_id') for _, _, status, summary in found
-            if status == 'imported'} - {None}) if saved_reading_replacement.enabled() else set()
-        for file, key, status, summary in found:
-            if status == 'imported' and (summary or {}).get('source_document_id') in shells:
-                continue
-            busy.add((file.sha256, key or ''))
-            if pages_of(file):
-                busy.add((pages_of(file), key or ''))
+    busy = _busy_scopes(session, case_id, shas, identities, pages_of)
     unique, seen = [], set()
     for item in candidates:
         scope = identity(item)
