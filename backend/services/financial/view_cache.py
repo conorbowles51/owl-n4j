@@ -528,6 +528,11 @@ def _encoded_class():
     return Encoded
 
 
+class ModelOutput(dict):
+    """A route's response-model output (``Model.model_validate(...).model_dump(mode='json')``). FastAPI serialised
+    it with pydantic, which keeps dict keys starting with "_sa", so json_response keeps them too."""
+
+
 def json_response(result):
     """FastAPI's own response for this result, without its slow pass over plain JSON.
 
@@ -542,7 +547,7 @@ def json_response(result):
         body = json.dumps(result, ensure_ascii=False, allow_nan=False, indent=None, separators=(',', ':')).encode('utf-8')
     except TypeError:
         return JSONResponse(content=jsonable_encoder(result))
-    if b'"_sa' in body:
+    if b'"_sa' in body and not isinstance(result, ModelOutput):
         # jsonable_encoder drops dict keys starting with "_sa" (SQLAlchemy state); keep its exact output.
         return JSONResponse(content=jsonable_encoder(result))
     global _Encoded

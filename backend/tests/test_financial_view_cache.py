@@ -350,6 +350,34 @@ def test_keys_fastapi_would_drop_are_dropped_the_same_way(engine):
     assert call(engine, handler, case).body == JSONResponse(content=jsonable_encoder(payload)).body == b'{"x":{"kept":2}}'
 
 
+def test_a_response_models_output_keeps_keys_starting_with_sa_as_fastapi_did():
+    """A route with a response model was serialised by pydantic, which keeps such keys (e.g. a transcript speaker
+    named "_sa_speaker"); only plain-dict routes went through jsonable_encoder, which drops them."""
+    from typing import Optional
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from pydantic import BaseModel
+
+    class Listing(BaseModel):
+        speakers: Optional[dict] = None
+    payload = {'speakers': {'_sa_speaker': 'Bob', 'S1': 'Al'}}
+    app = FastAPI()
+
+    @app.get('/before', response_model=Listing)
+    def before():
+        return payload
+    fastapi_body = TestClient(app).get('/before').content
+    assert view_cache.json_response(view_cache.ModelOutput(Listing.model_validate(payload).model_dump(mode='json'))).body == fastapi_body
+    assert b'_sa_speaker' in fastapi_body
+    assert b'_sa_speaker' not in view_cache.json_response(payload).body  # plain dicts: as jsonable_encoder
+
+
+def test_the_evidence_listing_is_marked_as_response_model_output():
+    import inspect
+    from routers import evidence
+    assert 'ModelOutput(EvidenceListResponse.model_validate(' in inspect.getsource(evidence.list_evidence)
+
+
 def test_a_table_whose_case_id_is_text_is_checked(engine):
     case, counter = uuid.uuid4(), Counter()
     write(engine, 'CREATE TABLE notes (id serial PRIMARY KEY, case_id varchar(64), body text)')

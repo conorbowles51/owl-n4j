@@ -121,7 +121,7 @@ async def _require_evidence_object_access(
         authorize_case(db, record.case_id, current_user, permission)
 
 
-from services.financial.view_cache import cached_view  # noqa: E402
+from services.financial.view_cache import ModelOutput, cached_view  # noqa: E402
 
 router = APIRouter(
     prefix="/api/evidence",
@@ -846,7 +846,7 @@ def list_evidence(
             'statement_root_evidence_id': roots.get(str(f.id), str(f.id)),
             'reading_versions': history.get(str(f.id), [])} for f in db_files]}
         # What FastAPI sends for the response model: a saved answer is sent as it is, past the model.
-        return EvidenceListResponse.model_validate(listing).model_dump(mode='json')
+        return ModelOutput(EvidenceListResponse.model_validate(listing).model_dump(mode='json'))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
