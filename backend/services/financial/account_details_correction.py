@@ -381,8 +381,6 @@ def _restore_copies(session, case_id, target, actor, reason):
         document = session.get(FinancialSourceDocument, UUID(item['source_document_id']))
         if document is None or document.status != 'superseded' or str(document.superseded_by_id) != item['retained_source_document_id']:
             continue  # Restored or decided again since: left as it stands.
-        if not restored:
-            admitted._lock_case(session, case_id)
         admitted._restore(session, case_id, document, actor, reason, touched)
         restored.append(item['source_document_id'])
     session.flush()
@@ -395,6 +393,10 @@ def undo_account_details(session, *, case_id, account_id, request, actor):
     try:
         _person(actor)
         reason = _reason(request.reason)
+        if any(item.get('copies_set_aside') for item in (_account(session, case_id, account_id).metadata_ or {}).get(HISTORY, [])):
+            # Restoring a copy takes the case lock; taken first, in the order the duplicate decisions take it.
+            from services.financial.admitted_statement_duplicates import _lock_case
+            _lock_case(session, case_id)
         account = _account(session, case_id, account_id, lock=True)
         statements = _statement_rows(session, case_id, _statements(session, case_id, account, lock=True))
         if _revision(account, statements) != request.expected_revision:
