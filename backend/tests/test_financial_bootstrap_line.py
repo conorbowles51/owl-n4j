@@ -37,7 +37,11 @@ PIN = re.compile(r'"([A-Za-z0-9._-]+)(?:\[[^\]]*\])?==([^"]+)"')
 REQUIREMENT = re.compile(r"^([A-Za-z0-9._-]+)(?:\[[^\]]*\])?\s*(.*)$")
 
 # On the line but not in requirements.txt, with the reason.
-TEST_ONLY = {"pytest": "test runner; test modules import it, the app does not"}
+TEST_ONLY = {"pytest": "test runner; test modules import it, the app does not",
+             "pytest-asyncio": "runs the asyncio-marked tests (evidence routes, uploads, websocket auth)"}
+# A test marker that only a pytest plugin understands: without the plugin pytest fails the
+# test with "async def functions are not natively supported" instead of running it.
+MARKER_PLUGINS = {re.compile(r"^\s*@pytest\.mark\.asyncio\b", re.M): "pytest-asyncio"}
 
 
 def _norm(name: str) -> str:
@@ -106,6 +110,16 @@ class BootstrapLineTests(unittest.TestCase):
             elif version not in SpecifierSet(specs[name]):
                 wrong[name] = (version, specs[name])
         self.assertEqual(wrong, {}, "bootstrap pin -> (line version, requirements.txt)")
+
+    def test_pytest_markers_have_their_plugin_on_the_line(self):
+        pins = _bootstrap_pins()
+        missing = {}
+        for path in sorted((BACKEND / "tests").glob("test_*.py")):
+            text = path.read_text()
+            for marker, plugin in MARKER_PLUGINS.items():
+                if marker.search(text) and plugin not in pins:
+                    missing.setdefault(plugin, []).append(path.name)
+        self.assertEqual(missing, {}, "plugin -> test modules whose marker needs it")
 
     def test_extras_on_the_line_are_followed(self):
         self.assertEqual(_bootstrap_extras().get("psycopg"), {"binary"})
