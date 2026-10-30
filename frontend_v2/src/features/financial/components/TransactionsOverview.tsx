@@ -56,6 +56,7 @@ export function TransactionsOverview({
   onGroup,
   onCategorise,
   modeSwitch,
+  show = {},
 }: {
   caseId: string
   /** Payments matching every filter: the totals and months. */
@@ -72,7 +73,10 @@ export function TransactionsOverview({
   onGroup: (kind: Exclude<OverviewGroup, "category" | "month">, group: MoneyGroup) => void
   onCategorise?: (rows: LedgerTransaction[]) => void
   modeSwitch?: React.ReactNode
+  /** Which parts are on the page (the control panel's switches); every part is shown unless switched off. */
+  show?: { totals?: boolean; months?: boolean; breakdown?: boolean }
 }) {
+  const { totals: showTotals = true, months: showMonths = true, breakdown: showBreakdown = true } = show
   // Sums over every matching payment: worked out again only when those payments change.
   const { currencies, counts } = useMemo(() => {
     const counts = new Map<string, number>()
@@ -108,8 +112,10 @@ export function TransactionsOverview({
   const tiles = groups.filter((g) => g !== uncategorized)
   const toggle = (name: string) =>
     onCategories(categories.includes(name) ? categories.filter((n) => n !== name) : [...categories, name])
+  if (!showTotals && !showMonths && !showBreakdown) return null
   return (
     <div className="space-y-6">
+      {(showTotals || showMonths) && (
       <section
         aria-label="This view at a glance"
         className="rounded-2xl p-5 text-[#f7f7f8] sm:p-7"
@@ -134,6 +140,7 @@ export function TransactionsOverview({
           <span className="flex-1" />
           {modeSwitch}
         </div>
+        {showTotals && (
         <div className="mt-5 flex flex-wrap gap-x-10 gap-y-4" aria-label={`Totals in ${currency}`}>
           {[
             ["Money in", `+${money(credit)}`, "text-[#5fd39a]", credit],
@@ -156,7 +163,8 @@ export function TransactionsOverview({
             </div>
           </div>
         </div>
-        {months.length > 0 && (
+        )}
+        {showMonths && months.length > 0 && (
           <figure className="mt-6 overflow-x-auto" aria-label={`Money in and out per month in ${currency}`}>
             <div
               className="grid items-end gap-1.5"
@@ -206,7 +214,9 @@ export function TransactionsOverview({
           </figure>
         )}
       </section>
+      )}
 
+      {showBreakdown && (
       <section aria-label="Where the money went" className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-2xl font-semibold" style={heading}>
@@ -264,6 +274,7 @@ export function TransactionsOverview({
           />
         )}
       </section>
+      )}
     </div>
   )
 }

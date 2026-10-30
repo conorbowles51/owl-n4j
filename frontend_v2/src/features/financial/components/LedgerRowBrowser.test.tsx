@@ -207,6 +207,9 @@ beforeEach(() => {
   useFinancialDraftStore.setState({ drafts: {} })
   useInvestigationScopeStore.getState().reset()
   useAuthStore.setState({ user: user("reviewer-a") })
+  // Page switches start from their defaults in every test.
+  for (const key of Object.keys(localStorage))
+    if (key.startsWith("loupe:transactions:")) localStorage.removeItem(key)
 })
 
 it("restores every payment filter and the table page after leaving and reopening the case", () => {
@@ -459,6 +462,7 @@ it("loads every account then filters one holder across banks, preserving paginat
       .apply("case", { accountHolders: ["example company"] })
   )
   expect(screen.getByText("1–50 of 120 matching rows")).toBeVisible()
+  fireEvent.click(screen.getByRole("switch", { name: /^Totals per account/ }))
   expect(screen.getByText("120.00 USD")).toBeVisible()
   fireEvent.click(screen.getByRole("button", { name: "Next ledger rows" }))
   expect(screen.getByText("51–100 of 120 matching rows")).toBeVisible()
@@ -499,6 +503,10 @@ it("shows roomy cards by default with totals and category tiles that filter, and
   const list = screen.getByRole("list", { name: "Investigation transactions" })
   expect(within(list).getAllByRole("checkbox")).toHaveLength(3)
   expect(screen.queryByRole("table", { name: "Investigation transactions" })).not.toBeInTheDocument()
+  // The totals are on from the start; the month chart and the tiles are switched on in the control panel.
+  expect(screen.queryByRole("region", { name: "Where the money went" })).toBeNull()
+  fireEvent.click(screen.getByRole("switch", { name: /^Monthly volume/ }))
+  fireEvent.click(screen.getByRole("switch", { name: /^Where it went/ }))
   const glance = screen.getByRole("region", { name: "This view at a glance" })
   expect(glance).toHaveTextContent("+900")
   expect(glance).toHaveTextContent("−502")
@@ -526,16 +534,16 @@ it("shows every set filter as a removable chip and removing one clears only it",
       ]}
     />
   )
-  expect(screen.queryByRole("group", { name: "Active filters" })).toBeNull()
+  expect(screen.getByRole("group", { name: "Active filters" })).toHaveTextContent("No filters on")
   fireEvent.change(screen.getByLabelText("Currency"), { target: { value: "GBP" } })
   fireEvent.change(screen.getByLabelText("Money in or out"), { target: { value: "credit" } })
   fireEvent.change(screen.getByLabelText("Search payments"), { target: { value: "Payment" } })
   const chips = screen.getByRole("group", { name: "Active filters" })
-  expect(within(chips).getByText("3 active")).toBeInTheDocument()
+  expect(within(chips).getByText("3 filters on")).toBeInTheDocument()
   fireEvent.click(within(chips).getByRole("button", { name: "Remove filter Incoming" }))
   expect(screen.getByLabelText("Money in or out")).toHaveValue("")
   expect(screen.getByLabelText("Currency")).toHaveValue("GBP")
-  expect(within(screen.getByRole("group", { name: "Active filters" })).getByText("2 active")).toBeInTheDocument()
+  expect(within(screen.getByRole("group", { name: "Active filters" })).getByText("2 filters on")).toBeInTheDocument()
   fireEvent.click(screen.getByRole("button", { name: "Remove filter GBP" }))
   expect(screen.getByLabelText("Currency")).toHaveValue("")
 })

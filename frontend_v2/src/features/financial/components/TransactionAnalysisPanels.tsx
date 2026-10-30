@@ -11,6 +11,7 @@ import {
   partyName,
   partySummaries,
   perspectiveSummary,
+  analysisFilterCount,
   type AnalysisFilters,
   type PartySummary,
 } from "../lib/transaction-analysis"
@@ -376,17 +377,7 @@ export function AnalysisFilterChips({
   filters: AnalysisFilters
   onChange: (value: Partial<AnalysisFilters>) => void
 }) {
-  const active =
-    filters.fromNames.length +
-    filters.toNames.length +
-    filters.perspectiveNames.length +
-    filters.analysisCategories.length +
-    Number(!!filters.analysisGroup) +
-    Number(!!filters.analysisPeriod) +
-    Number(!!filters.analysisDirection) +
-    Number(!!filters.flowParty) +
-    Number(!!filters.flowKind)
-  if (!active) return null
+  if (!analysisFilterCount(filters)) return null
   return (
     <div
       className="flex flex-wrap items-center gap-1.5 text-xs"

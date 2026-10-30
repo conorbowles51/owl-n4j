@@ -50,13 +50,16 @@ it("shows and hides each section at once: the table stays on its page and the to
   fireEvent.change(screen.getByLabelText("Rows per page"), { target: { value: "25" } })
   fireEvent.click(screen.getByRole("button", { name: "Next ledger rows" }))
   expect(screen.getByText("26–30 of 30 matching rows")).toBeVisible()
+  // Totals per account are where the pass over every payment happens: switch them on first.
+  fireEvent.click(screen.getByRole("switch", { name: /Totals per account/ }))
   const passes = vi.mocked(paymentInventory).mock.calls.length
-  for (const name of [/Charts/, /From & To/, /Money flow/]) {
-    const toggle = screen.getByRole("button", { name })
+  expect(passes).toBeGreaterThan(0)
+  for (const name of [/^Charts/, /^From & To/, /^Money flow/]) {
+    const toggle = screen.getByRole("switch", { name })
     fireEvent.click(toggle)
-    expect(toggle).toHaveAttribute("aria-expanded", "true")
+    expect(toggle).toHaveAttribute("aria-checked", "true")
     fireEvent.click(toggle)
-    expect(toggle).toHaveAttribute("aria-expanded", "false")
+    expect(toggle).toHaveAttribute("aria-checked", "false")
   }
   expect(screen.getByText("26–30 of 30 matching rows")).toBeVisible()
   expect(vi.mocked(paymentInventory).mock.calls.length).toBe(passes)

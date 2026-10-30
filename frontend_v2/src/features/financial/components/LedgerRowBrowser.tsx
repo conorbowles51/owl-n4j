@@ -5,8 +5,17 @@ import { correctionMoney } from "../lib/correction-contract"
 import { matchesAccountSelection } from "../lib/account-selection"
 import { compareDisplayedAmounts } from "../lib/transaction-search"
 import { transactionSearch } from "../lib/transaction-search"
-import { TransactionAnalysisControls } from "./TransactionAnalysisPanels"
 import { InAppLink } from "./InAppLink"
+import {
+  ControlGroup,
+  SectionSwitch,
+  TransactionControlPanel,
+} from "./TransactionControlPanel"
+import {
+  TRANSACTION_SECTIONS,
+  useControlsOpen,
+  useTransactionSections,
+} from "../lib/transaction-sections"
 import { useInvestigationScope } from "../stores/investigation-scope"
 import { retainPaymentTableView } from "../lib/payment-table-draft"
 import { PaymentCategoryFilter } from "./PaymentCategoryFilter"
@@ -24,6 +33,7 @@ import { PaymentCardList } from "./PaymentCardList"
 import { TransactionsOverview } from "./TransactionsOverview"
 import { Disclosure } from "./Disclosure"
 import {
+  analysisFilterCount,
   analysisTableView,
   filterAnalysis,
   sortAnalysisRows,
@@ -182,13 +192,19 @@ export function LedgerRowBrowser({
   )
   const [reviewSelection, setReviewSelection] = useState(false)
   const [localView, setLocalView] = useState(emptyView)
+  // Page switches remembered for this person (control panel); a new visit's analysis panels start from them.
+  const [sections, setSection] = useTransactionSections()
   const [savedView, setSavedView] = useFinancialDraft(
     exportContext?.caseId ?? "none",
     paymentTableDraftName(exportContext?.params, investigation) +
       (exportContext?.profile
         ? `:profile:${JSON.stringify(exportContext.profile)}`
         : ""),
-    exportContext?.profile ? { ...emptyView, chartsOpen: true } : emptyView
+    exportContext?.profile
+      ? { ...emptyView, chartsOpen: true }
+      : investigation
+        ? { ...emptyView, chartsOpen: sections.charts, partiesOpen: sections.parties, flowOpen: sections.flow }
+        : emptyView
   )
   const persistView = exportContext && !independentFilters
   const view = { ...emptyView, ...(persistView ? savedView : localView) }
@@ -490,15 +506,113 @@ export function LedgerRowBrowser({
     if (at >= 0 && Math.floor(at / pageSize) !== index)
       setView((previous) => ({ ...previous, page: Math.floor(at / pageSize) }))
   }
-  const transactionToolbar = (
-    <div
-      ref={toolbarRef}
-      className="sticky top-0 z-20 max-h-[55vh] overflow-y-auto rounded border bg-background p-3 shadow-sm"
-      role="region"
-      aria-label="Transaction tools and filters"
-    >
-      <div className="flex flex-wrap items-end gap-3">
-        {investigation && exportContext && (
+  // The control panel (Transactions page): every filter and page switch, docked on the right.
+  const [controlsOpen, setControlsOpen] = useControlsOpen()
+  const [sectionEl, setSectionEl] = useState<HTMLElement | null>(null)
+  // The naming panel opens beside the table on the right: the control panel steps back to its tab.
+  const [namingSeen, setNamingSeen] = useState(naming)
+  if (namingSeen !== naming) {
+    setNamingSeen(naming)
+    if (naming && controlsOpen) setControlsOpen(false)
+  }
+  // Every filter in force as a removable chip, so a filter inside the collapsed panel is never invisible.
+  const judgementNames: Record<string, Record<string, string>> = {
+    judgementCategory: Object.fromEntries((judgementMap.data?.categories || []).map((c) => [c.key, c.label])),
+    judgementStrength: STRENGTH_LABELS,
+    judgementOrigin: ORIGIN_LABELS,
+    judgementStatus: STATUS_LABELS,
+    judgementPriority: PRIORITY_LABELS,
+  }
+  const accountName = (id: string) =>
+    transactions.find((row) => row.account_id === id)?.account_label || `Account ${id.slice(0, 8)}`
+  const activeChips: [string, string, () => void][] = [
+    ...(accountScope.accountHolders || []).map((holder): [string, string, () => void] => [
+      `holder:${holder}`,
+      `Person: ${holder.replace(/^party:/, "")}`,
+      () => applyAccountScope({ ...accountScope, accountHolders: (accountScope.accountHolders || []).filter((h) => h !== holder) }),
+    ]),
+    ...(accountScope.accountIds || []).map((id): [string, string, () => void] => [
+      `account:${id}`,
+      `Account: ${accountName(id)}`,
+      () => applyAccountScope({ ...accountScope, accountIds: (accountScope.accountIds || []).filter((a) => a !== id) }),
+    ]),
+    ...(accountScope.accountId && !accountScope.accountIds?.length
+      ? [["account-one", `Account: ${accountName(accountScope.accountId)}`, () => applyAccountScope({ ...accountScope, accountId: undefined })] as [string, string, () => void]]
+      : []),
+    ...(accountScope.startDate ? [["from", `From ${accountScope.startDate}`, () => applyAccountScope({ ...accountScope, startDate: undefined })] as [string, string, () => void]] : []),
+    ...(accountScope.endDate ? [["to", `To ${accountScope.endDate}`, () => applyAccountScope({ ...accountScope, endDate: undefined })] as [string, string, () => void]] : []),
+    ...(sourceDocumentId ? [["statement", `Statement: ${sourceFilename || sourceDocumentId.slice(0, 8)}`, () => changeView({ sourceDocumentId: "", sourceFilename: "" })] as [string, string, () => void]] : []),
+    ...(importBatchId
+      ? [["batch", `Import batch · ${importStatementCount} statements`, () => changeView({ importBatchId: "", importBatchRevision: "", importSourceIds: [], importStatementCount: 0 })] as [string, string, () => void]]
+      : []),
+    ...(search ? [["search", `${searchMode === "boolean" ? "Boolean search" : "Search"}: “${search.length > 30 ? `${search.slice(0, 29)}…` : search}”`, () => changeView({ search: "" })] as [string, string, () => void]] : []),
+    ...(view.activity && view.activity !== "all"
+      ? [["activity", view.activity === "internal" ? "Reviewed internal transfers" : "External activity", () => changeView({ activity: "all" })] as [string, string, () => void]]
+      : []),
+    ...(currency ? [["currency", currency, () => changeView({ currency: "", minimum: "", maximum: "" })] as [string, string, () => void]] : []),
+    ...(minimum ? [["min", `At least ${minimum}${currency ? ` ${currency}` : ""}`, () => changeView({ minimum: "" })] as [string, string, () => void]] : []),
+    ...(maximum ? [["max", `At most ${maximum}${currency ? ` ${currency}` : ""}`, () => changeView({ maximum: "" })] as [string, string, () => void]] : []),
+    ...(direction ? [["direction", direction === "credit" ? "Incoming" : "Outgoing", () => changeView({ direction: "" })] as [string, string, () => void]] : []),
+    ...(proof ? [["proof", `How it was read: ${readProofClass(proof).label}`, () => changeView({ proof: "" })] as [string, string, () => void]] : []),
+    ...(view.judgement
+      ? [["judgement", view.judgement === "none" ? "Without a judgement call" : "With a judgement call", () => changeView({ judgement: "", judgementPriority: "", judgementCategory: "", judgementStrength: "", judgementOrigin: "", judgementStatus: "" })] as [string, string, () => void]]
+      : []),
+    ...(["judgementPriority", "judgementCategory", "judgementStrength", "judgementOrigin", "judgementStatus"] as const)
+      .filter((field) => view[field])
+      .map((field): [string, string, () => void] => [
+        field,
+        `Judgement call: ${judgementNames[field][view[field]] || view[field]}`,
+        () => changeView({ [field]: "" }),
+      ]),
+    ...categories.map((name): [string, string, () => void] => [
+      `category:${name}`,
+      `Category: ${name}`,
+      () => setCategories(categories.filter((other) => other !== name)),
+    ]),
+    ...(view.unnamedOnly && investigation && exportContext
+      ? [["unnamed", "Only payments with the other side not identified", () => changeView({ unnamedOnly: false })] as [string, string, () => void]]
+      : []),
+    ...(view.unconfirmedOnly && investigation && exportContext
+      ? [["unconfirmed", "Only names read by Claude, not confirmed", () => changeView({ unconfirmedOnly: false })] as [string, string, () => void]]
+      : []),
+  ]
+  const activeFilterCount = activeChips.length + analysisFilterCount(view)
+  const chipLine = (
+    <div className="flex flex-wrap items-center gap-1.5 text-[13px]" role="group" aria-label="Active filters">
+      <strong className="mr-2 text-sm">
+        <span>
+          {rows.length.toLocaleString()} of {transactions.length.toLocaleString()} imported transactions
+        </span>
+        {exportContext?.profile
+          ? " in this profile"
+          : Object.values(exportContext?.params ?? {}).some((value) =>
+                Array.isArray(value) ? value.length : value
+              )
+            ? " in the current account/date scope"
+            : " in this case"}
+      </strong>
+      {activeFilterCount > 0 ? (
+        <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+          {activeFilterCount} {activeFilterCount === 1 ? "filter" : "filters"} on
+        </span>
+      ) : (
+        <span className="text-xs text-muted-foreground">No filters on</span>
+      )}
+      {activeChips.map(([key, label, clear]) => (
+        <button
+          key={key}
+          type="button"
+          onClick={clear}
+          aria-label={`Remove filter ${label}`}
+          className="inline-flex items-center gap-1.5 rounded-full bg-[#14161b] px-3 py-1 font-medium text-white hover:bg-[#2a2d35] dark:bg-[#f7f7f8] dark:text-[#0b0c0f]"
+        >
+          {label} <span aria-hidden="true">×</span>
+        </button>
+      ))}
+      <AnalysisFilterChips filters={view} onChange={changeView} />
+    </div>
+  )
+  const activityControl = investigation && exportContext && (
           <label>
             Activity
             <select
@@ -513,7 +627,9 @@ export function LedgerRowBrowser({
               <option value="internal">Reviewed internal transfers</option>
             </select>
           </label>
-        )}
+  )
+  const searchControls = (
+    <>
         <label>
           Search payments
           <input
@@ -553,7 +669,9 @@ export function LedgerRowBrowser({
             Clear search
           </Button>
         )}
-        {investigation && (
+    </>
+  )
+  const internalNote = investigation && (
           <div className="w-full text-xs text-muted-foreground">
             {trails.error ? (
               <p role="alert">
@@ -593,8 +711,8 @@ export function LedgerRowBrowser({
               </>
             )}
           </div>
-        )}
-        {investigation && (
+  )
+  const csvButtons = investigation && (
           <>
             <Button
               variant="outline"
@@ -619,26 +737,10 @@ export function LedgerRowBrowser({
               </Button>
             )}
           </>
-        )}
-        <Disclosure
-          className="rounded border p-2 text-sm"
-          label={
-            <>
-              Filters
-              {[
-                currency,
-                minimum,
-                maximum,
-                direction,
-                proof,
-                judgementWanted,
-              ].filter(Boolean).length +
-                categories.length >
-                0 &&
-                ` (${[currency, minimum, maximum, direction, proof, judgementWanted].filter(Boolean).length + categories.length})`}
-            </>
-          }
-        >
+  )
+  const filterTotal =
+    [currency, minimum, maximum, direction, proof, judgementWanted].filter(Boolean).length + categories.length
+  const filterFields = (
           <div className="flex flex-wrap gap-3 pt-3">
             <label>
               Currency
@@ -897,8 +999,9 @@ export function LedgerRowBrowser({
               Choose a currency to filter by amount.
             </p>
           </div>
-        </Disclosure>
-      </div>
+  )
+  const searchHelp = (
+    <>
       {searchMode === "boolean" && (
         <p className="mt-2 text-xs text-muted-foreground">
           AND, OR, NOT, quoted phrases and parentheses. Adjacent terms mean AND.
@@ -911,29 +1014,58 @@ export function LedgerRowBrowser({
           {searchResult.error}
         </p>
       )}
-      {investigation && (
-        <TransactionAnalysisControls
-          filters={view}
-          panels={view}
-          // Showing or hiding a section keeps the table on the page it is on.
-          onChange={(changes) => setView((previous) => ({ ...previous, ...changes }))}
-        />
-      )}
+    </>
+  )
+  // Outside the Transactions page (a statement's payments, a profile) every tool stays in one bar above the list.
+  const transactionToolbar = (
+    <div
+      ref={toolbarRef}
+      className="sticky top-0 z-20 max-h-[55vh] overflow-y-auto rounded border bg-background p-3 shadow-sm"
+      role="region"
+      aria-label="Transaction tools and filters"
+    >
+      <div className="flex flex-wrap items-end gap-3">
+        {activityControl}
+        {searchControls}
+        {internalNote}
+        {csvButtons}
+        <Disclosure
+          className="rounded border p-2 text-sm"
+          label={<>Filters{filterTotal > 0 && ` (${filterTotal})`}</>}
+        >
+          {filterFields}
+        </Disclosure>
+      </div>
+      {searchHelp}
+    </div>
+  )
+  // On the Transactions page the bar above the table holds only search and downloads; every filter and page
+  // switch is in the control panel on the right.
+  const searchBar = (
+    <div
+      ref={toolbarRef}
+      className="sticky top-0 z-20 rounded border bg-background p-3 shadow-sm"
+      role="region"
+      aria-label="Transaction tools and filters"
+    >
+      <div className="flex flex-wrap items-end gap-3">
+        {searchControls}
+        {csvButtons}
+        <Button
+          variant="outline"
+          size="sm"
+          aria-expanded={controlsOpen}
+          aria-controls="transaction-controls"
+          onClick={() => setControlsOpen(!controlsOpen)}
+        >
+          Filters and page controls{activeFilterCount > 0 ? ` (${activeFilterCount} on)` : ""}
+        </Button>
+      </div>
+      {searchHelp}
     </div>
   )
   return (
-    <section aria-label="Browse ledger rows" className="space-y-3">
-      {investigation && exportContext && (
-        <TransactionAccountFilters
-          caseId={exportContext.caseId}
-          selection={accountScope}
-          onChange={(selection) => {
-            const next = { ...accountScope, ...selection }
-            retainPaymentTableView(exportContext.caseId, accountScope, next)
-            applyAccountScope(next)
-          }}
-        />
-      )}
+    <section ref={setSectionEl} aria-label="Browse ledger rows" className="space-y-3">
       {importBatchId && (
         <div
           className="flex flex-wrap items-center justify-between gap-3 rounded border bg-card p-3"
@@ -998,6 +1130,7 @@ export function LedgerRowBrowser({
       )}
       {!investigation && transactionToolbar}
       {!investigation && categoryBar}
+      {!(investigation && exportContext) && (
       <div
         className="flex flex-wrap gap-2 text-xs"
         aria-label="Applied payment filters"
@@ -1053,6 +1186,7 @@ export function LedgerRowBrowser({
           </Button>
         )}
       </div>
+      )}
       {invalidRange && (
         <p role="alert">
           Enter valid amounts for {currency}, with the minimum no greater than
@@ -1089,6 +1223,7 @@ export function LedgerRowBrowser({
         <>
           <TransactionsOverview
             caseId={exportContext.caseId}
+            show={sections}
             rows={shownAmounts}
             monthRows={sectionRows.months}
             tileRows={sectionRows.tiles}
@@ -1130,97 +1265,9 @@ export function LedgerRowBrowser({
                 : undefined
             }
           />
-          <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-            <strong>
-              <span>
-                {rows.length.toLocaleString()} of{" "}
-                {transactions.length.toLocaleString()} imported transactions
-              </span>
-              {exportContext.profile
-                ? " in this profile"
-                : Object.values(exportContext.params).some((value) =>
-                      Array.isArray(value) ? value.length : value
-                    )
-                  ? " in the current account/date scope"
-                  : " in this case"}
-            </strong>
-            <span className="text-xs text-muted-foreground">
-              Totals and analysis include every matching transaction, across all
-              pages.
-            </span>
-          </div>
-          {(() => {
-            // Every set filter as a removable chip: a filter behind "Filters" is never invisible.
-            const judgementNames: Record<string, Record<string, string>> = {
-              judgementCategory: Object.fromEntries((judgementMap.data?.categories || []).map((c) => [c.key, c.label])),
-              judgementStrength: STRENGTH_LABELS,
-              judgementOrigin: ORIGIN_LABELS,
-              judgementStatus: STATUS_LABELS,
-            }
-            const accountName = (id: string) =>
-              transactions.find((row) => row.account_id === id)?.account_label || `Account ${id.slice(0, 8)}`
-            const chips: [string, string, () => void][] = [
-              ...(accountScope.accountHolders || []).map((holder): [string, string, () => void] => [
-                `holder:${holder}`,
-                `Person: ${holder.replace(/^party:/, "")}`,
-                () => applyAccountScope({ ...accountScope, accountHolders: (accountScope.accountHolders || []).filter((h) => h !== holder) }),
-              ]),
-              ...(accountScope.accountIds || []).map((id): [string, string, () => void] => [
-                `account:${id}`,
-                `Account: ${accountName(id)}`,
-                () => applyAccountScope({ ...accountScope, accountIds: (accountScope.accountIds || []).filter((a) => a !== id) }),
-              ]),
-              ...(accountScope.accountId && !accountScope.accountIds?.length
-                ? [["account-one", `Account: ${accountName(accountScope.accountId)}`, () => applyAccountScope({ ...accountScope, accountId: undefined })] as [string, string, () => void]]
-                : []),
-              ...(accountScope.startDate ? [["from", `From ${accountScope.startDate}`, () => applyAccountScope({ ...accountScope, startDate: undefined })] as [string, string, () => void]] : []),
-              ...(accountScope.endDate ? [["to", `To ${accountScope.endDate}`, () => applyAccountScope({ ...accountScope, endDate: undefined })] as [string, string, () => void]] : []),
-              ...(sourceDocumentId ? [["statement", `Statement: ${sourceFilename || sourceDocumentId.slice(0, 8)}`, () => changeView({ sourceDocumentId: "", sourceFilename: "" })] as [string, string, () => void]] : []),
-              ...(importBatchId
-                ? [["batch", `Import batch · ${importStatementCount} statements`, () => changeView({ importBatchId: "", importBatchRevision: "", importSourceIds: [], importStatementCount: 0 })] as [string, string, () => void]]
-                : []),
-              ...(search ? [["search", `${searchMode === "boolean" ? "Boolean search" : "Search"}: “${search.length > 30 ? `${search.slice(0, 29)}…` : search}”`, () => changeView({ search: "" })] as [string, string, () => void]] : []),
-              ...(view.activity && view.activity !== "all"
-                ? [["activity", view.activity === "internal" ? "Reviewed internal transfers" : "External activity", () => changeView({ activity: "all" })] as [string, string, () => void]]
-                : []),
-              ...(currency ? [["currency", currency, () => changeView({ currency: "", minimum: "", maximum: "" })] as [string, string, () => void]] : []),
-              ...(minimum ? [["min", `At least ${minimum}${currency ? ` ${currency}` : ""}`, () => changeView({ minimum: "" })] as [string, string, () => void]] : []),
-              ...(maximum ? [["max", `At most ${maximum}${currency ? ` ${currency}` : ""}`, () => changeView({ maximum: "" })] as [string, string, () => void]] : []),
-              ...(direction ? [["direction", direction === "credit" ? "Incoming" : "Outgoing", () => changeView({ direction: "" })] as [string, string, () => void]] : []),
-              ...(proof ? [["proof", `How it was read: ${readProofClass(proof).label}`, () => changeView({ proof: "" })] as [string, string, () => void]] : []),
-              ...(view.judgement
-                ? [["judgement", view.judgement === "none" ? "Without a judgement call" : "With a judgement call", () => changeView({ judgement: "", judgementCategory: "", judgementStrength: "", judgementOrigin: "", judgementStatus: "" })] as [string, string, () => void]]
-                : []),
-              ...(["judgementCategory", "judgementStrength", "judgementOrigin", "judgementStatus"] as const)
-                .filter((field) => view[field])
-                .map((field): [string, string, () => void] => [
-                  field,
-                  `Judgement call: ${judgementNames[field][view[field]] || view[field]}`,
-                  () => changeView({ [field]: "" }),
-                ]),
-            ]
-            if (!chips.length) return null
-            return (
-              <div className="flex flex-wrap items-center gap-1.5 text-[13px]" role="group" aria-label="Active filters">
-                <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
-                  {chips.length} active
-                </span>
-                {chips.map(([key, label, clear]) => (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={clear}
-                    aria-label={`Remove filter ${label}`}
-                    className="inline-flex items-center gap-1.5 rounded-full bg-[#14161b] px-3 py-1 font-medium text-white hover:bg-[#2a2d35] dark:bg-[#f7f7f8] dark:text-[#0b0c0f]"
-                  >
-                    {label} <span aria-hidden="true">×</span>
-                  </button>
-                ))}
-              </div>
-            )
-          })()}
-          {categoryBar}
-          <AnalysisFilterChips filters={view} onChange={changeView} />
+          {chipLine}
+          {sections.accountTotals && (
+          <>
           <PaymentTotals
             rows={shownAmounts}
             knownAccounts={knownAccounts}
@@ -1244,6 +1291,8 @@ export function LedgerRowBrowser({
               counted. Clear the date range to include their account context.
             </p>
           )}
+          </>
+          )}
           {view.activity !== "all" && (
             <p className="text-xs text-muted-foreground">
               Totals and charts show{" "}
@@ -1254,7 +1303,89 @@ export function LedgerRowBrowser({
               in full; a split entry can appear in both activity views.
             </p>
           )}
-          {transactionToolbar}
+          {searchBar}
+          <TransactionControlPanel
+            open={controlsOpen}
+            onOpenChange={setControlsOpen}
+            activeCount={activeFilterCount}
+            anchor={sectionEl}
+          >
+            <ControlGroup title="Show on the page">
+              {TRANSACTION_SECTIONS.map((section) => {
+                const viewKey = "viewKey" in section ? section.viewKey : undefined
+                return (
+                  <SectionSwitch
+                    key={section.key}
+                    label={section.label}
+                    hint={section.hint}
+                    on={viewKey ? !!view[viewKey] : sections[section.key]}
+                    onChange={(on) => {
+                      setSection(section.key, on)
+                      // Showing or hiding a section keeps the table on the page it is on.
+                      if (viewKey) setView((previous) => ({ ...previous, [viewKey]: on }))
+                    }}
+                  />
+                )
+              })}
+            </ControlGroup>
+            <ControlGroup title="Accounts and dates">
+            <TransactionAccountFilters
+              caseId={exportContext.caseId}
+              selection={accountScope}
+              onChange={(selection) => {
+                const next = { ...accountScope, ...selection }
+                retainPaymentTableView(exportContext.caseId, accountScope, next)
+                applyAccountScope(next)
+              }}
+            />
+            </ControlGroup>
+            {categoryBar && <ControlGroup title="Categories">{categoryBar}</ControlGroup>}
+            <ControlGroup title="Payments">
+              <div className="flex flex-wrap items-end gap-3">
+                {activityControl}
+                {internalNote}
+              </div>
+              {filterFields}
+            </ControlGroup>
+            <ControlGroup title="Display">
+              <div className="flex flex-wrap items-center gap-2">
+            <div
+              role="group"
+              aria-label="Show payments as"
+              className="inline-flex rounded-lg bg-muted p-[3px] text-[13px]"
+            >
+              {(
+                [
+                  [false, "Cards"],
+                  [true, "Table view"],
+                ] as const
+              ).map(([on, name]) => (
+                <button
+                  key={name}
+                  type="button"
+                  aria-pressed={tableView === on}
+                  onClick={() => {
+                    setTableView(on)
+                    storeTableView(on)
+                  }}
+                  className={`rounded-md px-3 py-1 ${tableView === on ? "bg-background font-semibold shadow-sm" : "font-medium text-muted-foreground hover:text-foreground"}`}
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
+            {tableView && (
+              <TableColumnPicker
+                columns={tableColumns}
+                onChange={(next) => {
+                  setTableColumns(next)
+                  storeTableColumns(next)
+                }}
+              />
+            )}
+              </div>
+            </ControlGroup>
+          </TransactionControlPanel>
           {sort.startsWith("amount") && mixedCurrencies && (
             <p className="text-xs text-muted-foreground">
               Sorted by amount size across currencies. Money in or out does not
@@ -1275,40 +1406,6 @@ export function LedgerRowBrowser({
                   ? `${selection.length} payments selected`
                   : `${rows.length} matching payments`}
               </span>
-              <div
-                role="group"
-                aria-label="Show payments as"
-                className="inline-flex rounded-lg bg-muted p-[3px] text-[13px]"
-              >
-                {(
-                  [
-                    [false, "Cards"],
-                    [true, "Table view"],
-                  ] as const
-                ).map(([on, name]) => (
-                  <button
-                    key={name}
-                    type="button"
-                    aria-pressed={tableView === on}
-                    onClick={() => {
-                      setTableView(on)
-                      storeTableView(on)
-                    }}
-                    className={`rounded-md px-3 py-1 ${tableView === on ? "bg-background font-semibold shadow-sm" : "font-medium text-muted-foreground hover:text-foreground"}`}
-                  >
-                    {name}
-                  </button>
-                ))}
-              </div>
-              {tableView && (
-                <TableColumnPicker
-                  columns={tableColumns}
-                  onChange={(next) => {
-                    setTableColumns(next)
-                    storeTableColumns(next)
-                  }}
-                />
-              )}
               <Button
                 variant="outline"
                 disabled={

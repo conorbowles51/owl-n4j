@@ -17,7 +17,17 @@ import { useFinancialDraftStore } from "../stores/financial-drafts"
 import type { LedgerTransaction } from "../api"
 
 // These tests read the dense table view of Transactions.
-beforeEach(() => localStorage.setItem("financial-transactions-table-view", "1"))
+beforeEach(() => {
+  localStorage.setItem("financial-transactions-table-view", "1")
+  // These journeys use every filter and summary: the control panel starts open with every section shown.
+  for (const user of ["anyone", "reviewer"]) {
+    localStorage.setItem(`loupe:transactions:controls-open:v1:${user}`, "1")
+    localStorage.setItem(
+      `loupe:transactions:sections:v1:${user}`,
+      JSON.stringify({ totals: true, months: true, breakdown: true, accountTotals: true })
+    )
+  }
+})
 vi.mock("../hooks/use-financial-access", () => ({
   useFinancialAccess: () => ({ canEdit: true }),
 }))
@@ -125,6 +135,13 @@ afterEach(() => {
   useFinancialDraftStore.setState({ drafts: {} })
   document.documentElement.classList.remove("dark")
 })
+
+// The filters and page switches are in the control panel on the right: open it (it stays open until collapsed).
+function openControls() {
+  const tab = document.querySelector<HTMLButtonElement>("[data-testid=transaction-controls-dock] > button")!
+  if (tab.getAttribute("aria-expanded") !== "true") fireEvent.click(tab)
+}
+
 it("keeps reciprocal filters, perspective, charts, source and export connected on the same page", async () => {
   await page.viewport(1440, 1100)
   render(
@@ -141,7 +158,8 @@ it("keeps reciprocal filters, perspective, charts, source and export connected o
   expect(
     screen.getByText("EUR · Bank accounts", { selector: "h4" })
   ).toBeVisible()
-  fireEvent.click(screen.getByRole("button", { name: "▸ From & To" }))
+  openControls()
+  fireEvent.click(screen.getByRole("switch", { name: /^From & To/ }))
   const senders = screen.getByRole("region", { name: "Senders (From)" })
   fireEvent.click(within(senders).getByRole("button", { name: "Trading Co" }))
   expect(screen.getByText("4 of 5 imported transactions")).toBeVisible()
@@ -166,7 +184,8 @@ it("keeps reciprocal filters, perspective, charts, source and export connected o
   fireEvent.click(
     screen.getByRole("button", { name: "Clear analysis filters" })
   )
-  fireEvent.click(screen.getByRole("button", { name: "▸ Money flow" }))
+  openControls()
+  fireEvent.click(screen.getByRole("switch", { name: /^Money flow/ }))
   const perspective = screen.getByRole("region", { name: "Perspective names" })
   fireEvent.click(
     within(perspective).getByRole("button", { name: "Trading Co" })
@@ -192,7 +211,8 @@ it("keeps reciprocal filters, perspective, charts, source and export connected o
   fireEvent.click(
     screen.getByRole("button", { name: "Clear analysis filters" })
   )
-  fireEvent.click(screen.getByRole("button", { name: "▸ Charts" }))
+  openControls()
+  fireEvent.click(screen.getByRole("switch", { name: /^Charts/ }))
   fireEvent.change(screen.getByLabelText("Chart currency and account type"), {
     target: { value: "USD:bank" },
   })
@@ -284,7 +304,8 @@ it("filters every dashboard panel through bar segments and doughnut slices, and 
       </main>
     </QueryClientProvider>
   )
-  fireEvent.click(screen.getByRole("button", { name: "▸ Charts" }))
+  openControls()
+  fireEvent.click(screen.getByRole("switch", { name: /^Charts/ }))
   expect(screen.getByText("1–8 of 27 categories")).toBeVisible()
   fireEvent.click(screen.getByRole("button", { name: "Next categories" }))
   expect(screen.getByText("9–16 of 27 categories")).toBeVisible()
@@ -313,7 +334,8 @@ it("filters every dashboard panel through bar segments and doughnut slices, and 
     screen.getByRole("button", { name: "2024-01: Money out 1.00 USD" })
   )
   expect(screen.getByText("1 of 29 imported transactions")).toBeVisible()
-  fireEvent.click(screen.getByRole("button", { name: "▸ From & To" }))
+  openControls()
+  fireEvent.click(screen.getByRole("switch", { name: /^From & To/ }))
   expect(
     within(screen.getByRole("region", { name: "Recipients (To)" })).getByRole(
       "button",

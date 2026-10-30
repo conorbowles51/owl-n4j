@@ -7,7 +7,6 @@ import {
   screen,
   fireEvent,
   cleanup,
-  within,
 } from "@testing-library/react"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 import { page } from "vitest/browser"
@@ -28,7 +27,17 @@ import { Button } from "@/components/ui/button"
 import type { LedgerTransaction } from "../api"
 
 // These tests read the dense table view of Transactions.
-beforeEach(() => localStorage.setItem("financial-transactions-table-view", "1"))
+beforeEach(() => {
+  localStorage.setItem("financial-transactions-table-view", "1")
+  // These journeys use every filter and summary: the control panel starts open with every section shown.
+  for (const user of ["anyone", "reviewer"]) {
+    localStorage.setItem(`loupe:transactions:controls-open:v1:${user}`, "1")
+    localStorage.setItem(
+      `loupe:transactions:sections:v1:${user}`,
+      JSON.stringify({ totals: true, months: true, breakdown: true, accountTotals: true })
+    )
+  }
+})
 vi.mock("@/lib/api-client", async (original) => ({
   ...(await original<typeof import("@/lib/api-client")>()),
   fetchAPI: vi.fn(async () => ({
@@ -122,6 +131,13 @@ afterEach(() => {
   useInvestigationScopeStore.getState().reset()
   vi.restoreAllMocks()
 })
+
+
+// The filters and page switches are in the control panel on the right: open it (it stays open until collapsed).
+function openControls() {
+  const tab = document.querySelector<HTMLButtonElement>("[data-testid=transaction-controls-dock] > button")!
+  if (tab.getAttribute("aria-expanded") !== "true") fireEvent.click(tab)
+}
 
 it("downloads the complete filtered CSV across pages and reflects a later currency change in its actual contents", async () => {
   await page.viewport(1440, 1000)
@@ -286,7 +302,7 @@ it("downloads the complete filtered CSV across pages and reflects a later curren
     screen.getByRole("checkbox", { name: /^Example Company$/ })
   ).toBeChecked()
   expect(screen.getByText("51–80 of 80 matching rows")).toBeVisible()
-  fireEvent.click(screen.getByText("Filters (1)", { exact: true }))
+  openControls()
   await act(async () => {
     await page
       .getByRole("combobox", { name: "Currency", exact: true })
@@ -380,10 +396,8 @@ it("starts with all imported payments and filters across banks without a load st
   })
   expect(screen.getByText("1–50 of 61 matching rows")).toBeVisible()
   fireEvent.click(screen.getByRole("button", { name: /^Amount/ }))
-  const toolbar = screen.getByRole("region", {
-    name: "Transaction tools and filters",
-  })
-  expect(within(toolbar).getByRole("button", { name: /Charts/ })).toBeVisible()
+  openControls()
+  expect(screen.getByRole("switch", { name: /^Charts/ })).toBeVisible()
   expect(screen.getByRole("group", { name: "Filter by category" })).toBeVisible()
   await page.screenshot({ path: "/tmp/loupe-transaction-workflow.png" })
 })

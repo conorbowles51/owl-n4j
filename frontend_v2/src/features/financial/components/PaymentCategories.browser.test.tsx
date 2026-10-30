@@ -38,6 +38,12 @@ vi.mock("../hooks/use-financial-finding-index", () => ({
 }))
 vi.mock("./LedgerExportButton", () => ({ LedgerExportButton: () => null }))
 
+// The category tools are in the control panel on the right, which floats over the table while open.
+async function controls(open: boolean) {
+  await act(async () => {
+    await page.getByRole("button", { name: new RegExp(`^${open ? "Open" : "Collapse"} filters and page controls`) }).first().click()
+  })
+}
 afterEach(() => {
   cleanup()
   vi.resetAllMocks()
@@ -166,6 +172,7 @@ it("creates reusable categories, changes an automatic category, and recategorize
       .getByRole("combobox", { name: "Rows per page" })
       .selectOptions("25")
   })
+  await controls(true)
   await act(async () => {
     await page.getByRole("button", { name: "New or manage categories" }).click()
   })
@@ -188,6 +195,7 @@ it("creates reusable categories, changes an automatic category, and recategorize
       .first()
       .click()
   })
+  await controls(false)
 
   await act(async () => {
     await page
@@ -282,6 +290,7 @@ it("creates reusable categories, changes an automatic category, and recategorize
   ).toHaveTextContent("Due diligence")
   reloaded.unmount()
   show("another-case")
+  await controls(true)
   await act(async () => {
     await page.getByRole("button", { name: "New or manage categories" }).click()
   })

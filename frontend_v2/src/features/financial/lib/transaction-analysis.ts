@@ -371,3 +371,18 @@ export function sortAnalysisRows(rows: LedgerTransaction[], sort: string) {
     )
   })
 }
+
+/** How many removable chips the analysis filter chips show for these filters. */
+export function analysisFilterCount(filters: AnalysisFilters) {
+  return (
+    filters.fromNames.length +
+    filters.toNames.length +
+    filters.perspectiveNames.length +
+    filters.analysisCategories.length +
+    Number(!!filters.analysisGroup) +
+    Number(!!filters.analysisPeriod) +
+    Number(!!filters.analysisDirection) +
+    Number(!!filters.flowParty) +
+    Number(!!filters.flowKind)
+  )
+}
