@@ -577,6 +577,8 @@ export function ReadingJudgements({
   currency,
   readingRows,
   reviewRows,
+  fileId,
+  holder,
 }: {
   caseId: string
   statementId: string
@@ -584,6 +586,9 @@ export function ReadingJudgements({
   currency: string
   readingRows: ReadingRow[]
   reviewRows: ReviewRow[]
+  /** The statement's file and the holder being saved: the holder kept as printed is previewed too. */
+  fileId?: string
+  holder?: string
 }) {
   // Only what the detection reads: each row's fields, repairs and cell text, and the review's reasons.
   const reading = useMemo(
@@ -606,13 +611,14 @@ export function ReadingJudgements({
   const review = reviewRows.filter((row) => row.reason || row.excluded || row.manual_page)
   const reviewKey = JSON.stringify(review.map((row) => [row.id, row.reason || "", !!row.excluded]))
   const query = useQuery({
-    queryKey: ["financial-judgements", caseId, "preview", statementId, revision, currency, reviewKey],
+    queryKey: ["financial-judgements", caseId, "preview", statementId, revision, currency, reviewKey, fileId, holder],
     queryFn: () =>
       previewJudgements(caseId, {
         statement_id: statementId,
         currency,
         reading_rows: reading,
         review_rows: review,
+        ...(fileId ? { file_id: fileId, holder: holder || "" } : {}),
       }),
     retry: false,
     refetchOnWindowFocus: false,

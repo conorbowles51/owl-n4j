@@ -161,7 +161,14 @@ export async function judgementRowMap(caseId: string) {
 /** The calls the rules make on a reading before it is saved. Stores nothing. */
 export async function previewJudgements(
   caseId: string,
-  body: { statement_id: string; currency: string; reading_rows: unknown[]; review_rows: unknown[] }
+  body: {
+    statement_id: string
+    currency: string
+    reading_rows: unknown[]
+    review_rows: unknown[]
+    file_id?: string
+    holder?: string
+  }
 ) {
   return z
     .object({ items: z.array(previewItem) })

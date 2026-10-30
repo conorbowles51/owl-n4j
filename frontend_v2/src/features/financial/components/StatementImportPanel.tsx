@@ -3175,6 +3175,8 @@ function EditableStatement({
           currency={data.currency}
           readingRows={data.rows}
           reviewRows={rows}
+          fileId={fileId}
+          holder={holder}
         />
       )}
       {!data.assignment_only && (!data.current_import || replacePrevious) && (
