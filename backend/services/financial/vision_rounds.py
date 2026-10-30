@@ -38,7 +38,7 @@ def _take_lock():
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         lock = open(directory / LOCK_NAME, 'a')
     except OSError:
-        log.warning('Page-image rounds: no lock directory; they run in this worker', exc_info=True)
+        log.warning('Page-image rounds: the lock could not be opened; trying again after a pause', exc_info=True)
         return None
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -78,14 +78,33 @@ async def run_in_child_forever():
     """False when there is no lock location (the caller runs the rounds itself); otherwise never returns while the
     reader is on: this worker runs the child whenever it holds the lock."""
     from services.financial import vision_reader
-    if _lock_directory() is None:
+    if not await asyncio.to_thread(_lock_usable):
         return False
     while vision_reader.ENABLED:
         lock = await asyncio.to_thread(_take_lock)
         if lock is not None:
             with lock:
-                await _run_child()
+                try:
+                    await _run_child()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:  # noqa: BLE001 - e.g. the fork failed: tried again after the pause
+                    log.exception('Page-image rounds process could not be started; trying again after a pause')
         await asyncio.sleep(PAUSE_SECONDS)
+    return True
+
+
+def _lock_usable():
+    """A lock file can be opened (held by another worker or not); otherwise the worker runs the rounds itself."""
+    directory = _lock_directory()
+    if directory is None:
+        return False
+    try:
+        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        open(directory / LOCK_NAME, 'a').close()
+    except OSError:
+        log.warning('Page-image rounds: no lock directory; they run in this worker', exc_info=True)
+        return False
     return True
 
 
