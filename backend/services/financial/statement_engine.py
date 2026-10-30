@@ -2356,12 +2356,19 @@ def _grow_block(located, index, x, style):
         beside = any(earlier['y0'] < other['y0'] < block[-1]['y0'] for other in located)
         if gap > max(height * (4 if beside else 2.6), previous_gap * 1.6):
             break
+        if BLANK_LINE_LIMIT and beside and previous_gap and gap > previous_gap * 2.5:
+            # More than one blank line above a block whose own lines are evenly spaced: what is above (a scanned
+            # logo read as 'F3' over BBVA's 'CAAL ENERGY SYSTEMS SA DE CV' block) is not its name line.
+            break
         block.append(earlier)
         if len(block) >= 7:
             break
     return block
 
 
+# (A8) Off: a line more than one blank line above an evenly spaced address block can still join it (as before).
+BLANK_LINE_LIMIT = os.environ.get('LOUPE_FINANCIAL_ADDRESS_BLANK_LINE', '1').strip().lower() not in (
+    '0', 'false', 'off', 'no')
 # (A8) Off: a presort line above an addressee joins the block (its top line, which is then no name), as before.
 PRESORT_LINE_ENDS_BLOCK = os.environ.get('LOUPE_FINANCIAL_PRESORT_LINE', '1').strip().lower() not in (
     '0', 'false', 'off', 'no')

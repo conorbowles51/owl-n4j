@@ -1441,6 +1441,23 @@ class HolderAndInterbankTests(unittest.TestCase):
                      'TOTAL 12345'):
             self.assertFalse(E._postal(E.fold(text)), text)
 
+    def test_a_scanned_logo_line_above_the_addressee_block_is_not_its_name(self):
+        # BNB2 '03 BBVA 23 USD' (scan): the bank's logo read as 'F3' sits at the block's left edge three lines above
+        # the addressee; the block grew up to it and its top ('F3') is no name, so the holder was left blank.
+        lines = [[('F3', 47040, 60000), ('PAGINA 1/5', 532320, 590000)],
+                 [('Periodo DEL 01/03/2023 AL 31/03/2023', 316800, 590000)],
+                 [('7', 123600, 126000), ('Fecha de Corte 31/03/2023', 320640, 590000)],
+                 [('EMPRESA DE PRUEBA SA DE CV', 48240, 180000), ('habeas', 320400, 340000), ('onibe0id24', 547440, 590000)],
+                 [('CALLE EJEMPLO 843 B', 48240, 151440), ('No. de Cliente D2409724', 320400, 590000)],
+                 [('GRANADA', 48240, 120000), ('R.F.C XAXX010101000', 320400, 590000)],
+                 [('MIGUEL HIDALGO', 48240, 120000)],
+                 [('No. Cuenta CLABE 012180001192014248', 320400, 590000)],
+                 [('CIUDAD DE MEXICO CP 11520', 48000, 240000)]]
+        rows = E._pages([page(1, lines)])[1]
+        self.assertEqual(E.address_holder(rows), 'EMPRESA DE PRUEBA SA DE CV')
+        with mock.patch.object(E, 'BLANK_LINE_LIMIT', False):
+            self.assertEqual(E.address_holder(rows), '')
+
     def test_a_line_with_money_or_a_date_at_the_block_edge_is_not_part_of_an_address(self):
         lines = [[('EMPRESA DE PRUEBA SA DE CV', 20000, 200000)],
                  [('05/03/2024 PAGO RECIBIDO', 20000, 200000)],
