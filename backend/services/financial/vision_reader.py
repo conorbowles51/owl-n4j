@@ -2331,7 +2331,8 @@ def _note(item, record):
 # ---------------------------------------------------------------------------
 
 # Each statement's outcomes, newest last, beside METADATA_KEY on its file: one entry per distinct outcome (the same
-# outcome again only counts up and moves its last time), the last OUTCOME_HISTORY kept. Nothing is overwritten.
+# reading outcome again only counts up and moves its last time; the same skip again changes nothing, see
+# _record_outcome), the last OUTCOME_HISTORY kept. Nothing is overwritten.
 OUTCOMES_KEY = METADATA_KEY + '_outcomes'
 OUTCOME_HISTORY = 30
 # Why a statement was not read from its page images, in plain words ("Not read from page images: ...").
