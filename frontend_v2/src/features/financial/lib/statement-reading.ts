@@ -3,7 +3,10 @@ import { fetchAPI } from "@/lib/api-client"
 import { readerReplacementSchema } from "../components/readerReplacement"
 import { reviewRecoverySchema } from "./review-recovery"
 import { paymentDocumentProposal } from "./payment-document"
-import { retainedStatement, statementDuplicateDisposition } from "./statement-duplicate"
+import {
+  retainedStatement,
+  statementDuplicateDisposition,
+} from "./statement-duplicate"
 import { statementAssessment } from "./statement-assessment"
 import { statementModelWork } from "./statement-model-work"
 
@@ -232,6 +235,24 @@ export type Proposal = z.infer<typeof proposalSchema>
  * statement later still reads it afresh.
  */
 export const STATEMENT_READING_FRESH_MS = 10_000
+// What a reading the review cannot show breaks, in plain words: which line and which value, never a schema dump.
+export function readingShapeMessage(issues: { path: PropertyKey[] }[]) {
+  const where = (path: PropertyKey[]) => {
+    const rowAt = path.indexOf("rows")
+    const field = path[path.length - 1]
+    const name = String(field).replaceAll("_", " ")
+    return rowAt >= 0 && typeof path[rowAt + 1] === "number"
+      ? `line ${(path[rowAt + 1] as number) + 1} of the reading, value "${name}"`
+      : `the reading's value "${name}"`
+  }
+  const places = [...new Set(issues.map((issue) => where(issue.path)))]
+  return (
+    `Loupe read this statement, but the review cannot show ${places.slice(0, 3).join("; ")}` +
+    `${places.length > 3 ? ` and ${places.length - 3} more` : ""}. Nothing was saved or changed. ` +
+    "Report this statement so the review can be fixed; reading it again will not help."
+  )
+}
+
 export function statementReadingQuery(
   caseId: string,
   fileId: string,
@@ -245,9 +266,11 @@ export function statementReadingQuery(
       const params = new URLSearchParams({ case_id: caseId })
       if (currency) params.set("currency", currency)
       if (statementId) params.set("statement_id", statementId)
-      const data = proposalSchema.parse(
+      const parsed = proposalSchema.safeParse(
         await fetchAPI(`/api/financial/statement-import/${fileId}?${params}`)
       )
+      if (!parsed.success) throw Error(readingShapeMessage(parsed.error.issues))
+      const data = parsed.data
       if (data.case_id !== caseId || data.evidence_file_id !== fileId)
         throw Error("The review belongs to another statement.")
       return data
