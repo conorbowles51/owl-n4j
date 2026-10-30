@@ -250,14 +250,14 @@ export function JudgementMarker({
   // State colours follow the review queue's badges (spec tokens); the glyph carries the type without colour.
   const tone =
     judgement.status === "corrected"
-      ? "border-transparent bg-[#fde6e8] text-[#a3142a]"
+      ? "border-transparent bg-[#fde6e8] text-[#a3142a] dark:bg-[#4a1219] dark:text-[#ffc2c9]"
       : judgement.status === "confirmed"
-        ? "border-transparent bg-[#e3f4ea] text-[#15653f]"
+        ? "border-transparent bg-[#e3f4ea] text-[#15653f] dark:bg-[#12351f] dark:text-[#a7e3bf]"
         : judgement.origin === "agent"
-          ? "border-transparent bg-[#f1eefb] text-[#573199]"
+          ? "border-transparent bg-[#f1eefb] text-[#573199] dark:bg-[#2a2147] dark:text-[#d4c6ff]"
           : judgement.strength === "inferred"
-            ? "border-transparent bg-[#fdf0d5] text-[#8a5300]"
-            : "border-transparent bg-[#e6efff] text-[#1f4fa8]"
+            ? "border-transparent bg-[#fdf0d5] text-[#8a5300] dark:bg-[#47330f] dark:text-[#fbd38d]"
+            : "border-transparent bg-[#e6efff] text-[#1f4fa8] dark:bg-[#172a4a] dark:text-[#b9d0ff]"
   const word = settled ? statusLabel(judgement) : strengthLabel(judgement)
   const glyph =
     judgement.status === "corrected"
@@ -294,7 +294,7 @@ export function JudgementMarker({
         <span aria-hidden="true" className="shrink-0">{glyph}</span>
         <span>{word}</span>
         {!compact && (
-          <span className="truncate font-normal text-muted-foreground">· {judgement.rule_label}</span>
+          <span className="truncate font-normal">· {judgement.rule_label}</span>
         )}
         <span className="font-normal">· <span className="underline underline-offset-2">Why?</span></span>
         <ChevronRight
