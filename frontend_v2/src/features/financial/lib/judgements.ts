@@ -208,14 +208,15 @@ export function strengthLabel(judgement: Pick<Judgement, "strength"> & { origin?
 }
 
 export function strengthHelp(judgement: Pick<Judgement, "strength"> & { origin?: string; rule_id?: string }) {
+  // Whoever made it (the processor or Claude for a person), the holder call says what is and is not printed.
+  if (judgement.rule_id === "holder.printed_on_statement")
+    return "The page prints this name. Which person holds the account has not been established, so filing the statement under the name printed on it is a judgement call."
   if (judgement.origin === "agent" && judgement.rule_id === "model.statement_save")
     return "Claude saved this statement's payments for a person. No person has confirmed them against the statement yet."
   if (judgement.origin === "agent")
     return judgement.strength === "inferred"
       ? "Entered by hand by Claude, for a person, from the page images; the printed balances alone do not prove it. Not a person's entry until a person confirms it."
       : "Entered by hand by Claude, for a person, from the page images; checked against the printed balances and totals. Not a person's entry until a person confirms it."
-  if (judgement.rule_id === "holder.printed_on_statement")
-    return "The page prints this name. Which person holds the account has not been established, so filing the statement under the name printed on it is a judgement call."
   return judgement.strength === "inferred"
     ? "The page does not print this value; the processor worked it out."
     : "The processor chose this reading, and the printed balances or totals still prove it."
