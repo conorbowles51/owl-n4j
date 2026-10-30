@@ -1,0 +1,9 @@
+# lx-hostpolicy (WS-A, LOUPE-PERFORMANCE-PLAN.md). Sizes from the memory table in /mnt/owl-data/fin-wt/headless/LX-HOSTPOLICY-STATUS.md.
+# Automated work that is not inside fin-watchdog.service: job test containers, release builds (systemd-run --slice).
+[Unit]
+Description=Headless jobs fleet: builds, test databases (runs only on CPU the live service leaves)
+[Slice]
+CPUWeight=idle
+IOWeight=25
+MemoryHigh=6G
+MemorySwapMax=4G

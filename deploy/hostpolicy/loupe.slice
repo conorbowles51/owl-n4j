@@ -1,0 +1,8 @@
+# lx-hostpolicy (WS-A, LOUPE-PERFORMANCE-PLAN.md). Sizes from the memory table in /mnt/owl-data/fin-wt/headless/LX-HOSTPOLICY-STATUS.md.
+# Parent of loupe-live.slice (a dash in a slice name nests it), so it carries the same weights at the top level.
+[Unit]
+Description=Loupe (parent of the live slice)
+[Slice]
+CPUWeight=1000
+IOWeight=1000
+MemoryLow=14G
