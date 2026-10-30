@@ -19,19 +19,34 @@ import { RequestedCoveragePanel } from "./RequestedCoveragePanel"
 import { StatementSourceButton } from "./StatementSourceButton"
 import type { StatementCoverageAccount } from "../lib/statement-coverage"
 
-const displayMonth = (month: string) =>
+// Formatting a date is slow (about 0.8 s of d5b330d1's first Transactions load
+// went to month labels drawn again on every render); each text is formatted once.
+const remembered = (format: (text: string) => string) => {
+  const labels = new Map<string, string>()
+  return (text: string) => {
+    let label = labels.get(text)
+    if (label === undefined) {
+      label = format(text)
+      if (labels.size < 10_000) labels.set(text, label)
+    }
+    return label
+  }
+}
+const displayMonth = remembered((month) =>
   new Date(`${month}-01T00:00:00Z`).toLocaleDateString("en-GB", {
     month: "short",
     year: "numeric",
     timeZone: "UTC",
   })
-const displayDate = (day: string) =>
+)
+const displayDate = remembered((day) =>
   new Date(`${day}T00:00:00Z`).toLocaleDateString("en-GB", {
     day: "numeric",
     month: "short",
     year: "numeric",
     timeZone: "UTC",
   })
+)
 
 const monthEnd = (month: string) => {
   const day = new Date(`${month}-01T00:00:00Z`)

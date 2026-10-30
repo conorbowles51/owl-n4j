@@ -1,3 +1,4 @@
+import { useCallback, useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { z } from "zod"
 import { fetchAPI } from "@/lib/api-client"
@@ -145,10 +146,17 @@ export function useStatementFiles(
   includeRemoved = false,
   enabled = true
 ) {
+  // A stable selector: TanStack Query runs it again only when the answer or the
+  // selector changes, so the file list (and what is merged from it) keeps its
+  // identity between renders.
+  const select = useCallback(
+    (files: z.infer<typeof listing>["files"]) =>
+      includeRemoved ? files : files.filter((file) => !file.financial_removed),
+    [includeRemoved]
+  )
   return useQuery({
     enabled: enabled && !!caseId,
-    select: (files) =>
-      includeRemoved ? files : files.filter((file) => !file.financial_removed),
+    select,
     queryKey: ["statement-import-files", caseId, "financial-only"],
     queryFn: async () => {
       const result = listing.parse(
@@ -232,78 +240,101 @@ export function useStatementRegister(
       return result
     },
   })
-  const grouped = files.data ? groupStatementReadings(files.data) : undefined
-  const saved =
-    imports.data && grouped
-      ? {
-          ...imports.data,
-          files: grouped.flatMap((file) => {
-            const ids = new Set(
-              file.readingVersions.map((version) => version.id)
-            )
-            const entries = imports.data.files.filter((item) =>
-              ids.has(item.evidence_file_id)
-            )
-            if (!entries.length) return []
-            const latest = entries.find(
-              (entry) => entry.evidence_file_id === file.id
-            )
-            return [
-              {
-                evidence_file_id: file.id,
-                same_pdf_saved_file_ids: [
-                  ...new Set(
-                    entries.flatMap((entry) => entry.same_pdf_saved_file_ids)
-                  ),
-                ].filter((id) => !ids.has(id)),
-                current_transactions: entries.reduce(
-                  (sum, entry) => sum + entry.current_transactions,
-                  0
-                ),
-                incomplete_count: entries.reduce(
-                  (sum, entry) => sum + entry.incomplete_count,
-                  0
-                ),
-                awaiting_reconciliation_count: entries.reduce(
-                  (sum, entry) => sum + entry.awaiting_reconciliation_count,
-                  0
-                ),
-                incomplete_sources: entries.flatMap(
-                  (entry) => entry.incomplete_sources
-                ),
-                receipt_review_count: entries.reduce(
-                  (sum, entry) => sum + entry.receipt_review_count,
-                  0
-                ),
-                wire_review_count: entries.reduce(
-                  (sum, entry) => sum + entry.wire_review_count,
-                  0
-                ),
-                periods: entries
-                  .flatMap((entry) => entry.periods)
-                  .filter((period) => period.source_status === "admitted"),
-                history_periods: entries
-                  .flatMap((entry) => entry.periods)
-                  .filter((period) => period.source_status !== "admitted")
-                  .length,
-                prepared_periods: latest?.prepared_periods,
-                ignored_periods: latest?.ignored_periods || 0,
-                duplicate_dispositions: latest?.duplicate_dispositions || [],
-                available_periods: latest?.available_periods || 0,
-                ready_periods: latest?.ready_periods || [],
-                pending_periods: latest?.pending_periods || 0,
-                periods_with_checks: latest?.periods_with_checks || 0,
-                overlapping_periods: latest?.overlapping_periods || 0,
-                repeat_periods: latest?.repeat_periods || 0,
-                empty_reading: latest?.empty_reading ?? null,
-              },
-            ]
-          }),
-        }
-      : imports.data
+  // Merged once per answer, not on every render, and each file's saved entries
+  // found through an index: on d5b330d1 every render compared every file with
+  // every saved entry (about 1.4 s of the first Transactions load).
+  const grouped = useMemo(
+    () => (files.data ? groupStatementReadings(files.data) : undefined),
+    [files.data]
+  )
+  const saved = useMemo(
+    () =>
+      imports.data && grouped
+        ? mergeSavedImports(imports.data, grouped)
+        : imports.data,
+    [imports.data, grouped]
+  )
   return {
     files: { ...files, data: grouped },
     imports: { ...imports, data: saved },
+  }
+}
+
+/** The saved import state of each grouped file, merged across its reading versions. */
+export function mergeSavedImports(
+  importsData: z.infer<typeof statementImportStates>,
+  grouped: ReturnType<typeof groupStatementReadings>
+) {
+  const positions = new Map<string, number[]>()
+  importsData.files.forEach((item, index) => {
+    const known = positions.get(item.evidence_file_id)
+    if (known) known.push(index)
+    else positions.set(item.evidence_file_id, [index])
+  })
+  return {
+    ...importsData,
+    files: grouped.flatMap((file) => {
+      const ids = new Set(file.readingVersions.map((version) => version.id))
+      // The saved entries of these versions, in the answer's own order.
+      const entries = [...ids]
+        .flatMap((id) => positions.get(id) ?? [])
+        .sort((a, b) => a - b)
+        .map((index) => importsData.files[index])
+      if (!entries.length) return []
+      const latest = entries.find(
+        (entry) => entry.evidence_file_id === file.id
+      )
+      return [
+        {
+          evidence_file_id: file.id,
+          same_pdf_saved_file_ids: [
+            ...new Set(
+              entries.flatMap((entry) => entry.same_pdf_saved_file_ids)
+            ),
+          ].filter((id) => !ids.has(id)),
+          current_transactions: entries.reduce(
+            (sum, entry) => sum + entry.current_transactions,
+            0
+          ),
+          incomplete_count: entries.reduce(
+            (sum, entry) => sum + entry.incomplete_count,
+            0
+          ),
+          awaiting_reconciliation_count: entries.reduce(
+            (sum, entry) => sum + entry.awaiting_reconciliation_count,
+            0
+          ),
+          incomplete_sources: entries.flatMap(
+            (entry) => entry.incomplete_sources
+          ),
+          receipt_review_count: entries.reduce(
+            (sum, entry) => sum + entry.receipt_review_count,
+            0
+          ),
+          wire_review_count: entries.reduce(
+            (sum, entry) => sum + entry.wire_review_count,
+            0
+          ),
+          periods: entries
+            .flatMap((entry) => entry.periods)
+            .filter((period) => period.source_status === "admitted"),
+          history_periods: entries
+            .flatMap((entry) => entry.periods)
+            .filter((period) => period.source_status !== "admitted")
+            .length,
+          prepared_periods: latest?.prepared_periods,
+          ignored_periods: latest?.ignored_periods || 0,
+          duplicate_dispositions: latest?.duplicate_dispositions || [],
+          available_periods: latest?.available_periods || 0,
+          ready_periods: latest?.ready_periods || [],
+          pending_periods: latest?.pending_periods || 0,
+          periods_with_checks: latest?.periods_with_checks || 0,
+          overlapping_periods: latest?.overlapping_periods || 0,
+          repeat_periods: latest?.repeat_periods || 0,
+          empty_reading: latest?.empty_reading ?? null,
+        },
+      ]
+    }),
   }
 }
 
