@@ -17,6 +17,7 @@ import uuid as uuid_mod
 import zipfile
 from collections import defaultdict
 from pathlib import Path, PurePosixPath
+from types import SimpleNamespace
 from typing import Dict, List, Optional
 from uuid import UUID
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, Request
@@ -1204,16 +1205,20 @@ async def upload_evidence(
     try:
         from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
         case_uuid = UUID(case_id)
-        try:
-            check_case_access(db, case_uuid, current_user, required_permission=("evidence", "upload"))
-        except (CaseNotFound, CaseAccessDenied) as e:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
-
         folder_uuid = UUID(folder_id) if folder_id else None
-        if folder_uuid:
-            folder = EvidenceDBStorage.get_folder(db, folder_uuid)
-            if not folder or str(folder.case_id) != case_id:
-                raise HTTPException(status_code=404, detail="Target folder not found")
+
+        # Async for the form, staging and engine calls; every database step runs in the thread pool.
+        def check_target():
+            try:
+                check_case_access(db, case_uuid, current_user, required_permission=("evidence", "upload"))
+            except (CaseNotFound, CaseAccessDenied) as e:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+            if folder_uuid:
+                folder = EvidenceDBStorage.get_folder(db, folder_uuid)
+                if not folder or str(folder.case_id) != case_id:
+                    raise HTTPException(status_code=404, detail="Target folder not found")
+
+        await run_in_threadpool(check_target)
 
         staging_dir = _UPLOAD_STAGING_ROOT / uuid_mod.uuid4().hex
         archive_extract_dir: Optional[Path] = None
@@ -1239,47 +1244,52 @@ async def upload_evidence(
             elif is_folder:
                 cellebrite_roots = _find_cellebrite_report_roots_from_uploads(uploads)
 
-            register_files = not bool(cellebrite_roots)
-            if register_files:
-                records = _persist_staged_uploads(
-                    db=db,
-                    case_id=case_uuid,
-                    case_id_text=case_id,
-                    uploads=uploads,
-                    owner=current_user.email,
-                    folder_id=folder_uuid,
-                    created_by_id=current_user.id,
-                    register_files=True,
-                )
-            else:
-                root_parts = _get_folder_parts(db, folder_uuid)
-                await run_in_threadpool(
-                    _move_staged_uploads_to_case,
-                    case_id_text=case_id,
-                    uploads=uploads,
-                    root_parts=root_parts,
-                )
-                records = []
+            # The user is handed on as its two fields, read here: after the commit the row would reload on the loop.
+            def register():
+                register_files = not bool(cellebrite_roots)
+                if register_files:
+                    records = _persist_staged_uploads(
+                        db=db,
+                        case_id=case_uuid,
+                        case_id_text=case_id,
+                        uploads=uploads,
+                        owner=current_user.email,
+                        folder_id=folder_uuid,
+                        created_by_id=current_user.id,
+                        register_files=True,
+                    )
+                else:
+                    root_parts = _get_folder_parts(db, folder_uuid)
+                    _move_staged_uploads_to_case(
+                        case_id_text=case_id,
+                        uploads=uploads,
+                        root_parts=root_parts,
+                    )
+                    records = []
 
-            if cellebrite_roots:
                 report_folder_ids: Dict[str, Optional[UUID]] = {}
-                for root in cellebrite_roots:
-                    root_parts = [part for part in PurePosixPath(root).parts if part]
-                    if root_parts:
-                        report_folder_ids[root] = _get_or_create_folder_chain(
-                            db,
-                            case_id=case_uuid,
-                            parts=root_parts,
-                            parent_id=folder_uuid,
-                            created_by_id=current_user.id,
-                        )
-                    else:
-                        report_folder_ids[root] = folder_uuid
+                if cellebrite_roots:
+                    for root in cellebrite_roots:
+                        root_parts = [part for part in PurePosixPath(root).parts if part]
+                        if root_parts:
+                            report_folder_ids[root] = _get_or_create_folder_chain(
+                                db,
+                                case_id=case_uuid,
+                                parts=root_parts,
+                                parent_id=folder_uuid,
+                                created_by_id=current_user.id,
+                            )
+                        else:
+                            report_folder_ids[root] = folder_uuid
 
-            db.commit()
+                db.commit()
+                prefix_parts = _get_folder_parts(db, folder_uuid) if cellebrite_roots and folder_uuid else []
+                return records, report_folder_ids, prefix_parts, SimpleNamespace(email=current_user.email,
+                                                                                 id=current_user.id)
+
+            records, report_folder_ids, prefix_parts, owner = await run_in_threadpool(register)
 
             if cellebrite_roots:
-                prefix_parts = _get_folder_parts(db, folder_uuid) if folder_uuid else []
                 queued_jobs = []
                 queued_roots = []
                 for root in cellebrite_roots:
@@ -1288,7 +1298,7 @@ async def upload_evidence(
                         case_id=case_id,
                         folder_path=report_folder,
                         evidence_folder_id=report_folder_ids.get(root),
-                        current_user=current_user,
+                        current_user=owner,
                         force=replace_existing,
                         fail_on_duplicate=False,
                     )
@@ -2108,37 +2118,43 @@ async def process_cellebrite_folder(
 ):
     """Queue a Cellebrite UFED report folder for evidence-engine processing."""
     try:
-        from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
-        case_uuid = UUID(request.case_id)
-        try:
-            check_case_access(db, case_uuid, current_user, required_permission=("evidence", "upload"))
-        except (CaseNotFound, CaseAccessDenied) as e:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+        # Async for the engine calls; the access check and the folder chain run in the thread pool. The user is
+        # handed on as its two fields, read there: after the commit the row would reload on the event loop.
+        def register_folders():
+            from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
+            case_uuid = UUID(request.case_id)
+            try:
+                check_case_access(db, case_uuid, current_user, required_permission=("evidence", "upload"))
+            except (CaseNotFound, CaseAccessDenied) as e:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
-        if (
-            not request.folder_path
-            or ".." in request.folder_path
-            or request.folder_path.startswith(("/", "\\"))
-        ):
-            raise HTTPException(status_code=403, detail="Path outside case directory")
+            if (
+                not request.folder_path
+                or ".." in request.folder_path
+                or request.folder_path.startswith(("/", "\\"))
+            ):
+                raise HTTPException(status_code=403, detail="Path outside case directory")
 
-        force = bool(request.force or request.replace_existing)
-        evidence_folder_id = _get_or_create_folder_chain(
-            db,
-            case_id=case_uuid,
-            parts=[
-                part
-                for part in PurePosixPath(request.folder_path).parts
-                if part not in ("", ".", "..")
-            ],
-            created_by_id=current_user.id,
-        )
-        db.commit()
+            force = bool(request.force or request.replace_existing)
+            evidence_folder_id = _get_or_create_folder_chain(
+                db,
+                case_id=case_uuid,
+                parts=[
+                    part
+                    for part in PurePosixPath(request.folder_path).parts
+                    if part not in ("", ".", "..")
+                ],
+                created_by_id=current_user.id,
+            )
+            db.commit()
+            return case_uuid, force, evidence_folder_id, SimpleNamespace(email=current_user.email, id=current_user.id)
+
+        case_uuid, force, evidence_folder_id, owner = await run_in_threadpool(register_folders)
         job, detection = await _enqueue_cellebrite_engine_job(
             case_id=request.case_id,
             folder_path=request.folder_path,
             evidence_folder_id=evidence_folder_id,
-            current_user=current_user,
+            current_user=owner,
             force=force,
             fail_on_duplicate=True,
         )

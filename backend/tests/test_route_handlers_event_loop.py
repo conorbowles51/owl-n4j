@@ -65,11 +65,9 @@ def test_the_handlers_measured_in_use_run_in_the_thread_pool():
 # that is handed the session counts as touching it (the coroutine runs on the loop). Measured 2026-10-31
 # (perf-analysis lens-evidence): the engine jobs poll held a worker's loop 5-19 s this way. Each remaining entry is
 # work in progress for fin-eventloop item A2(b), with the reason it is not converted yet.
-NOT_YET_OFFLOADED = {
-    # Upload, folder-processing, deletion and Financial send actions: database work around engine calls on the
-    # shared async engine client, still on the loop in the handler itself; next in A2(b).
-    'routers/evidence.py:upload_evidence', 'routers/evidence.py:process_cellebrite_folder',
-}
+# Empty: every async handler and dependency keeps its database work in the thread pool. A new one that does not
+# fails test_no_async_handler_or_dependency_uses_a_sync_session_on_the_event_loop.
+NOT_YET_OFFLOADED: set = set()
 
 _OFFLOAD = {'run_in_threadpool', 'to_thread', 'run_sync'}
 # Coroutines that take the session but run their own database work in the thread pool.
