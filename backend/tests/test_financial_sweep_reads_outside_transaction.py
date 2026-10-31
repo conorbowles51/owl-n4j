@@ -192,3 +192,78 @@ def test_on_postgres_the_comparison_is_never_idle_in_transaction(sweep, request,
         with admin.begin() as db:
             db.execute(text('DROP SCHEMA IF EXISTS ' + schema + ' CASCADE'))
         admin.dispose()
+
+
+@pytest.fixture
+def scratch_postgres():
+    """An isolated schema on the local test PostgreSQL, one pooled connection (so a reset is observable)."""
+    if os.getenv('LOUPE_TEST_LOCAL_POSTGRES') != '1':
+        pytest.skip('Requires isolated local PostgreSQL')
+    url = make_url(os.environ['LOUPE_TEST_LOCAL_POSTGRES_URL'])
+    assert (url.host, url.database) == ('127.0.0.1', 'loupe_local')
+    schema = 'sweep_ro_' + uuid4().hex
+    admin = create_engine(url, connect_args={'connect_timeout': 2})
+    engine = create_engine(url, pool_size=1, max_overflow=0, pool_pre_ping=True,
+                           connect_args={'connect_timeout': 2, 'options': '-csearch_path=' + schema})
+    with admin.begin() as db:
+        db.execute(text('CREATE SCHEMA ' + schema))
+        db.execute(text('CREATE TABLE %s.marks (id integer PRIMARY KEY)' % schema))
+    try:
+        yield sessionmaker(bind=engine, autoflush=False)
+    finally:
+        engine.dispose()
+        with admin.begin() as db:
+            db.execute(text('DROP SCHEMA IF EXISTS ' + schema + ' CASCADE'))
+        admin.dispose()
+
+
+@pytest.mark.parametrize('write', ['INSERT INTO marks VALUES (1)', 'UPDATE marks SET id = 2', 'DELETE FROM marks'])
+def test_on_postgres_a_raw_write_inside_the_comparison_is_refused_and_nothing_is_written(scratch_postgres, write):
+    factory = scratch_postgres
+    with factory() as db:
+        db.execute(text('INSERT INTO marks VALUES (7)'))
+        db.commit()
+    with factory() as db:
+        read_only_session.reads_outside_transaction(db)
+        assert db.execute(text('SELECT count(*) FROM marks')).scalar() == 1  # reads still work
+        with pytest.raises(read_only_session.WriteInReadOnlyComparison):
+            db.execute(text(write))
+        db.rollback()
+    with factory() as db:
+        assert db.execute(text('SELECT id FROM marks')).scalars().all() == [7]
+
+
+def test_on_postgres_the_pooled_connection_is_writable_again_after_the_comparison(scratch_postgres):
+    factory = scratch_postgres
+    with factory() as db:
+        read_only_session.reads_outside_transaction(db)
+        assert db.execute(text('SHOW default_transaction_read_only')).scalar() == 'on'
+    with factory() as db:  # the same pooled connection (pool_size 1)
+        assert db.execute(text('SHOW default_transaction_read_only')).scalar() == 'off'
+        db.execute(text('INSERT INTO marks VALUES (3)'))
+        db.commit()
+    with factory() as db:
+        assert db.execute(text('SELECT id FROM marks')).scalars().all() == [3]
+        assert db.connection().get_execution_options().get('isolation_level') is None
+
+
+def test_on_postgres_a_write_after_the_reading_phase_ends_is_committed(scratch_postgres):
+    """vision_reader._write_phase: commit gives the read-only connection back; the write takes a real one."""
+    factory = scratch_postgres
+    with factory() as db:
+        read_only_session.reads_outside_transaction(db)
+        db.execute(text('SELECT 1'))
+        db.commit()
+        db.execute(text('INSERT INTO marks VALUES (5)'))
+        db.commit()
+    with factory() as db:
+        assert db.execute(text('SELECT id FROM marks')).scalars().all() == [5]
+
+
+def test_a_write_refused_on_another_connection_is_not_relabelled(scratch_postgres):
+    factory = scratch_postgres
+    with factory() as db:
+        db.execute(text('SET TRANSACTION READ ONLY'))
+        with pytest.raises(Exception) as raised:
+            db.execute(text('INSERT INTO marks VALUES (9)'))
+        assert not isinstance(raised.value, read_only_session.WriteInReadOnlyComparison)

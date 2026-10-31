@@ -10,14 +10,26 @@ comparison.
 ``reads_outside_transaction(session)`` runs the session's reads each in its own transaction (AUTOCOMMIT), and
 refuses any flush that would write: under autocommit a flush would be committed at once, where before the
 comparison's rollback discarded it. A refused flush raises ``WriteInReadOnlyComparison``; the sweep logs it and
-tries that file again later, and nothing is written. Measured on the test suites: 486 statement readings and 24
-held-statement judgements, no flush with a pending change.
+tries that file again later, and nothing is written. On PostgreSQL the database refuses too: the comparison's
+connection runs with ``default_transaction_read_only`` on, so a raw ``session.execute(insert/update/delete)`` or a
+``text()`` write, which never reaches a flush, is refused by Postgres (SQLSTATE 25006) and raised as the same
+``WriteInReadOnlyComparison``. The setting is reset before the connection goes back to the pool; if the reset
+fails the connection is closed instead, so no later user of the pool gets a read-only connection. Measured on
+the test suites: 486 statement readings and 24 held-statement judgements, no flush with a pending change.
 
 Switch: ``FINANCIAL_SWEEP_READS_OUTSIDE_TRANSACTION=0`` keeps the old open transaction.
 """
+import logging
 import os
 
 from sqlalchemy import event
+from sqlalchemy.engine import Engine
+
+log = logging.getLogger(__name__)
+
+# Marks the comparison's connection (an execution option lives on that Connection only, never on the pooled one).
+_OPTION = 'loupe_read_only_comparison'
+READ_ONLY_SQLSTATE = '25006'  # read_only_sql_transaction
 
 ENABLED = os.environ.get('FINANCIAL_SWEEP_READS_OUTSIDE_TRANSACTION', '1').strip().lower() not in (
     '0', 'false', 'off', 'no')
@@ -34,11 +46,50 @@ def _refuse_writes(session, flush_context, instances):
             % (len(session.new), len(session.dirty), len(session.deleted)))
 
 
+def _writable_again(dbapi_connection):
+    """Runs as the connection goes back to the pool: the next user gets the server's default again."""
+    try:
+        with dbapi_connection.cursor() as cursor:
+            cursor.execute('RESET default_transaction_read_only')
+        if not getattr(dbapi_connection, 'autocommit', True):
+            dbapi_connection.commit()
+    except Exception:  # noqa: BLE001 - never hand a read-only connection to the pool
+        log.warning('Could not reset a read-only comparison connection; closing it instead', exc_info=True)
+        try:
+            dbapi_connection.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _database_refuses_writes(connection):
+    if connection.dialect.name != 'postgresql':
+        return  # SQLite test databases: the flush refusal alone
+    # The reset is registered before the SET, so a connection never leaves read only without it. Finalizers run
+    # last-registered first, so this one runs before SQLAlchemy restores the isolation level (still autocommit).
+    connection.connection._connection_record.finalize_callback.append(_writable_again)
+    connection.exec_driver_sql('SET default_transaction_read_only = on')
+
+
+@event.listens_for(Engine, 'handle_error')
+def _refused_by_database(context):
+    """A write Postgres refused on a comparison's connection is the same refusal as a refused flush."""
+    connection = context.connection
+    if connection is None or not connection.get_execution_options().get(_OPTION):
+        return None
+    original = context.original_exception
+    if (getattr(original, 'sqlstate', None) or getattr(original, 'pgcode', None)) != READ_ONLY_SQLSTATE:
+        return None
+    verb = ((context.statement or '').split(None, 1) or ['?'])[0]
+    return WriteInReadOnlyComparison(
+        'A read-only comparison tried to write (%s); Postgres refused it, nothing was written' % verb)
+
+
 def reads_outside_transaction(session):
     """Call before the session's first statement. Its reads then run each in its own transaction, and a write is
-    refused. Does nothing when the switch is off."""
+    refused: by the flush check, and on PostgreSQL by the database itself. Does nothing when the switch is off."""
     if not ENABLED:
         return session
     event.listen(session, 'before_flush', _refuse_writes)
-    session.connection(execution_options={'isolation_level': 'AUTOCOMMIT'})
+    connection = session.connection(execution_options={'isolation_level': 'AUTOCOMMIT', _OPTION: True})
+    _database_refuses_writes(connection)
     return session
