@@ -432,6 +432,15 @@ class SavedFirstLineTests(SavedImageDescriptionTests):
                              ('model', 'DeepSeek', 'deepseek-flash', 'Neil Byrne'))
             self.assertEqual(event.actor_origin['citation']['page'], 1)
         self.assertEqual(self.first_lines()['outcome'], 'same', 'done once')
+        from services.financial.transaction_query import to_view
+        with self.f.SessionLocal() as db:
+            old = db.get(FinancialTransaction, self.labelled)
+            shown = to_view(db.get(FinancialTransaction, old.superseded_by_id)).to_json()['description_correction']
+            self.assertEqual({k: shown[k] for k in ('before', 'after', 'previous_description', 'model', 'model_id',
+                                                     'for_name', 'confirmed', 'page')},
+                             dict(before='Incoming', after='lncoming', previous_description='Incoming', model='DeepSeek',
+                                  model_id='deepseek-flash', for_name='Neil Byrne', confirmed=False, page=1))
+            self.assertNotIn('description_correction', to_view(old).to_json(), 'only on the corrected payment')
 
     def test_a_completed_payment_keeps_its_added_lines(self):
         self.store_lines('Incoming transfer from EXAMPLE SUPPLIER SA')

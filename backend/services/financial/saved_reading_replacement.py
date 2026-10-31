@@ -997,14 +997,16 @@ def refresh_descriptions(*, session_factory, case_id, document_id, from_images=F
                                             **({'first_line': dict(before=change['first_line_before'],
                                                                    after=change['first_line_after'])}
                                                if first_lines_for is not None else {}))}
+            actor = (first_line_actor(change, file_name=file_name, **first_lines_for) if first_lines_for is not None
+                     else ACTOR)
+            if first_lines_for is not None:
+                values['provenance']['reader_descriptions']['origin'] = dict(actor.origin)
             replacement = FinancialTransaction(**values)
             view = _event_text(to_view(row).to_json())
             view.update(amount_minor=str(row.amount_minor),
                         running_balance_minor=str(row.running_balance_minor) if row.running_balance_minor is not None else None)
             session.add(replacement)
             session.flush()
-            actor = (first_line_actor(change, file_name=file_name, **first_lines_for) if first_lines_for is not None
-                     else ACTOR)
             record(session, case_id=document.case_id, subject=row, subject_type=AdjudicationSubject.transaction,
                    decision=AdjudicationDecision.correct_transaction, actor=actor, reason=why,
                    before=dict(row=view, replacement_id=None, original_status=row.ledger_status,

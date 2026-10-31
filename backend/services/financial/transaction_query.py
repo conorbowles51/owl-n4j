@@ -145,6 +145,24 @@ def list_transactions(
 
 
 
+def description_correction(row) -> Optional[dict]:
+    """A payment whose first printed line a model read again and corrected (saved_reading_replacement
+    .correct_first_lines): the line before and after, the description as saved before, the page, and the model and
+    the person it read for. It is the model's reading, not confirmed, so it is shown as such beside the description."""
+    lines = (row.provenance or {}).get('reader_descriptions') or {}
+    first = lines.get('first_line') or {}
+    if lines.get('basis') != 'page_image_first_line' or not first:
+        return None
+    origin = lines.get('origin') or {}
+    read_by = lines.get('read_by') or {}
+    names = {'deepseek': 'DeepSeek', 'openai': 'OpenAI', 'anthropic': 'Anthropic'}
+    return {'before': first.get('before'), 'after': first.get('after'),
+            'previous_description': lines.get('previous_description'), 'page': lines.get('page'),
+            'model': origin.get('model') or names.get(read_by.get('provider'), read_by.get('provider')) or 'A model',
+            'model_id': origin.get('model_id') or read_by.get('model'),
+            'for_name': (origin.get('for') or {}).get('name'), 'confirmed': False}
+
+
 @dataclass(frozen=True)
 class TransactionView:
     """One ledger row, shaped for a reader rather than for storage.
@@ -200,6 +218,7 @@ class TransactionView:
     counterparty_link: dict | None = None
     label_sources: dict = field(default_factory=dict)
     balance_status: str = 'unavailable'
+    description_correction: Optional[dict] = None
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -241,6 +260,7 @@ class TransactionView:
             "ordering_date_source": self.ordering_date_source,
             **({"ordering_date_context": self.ordering_date_context} if self.ordering_date_context else {}),
             "description": self.description,
+            **({"description_correction": self.description_correction} if self.description_correction else {}),
             "counterparty_raw": self.counterparty_raw,
             "transaction_type": self.transaction_type,
             "bank_reference": self.bank_reference,
@@ -326,6 +346,7 @@ def to_view(row: FinancialTransaction, *, account=None, account_parties=None, ca
         ordering_date_source=row.ordering_date_source,
         ordering_date_context=("statement_end_ordering_only" if (row.provenance or {}).get("date_basis") == "statement_end_ordering_only" else None),
         description=row.description,
+        description_correction=description_correction(row),
         counterparty_raw=row.counterparty_raw,
         transaction_type=row.transaction_type,
         bank_reference=row.bank_reference,

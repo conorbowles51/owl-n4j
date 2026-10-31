@@ -86,6 +86,18 @@ export const transactionDetail = z.object({
   ordering_date_source: z.string(),
   ordering_date_context: z.literal("statement_end_ordering_only").optional(),
   description: z.string().nullable(),
+  description_correction: z
+    .object({
+      before: z.string().nullable().optional(),
+      after: z.string().nullable().optional(),
+      previous_description: z.string().nullable().optional(),
+      page: z.number().nullable().optional(),
+      model: z.string(),
+      model_id: z.string().nullable().optional(),
+      for_name: z.string().nullable().optional(),
+      confirmed: z.boolean(),
+    })
+    .optional(),
   counterparty_raw: z.string().nullable(),
   transaction_type: z.string().nullable(),
   bank_reference: z.string().nullable(),

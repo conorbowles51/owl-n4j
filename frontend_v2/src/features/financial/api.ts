@@ -1,6 +1,7 @@
 import { appendAccountSelection } from "./lib/account-selection"
 import { fetchAPI } from "@/lib/api-client"
 import { verifyBulkCorrectionResponse } from "./lib/bulk-correction-file"
+import type { DescriptionCorrection } from "./components/DescriptionCorrectionNote"
 
 export interface TransactionEntity {
   key: string | null
@@ -306,6 +307,8 @@ export interface LedgerTransaction {
   ordering_date_source: string
   ordering_date_context?: "statement_end_ordering_only"
   description: string | null
+  /** A model read the first printed line again and corrected it: shown as the model's reading, not confirmed. */
+  description_correction?: DescriptionCorrection
   account_alias_ids?: string[]
   canonical_account_id?: string | null
   canonical_account_label?: string | null

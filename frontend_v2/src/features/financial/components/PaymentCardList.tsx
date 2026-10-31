@@ -10,6 +10,7 @@ import { useRowPriority } from "../hooks/use-judgement-rows"
 import { cn } from "@/lib/cn"
 import type { ReactNode } from "react"
 import { PaymentLabelOrigin } from "./PaymentLabelOrigin"
+import { DescriptionCorrectionNote } from "./DescriptionCorrectionNote"
 
 /** A payment card; in a list of judgement calls it carries its tier's tint and left border. */
 function PriorityCard({ row, className, children }: { row: LedgerTransaction; className: string; children: ReactNode }) {
@@ -236,6 +237,7 @@ export function PaymentCardList({
                   {open && (
                     <div className="space-y-2 border-t bg-muted/30 p-4 text-[13px]">
                       <p>{row.description}</p>
+                      <DescriptionCorrectionNote correction={row.description_correction} />
                       <dl className="flex flex-wrap gap-x-6 gap-y-2">
                         <div>
                           <dt className="text-muted-foreground">Date</dt>
