@@ -37,9 +37,11 @@ services:
     mem_reservation: 1536m
     # lx-datastores: query statistics (pg_stat_statements, created in owl_db by migration 20261031), plans of
     # statements over 2 s (auto_explain, plan only, no ANALYZE cost), named temp spills over 10 MB, lock waits,
-    # JIT off. The log goes to postgres/data/log (one file per weekday, overwritten a week later) so it survives a
-    # container recreate. Memory settings (work_mem, shared_buffers) are unchanged until 24 h of these statistics
-    # size them. Way back: remove this command block and recreate the container.
+    # JIT off. Plans are logged without their parameter values (measured 31 Oct: the values were 6.7 of the
+    # first 14 MB, from IN lists of thousands of ids). The log goes to postgres/data/log (one file per weekday,
+    # overwritten a week later) so it survives a container recreate. Memory settings (work_mem, shared_buffers)
+    # are unchanged until 24 h of these statistics size them. Way back: remove this command block and recreate
+    # the container.
     command:
       - postgres
       - -c
@@ -52,6 +54,8 @@ services:
       - auto_explain.log_min_duration=2s
       - -c
       - auto_explain.log_analyze=off
+      - -c
+      - auto_explain.log_parameter_max_length=0
       - -c
       - log_temp_files=10MB
       - -c
