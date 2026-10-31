@@ -1269,6 +1269,21 @@ export interface AdmitFileParams {
   reason: string
 }
 
+/** Headline figures of the Financial Overview (GET /api/financial/ledger-overview). Amounts are minor units as
+ * text; currencies are unordered (the page orders them). */
+export interface LedgerOverviewTotals {
+  case_id: string
+  complete: boolean
+  categories: string[]
+  payments: number
+  accounts: number
+  unknown_dates: number
+  uncategorised: number
+  first_day: string | null
+  last_day: string | null
+  currencies: { currency: string; payments: number; credit: string; debit: string }[]
+}
+
 export const financialAPI = {
   getTransactions: (params: {
     caseId: string
@@ -1517,6 +1532,34 @@ export const financialAPI = {
     if (params.startDate) qs.set("start_date", params.startDate)
     if (params.endDate) qs.set("end_date", params.endDate)
     return fetchAPI<LedgerResponse>(`/api/financial/ledger?${qs}`)
+  },
+
+  /**
+   * The Overview's headline figures over exactly the rows `getLedgerTransactions` returns for the same filters,
+   * restricted to `categories` as the page restricts them (none: every category). Computed on the server so the
+   * Overview's top card does not wait for every payment.
+   */
+  getLedgerOverview: (params: {
+    caseId: string
+    sourceDocumentId?: string
+    accountIds?: string[]
+    accountHolders?: string[]
+    accountId?: string
+    ledgerStatus?: LedgerStatus
+    startDate?: string
+    endDate?: string
+    categories: string[]
+  }) => {
+    const qs = new URLSearchParams({ case_id: params.caseId })
+    if (params.sourceDocumentId)
+      qs.set("source_document_id", params.sourceDocumentId)
+    appendAccountSelection(qs, params)
+    if (params.accountId) qs.set("account_id", params.accountId)
+    if (params.ledgerStatus) qs.set("ledger_status", params.ledgerStatus)
+    if (params.startDate) qs.set("start_date", params.startDate)
+    if (params.endDate) qs.set("end_date", params.endDate)
+    for (const category of params.categories) qs.append("categories", category)
+    return fetchAPI<LedgerOverviewTotals>(`/api/financial/ledger-overview?${qs}`)
   },
 
   /** How many rows `getLedgerTransactions` returns for the same filters, counted without reading them. */

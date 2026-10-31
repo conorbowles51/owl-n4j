@@ -191,6 +191,47 @@ class GetLedgerCountTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ctx.exception.status_code, 400)
 
 
+class GetLedgerOverviewTests(unittest.IsolatedAsyncioTestCase):
+    """The Overview's headline figures: the same filters and rows as ``/ledger``, then overview_totals."""
+
+    def setUp(self):
+        for target in (patch.object(financial_ledger, '_account_party_state', return_value={'accounts': []}),
+                       patch('services.financial.payment_party_matches.case_party_matches', return_value={})):
+            target.start()
+            self.addCleanup(target.stop)
+
+    async def test_reads_the_ledger_rows_and_answers_their_totals(self):
+        case_id, account = uuid.uuid4(), uuid.uuid4()
+        payloads = [
+            {"key": "a", "case_id": str(case_id), "account_id": "x", "currency": "MXN", "direction": "credit",
+             "amount_minor": "500", "category": "Fees", "ordering_date": "2025-01-02"},
+            {"key": "b", "case_id": str(case_id), "account_id": "x", "currency": "MXN", "direction": "debit",
+             "amount_minor": "200", "category": None, "ordering_date": "2025-03-04"},
+        ]
+        views = iter(SimpleNamespace(to_json=lambda p=p: p) for p in payloads)
+        filters = dict(source_document_id=None, account_id=None, ledger_status="quarantined", start_date=None,
+                       end_date=None, account_ids=[account], account_holders=["A"])
+        with patch.object(financial_ledger, "list_transactions", return_value=[SimpleNamespace(account=None)] * 2) \
+                as list_call, patch.object(financial_ledger, "to_view", side_effect=lambda *a, **k: next(views)):
+            result = financial_ledger.get_ledger_overview(case_id=case_id, db="fake-session", categories=None,
+                                                          **filters)
+        list_call.assert_called_once_with(
+            "fake-session", case_id, source_document_id=None, account_id=None, account_ids=[account],
+            account_holders=["A"], ledger_status=LedgerStatus.quarantined, start_date=None, end_date=None)
+        self.assertEqual(result, {
+            "case_id": str(case_id), "complete": True, "categories": [], "payments": 2, "accounts": 1,
+            "unknown_dates": 0, "uncategorised": 1, "first_day": "2025-01-02", "last_day": "2025-03-04",
+            "currencies": [{"currency": "MXN", "payments": 2, "credit": "500", "debit": "200"}]})
+
+    async def test_an_unknown_status_is_a_400_as_on_the_ledger(self):
+        with self.assertRaises(HTTPException) as ctx:
+            financial_ledger.get_ledger_overview(
+                case_id=uuid.uuid4(), source_document_id=None, account_id=None, ledger_status="nope",
+                start_date=None, end_date=None, db="fake-session", account_ids=None, account_holders=None,
+                categories=None)
+        self.assertEqual(ctx.exception.status_code, 400)
+
+
 class GetCaseDecisionsTests(unittest.IsolatedAsyncioTestCase):
     """The decision log's first reader over HTTP.
 

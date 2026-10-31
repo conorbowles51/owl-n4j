@@ -18,10 +18,10 @@ import { InvestigatorFindingEditor } from "./InvestigatorFindingEditor"
 import { OverviewStatementCoverage } from "./OverviewStatementCoverage"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { useJudgementCounts } from "../hooks/use-judgements"
-import { categoryName } from "../hooks/use-payment-categories"
-import { compactMoney, groupMoney, minorToNumber } from "../lib/category-palette"
+import { useLedgerOverview } from "../hooks/use-ledger-overview"
+import { compactMoney, minorToNumber } from "../lib/category-palette"
 import { formatLedgerAmount } from "../lib/ledger-format"
-import { paymentDay } from "../lib/investigator-workspace"
+import { overviewFigures } from "../lib/overview-figures"
 import { InfoTip } from "./InfoTip"
 
 const heading = { fontFamily: "'Space Grotesk', ui-sans-serif, system-ui, sans-serif", letterSpacing: "-0.025em" }
@@ -49,24 +49,13 @@ export function InvestigatorOverview({
   })
   const { canEdit } = useFinancialAccess()
   const comparisons = useMemo(() => nearbyPayments(data.rows), [data.rows])
-  // Counted once per row list, not on every render (the Overview renders as each request lands; d5b330d1 has
-  // 27,926 payments). The rows are the same array while the answer and categories are.
-  const { unknownDates, uncategorised, accountCount, currencyCounts, currencies, span } = useMemo(() => {
-    const unknownDates = data.rows.filter(
-      (row) => row.ordering_date_context === "statement_end_ordering_only"
-    ).length
-    const uncategorised = data.rows.filter((row) => categoryName(row) === "Uncategorized").length
-    const accountCount = new Set(data.rows.map((row) => row.account_id)).size
-    // Money through the case, in each currency the scope holds (largest first).
-    const currencyCounts = new Map<string, number>()
-    for (const row of data.rows) currencyCounts.set(row.currency, (currencyCounts.get(row.currency) ?? 0) + 1)
-    const currencies = [...currencyCounts.keys()].sort(
-      (a, b) => (currencyCounts.get(b) ?? 0) - (currencyCounts.get(a) ?? 0) || a.localeCompare(b)
-    )
-    const days = data.rows.map(paymentDay).filter((day): day is string => !!day).sort()
-    const span = days.length ? `${monthName(days[0])} – ${monthName(days[days.length - 1])}` : "No dated payments"
-    return { unknownDates, uncategorised, accountCount, currencyCounts, currencies, span }
-  }, [data.rows])
+  // The top card's figures come from the server (the same figures over the same rows), so they do not wait for
+  // every payment (d5b330d1: 27,673 payments, a 64 MB answer). The panels below still read the payments.
+  const totals = useLedgerOverview(caseId)
+  const { payments, unknownDates, uncategorised, accountCount, currencyCounts, currencies, money: moneyBy, firstDay, lastDay } =
+    useMemo(() => overviewFigures(totals.data), [totals.data])
+  const totalsReady = totals.isSuccess
+  const span = firstDay && lastDay ? `${monthName(firstDay)} – ${monthName(lastDay)}` : "No dated payments"
   const [open, setOpen] = useState<{ ids: string[]; title: string } | null>(
     null
   )
@@ -101,10 +90,7 @@ export function InvestigatorOverview({
       ...(strength ? { jStrength: strength } : {}),
     })}`
   const currency = currencies.includes(chosenCurrency) ? chosenCurrency : currencies[0] || ""
-  const money = useMemo(
-    () => groupMoney(data.rows.filter((row) => row.currency === currency), () => ["all", "all"])[0],
-    [data.rows, currency]
-  )
+  const money = moneyBy.get(currency)
   const exact = (minor: bigint) => `${formatLedgerAmount(String(minor), currency).text} ${currency}`
   // One next step: the first unfinished thing, in the order the work runs.
   const next: { eyebrow?: string; title: string; sub: string; action: string; onClick: () => void } =
@@ -116,6 +102,8 @@ export function InvestigatorOverview({
           ? { title: `${plural(toCheck, "statement needs", "statements need")} a check.`, sub: "Check them, then the ledger is complete.", action: `Check the ${plural(toCheck, "statement")} →`, onClick: () => navigate("statements") }
           : notImported.length
             ? { title: `${plural(notImported.length, "file has", "files have")} no saved statements yet.`, sub: "They may be waiting for review, still being read, or duplicates.", action: "See what needs saving →", onClick: () => navigate("statements") }
+            : !totalsReady
+              ? { title: "Your case at a glance", sub: totals.isError ? "Payments could not be counted. Open Transactions to try again." : "Counting payments…", action: "Open transactions", onClick: () => navigate("transactions") }
             : uncategorised
               ? { title: `${plural(uncategorised, "payment has", "payments have")} no category yet.`, sub: "Give each one a category so every total breaks down.", action: `Categorise ${n(uncategorised)} →`, onClick: () => navigate("transactions") }
               : openCalls
@@ -127,7 +115,7 @@ export function InvestigatorOverview({
     { name: "Load", detail: plural(files.length, "file"), done: files.length > 0 },
     { name: "Read", detail: `${n(importedIds.size)} saved${toCheck ? ` · ${n(toCheck)} to check` : ""}${notImported.length ? ` · ${n(notImported.length)} not saved` : ""}`, done: files.length > 0 && !toCheck && !notImported.length },
     { name: "Check", detail: judgements.isSuccess ? (openCalls ? `${n(openCalls)} of Loupe's calls open` : "Loupe's calls checked") : "Loupe's calls", done: judgements.isSuccess && !openCalls },
-    { name: "Analyse", detail: `${plural(data.rows.length, "payment")}${uncategorised ? ` · ${n(uncategorised)} uncategorised` : ""}`, done: data.rows.length > 0 && !uncategorised },
+    { name: "Analyse", detail: totalsReady ? `${plural(payments, "payment")}${uncategorised ? ` · ${n(uncategorised)} uncategorised` : ""}` : totals.isError ? "Payments could not be counted" : "Counting payments…", done: totalsReady && payments > 0 && !uncategorised },
     { name: "Report", detail: findingCount ? plural(findingCount, "finding") : "No findings yet", done: findingCount > 0 },
   ]
   const now = steps.findIndex((step) => !step.done)
@@ -191,8 +179,10 @@ export function InvestigatorOverview({
                 </div>
               )}
             </div>
-            {data.query.isPending ? (
+            {totals.isPending ? (
               <p role="status" className="text-[#bfc1c8]">Adding up payments…</p>
+            ) : totals.isError ? (
+              <p role="alert" className="text-[#bfc1c8]">Payments could not be added up. Open Transactions to try again.</p>
             ) : (
               <>
                 <div className="flex items-baseline justify-between" title={exact(money?.credit ?? 0n)}>
@@ -264,13 +254,13 @@ export function InvestigatorOverview({
           <button
             type="button"
             onClick={() => navigate("transactions")}
-            className={`flex min-h-[170px] flex-col gap-3 rounded-[14px] p-5 text-left transition-transform hover:-translate-y-[3px] ${uncategorised ? "border-2 border-dashed border-[#d99a2b] bg-[#fdf0d5] text-[#5c3800]" : "bg-[#e4f4e9] text-[#1d6a3a]"}`}
+            className={`flex min-h-[170px] flex-col gap-3 rounded-[14px] p-5 text-left transition-transform hover:-translate-y-[3px] ${!totalsReady ? "bg-[#ecebe6] text-[#3b3d44]" : uncategorised ? "border-2 border-dashed border-[#d99a2b] bg-[#fdf0d5] text-[#5c3800]" : "bg-[#e4f4e9] text-[#1d6a3a]"}`}
           >
-            <span className={`${eyebrow} ${uncategorised ? "text-[#8a5300]" : "text-[#1d6a3a]"}`}>Categorise</span>
+            <span className={`${eyebrow} ${!totalsReady ? "text-[#3b3d44]" : uncategorised ? "text-[#8a5300]" : "text-[#1d6a3a]"}`}>Categorise</span>
             <span className="text-[22px] font-semibold leading-tight tabular-nums" style={heading}>
-              {uncategorised ? `${plural(uncategorised, "payment has", "payments have")} no category yet` : "Every payment has a category"}
+              {!totalsReady ? (totals.isError ? "Payments could not be counted" : "Counting payments…") : uncategorised ? `${plural(uncategorised, "payment has", "payments have")} no category yet` : "Every payment has a category"}
             </span>
-            <span className="mt-auto text-sm">{uncategorised ? "Categorise them in bulk →" : "See where the money went →"}</span>
+            <span className="mt-auto text-sm">{totalsReady && uncategorised ? "Categorise them in bulk →" : "See where the money went →"}</span>
           </button>
           <button type="button" onClick={() => go(judgementsHref(openCalls ? "open" : "all", openCalls && guesses ? "inferred" : undefined))} className="flex min-h-[170px] flex-col gap-3 rounded-[14px] bg-[#0f8a7e] p-5 text-left text-white transition-transform hover:-translate-y-[3px]">
             <span className={`${eyebrow} text-[#c9efe9]`}>Spot-check Loupe</span>
@@ -470,7 +460,7 @@ export function InvestigatorOverview({
                   )}
                 </>
               )}
-              {unknownDates > 0 && (
+              {totalsReady && unknownDates > 0 && (
                 <p className="text-sm">
                   {unknownDates} payments have only a statement end date. Check
                   their original records before comparing timing.
@@ -490,8 +480,11 @@ export function InvestigatorOverview({
             >
               <WalletCards size={20} className="text-[#c67a10]" />
               <h3 className="font-semibold" style={heading}>
-                {new Set(data.rows.map((row) => row.account_id)).size} accounts
-                with payments in this scope
+                {totalsReady
+                  ? `${accountCount} accounts with payments in this scope`
+                  : totals.isError
+                    ? "Accounts with payments in this scope could not be counted"
+                    : "Counting accounts with payments in this scope…"}
               </h3>
               <p className="text-sm text-muted-foreground">
                 Holders, periods and coverage in Statements & accounts.

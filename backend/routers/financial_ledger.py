@@ -845,6 +845,20 @@ def get_ledger_transactions(
     carry -- is what ``start_date``/``end_date`` bound, because it is the
     column the ledger itself orders and reconciles by.
     """
+    transactions = _ledger_rows(
+        db, case_id, source_document_id=source_document_id, account_id=account_id, account_ids=account_ids,
+        account_holders=account_holders, ledger_status=ledger_status, start_date=start_date, end_date=end_date)
+    return {
+        "case_id": str(case_id),
+        "transactions": transactions,
+        "total": len(transactions),
+    }
+
+
+def _ledger_rows(db, case_id, *, source_document_id, account_id, account_ids, account_holders, ledger_status,
+                 start_date, end_date):
+    """The rows ``/ledger`` answers with, as JSON objects (shared with ``/ledger-overview``, so both read the same
+    rows the same way)."""
     status = _ledger_status_param(ledger_status)
     try:
         rows = list_transactions(
@@ -869,13 +883,33 @@ def get_ledger_transactions(
     labels = account_label_index(parties)
     from services.financial.payment_party_matches import case_party_matches
     matches = case_party_matches(db, case_id)
-    transactions = [to_view(row, account=row.account, account_parties=parties,
+    return [to_view(row, account=row.account, account_parties=parties,
         canonical_account_labels=labels, party_matches=matches).to_json() for row in rows]
-    return {
-        "case_id": str(case_id),
-        "transactions": transactions,
-        "total": len(transactions),
-    }
+
+
+@router.get("/ledger-overview")
+@cached_view('ledger-overview')
+def get_ledger_overview(
+    case_id: UUID = Query(..., description="REQUIRED: Case ID"),
+    source_document_id: UUID | None = None,
+    account_id: Optional[UUID] = None,
+    ledger_status: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None,
+    account_holders: Annotated[list[str] | None, Query()] = None,
+    categories: Annotated[list[str] | None, Query()] = None):
+    """The Overview's headline figures over exactly the rows ``/ledger`` answers for the same query, restricted to
+    ``categories`` as the page restricts them (none: every category): payments, money in and out per currency,
+    accounts, the first and last dated day, payments with only a statement end date and uncategorised payments.
+
+    The page draws its top card from this small answer instead of every payment (d5b330d1: 64 MB). Each figure is
+    the browser's own calculation over the same rows (services.financial.overview_totals)."""
+    from services.financial.overview_totals import overview_totals
+    transactions = _ledger_rows(
+        db, case_id, source_document_id=source_document_id, account_id=account_id, account_ids=account_ids,
+        account_holders=account_holders, ledger_status=ledger_status, start_date=start_date, end_date=end_date)
+    return {"case_id": str(case_id), **overview_totals(transactions, str(case_id), categories or [])}
 
 
 

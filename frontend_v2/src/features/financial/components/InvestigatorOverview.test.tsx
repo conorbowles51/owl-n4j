@@ -21,8 +21,39 @@ const rows = [
   row("b", "debit", "120000", "Uncategorized"),
   row("c", "debit", "1000", "Bank fees", "USD"),
 ]
+// The server's figures over these rows (GET /ledger-overview): MXN in 5,000.00 / out 1,200.00 (2 payments), USD out 10.00.
+const totals = {
+  case_id: "case",
+  complete: true,
+  categories: [],
+  payments: 3,
+  accounts: 1,
+  unknown_dates: 0,
+  uncategorised: 1,
+  first_day: "2025-03-04",
+  last_day: "2025-03-04",
+  currencies: [
+    { currency: "USD", payments: 1, credit: "0", debit: "1000" },
+    { currency: "MXN", payments: 2, credit: "500000", debit: "120000" },
+  ],
+}
+const state = vi.hoisted(() => ({
+  payments: "ready" as "ready" | "pending",
+  totals: "ready" as "ready" | "pending" | "error",
+}))
 vi.mock("../hooks/use-investigator-payments", () => ({
-  useInvestigatorPayments: () => ({ rows, complete: true, query: { isPending: false, isError: false, refetch: vi.fn() } }),
+  useInvestigatorPayments: () =>
+    state.payments === "ready"
+      ? { rows, complete: true, query: { isPending: false, isError: false, refetch: vi.fn() } }
+      : { rows: [], complete: false, query: { isPending: true, isError: false, refetch: vi.fn() } },
+}))
+vi.mock("../hooks/use-ledger-overview", () => ({
+  useLedgerOverview: () => ({
+    data: state.totals === "ready" ? totals : undefined,
+    isPending: state.totals === "pending",
+    isError: state.totals === "error",
+    isSuccess: state.totals === "ready",
+  }),
 }))
 vi.mock("../hooks/use-statement-register", () => ({
   useStatementRegister: () => ({
@@ -48,7 +79,11 @@ vi.mock("./InvestigationWorkspaceParts", async (original) => ({
   WorkspaceScope: () => <p>Scope</p>,
 }))
 vi.mock("./InvestigationTransactionTable", () => ({ PaymentTotals: ({ label }: { label: string }) => <p>{label}</p> }))
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  state.payments = "ready"
+  state.totals = "ready"
+})
 
 it("leads with the next step, the journey, money by currency and every old panel", () => {
   render(
@@ -73,4 +108,44 @@ it("leads with the next step, the journey, money by currency and every old panel
   expect(screen.getByRole("button", { name: "Add or review statements" })).toBeTruthy()
   fireEvent.click(screen.getByRole("button", { name: "Check the 2 statements →" }))
   expect(useFinancialStore.getState().mainView).toBe("statements")
+})
+
+it("shows the top figures from the server's totals while every payment is still loading", () => {
+  state.payments = "pending"
+  render(
+    <MemoryRouter>
+      <InvestigatorOverview caseId="case" />
+    </MemoryRouter>
+  )
+  const progress = screen.getByRole("list", { name: "Your progress on this case" })
+  expect(progress.textContent).toContain("3 payments · 1 uncategorised")
+  expect(screen.getByText("1 payment has no category yet")).toBeTruthy()
+  expect(screen.getByRole("button", { name: "MXN · 2" }).getAttribute("aria-pressed")).toBe("true")
+  expect(screen.getByText("+5.00 k")).toBeTruthy()
+})
+
+it("never shows 0 while the totals load, and says so when they fail", () => {
+  state.totals = "pending"
+  const { unmount } = render(
+    <MemoryRouter>
+      <InvestigatorOverview caseId="case" />
+    </MemoryRouter>
+  )
+  let progress = screen.getByRole("list", { name: "Your progress on this case" })
+  expect(progress.textContent).toContain("Counting payments…")
+  expect(progress.textContent).not.toContain("0 payments")
+  expect(screen.getByText("Adding up payments…")).toBeTruthy()
+  expect(screen.queryByText("Every payment has a category")).toBeNull()
+  expect(screen.getByText("Counting accounts with payments in this scope…")).toBeTruthy()
+  unmount()
+  state.totals = "error"
+  render(
+    <MemoryRouter>
+      <InvestigatorOverview caseId="case" />
+    </MemoryRouter>
+  )
+  progress = screen.getByRole("list", { name: "Your progress on this case" })
+  expect(progress.textContent).toContain("Payments could not be counted")
+  expect(screen.getByRole("alert").textContent).toContain("Payments could not be added up")
+  expect(screen.queryByText("Every payment has a category")).toBeNull()
 })
