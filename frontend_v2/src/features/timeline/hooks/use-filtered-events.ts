@@ -105,7 +105,9 @@ export function useFilteredEvents({
           (e.summary &&
             markdownToPlainText(e.summary).toLowerCase().includes(term)) ||
           (e.notes && e.notes.toLowerCase().includes(term)) ||
-          (e.amount && e.amount.toLowerCase().includes(term)) ||
+          // Amounts arrive as text or as a number (live: 230 BNB2 events, 364 in OPDMD62, 14 in OPDMD66 are
+          // numbers); search the text the card shows for either.
+          (e.amount != null && String(e.amount).toLowerCase().includes(term)) ||
           // A connection is searched by the name the page shows for it: a connection that arrives with no
           // name (a statement period without dates) shows its type, and must not stop the search.
           e.connections.some((c) =>

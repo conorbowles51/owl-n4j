@@ -15,7 +15,8 @@ export interface TimelineEvent {
   type: string
   date: string
   time: string | null
-  amount: string | null
+  // Text for most events; a number where the stored amount is numeric.
+  amount: string | number | null
   summary: string | null
   notes: string | null
   source?: {

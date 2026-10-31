@@ -45,3 +45,21 @@ it("search does not stop on a connection with no name, and finds it by the type 
   expect(search("monex")).toEqual(["b"])
   expect(search("financialstatementperiod")).toEqual(["a"])
 })
+
+it("search does not stop on an amount that arrives as a number, and finds it by the shown digits", () => {
+  const withNumber: TimelineEvent[] = [
+    { ...event("n", []), amount: 125000.5 },
+    { ...event("s", []), amount: "MXN 9,999.00" },
+  ]
+  const { result } = renderHook(() =>
+    useFilteredEvents({
+      events: withNumber,
+      selectedTypes: new Set(),
+      selectedEntityKeys: new Set(),
+      dateRange: { start: null, end: null },
+      visibleWindow: null,
+      searchTerm: "125000",
+    })
+  )
+  expect(result.current.filteredEvents.map((e) => e.key)).toEqual(["n"])
+})
