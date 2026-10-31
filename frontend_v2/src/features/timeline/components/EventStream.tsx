@@ -80,8 +80,11 @@ export function EventStream({
     )
   }
 
+  // The scroll box takes the panel's height (h-full): the resizable panel wraps its content in a block box,
+  // where flex-1 does nothing, so the box grew to the whole list and every row was rendered and measured
+  // (BNB2: 31,993 rows, minutes of main-thread work) instead of the visible ones.
   return (
-    <div ref={parentRef} className="flex-1 overflow-auto">
+    <div ref={parentRef} className="h-full overflow-auto">
       <div
         style={{
           height: virtualizer.getTotalSize(),
