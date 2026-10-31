@@ -6,3 +6,7 @@ Description=Loupe live service (people's requests first)
 CPUWeight=1000
 IOWeight=1000
 MemoryLow=14G
+# Hard floor for Neo4j (heap max 3G + page cache 2G): memory.low alone was overridden under host pressure
+# (31 Oct: 76,145 low events since 00:30; 242 MB of Neo4j swapped between 01:04 and 01:07). The Neo4j scope gets the same floor from
+# headless/hostpolicy-sweep.sh, since a docker scope is transient.
+MemoryMin=5G

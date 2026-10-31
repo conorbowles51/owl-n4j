@@ -62,3 +62,11 @@ def test_installer_installs_and_removes_every_file(tmp_path):
     assert installed == shipped
     subprocess.run(['bash', str(POLICY / 'install.sh'), '--remove'], env=env, check=True)
     assert not [p for p in tmp_path.rglob('*') if p.is_file()]
+
+
+def test_neo4j_heap_and_page_cache_fit_under_a_hard_memory_floor():
+    env = dict(e.split('=', 1) for e in
+               yaml.safe_load((ROOT / 'docker-compose.yml').read_text())['services']['neo4j']['environment'])
+    need = _bytes(env['NEO4J_server_memory_heap_max__size']) + _bytes(env['NEO4J_server_memory_pagecache_size'])
+    for slice_ in ('loupe.slice', 'loupe-live.slice'):
+        assert _bytes(_unit(POLICY / slice_)['Slice']['MemoryMin']) >= need, slice_
