@@ -496,7 +496,7 @@ def test_a_graph_views_refresh_that_raced_a_graph_commit_is_tried_once_more(memo
     assert len(tries) == 2 and not path.exists()
 
 
-def test_a_compressed_copy_counts_in_the_cache_memory_and_can_evict():
+def test_a_compressed_copy_counts_in_the_cache_memory_and_can_evict(monkeypatch):
     """The kept gzip copy of a held entry is memory too (d5b330d1's ledger: 60 MB body, 7.4 MB compressed)."""
     import random
     view_cache.clear()
@@ -521,4 +521,16 @@ def test_a_compressed_copy_counts_in_the_cache_memory_and_can_evict():
     finally:
         view_cache._accepts_gzip.reset(token)
     assert view_cache._total_bytes == before + len(entry.gzipped)
+    # The copy that takes the cache over its bound evicts the least recently used entry.
     view_cache.clear()
+    held = view_cache._Entry(('payments',), (('payments', 1, 'z'),), body, 200, 'application/json')
+    view_cache._store(key, held)
+    monkeypatch.setattr(view_cache, 'MAX_TOTAL_BYTES', view_cache._total_bytes + 100)
+    token = view_cache._accepts_gzip.set(True)
+    try:
+        view_cache._current_answer(held)
+        evicted, left = key not in view_cache._entries, view_cache._total_bytes
+    finally:
+        view_cache._accepts_gzip.reset(token)
+        view_cache.clear()
+    assert evicted and left == 0
