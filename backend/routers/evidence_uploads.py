@@ -133,20 +133,29 @@ def write_chunk(item, index, content):
 @router.put('/{identity}/chunks/{index}')
 async def put_chunk(identity: UUID, index: int, request: Request,
     user: User = Depends(get_current_db_user), db: Session = Depends(get_db)):
-    item = get_session(db, identity, user)
-    if item.status != 'uploading':
-        raise HTTPException(409, 'Resume this upload before sending more bytes')
-    if not 0 <= index < len(item.chunks): raise HTTPException(400, 'Invalid chunk number')
+    # Async only to receive the body; database and disk work run in the thread pool, not on the event loop.
+    await run_in_threadpool(_check_chunk_accepted, db, identity, user, index)
     content = bytearray()
     async for part in request.stream():
         content.extend(part)
         if len(content) > CHUNK_SIZE: raise HTTPException(413, 'Upload chunk is too large')
+    return await run_in_threadpool(_save_chunk, db, identity, user, index, content)
+
+
+def _check_chunk_accepted(db: Session, identity: UUID, user: User, index: int) -> None:
+    item = get_session(db, identity, user)
+    if item.status != 'uploading':
+        raise HTTPException(409, 'Resume this upload before sending more bytes')
+    if not 0 <= index < len(item.chunks): raise HTTPException(400, 'Invalid chunk number')
+
+
+def _save_chunk(db: Session, identity: UUID, user: User, index: int, content: bytearray):
     # Pause must not wait for a slow network upload holding the session lock.
     # Recheck under the lock after receiving this bounded chunk.
     item = get_session(db, identity, user, lock=True)
     if item.status != 'uploading':
         raise HTTPException(409, 'Resume this upload before sending more bytes')
-    await run_in_threadpool(write_chunk, item, index, content)
+    write_chunk(item, index, content)
     db.commit()
     return snapshot(item)
 
@@ -180,7 +189,7 @@ def assemble(item):
 
 
 @router.post('/{identity}/{action}')
-async def upload_action(identity: UUID, action: str, user: User = Depends(get_current_db_user), db: Session = Depends(get_db)):
+def upload_action(identity: UUID, action: str, user: User = Depends(get_current_db_user), db: Session = Depends(get_db)):
     item = get_session(db, identity, user, lock=True)
     if action not in {'pause', 'resume', 'complete'}: raise HTTPException(404, 'Unknown upload action')
     if item.status == 'completed': return snapshot(item)
@@ -192,7 +201,7 @@ async def upload_action(identity: UUID, action: str, user: User = Depends(get_cu
         if group.status != 'uploading':
             raise HTTPException(409, 'Resume this selection before completing its files')
         if item.status != 'staged':
-            await run_in_threadpool(assemble, item)
+            assemble(item)
             item.status = 'staged'
             db.commit()
         return snapshot(item)
@@ -200,7 +209,7 @@ async def upload_action(identity: UUID, action: str, user: User = Depends(get_cu
         item.status = 'paused' if action == 'pause' else 'uploading'
     else:
         if item.status == 'paused': raise HTTPException(409, 'Resume this upload before completing it')
-        target = await run_in_threadpool(assemble, item)
+        target = assemble(item)
         records = EvidenceDBStorage.add_files(db, case_id=item.case_id, folder_id=item.folder_id,
             owner=user.email, created_by_id=user.id, files_data=[dict(original_filename=item.filename,
                 stored_path=str(target), sha256=item.sha256, size=item.size,

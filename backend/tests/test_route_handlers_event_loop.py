@@ -58,3 +58,100 @@ def test_the_handlers_measured_in_use_run_in_the_thread_pool():
         path, name = entry.split(':')
         tree = ast.parse((BACKEND / path).read_text())
         assert any(isinstance(node, ast.FunctionDef) and node.name == name for node in ast.walk(tree)), entry
+
+
+# Async handlers and async dependencies that take a sync database session must not use it on the event loop: every
+# call that touches the session (or Neo4j) runs through run_in_threadpool / anyio.to_thread. Awaiting a coroutine
+# that is handed the session counts as touching it (the coroutine runs on the loop). Measured 2026-10-31
+# (perf-analysis lens-evidence): the engine jobs poll held a worker's loop 5-19 s this way. Each remaining entry is
+# work in progress for fin-eventloop item A2(b), with the reason it is not converted yet.
+NOT_YET_OFFLOADED = {
+    # Upload, processing and deletion actions: they await process_db_files / engine uploads that interleave database
+    # writes with engine calls on the shared async engine client; converted with process_db_files in A2(b).
+    'routers/evidence.py:upload_evidence', 'routers/evidence.py:process_evidence_background',
+    'routers/evidence.py:process_evidence', 'routers/evidence.py:process_cellebrite_folder',
+    'routers/evidence.py:delete_evidence_file', 'routers/evidence_folders.py:process_folder',
+    'routers/financial_statement_import.py:prepare_existing', 'routers/financial_statement_import.py:reprocess',
+    'routers/financial_statement_import.py:retry_financial_batch_file',
+    'routers/evidence_upload_groups.py:group_action', 'routers/graph.py:merge_entities',
+    # Engine proxies with one access check before the engine call (one indexed read each).
+    'routers/evidence.py:check_evidence_financial_route', 'routers/evidence.py:delete_engine_job',
+    'routers/evidence.py:control_engine_job', 'routers/evidence.py:clear_engine_jobs',
+    'routers/evidence.py:check_cellebrite_folder', 'routers/evidence.py:get_video_frames',
+    'routers/evidence.py:generate_folder_profile', 'routers/graph.py:find_similar_entities_stream',
+}
+
+_OFFLOAD = {'run_in_threadpool', 'to_thread', 'run_sync'}
+# Coroutines that take the session but run their own database work in the thread pool.
+_OFFLOADS_INTERNALLY = {'reconcile_job_by_id', 'reconcile_case_jobs'}
+_ROUTE_METHODS = ('get', 'post', 'put', 'patch', 'delete', 'api_route')
+
+
+def _dotted(node):
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return _dotted(node.value) + '.' + node.attr
+    return '?'
+
+
+def _is_route(node):
+    return any(isinstance(d, ast.Call) and isinstance(d.func, ast.Attribute) and d.func.attr in _ROUTE_METHODS
+               for d in node.decorator_list)
+
+
+def _async_functions_using_a_sync_session_on_the_loop():
+    """Route handlers and async dependencies (named in Depends(...), or built by a *_dependency factory) that call
+    the database or Neo4j on the event loop. Async functions nested in a handler count for it; nested plain
+    functions do not (they are what gets handed to the thread pool)."""
+    found = {}
+    for path in sorted((BACKEND / 'routers').rglob('*.py')):
+        tree = ast.parse(path.read_text())
+        dependency_names = {call.args[0].id for call in ast.walk(tree)
+                            if isinstance(call, ast.Call) and _dotted(call.func) == 'Depends'
+                            and call.args and isinstance(call.args[0], ast.Name)}
+        candidates = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name.endswith('_dependency'):
+                candidates += [n for n in ast.walk(node) if isinstance(n, ast.AsyncFunctionDef)]
+            if isinstance(node, ast.AsyncFunctionDef) and (_is_route(node) or node.name in dependency_names):
+                candidates.append(node)
+        for node in candidates:
+            sessions = {a.arg for a in node.args.args + node.args.kwonlyargs
+                        if a.annotation is not None and 'Session' in ast.unparse(a.annotation)
+                        and 'Async' not in ast.unparse(a.annotation)}
+            hits = []
+
+            def visit(n, offloaded=False):
+                for child in ast.iter_child_nodes(n):
+                    if isinstance(child, (ast.FunctionDef, ast.Lambda)):
+                        continue
+                    if isinstance(child, ast.Call):
+                        name = _dotted(child.func)
+                        short = name.split('.')[-1]
+                        off = offloaded or short in _OFFLOAD or short in _OFFLOADS_INTERNALLY
+                        passed = list(child.args) + [k.value for k in child.keywords]
+                        if not off and (name.split('.')[0] in sessions or 'neo4j' in name.lower()
+                                        or any(isinstance(a, ast.Name) and a.id in sessions for a in passed)):
+                            hits.append(f'{child.lineno}:{name}')
+                        visit(child, off)
+                        continue
+                    visit(child, offloaded)
+            visit(node)
+            if hits:
+                found[f'{path.relative_to(BACKEND).as_posix()}:{node.name}'] = hits
+    return found
+
+
+def test_no_async_handler_or_dependency_uses_a_sync_session_on_the_event_loop():
+    found = _async_functions_using_a_sync_session_on_the_loop()
+    # Equal, not a subset: an entry leaves the list in the change that converts it.
+    assert set(found) == NOT_YET_OFFLOADED, {k: v for k, v in found.items() if k not in NOT_YET_OFFLOADED}
+
+
+def test_the_router_wide_access_checks_and_the_jobs_poll_stay_off_the_event_loop():
+    found = _async_functions_using_a_sync_session_on_the_loop()
+    for entry in ('routers/case_access.py:require_request_case_access',
+                  'routers/evidence.py:_require_evidence_object_access', 'routers/evidence.py:list_engine_jobs',
+                  'routers/evidence.py:get_engine_job', 'routers/evidence_uploads.py:put_chunk'):
+        assert entry not in found
