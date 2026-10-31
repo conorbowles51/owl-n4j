@@ -35,6 +35,47 @@ services:
     # memory table in headless/LX-HOSTPOLICY-STATUS.md. Changing either recreates the container.
     cgroup_parent: loupe-live.slice
     mem_reservation: 1536m
+    # lx-datastores: query statistics (pg_stat_statements, created in owl_db by migration 20261031), plans of
+    # statements over 2 s (auto_explain, plan only, no ANALYZE cost), named temp spills over 10 MB, lock waits,
+    # JIT off. The log goes to postgres/data/log (one file per weekday, overwritten a week later) so it survives a
+    # container recreate. Memory settings (work_mem, shared_buffers) are unchanged until 24 h of these statistics
+    # size them. Way back: remove this command block and recreate the container.
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements,auto_explain
+      - -c
+      - pg_stat_statements.track=top
+      - -c
+      - pg_stat_statements.max=5000
+      - -c
+      - auto_explain.log_min_duration=2s
+      - -c
+      - auto_explain.log_analyze=off
+      - -c
+      - log_temp_files=10MB
+      - -c
+      - log_lock_waits=on
+      - -c
+      - log_min_error_statement=error
+      - -c
+      - track_io_timing=on
+      - -c
+      - jit=off
+      - -c
+      - logging_collector=on
+      - -c
+      - log_directory=log
+      - -c
+      - log_filename=postgresql-%a.log
+      - -c
+      - log_truncate_on_rotation=on
+      - -c
+      - log_rotation_age=1d
+      - -c
+      - log_rotation_size=0
+      - -c
+      - "log_line_prefix=%m [%p] %q%a %u@%d "
     ports:
       - "5434:5432"
     environment:
