@@ -10,6 +10,13 @@ from has changed. One worker at a time, one case at a time, largest first; a fai
 continues. Nothing is written to the database.
 FINANCIAL_VIEW_WARMUP=0 turns it off.
 
+After that first pass the warm-up runs again whenever a table its views read has been written since its last pass
+(PostgreSQL's per-table insert/update/delete counters, checked once a minute, at most one pass every
+REWARM_MIN_SECONDS, one worker per host): a view whose rows changed is computed again and saved, so the next visitor
+does not wait for it (a batch round's or a sweep's writes otherwise left d5b330d1's statement files, review queue and
+batch list for the first visitor after them: 34.4, 28.0 and 11.7 s, 2026-10-31 01:0x). An unchanged view costs a
+fingerprint check (0.13 s average, measured); with no writes nothing runs. FINANCIAL_VIEW_REWARM=0 turns this off.
+
 The computing runs in a short-lived child process (``python -m services.financial.view_warmup``) that only fills
 the saved views and per-statement results. Computed inside a worker it left that worker gigabytes larger for the
 rest of its life (memory freed by Python stays with the process); the child's memory goes back to the system when
@@ -32,15 +39,76 @@ WARM_DELAY_SECONDS = 20
 CHILD_FLAG = '--lock-held'
 
 
+REWARM_CHECK_SECONDS = 60
+REWARM_MIN_SECONDS = 300
+REWARM_STATE = 'rewarm-state.json'
+
+
 async def warm_views_once():
     if os.environ.get('FINANCIAL_VIEW_WARMUP', '1') == '0':
         return
     await asyncio.sleep(WARM_DELAY_SECONDS)
     lock = await asyncio.to_thread(_take_lock)
-    if lock is None:
+    if lock is not None:
+        with lock:
+            await _run_child()
+    if os.environ.get('FINANCIAL_VIEW_REWARM', '1') == '0':
         return
-    with lock:
-        await _run_child()
+    while True:
+        await asyncio.sleep(REWARM_CHECK_SECONDS)
+        try:
+            lock = await asyncio.to_thread(_take_lock)
+            if lock is None:
+                continue  # another worker on this host is warming or checking
+            with lock:
+                if not process_shutdown_requested() and await asyncio.to_thread(_rewarm_due):
+                    await _run_child()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.warning('Financial view re-warm check failed', exc_info=True)
+
+
+def _write_counts(connection, tables=None):
+    """{table: inserts + updates + deletes so far} from PostgreSQL's statistics, for ``tables`` (default all)."""
+    from sqlalchemy import text
+    rows = connection.execute(text('SELECT relname, n_tup_ins + n_tup_upd + n_tup_del FROM pg_stat_user_tables '
+                                   'WHERE schemaname = current_schema()')).all()
+    return {name: int(count) for name, count in rows if tables is None or name in tables}
+
+
+def _rewarm_due(now=None):
+    """True if the last pass finished at least REWARM_MIN_SECONDS ago and a table its views read was written since
+    it started. False with no record of a pass (the first pass writes it), or on any doubt."""
+    import json
+    from services.financial import view_cache
+    directory = view_cache._memo_dir()
+    try:
+        state = json.loads((directory / REWARM_STATE).read_text())
+    except (OSError, ValueError, TypeError):
+        return False
+    if not isinstance(state, dict) or not state.get('tables') or (now or time.time()) - state.get('finished', 0) < REWARM_MIN_SECONDS:
+        return False
+    if _preparing():
+        return False  # a release is preparing the next code's views: this code's are about to be replaced
+    from postgres.session import _get_engine
+    with _get_engine().connect() as connection:
+        current = _write_counts(connection, set(state['tables']))
+    return current != state.get('counts')
+
+
+def _record_pass(counts, started):
+    """After a pass: the tables its views read and their write counts taken before it started, so a write during the
+    pass starts the next one."""
+    import json
+    from services.financial import view_cache
+    directory = view_cache._memo_dir()
+    tables = sorted(view_cache.tables_read)
+    state = dict(tables=tables, counts={table: counts[table] for table in tables if table in counts},
+                 started=started, finished=time.time())
+    temporary = directory / (REWARM_STATE + '.%d.tmp' % os.getpid())
+    temporary.write_text(json.dumps(state, sort_keys=True))
+    os.replace(temporary, directory / REWARM_STATE)
 
 
 async def _run_child():
@@ -144,7 +212,13 @@ def warm_account_history(lock_held=False):
         from services.financial import view_cache
         if view_cache._memo_dir() is None:
             return
-        _warm_cases()
+        counts, started = _counts_now(), time.time()
+        computed = view_cache.stats['misses']
+        warmed, failed = _warm_cases(stop_if_preparing=True)
+        if counts is not None and not process_shutdown_requested() and not _preparing():
+            _record_pass(counts, started)
+        logger.info('Financial view warm-up pass: %d views in %.0f s, %d computed again, %d failed', warmed + failed,
+                    time.time() - started, view_cache.stats['misses'] - computed, failed)
         return
     lock = _take_lock()
     if lock is None:
@@ -153,7 +227,34 @@ def warm_account_history(lock_held=False):
         _warm_cases()
 
 
-def _warm_cases(share=None):
+def _counts_now():
+    """Every table's write count now (None on a database without these statistics)."""
+    from postgres.session import _get_engine
+    try:
+        with _get_engine().connect() as connection:
+            if connection.dialect.name != 'postgresql':
+                return None
+            return _write_counts(connection)
+    except Exception:
+        logger.warning('Financial view re-warm: write counts unavailable', exc_info=True)
+        return None
+
+
+def _preparing():
+    """True while a release prepares the next code's views (it holds prepare.lock)."""
+    lock = _take_lock(name=PREPARE_LOCK)
+    if lock is None:
+        return True
+    lock.close()
+    return False
+
+
+def process_shutdown_requested():
+    from services import process_shutdown
+    return process_shutdown.requested.is_set()
+
+
+def _warm_cases(share=None, stop_if_preparing=False):
     """``share`` (k, n): only every n-th case-and-view task from the k-th, for a prepare split over n processes."""
     from sqlalchemy import func, select
     from postgres.models.financial import FinancialStatementPeriod as Period
@@ -232,6 +333,9 @@ def _warm_cases(share=None):
         if share is not None and task % share[1] != share[0]:
             continue
         if process_shutdown.requested.is_set():
+            return warmed, failed
+        if stop_if_preparing and _preparing():
+            logger.info('Financial view warm-up stopped: a release is preparing the next code')
             return warmed, failed
         started = time.perf_counter()
         try:

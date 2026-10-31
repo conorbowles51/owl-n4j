@@ -2,6 +2,7 @@
 
 Opt-in PostgreSQL checks (FINANCIAL_VIEW_CACHE_TEST_DATABASE_URL, a disposable schema per test)."""
 import fcntl
+import json
 import os
 import uuid
 
@@ -147,6 +148,74 @@ def test_a_views_own_refusal_counts_as_warmed_and_other_errors_as_failed(periods
     monkeypatch.setattr(view_warmup, '_migrations_pending', lambda: '')
     summary = view_warmup.prepare(processes=1)
     assert summary.startswith('prepare: %d views warmed in ' % (PER_CASE - 1)) and '(1 failed, 1 processes, code ' in summary
+
+
+@needs_pg
+def test_a_pass_is_due_only_after_a_write_to_a_table_its_views_read(periods, monkeypatch):
+    # The real child path: a cached view reads `payments`; the pass records it with its write count. A write
+    # elsewhere starts no pass, a write to `payments` does (after REWARM_MIN_SECONDS), a running prepare holds it.
+    import time as clock
+    from fastapi import HTTPException
+    import postgres.session
+    import routers.financial_ledger
+    from services.financial import view_cache
+    add, calls, directory = periods
+    case = uuid.uuid4()
+    add(case, 1)
+    engine = postgres.session._get_session_local()().get_bind()
+    with engine.begin() as connection:
+        connection.execute(text('CREATE TABLE payments (id serial PRIMARY KEY, case_id uuid NOT NULL)'))
+        connection.execute(text('CREATE TABLE notes (id serial PRIMARY KEY)'))
+        connection.execute(text('INSERT INTO payments (case_id) VALUES (:c)'), dict(c=case))
+
+    @view_cache.cached_view('ledger-timeline')
+    def timeline(case_id, db, **kw):
+        return dict(count=db.execute(text('SELECT count(*) FROM payments WHERE case_id = :c'), dict(c=case_id)).scalar())
+    monkeypatch.setattr(routers.financial_ledger, 'get_ledger_timeline', timeline)
+    monkeypatch.setattr(postgres.session, '_get_engine', lambda: engine)
+
+    def write(sql):
+        with engine.connect() as connection:
+            connection.execute(text(sql), dict(c=case))
+            connection.commit()
+            connection.execute(text('SELECT pg_stat_force_next_flush()'))
+        with engine.connect() as connection:  # a statement after the flush request flushes the counts
+            connection.execute(text('SELECT 1'))
+        clock.sleep(1.2)
+    write('SELECT 1')  # the setup's writes reach the statistics before the pass takes its counts
+    view_cache.clear()
+    view_cache._tables_cache.clear()
+    view_cache.tables_read.clear()
+    try:
+        assert view_warmup._rewarm_due() is False  # no pass recorded yet
+        view_warmup.warm_account_history(lock_held=True)
+        state = json.loads((directory / view_warmup.REWARM_STATE).read_text())
+        assert state['tables'] == ['payments'] and set(state['counts']) == {'payments'}
+        later = clock.time() + view_warmup.REWARM_MIN_SECONDS + 1
+        assert view_warmup._rewarm_due(now=later) is False  # nothing written
+        write('INSERT INTO notes DEFAULT VALUES')
+        assert view_warmup._rewarm_due(now=later) is False  # a table no view read
+        write('INSERT INTO payments (case_id) VALUES (:c)')
+        assert view_warmup._rewarm_due(now=clock.time()) is False  # too soon after the last pass
+        assert view_warmup._rewarm_due(now=later) is True
+        with open(directory / view_warmup.PREPARE_LOCK, 'a') as preparing:
+            fcntl.flock(preparing, fcntl.LOCK_EX)
+            assert view_warmup._rewarm_due(now=later) is False  # a release is preparing
+    finally:
+        view_cache.clear()
+        view_cache._tables_cache.clear()
+
+
+@needs_pg
+def test_the_after_start_pass_stops_when_a_release_starts_preparing(periods):
+    add, calls, directory = periods
+    add(uuid.uuid4(), 1)
+    with open(directory / view_warmup.PREPARE_LOCK, 'a') as preparing:
+        fcntl.flock(preparing, fcntl.LOCK_EX)
+        view_warmup.warm_account_history(lock_held=True)
+    assert calls == [] and not (directory / view_warmup.REWARM_STATE).exists()
+    view_warmup.warm_account_history(lock_held=True)
+    assert len(calls) == PER_CASE
 
 
 @needs_pg
@@ -299,8 +368,58 @@ import sys
 @pytest.fixture
 def memo_dir(tmp_path, monkeypatch):
     monkeypatch.setenv('FINANCIAL_VIEW_MEMO_DIR', str(tmp_path))
+    monkeypatch.setenv('FINANCIAL_VIEW_REWARM', '0')  # the first pass only; the re-warm loop has its own tests
     monkeypatch.setattr(view_warmup, 'WARM_DELAY_SECONDS', 0)
     return tmp_path
+
+
+def test_after_the_first_pass_a_child_runs_again_only_when_a_pass_is_due(memo_dir, monkeypatch):
+    monkeypatch.setenv('FINANCIAL_VIEW_REWARM', '1')
+    monkeypatch.setattr(view_warmup, 'REWARM_CHECK_SECONDS', 0)
+    runs, answers = [], iter([False, True, False, True])
+
+    async def child():
+        runs.append(view_warmup._take_lock() is None)  # the lock is held while a child runs
+
+    def due():
+        try:
+            return next(answers)
+        except StopIteration:
+            raise asyncio.CancelledError
+    monkeypatch.setattr(view_warmup, '_run_child', child)
+    monkeypatch.setattr(view_warmup, '_rewarm_due', due)
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(view_warmup.warm_views_once())
+    assert runs == [True, True, True]  # the first pass, then the two checks that found a pass due
+
+
+def test_no_re_warm_check_while_another_worker_holds_the_lock(memo_dir, monkeypatch):
+    monkeypatch.setenv('FINANCIAL_VIEW_REWARM', '1')
+    monkeypatch.setattr(view_warmup, 'REWARM_CHECK_SECONDS', 0)
+    checks = []
+
+    async def child():
+        pass
+
+    def due():
+        checks.append(1)
+        raise asyncio.CancelledError
+    monkeypatch.setattr(view_warmup, '_run_child', child)
+    monkeypatch.setattr(view_warmup, '_rewarm_due', due)
+    calls = []
+    real_sleep = asyncio.sleep
+
+    async def sleep(seconds):
+        calls.append(seconds)
+        if len(calls) == 3:
+            raise asyncio.CancelledError
+        await real_sleep(0)
+    monkeypatch.setattr(view_warmup.asyncio, 'sleep', sleep)
+    with open(memo_dir / 'warmup.lock', 'a') as held:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        with pytest.raises(asyncio.CancelledError):
+            asyncio.run(view_warmup.warm_views_once())
+    assert checks == []
 
 
 def test_the_warm_up_runs_in_a_child_process_holding_the_lock(memo_dir, monkeypatch):

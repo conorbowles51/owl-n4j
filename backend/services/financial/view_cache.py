@@ -61,6 +61,8 @@ _recording: ContextVar['_Recording | None'] = ContextVar('financial_view_cache_r
 _lock = threading.Lock()
 _entries: OrderedDict = OrderedDict()
 _total_bytes = 0
+# Every table a view kept or answered by this process read (view_warmup's re-warm watches their writes).
+tables_read: set = set()
 _key_locks: dict = {}
 stats = dict(hits=0, misses=0, stored=0, not_stored=0, saved_hits=0)
 _Encoded = None
@@ -233,6 +235,7 @@ def _cost(key, entry):
 def _store(key, entry):
     global _total_bytes
     with _lock:
+        tables_read.update(entry.tables)
         old = _entries.pop(key, None)
         if old is not None:
             _total_bytes -= _cost(key, old)
@@ -720,6 +723,8 @@ def _serve(handler, key, engine, case_id, kwargs, state):
 
 def _kept(entry, state):
     """A kept entry's answer: its response, or its refusal raised again with the same text."""
+    with _lock:
+        tables_read.update(entry.tables)
     if entry.refusal is not None:
         from fastapi import HTTPException
         state['handler_started'] = True
