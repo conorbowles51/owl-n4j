@@ -223,6 +223,26 @@ class GetLedgerOverviewTests(unittest.IsolatedAsyncioTestCase):
             "unknown_dates": 0, "uncategorised": 1, "first_day": "2025-01-02", "last_day": "2025-03-04",
             "currencies": [{"currency": "MXN", "payments": 2, "credit": "500", "debit": "200"}]})
 
+    async def test_the_ledgers_kept_copy_is_asked_for_under_the_ledgers_own_parameters(self):
+        import inspect
+        from services.financial import view_cache
+        case_id, asked = uuid.uuid4(), []
+        body = {"case_id": str(case_id), "total": 1, "transactions": [
+            {"key": "a", "case_id": str(case_id), "account_id": "x", "currency": "MXN", "direction": "credit",
+             "amount_minor": "500", "category": "Fees", "ordering_date": "2025-01-02"}]}
+        filters = dict(source_document_id=None, account_id=None, ledger_status=None, start_date=None, end_date=None,
+                       account_ids=None, account_holders=None)
+        with patch.object(view_cache, "kept_copy", side_effect=lambda name, kw: asked.append((name, kw)) or body), \
+                patch.object(financial_ledger, "list_transactions") as list_call:
+            result = financial_ledger.get_ledger_overview(case_id=case_id, db="fake-session", categories=["Fees"],
+                                                          **filters)
+        list_call.assert_not_called()
+        ledger = inspect.signature(inspect.unwrap(financial_ledger.get_ledger_transactions)).parameters
+        self.assertEqual([name for name, _ in asked], ["ledger"])
+        self.assertEqual(set(asked[0][1]), set(ledger) - {"db"}, "the same cached-view key as /ledger")
+        self.assertEqual(asked[0][1], dict(filters, case_id=case_id))
+        self.assertEqual((result["payments"], result["categories"]), (1, ["Fees"]))
+
     async def test_an_unknown_status_is_a_400_as_on_the_ledger(self):
         with self.assertRaises(HTTPException) as ctx:
             financial_ledger.get_ledger_overview(

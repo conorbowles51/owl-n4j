@@ -1216,30 +1216,79 @@ def _rows_and_total_views(rows_calls, own_reads):
     return rows, total
 
 
+def _forget(name, directory):
+    """Drop every kept copy of view ``name`` (memory and disk), so its next call runs its handler."""
+    with view_cache._lock:
+        for key in [key for key in view_cache._entries if key[0] == name]:
+            view_cache._entries.pop(key)
+    for path in directory.glob('*.view'):
+        if json.loads(path.open('rb').readline())['key'][0] == name:
+            path.unlink()
+
+
 def test_a_view_reads_another_views_kept_copy_only_while_it_is_current(engine, saved_views):
     case, rows_calls, own_reads = uuid.uuid4(), Counter(), Counter()
     rows, total = _rows_and_total_views(rows_calls, own_reads)
     write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 5), (:c, 7)', c=case)
     assert call(engine, total, case).body == b'{"total":12}' and own_reads.calls == 1, 'no copy yet: computed itself'
-    view_cache.clear()
+    _forget('payments-total', saved_views)
     call(engine, rows, case)
-    assert call(engine, total, case).body == b'{"total":12}' and own_reads.calls == 1, 'from the kept copy'
-    # A write to a row the copy was computed from: the totals view is not served unchanged and the stale copy is
-    # not read; both compute again.
+    reads = view_cache.stats['copy_reads']
+    assert call(engine, total, case).body == b'{"total":12}'
+    assert own_reads.calls == 1 and view_cache.stats['copy_reads'] == reads + 1, 'from the kept copy in memory'
+    kept = view_cache._lookup(view_cache.view_key('payments-total', dict(case_id=case)))
+    assert kept is not None and kept.tables == ('payments',), "kept under the copy's tables"
+    # The view kept from the copy covers the copy's rows: a write to them computes it again, and the now stale
+    # copy is not read (a changed value, then a rewrite with the same value).
     write(engine, 'UPDATE payments SET amount = 6 WHERE case_id = :c AND amount = 5', c=case)
-    assert call(engine, total, case).body == b'{"total":13}' and own_reads.calls == 2
+    assert call(engine, total, case).body == b'{"total":13}'
+    assert own_reads.calls == 2 and view_cache.stats['copy_reads'] == reads + 1
     call(engine, rows, case)
+    _forget('payments-total', saved_views)
     write(engine, 'UPDATE payments SET amount = amount WHERE case_id = :c AND amount = 6', c=case)
     assert call(engine, total, case).body == b'{"total":13}' and own_reads.calls == 3, 'a rewrite with the same value'
     # A saved copy (another worker, or after a restart) is read the same way.
     call(engine, rows, case)
     view_cache.clear()
-    calls = rows_calls.calls
-    assert call(engine, total, case).body == b'{"total":13}' and own_reads.calls == 3 and rows_calls.calls == calls
-    # The totals view kept from the copy covers the copy's rows: a later write computes it again.
+    _forget('payments-total', saved_views)
+    calls, reads = rows_calls.calls, view_cache.stats['copy_reads']
+    assert call(engine, total, case).body == b'{"total":13}'
+    assert (own_reads.calls, rows_calls.calls, view_cache.stats['copy_reads']) == (3, calls, reads + 1)
     write(engine, 'DELETE FROM payments WHERE case_id = :c AND amount = 7', c=case)
-    assert call(engine, total, case).body == b'{"total":6}'
+    assert call(engine, total, case).body == b'{"total":6}' and own_reads.calls == 4
 
 
-def test_kept_copy_outside_a_view_or_of_a_refusal_is_none(engine):
+def test_a_kept_refusal_is_not_read_as_a_copy(engine):
+    from fastapi import HTTPException
+    case, own_reads = uuid.uuid4(), Counter()
+
+    @view_cache.cached_view('payments-rows')
+    def refusing(case_id, db):
+        db.execute(text('SELECT amount FROM payments WHERE case_id = :c'), dict(c=case_id)).all()
+        raise HTTPException(status_code=422, detail='Too many payments.')
+
+    _, total = _rows_and_total_views(Counter(), own_reads)
+    write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 5)', c=case)
+    with pytest.raises(HTTPException):
+        call(engine, refusing, case)
+    assert view_cache._lookup(view_cache.view_key('payments-rows', dict(case_id=case))).refusal == 'Too many payments.'
+    assert call(engine, total, case).body == b'{"total":5}' and own_reads.calls == 1
+
+
+def test_a_view_kept_by_some_columns_does_not_read_copies(engine):
+    case, rows_calls, own_reads = uuid.uuid4(), Counter(), Counter()
+    rows, _ = _rows_and_total_views(rows_calls, own_reads)
+
+    @view_cache.cached_view('payments-total-projected', columns={'payments': ('id', 'case_id', 'amount')})
+    def projected(case_id, db):
+        assert view_cache.kept_copy('payments-rows', dict(case_id=case_id)) is None
+        own_reads.calls += 1
+        return dict(total=int(db.execute(text('SELECT coalesce(sum(amount), 0) FROM payments WHERE case_id = :c'),
+                                         dict(c=case_id)).scalar()))
+    write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 5)', c=case)
+    call(engine, rows, case)
+    assert call(engine, projected, case).body == b'{"total":5}' and own_reads.calls == 1
+
+
+def test_kept_copy_outside_a_view_is_none(engine):
     assert view_cache.kept_copy('payments-rows', dict(case_id=uuid.uuid4())) is None

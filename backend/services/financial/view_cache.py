@@ -65,7 +65,7 @@ _total_bytes = 0
 # Every table a view kept or answered by this process read (view_warmup's re-warm watches their writes).
 tables_read: set = set()
 _key_locks: dict = {}
-stats = dict(hits=0, misses=0, stored=0, not_stored=0, saved_hits=0, updating=0, saved=0)
+stats = dict(hits=0, misses=0, stored=0, not_stored=0, saved_hits=0, updating=0, saved=0, copy_reads=0)
 _Encoded = None
 _gc_lock = threading.Lock()
 _gc_pauses = 0
@@ -108,6 +108,7 @@ class _Recording:
     connection: object = None
     scope: object = None
     xmax: int | None = None
+    view: str | None = None
 
 
 @dataclass(frozen=True)
@@ -794,7 +795,7 @@ def _serve(handler, key, engine, case_id, kwargs, state):
             note_cache('miss')
             # A graph view: the graph's state before it is computed, compared with the state after (kept only if equal).
             graph_before = _graph_state() if key[0] in _GRAPH else None
-            recording = _Recording(owner=_dbapi(owner), snapshot=snapshot, connection=owner, scope=scope, xmax=xmax)
+            recording = _Recording(owner=_dbapi(owner), snapshot=snapshot, connection=owner, scope=scope, xmax=xmax, view=key[0])
             token = _recording.set(recording)
             session = Session(bind=owner, autoflush=False, join_transaction_mode='create_savepoint')
             refusal = None
@@ -863,6 +864,10 @@ def kept_copy(name, kwargs):
     recording = _recording.get()
     if recording is None or recording.paused or recording.connection is None or name in _GRAPH:
         return None
+    # A view kept by some columns or by its files' rows only would fingerprint the copy's tables the same narrow
+    # way, missing writes to what the copy read: such a view computes its rows itself.
+    if recording.view in _COLUMNS or recording.view in _FILE_SCOPED:
+        return None
     try:
         key = view_key(name, kwargs)
         case_id = kwargs['case_id']
@@ -872,9 +877,16 @@ def kept_copy(name, kwargs):
         for entry in candidates:
             if entry is None or entry.status_code != 200 or entry.refusal is not None:
                 continue
-            if _state(recording.connection, entry.tables, case_id, name) != entry.fingerprint:
+            # Its own check is not this view's reading: the copy's tables are added below, whole.
+            recording.paused = True
+            try:
+                current = _state(recording.connection, entry.tables, case_id, name)
+            finally:
+                recording.paused = False
+            if current != entry.fingerprint:
                 continue
             recording.tables.update(entry.tables)
+            stats['copy_reads'] += 1
             logger.info('Financial view computed from the kept %s copy', name)
             return json.loads(entry.body)
     except Exception:  # noqa: BLE001 - the view then computes its rows itself
