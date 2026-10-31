@@ -65,13 +65,13 @@ def _definitions(path: pathlib.Path) -> list[str]:
 # A module whose public name is its own module name is exported under an alias, so the package attribute of that
 # name stays the submodule: ``mock.patch('services.financial.journal.X')`` resolves by attribute on Python 3.10 and
 # would otherwise patch an attribute of the function.
-ALIASED_EXPORTS = {"journal": "journal_logger", "account_parties": "list_account_parties", "category_breakdown": "payment_category_breakdown", "category_library": "payment_category_library", "correction_fields": "payment_correction_fields", "correction_verification": "verify_correction", "counterparty_parties": "list_counterparty_parties", "ledger_source": "read_ledger_source", "ledger_summary": "summarise_ledger", "ledger_timeline": "build_ledger_timeline", "reconcile_case": "reconcile_case_periods", "statement_delta_hints": "find_statement_delta_hints"}
+ALIASED_EXPORTS = {"journal": "journal_logger", "account_parties": "list_account_parties", "category_breakdown": "payment_category_breakdown", "category_library": "payment_category_library", "correction_fields": "payment_correction_fields", "correction_verification": "verify_correction", "counterparty_parties": "list_counterparty_parties", "ledger_source": "read_ledger_source", "ledger_summary": "summarise_ledger", "ledger_timeline": "build_ledger_timeline", "reconcile_case": "reconcile_case_periods", "statement_delta_hints": "find_statement_delta_hints", "statement_file_status": "read_statement_file_status"}
 # Exports that already replace their submodule attribute. Frozen: the list may only shrink; a new one is aliased
 # as above instead.
 KNOWN_SHADOWING = frozenset({
     
     
-    "statement_file_status", "statement_layout_context", "summary_contributions",
+    "statement_layout_context", "summary_contributions",
     "transaction_search", "unread_pages",
 })
 
