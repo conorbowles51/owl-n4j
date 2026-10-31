@@ -1016,53 +1016,134 @@ def _extract_audio_track(file_path: str, output_dir: str) -> str | None:
     return None
 
 
+def _short_reason(exc: BaseException) -> str:
+    text = " ".join(str(exc).split()) or type(exc).__name__
+    return text[:200]
+
+
+def _count_reasons(reasons: list[str]) -> str:
+    counted: dict[str, int] = {}
+    for reason in reasons:
+        counted[reason] = counted.get(reason, 0) + 1
+    return "; ".join(
+        reason if count == 1 else f"{reason} ({count} frames)"
+        for reason, count in counted.items()
+    )
+
+
+async def _read_video_frame(frame_path: str, label: str, provider: str) -> str:
+    """Read one key frame with the configured image provider (the same setting images use)."""
+    if provider == "openai":
+        return await _describe_image_vision(frame_path, label)
+    return await asyncio.to_thread(_extract_text_tesseract, frame_path)
+
+
 async def _extract_video(file_path: str, file_name: str) -> ExtractedDocument:
+    """Transcribe a video's audio and read its key frames, stating every part that could not be read.
+
+    Frames follow ``image_provider``: Tesseract OCR when local (the default), OpenAI vision only when the
+    setting says so. A frame or audio track that could not be read is counted in metadata and said in the
+    document text, so a partial reading never presents as complete.
+    """
     metadata = _get_video_metadata(file_path)
     parts: list[str] = []
+    gaps: list[str] = []
+    provider = settings.image_provider.lower()
+    if provider not in ("openai", "tesseract"):
+        raise ValueError(
+            f"Unsupported IMAGE_PROVIDER={settings.image_provider!r}; expected 'tesseract' or 'openai'"
+        )
 
     with tempfile.TemporaryDirectory() as tmp_dir:
-        # Extract and transcribe audio track
+        # Audio track
         audio_path = _extract_audio_track(file_path, tmp_dir)
         if audio_path:
             try:
                 audio_doc = await _extract_audio(audio_path)
+            except Exception as e:
+                reason = _short_reason(e)
+                logger.warning("Video audio transcription failed: %s", reason)
+                metadata["transcription_status"] = "failed"
+                metadata["transcription_error"] = reason
+                gaps.append(f"The audio track could not be transcribed: {reason}")
+            else:
                 if audio_doc.text.strip():
                     parts.append("[Audio Transcription]\n" + audio_doc.text)
                     metadata["has_transcription"] = True
                     metadata["transcription"] = audio_doc.text
-            except Exception as e:
-                logger.warning("Video audio transcription failed: %s", e)
+                    metadata["transcription_status"] = "transcribed"
+                else:
+                    metadata["transcription_status"] = "no_speech"
+                    parts.append("[Audio Transcription]\nNo speech was transcribed from the audio track.")
+        elif metadata.get("has_audio"):
+            metadata["transcription_status"] = "failed"
+            metadata["transcription_error"] = "the audio track could not be extracted"
+            gaps.append("The audio track could not be transcribed: the audio track could not be extracted")
+        else:
+            metadata["transcription_status"] = "no_audio_track"
 
-        # Extract key frames
+        # Key frames
         frames_dir = os.path.join(tmp_dir, "frames")
         os.makedirs(frames_dir, exist_ok=True)
         try:
             frames = _extract_key_frames(file_path, frames_dir)
-            metadata["frame_count"] = len(frames)
         except Exception as e:
-            logger.warning("Frame extraction failed: %s", e)
+            reason = _short_reason(e)
+            logger.warning("Frame extraction failed: %s", reason)
             frames = []
+            metadata["frame_extraction_error"] = reason
+            gaps.append(f"No frames could be taken from the video: {reason}")
+        metadata["frame_count"] = len(frames)
+        metadata["frame_provider"] = "openai_vision" if provider == "openai" else "tesseract"
 
-        # Describe frames with Vision API
-        if frames:
-            frame_descriptions: list[str] = []
-            for frame in frames:
-                try:
-                    description = await _describe_image_vision(
-                        frame["path"], f"{file_name} @ {frame['timestamp_str']}"
-                    )
-                    frame_descriptions.append(
-                        f"[{frame['timestamp_str']}] {description}"
-                    )
-                except Exception as e:
-                    logger.warning(
-                        "Frame description failed at %s: %s",
-                        frame["timestamp_str"], e,
-                    )
-            if frame_descriptions:
-                parts.append(
-                    "[Video Frame Descriptions]\n" + "\n\n".join(frame_descriptions)
+        frame_texts: list[str] = []
+        failures: list[str] = []
+        without_text = 0
+        for frame in frames:
+            try:
+                text = await _read_video_frame(
+                    frame["path"], f"{file_name} @ {frame['timestamp_str']}", provider
                 )
+            except Exception as e:
+                reason = _short_reason(e)
+                logger.warning(
+                    "Frame reading failed at %s: %s", frame["timestamp_str"], reason
+                )
+                failures.append(reason)
+                continue
+            if text and text.strip():
+                frame_texts.append(f"[{frame['timestamp_str']}] {text.strip()}")
+            else:
+                without_text += 1
+
+        metadata["frames_read"] = len(frames) - len(failures)
+        metadata["frames_with_text"] = len(frame_texts)
+        metadata["frames_without_text"] = without_text
+        metadata["frames_failed"] = len(failures)
+        if failures:
+            metadata["frame_failure_reasons"] = _count_reasons(failures)
+            gaps.append(
+                f"{len(failures)} of {len(frames)} frames could not be read: "
+                f"{metadata['frame_failure_reasons']}"
+            )
+        if frame_texts or without_text:
+            heading = (
+                "[Video Frame Descriptions]"
+                if provider == "openai"
+                else "[Video Frame Text (OCR)]"
+            )
+            body = list(frame_texts)
+            if without_text:
+                body.append(
+                    f"{without_text} of {len(frames)} frames were read and had no "
+                    + ("description." if provider == "openai" else "readable text.")
+                )
+            parts.append(heading + "\n" + "\n\n".join(body))
+
+    if gaps:
+        metadata["extraction_incomplete"] = True
+        metadata["extraction_gaps"] = gaps
+        parts.insert(0, "[Not Read]\n" + "\n".join(gaps))
 
     text = "\n\n".join(parts)
     return ExtractedDocument(text=text, metadata=metadata)
