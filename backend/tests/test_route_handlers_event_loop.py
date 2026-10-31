@@ -74,11 +74,6 @@ NOT_YET_OFFLOADED = {
     'routers/financial_statement_import.py:prepare_existing', 'routers/financial_statement_import.py:reprocess',
     'routers/financial_statement_import.py:retry_financial_batch_file',
     'routers/evidence_upload_groups.py:group_action',
-    # Engine proxies with one access check before the engine call (one indexed read each).
-    'routers/evidence.py:check_evidence_financial_route', 'routers/evidence.py:delete_engine_job',
-    'routers/evidence.py:control_engine_job', 'routers/evidence.py:clear_engine_jobs',
-    'routers/evidence.py:check_cellebrite_folder', 'routers/evidence.py:get_video_frames',
-    'routers/evidence.py:generate_folder_profile',
 }
 
 _OFFLOAD = {'run_in_threadpool', 'to_thread', 'run_sync'}

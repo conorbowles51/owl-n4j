@@ -1471,7 +1471,7 @@ async def check_evidence_financial_route(
         # that ``/process/background`` requires.  Someone who may look at a case
         # may ask what its files are without being able to spend money on them.
         try:
-            check_case_access(db, case_uuid, current_user, required_permission=("case", "view"))
+            await run_in_threadpool(check_case_access, db, case_uuid, current_user, required_permission=("case", "view"))
         except (CaseNotFound, CaseAccessDenied) as e:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
@@ -1723,7 +1723,7 @@ async def delete_engine_job(
         from uuid import UUID
 
         try:
-            check_case_access(db, UUID(case_id), current_user, required_permission=("case", "edit"))
+            await run_in_threadpool(check_case_access, db, UUID(case_id), current_user, required_permission=("case", "edit"))
         except (CaseNotFound, CaseAccessDenied) as e:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
@@ -1740,10 +1740,10 @@ async def control_engine_job(job_id: str, action: str,
     current_user: User = Depends(get_current_db_user), db: Session = Depends(get_db)):
     if action not in {"pause", "resume"}:
         raise HTTPException(status_code=404, detail="Unknown job action")
-    record = EvidenceDBStorage.find_by_engine_job_id(db, job_id)
+    record = await run_in_threadpool(EvidenceDBStorage.find_by_engine_job_id, db, job_id)
     if record is None:
         raise HTTPException(status_code=404, detail="Evidence job not found")
-    authorize_case(db, record.case_id, current_user, ("evidence", "upload"))
+    await run_in_threadpool(authorize_case, db, record.case_id, current_user, ("evidence", "upload"))
     try:
         return await evidence_engine_client.control_job(job_id, str(record.case_id), action)
     except httpx.HTTPStatusError as exc:
@@ -1764,7 +1764,7 @@ async def clear_engine_jobs(
         from uuid import UUID
 
         try:
-            check_case_access(db, UUID(case_id), current_user, required_permission=("case", "edit"))
+            await run_in_threadpool(check_case_access, db, UUID(case_id), current_user, required_permission=("case", "edit"))
         except (CaseNotFound, CaseAccessDenied) as e:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
@@ -2075,7 +2075,7 @@ async def check_cellebrite_folder(
         from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
         case_uuid = UUID(case_id)
         try:
-            check_case_access(db, case_uuid, current_user, required_permission=("case", "view"))
+            await run_in_threadpool(check_case_access, db, case_uuid, current_user, required_permission=("case", "view"))
         except (CaseNotFound, CaseAccessDenied) as e:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
@@ -2501,9 +2501,9 @@ async def get_video_frames(
 
     record = None
     try:
-        record = EvidenceDBStorage.get(db, UUID(evidence_id))
+        record = await run_in_threadpool(EvidenceDBStorage.get, db, UUID(evidence_id))
     except (ValueError, AttributeError):
-        record = EvidenceDBStorage.get_by_legacy_id(db, evidence_id)
+        record = await run_in_threadpool(EvidenceDBStorage.get_by_legacy_id, db, evidence_id)
     if not record:
         raise HTTPException(status_code=404, detail="Evidence not found")
 
@@ -2915,7 +2915,7 @@ async def generate_folder_profile(
         from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
         from uuid import UUID
         try:
-            check_case_access(db, UUID(request.case_id), current_user, required_permission=("evidence", "upload"))
+            await run_in_threadpool(check_case_access, db, UUID(request.case_id), current_user, required_permission=("evidence", "upload"))
         except (CaseNotFound, CaseAccessDenied) as e:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
