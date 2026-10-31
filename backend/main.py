@@ -151,6 +151,9 @@ async def lifespan(app: FastAPI):
     # One worker computes each case's account history once after start (services.financial.view_warmup).
     from services.financial.view_warmup import warm_views_once
     view_warmup_task = asyncio.create_task(warm_views_once(), name="financial-view-warmup")
+    # A changed slow view is computed again at once in one background process per host (services.financial.view_refresh).
+    from services.financial.view_refresh import refresh_loop
+    view_refresh_task = asyncio.create_task(refresh_loop(), name="financial-view-refresh")
 
     # Each worker loads the largest cases' evidence-file copies once (services.financial.view_warmup).
     from services.financial.view_warmup import warm_case_files_once
@@ -170,7 +173,7 @@ async def lifespan(app: FastAPI):
     # pending recovery item, revisioned graph sweep) resumes on the next start.
     await process_shutdown.stop_background_tasks(
         [recovery_task, identity_graph_task, financial_batches_task, category_task, view_warmup_task,
-         case_files_task, cleanup_task, run_reaper_task, platform_update_task, loop_lag_task],
+         view_refresh_task, case_files_task, cleanup_task, run_reaper_task, platform_update_task, loop_lag_task],
         timeout=process_shutdown.BACKGROUND_STOP_SECONDS,
     )
 
@@ -229,11 +232,14 @@ app.add_middleware(
         "X-Loupe-Source-Files", "X-Loupe-Table-View", "X-Loupe-Table-View-Sha256", "X-Loupe-Privilege-Marking",
         "X-Loupe-Case-Review-History", "X-Loupe-Archive-Sha256", "X-Loupe-Assembly-Inputs-Sha256", "X-Loupe-Scenario-Sha256",
         "X-Loupe-Export-Id", "X-Loupe-Export-Event-Sha256", "X-Loupe-Export-Event-Sequence",
-        "X-Request-ID", "Server-Timing"],
+        "X-Request-ID", "Server-Timing", "X-Financial-View-State", "X-Financial-View-As-Of"],
 )
 # Correlation id and per-stage Server-Timing on financial batch endpoints.
 from services.financial.request_timing import FinancialTimingMiddleware
 app.add_middleware(FinancialTimingMiddleware)
+# A Financial page request that can show a view marked updating (services.financial.view_cache).
+from services.financial.view_cache import AcceptsUpdatingMiddleware
+app.add_middleware(AcceptsUpdatingMiddleware)
 # How long every /api request takes, kept permanently (services.request_speed).
 from services.request_speed import RequestSpeedMiddleware
 app.add_middleware(RequestSpeedMiddleware)

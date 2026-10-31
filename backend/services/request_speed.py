@@ -68,7 +68,7 @@ _lag = collections.deque(maxlen=QUEUE_LIMIT)  # finished minutes of event-loop l
 # cache state. Threads started for the request (sync dependencies and handlers) copy the context,
 # so they add to the same dict.
 _person = ContextVar('request_speed_person', default=None)
-CACHE_STATES = ('hit', 'saved', 'miss')
+CACHE_STATES = ('hit', 'saved', 'miss', 'updating')  # updating: the previous copy, marked so (view_cache)
 
 
 def bucket_of(ms):

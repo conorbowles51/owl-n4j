@@ -64,7 +64,7 @@ _total_bytes = 0
 # Every table a view kept or answered by this process read (view_warmup's re-warm watches their writes).
 tables_read: set = set()
 _key_locks: dict = {}
-stats = dict(hits=0, misses=0, stored=0, not_stored=0, saved_hits=0)
+stats = dict(hits=0, misses=0, stored=0, not_stored=0, saved_hits=0, updating=0)
 _Encoded = None
 _gc_lock = threading.Lock()
 _gc_pauses = 0
@@ -113,6 +113,10 @@ class _Entry:
     status_code: int
     media_type: str
     refusal: str | None = None
+    # How long the computation took and when its snapshot was taken (wall clock): an "updating" answer says how old
+    # the copy it serves is. Not part of equality: the same body computed twice is the same entry.
+    seconds: float = field(default=0.0, compare=False)
+    computed_at: float = field(default=0.0, compare=False)
 
 
 _TOKEN = re.compile(r'[a-z_][a-z0-9_]*')
@@ -621,6 +625,13 @@ def json_response(result):
 
 # View name -> {table: columns}: tables a view reads only these columns of (cached_view's ``columns``).
 _COLUMNS = {}
+# View name -> its decorated route handler (view_refresh computes asked views through them).
+handlers = {}
+
+
+def view_key(name, kwargs):
+    """The key a view is kept under: its name and its parameters (all but ``db``) as strings."""
+    return (name, json.dumps({k: _parameter(v) for k, v in kwargs.items() if k != 'db'}, sort_keys=True))
 
 
 def cached_view(name, *, columns=None):
@@ -640,7 +651,7 @@ def cached_view(name, *, columns=None):
             engine = db.get_bind()
             if getattr(getattr(engine, 'dialect', None), 'name', None) != 'postgresql':
                 return handler(*args, **kwargs)
-            key = (name, json.dumps({k: _parameter(v) for k, v in kwargs.items() if k != 'db'}, sort_keys=True))
+            key = view_key(name, kwargs)
             # The access check ran in the session's own transaction. End it, which returns its connection to
             # the pool, before waiting: a request waiting for the same view holds no connection.
             db.rollback()
@@ -655,6 +666,7 @@ def cached_view(name, *, columns=None):
                 # so the route's own error handling and messages apply.
                 logger.warning('Financial view reuse unavailable for %s; computing directly', name, exc_info=True)
                 return handler(*args, **kwargs)
+        handlers[name] = wrapper
         return wrapper
     return decorate
 
@@ -664,6 +676,7 @@ def _serve(handler, key, engine, case_id, kwargs, state):
     from starlette.exceptions import HTTPException as StarletteHTTPException
     from sqlalchemy.orm import Session
     started = time.perf_counter()
+    computed_at = time.time()  # before the snapshot: an updating answer never claims a copy newer than it is
     # One connection for the whole view, as before: the snapshot owner is also the handler's session
     # connection (the session works in a savepoint of the owner's transaction).
     with engine.connect() as owner:
@@ -686,6 +699,13 @@ def _serve(handler, key, engine, case_id, kwargs, state):
                 note_cache('saved')
                 logger.info('Financial view %s served from the saved copy (%.2f s)', key[0], time.perf_counter() - started)
                 return _kept(saved, state)
+            previous = _previous(entry, saved)
+            if previous is not None and _serve_previous(key, case_id, previous):
+                stats['updating'] += 1
+                note_cache('updating')
+                logger.info('Financial view %s changed; previous copy from %s served as updating (%.2f s)', key[0],
+                            _as_of(previous), time.perf_counter() - started)
+                return _kept(previous, state, updating=True)
             stats['misses'] += 1
             note_cache('miss')
             recording = _Recording(owner=_dbapi(owner), snapshot=snapshot)
@@ -717,7 +737,8 @@ def _serve(handler, key, engine, case_id, kwargs, state):
                 if refusal.status_code == 422 and refusal.headers is None and isinstance(refusal.detail, str) and tables:
                     current = fingerprint(owner, tables, case_id, _COLUMNS.get(key[0]))
                     if current is not None:
-                        kept = _Entry(tables, current, b'', 422, 'application/json', refusal=refusal.detail)
+                        kept = _Entry(tables, current, b'', 422, 'application/json', refusal=refusal.detail,
+                                      seconds=time.perf_counter() - started, computed_at=computed_at)
                         _store(key, kept)
                         stats['stored'] += 1
                         _save_if_slow(key, kept, scope, xmax, started)
@@ -735,7 +756,8 @@ def _serve(handler, key, engine, case_id, kwargs, state):
             if current is None or len(response.body) > MAX_ENTRY_BYTES:
                 stats['not_stored'] += 1
                 return response
-            kept = _Entry(tables, current, bytes(response.body), response.status_code, response.media_type)
+            kept = _Entry(tables, current, bytes(response.body), response.status_code, response.media_type,
+                          seconds=time.perf_counter() - started, computed_at=computed_at)
             _store(key, kept)
             stats['stored'] += 1
             logger.info('Financial view %s computed (%.2f s, %d bytes, %d tables)', key[0],
@@ -744,15 +766,81 @@ def _serve(handler, key, engine, case_id, kwargs, state):
             return response
 
 
-def _kept(entry, state):
-    """A kept entry's answer: its response, or its refusal raised again with the same text."""
+def _kept(entry, state, updating=False):
+    """A kept entry's answer: its response, or its refusal raised again with the same text. ``updating``: the rows
+    it was computed from have changed since; the answer says so (UPDATING_STATE_HEADER) and when it is from."""
     with _lock:
         tables_read.update(entry.tables)
+    headers = {UPDATING_STATE_HEADER: 'updating', UPDATING_AS_OF_HEADER: _as_of(entry)} if updating else None
     if entry.refusal is not None:
         from fastapi import HTTPException
         state['handler_started'] = True
-        raise HTTPException(status_code=422, detail=entry.refusal)
-    return _response(entry)
+        raise HTTPException(status_code=422, detail=entry.refusal, headers=headers)
+    response = _response(entry)
+    if headers:
+        response.headers.update(headers)
+    return response
+
+
+# A person never waits for a slow view to be computed again after a write (first visit under 2 s, 2026-10-31).
+# When the rows a kept view was computed from have changed, and computing it took at least UPDATING_MIN_SECONDS,
+# a request that says it can show it (UPDATING_ACCEPT_HEADER: updating, sent by the Financial page) gets the
+# previous copy marked updating, with the time it is from, and the view is computed again at once in a background
+# process (view_refresh). The page shows that it is updating and asks again until the answer is current. A request
+# without the header (exports, other callers) is computed as before. A copy is served as updating for at most
+# UPDATING_MAX_SECONDS after its refresh was asked for; after that the request computes it itself.
+# FINANCIAL_VIEW_UPDATING=0 turns this off.
+UPDATING_ACCEPT_HEADER = 'X-Financial-View-Accept'
+UPDATING_STATE_HEADER = 'X-Financial-View-State'
+UPDATING_AS_OF_HEADER = 'X-Financial-View-As-Of'
+UPDATING_MIN_SECONDS = 1.0
+UPDATING_MAX_SECONDS = 600
+_accepts_updating = ContextVar('financial_view_accepts_updating', default=False)
+# Set by the background refresh: every view it computes is saved, however fast, so the workers find it.
+always_save = ContextVar('financial_view_always_save', default=False)
+
+
+class AcceptsUpdatingMiddleware:
+    """Marks a GET request that carries UPDATING_ACCEPT_HEADER: updating (pure ASGI, so the mark reaches the
+    route's thread)."""
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get('type') != 'http' or scope.get('method') != 'GET' or not any(
+                name == b'x-financial-view-accept' and b'updating' in value.lower() for name, value in scope.get('headers') or ()):
+            return await self.app(scope, receive, send)
+        token = _accepts_updating.set(True)
+        try:
+            return await self.app(scope, receive, send)
+        finally:
+            _accepts_updating.reset(token)
+
+
+def _as_of(entry):
+    from datetime import datetime, timezone
+    return datetime.fromtimestamp(entry.computed_at, timezone.utc).isoformat(timespec='seconds') if entry.computed_at else ''
+
+
+def _previous(entry, saved):
+    """The newest copy of this view kept here or saved (same code), or None."""
+    copies = [copy for copy in (entry, saved) if copy is not None]
+    return max(copies, key=lambda copy: copy.computed_at) if copies else None
+
+
+def _serve_previous(key, case_id, previous):
+    """True if this request may be answered with the previous copy marked updating; asks for the refresh."""
+    import os
+    if (not _accepts_updating.get() or os.environ.get('FINANCIAL_VIEW_UPDATING', '1') == '0'
+            or previous.seconds < UPDATING_MIN_SECONDS or not previous.computed_at):
+        return False
+    from services.financial import view_refresh
+    try:
+        asked = view_refresh.ask(key, case_id)
+    except Exception:  # noqa: BLE001 - without a refresh on its way the request computes the view itself
+        logger.warning('Financial view %s refresh could not be asked for; computing it now', key[0], exc_info=True)
+        return False
+    return asked is not None and time.time() - asked < UPDATING_MAX_SECONDS
 
 
 # Views that took at least this long to compute are also saved to disk (_save_if_slow), so the other worker
@@ -811,8 +899,12 @@ def _load_saved(key, scope, xmax):
             body = saved.read()
         if header.get('size') != len(body) or header.get('sha256') != hashlib.sha256(body).hexdigest():
             return None
+        # A copy saved before these were recorded has no time: it is never served as updating (0).
+        seconds, computed_at = header.get('seconds'), header.get('computed_at')
+        valid = all(isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0 for value in (seconds, computed_at))
         return _Entry(tuple(header['tables']), tuple(tuple(part) for part in header['fingerprint']), body,
-                      header['status_code'], header['media_type'], header.get('refusal'))
+                      header['status_code'], header['media_type'], header.get('refusal'),
+                      seconds=float(seconds) if valid else 0.0, computed_at=float(computed_at) if valid else 0.0)
     except FileNotFoundError:
         return None
     except Exception:  # noqa: BLE001 - an unreadable copy is computed again
@@ -847,7 +939,8 @@ def _save_if_slow(key, entry, scope, xmax, started):
     """Save a slow view's entry for the other workers and the next start. Never raises."""
     import hashlib
     import os
-    if scope is None or time.perf_counter() - started < SAVE_MIN_SECONDS or len(entry.body) > MAX_SAVED_BYTES:
+    if (scope is None or (time.perf_counter() - started < SAVE_MIN_SECONDS and not always_save.get())
+            or len(entry.body) > MAX_SAVED_BYTES):
         return
     temporary = None
     try:
@@ -858,6 +951,7 @@ def _save_if_slow(key, entry, scope, xmax, started):
         header = dict(scope=scope, key=list(key), xmax=xmax, tables=list(entry.tables),
                       fingerprint=[list(part) for part in entry.fingerprint], status_code=entry.status_code,
                       media_type=entry.media_type, refusal=entry.refusal, size=len(entry.body),
+                      seconds=entry.seconds, computed_at=entry.computed_at,
                       sha256=hashlib.sha256(entry.body).hexdigest())
         temporary = path.with_name('%s.%d.%d.tmp' % (path.name, os.getpid(), threading.get_ident()))
         descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
