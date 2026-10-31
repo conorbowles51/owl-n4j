@@ -377,6 +377,15 @@ def _js_compare(a: str, b: str) -> int:
     return (a > b) - (a < b)
 
 
+def _js_number(value):
+    """The number JavaScript's subtraction uses for a row position: null is 0; None for NaN (missing, text)."""
+    if value is None:
+        return 0
+    if isinstance(value, bool):
+        return int(value)
+    return value if isinstance(value, (int, float)) and value == value else None
+
+
 def nearby_payments(rows, maximum_days: int = 7) -> dict:
     """nearbyPayments: per account and currency (credit cards and undated payments left out), each payment in
     followed by the account's next payment out within ``maximum_days``, ordered by the day money came in. Returns
@@ -391,8 +400,9 @@ def nearby_payments(rows, maximum_days: int = 7) -> dict:
         by_day = _js_compare(payment_day(a), payment_day(b))
         if by_day:
             return by_day
-        left, right = _get(a, 'row_index'), _get(b, 'row_index')
-        if isinstance(left, (int, float)) and isinstance(right, (int, float)) and left != right:
+        # a.row_index - b.row_index: null counts as 0; anything else not a number gives NaN, which falls through.
+        left, right = (_js_number(_get(row, 'row_index')) for row in (a, b))
+        if left is not None and right is not None and left != right:
             return -1 if left < right else 1
         return _js_compare(_text(_get(a, 'key')), _text(_get(b, 'key')))
 

@@ -1,4 +1,5 @@
-import { useQuery } from "@tanstack/react-query"
+import { useEffect } from "react"
+import { useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query"
 import { financialAPI } from "../api"
 import { useInvestigationScope } from "../stores/investigation-scope"
 import { usePaymentCategory } from "./use-payment-categories"
@@ -9,11 +10,12 @@ import { orderOverviewPanels } from "../lib/overview-panels"
  * the page would add up from every payment (useInvestigatorPayments), without waiting for every payment.
  * Under the case's "financial-ledger" key, so every write that refreshes the ledger refreshes these too.
  */
-export function useLedgerOverview(caseId: string) {
+export function useLedgerOverview(caseId: string, active = true) {
   const [categories] = usePaymentCategory(caseId)
   const [params] = useInvestigationScope(caseId)
-  return useQuery({
-    queryKey: ["financial-ledger", caseId, "overview", params ?? null, categories],
+  const queryKey = ["financial-ledger", caseId, "overview", params ?? null, categories]
+  const query = useQuery({
+    queryKey,
     queryFn: async () => {
       const result = await financialAPI.getLedgerOverview({
         caseId,
@@ -35,6 +37,26 @@ export function useLedgerOverview(caseId: string) {
         : undefined,
     enabled: !!caseId,
   })
+  useRefreshWhenShown(query, queryKey, active)
+  return query
+}
+
+/**
+ * The Overview stays mounted while another tab is shown, and a save there (a name, a category) updates the
+ * ledger's rows in place and only marks these figures out of date without fetching them. When the Overview is shown
+ * again with its figures out of date, they are fetched again (the page says it is updating meanwhile).
+ */
+function useRefreshWhenShown(
+  query: { isFetching: boolean; refetch: () => Promise<unknown> },
+  queryKey: QueryKey,
+  active: boolean
+) {
+  const client = useQueryClient()
+  const outOfDate = active && client.getQueryState(queryKey)?.isInvalidated === true
+  const { isFetching, refetch } = query
+  useEffect(() => {
+    if (outOfDate && !isFetching) void refetch()
+  }, [outOfDate, isFetching, refetch])
 }
 
 /**
@@ -43,11 +65,12 @@ export function useLedgerOverview(caseId: string) {
  * key, so every write that refreshes the ledger refreshes these too. Figures for other categories are never shown
  * as these; while the scope changes the previous answer stays up, as the ledger's does.
  */
-export function useLedgerOverviewPanels(caseId: string) {
+export function useLedgerOverviewPanels(caseId: string, active = true) {
   const [categories] = usePaymentCategory(caseId)
   const [params] = useInvestigationScope(caseId)
-  return useQuery({
-    queryKey: ["financial-ledger", caseId, "overview-panels", params ?? null, categories],
+  const queryKey = ["financial-ledger", caseId, "overview-panels", params ?? null, categories]
+  const query = useQuery({
+    queryKey,
     queryFn: async () => {
       const result = await financialAPI.getLedgerOverviewPanels({
         caseId,
@@ -67,4 +90,6 @@ export function useLedgerOverviewPanels(caseId: string) {
         : undefined,
     enabled: !!caseId,
   })
+  useRefreshWhenShown(query, queryKey, active)
+  return query
 }

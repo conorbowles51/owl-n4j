@@ -95,6 +95,15 @@ class NearbyPaymentsTests(unittest.TestCase):
                 row('too-late-out', account_id='acc-3', ordering_date='2025-01-09', row_index=1)]
         self.assertEqual(nearby_payments(rows), {'pairs': 2, 'keys': ['early-in', 'early-out', 'late-in', 'late-out']})
 
+    def test_a_missing_row_position_counts_as_zero_as_in_the_browser(self):
+        # Same day: the browser orders by row_index - row_index, where null is 0, so the null row comes first.
+        # Comparing keys instead would put "a-out" first and find no pair.
+        rows = [row('a-out', row_index=1), row('z-in', direction='credit', row_index=None)]
+        self.assertEqual(nearby_payments(rows), {'pairs': 1, 'keys': ['z-in', 'a-out']})
+        # A missing field is NaN to the browser: the keys decide.
+        rows = [row('a-out', row_index=1), {k: v for k, v in row('z-in', direction='credit').items() if k != 'row_index'}]
+        self.assertEqual(nearby_payments(rows), {'pairs': 0, 'keys': []})
+
     def test_cards_and_statement_end_dates_are_left_out(self):
         rows = [row('in', direction='credit', account_type='credit_card'), row('out', row_index=1),
                 row('in2', account_id='b', direction='credit', ordering_date_context='statement_end_ordering_only'),

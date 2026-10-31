@@ -44,8 +44,8 @@ export function InvestigatorOverview({
   const { canEdit } = useFinancialAccess()
   // The top card's figures and the panels below come from the server (the same figures over the same rows), so the
   // Overview does not download every payment (d5b330d1: 27,673 payments, a 64 MB answer).
-  const totals = useLedgerOverview(caseId)
-  const panels = useLedgerOverviewPanels(caseId)
+  const totals = useLedgerOverview(caseId, active)
+  const panels = useLedgerOverviewPanels(caseId, active)
   const panelTotals = useMemo(() => {
     const figures = panels.data?.totals
     if (!figures) return null
@@ -310,6 +310,11 @@ export function InvestigatorOverview({
           </Button>
         </div>
       ) : (<>
+        {(panels.isFetching || totals.isFetching) && (
+          <p role="status" className="text-sm text-muted-foreground">
+            Updating these figures after a change…
+          </p>
+        )}
         <PaymentTotalsView
           payments={panels.data.totals.payments}
           inventory={panelTotals.inventory}
