@@ -29,7 +29,8 @@ SELECT s.at, s.started_at, s.pid, s.method, s.route, left(CAST(s.case_id AS text
        l.max_ms AS lag_max_ms, l.over_100ms, l.samples AS lag_samples,
        h.cpu_busy_cores, h.psi_cpu_some, h.load1, h.swap_in_pages,
        (SELECT sum((v->>'cores')::float) FROM jsonb_each(h.groups) g(k, v)
-         WHERE k ~ '(fin-watchdog|fleet)' AND k ~ '/') AS fleet_cores,
+         WHERE k IN ('fleet.slice', 'system.slice/fin-watchdog.service')) AS fleet_cores,
+       (SELECT sum((v->>'cores')::float) FROM jsonb_each(h.groups) g(k, v) WHERE k = 'loupe.slice') AS live_cores,
        (SELECT sum((v->>'cores')::float) FROM jsonb_each(h.groups) g(k, v) WHERE k ~ 'owl-backend-v2') AS backend_cores,
        (SELECT max((v->>'cpu_some')::float) FROM jsonb_each(h.groups) g(k, v) WHERE k ~ 'owl-backend-v2') AS backend_cpu_some,
        (SELECT count(*) FROM availability_probe a WHERE date_trunc('minute', a.at) = s.m
@@ -105,7 +106,8 @@ def main(argv=None):
     print(f'{len(rows)} slow requests (>= {args.min_seconds:g} s, last {args.hours} h, '
           f'{"all callers" if args.all_users else "people only"}; newest first'
           f'{"" if has_releases else "; no releases table yet"})')
-    print('done (UTC)  start    pid      ms   pg_ms cache  lagmax >100  busy psi%  fleet  bkend bk_psi% down  route')
+    print('done (UTC)  start    pid      ms   pg_ms cache  lagmax >100  busy psi%  fleet  bkend bk_psi% down  route'
+          '  (fleet: fleet.slice + fin-watchdog cores; bkend: the backend service cores)')
     for r in rows:
         r = dict(zip(names, r))
         print(f'{r["at"]:%m-%d %H:%M:%S} {r["started_at"]:%H:%M:%S} ' if r['started_at'] else f'{r["at"]:%m-%d %H:%M:%S} -        ',

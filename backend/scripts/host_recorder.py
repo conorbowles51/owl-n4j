@@ -7,7 +7,8 @@ and keeps recording while the backend is restarting or stuck.
 Every minute, one ``host_load_minute`` row (migration 20261031_lx_measure):
   * load average, busy CPU cores, host pressure (cpu/memory/io, "some" and "full", as % of the minute);
   * memory available, swap used, pages swapped in and out in the minute;
-  * ``groups``: per cgroup (depth 1 and 2: slices, services, docker scopes named by container): CPU cores,
+  * ``groups``: per cgroup (depth 1 to 3: slices, services, docker scopes named by container; loupe.slice is the
+    live app, fleet.slice and system.slice/fin-watchdog.service the jobs fleet): CPU cores,
     CPU and IO pressure (% of the minute), memory and swap in MB;
   * ``top``: the 5 processes that used the most CPU in the minute (pid, name, cores, nice, cgroup);
   * ``recorder_cpu_ms``: this process's own CPU in the minute, so its cost is measured, not assumed.
@@ -109,26 +110,27 @@ class Names:
         return rel.rsplit('/', 1)[0] + f'/docker:{name}' if name else rel
 
 
-def _groups():
-    """Relative cgroup path -> counters, for depth 1 and 2."""
+def _groups(max_depth=3):
+    """Relative cgroup path -> counters, down to ``max_depth`` (loupe.slice/loupe-live.slice/<service> is 3)."""
     out = {}
-    try:
-        top = [d for d in os.listdir(CGROUP) if os.path.isdir(f'{CGROUP}/{d}')]
-    except OSError:
-        return out
-    for d in top:
-        paths = [d]
+
+    def walk(rel, depth):
+        full = f'{CGROUP}/{rel}' if rel else CGROUP
         try:
-            paths += [f'{d}/{e}' for e in os.listdir(f'{CGROUP}/{d}') if os.path.isdir(f'{CGROUP}/{d}/{e}')]
+            children = [e for e in os.listdir(full) if os.path.isdir(f'{full}/{e}')]
         except OSError:
-            pass
-        for rel in paths:
-            full = f'{CGROUP}/{rel}'
-            usage = _cpu_usage_us(full)
+            return
+        for e in children:
+            child = f'{rel}/{e}' if rel else e
+            path = f'{CGROUP}/{child}'
+            usage = _cpu_usage_us(path)
             if usage is None:
                 continue
-            out[rel] = dict(cpu_us=usage, cpu_p=_pressure(f'{full}/cpu.pressure'), io_p=_pressure(f'{full}/io.pressure'),
-                            mem_mb=_mb(f'{full}/memory.current'), swap_mb=_mb(f'{full}/memory.swap.current'))
+            out[child] = dict(cpu_us=usage, cpu_p=_pressure(f'{path}/cpu.pressure'), io_p=_pressure(f'{path}/io.pressure'),
+                              mem_mb=_mb(f'{path}/memory.current'), swap_mb=_mb(f'{path}/memory.swap.current'))
+            if depth < max_depth:
+                walk(child, depth + 1)
+    walk('', 1)
     return out
 
 
