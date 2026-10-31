@@ -6,15 +6,15 @@ import { FilterSidebar } from "./FilterSidebar"
 
 // A long company name as it appears in a real case's entity list, a short one, and large counts.
 const entities: DerivedEntity[] = [
-  { key: "a", name: "ECOTERRA SERVICIOS AMBIENTALES SA DE CV", type: "FinancialAccount" as DerivedEntity["type"], eventCount: 4699 },
-  { key: "b", name: "METALMEX ENERGIA Y SUSTENTO SA DE CV", type: "FinancialAccount" as DerivedEntity["type"], eventCount: 2322 },
-  { key: "c", name: "ARRENDO SERV", type: "FinancialAccount" as DerivedEntity["type"], eventCount: 172 },
+  { key: "a", name: "ECOTERRA SERVICIOS AMBIENTALES SA DE CV", type: "financialaccount" as DerivedEntity["type"], eventCount: 4699 },
+  { key: "b", name: "METALMEX ENERGIA Y SUSTENTO SA DE CV", type: "financialaccount" as DerivedEntity["type"], eventCount: 2322 },
+  { key: "c", name: "ARRENDO SERV", type: "financialaccount" as DerivedEntity["type"], eventCount: 172 },
 ]
 
 const overlaps = (a: DOMRect, b: DOMRect) =>
   a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom && b.top < a.bottom
 
-function renderAt(width: number) {
+function renderAt(width: number, list: DerivedEntity[] = entities) {
   return render(
     <div style={{ width, height: 600 }}>
       <FilterSidebar
@@ -23,7 +23,7 @@ function renderAt(width: number) {
         onToggleType={() => {}}
         onSelectAllTypes={() => {}}
         onClearAllTypes={() => {}}
-        entities={entities}
+        entities={list}
         selectedEntityKeys={new Set()}
         entityFilterCounts={new Map([["a", 4699], ["b", 2322], ["c", 172]])}
         onToggleEntity={() => {}}
@@ -81,3 +81,18 @@ for (const width of [240, 176]) {
     expect(clipped.length).toBeGreaterThan(0)
   })
 }
+
+it("an entity that arrives without a name still shows its type, as before", async () => {
+  // Live data has these: statement-period connections come with no name (807 rows on one case).
+  const unnamed = {
+    key: "p",
+    name: null as unknown as string,
+    type: "financialstatementperiod" as DerivedEntity["type"],
+    eventCount: 255,
+  }
+  const { container } = renderAt(240, [unnamed])
+  const focus = Array.from(container.querySelectorAll("button")).find((b) => b.textContent === "Focus")!
+  const label = focus.parentElement!.querySelector("label")!
+  expect(label.textContent).toContain("financialstatementperiod")
+  expect(label.getAttribute("title")).toBe("financialstatementperiod")
+})

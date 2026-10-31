@@ -138,6 +138,9 @@ export function FilterSidebar({
               <div className="space-y-0.5">
                 {groupEntities.map((entity) => {
                   const count = entityFilterCounts.get(entity.key) ?? 0
+                  // Some connections arrive without a name (statement periods); the badge has always shown the
+                  // entity type for those, so the row keeps doing so.
+                  const shownName = entity.name ?? entity.type
                   return (
                     <div
                       key={entity.key}
@@ -147,7 +150,7 @@ export function FilterSidebar({
                           drawn over. The full name stays readable in the tooltip. */}
                       <label
                         className="flex items-center gap-1.5 flex-1 min-w-0"
-                        title={entity.name}
+                        title={shownName}
                       >
                         <input
                           type="checkbox"
@@ -160,7 +163,7 @@ export function FilterSidebar({
                           className="text-[9px] py-0 min-w-0 max-w-full"
                         >
                           <span data-entity-name className="truncate min-w-0">
-                            {entity.name}
+                            {shownName}
                           </span>
                         </NodeBadge>
                         <span
