@@ -73,6 +73,16 @@ vi.mock("../hooks/use-financial-data", () => ({
 vi.mock("../hooks/use-ledger-transactions", () => ({
   useLedgerTransactions: ledger.useLedgerTransactions,
 }))
+// The page's ledger fixtures stand for every row (the full ledger path): the Transactions first view is not
+// available here, so the panel reads every row at once. The first view is tested in LedgerPanel.firstView.test.tsx.
+vi.mock("../hooks/use-ledger-first-view", () => ({
+  FIRST_VIEW_PAGE_SIZES: [25, 50, 100, 250],
+  useLedgerFirstView: () => ({
+    data: { case_id: "case-1", available: false, reason: "test", total: 0 },
+    isError: false,
+    isPending: false,
+  }),
+}))
 vi.mock("../hooks/use-ledger-count", () => ({
   useLedgerCount: () => ({ data: undefined }),
 }))
@@ -469,7 +479,7 @@ describe("FinancialPage", () => {
     renderPage()
     selectTab("Transactions")
 
-    expect(ledger.useLedgerTransactions).toHaveBeenCalledWith("case-1", {})
+    expect(ledger.useLedgerTransactions).toHaveBeenCalledWith("case-1", {}, true)
     expect(
       screen.getAllByText(
         /No (?:admitted rows in the ledger|imported payments yet)/i
