@@ -13,6 +13,13 @@ import {
   ResizablePanel,
   ResizableHandle,
 } from "@/components/ui/resizable"
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetTitle,
+} from "@/components/ui/sheet"
+import { useMediaQuery } from "@/hooks/use-media-query"
 import { useGraphStore } from "@/stores/graph.store"
 import { useUIStore } from "@/stores/ui.store"
 import { useTimelineData } from "../hooks/use-timeline-data"
@@ -48,6 +55,10 @@ export function TimelinePage() {
 
   const searchInputRef = useRef<HTMLInputElement>(null)
   const [exportOpen, setExportOpen] = useState(false)
+  // Below 768 px (the app's narrow breakpoint) the filters open as a sheet over the Timeline instead of a
+  // resizable column, which a phone squeezes to about 56 px. Closed until the user asks for it.
+  const narrowViewport = useMediaQuery("(max-width: 767px)")
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false)
   const [exportSource, setExportSource] = useState<TimelineExportSource | null>(
     null
   )
@@ -218,9 +229,18 @@ export function TimelinePage() {
   )
 
   const handleFocusEntity = useCallback(
-    (key: string) => setSelectedEntities(new Set([key])),
+    (key: string) => {
+      setSelectedEntities(new Set([key]))
+      // On a phone the sheet covers the events; Focus closes it so the focused events are in view.
+      setFilterSheetOpen(false)
+    },
     [setSelectedEntities]
   )
+
+  const handleToggleFilters = useCallback(() => {
+    if (narrowViewport) setFilterSheetOpen((open) => !open)
+    else toggleFilterSidebar()
+  }, [narrowViewport, toggleFilterSidebar])
 
   // Keyboard navigation
   useKeyboardNavigation({
@@ -230,10 +250,28 @@ export function TimelinePage() {
     onClearSelection: handleClearSelection,
     onPrevCluster: prevCluster,
     onNextCluster: nextCluster,
-    onToggleFilterSidebar: toggleFilterSidebar,
+    onToggleFilterSidebar: handleToggleFilters,
     searchInputRef,
     scrollToEvent,
   })
+
+  const filterSidebar = (
+    <FilterSidebar
+      eventTypes={eventTypes}
+      selectedTypes={selectedTypes}
+      onToggleType={toggleType}
+      onSelectAllTypes={handleSelectAllTypes}
+      onClearAllTypes={clearAllTypes}
+      entities={entities}
+      selectedEntityKeys={selectedEntityKeys}
+      entityFilterCounts={entityFilterCounts}
+      onToggleEntity={toggleEntity}
+      onClearEntityFilter={clearEntityFilter}
+      onFocusEntity={handleFocusEntity}
+      activeFilterCount={activeFilterCount}
+      onClearAll={handleClearAll}
+    />
+  )
 
   if (error)
     return (
@@ -320,7 +358,7 @@ export function TimelinePage() {
         onDateRangeChange={setDateRange}
         filteredCount={filteredCount}
         totalCount={totalCount}
-        onToggleFilterSidebar={toggleFilterSidebar}
+        onToggleFilterSidebar={handleToggleFilters}
         activeFilterCount={activeFilterCount}
         onExport={() => openExportDialog(null)}
       />
@@ -328,7 +366,7 @@ export function TimelinePage() {
       {/* 2-panel layout: filter sidebar + event stream */}
       <ResizablePanelGroup orientation="horizontal" className="flex-1">
         {/* Filter sidebar */}
-        {filterSidebarOpen && (
+        {!narrowViewport && filterSidebarOpen && (
           <>
             <ResizablePanel
               defaultSize="20"
@@ -336,21 +374,7 @@ export function TimelinePage() {
               maxSize="30"
               className="border-r border-border bg-panel"
             >
-              <FilterSidebar
-                eventTypes={eventTypes}
-                selectedTypes={selectedTypes}
-                onToggleType={toggleType}
-                onSelectAllTypes={handleSelectAllTypes}
-                onClearAllTypes={clearAllTypes}
-                entities={entities}
-                selectedEntityKeys={selectedEntityKeys}
-                entityFilterCounts={entityFilterCounts}
-                onToggleEntity={toggleEntity}
-                onClearEntityFilter={clearEntityFilter}
-                onFocusEntity={handleFocusEntity}
-                activeFilterCount={activeFilterCount}
-                onClearAll={handleClearAll}
-              />
+              {filterSidebar}
             </ResizablePanel>
             <ResizableHandle />
           </>
@@ -373,6 +397,21 @@ export function TimelinePage() {
           />
         </ResizablePanel>
       </ResizablePanelGroup>
+
+      {narrowViewport && (
+        <Sheet open={filterSheetOpen} onOpenChange={setFilterSheetOpen}>
+          <SheetContent
+            side="left"
+            className="w-[85vw] max-w-sm gap-0 bg-panel p-0 pt-10"
+          >
+            <SheetTitle className="sr-only">Timeline filters</SheetTitle>
+            <SheetDescription className="sr-only">
+              Choose the event types and entities the Timeline shows.
+            </SheetDescription>
+            <div className="min-h-0 flex-1">{filterSidebar}</div>
+          </SheetContent>
+        </Sheet>
+      )}
 
       {caseId && (
         <TimelineExportDialog

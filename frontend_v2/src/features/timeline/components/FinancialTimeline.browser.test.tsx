@@ -426,3 +426,84 @@ it("keeps the preview usable on a small screen after a stale save, then retries"
   await screen.findByText("1 added to Timeline.")
   expect(saved).toHaveLength(1)
 })
+
+// Timeline filters on a phone: below 768 px the filter column would be squeezed to about 56 px, so the
+// filters open as a sheet from the Filters button instead.
+const accountEvent: TimelineEvent = {
+  key: "event-account",
+  name: "Transfer to supplier",
+  type: "Transaction",
+  date: "2021-02-08",
+  time: null,
+  amount: null,
+  summary: null,
+  notes: null,
+  connections: [
+    {
+      key: "account-1",
+      name: "ECOTERRA SERVICIOS AMBIENTALES SA DE CV",
+      type: "FinancialAccount",
+      relationship: "FROM",
+      direction: "incoming",
+    },
+  ],
+}
+function renderTimelineOnly() {
+  render(
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
+      <MemoryRouter initialEntries={["/cases/case/timeline"]}>
+        <div className="h-screen bg-background text-foreground">
+          <Routes>
+            <Route path="/cases/:id/timeline" element={<TimelinePage />} />
+          </Routes>
+        </div>
+      </MemoryRouter>
+    </QueryClientProvider>
+  )
+}
+const focusButtons = (root: ParentNode = document) =>
+  Array.from(root.querySelectorAll("button")).filter(
+    (button) => button.textContent === "Focus"
+  )
+
+it("on a phone the filters open as a sheet wide enough to use, and Focus closes it", async () => {
+  await page.viewport(390, 844)
+  saved = [accountEvent]
+  renderTimelineOnly()
+  expect(await screen.findByText("Transfer to supplier")).toBeVisible()
+  // No squeezed filter column beside the events.
+  expect(focusButtons()).toHaveLength(0)
+
+  fireEvent.click(screen.getByRole("button", { name: /Filters/ }))
+  const sheet = await screen.findByRole("dialog", { name: "Timeline filters" })
+  const [focus] = focusButtons(sheet)
+  expect(focus).toBeDefined()
+  // 85% of a 390 px screen: the row has room for the checkbox, name, count and Focus.
+  expect(focus.parentElement!.getBoundingClientRect().width).toBeGreaterThan(250)
+  expect(
+    within(sheet).getByRole("checkbox", { name: /ECOTERRA/ })
+  ).toBeVisible()
+
+  fireEvent.click(focus)
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("dialog", { name: "Timeline filters" })
+    ).not.toBeInTheDocument()
+  )
+  expect(useTimelineStore.getState().selectedEntityKeys).toEqual(
+    new Set(["account-1"])
+  )
+})
+
+it("on a desktop the Timeline filters stay a column beside the events, with no sheet", async () => {
+  await page.viewport(1600, 1000)
+  saved = [accountEvent]
+  renderTimelineOnly()
+  expect(await screen.findByText("Transfer to supplier")).toBeVisible()
+  expect(focusButtons()).toHaveLength(1)
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+})
