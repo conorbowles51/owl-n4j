@@ -372,3 +372,17 @@ it("names each held count whose refresh failed on its own, so a stale count neve
     state[query] = "ready"
   }
 })
+
+it("shows no 'could not be updated' note for a count still loading or never loaded", () => {
+  for (const status of ["pending", "error"] as const) {
+    for (const query of ["totals", "panels", "register", "findings", "calls"] as const) state[query] = status
+    const view = render(
+      <MemoryRouter>
+        <InvestigatorOverview caseId="case" />
+      </MemoryRouter>
+    )
+    expect(document.body.textContent).not.toMatch(/could not be updated/)
+    expect(screen.queryByRole("button", { name: /Load them again/ })).toBeNull()
+    view.unmount()
+  }
+})

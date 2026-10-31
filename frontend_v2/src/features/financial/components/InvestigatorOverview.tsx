@@ -153,6 +153,8 @@ export function InvestigatorOverview({
     { what: "findings", queries: [findings] },
     { what: "payment figures", queries: [totals, panels] },
   ].filter(({ queries }) => queries.some((query) => query.isError && held(query)))
+  // A failed query keeps isError while it is fetched again: the note says it is being loaded until it lands.
+  const reloading = stale.some(({ queries }) => queries.some((query) => query.isFetching))
   return (
     <div className="space-y-6 bg-[#f4f3ef] p-4 sm:p-5 dark:bg-transparent">
       {stale.length > 0 && (
@@ -160,10 +162,12 @@ export function InvestigatorOverview({
           {`These could not be updated and show the last ones loaded: ${stale.map(({ what }) => what).join(", ")}.`}{" "}
           <button
             type="button"
-            className="underline"
+            className="underline disabled:no-underline disabled:opacity-70"
+            disabled={reloading}
+            aria-busy={reloading}
             onClick={() => stale.forEach(({ queries }) => queries.forEach((query) => void query.refetch()))}
           >
-            Load them again
+            {reloading ? "Loading them again…" : "Load them again"}
           </button>
         </p>
       )}

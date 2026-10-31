@@ -30,7 +30,9 @@ export function useCaseworkEntries(
     queryKey: caseworkKeys.list(caseId, params),
     queryFn: () => caseworkAPI.list(caseId!, params),
     enabled: !!caseId,
-    placeholderData: (previous) => previous,
+    // The previous list stays up while a filter or page reloads, only for the same case: another case's entries
+    // are never shown as this case's while its own load.
+    placeholderData: (previous, query) => (query?.queryKey[1] === caseId ? previous : undefined),
   })
 }
 
