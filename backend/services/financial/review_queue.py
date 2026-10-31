@@ -691,7 +691,17 @@ _recent_reads = OrderedDict()
 
 
 def prewarm(factory, *, budget_seconds=20.0, now=None):
-    """Rebuild the cached queue of recently read cases whose inputs changed. Returns the cases rebuilt."""
+    """Bring the cached queue of recently read cases whose inputs changed up to date. Returns the cases whose
+    cached queue is now current (loaded from the saved copy, or built here).
+
+    The build runs in the host's refresh process (view_refresh), not here: this runs in a web worker's thread, and
+    building there held the worker's interpreter lock (live 2026-10-31 12:25, py-spy --gil, 40 s on worker 3019311:
+    574 of 659 samples in review_queue._build_once from here, while that worker served the jobs poll and the
+    Financial pages). The worker loads the saved copy the child writes at the next sweep, a JSON read. It builds
+    here only when asks cannot be kept (no memo directory), the child marked the ask failed, or it has gone
+    unanswered past the updating limit.
+    Reverse: LOUPE_FINANCIAL_QUEUE_PREWARM_IN_CHILD=0.
+    """
     if not PREWARM:
         return []
     now = time.monotonic() if now is None else now
@@ -711,11 +721,42 @@ def prewarm(factory, *, budget_seconds=20.0, now=None):
                     hit = _cache.get(key)
                 if fingerprint is None or (hit and hit[0] == fingerprint):
                     continue
+                saved = _load_saved_view(session, key, fingerprint)
+                if saved is not None:
+                    _store(key, fingerprint, saved)
+                    rebuilt.append(key)
+                    continue
+                if _asked_of_child(key):
+                    continue
                 _view(session, UUID(key), note=False)
                 rebuilt.append(key)
             finally:
                 session.rollback()
     return rebuilt
+
+
+PREWARM_IN_CHILD = os.environ.get('LOUPE_FINANCIAL_QUEUE_PREWARM_IN_CHILD', '1').strip().lower() not in (
+    '0', 'false', 'off', 'no')
+
+
+def _asked_of_child(key):
+    """True while the host's refresh process has a live ask to build and save this case's queue (made now or
+    earlier); False when asks cannot be kept or the ask is past the updating limit (the caller builds)."""
+    if not PREWARM_IN_CHILD or os.environ.get('FINANCIAL_VIEW_UPDATING', '1') == '0':
+        return False
+    from services.financial import view_cache, view_refresh
+    try:
+        asked = view_refresh.ask(_ask_key(key), key)
+    except Exception:  # noqa: BLE001 - built here instead
+        import logging
+        logging.getLogger(__name__).warning('Review queue precompute could not be asked of the refresh process',
+                                            exc_info=True)
+        return False
+    if asked is None or time.time() - asked >= view_cache.UPDATING_MAX_SECONDS:
+        return False
+    directory = view_refresh._wanted_dir()
+    current = view_refresh._read(view_refresh._path(directory, _ask_key(key))) if directory is not None else None
+    return current is not None and not current.get('failed')  # a failed ask is not taken again: build here
 
 
 def _compute(session, case_id):

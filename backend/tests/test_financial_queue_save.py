@@ -512,8 +512,10 @@ class QueueCacheTests(Base):
         def build(session, case_id):
             builds.append(case_id)
             return real(session, case_id)
+        from services.financial import view_cache
+        # No memo directory: asks cannot be kept, so prewarm builds here (the refresh-process path is tested below).
         with patch.object(register, 'status_fingerprint', side_effect=lambda *_: tuple(fingerprint)), \
-                patch.object(rq, '_build', side_effect=build):
+                patch.object(rq, '_build', side_effect=build), patch.object(view_cache, '_memo_dir', return_value=None):
             with self.f.SessionLocal() as db:
                 case_review_queue(db, case_id=self.f.case.id)          # an open: built and noted
             self.assertEqual(len(builds), 1)
@@ -528,6 +530,73 @@ class QueueCacheTests(Base):
                 self.assertEqual(rq.prewarm(self.f.SessionLocal), [])
             # Reads older than the window are forgotten.
             self.assertEqual(rq.prewarm(self.f.SessionLocal, now=10 ** 9), [])
+
+    def _prewarm_after_a_write(self, *, memo=True, ask_state=None, saved=None, in_child=True):
+        """Open the case (built, noted), change its inputs, run prewarm. Returns (prewarm result, builds, ask)."""
+        import json
+        import sys
+        import tempfile
+        import time as time_module
+        from pathlib import Path
+        from services.financial import review_queue as rq, view_cache, view_refresh
+        import services.financial.statement_file_status  # noqa: F401
+        register = sys.modules['services.financial.statement_file_status']
+        rq._cache.clear(); rq._recent_reads.clear()
+        fingerprint, builds, real = [('a',)], [], rq._build
+        memo_dir = Path(tempfile.mkdtemp(prefix='rq-prewarm-'))
+        self.addCleanup(__import__('shutil').rmtree, memo_dir, True)
+
+        def build(session, case_id):
+            builds.append(case_id)
+            return real(session, case_id)
+        key = str(self.f.case.id)
+        with patch.object(register, 'status_fingerprint', side_effect=lambda *_: tuple(fingerprint)), \
+                patch.object(rq, '_build', side_effect=build), \
+                patch.object(rq, '_save_view'), \
+                patch.object(rq, 'PREWARM_IN_CHILD', in_child), \
+                patch.object(view_cache, '_memo_dir', return_value=memo_dir if memo else None), \
+                patch.object(view_cache, 'code_identity', return_value='code-1'):
+            with self.f.SessionLocal() as db:
+                case_review_queue(db, case_id=self.f.case.id)
+            fingerprint.append(('b',))
+            if ask_state is not None:
+                directory = view_refresh._wanted_dir(); directory.mkdir(parents=True)
+                view_refresh._write(view_refresh._path(directory, rq._ask_key(key)),
+                                    dict(key=list(rq._ask_key(key)), case_id=key, code='code-1',
+                                         asked=time_module.time() - ask_state.get('age', 0),
+                                         **({'failed': 1.0} if ask_state.get('failed') else {})))
+            with patch.object(rq, '_load_saved_view', return_value=saved):
+                result = rq.prewarm(self.f.SessionLocal)
+            directory = view_refresh._wanted_dir()
+            ask = view_refresh._read(view_refresh._path(directory, rq._ask_key(key))) if directory else None
+        return result, builds, ask
+
+    def test_prewarm_asks_the_refresh_process_instead_of_building_in_the_worker(self):
+        result, builds, ask = self._prewarm_after_a_write()
+        self.assertEqual(result, [])
+        self.assertEqual(len(builds), 1)  # only the open; the rebuild is the child's
+        self.assertEqual(ask['key'], ['review-queue', '{"case_id": "%s"}' % self.f.case.id])
+        self.assertEqual(ask['case_id'], str(self.f.case.id))
+
+    def test_prewarm_loads_a_current_saved_copy_without_building(self):
+        view = dict(entries=[], failed=[], copy_files=[], set_aside=[], unread=0, as_of='x')
+        result, builds, ask = self._prewarm_after_a_write(saved=view)
+        self.assertEqual((result, len(builds), ask), ([str(self.f.case.id)], 1, None))
+        from services.financial import review_queue as rq
+        self.assertIs(rq._cache[str(self.f.case.id)][1], view)
+
+    def test_prewarm_builds_here_when_the_ask_failed_or_is_past_the_limit_or_asks_cannot_be_kept(self):
+        from services.financial import view_cache
+        for state in (dict(ask_state={'failed': True}), dict(ask_state={'age': view_cache.UPDATING_MAX_SECONDS + 5}),
+                      dict(memo=False), dict(in_child=False)):
+            with self.subTest(**{k: str(v) for k, v in state.items()}):
+                result, builds, _ = self._prewarm_after_a_write(**state)
+                self.assertEqual((result, len(builds)), ([str(self.f.case.id)], 2))
+
+    def test_prewarm_does_not_build_while_an_earlier_ask_is_live(self):
+        result, builds, ask = self._prewarm_after_a_write(ask_state={'age': 30})
+        self.assertEqual((result, len(builds)), ([], 1))
+        self.assertNotIn('failed', ask)
 
 
 def test_the_already_saved_check_reads_only_keys_not_whole_file_rows_or_summaries():
