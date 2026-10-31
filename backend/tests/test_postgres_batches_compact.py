@@ -59,10 +59,12 @@ class BatchesCompactTest(unittest.TestCase):
         self.assertEqual(bind.statements[-1], "SELECT pg_relation_size('financial_import_batches')")
 
     def test_a_held_table_is_tried_again_then_skipped_without_failing(self):
-        bind = Bind([_lock_timeout() for _ in range(5)])
+        tries = _load().TRIES
+        self.assertGreaterEqual(tries, 20)
+        bind = Bind([_lock_timeout() for _ in range(tries)])
         self.run_upgrade(bind)
-        self.assertEqual(sum(s.startswith('VACUUM') for s in bind.statements), 5)
-        self.assertEqual(bind.statements.count('RESET lock_timeout'), 5)
+        self.assertEqual(sum(s.startswith('VACUUM') for s in bind.statements), tries)
+        self.assertEqual(bind.statements.count('RESET lock_timeout'), tries)
 
     def test_a_lock_free_retry_compacts(self):
         bind = Bind([_lock_timeout()])

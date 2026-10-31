@@ -5,7 +5,7 @@ pages (EXPLAIN ANALYZE: shared hit=2708, 2.7 ms), about 1,850 polls in 45 minute
 autovacuum frees the space for reuse but never shrinks the file.
 
 VACUUM FULL holds an exclusive lock on the table for the rewrite (under a second for 1 MB). It waits at most
-2 s per try for that lock, 5 tries; if another session holds the table all that time the compaction is skipped
+2 s per try for that lock, 20 tries a second apart (about a minute, during the release); if another session holds the table all that time the compaction is skipped
 with a printed line and the migration still succeeds (no row is touched either way).
 """
 import time
@@ -18,7 +18,7 @@ down_revision = "20261031_pg_stat_statements"
 branch_labels = None
 depends_on = None
 
-TRIES = 5
+TRIES = 20
 LOCK_WAIT = '2s'
 
 
