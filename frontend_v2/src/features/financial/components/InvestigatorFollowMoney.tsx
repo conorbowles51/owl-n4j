@@ -44,6 +44,10 @@ export function MoneyConnections({
   // payments: together they held the main thread 1.0-1.2 s on d5b330d1 Follow money (live long-task trace,
   // 2026-10-31 23:05), longer than the page may sit without redrawing. Until it is done, and again for a new row
   // list, the panel says what it is doing; figures for an older row list are never shown for the new one.
+  // The chosen currency group and page live here, not in the view, so they are kept while a new row list is grouped
+  // (the view is not drawn then), as they were when the grouping ran inside the render.
+  const choice = useState("")
+  const pageChoice = useState(0)
   const [grouped, setGrouped] = useState<{ rows: LedgerTransaction[]; groups: PanelGroup[] } | null>(null)
   useEffect(() => {
     if (grouped?.rows === rows) return
@@ -55,7 +59,6 @@ export function MoneyConnections({
       <section
         className="rounded-xl border bg-card p-5 space-y-2"
         aria-label="Recorded payment connections"
-        aria-busy="true"
       >
         <h3 className="font-semibold text-lg">Who paid in, and where payments went</h3>
         <p role="status" className="text-sm text-muted-foreground">
@@ -63,7 +66,15 @@ export function MoneyConnections({
         </p>
       </section>
     )
-  return <MoneyConnectionsView payments={rows.length} groups={grouped.groups} onOpen={onOpen} />
+  return (
+    <MoneyConnectionsView
+      payments={rows.length}
+      groups={grouped.groups}
+      onOpen={onOpen}
+      choice={choice}
+      pageChoice={pageChoice}
+    />
+  )
 }
 
 /** The connections panel from its figures: worked out from every payment (MoneyConnections) or answered by the
@@ -72,16 +83,23 @@ export function MoneyConnectionsView({
   payments: paymentCount,
   groups: figures,
   onOpen,
+  choice,
+  pageChoice,
 }: {
   payments: number
   groups: PanelGroup[]
   onOpen: (ids: string[], title: string) => void
+  /** The chosen group and page, when the caller keeps them (MoneyConnections). */
+  choice?: [string, (value: string) => void]
+  pageChoice?: [number, (value: number) => void]
 }) {
   const groups = figures.map((item) => item.group)
-  const [requestedGroup, setGroup] = useState("")
+  const ownChoice = useState("")
+  const ownPage = useState(0)
+  const [requestedGroup, setGroup] = choice ?? ownChoice
   const group = groups.includes(requestedGroup) ? requestedGroup : groups[0]
   const current = figures.find((item) => item.group === group)
-  const [requestedPage, setPage] = useState(0)
+  const [requestedPage, setPage] = pageChoice ?? ownPage
   const visibleNames = current?.names ?? []
   const page = Math.min(
     requestedPage,

@@ -100,3 +100,19 @@ it("says it is grouping the payments until its figures are worked out, and again
   expect(await screen.findAllByRole("button", { name: /Shop/ })).not.toHaveLength(0)
   expect(screen.queryByRole("button", { name: /Payer/ })).not.toBeInTheDocument()
 })
+
+it("keeps the chosen currency group and page of names when the row list changes", async () => {
+  const usd = Array.from({ length: 8 }, (_, i): LedgerTransaction => ({
+    ...paymentFixture, key: `usd-${i}`, direction: "debit", from_name: "Owner", to_name: `Shop ${i}`, currency: "USD", amount_minor: "100",
+  }))
+  const eur: LedgerTransaction = { ...paymentFixture, key: "eur", direction: "debit", from_name: "Owner", to_name: "Café", currency: "EUR", amount_minor: "100" }
+  const rows = [eur, ...usd]
+  const view = render(<MoneyConnections rows={rows} onOpen={vi.fn()} />)
+  fireEvent.change(await screen.findByLabelText("Connection currency and account type"), { target: { value: "USD:bank" } })
+  fireEvent.click(screen.getByRole("button", { name: "Next names" }))
+  expect(screen.getByText(/7 to 8 of 8 names/)).toBeInTheDocument()
+  // A refetch after a correction gives a new row list with the same payments.
+  view.rerender(<MoneyConnections rows={[...rows]} onOpen={vi.fn()} />)
+  expect(await screen.findByText(/7 to 8 of 8 names/)).toBeInTheDocument()
+  expect(screen.getByLabelText("Connection currency and account type")).toHaveValue("USD:bank")
+})
