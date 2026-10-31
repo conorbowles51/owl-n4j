@@ -64,7 +64,7 @@ _total_bytes = 0
 # Every table a view kept or answered by this process read (view_warmup's re-warm watches their writes).
 tables_read: set = set()
 _key_locks: dict = {}
-stats = dict(hits=0, misses=0, stored=0, not_stored=0, saved_hits=0, updating=0)
+stats = dict(hits=0, misses=0, stored=0, not_stored=0, saved_hits=0, updating=0, saved=0)
 _Encoded = None
 _gc_lock = threading.Lock()
 _gc_pauses = 0
@@ -840,7 +840,12 @@ def _serve_previous(key, case_id, previous):
     except Exception:  # noqa: BLE001 - without a refresh on its way the request computes the view itself
         logger.warning('Financial view %s refresh could not be asked for; computing it now', key[0], exc_info=True)
         return False
-    return asked is not None and time.time() - asked < UPDATING_MAX_SECONDS
+    if asked is None:
+        return False
+    if time.time() - asked >= UPDATING_MAX_SECONDS:
+        view_refresh.forget(key)  # this request computes it; a later change may ask again
+        return False
+    return True
 
 
 # Views that took at least this long to compute are also saved to disk (_save_if_slow), so the other worker
@@ -960,6 +965,7 @@ def _save_if_slow(key, entry, scope, xmax, started):
             out.write(entry.body)
         os.replace(temporary, path)
         temporary = None
+        stats['saved'] += 1
     except Exception:  # noqa: BLE001 - the view stays reused in memory
         logger.warning('Could not save Financial view %s; it stays in memory only', key[0], exc_info=True)
         if temporary is not None:

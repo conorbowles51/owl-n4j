@@ -3,6 +3,8 @@ import { apiErrorMessage } from "./api-error-message"
 import {
   ACCEPT_HEADER,
   acceptsUpdating,
+  nextRequestNumber,
+  noteOwnWrite,
   noteViewAnswer,
   updatingAsOf,
 } from "./financial-view-updates"
@@ -22,6 +24,11 @@ export class ApiError extends Error {
 interface FetchOptions extends Omit<RequestInit, "body"> {
   body?: unknown
   timeout?: number
+  /**
+   * Called with an updating answer's as-of time (or undefined when current) instead of recording it for the
+   * page: the updating notice's own checks record a current answer only once the page has fetched it again.
+   */
+  onViewAnswer?: (asOf: string | undefined) => void
 }
 
 let inFlight = 0
@@ -36,7 +43,7 @@ export async function fetchAPI<T>(
   options: FetchOptions = {}
 ): Promise<T> {
   const token = localStorage.getItem("authToken")
-  const { body, timeout, signal: callerSignal, ...init } = options
+  const { body, timeout, signal: callerSignal, onViewAnswer, ...init } = options
 
   const headers: Record<string, string> = {
     ...(init.headers as Record<string, string>),
@@ -46,6 +53,7 @@ export async function fetchAPI<T>(
     headers["Authorization"] = `Bearer ${token}`
   }
   const marksUpdating = acceptsUpdating(endpoint, init.method)
+  const requestNumber = marksUpdating ? nextRequestNumber() : 0
   if (marksUpdating) {
     headers[ACCEPT_HEADER] = "updating"
   }
@@ -76,7 +84,12 @@ export async function fetchAPI<T>(
       credentials: "include",
     })
 
-    if (marksUpdating) noteViewAnswer(endpoint, updatingAsOf(response))
+    if (marksUpdating) {
+      if (onViewAnswer) onViewAnswer(updatingAsOf(response))
+      else noteViewAnswer(endpoint, updatingAsOf(response), requestNumber)
+    }
+    const method = (init.method ?? "GET").toUpperCase()
+    if (response.ok && method !== "GET" && method !== "HEAD") noteOwnWrite()
 
     if (!response.ok) {
       let errorData: unknown

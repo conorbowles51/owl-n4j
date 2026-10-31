@@ -32,9 +32,13 @@ it("shows nothing while every answer is current", () => {
   expect(screen.queryByTestId("financial-view-updating")).toBeNull()
 })
 
-it("says the figures are a previous copy being recomputed, then refetches and clears when the view is current", async () => {
+it("keeps saying so until the page has fetched the view again, then clears", async () => {
   const client = new QueryClient()
-  const invalidate = vi.spyOn(client, "invalidateQueries")
+  let finishRefetch!: () => void
+  const refetch = vi.spyOn(client, "refetchQueries").mockImplementation(
+    () => new Promise<void>((resolve) => (finishRefetch = resolve))
+  )
+  const remove = vi.spyOn(client, "removeQueries")
   const endpoint = "/api/financial/ledger-summary?case_id=c1"
   act(() => noteViewAnswer(endpoint, "2026-10-31T07:15:00+00:00"))
   noteViewAnswer("/api/financial/ledger-summary?case_id=other-case", "2026-10-31T07:15:00+00:00")
@@ -49,6 +53,37 @@ it("says the figures are a previous copy being recomputed, then refetches and cl
   })
   expect(fetch).toHaveBeenCalledTimes(1)
   expect(fetch.mock.calls[0][0]).toBe(endpoint)
-  expect(invalidate).toHaveBeenCalledWith({ refetchType: "active" })
+  expect(remove).toHaveBeenCalledWith({ type: "inactive" })
+  expect(refetch).toHaveBeenCalledWith({ type: "active" })
+  // The view answered current, but the page still shows its previous copy until its refetch lands.
+  expect(screen.getByTestId("financial-view-updating")).toBeTruthy()
+  await act(async () => {
+    finishRefetch()
+    await vi.advanceTimersByTimeAsync(0)
+  })
   expect(screen.queryByTestId("financial-view-updating")).toBeNull()
+})
+
+it("keeps saying so while the view still answers updating", async () => {
+  const client = new QueryClient()
+  const refetch = vi.spyOn(client, "refetchQueries")
+  const endpoint = "/api/financial/ledger-summary?case_id=c1"
+  act(() => noteViewAnswer(endpoint, "2026-10-31T07:15:00+00:00"))
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response("{}", {
+          status: 200,
+          headers: { "X-Financial-View-State": "updating", "X-Financial-View-As-Of": "2026-10-31T07:16:00+00:00" },
+        })
+      )
+    )
+  )
+  show(client)
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(UPDATING_POLL_MS + 10)
+  })
+  expect(refetch).not.toHaveBeenCalled()
+  expect(screen.getByTestId("financial-view-updating")).toBeTruthy()
 })

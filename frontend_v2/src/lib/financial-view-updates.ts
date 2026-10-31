@@ -12,10 +12,23 @@ export const ACCEPT_HEADER = "X-Financial-View-Accept"
 export const STATE_HEADER = "X-Financial-View-State"
 export const AS_OF_HEADER = "X-Financial-View-As-Of"
 
+/**
+ * After this tab changes anything, its reads wait for current answers for this long: an editor that reads a
+ * revision back after its own save must never be given the copy from before that save.
+ */
+export const AFTER_OWN_WRITE_MS = 120000
+let ownWriteAt = -Infinity
+
+/** Called for every successful write this tab makes. */
+export function noteOwnWrite(now = Date.now()) {
+  ownWriteAt = now
+}
+
 /** Financial reads that may be answered as updating. */
-export function acceptsUpdating(endpoint: string, method?: string) {
+export function acceptsUpdating(endpoint: string, method?: string, now = Date.now()) {
   return (
     (method ?? "GET").toUpperCase() === "GET" &&
+    now - ownWriteAt >= AFTER_OWN_WRITE_MS &&
     (endpoint.startsWith("/api/financial") ||
       (endpoint.startsWith("/api/evidence?") && endpoint.includes("financial_only=true")))
   )
@@ -29,9 +42,23 @@ export function updatingAsOf(response: Response): string | undefined {
 
 let updating: ReadonlyMap<string, string> = new Map()
 const listeners = new Set<() => void>()
+let sequence = 0
+const latestAnswered = new Map<string, number>()
 
-/** Records how this address last answered: updating from ``asOf``, or current (undefined). */
-export function noteViewAnswer(endpoint: string, asOf: string | undefined) {
+/** A number for a request as it starts; answers are recorded in the order their requests started. */
+export function nextRequestNumber() {
+  sequence += 1
+  return sequence
+}
+
+/**
+ * Records how this address last answered: updating from ``asOf``, or current (undefined). ``request``: the
+ * number its request was given when it started; an answer to an earlier request than one already recorded is
+ * ignored (two workers can answer out of order).
+ */
+export function noteViewAnswer(endpoint: string, asOf: string | undefined, request = nextRequestNumber()) {
+  if ((latestAnswered.get(endpoint) ?? 0) > request) return
+  latestAnswered.set(endpoint, request)
   if (asOf === undefined ? !updating.has(endpoint) : updating.get(endpoint) === asOf) return
   const next = new Map(updating)
   if (asOf === undefined) next.delete(endpoint)
@@ -54,6 +81,8 @@ export function subscribeUpdatingViews(listener: () => void) {
 
 /** Forget every record (sign-out, tests). */
 export function clearUpdatingViews() {
+  latestAnswered.clear()
+  ownWriteAt = -Infinity
   if (updating.size === 0) return
   updating = new Map()
   listeners.forEach((listener) => listener())

@@ -88,8 +88,23 @@ def forget(key):
             pass
 
 
+def _alive(pid):
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+# Asks of other code (a release in between) are removed after this long; no process of that code is left by then.
+OTHER_CODE_SECONDS = 3600
+
+
 def _open_asks(code):
-    """(path, ask) of this code's asks not marked failed, oldest first."""
+    """(path, ask) of this code's asks not marked failed, oldest first. An ask whose refresh process ended without
+    finishing it (killed, out of memory) is marked failed, so no new process takes it first again."""
     directory = _wanted_dir()
     if directory is None:
         return []
@@ -99,9 +114,23 @@ def _open_asks(code):
         return []
     asks = []
     for name in names:
-        ask_ = _read(directory / name)
-        if ask_ is not None and ask_.get('code') == code and not ask_.get('failed'):
-            asks.append((directory / name, ask_))
+        path = directory / name
+        ask_ = _read(path)
+        if ask_ is None:
+            continue
+        if ask_.get('code') != code:
+            if time.time() - ask_['asked'] > OTHER_CODE_SECONDS:
+                path.unlink(missing_ok=True)
+            continue
+        if ask_.get('failed'):
+            continue
+        started = ask_.get('started')
+        if isinstance(started, dict) and started.get('pid') != os.getpid() and not _alive(started.get('pid') or 0):
+            _write(path, {**ask_, 'failed': time.time()})
+            logger.warning('Financial view %s refresh ended unfinished (process %s); left to its request',
+                           ask_['key'][0], started.get('pid'))
+            continue
+        asks.append((path, ask_))
     return sorted(asks, key=lambda pair: pair[1]['asked'])
 
 
@@ -124,7 +153,8 @@ def _typed(handler, parameters):
 
 
 def refresh_one(path, ask_, session_factory=None):
-    """Compute one asked view through its route; True when a current copy is kept (and saved) afterwards."""
+    """Compute one asked view through its route; True only when a current copy was saved where the workers read
+    it (written now, or already saved and current): a copy kept only in this process's memory is no refresh."""
     import importlib
     from fastapi import HTTPException
     from services.financial import view_cache
@@ -138,6 +168,7 @@ def refresh_one(path, ask_, session_factory=None):
     arguments = _typed(handler, parameters)
     if view_cache.view_key(name, arguments) != tuple(ask_['key']):
         raise ValueError('the parameters of %s no longer give the same key' % name)
+    view_cache.clear()  # never answered from this process's memory: the workers read only the saved copy
     before = dict(view_cache.stats)
     token = view_cache.always_save.set(True)
     try:
@@ -150,7 +181,7 @@ def refresh_one(path, ask_, session_factory=None):
     finally:
         view_cache.always_save.reset(token)
     after = view_cache.stats
-    return any(after[name_] > before[name_] for name_ in ('stored', 'hits', 'saved_hits'))
+    return after['saved'] > before['saved'] or after['saved_hits'] > before['saved_hits']
 
 
 def run_child():
@@ -170,6 +201,7 @@ def run_child():
                 continue
             for path, ask_ in asks:
                 started = time.perf_counter()
+                _write(path, {**ask_, 'started': dict(pid=os.getpid(), at=time.time())})
                 try:
                     kept = refresh_one(path, ask_)
                 except Exception as exc:  # noqa: BLE001 - marked failed; its request computes it after the limit

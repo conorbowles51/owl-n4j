@@ -236,3 +236,42 @@ def test_an_asked_routes_parameters_give_back_its_key():
     rebuilt = view_refresh._typed(handler, json.loads(key[1]))
     assert view_cache.view_key('pattern-review', rebuilt) == key
     assert rebuilt['window_days'] == 3 and rebuilt['cross_account'] is True and rebuilt['start_date'] == date(2024, 1, 2)
+
+
+@needs_pg
+def test_a_refresh_that_saves_nothing_the_workers_can_read_is_not_done(engine, memo, slow, monkeypatch):
+    """Review 2026-10-31: a copy kept only in the refresh process's memory would delete the ask while the workers
+    keep answering updating, forever."""
+    case, counter = uuid.uuid4(), Counter()
+    view = total_view(counter)
+    write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 5)', c=case)
+    call(engine, view, case)
+    write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 7)', c=case)
+    call(engine, view, case)
+    [(path, open_ask)] = view_refresh._open_asks('code-1')
+    monkeypatch.setattr(view_cache, '_save_if_slow', lambda *args, **kwargs: None)
+    assert not view_refresh.refresh_one(path, open_ask, session_factory=sessionmaker(engine))
+
+
+def test_an_ask_left_by_a_refresh_process_that_died_is_marked_failed_not_taken_again(memo):
+    key = ('totals', '{"case_id": "c"}')
+    view_refresh.ask(key, 'c')
+    [(path, open_ask)] = view_refresh._open_asks('code-1')
+    view_refresh._write(path, {**open_ask, 'started': dict(pid=2 ** 22 + 12345, at=time.time())})
+    assert view_refresh._open_asks('code-1') == []
+    assert view_refresh._read(path)['failed']
+
+
+def test_an_expired_ask_is_forgotten_so_a_later_change_may_ask_again(memo):
+    key = ('totals', '{"case_id": "c"}')
+    entry = view_cache._Entry(('payments',), (), b'{}', 200, 'application/json', seconds=5.0, computed_at=time.time())
+    token = view_cache._accepts_updating.set(True)
+    try:
+        assert view_cache._serve_previous(key, 'c', entry)
+        [(path, open_ask)] = view_refresh._open_asks('code-1')
+        view_refresh._write(path, {**open_ask, 'asked': time.time() - view_cache.UPDATING_MAX_SECONDS - 1, 'failed': 1.0})
+        assert not view_cache._serve_previous(key, 'c', entry)
+        assert not path.exists()
+        assert view_cache._serve_previous(key, 'c', entry), 'a new change asks again'
+    finally:
+        view_cache._accepts_updating.reset(token)

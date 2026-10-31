@@ -120,3 +120,29 @@ it("records a kept refusal answered as updating, and never asks writes or other 
   expect(fetch.mock.calls[2][1].headers["X-Financial-View-Accept"]).toBeUndefined()
   expect([...updatingViews().keys()]).toEqual([endpoint])
 })
+it("never asks to be answered as updating for two minutes after this tab saves something", async () => {
+  const { AFTER_OWN_WRITE_MS, clearUpdatingViews } = await import("./financial-view-updates")
+  clearUpdatingViews()
+  vi.useFakeTimers()
+  try {
+    const fetch = vi.fn().mockImplementation(() => Promise.resolve(new Response("{}", { status: 200 })))
+    vi.stubGlobal("fetch", fetch)
+    await fetchAPI("/api/financial/counterparty-parties/links?case_id=c1", { method: "POST", body: {} })
+    await fetchAPI("/api/financial/counterparty-parties?case_id=c1")
+    expect(fetch.mock.calls[1][1].headers["X-Financial-View-Accept"]).toBeUndefined()
+    vi.advanceTimersByTime(AFTER_OWN_WRITE_MS + 1)
+    await fetchAPI("/api/financial/counterparty-parties?case_id=c1")
+    expect(fetch.mock.calls[2][1].headers["X-Financial-View-Accept"]).toBe("updating")
+  } finally {
+    vi.useRealTimers()
+  }
+})
+it("ignores an answer to an earlier request that arrives after a later one", async () => {
+  const { clearUpdatingViews, nextRequestNumber, noteViewAnswer, updatingViews } = await import("./financial-view-updates")
+  clearUpdatingViews()
+  const earlier = nextRequestNumber()
+  const later = nextRequestNumber()
+  noteViewAnswer("/api/financial/ledger?case_id=c1", "2026-10-31T07:15:00+00:00", later)
+  noteViewAnswer("/api/financial/ledger?case_id=c1", undefined, earlier)
+  expect(updatingViews().get("/api/financial/ledger?case_id=c1")).toBe("2026-10-31T07:15:00+00:00")
+})
