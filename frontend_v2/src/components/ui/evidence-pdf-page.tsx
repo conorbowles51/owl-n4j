@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { Button } from "./button"
-import { evidenceAPI } from "@/features/evidence/api"
+import { loadPageImage } from "./pdf-page-images"
 
 export function EvidencePdfPage({
   evidenceId,
@@ -8,12 +8,17 @@ export function EvidencePdfPage({
   onPageCount,
   inline = false,
   documentZoom = 100,
+  placeholderSize,
+  onPageSize,
 }: {
   evidenceId: string
   page: number
   onPageCount: (fileId: string, count: number) => void
   inline?: boolean
   documentZoom?: number
+  /** Pixel size of a page of this document, so a page still loading takes the room it will take once shown. */
+  placeholderSize?: { width: number; height: number } | null
+  onPageSize?: (size: { width: number; height: number }) => void
 }) {
   const [retry, setRetry] = useState(0)
   const [zoom, setZoom] = useState(100)
@@ -31,37 +36,19 @@ export function EvidencePdfPage({
     let objectUrl: string | undefined
     async function load() {
       try {
-        const response = await fetch(
-          evidenceAPI.getPageImageUrl(evidenceId, page),
-          {
-            headers: token ? { Authorization: `Bearer ${token}` } : {},
-            credentials: "include",
-            signal: controller.signal,
-          }
-        )
-        if (!response.ok)
-          throw new Error(
-            response.status === 401 || response.status === 403
-              ? "You do not currently have access to this file. Sign in again or check your case access."
-              : `Page ${page} could not be loaded. Try again or open the original file in a new tab.`
-          )
-        if (!response.headers.get("content-type")?.startsWith("image/png"))
-          throw new Error("The server did not return a PDF page. Try again.")
-        const count = Number(response.headers.get("X-PDF-Page-Count"))
-        const blob = await response.blob()
-        if (blob.size > 20 * 1024 * 1024)
-          throw new Error(
-            "This page is too large to display. Open the original file in a new tab."
-          )
+        const image = await loadPageImage(evidenceId, page, {
+          token,
+          signal: controller.signal,
+        })
         if (
           controller.signal.aborted ||
           localStorage.getItem("authToken") !== token
         )
           return
-        objectUrl = URL.createObjectURL(blob)
+        objectUrl = URL.createObjectURL(image.blob)
         setResult({ key, url: objectUrl })
-        if (Number.isSafeInteger(count) && count >= page)
-          onPageCount(evidenceId, count)
+        if (image.size) onPageSize?.(image.size)
+        if (image.pageCount !== null) onPageCount(evidenceId, image.pageCount)
       } catch (error) {
         if (
           !controller.signal.aborted &&
@@ -81,7 +68,7 @@ export function EvidencePdfPage({
       controller.abort()
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [evidenceId, page, token, key, onPageCount])
+  }, [evidenceId, page, token, key, onPageCount, onPageSize])
 
   return (
     <div className={inline ? "" : "flex h-full min-h-0 flex-col"}>
@@ -115,7 +102,20 @@ export function EvidencePdfPage({
         className={inline ? "p-4" : "min-h-0 flex-1 overflow-auto p-4"}
         aria-label="PDF page area"
       >
-        {!current && <p role="status">Loading page {page}...</p>}
+        {!current &&
+          (placeholderSize ? (
+            <div
+              className="bg-muted/30"
+              style={{
+                width: `${inline ? documentZoom : zoom}%`,
+                aspectRatio: `${placeholderSize.width} / ${placeholderSize.height}`,
+              }}
+            >
+              <p role="status">Loading page {page}...</p>
+            </div>
+          ) : (
+            <p role="status">Loading page {page}...</p>
+          ))}
         {current?.error && (
           <div className="space-y-3">
             <p role="alert">{current.error}</p>
@@ -128,6 +128,11 @@ export function EvidencePdfPage({
             style={{ width: `${inline ? documentZoom : zoom}%` }}
             src={current.url}
             alt={`Page ${page} of the original PDF`}
+            onLoad={(event) => {
+              const { naturalWidth, naturalHeight } = event.currentTarget
+              if (naturalWidth > 0 && naturalHeight > 0)
+                onPageSize?.({ width: naturalWidth, height: naturalHeight })
+            }}
             onError={() =>
               setResult({
                 key,

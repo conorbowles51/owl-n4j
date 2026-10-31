@@ -1,16 +1,18 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 import { EvidencePdfPage } from "./evidence-pdf-page"
+import { resetPageImagesForTests } from "./pdf-page-images"
 
 const fetchFile = vi.fn()
 const createUrl = vi.fn(() => "blob:page")
 const revokeUrl = vi.fn()
-function imageResponse(count = 3) {
+function imageResponse(count = 3, size = "1200x1553") {
   return {
     ok: true,
     headers: new Headers({
       "content-type": "image/png",
       "X-PDF-Page-Count": String(count),
+      "X-PDF-Page-Image-Size": size,
     }),
     blob: async () => new Blob(["synthetic page"], { type: "image/png" }),
   }
@@ -25,6 +27,7 @@ beforeEach(() => {
     }
   )
   localStorage.setItem("authToken", "test-user")
+  resetPageImagesForTests()
   fetchFile.mockReset()
   createUrl.mockClear()
   revokeUrl.mockClear()
@@ -100,4 +103,35 @@ it("refuses a successful HTML response instead of showing it as a PDF page", asy
     "did not return a PDF page"
   )
   expect(createUrl).not.toHaveBeenCalled()
+})
+
+it("fetches a page once for the first-page view and the list's own row, and reports its size", async () => {
+  fetchFile.mockResolvedValue(imageResponse())
+  const size = vi.fn()
+  const first = render(
+    <EvidencePdfPage evidenceId="file-a" page={1} onPageCount={vi.fn()} onPageSize={size} />
+  )
+  await screen.findByRole("img")
+  expect(size).toHaveBeenCalledWith({ width: 1200, height: 1553 })
+  first.unmount()
+  render(<EvidencePdfPage evidenceId="file-a" page={1} onPageCount={vi.fn()} inline />)
+  await screen.findByRole("img")
+  expect(fetchFile).toHaveBeenCalledTimes(1)
+})
+
+it("keeps a page still loading at the page's own shape", () => {
+  fetchFile.mockReturnValue(new Promise(() => undefined))
+  render(
+    <EvidencePdfPage
+      evidenceId="file-a"
+      page={3}
+      onPageCount={vi.fn()}
+      inline
+      documentZoom={100}
+      placeholderSize={{ width: 1200, height: 1553 }}
+    />
+  )
+  const placeholder = screen.getByRole("status").parentElement!
+  expect(placeholder.style.aspectRatio).toBe("1200 / 1553")
+  expect(placeholder.style.width).toBe("100%")
 })

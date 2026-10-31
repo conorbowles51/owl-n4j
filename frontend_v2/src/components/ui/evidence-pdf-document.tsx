@@ -20,6 +20,17 @@ export function EvidencePdfDocument({
   const positioned = useRef(false)
   const [pageCount, setPageCount] = useState<number | null>(null)
   const [zoom, setZoom] = useState(100)
+  // The first page's pixel size, from the first image to arrive. Pages still loading take that shape, so the
+  // list mounts only the pages that fit on screen (a one-line placeholder let about 15 mount at once).
+  const [pageSize, setPageSize] = useState<{
+    width: number
+    height: number
+  } | null>(null)
+  const reportSize = useCallback(
+    (size: { width: number; height: number }) =>
+      setPageSize((known) => known ?? size),
+    []
+  )
   const reportCount = useCallback(
     (fileId: string, count: number) => {
       setPageCount(count)
@@ -32,9 +43,14 @@ export function EvidencePdfDocument({
   const virtualizer = useVirtualizer({
     count: pageCount ?? page,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => (1000 * zoom) / 100,
+    estimateSize: () => {
+      const width = scrollRef.current?.clientWidth
+      if (!pageSize || !width) return (1000 * zoom) / 100
+      // The label line, the page's own padding, and the image at the zoomed width in the page's proportions.
+      return 24 + 32 + ((width - 32) * zoom * pageSize.height) / (100 * pageSize.width)
+    },
     initialOffset: () => (page - 1) * 1000,
-    overscan: 2,
+    overscan: 1,
     onChange: (instance, scrolling) => {
       if (!scrolling || !pageCount || !positioned.current) return
       const offset = instance.scrollOffset ?? 0
@@ -98,6 +114,7 @@ export function EvidencePdfDocument({
             evidenceId={evidenceId}
             page={page}
             onPageCount={reportCount}
+            onPageSize={reportSize}
             inline
             documentZoom={zoom}
           />
@@ -130,6 +147,8 @@ export function EvidencePdfDocument({
                   evidenceId={evidenceId}
                   page={item.index + 1}
                   onPageCount={reportCount}
+                  onPageSize={reportSize}
+                  placeholderSize={pageSize}
                   inline
                   documentZoom={zoom}
                 />
