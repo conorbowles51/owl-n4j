@@ -20,7 +20,7 @@ from services.financial.correction_verification import correction_verification a
 from services.financial.correction_balances import correction_running_balances
 from services.financial.coverage_query import CoverageQueryError, list_statement_coverage, requested_statement_coverage
 from services.financial.ledger_snapshot import LedgerSnapshot, capture_ledger_snapshot, LedgerExport, capture_ledger_export
-from services.financial.ledger_summary import LedgerSummaryError, ledger_summary, ledger_counterparties
+from services.financial.ledger_summary import LedgerSummaryError, ledger_summary as summarise_ledger, ledger_counterparties
 from services.financial.amount_assessment import AmountAssessmentError, assess_source_amount, read_amount_source_text
 from services.financial.pdf_geometry_candidates import (
     PdfGridMapping, PdfGridBoundMapping, bind_pdf_grid_mapping, pdf_grid_source_revision,
@@ -916,7 +916,7 @@ from services.financial.version import (
 __all__ = [
     "LedgerTraceInput", "TraceAttributionInput", "ledger_trace_inputs", "evaluate_ledger_trace",
     "LedgerSnapshot", "capture_ledger_snapshot", "LedgerExport", "capture_ledger_export",
-    "LedgerSummaryError", "ledger_summary", "ledger_counterparties", "requested_statement_coverage",
+    "LedgerSummaryError", "summarise_ledger", "ledger_counterparties", "requested_statement_coverage",
     "CandidateFinalizationRequest", "preview_candidate_finalization", "finalize_candidates",
     "check_candidate_source_reuse",
     "CandidateAccountRequest", "create_candidate_account",
