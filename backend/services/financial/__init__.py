@@ -2093,7 +2093,7 @@ from services.financial.statement_import_monex import monex_catalog
 from services.financial.statement_import_citi import citi_catalog
 from services.financial.account_selection import apply_account_selection
 from services.financial.batch_import_history import current_imports
-from services.financial.category_library import category_library
+from services.financial.category_library import category_library as payment_category_library
 from services.financial.currency_correction import rescale_minor
 from services.financial.import_issues import retained_issues
 from services.financial.import_removal import preview_removal, remove_imports
@@ -2114,7 +2114,7 @@ from services.financial.statement_import_scotiabank import scotiabank_catalog
 from services.financial.transaction_search import transaction_search
 
 __all__ += [
-    "apply_account_selection", "current_imports", "category_library", "rescale_minor", "retained_issues",
+    "apply_account_selection", "current_imports", "payment_category_library", "rescale_minor", "retained_issues",
     "preview_removal", "remove_imports", "complete_record", "refresh_legacy_import", "manual_balance",
     "preview_payment_edits", "save_payment_edits", "infer_payment_labels", "update_payment_labels",
     "classify_with_model", "like_payments", "apply_learned", "record_person_choice", "BreakdownFilters", "payment_category_breakdown",
