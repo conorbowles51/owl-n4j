@@ -1627,44 +1627,52 @@ async def list_engine_jobs(
     current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
 ):
-    """Proxy: list all processing jobs from the evidence engine for a case."""
+    """Proxy: list all processing jobs from the evidence engine for a case.
+
+    The database work (access check, reconcile, file links) runs in a worker thread: this handler awaits the engine,
+    so it stays async, and nothing blocking may run on the event loop."""
     try:
-        from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
-        from uuid import UUID
-        try:
-            check_case_access(db, UUID(case_id), current_user, required_permission=("case", "view"))
-        except (CaseNotFound, CaseAccessDenied) as e:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+        await run_in_threadpool(_check_engine_jobs_access, db, case_id, current_user)
 
         if not USE_EVIDENCE_ENGINE:
             return []
 
-        from postgres.models.evidence import EvidenceFile
-        from services.evidence_job_sync import reconcile_jobs_payload
-        from uuid import UUID
-
         jobs = await evidence_engine_client.list_jobs(case_id)
-        reconcile_jobs_payload(db, jobs)
-        db.commit()
-
-        db_records = list(
-            db.scalars(
-                select(EvidenceFile).where(EvidenceFile.case_id == UUID(case_id))
-            ).all()
-        )
-        file_ids_by_job_id = {
-            str(rec.engine_job_id): str(rec.id)
-            for rec in db_records
-            if rec.engine_job_id
-        }
-        for job in jobs:
-            job["evidence_file_id"] = file_ids_by_job_id.get(str(job.get("id")))
-        return jobs
+        return await run_in_threadpool(_reconcile_and_link_engine_jobs, db, case_id, jobs)
     except HTTPException:
         raise
     except Exception as e:
         logger.warning("Failed to list engine jobs: %s", e)
         return []
+
+
+def _check_engine_jobs_access(db: Session, case_id: str, current_user: User) -> None:
+    from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
+
+    try:
+        check_case_access(db, UUID(case_id), current_user, required_permission=("case", "view"))
+    except (CaseNotFound, CaseAccessDenied) as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+
+
+def _reconcile_and_link_engine_jobs(db: Session, case_id: str, jobs: list) -> list:
+    from services.evidence_job_sync import reconcile_case_poll
+
+    reconcile_case_poll(db, case_id, jobs)
+    # Two columns: whole rows were loaded here only to build this map (3.3-4.0 s on the largest case).
+    file_ids_by_job_id = {
+        str(engine_job_id): str(file_id)
+        for engine_job_id, file_id in db.execute(
+            select(EvidenceFile.engine_job_id, EvidenceFile.id).where(
+                EvidenceFile.case_id == UUID(case_id),
+                EvidenceFile.engine_job_id.is_not(None),
+            )
+        ).all()
+        if engine_job_id
+    }
+    for job in jobs:
+        job["evidence_file_id"] = file_ids_by_job_id.get(str(job.get("id")))
+    return jobs
 
 
 @router.get("/engine/jobs/{job_id}")
@@ -1682,7 +1690,7 @@ async def get_engine_job(
         from services.evidence_db_storage import EvidenceDBStorage
 
         job = await reconcile_job_by_id(db, job_id)
-        db_rec = EvidenceDBStorage.find_by_engine_job_id(db, job_id)
+        db_rec = await run_in_threadpool(EvidenceDBStorage.find_by_engine_job_id, db, job_id)
         if db_rec:
             job["evidence_file_id"] = str(db_rec.id)
         return job
