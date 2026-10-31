@@ -132,7 +132,11 @@ def sweep(monkeypatch):
     def session():
         yield SimpleNamespace(scalars=lambda statement: ['case-1', 'case-2'])
     from postgres import session as sql_session
+    from sqlalchemy import create_engine
     monkeypatch.setattr(sql_session, 'get_background_session', session)
+    # The one-worker-per-case claim (d1160de6) opens the configured engine; off PostgreSQL it always
+    # holds, so the sweep never needs, or touches, a real database here.
+    monkeypatch.setattr(sql_session, '_get_engine', lambda: create_engine('sqlite://'))
     def synchronize(case_id):
         calls.append(case_id)
         if behaviour['raise'] and case_id == 'case-1':
