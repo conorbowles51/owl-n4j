@@ -7,17 +7,31 @@ requests from the owl-n4j backend so the frontend API surface remains unchanged.
 """
 
 import logging
+import time
 from contextlib import ExitStack
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import httpx
 
+from services import request_speed
 from config import EVIDENCE_ENGINE_API_KEY, EVIDENCE_ENGINE_URL, EVIDENCE_ENGINE_TIMEOUT
 
 logger = logging.getLogger(__name__)
 
 _client: httpx.AsyncClient | None = None
+
+
+class _TimedClient(httpx.AsyncClient):
+    """Records each engine call's time (sent to the whole answer read; for a streamed answer, to its headers) on the request being served, for the
+    Server-Timing "engine" part and the slow-request log line. The call itself is unchanged."""
+
+    async def send(self, request, **kwargs):
+        started = time.perf_counter()
+        try:
+            return await super().send(request, **kwargs)
+        finally:
+            request_speed.note_engine(time.perf_counter() - started)
 
 
 def _get_client() -> httpx.AsyncClient:
@@ -29,7 +43,7 @@ def _get_client() -> httpx.AsyncClient:
             if EVIDENCE_ENGINE_API_KEY
             else None
         )
-        _client = httpx.AsyncClient(
+        _client = _TimedClient(
             base_url=EVIDENCE_ENGINE_URL,
             timeout=httpx.Timeout(EVIDENCE_ENGINE_TIMEOUT, connect=10.0),
             headers=headers,

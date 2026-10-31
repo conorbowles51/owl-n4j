@@ -127,6 +127,15 @@ def note_pool_wait(seconds):
         holder['pool_ms'] = holder.get('pool_ms', 0.0) + seconds * 1000
 
 
+def note_engine(seconds):
+    """Called by the evidence engine client for each call inside this request: time from sending to the whole
+    answer read, so a slow engine poll splits into engine time and this server's own time."""
+    holder = _person.get()
+    if holder is not None:
+        holder['engine_ms'] = holder.get('engine_ms', 0.0) + seconds * 1000
+        holder['engine_n'] = holder.get('engine_n', 0) + 1
+
+
 def note_gzip(seconds):
     holder = _person.get()
     if holder is not None:
@@ -185,6 +194,8 @@ def server_timing(app_ms, holder):
         parts.append(f'pool;dur={holder["pool_ms"]:.1f}')
     if holder.get('gzip_ms'):
         parts.append(f'gz;dur={holder["gzip_ms"]:.1f}')
+    if holder.get('engine_n'):
+        parts.append(f'engine;dur={holder["engine_ms"]:.1f};desc="{holder["engine_n"]} calls"')
     if holder.get('cache'):
         parts.append(f'cache;desc={holder["cache"]}')
     parts.append(f'w;desc={os.getpid()}')
@@ -277,8 +288,10 @@ class RequestSpeedMiddleware:
                 enqueue('api', method, route + STREAM if streamed else route, case, outcome[0] or 499,
                         seconds * 1000, outcome[1], person.get('email'), extra=extra)
                 if seconds > SLOW_LOG_SECONDS and not streamed:
-                    log.warning('Slow request: %s %s case %s %.1f s (status %s)', method, route,
-                                case[:8] if case else '-', seconds, outcome[0] or 499)
+                    log.warning('Slow request: %s %s case %s %.1f s (status %s)%s', method, route,
+                                case[:8] if case else '-', seconds, outcome[0] or 499,
+                                f' [pg {person.get("pg_ms", 0.0) / 1000:.1f} s, engine '
+                                f'{person["engine_ms"] / 1000:.1f} s]' if person.get('engine_n') else '')
             except Exception:
                 log.exception('Request speed: could not record a request (the request itself is unaffected)')
 
