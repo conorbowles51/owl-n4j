@@ -247,9 +247,7 @@ success "Rollback target: $(git rev-parse --short "${ROLLBACK_TARGET}") (last kn
 # A release of the commit that is already live and healthy changes nothing: stop here, before any check, install,
 # build or restart. deploy-now.sh pins the commit it wants in DEPLOY_TARGET_SHA.
 release_already_live() {
-    local target="$1"
-    [ -n "${LIVE_COMMIT}" ] && [ "${target}" = "${LIVE_COMMIT}" ] &&
-        [ "$(cat "${LAST_GOOD_FILE}" 2>/dev/null || true)" = "${LIVE_COMMIT}" ]
+    release_fully_live "$1" "${LIVE_COMMIT}" "${COMPONENTS_FILE}" "$(frontend_current_build)"
 }
 if [ -n "${DEPLOY_TARGET_SHA:-}" ] &&
     release_already_live "$(git rev-parse --verify --quiet "${DEPLOY_TARGET_SHA}^{commit}" || true)"; then
@@ -456,7 +454,7 @@ if [ "${PREV_FRONTEND_ID}" != "${FRONTEND_ID}" ]; then
     fi
 fi
 FRONTEND_STOPPED=true
-frontend_server_apply "${FRONTEND_CHANGED}" || warn "The frontend server did not switch cleanly; the health check decides"
+frontend_server_apply "${FRONTEND_CHANGED}" "${NPM_HASH}" || warn "The frontend server did not switch cleanly; the health check decides"
 FRONTEND_STOPPED=false
 [ "${FRONTEND_CHANGED}" = true ] && FRONTEND_SWITCH_AT="$(date +%s)"
 success "V2 services restarted"
@@ -483,13 +481,15 @@ for i in $(seq 1 ${HEALTH_RETRIES}); do
 done
 
 if [ "${HEALTHY}" = true ]; then
-    echo "${NEW_COMMIT}" > "${LAST_GOOD_FILE}"
     if [ "${STEP_BACKEND}" = run ]; then
         BACKEND_COMMIT="${NEW_COMMIT}"
     else
         BACKEND_COMMIT="$(release_record_value "${COMPONENTS_FILE}" backend_commit)"
     fi
-    release_record_write "${COMPONENTS_FILE}" "${NEW_COMMIT}" "${BACKEND_COMMIT:-${LIVE_COMMIT}}" "${NEW_COMPONENTS}"
+    # The record first: a last-good commit without its record only makes the next release do every step.
+    release_record_write "${COMPONENTS_FILE}" "${NEW_COMMIT}" "${BACKEND_COMMIT:-${LIVE_COMMIT}}" "${NEW_COMPONENTS}" ||
+        rm -f "${COMPONENTS_FILE}"
+    echo "${NEW_COMMIT}" > "${LAST_GOOD_FILE}"
     frontend_prune || warn "Old frontend builds could not be pruned"
     # The measure this healthy release passed with is the baseline the next release is held to.
     [ -f "${PARTY_CANDIDATE}" ] && mv -f "${PARTY_CANDIDATE}" "${PARTY_BASELINE}"
@@ -516,7 +516,7 @@ else
 fi
 
 cd "${PROJECT_DIR}"
-check_ingestion_idle
+ingestion_gate
 $RUN_AS git reset --hard "${ROLLBACK_TARGET}"
 
 # The rollback serves the previous frontend build again (kept on disk) and reinstalls or restarts only what this
@@ -542,14 +542,19 @@ if [ "${STEP_ENGINE}" = run ]; then
 fi
 
 step "Rollback: restarting services"
-configure_ingestion_shutdown
-# Defined by ingestion-safety.sh, which this run sourced before the update: the
-# release that introduces the switch was sourced without it.
-if declare -F configure_backend_allocator >/dev/null; then
-    configure_backend_allocator
+# A release that did not touch the backend (the plan said so) rolls back the frontend only, unless the backend
+# itself is not answering.
+if [ "${RELEASE_TOUCHES_BACKEND}" = true ] ||
+    ! curl -fsS --max-time 5 "${HEALTH_URL}" 2>/dev/null | grep -q '"status":"ok"'; then
+    configure_ingestion_shutdown
+    # Defined by ingestion-safety.sh, which this run sourced before the update: the
+    # release that introduces the switch was sourced without it.
+    if declare -F configure_backend_allocator >/dev/null; then
+        configure_backend_allocator
+    fi
+    check_ingestion_idle
+    restart_backend_bounded || true
 fi
-check_ingestion_idle
-restart_backend_bounded || true
 ROLLBACK_FRONTEND_CHANGED=false
 if [ "$(frontend_current_build)" != "${ROLLBACK_FRONTEND_ID}" ] && frontend_build_exists "${ROLLBACK_FRONTEND_ID}"; then
     frontend_switch "${ROLLBACK_FRONTEND_ID}" || true

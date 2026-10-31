@@ -1,7 +1,2 @@
-export function generateBuildName(): {
-  name: string
-  displayName: string
-  commit: string
-  timestamp: string
-  full: string
-}
+export function generateBuildId(): string
+export function buildDisplayName(buildId: string): string

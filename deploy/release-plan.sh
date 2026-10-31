@@ -82,6 +82,16 @@ release_record_write() {
         mv -f "${recorded}.tmp" "${recorded}"
 }
 
+# <commit> is fully live: it is the live release (release_live_commit) and the record of the last-good release is
+# for it and names the frontend build being served. A backend restarted by hand at a commit is not enough: its
+# frontend, engine and migrations were never released.
+release_fully_live() {
+    local commit="$1" live="$2" recorded="$3" serving="$4"
+    [ -n "${commit}" ] && [ "${commit}" = "${live}" ] &&
+        [ "$(release_record_value "${recorded}" commit)" = "${commit}" ] &&
+        [ -n "${serving}" ] && [ "$(release_record_value "${recorded}" frontend)" = "${serving}" ]
+}
+
 # The release that is live, given the commit the healthy running backend reports it was started from: the last-good
 # commit when the backend was started from it, or when the last-good release did not restart the backend and recorded
 # that this backend commit carried on. Empty when the running backend is not explained by the last-good release.

@@ -21,9 +21,14 @@ frontend_server_wanted() {
 }
 
 # The nginx site for this checkout, rendered from the template.
+# The API target is the one the vite proxy uses: VITE_API_PROXY_TARGET from .env, else http://0.0.0.0:<API_PORT>;
+# its host:port is also the Host header the backend sees.
 frontend_nginx_render() {
+    local target="${VITE_API_PROXY_TARGET:-}"
+    [ -n "${target}" ] || target="http://0.0.0.0:${API_PORT:-8002}"
+    target="${target#http://}"; target="${target%%/*}"
     sed -e "s|@PORT@|${FRONTEND_PORT}|g" -e "s|@RELEASES@|${FRONTEND_RELEASES}|g" \
-        -e "s|@API@|${FRONTEND_API_TARGET:-0.0.0.0:${API_PORT}}|g" "${FRONTEND_NGINX_TEMPLATE}"
+        -e "s|@API_HOST@|${target}|g" -e "s|@API@|${target}|g" "${FRONTEND_NGINX_TEMPLATE}"
 }
 
 # The server in use is up (the health check's unit test).
@@ -44,10 +49,29 @@ frontend_point_preview_at_current() {
         $RUN_AS ln -sfn "${want}" "${dist}" && $RUN_AS rm -rf "${dist}.old"
 }
 
-# Leave the wanted server serving the current build. <changed> is true when `current` moved in this release.
-# Returns non-zero when nothing serves the frontend afterwards.
+# vite preview runs from the live checkout's node_modules. Until now every release ran npm ci there; the builds no
+# longer do, so the live install follows package-lock here: a marker records the install's lock hash (absent: the
+# install made by the last in-place release, recorded as current). Prints "stale" when it must be reinstalled.
+frontend_live_modules_state() {
+    local npm_hash="$1" marker="${PROJECT_DIR}/frontend_v2/node_modules/.loupe-npm-hash"
+    [ -d "${PROJECT_DIR}/frontend_v2/node_modules" ] || { echo stale; return; }
+    if [ ! -f "${marker}" ]; then
+        echo "${npm_hash}" | $RUN_AS tee "${marker}" >/dev/null
+    fi
+    [ "$(cat "${marker}" 2>/dev/null)" = "${npm_hash}" ] && echo current || echo stale
+}
+
+frontend_live_modules_install() {
+    local npm_hash="$1" marker="${PROJECT_DIR}/frontend_v2/node_modules/.loupe-npm-hash"
+    step "Installing the live checkout's frontend dependencies for vite preview (package-lock changed)"
+    (cd "${PROJECT_DIR}/frontend_v2" && $RUN_AS rm -f "${marker}" && $RUN_AS npm ci --silent) || return 1
+    echo "${npm_hash}" | $RUN_AS tee "${marker}" >/dev/null
+}
+
+# Leave the wanted server serving the current build. <changed> is true when `current` moved in this release;
+# <npm_hash> is the release's package-lock hash. Returns non-zero when nothing serves the frontend afterwards.
 frontend_server_apply() {
-    local changed="$1" wanted
+    local changed="$1" npm_hash="${2:-}" wanted modules=current
     wanted="$(frontend_server_wanted)"
     if [ "${wanted}" = nginx ]; then
         local rendered
@@ -80,6 +104,7 @@ frontend_server_apply() {
         fi
         return 0
     fi
+    [ -n "${npm_hash}" ] && modules="$(frontend_live_modules_state "${npm_hash}")"
     # vite preview: it indexes the files when it starts, so a new build (or a first switch of dist to the build
     # directory) needs a restart, a few seconds.
     if frontend_served_by_nginx; then
@@ -89,9 +114,12 @@ frontend_server_apply() {
         $SYSTEMCTL reload nginx || true
         $SYSTEMCTL enable --quiet "${FRONTEND_UNIT}" || true
         $SYSTEMCTL restart "${FRONTEND_UNIT}"
-    elif [ "${changed}" = true ] || ! $SYSTEMCTL is-active --quiet "${FRONTEND_UNIT}" ||
+    elif [ "${changed}" = true ] || [ "${modules}" = stale ] || ! $SYSTEMCTL is-active --quiet "${FRONTEND_UNIT}" ||
         [ "$(readlink "${PROJECT_DIR}/frontend_v2/dist" 2>/dev/null)" != "${FRONTEND_RELEASES}/current" ]; then
         $SYSTEMCTL stop "${FRONTEND_UNIT}" || true
+        if [ "${modules}" = stale ]; then
+            frontend_live_modules_install "${npm_hash}" || warn "npm ci in the live checkout failed"
+        fi
         frontend_point_preview_at_current || { $SYSTEMCTL start "${FRONTEND_UNIT}"; return 1; }
         $SYSTEMCTL start "${FRONTEND_UNIT}"
     fi
