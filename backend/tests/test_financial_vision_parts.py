@@ -123,6 +123,7 @@ class PartsTests(TestCase):
         self.assertEqual(second, vr.page_instructions(2, 6, part=([3, 4], 4))[0])
         self.assertIn('This statement has 4 pages. These images are 2 of them (labels 3, 4)', second)
         self.assertEqual(vr.page_instructions(2, 6, part=([1, 2], 4))[1], vr.PROMPT_VERSION)
+        self.assertEqual(vr.PART_NOTE_VERSION, 'part-note-v1')
 
     def test_a_single_page_cut_off_fails_as_before(self):
         FakeContext.document = statement(1)

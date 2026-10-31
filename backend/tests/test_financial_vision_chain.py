@@ -374,6 +374,16 @@ class ChainTests(TestCase):
         billed = vr.cost_usd('deepseek-flash', usage) + vr.cost_usd('gpt-5.6-terra', USAGE)
         self.assertAlmostEqual(sum(vr._spend.values()), billed, places=5)
 
+    def test_a_reading_in_parts_records_its_parts_and_the_part_note_version(self):
+        batch, held = self.held()
+        document, knowledge = self.r._image_reading(held)
+        chain = [reader('deepseek', 'deepseek-flash', lambda images: (document, dict(USAGE, parts=2, requests=3)))]
+        outcome, _ = self.read(batch, held, lambda db, case_id: chain, knowledge)
+        self.assertEqual(outcome['status'], 'proved', outcome.get('message'))
+        attempt = self.stored(held)['attempts'][0]
+        self.assertEqual((attempt['parts'], attempt['requests'], attempt['part_note_version'], attempt['prompt_version']),
+                         (2, 3, vr.PART_NOTE_VERSION, vr.PROMPT_VERSION))
+
     def test_a_text_only_model_in_the_chain_is_never_sent_the_pages(self):
         batch, held = self.held()
         right, knowledge = self.r._image_reading(held)

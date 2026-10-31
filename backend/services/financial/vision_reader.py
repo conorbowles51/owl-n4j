@@ -506,6 +506,8 @@ This statement has {pages} page(s), each given as {count} overlapping strip(s)."
 
 # A statement too long for one answer is read in parts of its pages (document_request): the same instructions, and
 # this note in place of PAGES_NOTE, so each part gives only what is printed on its own pages.
+# Recorded on a reading read in parts (beside PROMPT_VERSION): change PART_NOTE -> change this.
+PART_NOTE_VERSION = 'part-note-v1'
 PART_NOTE = """
 
 This statement has {total} pages. These images are {pages} of them (labels {labels}); the other pages are read separately. Transcribe only what is printed on these pages: pages[] describes only these pages, rows are only the lines printed on them, and a balance, total or count is given only when it is printed on these pages (a balance carried over from an earlier page is not the period's opening balance). Each page is given as {count} overlapping strip(s)."""
@@ -3102,7 +3104,8 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
                                completion_tokens=usage.get('completion_tokens'))
                 if usage.get('parts'):
                     # Read in parts of its pages (an answer of one request was cut off at the output limit).
-                    attempt.update(parts=usage['parts'], requests=usage.get('requests'))
+                    attempt.update(parts=usage['parts'], requests=usage.get('requests'),
+                                   part_note_version=PART_NOTE_VERSION)
                 log.info('Page-image reading: case %s file %s by %s %s, %s pages, %ss, cost $%.4f ($%.4f a page; '
                          '%s tokens in, %s out)', str(case_id)[:8], str(file_id)[:8], reader.provider or 'model',
                          reader.model, len(images), took, cost, cost / len(images), usage.get('prompt_tokens'),
@@ -3917,7 +3920,8 @@ def read_saved(factory, document_id, resolve_path, *, page_reader=None, knowledg
                     share['cost_usd'] = round(share['cost_usd'] + cost / len(images), 6)
                 attempt.update(cost_usd=round(cost, 6), seconds=took)
                 if usage.get('parts'):
-                    attempt.update(parts=usage['parts'], requests=usage.get('requests'))
+                    attempt.update(parts=usage['parts'], requests=usage.get('requests'),
+                                   part_note_version=PART_NOTE_VERSION)
                 log.info('Page-image reading of saved statement: case %s file %s by %s %s, %s pages, cost $%.4f',
                          str(case_id)[:8], str(file_id)[:8], reader.provider or 'model', reader.model, len(pages), cost)
             attempt['raw'] = raw
