@@ -146,8 +146,27 @@ export function InvestigatorOverview({
     { name: "Report", detail: !held(findings) ? (findings.isError ? "Findings could not be loaded" : "Loading findings…") : findingCount ? plural(findingCount, "finding") : "No findings yet", done: held(findings) && findingCount > 0 },
   ]
   const now = steps.findIndex((step) => !step.done)
+  // Every count shown from an answer whose refresh failed is named here, so none of them reads as current.
+  const stale = [
+    { what: "statement files", queries: [register.files, register.imports] },
+    { what: "Loupe's calls", queries: [judgements] },
+    { what: "findings", queries: [findings] },
+    { what: "payment figures", queries: [totals, panels] },
+  ].filter(({ queries }) => queries.some((query) => query.isError && held(query)))
   return (
     <div className="space-y-6 bg-[#f4f3ef] p-4 sm:p-5 dark:bg-transparent">
+      {stale.length > 0 && (
+        <p role="alert" className="rounded border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-950">
+          {`These could not be updated and show the last ones loaded: ${stale.map(({ what }) => what).join(", ")}.`}{" "}
+          <button
+            type="button"
+            className="underline"
+            onClick={() => stale.forEach(({ queries }) => queries.forEach((query) => void query.refetch()))}
+          >
+            Load them again
+          </button>
+        </p>
+      )}
       <section
         aria-label="Next for you"
         className="space-y-7 rounded-2xl p-5 text-[#f7f7f8] sm:p-8"
@@ -322,16 +341,9 @@ export function InvestigatorOverview({
           </Button>
         </div>
       ) : (<>
-        {(panels.isFetching || totals.isFetching) ? (
+        {(panels.isFetching || totals.isFetching) && (
           <p role="status" className="text-sm text-muted-foreground">
             Updating these figures…
-          </p>
-        ) : ((panels.isError && held(panels)) || (totals.isError && held(totals))) && (
-          <p role="alert" className="text-sm text-muted-foreground">
-            These figures could not be updated; they are the last ones loaded.{" "}
-            <button type="button" className="underline" onClick={() => { void panels.refetch(); void totals.refetch() }}>
-              Load them again
-            </button>
           </p>
         )}
         <PaymentTotalsView

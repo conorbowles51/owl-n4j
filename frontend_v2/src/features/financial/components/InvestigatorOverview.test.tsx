@@ -95,6 +95,7 @@ vi.mock("../hooks/use-statement-register", () => ({
       data: (state.register === "ready" || state.register === "stale") ? [{ id: "f1" }, { id: "f2" }] : undefined,
       isPending: state.register === "pending",
       isError: state.register === "error" || state.register === "stale",
+      refetch: vi.fn(),
     },
     imports: {
       data:
@@ -105,6 +106,7 @@ vi.mock("../hooks/use-statement-register", () => ({
           : undefined,
       isPending: state.register === "pending",
       isError: state.register === "error" || state.register === "stale",
+      refetch: vi.fn(),
     },
   }),
 }))
@@ -113,12 +115,14 @@ vi.mock("@/features/workspace/hooks/use-casework", () => ({
     isPending: state.findings === "pending",
     isError: state.findings === "error" || state.findings === "stale",
     isSuccess: state.findings === "ready",
+    refetch: vi.fn(),
     data: (state.findings === "ready" || state.findings === "stale") ? { entries: [], total: 0 } : undefined,
   }),
 }))
 vi.mock("../hooks/use-judgements", () => ({
   useJudgementCounts: () => ({
     isSuccess: state.calls === "ready",
+    refetch: vi.fn(),
     isError: state.calls === "error" || state.calls === "stale",
     data: (state.calls === "ready" || state.calls === "stale") ? { case: { total: 9, open: state.openCalls, inferred: 4 } } : undefined,
   }),
@@ -347,5 +351,24 @@ it("keeps every count it already has when a background refetch fails, and says t
   expect(kept.page).toBe(fresh.page)
   expect(kept.totals).toBe(fresh.totals)
   expect(kept.checked).toBe(true)
-  expect(kept.notes).toEqual(["These figures could not be updated; they are the last ones loaded. Load them again"])
+  expect(kept.notes).toEqual([
+    "These could not be updated and show the last ones loaded: statement files, Loupe's calls, findings, payment figures. Load them again",
+  ])
+})
+
+it("names each held count whose refresh failed on its own, so a stale count never reads as current", () => {
+  state.registerDone = true
+  state.openCalls = 0
+  state.uncategorised = 0
+  for (const [query, what] of [["calls", "Loupe's calls"], ["findings", "findings"], ["register", "statement files"], ["totals", "payment figures"], ["panels", "payment figures"]] as const) {
+    state[query] = "stale"
+    const view = render(
+      <MemoryRouter>
+        <InvestigatorOverview caseId="case" />
+      </MemoryRouter>
+    )
+    expect(screen.getByRole("alert").textContent).toBe(`These could not be updated and show the last ones loaded: ${what}. Load them again`)
+    view.unmount()
+    state[query] = "ready"
+  }
 })
