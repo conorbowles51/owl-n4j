@@ -14,7 +14,7 @@ from services.financial.candidate_assessment import assess_candidate_amounts, as
 from services.financial.candidate_source_bytes import verify_candidate_source_bytes
 from services.financial.candidate_store import CandidateStoreError, store_pdf_candidates, read_candidate_mapping, list_candidate_mappings, list_candidate_accounts
 from services.financial.correction_preview import CorrectionPreviewError, preview_amount_correction
-from services.financial.correction_fields import correction_fields, json_fields
+from services.financial.correction_fields import correction_fields as payment_correction_fields, json_fields
 from services.financial.corrections import correct_transaction
 from services.financial.correction_verification import correction_verification
 from services.financial.correction_balances import correction_running_balances
@@ -2045,7 +2045,7 @@ __all__ += ["closing_only_period_dates"]
 from services.financial.transaction_notes import capture_transaction_notes
 __all__ += ["capture_transaction_notes"]
 
-__all__ += ["correction_fields", "json_fields"]
+__all__ += ["payment_correction_fields", "json_fields"]
 
 from services.financial.deposit_receipt_proposal import propose_deposit_receipt, deposit_receipt_choices
 from services.financial.payment_document_proposal import propose_payment_document
