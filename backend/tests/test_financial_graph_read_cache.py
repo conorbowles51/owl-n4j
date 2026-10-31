@@ -367,6 +367,18 @@ class SavedGraphReadTests(unittest.TestCase):
         GraphReadCache(saved_as="g", marker=self.marker).read(self.session, "k", self.compute({"t": (1, 2)}))
         self.assertEqual(list(pathlib.Path(self.directory.name).rglob("*.graph")), [])
 
+    def test_bytes_are_saved_as_they_are_and_found_by_a_new_process(self):
+        # A compressed response body (graph_response_cache): before, it was pickled and so never saved.
+        import pathlib
+        body = bytes(range(256)) * 3
+        first = GraphReadCache(saved_as="g", marker=self.marker).read(self.session, ("graph", "c"), self.compute(body))
+        other = GraphReadCache(saved_as="g", marker=self.marker)
+        second = other.read(self.session, ("graph", "c"), self.compute(b"other"))
+        self.assertEqual((first, second), (body, body))
+        self.assertEqual((self.calls, other.stats["saved_hit"]), (1, 1))
+        [path] = pathlib.Path(self.directory.name, "g").glob("*.graph")
+        self.assertTrue(path.read_bytes().endswith(b"\nB" + body))
+
     def test_a_read_during_which_something_committed_is_not_saved(self):
         import pathlib
 

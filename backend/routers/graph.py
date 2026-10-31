@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select, text
 
 from services.neo4j_service import neo4j_service
-from services.neo4j.graph_response_cache import cached_json, keys_digest
+from services.neo4j.graph_response_cache import cached_json, keys_digest, warm as warm_response
 from services.insights_service import generate_entity_insights
 from services.llm_service import LLMService
 from services.geo_rescan_service import rescan_case_locations
@@ -394,6 +394,29 @@ def get_graph_edit_schema():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _graph_read(case_id: str, scope: str, scoped_entity_keys, lightweight: bool, limit, sort_by):
+    """The saved-response key and the read of GET /api/graph without dates. Read from the graph database only;
+    the significant keys (PostgreSQL) are part of the key."""
+    key = ("graph", case_id, scope, keys_digest(scoped_entity_keys), lightweight, limit, sort_by)
+    if lightweight:
+        compute = lambda: neo4j_service.get_graph_structure(
+            case_id=case_id, start_date=None, end_date=None,
+            limit=limit, sort_by=sort_by,
+            entity_keys=scoped_entity_keys,
+        )
+    else:
+        compute = lambda: neo4j_service.get_full_graph(
+            case_id=case_id, start_date=None, end_date=None,
+            entity_keys=scoped_entity_keys,
+        )
+    return key, compute
+
+
+def warm_graph_page(case_id, db=None) -> int:
+    """The Graph page's read as the page asks for it (lightweight=true&scope=all), into the saved responses."""
+    return warm_response(*_graph_read(str(case_id), "all", None, True, None, None))
+
+
 @router.get("")
 def get_graph(
     case_id: str = Query(..., description="REQUIRED: Filter by case ID"),
@@ -424,19 +447,7 @@ def get_graph(
             else None
         )
         if not start_date and not end_date:
-            # Read from the graph database only; the significant keys (PostgreSQL) are part of the key.
-            key = ("graph", case_id, scope, keys_digest(scoped_entity_keys), lightweight, limit, sort_by)
-            if lightweight:
-                compute = lambda: neo4j_service.get_graph_structure(
-                    case_id=case_id, start_date=None, end_date=None,
-                    limit=limit, sort_by=sort_by,
-                    entity_keys=scoped_entity_keys,
-                )
-            else:
-                compute = lambda: neo4j_service.get_full_graph(
-                    case_id=case_id, start_date=None, end_date=None,
-                    entity_keys=scoped_entity_keys,
-                )
+            key, compute = _graph_read(case_id, scope, scoped_entity_keys, lightweight, limit, sort_by)
             return cached_json(key, compute, request.headers.get("accept-encoding") if request is not None else None)
         if lightweight:
             result = neo4j_service.get_graph_structure(

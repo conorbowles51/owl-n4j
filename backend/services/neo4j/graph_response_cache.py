@@ -10,7 +10,8 @@ advances the bookmark, so a body is never served for a state other than the one 
 The caller does the access check before asking, on every request, and puts into ``key`` everything the
 body depends on besides the graph: the case, the route's parameters, and anything read from PostgreSQL
 (the significant-entity keys of the significant scope). Same-key reads in one process share one database
-read (graph_read_cache's single flight). Each backend process keeps its own copies, in memory only.
+read (graph_read_cache's single flight). Each backend process keeps its own copies in memory, and every copy is
+also saved on disk for the other processes and the next start.
 
 The body is FastAPI's own encoding of the result (view_cache.json_response), so a response served from
 here is byte-for-byte the one the route returned before, once decompressed.
@@ -25,10 +26,15 @@ from typing import Callable, Hashable
 from fastapi.responses import Response
 
 from services.neo4j.driver import driver
-from services.neo4j.graph_read_cache import GraphReadCache
+from services.neo4j.graph_read_cache import GraphReadCache, graph_database_marker
 
 # BNB2's graph is 2.7 MB compressed and its Timeline 3.8 MB over 16 pages (measured 31 Oct).
-graph_responses = GraphReadCache(max_bytes=128 * 1024 * 1024)
+# Saved on disk too (graph_read_cache ``saved_as``), under the code identity, the bookmark and the graph database's
+# marker: the other worker and the next start serve a first visit from disk while the graph is the same, and the
+# release's prepare (view_warmup) reads each Financial case's Graph and Timeline pages before the restart. Before,
+# the first visit after a restart read the graph again: d5b330d1 /api/timeline 5.5 s and /api/graph 4.5 s server
+# time (live 46cbf7f9, 31 Oct 18:24-18:25).
+graph_responses = GraphReadCache(max_bytes=128 * 1024 * 1024, saved_as="graph-responses", marker=graph_database_marker)
 
 
 def keys_digest(keys) -> str | None:
@@ -60,3 +66,10 @@ def cached_json(key: Hashable, compute: Callable[[], object], accept_encoding: s
             headers={"Content-Encoding": "gzip", "Vary": "Accept-Encoding"},
         )
     return Response(content=gzip.decompress(body), media_type="application/json")
+
+
+def warm(key: Hashable, compute: Callable[[], object]) -> int:
+    """Read ``key`` into the saved copies as ``cached_json`` would (served from them when already there); returns
+    the compressed size. For the release's prepare and the after-start warm-up (view_warmup)."""
+    with driver.session() as session:
+        return len(graph_responses.read(session, key, lambda: _encode(compute())))

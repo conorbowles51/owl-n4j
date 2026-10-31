@@ -442,6 +442,8 @@ def _warm_cases_now(share, stop_if_preparing):
     from fastapi import HTTPException
     from services import process_shutdown
     from routers.financial import get_financial_transactions as get_financial_records
+    from routers.graph import warm_graph_page
+    from routers.timeline import warm_timeline_page
     graph_defaults = dict(types=None, start_date=None, end_date=None, categories=None)
     full_range_dates = dict(account_id=None, start_date=None, end_date=None)
     full_range = dict(full_range_dates, population='working')
@@ -486,6 +488,11 @@ def _warm_cases_now(share, stop_if_preparing):
         # first visit after release 48 14.0 s on d5b330d1 (live 2026-10-31 09:09), 2.7 s after release 49.
         ('graph records', get_financial_records, dict(graph_defaults, mode='transactions')),
         ('graph intelligence records', get_financial_records, dict(graph_defaults, mode='intelligence')),
+        # The Graph and Timeline pages' reads, as the pages ask for them, into the saved graph responses
+        # (graph_response_cache): the first visit after the restart at 18:09 read them again, d5b330d1 /api/timeline
+        # 5.5 s and /api/graph 4.5 s server time (live 46cbf7f9, 2026-10-31 18:24-18:25).
+        ('graph page', warm_graph_page, {}),
+        ('whole timeline', warm_timeline_page, {}),
     )
     # The full-range analyses as the page first asks for them (the counterparty tab opens on the working analysis
     # by counterparty; the identities analysis is one tick away). First visit on d5b330d1 live 2026-10-30

@@ -33,7 +33,7 @@ so the other worker and the next start find it while the bookmark is the same:
 the release's warm-up reads it before the restart, and a first visit is served
 from disk (d5b330d1 transactions: 7.8 s graph read, measured 2026-10-31). A
 saved copy is used only for the exact key, code and bookmark it was read at, and
-only after its size and sha256 match; results JSON cannot keep are never saved.
+only after its size and sha256 match; results JSON cannot keep are never saved (bytes are saved as they are).
 A bookmark is a transaction number: restoring an earlier backup hands the same
 numbers out again for other contents. A restore stops and starts the database,
 so each saved copy also records the database's id and last start time (``marker``)
@@ -103,6 +103,9 @@ def _json_native(value) -> bool:
 
 
 def _pack(value) -> bytes:
+    # A value that is already bytes (a compressed response body, graph_response_cache) is kept as it is.
+    if type(value) is bytes:
+        return b"B" + value
     # orjson reads and writes a large row list several times faster than pickle
     # (d5b330d1 transactions: pickle 8 s to save, about 2 s to read back), and
     # keeps int, float and str exactly; anything else is pickled.
@@ -112,10 +115,14 @@ def _pack(value) -> bytes:
 
 
 def _unpack(blob: bytes):
+    if blob[:1] == b"B":
+        return blob[1:]
     data = zlib.decompress(blob[1:])
     return orjson.loads(data) if blob[:1] == b"J" else pickle.loads(data)
 
 
+# The kinds kept on disk: JSON and plain bytes. A pickled result is never saved (reading one back runs code).
+_SAVED_KINDS = (b"J", b"B")
 # Saved graph reads, oldest removed first above this size.
 MAX_SAVED_BYTES = 512 * 1024 * 1024
 # The graph database's marker is read at most this often per cache (10-26 ms each, measured 2026-10-31); a change
@@ -229,7 +236,7 @@ class GraphReadCache:
                     return None
                 blob = saved.read()
             if (header.get("size") != len(blob) or header.get("sha256") != hashlib.sha256(blob).hexdigest()
-                    or blob[:1] != b"J"):
+                    or blob[:1] not in _SAVED_KINDS):
                 return None
             return blob
         except FileNotFoundError:
@@ -242,7 +249,7 @@ class GraphReadCache:
         """Keep a JSON result on disk for the other workers and the next start, under the marker taken before it
         was read. Never raises."""
         directory, code = self._saved_dir()
-        if directory is None or marker is None or blob[:1] != b"J" or len(blob) > MAX_SAVED_BYTES:
+        if directory is None or marker is None or blob[:1] not in _SAVED_KINDS or len(blob) > MAX_SAVED_BYTES:
             return
         temporary = None
         try:

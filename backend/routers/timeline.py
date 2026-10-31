@@ -13,7 +13,7 @@ from postgres.session import get_db
 from routers.users import get_current_db_user
 from services.case_service import CaseAccessDenied, CaseNotFound, check_case_access, get_case_if_allowed
 from services.neo4j_service import neo4j_service
-from services.neo4j.graph_response_cache import cached_json, keys_digest
+from services.neo4j.graph_response_cache import cached_json, keys_digest, warm as warm_response
 from services.neo4j.timeline_service import TimelineTooLarge
 from services.significant_service import get_significant_entity_keys
 from services.timeline_entries import TimelineAddition, preview_addition, save_addition, list_entries
@@ -115,6 +115,24 @@ def _handle_error(exc: Exception) -> None:
     raise exc
 
 
+def _timeline_whole_read(page_args: dict, scope: str):
+    """The saved-response key and the read of GET /api/timeline?whole=true."""
+    whole_args = {name: value for name, value in page_args.items() if name not in ("limit", "cursor")}
+    key = (
+        "timeline-whole", page_args["case_id"], scope, keys_digest(page_args.get("entity_keys")),
+        tuple(page_args["event_types"] or ()), page_args["start_date"], page_args["end_date"],
+    )
+    return key, lambda: neo4j_service.get_timeline_whole(**whole_args)
+
+
+def warm_timeline_page(case_id, db=None) -> int:
+    """The Timeline page's read as the page asks for it (whole=true&scope=all), into the saved responses. A case
+    above the whole-Timeline ceiling is refused here as on the page, and nothing is saved."""
+    page_args = {"event_types": None, "start_date": None, "end_date": None, "case_id": str(case_id),
+                 "limit": 500, "cursor": None}
+    return warm_response(*_timeline_whole_read(page_args, "all"))
+
+
 @router.get("")
 def get_timeline(
     types: Optional[str] = Query(
@@ -172,12 +190,7 @@ def get_timeline(
         # The page is read from the graph database only; the significant keys come from PostgreSQL and
         # are part of the key, so a change to them reads again.
         if whole is True:
-            whole_args = {name: value for name, value in page_args.items() if name not in ("limit", "cursor")}
-            key = (
-                "timeline-whole", page_args["case_id"], scope, keys_digest(page_args.get("entity_keys")),
-                tuple(event_types or ()), start_date, end_date,
-            )
-            compute = lambda: neo4j_service.get_timeline_whole(**whole_args)
+            key, compute = _timeline_whole_read(page_args, scope)
         else:
             key = (
                 "timeline", page_args["case_id"], scope, keys_digest(page_args.get("entity_keys")),

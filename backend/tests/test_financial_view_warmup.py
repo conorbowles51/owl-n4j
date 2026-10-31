@@ -22,7 +22,7 @@ SUMMARY_VIEWS = (('get_ledger_summary', 'summary'), ('get_working_ledger_summary
 FULL_RANGE_VIEWS = (('get_working_ledger_analysis', 'working'), ('get_ledger_posting_graph', 'graph'), ('get_counterparty_party_analysis', 'cpa'),
                     ('get_ledger_timeline', 'timeline'), ('get_ledger_transfer_candidates', 'transfers'),
                     ('get_pattern_review', 'patterns'))
-PER_CASE = 21  # views warmed for each case
+PER_CASE = 23  # views warmed for each case
 GRAPH = {}  # the graph database's last commit as the tests set it (never a real graph database)
 
 
@@ -62,6 +62,11 @@ def periods(tmp_path, monkeypatch):
     import routers.financial
     monkeypatch.setattr(routers.financial, 'get_financial_transactions',
                         lambda **kw: calls.append(dict(kw, view='graph-' + kw['mode'])))
+    # The Graph and Timeline pages' saved responses (graph_response_cache); never a real graph database here.
+    import routers.graph
+    import routers.timeline
+    monkeypatch.setattr(routers.graph, 'warm_graph_page', lambda **kw: calls.append(dict(kw, view='graph-page')))
+    monkeypatch.setattr(routers.timeline, 'warm_timeline_page', lambda **kw: calls.append(dict(kw, view='timeline-page')))
     GRAPH['now'] = ['FB:1']
     monkeypatch.setattr(view_warmup, '_graph_now', lambda: GRAPH['now'] and list(GRAPH['now']))
 
@@ -89,10 +94,12 @@ def test_every_case_is_warmed_largest_first_with_the_routes_defaults(periods):
         (str(large), 'parties'), (str(large), 'types'), (str(large), 'consolidations'), (str(large), 'queue'),
         (str(large), 'batches'), (str(large), 'summary'), (str(large), 'working-summary'),
         (str(large), 'graph-transactions'), (str(large), 'graph-intelligence'),
+        (str(large), 'graph-page'), (str(large), 'timeline-page'),
         (str(small), None), (str(small), 'transactions'), (str(small), 'overview'), (str(small), 'panels'), (str(small), 'files'), (str(small), 'evidence'),
         (str(small), 'parties'), (str(small), 'types'), (str(small), 'consolidations'), (str(small), 'queue'),
         (str(small), 'batches'), (str(small), 'summary'), (str(small), 'working-summary'),
         (str(small), 'graph-transactions'), (str(small), 'graph-intelligence'),
+        (str(small), 'graph-page'), (str(small), 'timeline-page'),
         # The full-range analyses in a second pass, after every case's views above (the release warm-up's cap).
         (str(large), 'working'), (str(large), 'graph'), (str(large), 'cpa'), (str(large), 'timeline'),
         (str(large), 'transfers'), (str(large), 'patterns'),
@@ -107,6 +114,9 @@ def test_every_case_is_warmed_largest_first_with_the_routes_defaults(periods):
     assert {key: value for key, value in calls[13].items() if key != 'db'} == dict(
         case_id=str(large), mode='transactions', types=None, start_date=None, end_date=None, categories=None,
         view='graph-transactions')
+    # The Graph and Timeline pages' reads take only the case; each builds the route's own key (routers.graph/timeline).
+    assert [{key: value for key, value in calls[index].items() if key != 'db'} for index in (15, 16)] == [
+        dict(case_id=large, view='graph-page'), dict(case_id=large, view='timeline-page')]
     assert {key: value for key, value in calls[0].items() if key != 'db'} == dict(
         case_id=large, account_id=None, account_ids=None, account_holders=None, start_date=None, end_date=None)
     assert {key: value for key, value in calls[1].items() if key != 'db'} == dict(

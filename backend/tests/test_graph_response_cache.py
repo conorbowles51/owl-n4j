@@ -58,5 +58,50 @@ class GraphResponseCacheTests(unittest.TestCase):
             cached_json(("graph", "nan"), lambda: {"total": float("nan")}, "gzip")
 
 
+class WarmedPageTests(unittest.TestCase):
+    """The release's warm-up fills the very key the Graph and Timeline pages ask for (view_warmup)."""
+
+    def setUp(self):
+        graph_response_cache.graph_responses.clear()
+        self.addCleanup(graph_response_cache.graph_responses.clear)
+        self.calls = []
+        session = patch.object(graph_response_cache.driver, "session", side_effect=lambda: contextlib.nullcontext(object()))
+        bookmark = patch("services.neo4j.graph_read_cache.graph_bookmark", side_effect=lambda _s: ("b1",))
+        session.start(); bookmark.start()
+        self.addCleanup(session.stop); self.addCleanup(bookmark.stop)
+
+    def read(self, name):
+        def run(**kwargs):
+            self.calls.append((name, kwargs))
+            return {"read": name}
+        return run
+
+    def test_the_graph_page_after_the_warm_up_is_served_without_a_read(self):
+        from routers import graph
+        case = "d5b330d1-b3fe-4b03-8539-98d9cc3115e0"
+        with patch.object(graph.neo4j_service, "get_graph_structure", side_effect=self.read("graph")):
+            graph.warm_graph_page(__import__("uuid").UUID(case))
+            response = graph.get_graph(case_id=case, start_date=None, end_date=None, lightweight=True, limit=None,
+                                       sort_by=None, scope="all", request=None, db=None, user={})
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(json.loads(response.body), {"read": "graph"})
+        self.assertEqual(self.calls[0][1], dict(case_id=case, start_date=None, end_date=None, limit=None,
+                                                sort_by=None, entity_keys=None))
+
+    def test_the_timeline_page_after_the_warm_up_is_served_without_a_read(self):
+        import uuid
+        from routers import timeline
+        case = uuid.UUID("d5b330d1-b3fe-4b03-8539-98d9cc3115e0")
+        with patch.object(timeline.neo4j_service, "get_timeline_whole", side_effect=self.read("timeline")), \
+                patch.object(timeline, "get_case_if_allowed"):
+            timeline.warm_timeline_page(case)
+            response = timeline.get_timeline(types=None, start_date=None, end_date=None, case_id=case, limit=500,
+                                             cursor=None, scope="all", whole=True, request=None, db=None,
+                                             current_user=None)
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(json.loads(response.body), {"read": "timeline"})
+        self.assertEqual(self.calls[0][1], dict(event_types=None, start_date=None, end_date=None, case_id=str(case)))
+
+
 if __name__ == "__main__":
     unittest.main()
