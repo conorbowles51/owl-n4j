@@ -14,7 +14,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "20261031_batches_compact"
-down_revision = "20261031_pg_stat_statements"
+down_revision = "20261031_slow_pool_wait"
 branch_labels = None
 depends_on = None
 

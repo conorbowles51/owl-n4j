@@ -49,7 +49,7 @@ class BatchesCompactTest(unittest.TestCase):
     def test_follows_the_statistics_migration(self):
         module = _load()
         self.assertEqual((module.revision, module.down_revision),
-                         ('20261031_batches_compact', '20261031_pg_stat_statements'))
+                         ('20261031_batches_compact', '20261031_slow_pool_wait'))
 
     def test_compacts_with_a_short_lock_wait(self):
         bind = Bind([])
