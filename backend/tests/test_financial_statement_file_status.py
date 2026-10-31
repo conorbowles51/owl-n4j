@@ -276,9 +276,7 @@ class StatementFileStatusTests(DuplicateTestCase):
     def test_the_register_reads_only_the_batch_columns_its_cache_watches(self):
         # The cached view fingerprints a case's batches by these columns only (a batch's files list is rewritten
         # after every release); a read of any other batch column here would serve a stale register.
-        import re
         from uuid import uuid4
-        from sqlalchemy import event
         import routers.financial_statement_import  # noqa: F401 - registers the view
         from services.financial import view_cache
         from postgres.base import Base
@@ -299,18 +297,21 @@ class StatementFileStatusTests(DuplicateTestCase):
             self.db.add(Item(id=uuid4(), batch_id=batch.id, file_id=document.evidence_file_id, statement_key=key,
                 status=status, summary={'can_import': True}))
         self.db.commit()
+        # SQLite's authorizer names every column each statement reads, whatever the SQL's form (an alias, a JOIN,
+        # an unqualified name or SELECT *), which a regex over the SQL text cannot (review of 57534862). The register
+        # has no dialect-specific branch, so its reads here are its reads on PostgreSQL.
+        import sqlite3
         read = set()
-        def record(conn, cursor, statement, parameters, context, executemany):
-            read.update(re.findall(r'financial_import_batches\.(\w+)', statement))
-            if re.search(r'FROM\s+"?financial_import_batches"?\s+(AS\s+)?(\w+)', statement):
-                alias = re.search(r'FROM\s+"?financial_import_batches"?\s+(?:AS\s+)?(\w+)', statement).group(1)
-                read.update(re.findall(r'\b%s\.(\w+)' % alias, statement))
-        engine = self.db.get_bind()
-        event.listen(engine, 'before_cursor_execute', record)
+        def authorize(action, table, column, database, trigger):
+            if action == sqlite3.SQLITE_READ and table == 'financial_import_batches':
+                read.add(column)
+            return sqlite3.SQLITE_OK
+        raw = self.db.connection().connection.dbapi_connection
+        raw.set_authorizer(authorize)
         try:
             statement_file_status(self.db, case_id=self.case.id)
         finally:
-            event.remove(engine, 'before_cursor_execute', record)
+            raw.set_authorizer(None)
         watched = set(view_cache._COLUMNS['statement-import-files']['financial_import_batches'])
         self.assertTrue(read, 'the register reads the batches')
         self.assertLessEqual(read, watched)
