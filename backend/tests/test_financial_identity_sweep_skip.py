@@ -132,7 +132,7 @@ def _round(w):
 def _settle(w):
     """First round draws, second finds it current and remembers it, third is skipped."""
     assert _round(w) == (2, 2)  # identity marker + ledger projection marker
-    assert _round(w) == (2, 2)
+    assert _round(w) == (1, 2)  # already current: one build (54f016b1), no write
     assert _round(w) == (0, 0)
 
 
@@ -166,8 +166,7 @@ def test_an_unchanged_case_is_skipped_without_building_or_locking(world):
 
 def test_switch_off_builds_every_round_as_before(world, monkeypatch):
     monkeypatch.setattr(ig, 'SKIP_UNCHANGED', False, raising=False)
-    for _ in range(4):
-        assert _round(world)[0] == 2
+    assert [_round(world) for _ in range(4)] == [(2, 2)] + [(1, 2)] * 3  # every round builds and locks
 
 
 def test_a_ledger_change_is_caught_on_the_next_round(world):
@@ -177,7 +176,7 @@ def test_a_ledger_change_is_caught_on_the_next_round(world):
     revision = world.graph.revision
     assert _round(world)[0] == 2
     assert world.graph.revision != revision  # the new payment link was drawn
-    assert _round(world)[0] == 2
+    assert _round(world)[0] == 1
     assert _round(world) == (0, 0)
 
 
@@ -185,7 +184,7 @@ def test_a_new_identity_decision_is_caught_on_the_next_round(world):
     _settle(world)
     _entity_link(world)
     assert _round(world)[0] == 2
-    assert _round(world)[0] == 2
+    assert _round(world)[0] == 1
     assert _round(world) == (0, 0)
 
 
@@ -219,7 +218,7 @@ def test_each_kind_of_graph_write_is_caught_on_the_next_round(world, graph_write
 def test_a_full_sync_runs_at_least_every_full_sync_seconds(world):
     _settle(world)
     ig._unchanged[str(world.f.case.id)]['at'] -= ig.FULL_SYNC_SECONDS + 1  # noqa: the old code fails in _settle
-    assert _round(world)[0] == 2
+    assert _round(world)[0] == 1
     assert _round(world) == (0, 0)
 
 

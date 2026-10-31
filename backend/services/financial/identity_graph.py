@@ -159,11 +159,27 @@ def _graph_target_matches(tx, plan):
     # key is a collision too. UNWIND + OPTIONAL MATCH performed a whole-graph
     # scan per key without a common indexed label. Read all requested keys in
     # one pass, preserving every match so duplicate nodes cannot be hidden.
+    # A label-less MATCH is an AllNodesScan (81,290 nodes on live, 142-287 ms per case, every 30 s round).
+    # One branch per label the database knows (each uses that label's key index), joined and de-duplicated
+    # by node id, finds the same nodes (7 of 7 cases identical, 11-44 ms, measured 31 Oct): every node the
+    # code creates carries a label ('Entity' at least) and live has none without. With no labels listed,
+    # the single label-less read is used.
+    labels = sorted(row['label'] for row in tx.run('CALL db.labels() YIELD label RETURN label').data())
     matches = {}
-    for row in tx.run('''MATCH (n {case_id:$case}) WHERE n.key IN $keys
-        RETURN n.key AS key, labels(n) AS labels''',
-        keys=sorted(keys), case=plan['case_id']).data():
-        matches.setdefault(row['key'], []).append(row['labels'])
+    if not labels:
+        for row in tx.run('''MATCH (n {case_id:$case}) WHERE n.key IN $keys
+            RETURN n.key AS key, labels(n) AS labels''',
+            keys=sorted(keys), case=plan['case_id']).data():
+            matches.setdefault(row['key'], []).append(row['labels'])
+        return matches
+    query = '\nUNION ALL\n'.join(
+        'MATCH (n:`%s`) WHERE n.key IN $keys AND n.case_id = $case '
+        'RETURN elementId(n) AS id, n.key AS key, labels(n) AS labels' % label.replace('`', '``') for label in labels)
+    seen = set()
+    for row in tx.run(query, keys=sorted(keys), case=plan['case_id']).data():
+        if row['id'] not in seen:
+            seen.add(row['id'])
+            matches.setdefault(row['key'], []).append(row['labels'])
     return matches
 
 
