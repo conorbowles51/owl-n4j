@@ -273,6 +273,48 @@ class StatementFileStatusTests(DuplicateTestCase):
         linked = next(f for f in files if f['evidence_file_id'] == str(copy.id))
         self.assertEqual(linked['same_pdf_saved_file_ids'], expected_copy)
 
+    def test_the_register_reads_only_the_batch_columns_its_cache_watches(self):
+        # The cached view fingerprints a case's batches by these columns only (a batch's files list is rewritten
+        # after every release); a read of any other batch column here would serve a stale register.
+        import re
+        from uuid import uuid4
+        from sqlalchemy import event
+        import routers.financial_statement_import  # noqa: F401 - registers the view
+        from services.financial import view_cache
+        from postgres.base import Base
+        from postgres.models.evidence import EvidenceFile, EvidenceDocumentText, EvidenceTableGeometry
+        Base.metadata.create_all(self.db.connection(), tables=[EvidenceDocumentText.__table__, EvidenceTableGeometry.__table__])
+        from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item
+        document = self.make_document()
+        document.document_type = 'statement_review'
+        self.add_row(self.make_period(document), document, amount=100)
+        copy = EvidenceFile(id=uuid4(), case_id=self.case.id, original_filename='copy.pdf',
+            stored_path='/synthetic/copy.pdf', sha256=document.sha256_at_ingestion,
+            metadata_={'financial_duplicate_dispositions': {'': {'status': 'ignored', 'retained': {
+                'evidence_file_id': str(document.evidence_file_id), 'statement_id': None}}}})
+        batch = Batch(id=uuid4(), case_id=self.case.id, created_by=self.user.id, actor={}, status='review',
+            files=[{'file_id': str(document.evidence_file_id), 'status': 'checked', 'reader_stamp': 'old'}])
+        self.db.add_all([copy, batch]); self.db.flush()
+        for key, status in (('new-period', 'ready'), ('copy', 'duplicate_ignored'), ('held', 'attention')):
+            self.db.add(Item(id=uuid4(), batch_id=batch.id, file_id=document.evidence_file_id, statement_key=key,
+                status=status, summary={'can_import': True}))
+        self.db.commit()
+        read = set()
+        def record(conn, cursor, statement, parameters, context, executemany):
+            read.update(re.findall(r'financial_import_batches\.(\w+)', statement))
+            if re.search(r'FROM\s+"?financial_import_batches"?\s+(AS\s+)?(\w+)', statement):
+                alias = re.search(r'FROM\s+"?financial_import_batches"?\s+(?:AS\s+)?(\w+)', statement).group(1)
+                read.update(re.findall(r'\b%s\.(\w+)' % alias, statement))
+        engine = self.db.get_bind()
+        event.listen(engine, 'before_cursor_execute', record)
+        try:
+            statement_file_status(self.db, case_id=self.case.id)
+        finally:
+            event.remove(engine, 'before_cursor_execute', record)
+        watched = set(view_cache._COLUMNS['statement-import-files']['financial_import_batches'])
+        self.assertTrue(read, 'the register reads the batches')
+        self.assertLessEqual(read, watched)
+
     def test_sqlite_is_never_cached(self):
         from services.financial.statement_file_status import status_fingerprint
         self.assertIsNone(status_fingerprint(self.db, self.case.id))

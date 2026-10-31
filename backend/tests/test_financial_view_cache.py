@@ -108,6 +108,40 @@ def test_any_write_to_the_case_recomputes(engine, change):
     assert counter.calls == 2
 
 
+def _projected_view(counter):
+    @view_cache.cached_view('payments-projected', columns={'payments': ('id', 'case_id', 'amount')})
+    def handler(case_id, db):
+        counter.calls += 1
+        total = db.execute(text('SELECT coalesce(sum(amount), 0) FROM payments WHERE case_id = :c'), dict(c=case_id)).scalar()
+        return dict(total=int(total))
+    return handler
+
+
+@pytest.mark.parametrize('change, recomputes', [
+    ('UPDATE payments SET note = :n WHERE case_id = :c', False),
+    ('UPDATE payments SET amount = amount + 1 WHERE case_id = :c AND amount = 5', True),
+    ('INSERT INTO payments (case_id, amount) VALUES (:c, 1)', True),
+    ('DELETE FROM payments WHERE case_id = :c AND amount = 5', True),
+])
+def test_a_view_reading_some_columns_recomputes_only_when_they_change(engine, change, recomputes):
+    write(engine, 'ALTER TABLE payments ADD COLUMN note text')
+    case, counter = uuid.uuid4(), Counter()
+    write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 5), (:c, 7)', c=case)
+    view = _projected_view(counter)
+    call(engine, view, case)
+    write(engine, change, c=case, n='stamped after a release')
+    with engine.connect() as connection:
+        expected = connection.execute(text('SELECT coalesce(sum(amount), 0) FROM payments WHERE case_id = :c'), dict(c=case)).scalar()
+    assert call(engine, view, case).body == ('{"total":%d}' % expected).encode()
+    assert counter.calls == (2 if recomputes else 1)
+    plain = Counter()
+    unprojected = payments_view(plain)
+    call(engine, unprojected, case)
+    write(engine, 'UPDATE payments SET note = :n WHERE case_id = :c', c=case, n='again')
+    call(engine, unprojected, case)
+    assert plain.calls == 2, 'a view without columns still recomputes on any write'
+
+
 def test_another_cases_write_does_not_recompute(engine):
     case, other, counter = uuid.uuid4(), uuid.uuid4(), Counter()
     write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 5)', c=case)

@@ -114,7 +114,9 @@ def review_saved_statement_recovery(source_id: UUID, action: Literal['preview', 
 
 
 @router.get('/files')
-@cached_view('statement-import-files')
+# The register reads a batch's id, case and status only (test_financial_statement_file_status records its statements):
+# the reader-stamp and progress writes to a batch's files after a release do not make it compute again.
+@cached_view('statement-import-files', columns={'financial_import_batches': ('id', 'case_id', 'status')})
 def files(case_id: UUID = Query(...), db: Session = Depends(get_db)):
     # The register's own cache stays: it checks this case's rows of every table the view reads (measured on six
     # cases), whereas the view checks three of them whole (no case_id), so another case's import makes the view

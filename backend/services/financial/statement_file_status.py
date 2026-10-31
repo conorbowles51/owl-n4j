@@ -18,7 +18,8 @@ from postgres.models.financial import (
 # polls. A result is reused only while a fingerprint of every row the
 # computation reads is unchanged: PostgreSQL gives each row version a new
 # ``xmin``, so any insert, update or delete (including long transactions that
-# commit late) changes the fingerprint. Other databases are never cached.
+# commit late) changes the fingerprint. Other databases are never cached. Batches count by id and status, the only
+# columns of a batch the register reads (its files list takes reader stamps and progress after every release).
 _FINGERPRINT_SQL = text("""
 SELECT 'periods', count(*), md5(string_agg(id::text || ':' || xmin::text, ',' ORDER BY id))
   FROM financial_statement_periods WHERE case_id = :case_id
@@ -30,7 +31,7 @@ UNION ALL SELECT 'transactions', count(*), md5(string_agg(id::text || ':' || xmi
   FROM financial_transactions WHERE case_id = :case_id
 UNION ALL SELECT 'files', count(*), md5(string_agg(id::text || ':' || xmin::text, ',' ORDER BY id))
   FROM evidence_files WHERE case_id = :case_id
-UNION ALL SELECT 'batches', count(*), md5(string_agg(id::text || ':' || xmin::text, ',' ORDER BY id))
+UNION ALL SELECT 'batches', count(*), md5(string_agg(id::text || ':' || coalesce(status, ''), ',' ORDER BY id))
   FROM financial_import_batches WHERE case_id = :case_id
 UNION ALL SELECT 'items', count(*), md5(string_agg(i.id::text || ':' || i.xmin::text, ',' ORDER BY i.id))
   FROM financial_import_batch_items i JOIN financial_import_batches b ON b.id = i.batch_id WHERE b.case_id = :case_id

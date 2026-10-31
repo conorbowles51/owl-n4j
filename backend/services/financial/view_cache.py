@@ -171,12 +171,16 @@ def _join_snapshot(conn):
     conn.exec_driver_sql('SET TRANSACTION READ ONLY')
 
 
-def fingerprint(connection, tables, case_id):
+def fingerprint(connection, tables, case_id, columns=None):
     """(table, rows, md5 of the sorted xmin of those rows) per table; None when a table cannot be checked.
 
     Rows are the case's rows (case_id), or the whole table when it has no case_id and is small. A row
     inserted or updated since the last fingerprint carries the xid of a transaction that had not committed
     then, so the sorted xmin list differs; a delete changes the count. (A sum of xmin could balance out.)
+
+    ``columns`` ({table: column names}, a case-scoped table) fingerprints that table by those columns of each
+    row instead: for a view that reads nothing else of it (see cached_view), a write to its other columns
+    leaves the view as it was. Its entry is named ``table(columns)``.
     """
     known = _mapped_tables()
     result = []
@@ -184,6 +188,15 @@ def fingerprint(connection, tables, case_id):
         with connection.begin_nested():
             for table in sorted(tables):
                 case_type = known.get(table)
+                projected = (columns or {}).get(table)
+                if case_type is not None and projected:
+                    parameter = case_id if case_type == 'uuid' else str(case_id)
+                    row = 'md5(row(%s)::text)' % ', '.join('"%s"' % column for column in projected)
+                    rows, digest = connection.execute(text(
+                        f'SELECT count(*), md5(coalesce(string_agg({row}, \',\' ORDER BY {row}), \'\')) '
+                        f'FROM "{table}" WHERE case_id = :case_id'), dict(case_id=parameter)).one()
+                    result.append(('%s(%s)' % (table, ','.join(projected)), int(rows), digest))
+                    continue
                 if case_type is not None:
                     parameter = case_id if case_type == 'uuid' else str(case_id)
                     rows, digest = connection.execute(text(
@@ -606,8 +619,18 @@ def json_response(result):
     return _Encoded(content=body)
 
 
-def cached_view(name):
-    """Decorate a synchronous route handler that has ``case_id`` and ``db`` parameters."""
+# View name -> {table: columns}: tables a view reads only these columns of (cached_view's ``columns``).
+_COLUMNS = {}
+
+
+def cached_view(name, *, columns=None):
+    """Decorate a synchronous route handler that has ``case_id`` and ``db`` parameters.
+
+    ``columns`` ({table: column names}): case-scoped tables the view reads only these columns of, so a write to
+    their other columns does not compute it again (fingerprint). Only for a view whose every read of the table
+    is proved to use nothing else (a test records its statements)."""
+    if columns:
+        _COLUMNS[name] = {table: tuple(names) for table, names in columns.items()}
     def decorate(handler):
         @functools.wraps(handler)
         def wrapper(*args, **kwargs):
@@ -650,14 +673,14 @@ def _serve(handler, key, engine, case_id, kwargs, state):
             snapshot = owner.exec_driver_sql('SELECT pg_export_snapshot()').scalar()
             _load_tables(owner)
             entry = _lookup(key)
-            if entry is not None and fingerprint(owner, entry.tables, case_id) == entry.fingerprint:
+            if entry is not None and fingerprint(owner, entry.tables, case_id, _COLUMNS.get(key[0])) == entry.fingerprint:
                 stats['hits'] += 1
                 note_cache('hit')
                 logger.info('Financial view %s served unchanged (%.2f s)', key[0], time.perf_counter() - started)
                 return _kept(entry, state)
             scope, xmax = _saved_scope(owner)
             saved = _load_saved(key, scope, xmax) if scope is not None else None
-            if saved is not None and saved != entry and fingerprint(owner, saved.tables, case_id) == saved.fingerprint:
+            if saved is not None and saved != entry and fingerprint(owner, saved.tables, case_id, _COLUMNS.get(key[0])) == saved.fingerprint:
                 _store(key, saved)
                 stats['saved_hits'] += 1
                 note_cache('saved')
@@ -692,7 +715,7 @@ def _serve(handler, key, engine, case_id, kwargs, state):
                 # Only the route's plain 422 with a text reason: the same rows give the same refusal.
                 tables = tuple(sorted(recording.tables))
                 if refusal.status_code == 422 and refusal.headers is None and isinstance(refusal.detail, str) and tables:
-                    current = fingerprint(owner, tables, case_id)
+                    current = fingerprint(owner, tables, case_id, _COLUMNS.get(key[0]))
                     if current is not None:
                         kept = _Entry(tables, current, b'', 422, 'application/json', refusal=refusal.detail)
                         _store(key, kept)
@@ -708,7 +731,7 @@ def _serve(handler, key, engine, case_id, kwargs, state):
                 stats['not_stored'] += 1
                 return response
             tables = tuple(sorted(recording.tables))
-            current = fingerprint(owner, tables, case_id) if tables else None
+            current = fingerprint(owner, tables, case_id, _COLUMNS.get(key[0])) if tables else None
             if current is None or len(response.body) > MAX_ENTRY_BYTES:
                 stats['not_stored'] += 1
                 return response
