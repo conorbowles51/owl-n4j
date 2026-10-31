@@ -615,6 +615,22 @@ class QueueCacheTests(Base):
                 result, builds, _ = self._prewarm_after_a_write(**state)
                 self.assertEqual((result, len(builds)), ([str(self.f.case.id)], 2))
 
+    def test_one_case_failing_does_not_stop_prewarm_for_the_others(self):
+        from services.financial import review_queue as rq
+        rq._recent_reads.clear(); rq._cache.clear()
+        rq._recent_reads['00000000-0000-0000-0000-000000000001'] = 10.0
+        rq._recent_reads['00000000-0000-0000-0000-000000000002'] = 5.0
+        seen = []
+
+        def fingerprint(session, case_id):
+            seen.append(str(case_id))
+            if len(seen) == 1:
+                raise RuntimeError('boom')
+            return None
+        with patch.object(rq, 'queue_fingerprint', side_effect=fingerprint), self.assertLogs(rq.__name__, 'ERROR'):
+            self.assertEqual(rq.prewarm(self.f.SessionLocal, now=11.0), [])
+        self.assertEqual(len(seen), 2)
+
     def test_prewarm_does_not_build_while_an_earlier_ask_is_live(self):
         result, builds, ask = self._prewarm_after_a_write(ask_state={'age': 30})
         self.assertEqual((result, len(builds)), ([], 1))

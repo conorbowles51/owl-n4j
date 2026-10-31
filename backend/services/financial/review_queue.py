@@ -730,6 +730,9 @@ def prewarm(factory, *, budget_seconds=20.0, now=None):
                     continue
                 _view(session, UUID(key), note=False)
                 rebuilt.append(key)
+            except Exception:  # noqa: BLE001 - one case's failure does not stop the others; its next open builds it
+                import logging
+                logging.getLogger(__name__).exception('Review queue precompute failed for case %s', key)
             finally:
                 session.rollback()
     return rebuilt
