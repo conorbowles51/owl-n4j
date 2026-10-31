@@ -31,15 +31,13 @@ export interface LedgerQueryParams {
   endDate?: string
 }
 
-export function useLedgerTransactions(
-  caseId: string | undefined,
-  params?: LedgerQueryParams
-) {
-  return useQuery({
+/** The ledger read for these filters, as `useLedgerTransactions` runs it (also used to read it ahead of need). */
+export function ledgerTransactionsQuery(caseId: string, params?: LedgerQueryParams) {
+  return {
     queryKey: ["financial-ledger", caseId, params ?? null],
     queryFn: () =>
       financialAPI.getLedgerTransactions({
-        caseId: caseId!,
+        caseId,
         sourceDocumentId: params?.sourceDocumentId,
         accountId: params?.accountId,
         accountIds: params?.accountIds,
@@ -48,8 +46,19 @@ export function useLedgerTransactions(
         startDate: params?.startDate,
         endDate: params?.endDate,
       }),
+  }
+}
+
+export function useLedgerTransactions(
+  caseId: string | undefined,
+  params?: LedgerQueryParams,
+  /** false: read nothing yet (the Transactions page shows its first view and reads every row when asked). */
+  enabled = true
+) {
+  return useQuery({
+    ...ledgerTransactionsQuery(caseId!, params),
     placeholderData: (previous, query) =>
       query?.queryKey[1] === caseId ? previous : undefined,
-    enabled: !!caseId,
+    enabled: !!caseId && enabled,
   })
 }

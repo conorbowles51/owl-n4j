@@ -57,8 +57,15 @@ export function TransactionsOverview({
   onCategorise,
   modeSwitch,
   show = {},
+  summary,
 }: {
   caseId: string
+  /**
+   * The server's figures over every matching payment (Transactions first view): per currency its payments and
+   * money in and out. Given, the totals come from it and `rows` hold only the page shown; the month chart and
+   * tiles are then off.
+   */
+  summary?: { currency: string; count: number; credit: string; debit: string }[]
   /** Payments matching every filter: the totals and months. */
   rows: LedgerTransaction[]
   /** Payments matching every filter except the chosen month: the month chart. */
@@ -80,11 +87,12 @@ export function TransactionsOverview({
   // Sums over every matching payment: worked out again only when those payments change.
   const { currencies, counts } = useMemo(() => {
     const counts = new Map<string, number>()
-    for (const row of tileRows) counts.set(row.currency, (counts.get(row.currency) ?? 0) + 1)
+    if (summary) for (const entry of summary) counts.set(entry.currency, entry.count)
+    else for (const row of tileRows) counts.set(row.currency, (counts.get(row.currency) ?? 0) + 1)
     const currencies = [...counts.keys()]
     currencies.sort((a, b) => (counts.get(b) ?? 0) - (counts.get(a) ?? 0) || a.localeCompare(b))
     return { currencies, counts }
-  }, [tileRows])
+  }, [tileRows, summary])
   const [chosen, setChosen] = useState("")
   const currency = currencies.includes(chosen) ? chosen : currencies[0] || ""
   const [group, setGroup] = useState<OverviewGroup>("category")
@@ -104,8 +112,10 @@ export function TransactionsOverview({
           : groupMoney(inCurrency, keyOf(statementNames)[group]),
     }
   }, [rows, tileRows, monthRows, currency, group, statementNameData])
-  const credit = total?.credit ?? 0n
-  const debit = total?.debit ?? 0n
+  const summed = summary?.find((entry) => entry.currency === currency)
+  const credit = summary ? BigInt(summed?.credit ?? "0") : (total?.credit ?? 0n)
+  const debit = summary ? BigInt(summed?.debit ?? "0") : (total?.debit ?? 0n)
+  const shownCount = summary ? (summed?.count ?? 0) : inCurrency.length
   const peak = months.reduce((max, m) => Math.max(max, m.group ? minorToNumber(m.group.credit, currency) : 0, m.group ? minorToNumber(m.group.debit, currency) : 0), 1)
   const money = (minor: bigint) => compactMoney(minorToNumber(minor, currency))
   const uncategorized = group === "category" ? groups.find((g) => g.key === "Uncategorized") : undefined
@@ -162,7 +172,7 @@ export function TransactionsOverview({
           <div>
             <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-[#9a9da5]">Payments</span>
             <div className={`font-semibold tabular-nums text-[#bfc1c8] ${showMonths ? "text-4xl sm:text-[44px]" : "text-2xl sm:text-3xl"}`} style={heading}>
-              {inCurrency.length.toLocaleString()}
+              {shownCount.toLocaleString()}
             </div>
           </div>
           )}

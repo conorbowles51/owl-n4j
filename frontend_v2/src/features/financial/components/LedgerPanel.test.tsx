@@ -48,6 +48,16 @@ vi.mock("@/lib/api-client", async (original) => ({
 vi.mock("../hooks/use-ledger-transactions", () => ({
   useLedgerTransactions,
 }))
+// These tests read every row (the full ledger path): the Transactions first view is not available here, so the
+// panel asks for every row at once. The first view itself is tested in LedgerPanel.firstView.test.tsx.
+vi.mock("../hooks/use-ledger-first-view", () => ({
+  FIRST_VIEW_PAGE_SIZES: [25, 50, 100, 250],
+  useLedgerFirstView: () => ({
+    data: { case_id: "case-1", available: false, reason: "test", total: 0 },
+    isError: false,
+    isPending: false,
+  }),
+}))
 vi.mock("../hooks/use-money-trails", () => ({
   useMoneyTrails: () => ({
     data: { trails: [] },
@@ -226,7 +236,8 @@ describe("LedgerPanel with no rows returned", () => {
 
     render(<LedgerPanel caseId="case-1" params={params} />)
 
-    expect(useLedgerTransactions).toHaveBeenCalledWith("case-1", params)
+    // Outside the Transactions page every row is read at once (the third argument: enabled).
+    expect(useLedgerTransactions).toHaveBeenCalledWith("case-1", params, true)
   })
 })
 

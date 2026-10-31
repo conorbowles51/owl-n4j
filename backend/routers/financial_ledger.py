@@ -950,6 +950,47 @@ def get_ledger_overview_panels(
     return {"case_id": str(case_id), **overview_panels(transactions, str(case_id), categories or [])}
 
 
+@router.get("/ledger-first-view")
+@cached_view('ledger-first-view')
+def get_ledger_first_view(
+    case_id: UUID = Query(..., description="REQUIRED: Case ID"),
+    source_document_id: UUID | None = None,
+    account_id: Optional[UUID] = None,
+    ledger_status: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    page: int = Query(0, ge=0),
+    page_size: int = Query(50),
+    db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None,
+    account_holders: Annotated[list[str] | None, Query()] = None):
+    """The Transactions page's first view over exactly the rows ``/ledger`` answers for the same query: per currency
+    its payments and money in and out, how many payments are listed, how many a judgement call touches, how many
+    have the other side not identified or a name read by a model and not confirmed, and one page of rows in the
+    ledger's order (services.financial.transactions_first_view; each figure is the browser's own calculation).
+
+    The page shows this while no filter is on, instead of downloading every payment (d5b330d1: 64 MB); anything
+    that needs every payment loads them when asked. ``available`` is false (with the reason) where the browser's
+    calculation would fail on these rows; the page then reads every row as before."""
+    from services.financial.transactions_first_view import PAGE_SIZES, Unavailable, first_view
+    if page_size not in PAGE_SIZES:
+        raise HTTPException(status_code=400, detail=f"page_size must be one of {', '.join(map(str, PAGE_SIZES))}")
+    transactions = _overview_ledger_rows(
+        db, case_id, source_document_id=source_document_id, account_id=account_id, account_ids=account_ids,
+        account_holders=account_holders, ledger_status=ledger_status, start_date=start_date, end_date=end_date)
+    judgement_map = judgements_row_map(db, case_id)
+    try:
+        view = first_view(transactions, judgement_map, page=page, page_size=page_size)
+    except Unavailable as e:
+        return {"case_id": str(case_id), "available": False, "reason": str(e), "total": len(transactions)}
+    return {"case_id": str(case_id), "available": True, **view}
+
+
+def judgements_row_map(db, case_id):
+    """The judgement row map ``/judgements/rows`` answers with (the ledger's marks), read in this view's snapshot."""
+    from services.financial import judgements
+    return judgements.row_map(db, case_id)
+
+
 
 @router.get("/runs")
 def get_ingestion_runs(

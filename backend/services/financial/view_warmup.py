@@ -434,7 +434,8 @@ def _warm_cases_now(share, stop_if_preparing):
         cases = [case for case, _ in db.execute(select(Period.case_id, func.count()).group_by(Period.case_id)
             .order_by(func.count().desc(), Period.case_id))]
     warmed = failed = 0
-    from routers.financial_ledger import get_ledger_overview, get_ledger_overview_panels, get_ledger_transactions
+    from routers.financial_ledger import (get_ledger_first_view, get_ledger_overview, get_ledger_overview_panels,
+                                          get_ledger_transactions)
     from routers.financial_statement_import import files as get_statement_files
     from routers.evidence import list_evidence
     from routers.financial_ledger import get_account_consolidations, get_account_parties
@@ -469,6 +470,11 @@ def _warm_cases_now(share, stop_if_preparing):
                                                              ledger_status=None, start_date=None, end_date=None,
                                                              account_ids=None, account_holders=None,
                                                              categories=None)),
+        # The Transactions page's first view (GET /ledger-first-view), first page at the table's default size.
+        ('transactions first view', get_ledger_first_view, dict(source_document_id=None, account_id=None,
+                                                                ledger_status=None, start_date=None, end_date=None,
+                                                                page=0, page_size=50, account_ids=None,
+                                                                account_holders=None)),
         ('statement files', get_statement_files, {}),
         # The Financial page's statement register asks for every reading version of its files.
         ('statement register files', list_evidence, dict(status_filter=None, include_cellebrite_artifacts=False,

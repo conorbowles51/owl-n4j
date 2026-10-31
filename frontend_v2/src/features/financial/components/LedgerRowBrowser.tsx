@@ -79,8 +79,11 @@ import {
   type Judgement,
 } from "../lib/judgements"
 import { PriorityLegend } from "./JudgementCalls"
-import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
-import { useCallback, useContext, useMemo, useRef, useState, type ComponentProps } from "react"
+import { ledgerTransactionsQuery, type LedgerQueryParams } from "../hooks/use-ledger-transactions"
+import { FIRST_VIEW_PAGE_SIZES, useLedgerFirstView } from "../hooks/use-ledger-first-view"
+import { whenSettled } from "../lib/page-speed"
+import { useQueryClient } from "@tanstack/react-query"
+import { useCallback, useContext, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react"
 import { Button } from "@/components/ui/button"
 import { LedgerTable } from "./LedgerTable"
 import { paymentFilterKey } from "../lib/payment-table-draft"
@@ -88,6 +91,8 @@ import { PaymentNamingPanel } from "./PaymentNamingPanel"
 import { needsConfirm, needsName } from "../lib/payment-naming"
 import type { LedgerTransaction } from "../api"
 const TABLE_VIEW_KEY = "financial-transactions-table-view"
+// The first view's rows before it arrives (one value, so memos over the rows do not recompute each render).
+const NO_ROWS: LedgerTransaction[] = []
 function readTableView() {
   try {
     return localStorage.getItem(TABLE_VIEW_KEY) === "1"
@@ -110,14 +115,26 @@ function exactAmount(row: LedgerTransaction) {
   return /^(0|[1-9][0-9]{0,18})$/.test(text) ? BigInt(text) : null
 }
 export function LedgerRowBrowser({
-  transactions,
+  transactions: allTransactions,
   exportContext,
   investigation = false,
   independentFilters = false,
+  firstView,
   ...actions
 }: ComponentProps<typeof LedgerTable> & {
   investigation?: boolean
   independentFilters?: boolean
+  /**
+   * Given while every row has not been read (LedgerPanel, Transactions page): the default view is drawn from the
+   * server's first view (one page of rows and the figures above them); anything that needs every row calls
+   * `onNeedAll` and waits for them, saying what it is reading (`loading`).
+   */
+  firstView?: {
+    params: LedgerQueryParams | undefined
+    readingAll: boolean
+    loading: ReactNode
+    onNeedAll: () => void
+  }
   exportContext?: {
     caseId: string
     params: LedgerQueryParams
@@ -235,6 +252,82 @@ export function LedgerRowBrowser({
     "selected-payments",
     []
   )
+  // The control panel (Transactions page): every filter and page switch, docked on the right.
+  const [controlsOpen, setControlsOpen] = useControlsOpen()
+  const queryClient = useQueryClient()
+  // The default view (no filter, search, category, account choice, judgement filter, selection, open panel or
+  // section beyond the totals, ledger order) is drawn from the server's first view: the same figures over the same
+  // rows, without reading every payment. Anything else waits for every row.
+  const firstViewEligible =
+    !!firstView &&
+    !!exportContext &&
+    !exportContext.profile &&
+    investigation &&
+    paymentFilterKey(view) === paymentFilterKey(emptyView) &&
+    !view.unnamedOnly &&
+    !view.unconfirmedOnly &&
+    !view.chartsOpen &&
+    !view.partiesOpen &&
+    !view.flowOpen &&
+    !sections.months &&
+    !sections.breakdown &&
+    !sections.accountTotals &&
+    categories.length === 0 &&
+    !accountScope.accountId &&
+    !accountScope.accountIds?.length &&
+    !accountScope.accountHolders?.length &&
+    selection.length === 0 &&
+    !controlsOpen &&
+    !tableView &&
+    FIRST_VIEW_PAGE_SIZES.includes(pageSize) &&
+    !naming &&
+    !walk &&
+    !labelIds &&
+    !editNames &&
+    !manageCategories &&
+    !notesCsv &&
+    !timeline &&
+    !compare &&
+    !finding &&
+    !reviewSelection
+  const first = useLedgerFirstView(
+    firstViewEligible ? exportContext?.caseId : undefined,
+    firstView?.params,
+    page,
+    pageSize
+  )
+  const firstData = firstViewEligible && first.data?.available && first.data.total > 0 ? first.data : null
+  // Actions that need every row (CSV, select all, the naming walk) wait for them, then run with them.
+  const [pendingAction, setPendingAction] = useState<{ kind: string; key?: string } | null>(null)
+  const needAll = (action: { kind: string; key?: string }) => {
+    setPendingAction(action)
+    firstView?.onNeedAll()
+  }
+  const firstViewFailed =
+    !!firstView && firstViewEligible && (first.isError || (!!first.data && (!first.data.available || first.data.total === 0)))
+  const onNeedAll = firstView?.onNeedAll
+  const readingAll = !!firstView?.readingAll
+  useEffect(() => {
+    if (onNeedAll && !readingAll && (!firstViewEligible || firstViewFailed || pendingAction)) onNeedAll()
+  }, [onNeedAll, readingAll, firstViewEligible, firstViewFailed, pendingAction])
+  // Once the first view is on screen and nothing else is loading, every row is read into the cache in the
+  // background, so a filter or search a moment later does not wait for them. The page keeps the first view.
+  const prefetchCase = firstData ? exportContext?.caseId : undefined
+  const prefetchParams = firstView?.params
+  useEffect(() => {
+    if (!prefetchCase) return
+    const signal = { cancelled: false }
+    let timer: ReturnType<typeof setTimeout> | undefined
+    void whenSettled(queryClient, signal).then((at) => {
+      if (at === null || signal.cancelled) return
+      timer = setTimeout(() => void queryClient.prefetchQuery(ledgerTransactionsQuery(prefetchCase, prefetchParams)), 500)
+    })
+    return () => {
+      signal.cancelled = true
+      if (timer) clearTimeout(timer)
+    }
+  }, [prefetchCase, prefetchParams, queryClient])
+  const transactions = firstView ? (firstData?.rows ?? NO_ROWS) : allTransactions
   const selectedIds = new Set(selection)
   const selectedHere = transactions.filter((row) => selectedIds.has(row.key))
   const toggle = (row: LedgerTransaction, checked: boolean) =>
@@ -495,10 +588,14 @@ export function LedgerRowBrowser({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [rows, internal, showing, filterKey]
   )
-  const index = Math.min(
-    page,
-    Math.max(0, Math.ceil(rows.length / pageSize) - 1)
-  )
+  const index = firstData
+    ? firstData.page
+    : Math.min(page, Math.max(0, Math.ceil(rows.length / pageSize) - 1))
+  // In the first view the rows are the page itself and the counts are the server's over every row.
+  const total = firstData ? firstData.total : rows.length
+  const pageRows = firstData ? rows : rows.slice(index * pageSize, (index + 1) * pageSize)
+  const unnamedCount = firstData ? firstData.unnamed : unnamedRows.length
+  const unconfirmedCount = firstData ? firstData.unconfirmed : unconfirmedRows.length
   // Open a payment beside the table for naming, and turn the table to the page it is on.
   const openNaming = (id: string, mode?: "name" | "confirm") => {
     if (mode) setNamingMode(mode)
@@ -507,8 +604,6 @@ export function LedgerRowBrowser({
     if (at >= 0 && Math.floor(at / pageSize) !== index)
       setView((previous) => ({ ...previous, page: Math.floor(at / pageSize) }))
   }
-  // The control panel (Transactions page): every filter and page switch, docked on the right.
-  const [controlsOpen, setControlsOpen] = useControlsOpen()
   const [sectionEl, setSectionEl] = useState<HTMLElement | null>(null)
   // The naming panel opens beside the table on the right: the control panel steps back to its tab.
   const [namingSeen, setNamingSeen] = useState(naming)
@@ -579,7 +674,9 @@ export function LedgerRowBrowser({
   ]
   const activeFilterCount = activeChips.length + analysisFilterCount(view)
   const touchedInView = judgementsOf && !judgementWanted
-    ? rows.filter((row) => (judgementsOf(row) || []).length).length
+    ? firstData
+      ? firstData.touched
+      : rows.filter((row) => (judgementsOf(row) || []).length).length
     : 0
   const judgementNote = touchedInView > 0 && (
     <p className="text-xs text-muted-foreground" data-testid="ledger-judgement-line">
@@ -597,7 +694,7 @@ export function LedgerRowBrowser({
     <div className="flex flex-wrap items-center gap-1.5 text-[13px]" role="group" aria-label="Active filters">
       <strong className="mr-2 text-sm">
         <span>
-          {rows.length.toLocaleString()} of {transactions.length.toLocaleString()} imported transactions
+          {total.toLocaleString()} of {(firstData ? firstData.total : transactions.length).toLocaleString()} imported transactions
         </span>
         {exportContext?.profile
           ? " in this profile"
@@ -734,15 +831,17 @@ export function LedgerRowBrowser({
             <Button
               variant="outline"
               size="sm"
-              disabled={!rows.length}
+              disabled={!total}
               onClick={() =>
-                downloadCsv(
-                  transactionCsv(rows),
-                  "loupe-filtered-transactions.csv"
-                )
+                firstData
+                  ? needAll({ kind: "csv" })
+                  : downloadCsv(
+                      transactionCsv(rows),
+                      "loupe-filtered-transactions.csv"
+                    )
               }
             >
-              Download CSV ({rows.length.toLocaleString()})
+              Download CSV ({total.toLocaleString()})
             </Button>
             {canEdit && exportContext && (
               <Button
@@ -1071,12 +1170,14 @@ export function LedgerRowBrowser({
         <Button
           variant="outline"
           size="sm"
-          disabled={!rows.length || rows.every((row) => selectedIds.has(row.key))}
+          disabled={!total || (!firstData && rows.every((row) => selectedIds.has(row.key)))}
           onClick={() =>
-            setSelection((previous) => [...new Set([...previous, ...rows.map((row) => row.key)])])
+            firstData
+              ? needAll({ kind: "selectAll" })
+              : setSelection((previous) => [...new Set([...previous, ...rows.map((row) => row.key)])])
           }
         >
-          Select all {rows.length} matching payments
+          Select all {total} matching payments
         </Button>
         <Button
           variant="outline"
@@ -1091,6 +1192,40 @@ export function LedgerRowBrowser({
       {searchHelp}
     </div>
   )
+  const nameFirst = () => {
+    const first = unnamedRows.find((row) => pageRows.includes(row)) ?? unnamedRows[0]
+    if (first) openNaming(first.key, "name")
+  }
+  const confirmFirst = () => {
+    const first = unconfirmedRows.find((row) => pageRows.includes(row)) ?? unconfirmedRows[0]
+    if (first) openNaming(first.key, "confirm")
+  }
+  const startWalk = (key: string) => {
+    setWalk({ queue: rows.map((item) => item.key), done: 0 })
+    setLabelIds([key])
+  }
+  // Run with this render's rows: the action asked for in the first view, once every row is here.
+  const runPending = useRef<(action: { kind: string; key?: string }) => void>(() => {})
+  runPending.current = (action) => {
+    if (action.kind === "csv") downloadCsv(transactionCsv(rows), "loupe-filtered-transactions.csv")
+    else if (action.kind === "selectAll")
+      setSelection((previous) => [...new Set([...previous, ...rows.map((row) => row.key)])])
+    else if (action.kind === "nameFirst") nameFirst()
+    else if (action.kind === "confirmFirst") confirmFirst()
+    else if (action.kind === "walk" && action.key) {
+      setEditNames(false)
+      setFullEditor(false)
+      startWalk(action.key)
+    }
+  }
+  useEffect(() => {
+    if (firstView || !pendingAction) return
+    runPending.current(pendingAction)
+    setPendingAction(null)
+  }, [firstView, pendingAction])
+  // Waiting for the first view, or for every row when this view needs them: say what is being read.
+  if (firstView && !firstData)
+    return <div className="space-y-3">{firstView.loading}</div>
   return (
     <section
       ref={setSectionEl}
@@ -1237,6 +1372,7 @@ export function LedgerRowBrowser({
             caseId={exportContext.caseId}
             show={sections}
             rows={shownAmounts}
+            summary={firstData?.currencies}
             monthRows={sectionRows.months}
             tileRows={sectionRows.tiles}
             colors={categoryColors}
@@ -1322,6 +1458,10 @@ export function LedgerRowBrowser({
             activeCount={activeFilterCount}
             anchor={sectionEl}
           >
+            {/* Collapsed, the panel stays mounted; in the first view its counts would cover one page only, so it
+                holds nothing until every row is read (opening it reads them). */}
+            {firstData ? null : (
+            <>
             <ControlGroup title="Show on the page">
               {TRANSACTION_SECTIONS.map((section) => {
                 const viewKey = "viewKey" in section ? section.viewKey : undefined
@@ -1400,6 +1540,8 @@ export function LedgerRowBrowser({
             )}
               </div>
             </ControlGroup>
+            </>
+            )}
           </TransactionControlPanel>
           {sort.startsWith("amount") && mixedCurrencies && (
             <p className="text-xs text-muted-foreground">
@@ -1632,15 +1774,17 @@ export function LedgerRowBrowser({
           </button>
         </p>
       )}
-      {investigation && exportContext && (unnamedRows.length > 0 || view.unnamedOnly) && (
+      {/* An action that needs every row (CSV, select all, naming one by one) runs once they are read. */}
+      {firstData && pendingAction && firstView?.loading}
+      {investigation && exportContext && (unnamedCount > 0 || view.unnamedOnly) && (
         <div
           className="flex flex-wrap items-center gap-2 rounded border bg-card px-3 py-2 text-sm"
           role="group"
           aria-label="Payments without a name"
         >
           <span role="status">
-            <strong>{unnamedRows.length.toLocaleString()}</strong>{" "}
-            {unnamedRows.length === 1 ? "payment" : "payments"} in view with
+            <strong>{unnamedCount.toLocaleString()}</strong>{" "}
+            {unnamedCount === 1 ? "payment" : "payments"} in view with
             the other side not identified
           </span>
           <Button
@@ -1651,30 +1795,25 @@ export function LedgerRowBrowser({
           >
             {view.unnamedOnly ? "Show all payments" : "Show only these"}
           </Button>
-          {unnamedRows.length > 0 && (
+          {unnamedCount > 0 && (
             <Button
               size="sm"
-              onClick={() => {
-                const first = unnamedRows.find((row) =>
-                  rows.slice(index * pageSize, (index + 1) * pageSize).includes(row)
-                ) ?? unnamedRows[0]
-                openNaming(first.key, "name")
-              }}
+              onClick={() => (firstData ? needAll({ kind: "nameFirst" }) : nameFirst())}
             >
               {canEdit ? "Name them one by one" : "See their statement lines one by one"}
             </Button>
           )}
         </div>
       )}
-      {investigation && exportContext && (unconfirmedRows.length > 0 || view.unconfirmedOnly) && (
+      {investigation && exportContext && (unconfirmedCount > 0 || view.unconfirmedOnly) && (
         <div
           className="flex flex-wrap items-center gap-2 rounded border border-[#e7c66b] bg-[#fdf6dd] px-3 py-2 text-sm text-[#5c3d00] dark:bg-amber-950 dark:text-amber-100"
           role="group"
           aria-label="Names read by Claude, not confirmed"
         >
           <span role="status">
-            <strong>{unconfirmedRows.length.toLocaleString()}</strong>{" "}
-            {unconfirmedRows.length === 1 ? "name" : "names"} in view read
+            <strong>{unconfirmedCount.toLocaleString()}</strong>{" "}
+            {unconfirmedCount === 1 ? "name" : "names"} in view read
             by Claude and not confirmed by a person
           </span>
           <Button
@@ -1687,15 +1826,10 @@ export function LedgerRowBrowser({
           >
             {view.unconfirmedOnly ? "Show all payments" : "Show only these"}
           </Button>
-          {canEdit && unconfirmedRows.length > 0 && (
+          {canEdit && unconfirmedCount > 0 && (
             <Button
               size="sm"
-              onClick={() => {
-                const first = unconfirmedRows.find((row) =>
-                  rows.slice(index * pageSize, (index + 1) * pageSize).includes(row)
-                ) ?? unconfirmedRows[0]
-                openNaming(first.key, "confirm")
-              }}
+              onClick={() => (firstData ? needAll({ kind: "confirmFirst" }) : confirmFirst())}
             >
               Confirm them one by one
             </Button>
@@ -1711,7 +1845,7 @@ export function LedgerRowBrowser({
       >
       <div className="min-w-0">
       <RowJudgements.Provider value={tintedContext}>
-      {!rows.length ? (
+      {!total ? (
         <p>
           No payments match these filters. Clear the filters or choose another
           account/date range.
@@ -1720,7 +1854,7 @@ export function LedgerRowBrowser({
         <PaymentCardList
           findings={findings.data}
           categoryColors={categoryColors}
-          rows={rows.slice(index * pageSize, (index + 1) * pageSize)}
+          rows={pageRows}
           selected={selection}
           expanded={view.expandedRows}
           onExpand={(expandedRows) =>
@@ -1742,8 +1876,8 @@ export function LedgerRowBrowser({
               ? (row) => {
                   setEditNames(false)
                   setFullEditor(false)
-                  setWalk({ queue: rows.map((item) => item.key), done: 0 })
-                  setLabelIds([row.key])
+                  if (firstData) return needAll({ kind: "walk", key: row.key })
+                  startWalk(row.key)
                 }
               : undefined
           }
@@ -1764,7 +1898,7 @@ export function LedgerRowBrowser({
           statementNames={tableStatementNames}
           findings={findings.data}
           categoryColors={categoryColors}
-          rows={rows.slice(index * pageSize, (index + 1) * pageSize)}
+          rows={pageRows}
           selected={selection}
           expanded={view.expandedRows}
           sort={sort}
@@ -1788,8 +1922,8 @@ export function LedgerRowBrowser({
               ? (row) => {
                   setEditNames(false)
                   setFullEditor(false)
-                  setWalk({ queue: rows.map((item) => item.key), done: 0 })
-                  setLabelIds([row.key])
+                  if (firstData) return needAll({ kind: "walk", key: row.key })
+                  startWalk(row.key)
                 }
               : undefined
           }
@@ -1806,7 +1940,7 @@ export function LedgerRowBrowser({
         />
       ) : (
         <LedgerTable
-          transactions={rows.slice(index * pageSize, (index + 1) * pageSize)}
+          transactions={pageRows}
           {...actions}
         />
       )}
@@ -1892,7 +2026,7 @@ export function LedgerRowBrowser({
             ))}
           </select>
         </label>
-        {rows.length > pageSize && (
+        {total > pageSize && (
           <div className="flex items-center gap-3">
             <Button
               variant="outline"
@@ -1903,12 +2037,12 @@ export function LedgerRowBrowser({
             </Button>
             <span>
               {index * pageSize + 1}–
-              {Math.min((index + 1) * pageSize, rows.length)} of {rows.length}{" "}
+              {Math.min((index + 1) * pageSize, total)} of {total}{" "}
               matching rows
             </span>
             <Button
               variant="outline"
-              disabled={(index + 1) * pageSize >= rows.length}
+              disabled={(index + 1) * pageSize >= total}
               onClick={() => changeView({ page: index + 1 })}
             >
               Next ledger rows

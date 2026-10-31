@@ -26,6 +26,7 @@
  * figure over a subset.
  */
 
+import { useState } from "react"
 import { CircleAlert, Loader2, ScrollText } from "lucide-react"
 
 import { EmptyState } from "@/components/ui/empty-state"
@@ -72,17 +73,33 @@ export function LedgerPanel({
   investigation?: boolean
   independentFilters?: boolean
 }) {
-  const { data, isPending, isFetching, isError, error } = useLedgerTransactions(
+  // The Transactions page first shows what the server works out for its default view (one page of rows and the
+  // figures above them) and reads every payment only when the person asks for something that needs them all, or
+  // once the page has settled (LedgerRowBrowser). Elsewhere, and for other statuses, every row is read as before.
+  const firstViewMode =
+    !!caseId &&
+    investigation &&
+    !independentFilters &&
+    (params?.ledgerStatus ?? DEFAULT_LEDGER_STATUS) === "admitted"
+  const scopeKey = JSON.stringify([caseId, params ?? null])
+  const [wanted, setWanted] = useState<string | null>(null)
+  const wantAll = !firstViewMode || wanted === scopeKey
+  const { data, isPending, isFetching, isError, error, isPlaceholderData } = useLedgerTransactions(
     caseId,
-    params
+    params,
+    wantAll
   )
   // Counted by the server without reading the rows, so a long first load can say what it is loading.
   const count = useLedgerCount(caseId, params).data?.total
-  const elapsed = useElapsedSeconds(!!caseId && isPending)
+  const readingAll = wantAll && isPending
+  const elapsed = useElapsedSeconds(!!caseId && readingAll)
   const loading =
     count === undefined
       ? null
       : `${count.toLocaleString("en-GB")} ${investigation ? "payment" : "row"}${count === 1 ? "" : "s"}`
+  // Every row is here for this scope (not another scope's rows kept on screen while these load).
+  const allRows = wantAll && !!data && !isPlaceholderData
+  const firstViewOnly = firstViewMode && !allRows && !(wantAll && isError)
 
   if (!caseId) {
     return (
@@ -98,7 +115,7 @@ export function LedgerPanel({
     <WorkspaceScope caseId={caseId} datesOnly />
   )
 
-  if (isPending) {
+  if (isPending && !firstViewOnly) {
     return (
       <div className="space-y-3">
         {dateRange}
@@ -114,7 +131,7 @@ export function LedgerPanel({
     )
   }
 
-  if (isError) {
+  if (isError && !firstViewOnly) {
     return (
       <div className="space-y-3">
         {dateRange}
@@ -135,8 +152,8 @@ export function LedgerPanel({
   }
 
   const status = readLedgerStatus(params?.ledgerStatus ?? DEFAULT_LEDGER_STATUS)
-  const rows = data.transactions
-  const countDisagrees = data.total !== rows.length
+  const rows = firstViewOnly ? [] : data!.transactions
+  const countDisagrees = !firstViewOnly && data!.total !== rows.length
 
   const hasScopeFilter = Boolean(
     params?.accountId || params?.startDate || params?.endDate
@@ -170,7 +187,7 @@ export function LedgerPanel({
 
   return (
     <div className="space-y-3">
-      {isFetching && (
+      {isFetching && !firstViewOnly && (
         <p role="status" className="text-sm text-muted-foreground">
           Updating transactions for these filters…
         </p>
@@ -203,13 +220,13 @@ export function LedgerPanel({
         >
           <CircleAlert className="mt-0.5 size-3 shrink-0" aria-hidden="true" />
           <span>
-            The ledger reported {data.total} rows and sent {rows.length}. Treat
+            The ledger reported {data?.total} rows and sent {rows.length}. Treat
             what is below as part of the answer, not all of it.
           </span>
         </p>
       )}
 
-      {rows.length === 0 && investigation && (
+      {rows.length === 0 && investigation && !firstViewOnly && (
         <p className="rounded border p-3" role="status">
           {hasScopeFilter
             ? "No payments match these filters"
@@ -219,7 +236,7 @@ export function LedgerPanel({
             : ". Add statements to import their payments."}
         </p>
       )}
-      {rows.length === 0 && !investigation ? (
+      {rows.length === 0 && !investigation && !firstViewOnly ? (
         <EmptyState
           icon={ScrollText}
           title={
@@ -261,6 +278,28 @@ export function LedgerPanel({
           onNote={onNote}
           splitAmounts={splitAmounts}
           investigation={investigation}
+          firstView={
+            firstViewOnly
+              ? {
+                  params: params ?? {},
+                  readingAll,
+                  loading: (
+                    <>
+                      {dateRange}
+                      <div
+                        className="flex items-center gap-2 text-sm text-muted-foreground"
+                        data-testid="ledger-loading"
+                      >
+                        <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                        {loading ? `Reading the ledger: ${loading}…` : "Reading the ledger..."}
+                        {elapsed > 0 && ` ${elapsed} s`}
+                      </div>
+                    </>
+                  ),
+                  onNeedAll: () => setWanted(scopeKey),
+                }
+              : undefined
+          }
         />
       )}
     </div>

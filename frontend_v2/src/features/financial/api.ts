@@ -401,6 +401,27 @@ export interface LedgerResponse {
   total: number
 }
 
+/**
+ * GET /ledger-first-view: what the Transactions page shows with no filter on, worked out by the server over the
+ * same rows as `LedgerResponse` (`total` is that row count). Amounts are minor units as text.
+ */
+export type LedgerFirstView =
+  | {
+      case_id: string
+      available: true
+      total: number
+      /** The page shown after clamping as the table clamps, of `page_size` rows. */
+      page: number
+      page_size: number
+      rows: LedgerTransaction[]
+      /** Per currency in first-met order: its payments and money in (credit) and out (anything else). */
+      currencies: { currency: string; count: number; credit: string; debit: string }[]
+      unnamed: number
+      unconfirmed: number
+      touched: number
+    }
+  | { case_id: string; available: false; reason: string; total: number }
+
 /*
  * What produced the ledger, and what failed trying.
  *
@@ -1589,6 +1610,38 @@ export const financialAPI = {
     if (params.endDate) qs.set("end_date", params.endDate)
     for (const category of params.categories) qs.append("categories", category)
     return fetchAPI<OverviewPanels>(`/api/financial/ledger-overview-panels?${qs}`)
+  },
+
+  /**
+   * The Transactions page's first view over exactly the rows `getLedgerTransactions` returns for the same filters:
+   * per currency its payments and money in and out, the count of payments, of those a judgement call touches, of
+   * those with the other side not identified and with a name read by Claude and not confirmed, and one page of
+   * rows in the ledger's order. Each figure is the browser's own calculation, done on the server so the page does
+   * not wait for every payment. `available: false` means the page must read every row (as before).
+   */
+  getLedgerFirstView: (params: {
+    caseId: string
+    sourceDocumentId?: string
+    accountIds?: string[]
+    accountHolders?: string[]
+    accountId?: string
+    ledgerStatus?: LedgerStatus
+    startDate?: string
+    endDate?: string
+    page: number
+    pageSize: number
+  }) => {
+    const qs = new URLSearchParams({ case_id: params.caseId })
+    if (params.sourceDocumentId)
+      qs.set("source_document_id", params.sourceDocumentId)
+    appendAccountSelection(qs, params)
+    if (params.accountId) qs.set("account_id", params.accountId)
+    if (params.ledgerStatus) qs.set("ledger_status", params.ledgerStatus)
+    if (params.startDate) qs.set("start_date", params.startDate)
+    if (params.endDate) qs.set("end_date", params.endDate)
+    qs.set("page", String(params.page))
+    qs.set("page_size", String(params.pageSize))
+    return fetchAPI<LedgerFirstView>(`/api/financial/ledger-first-view?${qs}`)
   },
 
   /** How many rows `getLedgerTransactions` returns for the same filters, counted without reading them. */
