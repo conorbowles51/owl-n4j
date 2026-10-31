@@ -106,7 +106,11 @@ export function useFilteredEvents({
             markdownToPlainText(e.summary).toLowerCase().includes(term)) ||
           (e.notes && e.notes.toLowerCase().includes(term)) ||
           (e.amount && e.amount.toLowerCase().includes(term)) ||
-          e.connections.some((c) => c.name.toLowerCase().includes(term))
+          // A connection is searched by the name the page shows for it: a connection that arrives with no
+          // name (a statement period without dates) shows its type, and must not stop the search.
+          e.connections.some((c) =>
+            (c.name ?? c.type).toLowerCase().includes(term)
+          )
       )
     }
 
