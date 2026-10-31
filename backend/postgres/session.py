@@ -151,11 +151,18 @@ def _new_engine(db_url, role_suffix='', prefix='POSTGRES', defaults=(5, 10, 30))
     )
 
 
+# Guards the first build of each engine/sessionmaker: without it, threads arriving together each build an engine
+# and all but one leak their pool's connections until exit.
+_build_lock = threading.RLock()
+
+
 def _get_engine():
     """Get or create the database engine."""
     global _engine
     if _engine is None:
-        _engine = _new_engine(_database_url())
+        with _build_lock:
+            if _engine is None:
+                _engine = _new_engine(_database_url())
     return _engine
 
 
@@ -163,8 +170,10 @@ def _get_session_local():
     """Get or create the sessionmaker."""
     global _SessionLocal
     if _SessionLocal is None:
-        engine = _get_engine()
-        _SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+        with _build_lock:
+            if _SessionLocal is None:
+                engine = _get_engine()
+                _SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     return _SessionLocal
 
 
@@ -175,8 +184,11 @@ def _get_background_session_local():
     if process_role() != 'web' or not _database_url().startswith('postgresql+psycopg://'):
         return _get_session_local()
     if _BackgroundSessionLocal is None:
-        _background_engine = _new_engine(_database_url(), '-bg', 'POSTGRES_BACKGROUND', BACKGROUND_POOL_DEFAULTS)
-        _BackgroundSessionLocal = sessionmaker(bind=_background_engine, autoflush=False, autocommit=False)
+        with _build_lock:
+            if _BackgroundSessionLocal is None:
+                _background_engine = _new_engine(_database_url(), '-bg', 'POSTGRES_BACKGROUND',
+                                                 BACKGROUND_POOL_DEFAULTS)
+                _BackgroundSessionLocal = sessionmaker(bind=_background_engine, autoflush=False, autocommit=False)
     return _BackgroundSessionLocal
 
 

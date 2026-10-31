@@ -176,6 +176,33 @@ class BackgroundPoolTest(unittest.TestCase):
         self.assertEqual(names, ['loupe-web-bg-%d' % os.getpid(), 'loupe-web-%d' % os.getpid()])
         self.assertIs(session._get_background_session_local(), background)
 
+    def test_threads_arriving_together_build_each_pool_once(self):
+        os.environ['LOUPE_DB_ROLE'] = 'web'
+        built = []
+        real = session._new_engine
+
+        def slow(*args, **kwargs):
+            built.append(args[1] if len(args) > 1 else '')
+            time.sleep(0.05)
+            return real(*args, **kwargs)
+
+        start = threading.Barrier(8)
+        results = []
+
+        def first_use():
+            start.wait()
+            results.append((session._get_session_local(), session._get_background_session_local()))
+
+        with unittest.mock.patch.object(session, '_new_engine', slow):
+            threads = [threading.Thread(target=first_use) for _ in range(8)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+        self.assertEqual(sorted(built), ['', '-bg'])
+        self.assertEqual(len({id(pair[0]) for pair in results}), 1)
+        self.assertEqual(len({id(pair[1]) for pair in results}), 1)
+
     def test_the_background_engine_follows_the_role(self):
         os.environ['LOUPE_DB_ROLE'] = 'web'
         self.assertIs(session._get_background_engine(), session._background_engine)
