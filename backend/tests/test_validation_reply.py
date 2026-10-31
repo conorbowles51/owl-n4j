@@ -63,5 +63,26 @@ class ValidationReplyTests(unittest.TestCase):
         self.assertEqual(error["msg"], "Field required")
 
 
+class WebSocketValidationReplyTests(unittest.TestCase):
+    def test_websocket_close_reason_does_not_echo_submitted_value(self):
+        from fastapi import FastAPI, WebSocket
+        from starlette.websockets import WebSocketDisconnect
+        from services.validation_reply import install
+
+        app = FastAPI()
+        install(app)
+
+        @app.websocket("/ws")
+        async def ws(websocket: WebSocket, n: int):
+            await websocket.accept()
+
+        with self.assertRaises(WebSocketDisconnect) as closed:
+            with TestClient(app).websocket_connect("/ws?n=" + SECRET):
+                pass
+        self.assertEqual(closed.exception.code, 1008)
+        self.assertNotIn(SECRET, closed.exception.reason or "")
+        self.assertIn("int_parsing", closed.exception.reason)
+
+
 if __name__ == "__main__":
     unittest.main()

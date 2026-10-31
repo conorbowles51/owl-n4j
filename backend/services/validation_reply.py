@@ -7,10 +7,13 @@ any log or transcript that kept the reply). This reply keeps each error's type, 
 submitted values.
 """
 
-from fastapi import FastAPI, Request
+import json
+
+from fastapi import FastAPI, Request, WebSocket
 from fastapi.encoders import jsonable_encoder
-from fastapi.exceptions import RequestValidationError
+from fastapi.exceptions import RequestValidationError, WebSocketRequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.status import WS_1008_POLICY_VIOLATION
 
 _KEPT = ("type", "loc", "msg")
 
@@ -24,5 +27,12 @@ async def validation_reply(request: Request, exc: RequestValidationError) -> JSO
                         content=jsonable_encoder({"detail": [_without_input(e) for e in exc.errors()]}))
 
 
+async def websocket_validation_reply(websocket: WebSocket, exc: WebSocketRequestValidationError) -> None:
+    """FastAPI's own handler puts the errors, submitted values included, in the close reason."""
+    await websocket.close(code=WS_1008_POLICY_VIOLATION,
+                          reason=json.dumps(jsonable_encoder([_without_input(e) for e in exc.errors()])))
+
+
 def install(app: FastAPI) -> None:
     app.add_exception_handler(RequestValidationError, validation_reply)
+    app.add_exception_handler(WebSocketRequestValidationError, websocket_validation_reply)
