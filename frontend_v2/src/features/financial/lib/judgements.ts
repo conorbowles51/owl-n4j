@@ -207,10 +207,17 @@ export async function correctJudgement(caseId: string, id: string, reason: strin
   )
 }
 
+/** Claude changed a saved statement's details (its account, holder, number, bank or balances) for a person. */
+export const MODEL_DETAILS_RULES = ["model.statement_account", "model.statement_balances", "model.statement_details"]
+export function isModelDetailsEdit(ruleId?: string) {
+  return !!ruleId && MODEL_DETAILS_RULES.includes(ruleId)
+}
+
 /** The marker's short label: plain words, no rule ids. Work Claude did for a person has its own. */
 export function strengthLabel(judgement: Pick<Judgement, "strength"> & { origin?: string; rule_id?: string }) {
   if (judgement.origin === "agent" && judgement.rule_id === "holder.printed_on_statement")
     return "Kept as printed by Claude · not confirmed"
+  if (judgement.origin === "agent" && isModelDetailsEdit(judgement.rule_id)) return "Changed by Claude · not confirmed"
   if (judgement.origin === "agent")
     return judgement.rule_id === "model.statement_save" ? "Saved by Claude · not confirmed" : "Hand entry by Claude"
   return judgement.strength === "inferred" ? "Inferred" : "Checked guess"
@@ -220,6 +227,8 @@ export function strengthHelp(judgement: Pick<Judgement, "strength"> & { origin?:
   // Whoever made it (the processor or Claude for a person), the holder call says what is and is not printed.
   if (judgement.rule_id === "holder.printed_on_statement")
     return "The page prints this name. Which person holds the account has not been established, so filing the statement under the name printed on it is a judgement call."
+  if (judgement.origin === "agent" && isModelDetailsEdit(judgement.rule_id))
+    return "Claude changed this statement's details for a person, reading the page it cites. The statement is filed by the changed details until a person confirms or corrects them; the values before the change stay in the statement's history."
   if (judgement.origin === "agent" && judgement.rule_id === "model.statement_save")
     return "Claude saved this statement's payments for a person. No person has confirmed them against the statement yet."
   if (judgement.origin === "agent")

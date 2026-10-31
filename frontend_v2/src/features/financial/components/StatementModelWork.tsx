@@ -26,10 +26,13 @@ export function StatementModelWorkMark({
     onSuccess: onConfirmed,
   })
   const person = work.for_person || "a person"
+  // Payments saved by the model, or only the statement's details (its account, holder, number or balances) changed.
+  const saved = work.saved !== false
+  const did = saved ? "Saved" : "Details changed"
   if (work.status !== "not_confirmed")
     return (
       <p className="text-sm text-muted-foreground" data-testid="statement-model-work">
-        Saved by {work.model} for {person}.{" "}
+        {did} by {work.model} for {person}.{" "}
         {work.status === "corrected" ? "Corrected" : "Confirmed"} by {work.confirmed_by || "a person"}
         {work.confirmed_at ? ` on ${work.confirmed_at.slice(0, 10)}` : ""}.
       </p>
@@ -38,14 +41,17 @@ export function StatementModelWorkMark({
     <div
       className="space-y-2 rounded border border-[#e7c66b] bg-[#fdf6dd] p-3 text-sm text-[#5c3d00] dark:bg-amber-950 dark:text-amber-100"
       role="group"
-      aria-label="Saved by Claude, not confirmed"
+      aria-label={`${did} by ${work.model}, not confirmed`}
       data-testid="statement-model-work"
     >
       <p>
         <strong>
-          Saved by {work.model} for {person} · not confirmed
+          {did} by {work.model} for {person} · not confirmed
         </strong>
-        . No person has checked these payments against the statement yet.
+        .{" "}
+        {saved
+          ? "No person has checked these payments against the statement yet."
+          : "No person has checked the statement's account and details against the page yet."}
       </p>
       <button type="button" className="text-xs underline" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
         {open ? "Hide what was done" : "What was done"}

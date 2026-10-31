@@ -23,6 +23,26 @@ from services.financial import judgements
 from services.financial.decisions import Actor
 
 
+def _model_edit(at, before_account, after_account, before_details, after_details, *, model=True):
+    origin = dict(kind='model', model='Claude', at=at, **{'for': dict(name='Neil Byrne', user_id=None)},
+                  citation=dict(file='09 BBVA 23 USD.pdf', page=1), how='page 1 prints the addressee')
+    entry = dict(at=at, actor_name='Claude (for Neil Byrne)' if model else 'Alex',
+                 before=dict(account_id=before_account, details=before_details, currency='USD', balances={}),
+                 after=dict(account_id=after_account, details=after_details, currency='USD', balances={}))
+    if model:
+        entry['origin'] = origin
+    return entry
+
+
+# The live shape (d5b330d1, Sept 2023): Claude corrected the holder, then the account number, which moved the
+# statement onto another account.
+_HOLDER = _model_edit('2026-10-31T07:41:24', 'acct-a', 'acct-a', dict(holder='ns BVA', account_number='119201424'),
+                      dict(holder='CAAL ENERGY SYSTEMS SA DE CV', account_number='119201424'))
+_NUMBER = _model_edit('2026-10-31T07:52:40', 'acct-a', 'acct-b',
+                      dict(holder='CAAL ENERGY SYSTEMS SA DE CV', account_number='119201424'),
+                      dict(holder='CAAL ENERGY SYSTEMS SA DE CV', account_number='0119201424'))
+
+
 class RecordingTests(unittest.TestCase):
     def setUp(self):
         self._dir = tempfile.mkdtemp(prefix='loupe-judgements-')
@@ -138,6 +158,37 @@ class RecordingTests(unittest.TestCase):
         self.assertTrue(lines[5].startswith('3 When convenient,'))
         self.assertEqual(judgements.counts(self.db, self.case.id)['case']['priority_1'], 2)
 
+    def test_a_model_edit_of_statement_details_is_an_open_call_until_a_person_settles_it(self):
+        # The recording reads only the statement's id, case and stored history.
+        document = SimpleNamespace(id=uuid.uuid4(), case_id=self.case.id,
+                                   metadata_=dict(statement_details_history=[_HOLDER]))
+        first = judgements.record_model_details(self.db, document)
+        self.assertEqual((first.rule_id, first.status, first.origin), ('model.statement_account', 'open', 'agent'))
+        # A further model edit before anyone settles the call updates the same call: one call, both edits.
+        document.metadata_ = dict(statement_details_history=[_HOLDER, _NUMBER])
+        again = judgements.record_model_details(self.db, document)
+        self.db.commit()
+        self.assertEqual(again.id, first.id)
+        self.assertIn('moved the statement', again.summary)
+        self.assertEqual(len(self.db.scalars(select(FinancialJudgement)).all()), 1)
+        self.assertEqual(judgements.statement_model_work(self.db, self.case.id, document.id)['status'], 'not_confirmed')
+        self.assertFalse(judgements.statement_model_work(self.db, self.case.id, document.id)['saved'])
+        # A person confirms the statement: the call is theirs to settle, a model's confirm is refused.
+        with self.assertRaises(Exception):
+            judgements.confirm_statement(self.db, case_id=self.case.id, source_document_id=document.id,
+                                         actor=Actor(name='Claude (for Neil Byrne)', email='n@x', user_id=None,
+                                                     origin=dict(kind='model', model='Claude')))
+        self.db.rollback()
+        judgements.confirm_statement(self.db, case_id=self.case.id, source_document_id=document.id, actor=self.actor)
+        self.assertIsNone(judgements.record_model_details(self.db, document))  # settled edits record nothing more
+        later = _model_edit('2026-11-01T09:00:00', 'acct-b', 'acct-b', _NUMBER['after']['details'],
+                            dict(_NUMBER['after']['details'], institution='BBVA'))
+        document.metadata_ = dict(statement_details_history=[_HOLDER, _NUMBER, later])
+        newer = judgements.record_model_details(self.db, document)
+        self.assertNotEqual(newer.id, first.id)
+        self.assertEqual((newer.rule_id, newer.status), ('model.statement_details', 'open'))
+        self.assertEqual(newer.evidence['edits'], ['2026-11-01T09:00:00'])
+
 
 class DetectionTests(unittest.TestCase):
     def test_every_rule_has_a_priority(self):
@@ -218,6 +269,29 @@ class DetectionTests(unittest.TestCase):
         self.assertIn(('L9.scan_amount_marks', 'amount'), found)
         self.assertIn(('L31.scan_day_letter', 'date'), found)
         self.assertNotIn('L8', ' '.join(f['summary'] for f in found.values()))
+
+    def test_model_details_calls_say_what_claude_changed_and_where_it_read_it(self):
+        subject = ('statement_period', 'p1')
+        [call] = judgements.model_details_calls(dict(statement_details_history=[_HOLDER, _NUMBER]), subject, 'USD')
+        self.assertEqual((call['rule_id'], call['strength'], call['origin']), ('model.statement_account', 'inferred',
+                                                                                'agent'))
+        self.assertEqual(judgements.priority(call['rule_id']), 2)
+        for words in ("holder 'ns BVA' to 'CAAL ENERGY SYSTEMS SA DE CV'", "'119201424' to '0119201424'",
+                      'moved the statement', "page 1 of '09 BBVA 23 USD.pdf'", 'No person has confirmed it'):
+            self.assertIn(words, call['summary'])
+        self.assertEqual(call['evidence']['page'], 1)
+        # Read from another statement's page: said so, and the link opens this statement's own first page.
+        [other] = judgements.model_details_calls(dict(statement_details_history=[_HOLDER, _NUMBER]), subject, 'USD',
+                                                 own_file='08 BBVA 23 USD.pdf')
+        self.assertIn("another statement in the case, not this statement's own pages", other['summary'])
+        self.assertEqual((other['evidence']['page'], other['evidence']['first_page']), (None, 1))
+        self.assertEqual((call['evidence']['before']['account_id'], call['evidence']['chosen']['account_id']),
+                         ('acct-a', 'acct-b'))
+        # A person's edit after the model's settles the model's changes before it.
+        person = _model_edit('2026-10-31T09:00:00', 'acct-b', 'acct-b', {}, {}, model=False)
+        self.assertEqual(judgements.model_details_calls(dict(statement_details_history=[_HOLDER, _NUMBER, person]),
+                                                        subject), [])
+        self.assertEqual(judgements.model_details_calls(dict(statement_details_history=[person]), subject), [])
 
 
 if __name__ == '__main__':

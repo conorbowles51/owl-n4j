@@ -1,10 +1,12 @@
 import { z } from "zod"
 import { fetchAPI } from "@/lib/api-client"
 
-/** A saved statement Claude saved or entered for a person, and whether a person has confirmed it. */
+/** A saved statement Claude saved, entered or changed the details of for a person, and whether a person has confirmed it. */
 export const statementModelWork = z.object({
   status: z.enum(["not_confirmed", "confirmed", "corrected"]),
   model: z.string(),
+  // False when the model only changed the statement's details (account, holder, number, balances), not its payments.
+  saved: z.boolean().optional(),
   for_person: z.string().nullable().optional(),
   confirmed_by: z.string().nullable().optional(),
   confirmed_at: z.string().nullable().optional(),

@@ -331,6 +331,11 @@ def update_statement_details(session, *, case_id, source_id, request, actor, com
             reconcile_period(session, period)
             from services.financial.saved_statement_admission import refresh_saved_assessment
             refresh_saved_assessment(session, document, period, no_activity_confirmed=request.no_activity_confirmed)
+        if origin_field(actor):
+            # A model changed the statement's details for a person: shown as an open judgement call on the statement
+            # until a person confirms it (rule 1). Recording never fails the edit.
+            from services.financial.judgements import record_model_details
+            record_model_details(session, document)
         result = _view(document, period, account)
         if commit:
             session.commit()

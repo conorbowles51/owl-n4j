@@ -92,6 +92,12 @@ RULES = {
     'agent.refile': ('Refiled by hand (Claude, for a person)', 'fin-accounts / fin-queue3 L30c', 'inferred'),
     'agent.currency_refile': ('Currency changed by hand (Claude, for a person)', 'fin-queue3 L27', 'inferred'),
     'model.statement_save': ('Saved by Claude for a person; not confirmed by a person', 'fin-provenance', 'inferred'),
+    'model.statement_account': ("Statement's account or holder changed by Claude for a person; not confirmed",
+                                'fin-provenance (statement details)', 'inferred'),
+    'model.statement_balances': ("Statement's balances changed by Claude for a person; not confirmed",
+                                 'fin-provenance (statement details)', 'inferred'),
+    'model.statement_details': ("Statement's account number or bank changed by Claude for a person; not confirmed",
+                                'fin-provenance (statement details)', 'inferred'),
 }
 
 # Field basis written by a reading rule -> rule id. Only bases that choose a value the page does not print outright
@@ -173,7 +179,7 @@ CATEGORIES = {
     'holder': 'Holder name as printed',
     'copies': 'Copies, duplicates and replacements',
     'payment_category': 'Category suggested by the model',
-    'model_work': 'Saved by Claude, not yet confirmed by a person',
+    'model_work': 'Saved or changed by Claude, not yet confirmed by a person',
 }
 _CATEGORY_RULES = {
     'hand_entry': ('agent.page_entry', 'agent.correction'),
@@ -192,7 +198,8 @@ _CATEGORY_RULES = {
                          'autofill.detail', 'L30c.contract_refile', 'agent.refile', 'agent.currency_refile'),
     'payment_category': ('category.model',),
     'holder': ('holder.printed_on_statement',),
-    'model_work': ('model.statement_save',),
+    'model_work': ('model.statement_save', 'model.statement_account', 'model.statement_balances',
+                   'model.statement_details'),
     'copies': ('L26.duplicate_set_aside', 'L19.unreadable_copy', 'copies.held_copy', 'L20.part_of_saved',
                'reader.replacement', 'L22.vanished_key', 'erica.receipt_settled'),
 }
@@ -212,6 +219,7 @@ RULE_PRIORITY = {
     'agent.page_entry': (1, 'every amount of the statement was entered by hand'),
     'agent.correction': (1, 'a saved amount or field was changed by hand'),
     'model.statement_save': (1, "the statement's payments were saved by Claude and no person has confirmed them"),
+    'model.statement_balances': (1, "the statement's opening or closing balance was changed by Claude, not confirmed"),
     'image.page_reading': (1, "the statement's payments come from the page images, not the text layer"),
     'image.printed_total': (1, 'a printed total the balance check relies on was read from the image'),
     'image.date': (1, 'a payment date was read from the page image'),
@@ -262,8 +270,11 @@ RULE_PRIORITY = {
     'L20.part_of_saved': (2, 'a leftover was counted as part of a saved statement'),
     'L22.vanished_key': (2, 'an earlier reading was retired in favour of the saved one'),
     'erica.receipt_settled': (2, 'a deposit receipt was left out as already recorded'),
+    'model.statement_account': (2, "the statement's account, holder or currency was changed by Claude, not confirmed"),
     # 3 · description only
     'category.model': (3, "a payment's category was suggested by the model"),
+    'model.statement_details': (3, "only the statement's printed account number, CLABE or bank name was changed by "
+                                   "Claude; the statement stays on its account"),
 }
 
 
@@ -275,7 +286,7 @@ def priority(rule_id):
 STATEMENT_ROW_RULES = frozenset({'agent.page_entry', 'model.statement_save', 'image.page_reading', 'reader.replacement',
                                  'L30c.contract_refile', 'agent.refile', 'agent.currency_refile',
                                  'L4.currency_from_name', 'autofill.currency_account', 'autofill.currency_case',
-                                 'holder.printed_on_statement'})
+                                 'holder.printed_on_statement', 'model.statement_account'})
 
 
 def category(rule_id):
@@ -557,6 +568,81 @@ def detect(document, period, transactions, *, file=None):
     return found
 
 
+MODEL_DETAILS_RULES = ('model.statement_account', 'model.statement_balances', 'model.statement_details')
+_DETAIL_WORDS = (('holder', 'holder'), ('account_number', 'account number'), ('account_clabe', 'CLABE'),
+                 ('institution', 'bank'), ('period_start', 'period start'), ('period_end', 'period end'))
+
+
+def model_details_calls(meta, period_subject, currency='', settled_edits=(), own_file=''):
+    """The statement's details (holder, account number, bank, currency, balances, and so the account it is filed
+    in) changed by a model for a person (services.financial.statement_details, model origin) after the last person's
+    edit: one open call on the statement until a person confirms it. A person's later edit settles the model's
+    changes before it, so they record nothing; so do edits a person already settled through a call
+    (``settled_edits``: their times), and the call covers only the model's edits after them. Pure; reads the stored
+    history, never the saver's name. The call's target names its first edit, so it is one call per run of edits."""
+    from services.financial.model_work import origin_of
+    history = [e for e in meta.get('statement_details_history') or [] if isinstance(e, dict)]
+    settled = {str(at) for at in settled_edits or ()}
+    pending = []
+    for entry in history:
+        if not origin_of(entry) or str(entry.get('at')) in settled:
+            pending = []
+        else:
+            pending.append(entry)
+    if not pending:
+        return []
+    first, last = pending[0].get('before') or {}, pending[-1].get('after') or {}
+    was, now = first.get('details') or {}, last.get('details') or {}
+    changes = [f"{word} {_shown(was.get(key))} to {_shown(now.get(key))}" for key, word in _DETAIL_WORDS
+               if (was.get(key) or '') != (now.get(key) or '') and key in now]
+    if (first.get('currency') or '') != (last.get('currency') or '') and last.get('currency'):
+        changes.append(f"currency {_shown(first.get('currency'))} to {_shown(last.get('currency'))}")
+    balances = []
+    for role in ('opening', 'closing'):
+        after = ((last.get('balances') or {}).get(role) or {}).get('amount_minor')
+        before = ((first.get('balances') or {}).get(role) or {}).get('amount_minor')
+        if after is not None and str(after) != str(before):
+            balances.append(f"{role} balance {money(before, currency) if before is not None else '(none)'} to "
+                            f"{money(after, currency)}")
+    moved = (first.get('account_id') or '') != (last.get('account_id') or '')
+    if not (changes or balances or moved):
+        return []
+    rule = ('model.statement_balances' if balances else 'model.statement_account'
+            if moved or any(c.startswith(('holder', 'currency')) for c in changes) else 'model.statement_details')
+    origin = origin_of(pending[-1])
+    model = origin.get('model') or 'A model'
+    person = (origin.get('for') or {}).get('name') or 'a person'
+    citation = origin.get('citation') or {}
+    page = citation.get('page')
+    sentences = [f"{model}, working for {person}, changed this statement's details on "
+                 f"{str(origin.get('at') or pending[-1].get('at') or '')[:10]}: " + '; '.join(changes + balances) + '.']
+    if moved:
+        target = ' · '.join(v for v in (now.get('holder'), now.get('account_number')) if v)
+        sentences.append('This moved the statement to another account'
+                         + (f' ({target}).' if target else '.'))
+    other_file = bool(citation.get('file') and own_file and citation['file'] != own_file)
+    if citation.get('file') or page:
+        sentences.append(f"It read {('page ' + str(page) + ' of ') if page else ''}"
+                         f"{repr(citation['file']) if citation.get('file') else 'the statement'}"
+                         + (", another statement in the case, not this statement's own pages." if other_file else '.'))
+    sentences.append('No person has confirmed it yet; the values before the change stay in the statement history.')
+    return [dict(subject_type=period_subject[0], subject_id=period_subject[1], rule_id=rule,
+                 summary=' '.join(sentences), target_key=('details@' + str(pending[0].get('at') or ''))[:48],
+                 strength='inferred', origin='agent',
+                 # The page link opens this statement's own page: the cited page when it is this statement's,
+                 # else its first page, to check the changed values against what this statement prints.
+                 evidence=dict(origin=origin, page=None if other_file else page, first_page=1 if other_file else None,
+                               cited_file=citation.get('file'), cited_page=page, how=origin.get('how'),
+                               before=dict(account_id=first.get('account_id'), details=was,
+                                           currency=first.get('currency')),
+                               chosen=dict(account_id=last.get('account_id'), details=now, currency=last.get('currency')),
+                               edits=[e.get('at') for e in pending]))]
+
+
+def _shown(value):
+    return repr(str(value)) if value not in (None, '') else '(none)'
+
+
 _SPACED = re.compile(r'\d ,\d|\d, \d{3}|\d \.\d\d|\d\?$')
 _DAY_LETTER = re.compile(r'(?=[0-9OolI|]{2}[/-])(?=.{0,1}[OolI|])[0-9OolI|]{2}[/-](?:\d\d|[A-Za-z]{3})')
 
@@ -680,6 +766,9 @@ def record_saved(session, document, *, period=None, transactions=None, file=None
                                    **{'origin': origin, **found})
             if row is not None:
                 rows.append(row)
+        details = record_model_details(session, document)
+        if details is not None:
+            rows.append(details)
         return rows
     except Exception:  # noqa: BLE001 - recording only adds information
         log.exception('Recording the judgement calls of saved statement %s failed; the statement stands',
@@ -702,6 +791,47 @@ def record_on_document(session, document, rule_id, summary, *, target_key='', ev
                                 origin=origin)
     except Exception:  # noqa: BLE001
         log.exception('Recording a judgement call (%s) failed; the decision stands', rule_id)
+        return None
+
+
+def record_model_details(session, document):
+    """Record (or bring up to date) the open call on a statement whose details a model changed for a person
+    (model_details_calls). While a person has not settled it, a further model edit updates the same call; edits a
+    person settled stay settled and later ones get a call of their own. Never raises; returns the row or None."""
+    from postgres.models.financial import FinancialStatementPeriod
+    from postgres.models.financial_judgements import FinancialJudgement as J
+    try:
+        with session.begin_nested():
+            mine = list(session.scalars(select(J).where(J.source_document_id == document.id,
+                                                        J.rule_id.in_(MODEL_DETAILS_RULES)).order_by(J.created_at)))
+            settled = [at for row in mine if row.status != 'open' for at in (row.evidence or {}).get('edits') or []]
+            period = session.scalar(select(FinancialStatementPeriod).where(
+                FinancialStatementPeriod.source_document_id == document.id).limit(1))
+            subject = ('statement_period', period.id) if period is not None else ('source_document', document.id)
+            from postgres.models.evidence import EvidenceFile
+            file = session.get(EvidenceFile, document.evidence_file_id) if getattr(
+                document, 'evidence_file_id', None) else None
+            calls = model_details_calls(document.metadata_ or {}, subject, getattr(period, 'currency', None) or '',
+                                        settled_edits=settled, own_file=getattr(file, 'original_filename', '') or '')
+            if not calls:
+                return None
+            call = calls[0]
+            existing = next((row for row in mine if row.status == 'open' and row.target_key == call['target_key']),
+                            None)
+            if existing is not None:
+                if (existing.rule_id, existing.summary, existing.evidence) != (
+                        call['rule_id'], ' '.join(call['summary'].split())[:2000], _jsonable(call['evidence'])):
+                    existing.rule_id, existing.summary = call['rule_id'], ' '.join(call['summary'].split())[:2000]
+                    existing.evidence = _jsonable(call['evidence'])
+                    existing.subject_type, existing.subject_id = call['subject_type'], call['subject_id']
+                    existing.statement_period_id = getattr(period, 'id', None)
+                    session.flush()
+                return existing
+        return record_judgement(session, case_id=document.case_id, reading=str(document.id),
+                                source_document_id=document.id, statement_period_id=getattr(period, 'id', None),
+                                **call)
+    except Exception:  # noqa: BLE001 - recording only adds information; the edit stands
+        log.exception('Recording the model edit of statement %s failed; the edit stands', getattr(document, 'id', None))
         return None
 
 
@@ -1160,7 +1290,8 @@ def correct(session, *, case_id, judgement_id, actor, reason, adjudication_id=No
 
 
 # Statement-level work a model did for a person: a person confirms the whole statement with one action.
-MODEL_STATEMENT_RULES = ('model.statement_save', 'agent.page_entry')
+MODEL_STATEMENT_RULES = ('model.statement_save', 'agent.page_entry') + MODEL_DETAILS_RULES
+SAVED_BY_MODEL_RULES = ('model.statement_save', 'agent.page_entry')
 
 
 def statement_model_work(session, case_id, source_document_id):
@@ -1178,6 +1309,7 @@ def statement_model_work(session, case_id, source_document_id):
     status = 'not_confirmed' if len(settled) < len(rows) else (
         'corrected' if any(r.status == 'corrected' for r in rows) else 'confirmed')
     return dict(status=status, origin=origin, model=(origin or {}).get('model') or 'Claude',
+                saved=any(r.rule_id in SAVED_BY_MODEL_RULES for r in rows),
                 for_person=((origin or {}).get('for') or {}).get('name'),
                 confirmed_by=last.resolved_by if last is not None and status != 'not_confirmed' else None,
                 confirmed_at=last.resolved_at.isoformat() if last is not None and last.resolved_at and

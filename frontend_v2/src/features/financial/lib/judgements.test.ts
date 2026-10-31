@@ -24,3 +24,10 @@ it("a holder call made by Claude is not labelled a hand entry, and says no perso
   expect(label).toBe("Kept as printed by Claude · not confirmed")
   expect(strengthLabel({ strength: "inferred", origin: "agent", rule_id: "agent.page_entry" })).toBe("Hand entry by Claude")
 })
+
+it("a statement whose details Claude changed is labelled a change, not a hand entry, and says it is not confirmed", () => {
+  const call = { strength: "inferred" as const, origin: "agent", rule_id: "model.statement_account" }
+  expect(strengthLabel(call)).toBe("Changed by Claude · not confirmed")
+  expect(strengthHelp(call)).toMatch(/until a person confirms or corrects them/)
+  expect(strengthHelp(call)).not.toMatch(/Entered by hand/)
+})
