@@ -47,6 +47,14 @@ Each decision carries what would reverse it.
 2. **`.ufdr` is a first-class input**, alongside a PA XML report folder, a zip of one, and the split
    section export (`.xmlModel`, `.xmlTagged` and siblings). A protected UFDR is detected and explained,
    never decoded. *Reverse if* reading the Reader EULA or legal advice says otherwise.
+   **Build and test against XML report folders; readable UFDRs come later** (Neil, 2026-10-31). The
+   UFDRs received so far are protected and no password is held (section 2). The server's XML folders
+   are Alex's own exports of those same UFDRs (Neil, 2026-10-31), so they carry the same phones in
+   readable form and nothing is lost by building on them. Report reading does not depend on the
+   container: a UFDR is one more container over the same `report.xml`. Until a password is sourced from
+   Alex, the protected UFDRs serve only the protected-detection path (06 row 5); UFDR reading is
+   tested, and compared record for record with the matching folder export, once one is readable.
+   *Reverse if* a password arrives, or a production arrives as readable UFDRs only.
 3. **Complete coverage is the priority.** Every element, attribute and value in the report is captured,
    whether or not any code understands it. *Not reversible without Neil.*
 4. **Types are discovered, not listed.** A schema registry is learned from the data on every ingest.
@@ -80,6 +88,25 @@ Each decision carries what would reverse it.
 None is a `.ufdr`. Published sources: a UFDR is a zip with `report.xml` at its root and files grouped by
 category; there is no public schema; protected UFDRs are refused by IPED and Relativity with advice to
 re-export unprotected or decrypt in Reader.
+
+**UFDRs received 2026-10-31** (downloaded from Owl's SharePoint to `~/Documents/Owl/ufdrs/` on Neil's
+Mac; never committed). Measured read-only:
+
+| File | Size | SHA-256 | State |
+|---|---|---|---|
+| `220049582_06306208_C3_2022-12-12_Report.ufdr` | 1,047,377,145 | `a26010ae90c39782c1295ae7bb986dc90967ec2df57718f208d80c68d963890c` | Complete (all 82,136 entry CRCs pass). **Protected.** |
+| `CL1.ufdr` | 4,434,608,394 | `2bdcf19101cf1992e6b158061c90bc29237012d1955aafd0219596cb963f0411` | Complete (opens; 6,998 entries). **Protected.** Matches no server folder by name |
+| `220049582_06306207_C2_2022-12-12_Report.ufdr` | 3,703,713,792 | `55ef073d4a51a79d83bf74b2a595d50bff82b64823b72ec84fa2173cbb51d81b` | **Truncated download**: no end-of-central-directory record in the last 70 KB. Not usable; needs re-downloading |
+
+What protection looks like in both readable containers: every entry is stored (method 0) and none has
+the zip encryption flag set; the entry names and sizes are readable, but the content of every entry
+sampled is scrambled (`report.xml`, plists, images, `ThumbnailCache.s3db`) and does not compress. The
+first four bytes of `report.xml` differ per file (`24 65 2E 01` in CL1, `2E 0F C8 E8` in C3); neither is
+IPED's `2D 06 52 6D`. Both therefore classify as `protected_or_invalid` under 01 section 2.3 step 3,
+through the absence of the header strings. Layout visible from the names: C3 holds `files/` (49,454),
+`MediaResults/` (32,667), `chats/` (13), root `report.xml` (231,261,728 bytes as stored) and
+`ThumbnailCache.s3db`. The repo's readable C3 folder report is 177,729,844 bytes, so the size of the
+stored `report.xml` cannot be compared with it until one is decrypted.
 
 Consequence for intake: recognise UFDR, folder, zip (ignoring `__MACOSX` and `.DS_Store`) and split
 sections; read what is readable from a truncated export and flag it as incomplete; state plainly what
@@ -204,7 +231,9 @@ intake ─▶ capture (lossless) ─▶ registry + generic interpretation ─▶
 ```
 
 ### 6.1 Intake
-- Forms: UFDR, folder, zip, split sections. Protected UFDR detected by magic bytes and explained.
+- Forms: UFDR, folder, zip, split sections. Protected UFDR detected from the report's first bytes (an
+  encrypted entry, a known signature, or no report header strings: real protected files carry no fixed
+  signature, section 2) and explained.
 - Hash the container as received and the report XML; keep both before anything is unpacked or deleted.
 - Dedicated arq queue and worker, on the `PdfReviewWorkerSettings` pattern (`evidence-engine/app/worker.py:91-102`).
   Cooperative pause and resume through `services/ingestion_control.py`; checkpoints through
@@ -294,10 +323,17 @@ Each unit is finished, tested and committed before the next.
 - Local: C3, C9, C8 (the readable sections). Never committed.
 - Server: the 14 phones v1 ingested, under `/mnt/owl-data/ingestion-data/` (read-only use). Each has
   v1's `owl_ingest_report.json` with per-type counts and ingest duration, which serve as a baseline.
+  These folders are Alex's XML exports of the UFDRs in the production (Neil, 2026-10-31); C2 and C3 are
+  among them, under case `43f1afb1-1d2b-4b3f-a832-19cd049c8a9e`.
+- UFDRs (protected, section 2): kept on Neil's Mac at `~/Documents/Owl/ufdrs/`. A private folder for
+  them exists on the server at `/mnt/owl-data/ufdr-corpus/` (mode 700, owner `neil_byrne`), empty on
+  2026-10-31; nothing was copied, by decision 1.2.
 
 ## 9. Not yet established
 
-- Where real UFDRs differ from XML report folders: no `.ufdr` sample yet.
+- Where real UFDRs differ from XML report folders: the real UFDRs held are protected (section 2), so
+  only their layout is known. Settled once a password is sourced from Alex, by comparing a decrypted
+  UFDR with Alex's folder export of the same phone.
 - Whether the second group of types in 3.2 occurs top-level or only nested.
 - Whether v1's identity merge records an audit trail.
 - Memory profile of a single-pass capture on the largest report (338,715 records).

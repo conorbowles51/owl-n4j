@@ -1,4 +1,21 @@
-## 29 October: Cellebrite rebuild planned (phone work resumes here)
+## 31 October: UFDRs examined; build on XML folders (phone work resumes here)
+
+Documents only; no code changed.
+
+- **Decision (Neil):** build and test the phone work against the XML report folders on the server.
+  Recorded as part of standing decision 2 in `docs/cellebrite-rebuild-plan.md`, with what reverses it.
+  The folders are Alex's exports of the production's UFDRs, so they are the same phones.
+- **UFDRs received** (plan section 2, sizes and SHA-256 recorded there): C3 and CL1 are complete and
+  **protected**; no password is held; Neil will source one from Alex later. C2's download is truncated
+  and needs re-downloading. A fourth download was still in progress and was not examined. Files are on
+  Neil's Mac at `~/Documents/Owl/ufdrs/`; the server folder `/mnt/owl-data/ufdr-corpus/` exists, empty.
+- **Spec note:** real protected UFDRs carry no fixed first-bytes signature; they are detected only by
+  the missing header strings (01 section 2.1 note). Row 5's fixtures must include such a case.
+- **Next unit:** unchanged: `docs/cellebrite/06-build-order.md` rows 1 to 3, using the server folders.
+- **Mac facts:** the Mac's `rsync` is openrsync (no `--chmod`, no `--partial`); use `scp`. `ssh loupe`
+  works; `neil_byrne` cannot write `/mnt/owl-data` without `sudo`.
+
+## 29 October: Cellebrite rebuild planned
 
 Plan only; nothing built. Written on Neil's Mac and pushed as documents only (no code changed).
 

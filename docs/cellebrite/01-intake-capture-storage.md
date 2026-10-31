@@ -242,6 +242,11 @@ v1 kept a subset of the data (plan 3.1), so these are not like-for-like.
 | **Split-section export** | files sharing one stem with suffixes from the set in 2.2 | the non-empty sections |
 | **Protected UFDR** | UFDR whose `report.xml` is encrypted in the zip, starts with `2D 06 52 6D`, or lacks the header strings | none readable |
 
+Measured 2026-10-31 on the two real protected UFDRs held (plan section 2): neither sets the encryption
+flag nor starts with `2D 06 52 6D` (they start `24 65 2E 01` and `2E 0F C8 E8`); both are caught only by
+the missing header strings and classify as `protected_or_invalid`. The header-string test is therefore
+the one real files depend on, and the synthetic fixtures in section 12 must include a case like these.
+
 ### 2.2 Split-section suffixes
 
 Measured on C8: `.xmlModel` (records, root `decodedData`), `.xmlTagged` (root `project`: header,
