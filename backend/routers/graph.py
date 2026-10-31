@@ -1159,7 +1159,19 @@ def analyze_node_relationships(
             }
         
         # Use relationship analyzer to find relationships
-        from services.relationship_analyzer import analyze_node_relationships
+        from services.relationship_analyzer import (
+            PROMPT_NODE_LIMIT,
+            analyze_node_relationships,
+            nodes_shown_note,
+        )
+        nodes_total = len(existing_nodes)
+        nodes_considered = min(nodes_total, PROMPT_NODE_LIMIT)
+        coverage = {
+            "nodes_considered": nodes_considered,
+            "nodes_total": nodes_total,
+            "truncated": nodes_considered < nodes_total,
+            "message": f"Compared with {nodes_shown_note(nodes_considered, nodes_total)} in the case.",
+        }
         
         relationships = analyze_node_relationships(
             node_name=node_details.get("name", ""),
@@ -1188,7 +1200,8 @@ def analyze_node_relationships(
         
         return {
             "success": True,
-            "relationships": enhanced_relationships
+            "relationships": enhanced_relationships,
+            **coverage,
         }
     except HTTPException:
         raise

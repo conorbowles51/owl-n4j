@@ -203,18 +203,21 @@ class GraphService:
         return {"nodes": nodes, "links": links}
 
     def get_case_node_index(self, case_id: str) -> List[Dict]:
-        """Key, name, type and summary of every active node in the case, in get_full_graph's node order.
+        """Key, name, type, summary and degree of every active node in the case, most-connected first.
 
         For callers that need the case's nodes but not their properties or links (relationship analysis):
         get_full_graph also reads every property and every link, which on BNB2 exceeds the database's
-        25-second limit.
+        25-second limit. Ordered by degree descending, then key, so a caller that keeps only the first N
+        gets the same N on every call (an unordered MATCH returns them in storage order).
         """
         with driver.session() as session:
             result = session.run(
                 f"""
                 MATCH (n)
                 WHERE {active_node_predicate("n")}
-                RETURN n.key AS key, n.name AS name, labels(n)[0] AS type, n.summary AS summary
+                WITH n, COUNT {{ (n)--() }} AS degree
+                RETURN n.key AS key, n.name AS name, labels(n)[0] AS type, n.summary AS summary, degree
+                ORDER BY degree DESC, key ASC
                 """,
                 case_id=case_id,
             )
@@ -229,6 +232,7 @@ class GraphService:
                         "name": record["name"] or node_key,
                         "type": record["type"],
                         "summary": record["summary"],
+                        "degree": record.get("degree") or 0,
                     })
         return nodes
 

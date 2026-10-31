@@ -20,6 +20,16 @@ except ImportError as e:
     _llm_available = False
 
 
+PROMPT_NODE_LIMIT = 100
+
+
+def nodes_shown_note(shown: int, total: int) -> str:
+    """How much of the case the analysis saw, e.g. 'the 100 most-connected of 2,431 nodes'."""
+    if shown >= total:
+        return f"all {total:,} nodes"
+    return f"the {shown:,} most-connected of {total:,} nodes"
+
+
 def analyze_node_relationships(
     node_name: str,
     node_type: str,
@@ -72,9 +82,12 @@ For relationships, you may use one of these types: [{", ".join(relationship_type
 For relationships, use descriptive relationship types like "OWNS", "WORKS_FOR", "RELATED_TO", "MET_WITH", etc.
 """
     
-    # Build list of existing nodes for context
+    # Build list of existing nodes for context. The caller orders them most-connected first; the prompt
+    # names at most PROMPT_NODE_LIMIT of them and says so when the case has more.
+    total_nodes = len(existing_nodes)
+    shown_nodes = existing_nodes[:PROMPT_NODE_LIMIT]
     existing_nodes_list = []
-    for node in existing_nodes[:100]:  # Limit to 100 to avoid prompt bloat
+    for node in shown_nodes:
         node_info = f"{node.get('name', '')} ({node.get('type', '')}) - key: {node.get('key', '')}"
         if node.get('summary'):
             node_info += f" - {node.get('summary', '')[:100]}"
@@ -97,7 +110,7 @@ NEW NODE:
 {node_info_text}
 Key: {node_key}
 
-EXISTING NODES IN GRAPH:
+EXISTING NODES IN GRAPH ({nodes_shown_note(len(shown_nodes), total_nodes)}):
 {existing_nodes_text}
 
 Based on the new node's information, identify relationships it might have with existing nodes. Consider:

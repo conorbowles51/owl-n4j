@@ -436,13 +436,20 @@ export const graphAPI = {
 
   analyzeNodeRelationships: (nodeKey: string, caseId: string) =>
     fetchAPI<{
-      suggestions: {
-        target_key: string
-        target_name: string
-        relationship_type: string
-        confidence: number
-        reasoning: string
+      success: boolean
+      relationships: {
+        from_key: string
+        to_key: string
+        from_name: string
+        to_name: string
+        type: string
+        notes: string
       }[]
+      nodes_considered?: number
+      nodes_total?: number
+      truncated?: boolean
+      message?: string
+      error?: string
     }>(
       `/api/graph/node/${encodeURIComponent(nodeKey)}/analyze-relationships`,
       { method: "POST", body: { case_id: caseId } }
