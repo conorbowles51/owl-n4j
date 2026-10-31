@@ -857,12 +857,12 @@ def assess_first_line_fixes(session, document, only=None):
             continue
         fix = fixes[key]
         old = words(row.description)
+        text = words(fix.get('text'))
+        if not text or text.casefold() == first.casefold():
+            continue  # nothing to change, or this correction is already the payment's first line
         if words(first_lines.get(key)) != first:
             kept.append(dict(transaction_id=str(row.id), code='first_line_changed', before=row.description,
                              first_line_after=fix.get('text')))
-            continue
-        text = words(fix.get('text'))
-        if not text or text.casefold() == first.casefold():
             continue
         if words(lines.get(str(row.id))) not in ('', old) and vision_descriptions.read_from_image(row):
             # Its description lines are read and not yet added (assess_image_descriptions): they go first, or the

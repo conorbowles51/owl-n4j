@@ -374,26 +374,55 @@ def completed_from_image(session, row):
     """The first line read from the page image for a payment whose description lines were added since (a
     'page_image_descriptions' correction of a payment read_from_image, its description still that first line and the
     lines added), else None."""
+    return _image_first_line(session, row, IMAGE_LINES_BASIS)
+
+
+IMAGE_LINES_BASIS = 'page_image_descriptions'
+FIRST_LINE_BASIS = 'page_image_first_line'
+_CHAIN = 20  # corrections followed back at most; a longer chain is not counted (none on live, 31 Oct)
+
+
+def _image_first_line(session, row, *bases, depth=0):
+    """The first line from the page image of a payment corrected since it was read: a 'page_image_descriptions'
+    correction (its description lines added; the first line kept) or a 'page_image_first_line' correction (its first
+    line read again from the page, saved_reading_replacement.correct_first_lines; the new first line) of a payment
+    whose first line came from the page image itself, its description still starting with that first line. Else
+    None."""
     from uuid import UUID
     from postgres.models.financial import FinancialTransaction
     provenance = row.provenance or {}
     lines = provenance.get('reader_descriptions') or {}
     previous = (provenance.get('correction') or {}).get('previous_transaction_id')
-    first = _words(lines.get('previous_description'))
-    if lines.get('basis') != 'page_image_descriptions' or not previous or not first or page_of(row) is None:
+    basis = lines.get('basis')
+    if basis not in (bases or (IMAGE_LINES_BASIS, FIRST_LINE_BASIS)) or not previous or page_of(row) is None \
+            or depth >= _CHAIN:
         return None
-    if not (_words(row.description) + ' ').startswith(first + ' '):
+    before = _words(lines.get('previous_description'))
+    if basis == FIRST_LINE_BASIS:
+        change = lines.get('first_line') or {}
+        was, first = _words(change.get('before')), _words(change.get('after'))
+    else:
+        was = first = before
+    if not first or not was or not (_words(row.description) + ' ').startswith(first + ' '):
         return None
     earlier = session.get(FinancialTransaction, UUID(str(previous)))
-    if earlier is None or not read_from_image(earlier) or _words(earlier.description) != first:
+    if earlier is None or _words(earlier.description) != before:
         return None
-    return first
+    earlier_first = (_words(earlier.description) if read_from_image(earlier)
+                     else _image_first_line(session, earlier, *bases, depth=depth + 1))
+    return first if earlier_first == was else None
+
+
+def image_first_line(session, row):
+    """The first line of this payment read from its page image: as read (read_from_image), since completed by its
+    description lines, or since given the first line its page prints (correct_first_lines). Else None."""
+    return _words(row.description) if read_from_image(row) else _image_first_line(session, row)
 
 
 def first_line_rows(session, document):
     """[(payment, first line read from its page image)]: the saved statement's current payments whose first line came
-    from a page image, as read (read_from_image) or since completed by its description lines (completed_from_image),
-    in page order."""
+    from a page image (image_first_line: as read, since completed by its description lines, or since given its printed
+    first line), in page order."""
     from sqlalchemy import select
     from postgres.models.financial import FinancialTransaction
     rows = session.scalars(select(FinancialTransaction).where(
@@ -401,20 +430,39 @@ def first_line_rows(session, document):
         FinancialTransaction.superseded_by_id.is_(None)))
     found = []
     for row in rows:
-        first = _words(row.description) if read_from_image(row) else completed_from_image(session, row)
+        first = image_first_line(session, row)
         if first:
             found.append((row, first))
     return sorted(found, key=lambda item: (page_of(item[0]), item[0].row_index or 0, str(item[0].id)))
 
 
-def not_looked(stored, pairs):
+def not_looked(stored, pairs, session=None):
     """The pairs (first_line_rows) not yet read with their printed first line (``looked``, kept from the first reading
     with that question on; a page whose request failed, was not rendered or was deferred is not looked at and is read
-    again). A payment whose earlier row was looked at (its lines added since) counts as looked. A statement read only
+    again). A payment whose earlier row was looked at (its lines added or its first line corrected since) counts as
+    looked; with ``session`` the whole chain of earlier rows is followed, else the one before. A statement read only
     before (no ``looked``) is read once more for its first lines."""
     looked = set(stored.get('looked') or [])
-    return [(row, first) for row, first in pairs if str(row.id) not in looked
-            and ((row.provenance or {}).get('correction') or {}).get('previous_transaction_id') not in looked]
+    return [(row, first) for row, first in pairs if not (_earlier_ids(session, row) & looked)]
+
+
+def _earlier_ids(session, row):
+    """This payment's id and the ids of the rows it corrects, back along the correction chain (one step without a
+    session)."""
+    from uuid import UUID
+    found, current = {str(row.id)}, row
+    for _ in range(_CHAIN):
+        previous = ((current.provenance or {}).get('correction') or {}).get('previous_transaction_id')
+        if not previous or str(previous) in found:
+            break
+        found.add(str(previous))
+        if session is None:
+            break
+        from postgres.models.financial import FinancialTransaction
+        current = session.get(FinancialTransaction, UUID(str(previous)))
+        if current is None:
+            break
+    return found
 
 
 def _reader(db, case_id):
@@ -452,7 +500,7 @@ def read_saved_lines(factory, document_id, resolve_path, *, request_for=None):
         if not vr.approved(document.case_id):
             return dict(record, reason='case_not_approved')
         stored = ((document.metadata_ or {}).get(METADATA_KEY) or {})
-        pairs = not_looked(stored, first_line_rows(db, document))
+        pairs = not_looked(stored, first_line_rows(db, document), db)
         rows = [row for row, _ in pairs]
         if not rows:
             return dict(record, reason='nothing_to_read')

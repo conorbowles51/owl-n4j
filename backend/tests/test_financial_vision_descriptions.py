@@ -461,8 +461,33 @@ class SavedFirstLineTests(SavedImageDescriptionTests):
         with self.f.SessionLocal() as db:
             new = db.get(FinancialTransaction, db.get(FinancialTransaction, completed).superseded_by_id)
             self.assertEqual(new.description, 'lncoming transfer from EXAMPLE SUPPLIER SA')
-            self.assertEqual(vd.first_line_rows(db, db.get(FinancialSourceDocument, self.document_id)), [],
-                             'a corrected first line is not read again')
+            pairs = vd.first_line_rows(db, db.get(FinancialSourceDocument, self.document_id))
+            self.assertEqual([(row.id, first) for row, first in pairs], [(new.id, 'lncoming')],
+                             'still a page-image payment, under its corrected first line')
+            self.assertEqual(vd.not_looked({'looked': [str(self.labelled)]}, pairs, db), [],
+                             'a corrected first line is not read again (looked at through its earlier rows)')
+        verdict = self.first_lines()
+        self.assertEqual((verdict['outcome'], verdict['kept']), ('same', []), 'the correction is not proposed again')
+
+    def test_a_corrected_first_line_stays_a_page_image_payment(self):
+        self.store_fix(str(self.labelled), 'lncoming')
+        with self.f.SessionLocal() as db:
+            before = len(vd.first_line_rows(db, db.get(FinancialSourceDocument, self.document_id)))
+        self.assertTrue(self.correct()['applied'])
+        with self.f.SessionLocal() as db:
+            new_id = db.get(FinancialTransaction, self.labelled).superseded_by_id
+            pairs = vd.first_line_rows(db, db.get(FinancialSourceDocument, self.document_id))
+            self.assertEqual(len(pairs), before, 'the page-image scope keeps the corrected payment')
+            self.assertIn((new_id, 'lncoming'), [(row.id, first) for row, first in pairs])
+            self.assertEqual(vd.not_looked({'looked': [str(self.labelled)]}, pairs, db), [])
+            # Edited by hand since: no longer the page's first line.
+            db.get(FinancialTransaction, new_id).description = 'Wire from a supplier'
+            db.flush()
+            self.assertNotIn(new_id, [row.id for row, _ in vd.first_line_rows(
+                db, db.get(FinancialSourceDocument, self.document_id))])
+            db.rollback()
+        verdict = self.first_lines()
+        self.assertEqual((verdict['outcome'], verdict['kept']), ('same', []), 'done once, not kept as changed')
 
     def test_only_the_named_payments_are_corrected(self):
         self.store_fix(str(self.labelled), 'lncoming')

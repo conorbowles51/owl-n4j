@@ -74,7 +74,7 @@ def survey(factory, case_ids, document_ids):
             stored = (document.metadata_ or {}).get(vision_descriptions.METADATA_KEY) or {}
             verdict = assess_image_descriptions(session, document)
             results.append(dict(verdict, page_image_payments=len(pairs),
-                                not_read=len(vision_descriptions.not_looked(stored, pairs)),
+                                not_read=len(vision_descriptions.not_looked(stored, pairs, session)),
                                 kept_by_reading=dict(Counter(stored.get('kept', {}).values())),
                                 first_lines=assess_first_line_fixes(session, document)))
         session.rollback()
