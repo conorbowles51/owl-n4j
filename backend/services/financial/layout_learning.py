@@ -1356,11 +1356,27 @@ def _registry_entry(profile, fingerprint, gate_result, review, examples=(), toda
 RELEASED_MARK = Path('deploy') / 'logs' / '.last-good-commit'
 
 
+def served_backends():
+    """The working directories of the Loupe servers running on this machine (uvicorn ``main:app``), as real paths.
+    A second signal beside the deploy mark, which a checkout has only after its first successful release. Processes
+    this one cannot inspect are skipped (the mark still applies)."""
+    found = set()
+    for proc in Path('/proc').glob('[0-9]*'):
+        try:
+            command = (proc / 'cmdline').read_bytes().split(b'\0')
+            if any(part.endswith(b'uvicorn') for part in command) and b'main:app' in command:
+                found.add(Path(os.path.realpath(proc / 'cwd')))
+        except OSError:
+            continue
+    return found
+
+
 def released_checkout(path):
-    """The checkout deploy.sh releases from that ``path`` lies in, or None."""
+    """The checkout deploy.sh releases from, or a running Loupe server serves, that ``path`` lies in, or None."""
+    served = served_backends()
     for folder in Path(os.path.realpath(path)).parents:  # a link into the live checkout is the live checkout
-        if (folder / RELEASED_MARK).exists():
-            return folder
+        if (folder / RELEASED_MARK).exists() or folder in served:
+            return folder.parent if folder in served and folder.name == 'backend' else folder
     return None
 
 

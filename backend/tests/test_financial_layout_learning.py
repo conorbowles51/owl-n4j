@@ -1,4 +1,5 @@
 """Layout learning: proved page-image examples teach the text reader a layout, decided by exact re-reading and gates."""
+import os
 import json
 import tempfile
 import unittest
@@ -597,6 +598,14 @@ class EngineHookTests(unittest.TestCase):
         self.assertIsNone(ll.released_checkout(released))
         self.assertEqual(ll.release(entry, released), [])
         self.assertEqual([e['name'] for e in lp.registry(released)['profiles']], [entry['name']])
+        # A checkout a running server serves is refused before its first release has left the mark.
+        fresh = root / 'fresh'
+        (fresh / 'backend' / 'services' / 'financial').mkdir(parents=True)
+        unreleased = fresh / 'backend' / 'services' / 'financial' / 'learned_profiles.json'
+        with mock.patch.object(ll, 'served_backends', return_value={Path(os.path.realpath(fresh / 'backend'))}):
+            self.assertIn('deploy-now', ll.release(entry, unreleased)[0][1])
+            self.assertEqual(ll.released_checkout(unreleased), Path(os.path.realpath(fresh)))
+        self.assertFalse(unreleased.exists())
 
     def test_release_writes_only_a_gated_reviewed_draft_and_retires_the_old_version(self):
         draft = dict(name='learned-zzfinger', match=dict(all=['zz released layout']), currency='USD')
