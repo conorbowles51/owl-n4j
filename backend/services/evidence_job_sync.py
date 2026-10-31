@@ -322,17 +322,25 @@ def _case_rows_version(db: Session, case_id: str) -> str | None:
     bind = db.get_bind() if hasattr(db, "get_bind") else None
     if bind is None or bind.dialect.name != "postgresql":
         return None
-    count, version = db.execute(
-        text("SELECT count(*), coalesce(sum(xmin::text::bigint), 0) FROM evidence_files "
-             "WHERE case_id = CAST(:case_id AS uuid)"),
+    count, total, newest = db.execute(
+        text("SELECT count(*), coalesce(sum(xmin::text::bigint), 0), coalesce(max(xmin::text::bigint), 0) "
+             "FROM evidence_files WHERE case_id = CAST(:case_id AS uuid)"),
         dict(case_id=str(case_id)),
     ).one()
-    return f"{count}:{version}"
+    return f"{count}:{total}:{newest}"
+
+
+def _canonical_case_id(case_id: str) -> str:
+    try:
+        return str(uuid.UUID(str(case_id)))
+    except (ValueError, TypeError):
+        return str(case_id)
 
 
 def reconcile_case_poll(db: Session, case_id: str, jobs: list[dict[str, Any]]) -> int:
     """Reconcile a polled job list for one case and commit; skipped while the list is unchanged and settled.
     Blocking (database work): call it from a worker thread."""
+    case_id = _canonical_case_id(case_id)
     fingerprint = _jobs_fingerprint(jobs)
     with _poll_locks_guard:
         lock = _poll_locks.setdefault(case_id, threading.Lock())
@@ -359,7 +367,8 @@ def reconcile_case_poll(db: Session, case_id: str, jobs: list[dict[str, Any]]) -
         db.commit()
         if all_applied:
             # Kept only when this reconcile wrote nothing (its own writes renew the version) and every matched record
-            # is in the case the version covers.
+            # is in the case the version covers. A record of another case that only later takes one of these job ids
+            # waits for the next change of the job list (a job written into another case's record is itself wrong).
             keep = version if updated == 0 and record_cases <= {str(case_id)} else None
             _poll_settled[case_id] = (fingerprint, started, keep)
         return updated

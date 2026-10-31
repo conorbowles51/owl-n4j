@@ -85,3 +85,66 @@ def test_recheck_skips_until_a_row_of_the_case_is_written(Session, monkeypatch):
         db.commit()
         evidence_job_sync.reconcile_case_poll(db, str(case_id), [job])
         assert len(calls) == 5
+
+
+def _settled_case(Session, monkeypatch):
+    case_id = uuid4()
+    with Session() as db:
+        db.execute(text("INSERT INTO cases (id) VALUES (:id)"), dict(id=case_id))
+        rows = [EvidenceFile(id=uuid4(), case_id=case_id, original_filename=f"{n}.pdf", stored_path=f"/tmp/{n}.pdf",
+                             size=1, sha256=str(n) * 64, status="processed") for n in range(2)]
+        db.add_all(rows)
+        db.commit()
+        ids = [row.id for row in rows]
+    calls = []
+    real = evidence_job_sync._reconcile
+    monkeypatch.setattr(evidence_job_sync, "_reconcile", lambda db, jobs, **kw: calls.append(1) or real(db, jobs, **kw))
+    monkeypatch.setattr(evidence_job_sync, "POLL_RECHECK_SECONDS", 0.0)
+    return case_id, ids, calls
+
+
+def test_a_delete_in_the_case_and_a_non_canonical_case_id(Session, monkeypatch):
+    case_id, ids, calls = _settled_case(Session, monkeypatch)
+    job = dict(id=str(uuid4()), source_evidence_file_id=str(ids[0]), status="completed")
+    polled = str(case_id).upper().replace("-", "")  # the router passes the query string as given
+    with Session() as db:
+        evidence_job_sync.reconcile_case_poll(db, polled, [job])
+        evidence_job_sync.reconcile_case_poll(db, polled, [job])
+        evidence_job_sync.reconcile_case_poll(db, polled, [job])
+        assert len(calls) == 2
+        db.commit()
+    with Session() as other:
+        other.execute(text("DELETE FROM evidence_files WHERE id = :id"), dict(id=ids[1]))
+        other.commit()
+    with Session() as db:
+        evidence_job_sync.reconcile_case_poll(db, polled, [job])
+        assert len(calls) == 3
+
+
+def test_a_write_after_the_records_were_read_is_repaired_on_the_next_recheck(Session, monkeypatch):
+    case_id, ids, calls = _settled_case(Session, monkeypatch)
+    job = dict(id=str(uuid4()), source_evidence_file_id=str(ids[0]), status="completed", entity_count=5)
+    with Session() as db:
+        assert evidence_job_sync.reconcile_case_poll(db, str(case_id), [job]) == 1  # links the job: a write
+        db.commit()
+
+    real = evidence_job_sync._reconcile
+
+    def reconcile_then_other_writer(db, jobs, **kw):
+        result = real(db, jobs, **kw)
+        assert result == (0, True)  # nothing to write: this reconcile keeps a version
+        with Session() as other:  # another writer breaks the record after it was read, before this poll ends
+            other.execute(text("UPDATE evidence_files SET status = 'failed' WHERE id = :id"), dict(id=ids[0]))
+            other.commit()
+        return result
+
+    monkeypatch.setattr(evidence_job_sync, "_reconcile", reconcile_then_other_writer)
+    with Session() as db:
+        evidence_job_sync.reconcile_case_poll(db, str(case_id), [job])
+        db.commit()
+    monkeypatch.setattr(evidence_job_sync, "_reconcile", lambda db, jobs, **kw: calls.append(1) or real(db, jobs, **kw))
+    with Session() as db:
+        # The kept version was read before the records, so it predates the other write: the recheck reconciles.
+        assert evidence_job_sync.reconcile_case_poll(db, str(case_id), [job]) == 1
+        assert db.get(EvidenceFile, ids[0]).status == "processed"
+        db.commit()
