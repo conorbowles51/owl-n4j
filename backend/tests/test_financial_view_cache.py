@@ -1194,3 +1194,52 @@ def test_a_fast_view_is_saved_to_disk_only_when_asked_to_save_it(engine, tmp_pat
     [saved] = list(tmp_path.glob('views/*.view'))
     header = json.loads(saved.read_bytes().split(b'\n', 1)[0])
     assert header['key'][0] == 'payments' and header['seconds'] < view_cache.SAVE_MIN_SECONDS
+
+
+def _rows_and_total_views(rows_calls, own_reads):
+    """A rows view and a totals view over the same rows that reads the rows view's kept copy when it is current
+    (as /ledger-overview reads /ledger's)."""
+    @view_cache.cached_view('payments-rows')
+    def rows(case_id, db):
+        rows_calls.calls += 1
+        return dict(rows=[dict(amount=int(amount)) for (amount,) in db.execute(
+            text('SELECT amount FROM payments WHERE case_id = :c ORDER BY id'), dict(c=case_id))])
+
+    @view_cache.cached_view('payments-total')
+    def total(case_id, db):
+        kept = view_cache.kept_copy('payments-rows', dict(case_id=case_id))
+        if kept is None:
+            own_reads.calls += 1
+            kept = dict(rows=[dict(amount=int(amount)) for (amount,) in db.execute(
+                text('SELECT amount FROM payments WHERE case_id = :c ORDER BY id'), dict(c=case_id))])
+        return dict(total=sum(row['amount'] for row in kept['rows']))
+    return rows, total
+
+
+def test_a_view_reads_another_views_kept_copy_only_while_it_is_current(engine, saved_views):
+    case, rows_calls, own_reads = uuid.uuid4(), Counter(), Counter()
+    rows, total = _rows_and_total_views(rows_calls, own_reads)
+    write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 5), (:c, 7)', c=case)
+    assert call(engine, total, case).body == b'{"total":12}' and own_reads.calls == 1, 'no copy yet: computed itself'
+    view_cache.clear()
+    call(engine, rows, case)
+    assert call(engine, total, case).body == b'{"total":12}' and own_reads.calls == 1, 'from the kept copy'
+    # A write to a row the copy was computed from: the totals view is not served unchanged and the stale copy is
+    # not read; both compute again.
+    write(engine, 'UPDATE payments SET amount = 6 WHERE case_id = :c AND amount = 5', c=case)
+    assert call(engine, total, case).body == b'{"total":13}' and own_reads.calls == 2
+    call(engine, rows, case)
+    write(engine, 'UPDATE payments SET amount = amount WHERE case_id = :c AND amount = 6', c=case)
+    assert call(engine, total, case).body == b'{"total":13}' and own_reads.calls == 3, 'a rewrite with the same value'
+    # A saved copy (another worker, or after a restart) is read the same way.
+    call(engine, rows, case)
+    view_cache.clear()
+    calls = rows_calls.calls
+    assert call(engine, total, case).body == b'{"total":13}' and own_reads.calls == 3 and rows_calls.calls == calls
+    # The totals view kept from the copy covers the copy's rows: a later write computes it again.
+    write(engine, 'DELETE FROM payments WHERE case_id = :c AND amount = 7', c=case)
+    assert call(engine, total, case).body == b'{"total":6}'
+
+
+def test_kept_copy_outside_a_view_or_of_a_refusal_is_none(engine):
+    assert view_cache.kept_copy('payments-rows', dict(case_id=uuid.uuid4())) is None

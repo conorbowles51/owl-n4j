@@ -906,6 +906,14 @@ def get_ledger_overview(
     The page draws its top card from this small answer instead of every payment (d5b330d1: 64 MB). Each figure is
     the browser's own calculation over the same rows (services.financial.overview_totals)."""
     from services.financial.overview_totals import overview_totals
+    from services.financial.view_cache import kept_copy
+    # The ledger's own kept answer for the same scope, when it is current in this snapshot: the same rows, without
+    # building them again (d5b330d1: about 9 s).
+    ledger = kept_copy('ledger', dict(
+        case_id=case_id, source_document_id=source_document_id, account_id=account_id, ledger_status=ledger_status,
+        start_date=start_date, end_date=end_date, account_ids=account_ids, account_holders=account_holders))
+    if ledger is not None:
+        return {"case_id": str(case_id), **overview_totals(ledger["transactions"], str(case_id), categories or [])}
     transactions = _ledger_rows(
         db, case_id, source_document_id=source_document_id, account_id=account_id, account_ids=account_ids,
         account_holders=account_holders, ledger_status=ledger_status, start_date=start_date, end_date=end_date)

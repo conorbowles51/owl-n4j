@@ -104,6 +104,10 @@ class _Recording:
     tables: set = field(default_factory=set)
     paused: bool = False
     keep: bool = True
+    # The view's own snapshot connection and saved-copy scope (for kept_copy: another view's copy read in it).
+    connection: object = None
+    scope: object = None
+    xmax: int | None = None
 
 
 @dataclass(frozen=True)
@@ -790,7 +794,7 @@ def _serve(handler, key, engine, case_id, kwargs, state):
             note_cache('miss')
             # A graph view: the graph's state before it is computed, compared with the state after (kept only if equal).
             graph_before = _graph_state() if key[0] in _GRAPH else None
-            recording = _Recording(owner=_dbapi(owner), snapshot=snapshot)
+            recording = _Recording(owner=_dbapi(owner), snapshot=snapshot, connection=owner, scope=scope, xmax=xmax)
             token = _recording.set(recording)
             session = Session(bind=owner, autoflush=False, join_transaction_mode='create_savepoint')
             refusal = None
@@ -848,6 +852,34 @@ def _serve(handler, key, engine, case_id, kwargs, state):
                         time.perf_counter() - started, len(response.body), len(tables))
             _save_if_slow(key, kept, scope, xmax, started)
             return _current_answer(kept)
+
+
+def kept_copy(name, kwargs):
+    """Called by a cached view while it is computed: view ``name``'s kept answer for ``kwargs`` (as its handler is
+    called, all but ``db``), parsed, if one is kept (in memory or saved) and is current in this view's own snapshot;
+    else None. Only a plain 200 answer of a view that reads no graph. The copy's tables join this view's recorded
+    tables, so this view is kept under a fingerprint that covers every row the copy was computed from: a write to
+    any of them computes both again. Never raises."""
+    recording = _recording.get()
+    if recording is None or recording.paused or recording.connection is None or name in _GRAPH:
+        return None
+    try:
+        key = view_key(name, kwargs)
+        case_id = kwargs['case_id']
+        candidates = [_lookup(key)]
+        if recording.scope is not None:
+            candidates.append(_load_saved(key, recording.scope, recording.xmax))
+        for entry in candidates:
+            if entry is None or entry.status_code != 200 or entry.refusal is not None:
+                continue
+            if _state(recording.connection, entry.tables, case_id, name) != entry.fingerprint:
+                continue
+            recording.tables.update(entry.tables)
+            logger.info('Financial view computed from the kept %s copy', name)
+            return json.loads(entry.body)
+    except Exception:  # noqa: BLE001 - the view then computes its rows itself
+        logger.warning('Kept copy of %s unavailable; computing', name, exc_info=True)
+    return None
 
 
 def _kept(entry, state, updating=False):
