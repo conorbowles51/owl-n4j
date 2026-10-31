@@ -11,6 +11,7 @@ from pathlib import Path, PurePosixPath
 import re
 import stat
 import tempfile
+from types import SimpleNamespace
 from typing import Literal
 from uuid import UUID, uuid5
 import zipfile
@@ -289,45 +290,67 @@ async def dispatch_reports(group, user):
 async def group_action(identity: UUID, action: str, user: User = Depends(get_current_db_user), db: Session = Depends(get_db)):
     if action not in {'pause', 'resume', 'complete'}:
         raise HTTPException(404, 'Unknown upload action')
-    group = get_group(db, identity, user, lock=True)
-    if group.status == 'completed': return snapshot(db, group)
-    rows = members(db, group)
-    if action in {'pause', 'resume'}:
-        if group.receipt:
-            raise HTTPException(409, 'Files are saved. Finish registration to reconnect their processing jobs.')
-        group.status = 'paused' if action == 'pause' else 'uploading'
-        for row in rows:
-            if row.status != 'staged': row.status = group.status
-        db.commit()
-        return snapshot(db, group)
-    if group.status == 'paused':
-        raise HTTPException(409, 'Resume this selection before completing it')
-    if not group.receipt:
-        if any(row.status != 'staged' for row in rows):
+    # Async for the engine calls; every database step runs in the thread pool, in the same order and transaction
+    # (the group row stays locked from the first step to the commit that ends it).
+
+    def start():
+        group = get_group(db, identity, user, lock=True)
+        if group.status == 'completed': return None, None, snapshot(db, group)
+        rows = members(db, group)
+        if action in {'pause', 'resume'}:
+            if group.receipt:
+                raise HTTPException(409, 'Files are saved. Finish registration to reconnect their processing jobs.')
+            group.status = 'paused' if action == 'pause' else 'uploading'
+            for row in rows:
+                if row.status != 'staged': row.status = group.status
+            db.commit()
+            return None, None, snapshot(db, group)
+        if group.status == 'paused':
+            raise HTTPException(409, 'Resume this selection before completing it')
+        if not group.receipt and any(row.status != 'staged' for row in rows):
             raise HTTPException(409, 'Some files have not finished uploading. Resume the selection to send the missing parts.')
+        return group, rows, None
+
+    group, rows, answer = await run_in_threadpool(start)
+    if answer is not None:
+        return answer
+    if not group.receipt:
         try:
             prepared = await run_in_threadpool(prepare_payload, group, rows)
         except HTTPException as exc:
             if exc.status_code == 409:
-                for row in rows:
-                    if len(uploads.snapshot(row)['received']) != len(row.chunks):
-                        row.status = 'uploading'
-                db.commit()
+                def mark_unfinished():
+                    for row in rows:
+                        if len(uploads.snapshot(row)['received']) != len(row.chunks):
+                            row.status = 'uploading'
+                    db.commit()
+                await run_in_threadpool(mark_unfinished)
             raise
-        group.receipt = register_payload(db, group, user, prepared)
-        group.status = 'dispatching' if group.receipt['dispatch'] else 'completed'
-        if group.status == 'completed':
-            for row in rows: row.status = 'completed'
-        # The receipt and evidence rows commit together before any external job call.
-        db.commit()
-    if group.status == 'dispatching':
+
+        def register():
+            group.receipt = register_payload(db, group, user, prepared)
+            group.status = 'dispatching' if group.receipt['dispatch'] else 'completed'
+            if group.status == 'completed':
+                for row in rows: row.status = 'completed'
+            # The receipt and evidence rows commit together before any external job call.
+            db.commit()
+        await run_in_threadpool(register)
+    # What the engine calls read, loaded here: after a commit the objects reload on first use.
+    dispatch = await run_in_threadpool(lambda: None if group.status != 'dispatching' else (
+        SimpleNamespace(case_id=group.case_id, receipt=group.receipt, replace_existing=group.replace_existing),
+        SimpleNamespace(email=user.email, id=user.id)))
+    if dispatch is not None:
         try:
-            jobs = await dispatch_reports(group, user)
+            jobs = await dispatch_reports(*dispatch)
         except Exception as exc:
             raise HTTPException(503, 'Files are saved, but processing could not be queued. Choose Finish registration to retry; files will not be uploaded again.') from exc
-        group = get_group(db, identity, user, lock=True)
-        group.receipt = {**group.receipt, 'job_ids': jobs}
-        group.status = 'completed'
-        for row in members(db, group): row.status = 'completed'
-        db.commit()
-    return snapshot(db, group)
+
+        def finish():
+            group = get_group(db, identity, user, lock=True)
+            group.receipt = {**group.receipt, 'job_ids': jobs}
+            group.status = 'completed'
+            for row in members(db, group): row.status = 'completed'
+            db.commit()
+            return snapshot(db, group)
+        return await run_in_threadpool(finish)
+    return await run_in_threadpool(snapshot, db, group)

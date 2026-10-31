@@ -72,7 +72,6 @@ NOT_YET_OFFLOADED = {
     'routers/evidence.py:delete_evidence_file', 'routers/evidence_folders.py:process_folder',
     'routers/financial_statement_import.py:prepare_existing',
     'routers/financial_statement_import.py:retry_financial_batch_file',
-    'routers/evidence_upload_groups.py:group_action',
 }
 
 _OFFLOAD = {'run_in_threadpool', 'to_thread', 'run_sync'}
