@@ -53,6 +53,10 @@ class GraphResponseCacheTests(unittest.TestCase):
         self.assertEqual(self.calls, 3)
         self.assertIsNone(keys_digest(None))
 
+    def test_a_value_json_cannot_hold_is_a_server_error_not_a_bad_request(self):
+        with self.assertRaises(RuntimeError):
+            cached_json(("graph", "nan"), lambda: {"total": float("nan")}, "gzip")
+
 
 if __name__ == "__main__":
     unittest.main()

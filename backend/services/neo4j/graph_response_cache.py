@@ -40,7 +40,13 @@ def keys_digest(keys) -> str | None:
 
 def _encode(result) -> bytes:
     from services.financial.view_cache import json_response
-    return gzip.compress(json_response(result).body, compresslevel=1)
+    try:
+        body = json_response(result).body
+    except ValueError as exc:
+        # A value JSON cannot hold (NaN, infinity). FastAPI raised this after the route returned, a 500;
+        # inside the route a ValueError would be answered as a 400, so it is not passed on as one.
+        raise RuntimeError(f"The response could not be encoded as JSON: {exc}") from exc
+    return gzip.compress(body, compresslevel=1)
 
 
 def cached_json(key: Hashable, compute: Callable[[], object], accept_encoding: str | None) -> Response:
