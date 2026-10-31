@@ -71,6 +71,7 @@ ALIASED_EXPORTS = {
     "category_breakdown": "payment_category_breakdown",
     "category_library": "payment_category_library",
     "correction_fields": "payment_correction_fields",
+    "overview_totals": "summarise_overview",
     "correction_verification": "verify_correction",
     "counterparty_parties": "list_counterparty_parties",
     "ledger_source": "read_ledger_source",

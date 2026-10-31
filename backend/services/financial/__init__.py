@@ -2348,3 +2348,6 @@ __all__ += ["run_in_child_forever"]
 # Account-correction provenance carried in the ledger export.
 from services.financial.account_correction_provenance import capture_account_corrections
 __all__ += ["capture_account_corrections"]
+# Aliased like ``summarise_ledger``: exported as the module's own name it would replace the submodule.
+from services.financial.overview_totals import overview_totals as summarise_overview
+__all__ += ["summarise_overview"]
