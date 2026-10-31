@@ -356,6 +356,24 @@ class ChainTests(TestCase):
         self.assertAlmostEqual(stored['attempts'][0]['cost_usd'], billed, places=5)
         self.assertAlmostEqual(stored['cost_usd'], billed + vr.cost_usd('gpt-5.6-terra', USAGE), places=5)
 
+    def test_a_failed_reading_in_parts_counts_all_it_cost_against_the_case_budget(self):
+        """A long statement read in parts makes several requests; when it fails, what they cost beyond the one
+        request reserved is counted against the case's budget too (review, 2026-10-31)."""
+        batch, held = self.held()
+        right, knowledge = self.r._image_reading(held)
+        usage = dict(prompt_tokens=30000, completion_tokens=3 * 64000, requests=3)
+
+        def parts_fail(images):
+            error = vr.UnreadableAnswer('the parts of the reading print two different holder for one account')
+            error.usage = usage
+            raise error
+        chain = [reader('deepseek', 'deepseek-flash', parts_fail), reader('openai', 'gpt-5.6-terra', lambda images: (right, USAGE))]
+        with self.assertLogs(vr.log.name, 'WARNING'):
+            outcome, _ = self.read(batch, held, lambda db, case_id: chain, knowledge)
+        self.assertEqual(outcome['status'], 'proved', outcome.get('message'))
+        billed = vr.cost_usd('deepseek-flash', usage) + vr.cost_usd('gpt-5.6-terra', USAGE)
+        self.assertAlmostEqual(sum(vr._spend.values()), billed, places=5)
+
     def test_a_text_only_model_in_the_chain_is_never_sent_the_pages(self):
         batch, held = self.held()
         right, knowledge = self.r._image_reading(held)
@@ -462,12 +480,15 @@ class ChainTests(TestCase):
         constants = [t.id for node in ast.walk(tree) if isinstance(node, ast.Assign) for t in node.targets
                      if isinstance(t, ast.Name) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
                      and len(node.value.value) > 200]
-        self.assertEqual(constants, ['PROMPT'], 'one long instruction constant')
+        # PROMPT, and the note that takes PAGES_NOTE's place for a part of a long statement (both used only by
+        # page_instructions, sent the same to every provider).
+        self.assertEqual(constants, ['PROMPT', 'PART_NOTE'], 'one long instruction constant and its part note')
+        self.assertEqual(source.count('PART_NOTE.format('), 1)
         self.assertNotIn('STRIPS_NOTE', source)
         users = [line.strip() for line in source.splitlines() if re.search(r'\bPROMPT\b(?!_VERSION)', line)
                  and not line.lstrip().startswith(('#', 'PROMPT ='))]
         self.assertEqual([u for u in users if 'PROMPT +' in u or 'PROMPT,' in u and 'return' in u],
-                         ['return PROMPT + PAGES_NOTE.format(pages=pages, count=strips), PROMPT_VERSION'])
+                         ['return PROMPT + note, PROMPT_VERSION'])
         self.assertEqual(source.count('call_vision_json('), 1)
         self.assertEqual(source.count('page_instructions('), 2, 'defined once, used once (document_request)')
 

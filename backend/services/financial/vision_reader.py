@@ -504,11 +504,21 @@ PAGES_NOTE = """
 This statement has {pages} page(s), each given as {count} overlapping strip(s)."""
 
 
-def page_instructions(pages, strips):
+# A statement too long for one answer is read in parts of its pages (document_request): the same instructions, and
+# this note in place of PAGES_NOTE, so each part gives only what is printed on its own pages.
+PART_NOTE = """
+
+This statement has {total} pages. These images are {pages} of them (labels {labels}); the other pages are read separately. Transcribe only what is printed on these pages: pages[] describes only these pages, rows are only the lines printed on them, and a balance, total or count is given only when it is printed on these pages (a balance carried over from an earlier page is not the period's opening balance). Each page is given as {count} overlapping strip(s)."""
+
+
+def page_instructions(pages, strips, part=None):
     """(instruction text, PROMPT_VERSION) for reading a statement's page images: the ONE builder of that text, used
     for every provider and every path (Neil, 2026-10-28). Providers differ only in transport (OpenAI's enforced
-    response format; the schema after this text for DeepSeek) and in strips per page."""
-    return PROMPT + PAGES_NOTE.format(pages=pages, count=strips), PROMPT_VERSION
+    response format; the schema after this text for DeepSeek) and in strips per page. ``part``: (labels of the pages
+    in this part, pages of the statement) when a long statement is read in parts."""
+    note = PAGES_NOTE.format(pages=pages, count=strips) if part is None else PART_NOTE.format(
+        total=part[1], pages=pages, labels=', '.join(str(n) for n in part[0]), count=strips)
+    return PROMPT + note, PROMPT_VERSION
 
 
 def document_pages(document, sent_pages):
@@ -2128,47 +2138,225 @@ def chain_id(readers):
                       if not getattr(r, 'switched_off', False)) + f' ({PROMPT_VERSION})'
 
 
+def _try_seconds(provider, timeout):
+    """The longest one try of a request with ``timeout`` can take (see reader_worst_seconds)."""
+    from services.llm_service import LLMExecutionContext
+    if provider == 'openai':
+        return OPENAI_CLIENT_TRIES * 2 * timeout + (OPENAI_CLIENT_TRIES - 1) * OPENAI_RETRY_PAUSE_SECONDS
+    return timeout + LLMExecutionContext.DEEPSEEK_READ_GAP_SECONDS + CONNECT_SECONDS
+
+
+def _timeout_within(provider, timeout, left):
+    """The largest timeout, at most ``timeout``, whose try ends within ``left`` seconds."""
+    if _try_seconds(provider, timeout) <= left:
+        return timeout
+    fixed = _try_seconds(provider, 0)
+    return (left - fixed) / (OPENAI_CLIENT_TRIES * 2 if provider == 'openai' else 1)
+
+
+# A part of a long statement is not sent with less time than this to answer: the rest of the reader's allowance.
+PART_MIN_SECONDS = 120
+
+
 def document_request(model_id, api_key, provider='openai'):
     """read([(page, [png, ...])]) -> (document json, usage): one request for the statement's pages, with the shared
-    instructions (PROMPT); each provider's own settings (READER_SETTINGS). Raises on any failure."""
-    from services.llm_service import LLMExecutionContext
-    settings = READER_SETTINGS.get(provider) or READER_SETTINGS['openai']
+    instructions (PROMPT); each provider's own settings (READER_SETTINGS). Raises on any failure.
 
-    def read(pages):
+    An answer cut off at the provider's output limit (a long statement: fin-holders 2026-10-31, 20 pages, DeepSeek
+    stopped at its 64,000 tokens) is read again in two halves of its pages, each with the same instructions (PART_NOTE),
+    and the halves are joined into one reading (join_parts); a half cut off again is halved again. The joined reading
+    is then proved as a whole, exactly as a reading of one request. All of it within the reader's allowance
+    (reader_worst_seconds); usage counts every request, the cut-off ones included (they are billed)."""
+    from services.llm_service import IncompleteAnswer, LLMExecutionContext
+    settings = READER_SETTINGS.get(provider) or READER_SETTINGS['openai']
+    total = {'prompt_tokens': 0, 'completion_tokens': 0, 'requests': 0}
+
+    def counted(context):
+        usage = dict(context.last_usage or {})
+        total['prompt_tokens'] += usage.get('prompt_tokens') or 0
+        total['completion_tokens'] += usage.get('completion_tokens') or 0
+        total['requests'] += 1
+        return usage
+
+    def failed(error):
+        # What the provider reported it used for every request so far (an answer cut short is billed).
+        error.usage = dict(total)
+        return error
+
+    def one(pages, part, deadline):
         strips = max(len(images) for _, images in pages)
         labels, images = [], []
         for number, parts in pages:
             for index, image in enumerate(parts):
                 labels.append(f'Page {number}' if len(parts) == 1 else f'Page {number}, part {index + 1} of {len(parts)}')
                 images.append(image)
-        prompt, _ = page_instructions(len(pages), strips)
+        prompt, _ = page_instructions(len(pages), strips, part=part)
         for attempt in range(settings['retries'] + 1):
+            timeout = settings['timeout']
+            if deadline is not None:
+                timeout = _timeout_within(provider, timeout, deadline - time.monotonic())
+                if timeout < PART_MIN_SECONDS:
+                    out_of_time = requests_timeout('not sent: too little of its time was left')
+                    out_of_time.words = 'not enough of its time was left to read the rest of the statement'
+                    raise failed(out_of_time)
             context = LLMExecutionContext(provider, model_id, api_key=api_key)
             try:
                 text = context.call_vision_json(prompt, images, image_labels=labels, schema=DOCUMENT_SCHEMA,
-                                                schema_name='statement_document', timeout=settings['timeout'],
+                                                schema_name='statement_document', timeout=timeout,
                                                 max_output_tokens=settings['max_output_tokens'])
+                counted(context)
                 break
+            except IncompleteAnswer:
+                counted(context)
+                raise
             except Exception as error:  # noqa: BLE001 - retried only when the connection or server failed
+                counted(context)
                 if attempt >= settings['retries'] or not _retryable(error):
-                    # What the provider reported it used (an answer cut short is billed), for the caller to count.
-                    error.usage = dict(context.last_usage or {})
-                    raise
+                    raise failed(error)
                 log.warning('Page-image request to %s failed (%s: %s); trying again (%s of %s)', provider,
                             type(error).__name__, str(error)[:200], attempt + 1, settings['retries'])
                 time.sleep(RETRY_PAUSE_SECONDS * (attempt + 1))
         try:
             document = json.loads(text)
         except ValueError as error:
-            unreadable = UnreadableAnswer('the answer was not valid JSON')
-            unreadable.usage = dict(context.last_usage or {})
-            raise unreadable from error
+            raise failed(UnreadableAnswer('the answer was not valid JSON')) from error
         if not isinstance(document, dict):
-            unreadable = UnreadableAnswer('the answer was not a JSON object')
-            unreadable.usage = dict(context.last_usage or {})
-            raise unreadable
-        return document, dict(context.last_usage or {})
+            raise failed(UnreadableAnswer('the answer was not a JSON object'))
+        return document
+
+    def read_pages(pages, part, deadline):
+        try:
+            return [([n for n, _ in pages], one(pages, part, deadline))]
+        except IncompleteAnswer as error:
+            if error.finish_reason != 'length' or len(pages) < 2:
+                raise failed(error)
+            log.warning('Page-image reading by %s %s of %s pages stopped at its output limit; reading them again in '
+                        'two parts', provider, model_id, len(pages))
+            if deadline is None:
+                deadline = started + reader_worst_seconds(PageReader(provider=provider))
+            middle = (len(pages) + 1) // 2
+            halves = [pages[:middle], pages[middle:]]
+            return [read for half in halves
+                    for read in read_pages(half, ([n for n, _ in half], statement_total), deadline)]
+
+    def read(pages):
+        nonlocal started, statement_total
+        total.update(prompt_tokens=0, completion_tokens=0, requests=0)
+        started, statement_total = time.monotonic(), len(pages)
+        documents = read_pages(list(pages), None, None)
+        try:
+            document = documents[0][1] if len(documents) == 1 else join_parts(documents)
+        except UnreadableAnswer as error:
+            raise failed(error)
+        usage = dict(total)
+        if len(documents) > 1:
+            usage['parts'] = len(documents)
+        return document, usage
+    started, statement_total = 0.0, 0
     return read
+
+
+def requests_timeout(message):
+    import requests
+    return requests.exceptions.ReadTimeout(message)
+
+
+_PART_TEXT = ('section_name', 'institution', 'holder', 'currency', 'currency_as_printed', 'period_start', 'period_end',
+              'full_account_number')
+_PART_VALUES = ('opening_balance', 'closing_balance', 'total_credits', 'total_debits', 'count_credits', 'count_debits',
+                'days_in_period', 'total_fees', 'total_interest')
+
+
+def _same_name(field):
+    def same(a, b):
+        from services.financial import field_proposals as fp
+        return getattr(fp, field)(a, b)
+    return same
+
+
+_PART_SAME = {'institution': _same_name('same_institution'), 'holder': _same_name('same_holder')}
+
+
+def _part_account(accounts, account):
+    """The account of the earlier parts that ``account`` continues, else None: the same account number (digits, one
+    ending the other), else the same printed section name, else the only account when it prints neither."""
+    digits = _digits(account.get('account_number')) or _digits(account.get('full_account_number'))
+    name = ' '.join(str(account.get('section_name') or '').upper().split())
+    if digits:
+        same = [a for a in accounts if (_digits(a.get('account_number')) or _digits(a.get('full_account_number')))
+                and (lambda d: d.endswith(digits) or digits.endswith(d))(
+                    _digits(a.get('account_number')) or _digits(a.get('full_account_number')))]
+        if len(same) > 1 and name:
+            same = [a for a in same if ' '.join(str(a.get('section_name') or '').upper().split()) == name]
+        if len(same) > 1:
+            raise UnreadableAnswer('the parts of the reading could not be joined (two accounts with one number)')
+        return same[0] if same else None
+    if name:
+        same = [a for a in accounts if ' '.join(str(a.get('section_name') or '').upper().split()) == name]
+        if len(same) > 1:
+            raise UnreadableAnswer('the parts of the reading could not be joined (two accounts with one name)')
+        if same:
+            return same[0]
+    return accounts[0] if len(accounts) == 1 and not name else None
+
+
+def join_parts(parts):
+    """One document reading from the readings of a statement's parts, [(labels sent, document)] (disjoint pages, in
+    the order sent). A part citing a page it was not sent is refused (UnreadableAnswer). Pages in
+    order; each account joined with the same account of the earlier parts, its rows in order. What two parts print
+    differently for one account (holder, period, a balance or total) is never chosen between: UnreadableAnswer, and
+    the reader has not read the statement. The joined reading is proved as a whole (judge), like any other."""
+    pages, accounts = [], []
+    for labels, document in parts:
+        cited = [p.get('page') for p in document.get('pages') or []]
+        for account in document.get('accounts') or []:
+            cited += [row.get('page') for row in account.get('rows') or []]
+            cited += [account.get(k) for k in ('opening_balance_page', 'closing_balance_page')
+                      if account.get(k) is not None]
+        if any(page not in labels for page in cited):
+            raise UnreadableAnswer('a part of the reading cites a page it was not given')
+        pages.extend(document.get('pages') or [])
+        earlier = list(accounts)
+        for account in document.get('accounts') or []:
+            target = _part_account(earlier, account)
+            if target is None:
+                accounts.append(dict(account, rows=list(account.get('rows') or [])))
+                continue
+            for key in _PART_TEXT + ('account_number',):
+                mine, theirs = str(target.get(key) or '').strip(), str(account.get(key) or '').strip()
+                if not mine:
+                    target[key] = account.get(key)
+                elif theirs and key in _PART_SAME:
+                    # The bank's or holder's name printed in a longer or shorter form on another page (the measured
+                    # 20-page BBVA statement): the same by the rule prove() compares names with; the first part's kept.
+                    if ' '.join(mine.upper().split()) != ' '.join(theirs.upper().split()):
+                        if not _PART_SAME[key](mine, theirs):
+                            raise UnreadableAnswer('the parts of the reading print two different %s for one account'
+                                                   % key)
+                        # Both printed forms stay on the reading: the parts did not print it alike.
+                        forms = target.setdefault('forms_in_parts', {}).setdefault(key, [mine])
+                        if theirs not in forms:
+                            forms.append(theirs)
+                elif key == 'full_account_number':
+                    if theirs and _digits(mine) != _digits(theirs):
+                        raise UnreadableAnswer('the parts of the reading print two different full account number '
+                                               'for one account')
+                elif theirs and key != 'account_number' and ' '.join(mine.upper().split()) != ' '.join(theirs.upper().split()):
+                    raise UnreadableAnswer('the parts of the reading print two different %s for one account'
+                                           % key.replace('_', ' '))
+            for key in _PART_VALUES:
+                mine, theirs = target.get(key), account.get(key)
+                if theirs in (None, ''):
+                    continue
+                if mine in (None, ''):
+                    target[key] = theirs
+                    if key in ('opening_balance', 'closing_balance'):
+                        target[key + '_page'] = account.get(key + '_page')
+                elif _canonical(str(mine)) != _canonical(str(theirs)):
+                    raise UnreadableAnswer('the parts of the reading print two different values for the %s'
+                                           % key.replace('_', ' '))
+            target['rows'].extend(account.get('rows') or [])
+    return {'pages': pages, 'accounts': accounts}
 
 
 class UnreadableAnswer(ValueError):
@@ -2180,6 +2368,8 @@ def failure_words(error):
     import requests
     if isinstance(error, UnreadableAnswer):
         return str(error)
+    if getattr(error, 'words', None):
+        return error.words
     if isinstance(error, requests.exceptions.Timeout) or 'timed out' in str(error).lower():
         return 'it did not answer in time'
     if isinstance(error, (requests.exceptions.ConnectionError, requests.exceptions.ChunkedEncodingError)):
@@ -2604,7 +2794,10 @@ def _outcome(record, attempts, accepted, spent_now, seconds, page_costs, again):
         record.update(page_costs=costs, cost_usd=round(sum(c['cost_usd'] for c in costs) + reused, 6),
                       spent_usd=round(spent_now, 6), seconds=round(seconds, 1))
     if named:
-        shown = main or (attempts[-1] if attempts else {})
+        # The reader that read last, never one that was not sent the pages (switched off, no key, out of time):
+        # a failed outcome is DeepSeek's when OpenAI failover is switched off (fin-holders, 2026-10-31).
+        ran = [a for a in attempts if a.get('status') not in ('switched_off', 'unavailable', 'deferred', 'budget')]
+        shown = main or (ran[-1] if ran else attempts[-1] if attempts else {})
         record.update(provider=shown.get('provider'), model=shown.get('model'), prompt_version=shown.get('prompt_version'),
                       attempts=[dict({k: v for k, v in a.items() if k != 'raw'},
                                      **({'raw_in_record': True} if a is main else
@@ -2883,6 +3076,8 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
                         # An answer cut short or unreadable is billed: its cost is counted (the reservation stays).
                         cost = cost_usd(reader.model, usage)
                         spent_now += cost
+                        # A long statement read in parts can cost more than the one request reserved: the rest too.
+                        _add_spend(case_id, max(0.0, cost - reserved))
                         failed.update(cost_usd=round(cost, 6), prompt_tokens=usage.get('prompt_tokens'),
                                       completion_tokens=usage.get('completion_tokens'))
                         for number, _ in images:
@@ -2905,6 +3100,9 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
                     share['cost_usd'] = round(share['cost_usd'] + cost / len(images), 6)
                 attempt.update(cost_usd=round(cost, 6), seconds=took, prompt_tokens=usage.get('prompt_tokens'),
                                completion_tokens=usage.get('completion_tokens'))
+                if usage.get('parts'):
+                    # Read in parts of its pages (an answer of one request was cut off at the output limit).
+                    attempt.update(parts=usage['parts'], requests=usage.get('requests'))
                 log.info('Page-image reading: case %s file %s by %s %s, %s pages, %ss, cost $%.4f ($%.4f a page; '
                          '%s tokens in, %s out)', str(case_id)[:8], str(file_id)[:8], reader.provider or 'model',
                          reader.model, len(images), took, cost, cost / len(images), usage.get('prompt_tokens'),
@@ -3702,6 +3900,7 @@ def read_saved(factory, document_id, resolve_path, *, page_reader=None, knowledg
                     if usage.get('completion_tokens'):
                         cost = cost_usd(reader.model, usage)  # billed though it failed (the reservation stays)
                         spent_now += cost
+                        _add_spend(case_id, max(0.0, cost - reserved))  # parts beyond the reservation
                         failed['cost_usd'] = round(cost, 6)
                         for number, _ in images:
                             share = page_costs.setdefault(number, dict(page=number, prompt_tokens=0,
@@ -3717,6 +3916,8 @@ def read_saved(factory, document_id, resolve_path, *, page_reader=None, knowledg
                     share = page_costs.setdefault(number, dict(page=number, prompt_tokens=0, completion_tokens=0, cost_usd=0.0))
                     share['cost_usd'] = round(share['cost_usd'] + cost / len(images), 6)
                 attempt.update(cost_usd=round(cost, 6), seconds=took)
+                if usage.get('parts'):
+                    attempt.update(parts=usage['parts'], requests=usage.get('requests'))
                 log.info('Page-image reading of saved statement: case %s file %s by %s %s, %s pages, cost $%.4f',
                          str(case_id)[:8], str(file_id)[:8], reader.provider or 'model', reader.model, len(pages), cost)
             attempt['raw'] = raw

@@ -34,6 +34,14 @@ analysis_guidance = config.get("analysis_guidance", "Provide clear and helpful a
 RESPONSES_API_MODEL_PREFIXES = ("gpt-5",)
 
 
+class IncompleteAnswer(ValueError):
+    """The provider stopped before finishing its answer (``finish_reason``: 'length' = its output limit)."""
+
+    def __init__(self, message, finish_reason=None):
+        super().__init__(message)
+        self.finish_reason = finish_reason
+
+
 class LLMExecutionContext:
     def __init__(
         self,
@@ -219,7 +227,8 @@ class LLMExecutionContext:
         if getattr(choice.message, "refusal", None):
             raise ValueError("The model declined to read the page image")
         if choice.finish_reason != "stop":
-            raise ValueError(f"The page-image reading was incomplete ({choice.finish_reason})")
+            raise IncompleteAnswer(f"The page-image reading was incomplete ({choice.finish_reason})",
+                                   choice.finish_reason)
         text = choice.message.content
         if not text:
             raise ValueError("LLM returned empty response")
@@ -324,7 +333,8 @@ class LLMExecutionContext:
         if not choices:
             raise ValueError("DeepSeek returned no answer")
         if choices[0].get("finish_reason") != "stop":
-            raise ValueError(f"The page-image reading was incomplete ({choices[0].get('finish_reason')})")
+            raise IncompleteAnswer(f"The page-image reading was incomplete ({choices[0].get('finish_reason')})",
+                                   choices[0].get("finish_reason"))
         text = str((choices[0].get("message") or {}).get("content") or "").strip()
         if not text:
             raise ValueError("DeepSeek returned an empty response")
