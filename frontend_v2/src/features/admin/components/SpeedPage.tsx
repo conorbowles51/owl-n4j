@@ -29,6 +29,13 @@ function what(row: { kind: string; method: string; route: string }) {
 }
 
 /** How long requests and Financial page views take. Admins only (server enforced). */
+/** How a slow request's Financial view was served: a kept copy, the previous copy while it is recomputed, or computed now. */
+function cacheLabel(cache: string): string {
+  if (cache === "hit" || cache === "saved") return "kept copy"
+  if (cache === "updating") return "previous copy, updating"
+  return "computed"
+}
+
 export function SpeedPage() {
   const [days, setDays] = useState("1")
   const [caseId, setCaseId] = useState(ALL)
@@ -170,7 +177,7 @@ export function SpeedPage() {
                 <td className="px-3 py-1.5 text-right">{formatDuration(row.duration_ms)}</td>
                 <td className="px-3 py-1.5 text-right">
                   {row.pg_ms == null ? "" : formatDuration(row.pg_ms)}
-                  {row.cache ? ` (${row.cache === "hit" || row.cache === "saved" ? "kept copy" : "computed"})` : ""}
+                  {row.cache ? ` (${cacheLabel(row.cache)})` : ""}
                 </td>
                 <td className="px-3 py-1.5 text-right">{row.loop_lag_max_ms == null ? "" : formatDuration(row.loop_lag_max_ms)}</td>
                 <td className="px-3 py-1.5 text-right">{row.host_cpu_pressure == null ? "" : `${Math.round(row.host_cpu_pressure)}%`}</td>
