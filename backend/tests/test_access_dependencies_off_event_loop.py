@@ -97,3 +97,13 @@ def test_a_poll_waiting_on_another_poll_of_the_case_gives_up_after_the_wait(monk
         assert evidence_job_sync.reconcile_case_poll(SimpleNamespace(), "held-case", []) == 0
     finally:
         lock.release()
+
+
+def test_the_token_check_runs_on_the_event_loop_without_a_thread_hop():
+    # Reading the header and checking the JWT is CPU only; as plain functions every request spent two thread-pool
+    # hops on them, queued behind slow handlers when the pool was busy. They must stay async and never take a session.
+    import inspect
+    from routers.auth import _extract_token, get_current_user
+    for dependency in (_extract_token, get_current_user):
+        assert inspect.iscoroutinefunction(dependency), dependency.__name__
+        assert 'db' not in inspect.signature(dependency).parameters

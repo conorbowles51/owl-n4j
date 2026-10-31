@@ -57,7 +57,9 @@ class ChangePasswordRequest(BaseModel):
     new_password: str
 
 
-def _extract_token(
+# _extract_token and get_current_user are async on purpose: they read a header and check a JWT (no I/O), and as
+# plain functions every request spent two thread-pool hops on them, queued behind slow handlers when the pool is busy.
+async def _extract_token(
     request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> str | None:
@@ -68,7 +70,7 @@ def _extract_token(
     return None
 
 
-def get_current_user(
+async def get_current_user(
     token: str = Depends(_extract_token),
 ) -> dict:
     if not token:
