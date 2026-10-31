@@ -18,9 +18,20 @@ services:
       - NEO4J_server_memory_heap_initial__size=1G
       - NEO4J_server_memory_heap_max__size=3G
       - NEO4J_PLUGINS=["apoc"]
-      - NEO4J_dbms_security_procedures_unrestricted=apoc.*
+      # lx-neo4jconf: only the one APOC function the app calls (evidence-engine write_graph.py) may reach database
+      # internals. The 64 APOC procedures and functions that need that (apoc.meta.*, apoc.schema.*, apoc.trigger.*,
+      # apoc.node.degree ...) are not loaded; nothing in the app calls them. Must stay non-empty: when empty, the
+      # image's plugin installer puts back apoc.*. Way back: apoc.* here.
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.map.removeKeys
       - NEO4J_dbms_security_procedures_allowlist=apoc.*
       - NEO4J_db_transaction_timeout=25s
+      # lx-neo4jconf: a query cannot make the database server fetch a URL or read a server file. LOAD CSV,
+      # apoc.load.* and apoc.cypher.run wrapping them are refused for every address (0.0.0.0/0, ::/0; the private,
+      # loopback, link-local and metadata ranges are listed too so they stay blocked if the public lines are
+      # dropped) and for file:/// URLs. The app uses neither. 5.26 names the address setting
+      # internal.dbms.cypher_ip_blocklist. Check: deploy/checks/neo4j_url_refusals.py. Way back: remove these two lines.
+      - NEO4J_internal_dbms_cypher__ip__blocklist=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16,127.0.0.0/8,::1/128,fe80::/10,fc00::/7,0.0.0.0/0,::/0
+      - NEO4J_dbms_security_allow__csv__import__from__file__urls=false
     volumes:
       - ./neo4j/data:/data
       - ./neo4j/logs:/logs
