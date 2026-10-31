@@ -127,10 +127,14 @@ def _timeline_whole_read(page_args: dict, scope: str):
 
 def warm_timeline_page(case_id, db=None) -> int:
     """The Timeline page's read as the page asks for it (whole=true&scope=all), into the saved responses. A case
-    above the whole-Timeline ceiling is refused here as on the page, and nothing is saved."""
+    above the whole-Timeline ceiling is refused here as on the page, and nothing is saved: the refusal is that
+    case's answer, so the warm-up records it as a refusal (422) on each pass, not as a failed warm-up."""
     page_args = {"event_types": None, "start_date": None, "end_date": None, "case_id": str(case_id),
                  "limit": 500, "cursor": None}
-    return warm_response(*_timeline_whole_read(page_args, "all"))
+    try:
+        return warm_response(*_timeline_whole_read(page_args, "all"))
+    except TimelineTooLarge as exc:
+        raise HTTPException(status_code=422, detail=f"{exc} (the page is refused the same way; nothing saved)") from exc
 
 
 @router.get("")

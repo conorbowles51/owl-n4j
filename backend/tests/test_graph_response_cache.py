@@ -102,6 +102,19 @@ class WarmedPageTests(unittest.TestCase):
         self.assertEqual(json.loads(response.body), {"read": "timeline"})
         self.assertEqual(self.calls[0][1], dict(event_types=None, start_date=None, end_date=None, case_id=str(case)))
 
+    def test_a_timeline_above_the_ceiling_is_a_refusal_for_the_warm_up_and_nothing_is_saved(self):
+        import uuid
+        from fastapi import HTTPException
+        from routers import timeline
+        from services.neo4j.timeline_service import TimelineTooLarge
+        with patch.object(timeline.neo4j_service, "get_timeline_whole",
+                          side_effect=TimelineTooLarge("Timeline has 250,000 events; the whole-Timeline limit is 200,000")):
+            with self.assertRaises(HTTPException) as refused:
+                timeline.warm_timeline_page(uuid.UUID("d5b330d1-b3fe-4b03-8539-98d9cc3115e0"))
+        self.assertEqual(refused.exception.status_code, 422)
+        self.assertIn("250,000 events", refused.exception.detail)
+        self.assertIn("nothing saved", refused.exception.detail)
+        self.assertEqual(len(graph_response_cache.graph_responses._entries), 0)
 
 if __name__ == "__main__":
     unittest.main()
