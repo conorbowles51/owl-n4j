@@ -177,6 +177,63 @@ class TimelineServiceTests(unittest.TestCase):
         self.assertEqual(events[0]["source_files"], ["report.pdf"])
         self.assertEqual(events[0]["location"], "Port Newark")
 
+    @staticmethod
+    def _row(key, date="2024-01-02"):
+        return {
+            "key": key, "name": key, "type": "Event", "date": date, "time": None,
+            "amount": None, "summary": None, "notes": None, "connections": [],
+        }
+
+    def test_page_is_cut_before_connections_are_gathered(self):
+        captured = []
+        with patch(
+            "services.neo4j.timeline_service.driver.session",
+            return_value=_FakeSession(captured, rows=[], total=0),
+        ):
+            TimelineService().get_timeline_page(case_id="case-1", limit=2)
+
+        page_query = captured[0]["query"]
+        self.assertLess(page_query.index("LIMIT $limit"), page_query.index("OPTIONAL MATCH (n)-[r]-(connected)"))
+        # rows leave the aggregation unordered, so the page is sorted again after it
+        self.assertTrue(page_query.rstrip().endswith("ORDER BY sort_date ASC, coalesce(sort_time, '99:99') ASC, n.key ASC"))
+        self.assertLess(page_query.index("n.case_id = $case_id"), page_query.index("AS sort_date"))
+        self.assertNotIn("properties(", page_query)
+
+    def test_total_is_counted_once_and_carried_by_the_cursor(self):
+        first, later = [], []
+        rows = [self._row("a"), self._row("b"), self._row("c")]
+        with patch(
+            "services.neo4j.timeline_service.driver.session",
+            return_value=_FakeSession(first, rows=rows, total=5),
+        ):
+            page1 = TimelineService().get_timeline_page(case_id="case-1", limit=2, event_types=["Event"])
+        with patch(
+            "services.neo4j.timeline_service.driver.session",
+            return_value=_FakeSession(later, rows=[self._row("c")], total=999),
+        ):
+            page2 = TimelineService().get_timeline_page(
+                case_id="case-1", limit=2, event_types=["Event"], cursor=page1["next_cursor"],
+            )
+
+        self.assertEqual(sum("RETURN count(n) AS total" in c["query"] for c in first), 1)
+        self.assertEqual(page1["total"], 5)
+        self.assertEqual([c for c in later if "RETURN count(n) AS total" in c["query"]], [])
+        self.assertEqual(page2["total"], 5)
+        self.assertEqual(later[0]["params"]["cursor_key"], "b")
+
+    def test_cursor_total_is_not_reused_for_other_filters_or_old_cursors(self):
+        carried = TimelineService._encode_cursor(self._row("b"), total=5, filters=TimelineService._filter_tag({"case_id": "case-1"}))
+        old_style = TimelineService._encode_cursor(self._row("b"))
+        for cursor, kwargs in ((carried, {"case_id": "case-2"}), (carried, {"case_id": "case-1", "event_types": ["Event"]}), (old_style, {"case_id": "case-1"})):
+            captured = []
+            with patch(
+                "services.neo4j.timeline_service.driver.session",
+                return_value=_FakeSession(captured, rows=[], total=7),
+            ):
+                page = TimelineService().get_timeline_page(cursor=cursor, **kwargs)
+            self.assertEqual(page["total"], 7)
+            self.assertEqual(sum("RETURN count(n) AS total" in c["query"] for c in captured), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

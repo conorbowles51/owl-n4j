@@ -35,7 +35,9 @@ export function useTimelineData({
   const scope = useCaseLayer(caseId)
   const eventsQuery = useQuery({
     queryKey: ["timeline", caseId, scope],
-    queryFn: async () => {
+    // A superseded load (scope change, unmount, refetch) is cancelled through `signal`, so its
+    // remaining pages are not fetched.
+    queryFn: async ({ signal }) => {
       const events: TimelineEvent[] = []
       let cursor: string | undefined
       let total = 0
@@ -47,6 +49,7 @@ export function useTimelineData({
           limit: 2000,
           cursor,
           scope,
+          signal,
         })
         events.push(...page.events)
         total = page.total
@@ -66,7 +69,8 @@ export function useTimelineData({
           events: TimelineEvent[]
           next_offset: number | null
         } = await fetchAPI(
-          `/api/timeline/entries?${new URLSearchParams({ case_id: caseId!, scope, offset: String(offset) })}`
+          `/api/timeline/entries?${new URLSearchParams({ case_id: caseId!, scope, offset: String(offset) })}`,
+          { signal }
         )
         if (
           page.case_id !== caseId ||

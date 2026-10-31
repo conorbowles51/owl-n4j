@@ -88,3 +88,36 @@ it("reports a failed additions read instead of presenting the graph-only subset 
   )
   expect(result.current.dataKey).toBeNull()
 })
+it("stops paging when the load is cancelled, instead of fetching the remaining pages", async () => {
+  vi.mocked(timelineAPI.getEvents).mockReset()
+  vi.mocked(fetchAPI).mockReset()
+  let releaseFirst: () => void = () => {}
+  vi.mocked(timelineAPI.getEvents).mockImplementation(
+    ({ signal }) =>
+      new Promise((resolve, reject) => {
+        signal?.addEventListener("abort", () => reject(signal.reason), {
+          once: true,
+        })
+        releaseFirst = () =>
+          resolve({ events: [event], count: 1, total: 2, next_cursor: "next" })
+      })
+  )
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  const { unmount } = renderHook(() => useTimelineData({ caseId: "case" }), {
+    wrapper: ({ children }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    ),
+  })
+  await waitFor(() => expect(timelineAPI.getEvents).toHaveBeenCalledTimes(1))
+  const signal = vi.mocked(timelineAPI.getEvents).mock.calls[0][0].signal
+  expect(signal).toBeInstanceOf(AbortSignal)
+  unmount()
+  await client.cancelQueries({ queryKey: ["timeline", "case"] })
+  expect(signal?.aborted).toBe(true)
+  releaseFirst()
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  expect(timelineAPI.getEvents).toHaveBeenCalledTimes(1)
+  expect(fetchAPI).not.toHaveBeenCalled()
+})

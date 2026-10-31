@@ -5,6 +5,7 @@ Timeline Service - chronological event retrieval from the graph.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import logging
 import re
@@ -16,6 +17,9 @@ logger = logging.getLogger(__name__)
 
 
 class TimelineService:
+    # Repeated from _build_filters so the planner applies it before the sort-date expressions.
+    _NODE_PREFILTER = "n.case_id = $case_id AND coalesce(n.system_node, false) <> true"
+
     SORT_DATE_CYPHER = """
         CASE
             WHEN n.date IS NOT NULL AND toString(n.date) CONTAINS 'T' THEN split(toString(n.date), 'T')[0]
@@ -76,12 +80,15 @@ class TimelineService:
         return (date_text or None, time_text or None)
 
     @staticmethod
-    def _encode_cursor(event: Dict) -> str:
+    def _encode_cursor(event: Dict, total: int | None = None, filters: str | None = None) -> str:
         payload = {
             "date": event.get("date") or "",
             "time": event.get("time") or "99:99",
             "key": event.get("key") or "",
         }
+        if total is not None and filters:
+            payload["total"] = int(total)
+            payload["filters"] = filters
         raw = json.dumps(payload, separators=(",", ":")).encode("utf-8")
         return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
@@ -97,11 +104,22 @@ class TimelineService:
             return None
         if not isinstance(payload, dict):
             return None
-        return {
+        decoded = {
             "date": str(payload.get("date") or ""),
             "time": str(payload.get("time") or ""),
             "key": str(payload.get("key") or ""),
         }
+        total = payload.get("total")
+        if isinstance(total, int) and not isinstance(total, bool) and total >= 0 and isinstance(payload.get("filters"), str):
+            decoded["total"] = total
+            decoded["filters"] = payload["filters"]
+        return decoded
+
+    @staticmethod
+    def _filter_tag(params: Dict) -> str:
+        """Short digest of the filter values a total was counted for."""
+        raw = json.dumps(params, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+        return hashlib.sha256(raw).hexdigest()[:16]
 
     @staticmethod
     def _build_filters(
@@ -114,7 +132,7 @@ class TimelineService:
         conditions = [
             "sort_date IS NOT NULL",
             "NONE(label IN labels(n) WHERE label IN ['RecycleBin', 'RecycleBinItem'])",
-            "coalesce(properties(n)['system_node'], false) <> true",
+            "coalesce(n.system_node, false) <> true",
             "n.case_id = $case_id",
         ]
         params: Dict = {"case_id": case_id}
@@ -243,17 +261,24 @@ class TimelineService:
         page_params = dict(params)
         page_params["limit"] = limit + 1
 
+        # The page is chosen first and only its rows gather their connections: the connection list is
+        # per event, so the rows and their order are those of sorting every event and cutting after.
+        # Case and node checks come before the sort-date expressions so those run on this case's nodes only.
         query = f"""
             MATCH (n)
+            WHERE {self._NODE_PREFILTER}
             WITH
                 n,
                 {self.SORT_DATE_CYPHER} AS sort_date,
                 {self.SORT_TIME_CYPHER} AS sort_time
             WHERE {where_clause}
+            WITH n, sort_date, sort_time
+            ORDER BY sort_date ASC, coalesce(sort_time, '99:99') ASC, n.key ASC
+            LIMIT $limit
             OPTIONAL MATCH (n)-[r]-(connected)
             WHERE connected IS NULL OR (
               NONE(label IN labels(connected) WHERE label IN ['Document', 'Case', 'RecycleBin', 'RecycleBinItem'])
-              AND coalesce(properties(connected)['system_node'], false) <> true
+              AND coalesce(connected.system_node, false) <> true
               AND connected.case_id = $case_id
               {connected_scope_filter}
             )
@@ -276,7 +301,6 @@ class TimelineService:
                 n.ledger_transaction_id AS ledger_transaction_id,
                 connections
             ORDER BY sort_date ASC, coalesce(sort_time, '99:99') ASC, n.key ASC
-            LIMIT $limit
         """
 
         count_where, count_params = self._build_filters(
@@ -288,6 +312,7 @@ class TimelineService:
         )
         count_query = f"""
             MATCH (n)
+            WHERE {self._NODE_PREFILTER}
             WITH
                 n,
                 {self.SORT_DATE_CYPHER} AS sort_date,
@@ -296,17 +321,33 @@ class TimelineService:
             RETURN count(n) AS total
         """
 
+        # The total is counted on the first page and carried in the cursor, bound to the filters it
+        # was counted for. A cursor without it (issued before this change) or for other filters recounts.
+        # The total is the count when the load began: a graph change during the load does not move it.
+        filter_tag = self._filter_tag(count_params)
+        carried_total = (
+            cursor_payload.get("total")
+            if cursor_payload and cursor_payload.get("filters") == filter_tag
+            else None
+        )
         with driver.session() as session:
             rows = [self._event_from_record(record) for record in session.run(query, **page_params)]
-            total_record = session.run(count_query, **count_params).single()
+            if carried_total is None:
+                total_record = session.run(count_query, **count_params).single()
+                total = int(total_record["total"] or 0) if total_record else 0
+            else:
+                total = carried_total
 
         has_more = len(rows) > limit
         events = rows[:limit]
-        next_cursor = self._encode_cursor(events[-1]) if has_more and events else None
+        next_cursor = (
+            self._encode_cursor(events[-1], total=total, filters=filter_tag)
+            if has_more and events else None
+        )
         return {
             "events": events,
             "count": len(events),
-            "total": int(total_record["total"] or 0) if total_record else 0,
+            "total": total,
             "next_cursor": next_cursor,
         }
 
