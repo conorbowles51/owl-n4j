@@ -238,10 +238,14 @@ export const QUEUE_PAGE_SIZE = 50
 /** Shared fixes act on every statement of one issue: one capped read of them all. */
 export const QUEUE_BULK_LIMIT = 5000
 
-/** Reads the whole queue (every list complete), waiting for a current build. */
+/**
+ * Reads the whole queue (every list complete), waiting for a current build: actions read it just before they act,
+ * so it never accepts the previous queue a page may show while the current one is built (fresh=1).
+ */
 export async function fetchReviewQueue(caseId: string, fileIds: string[] = [], signal?: AbortSignal) {
   const search = new URLSearchParams({ case_id: caseId })
   for (const id of fileIds) search.append("file_id", id)
+  search.set("fresh", "1")
   const result = reviewQueue.parse(
     await fetchAPI(`/api/financial/statement-import/review/queue?${search}`, { signal, timeout: 60000 })
   )
