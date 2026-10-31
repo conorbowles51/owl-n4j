@@ -16,6 +16,10 @@ logger = logging.getLogger(__name__)
 # Lazy initialization - engine and sessionmaker created on first use
 _engine = None
 _SessionLocal = None
+# Web workers only: background work (lifespan loops, background sessions) has its own small pool, so it can never
+# take the connections a person's request waits for. Other processes use the one engine.
+_background_engine = None
+_BackgroundSessionLocal = None
 
 # A wait for a pooled connection at least this long is logged with the process role, so pool exhaustion is
 # visible before it becomes a 30 s timeout.
@@ -84,44 +88,58 @@ class TimedQueuePool(QueuePool):
                 timing.connecting += time.perf_counter() - started
 
 
-def pool_options(environ=None):
-    """Pool size, overflow and wait timeout from POSTGRES_POOL_SIZE / POSTGRES_MAX_OVERFLOW /
-    POSTGRES_POOL_TIMEOUT; the defaults are SQLAlchemy's own (5, 10, 30 s)."""
+def pool_options(environ=None, prefix='POSTGRES', defaults=(5, 10, 30)):
+    """Pool size, overflow and wait timeout from <prefix>_POOL_SIZE / _MAX_OVERFLOW / _POOL_TIMEOUT; the request
+    pool's defaults are SQLAlchemy's own (5, 10, 30 s)."""
     environ = os.environ if environ is None else environ
-    return dict(pool_size=int(environ.get('POSTGRES_POOL_SIZE', '5')),
-                max_overflow=int(environ.get('POSTGRES_MAX_OVERFLOW', '10')),
-                pool_timeout=float(environ.get('POSTGRES_POOL_TIMEOUT', '30')))
+    return dict(pool_size=int(environ.get(prefix + '_POOL_SIZE', str(defaults[0]))),
+                max_overflow=int(environ.get(prefix + '_MAX_OVERFLOW', str(defaults[1]))),
+                pool_timeout=float(environ.get(prefix + '_POOL_TIMEOUT', str(defaults[2]))))
+
+
+# The web worker's background pool: 2 kept + 6 more when busy (POSTGRES_BACKGROUND_*).
+BACKGROUND_POOL_DEFAULTS = (2, 6, 30)
+
+
+def _database_url():
+    if DATABASE_URL is None:
+        raise RuntimeError(
+            "DATABASE_URL is not set. Please configure it in your .env file. "
+            "Example: DATABASE_URL=postgresql+psycopg://user:password@localhost/dbname"
+        )
+    # Convert postgresql:// to postgresql+psycopg:// for psycopg3 compatibility
+    db_url = DATABASE_URL
+    if db_url.startswith("postgresql://") and "+psycopg" not in db_url:
+        db_url = db_url.replace("postgresql://", "postgresql+psycopg://", 1)
+    elif db_url.startswith("postgres://") and "+psycopg" not in db_url:
+        db_url = db_url.replace("postgres://", "postgresql+psycopg://", 1)
+    return db_url
+
+
+def _new_engine(db_url, role_suffix='', prefix='POSTGRES', defaults=(5, 10, 30)):
+    connect_args = {}
+    pool_args = {}
+    if db_url.startswith("postgresql+psycopg://"):
+        connect_args["connect_timeout"] = int(os.getenv("POSTGRES_CONNECT_TIMEOUT", "2"))
+        name = application_name()
+        if role_suffix:
+            role, _, pid = name.rpartition('-')
+            name = ('%s%s-%s' % (role, role_suffix, pid))[:63]
+        connect_args["application_name"] = name
+        pool_args = dict(poolclass=TimedQueuePool, **pool_options(prefix=prefix, defaults=defaults))
+    return create_engine(
+        db_url,
+        pool_pre_ping=True,
+        connect_args=connect_args,
+        **pool_args,
+    )
 
 
 def _get_engine():
     """Get or create the database engine."""
     global _engine
     if _engine is None:
-        if DATABASE_URL is None:
-            raise RuntimeError(
-                "DATABASE_URL is not set. Please configure it in your .env file. "
-                "Example: DATABASE_URL=postgresql+psycopg://user:password@localhost/dbname"
-            )
-        # Convert postgresql:// to postgresql+psycopg:// for psycopg3 compatibility
-        db_url = DATABASE_URL
-        if db_url.startswith("postgresql://") and "+psycopg" not in db_url:
-            db_url = db_url.replace("postgresql://", "postgresql+psycopg://", 1)
-        elif db_url.startswith("postgres://") and "+psycopg" not in db_url:
-            db_url = db_url.replace("postgres://", "postgresql+psycopg://", 1)
-        
-        connect_args = {}
-        pool_args = {}
-        if db_url.startswith("postgresql+psycopg://"):
-            connect_args["connect_timeout"] = int(os.getenv("POSTGRES_CONNECT_TIMEOUT", "2"))
-            connect_args["application_name"] = application_name()
-            pool_args = dict(poolclass=TimedQueuePool, **pool_options())
-
-        _engine = create_engine(
-            db_url,
-            pool_pre_ping=True,
-            connect_args=connect_args,
-            **pool_args,
-        )
+        _engine = _new_engine(_database_url())
     return _engine
 
 
@@ -132,6 +150,18 @@ def _get_session_local():
         engine = _get_engine()
         _SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     return _SessionLocal
+
+
+def _get_background_session_local():
+    """The sessionmaker for background work: in a web worker on Postgres, its own pool; elsewhere the one
+    sessionmaker (so a process has one pool, and tests that replace _get_session_local are followed)."""
+    global _background_engine, _BackgroundSessionLocal
+    if process_role() != 'web' or not _database_url().startswith('postgresql+psycopg://'):
+        return _get_session_local()
+    if _BackgroundSessionLocal is None:
+        _background_engine = _new_engine(_database_url(), '-bg', 'POSTGRES_BACKGROUND', BACKGROUND_POOL_DEFAULTS)
+        _BackgroundSessionLocal = sessionmaker(bind=_background_engine, autoflush=False, autocommit=False)
+    return _BackgroundSessionLocal
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -147,7 +177,7 @@ def get_db() -> Generator[Session, None, None]:
 @contextmanager
 def get_background_session() -> Generator[Session, None, None]:
     """Get a database session for use in background threads outside the request lifecycle."""
-    SessionLocal = _get_session_local()
+    SessionLocal = _get_background_session_local()
     db = SessionLocal()
     try:
         yield db

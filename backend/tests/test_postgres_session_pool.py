@@ -6,6 +6,7 @@ import tempfile
 import threading
 import time
 import unittest
+import unittest.mock
 
 from sqlalchemy import create_engine, text
 
@@ -124,6 +125,63 @@ class TimedPoolTest(unittest.TestCase):
         self.assertEqual(calls, [1])
         self.assertEqual(len(seen), 1)
         self.assertLess(seen[0], 0.2)
+
+
+class BackgroundPoolTest(unittest.TestCase):
+    """In a web worker, background sessions use their own pool; elsewhere (children, tests) the one pool."""
+
+    def setUp(self):
+        self.saved = (session.DATABASE_URL, session._engine, session._SessionLocal, session._background_engine,
+                      session._BackgroundSessionLocal, os.environ.get('LOUPE_DB_ROLE'))
+        session._engine = session._SessionLocal = session._background_engine = session._BackgroundSessionLocal = None
+        session.DATABASE_URL = 'postgresql+psycopg://u:p@127.0.0.1:1/none'
+
+    def tearDown(self):
+        for engine in (session._engine, session._background_engine):
+            if engine is not None:
+                engine.dispose()
+        (session.DATABASE_URL, session._engine, session._SessionLocal, session._background_engine,
+         session._BackgroundSessionLocal, role) = self.saved
+        if role is None:
+            os.environ.pop('LOUPE_DB_ROLE', None)
+        else:
+            os.environ['LOUPE_DB_ROLE'] = role
+
+    def test_a_web_worker_has_a_separate_background_pool(self):
+        os.environ['LOUPE_DB_ROLE'] = 'web'
+        names = []
+        real = session.create_engine
+
+        def recording(url, **kwargs):
+            names.append(kwargs['connect_args']['application_name'])
+            return real(url, **kwargs)
+
+        with unittest.mock.patch.object(session, 'create_engine', recording):
+            background = session._get_background_session_local()
+            requests = session._get_session_local()
+        self.assertIsNot(background, requests)
+        self.assertIsNot(background.kw['bind'], requests.kw['bind'])
+        self.assertEqual(background.kw['bind'].pool.size(), 2)
+        self.assertEqual(requests.kw['bind'].pool.size(), 5)
+        self.assertEqual(names, ['loupe-web-bg-%d' % os.getpid(), 'loupe-web-%d' % os.getpid()])
+        self.assertIs(session._get_background_session_local(), background)
+
+    def test_other_processes_keep_one_pool(self):
+        os.environ['LOUPE_DB_ROLE'] = 'vision_rounds'
+        self.assertIs(session._get_background_session_local(), session._get_session_local())
+
+    def test_sqlite_keeps_one_pool_in_a_web_worker(self):
+        os.environ['LOUPE_DB_ROLE'] = 'web'
+        session.DATABASE_URL = 'sqlite://'
+        self.assertIs(session._get_background_session_local(), session._get_session_local())
+
+    def test_background_sessions_use_the_background_pool(self):
+        os.environ['LOUPE_DB_ROLE'] = 'web'
+        made = []
+        session._BackgroundSessionLocal = lambda: made.append(1) or unittest.mock.MagicMock()
+        with session.get_background_session():
+            pass
+        self.assertEqual(made, [1])
 
 
 if __name__ == '__main__':

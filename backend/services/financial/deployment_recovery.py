@@ -483,7 +483,7 @@ def next_recovery_items(session, after=None):
 
 
 async def run_recovery_forever():
-    from postgres.session import _get_session_local
+    from postgres.session import _get_background_session_local
     from routers.evidence import _resolve_stored_path
     from services.evidence_processing_service import process_db_files
     from services.financial.import_batches import _finish_atomic
@@ -491,7 +491,7 @@ async def run_recovery_forever():
     after = None
     while True:
         try:
-            factory = _get_session_local()
+            factory = _get_background_session_local()
             if not initialized:
                 results = []
                 for campaign in scheduled_campaigns():
