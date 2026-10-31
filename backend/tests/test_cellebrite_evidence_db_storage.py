@@ -9,11 +9,17 @@ from sqlalchemy.orm import sessionmaker
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 EVIDENCE_ENGINE_ROOT = PROJECT_ROOT / "evidence-engine"
-if str(EVIDENCE_ENGINE_ROOT) not in sys.path:
+# On sys.path only for these imports: evidence-engine/scripts is a regular package, so while the engine
+# root is on the path it shadows backend/scripts for every later test that imports scripts.*.
+_added = str(EVIDENCE_ENGINE_ROOT) not in sys.path
+if _added:
     sys.path.insert(0, str(EVIDENCE_ENGINE_ROOT))
-
-from app.pipeline.cellebrite.file_linker import CellebriteFileLinker
-from app.pipeline.cellebrite.models import TaggedFile
+try:
+    from app.pipeline.cellebrite.file_linker import CellebriteFileLinker
+    from app.pipeline.cellebrite.models import TaggedFile
+finally:
+    if _added:
+        sys.path.remove(str(EVIDENCE_ENGINE_ROOT))
 from postgres.base import Base
 from postgres.models.case import Case
 from postgres.models.evidence import EvidenceFile, EvidenceFolder, IngestionLog
