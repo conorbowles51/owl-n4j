@@ -181,8 +181,8 @@ PYTHONHASHSEED=0 python3 -m pytest -q -p no:cacheprovider --basetemp=/dev/shm/pt
   $(ls tests/test_*.py | grep -v test_financial_)
 ```
 
-After the bootstrap: 92 modules, about 15 minutes; the only skips are four tests that need a local
-PostgreSQL (`DOSSIER_TEST_DATABASE_URL`, isolated agent session). Known-red tests are listed in
+After the bootstrap: **722 passed, 5 skipped** (2026-10-31, about 15 minutes). The five skips need a local
+PostgreSQL test connection (dossier 2, workspace setup 1, isolated agent session 2). Known-red tests are listed in
 `/mnt/owl-data/fin-wt/headless/TEST-BASELINE.md` (the job fleet on the server).
 
 ### Frontend, from `frontend_v2/`
