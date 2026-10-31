@@ -22,7 +22,7 @@ export function NodeBadge({ type, className, children }: NodeBadgeProps) {
       }}
     >
       <span
-        className="h-2 w-2 rounded-full"
+        className="h-2 w-2 shrink-0 rounded-full"
         style={{ backgroundColor: color }}
       />
       {children ?? type}

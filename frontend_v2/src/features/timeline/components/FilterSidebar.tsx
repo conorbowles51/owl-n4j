@@ -143,20 +143,30 @@ export function FilterSidebar({
                       key={entity.key}
                       className="flex items-center gap-1.5 rounded-md px-1 py-0.5 hover:bg-muted"
                     >
-                      <label className="flex items-center gap-1.5 flex-1 min-w-0">
+                      {/* Long names truncate inside the badge; the count and Focus keep their width and are never
+                          drawn over. The full name stays readable in the tooltip. */}
+                      <label
+                        className="flex items-center gap-1.5 flex-1 min-w-0"
+                        title={entity.name}
+                      >
                         <input
                           type="checkbox"
                           checked={selectedEntityKeys.has(entity.key)}
                           onChange={() => onToggleEntity(entity.key)}
-                          className="size-3 accent-primary"
+                          className="size-3 accent-primary shrink-0"
                         />
                         <NodeBadge
                           type={entity.type}
-                          className="text-[9px] py-0 shrink-0"
+                          className="text-[9px] py-0 min-w-0 max-w-full"
                         >
-                          {entity.name}
+                          <span data-entity-name className="truncate min-w-0">
+                            {entity.name}
+                          </span>
                         </NodeBadge>
-                        <span className="text-[10px] text-muted-foreground shrink-0">
+                        <span
+                          data-entity-count
+                          className="text-[10px] text-muted-foreground tabular-nums shrink-0"
+                        >
                           {count}
                         </span>
                       </label>
