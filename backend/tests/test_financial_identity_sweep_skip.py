@@ -43,10 +43,12 @@ class FakeGraph:
 
     def __init__(self):
         self.nodes, self.revision, self.staged, self.events = {}, None, None, []
+        self.in_tx, self.reads = False, []
 
     def run(self, query, parameters=None, **params):
         params = {**(parameters or {}), **params}
         text = getattr(query, 'text', query)
+        self.reads.append((self.in_tx, text))
         if 'projection_lock' in text:
             self.events.append('marker_lock')
             return _Result([dict(revision=self.revision, digest=None, ledger_fingerprint=None, status=None)])
@@ -64,6 +66,7 @@ class FakeGraph:
     def begin_transaction(self, timeout=None):
         graph = self
         self.events.append('begin')
+        self.in_tx = True
 
         class Tx:
             def run(self, *args, **kwargs):
@@ -75,7 +78,10 @@ class FakeGraph:
 
             def rollback(self):
                 graph.events.append('rollback')
-        yield Tx()
+        try:
+            yield Tx()
+        finally:
+            self.in_tx = False
 
 
 @pytest.fixture
@@ -268,3 +274,13 @@ def test_a_round_refused_because_the_case_row_was_busy_is_not_remembered(world, 
     monkeypatch.setattr(ig, '_identity_snapshot', real)
     assert _round(world)[0] == 2  # not skipped: the change is written on the next round, as before
     assert world.graph.revision != revision
+
+
+def test_the_skip_check_reads_the_graph_in_one_transaction(world):
+    """The label list and the per-label key read must see one committed state: as two auto-commit reads, a node
+    committed between them under a label no other node had was missed for a round."""
+    _settle(world)
+    world.graph.reads.clear()
+    assert _round(world) == (0, 0)
+    assert world.graph.reads and all(in_tx for in_tx, _ in world.graph.reads)
+    assert world.graph.events[-1] == 'rollback'

@@ -361,10 +361,15 @@ def identity_inputs_fingerprint(db, case_id):
 
 
 def _graph_reads(graph, plan):
-    """What the sync reads from the graph before deciding to write: the target matches and the marker."""
-    marker = graph.run('MATCH (m:FinancialIdentitySync {case_id:$case}) RETURN m.revision AS revision',
-        case=plan['case_id']).data()
-    matches = _graph_target_matches(graph, plan)
+    """What the sync reads from the graph before deciding to write: the target matches and the marker.
+
+    One read transaction, so the label list and the per-label key read see the same committed state (two
+    auto-commit reads could miss a node committed between them under a label no other node had)."""
+    with graph.begin_transaction(timeout=GRAPH_TRANSACTION_TIMEOUT) as tx:
+        marker = tx.run('MATCH (m:FinancialIdentitySync {case_id:$case}) RETURN m.revision AS revision',
+            case=plan['case_id']).data()
+        matches = _graph_target_matches(tx, plan)
+        tx.rollback()
     digest = hashlib.sha256(json.dumps([marker, {k: sorted(map(sorted, v)) for k, v in matches.items()}],
         sort_keys=True).encode()).hexdigest()
     return digest, (marker[0]['revision'] if marker else None)
