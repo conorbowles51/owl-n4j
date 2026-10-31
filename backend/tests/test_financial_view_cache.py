@@ -1175,3 +1175,22 @@ def test_the_records_route_through_its_cached_view_gives_the_bytes_of_a_fresh_co
     write(engine, "UPDATE evidence_table_geometry SET payload = 'p2' WHERE evidence_file_id = :a", a=mine)
     expected = fresh()
     assert cached() == expected and b'"locator":["p2"]' in expected and graph_reads.calls == 4
+
+
+def test_a_fast_view_is_saved_to_disk_only_when_asked_to_save_it(engine, tmp_path):
+    """The release warm-up sets always_save (view_warmup): a view that computes in under SAVE_MIN_SECONDS is then
+    saved for the restarted service; a person's request still saves only slow views (review follow-up F2)."""
+    case = uuid.uuid4()
+    write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 5)', c=case)
+    view = payments_view(Counter())
+    call(engine, view, case)
+    assert not list(tmp_path.glob('views/*.view'))
+    view_cache.clear()
+    token = view_cache.always_save.set(True)
+    try:
+        call(engine, view, case, minimum=1)
+    finally:
+        view_cache.always_save.reset(token)
+    [saved] = list(tmp_path.glob('views/*.view'))
+    header = json.loads(saved.read_bytes().split(b'\n', 1)[0])
+    assert header['key'][0] == 'payments' and header['seconds'] < view_cache.SAVE_MIN_SECONDS
