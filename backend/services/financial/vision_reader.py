@@ -2589,8 +2589,9 @@ SKIP_WORDS = {
     'failed_repeatedly': 'its page images could not be read after several tries',
     'gone': 'it is no longer in its batch',
 }
-# Outcomes of the moment (another worker has it, or it was decided before): logged at debug, not recorded.
-PASSING = ('already_read', 'being_read')
+# Outcomes of the moment (another worker has it, it was decided before, or a check tried to write and the statement
+# is read again next round): logged at debug, not recorded.
+PASSING = ('already_read', 'being_read', 'write_refused')
 
 
 def outcome_line(record):
@@ -2984,6 +2985,8 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
                                                                     pages_rule=PAGES_RULE), apply)
             try:
                 readers = readers_of(page_reader, db, case_id)
+            except WriteInReadOnlyComparison:
+                raise  # a refused write, not an unavailable reader (handled below)
             except Exception as error:  # noqa: BLE001 - fail closed
                 return dict(record, status='unavailable', reason='unavailable', message=str(error)[:300])
             if not any(not r.unavailable for r in readers):
@@ -3259,7 +3262,7 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
     except WriteInReadOnlyComparison:
         # A check tried to write before the reading's own write: refused, nothing written, not a failed reading
         # (no failure is counted); the statement is read again in a later round.
-        log.exception('Page-image reading stopped: a check tried to write; nothing was written')
+        log.exception('Page-image reading stopped: a check tried to write; nothing was written')  # PASSING: not recorded
         return dict(record, reason='write_refused')
     except Exception as error:  # noqa: BLE001 - fail closed: the statement stays held
         log.exception('Page-image reading failed; the statement stays held')

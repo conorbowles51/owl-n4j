@@ -98,3 +98,15 @@ def test_a_check_that_tries_to_write_is_not_counted_as_a_failed_reading(monkeypa
     record = vision_reader._read_item(lambda: Db(), uuid.uuid4(), lambda path: path)
     assert record['reason'] == 'write_refused' and record['status'] == 'skipped'
     assert 'failures' not in record and not finished, 'no failure counted, nothing recorded'
+
+
+def test_a_refused_write_is_not_recorded_in_the_statements_history(monkeypatch):
+    opened = []
+    vision_reader._decided(lambda: opened.append(1), 'item-1', dict(status='skipped', reason='write_refused'))
+    assert not opened, 'a passing outcome opens no session and records nothing'
+
+
+def test_a_refused_write_while_choosing_readers_is_not_reported_as_unavailable():
+    import inspect
+    source = inspect.getsource(vision_reader._read_item)
+    assert source.index('except WriteInReadOnlyComparison:\n                raise') < source.index("reason='unavailable'")
