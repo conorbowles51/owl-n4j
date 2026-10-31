@@ -108,7 +108,7 @@ it("checks each view by its headers only, without reading its body", async () =>
   act(() => noteViewAnswer(endpoint, "2026-10-31T07:15:00+00:00"))
   let pulled = 0
   let cancelled = 0
-  const answers = [
+  const answers: Record<string, string>[] = [
     { "X-Financial-View-State": "updating", "X-Financial-View-As-Of": "2026-10-31T07:16:00+00:00" },
     {},
   ]

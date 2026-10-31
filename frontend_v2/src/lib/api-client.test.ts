@@ -161,3 +161,20 @@ it("ignores an answer to an earlier request that arrives after a later one", asy
   noteViewAnswer("/api/financial/ledger?case_id=c1", undefined, earlier)
   expect(updatingViews().get("/api/financial/ledger?case_id=c1")).toBe("2026-10-31T07:15:00+00:00")
 })
+
+it("with headersOnly, still reads and throws a refusal, and returns nothing for a success", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ detail: "Too many payments" }), { status: 422 }))
+      .mockResolvedValueOnce(new Response('{"total":3}', { status: 200 }))
+  )
+  await expect(fetchAPI("/api/financial/ledger?case_id=c1", { headersOnly: true })).rejects.toMatchObject({
+    status: 422,
+    message: expect.stringContaining("Too many payments"),
+  })
+  await expect(fetchAPI("/api/financial/ledger?case_id=c1", { headersOnly: true })).resolves.toBeUndefined()
+  expect(apiRequestsInFlight()).toBe(0)
+  vi.unstubAllGlobals()
+})
