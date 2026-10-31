@@ -3,6 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import load_only
 
 from app.dependencies import get_db
 from app.models.job import Job, JobStatus
@@ -75,11 +76,21 @@ async def get_job(job_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     return job
 
 
+# The list answers with JobResponse only. Loading the other columns (sibling files, folder context, effective
+# instructions, transcripts, merge payloads) cost the backend's jobs poll on every call: on d5b330d1 (1,593 jobs)
+# they are 4.3 MB of the 6.7 MB read, and the read took 0.23-0.40 s with them, 0.13-0.19 s without; the answer's
+# bytes are identical. A field added to JobResponse is loaded automatically.
+LIST_COLUMNS = tuple(getattr(Job, name) for name in JobResponse.model_fields)
+
+
+def list_jobs_statement(case_id: str):
+    return (select(Job).options(load_only(*LIST_COLUMNS, raiseload=True))
+            .where(Job.case_id == case_id).order_by(Job.created_at.desc()))
+
+
 @router.get("/cases/{case_id}/jobs", response_model=list[JobResponse])
 async def list_jobs(case_id: str, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(
-        select(Job).where(Job.case_id == case_id).order_by(Job.created_at.desc())
-    )
+    result = await db.execute(list_jobs_statement(case_id))
     return result.scalars().all()
 
 
