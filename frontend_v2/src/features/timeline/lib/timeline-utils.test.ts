@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import {
   compareTimelineEvents,
   formatEventTime,
@@ -119,5 +119,56 @@ describe("timeline date/time utilities", () => {
     expect(formatEventTime(event({ date: "2024-01-01", time: null }))).toBe(
       "No time"
     )
+  })
+})
+
+describe("compareTimelineEvents on a large Timeline", () => {
+  const make = (index: number): TimelineEvent => ({
+    key: `k${(index * 7919) % 5000}`,
+    name: null,
+    type: "Transaction",
+    date: index % 97 === 0 ? "2021-02-30" : `20${10 + (index % 12)}-0${1 + (index % 9)}-1${index % 10}`,
+    time: index % 3 === 0 ? null : `1${index % 10}:${10 + (index % 50)}`,
+    amount: null,
+    summary: null,
+    notes: null,
+    connections: [],
+  })
+
+  it("orders exactly as comparing freshly parsed timestamps, and follows a changed date", () => {
+    const events = Array.from({ length: 3000 }, (_, index) => make(index))
+    const fresh = (a: TimelineEvent, b: TimelineEvent) => {
+      const aTs = getEventTimestamp(a, true)
+      const bTs = getEventTimestamp(b, true)
+      if (!Number.isFinite(aTs)) return Number.isFinite(bTs) ? 1 : a.key.localeCompare(b.key)
+      if (!Number.isFinite(bTs)) return -1
+      return aTs - bTs || a.key.localeCompare(b.key)
+    }
+    expect([...events].sort(compareTimelineEvents).map((e) => e.key)).toEqual(
+      [...events].sort(fresh).map((e) => e.key)
+    )
+    const moved = events[5]
+    moved.date = "1999-01-01"
+    expect([...events].sort(compareTimelineEvents)[0]).toBe(moved)
+  })
+
+  it("parses each event's date about once per sort, not once per comparison", () => {
+    const events = Array.from({ length: 3000 }, (_, index) => make(index))
+    const RealDate = Date
+    let constructed = 0
+    class CountingDate extends RealDate {
+      constructor(...args: ConstructorParameters<typeof Date>) {
+        super(...args)
+        constructed += 1
+      }
+    }
+    vi.stubGlobal("Date", CountingDate)
+    try {
+      ;[...events].sort(compareTimelineEvents)
+      ;[...events].reverse().sort(compareTimelineEvents)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+    expect(constructed).toBeLessThan(events.length * 3)
   })
 })

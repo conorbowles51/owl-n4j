@@ -65,12 +65,28 @@ export function getEventTimestamp(
   return new Date(`${date}T${normalizedTime}`).getTime()
 }
 
+// A sort compares each event about log2(n) times (BNB2: 30,449 events, sorted on every load and filter),
+// and each comparison parsed both dates again. The sort timestamp is kept per event object and reused
+// while that object's date and time are the ones it was computed from.
+const sortTimestamps = new WeakMap<
+  TimelineEvent,
+  { date: TimelineEvent["date"]; time: TimelineEvent["time"]; ts: number }
+>()
+
+function sortTimestamp(event: TimelineEvent): number {
+  const kept = sortTimestamps.get(event)
+  if (kept && kept.date === event.date && kept.time === event.time) return kept.ts
+  const ts = getEventTimestamp(event, true)
+  sortTimestamps.set(event, { date: event.date, time: event.time, ts })
+  return ts
+}
+
 export function compareTimelineEvents(
   a: TimelineEvent,
   b: TimelineEvent
 ): number {
-  const aTs = getEventTimestamp(a, true)
-  const bTs = getEventTimestamp(b, true)
+  const aTs = sortTimestamp(a)
+  const bTs = sortTimestamp(b)
   if (!Number.isFinite(aTs))
     return Number.isFinite(bTs) ? 1 : a.key.localeCompare(b.key)
   if (!Number.isFinite(bTs)) return -1
