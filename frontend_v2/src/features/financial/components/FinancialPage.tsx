@@ -1179,7 +1179,7 @@ function FinancialPageContent() {
           <RecordsModeSwitch
             transactionsMode={isTransactionsMode}
             onChange={handleModeChange}
-            aside={<FinancialAccessNotice inline />}
+            aside={<FinancialAccessNotice inline view="transactions" />}
           />
           <div
             className="min-h-0 flex-1 space-y-4 overflow-auto p-4"
@@ -1317,7 +1317,7 @@ function FinancialPageContent() {
           <RecordsModeSwitch
             transactionsMode={isTransactionsMode}
             onChange={handleModeChange}
-            aside={<FinancialAccessNotice inline />}
+            aside={<FinancialAccessNotice inline view="counterparties" />}
           />
           {isTransactionsMode ? (
             <div className="min-h-0 flex-1 overflow-auto">
@@ -1382,7 +1382,7 @@ function FinancialPageContent() {
           <RecordsModeSwitch
             transactionsMode={isTransactionsMode}
             onChange={handleModeChange}
-            aside={<FinancialAccessNotice inline />}
+            aside={<FinancialAccessNotice inline view="trends" />}
           />
           {isTransactionsMode ? (
             <div className="min-h-0 flex-1 overflow-auto">

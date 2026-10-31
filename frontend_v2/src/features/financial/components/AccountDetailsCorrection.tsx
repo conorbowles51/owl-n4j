@@ -164,6 +164,9 @@ export function AccountDetailsCorrection({
   const [institution, setInstitution] = useState("")
   const [number, setNumber] = useState("")
   const [reason, setReason] = useState("")
+  // What the person checked, per correction Claude made: each Confirm button has its own box, so a basis written
+  // for one correction is never sent with another.
+  const [bases, setBases] = useState<Record<string, string>>({})
   const [proposal, setProposal] = useState<z.infer<typeof preview> | null>(null)
   const [notice, setNotice] = useState("")
   const base = `/api/financial/statement-import/accounts/${encodeURIComponent(accountId)}/details`
@@ -253,12 +256,17 @@ export function AccountDetailsCorrection({
           body: {
             expected_revision: query.data!.revision,
             correction_id: correctionId,
-            basis: reason,
+            basis: bases[correctionId] ?? "",
           },
         })
       ),
-    onSuccess: (result) => {
+    onSuccess: (result, correctionId) => {
       client.setQueryData(key, result)
+      setBases((current) => {
+        const next = { ...current }
+        delete next[correctionId]
+        return next
+      })
       setNotice("Correction confirmed as yours. Claude's correction stays in the account history.")
     },
   })
@@ -449,15 +457,29 @@ export function AccountDetailsCorrection({
                 </p>
               )}
               {canEdit && !item.confirmed && (
-                <Button
-                  type="button"
-                  size="sm"
-                  disabled={confirm.isPending || !reason.trim()}
-                  title={reason.trim() ? undefined : "Enter what you checked first"}
-                  onClick={() => confirm.mutate(item.id)}
-                >
-                  Confirm this correction (say what you checked above)
-                </Button>
+                <div className="flex flex-col gap-1">
+                  <label className="flex flex-col gap-1">
+                    What you checked for this correction ({changeOf(item)})
+                    <input
+                      className="rounded border bg-background p-1"
+                      value={bases[item.id] ?? ""}
+                      onChange={(event) => {
+                        const value = event.target.value
+                        setBases((current) => ({ ...current, [item.id]: value }))
+                      }}
+                    />
+                  </label>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="self-start"
+                    disabled={confirm.isPending || !(bases[item.id] ?? "").trim()}
+                    title={(bases[item.id] ?? "").trim() ? undefined : "Enter what you checked first"}
+                    onClick={() => confirm.mutate(item.id)}
+                  >
+                    Confirm this correction
+                  </Button>
+                </div>
               )}
             </li>
           ))}

@@ -29,3 +29,17 @@ it("shows the case access notice on the switch's own line instead of a line abov
   expect(notice.parentElement).toBe(screen.getByRole("group", { name: "Which financial records to show" }).parentElement)
   expect(notice.className).not.toContain("border-b")
 })
+
+it("gives each mounted copy of the inline notice its own test id", () => {
+  // The transactions, people and trends views stay mounted side by side, each with a notice beside its switch.
+  render(
+    <FinancialAccessContext.Provider value={{ canEdit: false, canUpload: false, ready: true, error: false }}>
+      {["transactions", "counterparties", "trends"].map((view) => (
+        <RecordsModeSwitch key={view} transactionsMode onChange={vi.fn()} aside={<FinancialAccessNotice inline view={view} />} />
+      ))}
+    </FinancialAccessContext.Provider>
+  )
+  for (const view of ["transactions", "counterparties", "trends"])
+    expect(screen.getAllByTestId(`financial-access-notice-${view}`)).toHaveLength(1)
+  expect(screen.queryAllByTestId("financial-access-notice")).toHaveLength(0)
+})

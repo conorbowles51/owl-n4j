@@ -93,8 +93,10 @@ export function FinancialAccessProvider({
 /**
  * What this account may do in the case. ``inline``: shown in a row of its own
  * container (beside the records switch) instead of as a line of its own.
+ * ``view``: the view it sits in, so each copy of a notice in views that stay
+ * mounted side by side has its own test id.
  */
-export function FinancialAccessNotice({ inline = false }: { inline?: boolean } = {}) {
+export function FinancialAccessNotice({ inline = false, view }: { inline?: boolean; view?: string } = {}) {
   const access = useFinancialAccess()
   if (access.ready && access.canEdit && access.canUpload) return null
   return (
@@ -105,7 +107,7 @@ export function FinancialAccessNotice({ inline = false }: { inline?: boolean } =
           : "border-b px-4 py-2 text-sm"
       }
       role={access.error ? "alert" : "status"}
-      data-testid="financial-access-notice"
+      data-testid={view ? `financial-access-notice-${view}` : "financial-access-notice"}
     >
       {access.failure === "expired" ? (
         <>
