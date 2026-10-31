@@ -148,6 +148,11 @@ export function getEventTypeColor(type: string): string {
   ]
 }
 
+/** An amount to show: a stored zero (text "0" or the number 0) is shown; a missing or blank amount is not. */
+export function hasAmount(amount: TimelineEvent["amount"]): amount is string | number {
+  return amount !== null && amount !== undefined && amount !== ""
+}
+
 export const timelineAPI = {
   getEvents: (params: {
     caseId: string

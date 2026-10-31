@@ -3,7 +3,7 @@ import { cn } from "@/lib/cn"
 import { Checkbox } from "@/components/ui/checkbox"
 import { NodeBadge } from "@/components/ui/node-badge"
 import { markdownToPlainText } from "@/lib/markdown-text"
-import { getEventTypeColor } from "../api"
+import { getEventTypeColor, hasAmount } from "../api"
 import type { TimelineEvent } from "../api"
 import { formatEventTime, getEventTimeValue } from "../lib/timeline-utils"
 
@@ -146,7 +146,7 @@ export const EventCard = memo(function EventCard({
             <span className="min-w-0 flex-1 text-sm font-medium leading-snug text-foreground line-clamp-2">
               {highlightText(event.name, searchTerm)}
             </span>
-            {event.amount && (
+            {hasAmount(event.amount) && (
               <span className="shrink-0 text-xs font-semibold text-yellow-700 dark:text-yellow-300">
                 {event.amount}
               </span>

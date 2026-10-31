@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog"
 import { useCaseLayerStore } from "@/features/significant/stores/case-layer.store"
 import type { TimelineEvent } from "../api"
+import { hasAmount } from "../api"
 
 type Preview = {
   case_id: string
@@ -208,7 +209,7 @@ export function AddToTimelineDialog({
                             ? `${row.event.date} · ${row.event.type} · ${row.event.source?.date_basis ?? "Recorded date"}`
                             : "No payment date — will not be added"}
                         </p>
-                        {row.event?.amount && <p>{row.event.amount}</p>}
+                        {row.event && hasAmount(row.event.amount) && <p>{row.event.amount}</p>}
                         {row.event?.source?.label && (
                           <p className="text-muted-foreground break-words">
                             {row.event.source.label}
