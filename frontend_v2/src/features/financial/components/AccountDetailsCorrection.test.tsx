@@ -174,7 +174,15 @@ it("shows a correction Claude made as Claude's until a person confirms it with w
   expect(screen.getByText(/Corrected by Claude · not confirmed/)).toBeTruthy()
   const button = screen.getByRole("button", { name: /Confirm this correction/ })
   expect((button as HTMLButtonElement).disabled).toBe(true)
-  fireEvent.change(screen.getByLabelText(/reason/i), { target: { value: "Checked page 1" } })
+  // The basis goes in this correction's own box, not the shared reason box above.
+  fireEvent.change(screen.getByLabelText("Reason (where it is printed)"), { target: { value: "Not the basis" } })
+  expect((button as HTMLButtonElement).disabled).toBe(true)
+  fireEvent.change(
+    screen.getByLabelText(
+      "What you checked for this correction (holder LOMAS DE CHAPULTEPEC III SECCION → INGENIERIA APLICADA R2)"
+    ),
+    { target: { value: "Checked page 1" } }
+  )
   fireEvent.click(button)
   expect(await screen.findByText(/Confirmed by Alex on 2026-10-29: Checked page 1/)).toBeTruthy()
   await waitFor(() => expect(screen.queryByText(/not confirmed/)).toBeNull())
