@@ -827,7 +827,7 @@ def _validated_text_query(q: str) -> str:
 # the person's token is not part of what is saved.
 @router.get("", response_model=EvidenceListResponse, dependencies=[Depends(get_current_user)])
 # Of the statement batches it reads their id, case and files list (file_scope: each file's ids), never the keys the
-# release sweeps stamp on each file: proved by test_financial_file_scope.
+# release sweeps stamp on each file: proved by test_financial_batch_stamp_views.
 @cached_view('evidence-list', columns={'financial_import_batches': ('id', 'case_id', BATCH_FILES_UNSTAMPED)})
 def list_evidence(
     case_id: str = Query(..., description="Case ID"),

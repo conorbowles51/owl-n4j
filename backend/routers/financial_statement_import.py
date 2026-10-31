@@ -1069,7 +1069,7 @@ def financial_review_cases(user=Depends(get_current_db_user), db: Session = Depe
 
 @router.get('/batches/list')
 # Reads of a batch row: id, case, status, created_at, actor and its files list (not the keys the release sweeps stamp
-# on each file, nor updated_at or the worker's lease): proved by test_financial_batches_list_cached.
+# on each file, nor updated_at or the worker's lease): proved by test_financial_batch_stamp_views.
 @cached_view('batches-list', columns={'financial_import_batches': (
     'id', 'case_id', 'status', 'created_at', 'actor', BATCH_FILES_UNSTAMPED)})
 def list_financial_batches(case_id: UUID = Query(...), db: Session = Depends(get_db)):

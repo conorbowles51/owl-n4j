@@ -26,27 +26,34 @@ UNWATCHED_COLUMNS = ('updated_at', 'worker_token', 'lease_until')
 
 
 class _Recorded(dict):
-    """A stored JSON object that records every key read by name."""
+    """A stored JSON object that records every key read by name; reads of a batch file entry (the fixture stamps
+    every one with reader_stamp) are also recorded on their own."""
     keys_read = set()
+    file_keys_read = set()
+
+    def _note(self, key):
+        _Recorded.keys_read.add(key)
+        if dict.__contains__(self, 'reader_stamp'):
+            _Recorded.file_keys_read.add(key)
 
     def __getitem__(self, key):
-        _Recorded.keys_read.add(key)
+        self._note(key)
         return super().__getitem__(key)
 
     def get(self, key, default=None):
-        _Recorded.keys_read.add(key)
+        self._note(key)
         return super().get(key, default)
 
     def __contains__(self, key):
-        _Recorded.keys_read.add(key)
+        self._note(key)
         return super().__contains__(key)
 
     def pop(self, key, *default):
-        _Recorded.keys_read.add(key)
+        self._note(key)
         return super().pop(key, *default)
 
     def setdefault(self, key, default=None):
-        _Recorded.keys_read.add(key)
+        self._note(key)
         return super().setdefault(key, default)
 
 
@@ -114,6 +121,7 @@ class BatchStampViewTests(TestCase):
         dialect._type_memos.clear()
         engine.clear_compiled_cache()
         _Recorded.keys_read = set()
+        _Recorded.file_keys_read = set()
         columns, attributes = set(), set()
         original_get = InstrumentedAttribute.__get__
 
@@ -167,7 +175,9 @@ class BatchStampViewTests(TestCase):
                 if name == 'batches-list':  # it loads whole rows: the attribute recorder is live
                     self.assertIn('files', attributes)
                 if 'files' in attributes | columns:
-                    self.assertTrue(keys & {'file_id', 'source_id'}, keys)
+                    # Read from the batches' own files entries, not some other stored JSON.
+                    self.assertTrue(_Recorded.file_keys_read & {'file_id', 'source_id'}, _Recorded.file_keys_read)
+                    self.assertFalse(_Recorded.file_keys_read & set(STAMPED))
                 self.assertFalse(keys & set(STAMPED), (name, keys & set(STAMPED)))
                 for column in files:
                     self.assertEqual(set(column.keys), set(STAMPED))
