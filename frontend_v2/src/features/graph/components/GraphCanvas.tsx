@@ -34,6 +34,8 @@ interface FGLink {
 type ForceNode = NodeObject<FGNode>
 type ForceLink = LinkObject<FGNode, FGLink>
 
+const EMPTY_GRAPH: { nodes: ForceNode[]; links: ForceLink[] } = { nodes: [], links: [] }
+
 /* ------------------------------------------------------------------ */
 /*  Props                                                              */
 /* ------------------------------------------------------------------ */
@@ -146,6 +148,57 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
   const simCooldownTime = isLargeGraph ? 1500 : 3000
   const simWarmupTicks = isLargeGraph ? 50 : 0
 
+  /* ---- Large graphs: warm-up layout steps in a worker ---- */
+  // The warm-up steps of a large graph block the page in one piece before anything is drawn (BNB2,
+  // 35,693 nodes: 2.4-10 s on the server's test browser). A worker runs the same steps and the canvas
+  // draws its positions without warming up again. Until they arrive the canvas keeps what it showed.
+  // Without a worker the canvas warms up itself, as before.
+  const [workerLayout, setWorkerLayout] = useState<{ data: typeof fgData; laidOut: boolean } | null>(null)
+  useEffect(() => {
+    if (!isLargeGraph) return
+    let worker: Worker
+    try {
+      worker = new Worker(new URL("../lib/warmup-layout.worker.ts", import.meta.url), { type: "module" })
+    } catch {
+      setWorkerLayout({ data: fgData, laidOut: false })
+      return
+    }
+    worker.onmessage = (event: MessageEvent<{ positions: Float64Array }>) => {
+      const { positions } = event.data
+      fgData.nodes.forEach((node, i) => {
+        node.x = positions[i * 4]
+        node.y = positions[i * 4 + 1]
+        node.vx = positions[i * 4 + 2]
+        node.vy = positions[i * 4 + 3]
+      })
+      setWorkerLayout({ data: fgData, laidOut: true })
+      worker.terminate()
+    }
+    worker.onerror = () => {
+      setWorkerLayout({ data: fgData, laidOut: false })
+      worker.terminate()
+    }
+    const { linkDistance, chargeStrength, centerStrength } = useGraphStore.getState()
+    worker.postMessage({
+      nodes: fgData.nodes.map((n) => ({ id: n.id, fx: n.fx, fy: n.fy })),
+      links: fgData.links.map((l) => ({ source: l.source, target: l.target })),
+      params: {
+        ticks: simWarmupTicks,
+        alphaDecay: simAlphaDecay,
+        velocityDecay: simVelocityDecay,
+        linkDistance,
+        chargeStrength,
+        centerStrength,
+      },
+    })
+    return () => worker.terminate()
+    // the force settings are read when the layout starts; changing them later reheats the canvas (below)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fgData, isLargeGraph])
+  const shownData = isLargeGraph ? (workerLayout?.data ?? EMPTY_GRAPH) : fgData
+  const shownWarmupTicks = isLargeGraph && workerLayout?.laidOut ? 0 : simWarmupTicks
+  const layingOut = isLargeGraph && workerLayout?.data !== fgData
+
   /* ---- Apply force parameters ---- */
   useEffect(() => {
     const fg = fgRef.current
@@ -158,12 +211,12 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
 
   /* ---- Auto zoom-to-fit on first data load ---- */
   const handleEngineStop = useCallback(() => {
-    if (!hasZoomedToFit.current && fgRef.current && fgData.nodes.length > 0) {
+    if (!hasZoomedToFit.current && fgRef.current && shownData.nodes.length > 0) {
       hasZoomedToFit.current = true
       setTimeout(() => fgRef.current?.zoomToFit(400, 50), 100)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fgData.nodes.length])
+  }, [shownData.nodes.length])
 
   /* ---- Custom node renderer with LOD tiers ---- */
   const paintNode = useCallback(
@@ -481,7 +534,8 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
       const minGY = topLeft.y
       const maxGY = bottomRight.y
 
-      const selected = fgData.nodes
+      // the nodes drawn: while a large graph is laid out again, the canvas still shows the previous one
+      const selected = shownData.nodes
         .filter((n) => {
           const nx = n.x ?? 0
           const ny = n.y ?? 0
@@ -497,7 +551,7 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
       setIsDraggingState(false)
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [selectionMode, dragStart, fgData.nodes, selectNodes]
+    [selectionMode, dragStart, shownData.nodes, selectNodes]
   )
 
   /* ---- Node drag to pin ---- */
@@ -520,7 +574,7 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
     >
       <ForceGraph2D
         ref={fgRef as React.MutableRefObject<ForceGraphMethods<FGNode, FGLink>>}
-        graphData={fgData}
+        graphData={shownData}
         width={dimensions.width}
         height={dimensions.height}
         backgroundColor={canvasColors.background}
@@ -544,8 +598,14 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
         cooldownTime={simCooldownTime}
         d3AlphaDecay={simAlphaDecay}
         d3VelocityDecay={simVelocityDecay}
-        warmupTicks={simWarmupTicks}
+        warmupTicks={shownWarmupTicks}
       />
+
+      {layingOut && (
+        <div className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-md bg-slate-100/90 dark:bg-slate-900/80 px-2 py-1 text-xs text-slate-500 dark:text-slate-400">
+          Arranging {fgData.nodes.length} nodes…
+        </div>
+      )}
 
       {/* Drag selection rectangle overlay */}
       {selectionMode === "drag" && dragStart && dragEnd && isDraggingState && (
