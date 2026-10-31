@@ -28,10 +28,12 @@ class TimelineService:
                       "ledger_transaction_id", "connections")
     # A connection's name as the Timeline lists it. Accounts share their holder's name (BNB2: 14 accounts
     # named ARRENDO SERV SA DE CV), so an account is named by its identity label (holder, bank, number,
-    # currency) when that label extends its current name; a name a person gave it is kept. Statement
+    # currency) when that label extends its current name and no person has set the name (graph_edit_service
+    # records a rename in manual_fields); a name a person gave it is kept. Statement
     # periods have no name (all 2,371), so they are named by their dates (9 have none: "with no dates").
     CONNECTION_NAME_CYPHER = """CASE
                     WHEN connected:FinancialAccount AND connected.financial_identity_label IS NOT NULL
+                         AND NOT 'name' IN coalesce(connected.manual_fields, [])
                          AND (connected.name IS NULL OR connected.financial_identity_label STARTS WITH connected.name)
                         THEN connected.financial_identity_label
                     WHEN connected:FinancialStatementPeriod AND connected.name IS NULL

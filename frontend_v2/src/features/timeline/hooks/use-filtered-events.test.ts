@@ -18,7 +18,7 @@ function event(key: string, connections: TimelineEvent["connections"]): Timeline
 }
 
 const events: TimelineEvent[] = [
-  // Live data has statement periods with no name at all (49494305: 9 after the server names the rest).
+  // Connections can arrive with no name (live BNB2 had 807 statement-period rows before the server named them).
   event("a", [
     { key: "p", name: null as unknown as string, type: "FinancialStatementPeriod", relationship: "IN_PERIOD", direction: "outgoing" },
   ]),

@@ -249,6 +249,7 @@ class TimelineServiceTests(unittest.TestCase):
         self.assertIn("'Statement period ' + CASE", name)
         self.assertIn("coalesce(toString(connected.period_start), 'no start date')", name)
         self.assertIn("ELSE connected.name", name)
+        self.assertIn("AND NOT 'name' IN coalesce(connected.manual_fields, [])", name)
         self.assertIn("'with no dates'", name)
         for call in (
             lambda: TimelineService().get_timeline_page(case_id="case-1"),
