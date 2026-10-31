@@ -68,6 +68,16 @@ class ComparisonCacheTests(TestCase):
             self.assertEqual(set(self.files(db)), self.case_file_ids - {self.other.id})
         self.assertEqual(set(source_lineage._CASE_FILES[str(self.f.case.id)]), self.case_file_ids - {self.other.id})
 
+    def test_a_deleted_row_asked_for_by_id_is_dropped_from_the_copies(self):
+        with self.f.SessionLocal() as db:
+            self.files(db)
+            db.delete(db.get(EvidenceFile, self.other.id))
+            db.commit()
+        with self.f.SessionLocal() as db, patch.object(source_lineage, '_row_version', content_version):
+            self.assertEqual(set(source_lineage.case_files(db, self.f.case.id, ids=[self.other.id, self.f.file.id])),
+                             {self.f.file.id})
+        self.assertEqual(set(source_lineage._CASE_FILES[str(self.f.case.id)]), self.case_file_ids - {self.other.id})
+
     def test_a_session_with_unsaved_evidence_edits_reads_its_own_objects(self):
         with self.f.SessionLocal() as db:
             self.files(db)

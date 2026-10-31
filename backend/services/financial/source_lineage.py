@@ -113,7 +113,8 @@ def case_files(session, case_id, ids=None):
     EvidenceFile objects are returned instead.
     """
     version = _row_version(session)
-    condition = [EvidenceFile.case_id == case_id] + ([EvidenceFile.id.in_(set(ids))] if ids is not None else [])
+    ids = None if ids is None else set(ids)
+    condition = [EvidenceFile.case_id == case_id] + ([EvidenceFile.id.in_(ids)] if ids is not None else [])
     if version is None or not _cacheable(session):
         return {file.id: file for file in session.scalars(case_wide_files().where(*condition))}
     current = dict(session.execute(select(EvidenceFile.id, version).where(*condition)).all())
@@ -137,15 +138,17 @@ def case_files(session, case_id, ids=None):
     # A row deleted between the two reads is left out, as a fresh load would.
     result = {file_id: loaded[file_id][1] if file_id in loaded else known[file_id][1] for file_id in current
               if file_id in loaded or (file_id in known and known[file_id][0] == current[file_id])}
-    if loaded or (ids is None and len(known) != len(current)):
+    # Copies of files that no longer exist are dropped, also when only some ids were asked for.
+    gone = (known.keys() - current.keys()) if ids is None else (ids & known.keys()) - current.keys()
+    if loaded or gone:
         from services.financial.row_versions import memoisable, own_write_floor
         floor = own_write_floor(session) if loaded else None
         with _CASE_FILES_LOCK:
             entries = dict(_CASE_FILES.get(key, {}))
             # A row this transaction wrote may change again before it commits under the same version: not kept.
             entries.update({file_id: entry for file_id, entry in loaded.items() if memoisable(entry[0], floor)})
-            if ids is None:
-                entries = {file_id: entry for file_id, entry in entries.items() if file_id in current}
+            for file_id in gone:
+                entries.pop(file_id, None)
             _CASE_FILES[key] = entries
             _CASE_FILES.move_to_end(key)
             _drop_least_recent_cases()
