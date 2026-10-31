@@ -335,7 +335,7 @@ VISITED_MAX_VIEWS = 200
 
 
 def _visited_views(listed):
-    """(case_id, (name, route, {})) for each view saved on disk in the last VISITED_MAX_AGE_SECONDS whose key is not
+    """(case_id, (name, route, {})) for each view a person opened in the last VISITED_MAX_AGE_SECONDS whose key is not
     one the fixed lists warm (``listed``: (case_id, route, parameters) as they call it), newest first, at most
     VISITED_MAX_VIEWS. The route is called with the saved key's own parameters. Never raises: an unreadable copy is
     skipped."""
@@ -343,9 +343,13 @@ def _visited_views(listed):
     import json
     from uuid import UUID
     from services.financial import view_cache, view_refresh
-    directory = view_cache._saved_dir()
-    if directory is None:
+    # The visits people made (view_cache.note_visit); before any was noted, the saved copies' times.
+    memo = view_cache._memo_dir()
+    if memo is None:
         return []
+    directory, suffix = memo / view_cache.VISITED_DIR, '.visit'
+    if not directory.is_dir():
+        directory, suffix = view_cache._saved_dir(), '.view'
     for module in view_refresh.ROUTE_MODULES:
         __import__(module)
     listed_keys = set()
@@ -357,7 +361,7 @@ def _visited_views(listed):
     now = time.time()
     try:
         entries = sorted(((entry.stat().st_mtime, entry.path) for entry in os.scandir(directory)
-                          if entry.name.endswith('.view')), reverse=True)
+                          if entry.name.endswith(suffix)), reverse=True)
     except OSError:
         return []
     for mtime, path in entries:
@@ -395,6 +399,15 @@ def _graph_records(case_id, mode, db=None):
 
 def _warm_cases(share=None, stop_if_preparing=False):
     """``share`` (k, n): only every n-th case-and-view task from the k-th, for a prepare split over n processes."""
+    from services.financial import view_cache
+    token = view_cache.not_a_visit.set(True)  # warming a view is not a person opening it
+    try:
+        return _warm_cases_now(share, stop_if_preparing)
+    finally:
+        view_cache.not_a_visit.reset(token)
+
+
+def _warm_cases_now(share, stop_if_preparing):
     from sqlalchemy import func, select
     from postgres.models.financial import FinancialStatementPeriod as Period
     from postgres.session import _get_session_local

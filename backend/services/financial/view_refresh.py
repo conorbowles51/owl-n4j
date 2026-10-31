@@ -156,12 +156,21 @@ def refresh_one(path, ask_, session_factory=None):
     """Compute one asked view through its route; True only when a current copy was saved where the workers read
     it (written now, or already saved and current): a copy kept only in this process's memory is no refresh."""
     import importlib
-    from fastapi import HTTPException
     from services.financial import view_cache
-    from postgres.session import _get_session_local
     for module in ROUTE_MODULES:
         importlib.import_module(module)
     name, parameters = ask_['key'][0], json.loads(ask_['key'][1])
+    visit_token = view_cache.not_a_visit.set(True)
+    try:
+        return _refresh_one(name, parameters, ask_, session_factory)
+    finally:
+        view_cache.not_a_visit.reset(visit_token)
+
+
+def _refresh_one(name, parameters, ask_, session_factory):
+    from fastapi import HTTPException
+    from services.financial import view_cache
+    from postgres.session import _get_session_local
     if name == 'review-queue':
         from uuid import UUID
         from services.financial import review_queue

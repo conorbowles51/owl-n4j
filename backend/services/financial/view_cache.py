@@ -652,6 +652,7 @@ def cached_view(name, *, columns=None):
             if getattr(getattr(engine, 'dialect', None), 'name', None) != 'postgresql':
                 return handler(*args, **kwargs)
             key = view_key(name, kwargs)
+            note_visit(key)
             # The access check ran in the session's own transaction. End it, which returns its connection to
             # the pool, before waiting: a request waiting for the same view holds no connection.
             db.rollback()
@@ -800,6 +801,48 @@ UPDATING_MAX_SECONDS = 600
 _accepts_updating = ContextVar('financial_view_accepts_updating', default=False)
 # Set by the background refresh: every view it computes is saved, however fast, so the workers find it.
 always_save = ContextVar('financial_view_always_save', default=False)
+# Set by the warm-up and the refresh process: their calls are not a person opening the view.
+not_a_visit = ContextVar('financial_view_not_a_visit', default=False)
+
+# A person's request for a view is noted on disk (``visited``), at most once per key every VISIT_NOTE_SECONDS in a
+# process, so the release warms the views people open (view_warmup._visited_views) and stops warming one nobody
+# opened for a day; the saved copies themselves are rewritten by every warm-up and say nothing about visits.
+VISITED_DIR = 'visited'
+VISIT_NOTE_SECONDS = 600
+_visits_noted = {}
+
+
+def _visit_path(directory, key):
+    import hashlib
+    return directory / (hashlib.sha256(json.dumps(list(key)).encode()).hexdigest() + '.visit')
+
+
+def note_visit(key):
+    """Note that a person opened this view now. Never raises."""
+    import os
+    if not_a_visit.get():
+        return
+    now = time.time()
+    if now - _visits_noted.get(key, 0.0) < VISIT_NOTE_SECONDS:
+        return
+    directory = _memo_dir()
+    if directory is None:
+        return
+    _visits_noted[key] = now
+    try:
+        directory = directory / VISITED_DIR
+        path = _visit_path(directory, key)
+        try:
+            os.utime(path)
+            return
+        except FileNotFoundError:
+            pass
+        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        temporary = path.with_name('%s.%d.%d.tmp' % (path.name, os.getpid(), threading.get_ident()))
+        temporary.write_text(json.dumps(dict(key=list(key))))
+        os.replace(temporary, path)
+    except Exception:  # noqa: BLE001 - only the next release's warm-up list misses it
+        logger.warning('Could not note a visit to Financial view %s', key[0], exc_info=True)
 
 
 class AcceptsUpdatingMiddleware:
