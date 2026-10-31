@@ -854,9 +854,19 @@ def _copies_none_saved(session, case_id, entries):
                      issue_messages=[COPIES_NONE_SAVED_SENTENCE])
 
 
-def _store(key, fingerprint, view):
+_KEEP_TIME = object()
+
+
+def _store(key, fingerprint, view, built_at=_KEEP_TIME):
+    """Cache a view; with ``built_at`` (epoch seconds, or 0 for unknown) its computed time is recorded under the same
+    lock, so no reader pairs the new view with the previous time."""
     with _lock:
         _cache[key] = (fingerprint, view)
+        if built_at is not _KEEP_TIME:
+            if built_at:
+                _built_at[key] = built_at
+            else:
+                _built_at.pop(key, None)
         _cache.move_to_end(key)
         held = lambda: sum(len(value[1]['entries']) for value in _cache.values())
         while len(_cache) > 1 and (len(_cache) > _CACHE_SIZE or held() > CACHE_MAX_ENTRIES):
@@ -936,12 +946,7 @@ def _load_saved_entry(session, key, fingerprint):
 def _store_saved(key, fingerprint, view, computed_at):
     """Keep a loaded saved copy in memory with the time it was computed: an updating answer shows that time
     (previous_as_of), not the time of an earlier build in this worker. Unknown time: none is shown."""
-    _store(key, fingerprint, view)
-    with _lock:
-        if computed_at:
-            _built_at[key] = computed_at
-        else:
-            _built_at.pop(key, None)
+    _store(key, fingerprint, view, built_at=computed_at)
 
 
 def _save_view(session, key, fingerprint, view, started, started_at=0.0):
@@ -988,9 +993,7 @@ def _build_once(session, key, case_id, fingerprint):
     try:
         started, started_at = time.perf_counter(), time.time()
         view = _compute(session, case_id)
-        _store(key, fingerprint, view)
-        with _lock:
-            _built_at[key] = started_at
+        _store(key, fingerprint, view, built_at=started_at)
         _save_view(session, key, fingerprint, view, started, started_at)
         from services.financial import view_cache
         view_cache._forget_ask(_ask_key(key))

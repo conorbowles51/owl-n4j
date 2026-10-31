@@ -598,6 +598,8 @@ class QueueCacheTests(Base):
         with patch.object(register, 'status_fingerprint', return_value=(('c',),)), \
                 patch.object(rq, '_ask_refresh', return_value=True):
             with self.f.SessionLocal() as db:
+                token = rq.previous_as_of.set(0.0)
+                self.addCleanup(rq.previous_as_of.reset, token)
                 answer, refreshing = rq._view(db, self.f.case.id, stale_ok=True, updating=True)
         self.assertTrue(refreshing)
         self.assertIs(answer, view)
