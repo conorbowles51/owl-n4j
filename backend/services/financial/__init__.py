@@ -1952,8 +1952,8 @@ __all__ += ["statement_delta_hints"]
 from services.financial.trace_assets import trace_asset_uses
 __all__.append("trace_asset_uses")
 
-from .counterparty_parties import counterparty_parties, set_counterparty_party
-__all__.extend(["counterparty_parties", "set_counterparty_party"])
+from .counterparty_parties import counterparty_parties as list_counterparty_parties, set_counterparty_party
+__all__.extend(["list_counterparty_parties", "set_counterparty_party"])
 
 from services.financial.summary_contributions import summary_contributions
 __all__ += ["summary_contributions"]
