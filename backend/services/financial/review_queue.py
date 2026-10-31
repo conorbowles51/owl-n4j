@@ -962,7 +962,7 @@ def _refresh_in_background(bind, key, case_id):
     threading.Thread(target=run, name=f'review-queue-{key[:8]}', daemon=True).start()
 
 
-def _view(session, case_id, use_cache=True, note=True, stale_ok=False):
+def _view(session, case_id, use_cache=True, note=True, stale_ok=False, updating=False):
     """(whole-case view, refreshing). Reused while the case's rows are unchanged.
 
     ``stale_ok``: when the inputs changed since the cached view was built, that
@@ -990,7 +990,10 @@ def _view(session, case_id, use_cache=True, note=True, stale_ok=False):
         _store(key, fingerprint, saved)
         return saved, False
     if stale_ok:
-        previous, previous_at = (hit[1], _built_at.get(key, 0.0)) if hit else _load_saved_any(session, key)
+        # A saved copy of any age only for a reader that shows it as updating (the page's bar); others keep the
+        # earlier rule: only this process's own copy, built moments ago.
+        previous, previous_at = ((hit[1], _built_at.get(key, 0.0)) if hit
+                                 else _load_saved_any(session, key) if updating else (None, 0.0))
         if previous is not None and _ask_refresh(session, key, case_id):
             previous_as_of.set(previous_at)
             return previous, True
@@ -1301,7 +1304,7 @@ def _public(entry):
 
 
 def case_review_queue(session, *, case_id, file_ids=None, use_cache=True, limit=None, offset=0,
-                      page_list='waiting', issue=None, stale_ok=False):
+                      page_list='waiting', issue=None, stale_ok=False, updating=False):
     """The case's queue and status line, optionally limited to some files (evidence ids).
 
     ``limit`` caps every entry list (0: counts only) and ``offset``/``issue``
@@ -1315,7 +1318,7 @@ def case_review_queue(session, *, case_id, file_ids=None, use_cache=True, limit=
     if page_list not in PAGE_LISTS:
         raise ValueError(f'Unknown queue list: {page_list}')
     started = time.perf_counter()
-    view, refreshing = _view(session, case_id, use_cache=use_cache, stale_ok=stale_ok)
+    view, refreshing = _view(session, case_id, use_cache=use_cache, stale_ok=stale_ok, updating=updating)
     # Live (not cached): files being read or prepared, for "Reading 12 of 40 files".
     reading = dict(reading_progress(session, case_id=case_id), unread_statement_files=view['unread'])
     file_filter = {str(i) for i in file_ids or []}

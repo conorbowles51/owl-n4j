@@ -189,7 +189,7 @@ def test_after_a_restart_a_changed_queue_is_answered_from_its_saved_copy_while_t
     store['fingerprint'] = (('batches', '1', 6), ('items', '2', 7))
     token = review_queue.previous_as_of.set(0.0)
     try:
-        view, refreshing = review_queue._view(_Session(), case, stale_ok=True)
+        view, refreshing = review_queue._view(_Session(), case, stale_ok=True, updating=True)
         assert refreshing and view['built'] == 1 and store['builds'] == 1
         assert before - 1 <= review_queue.previous_as_of.get() <= time.time()
     finally:
@@ -200,6 +200,17 @@ def test_after_a_restart_a_changed_queue_is_answered_from_its_saved_copy_while_t
     assert review_queue.refresh(_Session(), case)
     assert not path.exists() and store['builds'] == 2
     _new_process()
+    view, refreshing = review_queue._view(_Session(), case, stale_ok=True, updating=True)
+    assert not refreshing and view['built'] == 2
+
+
+def test_a_reader_that_does_not_show_updating_never_gets_an_old_saved_queue(store):
+    """Review 2026-10-31: the cross-case status line and paged reads just after a person's own save show no
+    updating bar; a saved queue of any age must not reach them as if built moments ago."""
+    case = uuid4()
+    review_queue._view(_Session(), case)
+    _new_process()
+    store['fingerprint'] = (('batches', '1', 6), ('items', '2', 7))
     view, refreshing = review_queue._view(_Session(), case, stale_ok=True)
     assert not refreshing and view['built'] == 2
 
@@ -234,10 +245,10 @@ def test_the_queue_route_marks_an_answer_from_the_previous_queue_as_updating(mon
                                       issue=None, fresh=None, db=object(), response=response)
     finally:
         view_cache._accepts_updating.reset(token)
-    assert seen['stale_ok'] is True, 'an unpaged read from the page no longer waits for the build'
+    assert seen['stale_ok'] is True and seen['updating'] is True, 'an unpaged read from the page no longer waits'
     assert response.headers['x-financial-view-state'] == 'updating'
     assert response.headers['x-financial-view-as-of'] == '2026-10-31T07:00:00+00:00'
     seen.clear()
     routes.financial_review_queue(case_id=uuid4(), file_id=[], limit=None, offset=0, page_list='waiting',
                                   issue=None, fresh=None, db=object(), response=Response())
-    assert seen['stale_ok'] is False, 'other callers still wait for a current queue'
+    assert seen['stale_ok'] is False and seen['updating'] is False, 'other callers still wait for a current queue'

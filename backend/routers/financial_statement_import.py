@@ -947,7 +947,8 @@ def financial_review_queue(case_id: UUID = Query(...), file_id: list[UUID] = Que
         with stage('review_queue'):
             result = case_review_queue(db, case_id=case_id, file_ids=file_id, limit=limit, offset=offset,
                                        page_list=page_list, issue=issue,
-                                       stale_ok=fresh is False or (fresh is None and (limit is not None or accepts)))
+                                       stale_ok=fresh is False or (fresh is None and (limit is not None or accepts)),
+                                       updating=accepts)
         if result.get('refreshing') and response is not None:
             from datetime import datetime, timezone
             as_of = previous_as_of.get()

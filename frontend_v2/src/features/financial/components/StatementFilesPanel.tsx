@@ -19,7 +19,7 @@ import {
 import { FinancialFileAction } from "./FinancialFileAction"
 import { EvidenceFinancialPicker } from "./EvidenceFinancialPicker"
 import { BatchStartChoice } from "./BatchStartChoice"
-import { fillAndSaveReady, queueFileWork, queueHref, useReviewQueue } from "../lib/review-queue"
+import { fetchReviewQueue, fillAndSaveReady, queueFileWork, queueHref, useReviewQueue } from "../lib/review-queue"
 import {
   needsBatchStartChoice,
   previewBatchStart,
@@ -230,11 +230,12 @@ export function StatementFilesPanel({
   // Ready statements are saved from the queue (statement by statement, the
   // batch save's checks), never by starting another batch over their files.
   const saveReadyFromQueue = async () => {
-    const data = reviewQueue.data
-    if (!data || !(data.ready.length || data.filled.length) || queueSaving) return
+    if (!reviewQueue.data || !(reviewQueue.data.ready.length || reviewQueue.data.filled.length) || queueSaving) return
     setQueueSaveLine("")
     setQueueSaving("Checking the ready statements…")
     try {
+      // The list on screen may be the previous queue while the current one is built: act on the current one.
+      const data = await fetchReviewQueue(caseId)
       const result = await fillAndSaveReady(caseId, data, {
         onProgress: setQueueSaving,
       })
