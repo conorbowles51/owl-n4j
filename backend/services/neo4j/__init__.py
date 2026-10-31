@@ -34,6 +34,7 @@ class Neo4jServiceFacade:
     session = staticmethod(driver.session)
     run_cypher = staticmethod(driver.run_cypher)
     run_cypher_read = staticmethod(driver.run_cypher_read)
+    run_cypher_read_bounded = staticmethod(driver.run_cypher_read_bounded)
     validate_cypher_batch = staticmethod(driver.validate_cypher_batch)
     execute_cypher_batch = staticmethod(driver.execute_cypher_batch)
     clear_graph = staticmethod(driver.clear_graph)

@@ -628,11 +628,16 @@ CRITICAL RULES:
 5. Use only the entity types and relationship types from the schema
 6. Return relevant properties (name, key, type, summary)
 7. Keep queries simple and readable
+8. Bind EVERY node and relationship to the case: write each node as (n:Label {{case_id: $case_id}}) and each
+   relationship as [r:TYPE {{case_id: $case_id}}], or add WHERE n.case_id = $case_id. Never put a case id
+   value in the query; $case_id is supplied for you.
+9. Use only MATCH, OPTIONAL MATCH, WHERE, RETURN, ORDER BY and LIMIT, with single-hop relationships
+   (no WITH, UNWIND, UNION, subqueries or variable-length paths)
 
 Return ONLY valid JSON with this structure:
 {{
     "can_query": true or false,
-    "cypher": "MATCH ... RETURN ..." or null,
+    "cypher": "MATCH (n:Person {{case_id: $case_id}}) WHERE n.key = 'john-smith' RETURN n.name, n.summary" or null,
     "explanation": "brief explanation of what the query does"
 }}
 """

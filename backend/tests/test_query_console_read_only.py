@@ -20,6 +20,7 @@ from neo4j import READ_ACCESS
 from neo4j.exceptions import ClientError
 
 from postgres.models.user import GlobalRole
+from postgres.session import get_db
 from routers import auth, query, users
 from services.neo4j.driver import driver as neo4j_driver
 
@@ -87,6 +88,7 @@ class ConsoleReadOnlyTests(unittest.TestCase):
         query.system_log_service.log = lambda **kw: self.logged.append(kw)
         app = FastAPI()
         app.include_router(query.router)
+        app.dependency_overrides[get_db] = lambda: None
         self.app = app
         self.client = TestClient(app)
 

@@ -10,7 +10,7 @@ import logging
 import math
 from typing import Any, Dict, List, Optional
 
-from neo4j import READ_ACCESS, GraphDatabase
+from neo4j import READ_ACCESS, GraphDatabase, unit_of_work
 from neo4j.exceptions import AuthError, Neo4jError
 
 from config import NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD
@@ -186,6 +186,30 @@ class Neo4jDriver:
             def work(tx):
                 result = tx.run(query, params or {})
                 return [dict(r) for r in result]
+            return session.execute_read(work)
+
+    def run_cypher_read_bounded(
+        self,
+        query: str,
+        params: Optional[Dict] = None,
+        *,
+        max_rows: int,
+        timeout_seconds: float,
+    ) -> tuple:
+        """READ session and transaction with a database time limit; returns (rows, truncated).
+
+        Stops after ``max_rows`` and reports truncated=True when a further row exists, so a cut answer
+        is never presented as the whole one.
+        """
+        with self._driver.session(default_access_mode=READ_ACCESS) as session:
+            @unit_of_work(timeout=timeout_seconds)
+            def work(tx):
+                rows: List[Dict] = []
+                for record in tx.run(query, params or {}):
+                    if len(rows) == max_rows:
+                        return rows, True
+                    rows.append(dict(record))
+                return rows, False
             return session.execute_read(work)
 
     def validate_cypher_batch(self, queries: List[str]) -> List[str]:

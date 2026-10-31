@@ -453,14 +453,6 @@ export const graphAPI = {
       `/api/graph/node/${encodeURIComponent(nodeKey)}/geocode?apply=${apply}`,
       { method: "POST", body: { case_id: caseId, address } }
     ),
-
-  /* --- Cypher --- */
-
-  executeCypher: (caseId: string, query: string) =>
-    fetchAPI<{ columns: string[]; rows: unknown[][] }>("/api/graph/cypher", {
-      method: "POST",
-      body: { case_id: caseId, query },
-    }),
 }
 
 /* ------------------------------------------------------------------ */

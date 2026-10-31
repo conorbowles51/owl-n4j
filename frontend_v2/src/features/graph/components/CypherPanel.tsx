@@ -15,9 +15,31 @@ interface CypherPanelProps {
   className?: string
 }
 
+// POST /api/query in case mode: read only, every node bound to $case_id (supplied by the server),
+// with a row limit and time limit the response states.
+export interface CaseQueryResponse {
+  success: boolean
+  results: Record<string, unknown>[]
+  columns: string[]
+  count: number
+  row_limit: number
+  truncated: boolean
+  total: number | null
+  error: string | null
+}
+
 interface QueryResult {
   columns: string[]
   rows: Record<string, unknown>[]
+  rowLimit: number
+  truncated: boolean
+}
+
+export function runCaseQuery(caseId: string, query: string) {
+  return fetchAPI<CaseQueryResponse>("/api/query", {
+    method: "POST",
+    body: { query, case_id: caseId },
+  })
 }
 
 interface HistoryEntry {
@@ -39,13 +61,20 @@ export function CypherPanel({ caseId, className }: CypherPanelProps) {
     setLoading(true)
     setError(null)
     try {
-      const data = await fetchAPI<QueryResult>("/api/graph/cypher", {
-        method: "POST",
-        body: { query: q, case_id: caseId },
+      const data = await runCaseQuery(caseId, q)
+      if (!data.success) {
+        setError(data.error ?? "Query failed")
+        setResult(null)
+        return
+      }
+      setResult({
+        columns: data.columns,
+        rows: data.results,
+        rowLimit: data.row_limit,
+        truncated: data.truncated,
       })
-      setResult(data)
       setHistory((prev) => [
-        { query: q, timestamp: new Date(), rowCount: data.rows.length },
+        { query: q, timestamp: new Date(), rowCount: data.results.length },
         ...prev.slice(0, 19),
       ])
     } catch (err) {
@@ -87,8 +116,12 @@ export function CypherPanel({ caseId, className }: CypherPanelProps) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onExecute={executeQuery}
-          placeholder="MATCH (n) RETURN n LIMIT 25"
+          placeholder="MATCH (n {case_id: $case_id}) RETURN n.name, labels(n) LIMIT 25"
         />
+        <p className="text-[11px] text-muted-foreground">
+          Read only, within this case: bind every node and relationship to the case with{" "}
+          <code>{"{case_id: $case_id}"}</code>.
+        </p>
 
         <div className="flex gap-2">
           <Button
@@ -151,6 +184,11 @@ export function CypherPanel({ caseId, className }: CypherPanelProps) {
           <div className="mb-2 flex items-center justify-between">
             <Badge variant="slate">{result.rows.length} results</Badge>
           </div>
+          {result.truncated && (
+            <p role="status" className="mb-2 rounded-md bg-amber-50 p-2 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-400">
+              Showing the first {result.rowLimit} rows only: the query returned more. Add a LIMIT or narrow it.
+            </p>
+          )}
           {result.rows.length === 0 ? (
             <EmptyState title="No results" description="Query returned no data" className="py-6" />
           ) : (

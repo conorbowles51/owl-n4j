@@ -548,61 +548,71 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
     # Cypher Query (preserved from original)
     # =====================
 
+    # The chat shows at most this many rows of a generated query's answer and says when there were more.
+    CYPHER_CONTEXT_ROWS = 20
+
     def _try_cypher_query(
         self,
         question: str,
         graph_summary: Dict,
         debug_log: Optional[Dict] = None,
+        case_id: Optional[str] = None,
     ) -> Optional[str]:
         """
         Try to generate and execute a Cypher query for specific questions.
         Returns query results as formatted string, or None if not applicable.
+
+        The model's query runs only inside the asking case: it must bind every node and relationship to
+        $case_id (the case-scope grammar in services.agent.cypher_safety), the server supplies $case_id,
+        and it runs in a READ transaction with a time limit, so the database refuses any write.
         """
+        if not case_id:
+            return None
         schema_info = self._build_schema_info(graph_summary)
         cypher = self._get_llm().generate_cypher(question, schema_info)
         print("Cypher: ", cypher)
         if not cypher:
             return None
 
+        from services.agent.cypher_safety import UnsafeCypherError, run_case_cypher
+
+        if debug_log is not None:
+            debug_log["cypher_answer_query"] = {"generated_cypher": cypher}
         try:
-            cypher_upper = cypher.upper()
-            if any(
-                dangerous in cypher_upper
-                for dangerous in ["DELETE", "REMOVE", "SET", "CREATE", "MERGE", "DROP"]
-            ):
-                print(f"Blocked potentially dangerous query: {cypher}")
-                return None
-
+            results, truncated = run_case_cypher(
+                cypher, case_id=str(case_id), max_rows=self.CYPHER_CONTEXT_ROWS
+            )
+        except UnsafeCypherError as e:
+            print(f"[RAG] Generated Cypher refused (not case-scoped read): {e}")
             if debug_log is not None:
-                debug_log["cypher_answer_query"] = {
-                    "generated_cypher": cypher,
-                }
-
-            results = self.neo4j.run_cypher(cypher)
-
-            if not results:
-                if debug_log is not None:
-                    debug_log["cypher_answer_query"]["results"] = "No results"
-                return None
-
-            lines = [f"Query executed: {cypher}", "", "Results:"]
-            for i, row in enumerate(results[:20]):
-                lines.append(f"  {i + 1}. {row}")
-
-            if len(results) > 20:
-                lines.append(f"  ... and {len(results) - 20} more results")
-
-            if debug_log is not None:
-                debug_log["cypher_answer_query"]["results"] = {
-                    "rows_returned": len(results),
-                    "sample_results": results[:10],
-                }
-
-            return "\n".join(lines)
-
+                debug_log["cypher_answer_query"]["refused"] = str(e)
+            return None
         except Exception as e:
             print(f"Cypher execution error: {e}")
+            if debug_log is not None:
+                debug_log["cypher_answer_query"]["error"] = str(e)
             return None
+
+        if not results:
+            if debug_log is not None:
+                debug_log["cypher_answer_query"]["results"] = "No results"
+            return None
+
+        lines = [f"Query executed: {cypher}", "", "Results:"]
+        for i, row in enumerate(results):
+            lines.append(f"  {i + 1}. {row}")
+        if truncated:
+            lines.append(
+                f"  (only the first {len(results)} rows are shown; the query returned more)"
+            )
+
+        if debug_log is not None:
+            debug_log["cypher_answer_query"]["results"] = {
+                "rows_returned": len(results),
+                "truncated": truncated,
+                "sample_results": results[:10],
+            }
+        return "\n".join(lines)
 
     # =====================
     # NEW: Hybrid Retrieval Helpers
@@ -1838,7 +1848,7 @@ Only include candidates with score >= 5."""
                     }
                     schema_info = self._build_schema_info(graph_summary)
                     stage0b_details["schema_info"] = schema_info
-                    cypher_context = self._try_cypher_query(question, graph_summary, debug_log)
+                    cypher_context = self._try_cypher_query(question, graph_summary, debug_log, case_id=case_id)
                     stage0b_details["llm_prompt"] = llm.last_prompt
                     stage0b_details["llm_response"] = llm.last_raw_response
                     if cypher_context:
@@ -2356,112 +2366,6 @@ Only include candidates with score >= 5."""
             if len(sources) >= 5:
                 break
         return sources
-
-    # =====================
-    # Extract Nodes from Answer (preserved from original)
-    # =====================
-
-    def extract_nodes_from_answer(
-        self,
-        answer: str,
-        graph_summary: Optional[Dict] = None,
-    ) -> List[str]:
-        """
-        Generate a Cypher query from the answer to extract relevant nodes.
-        """
-        if not answer or not answer.strip():
-            return []
-
-        if graph_summary is None:
-            graph_summary = self.neo4j.get_graph_summary()
-
-        entity_types = list(graph_summary.get("entity_types", {}).keys())
-        relationship_types = list(graph_summary.get("relationship_types", {}).keys())
-
-        prompt = f"""Given this AI assistant answer about an investigation:
-
-"{answer}"
-
-Generate a Cypher query that will retrieve all nodes and relationships discussed or mentioned in this answer. The query should:
-
-1. Match nodes that are relevant to the answer's content
-2. Include relationships between those nodes
-3. Return node keys (n.key) for all relevant nodes
-4. Use appropriate labels and relationship types from the schema
-
-Available entity types: {', '.join(entity_types[:20])}
-Available relationship types: {', '.join(relationship_types[:20])}
-
-The query should return distinct node keys. Use patterns like:
-- MATCH (n:EntityType) WHERE ... RETURN DISTINCT n.key AS key
-- MATCH (n)-[r:RELATIONSHIP_TYPE]-(m) WHERE ... RETURN DISTINCT n.key AS key, m.key AS key
-- Or combine multiple patterns with UNION
-
-Return ONLY the Cypher query, nothing else. Do not include markdown code blocks."""
-
-        log_section(
-            source_file=__file__,
-            source_func="extract_nodes_from_answer",
-            title="Prompt: extract nodes from answer",
-            content={
-                "answer_length": len(answer),
-                "prompt": prompt,
-            },
-            as_json=True,
-        )
-
-        try:
-            cypher = self._get_llm().call(
-                prompt=prompt,
-                temperature=0.2,
-                json_mode=False,
-            )
-
-            if not cypher:
-                print("[RAG] No Cypher query generated from answer")
-                return []
-
-            cypher = cypher.strip()
-            if cypher.startswith("```"):
-                lines = cypher.split("\n")
-                cypher = "\n".join([l for l in lines if not l.strip().startswith("```")])
-                cypher = cypher.strip()
-
-            if "RETURN" not in cypher.upper():
-                if "MATCH" in cypher.upper():
-                    import re
-                    node_vars = re.findall(r'\((\w+)[:\)]', cypher)
-                    if node_vars:
-                        unique_vars = list(set(node_vars))
-                        return_clause = "RETURN DISTINCT " + ", ".join([f"{v}.key AS key" for v in unique_vars])
-                        cypher = f"{cypher}\n{return_clause}"
-
-            print(f"[RAG] Generated Cypher query from answer:\n{cypher}")
-
-            try:
-                results = self.neo4j.run_cypher(cypher)
-                node_keys = []
-                for row in results:
-                    key = row.get("key") or row.get("node_key") or row.get("n.key") or row.get("m.key")
-                    if key:
-                        node_keys.append(key)
-                    for value in row.values():
-                        if isinstance(value, str) and value:
-                            node_keys.append(value)
-
-                node_keys = list(set(node_keys))
-                print(f"[RAG] Extracted {len(node_keys)} node keys from Cypher query results")
-                return node_keys
-
-            except Exception as query_error:
-                print(f"[RAG] Error executing Cypher query: {query_error}")
-                return []
-
-        except Exception as e:
-            print(f"[RAG] Error generating Cypher query from answer: {e}")
-            import traceback
-            traceback.print_exc()
-            return []
 
     def get_suggested_questions(
         self,

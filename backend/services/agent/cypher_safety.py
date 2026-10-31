@@ -17,7 +17,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from neo4j import READ_ACCESS
+from neo4j import READ_ACCESS, unit_of_work
 
 from services.agent.json_utils import to_jsonable
 from services.neo4j.driver import driver
@@ -184,8 +184,8 @@ def _tokens(query: str) -> list[_Token]:
     return result
 
 
-def _enforce_limit(query: str, limit: int) -> str:
-    safe_limit = max(1, min(int(limit or 100), 200))
+def _enforce_limit(query: str, limit: int, max_limit: int = 200) -> str:
+    safe_limit = max(1, min(int(limit or 100), max_limit))
     tokens = _tokens(query)
     matches = [
         index for index, token in enumerate(tokens)
@@ -441,7 +441,7 @@ def repair_common_cypher(query: str) -> str:
     return repaired.strip()
 
 
-def validate_readonly_cypher(query: str, *, limit: int = 100) -> str:
+def validate_readonly_cypher(query: str, *, limit: int = 100, max_limit: int = 200) -> str:
     normalized_query = _single_statement(query)
     tokens = _tokens(normalized_query)
     squashed = " ".join(token.value for token in tokens)
@@ -461,7 +461,43 @@ def validate_readonly_cypher(query: str, *, limit: int = 100) -> str:
         raise UnsafeCypherError(f"Cypher contains disallowed keyword(s): {', '.join(found)}")
 
     _assert_case_scope(tokens)
-    return _enforce_limit(normalized_query, limit)
+    return _enforce_limit(normalized_query, limit, max_limit)
+
+
+# Every case-bound read gets a database-side time limit, so a runaway pattern cannot hold the graph.
+QUERY_TIMEOUT_SECONDS = 30
+
+
+def run_case_cypher(
+    query: str,
+    *,
+    case_id: str,
+    params: dict[str, Any] | None = None,
+    max_rows: int,
+    timeout_seconds: float = QUERY_TIMEOUT_SECONDS,
+) -> tuple[list[dict[str, Any]], bool]:
+    """Run case-scoped Cypher read-only and return (rows, truncated).
+
+    The query must pass the case-scope grammar above; ``$case_id`` always comes from the server, so a
+    client- or model-supplied value is overwritten. One row past ``max_rows`` is requested so a cut is
+    reported (truncated=True) rather than presented as the whole answer. The session and transaction
+    are READ, so the database refuses any write whatever the text says.
+    """
+    safe_query = validate_readonly_cypher(query, limit=max_rows + 1, max_limit=max_rows + 1)
+    safe_params = dict(params or {})
+    safe_params["case_id"] = case_id
+
+    @unit_of_work(timeout=timeout_seconds)
+    def work(tx):
+        rows: list[dict[str, Any]] = []
+        for record in tx.run(safe_query, safe_params):
+            if len(rows) == max_rows:
+                return rows, True
+            rows.append(to_jsonable(dict(record)))
+        return rows, False
+
+    with driver.session(default_access_mode=READ_ACCESS) as session:
+        return session.execute_read(work)
 
 
 def run_readonly_cypher(
@@ -475,6 +511,7 @@ def run_readonly_cypher(
     safe_params = dict(params or {})
     safe_params["case_id"] = case_id
 
+    @unit_of_work(timeout=QUERY_TIMEOUT_SECONDS)
     def work(tx):
         result = tx.run(safe_query, safe_params)
         return [to_jsonable(dict(record)) for record in result]
