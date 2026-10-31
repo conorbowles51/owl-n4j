@@ -24,6 +24,20 @@ export function noteOwnWrite(now = Date.now()) {
   ownWriteAt = now
 }
 
+/**
+ * Requests that change nothing a Financial view shows: the page's own speed records (posted every few seconds
+ * while the page is used) and signing in or out. Counting them as this tab's writes kept updating answers off
+ * for people using the page (live 2026-10-31 12:24: an evidence list computed inline for 7.6 s right after a
+ * speed record was posted).
+ */
+const NOT_DATA_WRITES = ["/api/request-speed/", "/api/auth/"]
+
+/** True when a successful request with this method may have changed what a Financial view shows. */
+export function isOwnWrite(endpoint: string, method?: string) {
+  const verb = (method ?? "GET").toUpperCase()
+  return verb !== "GET" && verb !== "HEAD" && !NOT_DATA_WRITES.some((prefix) => endpoint.startsWith(prefix))
+}
+
 /** Financial reads that may be answered as updating. */
 export function acceptsUpdating(endpoint: string, method?: string, now = Date.now()) {
   return (

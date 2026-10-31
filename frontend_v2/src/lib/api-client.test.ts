@@ -137,6 +137,21 @@ it("never asks to be answered as updating for two minutes after this tab saves s
     vi.useRealTimers()
   }
 })
+it("keeps asking to be answered as updating after the page posts its speed records", async () => {
+  const { clearUpdatingViews, noteOwnWrite } = await import("./financial-view-updates")
+  clearUpdatingViews()
+  vi.useFakeTimers()
+  try {
+    noteOwnWrite(0) // long ago
+    const fetch = vi.fn().mockImplementation(() => Promise.resolve(new Response("{}", { status: 202 })))
+    vi.stubGlobal("fetch", fetch)
+    await fetchAPI("/api/request-speed/page-views", { method: "POST", body: { views: [] } })
+    await fetchAPI("/api/evidence?case_id=c1&include_reading_versions=true&financial_only=true")
+    expect(fetch.mock.calls[1][1].headers["X-Financial-View-Accept"]).toBe("updating")
+  } finally {
+    vi.useRealTimers()
+  }
+})
 it("ignores an answer to an earlier request that arrives after a later one", async () => {
   const { clearUpdatingViews, nextRequestNumber, noteViewAnswer, updatingViews } = await import("./financial-view-updates")
   clearUpdatingViews()

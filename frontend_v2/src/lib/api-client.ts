@@ -4,6 +4,7 @@ import {
   ACCEPT_HEADER,
   acceptsUpdating,
   nextRequestNumber,
+  isOwnWrite,
   noteOwnWrite,
   noteViewAnswer,
   updatingAsOf,
@@ -90,8 +91,7 @@ export async function fetchAPI<T>(
     } else if (marksUpdating) {
       noteViewAnswer(endpoint, updatingAsOf(response), requestNumber)
     }
-    const method = (init.method ?? "GET").toUpperCase()
-    if (response.ok && method !== "GET" && method !== "HEAD") noteOwnWrite()
+    if (response.ok && isOwnWrite(endpoint, init.method)) noteOwnWrite()
 
     if (!response.ok) {
       let errorData: unknown
