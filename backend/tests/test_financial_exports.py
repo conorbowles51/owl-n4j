@@ -65,11 +65,11 @@ def _definitions(path: pathlib.Path) -> list[str]:
 # A module whose public name is its own module name is exported under an alias, so the package attribute of that
 # name stays the submodule: ``mock.patch('services.financial.journal.X')`` resolves by attribute on Python 3.10 and
 # would otherwise patch an attribute of the function.
-ALIASED_EXPORTS = {"journal": "journal_logger"}
+ALIASED_EXPORTS = {"journal": "journal_logger", "account_parties": "list_account_parties"}
 # Exports that already replace their submodule attribute. Frozen: the list may only shrink; a new one is aliased
 # as above instead.
 KNOWN_SHADOWING = frozenset({
-    "account_parties", "category_breakdown", "category_library", "correction_fields", "correction_verification",
+    "category_breakdown", "category_library", "correction_fields", "correction_verification",
     "counterparty_parties", "ledger_source", "ledger_summary", "ledger_timeline", "reconcile_case",
     "statement_delta_hints", "statement_file_status", "statement_layout_context", "summary_contributions",
     "transaction_search", "unread_pages",
@@ -117,7 +117,10 @@ class PackageSurfaceTests(unittest.TestCase):
                 alias = ALIASED_EXPORTS.get(path.stem)
                 if alias is not None:
                     self.assertIn(alias, exported)
-                    self.assertIs(getattr(package, alias), getattr(package, path.stem).__dict__[path.stem])
+                    # The alias is the module's own function (category_breakdown's is named ``breakdown``).
+                    exported_function = getattr(package, alias)
+                    self.assertIsInstance(getattr(package, path.stem), types.ModuleType)
+                    self.assertIs(exported_function, getattr(package, path.stem).__dict__[exported_function.__name__])
                     continue
                 self.assertTrue(
                     exported.intersection(defined),
