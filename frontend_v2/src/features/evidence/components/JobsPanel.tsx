@@ -249,11 +249,8 @@ function BackgroundTaskCard({
 
 export function JobsPanel({ caseId }: JobsPanelProps) {
   const queryClient = useQueryClient()
-  const hasActiveJobs = useMemo(() => {
-    return true // Always poll to detect new jobs
-  }, [])
-
-  const { data: jobs, isLoading: jobsLoading } = useJobs(caseId, hasActiveJobs)
+  // Polls while a job is unfinished (see useJobs).
+  const { data: jobs, isLoading: jobsLoading } = useJobs(caseId, true)
   const { data: backgroundTasks, isLoading: tasksLoading } = useBackgroundTasks(
     caseId,
     true

@@ -38,7 +38,7 @@ import { cn } from "@/lib/cn"
 import { downloadProtectedFile, useProtectedObjectUrl } from "@/lib/protected-file"
 import { useEvidenceStore } from "../evidence.store"
 import { useUIStore } from "@/stores/ui.store"
-import { useJobs } from "../hooks/use-jobs"
+import { hasUnfinishedJobs, useJobs } from "../hooks/use-jobs"
 import { useFolderContents } from "../hooks/use-folder-contents"
 import { JobsPanel } from "./JobsPanel"
 import { FileSummaryPanel } from "./FileSummaryPanel"
@@ -865,12 +865,9 @@ export function EvidenceContextSidebar({
     detailFileId && !folderDetailFile ? detailFileId : null
   )
   const detailFile = folderDetailFile ?? deepLinkedFile ?? null
+  // Polls only while a job is unfinished (see useJobs); the Processing tab dot shows the same thing.
   const { data: jobs } = useJobs(caseId, true)
-  const hasActiveJobs = useMemo(
-    () =>
-      jobs?.some((j) => !["completed", "failed"].includes(j.status)) ?? false,
-    [jobs]
-  )
+  const hasActiveJobs = useMemo(() => hasUnfinishedJobs(jobs), [jobs])
 
   const tabs = [
     { id: "details" as const, label: "Details", icon: Info },
