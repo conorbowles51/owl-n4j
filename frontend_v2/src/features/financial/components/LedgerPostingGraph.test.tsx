@@ -130,6 +130,29 @@ it("refuses an edge to another account's source group", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Show connections" }))
   expect(await screen.findByRole("alert")).toHaveTextContent("unavailable")
 })
+it("shows a payment an investigator linked to another account", async () => {
+  mount({
+    ...data,
+    nodes: [
+      ...data.nodes,
+      { id: "c", kind: "account", account_id: "other", label: "Other account" },
+    ],
+    edges: [
+      ...data.edges,
+      { ...data.edges[0], id: "linked", transaction_id: "linked", target: "c", amount_minor: "5" },
+    ],
+  })
+  fireEvent.click(screen.getByRole("button", { name: "Show connections" }))
+  expect(
+    await screen.findByRole("button", { name: "Source amount 5" })
+  ).toBeInTheDocument()
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+})
+it("refuses a payment whose posting side is a name group", async () => {
+  mount({ ...data, edges: [{ ...data.edges[0], source: "b", target: "a" }] })
+  fireEvent.click(screen.getByRole("button", { name: "Show connections" }))
+  expect(await screen.findByRole("alert")).toHaveTextContent("unavailable")
+})
 it("population changes remove the previous graph and source selection", async () => {
   mount()
   fireEvent.click(screen.getByRole("button", { name: "Show connections" }))

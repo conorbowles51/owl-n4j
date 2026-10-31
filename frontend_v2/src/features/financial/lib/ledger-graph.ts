@@ -44,15 +44,16 @@ export const postingGraph = z
     for (const edge of data.edges) {
       const a = nodes.get(edge.source),
         b = nodes.get(edge.target)
+      // The posting account sends a debit and receives a credit. The other end is a name group of that
+      // same account, or another account an investigator linked the payment to.
+      const [own, other] = edge.direction === "debit" ? [a, b] : [b, a]
       if (
-        !a ||
-        !b ||
-        a.account_id !== b.account_id ||
+        !own ||
+        !other ||
+        own.kind !== "account" ||
+        (other.kind === "source_label" && other.account_id !== own.account_id) ||
         edge.id !== edge.transaction_id ||
-        ids.has(edge.id) ||
-        (edge.direction === "debit"
-          ? a.kind !== "account" || b.kind !== "source_label"
-          : a.kind !== "source_label" || b.kind !== "account")
+        ids.has(edge.id)
       )
         ctx.addIssue({
           code: "custom",
