@@ -121,7 +121,7 @@ def test_the_child_runs_the_host_sweeps_beside_the_rounds_and_a_slow_sweep_does_
     monkeypatch.setattr(batch_rounds, 'GROUPS', (('auto_read', lambda: 0.01, 0, (auto_read,), 'failed'),))
     monkeypatch.setattr(batch_rounds, 'HOST_SWEEPS', (('sweep', lambda: 60, 0, (slow_sweep,), 'failed'),))
     monkeypatch.setattr(batch_rounds, 'PAUSE_SECONDS', 0.01)
-    monkeypatch.setattr(batch_rounds, 'graph_follow_up_forever', lambda stop, factory: stop.wait())
+    monkeypatch.setattr(batch_rounds, 'graph_follow_up_forever', lambda stop, factory, hand_offs=None: stop.wait())
     stop = threading.Event()
     worker = threading.Thread(target=batch_rounds.child_work, args=(stop, 'factory', lambda p: p))
     worker.start()

@@ -303,14 +303,22 @@ def rounds(stop, factory=None, resolve_path=None, groups=None):
 GRAPH_FOLLOW_UP_SECONDS = 5
 
 
-def graph_follow_up_forever(stop, factory=None, graph_session_factory=None):
+def graph_follow_up_forever(stop, factory=None, graph_session_factory=None, hand_offs=None):
     """The ledger graph follow-ups (graph_followup.serve_round: handed-off requests, the drift scan, due
     projections) every ``GRAPH_FOLLOW_UP_SECONDS`` until ``stop``. In its own thread of the child, beside
     ``rounds``: a whole-case projection (d5b330d1: about 49 CPU-s) does not hold back the batch rounds, and a long
     batch round does not hold back the graph. ``stop`` is looked at between cases and between statements (a
-    stopped projection rolls back). A failed round is logged and retried."""
+    stopped projection rolls back). A failed round is logged and retried. ``hand_offs``: the directory the workers
+    hand their requests to; taken up here (not before the rounds start), so a failure to set it up is retried
+    every round and never stops the batch rounds."""
     from services.financial import graph_followup
     while not stop.is_set():
+        if hand_offs is not None:
+            try:
+                graph_followup.serve_hand_offs(hand_offs)
+                hand_offs = None
+            except Exception:  # noqa: BLE001 - retried next round; the rounds go on meanwhile
+                log.exception('Graph follow-up hand-offs could not be taken up; trying again next round')
         try:
             graph_followup.serve_round(factory, graph_session_factory, stop=stop)
         except Exception:  # noqa: BLE001 - retried next round
@@ -323,11 +331,11 @@ def host_sweeps_forever(stop, factory=None, resolve_path=None):
     rounds(stop, factory, resolve_path, groups=HOST_SWEEPS)
 
 
-def child_work(stop, factory, resolve_path):
+def child_work(stop, factory, resolve_path, hand_offs=None):
     """Everything the child runs: the graph follow-ups and the host sweeps in threads of their own, the rounds in
     this one."""
-    graph = threading.Thread(target=graph_follow_up_forever, args=(stop, factory), name='graph-follow-up',
-                             daemon=True)
+    graph = threading.Thread(target=graph_follow_up_forever, args=(stop, factory), kwargs=dict(hand_offs=hand_offs),
+                             name='graph-follow-up', daemon=True)
     sweeps = threading.Thread(target=host_sweeps_forever, args=(stop, factory, resolve_path), name='host-sweeps',
                               daemon=True)
     graph.start()
@@ -389,10 +397,10 @@ def main():
     from services import process_shutdown, thread_dump
     from services.financial import graph_followup, vision_rounds
     factory = _get_session_local()
-    graph_followup.serve_hand_offs(graph_followup.hand_off_directory(vision_rounds._lock_directory()))
+    hand_offs = graph_followup.hand_off_directory(vision_rounds._lock_directory())
     # kill -USR1 <child> writes its threads' stacks to the same file as for the workers (services/thread_dump.py).
     _serve_until_signalled(threading.Event(), process_shutdown.BACKGROUND_STOP_SECONDS, os._exit,
-                           lambda stop: child_work(stop, factory, _resolve_stored_path), dump=thread_dump.write_dump)
+                           lambda stop: child_work(stop, factory, _resolve_stored_path, hand_offs), dump=thread_dump.write_dump)
 
 
 if __name__ == '__main__':

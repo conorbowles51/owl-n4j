@@ -428,7 +428,13 @@ def request_follow_up(case_id, *, now: Optional[float] = None, immediate: bool =
             directory = _handoff_dir[0]
             if directory is None:
                 _record_request(str(case_id), moment, immediate)
-                return
+                serving = _serving_dir[0]
+        if directory is None:
+            if serving is not None:
+                # A request made in the child itself (its rounds thread): the workers' status sees it at once,
+                # not only after the next graph round.
+                _write_pending(serving, case_id, None)
+            return
         _write_hand_off(directory, case_id, immediate)
     except Exception:  # pragma: no cover - a follow-up request must never fail an import
         log.exception("Graph follow-up request for case %s could not be recorded", case_id)
@@ -573,6 +579,11 @@ def claim_hand_offs() -> int:
             moment = _monotonic_from_wall(target.stat().st_mtime)
         except FileNotFoundError:
             continue
+        except OSError:
+            # One request that cannot be claimed must not stop the projections due this round: it stays in
+            # requests/ and is tried again next round.
+            log.exception("Graph follow-up request %s could not be claimed; tried again next round", name)
+            continue
         with _lock:
             _record_request(case, moment, name.endswith(IMMEDIATE_SUFFIX))
         claimed.append(target)
@@ -591,22 +602,53 @@ def _mtime_or_zero(path) -> float:
         return 0.0
 
 
+def _write_pending(directory, case_id, failure: Optional[dict]) -> None:
+    """``pending/<case>``: empty while waiting; after a failed attempt, the failure as JSON (attempts, last_error),
+    so a worker's status says ``retrying`` with the reason even when the graph marker could not be written."""
+    import json
+    path = directory / "pending" / _case_name(case_id)
+    body = json.dumps(failure).encode() if failure else b""
+    try:
+        if path.read_bytes() == body:
+            return
+    except OSError:
+        pass
+    temporary = directory / "tmp" / f"pending.{path.name}.{os.getpid()}.{threading.get_ident()}"
+    temporary.write_bytes(body)
+    os.replace(temporary, path)
+
+
+def _read_pending(directory, case) -> Optional[dict]:
+    """None when there is no pending file; {} while waiting; the failure after a failed attempt."""
+    import json
+    try:
+        body = (directory / "pending" / case).read_bytes()
+    except OSError:
+        return None
+    try:
+        failure = json.loads(body) if body else {}
+    except ValueError:
+        return {}
+    return failure if isinstance(failure, dict) else {}
+
+
 def _sync_pending() -> None:
-    """``pending/`` holds exactly the cases this child holds in process."""
+    """``pending/`` holds exactly the cases this child holds in process (with a failed attempt's reason)."""
     directory = _serving_dir[0]
     if directory is None:
         return
     with _lock:
-        held = set()
-        for case in _states:
+        held = {}
+        for case, state in _states.items():
             try:
-                held.add(_case_name(case))
+                held[_case_name(case)] = (dict(attempts=state.attempts, last_error=state.last_error)
+                                          if state.attempts else None)
             except ValueError:
                 pass
     present = {path.name for path in (directory / "pending").iterdir()}
-    for case in held - present:
-        (directory / "pending" / case).touch()
-    for case in present - held:
+    for case, failure in held.items():
+        _write_pending(directory, case, failure)
+    for case in present - set(held):
         (directory / "pending" / case).unlink(missing_ok=True)
 
 
@@ -620,18 +662,29 @@ def serve_round(session_factory=None, graph_session_factory=None, *,
         _sync_pending()
 
 
-def handed_off_request(case_id) -> bool:
-    """A request for this case is waiting for, or held by, the batch-rounds child."""
+def handed_off_request(case_id) -> Optional[dict]:
+    """The child's view of this case: None when no request is waiting for or held by the batch-rounds child;
+    otherwise {} or, after a failed attempt, {attempts, last_error}."""
     directory = _handoff_dir[0] or _serving_dir[0]
     if directory is None:
-        return False
+        return None
     try:
         case = _case_name(case_id)
     except ValueError:
-        return False
-    return any(path.exists() for path in (directory / "requests" / case,
-                                          directory / "requests" / (case + IMMEDIATE_SUFFIX),
-                                          directory / "pending" / case))
+        return None
+    held = _read_pending(directory, case)
+    if held is not None:
+        return held
+    if any(path.exists() for path in (directory / "requests" / case,
+                                      directory / "requests" / (case + IMMEDIATE_SUFFIX))):
+        return {}
+    # Being claimed (renamed into claimed/ and not yet in pending/): still waiting.
+    try:
+        if any(entry.name.startswith(case) for entry in os.scandir(directory / "claimed")):
+            return {}
+    except OSError:
+        pass
+    return None
 
 
 def projected_since_last_look() -> list[str]:
@@ -824,9 +877,11 @@ def follow_up_status(db, case_id, *, graph_session_factory=None) -> dict:
     admitted = int(db.scalar(select(func.count()).select_from(FinancialTransaction).where(
         FinancialTransaction.case_id == case_id, FinancialTransaction.ledger_status == "admitted")) or 0)
     local = pending_state(case_id)
-    if local is None and handed_off_request(case_id):
-        local = dict(requested=True, running=False, attempts=0, last_error=None, retry_in_seconds=None,
-                     last_outcome=None)
+    if local is None:
+        handed = handed_off_request(case_id)
+        if handed is not None:
+            local = dict(requested=True, running=False, attempts=int(handed.get("attempts") or 0),
+                         last_error=handed.get("last_error"), retry_in_seconds=None, last_outcome=None)
     result = dict(case_id=str(case_id), admitted_transactions=admitted, projected_transactions=None,
                   completed_at=None, last_error=(local or {}).get("last_error"),
                   attempts=(local or {}).get("attempts", 0),

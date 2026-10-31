@@ -110,6 +110,85 @@ class HandOffTests(GraphFollowUpTestCase):
         (self.directory / 'pending' / self.case).unlink()
         self.assertEqual(self.status()['status'], 'not_projected')
 
+    def worker_view(self):
+        """This process reads the status as a web worker that hands off (the child's in-process state unseen)."""
+        graph_followup._states.clear()
+        graph_followup._serving_dir[0] = None
+        graph_followup._handoff_dir[0] = self.directory
+
+    def test_status_says_pending_while_a_request_is_being_claimed(self):
+        graph_followup.hand_off_to(self.directory)
+        graph_followup.request_follow_up(self.case)
+        # The child has renamed it into claimed/ and not yet written pending/.
+        os.rename(self.directory / 'requests' / self.case, self.directory / 'claimed' / f'{self.case}.12345')
+        self.assertEqual(self.status()['status'], 'pending')
+
+    def test_a_failure_the_graph_marker_could_not_record_shows_as_retrying_with_its_reason(self):
+        graph_followup.hand_off_to(self.directory)
+        graph_followup.request_follow_up(self.case, immediate=True)
+        self.become_child()
+
+        def boom(*args, **kwargs):
+            raise RuntimeError('graph write refused')
+        with patch.object(graph_followup, 'project_case_graph', boom), \
+                patch.object(graph_followup, 'record_failure', boom):
+            results = self.serve()
+        self.assertEqual([r['outcome'] for r in results], ['failed'])
+        self.worker_view()
+        status = self.status()
+        self.assertEqual(status['status'], 'retrying')
+        self.assertEqual(status['last_error'], 'graph write refused')
+        self.assertEqual(status['attempts'], 1)
+
+    def test_a_request_made_in_the_child_itself_shows_as_pending_at_once(self):
+        self.become_child()
+        graph_followup.request_follow_up(self.case)  # e.g. a statement saved by the child's rounds thread
+        self.assertEqual(self.files('pending'), [self.case])
+        self.worker_view()
+        self.assertEqual(self.status()['status'], 'pending')
+
+    def test_a_request_that_cannot_be_claimed_does_not_stop_the_rest(self):
+        graph_followup.hand_off_to(self.directory)
+        other = '0f6a3c3e-6f4e-4d55-9b38-6a1f2f8f2b11'
+        graph_followup.request_follow_up(other)
+        graph_followup.request_follow_up(self.case, immediate=True)
+        self.become_child()
+        real = os.rename
+
+        def rename(source, target):
+            if Path(source).name == other:
+                raise PermissionError('synthetic')
+            return real(source, target)
+        with patch.object(graph_followup.os, 'rename', rename):
+            results = self.serve()
+        self.assertEqual([r['outcome'] for r in results], ['projected'])
+        self.assertEqual(self.files('requests'), [other])  # tried again next round
+
+
+def test_hand_offs_that_cannot_be_taken_up_are_retried_and_the_rounds_go_on(monkeypatch, fresh, caplog):
+    import threading
+    attempts, served = [], []
+
+    def serve_hand_offs(directory):
+        attempts.append(directory)
+        if len(attempts) == 1:
+            raise PermissionError('synthetic')
+    monkeypatch.setattr(graph_followup, 'serve_hand_offs', serve_hand_offs)
+    monkeypatch.setattr(graph_followup, 'serve_round', lambda factory, graph, stop: served.append(1) or [])
+    monkeypatch.setattr(batch_rounds, 'GRAPH_FOLLOW_UP_SECONDS', 0.01)
+    stop = threading.Event()
+    threading.Timer(0.2, stop.set).start()
+    batch_rounds.graph_follow_up_forever(stop, 'factory', hand_offs='dir')
+    assert attempts == ['dir', 'dir']  # once more after the failure, then not again
+    assert len(served) >= 2
+    assert any('could not be taken up' in r.getMessage() for r in caplog.records)
+
+
+def test_the_child_starts_its_rounds_before_taking_up_the_hand_offs():
+    import inspect
+    main = inspect.getsource(batch_rounds.main)
+    assert 'serve_hand_offs' not in main  # a failure there ended the child before any round ran
+
 
 @pytest.fixture
 def fresh():
@@ -161,7 +240,7 @@ def test_the_child_runs_the_graph_follow_up_beside_the_rounds_and_stops_with_the
     import threading
     served = []
     monkeypatch.setattr(graph_followup, 'serve_round', lambda factory, graph, stop: served.append(stop) or [])
-    monkeypatch.setattr(batch_rounds, 'rounds', lambda stop, factory, resolve_path: stop.wait(0.3))
+    monkeypatch.setattr(batch_rounds, 'rounds', lambda stop, factory, resolve_path, groups=None: stop.wait(0.3))
     monkeypatch.setattr(batch_rounds, 'GRAPH_FOLLOW_UP_SECONDS', 0.05)
     stop = threading.Event()
     threading.Timer(0.3, stop.set).start()
