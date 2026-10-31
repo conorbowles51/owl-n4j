@@ -17,6 +17,13 @@ interface FetchOptions extends Omit<RequestInit, "body"> {
   timeout?: number
 }
 
+let inFlight = 0
+
+/** API requests started through fetchAPI that have not finished yet (the page-speed post waits for none). */
+export function apiRequestsInFlight() {
+  return inFlight
+}
+
 export async function fetchAPI<T>(
   endpoint: string,
   options: FetchOptions = {}
@@ -43,6 +50,7 @@ export async function fetchAPI<T>(
   else callerSignal?.addEventListener("abort", abortFromCaller, { once: true })
   const timeoutMs = timeout ?? (endpoint.includes("/auth/") ? 10000 : 300000)
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+  inFlight += 1
 
   try {
     const response = await fetch(endpoint, {
@@ -83,6 +91,7 @@ export async function fetchAPI<T>(
 
     return (await response.json()) as T
   } finally {
+    inFlight -= 1
     clearTimeout(timeoutId)
     callerSignal?.removeEventListener("abort", abortFromCaller)
   }

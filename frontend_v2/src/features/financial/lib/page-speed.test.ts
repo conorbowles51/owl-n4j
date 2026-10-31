@@ -2,14 +2,15 @@ import { createElement, type ReactNode } from "react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { renderHook } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { fetchAPI } from "@/lib/api-client"
+import { apiRequestsInFlight, fetchAPI } from "@/lib/api-client"
 import { flushPageViews, recordPageView, useFinancialViewSpeed, whenSettled } from "./page-speed"
 
-vi.mock("@/lib/api-client", () => ({ fetchAPI: vi.fn() }))
+vi.mock("@/lib/api-client", () => ({ fetchAPI: vi.fn(), apiRequestsInFlight: vi.fn() }))
 
 beforeEach(() => {
   vi.resetAllMocks()
   vi.mocked(fetchAPI).mockResolvedValue({ accepted: 1 })
+  vi.mocked(apiRequestsInFlight).mockReturnValue(0)
 })
 afterEach(() => {
   flushPageViews()
@@ -30,6 +31,44 @@ describe("page speed", () => {
       { page: "financial/ledger", method: "VIEW", case_id: "c1", ms: 813 },
       { page: "financial/overview", method: "LOAD", case_id: "c1", ms: 2400 },
     ])
+  })
+
+  it("waits while other API requests are in flight, then posts once at low priority", () => {
+    vi.useFakeTimers()
+    vi.mocked(apiRequestsInFlight).mockReturnValue(3)
+    recordPageView({ page: "financial/ledger", method: "VIEW", case_id: "c1", ms: 900 })
+    vi.advanceTimersByTime(5000)
+    expect(fetchAPI).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(10000)
+    expect(fetchAPI).not.toHaveBeenCalled()
+    vi.mocked(apiRequestsInFlight).mockReturnValue(0)
+    vi.advanceTimersByTime(1000)
+    expect(fetchAPI).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(fetchAPI).mock.calls[0][1]).toMatchObject({ priority: "low", keepalive: false })
+  })
+
+  it("posts after a minute even if the app never goes quiet, and at once on leaving", () => {
+    vi.useFakeTimers()
+    vi.mocked(apiRequestsInFlight).mockReturnValue(1)
+    recordPageView({ page: "financial/ledger", method: "VIEW", case_id: "c1", ms: 900 })
+    vi.advanceTimersByTime(5000 + 59000)
+    expect(fetchAPI).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(1000)
+    expect(fetchAPI).toHaveBeenCalledTimes(1)
+    recordPageView({ page: "financial/trends", method: "LEFT", case_id: "c1", ms: 300 })
+    flushPageViews(true)
+    expect(fetchAPI).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(fetchAPI).mock.calls[1][1]).toMatchObject({ keepalive: true })
+  })
+
+  it("leaving posts every queued view, 50 per post", () => {
+    vi.useFakeTimers()
+    vi.mocked(apiRequestsInFlight).mockReturnValue(1)
+    for (let i = 0; i < 19; i++) recordPageView({ page: "financial/ledger", method: "VIEW", case_id: "c1", ms: i })
+    for (let i = 0; i < 60; i++) recordPageView({ page: "financial/ledger", method: "VIEW", case_id: "c1", ms: i })
+    flushPageViews(true)
+    const sizes = vi.mocked(fetchAPI).mock.calls.map(([, o]) => (o as { body: { views: unknown[] } }).body.views.length)
+    expect(sizes).toEqual([50, 29])
   })
 
   it("a failed post is swallowed", async () => {

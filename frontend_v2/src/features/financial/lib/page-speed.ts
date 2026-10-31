@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react"
 import { useQueryClient, type QueryClient } from "@tanstack/react-query"
-import { fetchAPI } from "@/lib/api-client"
+import { apiRequestsInFlight, fetchAPI } from "@/lib/api-client"
 import { viewDetail, type ViewDetail } from "@/lib/browser-timing"
 
 /**
@@ -12,7 +12,9 @@ import { viewDetail, type ViewDetail } from "@/lib/browser-timing"
  * frame painted after every request the view started has returned. A view the person leaves
  * before that (another view, case or page, or closing the tab) is recorded as LEFT with how long they
  * waited, so the slowest loads are not lost. Timings are queued and posted in small batches; a failed post is dropped, never
- * retried and never shown. Uses only performance.now, timers and fetch (safe over plain http).
+ * retried and never shown. A post waits until no other API request is in flight (checked each second, for up to a
+ * minute) and goes at low priority, so it never takes one of the browser's six connections from a request the person
+ * is waiting for; leaving the page posts at once. Uses only performance.now, timers and fetch (safe over plain http).
  *
  * The same timing runs for every route of the app (lib/route-speed.ts, page names like "case/timeline"),
  * and each row carries what the browser spent on the view (lib/browser-timing.ts).
@@ -31,20 +33,35 @@ const BATCH = 20
 const FLUSH_MS = 5000
 const MAX_MS = 600000 // the server accepts up to 10 minutes
 const GIVE_UP_MS = MAX_MS
+const QUIET_CHECK_MS = 1000
+const MAX_DEFER_MS = 60000
 
 const queue: PageView[] = []
 let timer: ReturnType<typeof setTimeout> | null = null
 const loadTaken = new Set<string>()
 let listening = false
+let deferredSince: number | null = null
 
 export function flushPageViews(keepalive = false) {
   if (timer) {
     clearTimeout(timer)
     timer = null
   }
-  const views = queue.splice(0, 50)
-  if (!views.length) return
-  void fetchAPI(ENDPOINT, { method: "POST", body: { views }, keepalive, timeout: 15000 }).catch(() => undefined)
+  if (!queue.length) return
+  if (!keepalive && apiRequestsInFlight() > 0) {
+    const now = Date.now()
+    deferredSince ??= now
+    if (now - deferredSince < MAX_DEFER_MS) {
+      timer = setTimeout(() => flushPageViews(), QUIET_CHECK_MS)
+      return
+    }
+  }
+  deferredSince = null
+  do {
+    const views = queue.splice(0, 50)
+    void fetchAPI(ENDPOINT, { method: "POST", body: { views }, keepalive, priority: "low", timeout: 15000 }).catch(() => undefined)
+  } while (keepalive && queue.length)
+  if (queue.length) timer = setTimeout(() => flushPageViews(), QUIET_CHECK_MS)
 }
 
 export function recordPageView(view: PageView) {

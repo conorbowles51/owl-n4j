@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
-import { fetchAPI } from "./api-client"
+import { apiRequestsInFlight, fetchAPI } from "./api-client"
 beforeEach(() => localStorage.clear())
 afterEach(() => vi.unstubAllGlobals())
 it("does not clear a new login when a previous session's delayed request returns 401", async () => {
@@ -40,4 +40,18 @@ it("removes the token when the current session expires", async () => {
     fetchAPI("/api/financial/case-access?case_id=case")
   ).rejects.toMatchObject({ status: 401 })
   expect(localStorage.getItem("authToken")).toBeNull()
+})
+it("counts requests in flight until each finishes, failed or not", async () => {
+  const finishes: ((value: Response) => void)[] = []
+  vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((resolve) => { finishes.push(resolve) })))
+  expect(apiRequestsInFlight()).toBe(0)
+  const ok = fetchAPI("/api/a")
+  const bad = fetchAPI("/api/b").catch((error) => error)
+  expect(apiRequestsInFlight()).toBe(2)
+  finishes[0](new Response("{}", { status: 200 }))
+  await ok
+  expect(apiRequestsInFlight()).toBe(1)
+  finishes[1](new Response("{}", { status: 500 }))
+  await bad
+  expect(apiRequestsInFlight()).toBe(0)
 })
