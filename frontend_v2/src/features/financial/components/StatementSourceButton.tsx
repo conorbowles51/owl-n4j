@@ -3,7 +3,7 @@ import { ImportedStatementDetails } from "./ImportedStatementDetails"
 import { AccountDetailsCorrection } from "./AccountDetailsCorrection"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { SourceCustodyPanel } from "./SourceCustodyPanel"
-import { useRef, useState } from "react"
+import { useRef, useState, type RefObject } from "react"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { useStatementWorkspace } from "../stores/statement-workspace"
 import { useQuery } from "@tanstack/react-query"
@@ -89,10 +89,65 @@ export function StatementSourceButton({
   contextLabel?: string
   returnLabel?: string
 }) {
-  const { canEdit } = useFinancialAccess()
   const trigger = useRef<HTMLButtonElement>(null)
-  const [opened, setOpened] = useState(false),
-    [viewFile, setViewFile] = useState(false),
+  const [opened, setOpened] = useState(false)
+  // The source query, dialog and viewer exist from the first opening on (and stay, so a reopened dialog keeps its
+  // state, as before). A statement table renders one button per period (d5b330d1: 1,363); an unopened button's
+  // disabled query was still a query-cache entry that every cache-wide scan and cache event had to walk.
+  const [everOpened, setEverOpened] = useState(false)
+  return (
+    <>
+      <Button
+        ref={trigger}
+        className="h-auto whitespace-normal text-left"
+        variant="outline"
+        onClick={() => {
+          setEverOpened(true)
+          setOpened(true)
+        }}
+      >
+        {label}
+      </Button>
+      {everOpened && (
+        <StatementSourceDialog
+          caseId={caseId}
+          periodId={periodId}
+          sourceDocumentId={sourceDocumentId}
+          onReviewStatement={onReviewStatement}
+          contextLabel={contextLabel}
+          returnLabel={returnLabel}
+          opened={opened}
+          setOpened={setOpened}
+          trigger={trigger}
+        />
+      )}
+    </>
+  )
+}
+
+function StatementSourceDialog({
+  caseId,
+  periodId,
+  sourceDocumentId,
+  onReviewStatement,
+  contextLabel,
+  returnLabel,
+  opened,
+  setOpened,
+  trigger,
+}: {
+  caseId: string
+  periodId: string
+  sourceDocumentId: string
+  onReviewStatement?: (fileId: string) => void
+  contextLabel?: string
+  returnLabel?: string
+  opened: boolean
+  setOpened: (open: boolean) => void
+  trigger: RefObject<HTMLButtonElement | null>
+}) {
+  const { canEdit } = useFinancialAccess()
+  const [viewFile, setViewFile] = useState(false),
     [controlRole, setControlRole] = useState<string | null>(null)
   const query = useQuery({
     queryKey: ["statement-source", caseId, periodId, sourceDocumentId],
@@ -120,14 +175,6 @@ export function StatementSourceButton({
   })
   return (
     <>
-      <Button
-        ref={trigger}
-        className="h-auto whitespace-normal text-left"
-        variant="outline"
-        onClick={() => setOpened(true)}
-      >
-        {label}
-      </Button>
       <Dialog
         open={opened && (!viewFile || query.isError)}
         onOpenChange={setOpened}

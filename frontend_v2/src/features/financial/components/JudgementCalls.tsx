@@ -497,12 +497,16 @@ export function StatementJudgements({
 }
 
 
-/** In a list of statement periods: how many calls the period has; opening it shows each one in place. */
+/**
+ * In a list of statement periods: how many calls the period has; opening it shows each one in place.
+ * The period's list query exists only while it is open: a statement table renders one of these per period
+ * (d5b330d1: 1,363), and a closed period's disabled query was still a query-cache entry, which every cache-wide
+ * scan and every cache event then had to walk.
+ */
 export function PeriodJudgements({ caseId, periodId }: { caseId: string; periodId: string }) {
   const counts = useJudgementCounts(caseId)
   const [open, setOpen] = useState(false)
   const tally = counts.data?.periods[periodId]
-  const query = useJudgements(caseId, { statementPeriodId: periodId }, open)
   if (!tally?.total) return null
   return (
     <div className="mt-1 text-xs" aria-label="Judgement calls in this period">
@@ -516,16 +520,21 @@ export function PeriodJudgements({ caseId, periodId }: { caseId: string; periodI
         {countLine(tally)}
         <ChevronRight aria-hidden="true" className={cn("size-3 transition-transform", open && "rotate-90")} />
       </button>
-      {open && (
-        <div className="mt-1 space-y-1">
-          {query.isPending && <p role="status">Loading…</p>}
-          <TieredList
-            items={query.data || []}
-            rowKey={(judgement) => judgement.id}
-            render={(judgement) => <JudgementMarker caseId={caseId} judgement={judgement} />}
-          />
-        </div>
-      )}
+      {open && <PeriodJudgementList caseId={caseId} periodId={periodId} />}
+    </div>
+  )
+}
+
+function PeriodJudgementList({ caseId, periodId }: { caseId: string; periodId: string }) {
+  const query = useJudgements(caseId, { statementPeriodId: periodId })
+  return (
+    <div className="mt-1 space-y-1">
+      {query.isPending && <p role="status">Loading…</p>}
+      <TieredList
+        items={query.data || []}
+        rowKey={(judgement) => judgement.id}
+        render={(judgement) => <JudgementMarker caseId={caseId} judgement={judgement} />}
+      />
     </div>
   )
 }

@@ -97,6 +97,8 @@ export function InvestigatorOverview({
   const guesses = Number(calls.inferred ?? 0)
   const findingCount = findings.data?.total ?? findings.data?.entries.length ?? 0
   const registerReady = !register.files.isPending && !register.imports.isPending && !register.files.isError && !register.imports.isError
+  const registerState =
+    register.files.isError || register.imports.isError ? "Statement status could not be loaded" : "Checking statement files…"
   const judgementsHref = (status: string, strength?: string) =>
     `/cases/${caseId}/financial?${new URLSearchParams({
       view: "statements",
@@ -110,7 +112,7 @@ export function InvestigatorOverview({
   // One next step: the first unfinished thing, in the order the work runs.
   const next: { eyebrow?: string; title: string; sub: string; action: string; onClick: () => void } =
     !registerReady
-      ? { title: "Your case at a glance", sub: "Checking statement files…", action: "Open statements", onClick: () => navigate("statements") }
+      ? { title: "Your case at a glance", sub: registerState, action: "Open statements", onClick: () => navigate("statements") }
       : !files.length
         ? { title: "Start with a statement.", sub: "Upload the PDFs, check what Loupe read, then investigate.", action: "Open statement files", onClick: () => navigate("statements") }
         : toCheck
@@ -127,8 +129,9 @@ export function InvestigatorOverview({
                   ? { title: "The ledger is checked.", sub: "Follow the money and record what needs explaining.", action: "Follow the money →", onClick: () => navigate("follow-money") }
                   : { title: "The ledger is checked.", sub: `${plural(findingCount, "finding")} saved. Keep going, or build the report.`, action: "Open Findings & Observations →", onClick: () => navigate("findings") }
   const steps: Step[] = [
-    { name: "Load", detail: plural(files.length, "file"), done: files.length > 0 },
-    { name: "Read", detail: `${n(importedIds.size)} saved${toCheck ? ` · ${n(toCheck)} to check` : ""}${notImported.length ? ` · ${n(notImported.length)} not saved` : ""}`, done: files.length > 0 && !toCheck && !notImported.length },
+    // Until the statement files and their saved readings are in, these two say so instead of counting nothing as 0.
+    { name: "Load", detail: registerReady ? plural(files.length, "file") : registerState, done: registerReady && files.length > 0 },
+    { name: "Read", detail: registerReady ? `${n(importedIds.size)} saved${toCheck ? ` · ${n(toCheck)} to check` : ""}${notImported.length ? ` · ${n(notImported.length)} not saved` : ""}` : registerState, done: registerReady && files.length > 0 && !toCheck && !notImported.length },
     { name: "Check", detail: judgements.isSuccess ? (openCalls ? `${n(openCalls)} of Loupe's calls open` : "Loupe's calls checked") : "Loupe's calls", done: judgements.isSuccess && !openCalls },
     { name: "Analyse", detail: totalsReady ? `${plural(payments, "payment")}${uncategorised ? ` · ${n(uncategorised)} uncategorised` : ""}` : totals.isError ? "Payments could not be counted" : "Counting payments…", done: totalsReady && payments > 0 && !uncategorised },
     { name: "Report", detail: findingCount ? plural(findingCount, "finding") : "No findings yet", done: findingCount > 0 },

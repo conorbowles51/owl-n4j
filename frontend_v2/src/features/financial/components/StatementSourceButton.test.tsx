@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { fireEvent, render, screen } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, expect, it, vi } from "vitest"
 import { StatementSourceButton } from "./StatementSourceButton"
 vi.mock("@/components/ui/document-viewer", () => ({
@@ -237,4 +237,26 @@ it("shows a viewer the account's holder, bank and number with who corrected them
   expect(panel).toHaveTextContent("INGENIERIA APLICADA R2 · Kapital · 194-98075-001-8 · CLABE 128180000000238632")
   expect(panel).toHaveTextContent("Corrected by Claude · not confirmed.")
   expect(screen.queryByRole("button", { name: /Confirm this correction|Undo this correction|Review/ })).toBeNull()
+})
+
+it("keeps no query until first opened (a statement table renders one per period), then keeps its answer after closing", async () => {
+  const fetch = vi
+    .spyOn(globalThis, "fetch")
+    .mockImplementation(async () => new Response(JSON.stringify(answer)))
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(
+    <QueryClientProvider client={client}>
+      <StatementSourceButton caseId="case" periodId="period" sourceDocumentId="document" />
+      <StatementSourceButton caseId="case" periodId="period-2" sourceDocumentId="document-2" label="Second" />
+    </QueryClientProvider>
+  )
+  expect(client.getQueryCache().getAll()).toHaveLength(0)
+  fireEvent.click(screen.getByRole("button", { name: "Inspect statement source" }))
+  await screen.findByText("statement.pdf")
+  expect(client.getQueryCache().getAll().map((query) => query.queryKey[2])).toEqual(["period"])
+  fireEvent.keyDown(document.activeElement || document.body, { key: "Escape" })
+  await waitFor(() => expect(screen.queryByText("statement.pdf")).toBeNull())
+  fireEvent.click(screen.getByRole("button", { name: "Inspect statement source" }))
+  expect(await screen.findByText("statement.pdf")).toBeVisible()
+  expect(fetch.mock.calls.every(([url]) => String(url).includes("statement-periods/period/"))).toBe(true)
 })

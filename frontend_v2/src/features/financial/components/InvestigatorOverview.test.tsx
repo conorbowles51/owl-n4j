@@ -56,6 +56,7 @@ const panels = {
 const state = vi.hoisted(() => ({
   panels: "ready" as "ready" | "pending" | "error",
   totals: "ready" as "ready" | "pending" | "error",
+  register: "ready" as "ready" | "pending" | "error",
   loadedEveryPayment: false,
 }))
 // The Overview no longer reads every payment: reading them is recorded so a test fails if it comes back.
@@ -82,11 +83,18 @@ vi.mock("../hooks/use-ledger-overview", () => ({
 }))
 vi.mock("../hooks/use-statement-register", () => ({
   useStatementRegister: () => ({
-    files: { data: [{ id: "f1" }, { id: "f2" }], isPending: false, isError: false },
+    files: {
+      data: state.register === "ready" ? [{ id: "f1" }, { id: "f2" }] : undefined,
+      isPending: state.register === "pending",
+      isError: state.register === "error",
+    },
     imports: {
-      data: { truncated: false, files: [{ evidence_file_id: "f1", current_transactions: 3, periods: [{}], available_periods: 0, periods_with_checks: 2 }] },
-      isPending: false,
-      isError: false,
+      data:
+        state.register === "ready"
+          ? { truncated: false, files: [{ evidence_file_id: "f1", current_transactions: 3, periods: [{}], available_periods: 0, periods_with_checks: 2 }] }
+          : undefined,
+      isPending: state.register === "pending",
+      isError: state.register === "error",
     },
   }),
 }))
@@ -117,6 +125,7 @@ afterEach(() => {
   cleanup()
   state.panels = "ready"
   state.totals = "ready"
+  state.register = "ready"
   state.loadedEveryPayment = false
 })
 
@@ -223,4 +232,21 @@ it("never shows 0 while the totals load, and says so when they fail", () => {
   expect(progress.textContent).toContain("Payments could not be counted")
   expect(screen.getByRole("alert").textContent).toContain("Payments could not be added up")
   expect(screen.queryByText("Every payment has a category")).toBeNull()
+})
+
+it.each([
+  ["pending", "Checking statement files…"],
+  ["error", "Statement status could not be loaded"],
+] as const)("never shows 0 files or 0 saved while the statement files are %s", (register, says) => {
+  state.register = register
+  render(
+    <MemoryRouter>
+      <InvestigatorOverview caseId="case" />
+    </MemoryRouter>
+  )
+  const progress = screen.getByRole("list", { name: "Your progress on this case" })
+  expect(progress.textContent).not.toMatch(/\b0 (file|saved)/)
+  expect(progress.textContent).toMatch(new RegExp(`Load\\([a-z ]+\\)${says}`))
+  expect(progress.textContent).toMatch(new RegExp(`Read\\([a-z ]+\\)${says}`))
+  expect(screen.getByRole("heading", { name: /Your case at a glance/ }).textContent).toContain(says)
 })

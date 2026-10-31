@@ -8,7 +8,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { expect, it, vi } from "vitest"
 import { fetchAPI } from "@/lib/api-client"
 import type { Judgement } from "../lib/judgements"
-import { JudgementMarker } from "./JudgementCalls"
+import { JudgementMarker, PeriodJudgements } from "./JudgementCalls"
 
 const judgement: Judgement = {
   id: "j-1",
@@ -102,4 +102,31 @@ it("shows a hand entry as its own button, with its own help and the working note
   expect(screen.getByText(/checked against the printed balances and totals/)).toBeVisible()
   expect(screen.queryByText(/Checked guess/)).toBeNull()
   expect(screen.getByText("Working notes")).toBeVisible()
+})
+
+it("keeps no list query for a closed period (a statement table renders one per period), and reads it on opening", async () => {
+  const client = new QueryClient()
+  vi.mocked(fetchAPI).mockReset()
+  vi.mocked(fetchAPI).mockImplementation(async (url: string) =>
+    url.includes("/judgements/counts")
+      ? { case: { total: 2 }, statements: {}, periods: { "p-1": { total: 1 }, "p-2": { total: 1 } }, rules: [] }
+      : { items: [judgement] }
+  )
+  render(
+    <QueryClientProvider client={client}>
+      <PeriodJudgements caseId="case-a" periodId="p-1" />
+      <PeriodJudgements caseId="case-a" periodId="p-2" />
+    </QueryClientProvider>
+  )
+  const buttons = await screen.findAllByRole("button", { name: /1 judgement call/ })
+  expect(buttons).toHaveLength(2)
+  // Only the shared counts query: no entry per closed period.
+  expect(client.getQueryCache().getAll()).toHaveLength(1)
+  fireEvent.click(buttons[0])
+  await waitFor(() =>
+    expect(vi.mocked(fetchAPI).mock.calls.filter(([url]) => String(url).includes("statement_period_id=p-1"))).toHaveLength(1)
+  )
+  await waitFor(() => expect(screen.queryByRole("status")).toBeNull())
+  expect(vi.mocked(fetchAPI).mock.calls.filter(([url]) => String(url).includes("statement_period_id=p-2"))).toHaveLength(0)
+  expect(client.getQueryCache().getAll()).toHaveLength(2)
 })
