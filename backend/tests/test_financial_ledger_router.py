@@ -251,6 +251,49 @@ class GetLedgerOverviewTests(unittest.IsolatedAsyncioTestCase):
                 categories=None)
         self.assertEqual(ctx.exception.status_code, 400)
 
+    async def test_the_lower_panels_read_the_same_rows_from_the_ledgers_kept_copy(self):
+        import inspect
+        from services.financial import view_cache
+        case_id, asked = uuid.uuid4(), []
+        body = {"case_id": str(case_id), "total": 2, "transactions": [
+            {"key": "a", "case_id": str(case_id), "account_id": "x", "currency": "MXN", "direction": "credit",
+             "amount_minor": "500", "category": "Fees", "ordering_date": "2025-01-02", "from_name": "Ana"},
+            {"key": "b", "case_id": str(case_id), "account_id": "x", "currency": "MXN", "direction": "debit",
+             "amount_minor": "200", "category": None, "ordering_date": "2025-01-03", "to_name": "Shop",
+             "row_index": 1}]}
+        filters = dict(source_document_id=None, account_id=None, ledger_status=None, start_date=None, end_date=None,
+                       account_ids=None, account_holders=None)
+        with patch.object(view_cache, "kept_copy", side_effect=lambda name, kw: asked.append((name, kw)) or body), \
+                patch.object(financial_ledger, "list_transactions") as list_call:
+            result = financial_ledger.get_ledger_overview_panels(case_id=case_id, db="fake-session",
+                                                                 categories=None, **filters)
+        list_call.assert_not_called()
+        ledger = inspect.signature(inspect.unwrap(financial_ledger.get_ledger_transactions)).parameters
+        self.assertEqual(asked, [("ledger", dict(filters, case_id=case_id))])
+        self.assertEqual(set(asked[0][1]), set(ledger) - {"db"}, "the same cached-view key as /ledger")
+        self.assertEqual((result["case_id"], result["complete"], result["totals"]["payments"]), (str(case_id), True, 2))
+        self.assertEqual(result["comparisons"], {"pairs": 1, "keys": ["a", "b"]})
+        self.assertEqual([n["name"] for n in result["connections"]["groups"][0]["names"]], ["Ana", "Shop"])
+
+    async def test_the_lower_panels_build_the_ledger_rows_when_no_copy_is_kept(self):
+        from services.financial import view_cache
+        case_id = uuid.uuid4()
+        payload = {"key": "a", "case_id": str(case_id), "account_id": "x", "currency": "MXN",
+                   "direction": "credit", "amount_minor": "500", "category": "Fees", "ordering_date": "2025-01-02"}
+        with patch.object(view_cache, "kept_copy", return_value=None), \
+                patch.object(financial_ledger, "list_transactions", return_value=[SimpleNamespace(account=None)]), \
+                patch.object(financial_ledger, "to_view", return_value=SimpleNamespace(to_json=lambda: payload)):
+            result = financial_ledger.get_ledger_overview_panels(
+                case_id=case_id, source_document_id=None, account_id=None, ledger_status=None, start_date=None,
+                end_date=None, db="fake-session", account_ids=None, account_holders=None, categories=["Other"])
+        self.assertEqual((result["categories"], result["totals"]["payments"]), (["Other"], 0))
+        with self.assertRaises(HTTPException) as ctx:
+            financial_ledger.get_ledger_overview_panels(
+                case_id=uuid.uuid4(), source_document_id=None, account_id=None, ledger_status="nope",
+                start_date=None, end_date=None, db="fake-session", account_ids=None, account_holders=None,
+                categories=None)
+        self.assertEqual(ctx.exception.status_code, 400)
+
 
 class GetCaseDecisionsTests(unittest.IsolatedAsyncioTestCase):
     """The decision log's first reader over HTTP.

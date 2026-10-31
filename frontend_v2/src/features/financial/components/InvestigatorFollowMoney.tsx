@@ -19,12 +19,8 @@ import {
   useFinancialStore,
   type FinancialMainView,
 } from "../stores/financial.store"
-import {
-  nearbyPayments,
-  minorAmount,
-  paymentProfiles,
-  paymentGroup,
-} from "../lib/investigator-workspace"
+import { nearbyPayments } from "../lib/investigator-workspace"
+import { connectionGroups, type PanelGroup, type PanelTotal } from "../lib/overview-panels"
 import { formatLedgerAmount } from "../lib/ledger-format"
 import { useFinancialDraft } from "../stores/financial-drafts"
 import {
@@ -33,10 +29,6 @@ import {
   WorkspaceScope,
 } from "./InvestigationWorkspaceParts"
 import { PaymentComparison } from "./PaymentComparison"
-import {
-  unidentifiedGroups,
-  unidentifiedPayment,
-} from "../lib/unidentified-payments"
 
 export function MoneyConnections({
   rows,
@@ -48,43 +40,38 @@ export function MoneyConnections({
   // Grouped once per row list, not on every render: on d5b330d1 (27,926 payments) grouping the profiles took about
   // 0.7 s of main thread per render, and the Overview renders as each of its requests lands (browser profile,
   // 2026-10-31). The inputs are the same array while the answer and categories are (useInvestigatorPayments).
-  const { names, accounts, groups } = useMemo(
-    () => ({
-      names: paymentProfiles(
-        rows.filter((row) => !unidentifiedPayment(row))
-      ).filter((profile) => profile.kind === "name"),
-      accounts: paymentProfiles(rows).filter(
-        (profile) => profile.kind === "account"
-      ),
-      groups: [...new Set(rows.map(paymentGroup))].sort(),
-    }),
-    [rows]
-  )
+  const groups = useMemo(() => connectionGroups(rows), [rows])
+  return <MoneyConnectionsView payments={rows.length} groups={groups} onOpen={onOpen} />
+}
+
+/** The connections panel from its figures: worked out from every payment (MoneyConnections) or answered by the
+ * server for the Overview (GET /ledger-overview-panels), the same figures either way. */
+export function MoneyConnectionsView({
+  payments: paymentCount,
+  groups: figures,
+  onOpen,
+}: {
+  payments: number
+  groups: PanelGroup[]
+  onOpen: (ids: string[], title: string) => void
+}) {
+  const groups = figures.map((item) => item.group)
   const [requestedGroup, setGroup] = useState("")
   const group = groups.includes(requestedGroup) ? requestedGroup : groups[0]
+  const current = figures.find((item) => item.group === group)
   const [requestedPage, setPage] = useState(0)
-  const visibleNames = useMemo(
-    () =>
-      names.filter((profile) =>
-        profile.rows.some((row) => paymentGroup(row) === group)
-      ),
-    [names, group]
-  )
+  const visibleNames = current?.names ?? []
   const page = Math.min(
     requestedPage,
     Math.max(0, Math.ceil(visibleNames.length / 6) - 1)
   )
   const list = visibleNames.slice(page * 6, (page + 1) * 6)
   const card = group?.endsWith(":card")
-  const unnamed = useMemo(
-    () => unidentifiedGroups(rows.filter((row) => paymentGroup(row) === group)),
-    [rows, group]
-  )
-  const unnamedCount = unnamed.reduce((sum, item) => sum + item.rows.length, 0)
-  const totalLabel = (payments: LedgerTransaction[]) => {
-    const amounts = payments.map((row) => minorAmount(row.amount_minor))
-    if (amounts.some((value) => value === null)) return "Amount needs checking"
-    return `${formatLedgerAmount(amounts.reduce<bigint>((sum, value) => sum + value!, 0n).toString(), group?.split(":")[0] || "").text} ${group?.split(":")[0]}`
+  const unnamed = current?.unnamed ?? []
+  const unnamedCount = unnamed.reduce((sum, item) => sum + item.keys.length, 0)
+  const totalLabel = (total: PanelTotal | undefined) => {
+    if (total === null || total === undefined) return "Amount needs checking"
+    return `${formatLedgerAmount(total, group?.split(":")[0] || "").text} ${group?.split(":")[0]}`
   }
   return (
     <section
@@ -119,23 +106,15 @@ export function MoneyConnections({
           </select>
         )}
       </div>
-      {!!rows.length && (
+      {!!paymentCount && (
         <div className="rounded-lg border bg-muted/20 p-3 space-y-2 text-sm">
           <p>
             This is a summary of independent transactions for{" "}
             {group?.split(":")[0]} {card ? "credit cards" : "bank accounts"}.
             Left:{" "}
-            {totalLabel(
-              rows.filter(
-                (r) => paymentGroup(r) === group && r.direction === "credit"
-              )
-            )}{" "}
+            {totalLabel(current?.credit_total)}{" "}
             in credits. Right:{" "}
-            {totalLabel(
-              rows.filter(
-                (r) => paymentGroup(r) === group && r.direction === "debit"
-              )
-            )}{" "}
+            {totalLabel(current?.debit_total)}{" "}
             in debits. Totals include the unidentified counterparties listed
             below.
           </p>
@@ -149,7 +128,7 @@ export function MoneyConnections({
           </p>
         </div>
       )}
-      {!rows.length ? (
+      {!paymentCount ? (
         <p>No imported payments in this scope.</p>
       ) : (
         <div className="grid gap-4 lg:grid-cols-[1fr_auto_1fr_auto_1fr] items-center">
@@ -158,17 +137,14 @@ export function MoneyConnections({
               {card ? "Credits recorded from" : "Paid in by"}
             </p>
             {list.map((profile) => {
-              const payments = profile.rows.filter(
-                (row) =>
-                  paymentGroup(row) === group && row.direction === "credit"
-              )
+              const payments = profile.credit
               return (
-                payments.length > 0 && (
+                payments.keys.length > 0 && (
                   <button
                     key={profile.id}
                     onClick={() =>
                       onOpen(
-                        payments.map((row) => row.key),
+                        payments.keys,
                         `Payments from ${profile.name}`
                       )
                     }
@@ -178,27 +154,19 @@ export function MoneyConnections({
                     <strong className="block text-sm break-words">
                       {profile.name}
                     </strong>
-                    {payments.some(
-                      (row) =>
-                        row.label_sources?.from_name?.source === "description"
-                    ) && (
+                    {payments.suggested && (
                       <span className="block text-xs text-muted-foreground">
                         Includes names suggested from descriptions
                       </span>
                     )}
                     <span className="finance-amount text-xs">
-                      {payments.length} payments · {totalLabel(payments)}
+                      {payments.keys.length} payments · {totalLabel(payments.total)}
                     </span>
                   </button>
                 )
               )
             })}
-            {!list.some((profile) =>
-              profile.rows.some(
-                (row) =>
-                  paymentGroup(row) === group && row.direction === "credit"
-              )
-            ) && (
+            {!list.some((profile) => profile.credit.keys.length > 0) && (
               <p className="text-sm text-muted-foreground">
                 No incoming payments for these names
               </p>
@@ -215,21 +183,12 @@ export function MoneyConnections({
             <p className="text-xs uppercase tracking-wide text-muted-foreground">
               Accounts in the case
             </p>
-            {accounts
-              .filter((account) =>
-                account.rows.some((row) => paymentGroup(row) === group)
-              )
-              .map((account) => (
+            {(current?.accounts ?? []).map((account) => (
                 <button
                   key={account.id}
                   className="block text-left text-sm font-semibold hover:underline break-words"
                   onClick={() =>
-                    onOpen(
-                      account.rows
-                        .filter((row) => paymentGroup(row) === group)
-                        .map((row) => row.key),
-                      account.name
-                    )
+                    onOpen(account.keys, account.name)
                   }
                 >
                   {account.name}
@@ -245,17 +204,14 @@ export function MoneyConnections({
               {card ? "Charges recorded to" : "Paid out to"}
             </p>
             {list.map((profile) => {
-              const payments = profile.rows.filter(
-                (row) =>
-                  paymentGroup(row) === group && row.direction === "debit"
-              )
+              const payments = profile.debit
               return (
-                payments.length > 0 && (
+                payments.keys.length > 0 && (
                   <button
                     key={profile.id}
                     onClick={() =>
                       onOpen(
-                        payments.map((row) => row.key),
+                        payments.keys,
                         `Payments to ${profile.name}`
                       )
                     }
@@ -265,27 +221,19 @@ export function MoneyConnections({
                     <strong className="block text-sm break-words">
                       {profile.name}
                     </strong>
-                    {payments.some(
-                      (row) =>
-                        row.label_sources?.to_name?.source === "description"
-                    ) && (
+                    {payments.suggested && (
                       <span className="block text-xs text-muted-foreground">
                         Includes names suggested from descriptions
                       </span>
                     )}
                     <span className="finance-amount text-xs">
-                      {payments.length} payments · {totalLabel(payments)}
+                      {payments.keys.length} payments · {totalLabel(payments.total)}
                     </span>
                   </button>
                 )
               )
             })}
-            {!list.some((profile) =>
-              profile.rows.some(
-                (row) =>
-                  paymentGroup(row) === group && row.direction === "debit"
-              )
-            ) && (
+            {!list.some((profile) => profile.debit.keys.length > 0) && (
               <p className="text-sm text-muted-foreground">
                 No outgoing payments for these names
               </p>
@@ -335,16 +283,16 @@ export function MoneyConnections({
                 className="rounded border bg-background p-3 text-left hover:bg-muted/50"
                 onClick={() =>
                   onOpen(
-                    item.rows.map((row) => row.key),
+                    item.keys,
                     item.label
                   )
                 }
               >
                 <strong className="block text-sm">{item.label}</strong>
                 <span className="block text-sm">
-                  {item.rows.length}{" "}
-                  {item.rows.length === 1 ? "payment" : "payments"} ·{" "}
-                  {totalLabel(item.rows)} ·{" "}
+                  {item.keys.length}{" "}
+                  {item.keys.length === 1 ? "payment" : "payments"} ·{" "}
+                  {totalLabel(item.total)} ·{" "}
                   {card
                     ? item.direction === "credit"
                       ? "Card credits"

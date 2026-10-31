@@ -1,5 +1,6 @@
 import { appendAccountSelection } from "./lib/account-selection"
 import { fetchAPI } from "@/lib/api-client"
+import type { OverviewPanels } from "./lib/overview-panels"
 import { verifyBulkCorrectionResponse } from "./lib/bulk-correction-file"
 import type { DescriptionCorrection } from "./components/DescriptionCorrectionNote"
 
@@ -1560,6 +1561,34 @@ export const financialAPI = {
     if (params.endDate) qs.set("end_date", params.endDate)
     for (const category of params.categories) qs.append("categories", category)
     return fetchAPI<LedgerOverviewTotals>(`/api/financial/ledger-overview?${qs}`)
+  },
+
+  /**
+   * The Overview's lower panels over the same rows as getLedgerTransactions for the same filters, restricted to the
+   * page's categories (GET /api/financial/ledger-overview-panels): totals, connections and money in then out, each
+   * with the keys of its payments, so the Overview does not download every payment to draw them.
+   */
+  getLedgerOverviewPanels: (params: {
+    caseId: string
+    sourceDocumentId?: string
+    accountIds?: string[]
+    accountHolders?: string[]
+    accountId?: string
+    ledgerStatus?: LedgerStatus
+    startDate?: string
+    endDate?: string
+    categories: string[]
+  }) => {
+    const qs = new URLSearchParams({ case_id: params.caseId })
+    if (params.sourceDocumentId)
+      qs.set("source_document_id", params.sourceDocumentId)
+    appendAccountSelection(qs, params)
+    if (params.accountId) qs.set("account_id", params.accountId)
+    if (params.ledgerStatus) qs.set("ledger_status", params.ledgerStatus)
+    if (params.startDate) qs.set("start_date", params.startDate)
+    if (params.endDate) qs.set("end_date", params.endDate)
+    for (const category of params.categories) qs.append("categories", category)
+    return fetchAPI<OverviewPanels>(`/api/financial/ledger-overview-panels?${qs}`)
   },
 
   /** How many rows `getLedgerTransactions` returns for the same filters, counted without reading them. */

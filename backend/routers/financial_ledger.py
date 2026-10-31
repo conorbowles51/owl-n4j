@@ -906,18 +906,47 @@ def get_ledger_overview(
     The page draws its top card from this small answer instead of every payment (d5b330d1: 64 MB). Each figure is
     the browser's own calculation over the same rows (services.financial.overview_totals)."""
     from services.financial.overview_totals import overview_totals
-    from services.financial.view_cache import kept_copy
-    # The ledger's own kept answer for the same scope, when it is current in this snapshot: the same rows, without
-    # building them again (d5b330d1: about 9 s).
-    ledger = kept_copy('ledger', dict(
-        case_id=case_id, source_document_id=source_document_id, account_id=account_id, ledger_status=ledger_status,
-        start_date=start_date, end_date=end_date, account_ids=account_ids, account_holders=account_holders))
-    if ledger is not None:
-        return {"case_id": str(case_id), **overview_totals(ledger["transactions"], str(case_id), categories or [])}
-    transactions = _ledger_rows(
+    transactions = _overview_ledger_rows(
         db, case_id, source_document_id=source_document_id, account_id=account_id, account_ids=account_ids,
         account_holders=account_holders, ledger_status=ledger_status, start_date=start_date, end_date=end_date)
     return {"case_id": str(case_id), **overview_totals(transactions, str(case_id), categories or [])}
+
+
+def _overview_ledger_rows(db, case_id, **scope):
+    """The rows ``/ledger`` answers for ``scope``: its own kept answer when that is current in this snapshot (the
+    same rows, without building them again; d5b330d1: about 9 s), else built as ``/ledger`` builds them."""
+    from services.financial.view_cache import kept_copy
+    ledger = kept_copy('ledger', dict(case_id=case_id, **scope))
+    if ledger is not None:
+        return ledger["transactions"]
+    return _ledger_rows(db, case_id, **scope)
+
+
+@router.get("/ledger-overview-panels")
+@cached_view('ledger-overview-panels')
+def get_ledger_overview_panels(
+    case_id: UUID = Query(..., description="REQUIRED: Case ID"),
+    source_document_id: UUID | None = None,
+    account_id: Optional[UUID] = None,
+    ledger_status: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None,
+    account_holders: Annotated[list[str] | None, Query()] = None,
+    categories: Annotated[list[str] | None, Query()] = None):
+    """The Overview's lower panels over exactly the rows ``/ledger`` answers for the same query, restricted to
+    ``categories`` as the page restricts them (none: every category): payment totals per currency and account
+    type, who paid in and where payments went, and money in then out within a week, each with the keys of the
+    payments behind it.
+
+    The page draws these panels from this answer instead of every payment (d5b330d1: 27,673 payments, 64 MB; this
+    answer about 3 MB). Each figure is the browser's own calculation over the same rows
+    (services.financial.overview_panels)."""
+    from services.financial.overview_panels import overview_panels
+    transactions = _overview_ledger_rows(
+        db, case_id, source_document_id=source_document_id, account_id=account_id, account_ids=account_ids,
+        account_holders=account_holders, ledger_status=ledger_status, start_date=start_date, end_date=end_date)
+    return {"case_id": str(case_id), **overview_panels(transactions, str(case_id), categories or [])}
 
 
 

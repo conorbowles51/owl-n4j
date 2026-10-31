@@ -76,6 +76,51 @@ export const PaymentTotals = memo(function PaymentTotals({
     total.labels.add(account.label)
     totals.set(group, total)
   }
+  return (
+    <PaymentTotalsView
+      label={label}
+      payments={rows.length}
+      inventory={inventory}
+      totals={new Map([...totals].map(([group, total]) => [group, { ...total, accountCount: total.accounts.size }]))}
+      unreadable={unreadable}
+      expandAccounts={expandAccounts}
+      knownAccounts={knownAccounts}
+      caseId={caseId}
+    />
+  )
+})
+
+/** One total per currency and account type, as PaymentTotals shows it. `accounts` holds the account ids when they
+ * are known (only needed with known accounts); `accountCount` is always the number of accounts. */
+export interface PaymentGroupTotal {
+  credit: bigint
+  debit: bigint
+  count: number
+  accountCount: number
+  accounts?: ReadonlySet<string>
+}
+
+/** PaymentTotals from its figures: worked out from every payment (PaymentTotals) or answered by the server for the
+ * Overview (GET /ledger-overview-panels), the same figures either way. */
+export const PaymentTotalsView = memo(function PaymentTotalsView({
+  label,
+  payments,
+  inventory,
+  totals,
+  unreadable,
+  expandAccounts = true,
+  knownAccounts = NO_KNOWN_ACCOUNTS,
+  caseId,
+}: {
+  label: string
+  payments: number
+  inventory: ReturnType<typeof paymentInventory>
+  totals: ReadonlyMap<string, PaymentGroupTotal>
+  unreadable: number
+  expandAccounts?: boolean
+  knownAccounts?: KnownPaymentAccount[]
+  caseId?: string
+}) {
   const groupName = (group: string) => group.endsWith(":unknown")
     ? `${group.split(":")[0]} · Account type not recorded`
     : amountGroupName(group)
@@ -86,7 +131,7 @@ export const PaymentTotals = memo(function PaymentTotals({
       className="space-y-3 rounded border bg-card p-3"
     >
       <h3 className="text-sm font-medium">
-        {label} · {rows.length.toLocaleString()} transactions ·{" "}
+        {label} · {payments.toLocaleString()} transactions ·{" "}
         {inventory.accounts.length} accounts · {inventory.banks.length} banks
       </h3>
       <p className="text-xs text-muted-foreground">
@@ -148,8 +193,8 @@ export const PaymentTotals = memo(function PaymentTotals({
               <h4 className="font-semibold">{groupName(group)}</h4>
               <span className="text-muted-foreground">
                 {total.count.toLocaleString()} transactions ·{" "}
-                {total.accounts.size}{" "}
-                {total.accounts.size === 1 ? "account" : "accounts"}
+                {total.accountCount}{" "}
+                {total.accountCount === 1 ? "account" : "accounts"}
               </span>
             </div>
             <dl className="grid grid-cols-3 gap-2 text-sm">
@@ -192,7 +237,7 @@ export const PaymentTotals = memo(function PaymentTotals({
             </dl>
             {total.count === 0 && (
               <p className="text-xs text-muted-foreground">
-                No matching imported payments. {knownAccounts.some((account) => total.accounts.has(account.id) && account.currency === currency && account.periods.length)
+                No matching imported payments. {knownAccounts.some((account) => !!total.accounts?.has(account.id) && account.currency === currency && account.periods.length)
                   ? "Saved statements are available. Review account history to check their balances, dates and no-activity confirmation."
                   : "No saved statement period is recorded for these accounts in this scope. Check Statements & accounts for pending reading or review."}
               </p>

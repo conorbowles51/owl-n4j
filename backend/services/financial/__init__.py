@@ -2351,6 +2351,8 @@ __all__ += ["capture_account_corrections"]
 # Aliased like ``summarise_ledger``: exported as the module's own name it would replace the submodule.
 from services.financial.overview_totals import overview_totals as summarise_overview
 __all__ += ["summarise_overview"]
+from services.financial.overview_panels import overview_panels as summarise_overview_panels
+__all__ += ["summarise_overview_panels"]
 # Read-only comparison sessions: the reading checks run outside a write transaction; a write there is refused.
 from services.financial.read_only_session import WriteInReadOnlyComparison, reads_outside_transaction
 __all__ += ["WriteInReadOnlyComparison", "reads_outside_transaction"]

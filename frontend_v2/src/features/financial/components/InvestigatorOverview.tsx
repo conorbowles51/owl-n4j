@@ -1,24 +1,19 @@
-import { useInvestigatorPayments } from "../hooks/use-investigator-payments"
 import { useMemo, useState } from "react"
 import { ArrowRight, Files, BookOpenCheck, WalletCards } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { useCaseworkEntries } from "@/features/workspace/hooks/use-casework"
 import { useFinancialStore } from "../stores/financial.store"
-import { nearbyPayments } from "../lib/investigator-workspace"
-import { PaymentTotals } from "./InvestigationTransactionTable"
-import {
-  InvestigationReadState,
-  WorkspaceScope,
-} from "./InvestigationWorkspaceParts"
+import { PaymentTotalsView } from "./InvestigationTransactionTable"
+import { WorkspaceScope } from "./InvestigationWorkspaceParts"
 import { useStatementRegister } from "../hooks/use-statement-register"
-import { MoneyConnections } from "./InvestigatorFollowMoney"
+import { MoneyConnectionsView } from "./InvestigatorFollowMoney"
 import { PaymentComparison } from "./PaymentComparison"
 import { InvestigatorFindingEditor } from "./InvestigatorFindingEditor"
 import { OverviewStatementCoverage } from "./OverviewStatementCoverage"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { useJudgementCounts } from "../hooks/use-judgements"
-import { useLedgerOverview } from "../hooks/use-ledger-overview"
+import { useLedgerOverview, useLedgerOverviewPanels } from "../hooks/use-ledger-overview"
 import { compactMoney, minorToNumber } from "../lib/category-palette"
 import { formatLedgerAmount } from "../lib/ledger-format"
 import { overviewFigures } from "../lib/overview-figures"
@@ -40,7 +35,6 @@ export function InvestigatorOverview({
   caseId: string
   active?: boolean
 }) {
-  const data = useInvestigatorPayments(caseId)
   const register = useStatementRegister(caseId, false, [], false, active)
   const findings = useCaseworkEntries(caseId, {
     tag: "financial",
@@ -48,10 +42,31 @@ export function InvestigatorOverview({
     offset: 0,
   })
   const { canEdit } = useFinancialAccess()
-  const comparisons = useMemo(() => nearbyPayments(data.rows), [data.rows])
-  // The top card's figures come from the server (the same figures over the same rows), so they do not wait for
-  // every payment (d5b330d1: 27,673 payments, a 64 MB answer). The panels below still read the payments.
+  // The top card's figures and the panels below come from the server (the same figures over the same rows), so the
+  // Overview does not download every payment (d5b330d1: 27,673 payments, a 64 MB answer).
   const totals = useLedgerOverview(caseId)
+  const panels = useLedgerOverviewPanels(caseId)
+  const panelTotals = useMemo(() => {
+    const figures = panels.data?.totals
+    if (!figures) return null
+    const inventory = figures.inventory
+    return {
+      inventory: {
+        accounts: inventory.accounts.map((account) => ({ ...account, currencies: new Set(account.currencies) })),
+        banks: inventory.banks,
+        currencies: inventory.currencies,
+        first: inventory.first,
+        last: inventory.last,
+        undated: inventory.undated,
+        unknownBanks: inventory.unknown_banks,
+        unidentifiedCounterparties: inventory.unidentified_counterparties,
+      },
+      totals: new Map(figures.groups.map((group) => [group.group, {
+        credit: BigInt(group.credit), debit: BigInt(group.debit), count: group.count, accountCount: group.accounts,
+      }])),
+    }
+  }, [panels.data])
+  const comparisons = panels.data?.comparisons
   const { payments, unknownDates, uncategorised, accountCount, currencyCounts, currencies, money: moneyBy, firstDay, lastDay } =
     useMemo(() => overviewFigures(totals.data), [totals.data])
   const totalsReady = totals.isSuccess
@@ -278,16 +293,36 @@ export function InvestigatorOverview({
           </button>
         </div>
       </section>
-      <InvestigationReadState data={data}>
-        <PaymentTotals
-          rows={data.rows}
+      {panels.isPending ? (
+        <p role="status" className="p-6">
+          Loading this case’s payments
+          {totalsReady ? ` (${plural(payments, "payment")})` : ""}…
+        </p>
+      ) : panels.isError || !panels.data.complete || !panelTotals ? (
+        <div role="alert" className="rounded border p-4 space-y-2">
+          <p>
+            {panels.isError
+              ? panels.error.message
+              : "Not all payments were returned. These views cannot yet describe the whole selection."}
+          </p>
+          <Button onClick={() => void panels.refetch()}>
+            Load payments again
+          </Button>
+        </div>
+      ) : (<>
+        <PaymentTotalsView
+          payments={panels.data.totals.payments}
+          inventory={panelTotals.inventory}
+          totals={panelTotals.totals}
+          unreadable={panels.data.totals.unreadable}
           label="Imported payments in the selected accounts and dates"
         />
         <div className="grid gap-5 xl:grid-cols-[minmax(0,2fr)_minmax(260px,1fr)]">
           <div className="min-w-0 space-y-5">
-            {data.rows.length ? (
-              <MoneyConnections
-                rows={data.rows}
+            {panels.data.connections.payments ? (
+              <MoneyConnectionsView
+                payments={panels.data.connections.payments}
+                groups={panels.data.connections.groups}
                 onOpen={(ids, title) => setOpen({ ids, title })}
               />
             ) : (
@@ -306,7 +341,7 @@ export function InvestigatorOverview({
                 </Button>
               </section>
             )}
-            {!!comparisons.length && (
+            {!!comparisons?.pairs && (
               <section
                 className="space-y-3 rounded-[14px] bg-card p-5"
                 style={card}
@@ -315,7 +350,7 @@ export function InvestigatorOverview({
                   Money in, then money out
                 </p>
                 <h3 className="text-xl font-semibold" style={heading}>
-                  {comparisons.length} times money arrived and the next payment
+                  {comparisons.pairs} times money arrived and the next payment
                   left within a week
                 </h3>
                 <p className="text-sm text-muted-foreground">
@@ -326,14 +361,7 @@ export function InvestigatorOverview({
                   <Button
                     onClick={() =>
                       setOpen({
-                        ids: [
-                          ...new Set(
-                            comparisons.flatMap((pair) => [
-                              pair.incoming.key,
-                              pair.outgoing.key,
-                            ])
-                          ),
-                        ],
+                        ids: comparisons.keys,
                         title: "Receipts and subsequent payments",
                       })
                     }
@@ -507,7 +535,7 @@ export function InvestigatorOverview({
             </section>
           </aside>
         </div>
-      </InvestigationReadState>
+      </>)}
       <OverviewStatementCoverage caseId={caseId} active={active} />
       {open && (
         <PaymentComparison
