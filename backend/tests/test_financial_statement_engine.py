@@ -1726,6 +1726,34 @@ class AddresseeConfirmationTests(unittest.TestCase):
         self.assertEqual(self.holder(addressee_statement(receipt='EMPRESA')), '')
 
 
+class IssuerFooterAddressTests(unittest.TestCase):
+    """(A8) The bank's own address printed in a page footer, under its legal name, is never the holder (BBVA Maestra
+    PyME, d5b330d1 '03 BBVA 23 MXN.pdf': the footnote line above it was read as the holder 'La GAT Reales el')."""
+    FOOTER = [[('La GAT Reales el', 20000, 120000), ('ue obtendria despues de descontar la inflacion', 200000, 500000)],
+              [('EJEMPLO MEXICO, S.A., INS', 20000, 160000), ('N DE BANCA MULTIPLE, GRUPO FINANCIERO EJEMPLO', 170000, 500000)],
+              [('Av. Paseo del Ejemplo 510', 20000, 160000), ('Centro, C.P. 06600, Ciudad de Mexico', 170000, 500000)]]
+
+    def holder(self, addressee):
+        return E.address_holder(E._pages([page(1, addressee + [[('TOTAL IMPORTE CARGOS', 330000, 500000)]] * 6
+                                                 + self.FOOTER)])[1])
+
+    def test_a_footer_block_under_the_issuers_legal_name_gives_no_holder(self):
+        # The addressee block's top is a scan mark, so no addressee name is read: the footer block must not fill in.
+        lost = [[(';', 20000, 24000), ('No, de 0012345678', 330000, 500000)],
+                [('EMPRESA DE PRUEBA SA DE CV', 26000, 200000)], [('CALLE FALSA 123', 26000, 150000)],
+                [('MIGUEL HIDALGO', 26000, 150000)], [('CIUDAD DE MEXICO CP 11520', 26000, 220000)]]
+        self.assertEqual(self.holder(lost), '')
+        with mock.patch.object(E, 'ISSUER_LEGAL_BLOCK', False):
+            self.assertEqual(self.holder(lost), 'La GAT Reales el')
+
+    def test_the_addressee_above_the_footer_is_still_read(self):
+        named = [[('EMPRESA DE PRUEBA SA DE CV', 20000, 200000)], [('CALLE FALSA 123', 20000, 150000)],
+                 [('COL CENTRO', 20000, 120000)], [('CIUDAD DE MEXICO C.P. 06000', 20000, 220000)]]
+        self.assertEqual(self.holder(named), 'EMPRESA DE PRUEBA SA DE CV')
+        # A block whose own lines name no issuer designation keeps its top line.
+        self.assertFalse(E._issuer_legal_block(list(reversed([r for r in E._pages([page(1, named)])[1] if r['tokens']]))))
+
+
 class ScanNoiseAddressTests(unittest.TestCase):
     def holder(self, name_cell, street_cell=('CALLE FALSA 123', 20000, 150000)):
         lines = [[('BANCO EJEMPLO DEL NORTE, S.A., INSTITUCION DE BANCA MULTIPLE', 20000, 400000)],

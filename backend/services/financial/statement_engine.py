@@ -2374,13 +2374,15 @@ def _address_tops(rows, style=None):
         if own_cell:
             block = block if 3 <= len(block) <= 4 else _spaced_block(block)
             top = _block_top(block, x, located) if block and 3 <= len(block) <= 4 and _street_lines(block, x) else None
-            if top and top[2] and not re.search(r'\d', top[1]) and not _damaged_above(located, block, x):
+            if (top and top[2] and not re.search(r'\d', top[1]) and not _damaged_above(located, block, x)
+                    and not _issuer_legal_block(block)):
                 found.append(top)
             continue
         if 3 <= len(block) <= 7:
             anchored.append((block, x))
             top = _block_top(block, x, located)
-            if top and (_damaged_above(located, block, x) or _issuer_headed(located, block, x)):
+            if top and (_damaged_above(located, block, x) or _issuer_headed(located, block, x)
+                        or _issuer_legal_block(block)):
                 top = (top[0], top[1], False)
             if top:
                 found.append(top)
@@ -2544,6 +2546,22 @@ def _issuer_headed(located, block, x):
     return (top['y0'] - nearest['y0'] <= pitch * 1.3 and len(text.split()) <= 4 and ',' not in text
             and not _LEGAL_FORM.search(re.sub(r'\b(?:BANK|BANCO)\b', '', text))
             and any(word in text for word in INSTITUTION_WORDS))
+
+
+# (A8) Off: an address block printing the issuer's legal name on a line below its top (the bank's own address in a
+# page footer) can give its top line as the holder, as before.
+ISSUER_LEGAL_BLOCK = _switch('LOUPE_FINANCIAL_ISSUER_LEGAL_BLOCK')
+# Words only an issuer's legal name prints ('BBVA MEXICO, S.A., INSTITUCION DE BANCA MULTIPLE, GRUPO FINANCIERO ...').
+_ISSUER_DESIGNATION = re.compile(r'\b(?:BANCA MULTIPLE|GRUPO FINANCIERO|CASA DE BOLSA|CREDIT UNION)\b')
+
+
+def _issuer_legal_block(block):
+    """(A8) Whether a line of an address block below its top (bottom first, the top last) prints an issuer's
+    legal-name designation: the block is the bank's own address ('LA GAT REALES EL' / 'BBVA MEXICO, S.A., INS N DE
+    BANCA MULTIPLE, GRUPO FINANCIERO BBVA MEXICO' / 'AV. PASEO DE LA REFORMA ... C.P. 06600', the footer of BBVA's
+    Maestra PyME statement), never the addressee's, and its top line is no holder."""
+    return ISSUER_LEGAL_BLOCK and any(_ISSUER_DESIGNATION.search(' '.join(fold(row['text']).split()))
+                                      for row in block[:-1])
 
 
 def _damaged_above(located, block, x):
