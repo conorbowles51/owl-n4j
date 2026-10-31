@@ -4,7 +4,7 @@ from copy import deepcopy
 from threading import Lock
 from uuid import UUID
 
-from sqlalchemy import String, cast, func, literal_column, select
+from sqlalchemy import String, cast, func, inspect, literal_column, select, text
 
 from postgres.models.evidence import EvidenceDocumentText, EvidenceFile, EvidenceTableGeometry
 from postgres.models.financial import FinancialSourceDocument
@@ -75,12 +75,23 @@ def _digested(session, model, keys, columns, digest, *conditions, kind=None):
     return [found[key] for key in (tuple(row[:width]) for row in rows) if key in found]
 
 
-def load_projection_context(session, case_id, files, *, periods=None, source_ids=None):
+# Per process: (file id, statement key) -> (file row version, digest of the period's saved shared review). The
+# statement register's duplicate checks hashed every saved review on each computation (28 MB on d5b330d1, many
+# periods twice); a digest is reused while its file's row version is unchanged. Only a read-only caller asks for it
+# (row_versions=True), and only in a REPEATABLE READ transaction, where the file rows and their versions come from
+# one snapshot.
+_REVIEW_DIGESTS = OrderedDict()
+REVIEW_DIGESTS_KEPT = 50_000
+
+
+def load_projection_context(session, case_id, files, *, periods=None, source_ids=None, row_versions=False):
     """Bulk scalar fingerprints; PostgreSQL hashes geometry inside the database.
 
     ``periods`` ({(file id, statement key)}) and ``source_ids`` limit the batch
     drafts and saved sources fingerprinted to those one guard reads; the values
-    are the same as in a whole-file context.
+    are the same as in a whole-file context. ``row_versions`` (a caller that
+    writes nothing): each period's saved review is hashed once per computation,
+    and reused across computations while its file's row version is unchanged.
     """
     from services.financial.statement_import import VERSION
     files = {str(file.id): file for file in files}
@@ -140,16 +151,67 @@ def load_projection_context(session, case_id, files, *, periods=None, source_ids
         for identifier, status, value, removed in session.execute(select(FinancialSourceDocument.id,
                 FinancialSourceDocument.status, source_fingerprint, removal).where(*conditions)):
             sources[str(identifier)] = dict(status=status, fingerprint=_digest(value), removed=bool(removed))
-    return dict(files=files, guards=guards, drafts=drafts, sources=sources)
+    context = dict(files=files, guards=guards, drafts=drafts, sources=sources)
+    if row_versions:
+        context['review_digests'] = {}
+        context['file_versions'] = _file_versions(session, files) if postgres else {}
+    return context
+
+
+def _file_versions(session, files):
+    """{file id: row version} of files ({id: file}) whose loaded state is that version for good: read in a REPEATABLE
+    READ (or SERIALIZABLE) transaction, so the rows and their versions come from one snapshot, not written by this
+    transaction, and not changed in this session. Empty otherwise."""
+    if not files or session.execute(text('SHOW transaction_isolation')).scalar() not in ('repeatable read', 'serializable'):
+        return {}
+    from services.financial.row_versions import memoisable, own_write_floor
+    floor = own_write_floor(session)
+    return {str(identifier): version for identifier, version in session.execute(
+        select(EvidenceFile.id, literal_column('evidence_files.xmin::text')).where(EvidenceFile.id.in_(
+            [UUID(identifier) for identifier in files])))
+        if memoisable(version, floor) and not _modified(files[str(identifier)])}
+
+
+def _modified(file):
+    # Attribute changes only: an in-place change to a JSON value is not seen, so a caller passing row_versions=True
+    # must not change file metadata before its guards are computed (the register only reads).
+    try:
+        return inspect(file).modified
+    except Exception:
+        return False  # not a mapped object (tests' stand-ins)
 
 
 def _period_guard(context, file_id, statement_id):
     file = context['files'].get(file_id)
     if file is None:
         return None
-    saved = (file.metadata_ or {}).get('financial_review_progress', {}).get(statement_id or '')
-    return dict(reading=context['guards'][file_id], shared_review=_digest(saved),
+    return dict(reading=context['guards'][file_id], shared_review=_review_digest(context, file, file_id, statement_id),
         batch_reviews=sorted(set(context['drafts'][(file_id, statement_id or '')])))
+
+
+def _review_digest(context, file, file_id, statement_id):
+    """Digest of one period's saved shared review: see _REVIEW_DIGESTS."""
+    memo = context.get('review_digests')
+    key = (file_id, statement_id or '')
+    if memo is not None and key in memo:
+        return memo[key]
+    version = context.get('file_versions', {}).get(file_id)
+    if version is not None:
+        with _DIGESTS_LOCK:
+            known = _REVIEW_DIGESTS.get(key)
+        if known is not None and known[0] == version:
+            memo[key] = known[1]
+            return known[1]
+    value = _digest((file.metadata_ or {}).get('financial_review_progress', {}).get(statement_id or ''))
+    if memo is not None:
+        memo[key] = value
+    if version is not None:
+        with _DIGESTS_LOCK:
+            _REVIEW_DIGESTS[key] = (version, value)
+            _REVIEW_DIGESTS.move_to_end(key)
+            while len(_REVIEW_DIGESTS) > REVIEW_DIGESTS_KEPT:
+                _REVIEW_DIGESTS.popitem(last=False)
+    return value
 
 
 def projection_guard(context, file, statement_id, decision):

@@ -83,6 +83,15 @@ def statement_file_status(session, *, case_id, use_cache=True):
     return result
 
 
+def _files_by_id(session, case_id, ids, loaded):
+    """This case's evidence files with these ids, in this order; ``loaded`` ({id: file}) are not fetched again."""
+    missing = [identifier for identifier in ids if identifier not in loaded]
+    if missing:
+        loaded.update({file.id: file for file in session.scalars(select(EvidenceFile).where(
+            EvidenceFile.case_id == case_id, EvidenceFile.id.in_(missing)))})
+    return [loaded[identifier] for identifier in ids if identifier in loaded]
+
+
 def _statement_file_status(session, *, case_id):
     # Only the columns the register shows. Loading whole source documents would
     # decode every saved reading (tens of MB on a large case) for each poll.
@@ -257,10 +266,13 @@ def _statement_file_status(session, *, case_id):
     from services.financial.pending_duplicate_projection import load_projection_context, cached_disposition
     # Removal retains duplicate decisions as evidence history. That history
     # must not recreate active prepared periods after the imports were removed.
-    decision_files = list(session.scalars(select(EvidenceFile).where(EvidenceFile.case_id == case_id,
+    # Ids first: a file already loaded above is not fetched again (each fetch decodes its whole metadata, and the
+    # session keeps the object it loaded first either way).
+    loaded = dict(item_files)
+    decision_ids = list(session.scalars(select(EvidenceFile.id).where(EvidenceFile.case_id == case_id,
         *active_file, EvidenceFile.metadata_[METADATA_KEY].as_string().is_not(None)).order_by(EvidenceFile.id).limit(5001)))
-    truncated = truncated or len(decision_files) > 5000
-    decision_files = decision_files[:5000]
+    truncated = truncated or len(decision_ids) > 5000
+    decision_files = _files_by_id(session, case_id, decision_ids[:5000], loaded)
     related_ids = set()
     for file in decision_files:
         for decision in (file.metadata_ or {}).get(METADATA_KEY, {}).values():
@@ -269,9 +281,9 @@ def _statement_file_status(session, *, case_id):
             except (KeyError, ValueError, TypeError):
                 continue
     known_ids = {file.id for file in decision_files}
-    related_files = list(session.scalars(select(EvidenceFile).where(EvidenceFile.case_id == case_id,
-        EvidenceFile.id.in_(related_ids - known_ids)))) if related_ids - known_ids else []
-    context = load_projection_context(session, case_id, [*decision_files, *related_files]) if decision_files else None
+    related_files = _files_by_id(session, case_id, sorted(related_ids - known_ids), loaded)
+    context = load_projection_context(session, case_id, [*decision_files, *related_files],
+                                      row_versions=True) if decision_files else None
     decisions = {}
     for file in decision_files:
         for statement_id in (file.metadata_ or {}).get(METADATA_KEY, {}):
@@ -427,7 +439,7 @@ def _statement_file_status(session, *, case_id):
         if owner and (owner['periods'] or owner.get('incomplete_count')):
             saved_by_hash.setdefault(source.sha256_at_ingestion, set()).add(source.evidence_file_id)
     if saved_by_hash:
-        copies = list(session.scalars(select(EvidenceFile).where(
+        copies = list(session.execute(select(EvidenceFile.id, EvidenceFile.sha256).where(
             EvidenceFile.case_id == case_id, *active_file,
             EvidenceFile.sha256.in_(saved_by_hash)).order_by(EvidenceFile.id).limit(20001)))
         truncated = truncated or len(copies) > 20000

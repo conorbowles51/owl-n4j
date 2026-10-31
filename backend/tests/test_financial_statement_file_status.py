@@ -239,6 +239,40 @@ class StatementFileStatusTests(DuplicateTestCase):
             self.assertEqual(compute.call_count, 3)
         module._cache.clear()
 
+    def test_one_computation_reads_each_files_whole_row_once(self):
+        # A whole evidence-file row carries its metadata (decoded on every read, megabytes per file on a large
+        # case); a file already read is not read again, and same-PDF copies need only their ids and hashes.
+        from uuid import uuid4
+        from sqlalchemy import event
+        from postgres.models.evidence import EvidenceFile
+        from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item
+        document = self.make_document()
+        document.document_type = 'statement_review'
+        self.add_row(self.make_period(document), document, amount=100)
+        copy = EvidenceFile(id=uuid4(), case_id=self.case.id, original_filename='copy.pdf',
+            stored_path='/synthetic/copy.pdf', sha256=document.sha256_at_ingestion)
+        batch = Batch(id=uuid4(), case_id=self.case.id, created_by=self.user.id, actor={}, files=[], status='review')
+        self.db.add_all([copy, batch]); self.db.flush()
+        self.db.add(Item(id=uuid4(), batch_id=batch.id, file_id=document.evidence_file_id, statement_key='new-period',
+            status='ready', summary={'can_import': True}))
+        self.db.commit()
+        expected_copy = [str(document.evidence_file_id)]
+        whole_rows = []
+        def record(conn, cursor, statement, parameters, context, executemany):
+            head = statement.split(' FROM ', 1)[0]
+            if statement.lstrip().upper().startswith('SELECT') and 'evidence_files.metadata' in head \
+                    and 'evidence_files.stored_path' in head:
+                whole_rows.append(statement)
+        engine = self.db.get_bind()
+        event.listen(engine, 'before_cursor_execute', record)
+        try:
+            files = statement_file_status(self.db, case_id=self.case.id)['files']
+        finally:
+            event.remove(engine, 'before_cursor_execute', record)
+        self.assertEqual(len(whole_rows), 1, whole_rows)
+        linked = next(f for f in files if f['evidence_file_id'] == str(copy.id))
+        self.assertEqual(linked['same_pdf_saved_file_ids'], expected_copy)
+
     def test_sqlite_is_never_cached(self):
         from services.financial.statement_file_status import status_fingerprint
         self.assertIsNone(status_fingerprint(self.db, self.case.id))
