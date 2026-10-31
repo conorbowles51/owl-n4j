@@ -69,7 +69,7 @@ NOT_YET_OFFLOADED = {
     # Upload, folder-processing, deletion and Financial send actions: database work around engine calls on the
     # shared async engine client, still on the loop in the handler itself; next in A2(b).
     'routers/evidence.py:upload_evidence', 'routers/evidence.py:process_cellebrite_folder',
-    'routers/evidence.py:delete_evidence_file', 'routers/evidence_folders.py:process_folder',
+    'routers/evidence_folders.py:process_folder',
     'routers/financial_statement_import.py:prepare_existing',
     'routers/financial_statement_import.py:retry_financial_batch_file',
 }
