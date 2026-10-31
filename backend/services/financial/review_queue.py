@@ -721,9 +721,9 @@ def prewarm(factory, *, budget_seconds=20.0, now=None):
                     hit = _cache.get(key)
                 if fingerprint is None or (hit and hit[0] == fingerprint):
                     continue
-                saved = _load_saved_view(session, key, fingerprint)
+                saved, computed_at = _load_saved_entry(session, key, fingerprint)
                 if saved is not None:
-                    _store(key, fingerprint, saved)
+                    _store_saved(key, fingerprint, saved, computed_at)
                     rebuilt.append(key)
                     continue
                 if _asked_of_child(key):
@@ -911,20 +911,37 @@ def _load_saved_any(session, key):
 
 def _load_saved_view(session, key, fingerprint):
     """The saved whole-case view built at exactly ``fingerprint``, or None. Never raises."""
+    return _load_saved_entry(session, key, fingerprint)[0]
+
+
+def _load_saved_entry(session, key, fingerprint):
+    """(view, start time) of the saved whole-case view built at exactly ``fingerprint``, or (None, 0). The start time
+    is 0 for a copy saved without one. Never raises."""
     import json
     from services.financial import view_cache
     try:
         scope, xmax = view_cache._saved_scope(session.connection())
         if scope is None:
-            return None
+            return None, 0.0
         entry = view_cache._load_saved(_saved_key(key), scope, xmax)
         if entry is None or _plain(entry.fingerprint) != _plain(fingerprint):
-            return None
-        return json.loads(entry.body)
+            return None, 0.0
+        return json.loads(entry.body), entry.computed_at or 0.0
     except Exception:  # noqa: BLE001 - built again instead
         import logging
         logging.getLogger(__name__).warning('Saved review queue unreadable; building it', exc_info=True)
-        return None
+        return None, 0.0
+
+
+def _store_saved(key, fingerprint, view, computed_at):
+    """Keep a loaded saved copy in memory with the time it was computed: an updating answer shows that time
+    (previous_as_of), not the time of an earlier build in this worker. Unknown time: none is shown."""
+    _store(key, fingerprint, view)
+    with _lock:
+        if computed_at:
+            _built_at[key] = computed_at
+        else:
+            _built_at.pop(key, None)
 
 
 def _save_view(session, key, fingerprint, view, started, started_at=0.0):
@@ -1026,9 +1043,9 @@ def _view(session, case_id, use_cache=True, note=True, stale_ok=False, updating=
             _cache.move_to_end(key)
     if hit and hit[0] == fingerprint:
         return hit[1], False
-    saved = _load_saved_view(session, key, fingerprint)
+    saved, computed_at = _load_saved_entry(session, key, fingerprint)
     if saved is not None:
-        _store(key, fingerprint, saved)
+        _store_saved(key, fingerprint, saved, computed_at)
         return saved, False
     if stale_ok:
         # A saved copy of any age only for a reader that shows it as updating (the page's bar); others keep the

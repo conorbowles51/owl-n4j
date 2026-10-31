@@ -531,7 +531,7 @@ class QueueCacheTests(Base):
             # Reads older than the window are forgotten.
             self.assertEqual(rq.prewarm(self.f.SessionLocal, now=10 ** 9), [])
 
-    def _prewarm_after_a_write(self, *, memo=True, ask_state=None, saved=None, in_child=True):
+    def _prewarm_after_a_write(self, *, memo=True, ask_state=None, saved=None, saved_at=0.0, in_child=True):
         """Open the case (built, noted), change its inputs, run prewarm. Returns (prewarm result, builds, ask)."""
         import json
         import sys
@@ -565,7 +565,7 @@ class QueueCacheTests(Base):
                                     dict(key=list(rq._ask_key(key)), case_id=key, code='code-1',
                                          asked=time_module.time() - ask_state.get('age', 0),
                                          **({'failed': 1.0} if ask_state.get('failed') else {})))
-            with patch.object(rq, '_load_saved_view', return_value=saved):
+            with patch.object(rq, '_load_saved_entry', return_value=(saved, saved_at) if saved else (None, 0.0)):
                 result = rq.prewarm(self.f.SessionLocal)
             directory = view_refresh._wanted_dir()
             ask = view_refresh._read(view_refresh._path(directory, rq._ask_key(key))) if directory else None
@@ -584,6 +584,26 @@ class QueueCacheTests(Base):
         self.assertEqual((result, len(builds), ask), ([str(self.f.case.id)], 1, None))
         from services.financial import review_queue as rq
         self.assertIs(rq._cache[str(self.f.case.id)][1], view)
+
+    def test_a_loaded_saved_copy_carries_its_own_time_to_the_updating_answer(self):
+        """The updating notice says when the figures shown were computed. After prewarm loads the child's copy, the
+        next updating answer must carry that copy's start time, not the time of the worker's own earlier build."""
+        import sys
+        from services.financial import review_queue as rq
+        view = dict(entries=[], failed=[], copy_files=[], set_aside=[], unread=0, as_of='2026-10-31T12:07:00+00:00')
+        self._prewarm_after_a_write(saved=view, saved_at=1793448420.0)
+        key = str(self.f.case.id)
+        self.assertEqual(rq._built_at[key], 1793448420.0)
+        register = sys.modules['services.financial.statement_file_status']
+        with patch.object(register, 'status_fingerprint', return_value=(('c',),)), \
+                patch.object(rq, '_ask_refresh', return_value=True):
+            with self.f.SessionLocal() as db:
+                answer, refreshing = rq._view(db, self.f.case.id, stale_ok=True, updating=True)
+        self.assertTrue(refreshing)
+        self.assertIs(answer, view)
+        self.assertEqual(rq.previous_as_of.get(), 1793448420.0)
+        rq._store_saved(key, (('d',),), view, 0.0)                     # a copy saved without its time: none shown
+        self.assertNotIn(key, rq._built_at)
 
     def test_prewarm_builds_here_when_the_ask_failed_or_is_past_the_limit_or_asks_cannot_be_kept(self):
         from services.financial import view_cache
