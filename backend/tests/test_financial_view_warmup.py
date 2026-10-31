@@ -426,3 +426,45 @@ def test_view_reuse_and_warm_up_lines_reach_the_service_journal():
     for module in (view_cache, view_warmup):
         assert module.logger.isEnabledFor(logging.INFO)
         assert any(getattr(handler, '_loupe_journal', False) for handler in module.logger.handlers)
+
+
+@needs_pg
+def test_a_real_cached_views_refusal_warmed_here_is_answered_from_its_saved_copy(periods, monkeypatch):
+    # End to end: the route -> cached_view keeps its 422 and saves it -> the warm-up counts it; a later request in
+    # a process that has nothing in memory gets the same refusal from the saved copy, without computing.
+    from fastapi import HTTPException
+    from sqlalchemy.orm import Session
+    import postgres.session
+    import routers.financial_ledger
+    from services.financial import view_cache
+    add, calls, directory = periods
+    case = uuid.uuid4()
+    add(case, 1)
+    engine = postgres.session._get_session_local()().get_bind()
+    with engine.begin() as connection:
+        connection.execute(text('CREATE TABLE payments (id serial PRIMARY KEY, case_id uuid NOT NULL)'))
+        connection.execute(text('INSERT INTO payments (case_id) SELECT :c FROM generate_series(1, 3)'), dict(c=case))
+    computed = []
+
+    @view_cache.cached_view('ledger-timeline')
+    def timeline(case_id, db, **kw):
+        computed.append(case_id)
+        count = db.execute(text('SELECT count(*) FROM payments WHERE case_id = :c'), dict(c=case_id)).scalar()
+        raise HTTPException(status_code=422, detail=f'More than {count - 1} payments match these filters.')
+    monkeypatch.setattr(routers.financial_ledger, 'get_ledger_timeline', timeline)
+    monkeypatch.setattr(view_cache, 'SAVE_MIN_SECONDS', 0.0)
+    view_cache.clear()
+    view_cache._tables_cache.clear()
+    try:
+        warmed, failed = view_warmup._warm_cases()
+        assert (warmed, failed) == (PER_CASE, 0) and len(computed) == 1
+        view_cache.clear()  # as a new process: only the saved copy is left
+        hits = view_cache.stats['saved_hits']
+        with Session(engine) as db, pytest.raises(HTTPException) as refusal:
+            timeline(case_id=case, account_id=None, start_date=None, end_date=None, population='working',
+                     account_ids=None, account_holders=None, db=db)
+        assert (refusal.value.status_code, refusal.value.detail) == (422, 'More than 2 payments match these filters.')
+        assert view_cache.stats['saved_hits'] == hits + 1 and len(computed) == 1
+    finally:
+        view_cache.clear()
+        view_cache._tables_cache.clear()
