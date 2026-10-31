@@ -84,9 +84,11 @@ export async function fetchAPI<T>(
       credentials: "include",
     })
 
-    if (marksUpdating) {
-      if (onViewAnswer) onViewAnswer(updatingAsOf(response))
-      else noteViewAnswer(endpoint, updatingAsOf(response), requestNumber)
+    if (onViewAnswer) {
+      // Not asked to accept updating (just after this tab wrote): the answer is computed, so current.
+      onViewAnswer(marksUpdating ? updatingAsOf(response) : undefined)
+    } else if (marksUpdating) {
+      noteViewAnswer(endpoint, updatingAsOf(response), requestNumber)
     }
     const method = (init.method ?? "GET").toUpperCase()
     if (response.ok && method !== "GET" && method !== "HEAD") noteOwnWrite()

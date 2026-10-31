@@ -111,7 +111,7 @@ def test_a_changed_view_is_answered_with_its_previous_copy_marked_updating_then_
     # The background refresh computes it exactly as a request without the mark would.
     [(path, open_ask)] = view_refresh._open_asks('code-1')
     assert view_refresh.refresh_one(path, open_ask, session_factory=sessionmaker(engine))
-    path.unlink()
+    assert not path.exists(), 'keeping a current copy answers the ask'
     assert counter.calls == 2
     fresh = call(engine, view, case)
     assert fresh.body == b'{"total":12}' and 'x-financial-view-state' not in fresh.headers
@@ -262,7 +262,7 @@ def test_an_ask_left_by_a_refresh_process_that_died_is_marked_failed_not_taken_a
     assert view_refresh._read(path)['failed']
 
 
-def test_an_expired_ask_is_forgotten_so_a_later_change_may_ask_again(memo):
+def test_an_expired_ask_is_forgotten_only_once_a_current_copy_is_kept(memo):
     key = ('totals', '{"case_id": "c"}')
     entry = view_cache._Entry(('payments',), (), b'{}', 200, 'application/json', seconds=5.0, computed_at=time.time())
     token = view_cache._accepts_updating.set(True)
@@ -271,7 +271,40 @@ def test_an_expired_ask_is_forgotten_so_a_later_change_may_ask_again(memo):
         [(path, open_ask)] = view_refresh._open_asks('code-1')
         view_refresh._write(path, {**open_ask, 'asked': time.time() - view_cache.UPDATING_MAX_SECONDS - 1, 'failed': 1.0})
         assert not view_cache._serve_previous(key, 'c', entry)
+        assert not view_cache._serve_previous(key, 'c', entry), 'every request computes it until one is kept'
+        view_cache._forget_ask(key)  # a request kept a current copy
         assert not path.exists()
         assert view_cache._serve_previous(key, 'c', entry), 'a new change asks again'
     finally:
         view_cache._accepts_updating.reset(token)
+
+
+@needs_pg
+def test_a_view_whose_new_answer_cannot_be_kept_shows_that_answer_after_the_limit_every_time(engine, memo, slow):
+    """Re-review 2026-10-31: forgetting the ask before computing made an error answer loop back into updating."""
+    from fastapi import HTTPException
+    case, counter = uuid.uuid4(), Counter()
+
+    @view_cache.cached_view('breaks')
+    def view(case_id, db):
+        counter.calls += 1
+        total = db.execute(text('SELECT coalesce(sum(amount), 0) FROM payments WHERE case_id = :c'), dict(c=case_id)).scalar()
+        if total > 10:
+            raise HTTPException(status_code=500, detail='Could not be prepared.')
+        return dict(total=int(total))
+    write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 5)', c=case)
+    token = view_cache.always_save.set(True)  # saved like a slow view, so every worker has a previous copy
+    try:
+        call(engine, view, case)
+    finally:
+        view_cache.always_save.reset(token)
+    write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 7)', c=case)
+    assert call(engine, view, case).headers['x-financial-view-state'] == 'updating'
+    [(path, open_ask)] = view_refresh._open_asks('code-1')
+    with pytest.raises(HTTPException):
+        view_refresh.refresh_one(path, open_ask, session_factory=sessionmaker(engine))
+    view_refresh._write(path, {**open_ask, 'asked': time.time() - view_cache.UPDATING_MAX_SECONDS - 1, 'failed': 1.0})
+    for _ in range(2):
+        with pytest.raises(HTTPException) as failed:
+            call(engine, view, case)
+        assert failed.value.status_code == 500

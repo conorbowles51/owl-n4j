@@ -58,7 +58,11 @@ export function FinancialViewUpdatingNotice() {
         // when shown), those on screen are fetched again and awaited. Only then is the address recorded current.
         const started = nextRequestNumber()
         queryClient.removeQueries({ type: "inactive" })
-        await queryClient.refetchQueries({ type: "active" })
+        try {
+          await queryClient.refetchQueries({ type: "active" }, { throwOnError: true })
+        } catch {
+          return // a page refetch failed: it may still show the previous copy, so the notice stays
+        }
         for (const endpoint of current) noteViewAnswer(endpoint, undefined, started)
       } finally {
         polling.current = false

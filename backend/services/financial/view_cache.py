@@ -740,6 +740,7 @@ def _serve(handler, key, engine, case_id, kwargs, state):
                         kept = _Entry(tables, current, b'', 422, 'application/json', refusal=refusal.detail,
                                       seconds=time.perf_counter() - started, computed_at=computed_at)
                         _store(key, kept)
+                        _forget_ask(key)
                         stats['stored'] += 1
                         _save_if_slow(key, kept, scope, xmax, started)
                         logger.info('Financial view %s refusal kept (%.2f s, %d tables)', key[0],
@@ -759,6 +760,7 @@ def _serve(handler, key, engine, case_id, kwargs, state):
             kept = _Entry(tables, current, bytes(response.body), response.status_code, response.media_type,
                           seconds=time.perf_counter() - started, computed_at=computed_at)
             _store(key, kept)
+            _forget_ask(key)
             stats['stored'] += 1
             logger.info('Financial view %s computed (%.2f s, %d bytes, %d tables)', key[0],
                         time.perf_counter() - started, len(response.body), len(tables))
@@ -842,10 +844,21 @@ def _serve_previous(key, case_id, previous):
         return False
     if asked is None:
         return False
-    if time.time() - asked >= UPDATING_MAX_SECONDS:
-        view_refresh.forget(key)  # this request computes it; a later change may ask again
-        return False
-    return True
+    # Past the limit every request computes the view itself (and shows its own answer or error) until one keeps a
+    # current copy, which forgets the ask (_forget_ask), so a later change may ask again.
+    return time.time() - asked < UPDATING_MAX_SECONDS
+
+
+def _forget_ask(key):
+    """A current copy of this view is kept: any ask for it is answered. Never raises."""
+    import os
+    if os.environ.get('FINANCIAL_VIEW_UPDATING', '1') == '0':
+        return
+    try:
+        from services.financial import view_refresh
+        view_refresh.forget(key)
+    except Exception:  # noqa: BLE001 - an ask left over is answered by the refresh or the time limit
+        logger.warning('Financial view %s ask could not be removed', key[0], exc_info=True)
 
 
 # Views that took at least this long to compute are also saved to disk (_save_if_slow), so the other worker

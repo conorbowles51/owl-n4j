@@ -54,7 +54,7 @@ it("keeps saying so until the page has fetched the view again, then clears", asy
   expect(fetch).toHaveBeenCalledTimes(1)
   expect(fetch.mock.calls[0][0]).toBe(endpoint)
   expect(remove).toHaveBeenCalledWith({ type: "inactive" })
-  expect(refetch).toHaveBeenCalledWith({ type: "active" })
+  expect(refetch).toHaveBeenCalledWith({ type: "active" }, { throwOnError: true })
   // The view answered current, but the page still shows its previous copy until its refetch lands.
   expect(screen.getByTestId("financial-view-updating")).toBeTruthy()
   await act(async () => {
@@ -85,5 +85,18 @@ it("keeps saying so while the view still answers updating", async () => {
     await vi.advanceTimersByTimeAsync(UPDATING_POLL_MS + 10)
   })
   expect(refetch).not.toHaveBeenCalled()
+  expect(screen.getByTestId("financial-view-updating")).toBeTruthy()
+})
+
+it("keeps saying so when the page's refetch fails", async () => {
+  const client = new QueryClient()
+  vi.spyOn(client, "refetchQueries").mockRejectedValue(new Error("offline"))
+  const endpoint = "/api/financial/ledger-summary?case_id=c1"
+  act(() => noteViewAnswer(endpoint, "2026-10-31T07:15:00+00:00"))
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 200 })))
+  show(client)
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(UPDATING_POLL_MS + 10)
+  })
   expect(screen.getByTestId("financial-view-updating")).toBeTruthy()
 })
