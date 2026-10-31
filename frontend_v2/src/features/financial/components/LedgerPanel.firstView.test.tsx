@@ -109,3 +109,45 @@ it("downloads every payment, not the page, when the CSV is asked for in the firs
   expect(csv).toContain("PAYMENT 0")
   expect(asked("/api/financial/ledger")).toBe(1)
 })
+
+it("keeps the search box and every keystroke while the payments for a search are read", async () => {
+  let release: () => void = () => {}
+  const held = new Promise<void>((resolve) => (release = resolve))
+  fetchAPI.mockImplementation(async (url: string) => {
+    if (new URL(url, "http://test").pathname === "/api/financial/ledger") await held
+    return answer(url)
+  })
+  show()
+  await screen.findByText(/60 of 60 imported transactions/)
+  const box = screen.getByLabelText("Search payments") as HTMLInputElement
+  fireEvent.change(box, { target: { value: "N" } })
+  // While every payment is read the box stays (the same element) and takes the rest of the word.
+  expect(screen.getByLabelText("Search payments")).toBe(box)
+  expect(screen.queryByText(/60 of 60 imported transactions/)).toBeNull()
+  expect(screen.queryByText("PAYMENT 0")).toBeNull()
+  expect(screen.getByTestId("ledger-loading")).toBeTruthy()
+  fireEvent.change(box, { target: { value: "Needle" } })
+  release()
+  expect(await screen.findByText(/1 of 60 imported transactions/)).toBeTruthy()
+  expect((screen.getByLabelText("Search payments") as HTMLInputElement).value).toBe("Needle")
+})
+
+it("says the figures are updating while the first view is read again after a change", async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(
+    <QueryClientProvider client={client}>
+      <LedgerPanel caseId={CASE} investigation params={{}} />
+    </QueryClientProvider>
+  )
+  await screen.findByText(/60 of 60 imported transactions/)
+  let release: () => void = () => {}
+  const held = new Promise<void>((resolve) => (release = resolve))
+  fetchAPI.mockImplementation(async (url: string) => {
+    if (new URL(url, "http://test").pathname === "/api/financial/ledger-first-view") await held
+    return answer(url)
+  })
+  act(() => void client.invalidateQueries({ queryKey: ["financial-ledger", CASE] }))
+  expect(await screen.findByText("Updating transactions for these filters…")).toBeTruthy()
+  release()
+  await waitFor(() => expect(screen.queryByText("Updating transactions for these filters…")).toBeNull())
+})

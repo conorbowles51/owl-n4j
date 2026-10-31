@@ -132,7 +132,10 @@ export function LedgerRowBrowser({
   firstView?: {
     params: LedgerQueryParams | undefined
     readingAll: boolean
+    /** Shown in place of the page while nothing has been shown yet (with the date range). */
     loading: ReactNode
+    /** The reading line alone, shown in place of the figures and list once the page is on screen. */
+    status: ReactNode
     onNeedAll: () => void
   }
   exportContext?: {
@@ -326,8 +329,15 @@ export function LedgerRowBrowser({
       signal.cancelled = true
       if (timer) clearTimeout(timer)
     }
-  }, [prefetchCase, prefetchParams, queryClient])
+    // By value: the scope object may be rebuilt on each render while it says the same.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefetchCase, JSON.stringify(prefetchParams ?? null), queryClient])
   const transactions = firstView ? (firstData?.rows ?? NO_ROWS) : allTransactions
+  // Once the page is on screen it stays mounted (search box, controls, scroll) while every row or the next page is
+  // read; only the figures and the list wait, since without the rows they would count nothing or one page.
+  const shownOnce = useRef(false)
+  if (firstData) shownOnce.current = true
+  const waiting = !!firstView && !firstData
   const selectedIds = new Set(selection)
   const selectedHere = transactions.filter((row) => selectedIds.has(row.key))
   const toggle = (row: LedgerTransaction, checked: boolean) =>
@@ -1166,7 +1176,8 @@ export function LedgerRowBrowser({
     >
       <div className="flex flex-wrap items-center gap-3">
         {searchControls}
-        {csvButtons}
+        {!waiting && csvButtons}
+        {!waiting && (
         <Button
           variant="outline"
           size="sm"
@@ -1179,6 +1190,7 @@ export function LedgerRowBrowser({
         >
           Select all {total} matching payments
         </Button>
+        )}
         <Button
           variant="outline"
           size="sm"
@@ -1224,7 +1236,7 @@ export function LedgerRowBrowser({
     setPendingAction(null)
   }, [firstView, pendingAction])
   // Waiting for the first view, or for every row when this view needs them: say what is being read.
-  if (firstView && !firstData)
+  if (waiting && !shownOnce.current)
     return <div className="space-y-3">{firstView.loading}</div>
   return (
     <section
@@ -1366,8 +1378,14 @@ export function LedgerRowBrowser({
         </p>
       )}
       {!(investigation && exportContext) && judgementNote}
+      {investigation && exportContext && !waiting && firstData && first.isFetching && (
+        <p role="status" className="text-sm text-muted-foreground">
+          Updating transactions for these filters…
+        </p>
+      )}
       {investigation && exportContext && (
         <>
+          {!waiting && (
           <TransactionsOverview
             caseId={exportContext.caseId}
             show={sections}
@@ -1413,8 +1431,9 @@ export function LedgerRowBrowser({
                 : undefined
             }
           />
-          {chipLine}
-          {sections.accountTotals && (
+          )}
+          {!waiting && chipLine}
+          {sections.accountTotals && !waiting && (
           <>
           <PaymentTotals
             rows={shownAmounts}
@@ -1460,7 +1479,11 @@ export function LedgerRowBrowser({
           >
             {/* Collapsed, the panel stays mounted; in the first view its counts would cover one page only, so it
                 holds nothing until every row is read (opening it reads them). */}
-            {firstData ? null : (
+            {waiting ? (
+              <p className="text-sm text-muted-foreground" role="status">
+                Reading every payment for these controls…
+              </p>
+            ) : firstData ? null : (
             <>
             <ControlGroup title="Show on the page">
               {TRANSACTION_SECTIONS.map((section) => {
@@ -1775,8 +1798,8 @@ export function LedgerRowBrowser({
         </p>
       )}
       {/* An action that needs every row (CSV, select all, naming one by one) runs once they are read. */}
-      {firstData && pendingAction && firstView?.loading}
-      {investigation && exportContext && (unnamedCount > 0 || view.unnamedOnly) && (
+      {(waiting || (firstData && pendingAction)) && firstView?.status}
+      {investigation && exportContext && !waiting && (unnamedCount > 0 || view.unnamedOnly) && (
         <div
           className="flex flex-wrap items-center gap-2 rounded border bg-card px-3 py-2 text-sm"
           role="group"
@@ -1805,7 +1828,7 @@ export function LedgerRowBrowser({
           )}
         </div>
       )}
-      {investigation && exportContext && (unconfirmedCount > 0 || view.unconfirmedOnly) && (
+      {investigation && exportContext && !waiting && (unconfirmedCount > 0 || view.unconfirmedOnly) && (
         <div
           className="flex flex-wrap items-center gap-2 rounded border border-[#e7c66b] bg-[#fdf6dd] px-3 py-2 text-sm text-[#5c3d00] dark:bg-amber-950 dark:text-amber-100"
           role="group"
@@ -1845,7 +1868,7 @@ export function LedgerRowBrowser({
       >
       <div className="min-w-0">
       <RowJudgements.Provider value={tintedContext}>
-      {!total ? (
+      {waiting ? null : !total ? (
         <p>
           No payments match these filters. Clear the filters or choose another
           account/date range.
@@ -2026,7 +2049,7 @@ export function LedgerRowBrowser({
             ))}
           </select>
         </label>
-        {total > pageSize && (
+        {!waiting && total > pageSize && (
           <div className="flex items-center gap-3">
             <Button
               variant="outline"

@@ -100,6 +100,14 @@ export function LedgerPanel({
   // Every row is here for this scope (not another scope's rows kept on screen while these load).
   const allRows = wantAll && !!data && !isPlaceholderData
   const firstViewOnly = firstViewMode && !allRows && !(wantAll && isError)
+  // What is being read, with its count and the seconds so far (the first view's own wait, or every row's).
+  const readingLine = (
+    <div className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="ledger-loading">
+      <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+      {loading ? `Reading the ledger: ${loading}…` : "Reading the ledger..."}
+      {elapsed > 0 && ` ${elapsed} s`}
+    </div>
+  )
 
   if (!caseId) {
     return (
@@ -281,21 +289,15 @@ export function LedgerPanel({
           firstView={
             firstViewOnly
               ? {
-                  params: params ?? {},
+                  params,
                   readingAll,
                   loading: (
                     <>
                       {dateRange}
-                      <div
-                        className="flex items-center gap-2 text-sm text-muted-foreground"
-                        data-testid="ledger-loading"
-                      >
-                        <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                        {loading ? `Reading the ledger: ${loading}…` : "Reading the ledger..."}
-                        {elapsed > 0 && ` ${elapsed} s`}
-                      </div>
+                      {readingLine}
                     </>
                   ),
+                  status: readingLine,
                   onNeedAll: () => setWanted(scopeKey),
                 }
               : undefined
