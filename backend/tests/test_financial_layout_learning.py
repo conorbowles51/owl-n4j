@@ -566,6 +566,38 @@ class EngineHookTests(unittest.TestCase):
                 self.assertRaises(AttributeError):
             routing._profiled([], plain)  # a written profile's fault is never hidden
 
+    def test_release_refuses_the_registry_of_the_checkout_the_live_service_runs(self):
+        """The running service keyed its saved views on the code it loaded and re-reads a changed registry: a promote
+        written into its checkout would serve views read before it until the next restart (and deploy.sh would stash
+        or trip over the file). A worktree's registry is released; the live checkout's never is."""
+        draft = dict(name='learned-zzlive', match=dict(all=['zz live layout']), currency='USD')
+        gates = dict(passed=True, corpus=dict(passed=True, rematched=['f'], gained=[1]), truth=dict(passed=True, judged=['f']),
+                     conditions=dict(rules_hash=lp.rules_hash(draft), profiles_off=[], fingerprint='zzlive', live_learned=[],
+                                     replaced=[], corpus_dumped_at='2026-10-28T03:26:00+00:00'))
+        entry = ll.registry_entry(draft, 'zzlive', gates, 'PASS')
+        root = Path(self.directory.name)
+        live, worktree = root / 'live', root / 'worktree'
+        for checkout in (live, worktree):
+            (checkout / 'backend' / 'services' / 'financial').mkdir(parents=True)
+        (live / 'deploy' / 'logs').mkdir(parents=True)
+        (live / 'deploy' / 'logs' / '.last-good-commit').write_text('6e9abbc8\n')
+        served = live / 'backend' / 'services' / 'financial' / 'learned_profiles.json'
+        served.write_text(json.dumps(dict(version=1, profiles=[])) + '\n')
+        before = served.read_text()
+        problems = ll.release(entry, served)
+        self.assertEqual(len(problems), 1)
+        self.assertIn('deploy-now', problems[0][1])
+        self.assertEqual(served.read_text(), before)  # nothing written
+        self.assertEqual(sorted(p.name for p in served.parent.iterdir()), ['learned_profiles.json'])  # no lock, no temp
+        with mock.patch.object(lp, 'REGISTRY', served):  # the CLI's default: the registry the engine reads
+            self.assertIn('deploy-now', ll.release(entry)[0][1])
+        self.assertEqual(served.read_text(), before)
+        self.assertEqual(ll.released_checkout(served), live)
+        released = worktree / 'backend' / 'services' / 'financial' / 'learned_profiles.json'
+        self.assertIsNone(ll.released_checkout(released))
+        self.assertEqual(ll.release(entry, released), [])
+        self.assertEqual([e['name'] for e in lp.registry(released)['profiles']], [entry['name']])
+
     def test_release_writes_only_a_gated_reviewed_draft_and_retires_the_old_version(self):
         draft = dict(name='learned-zzfinger', match=dict(all=['zz released layout']), currency='USD')
 

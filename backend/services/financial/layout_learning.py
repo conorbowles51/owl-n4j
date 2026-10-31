@@ -1348,12 +1348,33 @@ def _registry_entry(profile, fingerprint, gate_result, review, examples=(), toda
     return entry
 
 
+# A checkout deploy.sh releases from holds deploy/logs/.last-good-commit (written by every successful release;
+# measured 2026-10-31: present in the live checkout, absent from every worktree). The service running there keyed its
+# saved views and readings on the code it loaded (view_cache.code_identity), while it re-reads the registry when the
+# file changes: a promote written there would serve views read before it until the next restart, and deploy.sh,
+# which expects that checkout clean, would stash or trip over the file. A promote is a release: it goes through git.
+RELEASED_MARK = Path('deploy') / 'logs' / '.last-good-commit'
+
+
+def released_checkout(path):
+    """The checkout deploy.sh releases from that ``path`` lies in, or None."""
+    for folder in Path(os.path.realpath(path)).parents:  # a link into the live checkout is the live checkout
+        if (folder / RELEASED_MARK).exists():
+            return folder
+    return None
+
+
 def release(entry, path=None):
     """Write ``entry`` into the registry (atomically), retiring the layout's previous live version. Returns the
     problems that stopped it ([] when written): the registry no longer holding exactly the live learned profiles
     the gates read, or any entry the engine would refuse. Nothing is written unless there are none."""
     from services.financial import learned_profiles as lp
     path = Path(path or lp.REGISTRY)
+    released = released_checkout(path)
+    if released is not None:
+        return [('(release)', 'the registry at %s belongs to the checkout the live service runs (%s): promote in a '
+                 'worktree, commit, and release through deploy-now, so the restart gives every saved view and reading '
+                 'a new identity' % (path, released))]
     try:
         with open(path.with_name('.learned_profiles.lock'), 'a') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)  # two releases never read the same version and drop each other's entry
