@@ -312,6 +312,77 @@ def process_shutdown_requested():
     return process_shutdown.requested.is_set()
 
 
+VISITED_MAX_AGE_SECONDS = 24 * 3600
+VISITED_MAX_VIEWS = 200
+
+
+def _visited_views(listed):
+    """(case_id, (name, route, {})) for each view saved on disk in the last VISITED_MAX_AGE_SECONDS and not in
+    ``listed`` (case, route, parameter names) with the same key, newest first, at most VISITED_MAX_VIEWS. The route
+    is called with the saved key's own parameters. Never raises: an unreadable copy is skipped."""
+    import functools
+    import json
+    from uuid import UUID
+    from services.financial import view_cache, view_refresh
+    directory = view_cache._saved_dir()
+    if directory is None:
+        return []
+    for module in view_refresh.ROUTE_MODULES:
+        __import__(module)
+    listed_keys = set()
+    for case_id, route, names in listed:
+        name = next((n for n, handler in view_cache.handlers.items() if handler is route), None)
+        if name is not None:
+            listed_keys.add((name, str(case_id)))
+    found, seen = [], set()
+    now = time.time()
+    try:
+        entries = sorted(((entry.stat().st_mtime, entry.path) for entry in os.scandir(directory)
+                          if entry.name.endswith('.view')), reverse=True)
+    except OSError:
+        return []
+    for mtime, path in entries:
+        if now - mtime > VISITED_MAX_AGE_SECONDS or len(found) >= VISITED_MAX_VIEWS:
+            break
+        try:
+            with open(path, 'rb') as saved:
+                key = tuple(json.loads(saved.readline())['key'])
+            name, parameters = key[0], json.loads(key[1])
+            handler = view_cache.handlers.get(name)
+            if handler is None or key in seen:
+                continue
+            seen.add(key)
+            arguments = view_refresh._typed(handler, parameters)
+            if view_cache.view_key(name, arguments) != key:
+                continue
+            case_id = arguments.get('case_id')
+            if case_id is None:
+                continue
+            # The fixed lists' first-visit forms are warmed already; any other parameters of the same view are not.
+            if (name, str(case_id)) in listed_keys and _is_default_form(handler, arguments):
+                continue
+            def call(case_id, db, _handler=handler, _arguments=arguments):
+                return _handler(**_arguments, db=db)
+            found.append((UUID(str(case_id)), ('visited ' + name, call, {})))
+        except Exception:  # noqa: BLE001 - a copy that cannot be read back is not warmed
+            continue
+    return found
+
+
+def _is_default_form(handler, arguments):
+    """True if every parameter but case_id is the route's default (the form the fixed lists warm)."""
+    import inspect
+    for parameter in inspect.signature(handler).parameters.values():
+        if parameter.name in ('case_id', 'db') or parameter.name not in arguments:
+            continue
+        default = getattr(parameter.default, 'default', parameter.default)
+        if default is inspect.Parameter.empty:
+            continue
+        if arguments[parameter.name] != default:
+            return False
+    return True
+
+
 def _warm_cases(share=None, stop_if_preparing=False):
     """``share`` (k, n): only every n-th case-and-view task from the k-th, for a prepare split over n processes."""
     from sqlalchemy import func, select
@@ -388,6 +459,11 @@ def _warm_cases(share=None, stop_if_preparing=False):
                                                     account_holders=None)),
     )
     order = [(case_id, view) for group in (views, analyses) for case_id in cases for view in group]
+    # Last: every other view a person opened in the last day (its saved copy, under any code), with the exact
+    # parameters it was opened with, so a first visit after a release finds it ready however the page asked for it
+    # (measured live 2026-10-31 09:10, first visit after the release: statement coverage on 49494305 13.9 s, a view
+    # no fixed list named). Each is rebuilt from its key as the refresh process does (view_refresh._typed).
+    order += _visited_views({(case_id, route, tuple(sorted(defaults))) for case_id, (_, route, defaults) in order})
     for task, (case_id, (name, route, defaults)) in enumerate(order):
         if share is not None and task % share[1] != share[0]:
             continue
