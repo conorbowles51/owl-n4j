@@ -726,7 +726,7 @@ from services.financial.reconcile_case import (
     PeriodReconciliationView,
     ReconciliationQueryError,
     list_period_reconciliations,
-    reconcile_case,
+    reconcile_case as reconcile_case_periods,
     to_reconciliation_view,
 )
 from services.financial.references import (
@@ -1662,7 +1662,7 @@ __all__ = [
     "PeriodReconciliationView",
     "ReconciliationQueryError",
     "list_period_reconciliations",
-    "reconcile_case",
+    "reconcile_case_periods",
     "to_reconciliation_view",
     # What a row's reading is, and the reference a reader cites it by
     "MalformedReadingError",

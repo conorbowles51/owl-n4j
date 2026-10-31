@@ -49,9 +49,9 @@ from services.financial import (
     CaseOutcome,
     ReconciliationQueryError,
     list_period_reconciliations,
-    reconcile_case,
     to_reconciliation_view,
 )
+from services.financial.reconcile_case import reconcile_case
 
 logger = logging.getLogger(__name__)
 
