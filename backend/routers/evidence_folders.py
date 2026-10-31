@@ -11,6 +11,7 @@ import uuid
 from typing import Any, Dict, List, Optional, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
@@ -447,71 +448,80 @@ async def process_folder(
 ):
     """Process all files in a folder (optionally recursive)."""
     try:
-        _check_case_access(db, req.case_id, current_user, permission=("evidence", "process"))
+        # Async for the engine send; the access check and the file selection run in the thread pool.
+        def select_files():
+            _check_case_access(db, req.case_id, current_user, permission=("evidence", "process"))
 
-        # Collect file IDs
-        if folder_id == "root":
-            fid = None
-            if req.recursive:
-                from sqlalchemy import select
-                from postgres.models.evidence import EvidenceFile as EF
+            # Collect file IDs
+            if folder_id == "root":
+                fid = None
+                if req.recursive:
+                    from sqlalchemy import select
+                    from postgres.models.evidence import EvidenceFile as EF
 
-                file_ids = list(
-                    db.scalars(
-                        select(EF.id).where(EF.case_id == uuid.UUID(req.case_id))
-                    ).all()
-                )
+                    file_ids = list(
+                        db.scalars(
+                            select(EF.id).where(EF.case_id == uuid.UUID(req.case_id))
+                        ).all()
+                    )
+                else:
+                    from sqlalchemy import select
+                    from postgres.models.evidence import EvidenceFile as EF
+
+                    file_ids = list(
+                        db.scalars(
+                            select(EF.id).where(
+                                EF.case_id == uuid.UUID(req.case_id),
+                                EF.folder_id.is_(None),
+                            )
+                        ).all()
+                    )
             else:
+                fid = uuid.UUID(folder_id)
+                if req.recursive:
+                    file_ids = EvidenceDBStorage.collect_recursive_file_ids(db, fid)
+                else:
+                    from sqlalchemy import select
+                    from postgres.models.evidence import EvidenceFile as EF
+
+                    file_ids = list(
+                        db.scalars(select(EF.id).where(EF.folder_id == fid)).all()
+                    )
+
+            if not file_ids:
+                return None, None, {"job_ids": [], "file_count": 0, "message": "No files found in folder"}
+
+            # Filter out already-processed files unless reprocess requested
+            if not req.reprocess_completed:
                 from sqlalchemy import select
                 from postgres.models.evidence import EvidenceFile as EF
+                pending = db.scalars(
+                    select(EF.id).where(
+                        EF.id.in_(file_ids),
+                        EF.status != "processed",
+                    )
+                ).all()
+                file_ids = list(pending)
 
-                file_ids = list(
-                    db.scalars(
-                        select(EF.id).where(
-                            EF.case_id == uuid.UUID(req.case_id),
-                            EF.folder_id.is_(None),
-                        )
-                    ).all()
-                )
-        else:
-            fid = uuid.UUID(folder_id)
-            if req.recursive:
-                file_ids = EvidenceDBStorage.collect_recursive_file_ids(db, fid)
-            else:
-                from sqlalchemy import select
-                from postgres.models.evidence import EvidenceFile as EF
+            if not file_ids:
+                return None, None, {"job_ids": [], "file_count": 0, "message": "All files already processed"}
 
-                file_ids = list(
-                    db.scalars(select(EF.id).where(EF.folder_id == fid)).all()
-                )
+            return fid, file_ids, None
 
-        if not file_ids:
-            return {"job_ids": [], "file_count": 0, "message": "No files found in folder"}
-
-        # Filter out already-processed files unless reprocess requested
-        if not req.reprocess_completed:
-            from sqlalchemy import select
-            from postgres.models.evidence import EvidenceFile as EF
-            pending = db.scalars(
-                select(EF.id).where(
-                    EF.id.in_(file_ids),
-                    EF.status != "processed",
-                )
-            ).all()
-            file_ids = list(pending)
-
-        if not file_ids:
-            return {"job_ids": [], "file_count": 0, "message": "All files already processed"}
+        fid, file_ids, answer = await run_in_threadpool(select_files)
+        if answer is not None:
+            return answer
+        user_id = await run_in_threadpool(lambda: current_user.id)
 
         result = await process_db_files(
             db,
             case_id=uuid.UUID(req.case_id),
             file_ids=file_ids,
             force_reprocess=req.reprocess_completed,
-            requested_by_user_id=current_user.id,
+            requested_by_user_id=user_id,
         )
-        result["effective_profile"] = resolve_effective_profile(
-            db, fid, uuid.UUID(req.case_id)
+        result["effective_profile"] = await run_in_threadpool(
+            resolve_effective_profile, db, fid, uuid.UUID(req.case_id)
         )
         return result
     except HTTPException:
@@ -524,7 +534,7 @@ async def process_folder(
         # file is the only account they get of what stopped it.
         raise HTTPException(status_code=409, detail=e.as_dict())
     except Exception as e:
-        db.rollback()
+        await run_in_threadpool(db.rollback)
         raise HTTPException(status_code=500, detail=str(e))
 
 
