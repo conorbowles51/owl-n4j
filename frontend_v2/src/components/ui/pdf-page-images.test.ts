@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 import {
+  HANDOFF_MS,
   MAX_IN_FLIGHT,
   loadPageImage,
   pageRequestsInFlight,
@@ -44,7 +45,7 @@ it("runs at most three page requests at once and starts the next as one finishes
   ))
 })
 
-it("joins a request already on its way and keeps the answer for the tab", async () => {
+it("joins a request already on its way and hands the answer on, then asks the server again", async () => {
   const one = want(1)
   const two = want(1)
   await flush()
@@ -54,6 +55,29 @@ it("joins a request already on its way and keeps the answer for the tab", async 
   expect(a.pageCount).toBe(9)
   expect(await want(1)).toBe(a)
   expect(fetchFile).toHaveBeenCalledTimes(1)
+  // Later views ask again, so withdrawn access is refused (the browser revalidates: 304 after the check).
+  const now = performance.now()
+  const clock = vi.spyOn(performance, "now").mockReturnValue(now + HANDOFF_MS + 1)
+  const later = want(1)
+  await flush()
+  expect(fetchFile).toHaveBeenCalledTimes(2)
+  answers[1]({ ok: false, status: 403 })
+  await expect(later).rejects.toThrow("You do not currently have access")
+  clock.mockRestore()
+})
+
+it("a caller arriving as a cancelled request is torn down starts a fresh one", async () => {
+  const leaving = new AbortController()
+  const first = want(1, leaving.signal)
+  first.catch(() => undefined)
+  await flush()
+  leaving.abort()
+  const again = want(1)
+  await flush()
+  expect(fetchFile).toHaveBeenCalledTimes(2)
+  answers[0](Promise.reject(new DOMException("aborted", "AbortError")))
+  answers[1](imageResponse())
+  await expect(again).resolves.toMatchObject({ pageCount: 9 })
 })
 
 it("drops a queued page nobody wants any more, and aborts a running one", async () => {

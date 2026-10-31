@@ -731,7 +731,7 @@ async def get_payment_statement_page_image(request: Request, transaction_id: UUI
         except Exception as exc:
             raise failure(exc) from exc
 
-    entry = page_image_cache.entry_for(path, sha256, page=page, width=width)
+    entry = await run_in_threadpool(page_image_cache.entry_for, path, sha256, page=page, width=width)
     return await page_image_cache.serve(request, entry, render)
 
 

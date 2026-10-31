@@ -353,6 +353,7 @@ class EndpointTests(unittest.TestCase):
         source = ast.unparse(endpoint)
         self.assertIn("await run_in_threadpool(_page_image_source, db, evidence_id)", source)
         self.assertIn("return await page_image_cache.serve(request, entry, render)", source)
+        self.assertIn("await run_in_threadpool(page_image_cache.entry_for,", source)
         top_level_calls = {
             ast.unparse(node.func)
             for statement in endpoint.body

@@ -65,6 +65,14 @@ class CacheTestCase(unittest.TestCase):
         return render, calls
 
 
+class TestRunTests(unittest.TestCase):
+    def test_a_test_run_never_writes_to_the_real_cache(self):
+        import tests  # noqa: F401 - the package sets the directory before any test module runs
+        configured = os.environ.get('LOUPE_PAGE_CACHE_DIR')
+        self.assertTrue(configured)
+        self.assertNotEqual(Path(configured), Path.home() / '.cache' / 'loupe-page-images')
+
+
 class KeyTests(CacheTestCase):
     def test_every_input_of_the_image_is_in_the_key(self):
         base = cache.entry_for(self.file, SHA, page=1, width=1200)

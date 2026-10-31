@@ -2375,7 +2375,7 @@ async def get_evidence_page_image(
     the browser has gone away while it waited.
     """
     file_path, sha256 = await run_in_threadpool(_page_image_source, db, evidence_id)
-    entry = page_image_cache.entry_for(file_path, sha256, page=page_number, width=width)
+    entry = await run_in_threadpool(page_image_cache.entry_for, file_path, sha256, page=page_number, width=width)
 
     def render():
         pdf_library = _load_pymupdf()

@@ -3,20 +3,24 @@ import { evidenceAPI } from "@/features/evidence/api"
 /**
  * Authenticated PDF page images shared by every viewer in the tab.
  *
- * Measured 2026-10-30: opening a PDF started about 15 page renders within 0.8 s, page 1 was fetched twice (the
- * first-page view and then the list's own page-1 row), and scrolling back fetched a page again. Here each page
- * image (file, page, width, signed-in token) is fetched once and kept for the tab, a request for a page already on
- * its way joins it, and at most MAX_IN_FLIGHT page requests run at once; the rest wait their turn and leave the
- * queue when nobody wants them any more. A failed page is not kept, so Retry asks the server again.
+ * Measured 2026-10-30: opening a PDF started about 15 page renders within 0.8 s, and page 1 was fetched twice (the
+ * first-page view and then the list's own page-1 row). Here a request for a page already on its way is joined, an
+ * answer is reused for HANDOFF_MS (long enough for the list's row to take over from the first-page view), and at
+ * most MAX_IN_FLIGHT page requests run at once; the rest wait their turn and leave the queue when nobody wants them
+ * any more. A failed page is not kept, so Retry asks the server again.
  *
- * The server answers with an ETag and `private, no-cache`, so an image this store no longer holds is still a 304
- * from the browser's own cache after the server's access check.
+ * After HANDOFF_MS a page is asked for again, so a person whose access has been withdrawn is refused on the next
+ * view: the server answers with an ETag and `private, no-cache`, so the browser revalidates and gets a 304 (no
+ * image bytes, no render) only after the server's access check.
  */
 export const MAX_IN_FLIGHT = 3
+export const HANDOFF_MS = 10_000
 const MAX_KEPT_BYTES = 80 * 1024 * 1024
 const MAX_PAGE_BYTES = 20 * 1024 * 1024
 
 export interface PageImage {
+  /** When this answer arrived (performance.now()). */
+  at: number
   blob: Blob
   /** The document's page count, when the server sent it. */
   pageCount: number | null
@@ -97,6 +101,7 @@ async function fetchPage(
   if (blob.size > MAX_PAGE_BYTES)
     throw new Error("This page is too large to display. Open the original file in a new tab.")
   return {
+    at: performance.now(),
     blob,
     pageCount: Number.isSafeInteger(count) && count >= page ? count : null,
     size,
@@ -120,12 +125,21 @@ export function loadPageImage(
   if (signal.aborted) return Promise.reject(abortError())
   const key = keyFor(evidenceId, page, width, token)
   const ready = kept.get(key)
-  if (ready) {
+  if (ready && performance.now() - ready.at > HANDOFF_MS) {
+    kept.delete(key)
+    keptBytes -= ready.blob.size
+  } else if (ready) {
     kept.delete(key)
     kept.set(key, ready) // most recently used
     return Promise.resolve(ready)
   }
   let entry = pending.get(key)
+  if (entry?.controller.signal.aborted) {
+    // Everyone left this request and it is being cancelled: a new caller starts afresh rather than inherit the
+    // cancellation (React mounts twice in development, and a page can be left and reopened in one render).
+    pending.delete(key)
+    entry = undefined
+  }
   if (!entry) {
     const controller = new AbortController()
     let start!: () => void
@@ -143,7 +157,7 @@ export function loadPageImage(
         return image
       })
       .finally(() => {
-        pending.delete(key)
+        if (pending.get(key) === created) pending.delete(key)
         inFlight -= 1
         pump()
       })
