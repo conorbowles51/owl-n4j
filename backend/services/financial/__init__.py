@@ -1919,8 +1919,8 @@ __all__ += ['scan_candidate_pages']
 from services.financial.network_tracing import network_trace_inputs, evaluate_network_trace
 __all__ += ['network_trace_inputs', 'evaluate_network_trace']
 
-from services.financial.ledger_timeline import ledger_timeline
-__all__ += ['ledger_timeline']
+from services.financial.ledger_timeline import ledger_timeline as build_ledger_timeline
+__all__ += ['build_ledger_timeline']
 
 from services.financial.pattern_review import screen_ledger_patterns
 __all__ += ['screen_ledger_patterns']
