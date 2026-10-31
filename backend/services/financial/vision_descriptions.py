@@ -398,19 +398,21 @@ def _image_first_line(session, row, *bases, depth=0):
             or depth >= _CHAIN:
         return None
     before = _words(lines.get('previous_description'))
-    if basis == FIRST_LINE_BASIS:
-        change = lines.get('first_line') or {}
-        was, first = _words(change.get('before')), _words(change.get('after'))
-    else:
-        was = first = before
-    if not first or not was or not (_words(row.description) + ' ').startswith(first + ' '):
-        return None
     earlier = session.get(FinancialTransaction, UUID(str(previous)))
-    if earlier is None or _words(earlier.description) != before:
+    if not before or earlier is None or _words(earlier.description) != before:
         return None
     earlier_first = (_words(earlier.description) if read_from_image(earlier)
                      else _image_first_line(session, earlier, *bases, depth=depth + 1))
-    return first if earlier_first == was else None
+    if not earlier_first:
+        return None
+    if basis == FIRST_LINE_BASIS:
+        change = lines.get('first_line') or {}
+        if _words(change.get('before')) != earlier_first:
+            return None
+        first = _words(change.get('after'))
+    else:
+        first = earlier_first  # description lines added: the first line kept
+    return first if first and (_words(row.description) + ' ').startswith(first + ' ') else None
 
 
 def image_first_line(session, row):
@@ -436,19 +438,18 @@ def first_line_rows(session, document):
     return sorted(found, key=lambda item: (page_of(item[0]), item[0].row_index or 0, str(item[0].id)))
 
 
-def not_looked(stored, pairs, session=None):
+def not_looked(stored, pairs, session):
     """The pairs (first_line_rows) not yet read with their printed first line (``looked``, kept from the first reading
     with that question on; a page whose request failed, was not rendered or was deferred is not looked at and is read
     again). A payment whose earlier row was looked at (its lines added or its first line corrected since) counts as
-    looked; with ``session`` the whole chain of earlier rows is followed, else the one before. A statement read only
+    looked: the whole chain of earlier rows is followed in ``session``. A statement read only
     before (no ``looked``) is read once more for its first lines."""
     looked = set(stored.get('looked') or [])
     return [(row, first) for row, first in pairs if not (_earlier_ids(session, row) & looked)]
 
 
 def _earlier_ids(session, row):
-    """This payment's id and the ids of the rows it corrects, back along the correction chain (one step without a
-    session)."""
+    """This payment's id and the ids of the rows it corrects, back along the correction chain."""
     from uuid import UUID
     found, current = {str(row.id)}, row
     for _ in range(_CHAIN):
@@ -456,8 +457,6 @@ def _earlier_ids(session, row):
         if not previous or str(previous) in found:
             break
         found.add(str(previous))
-        if session is None:
-            break
         from postgres.models.financial import FinancialTransaction
         current = session.get(FinancialTransaction, UUID(str(previous)))
         if current is None:

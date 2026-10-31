@@ -512,8 +512,8 @@ class SavedFirstLineTests(SavedImageDescriptionTests):
                                          document_id=self.document_id, from_images=True)
         with self.f.SessionLocal() as db:
             pairs = vd.first_line_rows(db, db.get(FinancialSourceDocument, self.document_id))
-            self.assertEqual(len(vd.not_looked({'looked': [str(self.labelled)]}, pairs)), 0)
-            self.assertEqual(len(vd.not_looked({}, pairs)), 1)
+            self.assertEqual(len(vd.not_looked({'looked': [str(self.labelled)]}, pairs, db)), 0)
+            self.assertEqual(len(vd.not_looked({}, pairs, db)), 1)
 
     def test_a_first_line_changed_since_stays(self):
         self.store_fix(str(self.labelled), 'lncoming', first='Incoming wire')
