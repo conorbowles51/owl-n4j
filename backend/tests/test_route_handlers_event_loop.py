@@ -69,12 +69,12 @@ NOT_YET_OFFLOADED = {
     # Upload, folder-processing, deletion and Financial send actions: database work around engine calls on the
     # shared async engine client, still on the loop in the handler itself; next in A2(b).
     'routers/evidence.py:upload_evidence', 'routers/evidence.py:process_cellebrite_folder',
-    'routers/financial_statement_import.py:prepare_existing',
 }
 
 _OFFLOAD = {'run_in_threadpool', 'to_thread', 'run_sync'}
 # Coroutines that take the session but run their own database work in the thread pool.
 _OFFLOADS_INTERNALLY = {'reconcile_job_by_id', 'reconcile_case_jobs', 'process_db_files', 'retry_file_checked',
+                        'prepare_existing_financial_file',
                         # reads the graph with asyncio.to_thread, then compares names between awaits
                         'find_similar_entities_streaming'}
 _ROUTE_METHODS = ('get', 'post', 'put', 'patch', 'delete', 'api_route')

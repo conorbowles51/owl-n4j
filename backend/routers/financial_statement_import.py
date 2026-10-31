@@ -708,13 +708,14 @@ async def prepare_existing(evidence_file_id: UUID, body: EvidencePreparationRequ
         result = await prepare_existing_financial_file(db, case_id=case_id, evidence_file_id=evidence_file_id,
             expected_revision=body.expected_revision, actor=actor_from_user(user), resolve_path=_resolve_stored_path,
             process_files=process_db_files)
-        _record_send(db, case_id=case_id, user=user, how='prepare_existing', file_ids=[evidence_file_id])
+        await run_in_threadpool(_record_send, db, case_id=case_id, user=user, how='prepare_existing',
+                                file_ids=[evidence_file_id])
         return result
     except PdfMappingError as exc:
-        db.rollback()
+        await run_in_threadpool(db.rollback)
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     except Exception:
-        db.rollback()
+        await run_in_threadpool(db.rollback)
         logger.exception('Existing evidence could not be sent to Financial')
         raise HTTPException(status_code=500, detail='The financial reading could not be confirmed. Refresh files before trying again; existing evidence results are retained.')
 

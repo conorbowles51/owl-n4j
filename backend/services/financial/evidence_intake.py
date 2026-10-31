@@ -1,6 +1,8 @@
 """Select financial sources in any format; prepare PDFs with the statement reader."""
 import os
+from types import SimpleNamespace
 from uuid import NAMESPACE_URL, UUID, uuid5
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import select, or_, exists
 from postgres.models.evidence import EvidenceFile, EvidenceFolder, EvidenceDocumentText, EvidenceTableGeometry
 from services.financial.pdf_candidates import PdfMappingError
@@ -99,62 +101,75 @@ def has_financial_reading(session, file):
 
 async def prepare_existing_financial_file(session, *, case_id, evidence_file_id, expected_revision,
                                          actor, resolve_path, process_files):
-    file = session.scalar(select(EvidenceFile).where(EvidenceFile.id == evidence_file_id, EvidenceFile.case_id == case_id))
-    if file is None:
-        raise PdfMappingError('File not found in this case.', 404)
-    if not file.original_filename.lower().endswith('.pdf'):
-        raise PdfMappingError('Financial statement review accepts PDFs. The file remains in Evidence.', 422)
-    reset = (file.metadata_ or {}).get('financial_import_removal')
-    target = file
-    if reset:
-        from services.financial.reading_recovery import retry_reference_problem
-        problem = retry_reference_problem(session, case_id=case_id, source_id=file.id, source=file)
-        if problem:
-            raise PdfMappingError(problem['message'], 409)
-        if financial_file_visibility(file)['financial_visibility_revision'] != expected_revision:
-            raise PdfMappingError('The removal changed. Refresh files before preparing them again.', 409)
-        target = create_statement_version(session, case_id=case_id,
-            evidence_file_id=UUID(reset['restart_file_id']),
-            request_id=uuid5(NAMESPACE_URL, f"loupe-financial-reset:{case_id}:{reset['id']}:{file.sha256}"),
-            reset_revision=reset['id'], actor=actor, resolve_path=resolve_path)
-    else:
-        # Explicitly sending a hidden, unimported file restores its file-list choice.
-        set_financial_file_visibility(session, case_id=case_id, evidence_file_id=file.id,
-            removed=False, expected_revision=expected_revision, actor=actor)
-        if file.status == 'processed' and has_financial_reading(session, file):
-            from services.financial.file_scope import mark_financial_workspace
-            mark_financial_workspace(file, user_id=actor.user_id)
-            session.commit()
-            return dict(case_id=str(case_id), source_file_id=str(file.id), evidence_file_id=str(file.id), outcome='ready')
-        if file.status == 'processed':
-            if (file.metadata_ or {}).get('statement_version_request'):
-                from postgres.models.financial import FinancialSourceDocument
-                if session.scalar(select(FinancialSourceDocument.id).where(FinancialSourceDocument.case_id == case_id,
-                        FinancialSourceDocument.evidence_file_id == file.id).limit(1)):
-                    raise PdfMappingError('This saved reading has no usable PDF geometry. Open its statement history and choose Read the statement again; its saved payments are retained.', 409)
-                # A prior preparation without usable geometry resumes the same
-                # internal reading; it must not manufacture another PDF copy.
-                target = file
-            else:
-                target = create_statement_version(session, case_id=case_id, evidence_file_id=file.id,
-                    request_id=uuid5(NAMESPACE_URL, f'loupe-financial-intake:{case_id}:{file.id}'),
-                    actor=actor, resolve_path=resolve_path)
-    require_financial_file(target)
-    if target.status == 'processed' and has_financial_reading(session, target):
-        return dict(case_id=str(case_id), source_file_id=str(file.id), evidence_file_id=str(target.id), outcome='ready')
-    if target.status == 'processing':
-        return dict(case_id=str(case_id), source_file_id=str(file.id), evidence_file_id=str(target.id), outcome='processing')
-    result = await process_files(session, case_id=case_id, file_ids=[target.id], preparation_mode='pdf_review',
-        force_reprocess=target.status == 'processed', requested_by_user_id=actor.user_id)
-    if len(result.get('job_ids', [])) != 1:
-        # Another worker may have started this same reading a moment earlier: the
-        # processing handoff then skips it as already processing. That reading is
-        # the one this request wanted, so report it instead of failing the file.
-        if ALREADY_READING_IS_PROGRESS:
-            session.refresh(target)
-            if target.status == 'processing' and target.engine_job_id:
-                return dict(case_id=str(case_id), source_file_id=str(file.id), evidence_file_id=str(target.id), outcome='processing')
-            if target.status == 'processed' and has_financial_reading(session, target):
-                return dict(case_id=str(case_id), source_file_id=str(file.id), evidence_file_id=str(target.id), outcome='ready')
-        raise PdfMappingError('A financial reading job could not be confirmed. Refresh files before trying again. The file remains in Evidence.', 409)
-    return dict(case_id=str(case_id), source_file_id=str(file.id), evidence_file_id=str(target.id), outcome='queued')
+    # Async for the processing handoff; the database steps before and after it run in the thread pool.
+    def before():
+        file = session.scalar(select(EvidenceFile).where(EvidenceFile.id == evidence_file_id, EvidenceFile.case_id == case_id))
+        if file is None:
+            raise PdfMappingError('File not found in this case.', 404)
+        if not file.original_filename.lower().endswith('.pdf'):
+            raise PdfMappingError('Financial statement review accepts PDFs. The file remains in Evidence.', 422)
+        reset = (file.metadata_ or {}).get('financial_import_removal')
+        target = file
+        if reset:
+            from services.financial.reading_recovery import retry_reference_problem
+            problem = retry_reference_problem(session, case_id=case_id, source_id=file.id, source=file)
+            if problem:
+                raise PdfMappingError(problem['message'], 409)
+            if financial_file_visibility(file)['financial_visibility_revision'] != expected_revision:
+                raise PdfMappingError('The removal changed. Refresh files before preparing them again.', 409)
+            target = create_statement_version(session, case_id=case_id,
+                evidence_file_id=UUID(reset['restart_file_id']),
+                request_id=uuid5(NAMESPACE_URL, f"loupe-financial-reset:{case_id}:{reset['id']}:{file.sha256}"),
+                reset_revision=reset['id'], actor=actor, resolve_path=resolve_path)
+        else:
+            # Explicitly sending a hidden, unimported file restores its file-list choice.
+            set_financial_file_visibility(session, case_id=case_id, evidence_file_id=file.id,
+                removed=False, expected_revision=expected_revision, actor=actor)
+            if file.status == 'processed' and has_financial_reading(session, file):
+                from services.financial.file_scope import mark_financial_workspace
+                mark_financial_workspace(file, user_id=actor.user_id)
+                session.commit()
+                return dict(case_id=str(case_id), source_file_id=str(file.id), evidence_file_id=str(file.id), outcome='ready'), None
+            if file.status == 'processed':
+                if (file.metadata_ or {}).get('statement_version_request'):
+                    from postgres.models.financial import FinancialSourceDocument
+                    if session.scalar(select(FinancialSourceDocument.id).where(FinancialSourceDocument.case_id == case_id,
+                            FinancialSourceDocument.evidence_file_id == file.id).limit(1)):
+                        raise PdfMappingError('This saved reading has no usable PDF geometry. Open its statement history and choose Read the statement again; its saved payments are retained.', 409)
+                    # A prior preparation without usable geometry resumes the same
+                    # internal reading; it must not manufacture another PDF copy.
+                    target = file
+                else:
+                    target = create_statement_version(session, case_id=case_id, evidence_file_id=file.id,
+                        request_id=uuid5(NAMESPACE_URL, f'loupe-financial-intake:{case_id}:{file.id}'),
+                        actor=actor, resolve_path=resolve_path)
+        require_financial_file(target)
+        if target.status == 'processed' and has_financial_reading(session, target):
+            return dict(case_id=str(case_id), source_file_id=str(file.id), evidence_file_id=str(target.id), outcome='ready'), None
+        if target.status == 'processing':
+            return dict(case_id=str(case_id), source_file_id=str(file.id), evidence_file_id=str(target.id), outcome='processing'), None
+        return None, (file.id, target.id, target.status == 'processed')
+
+    answer, ids = await run_in_threadpool(before)
+    if answer is not None:
+        return answer
+    file_id, target_id, force = ids
+    result = await process_files(session, case_id=case_id, file_ids=[target_id], preparation_mode='pdf_review',
+        force_reprocess=force, requested_by_user_id=actor.user_id)
+
+    def after():
+        file, target = SimpleNamespace(id=file_id), session.get(EvidenceFile, target_id)
+        if len(result.get('job_ids', [])) != 1:
+            # Another worker may have started this same reading a moment earlier: the
+            # processing handoff then skips it as already processing. That reading is
+            # the one this request wanted, so report it instead of failing the file.
+            if ALREADY_READING_IS_PROGRESS:
+                session.refresh(target)
+                if target.status == 'processing' and target.engine_job_id:
+                    return dict(case_id=str(case_id), source_file_id=str(file.id), evidence_file_id=str(target.id), outcome='processing')
+                if target.status == 'processed' and has_financial_reading(session, target):
+                    return dict(case_id=str(case_id), source_file_id=str(file.id), evidence_file_id=str(target.id), outcome='ready')
+            raise PdfMappingError('A financial reading job could not be confirmed. Refresh files before trying again. The file remains in Evidence.', 409)
+        return dict(case_id=str(case_id), source_file_id=str(file.id), evidence_file_id=str(target.id), outcome='queued')
+
+    return await run_in_threadpool(after)

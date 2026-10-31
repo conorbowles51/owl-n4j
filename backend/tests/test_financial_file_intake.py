@@ -431,3 +431,43 @@ class AlreadyReadingTests(FinancialFileIntakeTests):
         with mock.patch.object(evidence_intake, 'ALREADY_READING_IS_PROGRESS', False):
             with self.assertRaisesRegex(PdfMappingError, 'could not be confirmed'):
                 self.prepare(process=other_worker_got_there_first)
+
+
+class OffEventLoopTests(FinancialFileIntakeTests):
+    """The route awaits this on the event loop: its database steps run in the thread pool around the handoff."""
+
+    def prepare_watched(self, process):
+        import threading
+        from sqlalchemy import event
+        self.case.id, self.file.id  # the test's own arguments, loaded before watching
+        on_the_loop = []
+        def record(conn, cursor, statement, *rest):
+            if threading.current_thread() is threading.main_thread():
+                on_the_loop.append(statement.split('\n')[0][:80])
+        event.listen(self.engine, 'before_cursor_execute', record)
+        try:
+            return self.prepare(process=process), on_the_loop
+        finally:
+            event.remove(self.engine, 'before_cursor_execute', record)
+
+    def test_a_queued_preparation_runs_no_sql_on_the_event_loop(self):
+        result, on_the_loop = self.prepare_watched(AsyncMock(return_value={'job_ids': ['job']}))
+        self.assertEqual(result['outcome'], 'queued')
+        self.assertNotEqual(result['evidence_file_id'], str(self.file.id))
+        self.assertEqual(on_the_loop, [])
+
+    def test_a_reading_another_worker_started_is_checked_off_the_event_loop(self):
+        def start_elsewhere(file_id):
+            target = self.db.get(EvidenceFile, file_id)
+            target.status = 'processing'; target.engine_job_id = 'other-worker-job'; self.db.commit()
+        async def other_worker_got_there_first(db, **kwargs):
+            await asyncio.to_thread(start_elsewhere, kwargs['file_ids'][0])
+            return {'job_ids': [], 'skipped_count': 1}
+        result, on_the_loop = self.prepare_watched(other_worker_got_there_first)
+        self.assertEqual(result['outcome'], 'processing')
+        self.assertEqual(on_the_loop, [])
+
+
+# Only its own two tests: the inherited ones already run in FinancialFileIntakeTests.
+for _name in [name for name in vars(FinancialFileIntakeTests) if name.startswith('test_')]:
+    setattr(OffEventLoopTests, _name, None)
