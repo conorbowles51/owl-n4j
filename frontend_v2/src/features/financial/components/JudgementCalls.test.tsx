@@ -157,3 +157,27 @@ it("shows a reopened period's calls at once, even after the cache lifetime of an
   expect(screen.getByLabelText("Judgement calls in this period").textContent).toBe(shown)
   release({ items: [judgement] })
 })
+
+it("says so when an opened period's calls could not be loaded, instead of showing an empty list", async () => {
+  const client = new QueryClient()
+  vi.mocked(fetchAPI).mockReset()
+  let fail = true
+  vi.mocked(fetchAPI).mockImplementation(async (url: string) => {
+    if (url.includes("/judgements/counts")) return { case: { total: 1 }, statements: {}, periods: { "p-1": { total: 1 } }, rules: [] }
+    if (fail) throw new Error("Server error")
+    return { items: [judgement] }
+  })
+  render(
+    <QueryClientProvider client={client}>
+      <PeriodJudgements caseId="case-a" periodId="p-1" />
+    </QueryClientProvider>
+  )
+  fireEvent.click(await screen.findByRole("button", { name: /1 judgement call/ }))
+  const alert = await screen.findByRole("alert")
+  expect(alert.textContent).toContain("These calls could not be loaded.")
+  expect(screen.queryByRole("status")).toBeNull()
+  fail = false
+  fireEvent.click(screen.getByRole("button", { name: "Try again" }))
+  await waitFor(() => expect(screen.queryByRole("alert")).toBeNull())
+  await waitFor(() => expect(vi.mocked(fetchAPI).mock.calls.filter(([url]) => String(url).includes("statement_period_id=p-1"))).toHaveLength(2))
+})

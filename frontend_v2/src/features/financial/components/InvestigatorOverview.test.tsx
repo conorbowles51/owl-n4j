@@ -53,12 +53,14 @@ const panels = {
   connections: { payments: 3, groups: [] },
   comparisons: { pairs: 1, keys: ["a", "b"] },
 }
+// "stale": a background refetch failed while the query still holds its last answer (isError with data).
+type Status = "ready" | "pending" | "error" | "stale"
 const state = vi.hoisted(() => ({
-  panels: "ready" as "ready" | "pending" | "error",
-  totals: "ready" as "ready" | "pending" | "error",
-  register: "ready" as "ready" | "pending" | "error",
-  findings: "ready" as "ready" | "pending" | "error",
-  calls: "ready" as "ready" | "pending" | "error",
+  panels: "ready" as Status,
+  totals: "ready" as Status,
+  register: "ready" as Status,
+  findings: "ready" as Status,
+  calls: "ready" as Status,
   openCalls: 7,
   uncategorised: 1,
   registerDone: false,
@@ -73,51 +75,52 @@ vi.mock("../hooks/use-investigator-payments", () => ({
 }))
 vi.mock("../hooks/use-ledger-overview", () => ({
   useLedgerOverview: () => ({
-    data: state.totals === "ready" ? { ...totals, uncategorised: state.uncategorised } : undefined,
+    data: (state.totals === "ready" || state.totals === "stale") ? { ...totals, uncategorised: state.uncategorised } : undefined,
     isPending: state.totals === "pending",
-    isError: state.totals === "error",
+    isError: state.totals === "error" || state.totals === "stale",
     isSuccess: state.totals === "ready",
+    refetch: vi.fn(),
   }),
   useLedgerOverviewPanels: () => ({
-    data: state.panels === "ready" ? panels : undefined,
+    data: (state.panels === "ready" || state.panels === "stale") ? panels : undefined,
     isPending: state.panels === "pending",
-    isError: state.panels === "error",
-    error: state.panels === "error" ? Error("The payments could not be loaded.") : null,
+    isError: state.panels === "error" || state.panels === "stale",
+    error: state.panels !== "ready" && state.panels !== "pending" ? Error("The payments could not be loaded.") : null,
     refetch: vi.fn(),
   }),
 }))
 vi.mock("../hooks/use-statement-register", () => ({
   useStatementRegister: () => ({
     files: {
-      data: state.register === "ready" ? [{ id: "f1" }, { id: "f2" }] : undefined,
+      data: (state.register === "ready" || state.register === "stale") ? [{ id: "f1" }, { id: "f2" }] : undefined,
       isPending: state.register === "pending",
-      isError: state.register === "error",
+      isError: state.register === "error" || state.register === "stale",
     },
     imports: {
       data:
-        state.register === "ready"
+        state.register === "ready" || state.register === "stale"
           ? state.registerDone
             ? { truncated: false, files: ["f1", "f2"].map((id) => ({ evidence_file_id: id, current_transactions: 3, periods: [{}], available_periods: 0, periods_with_checks: 0 })) }
             : { truncated: false, files: [{ evidence_file_id: "f1", current_transactions: 3, periods: [{}], available_periods: 0, periods_with_checks: 2 }] }
           : undefined,
       isPending: state.register === "pending",
-      isError: state.register === "error",
+      isError: state.register === "error" || state.register === "stale",
     },
   }),
 }))
 vi.mock("@/features/workspace/hooks/use-casework", () => ({
   useCaseworkEntries: () => ({
     isPending: state.findings === "pending",
-    isError: state.findings === "error",
+    isError: state.findings === "error" || state.findings === "stale",
     isSuccess: state.findings === "ready",
-    data: state.findings === "ready" ? { entries: [], total: 0 } : undefined,
+    data: (state.findings === "ready" || state.findings === "stale") ? { entries: [], total: 0 } : undefined,
   }),
 }))
 vi.mock("../hooks/use-judgements", () => ({
   useJudgementCounts: () => ({
     isSuccess: state.calls === "ready",
-    isError: state.calls === "error",
-    data: state.calls === "ready" ? { case: { total: 9, open: state.openCalls, inferred: 4 } } : undefined,
+    isError: state.calls === "error" || state.calls === "stale",
+    data: (state.calls === "ready" || state.calls === "stale") ? { case: { total: 9, open: state.openCalls, inferred: 4 } } : undefined,
   }),
 }))
 vi.mock("../hooks/use-financial-access", () => ({ useFinancialAccess: () => ({ canEdit: true }) }))
@@ -313,4 +316,36 @@ it("says the ledger is checked once the files, calls and findings are all counte
   )
   expect(screen.getByRole("heading", { name: /The ledger is checked/ })).toBeTruthy()
   expect(screen.getByRole("list", { name: "Your progress on this case" }).textContent).toContain("No findings yet")
+})
+
+it("keeps every count it already has when a background refetch fails, and says the figures are the last ones loaded", () => {
+  state.registerDone = true
+  state.openCalls = 0
+  state.uncategorised = 0
+  const shown = () => {
+    const view = render(
+      <MemoryRouter>
+        <InvestigatorOverview caseId="case" />
+      </MemoryRouter>
+    )
+    const text = {
+      progress: screen.getByRole("list", { name: "Your progress on this case" }).textContent,
+      page: document.body.textContent?.replace(screen.queryByRole("alert")?.textContent ?? "", ""),
+      totals: screen.getByText("Imported payments in the selected accounts and dates").textContent,
+      checked: screen.queryByText("The ledger is checked.") !== null,
+      notes: screen.queryAllByRole("alert").map((alert) => alert.textContent),
+    }
+    view.unmount()
+    return text
+  }
+  const fresh = shown()
+  for (const query of ["totals", "panels", "register", "findings", "calls"] as const) state[query] = "stale"
+  const kept = shown()
+  expect(fresh.notes).toEqual([])
+  expect(kept.progress).toBe(fresh.progress)
+  expect(kept.progress).not.toMatch(/could not be/)
+  expect(kept.page).toBe(fresh.page)
+  expect(kept.totals).toBe(fresh.totals)
+  expect(kept.checked).toBe(true)
+  expect(kept.notes).toEqual(["These figures could not be updated; they are the last ones loaded. Load them again"])
 })

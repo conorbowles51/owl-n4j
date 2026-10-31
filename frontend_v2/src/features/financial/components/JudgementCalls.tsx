@@ -535,7 +535,13 @@ function PeriodJudgementList({ caseId, periodId, open }: { caseId: string; perio
   if (!open) return null
   return (
     <div className="mt-1 space-y-1">
-      {query.isPending && <p role="status">Loading…</p>}
+      {query.isPending && !query.isError && <p role="status">Loading…</p>}
+      {query.isError && query.data === undefined && (
+        <p role="alert">
+          These calls could not be loaded.{" "}
+          <button type="button" className="underline" onClick={() => void query.refetch()}>Try again</button>
+        </p>
+      )}
       <TieredList
         items={query.data || []}
         rowKey={(judgement) => judgement.id}

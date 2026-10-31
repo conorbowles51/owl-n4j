@@ -27,6 +27,10 @@ const plural = (count: number, one: string, many = `${one}s`) => `${n(count)} ${
 const monthName = (day: string) =>
   new Date(`${day}T00:00:00Z`).toLocaleDateString("en-GB", { month: "short", year: "numeric", timeZone: "UTC" })
 type Step = { name: string; detail: string; done: boolean }
+// A query keeps its last answer when a background refetch fails (isError is then true with data still held).
+// Everything here is shown from the answer held; "could not be loaded" is only for a query that has none.
+const held = (query: { data: unknown }) => query.data !== undefined
+const failed = (query: { data: unknown; isError: boolean }) => query.isError && query.data === undefined
 
 export function InvestigatorOverview({
   caseId,
@@ -69,7 +73,7 @@ export function InvestigatorOverview({
   const comparisons = panels.data?.comparisons
   const { payments, unknownDates, uncategorised, accountCount, currencyCounts, currencies, money: moneyBy, firstDay, lastDay } =
     useMemo(() => overviewFigures(totals.data), [totals.data])
-  const totalsReady = totals.isSuccess
+  const totalsReady = held(totals)
   const span = firstDay && lastDay ? `${monthName(firstDay)} – ${monthName(lastDay)}` : "No dated payments"
   const [open, setOpen] = useState<{ ids: string[]; title: string } | null>(
     null
@@ -96,9 +100,9 @@ export function InvestigatorOverview({
   const openCalls = Number(calls.open ?? 0)
   const guesses = Number(calls.inferred ?? 0)
   const findingCount = findings.data?.total ?? findings.data?.entries.length ?? 0
-  const registerReady = !register.files.isPending && !register.imports.isPending && !register.files.isError && !register.imports.isError
+  const registerReady = held(register.files) && held(register.imports)
   const registerState =
-    register.files.isError || register.imports.isError ? "Statement status could not be loaded" : "Checking statement files…"
+    failed(register.files) || failed(register.imports) ? "Statement status could not be loaded" : "Checking statement files…"
   const judgementsHref = (status: string, strength?: string) =>
     `/cases/${caseId}/financial?${new URLSearchParams({
       view: "statements",
@@ -124,11 +128,11 @@ export function InvestigatorOverview({
             : uncategorised
               ? { title: `${plural(uncategorised, "payment has", "payments have")} no category yet.`, sub: "Give each one a category so every total breaks down.", action: `Categorise ${n(uncategorised)} →`, onClick: () => navigate("transactions") }
               // Neither "waiting for a look" nor "checked" is known until Loupe's calls and the findings are counted.
-              : !judgements.isSuccess
+              : !held(judgements)
                 ? { title: "Your case at a glance", sub: judgements.isError ? "Loupe's calls could not be counted." : "Counting Loupe's calls…", action: "Open statements", onClick: () => navigate("statements") }
               : openCalls
                 ? { title: `${plural(openCalls, "call")} Loupe made ${openCalls === 1 ? "is" : "are"} waiting for a look.`, sub: "Confirm the ones that look right, correct the rest.", action: "Spot-check Loupe →", onClick: () => go(judgementsHref("open")) }
-                : !findings.isSuccess
+                : !held(findings)
                   ? { title: "The ledger is checked.", sub: findings.isError ? "Findings could not be loaded." : "Loading findings…", action: "Open Findings & Observations →", onClick: () => navigate("findings") }
                 : !findingCount
                   ? { title: "The ledger is checked.", sub: "Follow the money and record what needs explaining.", action: "Follow the money →", onClick: () => navigate("follow-money") }
@@ -137,9 +141,9 @@ export function InvestigatorOverview({
     // Until the statement files and their saved readings are in, these two say so instead of counting nothing as 0.
     { name: "Load", detail: registerReady ? plural(files.length, "file") : registerState, done: registerReady && files.length > 0 },
     { name: "Read", detail: registerReady ? `${n(importedIds.size)} saved${toCheck ? ` · ${n(toCheck)} to check` : ""}${notImported.length ? ` · ${n(notImported.length)} not saved` : ""}` : registerState, done: registerReady && files.length > 0 && !toCheck && !notImported.length },
-    { name: "Check", detail: judgements.isSuccess ? (openCalls ? `${n(openCalls)} of Loupe's calls open` : "Loupe's calls checked") : "Loupe's calls", done: judgements.isSuccess && !openCalls },
+    { name: "Check", detail: held(judgements) ? (openCalls ? `${n(openCalls)} of Loupe's calls open` : "Loupe's calls checked") : "Loupe's calls", done: held(judgements) && !openCalls },
     { name: "Analyse", detail: totalsReady ? `${plural(payments, "payment")}${uncategorised ? ` · ${n(uncategorised)} uncategorised` : ""}` : totals.isError ? "Payments could not be counted" : "Counting payments…", done: totalsReady && payments > 0 && !uncategorised },
-    { name: "Report", detail: !findings.isSuccess ? (findings.isError ? "Findings could not be loaded" : "Loading findings…") : findingCount ? plural(findingCount, "finding") : "No findings yet", done: findings.isSuccess && findingCount > 0 },
+    { name: "Report", detail: !held(findings) ? (findings.isError ? "Findings could not be loaded" : "Loading findings…") : findingCount ? plural(findingCount, "finding") : "No findings yet", done: held(findings) && findingCount > 0 },
   ]
   const now = steps.findIndex((step) => !step.done)
   return (
@@ -202,9 +206,9 @@ export function InvestigatorOverview({
                 </div>
               )}
             </div>
-            {totals.isPending ? (
+            {!totalsReady && !totals.isError ? (
               <p role="status" className="text-[#bfc1c8]">Adding up payments…</p>
-            ) : totals.isError ? (
+            ) : !totalsReady ? (
               <p role="alert" className="text-[#bfc1c8]">Payments could not be added up. Open Transactions to try again.</p>
             ) : (
               <>
@@ -288,7 +292,7 @@ export function InvestigatorOverview({
           <button type="button" onClick={() => go(judgementsHref(openCalls ? "open" : "all", openCalls && guesses ? "inferred" : undefined))} className="flex min-h-[170px] flex-col gap-3 rounded-[14px] bg-[#0f8a7e] p-5 text-left text-white transition-transform hover:-translate-y-[3px]">
             <span className={`${eyebrow} text-[#c9efe9]`}>Spot-check Loupe</span>
             <span className="text-[22px] font-semibold leading-tight tabular-nums" style={heading}>
-              {judgements.isSuccess ? `${plural(Number(calls.total ?? 0), "call")} Loupe made for you` : judgements.isError ? "Loupe's calls could not be counted" : "Counting Loupe's calls…"}
+              {held(judgements) ? `${plural(Number(calls.total ?? 0), "call")} Loupe made for you` : judgements.isError ? "Loupe's calls could not be counted" : "Counting Loupe's calls…"}
             </span>
             <span className="mt-auto text-sm text-[#c9efe9]">
               {openCalls ? `${n(openCalls)} open${guesses ? ` · start with the ${n(guesses)} guesses` : ""} →` : "See them all →"}
@@ -297,20 +301,20 @@ export function InvestigatorOverview({
           <button type="button" onClick={() => navigate("findings")} className="flex min-h-[170px] flex-col gap-3 rounded-[14px] bg-[#14161b] p-5 text-left text-white transition-transform hover:-translate-y-[3px]">
             <span className={`${eyebrow} text-[#9a9da5]`}>Findings</span>
             <span className="text-[22px] font-semibold leading-tight" style={heading}>Turn what you find into a report</span>
-            <span className="mt-auto text-sm text-[#bfc1c8]">{findings.isSuccess ? `${plural(findingCount, "finding")} so far →` : "Open Findings & Observations →"}</span>
+            <span className="mt-auto text-sm text-[#bfc1c8]">{held(findings) ? `${plural(findingCount, "finding")} so far →` : "Open Findings & Observations →"}</span>
           </button>
         </div>
       </section>
-      {panels.isPending ? (
+      {!held(panels) && !panels.isError ? (
         <p role="status" className="p-6">
           Loading this case’s payments
           {totalsReady ? ` (${plural(payments, "payment")})` : ""}…
         </p>
-      ) : panels.isError || !panels.data.complete || !panelTotals ? (
+      ) : !panels.data || !panels.data.complete || !panelTotals ? (
         <div role="alert" className="rounded border p-4 space-y-2">
           <p>
-            {panels.isError
-              ? panels.error.message
+            {!panels.data
+              ? panels.error?.message
               : "Not all payments were returned. These views cannot yet describe the whole selection."}
           </p>
           <Button onClick={() => void panels.refetch()}>
@@ -318,9 +322,16 @@ export function InvestigatorOverview({
           </Button>
         </div>
       ) : (<>
-        {(panels.isFetching || totals.isFetching) && (
+        {(panels.isFetching || totals.isFetching) ? (
           <p role="status" className="text-sm text-muted-foreground">
             Updating these figures…
+          </p>
+        ) : ((panels.isError && held(panels)) || (totals.isError && held(totals))) && (
+          <p role="alert" className="text-sm text-muted-foreground">
+            These figures could not be updated; they are the last ones loaded.{" "}
+            <button type="button" className="underline" onClick={() => { void panels.refetch(); void totals.refetch() }}>
+              Load them again
+            </button>
           </p>
         )}
         <PaymentTotalsView
@@ -407,9 +418,9 @@ export function InvestigatorOverview({
                   Open Findings &amp; Observations
                 </Button>
               </div>
-              {findings.isPending ? (
+              {!held(findings) && !findings.isError ? (
                 <p role="status">Loading findings…</p>
-              ) : findings.isError ? (
+              ) : !held(findings) ? (
                 <p role="alert">
                   Saved findings could not be loaded. Open Findings &amp;
                   Observations to try again.
@@ -462,12 +473,12 @@ export function InvestigatorOverview({
                   <InfoTip text="These file counts cover the whole case. Saved statements are available for investigation, including statements with no transactions. Files not yet saved may be waiting for review, still being read, or duplicate copies. One file can contain several statements." />
                 </h3>
               </div>
-              {register.files.isError || register.imports.isError ? (
+              {failed(register.files) || failed(register.imports) ? (
                 <p role="alert" className="text-sm">
                   Statement status could not be loaded. Open the file register
                   to try again.
                 </p>
-              ) : register.files.isPending || register.imports.isPending ? (
+              ) : !registerReady ? (
                 <p role="status">Checking statement files…</p>
               ) : (
                 <>
