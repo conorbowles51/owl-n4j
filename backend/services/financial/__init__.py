@@ -16,7 +16,7 @@ from services.financial.candidate_store import CandidateStoreError, store_pdf_ca
 from services.financial.correction_preview import CorrectionPreviewError, preview_amount_correction
 from services.financial.correction_fields import correction_fields as payment_correction_fields, json_fields
 from services.financial.corrections import correct_transaction
-from services.financial.correction_verification import correction_verification
+from services.financial.correction_verification import correction_verification as verify_correction
 from services.financial.correction_balances import correction_running_balances
 from services.financial.coverage_query import CoverageQueryError, list_statement_coverage, requested_statement_coverage
 from services.financial.ledger_snapshot import LedgerSnapshot, capture_ledger_snapshot, LedgerExport, capture_ledger_export
@@ -933,7 +933,7 @@ __all__ = [
     "LedgerSourceError",
     "ledger_source",
     "read_amount_source_text",
-    "correction_verification", "correction_running_balances", "CoverageQueryError", "list_statement_coverage",
+    "verify_correction", "correction_running_balances", "CoverageQueryError", "list_statement_coverage",
     "correct_transaction",
     "CorrectionPreviewError",
     "preview_amount_correction",
