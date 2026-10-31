@@ -43,13 +43,6 @@ function read(path: string): string {
 }
 
 /**
- * The body of a Python block, from its header to the next line that starts in
- * column one. Scoping matters here for the same reason it does in the ledger
- * test: `reason` and `case_id` appear on both routes in this router and on
- * several routes elsewhere, so a whole-file search proves nothing about the
- * route actually being called.
- */
-/**
  * Where a header starts. A route header ("def name(") must start its line, with
  * or without "async ": a longer name ending in the same text does not count.
  */
@@ -60,6 +53,13 @@ function headerIndex(source: string, header: string): number {
   return found ? found.index + found[0].length - header.length : -1
 }
 
+/**
+ * The body of a Python block, from its header to the next line that starts in
+ * column one. Scoping matters here for the same reason it does in the ledger
+ * test: `reason` and `case_id` appear on both routes in this router and on
+ * several routes elsewhere, so a whole-file search proves nothing about the
+ * route actually being called.
+ */
 function pythonBlock(source: string, header: string): string {
   const opens = headerIndex(source, header)
   expect(opens, `${header} is no longer declared`).toBeGreaterThan(-1)
