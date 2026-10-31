@@ -704,11 +704,17 @@ class LoopLag:
 async def run_loop_lag_probe(interval=LAG_INTERVAL):
     """Started by each web worker (main.py lifespan). One timer wake every ``interval``; never raises."""
     import asyncio
+    from services import loop_stall
     lag = LoopLag()
+    # A thread beside the loop logs what the loop is running when it falls a second behind (loop_stall).
+    heartbeat = loop_stall.Heartbeat(interval)
+    heartbeat.beat()
+    stop_watch = loop_stall.start(heartbeat)
     try:
         while True:
             due = time.perf_counter() + interval
             await asyncio.sleep(interval)
+            heartbeat.beat()
             late = max(0.0, time.perf_counter() - due) * 1000
             lag.add(time.time(), late)
     except asyncio.CancelledError:
@@ -716,6 +722,9 @@ async def run_loop_lag_probe(interval=LAG_INTERVAL):
         raise
     except Exception:  # pragma: no cover - the probe must never take the worker down
         log.exception('Request speed: loop-lag probe stopped')
+    finally:
+        if stop_watch is not None:
+            stop_watch.set()
 
 
 # --- reading ---------------------------------------------------------------------------------
