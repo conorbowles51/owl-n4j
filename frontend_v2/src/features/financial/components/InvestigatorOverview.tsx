@@ -129,7 +129,7 @@ export function InvestigatorOverview({
               : openCalls
                 ? { title: `${plural(openCalls, "call")} Loupe made ${openCalls === 1 ? "is" : "are"} waiting for a look.`, sub: "Confirm the ones that look right, correct the rest.", action: "Spot-check Loupe →", onClick: () => go(judgementsHref("open")) }
                 : !findings.isSuccess
-                  ? { title: "Your case at a glance", sub: findings.isError ? "Findings could not be loaded." : "Loading findings…", action: "Open Findings & Observations →", onClick: () => navigate("findings") }
+                  ? { title: "The ledger is checked.", sub: findings.isError ? "Findings could not be loaded." : "Loading findings…", action: "Open Findings & Observations →", onClick: () => navigate("findings") }
                 : !findingCount
                   ? { title: "The ledger is checked.", sub: "Follow the money and record what needs explaining.", action: "Follow the money →", onClick: () => navigate("follow-money") }
                   : { title: "The ledger is checked.", sub: `${plural(findingCount, "finding")} saved. Keep going, or build the report.`, action: "Open Findings & Observations →", onClick: () => navigate("findings") }

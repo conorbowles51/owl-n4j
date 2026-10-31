@@ -277,7 +277,7 @@ it.each([
   ["calls", "error", "Loupe's calls could not be counted."],
   ["findings", "pending", "Loading findings…"],
   ["findings", "error", "Findings could not be loaded."],
-] as const)("never says the ledger is checked or that there are no findings while %s are %s", (what, how, says) => {
+] as const)("says nothing about %s until they are counted (%s): the ledger is not called checked without the calls, and findings are not called none", (what, how, says) => {
   // Everything before them is done: files saved, nothing to check, every payment categorised.
   state.uncategorised = 0
   state.openCalls = 0
@@ -288,10 +288,18 @@ it.each([
       <InvestigatorOverview caseId="case" />
     </MemoryRouter>
   )
-  expect(screen.queryByRole("heading", { name: /The ledger is checked/ })).toBeNull()
-  expect(screen.getByRole("heading", { name: /Your case at a glance/ }).textContent).toContain(says)
   const progress = screen.getByRole("list", { name: "Your progress on this case" })
-  if (what === "findings") expect(progress.textContent).not.toContain("No findings yet")
+  if (what === "calls") {
+    // Whether the ledger is checked turns on Loupe's calls: not said until they are counted.
+    expect(screen.queryByRole("heading", { name: /The ledger is checked/ })).toBeNull()
+    expect(screen.getByRole("heading", { name: /Your case at a glance/ }).textContent).toContain(says)
+  } else {
+    // It does not turn on the findings: the title stays, and only the line about findings waits for them.
+    const heading = screen.getByRole("heading", { name: /The ledger is checked/ })
+    expect(heading.textContent).toContain(says)
+    expect(heading.textContent).not.toContain("Follow the money and record")
+    expect(progress.textContent).not.toContain("No findings yet")
+  }
 })
 
 it("says the ledger is checked once the files, calls and findings are all counted and nothing is open", () => {
