@@ -14,17 +14,23 @@ os.environ.setdefault('FINANCIAL_AUTO_SAVE_READY', '0')
 import atexit as _atexit
 import shutil as _shutil
 import tempfile as _tempfile
-os.environ['LOUPE_PAGE_CACHE_DIR'] = _tempfile.mkdtemp(prefix='loupe-page-cache-tests-')
-_atexit.register(_shutil.rmtree, os.environ['LOUPE_PAGE_CACHE_DIR'], ignore_errors=True)
+
+
+def _throwaway_dir(variable, prefix):
+    """Point ``variable`` at a fresh directory removed at exit, unless it already names one a test run made (a child
+    process re-importing this package keeps its parent's directory and registers no removal)."""
+    current = os.environ.get(variable, '')
+    made = os.path.join(_tempfile.gettempdir(), prefix)
+    if current.startswith(made) and os.path.isdir(current):
+        return
+    os.environ[variable] = _tempfile.mkdtemp(prefix=prefix)
+    _atexit.register(_shutil.rmtree, os.environ[variable], ignore_errors=True)
+
+
+_throwaway_dir('LOUPE_PAGE_CACHE_DIR', 'loupe-page-cache-tests-')
 
 # Saved Financial views and refresh asks live in FINANCIAL_VIEW_MEMO_DIR, else ~/.cache/loupe-financial-view-memo
-# (services/financial/view_cache._memo_dir). Tests that build, save or ask for views must never write to or delete
-# from a real one: run as the service's user, that is the live service's directory. Each test run gets its own
-# empty directory, removed at exit; a test that sets the variable itself still wins.
-if 'FINANCIAL_VIEW_MEMO_DIR' not in os.environ:
-    import atexit
-    import shutil
-    import tempfile
-    _memo = tempfile.mkdtemp(prefix='loupe-test-view-memo-')
-    os.environ['FINANCIAL_VIEW_MEMO_DIR'] = _memo
-    atexit.register(shutil.rmtree, _memo, True)
+# (services/financial/view_cache._memo_dir). Tests that build, save, ask for or forget views must never touch a real
+# one: run as the service's user, that is the live service's directory. Set, not defaulted, like the page cache: a
+# shell exporting the live directory must not reach it. A test that sets the variable itself still wins.
+_throwaway_dir('FINANCIAL_VIEW_MEMO_DIR', 'loupe-test-view-memo-')
