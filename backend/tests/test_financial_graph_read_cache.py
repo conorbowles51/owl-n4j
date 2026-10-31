@@ -277,6 +277,27 @@ class PackingKeepsTypesTests(unittest.TestCase):
         self.assertNotEqual(module._unpack(blob)["x"], module._unpack(blob)["x"])  # still NaN
 
 
+class _HeaderOnly:
+    """A file whose body reads are counted (the header line is read with readline)."""
+
+    def __init__(self, handle, reads):
+        self.handle, self.reads = handle, reads
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.handle.close()
+        return False
+
+    def readline(self, *args):
+        return self.handle.readline(*args)
+
+    def read(self, *args):
+        self.reads.append(args)
+        return self.handle.read(*args)
+
+
 class SavedGraphReadTests(unittest.TestCase):
     """A result read once is found by another process (a new cache) while the graph and the code are the same."""
 
@@ -379,10 +400,10 @@ class SavedGraphReadTests(unittest.TestCase):
         loading, release = threading.Event(), threading.Event()
         original = cache._load_saved
 
-        def slow_load(key, bookmark):
+        def slow_load(*args):
             loading.set()
             release.wait(5)
-            return original(key, bookmark)
+            return original(*args)
         cache._load_saved = slow_load
         results = []
         first = threading.Thread(target=lambda: results.append(cache.read(_Session(self.graph), "k", self.compute())))
@@ -398,6 +419,48 @@ class SavedGraphReadTests(unittest.TestCase):
         self.assertIsNot(results[0], results[1])
         self.assertEqual(self.calls, 1)
         self.assertEqual((cache.stats["saved_hit"], cache.stats["joined"]), (1, 1))
+
+    def test_a_refused_header_never_reads_the_body(self):
+        """After a graph commit the old copy is refused from its header line, not read and hashed whole."""
+        import builtins
+        GraphReadCache(saved_as="g", marker=self.marker).read(self.session, "k", self.compute())
+        self.graph.tx = 2
+        reads = []
+        real_open = builtins.open
+        cache = GraphReadCache(saved_as="g", marker=self.marker)
+        with patch.object(builtins, "open", side_effect=lambda *a, **k: _HeaderOnly(real_open(*a, **k), reads)):
+            self.assertIsNone(cache._load_saved("k", ("FB:2",), self.started))
+        self.assertEqual(reads, [])
+        with patch.object(builtins, "open", side_effect=lambda *a, **k: _HeaderOnly(real_open(*a, **k), reads)):
+            self.assertIsNotNone(cache._load_saved("k", ("FB:1",), self.started))
+        self.assertEqual(len(reads), 1)
+
+    def test_a_restart_while_the_process_runs_empties_the_memory_cache(self):
+        """Entries are keyed by bookmark alone; after a restore the same bookmarks name other contents."""
+        import itertools
+        from services.neo4j import graph_read_cache as module
+        clock = itertools.count(0, module.MARKER_SECONDS + 1)
+        cache = GraphReadCache(saved_as="g", marker=self.marker)
+        with patch("time.monotonic", lambda: next(clock)):
+            cache.read(self.session, "k", self.compute())
+            self.assertEqual(cache.stats["hit"], 0)
+            cache.read(self.session, "k", self.compute())
+            self.assertEqual(cache.stats["hit"], 1)
+            self.started = "db1@2026-10-31T10:30:00"
+            cache.read(self.session, "k", self.compute())
+        self.assertEqual(cache.stats["hit"], 1)
+        self.assertEqual(self.calls, 2)
+
+    def test_the_marker_is_read_at_most_once_per_interval(self):
+        reads = []
+
+        def marker():
+            reads.append(1)
+            return self.started
+        cache = GraphReadCache(saved_as="g", marker=marker)
+        for _ in range(5):
+            cache.read(self.session, "k", self.compute())
+        self.assertEqual(len(reads), 1)
 
     def test_without_saved_as_nothing_is_written(self):
         import pathlib

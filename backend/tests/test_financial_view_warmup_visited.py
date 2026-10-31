@@ -115,6 +115,7 @@ def test_the_views_people_opened_are_warmed_not_the_ones_only_warm_ups_rewrote(t
     task_case, (_, route, defaults) = found[0]
     assert task_case == case
     assert not view_cache._visit_path(tmp_path / view_cache.VISITED_DIR, rewritten).exists()
+    assert not path.exists()  # a note older than a day is removed
 
 
 def test_a_visit_is_noted_at_most_once_per_interval(tmp_path, monkeypatch):

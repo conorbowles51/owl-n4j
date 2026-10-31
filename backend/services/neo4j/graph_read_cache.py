@@ -118,6 +118,11 @@ def _unpack(blob: bytes):
 
 # Saved graph reads, oldest removed first above this size.
 MAX_SAVED_BYTES = 512 * 1024 * 1024
+# The graph database's marker is read at most this often per cache (10-26 ms each, measured 2026-10-31); a change
+# (a restart, as a restore needs) also empties the memory cache, whose entries are keyed by bookmark alone.
+MARKER_SECONDS = 30
+# One warning per this many seconds while the marker cannot be read (the graph database down, no password).
+MARKER_WARNING_SECONDS = 600
 
 
 class GraphReadCache:
@@ -126,6 +131,10 @@ class GraphReadCache:
         self.max_bytes = max_bytes
         self.saved_as = saved_as
         self.marker = marker
+        self._marker_seen: Optional[str] = None  # the last marker read
+        self._marker_now: Optional[str] = None  # the last answer (None when unreadable), reused for MARKER_SECONDS
+        self._marker_at = float("-inf")
+        self._marker_warned = float("-inf")
         self._entries: "OrderedDict[Hashable, Tuple[Bookmark, bytes]]" = OrderedDict()
         self._flights: Dict[Hashable, _Flight] = {}
         self._bytes = 0
@@ -161,31 +170,51 @@ class GraphReadCache:
             self.stats["saved"] += 1
 
     def _saved_dir(self):
-        """Where this cache's results outlive the process, with the code they were read by and the graph database's
-        marker (id and last start); (None, None, None) if not."""
+        """Where this cache's results outlive the process, with the code they were read by; (None, None) if not."""
         if self.saved_as is None or self.marker is None:
-            return None, None, None
+            return None, None
         from services.financial import view_cache
         directory, code = view_cache._memo_dir(), view_cache.code_identity()
         if directory is None or code is None:
-            return None, None, None
+            return None, None
+        return directory / self.saved_as, code
+
+    def _current_marker(self) -> Optional[str]:
+        """The graph database's marker (id and last start), read at most every MARKER_SECONDS; None if there is no
+        marker or it cannot be read. When it changed, the memory cache is emptied first. Never raises."""
+        import time
+        if self.marker is None:
+            return None
+        now = time.monotonic()
+        with self._lock:
+            if now - self._marker_at < MARKER_SECONDS:
+                return self._marker_now
         try:
-            marker = self.marker()
+            marker = self.marker() or None
         except Exception:  # noqa: BLE001 - then nothing is read from or written to disk
-            logger.warning("Graph database marker unreadable; graph reads kept in memory only", exc_info=True)
-            return None, None, None
-        if not marker:
-            return None, None, None
-        return directory / self.saved_as, code, marker
+            if now - self._marker_warned >= MARKER_WARNING_SECONDS:
+                self._marker_warned = now
+                logger.warning("Graph database marker unreadable; graph reads kept in memory only", exc_info=True)
+            marker = None
+        with self._lock:
+            if marker is not None and self._marker_seen is not None and marker != self._marker_seen:
+                logger.warning("The graph database was restarted (%s -> %s); graph reads kept so far dropped",
+                               self._marker_seen, marker)
+                self._entries.clear()
+                self._bytes = 0
+            if marker is not None:
+                self._marker_seen = marker
+            self._marker_now, self._marker_at = marker, now
+            return marker
 
     @staticmethod
     def _saved_name(key, code) -> str:
         return hashlib.sha256(json.dumps([key, code], default=str, sort_keys=True).encode()).hexdigest() + ".graph"
 
-    def _load_saved(self, key: Hashable, bookmark: Bookmark) -> Optional[bytes]:
-        """The saved result of this key read by this code at exactly this bookmark. Never raises."""
-        directory, code, marker = self._saved_dir()
-        if directory is None:
+    def _load_saved(self, key: Hashable, bookmark: Bookmark, marker: Optional[str]) -> Optional[bytes]:
+        """The saved result of this key read by this code at exactly this bookmark and marker. Never raises."""
+        directory, code = self._saved_dir()
+        if directory is None or marker is None:
             return None
         try:
             with open(directory / self._saved_name(key, code), "rb") as saved:
@@ -205,10 +234,11 @@ class GraphReadCache:
             logger.warning("Saved graph read unreadable; reading it again", exc_info=True)
             return None
 
-    def _save(self, key: Hashable, bookmark: Bookmark, blob: bytes) -> None:
-        """Keep a JSON result on disk for the other workers and the next start. Never raises."""
-        directory, code, marker = self._saved_dir()
-        if directory is None or blob[:1] != b"J" or len(blob) > MAX_SAVED_BYTES:
+    def _save(self, key: Hashable, bookmark: Bookmark, blob: bytes, marker: Optional[str]) -> None:
+        """Keep a JSON result on disk for the other workers and the next start, under the marker taken before it
+        was read. Never raises."""
+        directory, code = self._saved_dir()
+        if directory is None or marker is None or blob[:1] != b"J" or len(blob) > MAX_SAVED_BYTES:
             return
         temporary = None
         try:
@@ -267,6 +297,7 @@ class GraphReadCache:
         compute must read only from the graph database through `session`;
         anything read from elsewhere must be added by the caller afterwards.
         """
+        marker = self._current_marker()  # before the bookmark: a restart since empties the memory cache
         while True:
             before = graph_bookmark(session)
             blob = self._get(key, before)
@@ -295,7 +326,7 @@ class GraphReadCache:
             self._count("miss")
             return compute()
         try:
-            saved = self._load_saved(key, before)
+            saved = self._load_saved(key, before, marker)
             if saved is not None:
                 value = _unpack(saved)
                 flight.blob = saved
@@ -308,7 +339,7 @@ class GraphReadCache:
                 flight.blob = _pack(value)
                 if graph_bookmark(session) == before:
                     self._put(key, before, flight.blob)
-                    self._save(key, before, flight.blob)
+                    self._save(key, before, flight.blob, marker)
                 else:
                     self._count("changed_during_read")
             except Exception:
@@ -338,9 +369,10 @@ class GraphReadCache:
 def graph_database_marker() -> Optional[str]:
     """The home graph database's id and last start time (changed by any stop and start, which a restore needs).
     Read on a session of its own: an administration command's bookmark must not join a read's."""
+    from neo4j import Query
     from services.neo4j.driver import driver
     with driver.session() as session:
-        record = session.run("SHOW HOME DATABASE YIELD databaseID, lastStartTime").single()
+        record = session.run(Query("SHOW HOME DATABASE YIELD databaseID, lastStartTime", timeout=5)).single()
     if record is None or not record["databaseID"] or record["lastStartTime"] is None:
         return None
     return "%s@%s" % (record["databaseID"], record["lastStartTime"].iso_format())

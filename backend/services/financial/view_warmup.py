@@ -334,6 +334,21 @@ VISITED_MAX_AGE_SECONDS = 24 * 3600
 VISITED_MAX_VIEWS = 200
 
 
+def _prune_visits(directory, now):
+    """Remove visit notes older than VISITED_MAX_AGE_SECONDS and temporary files a killed writer left an hour ago."""
+    try:
+        for entry in os.scandir(directory):
+            try:
+                age = now - entry.stat().st_mtime
+                if (entry.name.endswith('.visit') and age > VISITED_MAX_AGE_SECONDS) or (
+                        entry.name.endswith('.tmp') and age > 3600):
+                    os.unlink(entry.path)
+            except FileNotFoundError:
+                continue
+    except OSError:
+        logger.warning('Could not prune Financial view visit notes', exc_info=True)
+
+
 def _visited_views(listed):
     """(case_id, (name, route, {})) for each view a person opened in the last VISITED_MAX_AGE_SECONDS whose key is not
     one the fixed lists warm (``listed``: (case_id, route, parameters) as they call it), newest first, at most
@@ -364,6 +379,8 @@ def _visited_views(listed):
                           if entry.name.endswith(suffix)), reverse=True)
     except OSError:
         return []
+    if suffix == '.visit':
+        _prune_visits(directory, now)
     for mtime, path in entries:
         if now - mtime > VISITED_MAX_AGE_SECONDS or len(found) >= VISITED_MAX_VIEWS:
             break

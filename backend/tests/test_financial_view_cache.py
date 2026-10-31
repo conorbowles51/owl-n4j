@@ -1026,3 +1026,20 @@ def test_when_the_saved_scope_cannot_be_read_the_view_is_still_answered(engine, 
     assert call(engine, payments_view(counter), case).body == b'{"total":5}'
     assert call(engine, payments_view(counter), case).body == b'{"total":5}' and counter.calls == 1, 'kept in memory'
     assert not list(saved_views.glob('*.view'))
+
+
+def test_a_persons_request_notes_a_visit_and_a_warm_up_does_not(engine, tmp_path, monkeypatch):
+    """The release warms the views people opened (view_warmup._visited_views reads these notes)."""
+    monkeypatch.setattr(view_cache, '_visits_noted', {})
+    case, counter = uuid.uuid4(), Counter()
+    view = payments_view(counter)
+    token = view_cache.not_a_visit.set(True)
+    try:
+        call(engine, view, case, minimum=3)  # a warm-up's or refresh's call
+    finally:
+        view_cache.not_a_visit.reset(token)
+    visited = tmp_path / view_cache.VISITED_DIR
+    assert not visited.exists() or not list(visited.glob('*.visit'))
+    call(engine, view, case)
+    [note] = list(visited.glob('*.visit'))
+    assert json.loads(note.read_text())['key'] == list(view_cache.view_key('payments', dict(case_id=case)))
