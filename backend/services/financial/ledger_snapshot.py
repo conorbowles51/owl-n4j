@@ -179,6 +179,13 @@ def _capture_history(session, document, *, case_id):
     work = model_work_inventory(document)
     if work['unconfirmed_names'] or work['unconfirmed_saved_payments']:
         document['limitations'].append(work['limitation'])
+    from services.financial.account_correction_provenance import capture_account_corrections, unconfirmed_limitation
+    # Who corrected an account's holder, bank or number, from what, and whether a person confirmed it: the account
+    # panel shows this, so the exported record carries it too.
+    document['account_corrections'] = capture_account_corrections(session, case_id=case_id, account_ids=scopes['account'])
+    corrections_limitation = unconfirmed_limitation(document['account_corrections'])
+    if corrections_limitation:
+        document['limitations'].append(corrections_limitation)
     return document
 
 
@@ -376,6 +383,8 @@ def render_ledger_report(snapshot):
 
     document = json.loads(snapshot.content)
     ledger = document['ledger']
+    from services.financial.account_correction_provenance import row_markers
+    account_markers = row_markers(document.get('account_corrections'))
 
     def text(value):
         return escape('Not recorded' if value is None else str(value), quote=True)
@@ -552,6 +561,23 @@ def render_ledger_report(snapshot):
                 money_display(row['amount_minor'], row['currency'], exact=False) if row['direction'] == 'debit' else '',
                 money_display(row['running_balance_minor'], row['currency'], exact=False) if row['running_balance_minor'] is not None else absent_balance(row),
                 source_reference(row)] for row in current])]
+    corrections = (document.get('account_corrections') or {}).get('corrections') or []
+    if corrections:
+        parts += ['<h2>Account corrections</h2><p>Corrections of the holder, bank or account number of the captured '
+            'accounts. The original value stays beside the corrected one. A correction a model made is its reading '
+            'until a person confirms it.</p>',
+            table(['Account', 'Detail', 'Original value', 'Corrected value', 'Made by', 'On', 'Status', 'Reason'], [[
+                item['account_label'] or item['account_id'], item['field_label'], item['original_value'] or '(blank)',
+                item['corrected_value'] or '(blank)', item['made_by'], (item['at'] or '')[:10], item['status_text'],
+                item['reason']] for item in corrections])]
+        relayed = [(item, relay) for item in corrections for relay in item['relays']]
+        if relayed:
+            parts += ['<h3>How confirmations were entered</h3><p>These confirmations are the named person\u2019s, '
+                'entered by someone else on their instruction. The person did not press Confirm in Loupe.</p>',
+                table(['Account', 'Detail', 'Entry', 'Note', 'Instruction came by', 'Basis'], [[
+                    item['account_label'] or item['account_id'], item['field_label'], relay['text'],
+                    relay.get('note') or 'No relay note recorded', relay.get('via'), relay.get('basis') or item['confirmation'].get('basis')]
+                    for item, relay in relayed])]
     notes = document.get('investigation_notes', [])
     if notes:
         parts += ['<h2>Investigation notes</h2><p>Current Workspace notes linked to captured transaction readings. These are the authors’ observations, not additional transactions. Notes may discuss other evidence.</p>']
@@ -599,7 +625,8 @@ def render_ledger_report(snapshot):
             table(['Date', 'Account', 'Description', 'Credit', 'Debit', 'Recorded balance', 'Review', 'Reference / source'], [[
                 r['row']['ordering_date'] + (' (statement end; payment date unknown)' if r['row'].get('ordering_date_context') == 'statement_end_ordering_only' else ''),
                 ('Credit card: ' if (r.get('account') or {}).get('account_type') == 'credit_card' else '')
-                    + ((r.get('account') or {}).get('label') or r['row']['account_id']),
+                    + ((r.get('account') or {}).get('label') or r['row']['account_id'])
+                    + (account_markers.get(str(r['row']['account_id'])) or account_markers.get(str(r['row'].get('canonical_account_id'))) or ''),
                 r['row']['description'],
                 money_display(r['row']['amount_minor'], r['row']['currency'], exact=False) if r['row']['direction'] == 'credit' else '',
                 money_display(r['row']['amount_minor'], r['row']['currency'], exact=False) if r['row']['direction'] == 'debit' else '',

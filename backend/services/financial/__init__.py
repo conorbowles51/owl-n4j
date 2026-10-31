@@ -2343,3 +2343,6 @@ __all__ += ["rounds_forever"]
 # The page-image rounds child (batch_rounds has a function of the same name; this one is the page-image one).
 from services.financial.vision_rounds import run_in_child_forever
 __all__ += ["run_in_child_forever"]
+# Account-correction provenance carried in the ledger export.
+from services.financial.account_correction_provenance import capture_account_corrections
+__all__ += ["capture_account_corrections"]
