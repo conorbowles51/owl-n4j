@@ -233,7 +233,6 @@ class LifespanShutdownTests(ShutdownStateMixin, unittest.TestCase):
             patch.object(main.snapshot_storage, "reload", lambda: None),
             patch.object(main.snapshot_storage, "get_all", lambda: []),
             patch.object(main, "_cleanup_stale_chunks", forever),
-            patch.object(main, "reap_stale_runs_forever", forever),
             patch.object(main, "get_subscriber", lambda: Subscriber()),
             patch.object(main.neo4j_service, "close", lambda: None),
             patch.object(main.evidence_engine_client, "close", no_op),

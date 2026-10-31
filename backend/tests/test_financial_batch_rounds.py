@@ -24,17 +24,18 @@ def lock_dir(tmp_path, monkeypatch):
 
 
 def _stub_steps(monkeypatch, calls, fail=()):
-    """Every group's steps replaced by recorders (``fail``: step names that raise)."""
-    groups = []
-    for name, every, first, steps, failure in batch_rounds.GROUPS:
-        def make(step_name):
-            def step(factory, resolve_path):
-                calls.append(step_name)
-                if step_name in fail:
-                    raise RuntimeError('synthetic failure')
-            return step
-        groups.append((name, every, first, tuple(make(step.__name__) for step in steps), failure))
-    monkeypatch.setattr(batch_rounds, 'GROUPS', tuple(groups))
+    """Every group's and host sweep's steps replaced by recorders (``fail``: step names that raise)."""
+    for attribute in ('GROUPS', 'HOST_SWEEPS'):
+        groups = []
+        for name, every, first, steps, failure in getattr(batch_rounds, attribute):
+            def make(step_name):
+                def step(factory, resolve_path):
+                    calls.append(step_name)
+                    if step_name in fail:
+                        raise RuntimeError('synthetic failure')
+                return step
+            groups.append((name, every, first, tuple(make(step.__name__) for step in steps), failure))
+        monkeypatch.setattr(batch_rounds, attribute, tuple(groups))
 
 
 def test_every_round_the_worker_loop_ran_is_in_a_group():
@@ -47,6 +48,70 @@ def test_every_round_the_worker_loop_ran_is_in_a_group():
     from services.financial import reader_gaps
     assert every == dict(auto_read=10, reader_release=120, held_reprepare=120, reader_gaps=reader_gaps.SWEEP_SECONDS,
                          readiness=60)
+
+
+def test_the_host_sweeps_keep_the_workers_timing():
+    names = [step.__name__ for _, _, _, steps, _ in batch_rounds.HOST_SWEEPS for step in steps]
+    assert names == ['_run_reaper', '_payment_categories']
+    first = {name: delay for name, _, delay, _, _ in batch_rounds.HOST_SWEEPS}
+    assert first == dict(run_reaper=0, payment_categories=60)
+    import config
+    from services.financial import payment_categories
+    every = {name: interval() for name, interval, _, _, _ in batch_rounds.HOST_SWEEPS}
+    assert every == dict(run_reaper=config.FINANCIAL_RUN_REAP_INTERVAL_SECONDS,
+                         payment_categories=payment_categories.SWEEP_SECONDS)
+
+
+def test_the_web_workers_no_longer_start_the_host_sweeps():
+    """Each worker ran its own abandoned-run sweep and its own category sweep: the model was asked about the same
+    new payments once per worker (journal 2026-10-28, both workers, the same case, 10 s apart)."""
+    source = (pathlib.Path(BACKEND) / 'main.py').read_text()
+    lifespan = source[source.index('async def lifespan('):]
+    assert 'run_category_model_forever' not in lifespan
+    assert 'reap_stale_runs_forever' not in lifespan
+
+
+def test_the_host_sweep_steps_call_the_sweeps(monkeypatch):
+    from datetime import timedelta
+    from services.financial import payment_categories, run_reaper
+    seen = []
+    monkeypatch.setattr(payment_categories, 'sweep_once', lambda: seen.append('categories') or {})
+    monkeypatch.setattr(run_reaper, 'reap_stale_runs', lambda older_than: seen.append(older_than) or [])
+    import config
+    for _, _, _, steps, _ in batch_rounds.HOST_SWEEPS:
+        for step in steps:
+            step('factory', lambda p: p)
+    assert seen == [timedelta(hours=config.FINANCIAL_RUN_STALE_AFTER_HOURS), 'categories']
+
+
+def test_the_child_runs_the_host_sweeps_beside_the_rounds_and_a_slow_sweep_does_not_hold_them(monkeypatch):
+    """A category sweep asking the model for minutes must not stop automatic reading in the meantime."""
+    calls, sweep_entered, release = [], threading.Event(), threading.Event()
+
+    def slow_sweep(factory, resolve_path):
+        calls.append('sweep-start')
+        sweep_entered.set()
+        release.wait(5)
+        calls.append('sweep-end')
+
+    def auto_read(factory, resolve_path):
+        calls.append('auto_read')
+    monkeypatch.setattr(batch_rounds, 'GROUPS', (('auto_read', lambda: 0.01, 0, (auto_read,), 'failed'),))
+    monkeypatch.setattr(batch_rounds, 'HOST_SWEEPS', (('sweep', lambda: 60, 0, (slow_sweep,), 'failed'),))
+    monkeypatch.setattr(batch_rounds, 'PAUSE_SECONDS', 0.01)
+    monkeypatch.setattr(batch_rounds, 'graph_follow_up_forever', lambda stop, factory: stop.wait())
+    stop = threading.Event()
+    worker = threading.Thread(target=batch_rounds.child_work, args=(stop, 'factory', lambda p: p))
+    worker.start()
+    assert sweep_entered.wait(5)
+    before = calls.count('auto_read')
+    time.sleep(0.2)
+    assert calls.count('auto_read') > before  # the rounds went on while the sweep ran
+    release.set()
+    stop.set()
+    worker.join(5)
+    assert not worker.is_alive()
+    assert calls.count('sweep-start') == 1 and 'sweep-end' in calls
 
 
 def test_the_worker_loop_no_longer_runs_the_rounds(monkeypatch):
@@ -93,7 +158,8 @@ def test_without_a_lock_location_the_worker_runs_the_steps_itself(monkeypatch):
         with pytest.raises(asyncio.CancelledError):
             await task
     asyncio.run(run())
-    assert calls and set(calls) == {'_auto_read'}  # the others first run 60 s after start
+    # The others first run 60 s after start; the abandoned-run sweep runs at once, as it did in the worker.
+    assert calls and set(calls) == {'_auto_read', '_run_reaper'}
 
 
 def test_child_loop_runs_due_groups_and_a_failed_step_ends_only_its_group(monkeypatch):

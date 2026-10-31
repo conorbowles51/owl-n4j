@@ -18,8 +18,16 @@ The ledger graph follow-ups (graph_followup) run here too, in a thread of their 
 worker ran its own drift scan and its own projection of the same case (one d5b330d1 snapshot: about 49 CPU-s and
 3.5 GB transient memory per worker). The workers hand their requests over as files.
 
+Two host-wide sweeps run here too, in a third thread (HOST_SWEEPS): closing abandoned ingestion runs (run_reaper)
+and giving uncategorised payments a category (payment_categories). In the workers both ran in each worker: the
+category sweep asked the model about the same new payments once per worker (journal 2026-10-28 05:58-06:08: both
+workers, the same case, 10 s apart). Their own thread keeps a model call of several minutes from holding back the
+batch rounds. The loops that keep per-worker state stay in the workers: the upload chunk cache, the platform-update
+status, the cache warm-ups, the loop-lag probe, the identity sweep (woken in process by the worker's own requests)
+and deployment recovery (it starts readings through the worker's evidence pipeline).
+
 The review-queue precompute stays in the workers: it fills their in-memory queue cache (review_queue.prewarm).
-Without a lock location the rounds and the graph follow-ups run in the worker as before.
+Without a lock location the rounds, the host sweeps and the graph follow-ups run in the worker as before.
 """
 import asyncio
 import logging
@@ -102,6 +110,31 @@ def _sweep_backlog(factory, resolve_path):
     sweep_backlog(factory)
 
 
+def _run_reaper(factory, resolve_path):
+    # Ingestion runs left 'running' by a process killed before it recorded an end are closed as failed.
+    from datetime import timedelta
+    from config import FINANCIAL_RUN_STALE_AFTER_HOURS
+    from services.financial.run_reaper import _report, reap_stale_runs
+    older_than = timedelta(hours=FINANCIAL_RUN_STALE_AFTER_HOURS)
+    _report(reap_stale_runs(older_than=older_than), older_than)
+
+
+def _payment_categories(factory, resolve_path):
+    # Current payments without a category get one: rules first, then the model (once per host, not per worker).
+    from services.financial.payment_categories import sweep_once
+    sweep_once()
+
+
+def _run_reaper_seconds():
+    from config import FINANCIAL_RUN_REAP_INTERVAL_SECONDS
+    return FINANCIAL_RUN_REAP_INTERVAL_SECONDS
+
+
+def _payment_categories_seconds():
+    from services.financial.payment_categories import SWEEP_SECONDS
+    return SWEEP_SECONDS
+
+
 def _reader_gaps_seconds():
     from services.financial import reader_gaps
     return reader_gaps.SWEEP_SECONDS
@@ -124,16 +157,27 @@ GROUPS = (
 )
 
 
-class Schedule:
-    """When each group runs next (monotonic seconds)."""
+# The host-wide sweeps, in a thread of their own in the child (same shape as GROUPS; the first delays as in the
+# workers: the reaper at once, the category sweep after 60 s).
+HOST_SWEEPS = (
+    ('run_reaper', _run_reaper_seconds, 0, (_run_reaper,),
+     'Sweep for abandoned financial ingestion runs failed'),
+    ('payment_categories', _payment_categories_seconds, 60, (_payment_categories,),
+     'Category sweep failed'),
+)
 
-    def __init__(self, now=None):
+
+class Schedule:
+    """When each group runs next (monotonic seconds). ``groups``: GROUPS unless given."""
+
+    def __init__(self, now=None, groups=None):
         now = time.monotonic() if now is None else now
-        self.next = {name: now + first for name, _, first, _, _ in GROUPS}
+        self.groups = GROUPS if groups is None else groups
+        self.next = {name: now + first for name, _, first, _, _ in self.groups}
 
     def due(self):
         """The groups due now, each moved to its next time as it is handed out (as the worker loop did)."""
-        for name, every, _, steps, failure in GROUPS:
+        for name, every, _, steps, failure in self.groups:
             now = time.monotonic()
             if now >= self.next[name]:
                 self.next[name] = now + every()
@@ -177,7 +221,7 @@ async def rounds_forever(factory_source, resolve_path, finish_atomic, child=None
     if child:
         await run_in_child_forever()
         return
-    schedule = Schedule()
+    schedule = Schedule(groups=GROUPS + HOST_SWEEPS)
     while True:
         try:
             await run_in_worker(factory_source(), resolve_path, finish_atomic, schedule)
@@ -223,16 +267,16 @@ async def run_in_child_forever():
         await asyncio.sleep(RETRY_SECONDS)
 
 
-def rounds(stop, factory=None, resolve_path=None):
-    """The child's loop: the due groups, a pause, again, until ``stop`` (a threading.Event) is set. A step that has
-    started runs to its end; the stop is looked at between steps."""
+def rounds(stop, factory=None, resolve_path=None, groups=None):
+    """The child's loop: the due groups (GROUPS unless given), a pause, again, until ``stop`` (a threading.Event) is
+    set. A step that has started runs to its end; the stop is looked at between steps."""
     if factory is None:
         from postgres.session import _get_session_local
         factory = _get_session_local()
     if resolve_path is None:
         from routers.evidence import _resolve_stored_path
         resolve_path = _resolve_stored_path
-    schedule = Schedule()
+    schedule = Schedule() if groups is None else Schedule(groups=groups)
     while not stop.is_set():
         for name, steps, failure in schedule.due():
             try:
@@ -263,16 +307,26 @@ def graph_follow_up_forever(stop, factory=None, graph_session_factory=None):
         stop.wait(GRAPH_FOLLOW_UP_SECONDS)
 
 
+def host_sweeps_forever(stop, factory=None, resolve_path=None):
+    """HOST_SWEEPS until ``stop``, in a thread of the child beside ``rounds``."""
+    rounds(stop, factory, resolve_path, groups=HOST_SWEEPS)
+
+
 def child_work(stop, factory, resolve_path):
-    """Everything the child runs: the graph follow-ups in a thread of their own, the rounds in this one."""
+    """Everything the child runs: the graph follow-ups and the host sweeps in threads of their own, the rounds in
+    this one."""
     graph = threading.Thread(target=graph_follow_up_forever, args=(stop, factory), name='graph-follow-up',
                              daemon=True)
+    sweeps = threading.Thread(target=host_sweeps_forever, args=(stop, factory, resolve_path), name='host-sweeps',
+                              daemon=True)
     graph.start()
+    sweeps.start()
     try:
         rounds(stop, factory, resolve_path)
     finally:
         stop.set()
         graph.join()
+        sweeps.join()
 
 
 STOP_SIGNALS = (signal.SIGTERM, signal.SIGINT)

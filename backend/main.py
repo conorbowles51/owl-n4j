@@ -7,7 +7,6 @@ Main entry point for the API server.
 import asyncio
 import os
 from contextlib import asynccontextmanager
-from datetime import timedelta
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -15,8 +14,6 @@ from config import (
     API_HOST,
     API_PORT,
     CORS_ORIGINS,
-    FINANCIAL_RUN_REAP_INTERVAL_SECONDS,
-    FINANCIAL_RUN_STALE_AFTER_HOURS,
 )
 from routers import (
     graph_router,
@@ -74,7 +71,6 @@ from routers.evidence_ws import router as evidence_ws_router, close_redis
 from services.job_status_subscriber import get_subscriber
 from services.neo4j.driver import driver
 from services.platform_update_service import platform_update_service
-from services.financial.run_reaper import reap_stale_runs_forever
 from services import process_shutdown
 
 
@@ -110,20 +106,8 @@ async def lifespan(app: FastAPI):
         else None
     )
 
-    # Background task: close financial ingestion runs abandoned by a process
-    # that was killed before it could record a terminal status. Nothing else
-    # can close those: every in-process path already writes its own status, and
-    # the case for this one is that there was no process left to run a handler.
-    # Started here rather than exposed as an endpoint because the sweep is
-    # global, not case-scoped, so behind a case-gated route a caller would be
-    # terminating runs in cases they cannot see.
-    run_reaper_task = asyncio.create_task(
-        reap_stale_runs_forever(
-            older_than=timedelta(hours=FINANCIAL_RUN_STALE_AFTER_HOURS),
-            every=timedelta(seconds=FINANCIAL_RUN_REAP_INTERVAL_SECONDS),
-        ),
-        name="financial-run-reaper",
-    )
+    # Closing abandoned ingestion runs and the payment-category sweep are host-wide: they run once per host in the
+    # batch-rounds child (services.financial.batch_rounds.HOST_SWEEPS), started by run_batches_forever below.
 
     # Start Redis subscriber for evidence engine job status sync
     job_subscriber = get_subscriber()
@@ -140,9 +124,6 @@ async def lifespan(app: FastAPI):
 
     from services.financial.deployment_recovery import run_recovery_forever
     recovery_task = asyncio.create_task(run_recovery_forever(), name="financial-deployment-recovery")
-
-    from services.financial.payment_categories import run_category_model_forever
-    category_task = asyncio.create_task(run_category_model_forever(), name="financial-payment-categories")
 
     # How late this worker's event loop runs a 250 ms timer, max per minute (services.request_speed).
     from services.request_speed import run_loop_lag_probe
@@ -172,8 +153,8 @@ async def lifespan(app: FastAPI):
     # back when the process ends, and its durable record (leased batch,
     # pending recovery item, revisioned graph sweep) resumes on the next start.
     await process_shutdown.stop_background_tasks(
-        [recovery_task, identity_graph_task, financial_batches_task, category_task, view_warmup_task,
-         view_refresh_task, case_files_task, cleanup_task, run_reaper_task, platform_update_task, loop_lag_task],
+        [recovery_task, identity_graph_task, financial_batches_task, view_warmup_task,
+         view_refresh_task, case_files_task, cleanup_task, platform_update_task, loop_lag_task],
         timeout=process_shutdown.BACKGROUND_STOP_SECONDS,
     )
 
