@@ -267,3 +267,23 @@ def test_a_write_refused_on_another_connection_is_not_relabelled(scratch_postgre
         with pytest.raises(Exception) as raised:
             db.execute(text('INSERT INTO marks VALUES (9)'))
         assert not isinstance(raised.value, read_only_session.WriteInReadOnlyComparison)
+
+
+def test_on_postgres_a_connection_lost_during_the_comparison_is_discarded_and_its_pool_slot_returned(scratch_postgres):
+    factory = scratch_postgres
+    admin = create_engine(make_url(os.environ['LOUPE_TEST_LOCAL_POSTGRES_URL']), connect_args={'connect_timeout': 2})
+    try:
+        db = factory()
+        read_only_session.reads_outside_transaction(db)
+        pid = db.execute(text('SELECT pg_backend_pid()')).scalar()
+        with admin.begin() as a:
+            a.execute(text('SELECT pg_terminate_backend(:p)'), {'p': pid})
+        db.close()  # the reset fails on the lost connection; it must not take the pool's only slot with it
+        engine = factory.kw['bind']
+        engine.pool._timeout = 3
+        with factory() as again:
+            assert again.execute(text('SHOW default_transaction_read_only')).scalar() == 'off'
+            again.execute(text('INSERT INTO marks VALUES (4)'))
+            again.commit()
+    finally:
+        admin.dispose()

@@ -14,11 +14,12 @@ tries that file again later, and nothing is written. On PostgreSQL the database 
 connection runs with ``default_transaction_read_only`` on, so a raw ``session.execute(insert/update/delete)`` or a
 ``text()`` write, which never reaches a flush, is refused by Postgres (SQLSTATE 25006) and raised as the same
 ``WriteInReadOnlyComparison``. The setting is reset before the connection goes back to the pool; if the reset
-fails the connection is closed instead, so no later user of the pool gets a read-only connection. Measured on
+fails the connection is discarded instead, so no later user of the pool gets a read-only connection. Measured on
 the test suites: 486 statement readings and 24 held-statement judgements, no flush with a pending change.
 
 Switch: ``FINANCIAL_SWEEP_READS_OUTSIDE_TRANSACTION=0`` keeps the old open transaction.
 """
+import functools
 import logging
 import os
 
@@ -46,19 +47,18 @@ def _refuse_writes(session, flush_context, instances):
             % (len(session.new), len(session.dirty), len(session.deleted)))
 
 
-def _writable_again(dbapi_connection):
+def _writable_again(record, dbapi_connection):
     """Runs as the connection goes back to the pool: the next user gets the server's default again."""
     try:
         with dbapi_connection.cursor() as cursor:
             cursor.execute('RESET default_transaction_read_only')
         if not getattr(dbapi_connection, 'autocommit', True):
             dbapi_connection.commit()
-    except Exception:  # noqa: BLE001 - never hand a read-only connection to the pool
-        log.warning('Could not reset a read-only comparison connection; closing it instead', exc_info=True)
-        try:
-            dbapi_connection.close()
-        except Exception:  # noqa: BLE001
-            pass
+    except Exception as error:  # noqa: BLE001 - never hand a read-only connection to the pool
+        # Invalidate through the pool record: it closes the connection, drops the remaining resets (they would fail
+        # on it too) and still returns the slot; the next checkout opens a fresh connection.
+        log.warning('Could not reset a read-only comparison connection; discarding it instead', exc_info=True)
+        record.invalidate(e=error)
 
 
 def _database_refuses_writes(connection):
@@ -66,7 +66,8 @@ def _database_refuses_writes(connection):
         return  # SQLite test databases: the flush refusal alone
     # The reset is registered before the SET, so a connection never leaves read only without it. Finalizers run
     # last-registered first, so this one runs before SQLAlchemy restores the isolation level (still autocommit).
-    connection.connection._connection_record.finalize_callback.append(_writable_again)
+    record = connection.connection._connection_record
+    record.finalize_callback.append(functools.partial(_writable_again, record))
     connection.exec_driver_sql('SET default_transaction_read_only = on')
 
 
