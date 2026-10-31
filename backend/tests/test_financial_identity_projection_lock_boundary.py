@@ -197,3 +197,15 @@ def test_missing_payment_nodes_do_not_claim_completed_identity_revision():
     graph.missing = [{'key': 'synthetic-pending-payment'}]
     assert projection.apply_identity_graph(graph, plan('old'), is_current=lambda: True)
     assert graph.revision is None
+
+
+def test_a_graph_already_at_the_revision_is_not_planned_again():
+    # The sweep finds most cases unchanged; rebuilding the plan to confirm a write that will not happen cost
+    # d5b330d1 1.24 s of a web worker's interpreter every sweep.
+    graph = Graph()
+    graph.revision = 'same'
+    checks = []
+    assert not projection.apply_identity_graph(graph, plan('same'), is_current=lambda: checks.append(1) or True)
+    assert checks == []
+    assert graph.revision == 'same'
+    assert graph.events[-1] == 'rollback'

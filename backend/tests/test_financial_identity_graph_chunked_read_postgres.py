@@ -1,6 +1,7 @@
 """Opt-in real PostgreSQL: the identity plan's payment read streams through a server-side cursor
 (yield_per) while resolved_link looks accounts up on the same session. The plan must equal an unchunked
-read's, and the lookups inside the open stream must work (review follow-up to 45787abf)."""
+read's, the lookups inside the open stream must work (review follow-up to 45787abf), and only rows that carry a
+link reach Python."""
 
 import os
 import unittest
@@ -22,7 +23,8 @@ class ChunkedPaymentReadPostgresTests(DuplicateTestCase):
     def test_lookups_inside_the_streamed_read_give_the_unchunked_plan(self):
         self.make_copy(rows=tuple((n * 100, f"{n:02x}") for n in range(1, 8)))
         rows = list(self.db.query(FinancialTransaction).filter_by(case_id=self.case.id).order_by(FinancialTransaction.id))
-        for row in rows:
+        # Two rows carry no link; the read leaves them in the database.
+        for row in rows[:5]:
             row.metadata_ = {**(row.metadata_ or {}),
                              'investigation_labels': {'counterparty_link': {'kind': 'account', 'id': str(self.account.id)}}}
             flag_modified(row, 'metadata_')
@@ -65,6 +67,9 @@ class ChunkedPaymentReadPostgresTests(DuplicateTestCase):
             # SQL while the server-side cursor is open works and changes nothing.
             from services.financial import payment_counterparty_link
             resolved = payment_counterparty_link.resolved_link
+            read = []
+            stored = payment_counterparty_link.stored_link
+            payment_counterparty_link.stored_link = lambda labels, reviewed: read.append(1) or stored(labels, reviewed)
             def resolved_with_a_query(db, case_id, link):
                 db.execute(select(FinancialAccount.id).where(FinancialAccount.case_id == case_id)).all()
                 return resolved(db, case_id, link)
@@ -74,8 +79,10 @@ class ChunkedPaymentReadPostgresTests(DuplicateTestCase):
                 chunked, statements = plan(2)
             finally:
                 payment_counterparty_link.resolved_link = resolved
+                payment_counterparty_link.stored_link = stored
             self.assertEqual(chunked, whole)
-            self.assertEqual(len(chunked['payment_links']), len(rows))
+            self.assertEqual(len(chunked['payment_links']), 5)
+            self.assertEqual(len(read), 2 * 5)
             streamed = [i for i, (statement, streaming) in enumerate(statements) if streaming]
             self.assertEqual(len(streamed), 1)
             # Queries ran on the same session while the stream was open.

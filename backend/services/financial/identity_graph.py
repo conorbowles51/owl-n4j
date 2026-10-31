@@ -14,7 +14,7 @@ from contextlib import contextmanager
 from threading import Event, Lock
 from uuid import UUID
 from neo4j import Query
-from sqlalchemy import select, text
+from sqlalchemy import or_, select, text
 from postgres.models.case import Case
 from postgres.models.financial import FinancialAccount, FinancialTransaction, AdjudicationEvent
 from services.financial.account_identity import identity_state
@@ -122,7 +122,10 @@ def identity_graph_plan(db, case_id):
             FinancialTransaction.ref_id, FinancialTransaction.direction,
             FinancialTransaction.metadata_['investigation_labels'],
             FinancialTransaction.provenance['reviewed_counterparty']).where(FinancialTransaction.case_id == case_id,
-            FinancialTransaction.superseded_by_id.is_(None), FinancialTransaction.ledger_status == 'admitted')
+            FinancialTransaction.superseded_by_id.is_(None), FinancialTransaction.ledger_status == 'admitted',
+            # Only rows that carry a link can give one (stored_link): d5b330d1 has 619 of 27,673.
+            or_(FinancialTransaction.metadata_['investigation_labels']['counterparty_link'].isnot(None),
+                FinancialTransaction.provenance['reviewed_counterparty'].isnot(None)))
             .order_by(FinancialTransaction.id).execution_options(yield_per=PAYMENT_LINK_CHUNK)):
         identity = resolved_link(db, case_id, stored_link(labels, reviewed))
         if not identity:
@@ -177,6 +180,14 @@ def apply_identity_graph(graph_session, plan, *, is_current=None):
         # this one; the projection never takes this marker, so the order holds.
         from services.financial.graph_followup import _LOCK_MARKER
         tx.run(_LOCK_MARKER, case_id=case_id).consume()
+        # A graph already at this revision gets no write, so no newer writer can be overwritten and the plan need
+        # not be built again: the sweep finds most cases unchanged, and d5b330d1's plan took 1.24 s of a web
+        # worker's interpreter (31 Oct).
+        if marker and marker['revision'] == revision:
+            validate_graph_targets(tx, plan)
+            tx.rollback()
+            _clear_deferral(case_id)
+            return False
         # Revalidate only after acquiring the graph marker lock. Otherwise an
         # older snapshot could wait behind a newer writer and overwrite it.
         # The callback closes its short SQL snapshot before graph work resumes.
@@ -184,10 +195,6 @@ def apply_identity_graph(graph_session, plan, *, is_current=None):
             tx.rollback()
             return False
         validate_graph_targets(tx, plan)
-        if marker and marker['revision'] == revision:
-            tx.rollback()
-            _clear_deferral(case_id)
-            return False
         for label, rows in [('FinancialAccount', plan['accounts']), ('FinancialParty', plan['parties'])]:
             # All labels and relation types come from this module, never user text.
             tx.run(f'''UNWIND $rows AS row
