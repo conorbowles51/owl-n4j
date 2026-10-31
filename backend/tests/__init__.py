@@ -16,3 +16,15 @@ import shutil as _shutil
 import tempfile as _tempfile
 os.environ['LOUPE_PAGE_CACHE_DIR'] = _tempfile.mkdtemp(prefix='loupe-page-cache-tests-')
 _atexit.register(_shutil.rmtree, os.environ['LOUPE_PAGE_CACHE_DIR'], ignore_errors=True)
+
+# Saved Financial views and refresh asks live in FINANCIAL_VIEW_MEMO_DIR, else ~/.cache/loupe-financial-view-memo
+# (services/financial/view_cache._memo_dir). Tests that build, save or ask for views must never write to or delete
+# from a real one: run as the service's user, that is the live service's directory. Each test run gets its own
+# empty directory, removed at exit; a test that sets the variable itself still wins.
+if 'FINANCIAL_VIEW_MEMO_DIR' not in os.environ:
+    import atexit
+    import shutil
+    import tempfile
+    _memo = tempfile.mkdtemp(prefix='loupe-test-view-memo-')
+    os.environ['FINANCIAL_VIEW_MEMO_DIR'] = _memo
+    atexit.register(shutil.rmtree, _memo, True)

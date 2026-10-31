@@ -633,14 +633,22 @@ class QueueCacheTests(Base):
                 observed.append((hit[1].get('as_of') if hit else None, rq._built_at.get(key)))
                 real.release()
                 return False
-        rq._cache.clear(); rq._built_at.clear()
+        from services.financial import view_cache
         times = iter([1793448000.0, 1793448600.0])
-        with patch.object(rq, '_lock', Observed()), \
+
+        def now():
+            value = next(times, None)
+            if value is None:
+                raise AssertionError('more time.time calls than builds')  # not StopIteration, which a caller may catch
+            return value
+        with patch.dict(rq._cache, clear=True), patch.dict(rq._built_at, clear=True), \
+                patch.object(view_cache, '_memo_dir', return_value=None), patch.object(rq, '_lock', Observed()), \
                 patch.object(rq, '_compute', side_effect=lambda *_: dict(entries=[], as_of='v%d' % len(observed))), \
-                patch.object(rq.time, 'time', side_effect=lambda: next(times)), patch.object(rq, '_save_view'):
+                patch.object(rq.time, 'time', side_effect=now), patch.object(rq, '_save_view'):
             with self.f.SessionLocal() as db:
                 rq._build_once(db, key, self.f.case.id, (('a',),))
                 rq._build_once(db, key, self.f.case.id, (('b',),))
+        self.assertNotIn(key, rq._cache)                               # restored: nothing left for other tests
         pairs = {}
         for view, at in observed:
             if view is not None:
