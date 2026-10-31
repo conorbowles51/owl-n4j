@@ -30,6 +30,7 @@ def store(tmp_path, monkeypatch):
     monkeypatch.setattr(view_cache, 'code_identity', lambda: 'code-1')
     monkeypatch.setattr(view_cache, '_saved_scope', lambda connection: (dict(format=1, database='db', code='code-1'), 100))
     monkeypatch.setattr(view_cache, 'SAVE_MIN_SECONDS', 0.0)
+    monkeypatch.setattr(view_cache, 'UPDATING_MIN_SECONDS', 0.0)
     state = dict(fingerprint=(('batches', '1', 5), ('items', '2', 7)), builds=0)
     monkeypatch.setattr(review_queue, 'queue_fingerprint', lambda session, case_id: state['fingerprint'])
 
@@ -252,3 +253,15 @@ def test_the_queue_route_marks_an_answer_from_the_previous_queue_as_updating(mon
     routes.financial_review_queue(case_id=uuid4(), file_id=[], limit=None, offset=0, page_list='waiting',
                                   issue=None, fresh=None, db=object(), response=Response())
     assert seen['stale_ok'] is False and seen['updating'] is False, 'other callers still wait for a current queue'
+
+
+def test_a_queue_that_built_fast_is_built_for_the_reader_not_shown_as_updating(store, monkeypatch):
+    """Review 2026-10-31 (7ece7931 F1): the release warm-up now saves every queue, however fast; a queue that built
+    in under UPDATING_MIN_SECONDS is built again for the reader after a change, as a cached view is."""
+    monkeypatch.setattr(view_cache, 'UPDATING_MIN_SECONDS', 1.0)
+    case = uuid4()
+    review_queue._view(_Session(), case)
+    _new_process()
+    store['fingerprint'] = (('batches', '1', 6), ('items', '2', 7))
+    view, refreshing = review_queue._view(_Session(), case, stale_ok=True, updating=True)
+    assert not refreshing and view['built'] == 2

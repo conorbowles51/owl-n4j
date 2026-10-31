@@ -905,7 +905,7 @@ def _ask_key(key):
 
 def _load_saved_any(session, key):
     """(view, start time) of the newest saved whole-case view of this case and code, whatever rows it was built
-    from, or (None, 0). A copy saved without its start time is not returned. Never raises."""
+    from, or (None, 0). A copy saved without its start time, or one that built fast, is not returned. Never raises."""
     import json
     from services.financial import view_cache
     try:
@@ -913,7 +913,9 @@ def _load_saved_any(session, key):
         if scope is None:
             return None, 0.0
         entry = view_cache._load_saved(_saved_key(key), scope, xmax)
-        if entry is None or not entry.computed_at:
+        # A queue that built in under UPDATING_MIN_SECONDS is built for the reader, not shown as updating (the rule
+        # cached views follow): the release warm-up saves every queue it builds, however fast.
+        if entry is None or not entry.computed_at or entry.seconds < view_cache.UPDATING_MIN_SECONDS:
             return None, 0.0
         return json.loads(entry.body), entry.computed_at
     except Exception:  # noqa: BLE001 - built instead
