@@ -153,6 +153,11 @@ def description_correction(row) -> Optional[dict]:
     first = lines.get('first_line') or {}
     if lines.get('basis') != 'page_image_first_line' or not first:
         return None
+    # A payment edited since (a person's correction copies the provenance on) no longer shows the model's line: the
+    # note would describe text the payment no longer has.
+    words = lambda text: ' '.join(str(text or '').split())
+    if not (words(row.description) + ' ').startswith(words(first.get('after')) + ' '):
+        return None
     origin = lines.get('origin') or {}
     read_by = lines.get('read_by') or {}
     names = {'deepseek': 'DeepSeek', 'openai': 'OpenAI', 'anthropic': 'Anthropic'}

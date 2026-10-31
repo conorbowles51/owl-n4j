@@ -441,6 +441,10 @@ class SavedFirstLineTests(SavedImageDescriptionTests):
                              dict(before='Incoming', after='lncoming', previous_description='Incoming', model='DeepSeek',
                                   model_id='deepseek-flash', for_name='Neil Byrne', confirmed=False, page=1))
             self.assertNotIn('description_correction', to_view(old).to_json(), 'only on the corrected payment')
+            edited = db.get(FinancialTransaction, old.superseded_by_id)
+            edited.description = 'Incoming wire'
+            self.assertNotIn('description_correction', to_view(edited).to_json(), 'not after a later edit')
+            db.rollback()
 
     def test_a_completed_payment_keeps_its_added_lines(self):
         self.store_lines('Incoming transfer from EXAMPLE SUPPLIER SA')
