@@ -25,7 +25,7 @@ from services.financial.payment_document_review import (
 
 logger = logging.getLogger(__name__)
 _require_access = case_access_dependency(lambda request, payload: ('case', 'view'))
-from services.financial.view_cache import cached_view, not_kept
+from services.financial.view_cache import BATCH_FILES_UNSTAMPED, cached_view, not_kept
 
 router = APIRouter(prefix='/api/financial/statement-import', tags=['financial'],
                    dependencies=[Depends(get_current_db_user), Depends(_require_access)])
@@ -1068,7 +1068,10 @@ def financial_review_cases(user=Depends(get_current_db_user), db: Session = Depe
 
 
 @router.get('/batches/list')
-@cached_view('batches-list')
+# Reads of a batch row: id, case, status, created_at, actor and its files list (not the keys the release sweeps stamp
+# on each file, nor updated_at or the worker's lease): proved by test_financial_batches_list_cached.
+@cached_view('batches-list', columns={'financial_import_batches': (
+    'id', 'case_id', 'status', 'created_at', 'actor', BATCH_FILES_UNSTAMPED)})
 def list_financial_batches(case_id: UUID = Query(...), db: Session = Depends(get_db)):
     from services.financial.batch_review_summary import statement_summary
     from sqlalchemy import select

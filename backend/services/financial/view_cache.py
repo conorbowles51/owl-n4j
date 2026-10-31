@@ -190,6 +190,84 @@ def _join_snapshot(conn):
     conn.exec_driver_sql('SET TRANSACTION READ ONLY')
 
 
+class Without:
+    """A JSON list column (``cached_view``'s ``columns``) read without some keys of its entries: a view whose code never
+    reads those keys names the column this way, so a write that changes only them (bookkeeping a background sweep
+    stamps on each entry) leaves the view as it was. Every other part of the column is fingerprinted: each entry
+    with those keys removed, in order; a value that is not a list, or an entry that is not an object, whole."""
+
+    def __init__(self, column, *keys):
+        if not keys or not all(_TOKEN.fullmatch(name) for name in (column, *keys)):
+            raise ValueError('Without needs a column and at least one key, each a plain name')
+        self.column, self.keys = column, tuple(keys)
+
+    def __str__(self):
+        return '%s-%s' % (self.column, '-'.join(self.keys))
+
+    def __repr__(self):
+        return 'Without(%r)' % str(self)
+
+    def __eq__(self, other):
+        return isinstance(other, Without) and (other.column, other.keys) == (self.column, self.keys)
+
+    def __hash__(self):
+        return hash((self.column, self.keys))
+
+    def sql(self):
+        removed = ''.join(" - '%s'" % key for key in self.keys)
+        column = '"%s"' % self.column
+        return (f"(CASE WHEN jsonb_typeof({column}::jsonb) = 'array' THEN (SELECT coalesce(jsonb_agg("
+                f"CASE WHEN jsonb_typeof(e) = 'object' THEN e{removed} ELSE e END ORDER BY o), '[]'::jsonb) "
+                f"FROM jsonb_array_elements({column}::jsonb) WITH ORDINALITY AS x(e, o)) ELSE {column}::jsonb END)")
+
+
+# A statement batch's files list without the keys the release sweeps stamp on each file after every release: the
+# reader that prepared it (reader_release: reader_stamp) and the held-file re-check's mark (held_reprepare.MARK).
+# Measured on live 2026-10-31 15:12-18:16: 228 of 236 writes to d5b330d1's and 49494305's batch rows changed only
+# these keys (and updated_at); each made the batch list, the financial evidence list and the ledger accounts compute
+# again. Only the review queue reads them (its own fingerprint watches every batch row).
+BATCH_FILES_UNSTAMPED = Without('files', 'reader_stamp', 'held_reprepare')
+
+
+def _column_sql(column):
+    return column.sql() if isinstance(column, Without) else '"%s"' % column
+
+
+class _Bounded:
+    """A small thread-safe map that forgets its oldest entries past ``size``."""
+
+    def __init__(self, size):
+        from collections import OrderedDict
+        self.size, self.values, self.lock = size, OrderedDict(), threading.Lock()
+
+    def get(self, key):
+        with self.lock:
+            return self.values.get(key)
+
+    def put(self, key, value):
+        with self.lock:
+            self.values[key] = value
+            self.values.move_to_end(key)
+            while len(self.values) > self.size:
+                self.values.popitem(last=False)
+
+    def clear(self):
+        with self.lock:
+            self.values.clear()
+
+
+# (database, schema, projected table, case, rows, digest of the rows' versions) -> the projected digest. A row's
+# version (xmin) changes on every write to it, so the same versions always project to the same digest.
+_projected_digests = _Bounded(4096)
+
+
+def _database_name(connection):
+    try:
+        return str(connection.engine.url.render_as_string(hide_password=True))
+    except Exception:  # noqa: BLE001
+        return repr(connection.engine)
+
+
 def fingerprint(connection, tables, case_id, columns=None, file_scoped=()):
     """(table, rows, md5 of the sorted xmin of those rows) per table; None when a table cannot be checked.
 
@@ -213,11 +291,26 @@ def fingerprint(connection, tables, case_id, columns=None, file_scoped=()):
                 projected = (columns or {}).get(table)
                 if case_type is not None and projected:
                     parameter = case_id if case_type == 'uuid' else str(case_id)
-                    row = 'md5(row(%s)::text)' % ', '.join('"%s"' % column for column in projected)
-                    rows, digest = connection.execute(text(
-                        f'SELECT count(*), md5(coalesce(string_agg({row}, \',\' ORDER BY {row}), \'\')) '
-                        f'FROM "{table}" WHERE case_id = :case_id'), dict(case_id=parameter)).one()
-                    result.append(('%s(%s)' % (table, ','.join(projected)), int(rows), digest))
+                    name = '%s(%s)' % (table, ','.join(str(column) for column in projected))
+                    # The projected digest is a function of the rows' versions: taken again only when they change
+                    # (d5b330d1's batches: 1 ms for the versions, 120-140 ms to project 2 MB of files lists).
+                    schema, rows, versions = connection.execute(text(
+                        f'SELECT current_schema(), count(*), md5(coalesce(string_agg(xmin::text, \',\' '
+                        f'ORDER BY xmin::text::bigint), \'\')) FROM "{table}" WHERE case_id = :case_id'),
+                        dict(case_id=parameter)).one()
+                    memo_key = (_database_name(connection), schema, name, str(case_id), int(rows), versions)
+                    digest = _projected_digests.get(memo_key)
+                    if digest is None:
+                        row = 'md5(row(%s)::text)' % ', '.join(_column_sql(column) for column in projected)
+                        rows, digest, read_versions = connection.execute(text(
+                            f'SELECT count(*), md5(coalesce(string_agg({row}, \',\' ORDER BY {row}), \'\')), '
+                            f'md5(coalesce(string_agg(xmin::text, \',\' ORDER BY xmin::text::bigint), \'\')) '
+                            f'FROM "{table}" WHERE case_id = :case_id'), dict(case_id=parameter)).one()
+                        # Kept only when both reads saw the same rows (outside a fixed snapshot a write may
+                        # land between them).
+                        if read_versions == versions and int(rows) == memo_key[4]:
+                            _projected_digests.put(memo_key, digest)
+                    result.append((name, int(rows), digest))
                     continue
                 if case_type is None and table in file_scoped:
                     rows, digest = connection.execute(text(
@@ -600,6 +693,7 @@ _MISSING = object()
 
 def clear():
     global _total_bytes
+    _projected_digests.clear()
     with _lock:
         _entries.clear()
         _key_locks.clear()
@@ -680,7 +774,8 @@ def cached_view(name, *, columns=None, file_scoped=(), graph=False):
 
     ``columns`` ({table: column names}): case-scoped tables the view reads only these columns of, so a write to
     their other columns does not compute it again (fingerprint). Only for a view whose every read of the table
-    is proved to use nothing else (a test records its statements)."""
+    is proved to use nothing else (a test records its statements). A name may be a ``Without`` (a JSON list column
+    read without some keys of its entries; its test also records which keys the view reads)."""
     if columns:
         _COLUMNS[name] = {table: tuple(names) for table, names in columns.items()}
     if file_scoped:

@@ -134,7 +134,7 @@ def _authorize_evidence_objects(db: Session, current_user: User, permission, evi
         authorize_case(db, record.case_id, current_user, permission)
 
 
-from services.financial.view_cache import ModelOutput, cached_view  # noqa: E402
+from services.financial.view_cache import BATCH_FILES_UNSTAMPED, ModelOutput, cached_view  # noqa: E402
 
 router = APIRouter(
     prefix="/api/evidence",
@@ -826,7 +826,9 @@ def _validated_text_query(q: str) -> str:
 # register lists d5b330d1's 3,158 files in 10-20 s). The sign-in check is a route dependency, not a parameter, so
 # the person's token is not part of what is saved.
 @router.get("", response_model=EvidenceListResponse, dependencies=[Depends(get_current_user)])
-@cached_view('evidence-list')
+# Of the statement batches it reads their id, case and files list (file_scope: each file's ids), never the keys the
+# release sweeps stamp on each file: proved by test_financial_file_scope.
+@cached_view('evidence-list', columns={'financial_import_batches': ('id', 'case_id', BATCH_FILES_UNSTAMPED)})
 def list_evidence(
     case_id: str = Query(..., description="Case ID"),
     status_filter: Optional[str] = Query(None, alias="status"),

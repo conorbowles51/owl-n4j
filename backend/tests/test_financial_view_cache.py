@@ -1292,3 +1292,96 @@ def test_a_view_kept_by_some_columns_does_not_read_copies(engine):
 
 def test_kept_copy_outside_a_view_is_none(engine):
     assert view_cache.kept_copy('payments-rows', dict(case_id=uuid.uuid4())) is None
+
+
+# A statement batch's files list read without the keys the release sweeps stamp (view_cache.Without): the batch list,
+# the financial evidence list and the ledger accounts are fingerprinted this way (test_financial_batch_stamp_views
+# proves what they read).
+def _batches_view(counter):
+    @view_cache.cached_view('batches-unstamped', columns={'batches': ('id', 'case_id', 'status', view_cache.Without(
+        'files', 'reader_stamp', 'held_reprepare'))})
+    def handler(case_id, db):
+        counter.calls += 1
+        rows = db.execute(text('SELECT status, files FROM batches WHERE case_id = :c ORDER BY id'), dict(c=case_id)).all()
+        return [[status, [entry.get('file_id') if isinstance(entry, dict) else entry for entry in files]
+                 if isinstance(files, list) else files] for status, files in rows]
+    return handler
+
+
+@pytest.mark.parametrize('change, recomputes', [
+    # Bookkeeping: what the sweeps write after a release.
+    ("UPDATE batches SET files = jsonb_set(files, '{0,reader_stamp}', '\"reader-b\"'), updated_at = now() + interval '1 hour' WHERE case_id = :c", False),
+    ("UPDATE batches SET files = jsonb_set(files, '{0,held_reprepare}', '{\"state\": \"left\"}') WHERE case_id = :c", False),
+    ("UPDATE batches SET files = (SELECT jsonb_agg(e - 'reader_stamp' - 'held_reprepare') FROM jsonb_array_elements(files) e) WHERE case_id = :c", False),
+    ("UPDATE batches SET updated_at = now() + interval '1 hour', worker = 'w2' WHERE case_id = :c", False),
+    # Anything else in the list, or a watched column, computes the view again.
+    ("UPDATE batches SET files = jsonb_set(files, '{0,file_id}', '\"f9\"') WHERE case_id = :c", True),
+    ("UPDATE batches SET files = jsonb_set(files, '{0,status}', '\"error\"') WHERE case_id = :c", True),
+    ("UPDATE batches SET files = files || '[{\"file_id\": \"f3\"}]' WHERE case_id = :c", True),
+    ("UPDATE batches SET files = (SELECT jsonb_agg(e ORDER BY o DESC) FROM jsonb_array_elements(files) WITH ORDINALITY x(e, o)) WHERE case_id = :c", True),
+    ("UPDATE batches SET files = '[\"f1\", 7]' WHERE case_id = :c", True),
+    ("UPDATE batches SET files = '{\"reader_stamp\": \"x\"}' WHERE case_id = :c", True),
+    ("UPDATE batches SET status = 'removed' WHERE case_id = :c", True),
+    ("INSERT INTO batches (case_id, status, files) VALUES (:c, 'review', '[]')", True),
+    ("DELETE FROM batches WHERE case_id = :c", True),
+])
+def test_a_stamp_on_a_batch_file_leaves_a_view_that_never_reads_it(engine, change, recomputes):
+    write(engine, "CREATE TABLE batches (id serial PRIMARY KEY, case_id uuid NOT NULL, status text NOT NULL, "
+                  "files jsonb NOT NULL, worker text, updated_at timestamptz NOT NULL DEFAULT now())")
+    case, other, counter = uuid.uuid4(), uuid.uuid4(), Counter()
+    files = json.dumps([{'file_id': 'f1', 'status': 'checked', 'reader_stamp': 'reader-a',
+                         'held_reprepare': {'state': 'done'}}, {'file_id': 'f2', 'status': 'checked'}])
+    write(engine, "INSERT INTO batches (case_id, status, files) VALUES (:c, 'review', CAST(:f AS jsonb)), "
+                  "(:o, 'review', CAST(:f AS jsonb))", c=case, o=other, f=files)
+    view = _batches_view(counter)
+    call(engine, view, case)
+    write(engine, change, c=case)
+    fresh = Counter()
+    with Session(engine) as db:
+        expected = _batches_view(fresh).__wrapped__(case_id=case, db=db)
+    assert json.loads(call(engine, view, case).body) == expected
+    assert counter.calls == (2 if recomputes else 1)
+
+
+def test_without_names_plain_keys_only():
+    with pytest.raises(ValueError):
+        view_cache.Without('files')
+    with pytest.raises(ValueError):
+        view_cache.Without('files', "x' OR '1")
+    assert str(view_cache.BATCH_FILES_UNSTAMPED) == 'files-reader_stamp-held_reprepare'
+
+
+def test_a_projected_digest_is_taken_again_only_when_the_rows_change(engine, monkeypatch):
+    """The projected digest (2 MB of files lists on d5b330d1: 120-140 ms) is reused while the rows' versions are the
+    same, and taken again on any write, so a reuse can never hide a change."""
+    write(engine, "CREATE TABLE batches (id serial PRIMARY KEY, case_id uuid NOT NULL, status text NOT NULL, "
+                  "files jsonb NOT NULL, worker text, updated_at timestamptz NOT NULL DEFAULT now())")
+    case = uuid.uuid4()
+    write(engine, "INSERT INTO batches (case_id, status, files) VALUES (:c, 'review', '[{\"file_id\": \"f1\"}]')", c=case)
+    projected = {'batches': ('id', 'case_id', 'status', view_cache.BATCH_FILES_UNSTAMPED)}
+    statements = []
+
+    def take():
+        from sqlalchemy import event
+        def record(conn, cursor, statement, *args):
+            statements.append(statement)
+        event.listen(engine, 'before_cursor_execute', record)
+        try:
+            with engine.connect() as connection:
+                view_cache._load_tables(connection)
+                return view_cache.fingerprint(connection, {'batches'}, case, projected)
+        finally:
+            event.remove(engine, 'before_cursor_execute', record)
+
+    def projections():
+        return sum("jsonb_typeof" in statement for statement in statements)
+    first = take()
+    assert projections() == 1
+    assert take() == first and projections() == 1, 'unchanged rows: the digest is reused'
+    write(engine, "UPDATE batches SET files = jsonb_set(files, '{0,reader_stamp}', '\"r\"') WHERE case_id = :c", c=case)
+    assert take() == first and projections() == 2, 'a stamp: taken again, and equal'
+    write(engine, "UPDATE batches SET files = jsonb_set(files, '{0,file_id}', '\"f2\"') WHERE case_id = :c", c=case)
+    changed = take()
+    assert changed != first and projections() == 3
+    view_cache.clear()
+    assert take() == changed and projections() == 4

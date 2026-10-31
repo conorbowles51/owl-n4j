@@ -602,7 +602,8 @@ def get_account_history(case_id: UUID = Query(...), account_id: UUID | None = Qu
 
 
 @router.get("/ledger-accounts")
-@cached_view('ledger-accounts')
+# Of the statement batches it reads their id, case and status only (proved by test_financial_candidate_accounts).
+@cached_view('ledger-accounts', columns={'financial_import_batches': ('id', 'case_id', 'status')})
 def get_candidate_accounts(case_id: UUID = Query(...), search: str = Query("", max_length=128), offset: int = 0,
                                   db: Session = Depends(get_db)):
     try:
