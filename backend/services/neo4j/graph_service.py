@@ -208,8 +208,10 @@ class GraphService:
     ) -> Dict[str, List]:
         """
         Lightweight graph structure for visualization — returns only the fields
-        needed for rendering (key, name, type, confidence, mentioned) instead
-        of full properties(n).  The on-demand detail endpoint still returns
+        needed for rendering (key, name, type, confidence, mentioned, aliases,
+        source count, link weight), each read as its own property: returning
+        properties(n) shipped every property of every node to be dropped here.
+        The on-demand detail endpoint still returns
         everything when a node is clicked.
 
         Args:
@@ -259,7 +261,8 @@ class GraphService:
                     ORDER BY deg DESC
                     LIMIT $limit
                     RETURN n.key AS key, n.name AS name, labels(n)[0] AS type,
-                           n.confidence AS confidence, properties(n) AS node_props
+                           n.confidence AS confidence, n.mentioned AS mentioned,
+                           n.aliases AS aliases, n.source_files AS source_files
                     """,
                     **params,
                 )
@@ -269,15 +272,14 @@ class GraphService:
                     nk = record["key"]
                     if nk not in node_keys:
                         node_keys.add(nk)
-                        node_props = record.get("node_props") or {}
                         nodes.append({
                             "key": nk,
                             "name": record["name"] or nk,
                             "type": record["type"],
                             "confidence": record["confidence"],
-                            "mentioned": node_props.get("mentioned"),
-                            "aliases": node_props.get("aliases") or [],
-                            "source_count": _source_count(node_props),
+                            "mentioned": record["mentioned"],
+                            "aliases": record["aliases"] or [],
+                            "source_count": _source_count({"source_files": record["source_files"]}),
                         })
 
                 links = []
@@ -288,7 +290,7 @@ class GraphService:
                         WHERE a.key IN $node_keys AND b.key IN $node_keys
                           AND r.case_id = $case_id
                         RETURN a.key AS source, b.key AS target,
-                               type(r) AS type, properties(r) AS rel_props
+                               type(r) AS type, r.weight AS weight
                         """,
                         node_keys=list(node_keys), case_id=case_id,
                     )
@@ -297,7 +299,7 @@ class GraphService:
                             "source": record["source"],
                             "target": record["target"],
                             "type": record["type"],
-                            "weight": (record.get("rel_props") or {}).get("weight"),
+                            "weight": record["weight"],
                         })
 
                 return {"nodes": nodes, "links": links, "total_node_count": total_node_count}
@@ -331,7 +333,9 @@ class GraphService:
                         node.name AS name,
                         labels(node)[0] AS type,
                         node.confidence AS confidence,
-                        properties(node) AS node_props
+                        node.mentioned AS mentioned,
+                        node.aliases AS aliases,
+                        node.source_files AS source_files
                 """
             else:
                 query = f"""
@@ -343,7 +347,9 @@ class GraphService:
                         n.name AS name,
                         labels(n)[0] AS type,
                         n.confidence AS confidence,
-                        properties(n) AS node_props
+                        n.mentioned AS mentioned,
+                        n.aliases AS aliases,
+                        n.source_files AS source_files
                 """
 
             nodes_result = session.run(query, **params)
@@ -354,15 +360,14 @@ class GraphService:
                 node_key = record["key"]
                 if node_key not in node_keys:
                     node_keys.add(node_key)
-                    node_props = record.get("node_props") or {}
                     nodes.append({
                         "key": node_key,
                         "name": record["name"] or node_key,
                         "type": record["type"],
                         "confidence": record["confidence"],
-                        "mentioned": node_props.get("mentioned"),
-                        "aliases": node_props.get("aliases") or [],
-                        "source_count": _source_count(node_props),
+                        "mentioned": record["mentioned"],
+                        "aliases": record["aliases"] or [],
+                        "source_count": _source_count({"source_files": record["source_files"]}),
                     })
 
             if node_keys and len(node_keys) > 0:
@@ -375,7 +380,7 @@ class GraphService:
                         a.key AS source,
                         b.key AS target,
                         type(r) AS type,
-                        properties(r) AS rel_props
+                        r.weight AS weight
                 """
                 rels_result = session.run(rels_query, node_keys=keys_list, case_id=case_id)
             else:
@@ -387,7 +392,7 @@ class GraphService:
                     "source": record["source"],
                     "target": record["target"],
                     "type": record["type"],
-                    "weight": (record.get("rel_props") or {}).get("weight"),
+                    "weight": record["weight"],
                 })
 
         return {"nodes": nodes, "links": links}

@@ -46,16 +46,18 @@ class SignificantProjectionTests(unittest.TestCase):
                 "name": "Mark",
                 "type": "Person",
                 "confidence": 0.9,
-                "node_props": {
-                    "source_files": ["registry.pdf", "report.pdf", "registry.pdf"]
-                },
+                "mentioned": None,
+                "aliases": None,
+                "source_files": ["registry.pdf", "report.pdf", "registry.pdf"],
             },
             {
                 "key": "event-2",
                 "name": "Meeting",
                 "type": "Event",
                 "confidence": 0.8,
-                "node_props": {},
+                "mentioned": True,
+                "aliases": ["The meeting"],
+                "source_files": None,
             },
         ]
         link_rows = [
@@ -63,7 +65,7 @@ class SignificantProjectionTests(unittest.TestCase):
                 "source": "person-1",
                 "target": "event-2",
                 "type": "ATTENDED",
-                "rel_props": {},
+                "weight": 2,
             }
         ]
         with patch(
@@ -82,6 +84,12 @@ class SignificantProjectionTests(unittest.TestCase):
         self.assertIn("n.key IN $entity_keys", captured[0]["query"])
         self.assertEqual(captured[0]["params"]["entity_keys"], ["person-1", "event-2"])
         self.assertIn("a.key IN $node_keys AND b.key IN $node_keys", captured[1]["query"])
+        meeting = next(node for node in graph["nodes"] if node["key"] == "event-2")
+        self.assertEqual((meeting["mentioned"], meeting["aliases"], meeting["source_count"]), (True, ["The meeting"], 0))
+        self.assertEqual(graph["links"][0]["weight"], 2)
+        # the graph reads the fields it shows, not every property of every node and link
+        self.assertNotIn("properties(", captured[0]["query"])
+        self.assertNotIn("properties(", captured[1]["query"])
 
     def test_node_details_include_complete_relationship_properties_for_merges(self):
         captured = []
