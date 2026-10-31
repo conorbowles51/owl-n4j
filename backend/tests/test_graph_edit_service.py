@@ -146,7 +146,7 @@ class GraphGeocodeRouteTests(unittest.IsolatedAsyncioTestCase):
                 "confidence": "high",
             },
         ), patch.object(graph.neo4j_service, "update_graph_node") as update:
-            result = await graph.geocode_node(
+            result = graph.geocode_node(
                 "loc-1",
                 graph.GeocodeNodeRequest(case_id="case-1", address="London"),
                 apply=False,
@@ -170,7 +170,7 @@ class GraphGeocodeRouteTests(unittest.IsolatedAsyncioTestCase):
                 "location_granularity": "city",
             },
         ), patch.object(graph.neo4j_service, "update_geocoded_location") as update:
-            result = await graph.geocode_node(
+            result = graph.geocode_node(
                 "loc-1",
                 graph.GeocodeNodeRequest(case_id="case-1", address="London"),
                 apply=True,
