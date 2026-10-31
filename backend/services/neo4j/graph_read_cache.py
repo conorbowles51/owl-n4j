@@ -34,6 +34,11 @@ the release's warm-up reads it before the restart, and a first visit is served
 from disk (d5b330d1 transactions: 7.8 s graph read, measured 2026-10-31). A
 saved copy is used only for the exact key, code and bookmark it was read at, and
 only after its size and sha256 match; results JSON cannot keep are never saved.
+A bookmark is a transaction number: restoring an earlier backup hands the same
+numbers out again for other contents. A restore stops and starts the database,
+so each saved copy also records the database's id and last start time (``marker``)
+and is used only while both are the same; with the marker unreadable nothing is
+read from or written to disk.
 """
 
 import hashlib
@@ -116,9 +121,11 @@ MAX_SAVED_BYTES = 512 * 1024 * 1024
 
 
 class GraphReadCache:
-    def __init__(self, max_bytes: int = 64 * 1024 * 1024, saved_as: Optional[str] = None):
+    def __init__(self, max_bytes: int = 64 * 1024 * 1024, saved_as: Optional[str] = None,
+                 marker: Optional[Callable[[], Optional[str]]] = None):
         self.max_bytes = max_bytes
         self.saved_as = saved_as
+        self.marker = marker
         self._entries: "OrderedDict[Hashable, Tuple[Bookmark, bytes]]" = OrderedDict()
         self._flights: Dict[Hashable, _Flight] = {}
         self._bytes = 0
@@ -154,14 +161,22 @@ class GraphReadCache:
             self.stats["saved"] += 1
 
     def _saved_dir(self):
-        """Where this cache's results outlive the process, with the code they were read by; (None, None) if not."""
-        if self.saved_as is None:
-            return None, None
+        """Where this cache's results outlive the process, with the code they were read by and the graph database's
+        marker (id and last start); (None, None, None) if not."""
+        if self.saved_as is None or self.marker is None:
+            return None, None, None
         from services.financial import view_cache
         directory, code = view_cache._memo_dir(), view_cache.code_identity()
         if directory is None or code is None:
-            return None, None
-        return directory / self.saved_as, code
+            return None, None, None
+        try:
+            marker = self.marker()
+        except Exception:  # noqa: BLE001 - then nothing is read from or written to disk
+            logger.warning("Graph database marker unreadable; graph reads kept in memory only", exc_info=True)
+            return None, None, None
+        if not marker:
+            return None, None, None
+        return directory / self.saved_as, code, marker
 
     @staticmethod
     def _saved_name(key, code) -> str:
@@ -169,16 +184,19 @@ class GraphReadCache:
 
     def _load_saved(self, key: Hashable, bookmark: Bookmark) -> Optional[bytes]:
         """The saved result of this key read by this code at exactly this bookmark. Never raises."""
-        directory, code = self._saved_dir()
+        directory, code, marker = self._saved_dir()
         if directory is None:
             return None
         try:
             with open(directory / self._saved_name(key, code), "rb") as saved:
                 header = json.loads(saved.readline())
+                # The header first: after a graph commit the old copy is not read whole to be refused.
+                if (header.get("key") != json.loads(json.dumps(key, default=str)) or header.get("code") != code
+                        or header.get("marker") != marker or header.get("bookmark") != list(bookmark)):
+                    return None
                 blob = saved.read()
-            if (header.get("key") != json.loads(json.dumps(key, default=str)) or header.get("code") != code
-                    or header.get("bookmark") != list(bookmark) or header.get("size") != len(blob)
-                    or header.get("sha256") != hashlib.sha256(blob).hexdigest() or blob[:1] != b"J"):
+            if (header.get("size") != len(blob) or header.get("sha256") != hashlib.sha256(blob).hexdigest()
+                    or blob[:1] != b"J"):
                 return None
             return blob
         except FileNotFoundError:
@@ -189,15 +207,15 @@ class GraphReadCache:
 
     def _save(self, key: Hashable, bookmark: Bookmark, blob: bytes) -> None:
         """Keep a JSON result on disk for the other workers and the next start. Never raises."""
-        directory, code = self._saved_dir()
+        directory, code, marker = self._saved_dir()
         if directory is None or blob[:1] != b"J" or len(blob) > MAX_SAVED_BYTES:
             return
         temporary = None
         try:
             directory.mkdir(parents=True, exist_ok=True, mode=0o700)
             path = directory / self._saved_name(key, code)
-            header = dict(key=json.loads(json.dumps(key, default=str)), code=code, bookmark=list(bookmark),
-                          size=len(blob), sha256=hashlib.sha256(blob).hexdigest())
+            header = dict(key=json.loads(json.dumps(key, default=str)), code=code, marker=marker,
+                          bookmark=list(bookmark), size=len(blob), sha256=hashlib.sha256(blob).hexdigest())
             temporary = path.with_name("%s.%d.%d.tmp" % (path.name, os.getpid(), threading.get_ident()))
             descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
             with os.fdopen(descriptor, "wb") as out:
@@ -226,7 +244,10 @@ class GraphReadCache:
                 continue
             if entry.name.endswith(".tmp"):
                 if time.time() - info.st_mtime > 3600:
-                    os.unlink(entry.path)
+                    try:
+                        os.unlink(entry.path)
+                    except FileNotFoundError:  # another process removed it first
+                        pass
                 continue
             files.append((info.st_mtime, entry.path, info.st_size))
         total = sum(size for _, _, size in files)
@@ -314,4 +335,15 @@ class GraphReadCache:
             self._bytes = 0
 
 
-financial_graph_reads = GraphReadCache(saved_as="graph-reads")
+def graph_database_marker() -> Optional[str]:
+    """The home graph database's id and last start time (changed by any stop and start, which a restore needs).
+    Read on a session of its own: an administration command's bookmark must not join a read's."""
+    from services.neo4j.driver import driver
+    with driver.session() as session:
+        record = session.run("SHOW HOME DATABASE YIELD databaseID, lastStartTime").single()
+    if record is None or not record["databaseID"] or record["lastStartTime"] is None:
+        return None
+    return "%s@%s" % (record["databaseID"], record["lastStartTime"].iso_format())
+
+
+financial_graph_reads = GraphReadCache(saved_as="graph-reads", marker=graph_database_marker)

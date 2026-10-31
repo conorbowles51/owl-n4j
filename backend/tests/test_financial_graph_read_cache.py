@@ -291,6 +291,12 @@ class SavedGraphReadTests(unittest.TestCase):
         self.graph = _Graph()
         self.session = _Session(self.graph)
         self.calls = 0
+        self.started = "db1@2026-04-08T19:10:29"
+
+    def marker(self):
+        if isinstance(self.started, Exception):
+            raise self.started
+        return self.started
 
     def compute(self, value=None):
         def run():
@@ -299,45 +305,45 @@ class SavedGraphReadTests(unittest.TestCase):
         return run
 
     def test_a_new_process_reads_the_saved_copy_at_the_same_bookmark(self):
-        first = GraphReadCache(saved_as="g").read(self.session, ("transactions", "c", None), self.compute())
-        other = GraphReadCache(saved_as="g")
+        first = GraphReadCache(saved_as="g", marker=self.marker).read(self.session, ("transactions", "c", None), self.compute())
+        other = GraphReadCache(saved_as="g", marker=self.marker)
         second = other.read(self.session, ("transactions", "c", None), self.compute())
         self.assertEqual(second, first)
         self.assertEqual(self.calls, 1)
         self.assertEqual(other.stats["saved_hit"], 1)
 
     def test_a_commit_since_reads_again(self):
-        GraphReadCache(saved_as="g").read(self.session, "k", self.compute())
+        GraphReadCache(saved_as="g", marker=self.marker).read(self.session, "k", self.compute())
         self.graph.tx = 2
-        value = GraphReadCache(saved_as="g").read(self.session, "k", self.compute())
+        value = GraphReadCache(saved_as="g", marker=self.marker).read(self.session, "k", self.compute())
         self.assertEqual(value["rows"][0]["tx"], 2)
         self.assertEqual(self.calls, 2)
 
     def test_other_code_reads_again(self):
         from services.financial import view_cache
-        GraphReadCache(saved_as="g").read(self.session, "k", self.compute())
+        GraphReadCache(saved_as="g", marker=self.marker).read(self.session, "k", self.compute())
         with patch.object(view_cache, "code_identity", return_value="another release"):
-            GraphReadCache(saved_as="g").read(self.session, "k", self.compute())
+            GraphReadCache(saved_as="g", marker=self.marker).read(self.session, "k", self.compute())
         self.assertEqual(self.calls, 2)
 
     def test_a_changed_copy_is_never_served(self):
         import pathlib
-        GraphReadCache(saved_as="g").read(self.session, "k", self.compute())
+        GraphReadCache(saved_as="g", marker=self.marker).read(self.session, "k", self.compute())
         [path] = pathlib.Path(self.directory.name, "g").glob("*.graph")
         data = path.read_bytes()
         path.write_bytes(data[:-1] + bytes([data[-1] ^ 1]))
-        GraphReadCache(saved_as="g").read(self.session, "k", self.compute())
+        GraphReadCache(saved_as="g", marker=self.marker).read(self.session, "k", self.compute())
         self.assertEqual(self.calls, 2)
 
     def test_keys_are_separate_on_disk(self):
-        GraphReadCache(saved_as="g").read(self.session, ("t", "case-a"), self.compute({"a": 1}))
-        value = GraphReadCache(saved_as="g").read(self.session, ("t", "case-b"), self.compute({"b": 2}))
+        GraphReadCache(saved_as="g", marker=self.marker).read(self.session, ("t", "case-a"), self.compute({"a": 1}))
+        value = GraphReadCache(saved_as="g", marker=self.marker).read(self.session, ("t", "case-b"), self.compute({"b": 2}))
         self.assertEqual(value, {"b": 2})
         self.assertEqual(self.calls, 2)
 
     def test_values_json_would_change_are_not_saved(self):
         import pathlib
-        GraphReadCache(saved_as="g").read(self.session, "k", self.compute({"t": (1, 2)}))
+        GraphReadCache(saved_as="g", marker=self.marker).read(self.session, "k", self.compute({"t": (1, 2)}))
         self.assertEqual(list(pathlib.Path(self.directory.name).rglob("*.graph")), [])
 
     def test_a_read_during_which_something_committed_is_not_saved(self):
@@ -347,13 +353,104 @@ class SavedGraphReadTests(unittest.TestCase):
             self.calls += 1
             self.graph.tx = 2
             return {"x": 1}
-        GraphReadCache(saved_as="g").read(self.session, "k", during)
+        GraphReadCache(saved_as="g", marker=self.marker).read(self.session, "k", during)
         self.assertEqual(list(pathlib.Path(self.directory.name).rglob("*.graph")), [])
+
+    def test_a_restart_of_the_graph_database_reads_again(self):
+        """A restore of an earlier backup hands out the same bookmarks again; it needs a stop and start."""
+        GraphReadCache(saved_as="g", marker=self.marker).read(self.session, "k", self.compute())
+        self.started = "db1@2026-10-31T10:30:00"
+        GraphReadCache(saved_as="g", marker=self.marker).read(self.session, "k", self.compute())
+        self.assertEqual(self.calls, 2)
+
+    def test_an_unreadable_marker_keeps_reads_in_memory_only(self):
+        import pathlib
+        for unreadable in (None, RuntimeError("graph database down")):
+            self.started = unreadable
+            cache = GraphReadCache(saved_as="g", marker=self.marker)
+            cache.read(self.session, "k", self.compute())
+            self.assertEqual(cache.read(self.session, "k", self.compute())["rows"][0]["tx"], 1)  # memory still
+        self.assertEqual(list(pathlib.Path(self.directory.name).rglob("*.graph")), [])
+        self.assertEqual(self.calls, 2)
+
+    def test_callers_joining_a_read_served_from_disk_get_its_copy(self):
+        GraphReadCache(saved_as="g", marker=self.marker).read(self.session, "k", self.compute())
+        cache = GraphReadCache(saved_as="g", marker=self.marker)
+        loading, release = threading.Event(), threading.Event()
+        original = cache._load_saved
+
+        def slow_load(key, bookmark):
+            loading.set()
+            release.wait(5)
+            return original(key, bookmark)
+        cache._load_saved = slow_load
+        results = []
+        first = threading.Thread(target=lambda: results.append(cache.read(_Session(self.graph), "k", self.compute())))
+        first.start()
+        loading.wait(5)
+        second = threading.Thread(target=lambda: results.append(cache.read(_Session(self.graph), "k", self.compute())))
+        second.start()
+        time.sleep(0.2)
+        release.set()
+        first.join(5); second.join(5)
+        self.assertEqual(len(results), 2)
+        self.assertEqual(results[0], results[1])
+        self.assertIsNot(results[0], results[1])
+        self.assertEqual(self.calls, 1)
+        self.assertEqual((cache.stats["saved_hit"], cache.stats["joined"]), (1, 1))
 
     def test_without_saved_as_nothing_is_written(self):
         import pathlib
         GraphReadCache().read(self.session, "k", self.compute())
         self.assertEqual(list(pathlib.Path(self.directory.name).rglob("*")), [])
+
+
+class GraphRecordsWarmTests(unittest.TestCase):
+    def test_the_release_warms_the_key_a_first_visit_reads(self):
+        """The warm-up's graph read and the tab's first visit (GET /api/financial with no filters) use one key."""
+        import uuid as uuid_module
+        from services.financial import view_warmup
+        from importlib import import_module
+        financial_service = import_module("services.neo4j.financial_service")
+        import routers.financial as route_module
+        keys = []
+
+        class _Driver:
+            def session(self, **kwargs):
+                return _Context()
+
+        class _Context:
+            def __enter__(self):
+                return object()
+
+            def __exit__(self, *exc):
+                return False
+
+        def read(session, key, compute):
+            keys.append(key)
+            return {"transactions": [], "total": 0}
+        case = uuid_module.uuid4()
+        with patch.object(financial_service, "driver", _Driver()), \
+                patch.object(financial_service.financial_graph_reads, "read", read):
+            for mode in ("transactions", "intelligence"):
+                view_warmup._graph_records(case_id=case, mode=mode)
+                route_module.get_financial_transactions(case_id=str(case), mode=mode, types=None, start_date=None,
+                                                        end_date=None, categories=None, db=None)
+        self.assertEqual(len(keys), 4)
+        self.assertEqual(keys[0], keys[1])
+        self.assertEqual(keys[2], keys[3])
+        self.assertNotEqual(keys[0], keys[2])
+
+    def test_the_re_warm_reads_no_graph_state_when_the_graph_refuses(self):
+        from services.financial import view_warmup
+        from importlib import import_module
+        driver_module = import_module("services.neo4j.driver")
+
+        class _Refusing:
+            def session(self, **kwargs):
+                raise RuntimeError("no password configured")
+        with patch.object(driver_module, "driver", _Refusing()):
+            self.assertIsNone(view_warmup._graph_now())
 
 
 class FinancialServiceUsesTheCacheTests(unittest.TestCase):
