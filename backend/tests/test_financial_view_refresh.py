@@ -285,6 +285,20 @@ def test_an_asked_routes_parameters_give_back_its_key():
     assert rebuilt['window_days'] == 3 and rebuilt['cross_account'] is True and rebuilt['start_date'] == date(2024, 1, 2)
 
 
+
+def test_the_graph_records_route_parameters_give_back_its_key():
+    """The records tab's view is keyed by plain strings (case_id is a str there, not a UUID) and Optional strings."""
+    import routers.financial  # noqa: F401 - registers the view
+    handler = view_cache.handlers['graph-records']
+    for arguments in (dict(case_id=str(uuid.uuid4()), mode='transactions', types=None, start_date=None,
+                           end_date=None, categories=None),
+                      dict(case_id=str(uuid.uuid4()), mode='intelligence', types='Payment,Transfer',
+                           start_date='2024-01-02', end_date='2024-12-31', categories='Rent')):
+        key = view_cache.view_key('graph-records', arguments)
+        rebuilt = view_refresh._typed(handler, json.loads(key[1]))
+        assert view_cache.view_key('graph-records', rebuilt) == key and rebuilt == arguments
+        assert isinstance(rebuilt['case_id'], str)
+
 @needs_pg
 def test_a_refresh_that_saves_nothing_the_workers_can_read_is_not_done(engine, memo, slow, monkeypatch):
     """Review 2026-10-31: a copy kept only in the refresh process's memory would delete the ask while the workers
@@ -480,3 +494,31 @@ def test_a_graph_views_refresh_that_raced_a_graph_commit_is_tried_once_more(memo
     monkeypatch.setattr(view_warmup, '_preparing', lambda: False)
     assert view_refresh.run_child() == 1
     assert len(tries) == 2 and not path.exists()
+
+
+def test_a_compressed_copy_counts_in_the_cache_memory_and_can_evict():
+    """The kept gzip copy of a held entry is memory too (d5b330d1's ledger: 60 MB body, 7.4 MB compressed)."""
+    import random
+    view_cache.clear()
+    rng = random.Random(7)
+    body = bytes(rng.randrange(256) for _ in range(20000))  # barely compressible
+    entry = view_cache._Entry(('payments',), (('payments', 1, 'x'),), body, 200, 'application/json')
+    key = ('kept-view', '{}')
+    view_cache._store(key, entry)
+    before = view_cache._total_bytes
+    token = view_cache._accepts_gzip.set(True)
+    try:
+        view_cache._current_answer(entry)
+    finally:
+        view_cache._accepts_gzip.reset(token)
+    assert entry.gzipped and view_cache._total_bytes == before + len(entry.gzipped)
+    assert view_cache._total_bytes == sum(view_cache._cost(k, e) for k, e in view_cache._entries.items())
+    # An entry no longer held: its copy is not counted.
+    loose = view_cache._Entry(('payments',), (('payments', 1, 'y'),), body, 200, 'application/json')
+    token = view_cache._accepts_gzip.set(True)
+    try:
+        view_cache._current_answer(loose)
+    finally:
+        view_cache._accepts_gzip.reset(token)
+    assert view_cache._total_bytes == before + len(entry.gzipped)
+    view_cache.clear()

@@ -1082,6 +1082,20 @@ def test_a_file_scoped_table_recomputes_only_for_this_cases_files(engine):
     assert call(engine, view, case).body == b'{"rows":[]}' and counter.calls == 3
 
 
+
+def test_a_file_scoped_table_is_fingerprinted_when_the_case_id_is_text(engine):
+    """The records tab's route takes case_id as a str: the case-files fingerprint must read the same rows."""
+    _geometry_tables(engine)
+    case, counter = uuid.uuid4(), Counter()
+    mine = uuid.uuid4()
+    write(engine, 'INSERT INTO evidence_files VALUES (:a, :c)', a=mine, c=case)
+    write(engine, "INSERT INTO evidence_table_geometry VALUES (:a, 1, 'p1')", a=mine)
+    view = geometry_view(counter, name='geometry-text-case')
+    assert call(engine, view, str(case)).body == b'{"rows":["p1"]}'
+    assert call(engine, view, str(case)).body == b'{"rows":["p1"]}' and counter.calls == 1
+    write(engine, "UPDATE evidence_table_geometry SET payload = 'p2' WHERE evidence_file_id = :a", a=mine)
+    assert call(engine, view, str(case)).body == b'{"rows":["p2"]}' and counter.calls == 2
+
 def test_a_graph_view_is_reused_only_while_the_graph_state_is_the_same(engine, monkeypatch):
     _geometry_tables(engine)
     case, counter = uuid.uuid4(), Counter()
@@ -1116,3 +1130,48 @@ def test_a_graph_view_computed_while_the_graph_committed_is_not_kept(engine, mon
     call(engine, view, case)  # FB:2 before and after: computed again, now kept
     call(engine, view, case)  # reused
     assert counter.calls == 2
+
+
+def test_the_records_route_through_its_cached_view_gives_the_bytes_of_a_fresh_computation(engine, monkeypatch):
+    """GET /api/financial (graph-records): kept, reused and recomputed after its case's geometry changes, the
+    bytes always those of the route computed without the cache."""
+    import routers.financial as financial
+    _geometry_tables(engine)
+    case, mine = uuid.uuid4(), uuid.uuid4()
+    write(engine, 'INSERT INTO evidence_files VALUES (:a, :c)', a=mine, c=case)
+    write(engine, "INSERT INTO evidence_table_geometry VALUES (:a, 1, 'p1')", a=mine)
+    monkeypatch.setattr(view_cache, '_graph_state', lambda: ('graph', 0, 'FB:1@db1'))
+    graph_reads = Counter()
+
+    def graph(**kwargs):
+        graph_reads.calls += 1
+        return {'transactions': [{'id': 't1', 'amount': 1.5, 'name': 'Café'}, {'id': 't2', 'amount': None}]}
+
+    def locators(db, rows, case_id=None):
+        pages = db.execute(text('SELECT g.payload FROM evidence_table_geometry g JOIN evidence_files f '
+                                'ON f.id = g.evidence_file_id WHERE f.case_id = CAST(:c AS uuid)'),
+                           dict(c=case_id)).scalars().all()
+        for row in rows:
+            row['locator'] = list(pages)
+    monkeypatch.setattr(financial.neo4j_service, 'get_financial_transactions', graph)
+    monkeypatch.setattr(financial, 'attach_transaction_locators', locators)
+    route = financial.get_financial_transactions
+    arguments = dict(case_id=str(case), mode='transactions', types=None, start_date=None, end_date=None,
+                     categories=None)
+
+    def fresh():
+        with Session(engine) as db:
+            return route.__wrapped__(**arguments, db=db).body
+
+    def cached():
+        with Session(engine) as db:
+            db.execute(text('SELECT 1'))
+            return route(**arguments, db=db).body
+
+    expected = fresh()
+    assert b'"locator":["p1"]' in expected and 'Café'.encode() in expected
+    assert cached() == expected and cached() == expected
+    assert graph_reads.calls == 2, 'one fresh computation, one cached computation, then reused'
+    write(engine, "UPDATE evidence_table_geometry SET payload = 'p2' WHERE evidence_file_id = :a", a=mine)
+    expected = fresh()
+    assert cached() == expected and b'"locator":["p2"]' in expected and graph_reads.calls == 4

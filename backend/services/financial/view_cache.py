@@ -264,8 +264,9 @@ class _KeyLock:
 
 
 def _cost(key, entry):
-    """Memory an entry holds: its body plus key, table names and fingerprint, with a fixed allowance per object."""
-    return (len(entry.body) + len(entry.refusal or '') + len(key[0]) + len(key[1]) + 1024
+    """Memory an entry holds: its body and its compressed copy, plus key, table names and fingerprint, with a fixed
+    allowance per object."""
+    return (len(entry.body) + len(entry.gzipped) + len(entry.refusal or '') + len(key[0]) + len(key[1]) + 1024
             + sum(len(table) + 128 for table in entry.tables) + 256 * len(entry.fingerprint))
 
 
@@ -278,9 +279,15 @@ def _store(key, entry):
             _total_bytes -= _cost(key, old)
         _entries[key] = entry
         _total_bytes += _cost(key, entry)
-        while (_total_bytes > MAX_TOTAL_BYTES or len(_entries) > MAX_ENTRIES) and _entries:
-            evicted_key, evicted = _entries.popitem(last=False)
-            _total_bytes -= _cost(evicted_key, evicted)
+        _evict_over_bounds()
+
+
+def _evict_over_bounds():
+    """Evict the least recently used entries until the bounds hold. Called holding _lock."""
+    global _total_bytes
+    while (_total_bytes > MAX_TOTAL_BYTES or len(_entries) > MAX_ENTRIES) and _entries:
+        evicted_key, evicted = _entries.popitem(last=False)
+        _total_bytes -= _cost(evicted_key, evicted)
 
 
 def _lookup(key):
@@ -894,10 +901,27 @@ def _compressed(entry):
     from services.request_speed import note_gzip
     if not entry.gzipped:
         began = time.perf_counter()
-        object.__setattr__(entry, 'gzipped', gzip.compress(entry.body, compresslevel=1, mtime=0))
+        blob = gzip.compress(entry.body, compresslevel=1, mtime=0)
         note_gzip(time.perf_counter() - began)
+        _keep_compressed(entry, blob)
     return Response(content=entry.gzipped, status_code=entry.status_code, media_type=entry.media_type,
                     headers={'Content-Encoding': 'gzip', 'Vary': 'Accept-Encoding'})
+
+
+def _keep_compressed(entry, blob):
+    """Store the compressed copy on the entry and count it in the cache's memory (a held entry's copy can be as large
+    as a fifth of its body: d5b330d1's ledger, 60 MB, 7.4 MB gzipped)."""
+    global _total_bytes
+    with _lock:
+        if entry.gzipped:
+            return  # another request stored it first
+        key = next((k for k, held in _entries.items() if held is entry), None)
+        if key is not None:
+            _total_bytes -= _cost(key, entry)
+        object.__setattr__(entry, 'gzipped', blob)
+        if key is not None:
+            _total_bytes += _cost(key, entry)
+            _evict_over_bounds()
 
 
 def etagged(response):
