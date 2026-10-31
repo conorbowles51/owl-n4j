@@ -26,6 +26,22 @@ class TimelineService:
     # The columns the page query returns, in its RETURN order (rows arrive packed: see run_packed).
     _EVENT_COLUMNS = ("key", "name", "type", "date", "time", "amount", "summary", "notes",
                       "ledger_transaction_id", "connections")
+    # A connection's name as the Timeline lists it. Accounts share their holder's name (BNB2: 14 accounts
+    # named ARRENDO SERV SA DE CV), so an account is named by its identity label (holder, bank, number,
+    # currency) when that label extends its current name; a name a person gave it is kept. Statement
+    # periods have no name (all 2,371), so they are named by their dates (9 have none: "with no dates").
+    CONNECTION_NAME_CYPHER = """CASE
+                    WHEN connected:FinancialAccount AND connected.financial_identity_label IS NOT NULL
+                         AND (connected.name IS NULL OR connected.financial_identity_label STARTS WITH connected.name)
+                        THEN connected.financial_identity_label
+                    WHEN connected:FinancialStatementPeriod AND connected.name IS NULL
+                        THEN 'Statement period ' + CASE
+                            WHEN connected.period_start IS NULL AND connected.period_end IS NULL THEN 'with no dates'
+                            ELSE coalesce(toString(connected.period_start), 'no start date') + ' to '
+                                 + coalesce(toString(connected.period_end), 'no end date')
+                        END
+                    ELSE connected.name
+                END"""
 
     SORT_DATE_CYPHER = """
         CASE
@@ -319,7 +335,7 @@ class TimelineService:
             )
             WITH n, sort_date, sort_time, collect(DISTINCT {{
                 key: connected.key,
-                name: connected.name,
+                name: {self.CONNECTION_NAME_CYPHER},
                 type: labels(connected)[0],
                 relationship: type(r),
                 direction: CASE WHEN startNode(r) = n THEN 'outgoing' ELSE 'incoming' END
@@ -451,7 +467,7 @@ class TimelineService:
             )
             WITH n, sort_date, sort_time, collect(DISTINCT {{
                 key: connected.key,
-                name: connected.name,
+                name: {self.CONNECTION_NAME_CYPHER},
                 type: labels(connected)[0],
                 relationship: type(r),
                 direction: CASE WHEN startNode(r) = n THEN 'outgoing' ELSE 'incoming' END

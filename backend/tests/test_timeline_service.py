@@ -241,6 +241,27 @@ class TimelineServiceTests(unittest.TestCase):
             self.assertEqual(page["total"], 7)
             self.assertEqual(sum("RETURN count(n) AS total" in c["query"] for c in captured), 1)
 
+    def test_connections_name_accounts_by_identity_and_statement_periods_by_dates(self):
+        # accounts sharing a holder's name are told apart; unnamed statement periods get their dates;
+        # an account name a person changed is never replaced
+        name = TimelineService.CONNECTION_NAME_CYPHER
+        self.assertIn("connected.financial_identity_label STARTS WITH connected.name", name)
+        self.assertIn("'Statement period ' + CASE", name)
+        self.assertIn("coalesce(toString(connected.period_start), 'no start date')", name)
+        self.assertIn("ELSE connected.name", name)
+        self.assertIn("'with no dates'", name)
+        for call in (
+            lambda: TimelineService().get_timeline_page(case_id="case-1"),
+            lambda: TimelineService().get_timeline_events_by_keys(case_id="case-1", event_keys=["e"]),
+        ):
+            captured = []
+            with patch(
+                "services.neo4j.timeline_service.driver.session",
+                return_value=_FakeSession(captured, rows=[], total=0),
+            ):
+                call()
+            self.assertIn("name: " + name, captured[0]["query"])
+
     def test_full_fetch_returns_every_page(self):
         pages = iter([
             {"events": [{"key": "a"}], "count": 1, "total": 2, "next_cursor": "c1"},
