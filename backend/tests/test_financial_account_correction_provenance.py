@@ -125,3 +125,21 @@ class AccountCorrectionExportTests(LedgerSummaryTests):
         account = self.correct(row)
         self.assertEqual(capture_account_corrections(self.db, case_id=self.other_case.id, account_ids=[account.id])['corrections'], [])
         self.assertEqual(capture_account_corrections(self.db, case_id=self.case.id, account_ids=[])['corrections'], [])
+
+    def test_an_account_export_with_no_rows_still_shows_its_corrections(self):
+        from postgres.models.financial import FinancialAccount
+        from services.financial.ledger_snapshot import _capture_history, capture_ledger_snapshot
+        row, _ = self.add(1)
+        account = self.correct(row)
+        row.ledger_status = 'rejected'
+        self.db.commit()
+        empty = FinancialAccount(case_id=self.case.id, identity_key='institution_account\x1fkapital\x1f2', holder_name='R2',
+                                 metadata_=dict(account_details_history=[dict(HISTORY[1])]))
+        self.db.add(empty)
+        self.db.commit()
+        document = _capture_history(self.db, json.loads(capture_ledger_snapshot(self.db, case_id=self.case.id,
+                                    account_id=empty.id).content), case_id=self.case.id)
+        self.assertEqual(document['ledger']['readings'], [])
+        self.assertEqual([(item['account_id'], item['field']) for item in document['account_corrections']['corrections']],
+                         [(str(empty.id), 'account_number')])
+        self.assertNotIn(str(account.id), {item['account_id'] for item in document['account_corrections']['corrections']})

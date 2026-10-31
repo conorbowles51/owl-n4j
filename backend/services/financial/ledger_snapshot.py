@@ -182,7 +182,12 @@ def _capture_history(session, document, *, case_id):
     from services.financial.account_correction_provenance import capture_account_corrections, unconfirmed_limitation
     # Who corrected an account's holder, bank or number, from what, and whether a person confirmed it: the account
     # panel shows this, so the exported record carries it too.
-    document['account_corrections'] = capture_account_corrections(session, case_id=case_id, account_ids=scopes['account'])
+    # The captured rows' accounts, and the account(s) the export was asked for: an account with no rows in scope
+    # still shows its corrections.
+    ledger = document['ledger']
+    requested = {value for value in [ledger.get('account_id'), *(ledger.get('account_ids') or [])] if value}
+    document['account_corrections'] = capture_account_corrections(session, case_id=case_id,
+                                                                  account_ids=set(map(str, scopes['account'])) | requested)
     corrections_limitation = unconfirmed_limitation(document['account_corrections'])
     if corrections_limitation:
         document['limitations'].append(corrections_limitation)
