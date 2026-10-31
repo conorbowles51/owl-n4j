@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
+import { ACCESS_REFUSED_EVENT } from "./access-refused"
 import { apiRequestsInFlight, fetchAPI } from "./api-client"
 beforeEach(() => localStorage.clear())
 afterEach(() => vi.unstubAllGlobals())
@@ -55,3 +56,26 @@ it("counts requests in flight until each finishes, failed or not", async () => {
   await bad
   expect(apiRequestsInFlight()).toBe(0)
 })
+it.each([
+  [401, true],
+  [403, true],
+  [404, false],
+  [500, false],
+])(
+  "announces a %s answer to permission holders: %s",
+  async (status, announced) => {
+    const heard: string[] = []
+    const listen = (event: Event) =>
+      heard.push((event as CustomEvent<string>).detail)
+    window.addEventListener(ACCESS_REFUSED_EVENT, listen)
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("{}", { status }))
+    )
+    await expect(
+      fetchAPI("/api/financial/ledger?case_id=c")
+    ).rejects.toMatchObject({ status })
+    window.removeEventListener(ACCESS_REFUSED_EVENT, listen)
+    expect(heard).toEqual(announced ? ["/api/financial/ledger?case_id=c"] : [])
+  }
+)

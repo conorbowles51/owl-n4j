@@ -1,3 +1,4 @@
+import { ACCESS_REFUSED_EVENT } from "./access-refused"
 import { apiErrorMessage } from "./api-error-message"
 
 export class ApiError extends Error {
@@ -78,6 +79,12 @@ export async function fetchAPI<T>(
         localStorage.getItem("authToken") === token
       ) {
         localStorage.removeItem("authToken")
+      }
+
+      if (response.status === 401 || response.status === 403) {
+        window.dispatchEvent(
+          new CustomEvent(ACCESS_REFUSED_EVENT, { detail: endpoint })
+        )
       }
 
       const detail = (errorData as { detail?: unknown })?.detail

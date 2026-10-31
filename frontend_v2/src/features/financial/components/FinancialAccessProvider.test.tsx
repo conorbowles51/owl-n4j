@@ -7,6 +7,7 @@ import {
   FinancialAccessNotice,
 } from "./FinancialAccessProvider"
 import { useFinancialAccess } from "../hooks/use-financial-access"
+import { ACCESS_REFUSED_EVENT } from "@/lib/access-refused"
 import { CorrectionForm } from "./CorrectionForm"
 import { SavePaymentSelection } from "./SavePaymentSelection"
 import { PdfReviewIntake } from "./PdfReviewIntake"
@@ -174,3 +175,44 @@ it.each([401, 403, 404])(
     ).toHaveAttribute("href", status === 401 ? "/login" : "/cases")
   }
 )
+
+const refused = (endpoint: string) =>
+  window.dispatchEvent(
+    new CustomEvent(ACCESS_REFUSED_EVENT, { detail: endpoint })
+  )
+
+it("checks access when a page opens, not on a timer", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+  try {
+    api.mockResolvedValue(response(true, true))
+    setup()
+    await screen.findByText("access-ready")
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5 * 60_000)
+    })
+    expect(api).toHaveBeenCalledTimes(1)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it("checks access again when another request is refused, and shows the refusal", async () => {
+  api.mockResolvedValue(response(true, true))
+  setup()
+  await screen.findByText("access-ready")
+  api.mockRejectedValue(Object.assign(Error("Access denied"), { status: 403 }))
+  await act(async () => refused("/api/financial/ledger?case_id=case-one"))
+  // At once, not at the next timer: the old 30 s poll would also show it eventually.
+  expect(
+    await screen.findByRole("alert", {}, { timeout: 2000 })
+  ).toHaveTextContent("This case is no longer available")
+  expect(api).toHaveBeenCalledTimes(2)
+})
+
+it("does not ask again because its own check was refused", async () => {
+  api.mockResolvedValue(response(true, true))
+  setup()
+  await screen.findByText("access-ready")
+  await act(async () => refused("/api/financial/case-access?case_id=case-one"))
+  expect(api).toHaveBeenCalledTimes(1)
+})

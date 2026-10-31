@@ -1,7 +1,8 @@
-import type { ReactNode } from "react"
+import { useEffect, type ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { z } from "zod"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
+import { ACCESS_REFUSED_EVENT } from "@/lib/access-refused"
 import { fetchAPI } from "@/lib/api-client"
 import { Button } from "@/components/ui/button"
 import {
@@ -31,8 +32,9 @@ export function FinancialAccessProvider({
     queryKey: ["financial-case-access", owner, caseId],
     enabled: !!caseId && !!owner,
     retry: false,
+    // Checked when a page opens (if the last check is older than this) and
+    // whenever any request is refused with 401 or 403, not on a timer.
     staleTime: 30_000,
-    refetchInterval: 30_000,
     queryFn: async () => {
       const data = accessSchema.parse(
         await fetchAPI(
@@ -44,6 +46,18 @@ export function FinancialAccessProvider({
       return data
     },
   })
+  const { refetch } = query
+  useEffect(() => {
+    if (!caseId || !owner) return
+    const recheck = (event: Event) => {
+      const endpoint = (event as CustomEvent<string>).detail
+      // This check's own refusal is its answer, not a reason to ask again.
+      if (typeof endpoint === "string" && endpoint.startsWith("/api/financial/case-access")) return
+      void refetch()
+    }
+    window.addEventListener(ACCESS_REFUSED_EVENT, recheck)
+    return () => window.removeEventListener(ACCESS_REFUSED_EVENT, recheck)
+  }, [caseId, owner, refetch])
   const status =
     query.error && "status" in query.error ? query.error.status : undefined
   const failure =
