@@ -104,7 +104,7 @@ def warm_case_files():
         cases, total = [], 0
         for case_id, count in counts:
             if cases and total + count > source_lineage.CASE_FILES_KEPT_FILES:
-                break
+                continue  # a smaller case after it may still fit
             cases.append(case_id)
             total += count
         warmed = []
