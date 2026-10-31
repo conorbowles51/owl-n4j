@@ -113,9 +113,14 @@ def _sweep_backlog(factory, resolve_path):
 def _run_reaper(factory, resolve_path):
     # Ingestion runs left 'running' by a process killed before it recorded an end are closed as failed.
     from datetime import timedelta
-    from config import FINANCIAL_RUN_STALE_AFTER_HOURS
+    from config import FINANCIAL_RUN_REAP_INTERVAL_SECONDS, FINANCIAL_RUN_STALE_AFTER_HOURS
     from services.financial.run_reaper import _report, reap_stale_runs
     older_than = timedelta(hours=FINANCIAL_RUN_STALE_AFTER_HOURS)
+    # As reap_stale_runs_forever refused to start: a non-positive age would close every run the moment it started.
+    if older_than <= timedelta(0) or FINANCIAL_RUN_REAP_INTERVAL_SECONDS <= 0:
+        raise ValueError(f'FINANCIAL_RUN_STALE_AFTER_HOURS ({FINANCIAL_RUN_STALE_AFTER_HOURS}) and '
+                         f'FINANCIAL_RUN_REAP_INTERVAL_SECONDS ({FINANCIAL_RUN_REAP_INTERVAL_SECONDS}) must be '
+                         'positive; no run was closed')
     _report(reap_stale_runs(older_than=older_than), older_than)
 
 
@@ -127,7 +132,8 @@ def _payment_categories(factory, resolve_path):
 
 def _run_reaper_seconds():
     from config import FINANCIAL_RUN_REAP_INTERVAL_SECONDS
-    return FINANCIAL_RUN_REAP_INTERVAL_SECONDS
+    # A non-positive setting is refused by _run_reaper (logged); it is not retried every pause.
+    return FINANCIAL_RUN_REAP_INTERVAL_SECONDS if FINANCIAL_RUN_REAP_INTERVAL_SECONDS > 0 else 300
 
 
 def _payment_categories_seconds():
@@ -180,7 +186,12 @@ class Schedule:
         for name, every, _, steps, failure in self.groups:
             now = time.monotonic()
             if now >= self.next[name]:
-                self.next[name] = now + every()
+                try:
+                    interval = every()
+                except Exception:  # noqa: BLE001 - one bad interval never ends the thread running the others
+                    log.exception('Interval for %s could not be read; trying again in %s s', name, RETRY_SECONDS)
+                    interval = RETRY_SECONDS
+                self.next[name] = now + interval
                 yield name, steps, failure
 
 

@@ -84,6 +84,28 @@ def test_the_host_sweep_steps_call_the_sweeps(monkeypatch):
     assert seen == [timedelta(hours=config.FINANCIAL_RUN_STALE_AFTER_HOURS), 'categories']
 
 
+@pytest.mark.parametrize('hours, seconds', [(0, 300), (-1, 300), (6, 0)])
+def test_the_reaper_refuses_a_non_positive_setting_and_closes_nothing(monkeypatch, hours, seconds):
+    import config
+    from services.financial import run_reaper
+    monkeypatch.setattr(config, 'FINANCIAL_RUN_STALE_AFTER_HOURS', hours)
+    monkeypatch.setattr(config, 'FINANCIAL_RUN_REAP_INTERVAL_SECONDS', seconds)
+    reaped = []
+    monkeypatch.setattr(run_reaper, 'reap_stale_runs', lambda older_than: reaped.append(older_than) or [])
+    with pytest.raises(ValueError):
+        batch_rounds._run_reaper('factory', lambda p: p)
+    assert reaped == []
+    assert batch_rounds._run_reaper_seconds() > 0
+
+
+def test_an_interval_that_cannot_be_read_does_not_end_the_schedule():
+    def broken():
+        raise RuntimeError('synthetic')
+    schedule = batch_rounds.Schedule(now=0, groups=(('bad', broken, 0, (), 'f'), ('good', lambda: 1, 0, (), 'f')))
+    assert [name for name, _, _ in schedule.due()] == ['bad', 'good']
+    assert [name for name, _, _ in schedule.due()] == []  # 'bad' waits RETRY_SECONDS, not every pause
+
+
 def test_the_child_runs_the_host_sweeps_beside_the_rounds_and_a_slow_sweep_does_not_hold_them(monkeypatch):
     """A category sweep asking the model for minutes must not stop automatic reading in the meantime."""
     calls, sweep_entered, release = [], threading.Event(), threading.Event()
