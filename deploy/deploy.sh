@@ -359,7 +359,7 @@ fi
 if [ "${STEP_PIP}" = run ]; then
     step "Installing backend dependencies"
     check_ingestion_idle
-    $RUN_AS "${VENV_DIR}/bin/pip" install -r "${BACKEND_DIR}/requirements.txt" --quiet
+    $(release_build_scope) $RUN_AS "${VENV_DIR}/bin/pip" install -r "${BACKEND_DIR}/requirements.txt" --quiet
     success "Backend dependencies installed"
 else
     success "Backend dependencies unchanged; pip skipped"
@@ -414,7 +414,7 @@ fi
 
 if [ "${STEP_ENGINE}" = run ]; then
     step "Building Docker images without replacing running containers"
-    docker compose build
+    $(release_build_scope) docker compose build
 
     step "Refreshing Docker stack"
     check_ingestion_idle

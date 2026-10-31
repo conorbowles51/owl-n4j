@@ -18,6 +18,14 @@ FRONTEND_RELEASES="${FRONTEND_RELEASES:-$(cd "${PROJECT_DIR}/.." && pwd)/loupe-f
 FRONTEND_KEEP_BUILDS="${FRONTEND_KEEP_BUILDS:-4}"
 FRONTEND_NGINX_SITE="${FRONTEND_NGINX_SITE:-/etc/nginx/sites-enabled/loupe-frontend}"
 
+# Builds run in the jobs fleet's low-priority slice when it exists (lx-hostpolicy, 2026-10-31), whoever started the
+# release, so a build never competes with the live service; elsewhere they run as before.
+release_build_scope() {
+    if [ "$(id -u)" -eq 0 ] && systemctl cat fleet.slice >/dev/null 2>&1; then
+        echo "systemd-run --scope --quiet --collect --slice=fleet.slice"
+    fi
+}
+
 frontend_build_dir() {
     echo "${FRONTEND_RELEASES}/builds/$1"
 }
@@ -42,7 +50,8 @@ frontend_build_exists() {
 # Build commit <rev> as build <id> into builds/<id>, while whatever is served keeps being served.
 # <npm_hash> decides whether node_modules has to be reinstalled.
 frontend_build_aside() {
-    local rev="$1" id="$2" npm_hash="$3" wt out tmp marker
+    local rev="$1" id="$2" npm_hash="$3" wt out tmp marker scope
+    scope="$(release_build_scope)"
     wt="${FRONTEND_RELEASES}/worktree"
     out="$(frontend_build_dir "${id}")"
     if frontend_build_exists "${id}"; then
@@ -58,7 +67,7 @@ frontend_build_aside() {
     marker="${wt}/frontend_v2/node_modules/.loupe-npm-hash"
     if [ "$(cat "${marker}" 2>/dev/null)" != "${npm_hash}" ]; then
         step "Installing frontend dependencies in the build worktree (package-lock or node changed)"
-        (cd "${wt}/frontend_v2" && $RUN_AS rm -f "${marker}" && $RUN_AS nice -n 15 npm ci --silent) || return 1
+        (cd "${wt}/frontend_v2" && $RUN_AS rm -f "${marker}" && $scope $RUN_AS nice -n 15 npm ci --silent) || return 1
         echo "${npm_hash}" | $RUN_AS tee "${marker}" >/dev/null
     else
         success "Frontend dependencies unchanged; node_modules kept"
@@ -66,7 +75,7 @@ frontend_build_aside() {
     tmp="${FRONTEND_RELEASES}/builds/.building-${id}"
     $RUN_AS rm -rf "${tmp}"
     (cd "${wt}/frontend_v2" && $RUN_AS rm -rf node_modules/.vite &&
-        $RUN_AS env LOUPE_BUILD_ID="${id}" nice -n 15 npm run build -- --outDir "${tmp}" --emptyOutDir) || return 1
+        $scope $RUN_AS env LOUPE_BUILD_ID="${id}" nice -n 15 npm run build -- --outDir "${tmp}" --emptyOutDir) || return 1
     frontend_precompress "${tmp}" || return 1
     echo "commit=${rev}" | $RUN_AS tee "${tmp}/.loupe-build-complete" >/dev/null
     $RUN_AS chmod -R a-w "${tmp}"
