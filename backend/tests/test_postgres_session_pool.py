@@ -93,5 +93,38 @@ class TimedPoolTest(unittest.TestCase):
         self.assertGreaterEqual(seen[0], 0.0)
 
 
+    def test_opening_a_new_connection_is_not_counted_as_waiting_and_a_checkout_is_noted_once(self):
+        seen = []
+        calls = []
+
+        class Pool(session.TimedQueuePool):
+            def _create_connection(self):
+                return super()._create_connection()
+
+        real = session._note_pool_wait
+        session._note_pool_wait = lambda seconds, pool: seen.append(seconds)
+        original_create = session.QueuePool._create_connection
+
+        def slow_create(pool):
+            calls.append(1)
+            time.sleep(0.3)
+            return original_create(pool)
+
+        session.QueuePool._create_connection = slow_create
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                engine = create_engine('sqlite:///' + os.path.join(directory, 'p.db'), poolclass=Pool,
+                                       pool_size=1, max_overflow=0)
+                with engine.connect():
+                    pass
+                engine.dispose()
+        finally:
+            session.QueuePool._create_connection = original_create
+            session._note_pool_wait = real
+        self.assertEqual(calls, [1])
+        self.assertEqual(len(seen), 1)
+        self.assertLess(seen[0], 0.2)
+
+
 if __name__ == '__main__':
     unittest.main()

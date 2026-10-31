@@ -3,6 +3,7 @@ from contextlib import contextmanager
 import logging
 import os
 import sys
+import threading
 import time
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
@@ -56,14 +57,31 @@ def _note_pool_wait(seconds, pool):
 
 
 class TimedQueuePool(QueuePool):
-    """QueuePool that measures how long each checkout waited for a free connection."""
+    """QueuePool that measures how long each checkout waited for a free connection: once per checkout (QueuePool
+    retries call _do_get again), and without the time spent opening a new connection."""
+
+    _timing = threading.local()
 
     def _do_get(self):
+        timing = self._timing
+        if getattr(timing, 'depth', 0):
+            return super()._do_get()
+        timing.depth, timing.connecting = 1, 0.0
         started = time.perf_counter()
         try:
             return super()._do_get()
         finally:
-            _note_pool_wait(time.perf_counter() - started, self)
+            timing.depth = 0
+            _note_pool_wait(max(0.0, time.perf_counter() - started - timing.connecting), self)
+
+    def _create_connection(self):
+        started = time.perf_counter()
+        try:
+            return super()._create_connection()
+        finally:
+            timing = self._timing
+            if getattr(timing, 'depth', 0):
+                timing.connecting += time.perf_counter() - started
 
 
 def pool_options(environ=None):
