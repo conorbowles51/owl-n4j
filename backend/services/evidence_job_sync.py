@@ -124,9 +124,10 @@ def reconcile_jobs_payload(db: Session, jobs: list[dict[str, Any]]) -> int:
     return _reconcile(db, jobs)[0]
 
 
-def _reconcile(db: Session, jobs: list[dict[str, Any]]) -> tuple[int, bool]:
+def _reconcile(db: Session, jobs: list[dict[str, Any]], record_cases: set | None = None) -> tuple[int, bool]:
     """Apply each file's newest accepted engine attempt to its record. Returns (records updated, settled): settled is
-    False when a record that should change was held by another writer and is left for the next run."""
+    False when a record that should change was held by another writer and is left for the next run. When
+    record_cases is given, the case of every matched record is added to it."""
     engine_job_ids = [str(job.get("id")) for job in jobs if job.get("id")]
     source_evidence_file_ids: list[uuid.UUID] = []
     for job in jobs:
@@ -162,6 +163,8 @@ def _reconcile(db: Session, jobs: list[dict[str, Any]]) -> tuple[int, bool]:
         if record.engine_job_id
     }
     records_by_source_id = {str(record.id): record for record in db_records}
+    if record_cases is not None:
+        record_cases.update(str(record.case_id) for record in db_records)
 
     # Reprocessing creates several jobs for the same evidence file. Applying
     # every historical attempt would allow an old failure to overwrite the
@@ -289,9 +292,13 @@ def _claim_without_waiting(db: Session, records: list[EvidenceFile]) -> set | No
 # whole history on each poll reads and claims every file of the case (1,593 jobs on the largest case), so a poll
 # reconciles only when the engine's list changed since this process last settled it, or after RECHECK seconds (a
 # record changed by another writer is still repaired within that time). One poll per case at a time.
+# The recheck first compares the case's evidence rows version (row count and the sum of each row's xmin, which
+# every write renews; 7-12 ms on the largest case) with the one read before the settled reconcile; unchanged means
+# no record can differ from what was settled, so the 0.3-1.2 s re-read is skipped.
 POLL_RECHECK_SECONDS = 30.0
 POLL_WAIT_SECONDS = 10.0
-_poll_settled: dict[str, tuple[str, float]] = {}
+# case -> (job list fingerprint, settled at, case rows version read before that reconcile, or None)
+_poll_settled: dict[str, tuple[str, float, str | None]] = {}
 _poll_locks: dict[str, threading.Lock] = {}
 _poll_locks_guard = threading.Lock()
 
@@ -310,6 +317,19 @@ def _jobs_fingerprint(jobs: list[dict[str, Any]]) -> str:
     return digest.hexdigest()
 
 
+def _case_rows_version(db: Session, case_id: str) -> str | None:
+    """Changes whenever an evidence row of the case is written, added or removed. None off PostgreSQL."""
+    bind = db.get_bind() if hasattr(db, "get_bind") else None
+    if bind is None or bind.dialect.name != "postgresql":
+        return None
+    count, version = db.execute(
+        text("SELECT count(*), coalesce(sum(xmin::text::bigint), 0) FROM evidence_files "
+             "WHERE case_id = CAST(:case_id AS uuid)"),
+        dict(case_id=str(case_id)),
+    ).one()
+    return f"{count}:{version}"
+
+
 def reconcile_case_poll(db: Session, case_id: str, jobs: list[dict[str, Any]]) -> int:
     """Reconcile a polled job list for one case and commit; skipped while the list is unchanged and settled.
     Blocking (database work): call it from a worker thread."""
@@ -322,14 +342,26 @@ def reconcile_case_poll(db: Session, case_id: str, jobs: list[dict[str, Any]]) -
         return 0
     try:
         settled = _poll_settled.get(case_id)
-        if settled and settled[0] == fingerprint and time.monotonic() - settled[1] < POLL_RECHECK_SECONDS:
-            return 0
+        if settled and settled[0] == fingerprint:
+            if time.monotonic() - settled[1] < POLL_RECHECK_SECONDS:
+                return 0
+            if settled[2] is not None:
+                checked = time.monotonic()
+                if _case_rows_version(db, case_id) == settled[2]:
+                    _poll_settled[case_id] = (fingerprint, checked, settled[2])
+                    return 0
         _poll_settled.pop(case_id, None)
+        # Read before the records: a write landing after it changes the version, so the next recheck reconciles.
+        version = _case_rows_version(db, case_id)
         started = time.monotonic()
-        updated, all_applied = _reconcile(db, jobs)
+        record_cases: set = set()
+        updated, all_applied = _reconcile(db, jobs, record_cases=record_cases)
         db.commit()
         if all_applied:
-            _poll_settled[case_id] = (fingerprint, started)
+            # Kept only when this reconcile wrote nothing (its own writes renew the version) and every matched record
+            # is in the case the version covers.
+            keep = version if updated == 0 and record_cases <= {str(case_id)} else None
+            _poll_settled[case_id] = (fingerprint, started, keep)
         return updated
     finally:
         lock.release()

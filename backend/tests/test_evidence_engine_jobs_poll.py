@@ -89,7 +89,7 @@ def test_poll_reconciles_only_when_the_job_list_changed(Session, monkeypatch):
         file_id = record.id
     calls = []
     real = evidence_job_sync._reconcile
-    monkeypatch.setattr(evidence_job_sync, "_reconcile", lambda db, jobs: calls.append(1) or real(db, jobs))
+    monkeypatch.setattr(evidence_job_sync, "_reconcile", lambda db, jobs, **kw: calls.append(1) or real(db, jobs, **kw))
 
     job = dict(id=str(uuid4()), source_evidence_file_id=str(file_id), status="extracting_text")
     with Session() as db:
@@ -107,12 +107,57 @@ def test_poll_reconciles_only_when_the_job_list_changed(Session, monkeypatch):
 
 def test_poll_runs_again_while_a_record_was_left_for_later(monkeypatch):
     calls = []
-    monkeypatch.setattr(evidence_job_sync, "_reconcile", lambda db, jobs: calls.append(1) or (0, False))
+    monkeypatch.setattr(evidence_job_sync, "_reconcile", lambda db, jobs, **kw: calls.append(1) or (0, False))
     db = SimpleNamespace(commit=lambda: None)
     jobs = [dict(id="j", status="completed")]
     evidence_job_sync.reconcile_case_poll(db, "case", jobs)
     evidence_job_sync.reconcile_case_poll(db, "case", jobs)
     assert len(calls) == 2
+
+
+def test_recheck_skips_the_reread_while_the_case_rows_are_unchanged(Session, monkeypatch):
+    case_id = uuid4()
+    with Session() as db:
+        record = _file(case_id, status="processed")
+        db.add(record)
+        db.commit()
+        file_id = record.id
+    calls, versions = [], ["v1"]
+    real = evidence_job_sync._reconcile
+    monkeypatch.setattr(evidence_job_sync, "_reconcile", lambda db, jobs, **kw: calls.append(1) or real(db, jobs, **kw))
+    monkeypatch.setattr(evidence_job_sync, "_case_rows_version", lambda db, case: versions[0])
+    monkeypatch.setattr(evidence_job_sync, "POLL_RECHECK_SECONDS", 0.0)
+    job = dict(id=str(uuid4()), source_evidence_file_id=str(file_id), status="completed")
+    with Session() as db:
+        evidence_job_sync.reconcile_case_poll(db, str(case_id), [job])  # links the job id: a write
+        evidence_job_sync.reconcile_case_poll(db, str(case_id), [job])  # own write -> no version kept -> reconcile
+        assert len(calls) == 2
+        evidence_job_sync.reconcile_case_poll(db, str(case_id), [job])  # rows unchanged since the settled read
+        evidence_job_sync.reconcile_case_poll(db, str(case_id), [job])
+        assert len(calls) == 2
+        versions[0] = "v2"  # another writer changed a row of the case
+        evidence_job_sync.reconcile_case_poll(db, str(case_id), [job])
+        assert len(calls) == 3
+
+
+def test_recheck_rereads_when_a_matched_record_is_in_another_case(Session, monkeypatch):
+    case_id = uuid4()
+    with Session() as db:
+        record = _file(uuid4(), status="processed")
+        db.add(record)
+        db.commit()
+        file_id = record.id
+    calls = []
+    real = evidence_job_sync._reconcile
+    monkeypatch.setattr(evidence_job_sync, "_reconcile", lambda db, jobs, **kw: calls.append(1) or real(db, jobs, **kw))
+    monkeypatch.setattr(evidence_job_sync, "_case_rows_version", lambda db, case: "v1")
+    monkeypatch.setattr(evidence_job_sync, "POLL_RECHECK_SECONDS", 0.0)
+    job = dict(id=str(uuid4()), source_evidence_file_id=str(file_id), status="completed")
+    with Session() as db:
+        for _ in range(3):
+            evidence_job_sync.reconcile_case_poll(db, str(case_id), [job])
+    # The version covers only the polled case, so a record outside it is always re-read.
+    assert len(calls) == 3
 
 
 def test_list_engine_jobs_links_files_with_its_database_work_off_the_event_loop(Session, monkeypatch):
