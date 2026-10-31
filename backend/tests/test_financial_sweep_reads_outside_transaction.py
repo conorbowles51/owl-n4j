@@ -110,6 +110,25 @@ def test_a_write_inside_the_comparison_is_refused_and_nothing_is_written(release
     assert reader_release.sweep(released.f.SessionLocal)['rechecked'] == 1
 
 
+def test_a_write_inside_a_held_judgement_leaves_no_mark_and_is_judged_again(held_file, caplog):
+    """A refused write is not a verdict: no 'left' mark is recorded, and the next sweep judges the file."""
+    judge = held.judge
+
+    def writing(session, case_id, source_id, *args, **kwargs):
+        item = session.scalar(select(Item).where(Item.batch_id == held_file.batch))
+        item.status = 'tampered'
+        session.flush()
+        return judge(session, case_id, source_id, *args, **kwargs)
+
+    with patch.object(held, 'judge', writing), caplog.at_level(logging.ERROR):
+        outcome = held.sweep(held_file.f.SessionLocal)
+    assert outcome['verdicts'] == {}
+    assert 'nothing was written' in caplog.text
+    assert held.MARK not in held_file.fixture.files(held_file.batch)[0]
+    assert [i.status for i in held_file.fixture.items(held_file.batch)] == ['attention']
+    assert held.sweep(held_file.f.SessionLocal)['verdicts'] == {'changed': 1}
+
+
 def test_the_switch_off_keeps_the_old_transaction(released):
     modes = []
     with patch.object(read_only_session, 'ENABLED', False), _recording_comparison(modes):

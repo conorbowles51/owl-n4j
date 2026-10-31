@@ -86,9 +86,9 @@ from uuid import UUID
 from sqlalchemy import select
 
 from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item
-from services.financial.read_only_session import reads_outside_transaction
+from services.financial.read_only_session import WriteInReadOnlyComparison, reads_outside_transaction
 
-log =logging.getLogger(__name__)
+log = logging.getLogger(__name__)
 
 
 def _switch(name, default='1'):
@@ -328,6 +328,8 @@ def exact_copies_rekeyed(session, case_id, source, reading, current, proposals, 
             # (saved_copies UNREADABLE_COPIES / PART_OF_SAVED) is set aside by held_settlement, never re-keyed.
             if result.get('outcome') != 'match' or result.get('basis'):
                 return False
+    except WriteInReadOnlyComparison:
+        raise  # A refused write is not a verdict: the file is judged again next sweep.
     except Exception:  # noqa: BLE001 - fail closed: the copy stays left
         log.exception('Comparing a held copy with its saved statement failed; it is left as it is')
         return False
