@@ -1,9 +1,6 @@
 /**
- * Build Name Generator
- *
- * Generates a unique, funny two-word name for each build
- * based on the git commit hash. Deterministic — same commit
- * always produces the same name.
+ * Build identity and name. The name is a two-word label derived from the build id; the same build always gets the
+ * same name.
  */
 import { execSync } from 'child_process';
 
@@ -29,31 +26,25 @@ const nouns = [
   'dingo', 'echidna',
 ];
 
-export function generateBuildName() {
-  let commitHash = 'dev';
-  let commitShort = 'dev';
-  let timestamp = new Date().toISOString();
-
+/**
+ * The identity of a frontend build: what the bundle was built from, not which repository commit carried it.
+ * deploy.sh passes LOUPE_BUILD_ID (a hash of the frontend tree, its VITE_* settings and the node version), so a
+ * release that changes only the backend serves the same build, keeps every file name and shows no reload banner.
+ * Outside a release it falls back to the git tree id of frontend_v2 (committed state), then to 'dev'.
+ */
+export function generateBuildId() {
+  if (process.env.LOUPE_BUILD_ID) return process.env.LOUPE_BUILD_ID.trim();
   try {
-    commitHash = execSync('git rev-parse HEAD', { encoding: 'utf-8' }).trim();
-    commitShort = commitHash.substring(0, 7);
-    timestamp = execSync('git log -1 --format=%cI', { encoding: 'utf-8' }).trim();
+    return execSync('git rev-parse HEAD:frontend_v2', { encoding: 'utf-8' }).trim();
   } catch {
-    // Not in a git repo — use timestamp-based fallback
-    commitHash = Date.now().toString(16);
-    commitShort = commitHash.substring(0, 7);
+    return 'dev';
   }
+}
 
-  // Deterministic selection from commit hash
-  const hashNum = parseInt(commitHash.substring(0, 8), 16);
+/** A readable two-word name for a build id (deterministic). */
+export function buildDisplayName(buildId) {
+  const hashNum = parseInt(buildId.substring(0, 8), 16) || 0;
   const adj = adjectives[hashNum % adjectives.length];
   const noun = nouns[Math.floor(hashNum / adjectives.length) % nouns.length];
-
-  return {
-    name: `${adj}-${noun}`,
-    displayName: `${adj.charAt(0).toUpperCase() + adj.slice(1)} ${noun.charAt(0).toUpperCase() + noun.slice(1)}`,
-    commit: commitShort,
-    timestamp,
-    full: `${adj}-${noun} (${commitShort})`,
-  };
+  return `${adj.charAt(0).toUpperCase() + adj.slice(1)} ${noun.charAt(0).toUpperCase() + noun.slice(1)}`;
 }

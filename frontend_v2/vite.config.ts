@@ -2,9 +2,14 @@ import { defineConfig, type ProxyOptions } from "vite"
 import react from "@vitejs/plugin-react"
 import tailwindcss from "@tailwindcss/vite"
 import path from "path"
-import { generateBuildName } from "./build-name.js"
+import fs from "fs"
+import { buildDisplayName, generateBuildId } from "./build-name.js"
 
-const buildInfo = generateBuildName()
+const buildId = generateBuildId()
+const buildName = buildDisplayName(buildId)
+// Raised (in this file) when a backend change needs every open tab to reload. The file is part of the frontend tree,
+// so raising it gives a new build id, and the stale-tab guard shows the reload banner.
+const apiCompat = fs.readFileSync(path.resolve(__dirname, "api-compat.txt"), "utf-8").trim()
 const frontendPort = Number(process.env.FRONTEND_PORT || "5174")
 const apiProxyTarget = process.env.VITE_API_PROXY_TARGET || "http://0.0.0.0:8002"
 const apiProxyTimeout = Number(process.env.VITE_API_PROXY_TIMEOUT_MS || "3600000")
@@ -34,27 +39,32 @@ const apiProxy: Record<string, ProxyOptions> = {
     },
   },
 }
-console.log(`\n  🦉 Build: ${buildInfo.full}\n`)
+console.log(`\n  🦉 Build: ${buildName} (${buildId.substring(0, 12)})\n`)
 
-// Written into dist/ so a running tab can detect that a newer build has been
-// deployed (stale open SPA tabs otherwise survive every deploy).
-const versionJsonPlugin: import("vite").Plugin = {
-  name: "emit-version-json",
+// The build id lives only in index.html (a <meta> tag) and version.json, never in a JavaScript file: index.html is
+// served no-cache, so a release that does not change the frontend keeps every hashed file name and every browser
+// cache entry. version.json lets a running tab detect that a different build is now served (stale open SPA tabs
+// otherwise survive every deploy). "commit" repeats the build id for tabs opened before this change, whose guard
+// compares that field.
+const buildIdentityPlugin: import("vite").Plugin = {
+  name: "loupe-build-identity",
+  transformIndexHtml() {
+    return [
+      { tag: "meta", attrs: { name: "loupe-build", content: buildId }, injectTo: "head" },
+      { tag: "meta", attrs: { name: "loupe-build-name", content: buildName }, injectTo: "head" },
+    ]
+  },
   generateBundle() {
     this.emitFile({
       type: "asset",
       fileName: "version.json",
-      source: JSON.stringify({
-        commit: buildInfo.commit,
-        name: buildInfo.displayName,
-        timestamp: buildInfo.timestamp,
-      }),
+      source: JSON.stringify({ build: buildId, commit: buildId, name: buildName, api_compat: apiCompat }),
     })
   },
 }
 
 export default defineConfig({
-  plugins: [react(), tailwindcss(), versionJsonPlugin],
+  plugins: [react(), tailwindcss(), buildIdentityPlugin],
   // Pre-bundle dependencies used by lazy views so their first activation does
   // not invalidate the running dev server.
   optimizeDeps: {
@@ -67,11 +77,6 @@ export default defineConfig({
       "remark-gfm",
       "@testing-library/user-event",
     ],
-  },
-  define: {
-    __BUILD_NAME__: JSON.stringify(buildInfo.displayName),
-    __BUILD_COMMIT__: JSON.stringify(buildInfo.commit),
-    __BUILD_TIMESTAMP__: JSON.stringify(buildInfo.timestamp),
   },
   resolve: {
     alias: {

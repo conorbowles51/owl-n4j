@@ -2,12 +2,11 @@
  * Stale-tab guard. An open SPA tab survives every deploy — it keeps running
  * the bundle it loaded, silently, while the server moves on (this masked two
  * rounds of DKT-932 fixes). On window focus and every few minutes we compare
- * the bundle's baked-in commit against dist/version.json; on mismatch a
- * fixed banner asks the user to reload.
+ * the build this page was loaded from (index.html's loupe-build meta tag)
+ * against dist/version.json; on mismatch a fixed banner asks the user to
+ * reload. The build id is the frontend's own inputs, so a release that changes
+ * only the backend shows no banner.
  */
-
-declare const __BUILD_NAME__: string
-declare const __BUILD_COMMIT__: string
 
 const CHECK_INTERVAL_MS = 5 * 60 * 1000
 
@@ -38,19 +37,28 @@ function showReloadBanner() {
   document.body.append(bar)
 }
 
+function metaContent(name: string): string {
+  return document.querySelector(`meta[name="${name}"]`)?.getAttribute("content") ?? ""
+}
+
+/** True when version.json names a different build than the one this tab loaded. */
+export function isStaleBuild(served: { build?: string }, loaded: string): boolean {
+  return Boolean(served.build && loaded && served.build !== loaded)
+}
+
 async function checkVersion() {
   try {
     const res = await fetch(`/version.json?_=${Date.now()}`, { cache: "no-store" })
     if (!res.ok) return
-    const data = (await res.json()) as { commit?: string }
-    if (data.commit && data.commit !== __BUILD_COMMIT__) showReloadBanner()
+    const data = (await res.json()) as { build?: string }
+    if (isStaleBuild(data, metaContent("loupe-build"))) showReloadBanner()
   } catch {
     // Network hiccup — never bother the user over the guard itself.
   }
 }
 
 export function startBuildVersionGuard() {
-  console.info(`🦉 Loupe build: ${__BUILD_NAME__} (${__BUILD_COMMIT__})`)
+  console.info(`🦉 Loupe build: ${metaContent("loupe-build-name")} (${metaContent("loupe-build").slice(0, 12)})`)
   window.addEventListener("focus", checkVersion)
   setInterval(checkVersion, CHECK_INTERVAL_MS)
   checkVersion()

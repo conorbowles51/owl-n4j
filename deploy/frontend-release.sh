@@ -51,7 +51,7 @@ frontend_build_aside() {
     fi
     $RUN_AS mkdir -p "${FRONTEND_RELEASES}/builds" "${FRONTEND_RELEASES}/assets" || return 1
     if [ ! -e "${wt}/.git" ]; then
-        (cd "${PROJECT_DIR}" && $RUN_AS git worktree prune && $RUN_AS git worktree add --detach "${wt}" "${rev}") || return 1
+        (cd "${PROJECT_DIR}" && $RUN_AS git worktree add -q -f --detach "${wt}" "${rev}") || return 1
     fi
     (cd "${wt}" && $RUN_AS git checkout -q --detach -f "${rev}" &&
         $RUN_AS git clean -ffdxq -e frontend_v2/node_modules) || return 1
