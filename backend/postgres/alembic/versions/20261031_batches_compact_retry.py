@@ -70,8 +70,8 @@ def upgrade():
                 finally:
                     bind.execute(sa.text('RESET lock_timeout'))
             if time.monotonic() >= deadline:
-                print('%s not compacted: no free moment in %d s (%d tries of %s, %d polls busy); rows unchanged'
-                      % (TABLE, WINDOW_SECONDS, tries, LOCK_WAIT, busy))
+                print('%s not compacted in %d s: %d polls found the table held, %d tries for the lock (%s each) '
+                      'timed out; rows unchanged' % (TABLE, WINDOW_SECONDS, busy, tries, LOCK_WAIT))
                 return
             time.sleep(POLL_SECONDS)
         after_rows = _rows(bind)

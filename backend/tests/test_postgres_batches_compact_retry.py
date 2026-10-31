@@ -92,9 +92,20 @@ class BatchesCompactRetryTest(unittest.TestCase):
 
     def test_a_held_table_for_the_whole_window_is_skipped_without_failing(self):
         bind = Bind(holders=[1] * 100000)
-        clock = self.run_upgrade(bind)
+        with mock.patch('builtins.print') as printed:
+            clock = self.run_upgrade(bind)
         self.assertEqual(self.vacuums(bind), 0)
         self.assertGreaterEqual(clock.now, _load().WINDOW_SECONDS)
+        self.assertIn('0 tries for the lock', printed.call_args[0][0])
+        self.assertIn('rows unchanged', printed.call_args[0][0])
+
+    def test_every_lost_race_is_reported_as_tries_not_as_a_held_table(self):
+        bind = Bind(vacuum_errors=[_lock_timeout()] * 100000)
+        with mock.patch('builtins.print') as printed:
+            self.run_upgrade(bind)
+        line = printed.call_args[0][0]
+        self.assertIn('0 polls found the table held', line)
+        self.assertIn('%d tries for the lock' % self.vacuums(bind), line)
 
     def test_a_lost_race_for_the_lock_is_tried_again(self):
         bind = Bind(vacuum_errors=[_lock_timeout(), _lock_timeout()])
@@ -120,6 +131,11 @@ class BatchesCompactRetryTest(unittest.TestCase):
         line = self.run_printed(Bind(rows_after=[('b1', 'd1', 't1'), ('b2', 'dX', 't9'), ('b3', 'd3', 't8')]))
         self.assertIn("2 rows before, 3 after, 1 identical; changed by a writer: [('b2', 't9')]; "
                       "added: [('b3', 't8')]; removed: none", line)
+
+    def test_a_row_a_writer_removed_is_listed_not_fatal(self):
+        line = self.run_printed(Bind(rows_after=[('b1', 'd1', 't1')]))
+        self.assertIn("2 rows before, 1 after, 1 identical; changed by a writer: none; added: none; removed: ['b2']",
+                      line)
 
     def test_any_other_error_fails_the_migration(self):
         with self.assertRaises(sa.exc.OperationalError):
