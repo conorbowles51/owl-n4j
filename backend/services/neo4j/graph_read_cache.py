@@ -26,9 +26,20 @@ failed, every one of them read for itself at once; the concurrent reads slowed
 each other past the server's time limit, failed and were asked again, so the
 case's financial graph answered 503 for hours (33 slow failures in 3 hours,
 up to 894 s each) while one read alone takes about 7 s.
+
+A cache made with ``saved_as`` also keeps each JSON result on disk (in the
+Financial memo directory, under the code identity of the process that read it),
+so the other worker and the next start find it while the bookmark is the same:
+the release's warm-up reads it before the restart, and a first visit is served
+from disk (d5b330d1 transactions: 7.8 s graph read, measured 2026-10-31). A
+saved copy is used only for the exact key, code and bookmark it was read at, and
+only after its size and sha256 match; results JSON cannot keep are never saved.
 """
 
+import hashlib
+import json
 import logging
+import os
 import pickle
 import threading
 import zlib
@@ -100,15 +111,20 @@ def _unpack(blob: bytes):
     return orjson.loads(data) if blob[:1] == b"J" else pickle.loads(data)
 
 
+# Saved graph reads, oldest removed first above this size.
+MAX_SAVED_BYTES = 512 * 1024 * 1024
+
+
 class GraphReadCache:
-    def __init__(self, max_bytes: int = 64 * 1024 * 1024):
+    def __init__(self, max_bytes: int = 64 * 1024 * 1024, saved_as: Optional[str] = None):
         self.max_bytes = max_bytes
+        self.saved_as = saved_as
         self._entries: "OrderedDict[Hashable, Tuple[Bookmark, bytes]]" = OrderedDict()
         self._flights: Dict[Hashable, _Flight] = {}
         self._bytes = 0
         self._lock = threading.Lock()
         self.stats = {"hit": 0, "joined": 0, "miss": 0, "saved": 0, "changed_during_read": 0, "too_large": 0,
-                      "joined_failure": 0}
+                      "joined_failure": 0, "saved_hit": 0, "written": 0}
 
     def _count(self, name: str) -> None:
         with self._lock:
@@ -136,6 +152,93 @@ class GraphReadCache:
                 _, (_, dropped) = self._entries.popitem(last=False)
                 self._bytes -= len(dropped)
             self.stats["saved"] += 1
+
+    def _saved_dir(self):
+        """Where this cache's results outlive the process, with the code they were read by; (None, None) if not."""
+        if self.saved_as is None:
+            return None, None
+        from services.financial import view_cache
+        directory, code = view_cache._memo_dir(), view_cache.code_identity()
+        if directory is None or code is None:
+            return None, None
+        return directory / self.saved_as, code
+
+    @staticmethod
+    def _saved_name(key, code) -> str:
+        return hashlib.sha256(json.dumps([key, code], default=str, sort_keys=True).encode()).hexdigest() + ".graph"
+
+    def _load_saved(self, key: Hashable, bookmark: Bookmark) -> Optional[bytes]:
+        """The saved result of this key read by this code at exactly this bookmark. Never raises."""
+        directory, code = self._saved_dir()
+        if directory is None:
+            return None
+        try:
+            with open(directory / self._saved_name(key, code), "rb") as saved:
+                header = json.loads(saved.readline())
+                blob = saved.read()
+            if (header.get("key") != json.loads(json.dumps(key, default=str)) or header.get("code") != code
+                    or header.get("bookmark") != list(bookmark) or header.get("size") != len(blob)
+                    or header.get("sha256") != hashlib.sha256(blob).hexdigest() or blob[:1] != b"J"):
+                return None
+            return blob
+        except FileNotFoundError:
+            return None
+        except Exception:  # noqa: BLE001 - an unreadable copy is read again from the graph
+            logger.warning("Saved graph read unreadable; reading it again", exc_info=True)
+            return None
+
+    def _save(self, key: Hashable, bookmark: Bookmark, blob: bytes) -> None:
+        """Keep a JSON result on disk for the other workers and the next start. Never raises."""
+        directory, code = self._saved_dir()
+        if directory is None or blob[:1] != b"J" or len(blob) > MAX_SAVED_BYTES:
+            return
+        temporary = None
+        try:
+            directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+            path = directory / self._saved_name(key, code)
+            header = dict(key=json.loads(json.dumps(key, default=str)), code=code, bookmark=list(bookmark),
+                          size=len(blob), sha256=hashlib.sha256(blob).hexdigest())
+            temporary = path.with_name("%s.%d.%d.tmp" % (path.name, os.getpid(), threading.get_ident()))
+            descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(descriptor, "wb") as out:
+                out.write(json.dumps(header, sort_keys=True).encode() + b"\n")
+                out.write(blob)
+            os.replace(temporary, path)
+            temporary = None
+            self._count("written")
+            self._trim_saved(directory, keep=path)
+        except Exception:  # noqa: BLE001 - the result stays reused in memory
+            logger.warning("Could not save a graph read", exc_info=True)
+            if temporary is not None:
+                try:
+                    temporary.unlink()
+                except OSError:
+                    pass
+
+    @staticmethod
+    def _trim_saved(directory, keep) -> None:
+        import time
+        files = []
+        for entry in os.scandir(directory):
+            try:
+                info = entry.stat()
+            except FileNotFoundError:
+                continue
+            if entry.name.endswith(".tmp"):
+                if time.time() - info.st_mtime > 3600:
+                    os.unlink(entry.path)
+                continue
+            files.append((info.st_mtime, entry.path, info.st_size))
+        total = sum(size for _, _, size in files)
+        for _, path, size in sorted(files):
+            if total <= MAX_SAVED_BYTES:
+                break
+            if path != str(keep):
+                try:
+                    os.unlink(path)
+                except FileNotFoundError:
+                    pass
+                total -= size
 
     def read(self, session, key: Hashable, compute: Callable[[], object]):
         """Return compute()'s result for the database's current state.
@@ -170,13 +273,21 @@ class GraphReadCache:
             # The read could not be kept, or failed in a way of its own; read for itself.
             self._count("miss")
             return compute()
-        self._count("miss")
         try:
+            saved = self._load_saved(key, before)
+            if saved is not None:
+                value = _unpack(saved)
+                flight.blob = saved
+                self._put(key, before, saved)
+                self._count("saved_hit")
+                return value
+            self._count("miss")
             value = compute()
             try:
                 flight.blob = _pack(value)
                 if graph_bookmark(session) == before:
                     self._put(key, before, flight.blob)
+                    self._save(key, before, flight.blob)
                 else:
                     self._count("changed_during_read")
             except Exception:
@@ -203,4 +314,4 @@ class GraphReadCache:
             self._bytes = 0
 
 
-financial_graph_reads = GraphReadCache()
+financial_graph_reads = GraphReadCache(saved_as="graph-reads")

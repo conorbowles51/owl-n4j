@@ -317,9 +317,10 @@ VISITED_MAX_VIEWS = 200
 
 
 def _visited_views(listed):
-    """(case_id, (name, route, {})) for each view saved on disk in the last VISITED_MAX_AGE_SECONDS and not in
-    ``listed`` (case, route, parameter names) with the same key, newest first, at most VISITED_MAX_VIEWS. The route
-    is called with the saved key's own parameters. Never raises: an unreadable copy is skipped."""
+    """(case_id, (name, route, {})) for each view saved on disk in the last VISITED_MAX_AGE_SECONDS whose key is not
+    one the fixed lists warm (``listed``: (case_id, route, parameters) as they call it), newest first, at most
+    VISITED_MAX_VIEWS. The route is called with the saved key's own parameters. Never raises: an unreadable copy is
+    skipped."""
     import functools
     import json
     from uuid import UUID
@@ -330,10 +331,10 @@ def _visited_views(listed):
     for module in view_refresh.ROUTE_MODULES:
         __import__(module)
     listed_keys = set()
-    for case_id, route, names in listed:
+    for case_id, route, parameters in listed:
         name = next((n for n, handler in view_cache.handlers.items() if handler is route), None)
         if name is not None:
-            listed_keys.add((name, str(case_id)))
+            listed_keys.add(view_cache.view_key(name, dict(parameters, case_id=case_id)))
     found, seen = [], set()
     now = time.time()
     try:
@@ -349,7 +350,7 @@ def _visited_views(listed):
                 key = tuple(json.loads(saved.readline())['key'])
             name, parameters = key[0], json.loads(key[1])
             handler = view_cache.handlers.get(name)
-            if handler is None or key in seen:
+            if handler is None or key in seen or key in listed_keys:
                 continue
             seen.add(key)
             arguments = view_refresh._typed(handler, parameters)
@@ -357,9 +358,6 @@ def _visited_views(listed):
                 continue
             case_id = arguments.get('case_id')
             if case_id is None:
-                continue
-            # The fixed lists' first-visit forms are warmed already; any other parameters of the same view are not.
-            if (name, str(case_id)) in listed_keys and _is_default_form(handler, arguments):
                 continue
             def call(case_id, db, _handler=handler, _arguments=arguments):
                 return _handler(**_arguments, db=db)
@@ -369,18 +367,12 @@ def _visited_views(listed):
     return found
 
 
-def _is_default_form(handler, arguments):
-    """True if every parameter but case_id is the route's default (the form the fixed lists warm)."""
-    import inspect
-    for parameter in inspect.signature(handler).parameters.values():
-        if parameter.name in ('case_id', 'db') or parameter.name not in arguments:
-            continue
-        default = getattr(parameter.default, 'default', parameter.default)
-        if default is inspect.Parameter.empty:
-            continue
-        if arguments[parameter.name] != default:
-            return False
-    return True
+def _graph_records(case_id, mode, db=None):
+    """The "Other financial records" tab's graph read (GET /api/financial, no filters), saved for the workers and
+    the next start (graph_read_cache) while the graph is unchanged. Measured live 2026-10-31 09:09, first visit
+    after a release: d5b330d1 14.0 s (7.8 s of it the graph read), 49494305 4.1 s."""
+    from services.neo4j_service import neo4j_service
+    neo4j_service.get_financial_transactions(case_id=str(case_id), mode=mode)
 
 
 def _warm_cases(share=None, stop_if_preparing=False):
@@ -438,6 +430,8 @@ def _warm_cases(share=None, stop_if_preparing=False):
                                                     account_holders=None)),
         ('working ledger summary', get_working_ledger_summary, dict(full_range_dates, include_contributions=True,
                                                                     account_ids=None, account_holders=None)),
+        ('graph records', _graph_records, dict(mode='transactions')),
+        ('graph intelligence records', _graph_records, dict(mode='intelligence')),
     )
     # The full-range analyses as the page first asks for them (the counterparty tab opens on the working analysis
     # by counterparty; the identities analysis is one tick away). First visit on d5b330d1 live 2026-10-30
@@ -463,7 +457,7 @@ def _warm_cases(share=None, stop_if_preparing=False):
     # parameters it was opened with, so a first visit after a release finds it ready however the page asked for it
     # (measured live 2026-10-31 09:10, first visit after the release: statement coverage on 49494305 13.9 s, a view
     # no fixed list named). Each is rebuilt from its key as the refresh process does (view_refresh._typed).
-    order += _visited_views({(case_id, route, tuple(sorted(defaults))) for case_id, (_, route, defaults) in order})
+    order += _visited_views([(case_id, route, defaults) for case_id, (_, route, defaults) in order])
     for task, (case_id, (name, route, defaults)) in enumerate(order):
         if share is not None and task % share[1] != share[0]:
             continue

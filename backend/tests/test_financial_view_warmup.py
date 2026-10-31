@@ -21,7 +21,7 @@ SUMMARY_VIEWS = (('get_ledger_summary', 'summary'), ('get_working_ledger_summary
 FULL_RANGE_VIEWS = (('get_working_ledger_analysis', 'working'), ('get_ledger_posting_graph', 'graph'), ('get_counterparty_party_analysis', 'cpa'),
                     ('get_ledger_timeline', 'timeline'), ('get_ledger_transfer_candidates', 'transfers'),
                     ('get_pattern_review', 'patterns'))
-PER_CASE = 17  # views warmed for each case
+PER_CASE = 19  # views warmed for each case
 
 
 @pytest.fixture
@@ -54,6 +54,8 @@ def periods(tmp_path, monkeypatch):
     monkeypatch.setattr(review_queue, 'warm', lambda **kw: calls.append(dict(kw, view='queue')))
     for route, view in SUMMARY_VIEWS + FULL_RANGE_VIEWS:
         monkeypatch.setattr(routers.financial_ledger, route, lambda view=view, **kw: calls.append(dict(kw, view=view)))
+    # The graph records read (its own saved copies, graph_read_cache); never a real graph database here.
+    monkeypatch.setattr(view_warmup, '_graph_records', lambda **kw: calls.append(dict(kw, view='graph-' + kw['mode'])))
 
     def add(case, count):
         with engine.begin() as connection:
@@ -78,9 +80,11 @@ def test_every_case_is_warmed_largest_first_with_the_routes_defaults(periods):
         (str(large), None), (str(large), 'transactions'), (str(large), 'files'), (str(large), 'evidence'),
         (str(large), 'parties'), (str(large), 'types'), (str(large), 'consolidations'), (str(large), 'queue'),
         (str(large), 'batches'), (str(large), 'summary'), (str(large), 'working-summary'),
+        (str(large), 'graph-transactions'), (str(large), 'graph-intelligence'),
         (str(small), None), (str(small), 'transactions'), (str(small), 'files'), (str(small), 'evidence'),
         (str(small), 'parties'), (str(small), 'types'), (str(small), 'consolidations'), (str(small), 'queue'),
         (str(small), 'batches'), (str(small), 'summary'), (str(small), 'working-summary'),
+        (str(small), 'graph-transactions'), (str(small), 'graph-intelligence'),
         # The full-range analyses in a second pass, after every case's views above (the release warm-up's cap).
         (str(large), 'working'), (str(large), 'graph'), (str(large), 'cpa'), (str(large), 'timeline'),
         (str(large), 'transfers'), (str(large), 'patterns'),

@@ -277,6 +277,85 @@ class PackingKeepsTypesTests(unittest.TestCase):
         self.assertNotEqual(module._unpack(blob)["x"], module._unpack(blob)["x"])  # still NaN
 
 
+class SavedGraphReadTests(unittest.TestCase):
+    """A result read once is found by another process (a new cache) while the graph and the code are the same."""
+
+    def setUp(self):
+        import os
+        import tempfile
+        self.directory = tempfile.TemporaryDirectory()
+        patcher = patch.dict(os.environ, {"FINANCIAL_VIEW_MEMO_DIR": self.directory.name})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(self.directory.cleanup)
+        self.graph = _Graph()
+        self.session = _Session(self.graph)
+        self.calls = 0
+
+    def compute(self, value=None):
+        def run():
+            self.calls += 1
+            return value if value is not None else {"rows": [{"key": "a", "tx": self.graph.tx}]}
+        return run
+
+    def test_a_new_process_reads_the_saved_copy_at_the_same_bookmark(self):
+        first = GraphReadCache(saved_as="g").read(self.session, ("transactions", "c", None), self.compute())
+        other = GraphReadCache(saved_as="g")
+        second = other.read(self.session, ("transactions", "c", None), self.compute())
+        self.assertEqual(second, first)
+        self.assertEqual(self.calls, 1)
+        self.assertEqual(other.stats["saved_hit"], 1)
+
+    def test_a_commit_since_reads_again(self):
+        GraphReadCache(saved_as="g").read(self.session, "k", self.compute())
+        self.graph.tx = 2
+        value = GraphReadCache(saved_as="g").read(self.session, "k", self.compute())
+        self.assertEqual(value["rows"][0]["tx"], 2)
+        self.assertEqual(self.calls, 2)
+
+    def test_other_code_reads_again(self):
+        from services.financial import view_cache
+        GraphReadCache(saved_as="g").read(self.session, "k", self.compute())
+        with patch.object(view_cache, "code_identity", return_value="another release"):
+            GraphReadCache(saved_as="g").read(self.session, "k", self.compute())
+        self.assertEqual(self.calls, 2)
+
+    def test_a_changed_copy_is_never_served(self):
+        import pathlib
+        GraphReadCache(saved_as="g").read(self.session, "k", self.compute())
+        [path] = pathlib.Path(self.directory.name, "g").glob("*.graph")
+        data = path.read_bytes()
+        path.write_bytes(data[:-1] + bytes([data[-1] ^ 1]))
+        GraphReadCache(saved_as="g").read(self.session, "k", self.compute())
+        self.assertEqual(self.calls, 2)
+
+    def test_keys_are_separate_on_disk(self):
+        GraphReadCache(saved_as="g").read(self.session, ("t", "case-a"), self.compute({"a": 1}))
+        value = GraphReadCache(saved_as="g").read(self.session, ("t", "case-b"), self.compute({"b": 2}))
+        self.assertEqual(value, {"b": 2})
+        self.assertEqual(self.calls, 2)
+
+    def test_values_json_would_change_are_not_saved(self):
+        import pathlib
+        GraphReadCache(saved_as="g").read(self.session, "k", self.compute({"t": (1, 2)}))
+        self.assertEqual(list(pathlib.Path(self.directory.name).rglob("*.graph")), [])
+
+    def test_a_read_during_which_something_committed_is_not_saved(self):
+        import pathlib
+
+        def during():
+            self.calls += 1
+            self.graph.tx = 2
+            return {"x": 1}
+        GraphReadCache(saved_as="g").read(self.session, "k", during)
+        self.assertEqual(list(pathlib.Path(self.directory.name).rglob("*.graph")), [])
+
+    def test_without_saved_as_nothing_is_written(self):
+        import pathlib
+        GraphReadCache().read(self.session, "k", self.compute())
+        self.assertEqual(list(pathlib.Path(self.directory.name).rglob("*")), [])
+
+
 class FinancialServiceUsesTheCacheTests(unittest.TestCase):
     def test_filters_are_part_of_the_key(self):
         from importlib import import_module
