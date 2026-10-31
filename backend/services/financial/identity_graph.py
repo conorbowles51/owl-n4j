@@ -53,6 +53,20 @@ def _clear_deferral(case_id):
         _deferred.pop(str(case_id), None)
 
 
+def _deferral_snapshot(case_id):
+    with _deferred_lock:
+        state = _deferred.get(str(case_id))
+        return None if state is None else (state, state['attempts'])
+
+
+def _clear_deferral_if_unchanged(case_id, seen):
+    """Clear the case's backoff only if it is the entry `seen` was taken from, at the same attempt count."""
+    with _deferred_lock:
+        state = _deferred.get(str(case_id))
+        if state is not None and seen is not None and state is seen[0] and state['attempts'] == seen[1]:
+            _deferred.pop(str(case_id), None)
+
+
 def _is_deferred(case_id):
     with _deferred_lock:
         state = _deferred.get(str(case_id))
@@ -220,8 +234,6 @@ def apply_identity_graph(graph_session, plan, *, is_current=None):
         if marker and marker['revision'] == revision:
             # Where this branch's answer depends on the plan still being current (a refusal to report, or a backoff
             # to clear), it is rebuilt as before, so a plan that went stale while waiting changes neither.
-            with _deferred_lock:
-                deferred = str(case_id) in _deferred
             try:
                 validate_graph_targets(tx, plan)
             except Exception:
@@ -229,11 +241,15 @@ def apply_identity_graph(graph_session, plan, *, is_current=None):
                     tx.rollback()
                     return False
                 raise
-            if deferred and is_current is not None and not is_current():
+            # The backoff is read after the targets check, and cleared only if it is still the entry checked
+            # against is_current(): a deferral another thread records in between (a manual sync's failure) is
+            # kept, since nothing here showed the plan current at that time.
+            seen = _deferral_snapshot(case_id)
+            if seen is not None and is_current is not None and not is_current():
                 tx.rollback()
                 return False
             tx.rollback()
-            _clear_deferral(case_id)
+            _clear_deferral_if_unchanged(case_id, seen)
             return False
         # Revalidate only after acquiring the graph marker lock. Otherwise an
         # older snapshot could wait behind a newer writer and overwrite it.

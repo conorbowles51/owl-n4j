@@ -124,6 +124,38 @@ def test_already_current_revision_clears_a_stale_deferral():
     assert identity_graph.sweep_deferral('case-1') is None
 
 
+def test_a_deferral_recorded_during_the_targets_check_is_kept_when_the_plan_is_stale(monkeypatch):
+    # A manual sync's failure lands between the at-revision branch's read of the backoff and its clear.
+    real = identity_graph.validate_graph_targets
+    def validate(tx, plan):
+        identity_graph._defer('case-1', 'failed', error='manual sync failed')
+        return real(tx, plan)
+    monkeypatch.setattr(identity_graph, 'validate_graph_targets', validate)
+    graph = ScriptedGraph(marker_revision='rev-1')
+    assert identity_graph.apply_identity_graph(graph, _plan(), is_current=lambda: False) is False
+    kept = identity_graph.sweep_deferral('case-1')
+    assert kept is not None and kept['reason'] == 'failed' and kept['last_error'] == 'manual sync failed'
+
+
+def test_a_deferral_bumped_after_the_current_check_is_kept(monkeypatch):
+    # The backoff seen by the at-revision branch is retried again (attempts + 1) after is_current() said yes.
+    identity_graph._defer('case-1', 'failed', error='earlier')
+    def is_current():
+        identity_graph._defer('case-1', 'failed', error='again')
+        return True
+    graph = ScriptedGraph(marker_revision='rev-1')
+    assert identity_graph.apply_identity_graph(graph, _plan(), is_current=is_current) is False
+    kept = identity_graph.sweep_deferral('case-1')
+    assert kept is not None and kept['attempts'] == 2 and kept['last_error'] == 'again'
+
+
+def test_a_seen_deferral_is_cleared_when_the_plan_is_still_current():
+    identity_graph._defer('case-1', 'failed', error='earlier')
+    graph = ScriptedGraph(marker_revision='rev-1')
+    assert identity_graph.apply_identity_graph(graph, _plan(), is_current=lambda: True) is False
+    assert identity_graph.sweep_deferral('case-1') is None
+
+
 @pytest.fixture
 def sweep(monkeypatch):
     calls = []
