@@ -7,7 +7,7 @@ import os
 import re
 from functools import lru_cache
 from datetime import date
-from sqlalchemy import select
+from sqlalchemy import inspect as sa_inspect, select
 from postgres.models.evidence import EvidenceFile
 from postgres.models.financial import FinancialAccount, FinancialSourceDocument, FinancialStatementPeriod
 from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item
@@ -391,8 +391,14 @@ def coverage_review(session, *, case_id, file_id, request, sources=None):
     # Batch comparison already loaded the case's source lineage. Reuse that
     # request-local snapshot instead of repeating a SQL read for every period.
     files = getattr(sources, 'files', None)
-    if files is not None and getattr(sources, 'case_id', None) == str(case_id):
-        file = files.get(str(file_id))
+    snapshot = files is not None and getattr(sources, 'case_id', None) == str(case_id)
+    file = files.get(str(file_id)) if snapshot else None
+    state = sa_inspect(file, raiseerr=False) if file is not None else None
+    if state is not None and state.session is not session:
+        # An ORM row built in another session (recovery prepares in one and writes in another) is
+        # detached and expired, so read this one here. Plain snapshot records (CaseFile) are kept.
+        snapshot = False
+    if snapshot:
         if file is not None and str(file.case_id) != str(case_id):
             file = None
     else:

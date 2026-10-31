@@ -147,7 +147,11 @@ def test_migration_follows_the_single_head():
     config = Config()
     config.set_main_option('script_location', str(MIGRATION.parents[1]))
     scripts = ScriptDirectory.from_config(config)
-    assert scripts.get_heads() == ['20261002_one_active_statement']
+    # One head, and this migration on its line straight after statement recovery. Later migrations
+    # (20261019_dossier_workflows onwards) follow it, so the head itself is not pinned.
+    heads = scripts.get_heads()
+    assert len(heads) == 1, heads
+    assert '20261002_one_active_statement' in {script.revision for script in scripts.walk_revisions('base', heads[0])}
     assert scripts.get_revision('20261002_one_active_statement').down_revision == '20260924_statement_recovery'
 
 
