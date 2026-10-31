@@ -114,6 +114,14 @@ it("loads current postings and source links with exact money", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Canvas account" }))
   expect(screen.getByTestId("linked-payments")).toHaveTextContent("case/row")
 })
+it("asks for the graph without label origins, which it does not show", async () => {
+  const fetch = mount()
+  fireEvent.click(screen.getByRole("button", { name: "Show connections" }))
+  await screen.findByRole("button", { name: "Source amount 9007199254740993" })
+  const url = new URL(String(fetch.mock.calls[0][0]), "http://loupe")
+  expect(url.pathname).toMatch(/ledger-posting-graph$/)
+  expect(url.searchParams.get("label_origins")).toBe("false")
+})
 it("refuses an edge to another account's source group", async () => {
   mount({
     ...data,

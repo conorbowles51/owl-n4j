@@ -18,6 +18,17 @@ class LedgerGraphTests(LedgerTransferTests):
         self.assertEqual(edge['amount_minor'], '9007199254740993')
         self.assertEqual(edge['source_document_id'], str(debit.source_document_id))
         self.assertEqual(ledger_posting_graph(self.capture(), population='verified')['edges'], [])
+    def test_without_label_origins_only_they_are_left_out_and_the_answer_says_so(self):
+        self.pair()
+        full = ledger_posting_graph(self.capture())
+        lean = ledger_posting_graph(self.capture(), label_origins=False)
+        self.assertTrue(all('label_sources' in edge for edge in full['edges']))
+        self.assertTrue(full['edges'] and not any('label_sources' in edge for edge in lean['edges']))
+        self.assertEqual([{k: v for k, v in edge.items() if k != 'label_sources'} for edge in full['edges']], lean['edges'])
+        self.assertEqual({k: v for k, v in full.items() if k not in ('edges', 'limitation')},
+                         {k: v for k, v in lean.items() if k not in ('edges', 'limitation')})
+        self.assertIn('each edge records its label origins', full['limitation'])
+        self.assertIn('label origins are left out of this answer', lean['limitation'])
     def test_exclusion_is_not_hidden(self):
         debit, credit = self.pair()
         from postgres.models.enums import LedgerStatus

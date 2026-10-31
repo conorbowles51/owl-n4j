@@ -99,7 +99,8 @@ function GraphScope({
     enabled: opened,
     retry: false,
     queryFn: async () => {
-      const search = new URLSearchParams({ population })
+      // Label origins are half of the answer on a large case; the graph does not show them.
+      const search = new URLSearchParams({ population, label_origins: "false" })
       appendAccountSelection(search, params)
       if (account) search.set("account_id", account)
       if (start) search.set("start_date", start)

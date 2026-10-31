@@ -7,7 +7,9 @@ from services.financial.working_totals import working_totals_from_readings
 
 
 
-def ledger_posting_graph(export, *, population='working'):
+def ledger_posting_graph(export, *, population='working', label_origins=True):
+    """label_origins=False leaves each edge's label origins out (half of the answer on a large case; the graph page
+    does not read them and a payment's source dialog shows where its names came from) and says so."""
     if population not in ('working', 'verified'):
         raise LedgerSummaryError('Choose working or verified readings.')
     document, stamp = view_capture(export)
@@ -37,8 +39,9 @@ def ledger_posting_graph(export, *, population='working'):
             source_document_id=row['source_document_id'], currency=row['currency'], amount_minor=row['amount_minor'],
             direction=row['direction'], ordering_date=row['ordering_date'], description=row['description'],
             proof_class=row['proof_class'], category=row.get('category', ''),
-            label_sources=row.get('label_sources', {})))
+            **(dict(label_sources=row.get('label_sources', {})) if label_origins else {})))
     return dict(case_id=ledger['case_id'], account_id=ledger['account_id'], start_date=ledger['start_date'], end_date=ledger['end_date'],
         population=population, **stamp, applied=False,
         nodes=sorted(nodes.values(), key=lambda n:n['id']), edges=edges, currencies=totals['currencies'], excluded_rows=totals['excluded_rows'],
-        limitation='One edge per current posting. Arrows show the account posting direction. Names may come from the statement, investigator edits, or description suggestions; each edge records its label origins. Name groups are local to each account and currency; equal names do not establish identity. Missing labels do not identify a party. Transfers are not paired in this graph; use the separate transfer scenario for explicit pairing assumptions.')
+        limitation='One edge per current posting. Arrows show the account posting direction. Names may come from the statement, investigator edits, or description suggestions; ' + (
+            'each edge records its label origins. ' if label_origins else 'label origins are left out of this answer; each payment\'s source shows how its names were set. ') + 'Name groups are local to each account and currency; equal names do not establish identity. Missing labels do not identify a party. Transfers are not paired in this graph; use the separate transfer scenario for explicit pairing assumptions.')

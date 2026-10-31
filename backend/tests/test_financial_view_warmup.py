@@ -125,6 +125,8 @@ def test_the_full_range_views_get_the_routes_own_defaults(periods):
             expected['grouping'] = 'counterparty'  # the counterparty tab's first request: grouping=counterparty
         if view in ('summary', 'working-summary'):
             expected['include_contributions'] = True  # LedgerSummaryPanel asks include_contributions=true
+        if view == 'graph':
+            expected['label_origins'] = False  # LedgerPostingGraph asks label_origins=false
         assert {key: value for key, value in by_view[view].items() if key not in ('db', 'view', 'case_id')} == expected, view
         assert by_view[view]['case_id'] == case
     assert by_view['timeline']['population'] == 'working' and by_view['patterns']['window_days'] == 3

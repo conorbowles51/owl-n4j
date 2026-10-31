@@ -333,7 +333,8 @@ def _warm_cases(share=None, stop_if_preparing=False):
     analyses = (
         ('working counterparty analysis', get_working_ledger_analysis, dict(full_range_dates, grouping='counterparty',
                                                                            account_ids=None, account_holders=None)),
-        ('posting graph', get_ledger_posting_graph, dict(full_range, account_ids=None, account_holders=None)),
+        ('posting graph', get_ledger_posting_graph, dict(full_range, account_ids=None, account_holders=None,
+                                                         label_origins=False)),
         ('counterparty-party analysis', get_counterparty_party_analysis, dict(full_range, account_ids=None,
                                                                              account_holders=None)),
         ('timeline', get_ledger_timeline, dict(full_range, account_ids=None, account_holders=None)),

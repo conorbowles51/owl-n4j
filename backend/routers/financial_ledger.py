@@ -1242,11 +1242,12 @@ def calculate_ledger_transfer_scenario(body: LedgerTransferScenario, case_id: UU
 @cached_view('ledger-posting-graph')
 def get_ledger_posting_graph(case_id: UUID = Query(...), account_id: Optional[UUID] = Query(None),
         start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None),
-        population: Literal['working', 'verified'] = Query('working'), db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None):
+        population: Literal['working', 'verified'] = Query('working'), db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None,
+        label_origins: bool = Query(True)):
     from services.financial.ledger_graph import ledger_posting_graph
     try:
         captured = capture_ledger_scope(db.get_bind(), case_id=case_id, account_id=account_id, account_ids=account_ids, account_holders=account_holders, start_date=start_date, end_date=end_date)
-        return ledger_posting_graph(captured, population=population)
+        return ledger_posting_graph(captured, population=population, label_origins=label_origins)
     except LedgerSummaryError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception:
