@@ -615,6 +615,40 @@ class QueueCacheTests(Base):
                 result, builds, _ = self._prewarm_after_a_write(**state)
                 self.assertEqual((result, len(builds)), ([str(self.f.case.id)], 2))
 
+    def test_a_cached_view_is_never_seen_with_the_previous_time(self):
+        """Whenever the cache lock is free (what another thread can observe), the cached view and its computed time
+        belong together: an in-worker build records both under one lock."""
+        import threading
+        from services.financial import review_queue as rq
+        key, observed = str(self.f.case.id), []
+        real = threading.Lock()
+
+        class Observed:
+            def __enter__(self):
+                real.acquire()
+                return self
+
+            def __exit__(self, *exc):
+                hit = rq._cache.get(key)
+                observed.append((hit[1].get('as_of') if hit else None, rq._built_at.get(key)))
+                real.release()
+                return False
+        rq._cache.clear(); rq._built_at.clear()
+        times = iter([1793448000.0, 1793448600.0])
+        with patch.object(rq, '_lock', Observed()), \
+                patch.object(rq, '_compute', side_effect=lambda *_: dict(entries=[], as_of='v%d' % len(observed))), \
+                patch.object(rq.time, 'time', side_effect=lambda: next(times)), patch.object(rq, '_save_view'):
+            with self.f.SessionLocal() as db:
+                rq._build_once(db, key, self.f.case.id, (('a',),))
+                rq._build_once(db, key, self.f.case.id, (('b',),))
+        pairs = {}
+        for view, at in observed:
+            if view is not None:
+                pairs.setdefault(view, set()).add(at)
+        self.assertTrue(pairs)
+        for view, ats in pairs.items():
+            self.assertEqual(len(ats), 1, (view, ats))
+
     def test_one_case_failing_does_not_stop_prewarm_for_the_others(self):
         from services.financial import review_queue as rq
         rq._recent_reads.clear(); rq._cache.clear()
