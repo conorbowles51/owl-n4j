@@ -65,12 +65,12 @@ def _definitions(path: pathlib.Path) -> list[str]:
 # A module whose public name is its own module name is exported under an alias, so the package attribute of that
 # name stays the submodule: ``mock.patch('services.financial.journal.X')`` resolves by attribute on Python 3.10 and
 # would otherwise patch an attribute of the function.
-ALIASED_EXPORTS = {"journal": "journal_logger", "account_parties": "list_account_parties", "category_breakdown": "payment_category_breakdown", "category_library": "payment_category_library", "correction_fields": "payment_correction_fields", "correction_verification": "verify_correction", "counterparty_parties": "list_counterparty_parties"}
+ALIASED_EXPORTS = {"journal": "journal_logger", "account_parties": "list_account_parties", "category_breakdown": "payment_category_breakdown", "category_library": "payment_category_library", "correction_fields": "payment_correction_fields", "correction_verification": "verify_correction", "counterparty_parties": "list_counterparty_parties", "ledger_source": "read_ledger_source"}
 # Exports that already replace their submodule attribute. Frozen: the list may only shrink; a new one is aliased
 # as above instead.
 KNOWN_SHADOWING = frozenset({
     
-    "ledger_source", "ledger_summary", "ledger_timeline", "reconcile_case",
+    "ledger_summary", "ledger_timeline", "reconcile_case",
     "statement_delta_hints", "statement_file_status", "statement_layout_context", "summary_contributions",
     "transaction_search", "unread_pages",
 })
@@ -90,7 +90,7 @@ class PackageSurfaceTests(unittest.TestCase):
             self.assertTrue(hasattr(package, name))
 
     def test_source_amount_assessment_is_exported(self):
-        for name in ("AmountAssessmentError", "assess_source_amount", "read_amount_source_text", "LedgerSourceError", "ledger_source"):
+        for name in ("AmountAssessmentError", "assess_source_amount", "read_amount_source_text", "LedgerSourceError", "read_ledger_source"):
             self.assertIn(name, package.__all__)
             self.assertTrue(hasattr(package, name))
 

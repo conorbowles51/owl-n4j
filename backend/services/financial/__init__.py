@@ -30,7 +30,7 @@ from services.financial.pdf_candidates import (
     PdfRowProposal, PdfContextProposal, PdfMappingProposal, PdfBoundCell,
     PdfPendingCandidate, PdfBoundMapping, pdf_mapping_source_revision, bind_pdf_mapping,
 )
-from services.financial.ledger_source import LedgerSourceError, ledger_source
+from services.financial.ledger_source import LedgerSourceError, ledger_source as read_ledger_source
 from services.financial.accounts import (
     IDENTITY_TIERS,
     NON_VALUES,
@@ -931,7 +931,7 @@ __all__ = [
     "AmountAssessmentError",
     "assess_source_amount",
     "LedgerSourceError",
-    "ledger_source",
+    "read_ledger_source",
     "read_amount_source_text",
     "verify_correction", "correction_running_balances", "CoverageQueryError", "list_statement_coverage",
     "correct_transaction",
