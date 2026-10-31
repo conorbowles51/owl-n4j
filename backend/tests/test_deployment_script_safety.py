@@ -44,6 +44,9 @@ def release_sandbox(tmp_path):
     # This service installer is not under test, and must never touch the host.
     (project / 'deploy/install-frontend-service.sh').write_text('#!/bin/bash\nexit 0\n')
     (project / '.env').write_text('API_PORT=8002\nFRONTEND_PORT=5174\n')
+    # The checked-in choice of server may be nginx; these tests cover the vite preview path, and nginx paths point
+    # into the sandbox so a run as root can never install a site on the host.
+    (project / 'deploy/frontend-server.conf').write_text('vite\n')
     (project / 'deploy/logs/.last-good-commit').write_text('previous-safe-revision')
     (project / 'backend/postgres/__init__.py').write_text('')
     (project / 'backend/postgres/session.py').write_text(
@@ -116,7 +119,7 @@ elif name == 'systemctl' and args[:1] == ['show']:
     print('inactive')  # the bounded stop sees the backend stopped at once
 ''')
     stub.chmod(0o755)
-    for name in ('git', 'id', 'whoami', 'sudo', 'docker', 'npm', 'systemctl', 'curl', 'sleep', 'seq', 'flock'):
+    for name in ('git', 'id', 'whoami', 'sudo', 'docker', 'npm', 'systemctl', 'curl', 'sleep', 'seq', 'flock', 'nginx'):
         (project / 'commands' / name).symlink_to(stub)
     for name in ('python', 'pip', 'alembic'):
         (project / '.venv/bin' / name).symlink_to(stub)
@@ -128,7 +131,9 @@ def run_release(project, script, *, arrives_after=None, initially_active=False, 
         with sqlite3.connect(project / 'jobs.sqlite') as db:
             db.execute("INSERT INTO jobs VALUES ('processing',false)")
     env = {**os.environ, 'PATH': str(project / 'commands') + ':/usr/bin:/bin',
-           'RELEASE_SANDBOX': str(project), 'GATE_DATABASE': str(project / 'jobs.sqlite')}
+           'RELEASE_SANDBOX': str(project), 'GATE_DATABASE': str(project / 'jobs.sqlite'),
+           'FRONTEND_NGINX_SITE': str(project / 'nginx/sites-enabled/loupe-frontend'),
+           'FRONTEND_NGINX_AVAILABLE': str(project / 'nginx/sites-available/loupe-frontend')}
     if arrives_after:
         env['WORK_ARRIVES_AFTER'] = arrives_after
     if health_failure:
@@ -294,3 +299,25 @@ def test_a_manual_rollback_builds_aside_and_switches_like_a_release(release_sand
     assert 'systemctl restart owl-frontend-v2' not in events
     dist = release_sandbox / 'frontend_v2/dist'
     assert dist.is_symlink() and dist.resolve() == (release_sandbox.parent / 'loupe-frontend/current').resolve()
+
+
+def test_nginx_serves_the_site_and_a_frontend_release_then_stops_nothing(release_sandbox):
+    (release_sandbox / 'deploy/frontend-server.conf').write_text('nginx\n')
+    for directory in ('sites-enabled', 'sites-available'):
+        (release_sandbox / 'nginx' / directory).mkdir(parents=True)
+    first, events = run_release(release_sandbox, 'deploy.sh', extra_env={'REVISION': RELEASED})
+    assert first.returncode == 0, first.stdout + first.stderr
+    site = release_sandbox / 'nginx/sites-enabled/loupe-frontend'
+    assert site.is_symlink()
+    text = site.read_text()
+    assert 'listen 5174;' in text and str(release_sandbox.parent / 'loupe-frontend') + '/current' in text
+    assert 'proxy_pass http://0.0.0.0:8002;' in text and '@' not in text.split('server {')[1].split('}')[0]
+    assert 'systemctl stop owl-frontend-v2' in events and 'systemctl reload nginx' in events
+    env_file = release_sandbox / '.env'
+    env_file.write_text(env_file.read_text() + 'VITE_SOMETHING=2\n')
+    (release_sandbox / 'events').write_text('')
+    second, events = run_release(release_sandbox, 'deploy.sh', extra_env={'REVISION': RELEASED, 'HEALTH_COMMIT': RELEASED})
+    assert second.returncode == 0, second.stdout + second.stderr
+    assert 'the build switch needed no restart' in second.stdout
+    assert not any(event.startswith(('systemctl stop owl-frontend', 'systemctl restart owl-frontend',
+                                     'systemctl start owl-frontend', 'systemctl reload nginx')) for event in events), events
