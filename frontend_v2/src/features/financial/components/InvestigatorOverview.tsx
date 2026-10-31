@@ -49,6 +49,24 @@ export function InvestigatorOverview({
   })
   const { canEdit } = useFinancialAccess()
   const comparisons = useMemo(() => nearbyPayments(data.rows), [data.rows])
+  // Counted once per row list, not on every render (the Overview renders as each request lands; d5b330d1 has
+  // 27,926 payments). The rows are the same array while the answer and categories are.
+  const { unknownDates, uncategorised, accountCount, currencyCounts, currencies, span } = useMemo(() => {
+    const unknownDates = data.rows.filter(
+      (row) => row.ordering_date_context === "statement_end_ordering_only"
+    ).length
+    const uncategorised = data.rows.filter((row) => categoryName(row) === "Uncategorized").length
+    const accountCount = new Set(data.rows.map((row) => row.account_id)).size
+    // Money through the case, in each currency the scope holds (largest first).
+    const currencyCounts = new Map<string, number>()
+    for (const row of data.rows) currencyCounts.set(row.currency, (currencyCounts.get(row.currency) ?? 0) + 1)
+    const currencies = [...currencyCounts.keys()].sort(
+      (a, b) => (currencyCounts.get(b) ?? 0) - (currencyCounts.get(a) ?? 0) || a.localeCompare(b)
+    )
+    const days = data.rows.map(paymentDay).filter((day): day is string => !!day).sort()
+    const span = days.length ? `${monthName(days[0])} – ${monthName(days[days.length - 1])}` : "No dated payments"
+    return { unknownDates, uncategorised, accountCount, currencyCounts, currencies, span }
+  }, [data.rows])
   const [open, setOpen] = useState<{ ids: string[]; title: string } | null>(
     null
   )
@@ -66,19 +84,14 @@ export function InvestigatorOverview({
       .map((file) => file.evidence_file_id)
   )
   const notImported = files.filter((file) => !importedIds.has(file.id))
-  const unknownDates = data.rows.filter(
-    (row) => row.ordering_date_context === "statement_end_ordering_only"
-  ).length
   const toCheck =
     register.imports.data?.files.reduce((sum, file) => sum + file.periods_with_checks, 0) ?? 0
   const readyToSave =
     register.imports.data?.files.reduce((sum, file) => sum + file.available_periods, 0) ?? 0
-  const uncategorised = data.rows.filter((row) => categoryName(row) === "Uncategorized").length
   const calls = judgements.data?.case ?? {}
   const openCalls = Number(calls.open ?? 0)
   const guesses = Number(calls.inferred ?? 0)
   const findingCount = findings.data?.total ?? findings.data?.entries.length ?? 0
-  const accountCount = new Set(data.rows.map((row) => row.account_id)).size
   const registerReady = !register.files.isPending && !register.imports.isPending && !register.files.isError && !register.imports.isError
   const judgementsHref = (status: string, strength?: string) =>
     `/cases/${caseId}/financial?${new URLSearchParams({
@@ -87,16 +100,11 @@ export function InvestigatorOverview({
       jStatus: status,
       ...(strength ? { jStrength: strength } : {}),
     })}`
-  // Money through the case, in each currency the scope holds (largest first).
-  const currencyCounts = new Map<string, number>()
-  for (const row of data.rows) currencyCounts.set(row.currency, (currencyCounts.get(row.currency) ?? 0) + 1)
-  const currencies = [...currencyCounts.keys()].sort(
-    (a, b) => (currencyCounts.get(b) ?? 0) - (currencyCounts.get(a) ?? 0) || a.localeCompare(b)
-  )
   const currency = currencies.includes(chosenCurrency) ? chosenCurrency : currencies[0] || ""
-  const [money] = groupMoney(data.rows.filter((row) => row.currency === currency), () => ["all", "all"])
-  const days = data.rows.map(paymentDay).filter((day): day is string => !!day).sort()
-  const span = days.length ? `${monthName(days[0])} – ${monthName(days[days.length - 1])}` : "No dated payments"
+  const money = useMemo(
+    () => groupMoney(data.rows.filter((row) => row.currency === currency), () => ["all", "all"])[0],
+    [data.rows, currency]
+  )
   const exact = (minor: bigint) => `${formatLedgerAmount(String(minor), currency).text} ${currency}`
   // One next step: the first unfinished thing, in the order the work runs.
   const next: { eyebrow?: string; title: string; sub: string; action: string; onClick: () => void } =

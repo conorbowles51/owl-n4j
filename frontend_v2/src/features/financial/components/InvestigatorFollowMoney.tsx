@@ -45,18 +45,30 @@ export function MoneyConnections({
   rows: LedgerTransaction[]
   onOpen: (ids: string[], title: string) => void
 }) {
-  const names = paymentProfiles(
-    rows.filter((row) => !unidentifiedPayment(row))
-  ).filter((profile) => profile.kind === "name")
-  const accounts = paymentProfiles(rows).filter(
-    (profile) => profile.kind === "account"
+  // Grouped once per row list, not on every render: on d5b330d1 (27,926 payments) grouping the profiles took about
+  // 0.7 s of main thread per render, and the Overview renders as each of its requests lands (browser profile,
+  // 2026-10-31). The inputs are the same array while the answer and categories are (useInvestigatorPayments).
+  const { names, accounts, groups } = useMemo(
+    () => ({
+      names: paymentProfiles(
+        rows.filter((row) => !unidentifiedPayment(row))
+      ).filter((profile) => profile.kind === "name"),
+      accounts: paymentProfiles(rows).filter(
+        (profile) => profile.kind === "account"
+      ),
+      groups: [...new Set(rows.map(paymentGroup))].sort(),
+    }),
+    [rows]
   )
-  const groups = [...new Set(rows.map(paymentGroup))].sort()
   const [requestedGroup, setGroup] = useState("")
   const group = groups.includes(requestedGroup) ? requestedGroup : groups[0]
   const [requestedPage, setPage] = useState(0)
-  const visibleNames = names.filter((profile) =>
-    profile.rows.some((row) => paymentGroup(row) === group)
+  const visibleNames = useMemo(
+    () =>
+      names.filter((profile) =>
+        profile.rows.some((row) => paymentGroup(row) === group)
+      ),
+    [names, group]
   )
   const page = Math.min(
     requestedPage,
@@ -64,8 +76,9 @@ export function MoneyConnections({
   )
   const list = visibleNames.slice(page * 6, (page + 1) * 6)
   const card = group?.endsWith(":card")
-  const unnamed = unidentifiedGroups(
-    rows.filter((row) => paymentGroup(row) === group)
+  const unnamed = useMemo(
+    () => unidentifiedGroups(rows.filter((row) => paymentGroup(row) === group)),
+    [rows, group]
   )
   const unnamedCount = unnamed.reduce((sum, item) => sum + item.rows.length, 0)
   const totalLabel = (payments: LedgerTransaction[]) => {
