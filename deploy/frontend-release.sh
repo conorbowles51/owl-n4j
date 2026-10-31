@@ -62,6 +62,9 @@ frontend_build_aside() {
     if [ ! -e "${wt}/.git" ]; then
         (cd "${PROJECT_DIR}" && $RUN_AS git worktree add -q -f --detach "${wt}" "${rev}") || return 1
     fi
+    # A job run as root in the build worktree leaves root-owned caches the deploy user cannot replace.
+    [ "$(id -u)" -eq 0 ] && [ -n "${DEPLOY_USER:-}" ] && [ -d "${wt}/frontend_v2/node_modules" ] &&
+        find "${wt}/frontend_v2/node_modules" -maxdepth 3 ! -user "${DEPLOY_USER}" -exec chown -R "${DEPLOY_USER}:" {} + 2>/dev/null
     (cd "${wt}" && $RUN_AS git checkout -q --detach -f "${rev}" &&
         $RUN_AS git clean -ffdxq -e frontend_v2/node_modules) || return 1
     marker="${wt}/frontend_v2/node_modules/.loupe-npm-hash"
@@ -97,8 +100,13 @@ frontend_switch() {
     local id="$1" link="${FRONTEND_RELEASES}/current"
     frontend_build_exists "${id}" || { fail "No finished frontend build ${id}"; return 1; }
     # Old tabs' files stay reachable: link this build's assets into the pool before index.html points at them.
-    $RUN_AS cp -al -n "$(frontend_build_dir "${id}")/assets/." "${FRONTEND_RELEASES}/assets/" 2>/dev/null ||
-        $RUN_AS cp -a -n "$(frontend_build_dir "${id}")/assets/." "${FRONTEND_RELEASES}/assets/" || return 1
+    # Copy the files, never the directory itself: the build's assets/ is read-only and "cp -a dir/." would give the
+    # pool that mode, so the next release could not add its files (release of 9e88a187, 2026-10-31 02:06).
+    $RUN_AS chmod u+w "${FRONTEND_RELEASES}/assets" || return 1
+    (cd "$(frontend_build_dir "${id}")/assets" && find . -mindepth 1 -maxdepth 1 -print0 |
+        $RUN_AS xargs -0 -r cp -al -n -t "${FRONTEND_RELEASES}/assets/" 2>/dev/null) ||
+        (cd "$(frontend_build_dir "${id}")/assets" && find . -mindepth 1 -maxdepth 1 -print0 |
+            $RUN_AS xargs -0 -r cp -a -n -t "${FRONTEND_RELEASES}/assets/") || return 1
     $RUN_AS ln -sfn "builds/${id}" "${link}.new" && $RUN_AS mv -T "${link}.new" "${link}" || return 1
     $RUN_AS touch -h "$(frontend_build_dir "${id}")" 2>/dev/null || true
     success "Frontend now serves build ${id:0:12}"

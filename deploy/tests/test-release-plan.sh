@@ -119,6 +119,9 @@ sleep 1; fake_build b2; frontend_switch b2
 expect current "$(frontend_current_build)" b2
 [ -f "${FRONTEND_RELEASES}/assets/chunk-b1.js" ] || { echo "old build's asset left the pool"; exit 1; }
 [ -f "${FRONTEND_RELEASES}/assets/chunk-b2.js" ] || { echo "new build's asset not in the pool"; exit 1; }
+# The pool must stay writable for the deploy user (root ignores the mode, so check the bits): a read-only build's
+# directory mode copied onto the pool blocked every later release.
+[ "$(stat -c %A "${FRONTEND_RELEASES}/assets" | cut -c3)" = w ] || { echo "asset pool lost its write bit"; exit 1; }
 if frontend_switch missing; then echo "switch to a missing build must fail"; exit 1; fi
 expect "current after failed switch" "$(frontend_current_build)" b2
 sleep 1; fake_build b3; frontend_switch b3
