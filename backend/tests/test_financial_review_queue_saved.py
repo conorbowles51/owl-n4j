@@ -175,3 +175,69 @@ def test_a_write_to_a_batchs_files_changes_the_queue_key_on_postgresql():
         with admin.begin() as connection:
             connection.execute(text(f'DROP SCHEMA {schema} CASCADE'))
         admin.dispose()
+
+
+def test_after_a_restart_a_changed_queue_is_answered_from_its_saved_copy_while_the_refresh_builds_it(store, tmp_path):
+    """Measured 2026-10-31 07:05: the d5b330d1 queue took 38.2 s for a person while the background re-warm built the
+    same queue. A reader that can show an updating answer gets the previous saved queue at once and its start time;
+    the build is asked of the host's refresh process (an ask file), not done in the request."""
+    from services.financial import view_refresh
+    case = uuid4()
+    before = time.time()
+    review_queue._view(_Session(), case)
+    _new_process()
+    store['fingerprint'] = (('batches', '1', 6), ('items', '2', 7))
+    token = review_queue.previous_as_of.set(0.0)
+    try:
+        view, refreshing = review_queue._view(_Session(), case, stale_ok=True)
+        assert refreshing and view['built'] == 1 and store['builds'] == 1
+        assert before - 1 <= review_queue.previous_as_of.get() <= time.time()
+    finally:
+        review_queue.previous_as_of.reset(token)
+    [(path, ask)] = view_refresh._open_asks('code-1')
+    assert ask['key'] == ['review-queue', '{"case_id": "%s"}' % case]
+    # The refresh builds and saves the current queue; that answers the ask, and the next reader gets it current.
+    assert review_queue.refresh(_Session(), case)
+    assert not path.exists() and store['builds'] == 2
+    _new_process()
+    view, refreshing = review_queue._view(_Session(), case, stale_ok=True)
+    assert not refreshing and view['built'] == 2
+
+
+def test_past_the_updating_limit_the_reader_builds_the_queue_itself(store):
+    from services.financial import view_refresh
+    case = uuid4()
+    review_queue._view(_Session(), case)
+    store['fingerprint'] = (('batches', '1', 6), ('items', '2', 7))
+    review_queue._view(_Session(), case, stale_ok=True)
+    [(path, ask)] = view_refresh._open_asks('code-1')
+    view_refresh._write(path, {**ask, 'asked': time.time() - view_cache.UPDATING_MAX_SECONDS - 1})
+    view, refreshing = review_queue._view(_Session(), case, stale_ok=True)
+    assert not refreshing and view['built'] == 2
+
+
+def test_the_queue_route_marks_an_answer_from_the_previous_queue_as_updating(monkeypatch):
+    from fastapi import Response
+    from routers import financial_statement_import as routes
+    from services.financial import review_queue as queue_module
+    seen = {}
+
+    def fake(db, **kwargs):
+        seen.update(kwargs)
+        queue_module.previous_as_of.set(1793430000.0)
+        return dict(refreshing=True, as_of='later')
+    monkeypatch.setattr(queue_module, 'case_review_queue', fake)
+    token = view_cache._accepts_updating.set(True)
+    try:
+        response = Response()
+        routes.financial_review_queue(case_id=uuid4(), file_id=[], limit=None, offset=0, page_list='waiting',
+                                      issue=None, fresh=None, db=object(), response=response)
+    finally:
+        view_cache._accepts_updating.reset(token)
+    assert seen['stale_ok'] is True, 'an unpaged read from the page no longer waits for the build'
+    assert response.headers['x-financial-view-state'] == 'updating'
+    assert response.headers['x-financial-view-as-of'] == '2026-10-31T07:00:00+00:00'
+    seen.clear()
+    routes.financial_review_queue(case_id=uuid4(), file_id=[], limit=None, offset=0, page_list='waiting',
+                                  issue=None, fresh=None, db=object(), response=Response())
+    assert seen['stale_ok'] is False, 'other callers still wait for a current queue'

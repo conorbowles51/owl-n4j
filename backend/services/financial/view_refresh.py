@@ -162,6 +162,19 @@ def refresh_one(path, ask_, session_factory=None):
     for module in ROUTE_MODULES:
         importlib.import_module(module)
     name, parameters = ask_['key'][0], json.loads(ask_['key'][1])
+    if name == 'review-queue':
+        from uuid import UUID
+        from services.financial import review_queue
+        view_cache.clear()
+        token = view_cache.always_save.set(True)
+        try:
+            with (session_factory or _get_session_local())() as db:
+                try:
+                    return review_queue.refresh(db, UUID(parameters['case_id']))
+                finally:
+                    db.rollback()
+        finally:
+            view_cache.always_save.reset(token)
     handler = view_cache.handlers.get(name)
     if handler is None:
         raise LookupError('no cached view named %s' % name)

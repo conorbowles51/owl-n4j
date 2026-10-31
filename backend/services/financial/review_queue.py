@@ -838,6 +838,36 @@ def _plain(fingerprint):
     return json.loads(json.dumps(fingerprint, default=str))
 
 
+# When each case's view in this process's memory was started (wall clock): an updating answer says how old it is.
+_built_at = {}
+# The start time of the previous view the last stale answer in this thread came from (0: none).
+from contextvars import ContextVar
+previous_as_of = ContextVar('review_queue_previous_as_of', default=0.0)
+
+
+def _ask_key(key):
+    return _saved_key(key)
+
+
+def _load_saved_any(session, key):
+    """(view, start time) of the newest saved whole-case view of this case and code, whatever rows it was built
+    from, or (None, 0). A copy saved without its start time is not returned. Never raises."""
+    import json
+    from services.financial import view_cache
+    try:
+        scope, xmax = view_cache._saved_scope(session.connection())
+        if scope is None:
+            return None, 0.0
+        entry = view_cache._load_saved(_saved_key(key), scope, xmax)
+        if entry is None or not entry.computed_at:
+            return None, 0.0
+        return json.loads(entry.body), entry.computed_at
+    except Exception:  # noqa: BLE001 - built instead
+        import logging
+        logging.getLogger(__name__).warning('Saved review queue unreadable; building it', exc_info=True)
+        return None, 0.0
+
+
 def _load_saved_view(session, key, fingerprint):
     """The saved whole-case view built at exactly ``fingerprint``, or None. Never raises."""
     import json
@@ -856,7 +886,7 @@ def _load_saved_view(session, key, fingerprint):
         return None
 
 
-def _save_view(session, key, fingerprint, view, started):
+def _save_view(session, key, fingerprint, view, started, started_at=0.0):
     """Save a whole-case view built at ``fingerprint`` for the other worker and the next start. Never raises."""
     import json
     from services.financial import view_cache
@@ -873,7 +903,8 @@ def _save_view(session, key, fingerprint, view, started):
             return
         body = json.dumps(view, ensure_ascii=False, separators=(',', ':')).encode()
         entry = view_cache._Entry(tables=(), fingerprint=tuple(tuple(part) for part in _plain(fingerprint)), body=body,
-                                  status_code=200, media_type='application/json')
+                                  status_code=200, media_type='application/json',
+                                  seconds=time.perf_counter() - started, computed_at=started_at)
         view_cache._save_if_slow(_saved_key(key), entry, scope, xmax, started)
     except Exception:  # noqa: BLE001 - the view stays cached in memory
         import logging
@@ -897,10 +928,14 @@ def _build_once(session, key, case_id, fingerprint):
             return hit[1]
         return _compute(session, case_id)  # that build was of older inputs (or timed out)
     try:
-        started = time.perf_counter()
+        started, started_at = time.perf_counter(), time.time()
         view = _compute(session, case_id)
         _store(key, fingerprint, view)
-        _save_view(session, key, fingerprint, view, started)
+        with _lock:
+            _built_at[key] = started_at
+        _save_view(session, key, fingerprint, view, started, started_at)
+        from services.financial import view_cache
+        view_cache._forget_ask(_ask_key(key))
         return view
     finally:
         with _lock:
@@ -954,10 +989,42 @@ def _view(session, case_id, use_cache=True, note=True, stale_ok=False):
     if saved is not None:
         _store(key, fingerprint, saved)
         return saved, False
-    if hit and stale_ok:
-        _refresh_in_background(session.get_bind(), key, case_id)
-        return hit[1], True
+    if stale_ok:
+        previous, previous_at = (hit[1], _built_at.get(key, 0.0)) if hit else _load_saved_any(session, key)
+        if previous is not None and _ask_refresh(session, key, case_id):
+            previous_as_of.set(previous_at)
+            return previous, True
     return _build_once(session, key, case_id, fingerprint), False
+
+
+def _ask_refresh(session, key, case_id):
+    """Have the current view built in the background (the host's refresh process, view_refresh; a thread here when
+    asks cannot be kept). False once an ask is older than the updating limit: the reader builds it itself."""
+    import os
+    from services.financial import view_cache, view_refresh
+    asked = None
+    if os.environ.get('FINANCIAL_VIEW_UPDATING', '1') != '0':
+        try:
+            asked = view_refresh.ask(_ask_key(key), case_id)
+        except Exception:  # noqa: BLE001
+            import logging
+            logging.getLogger(__name__).warning('Review queue refresh could not be asked for', exc_info=True)
+    if asked is None:
+        _refresh_in_background(session.get_bind(), key, case_id)
+        return True
+    return time.time() - asked < view_cache.UPDATING_MAX_SECONDS
+
+
+def refresh(session, case_id):
+    """Build and save the case's current whole-case view unless a current one is saved (view_refresh). True when a
+    current copy is saved where every worker reads it."""
+    key = str(case_id)
+    fingerprint = queue_fingerprint(session, case_id)
+    if fingerprint is None:
+        return False
+    if _load_saved_view(session, key, fingerprint) is None:
+        _build_once(session, key, case_id, fingerprint)
+    return _load_saved_view(session, key, fingerprint) is not None
 
 
 def warm(*, case_id, db):

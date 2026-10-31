@@ -585,9 +585,13 @@ class PagedQueueTests(QueueReadTests):
         self.assertTrue(all('root' not in e for e in page['items']))
 
     def test_a_changed_case_is_answered_at_once_and_rebuilt_in_the_background(self):
+        # Without a memo directory no ask can be kept for the host's refresh process (view_refresh; covered in
+        # test_financial_review_queue_saved): the build runs in a thread of this process.
+        import os
+        from unittest import mock
         from services.financial import review_queue as rq
         fingerprint = [('a',)]
-        with self.fingerprinted(fingerprint):
+        with self.fingerprinted(fingerprint), mock.patch.dict(os.environ, FINANCIAL_VIEW_MEMO_DIR=''):
             first = self.queue(use_cache=True, limit=10, stale_ok=True)
             self.assertFalse(first['refreshing'])  # nothing cached yet: built now
             fingerprint.append(('b',))

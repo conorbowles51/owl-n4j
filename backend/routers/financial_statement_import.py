@@ -5,7 +5,7 @@ from datetime import date
 from typing import Literal
 from uuid import UUID
 from fastapi.concurrency import run_in_threadpool
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 from postgres.session import get_db
 from routers.case_access import case_access_dependency
@@ -927,7 +927,7 @@ def financial_review_queue(case_id: UUID = Query(...), file_id: list[UUID] = Que
         limit: int | None = Query(None, ge=0, le=5000), offset: int = Query(0, ge=0),
         page_list: Literal['waiting', 'ready', 'filled', 'reader_fix', 'rechecking', 'copies', 'unreadable'] = Query('waiting'),
         issue: str | None = Query(None, max_length=64), fresh: bool | None = Query(None),
-        db: Session = Depends(get_db)):
+        db: Session = Depends(get_db), response: Response = None):
     """The case's statements that need a decision now, from stored readings. Read only; nothing is re-read.
 
     ``limit``/``offset``/``page_list``/``issue`` page the lists (``totals`` and
@@ -936,12 +936,27 @@ def financial_review_queue(case_id: UUID = Query(...), file_id: list[UUID] = Que
     built (``refreshing``); ``fresh=1``, and an unpaged read (the views that
     predate paging), wait for the current one.
     """
-    from services.financial.review_queue import case_review_queue
+    from services.financial.review_queue import case_review_queue, previous_as_of
     from services.financial.request_timing import stage
-    with stage('review_queue'):
-        return case_review_queue(db, case_id=case_id, file_ids=file_id, limit=limit, offset=offset,
-                                 page_list=page_list, issue=issue,
-                                 stale_ok=fresh is False or (fresh is None and limit is not None))
+    from services.financial import view_cache
+    # A Financial page that can show an updating answer (view_cache) is answered from the previous queue at once
+    # while the current one is built in the background, and told so in the headers as for every other view.
+    accepts = view_cache._accepts_updating.get()
+    token = previous_as_of.set(0.0)
+    try:
+        with stage('review_queue'):
+            result = case_review_queue(db, case_id=case_id, file_ids=file_id, limit=limit, offset=offset,
+                                       page_list=page_list, issue=issue,
+                                       stale_ok=fresh is False or (fresh is None and (limit is not None or accepts)))
+        if result.get('refreshing') and response is not None:
+            from datetime import datetime, timezone
+            as_of = previous_as_of.get()
+            response.headers[view_cache.UPDATING_STATE_HEADER] = 'updating'
+            response.headers[view_cache.UPDATING_AS_OF_HEADER] = (
+                datetime.fromtimestamp(as_of, timezone.utc).isoformat(timespec='seconds') if as_of else '')
+        return result
+    finally:
+        previous_as_of.reset(token)
 
 
 @router.get('/review/status')
