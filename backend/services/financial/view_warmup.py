@@ -72,7 +72,7 @@ async def warm_views_once():
 async def warm_case_files_once():
     """Each worker loads the evidence-file copies of the cases with the most files once, right after start.
 
-    ``source_lineage.case_files`` keeps those copies per process (CASE_FILES_KEPT cases), so the shared warm-up
+    ``source_lineage.case_files`` keeps those copies per process (up to CASE_FILES_KEPT_FILES files), so the shared warm-up
     above, which runs in a child process, cannot fill them. Without this every worker's first statement open,
     review queue or activity request on d5b330d1 loaded its 6,108 files: 3.91 s, against 0.07 s once held
     (measured 2026-10-31, live data). The copies are checked against each row's version on every use, so loading
@@ -92,15 +92,21 @@ async def warm_case_files_once():
 
 
 def warm_case_files():
-    """Load ``case_files`` for the CASE_FILES_KEPT cases with the most evidence files; returns their ids."""
+    """Load ``case_files`` for the cases with the most evidence files that fit CASE_FILES_KEPT_FILES together
+    (always at least the largest); returns their ids, in load order."""
     from sqlalchemy import func, select
     from postgres.models.evidence import EvidenceFile
     from postgres.session import _get_session_local
     from services.financial import source_lineage
     with _get_session_local()() as db:
-        cases = list(db.scalars(select(EvidenceFile.case_id).group_by(EvidenceFile.case_id)
-                                .order_by(func.count().desc(), EvidenceFile.case_id)
-                                .limit(source_lineage.CASE_FILES_KEPT)))
+        counts = db.execute(select(EvidenceFile.case_id, func.count()).group_by(EvidenceFile.case_id)
+                            .order_by(func.count().desc(), EvidenceFile.case_id)).all()
+        cases, total = [], 0
+        for case_id, count in counts:
+            if cases and total + count > source_lineage.CASE_FILES_KEPT_FILES:
+                break
+            cases.append(case_id)
+            total += count
         warmed = []
         # Smallest first, so the largest case is the most recently used one and the last to be dropped.
         for case_id in reversed(cases):

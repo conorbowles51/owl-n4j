@@ -76,7 +76,19 @@ class CaseFile:
 # case's metadata was about 1.2 s of every statement open and queue rebuild.
 _CASE_FILES = OrderedDict()
 _CASE_FILES_LOCK = Lock()
-CASE_FILES_KEPT = 2  # About 90 MB per worker for a 5,500-file case.
+# Copies are kept by total file count, not case count: with a 2-case limit any
+# request on a third case dropped d5b330d1's 6,108 copies and its next request
+# reloaded them (3.0-4.3 s live, 31 Oct). All 20 cases (15,460 files, 31 Oct)
+# fit; that costs about 46 MB more per worker than two cases (measured RSS).
+# The most recently used case is always kept, whatever its size.
+CASE_FILES_KEPT_FILES = 20000
+
+
+def _drop_least_recent_cases():
+    """Drop the least recently used cases while the copies exceed CASE_FILES_KEPT_FILES. Caller holds the lock."""
+    total = sum(len(entries) for entries in _CASE_FILES.values())
+    while len(_CASE_FILES) > 1 and total > CASE_FILES_KEPT_FILES:
+        total -= len(_CASE_FILES.popitem(last=False)[1])
 
 
 def _row_version(session):
@@ -136,8 +148,7 @@ def case_files(session, case_id, ids=None):
                 entries = {file_id: entry for file_id, entry in entries.items() if file_id in current}
             _CASE_FILES[key] = entries
             _CASE_FILES.move_to_end(key)
-            while len(_CASE_FILES) > CASE_FILES_KEPT:
-                _CASE_FILES.popitem(last=False)
+            _drop_least_recent_cases()
     return result
 
 

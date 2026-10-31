@@ -43,15 +43,46 @@ def _cases(Session, sizes):
     return ids
 
 
-def test_the_cases_with_the_most_files_are_loaded_largest_last(Session, monkeypatch):
+def test_the_cases_with_the_most_files_that_fit_the_budget_are_loaded_largest_last(Session, monkeypatch):
     small, large, middle = _cases(Session, [1, 5, 3])
     loaded = []
     monkeypatch.setattr(source_lineage, "case_files", lambda db, case_id, ids=None: loaded.append(case_id) or {})
-    monkeypatch.setattr(source_lineage, "CASE_FILES_KEPT", 2)
+    monkeypatch.setattr(source_lineage, "CASE_FILES_KEPT_FILES", 8)
 
     assert view_warmup.warm_case_files() == [middle, large]
     # The largest is loaded last, so it is the most recently used copy and the last one dropped.
     assert loaded == [middle, large]
+
+    loaded.clear()
+    monkeypatch.setattr(source_lineage, "CASE_FILES_KEPT_FILES", 9)
+    assert view_warmup.warm_case_files() == [small, middle, large]
+
+
+def test_a_case_larger_than_the_budget_is_still_loaded(Session, monkeypatch):
+    small, large = _cases(Session, [1, 5])
+    monkeypatch.setattr(source_lineage, "case_files", lambda db, case_id, ids=None: {})
+    monkeypatch.setattr(source_lineage, "CASE_FILES_KEPT_FILES", 2)
+    assert view_warmup.warm_case_files() == [large]
+
+
+def test_copies_are_dropped_by_file_count_not_case_count(monkeypatch):
+    """With a 2-case limit a request on a third case dropped d5b330d1's 6,108 copies (live 31 Oct, 3.0-4.3 s to reload)."""
+    from collections import OrderedDict
+    monkeypatch.setattr(source_lineage, "_CASE_FILES", OrderedDict())
+    monkeypatch.setattr(source_lineage, "CASE_FILES_KEPT_FILES", 10)
+    kept = source_lineage._CASE_FILES
+    for name, size in (("big", 6), ("a", 1), ("b", 1), ("c", 2)):
+        kept[name] = {n: None for n in range(size)}
+        source_lineage._drop_least_recent_cases()
+    assert list(kept) == ["big", "a", "b", "c"]  # 10 files in four cases: all kept
+
+    kept["d"] = {0: None}
+    source_lineage._drop_least_recent_cases()
+    assert list(kept) == ["a", "b", "c", "d"]  # over budget: the least recently used goes first
+
+    kept["huge"] = {n: None for n in range(50)}
+    source_lineage._drop_least_recent_cases()
+    assert list(kept) == ["huge"]  # the most recent case is always kept
 
 
 def test_the_warm_up_reads_through_case_files_in_a_worker_thread_and_never_raises(Session, monkeypatch):
