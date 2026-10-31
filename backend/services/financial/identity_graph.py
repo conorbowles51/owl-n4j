@@ -76,6 +76,9 @@ def sweep_deferral(case_id):
             last_error=state['error'], retry_in_seconds=round(max(state['next_due'] - time.monotonic(), 0.0), 1))
 
 
+PAYMENT_LINK_CHUNK = 1000
+
+
 def identity_graph_plan(db, case_id):
     state = identity_state(db, case_id)
     from services.financial.counterparty_parties import payment_party_choices
@@ -113,12 +116,14 @@ def identity_graph_plan(db, case_id):
     # Only the columns a payment's identity link is read from: loading every
     # admitted payment of the case whole (with its saved reading) made each
     # snapshot grow with the case, and the sweep takes one per case every 30 s.
+    # Read 1,000 rows at a time: fetched in one go, d5b330d1's 27,673 rows held the interpreter lock for 489 ms in
+    # the driver, and the sweep runs in a web worker's thread, so that worker's requests waited that long.
     for row_id, ref_id, direction, labels, reviewed in db.execute(select(FinancialTransaction.id,
             FinancialTransaction.ref_id, FinancialTransaction.direction,
             FinancialTransaction.metadata_['investigation_labels'],
             FinancialTransaction.provenance['reviewed_counterparty']).where(FinancialTransaction.case_id == case_id,
             FinancialTransaction.superseded_by_id.is_(None), FinancialTransaction.ledger_status == 'admitted')
-            .order_by(FinancialTransaction.id)):
+            .order_by(FinancialTransaction.id).execution_options(yield_per=PAYMENT_LINK_CHUNK)):
         identity = resolved_link(db, case_id, stored_link(labels, reviewed))
         if not identity:
             continue
