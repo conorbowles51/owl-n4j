@@ -292,6 +292,45 @@ class AccountDetailsCorrectionTests(TestCase):
         self.assertEqual(raised.exception.status_code, 409)
         self.assertEqual(self.details(self.first)['details']['institution'], 'Other Synthetic Bank')
 
+    def test_another_accounts_bank_and_number_is_refused_at_review_and_points_to_the_statement_details(self):
+        # The key a bank correction would give this account, then taken by another account.
+        result = self.correct(institution='Other Synthetic Bank')
+        with self.f.SessionLocal() as db:
+            taken = db.get(FinancialAccount, self.account_id).identity_key
+        self.undo(result['correction']['id'])
+        with self.f.SessionLocal() as db:
+            account = db.get(FinancialAccount, self.account_id)
+            other = FinancialAccount(case_id=self.f.case.id, identity_key=taken, holder_name=account.holder_name,
+                institution_name='Other Synthetic Bank', identifier_as_printed=account.identifier_as_printed,
+                identifier_normalised=account.identifier_normalised, currency=account.currency,
+                account_type=account.account_type, metadata_=dict(account_reference_kind=(account.metadata_ or {}).get('account_reference_kind')))
+            db.add(other)
+            db.commit()
+            other_id = other.id
+        before = self.state()
+        request = service.AccountDetailsRequest(expected_revision=before['revision'], reason='r', institution='Other Synthetic Bank')
+        for step in ('preview', 'save'):
+            with self.assertRaises(PdfMappingError) as raised:
+                if step == 'preview':
+                    with self.f.SessionLocal() as db:
+                        service.preview_account_details(db, case_id=self.f.case.id, account_id=self.account_id, request=request)
+                else:
+                    self.correct(institution='Other Synthetic Bank')
+            message = str(raised.exception.detail if hasattr(raised.exception, 'detail') else raised.exception)
+            self.assertEqual(raised.exception.status_code, 409, step)
+            # The merge refuses two accounts whose numbers differ: the advice is the statement details, naming the account.
+            self.assertNotIn('Merge', message, step)
+            self.assertIn("statement's details", message, step)
+            self.assertIn('Other Synthetic Bank · ', message, step)
+        self.assertEqual(self.state()['revision'], before['revision'])
+        # The advice works: the statement's own details edit places it on that account.
+        view = self.details(self.first)
+        with self.f.SessionLocal() as db:
+            update_statement_details(db, case_id=self.f.case.id, source_id=self.first, actor=self.f.actor,
+                request=StatementDetailsRequest(expected_revision=view['revision'], holder=view['details']['holder'],
+                    account_number=view['details']['account_number'], institution='Other Synthetic Bank'))
+        self.assertEqual(self.accounts_of(self.first), {other_id})
+
 
 CLABE = '128180000000238632'
 

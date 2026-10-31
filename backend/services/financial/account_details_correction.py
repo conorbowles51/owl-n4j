@@ -204,6 +204,8 @@ def _alias_after(account, after):
 def preview_account_details(session, *, case_id, account_id, request):
     account = _account(session, case_id, account_id)
     current, after = _requested(account, request)
+    # The save would refuse a bank and number another account has: say so at review, before anything is saved.
+    _new_identity(session, case_id, account, after, _alias_after(account, after))
     statements = _statement_rows(session, case_id, _statements(session, case_id, account))
     rejoin = [dict(account_id=str(other.id), statements=_statement_rows(session, case_id, _statements(session, case_id, other)))
               for other in _split_off(session, case_id, account, after)]
@@ -228,9 +230,15 @@ def _new_identity(session, case_id, account, after, alias=None):
         key = draft.identity().key
     except AccountIdentityError as exc:
         raise PdfMappingError('The corrected bank does not identify this account. Nothing was changed.', 422) from exc
-    if key != account.identity_key and session.scalar(select(FinancialAccount.id).where(
-            FinancialAccount.case_id == case_id, FinancialAccount.identity_key == key, FinancialAccount.id != account.id)):
-        raise PdfMappingError('Another account already has this bank and number. Merge the two accounts instead; nothing was changed.', 409)
+    other = key != account.identity_key and session.scalar(select(FinancialAccount).where(
+        FinancialAccount.case_id == case_id, FinancialAccount.identity_key == key, FinancialAccount.id != account.id))
+    if other:
+        # Not "merge": the merge refuses two accounts whose numbers differ. The statement-details edit places a
+        # statement on the account that has its bank and number, keeping its history.
+        named = ' · '.join(part for part in (other.holder_name, other.institution_name, other.identifier_as_printed) if part)
+        raise PdfMappingError(f'Another account ({named or other.id}) already has this bank and number, so this account '
+            'cannot take them. To put a statement on that account, correct the bank and number in that statement\'s '
+            'details; the statement then joins that account and keeps its history. Nothing was changed.', 409)
     return key
 
 
