@@ -47,6 +47,7 @@ from sqlalchemy import select
 from postgres.models.evidence import EvidenceFile
 from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item
 from services.financial.pdf_candidates import PdfMappingError
+from services.financial.read_only_session import reads_outside_transaction
 
 log = logging.getLogger(__name__)
 
@@ -228,6 +229,8 @@ def sweep(factory, *, max_files=None, budget_seconds=None):
                     break
                 if has_open:
                     with factory() as db:
+                        # Read only; minutes of comparison must not hold a transaction open (read_only_session).
+                        reads_outside_transaction(db)
                         items = _open_items(db, batch_id, UUID(entry['file_id']))
                         verdict = reading_changed(db, case_id=case_id, batch_file=entry, items=items)
                     outcome['compared'] += 1

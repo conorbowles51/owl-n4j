@@ -86,8 +86,9 @@ from uuid import UUID
 from sqlalchemy import select
 
 from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item
+from services.financial.read_only_session import reads_outside_transaction
 
-log = logging.getLogger(__name__)
+log =logging.getLogger(__name__)
 
 
 def _switch(name, default='1'):
@@ -426,6 +427,8 @@ def select_case(factory, case_id, stamp, *, out_of_time, outcome):
             outcome['deferred'] += 1
             continue
         with factory() as db:
+            # Read only; minutes of judging must not hold a transaction open (read_only_session).
+            reads_outside_transaction(db)
             scope = readers.context(db, case_id)
             notes = {}
             verdict, chosen, members = judge(db, case_id, source_id, scope, scheduled, notes)
