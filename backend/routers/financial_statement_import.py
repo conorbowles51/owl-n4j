@@ -260,7 +260,10 @@ def undo_account_details(account_id: UUID, body: account_details_correction.Undo
         raise HTTPException(status_code=500, detail='The correction could not be undone. Nothing was changed.')
 
 
+# Reads only database rows of its case (no clock, files or graph), so a saved copy keyed on those rows answers it:
+# every call read and decompressed each statement's saved metadata (d5b330d1: 1.8-3.7 s, with 0 records to show).
 @router.get('/incomplete-records')
+@cached_view('incomplete-records')
 def incomplete_records(account_ids: Annotated[list[UUID] | None, Query()] = None, account_holders: Annotated[list[str] | None, Query()] = None, case_id: UUID = Query(...), account_id: UUID | None = Query(None),
         source_document_id: UUID | None = None, evidence_file_id: Annotated[list[UUID] | None, Query()] = None,
         start_date: date | None = Query(None), end_date: date | None = Query(None),
