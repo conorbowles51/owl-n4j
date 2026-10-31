@@ -30,6 +30,12 @@ interface FetchOptions extends Omit<RequestInit, "body"> {
    * page: the updating notice's own checks record a current answer only once the page has fetched it again.
    */
   onViewAnswer?: (asOf: string | undefined) => void
+  /**
+   * Only the answer's status and headers are wanted: a successful body is cancelled unread and undefined is
+   * returned. The updating notice's checks use it, so each check does not download and parse a whole view (a
+   * d5b330d1 ledger is 64 MB) only to read its headers.
+   */
+  headersOnly?: boolean
 }
 
 let inFlight = 0
@@ -44,7 +50,7 @@ export async function fetchAPI<T>(
   options: FetchOptions = {}
 ): Promise<T> {
   const token = localStorage.getItem("authToken")
-  const { body, timeout, signal: callerSignal, onViewAnswer, ...init } = options
+  const { body, timeout, signal: callerSignal, onViewAnswer, headersOnly, ...init } = options
 
   const headers: Record<string, string> = {
     ...(init.headers as Record<string, string>),
@@ -120,6 +126,11 @@ export async function fetchAPI<T>(
     }
 
     if (response.status === 204) {
+      return undefined as T
+    }
+
+    if (headersOnly) {
+      await response.body?.cancel().catch(() => undefined)
       return undefined as T
     }
 

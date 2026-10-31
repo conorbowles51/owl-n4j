@@ -46,7 +46,11 @@ export function FinancialViewUpdatingNotice() {
           const request = nextRequestNumber()
           let asOf: string | undefined = ""
           try {
-            await fetchAPI(endpoint, { signal: controller.signal, onViewAnswer: (value) => (asOf = value) })
+            await fetchAPI(endpoint, {
+              signal: controller.signal,
+              headersOnly: true,
+              onViewAnswer: (value) => (asOf = value),
+            })
           } catch {
             // A refusal is answered like any view; the page's own query shows it once fetched again.
           }

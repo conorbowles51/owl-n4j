@@ -100,3 +100,45 @@ it("keeps saying so when the page's refetch fails", async () => {
   })
   expect(screen.getByTestId("financial-view-updating")).toBeTruthy()
 })
+
+it("checks each view by its headers only, without reading its body", async () => {
+  const client = new QueryClient()
+  vi.spyOn(client, "refetchQueries").mockResolvedValue()
+  const endpoint = "/api/financial/ledger?case_id=c1"
+  act(() => noteViewAnswer(endpoint, "2026-10-31T07:15:00+00:00"))
+  let pulled = 0
+  let cancelled = 0
+  const answers = [
+    { "X-Financial-View-State": "updating", "X-Financial-View-As-Of": "2026-10-31T07:16:00+00:00" },
+    {},
+  ]
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockImplementation(() => {
+      const body = new ReadableStream({
+        pull(controller) {
+          pulled += 1
+          controller.enqueue(new TextEncoder().encode('{"transactions":[]}'))
+          controller.close()
+        },
+        cancel() {
+          cancelled += 1
+        },
+      }, { highWaterMark: 0 })
+      return Promise.resolve(new Response(body, { status: 200, headers: answers.shift() ?? {} }))
+    })
+  )
+  show(client)
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(UPDATING_POLL_MS + 10)
+  })
+  // Still updating: the previous copy's body is not downloaded again.
+  expect(screen.getByTestId("financial-view-updating")).toBeTruthy()
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(UPDATING_POLL_MS + 10)
+  })
+  // Current now: the notice goes once the page's own refetch lands; the check itself read no body.
+  expect(screen.queryByTestId("financial-view-updating")).toBeNull()
+  expect(pulled).toBe(0)
+  expect(cancelled).toBe(2)
+})
