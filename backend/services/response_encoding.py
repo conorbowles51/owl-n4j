@@ -42,6 +42,18 @@ def _plain(value):
     return value is None or kind in _PLAIN
 
 
+def plain_or_encoded(content):
+    """``jsonable_encoder(content)`` for a route that builds its own JSONResponse: the content itself when it is
+    already plain JSON data (the same bytes, without the walk)."""
+    try:
+        if _plain(content):
+            return content
+    except RecursionError:
+        pass
+    from fastapi.encoders import jsonable_encoder
+    return jsonable_encoder(content)
+
+
 def _encode(arguments):
     # A route without a response model that returns data already in JSON form (most of them: engine job lists,
     # dicts of str and numbers) needs no encoding: checking that costs d5b330d1's jobs list 0.02 s where

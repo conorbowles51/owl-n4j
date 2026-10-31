@@ -22,7 +22,6 @@ from typing import Dict, List, Optional
 from uuid import UUID
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.encoders import jsonable_encoder
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 from starlette.datastructures import UploadFile as StarletteUploadFile
@@ -37,6 +36,7 @@ from services.cypher_generator import generate_cypher_from_graph
 from services.evidence_db_storage import EvidenceDBStorage
 from services.evidence_text_search_service import search_case_text, search_document_text
 from services import evidence_engine_client
+from services.response_encoding import plain_or_encoded
 from services.financial import PageRenderError, UnadmittedFileError, render_page_png
 from services import page_image_cache
 from .auth import get_current_user
@@ -1681,7 +1681,8 @@ async def list_engine_jobs(
 
 def _jobs_answer(jobs: list, if_none_match: Optional[str]) -> Response:
     """The job list as FastAPI would encode it, with an ETag; 304 when the browser already holds these bytes."""
-    answer = JSONResponse(jsonable_encoder(jobs))
+    # The engine's list is plain JSON data: d5b330d1's took 0.19 s to walk with jsonable_encoder, for the same bytes.
+    answer = JSONResponse(plain_or_encoded(jobs))
     # Weak: the same tag names the plain and the gzipped body (the same JSON).
     etag = 'W/"' + hashlib.sha256(answer.body).hexdigest()[:32] + '"'
     headers = {"ETag": etag, "Cache-Control": "private, no-cache"}

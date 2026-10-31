@@ -71,3 +71,24 @@ def test_an_encoding_failure_is_an_error_not_an_empty_list(monkeypatch):
         asyncio.run(router.list_engine_jobs(SimpleNamespace(headers={}), case_id="c", current_user=None, db=None))
     monkeypatch.setattr(router.evidence_engine_client, "list_jobs", AsyncMock(side_effect=OSError("engine down")))
     assert asyncio.run(router.list_engine_jobs(SimpleNamespace(headers={}), case_id="c", current_user=None, db=None)) == []
+
+
+def test_the_engine_list_is_not_walked_and_its_bytes_are_unchanged(monkeypatch):
+    # The engine's list is plain JSON data; jsonable_encoder walked d5b330d1's for 0.19 s to hand back the same.
+    import datetime
+    import fastapi.encoders
+    from fastapi.responses import JSONResponse
+    from routers import evidence as router
+
+    plain = [{"id": "j1", "status": "completed", "progress": 1.0, "files": [], "error": None, "evidence_file_id": "f"}]
+    odd = [{"id": "j2", "at": datetime.datetime(2026, 10, 31, 9, 0)}]
+    expected = {id(plain): JSONResponse(fastapi.encoders.jsonable_encoder(plain)).body,
+                id(odd): JSONResponse(fastapi.encoders.jsonable_encoder(odd)).body}
+    walked = []
+    original = fastapi.encoders.jsonable_encoder
+    monkeypatch.setattr(fastapi.encoders, "jsonable_encoder",
+                        lambda value, *a, **k: walked.append(value) or original(value, *a, **k))
+    assert router._jobs_answer(plain, None).body == expected[id(plain)]
+    assert plain not in walked
+    assert router._jobs_answer(odd, None).body == expected[id(odd)]
+    assert odd in walked
