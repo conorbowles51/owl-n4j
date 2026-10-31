@@ -20,8 +20,9 @@ def _throwaway_dir(variable, prefix):
     """Point ``variable`` at a fresh directory removed at exit, unless it already names one a test run made (a child
     process re-importing this package keeps its parent's directory and registers no removal)."""
     current = os.environ.get(variable, '')
-    made = os.path.join(_tempfile.gettempdir(), prefix)
-    if current.startswith(made) and os.path.isdir(current):
+    real = os.path.realpath(current) if current else ''
+    if (real and os.path.isdir(real) and os.path.dirname(real) == os.path.realpath(_tempfile.gettempdir())
+            and os.path.basename(real).startswith(prefix)):
         return
     os.environ[variable] = _tempfile.mkdtemp(prefix=prefix)
     _atexit.register(_shutil.rmtree, os.environ[variable], ignore_errors=True)
