@@ -218,7 +218,20 @@ def apply_identity_graph(graph_session, plan, *, is_current=None):
         # not be built again: the sweep finds most cases unchanged, and d5b330d1's plan took 1.24 s of a web
         # worker's interpreter (31 Oct).
         if marker and marker['revision'] == revision:
-            validate_graph_targets(tx, plan)
+            # Where this branch's answer depends on the plan still being current (a refusal to report, or a backoff
+            # to clear), it is rebuilt as before, so a plan that went stale while waiting changes neither.
+            with _deferred_lock:
+                deferred = str(case_id) in _deferred
+            try:
+                validate_graph_targets(tx, plan)
+            except Exception:
+                if is_current is not None and not is_current():
+                    tx.rollback()
+                    return False
+                raise
+            if deferred and is_current is not None and not is_current():
+                tx.rollback()
+                return False
             tx.rollback()
             _clear_deferral(case_id)
             return False

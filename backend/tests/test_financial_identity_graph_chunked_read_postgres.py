@@ -21,13 +21,20 @@ from tests.test_financial_duplicates import DuplicateTestCase
 @unittest.skipUnless(os.getenv('LOUPE_TEST_LOCAL_POSTGRES') == '1', 'Requires isolated local PostgreSQL')
 class ChunkedPaymentReadPostgresTests(DuplicateTestCase):
     def test_lookups_inside_the_streamed_read_give_the_unchunked_plan(self):
-        self.make_copy(rows=tuple((n * 100, f"{n:02x}") for n in range(1, 8)))
+        self.make_copy(rows=tuple((n * 100, f"{n:02x}") for n in range(1, 9)))
         rows = list(self.db.query(FinancialTransaction).filter_by(case_id=self.case.id).order_by(FinancialTransaction.id))
-        # Two rows carry no link; the read leaves them in the database.
         for row in rows[:5]:
             row.metadata_ = {**(row.metadata_ or {}),
                              'investigation_labels': {'counterparty_link': {'kind': 'account', 'id': str(self.account.id)}}}
             flag_modified(row, 'metadata_')
+        # A link recorded as null outranks a reviewed counterparty (no link); labels that are not an object fall back
+        # to it (a link). The last row carries nothing.
+        link = {'kind': 'account', 'id': str(self.account.id)}
+        for row, labels in ((rows[5], {'counterparty_link': None}), (rows[6], ['counterparty_link'])):
+            row.metadata_ = {**(row.metadata_ or {}), 'investigation_labels': labels}
+            row.provenance = {**(row.provenance or {}), 'reviewed_counterparty': link}
+            flag_modified(row, 'metadata_')
+            flag_modified(row, 'provenance')
         self.db.commit()
 
         url = make_url(os.environ['LOUPE_TEST_LOCAL_POSTGRES_URL'])
@@ -81,8 +88,10 @@ class ChunkedPaymentReadPostgresTests(DuplicateTestCase):
                 payment_counterparty_link.resolved_link = resolved
                 payment_counterparty_link.stored_link = stored
             self.assertEqual(chunked, whole)
-            self.assertEqual(len(chunked['payment_links']), 5)
-            self.assertEqual(len(read), 2 * 5)
+            self.assertEqual(sorted(link['source'] for link in chunked['payment_links']),
+                             sorted(row.ref_id for row in rows[:5] + [rows[6]]))
+            # Only the row with nothing stays in the database.
+            self.assertEqual(len(read), 2 * 7)
             streamed = [i for i, (statement, streaming) in enumerate(statements) if streaming]
             self.assertEqual(len(streamed), 1)
             # Queries ran on the same session while the stream was open.

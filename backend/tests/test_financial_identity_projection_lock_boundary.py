@@ -202,6 +202,7 @@ def test_missing_payment_nodes_do_not_claim_completed_identity_revision():
 def test_a_graph_already_at_the_revision_is_not_planned_again():
     # The sweep finds most cases unchanged; rebuilding the plan to confirm a write that will not happen cost
     # d5b330d1 1.24 s of a web worker's interpreter every sweep.
+    projection._clear_deferral('synthetic-case')  # an earlier test's backoff would rightly make it check
     graph = Graph()
     graph.revision = 'same'
     checks = []
@@ -209,3 +210,24 @@ def test_a_graph_already_at_the_revision_is_not_planned_again():
     assert checks == []
     assert graph.revision == 'same'
     assert graph.events[-1] == 'rollback'
+
+
+def test_a_stale_plan_at_the_graph_revision_neither_refuses_nor_clears_a_backoff():
+    # The source changed while the sweep waited for the lock: as before the graph-revision check moved ahead of
+    # the rebuild, the stale plan's refusal is not reported and a recorded backoff stays.
+    graph = Graph()
+    graph.revision = 'same'
+    stale = plan('same')
+    stale['entity_links'] = [{'target': 'removed-meanwhile'}]
+    assert not projection.apply_identity_graph(graph, stale, is_current=lambda: False)
+    with pytest.raises(ValueError):
+        projection.apply_identity_graph(graph, stale, is_current=lambda: True)
+
+    projection._defer('synthetic-case', 'failed', error='synthetic')
+    try:
+        assert not projection.apply_identity_graph(graph, plan('same'), is_current=lambda: False)
+        assert projection.sweep_deferral('synthetic-case')['reason'] == 'failed'
+        assert not projection.apply_identity_graph(graph, plan('same'), is_current=lambda: True)
+        assert projection.sweep_deferral('synthetic-case') is None
+    finally:
+        projection._clear_deferral('synthetic-case')
