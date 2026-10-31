@@ -286,7 +286,7 @@ def test_every_thread_of_the_child_starts_with_stop_and_dump_signals_blocked(tmp
     """Threads started while the package imports, before main() runs, took SIGUSR1's default action and ended the
     live process (2026-10-30 16:02 and 16:13, status -10). The child's first statement blocks the signals, before any
     import; started by uvloop as the live workers do (it clears a launcher-set mask)."""
-    import uvloop
+    uvloop = pytest.importorskip('uvloop', reason='uvloop is in the live venv, not in the CLAUDE.md bootstrap line')
     out = tmp_path / 'masks'
     (tmp_path / 'probe_module.py').write_text(
         "import sys, threading, time, glob\n"

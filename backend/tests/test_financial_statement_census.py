@@ -28,6 +28,9 @@ def load():
 @pytest.fixture(scope='module')
 def corpus(tmp_path_factory):
     """The three corpus PDFs, read once by the real engine into a census cache."""
+    # The engine reads in a child of this interpreter, so it needs the engine's dependencies
+    # (evidence-engine/pyproject.toml). The live venv has them; the CLAUDE.md bootstrap line does not.
+    pytest.importorskip('pydantic_settings', reason="needs the evidence engine's dependencies (evidence-engine/pyproject.toml)")
     census = load()
     root = tmp_path_factory.mktemp('census-corpus')
     originals = {}
