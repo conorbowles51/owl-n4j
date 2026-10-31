@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react"
 import { useQueryClient, type QueryClient } from "@tanstack/react-query"
 import { fetchAPI } from "@/lib/api-client"
+import { viewDetail, type ViewDetail } from "@/lib/browser-timing"
 
 /**
  * Time from opening a Financial view to its data being on screen, as the person sees it.
@@ -12,6 +13,9 @@ import { fetchAPI } from "@/lib/api-client"
  * before that (another view, case or page, or closing the tab) is recorded as LEFT with how long they
  * waited, so the slowest loads are not lost. Timings are queued and posted in small batches; a failed post is dropped, never
  * retried and never shown. Uses only performance.now, timers and fetch (safe over plain http).
+ *
+ * The same timing runs for every route of the app (lib/route-speed.ts, page names like "case/timeline"),
+ * and each row carries what the browser spent on the view (lib/browser-timing.ts).
  */
 
 export interface PageView {
@@ -19,6 +23,7 @@ export interface PageView {
   method: "LOAD" | "VIEW" | "LEFT"
   case_id: string | null
   ms: number
+  detail?: ViewDetail
 }
 
 const ENDPOINT = "/api/request-speed/page-views"
@@ -29,7 +34,7 @@ const GIVE_UP_MS = MAX_MS
 
 const queue: PageView[] = []
 let timer: ReturnType<typeof setTimeout> | null = null
-let loadTaken = false
+const loadTaken = new Set<string>()
 let listening = false
 
 export function flushPageViews(keepalive = false) {
@@ -55,10 +60,10 @@ export function recordPageView(view: PageView) {
   else if (!timer) timer = setTimeout(() => flushPageViews(), FLUSH_MS)
 }
 
-/** True once: the document was loaded at this very address and nothing has been timed yet. */
-export function takeDocumentLoad(pathname: string) {
-  if (loadTaken) return false
-  loadTaken = true
+/** True once per channel: the document was loaded at this very address and nothing has been timed yet. */
+export function takeDocumentLoad(pathname: string, channel = "financial") {
+  if (loadTaken.has(channel)) return false
+  loadTaken.add(channel)
   const entry = performance.getEntriesByType?.("navigation")?.[0] as PerformanceNavigationTiming | undefined
   if (!entry?.name) return false
   try {
@@ -96,20 +101,28 @@ export function whenSettled(client: QueryClient, signal: { cancelled: boolean })
 
 /** Times each Financial view (page name like "financial/ledger") for a case. */
 export function useFinancialViewSpeed(caseId: string | undefined, page: string) {
+  useViewSpeed(caseId ?? null, caseId ? page : null, "financial")
+}
+
+/**
+ * Times each view named `page` (null: not timed). `channel` keeps the opening (LOAD) of one timer
+ * separate from another's, so the route timer and the Financial view timer both see the same opening.
+ */
+export function useViewSpeed(caseId: string | null, page: string | null, channel: string) {
   const client = useQueryClient()
   const current = useRef<{ start: number; method: "LOAD" | "VIEW"; armed: boolean; signal: { cancelled: boolean } } | null>(null)
 
   useEffect(() => {
-    if (!caseId || typeof performance === "undefined") return
+    if (!page || typeof performance === "undefined") return
     if (document.visibilityState === "hidden") {
-      takeDocumentLoad(window.location.pathname) // a hidden opening is not timed, and not reused later
+      takeDocumentLoad(window.location.pathname, channel) // a hidden opening is not timed, and not reused later
       return
     }
     const previous = current.current
     // A view set by the address in the same frame as opening (not by the person) keeps the
     // opening's start: it is the same page load.
     const inherit = previous && !previous.armed
-    const method = inherit ? previous.method : takeDocumentLoad(window.location.pathname) ? "LOAD" : "VIEW"
+    const method = inherit ? previous.method : takeDocumentLoad(window.location.pathname, channel) ? "LOAD" : "VIEW"
     const start = inherit ? previous.start : method === "LOAD" ? 0 : performance.now()
     const signal = { cancelled: false }
     const measuring = { start, method, armed: false, signal }
@@ -121,13 +134,15 @@ export function useFinancialViewSpeed(caseId: string | undefined, page: string) 
       void whenSettled(client, signal).then((end) => {
         if (end === null || signal.cancelled) return
         settled = true
-        recordPageView({ page, method, case_id: caseId, ms: end - start })
+        recordPageView({ page, method, case_id: caseId, ms: end - start, detail: viewDetail(start, end, method === "LOAD") })
       })
     })
     const leave = () => {
       // Left by the person before the data was shown (not the same-frame address sync).
-      if (measuring.armed && !settled && !signal.cancelled)
-        recordPageView({ page, method: "LEFT", case_id: caseId, ms: performance.now() - start })
+      if (measuring.armed && !settled && !signal.cancelled) {
+        const now = performance.now()
+        recordPageView({ page, method: "LEFT", case_id: caseId, ms: now - start, detail: viewDetail(start, now, method === "LOAD") })
+      }
     }
     // Closing or reloading the tab runs no React cleanup: record the leave and post it now.
     const unload = () => {
@@ -142,5 +157,5 @@ export function useFinancialViewSpeed(caseId: string | undefined, page: string) 
       signal.cancelled = true
       cancelAnimationFrame(frame)
     }
-  }, [caseId, page, client])
+  }, [caseId, page, channel, client])
 }

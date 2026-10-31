@@ -10,6 +10,7 @@ import {
 import { useUIStore } from "@/stores/ui.store"
 import { ChatSidePanel } from "@/features/chat/components/ChatSidePanel"
 import { useGlobalShortcuts } from "@/hooks/use-global-shortcuts"
+import { useRouteSpeed } from "@/lib/route-speed"
 
 export function AppLayout() {
   const chatPanelOpen = useUIStore((s) => s.chatPanelOpen)
@@ -30,6 +31,8 @@ export function AppLayout() {
   const hasSelfManagedPanel = isGraphRoute || isChatRoute || isAgentRoute
 
   useGlobalShortcuts(currentCaseId)
+  // How long each page takes to show its data, from every route (lib/route-speed.ts).
+  useRouteSpeed()
 
   // Keyboard shortcut: Ctrl+Shift+L — works globally
   useEffect(() => {
