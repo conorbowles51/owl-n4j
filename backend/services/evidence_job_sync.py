@@ -222,10 +222,11 @@ def _reconcile(db: Session, jobs: list[dict[str, Any]]) -> tuple[int, bool]:
 
 def _accepted_request_ids(db: Session, predicates) -> dict | None:
     """The ingestion request each matched file last accepted, read as one JSON field instead of loading the whole
-    profile snapshot. Pending in-session changes are flushed first (autoflush), so this is what the record holds.
-    None for a stand-in session without SQL, where the record's own snapshot is read instead."""
+    profile snapshot. Pending in-session changes are flushed first (sessions here do not autoflush), so this is what
+    the record holds. None for a stand-in session without SQL, where the record's own snapshot is read instead."""
     if not isinstance(db, Session):
         return None
+    db.flush()
     request_id = EvidenceFile.last_processed_profile_snapshot["ingestion_request_id"].as_string()
     rows = db.execute(select(EvidenceFile.id, request_id).where(or_(*predicates), request_id.is_not(None))).all()
     return {row[0]: row[1] for row in rows if row[1]}
@@ -289,6 +290,7 @@ def _claim_without_waiting(db: Session, records: list[EvidenceFile]) -> set | No
 # reconciles only when the engine's list changed since this process last settled it, or after RECHECK seconds (a
 # record changed by another writer is still repaired within that time). One poll per case at a time.
 POLL_RECHECK_SECONDS = 30.0
+POLL_WAIT_SECONDS = 10.0
 _poll_settled: dict[str, tuple[str, float]] = {}
 _poll_locks: dict[str, threading.Lock] = {}
 _poll_locks_guard = threading.Lock()
@@ -314,7 +316,11 @@ def reconcile_case_poll(db: Session, case_id: str, jobs: list[dict[str, Any]]) -
     fingerprint = _jobs_fingerprint(jobs)
     with _poll_locks_guard:
         lock = _poll_locks.setdefault(case_id, threading.Lock())
-    with lock:
+    # Another poll of this case is reconciling: wait for it (its result is what this poll would write), but never
+    # hold a thread-pool slot longer than POLL_WAIT_SECONDS; the next poll reconciles.
+    if not lock.acquire(timeout=POLL_WAIT_SECONDS):
+        return 0
+    try:
         settled = _poll_settled.get(case_id)
         if settled and settled[0] == fingerprint and time.monotonic() - settled[1] < POLL_RECHECK_SECONDS:
             return 0
@@ -325,6 +331,8 @@ def reconcile_case_poll(db: Session, case_id: str, jobs: list[dict[str, Any]]) -
         if all_applied:
             _poll_settled[case_id] = (fingerprint, started)
         return updated
+    finally:
+        lock.release()
 
 
 def _reconcile_and_commit(db: Session, jobs: list[dict[str, Any]]) -> int:

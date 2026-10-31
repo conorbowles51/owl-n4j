@@ -72,3 +72,28 @@ def test_evidence_object_access_still_refuses_unknown_records(monkeypatch):
         asyncio.run(evidence._require_evidence_object_access(
             _request(path="/api/evidence/e1", path_params={"evidence_id": "e1"}), current_user=object(), db=object()))
     assert refused.value.status_code == 404
+
+
+def test_an_unknown_engine_job_is_refused_without_evidence_ids(monkeypatch):
+    import pytest
+    from fastapi import HTTPException
+    from routers import evidence
+
+    monkeypatch.setattr(evidence.EvidenceDBStorage, "find_by_engine_job_id", lambda db, job_id: None)
+    with pytest.raises(HTTPException) as refused:
+        asyncio.run(evidence._require_evidence_object_access(
+            _request(path="/api/evidence/engine/jobs/j9", path_params={"job_id": "j9"}), current_user=object(), db=object()))
+    assert (refused.value.status_code, refused.value.detail) == (404, "Evidence job not found")
+
+
+def test_a_poll_waiting_on_another_poll_of_the_case_gives_up_after_the_wait(monkeypatch):
+    from services import evidence_job_sync
+
+    monkeypatch.setattr(evidence_job_sync, "POLL_WAIT_SECONDS", 0.05)
+    monkeypatch.setattr(evidence_job_sync, "_reconcile", lambda db, jobs: (_ for _ in ()).throw(AssertionError("ran")))
+    lock = evidence_job_sync._poll_locks.setdefault("held-case", threading.Lock())
+    lock.acquire()
+    try:
+        assert evidence_job_sync.reconcile_case_poll(SimpleNamespace(), "held-case", []) == 0
+    finally:
+        lock.release()
