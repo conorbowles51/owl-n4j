@@ -68,17 +68,16 @@ def test_the_handlers_measured_in_use_run_in_the_thread_pool():
 NOT_YET_OFFLOADED = {
     # Upload, processing and deletion actions: they await process_db_files / engine uploads that interleave database
     # writes with engine calls on the shared async engine client; converted with process_db_files in A2(b).
-    'routers/evidence.py:upload_evidence', 'routers/evidence.py:process_evidence_background',
-    'routers/evidence.py:process_evidence', 'routers/evidence.py:process_cellebrite_folder',
+    'routers/evidence.py:upload_evidence', 'routers/evidence.py:process_cellebrite_folder',
     'routers/evidence.py:delete_evidence_file', 'routers/evidence_folders.py:process_folder',
-    'routers/financial_statement_import.py:prepare_existing', 'routers/financial_statement_import.py:reprocess',
+    'routers/financial_statement_import.py:prepare_existing',
     'routers/financial_statement_import.py:retry_financial_batch_file',
     'routers/evidence_upload_groups.py:group_action',
 }
 
 _OFFLOAD = {'run_in_threadpool', 'to_thread', 'run_sync'}
 # Coroutines that take the session but run their own database work in the thread pool.
-_OFFLOADS_INTERNALLY = {'reconcile_job_by_id', 'reconcile_case_jobs',
+_OFFLOADS_INTERNALLY = {'reconcile_job_by_id', 'reconcile_case_jobs', 'process_db_files',
                         # reads the graph with asyncio.to_thread, then compares names between awaits
                         'find_similar_entities_streaming'}
 _ROUTE_METHODS = ('get', 'post', 'put', 'patch', 'delete', 'api_route')

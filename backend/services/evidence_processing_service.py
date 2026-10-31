@@ -7,6 +7,7 @@ from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from postgres.models.evidence import EvidenceFile
 from services import evidence_engine_client
@@ -80,6 +81,9 @@ async def process_db_files(
     preparation_mode: str = "full",
     requested_by_user_id: uuid.UUID | None = None,
 ) -> dict[str, Any]:
+    """Send evidence files to the engine. The database work (selection, snapshots, the admission gate, marking the
+    files, recording the jobs) runs in the thread pool on this session, in this order; only the engine calls and the
+    job subscription are awaited on the event loop."""
     if preparation_mode not in ("full", "pdf_review"):
         raise ValueError("Unknown document preparation mode")
     if preparation_mode == "pdf_review":
@@ -87,10 +91,102 @@ async def process_db_files(
         # or restoring a reading, including an idempotent reprocessing request.
         # Persist that choice before the network wait. Visibility is checked
         # again under lock below before a processing request can be committed.
-        db.commit()
+        await run_in_threadpool(db.commit)
     await reconcile_case_jobs(db, str(case_id))
     ingestion_request_id = str(uuid.uuid4())
 
+    prepared = await run_in_threadpool(
+        _prepare_files,
+        db,
+        case_id=case_id,
+        file_ids=file_ids,
+        force_reprocess=force_reprocess,
+        preparation_mode=preparation_mode,
+        requested_by_user_id=requested_by_user_id,
+        ingestion_request_id=ingestion_request_id,
+    )
+    if isinstance(prepared, dict):
+        return prepared
+    file_tuples, per_file_metadata, valid_files, valid_ids, skipped_processing, missing_on_disk = prepared
+
+    try:
+        jobs = await evidence_engine_client.upload_file_paths_batch(
+            case_id=str(case_id),
+            files=file_tuples,
+            processing_metadata=per_file_metadata,
+        )
+    except Exception as exc:
+        recovered_jobs: list[dict[str, Any]] = []
+        try:
+            case_jobs = await evidence_engine_client.list_jobs(str(case_id))
+            jobs_by_source_id: dict[str, dict[str, Any]] = {}
+            for job in case_jobs:
+                pipeline_state = job.get("pipeline_state") or {}
+                if pipeline_state.get("ingestion_request_id") != ingestion_request_id:
+                    continue
+                source_id = str(job.get("source_evidence_file_id") or "")
+                if source_id:
+                    jobs_by_source_id[source_id] = job
+            recovered_jobs = [
+                jobs_by_source_id[file_id]
+                for file_id in valid_ids
+                if file_id in jobs_by_source_id
+            ]
+        except Exception:
+            logger.exception(
+                "Failed to check whether ingestion request %s was accepted",
+                ingestion_request_id,
+            )
+
+        if len(recovered_jobs) == len(valid_files):
+            recovered_job_ids = await run_in_threadpool(_record_recovered_jobs, db, valid_files, recovered_jobs)
+            await reconcile_case_jobs(db, str(case_id))
+            subscriber = get_subscriber()
+            await subscriber.track_jobs(recovered_job_ids, str(case_id))
+            logger.warning(
+                "Recovered %d accepted jobs after upload response failure request_id=%s",
+                len(recovered_job_ids),
+                ingestion_request_id,
+            )
+            return {
+                "job_ids": recovered_job_ids,
+                "file_count": len(valid_files),
+                "skipped_count": skipped_processing,
+                "missing_on_disk": missing_on_disk,
+                "message": f"Processing {len(valid_files)} file(s)",
+                "recovered_after_response_error": True,
+            }
+
+        await run_in_threadpool(_record_upload_failed, db, valid_files, str(exc))
+        raise
+
+    job_ids_out = await run_in_threadpool(_record_engine_jobs, db, valid_files, jobs)
+
+    if job_ids_out:
+        subscriber = get_subscriber()
+        await subscriber.track_jobs(job_ids_out, str(case_id))
+
+    return {
+        "job_ids": job_ids_out,
+        "file_count": len(valid_files),
+        "skipped_count": skipped_processing,
+        "missing_on_disk": missing_on_disk,
+        "message": f"Processing {len(valid_files)} file(s)",
+    }
+
+
+def _prepare_files(
+    db: Session,
+    *,
+    case_id: uuid.UUID,
+    file_ids: list[uuid.UUID],
+    force_reprocess: bool,
+    preparation_mode: str,
+    requested_by_user_id: uuid.UUID | None,
+    ingestion_request_id: str,
+):
+    """Select, snapshot, gate and mark the files to send, and commit. Returns the early result dict when nothing is
+    sent, otherwise (file_tuples, per_file_metadata, valid_files, valid_ids, skipped_processing, missing_on_disk)."""
     if preparation_mode == "pdf_review":
         files = _financial_processing_files(db, case_id, file_ids)
     else:
@@ -206,87 +302,38 @@ async def process_db_files(
             profile_snapshot=_serialize_profile_snapshot(snapshot),
             folder_id=ef.folder_id,
         )
+    valid_ids = [str(ef.id) for ef in valid_files]  # read before the commit expires the rows
+    db.commit()
+    return file_tuples, per_file_metadata, valid_files, valid_ids, skipped_processing, missing_on_disk
+
+
+def _record_recovered_jobs(db: Session, valid_files: list[EvidenceFile], recovered_jobs: list[dict[str, Any]]) -> list[str]:
+    recovered_job_ids: list[str] = []
+    for ef, job in zip(valid_files, recovered_jobs):
+        ef.engine_job_id = str(job["id"])
+        ef.status = "processing"
+        ef.last_error = None
+        recovered_job_ids.append(str(job["id"]))
+    db.commit()
+    return recovered_job_ids
+
+
+def _record_upload_failed(db: Session, valid_files: list[EvidenceFile], error: str) -> None:
+    EvidenceDBStorage.mark_processed(
+        db,
+        [ef.id for ef in valid_files],
+        error=error,
+    )
     db.commit()
 
-    try:
-        jobs = await evidence_engine_client.upload_file_paths_batch(
-            case_id=str(case_id),
-            files=file_tuples,
-            processing_metadata=per_file_metadata,
-        )
-    except Exception as exc:
-        recovered_jobs: list[dict[str, Any]] = []
-        try:
-            case_jobs = await evidence_engine_client.list_jobs(str(case_id))
-            jobs_by_source_id: dict[str, dict[str, Any]] = {}
-            for job in case_jobs:
-                pipeline_state = job.get("pipeline_state") or {}
-                if pipeline_state.get("ingestion_request_id") != ingestion_request_id:
-                    continue
-                source_id = str(job.get("source_evidence_file_id") or "")
-                if source_id:
-                    jobs_by_source_id[source_id] = job
-            recovered_jobs = [
-                jobs_by_source_id[str(ef.id)]
-                for ef in valid_files
-                if str(ef.id) in jobs_by_source_id
-            ]
-        except Exception:
-            logger.exception(
-                "Failed to check whether ingestion request %s was accepted",
-                ingestion_request_id,
-            )
 
-        if len(recovered_jobs) == len(valid_files):
-            recovered_job_ids: list[str] = []
-            for ef, job in zip(valid_files, recovered_jobs):
-                ef.engine_job_id = str(job["id"])
-                ef.status = "processing"
-                ef.last_error = None
-                recovered_job_ids.append(str(job["id"]))
-            db.commit()
-            await reconcile_case_jobs(db, str(case_id))
-            subscriber = get_subscriber()
-            await subscriber.track_jobs(recovered_job_ids, str(case_id))
-            logger.warning(
-                "Recovered %d accepted jobs after upload response failure request_id=%s",
-                len(recovered_job_ids),
-                ingestion_request_id,
-            )
-            return {
-                "job_ids": recovered_job_ids,
-                "file_count": len(valid_files),
-                "skipped_count": skipped_processing,
-                "missing_on_disk": missing_on_disk,
-                "message": f"Processing {len(valid_files)} file(s)",
-                "recovered_after_response_error": True,
-            }
-
-        EvidenceDBStorage.mark_processed(
-            db,
-            [ef.id for ef in valid_files],
-            error=str(exc),
-        )
-        db.commit()
-        raise
-
+def _record_engine_jobs(db: Session, valid_files: list[EvidenceFile], jobs: list[dict[str, Any]]) -> list[str]:
     job_ids_out: list[str] = []
     for ef, job in zip(valid_files, jobs):
         ef.engine_job_id = str(job["id"])
         job_ids_out.append(str(job["id"]))
     db.commit()
-
-    if job_ids_out:
-        subscriber = get_subscriber()
-        await subscriber.track_jobs(job_ids_out, str(case_id))
-
-    return {
-        "job_ids": job_ids_out,
-        "file_count": len(valid_files),
-        "skipped_count": skipped_processing,
-        "missing_on_disk": missing_on_disk,
-        "message": f"Processing {len(valid_files)} file(s)",
-    }
+    return job_ids_out
 
 
 def _guess_content_type(file_name: str) -> str:

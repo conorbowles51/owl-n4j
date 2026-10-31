@@ -1361,11 +1361,12 @@ async def process_evidence_background(
             from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
             from uuid import UUID
             try:
-                check_case_access(db, UUID(request.case_id), current_user, required_permission=("evidence", "upload"))
+                await run_in_threadpool(check_case_access, db, UUID(request.case_id), current_user,
+                                        required_permission=("evidence", "upload"))
             except (CaseNotFound, CaseAccessDenied) as e:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
-        db_backed_ids, missing_ids = _split_db_backed_legacy(request.file_ids, db)
+        db_backed_ids, missing_ids = await run_in_threadpool(_split_db_backed_legacy, request.file_ids, db)
         if missing_ids:
             raise HTTPException(
                 status_code=404,
@@ -1380,10 +1381,12 @@ async def process_evidence_background(
             # Financial reading: exact copies of a file already in Financial are
             # not read again; the rest join the case's automatic statement batch.
             from services.financial.auto_read import intake_pdf_review
-            db_backed_ids, copies = intake_pdf_review(db, case_id=UUID(request.case_id), file_ids=db_backed_ids)
+            db_backed_ids, copies = await run_in_threadpool(
+                intake_pdf_review, db, case_id=UUID(request.case_id), file_ids=db_backed_ids)
             if copies:
                 messages.append(f"{len(copies)} file(s) already in Financial; not read again")
-            _record_financial_read(db, current_user, request.case_id, list(db_backed_ids) + [c['file_id'] for c in copies], copies)
+            await run_in_threadpool(_record_financial_read, db, current_user, request.case_id,
+                                    list(db_backed_ids) + [c['file_id'] for c in copies], copies)
 
         if db_backed_ids:
             if not request.case_id:
@@ -1537,11 +1540,12 @@ async def process_evidence(
             from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
             from uuid import UUID
             try:
-                check_case_access(db, UUID(request.case_id), current_user, required_permission=("evidence", "upload"))
+                await run_in_threadpool(check_case_access, db, UUID(request.case_id), current_user,
+                                        required_permission=("evidence", "upload"))
             except (CaseNotFound, CaseAccessDenied) as e:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
-        db_backed_ids, missing_ids = _split_db_backed_legacy(request.file_ids, db)
+        db_backed_ids, missing_ids = await run_in_threadpool(_split_db_backed_legacy, request.file_ids, db)
         if missing_ids:
             raise HTTPException(
                 status_code=404,

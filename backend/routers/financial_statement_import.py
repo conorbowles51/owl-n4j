@@ -4,6 +4,7 @@ import logging
 from datetime import date
 from typing import Literal
 from uuid import UUID
+from fastapi.concurrency import run_in_threadpool
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from postgres.session import get_db
@@ -743,16 +744,20 @@ class ReprocessRequest(BaseModel):
 async def reprocess(evidence_file_id: UUID, body: ReprocessRequest, case_id: UUID = Query(...),
                     user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     try:
-        version = create_statement_version(db, case_id=case_id, evidence_file_id=evidence_file_id,
-            request_id=body.request_id, reading_mode=body.reading_mode,
-            actor=actor_from_user(user), resolve_path=_resolve_stored_path)
-        if version.engine_job_id and version.status in ('processing', 'processed'):
-            return dict(case_id=str(case_id), evidence_file_id=str(version.id), job_id=version.engine_job_id)
-        result = await process_db_files(db, case_id=case_id, file_ids=[version.id],
+        def _create_version():
+            version = create_statement_version(db, case_id=case_id, evidence_file_id=evidence_file_id,
+                request_id=body.request_id, reading_mode=body.reading_mode,
+                actor=actor_from_user(user), resolve_path=_resolve_stored_path)
+            return version.id, version.engine_job_id, version.status
+        # The database work runs in the thread pool; process_db_files does the same for its own.
+        version_id, engine_job_id, version_status = await run_in_threadpool(_create_version)
+        if engine_job_id and version_status in ('processing', 'processed'):
+            return dict(case_id=str(case_id), evidence_file_id=str(version_id), job_id=engine_job_id)
+        result = await process_db_files(db, case_id=case_id, file_ids=[version_id],
             force_reprocess=True, preparation_mode='pdf_review', requested_by_user_id=user.id)
         if len(result.get('job_ids', [])) != 1:
             raise PdfMappingError('The new version could not be queued. Retry this reprocessing request.', 409)
-        return dict(case_id=str(case_id), evidence_file_id=str(version.id), job_id=result['job_ids'][0])
+        return dict(case_id=str(case_id), evidence_file_id=str(version_id), job_id=result['job_ids'][0])
     except PdfMappingError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     except Exception:
