@@ -62,9 +62,31 @@ class _JSONGZipResponder(GZipResponder):
         await super().send_with_compression(message)
 
 
+BODY_LENGTH_HEADER = 'x-body-length'
+
+
+def _with_body_length(app):
+    """The answer's own (uncompressed) length as X-Body-Length, before any compression replaces Content-Length.
+
+    The browser counts the decompressed bytes it reads, so this is the total its loading bar measures against
+    (bytes received of total). Only an answer whose length is known up front carries it; nothing else changes.
+    """
+    async def wrapped(scope, receive, send):
+        async def send_with_length(message):
+            if message['type'] == 'http.response.start':
+                headers = MutableHeaders(raw=list(message['headers']))
+                length = headers.get('content-length')
+                if length is not None and BODY_LENGTH_HEADER not in headers:
+                    headers[BODY_LENGTH_HEADER] = length
+                    message = {**message, 'headers': headers.raw}
+            await send(message)
+        await app(scope, receive, send_with_length)
+    return wrapped
+
+
 class JSONGZipMiddleware(GZipMiddleware):
     def __init__(self, app, minimum_size=4096, compresslevel=1):
-        super().__init__(app, minimum_size=minimum_size, compresslevel=compresslevel)
+        super().__init__(_with_body_length(app), minimum_size=minimum_size, compresslevel=compresslevel)
 
     async def __call__(self, scope, receive, send):
         if scope['type'] != 'http' or 'gzip' not in Headers(scope=scope).get('Accept-Encoding', ''):

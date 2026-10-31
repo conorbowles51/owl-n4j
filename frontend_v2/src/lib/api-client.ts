@@ -9,6 +9,7 @@ import {
   noteViewAnswer,
   updatingAsOf,
 } from "./financial-view-updates"
+import { answerRequest, bodyLength, endRequest, readJSON, startRequest } from "./request-progress"
 
 export class ApiError extends Error {
   status: number
@@ -77,6 +78,10 @@ export async function fetchAPI<T>(
   const timeoutMs = timeout ?? (endpoint.includes("/auth/") ? 10000 : 300000)
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
   inFlight += 1
+  // Reads (GET) are recorded for the loading panel; writes and the page-speed posts are not page loads.
+  const counted = (init.method ?? "GET").toUpperCase() === "GET" && !headersOnly
+  const progressId = counted ? startRequest(endpoint) : 0
+  let failure: string | null = "Stopped before an answer"
 
   try {
     const response = await fetch(endpoint, {
@@ -90,6 +95,7 @@ export async function fetchAPI<T>(
       signal: controller.signal,
       credentials: "include",
     })
+    if (counted) answerRequest(progressId, bodyLength(response))
 
     if (onViewAnswer) {
       // Not asked to accept updating (just after this tab wrote): the answer is computed, so current.
@@ -122,20 +128,31 @@ export async function fetchAPI<T>(
 
       const detail = (errorData as { detail?: unknown })?.detail
       const message = apiErrorMessage(detail, response.status)
+      failure = message
       throw new ApiError(message, response.status, errorData)
     }
 
     if (response.status === 204) {
+      failure = null
       return undefined as T
     }
 
     if (headersOnly) {
       await response.body?.cancel().catch(() => undefined)
+      failure = null
       return undefined as T
     }
 
-    return (await response.json()) as T
+    const value = counted ? await readJSON<T>(response, progressId) : ((await response.json()) as T)
+    failure = null
+    return value
+  } catch (error) {
+    if (failure === "Stopped before an answer" && error instanceof Error)
+      failure = controller.signal.aborted && !callerSignal?.aborted ? "Took too long and was stopped" : error.message
+    throw error
   } finally {
+    // A read the caller cancelled (the person left, or React Query dropped it) is not a failure to show.
+    if (counted) endRequest(progressId, callerSignal?.aborted ? null : failure)
     inFlight -= 1
     clearTimeout(timeoutId)
     callerSignal?.removeEventListener("abort", abortFromCaller)

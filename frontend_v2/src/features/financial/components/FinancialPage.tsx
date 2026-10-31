@@ -44,6 +44,7 @@ import { InvestigatorPeople } from "./InvestigatorPeople"
 import { AccountTypeReview } from "./AccountTypeReview"
 import { InvestigatorOverview } from "./InvestigatorOverview"
 import { useFinancialViewSpeed } from "../lib/page-speed"
+import { LoadProgress } from "./LoadProgress"
 import { InvestigatorFollowMoney } from "./InvestigatorFollowMoney"
 import { InvestigatorTrends } from "./InvestigatorTrends"
 import { StatementRegister } from "./StatementRegister"
@@ -172,10 +173,8 @@ function FinancialPageContent() {
           ? statementSection.section
           : "queue"
   const reviewingAccounts = section === "accounts"
-  useFinancialViewSpeed(
-    caseId,
-    store.mainView === "statements" ? `financial/statements/${section}` : `financial/${store.mainView}`
-  )
+  const speedPage = store.mainView === "statements" ? `financial/statements/${section}` : `financial/${store.mainView}`
+  useFinancialViewSpeed(caseId, speedPage)
   const statementScroll = useRef<HTMLDivElement>(null)
   const accountsDestination = useRef<HTMLDivElement>(null)
 
@@ -732,6 +731,8 @@ function FinancialPageContent() {
           value={store.mainView}
           onChange={navigateFinancial}
         />
+        {/* From opening a view until its data is on screen: what is loading, how far along, time left. */}
+        <LoadProgress caseId={caseId} page={speedPage} />
         {/* Views with the records switch show the access notice on its line. */}
         {!RECORDS_SWITCH_VIEWS.has(store.mainView) && <FinancialAccessNotice />}
         {/* Categories are chosen and managed under Transactions (Alex: not at

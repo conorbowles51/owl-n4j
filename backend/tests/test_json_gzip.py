@@ -104,6 +104,20 @@ class JSONGZipTests(unittest.TestCase):
                 self.assertEqual(wire, original[:100] if extra else original)
                 self.assertEqual(response.status_code, 206 if extra else 200)
 
+    def test_every_answer_of_known_length_says_its_uncompressed_length(self):
+        # The browser's loading bar counts decompressed bytes read against X-Body-Length.
+        for path in ('/json', '/large', '/small', '/zip'):
+            plain = self.client.get(path, headers={'Accept-Encoding': 'identity'})
+            with self.subTest(path=path), self.client.stream('GET', path, headers={'Accept-Encoding': 'gzip'}) as response:
+                wire = b''.join(response.iter_raw())
+                body = gzip.decompress(wire) if response.headers.get('content-encoding') == 'gzip' else wire
+            self.assertEqual(body, plain.content)
+            self.assertEqual(int(response.headers['x-body-length']), len(plain.content))
+            self.assertEqual(int(plain.headers['x-body-length']), len(plain.content))
+        with self.client.stream('GET', '/stream', headers={'Accept-Encoding': 'gzip'}) as response:
+            b''.join(response.iter_raw())
+        self.assertNotIn('x-body-length', response.headers)
+
 
 if __name__ == '__main__':
     unittest.main()
