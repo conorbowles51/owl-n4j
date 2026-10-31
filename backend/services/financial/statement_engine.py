@@ -2367,13 +2367,13 @@ def _address_tops(rows, style=None):
         block = _grow_block(located, index, x, style)
         if own_cell:
             block = block if 3 <= len(block) <= 4 else _spaced_block(block)
-            top = _block_top(block, x) if block and 3 <= len(block) <= 4 and _street_lines(block, x) else None
+            top = _block_top(block, x, located) if block and 3 <= len(block) <= 4 and _street_lines(block, x) else None
             if top and top[2] and not re.search(r'\d', top[1]) and not _damaged_above(located, block, x):
                 found.append(top)
             continue
         if 3 <= len(block) <= 7:
             anchored.append((block, x))
-            top = _block_top(block, x)
+            top = _block_top(block, x, located)
             if top and (_damaged_above(located, block, x) or _issuer_headed(located, block, x)):
                 top = (top[0], top[1], False)
             if top:
@@ -2575,7 +2575,7 @@ def _aligned_text(row, x):
 WORD_CELLS_NAME = os.environ.get('LOUPE_FINANCIAL_WORD_CELLS_NAME', '1').strip().lower() not in ('0', 'false', 'off', 'no')
 
 
-def _block_top(block, x):
+def _block_top(block, x, located=None):
     """(y0, name, accepted) of a block's top line, or None."""
     top = block[-1]
     aligned = [t for t in _aligned_tokens(top, x) if t['line'] == 0]
@@ -2587,6 +2587,8 @@ def _block_top(block, x):
             if token['x0'] > aligned[-1]['x1'] and token['x0'] - aligned[-1]['x1'] <= tolerance:
                 aligned.append(token)
     name = ' '.join(t['t'] for t in aligned)
+    if SPLIT_NAME_LINE and located is not None and aligned:
+        name = _continued_name(located, top, aligned, name, block[-2]['y0'] if len(block) > 1 else None)
     # An address line at the top means the scan lost the name line above it.
     accepted = _name_like(name) and not address_line(name)
     if not accepted:
@@ -2598,6 +2600,34 @@ def _block_top(block, x):
                 and not address_line(' '.join(words[:cut]))):
             name, accepted = ' '.join(words[:cut]), True
     return (top['y0'], name, accepted) if name.strip() else None
+
+
+# (A8) A scan can store one printed name line as two rows: the line's end set a little lower, on a row of its own
+# ('ECOTERRA SERVICIOS' | 'AMBIENTALES SA DE CV', ECO Mar 2023 MN, split by a vertical streak in the scan). The
+# fragment continues the top line when it starts within a word space after the line's last word, at most 1.3 text
+# heights lower and above the block's next line, and the joined line closes with a whole company legal form while the
+# top line alone does not.
+# Off: the top line alone is the name, as before.
+SPLIT_NAME_LINE = os.environ.get('LOUPE_FINANCIAL_SPLIT_NAME_LINE', '1').strip().lower() not in (
+    '0', 'false', 'off', 'no')
+
+
+def _continued_name(located, top, aligned, name, below):
+    if _legal_name(name):
+        return name
+    right = max(t['x1'] for t in aligned)
+    height = max(t['y1'] - t['y0'] for t in aligned)
+    tolerance = top['width'] * 0.015
+    following = [t for row in located if row is not top and row['y0'] is not None
+                 and top['y0'] < row['y0'] <= top['y0'] + height * 1.3 and (below is None or row['y0'] < below)
+                 for t in row['tokens'] if t['line'] == 0]
+    after = sorted((t for t in following if 0 <= t['x0'] - right <= tolerance), key=lambda t: t['x0'])
+    if len(after) != 1:
+        return name
+    cell = after[0]['cell']
+    rest = ' '.join(t['t'] for t in sorted((t for t in following if t['cell'] is cell), key=lambda t: t['x0']))
+    joined = name + ' ' + rest
+    return joined if _legal_name(joined) else name
 
 
 def _reprinted_block(located, anchored, x, style):
@@ -2632,7 +2662,7 @@ def _reprinted_block(located, anchored, x, style):
             continue
         if id(block[-1]) in {id(located[i]) for i, _ in pairs}:
             continue
-        return _block_top(block, rx)
+        return _block_top(block, rx, located)
     return None
 
 

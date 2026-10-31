@@ -1621,6 +1621,24 @@ class AddresseeConfirmationTests(unittest.TestCase):
                 E._LIVE_READINGS.clear()
                 self.assertEqual(self.holder(sources), '')
 
+    def test_a_name_line_split_onto_a_lower_row_by_the_scan_is_joined(self):
+        # ECO Mar 2023 MN: one printed line 'ECOTERRA SERVICIOS AMBIENTALES SA DE CV' stored as two rows, its end
+        # 8000 lower; the holder read 'ECOTERRA SERVICIOS'.
+        def rows(fragment_x0=140000, fragment=('AMBIENTALES SA DE CV',)):
+            sheet = page(1, [[('EMPRESA SERVICIOS', 47000, 137000)], [('|', 30000, 38000), (fragment[0], fragment_x0, 239000)],
+                             [('CALLE EJEMPLO 11 PISO 3', 49000, 238000)], [('POLANCO | SECCION', 49000, 132000)],
+                             [('MIGUEL HIDALGO', 49000, 116000)], [('CIU MEXICO CP 11510', 49000, 252000)]])
+            for row, y in zip(sheet['rows'], (90000, 98000, 105000, 115000, 128000, 140000)):
+                for c in row['cells']:
+                    c['locator']['rect'][1:4:2] = [y, y + 8000]
+            return E._pages([sheet])[1]
+        self.assertEqual(E.address_holder(rows()), 'EMPRESA SERVICIOS AMBIENTALES SA DE CV')
+        with mock.patch.object(E, 'SPLIT_NAME_LINE', False):
+            self.assertEqual(E.address_holder(rows()), 'EMPRESA SERVICIOS')
+        # A fragment further right than a word space, or one not closing with a legal form, is another cell.
+        self.assertEqual(E.address_holder(rows(fragment_x0=180000)), 'EMPRESA SERVICIOS')
+        self.assertEqual(E.address_holder(rows(fragment=('AMBIENTALES NORTE',))), 'EMPRESA SERVICIOS')
+
     def test_a_fiscal_domicile_heading_ends_the_block_grown_from_its_postal_line(self):
         # ECO May 2023 DOLARES: the addressee's postal line was read split (no block); the fiscal block's growth
         # climbed over 'DOMICILIO FISCAL' and stopped at the addressee's street line, leaving 'POLANCO | SECCION' as
