@@ -747,14 +747,24 @@ def summary(session, days, case_id=None, kind=None, slow_limit=200):
         slow_where.append('s.case_id = CAST(:case_id AS uuid)')
     if kind:
         slow_where.append('s.kind = :kind')
+    # Each slow request beside its minute: its worker's event-loop lag, the machine's CPU pressure and the
+    # jobs fleet's CPU (host_load_minute, request_speed_loop_lag; None when that minute was not recorded).
     slow = [dict(at=r.at.isoformat(), kind=r.kind, method=r.method, route=r.route,
                  case_id=str(r.case_id) if r.case_id else None, case_title=r.case_title,
-                 status=r.status, duration_ms=r.duration_ms, bytes=r.bytes, user_name=r.user_name)
+                 status=r.status, duration_ms=r.duration_ms, bytes=r.bytes, user_name=r.user_name,
+                 started_at=r.started_at.isoformat() if r.started_at else None, pid=r.pid, pg_ms=r.pg_ms,
+                 cache=r.cache, loop_lag_max_ms=r.lag_max_ms, host_cpu_pressure=r.psi_cpu_some,
+                 fleet_cores=r.fleet_cores)
             for r in session.execute(text(f'''
                 SELECT s.at, s.kind, s.method, s.route, s.case_id, c.title AS case_title, s.status,
-                       s.duration_ms, s.bytes, u.name AS user_name
+                       s.duration_ms, s.bytes, u.name AS user_name, s.started_at, s.pid, s.pg_ms, s.cache,
+                       l.max_ms AS lag_max_ms, h.psi_cpu_some,
+                       (SELECT sum((v->>'cores')::float) FROM jsonb_each(h.groups) g(k, v)
+                        WHERE k IN ('fleet.slice', 'system.slice/fin-watchdog.service')) AS fleet_cores
                 FROM request_speed_slow s
                 LEFT JOIN cases c ON c.id = s.case_id LEFT JOIN users u ON u.id = s.user_id
+                LEFT JOIN request_speed_loop_lag l ON l.minute = date_trunc('minute', s.at) AND l.pid = s.pid
+                LEFT JOIN host_load_minute h ON h.minute = date_trunc('minute', s.at)
                 WHERE {' AND '.join(slow_where)} ORDER BY s.at DESC LIMIT :limit'''),
                 dict(params, limit=slow_limit))]
     cases = [dict(id=str(r.case_id), title=r.title, count=int(r.count)) for r in session.execute(text('''

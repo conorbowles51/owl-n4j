@@ -25,6 +25,14 @@ export interface SlowRequest {
   duration_ms: number
   bytes: number
   user_name: string | null
+  /** When it reached its worker (at is when it finished), the worker, and its minute's context. */
+  started_at?: string | null
+  pid?: number | null
+  pg_ms?: number | null
+  cache?: string | null
+  loop_lag_max_ms?: number | null
+  host_cpu_pressure?: number | null
+  fleet_cores?: number | null
 }
 
 export interface SpeedSummary {

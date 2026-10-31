@@ -140,6 +140,10 @@ export function SpeedPage() {
               <th className="px-3 py-2">Case</th>
               <th className="px-3 py-2">Who</th>
               <th className="px-3 py-2 text-right">Took</th>
+              <th className="px-3 py-2 text-right" title="Time spent in the database inside this request">Database</th>
+              <th className="px-3 py-2 text-right" title="The longest its server worker was held that minute (it could not start other requests)">Worker held</th>
+              <th className="px-3 py-2 text-right" title="Share of that minute in which work on the machine waited for a CPU">Machine busy</th>
+              <th className="px-3 py-2 text-right" title="CPU cores used by the automated jobs that minute (of 6)">Jobs CPU</th>
               <th className="px-3 py-2 text-right">Result</th>
             </tr>
           </thead>
@@ -153,6 +157,13 @@ export function SpeedPage() {
                 <td className="px-3 py-1.5">{caseTitle(row.case_id, row.case_title)}</td>
                 <td className="px-3 py-1.5">{row.user_name || ""}</td>
                 <td className="px-3 py-1.5 text-right">{formatDuration(row.duration_ms)}</td>
+                <td className="px-3 py-1.5 text-right">
+                  {row.pg_ms == null ? "" : formatDuration(row.pg_ms)}
+                  {row.cache ? ` (${row.cache === "hit" || row.cache === "saved" ? "kept copy" : "computed"})` : ""}
+                </td>
+                <td className="px-3 py-1.5 text-right">{row.loop_lag_max_ms == null ? "" : formatDuration(row.loop_lag_max_ms)}</td>
+                <td className="px-3 py-1.5 text-right">{row.host_cpu_pressure == null ? "" : `${Math.round(row.host_cpu_pressure)}%`}</td>
+                <td className="px-3 py-1.5 text-right">{row.fleet_cores == null ? "" : row.fleet_cores.toFixed(1)}</td>
                 <td className="px-3 py-1.5 text-right">
                   {row.kind === "page" ? "" : row.status && row.status >= 400 ? `failed (${row.status})` : "ok"}
                 </td>

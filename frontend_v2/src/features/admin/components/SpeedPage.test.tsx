@@ -18,7 +18,10 @@ const summary: SpeedSummary = {
   slow: [
     { at: "2026-10-28T13:00:00Z", kind: "api", method: "GET", route: "/api/financial/summary",
       case_id: "d5b330d1-1111-2222-3333-444455556666", case_title: "Merrick", status: 200,
-      duration_ms: 9800, bytes: 100, user_name: "Alex" },
+      duration_ms: 9800, bytes: 100, user_name: "Alex", started_at: "2026-10-28T12:59:50.200Z", pid: 1234,
+      pg_ms: 6731, cache: "miss", loop_lag_max_ms: 1941, host_cpu_pressure: 69.1, fleet_cores: 1.34 },
+    { at: "2026-10-28T12:00:00Z", kind: "api", method: "GET", route: "/api/timeline",
+      case_id: null, case_title: null, status: 200, duration_ms: 4000, bytes: 10, user_name: "Before" },
   ],
   cases: [{ id: "d5b330d1-1111-2222-3333-444455556666", title: "Merrick", count: 1200 }],
   slow_row_seconds: 2,
@@ -55,6 +58,14 @@ describe("SpeedPage", () => {
     const slow = screen.getByText("Alex").closest("tr")!
     expect(within(slow).getByText("Merrick")).toBeTruthy()
     expect(within(slow).getByText("ok")).toBeTruthy()
+    // Its minute: database time (computed, not a kept copy), how long its worker was held, machine and jobs load.
+    expect(within(slow).getByText("6.7 s (computed)")).toBeTruthy()
+    expect(within(slow).getByText("1.9 s")).toBeTruthy()
+    expect(within(slow).getByText("69%")).toBeTruthy()
+    expect(within(slow).getByText("1.3")).toBeTruthy()
+    // A row from before these figures were recorded shows blanks, never zero.
+    const older = screen.getByText("Before").closest("tr")!
+    expect(within(older).queryByText(/%|computed|0 ms/)).toBeNull()
     expect(vi.mocked(fetchAPI)).toHaveBeenCalledWith("/api/request-speed/summary?days=1")
   })
 
