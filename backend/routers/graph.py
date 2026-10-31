@@ -1379,9 +1379,9 @@ def analyze_node_relationships(
         if not node_details:
             raise HTTPException(status_code=404, detail=f"Node with key '{node_key}' not found")
         
-        # Get all existing nodes from the graph (excluding the target node)
-        existing_graph = neo4j_service.get_full_graph(case_id=request.case_id)
-        existing_nodes = existing_graph.get("nodes", [])
+        # Every other node of the case (key, name, type, summary: all the analysis reads), without the
+        # properties and links of the full graph, which on a large case exceed the database's time limit.
+        existing_nodes = neo4j_service.get_case_node_index(request.case_id)
         
         # Filter out the node we're analyzing
         existing_nodes = [n for n in existing_nodes if n.get("key") != node_key]

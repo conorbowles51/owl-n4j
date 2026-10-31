@@ -197,6 +197,36 @@ class GraphService:
 
         return {"nodes": nodes, "links": links}
 
+    def get_case_node_index(self, case_id: str) -> List[Dict]:
+        """Key, name, type and summary of every active node in the case, in get_full_graph's node order.
+
+        For callers that need the case's nodes but not their properties or links (relationship analysis):
+        get_full_graph also reads every property and every link, which on BNB2 exceeds the database's
+        25-second limit.
+        """
+        with driver.session() as session:
+            result = session.run(
+                f"""
+                MATCH (n)
+                WHERE {active_node_predicate("n")}
+                RETURN n.key AS key, n.name AS name, labels(n)[0] AS type, n.summary AS summary
+                """,
+                case_id=case_id,
+            )
+            nodes = []
+            seen = set()
+            for record in result:
+                node_key = record["key"]
+                if node_key not in seen:
+                    seen.add(node_key)
+                    nodes.append({
+                        "key": node_key,
+                        "name": record["name"] or node_key,
+                        "type": record["type"],
+                        "summary": record["summary"],
+                    })
+        return nodes
+
     def get_graph_structure(
         self,
         case_id: str,
