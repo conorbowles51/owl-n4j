@@ -304,11 +304,16 @@ def database_url():
 class Store:
     def __init__(self, url):
         self.url, self.conn = url, None
+        self.lock = threading.Lock()
         self.hosts, self.probes = [], []
         self.pruned = 0.0
         self.last_warning = 0.0
 
     def add(self, host=None, probes=()):
+        with self.lock:
+            self._add(host, probes)
+
+    def _add(self, host, probes):
         if host:
             self.hosts.append(host)
         self.probes.extend(probes)
@@ -318,6 +323,8 @@ class Store:
     def flush(self):
         import psycopg
         from psycopg.types.json import Jsonb
+        with self.lock:  # rows added by the probe thread during the write wait for the next flush
+            hosts, probes, self.hosts, self.probes = self.hosts, self.probes, [], []
         try:
             if self.conn is None or self.conn.closed:
                 # Keepalives and a TCP user timeout end a write to a database that stopped answering.
@@ -326,16 +333,20 @@ class Store:
                                             keepalives_count=3, tcp_user_timeout=30000)
             with self.conn.transaction(), self.conn.cursor() as cur:
                 cur.execute("SET LOCAL statement_timeout = '10s'")
-                for h in self.hosts:
+                for h in hosts:
                     cur.execute(INSERT_HOST, dict(h, groups=Jsonb(h['groups']), top=Jsonb(h['top'])))
-                if self.probes:
-                    cur.executemany(INSERT_PROBE, self.probes)
+                if probes:
+                    cur.executemany(INSERT_PROBE, probes)
                 if time.time() - self.pruned > 86400:
                     for statement in PRUNE:
                         cur.execute(statement)
                     self.pruned = time.time()
-            self.hosts, self.probes = [], []
         except Exception as e:
+            with self.lock:
+                for h in reversed(hosts):
+                    self.hosts.insert(0, h)
+                self.probes[:0] = probes
+                self._add(None, ())  # re-apply the caps
             try:
                 if self.conn is not None:
                     self.conn.close()
@@ -355,26 +366,31 @@ def watchdog(progress, stall=STALL_SECONDS):
     database write that never returns; a stuck recorder would otherwise look alive and record nothing."""
     while True:
         time.sleep(stall / 5)
-        if time.monotonic() - progress[0] > stall:
+        if time.monotonic() - min(progress) > stall:
             print(f'host recorder: no progress for {stall} s, exiting to be restarted', flush=True)
             os._exit(3)
+
+
+def probe_forever(store, progress):
+    """Every PROBE_SECONDS on its own thread, so a slow probe never delays or skips a minute's host row."""
+    while True:
+        tick = time.monotonic()
+        progress[1] = tick
+        store.add(probes=probe_all())
+        time.sleep(max(0.5, PROBE_SECONDS - (time.monotonic() - tick)))
 
 
 def run(url):
     sampler, store = Sampler(), Store(url)
     sampler.sample()
-    progress = [time.monotonic()]
+    progress = [time.monotonic(), time.monotonic()]  # host loop, probe loop
     threading.Thread(target=watchdog, args=(progress,), daemon=True).start()
-    next_minute = time.time() - time.time() % 60 + 60
+    threading.Thread(target=probe_forever, args=(store, progress), daemon=True).start()
     while True:
         progress[0] = time.monotonic()
-        tick = time.time()
-        store.add(probes=probe_all())
-        if time.time() >= next_minute:
-            store.add(host=sampler.sample())
-            next_minute = time.time() - time.time() % 60 + 60
-            store.flush()
-        time.sleep(max(0.5, PROBE_SECONDS - (time.time() - tick)))
+        time.sleep(max(0.1, 60.2 - time.time() % 60))  # just after each minute
+        store.add(host=sampler.sample())
+        store.flush()
 
 
 def main(argv=None):

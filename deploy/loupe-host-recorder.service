@@ -14,13 +14,14 @@ EnvironmentFile=/home/conorbowles51/app-v3/owl-n4j/.env
 ExecStart=/home/conorbowles51/app-v3/owl-n4j/.venv/bin/python -I scripts/host_recorder.py
 Restart=always
 RestartSec=10
-# Low priority, in the jobs fleet's slice (lx-hostpolicy): a recorder must never compete with the app it measures.
-Nice=10
-CPUWeight=20
-IOWeight=20
+# In the live app's slice, capped at 5% of one core: it uses about 0.3% (measured by its own recorder_cpu_ms),
+# but it must get that CPU on time. In the fleet's low-weight slice (first install, 01:14-01:20 on 31 Oct) it was
+# starved under 74% host CPU pressure: minutes 29-112 s long, a missing minute, and probe times that included its
+# own wait for a CPU.
+Slice=loupe.slice
+CPUQuota=5%
 MemoryMax=128M
-IOSchedulingClass=idle
-Slice=fleet.slice
+IOWeight=20
 
 [Install]
 WantedBy=multi-user.target

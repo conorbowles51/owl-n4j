@@ -437,3 +437,54 @@ class SqlListenersNeverRaise(Captured):
             failed(Context())
         finally:
             rs._person.reset(token)
+
+
+class RecorderStore(TestCase):
+    def test_rows_survive_a_failed_write_and_rows_added_meanwhile_are_kept(self):
+        from scripts import host_recorder as hr
+        store = hr.Store('postgresql://nowhere.invalid/x')
+        store.add(host={'minute': 1}, probes=[{'p': 1}])
+
+        def connect(*a, **k):
+            store.add(probes=[{'p': 2}])  # the probe thread, during the write
+            raise OSError('down')
+        import psycopg
+        with patch.object(psycopg, 'connect', side_effect=connect):
+            store.flush()
+        self.assertEqual(store.hosts, [{'minute': 1}])
+        self.assertEqual(store.probes, [{'p': 1}, {'p': 2}])
+
+    def test_a_probe_added_during_a_successful_write_is_not_lost(self):
+        from contextlib import nullcontext
+        from scripts import host_recorder as hr
+        store = hr.Store('postgresql://x/y')
+        store.add(probes=[{'p': 1}])
+        written = []
+
+        class Cursor:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def execute(self, *a):
+                pass
+
+            def executemany(self, sql, rows):
+                written.extend(rows)
+                store.add(probes=[{'p': 2}])  # the probe thread, during the write
+
+        class Conn:
+            closed = False
+
+            def transaction(self):
+                return nullcontext()
+
+            def cursor(self):
+                return Cursor()
+        store.conn = Conn()
+        store.pruned = time.time()
+        store.flush()
+        self.assertEqual(written, [{'p': 1}])
+        self.assertEqual(store.probes, [{'p': 2}])
