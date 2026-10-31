@@ -13,6 +13,7 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, Request, status
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
 from postgres.models.user import User
@@ -134,6 +135,7 @@ def case_access_dependency(
         permission = permission_resolver(request, payload)
         if case_id is None or permission is None:
             return
-        authorize_case(db, case_id, current_user, permission)
+        # Async only to read the body; the database check runs in the thread pool, not on the event loop.
+        await run_in_threadpool(authorize_case, db, case_id, current_user, permission)
 
     return require_request_case_access

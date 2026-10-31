@@ -108,15 +108,25 @@ async def _require_evidence_object_access(
         evidence_ids.update(str(value) for value in payload_evidence_ids if value)
 
     permission = ("case", "view") if request.method == "GET" else ("evidence", "upload")
+    job_id = None
+    if request.method == "GET" and request.url.path.startswith("/api/evidence/engine/jobs/"):
+        job_id = str(request.path_params.get("job_id") or "")
+    if not evidence_ids and job_id is None:
+        return
+    # Async only to read the body; the database checks run in the thread pool, not on the event loop.
+    await run_in_threadpool(_authorize_evidence_objects, db, current_user, permission, evidence_ids, job_id)
+
+
+def _authorize_evidence_objects(db: Session, current_user: User, permission, evidence_ids: set[str],
+                                job_id: str | None) -> None:
     for evidence_id in evidence_ids:
         record = _evidence_record_for_id(db, evidence_id)
         if record is None:
             raise HTTPException(status_code=404, detail="Evidence not found")
         authorize_case(db, record.case_id, current_user, permission)
 
-    if request.method == "GET" and request.url.path.startswith("/api/evidence/engine/jobs/"):
-        job_id = request.path_params.get("job_id")
-        record = EvidenceDBStorage.find_by_engine_job_id(db, str(job_id)) if job_id else None
+    if job_id is not None:
+        record = EvidenceDBStorage.find_by_engine_job_id(db, job_id) if job_id else None
         if record is None:
             raise HTTPException(status_code=404, detail="Evidence job not found")
         authorize_case(db, record.case_id, current_user, permission)
