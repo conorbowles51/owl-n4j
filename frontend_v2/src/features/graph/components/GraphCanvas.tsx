@@ -151,7 +151,8 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
   /* ---- Large graphs: warm-up layout steps in a worker ---- */
   // The warm-up steps of a large graph block the page in one piece before anything is drawn (BNB2,
   // 35,693 nodes: 2.4-10 s on the server's test browser). A worker runs the same steps and the canvas
-  // draws its positions without warming up again. Until they arrive the canvas keeps what it showed.
+  // draws its positions without warming up again. Until they arrive the canvas is empty and says so:
+  // a previous graph left on it could be clicked, for a hidden node or another case.
   // Without a worker the canvas warms up itself, as before.
   const [workerLayout, setWorkerLayout] = useState<{ data: typeof fgData; laidOut: boolean } | null>(null)
   useEffect(() => {
@@ -195,7 +196,7 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
     // the force settings are read when the layout starts; changing them later reheats the canvas (below)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fgData, isLargeGraph])
-  const shownData = isLargeGraph ? (workerLayout?.data ?? EMPTY_GRAPH) : fgData
+  const shownData = isLargeGraph ? (workerLayout?.data === fgData ? fgData : EMPTY_GRAPH) : fgData
   const shownWarmupTicks = isLargeGraph && workerLayout?.laidOut ? 0 : simWarmupTicks
   const layingOut = isLargeGraph && workerLayout?.data !== fgData
 
@@ -534,7 +535,7 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
       const minGY = topLeft.y
       const maxGY = bottomRight.y
 
-      // the nodes drawn: while a large graph is laid out again, the canvas still shows the previous one
+      // the nodes drawn (none while a large graph is being laid out)
       const selected = shownData.nodes
         .filter((n) => {
           const nx = n.x ?? 0

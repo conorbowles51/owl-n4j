@@ -82,6 +82,18 @@ describe("GraphCanvas layout", () => {
     expect(last().graphData.nodes.every((n) => Number.isFinite(n.x) && Number.isFinite(n.y))).toBe(true)
   })
 
+  it("shows no stale graph while a changed large graph is laid out again", async () => {
+    vi.stubGlobal("Worker", FakeLayoutWorker)
+    const view = render(<GraphCanvas data={makeGraph(600)} caseId="case-1" />)
+    await waitFor(() => expect(last().graphData.nodes.length).toBe(600))
+    mocks.props = []
+    view.rerender(<GraphCanvas data={makeGraph(700)} caseId="case-2" />)
+    // the 600 nodes of the previous graph are never offered for clicks while the 700 are arranged
+    expect(mocks.props[0].graphData.nodes.length).toBe(0)
+    await waitFor(() => expect(last().graphData.nodes.length).toBe(700))
+    expect(mocks.props.some((p) => p.graphData.nodes.length === 600)).toBe(false)
+  })
+
   it("warms up on the page, as before, when no worker can be started", async () => {
     vi.stubGlobal("Worker", class { constructor() { throw new Error("no workers") } })
     render(<GraphCanvas data={makeGraph(600)} caseId="case-1" />)
