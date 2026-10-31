@@ -52,8 +52,19 @@ function read(path: string): string {
  * The body of a Python block, from its header to the next line that starts in
  * column one.
  */
+/**
+ * Where a header starts. A route header ("def name(") must start its line, with
+ * or without "async ": a longer name ending in the same text does not count.
+ */
+function headerIndex(source: string, header: string): number {
+  if (!header.startsWith("def ")) return source.indexOf(header)
+  const escaped = header.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  const found = new RegExp(`^(?:async )?${escaped}`, "m").exec(source)
+  return found ? found.index + found[0].length - header.length : -1
+}
+
 function pythonBlock(source: string, header: string): string {
-  const opens = source.indexOf(header)
+  const opens = headerIndex(source, header)
   expect(opens, `${header} is no longer declared`).toBeGreaterThan(-1)
   const next = source.slice(opens + header.length).search(/\n(?=\S)/)
   return next === -1
