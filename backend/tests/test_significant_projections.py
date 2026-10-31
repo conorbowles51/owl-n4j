@@ -21,6 +21,11 @@ class _Result:
         return self.single_value
 
 
+def _packed(rows):
+    """The single record a packed read returns: its rows as lists, in the query's column order."""
+    return _Result(single={"rows": [list(row.values()) for row in rows]})
+
+
 class _Session:
     def __init__(self, captured, results):
         self.captured = captured
@@ -70,7 +75,7 @@ class SignificantProjectionTests(unittest.TestCase):
         ]
         with patch(
             "services.neo4j.graph_service.driver.session",
-            return_value=_Session(captured, [_Result(node_rows), _Result(link_rows)]),
+            return_value=_Session(captured, [_packed(node_rows), _packed(link_rows)]),
         ):
             graph = GraphService().get_graph_structure(
                 "case-1",
@@ -90,6 +95,9 @@ class SignificantProjectionTests(unittest.TestCase):
         # the graph reads the fields it shows, not every property of every node and link
         self.assertNotIn("properties(", captured[0]["query"])
         self.assertNotIn("properties(", captured[1]["query"])
+        # each read arrives as one record holding its rows: one record per row cost BNB2 8-12 s of driver time
+        for call in captured:
+            self.assertIn("RETURN collect([", call["query"])
 
     def test_node_details_include_complete_relationship_properties_for_merges(self):
         captured = []

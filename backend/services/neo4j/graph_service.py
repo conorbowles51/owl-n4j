@@ -22,6 +22,24 @@ def _source_count(properties: Dict) -> int:
     return len({str(item).strip() for item in source_files if str(item).strip()})
 
 
+_NODE_COLUMNS = ("key", "name", "type", "confidence", "mentioned", "aliases", "source_files")
+_LINK_COLUMNS = ("source", "target", "type", "weight")
+
+
+def _run_packed(session, query: str, columns, **params) -> List[Dict]:
+    """Run a query and return its rows as dicts, sent by the database as one record.
+
+    The driver builds a record object for every row it receives. For BNB2's 89,862 graph links that took
+    8-12 s of the request while the database had finished in about 1 s. Collected into one list in the
+    database, the same rows arrive in the same order in 1.2 s. The query must return exactly ``columns``.
+    """
+    packed = session.run(
+        f"CALL {{ {query} }} RETURN collect([{', '.join(columns)}]) AS rows",
+        **params,
+    ).single()
+    return [dict(zip(columns, row)) for row in (packed["rows"] if packed else [])]
+
+
 class GraphService:
     """Graph visualization, search, and AI-context queries."""
 
@@ -280,7 +298,8 @@ class GraphService:
                 )
                 total_node_count = total_result.single()["cnt"]
 
-                nodes_result = session.run(
+                nodes_result = _run_packed(
+                    session,
                     f"""
                     MATCH (n)
                     WHERE {active_node_predicate("n")}
@@ -294,6 +313,7 @@ class GraphService:
                            n.confidence AS confidence, n.mentioned AS mentioned,
                            n.aliases AS aliases, n.source_files AS source_files
                     """,
+                    _NODE_COLUMNS,
                     **params,
                 )
                 nodes = []
@@ -314,7 +334,8 @@ class GraphService:
 
                 links = []
                 if node_keys:
-                    rels_result = session.run(
+                    rels_result = _run_packed(
+                        session,
                         """
                         MATCH (a)-[r]->(b)
                         WHERE a.key IN $node_keys AND b.key IN $node_keys
@@ -322,6 +343,7 @@ class GraphService:
                         RETURN a.key AS source, b.key AS target,
                                type(r) AS type, r.weight AS weight
                         """,
+                        _LINK_COLUMNS,
                         node_keys=list(node_keys), case_id=case_id,
                     )
                     for record in rels_result:
@@ -382,7 +404,7 @@ class GraphService:
                         n.source_files AS source_files
                 """
 
-            nodes_result = session.run(query, **params)
+            nodes_result = _run_packed(session, query, _NODE_COLUMNS, **params)
             nodes = []
             node_keys = set()
 
@@ -412,7 +434,7 @@ class GraphService:
                         type(r) AS type,
                         r.weight AS weight
                 """
-                rels_result = session.run(rels_query, node_keys=keys_list, case_id=case_id)
+                rels_result = _run_packed(session, rels_query, _LINK_COLUMNS, node_keys=keys_list, case_id=case_id)
             else:
                 rels_result = []
 
