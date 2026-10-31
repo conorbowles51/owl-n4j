@@ -29,6 +29,8 @@ from services.financial.recovery_campaigns import (CAMPAIGNS, INITIAL_RELEASE, R
 RELEASE = INITIAL_RELEASE
 ACTOR = Actor(name='Loupe automatic statement recovery', email='statement-recovery@system.local')
 PENDING = ('pending', 'waiting', 'reading')
+# Pending units selected per turn (next_recovery_items).
+RECOVERY_PAGE = 8
 log = logging.getLogger(__name__)
 
 
@@ -474,7 +476,7 @@ def next_recovery_items(session, after=None):
     Restarting the cursor is safe because each unit rechecks its durable state.
     """
     query = select(Item.id).join(Run, Item.run_id == Run.id).where(
-        _running_releases(), Run.status == 'running', Item.status.in_(PENDING)).order_by(Item.id).limit(8)
+        _running_releases(), Run.status == 'running', Item.status.in_(PENDING)).order_by(Item.id).limit(RECOVERY_PAGE)
     if after is not None:
         following = list(session.scalars(query.where(Item.id > after)))
         if following:

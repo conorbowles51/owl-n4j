@@ -12,7 +12,15 @@ from postgres.models.financial_recovery import FinancialRecoveryRun as Run, Fina
 from services.financial import deployment_recovery as recovery
 from services.financial.file_scope import mark_financial_workspace
 from services.financial.recovery_campaigns import RecoveryCampaign
+from services.financial.recovery_campaigns import READER_RECOVERY_FLAG
 from tests.test_financial_deployment_recovery import f
+
+
+@pytest.fixture(autouse=True)
+def only_the_test_campaigns(monkeypatch):
+    # The engine-release re-read campaign is on by default (683ea010); these tests schedule their own
+    # synthetic campaigns and count what those snapshot, so it stays off here.
+    monkeypatch.setenv(READER_RECOVERY_FLAG, '0')
 
 
 def test_snapshot_failure_does_not_starve_existing_work_and_retries_same_cutoff(f, monkeypatch):
@@ -186,6 +194,7 @@ def test_worker_advances_past_two_skip_locked_case_results(f, monkeypatch):
     factory = sessionmaker(bind=f.engine, class_=BusyCaseSession)
     monkeypatch.setattr('postgres.session._get_session_local', lambda: factory)
     monkeypatch.setattr(recovery, 'CAMPAIGNS', (SimpleNamespace(release=release),))
+    monkeypatch.setattr(recovery, 'RECOVERY_PAGE', 2)  # two locked units fill a page; the third is on the next
     monkeypatch.setattr(recovery, 'activate', lambda *args: datetime.now(timezone.utc))
     monkeypatch.setattr(recovery, 'snapshot_case', lambda *args: True)
     original = recovery.recover_one
@@ -214,6 +223,8 @@ def test_worker_advances_past_two_skip_locked_case_results(f, monkeypatch):
 
 def seed(f, monkeypatch):
     release = 'synthetic-recovery-fairness'
+    # Three units and pages of two, so rotation past a page and the wrap to the start are visible.
+    monkeypatch.setattr(recovery, 'RECOVERY_PAGE', 2)
     monkeypatch.setattr(recovery, 'CAMPAIGNS', (SimpleNamespace(release=release),))
     run = Run(id=uuid4(), case_id=f.case.id, release=release, status='running')
     other_run = Run(id=uuid4(), case_id=f.other_case.id, release=release, status='running')
