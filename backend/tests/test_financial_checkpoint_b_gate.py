@@ -22,6 +22,7 @@ disposable local PostgreSQL.
 import hashlib
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+from datetime import timedelta
 from pathlib import Path
 from threading import Barrier
 from unittest import TestCase
@@ -32,8 +33,8 @@ from sqlalchemy import func, select
 
 from postgres.models.evidence import EvidenceDocumentText, EvidenceFile, EvidenceTableGeometry
 from postgres.models.financial import FinancialSourceDocument, FinancialTransaction
-from postgres.models.financial_import_batches import (FinancialImportBatchItem as Item,
-    FinancialImportOperation as Operation)
+from postgres.models.financial_import_batches import (FinancialImportBatch as Batch,
+    FinancialImportBatchItem as Item, FinancialImportOperation as Operation)
 from services.financial import import_batches as batches
 from services.financial.pdf_candidates import PdfMappingError
 from services.financial.statement_file_status import statement_file_status
@@ -107,6 +108,17 @@ class CheckpointBGateTests(TestCase):
         with self.f.SessionLocal() as db:
             batch = batches.create_batch(db, case_id=self.f.case.id, request_id=uuid4(),
                 file_ids=[file.id for file in files], folder_ids=[], actor=self.f.actor)
+        # SQLite's server default stamps whole seconds, so two batches made in one
+        # second tie on created_at and their random ids decide which is newest; when
+        # the earlier batch wins, the later one adopts its preparation of the shared
+        # file and holds no item for it. Postgres stamps microseconds. Each batch is
+        # created after the ones before it.
+        with self.f.SessionLocal() as db:
+            latest = db.scalar(select(func.max(Batch.created_at)).where(Batch.case_id == self.f.case.id,
+                Batch.id != batch))
+            if latest is not None:
+                db.get(Batch, batch).created_at = latest + timedelta(microseconds=1)
+                db.commit()
         for _ in range(4 * len(files) + 4):
             self.b.advance(batch)
             with self.f.SessionLocal() as db:
