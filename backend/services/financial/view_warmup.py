@@ -175,7 +175,7 @@ def _warm_cases(share=None):
     from services.financial.review_queue import warm as warm_review_queue
     from routers.financial_ledger import (get_counterparty_party_analysis, get_ledger_posting_graph,
                                           get_ledger_timeline, get_ledger_transfer_candidates, get_pattern_review,
-                                          get_working_ledger_analysis)
+                                          get_ledger_summary, get_working_ledger_analysis, get_working_ledger_summary)
     from fastapi import HTTPException
     from services import process_shutdown
     full_range_dates = dict(account_id=None, start_date=None, end_date=None)
@@ -201,6 +201,13 @@ def _warm_cases(share=None):
         ('review queue', warm_review_queue, {}),
         # Every call recomputed it: d5b330d1 10-39 s live (request_speed, 6 h to 19:00 2026-10-30), 49494305 ~5 s.
         ('batch list', list_financial_batches, {}),
+        # The summary panel of the Ledger, Trends and People tabs (LedgerSummaryPanel, include_contributions); the
+        # Ledger tab opens with the working summary. Computed for the first visitor before: 1.9-4.1 s (journal,
+        # 2026-10-30 19:42) and 4.2-4.7 s live (22:11).
+        ('ledger summary', get_ledger_summary, dict(full_range_dates, include_contributions=True, account_ids=None,
+                                                    account_holders=None)),
+        ('working ledger summary', get_working_ledger_summary, dict(full_range_dates, include_contributions=True,
+                                                                    account_ids=None, account_holders=None)),
     )
     # The full-range analyses as the page first asks for them (the counterparty tab opens on the working analysis
     # by counterparty; the identities analysis is one tick away). First visit on d5b330d1 live 2026-10-30

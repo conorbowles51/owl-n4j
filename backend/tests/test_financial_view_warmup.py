@@ -16,10 +16,11 @@ URL = os.environ.get('FINANCIAL_VIEW_CACHE_TEST_DATABASE_URL')
 needs_pg = pytest.mark.skipif(not URL, reason='Requires an explicit local PostgreSQL test connection')
 
 
+SUMMARY_VIEWS = (('get_ledger_summary', 'summary'), ('get_working_ledger_summary', 'working-summary'))
 FULL_RANGE_VIEWS = (('get_working_ledger_analysis', 'working'), ('get_ledger_posting_graph', 'graph'), ('get_counterparty_party_analysis', 'cpa'),
                     ('get_ledger_timeline', 'timeline'), ('get_ledger_transfer_candidates', 'transfers'),
                     ('get_pattern_review', 'patterns'))
-PER_CASE = 15  # views warmed for each case
+PER_CASE = 17  # views warmed for each case
 
 
 @pytest.fixture
@@ -50,7 +51,7 @@ def periods(tmp_path, monkeypatch):
                         lambda **kw: calls.append(dict(kw, view='batches')))
     from services.financial import review_queue
     monkeypatch.setattr(review_queue, 'warm', lambda **kw: calls.append(dict(kw, view='queue')))
-    for route, view in FULL_RANGE_VIEWS:
+    for route, view in SUMMARY_VIEWS + FULL_RANGE_VIEWS:
         monkeypatch.setattr(routers.financial_ledger, route, lambda view=view, **kw: calls.append(dict(kw, view=view)))
 
     def add(case, count):
@@ -75,10 +76,10 @@ def test_every_case_is_warmed_largest_first_with_the_routes_defaults(periods):
     assert [(str(call['case_id']), call.get('view')) for call in calls] == [
         (str(large), None), (str(large), 'transactions'), (str(large), 'files'), (str(large), 'evidence'),
         (str(large), 'parties'), (str(large), 'types'), (str(large), 'consolidations'), (str(large), 'queue'),
-        (str(large), 'batches'),
+        (str(large), 'batches'), (str(large), 'summary'), (str(large), 'working-summary'),
         (str(small), None), (str(small), 'transactions'), (str(small), 'files'), (str(small), 'evidence'),
         (str(small), 'parties'), (str(small), 'types'), (str(small), 'consolidations'), (str(small), 'queue'),
-        (str(small), 'batches'),
+        (str(small), 'batches'), (str(small), 'summary'), (str(small), 'working-summary'),
         # The full-range analyses in a second pass, after every case's views above (the release warm-up's cap).
         (str(large), 'working'), (str(large), 'graph'), (str(large), 'cpa'), (str(large), 'timeline'),
         (str(large), 'transfers'), (str(large), 'patterns'),
@@ -105,7 +106,8 @@ def test_the_full_range_views_get_the_routes_own_defaults(periods):
     add, calls, _ = periods
     case = uuid.uuid4()
     add(case, 1)
-    paths = dict(working='/ledger-working-analysis', graph='/ledger-posting-graph', cpa='/counterparty-party-analysis', timeline='/ledger-timeline',
+    paths = dict(summary='/ledger-summary', **{'working-summary': '/ledger-working-summary'},
+                 working='/ledger-working-analysis', graph='/ledger-posting-graph', cpa='/counterparty-party-analysis', timeline='/ledger-timeline',
                  transfers='/ledger-transfer-candidates', patterns='/pattern-review')
     # The endpoints FastAPI serves (the fixture replaced the module's names).
     served = {route.path.rsplit('/financial', 1)[-1]: route.endpoint for route in ledger.router.routes
@@ -120,6 +122,8 @@ def test_the_full_range_views_get_the_routes_own_defaults(periods):
                     if name not in ('case_id', 'db')}
         if view == 'working':
             expected['grouping'] = 'counterparty'  # the counterparty tab's first request: grouping=counterparty
+        if view in ('summary', 'working-summary'):
+            expected['include_contributions'] = True  # LedgerSummaryPanel asks include_contributions=true
         assert {key: value for key, value in by_view[view].items() if key not in ('db', 'view', 'case_id')} == expected, view
         assert by_view[view]['case_id'] == case
     assert by_view['timeline']['population'] == 'working' and by_view['patterns']['window_days'] == 3
