@@ -247,7 +247,8 @@ success "Rollback target: $(git rev-parse --short "${ROLLBACK_TARGET}") (last kn
 # A release of the commit that is already live and healthy changes nothing: stop here, before any check, install,
 # build or restart. deploy-now.sh pins the commit it wants in DEPLOY_TARGET_SHA.
 release_already_live() {
-    release_fully_live "$1" "${LIVE_COMMIT}" "${COMPONENTS_FILE}" "$(frontend_current_build)"
+    release_fully_live "$1" "${LIVE_COMMIT}" "${COMPONENTS_FILE}" "$(frontend_current_build)" \
+        "$(release_component_hashes "$1" "${ENV_FILE}")"
 }
 if [ -n "${DEPLOY_TARGET_SHA:-}" ] &&
     release_already_live "$(git rev-parse --verify --quiet "${DEPLOY_TARGET_SHA}^{commit}" || true)"; then

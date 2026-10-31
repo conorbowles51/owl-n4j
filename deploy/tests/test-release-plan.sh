@@ -88,10 +88,11 @@ expect "after a backend-skip release, skip against it" "$(release_step backend "
 # Fully live: the record must be for the commit and name the build being served (a backend restarted by hand at a
 # commit is not a release of it).
 fr3="$(hash_of "${h3}" frontend)"
-release_fully_live "${c3}" "${c3}" "${rec}" "${fr3}" || { echo "recorded release should be fully live"; exit 1; }
-if release_fully_live "${c3}" "${c3}" "${rec}" "otherbuild"; then echo "another build served: not live"; exit 1; fi
-if release_fully_live "${c1}" "${c1}" "${rec}" "${fr3}"; then echo "no record for the commit: not live"; exit 1; fi
-if release_fully_live "${c3}" "" "${rec}" "${fr3}"; then echo "nothing live: not live"; exit 1; fi
+release_fully_live "${c3}" "${c3}" "${rec}" "${fr3}" "${h3}" || { echo "recorded release should be fully live"; exit 1; }
+if release_fully_live "${c3}" "${c3}" "${rec}" "otherbuild" "${h3}"; then echo "another build served: not live"; exit 1; fi
+if release_fully_live "${c1}" "${c1}" "${rec}" "${fr3}" "${h3}"; then echo "no record for the commit: not live"; exit 1; fi
+if release_fully_live "${c3}" "" "${rec}" "${fr3}" "${h3}"; then echo "nothing live: not live"; exit 1; fi
+if release_fully_live "${c3}" "${c3}" "${rec}" "${fr3}" "${h5}"; then echo "same commit, changed .env: not live"; exit 1; fi
 
 # Frontend builds: switch, asset pool, prune.
 PROJECT_DIR="${scratch}/repo"

@@ -24,7 +24,9 @@ def release_sandbox(tmp_path):
     project = tmp_path / 'release'
     for directory in ('deploy/logs', 'backend/postgres', 'frontend_v2', '.venv/bin', 'commands'):
         (project / directory).mkdir(parents=True)
-    for name in ('deploy.sh', 'rollback.sh', 'ingestion-safety.sh', 'check_ingestion_idle.py', 'backend-stop.sh', 'git-update.sh'):
+    for name in ('deploy.sh', 'rollback.sh', 'ingestion-safety.sh', 'check_ingestion_idle.py', 'backend-stop.sh', 'git-update.sh',
+                 'release-plan.sh', 'frontend-release.sh', 'frontend-server.sh', 'frontend-server.conf',
+                 'nginx-loupe-frontend.conf', 'record_release.py'):
         shutil.copy(DEPLOY / name, project / 'deploy' / name)
     # Exercise real install/mv commands, but target a synthetic unit directory.
     helper = project / 'deploy/ingestion-safety.sh'
@@ -78,7 +80,12 @@ if name == 'python':
     os.execv(sys.executable, [sys.executable, *args])
 elif name == 'git':
     if args[0] == 'rev-parse':
-        print('main' if '--abbrev-ref' in args else 'current-revision')
+        print('main' if '--abbrev-ref' in args else os.environ.get('REVISION', 'current-revision'))
+    if args[0] == 'worktree' and 'add' in args:
+        # The build worktree beside the checkout (deploy/frontend-release.sh); its path precedes the revision.
+        worktree = pathlib.Path(args[-2])
+        (worktree / 'frontend_v2').mkdir(parents=True, exist_ok=True)
+        (worktree / '.git').write_text('gitdir: inert')
     if args[0] in ('checkout', 'reset', 'pull'):
         # The captured checker must still run after reverting to older code.
         (root / 'deploy/check_ingestion_idle.py').write_text('raise SystemExit(0)\\n')
@@ -99,6 +106,12 @@ elif name == 'curl':
         print('{"status":"ok"}')
 elif name == 'seq':
     print('1')
+elif name == 'npm' and 'build' in args and '--outDir' in args:
+    # A build writes its output where it is told (deploy/frontend-release.sh builds beside the served one).
+    out = pathlib.Path(args[args.index('--outDir') + 1])
+    (out / 'assets').mkdir(parents=True, exist_ok=True)
+    (out / 'index.html').write_text('<script src="/assets/app.js"></script>')
+    (out / 'assets/app.js').write_text('app')
 elif name == 'systemctl' and args[:1] == ['show']:
     print('inactive')  # the bounded stop sees the backend stopped at once
 ''')
@@ -150,8 +163,10 @@ def test_work_arriving_during_image_build_blocks_container_replacement(release_s
     assert 'docker compose build' in events
     assert not any(event.startswith(('docker compose up', 'systemctl restart owl-backend', 'systemctl start owl-backend')) for event in events)
     if script == 'deploy.sh':
-        assert 'serving the bundle currently on disk; the release is not confirmed complete' in result.stdout
-        assert 'serving the previous build' not in result.stdout
+        # The frontend is built beside the served one and never stopped before the switch, so a release deferred
+        # here leaves the site serving throughout: nothing stopped, nothing to restore.
+        assert not any(event.startswith('systemctl stop owl-frontend') for event in events)
+        assert 'Deployment exited while the frontend was stopped' not in result.stdout
 
 
 @pytest.mark.parametrize('script', ['deploy.sh', 'rollback.sh'])
@@ -234,3 +249,36 @@ def test_party_coverage_gate_pass_becomes_the_baseline_after_a_healthy_release(r
     assert result.returncode == 0, result.stdout + result.stderr
     assert 'Party coverage gate passed' in result.stdout
     assert (release_sandbox / 'deploy/logs/party-coverage-baseline.json').read_text() == '{}'
+
+
+RELEASED = 'b' * 40
+NO_REPEAT = ('npm ', 'pip ', 'alembic', 'docker compose', 'systemctl restart', 'systemctl stop', 'systemctl start')
+
+
+def test_a_release_of_the_live_commit_changes_nothing(release_sandbox):
+    """Measured 2026-10-30: 37 of 91 releases redeployed the live commit, one of them took the site down 15.5 min."""
+    first, _ = run_release(release_sandbox, 'deploy.sh', extra_env={'REVISION': RELEASED})
+    assert first.returncode == 0, first.stdout + first.stderr
+    assert (release_sandbox / 'deploy/logs/.last-good-commit').read_text().strip() == RELEASED
+    (release_sandbox / 'events').write_text('')
+    second, events = run_release(release_sandbox, 'deploy.sh', extra_env={'REVISION': RELEASED, 'HEALTH_COMMIT': RELEASED})
+    assert second.returncode == 0, second.stdout + second.stderr
+    assert 'already live' in second.stdout
+    assert not any(event.startswith(NO_REPEAT) for event in events), events
+
+
+def test_a_frontend_only_release_never_stops_or_restarts_the_backend(release_sandbox):
+    first, _ = run_release(release_sandbox, 'deploy.sh', extra_env={'REVISION': RELEASED})
+    assert first.returncode == 0, first.stdout + first.stderr
+    # Only a setting that reaches the bundle changes (frontend hash); the backend, packages and engine are the same.
+    env_file = release_sandbox / '.env'
+    env_file.write_text(env_file.read_text() + 'VITE_SOMETHING=2\n')
+    (release_sandbox / 'events').write_text('')
+    second, events = run_release(release_sandbox, 'deploy.sh', extra_env={'REVISION': RELEASED, 'HEALTH_COMMIT': RELEASED})
+    assert second.returncode == 0, second.stdout + second.stderr
+    assert 'frontend=run npm=skip pip=skip backend=skip engine=skip' in second.stdout
+    assert any(event.startswith('npm run build') for event in events)
+    assert not any(event.startswith(('pip ', 'alembic', 'docker compose', 'systemctl stop --no-block owl-backend',
+                                     'systemctl start owl-backend', 'systemctl stop owl-backend')) for event in events), events
+    current = (release_sandbox.parent / 'loupe-frontend/current').resolve()
+    assert (current / 'index.html').exists()

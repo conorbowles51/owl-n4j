@@ -82,14 +82,18 @@ release_record_write() {
         mv -f "${recorded}.tmp" "${recorded}"
 }
 
-# <commit> is fully live: it is the live release (release_live_commit) and the record of the last-good release is
-# for it and names the frontend build being served. A backend restarted by hand at a commit is not enough: its
-# frontend, engine and migrations were never released.
+# <commit> is fully live: it is the live release (release_live_commit), the record of the last-good release is for
+# it and names the frontend build being served, and every component hash of <commit> now (<new_hashes>, which also
+# cover .env and node) equals the recorded one. A backend restarted by hand at a commit is not enough (its frontend,
+# engine and migrations were never released), nor is the same commit with a changed .env.
 release_fully_live() {
-    local commit="$1" live="$2" recorded="$3" serving="$4"
+    local commit="$1" live="$2" recorded="$3" serving="$4" new_hashes="$5" c
     [ -n "${commit}" ] && [ "${commit}" = "${live}" ] &&
         [ "$(release_record_value "${recorded}" commit)" = "${commit}" ] &&
-        [ -n "${serving}" ] && [ "$(release_record_value "${recorded}" frontend)" = "${serving}" ]
+        [ -n "${serving}" ] && [ "$(release_record_value "${recorded}" frontend)" = "${serving}" ] || return 1
+    for c in ${RELEASE_COMPONENTS}; do
+        [ "$(release_step "${c}" "${recorded}" "${live}" "${new_hashes}")" = skip ] || return 1
+    done
 }
 
 # The release that is live, given the commit the healthy running backend reports it was started from: the last-good
