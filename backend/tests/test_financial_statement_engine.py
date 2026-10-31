@@ -1609,6 +1609,16 @@ class AddresseeConfirmationTests(unittest.TestCase):
         self.assertEqual(E._respaced_recipient('EMPRESA DE PRU EBO SA DE CV', 'EMPRESA DE PRUEBA'), '')
         self.assertEqual(E._respaced_recipient('EMPRESA DE PRU EBA', 'EMPRESA DE PRUEBA'), '')
         self.assertEqual(E._respaced_recipient('EMPRESA DE PRUEBA SA DE CV', 'EMPRESA DE PRUEBA'), '')
+        # A comma after the name, and marks inside the printed line, are not letters.
+        self.assertEqual(E._respaced_recipient('EMPRESA DE PRU EBA, S.A. DE C.V.', 'EMPRESA DE PRUEBA'),
+                         'EMPRESA DE PRUEBA S.A. DE C.V.')
+        # A mark standing alone between the name and its legal form is not part of the tail.
+        self.assertEqual(E._respaced_recipient('EMPRESA-DE PRU EBA | SA DE CV', 'EMPRESA DE PRUEBA'),
+                         'EMPRESA DE PRUEBA SA DE CV')
+        self.assertEqual(E._respaced_recipient('EMPRESA DE PRU EBA SA | DE CV', 'EMPRESA DE PRUEBA'), '')
+        # When the receipt is the printing with the space inside a word, the heading's own words are the name.
+        self.assertEqual(E._respaced_recipient('EMPRESA DE PRUEBA SA DE CV', 'EMPRESA DE PRU EBA'),
+                         'EMPRESA DE PRUEBA SA DE CV')
         with mock.patch.object(E, 'LEGAL_FORM_UNANCHORED', False):
             sources = addressee_statement(receipt='EMPRESA DE PRUEBA')
             for row in sources[0]['rows']:
@@ -1656,6 +1666,11 @@ class AddresseeConfirmationTests(unittest.TestCase):
         self.assertEqual(E.address_holder(rows), 'EMPRESA DE PRUEBA SA DE CV')
         with mock.patch.object(E, 'FISCAL_HEADING_ENDS_BLOCK', False):
             self.assertEqual(E.address_holder(rows), 'POLANCO | SECCION')
+        # A plain address label inside the addressee's own block is no fiscal heading: the block still reaches the name.
+        own = [[('EMPRESA DE PRUEBA SA DE CV', 20000, 200000)], [('DIRECCION:', 20000, 80000)],
+               [('CALLE FALSA 123', 20000, 150000)], [('CIUDAD DE MEXICO C.P. 06000', 20000, 220000)]]
+        self.assertTrue(E._grow_block(*(lambda r: (r, len(r) - 1, 20000, None))(
+            [row for row in E._pages([page(1, own)])[1] if row['tokens']]))[-1]['text'].startswith('EMPRESA'))
 
     def test_the_fiscal_receipt_recipient_agreeing_with_the_heading_line_confirms_it(self):
         self.assertEqual(self.holder(addressee_statement(receipt='EMPRESA DE PRUEBA')), 'EMPRESA DE PRUEBA SA DE CV')
@@ -2755,6 +2770,29 @@ class UnanchoredHolderTests(unittest.TestCase):
         self.assertEqual(self.holder(sources), '')
         sources[-1] = page(2, [[('INFORMACION FISCAL', 20000, 200000)],
                                [('Nombre del Receptor : EMPRESA DE PRUEBA', 20000, 300000)]])
+        self.assertEqual(self.holder(sources), 'EMPRESA DE PRUEBA SA DE CV')
+
+    def test_a_receipt_printed_with_other_spacing_or_marks_is_no_contradiction(self):
+        for receipt in ('EMPRESA DE PRUEBA, S.A. DE C.V.', 'EMPRESA DE PRU EBA'):
+            sources = barcoded_statement(reprint=None)
+            sources.append(page(2, [[('INFORMACION FISCAL', 20000, 200000)],
+                                    [('Nombre del Receptor : ' + receipt, 20000, 300000)]]))
+            self.assertEqual(self.holder(sources), 'EMPRESA DE PRUEBA SA DE CV', receipt)
+
+    def test_a_block_confirmed_by_its_reprint_outweighs_a_second_legal_name_block(self):
+        # The holder's block is confirmed by a reprint; a lessor's block lower in the left half has a legal-name top
+        # line. The reprinted one is the holder (the legal-name route is a fallback, never a rival).
+        sources = barcoded_statement(reprint='EMPRESA DE PRUEBA SA DE CV')
+        rows = sources[0]['rows']
+        y = max(c['locator']['rect'][3] for r in rows for c in r['cells'] if c['locator']['rect'][0] < 100000)
+        extra = page(9, [[('ARRENDADORA EJEMPLO SA DE CV', 20000, 200000)], [('AVENIDA OTRA 12', 20000, 150000)],
+                         [('COLONIA OTRA, NORTE', 20000, 150000)], [('OTRA CIUDAD, ESTADO', 20000, 160000)]])
+        lessor = [r for r in extra['rows']]
+        for index, row in enumerate(lessor):
+            for c in row['cells']:
+                c['locator']['rect'][1:4:2] = [y + 40000 + index * 12000, y + 47000 + index * 12000]
+            row['row_index'] = 1000 + index
+        rows.extend(lessor)
         self.assertEqual(self.holder(sources), 'EMPRESA DE PRUEBA SA DE CV')
 
     def test_the_legal_form_switch_turns_it_off(self):

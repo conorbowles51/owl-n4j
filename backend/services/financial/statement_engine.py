@@ -1952,7 +1952,9 @@ def _unanchored_holder(section_pages, pages, heading, style):
       directly above its top line or among its lines (a lost first name line would make the next line
       look like the top);
     * a second printed fact: the top line printed again, as the whole of a line's left cells, above the
-      movements of another page of the same statement (the page headings that reprint the addressee);
+      movements of another page of the same statement (the page headings that reprint the addressee); or, when
+      no block is confirmed that way, the top line closing with a whole company legal form holding 'DE'
+      (LEGAL_FORM_UNANCHORED), with no other legal name heading another page and no receipt naming another;
     * every block found this way names the same holder.
     """
     if not UNANCHORED_HOLDER or not heading:
@@ -1973,6 +1975,7 @@ def _unanchored_holder(section_pages, pages, heading, style):
                                   height=max(t['y1'] - t['y0'] for t in aligned), text=_aligned_text(row, x)))
     reprints = set()
     reprint_pages = {}
+    legal = set()
     for other in section_pages:
         if other == page:
             continue
@@ -2010,11 +2013,14 @@ def _unanchored_holder(section_pages, pages, heading, style):
         top = ' '.join(t['t'] for t in _aligned_tokens(row, x) if t['line'] == 0)
         if ' '.join(fold(top).split()) in reprints:
             found.add(' '.join(top.split()))
-        elif (LEGAL_FORM_UNANCHORED and _legal_name(top) and not _other_names(top, reprints, section_pages, pages)
-                and (checked.get('checked') is not True or not _unread_above(unread, x, y, height, tolerance))):
-            found.add(' '.join(top.split()))
+        elif LEGAL_FORM_UNANCHORED and _legal_name(top) and not _other_names(top, reprints, section_pages, pages):
+            legal.add(' '.join(top.split()))
         elif LEGAL_FORM_COMPLETION:
             found.update(_legal_form_completions(' '.join(fold(top).split()), reprint_pages))
+    if not found:
+        # Only when no block is confirmed by a reprint: a second block whose top is a legal name (a lessor's or an
+        # employer's address) never outweighs the reprinted one.
+        found = legal
     names = {fold(name) for name in found}
     return next(iter(found)) if len(names) == 1 else ''
 
@@ -2024,8 +2030,7 @@ def _unanchored_holder(section_pages, pages, heading, style):
 # JERONIMO TEPETLACALCO / TLALNEPANTLA DE BAZ', 11 ARRENDO BBVA USD NOV 2024): a street or district line never ends in
 # 'SA DE CV', so the top line is not an address line left at the top by a lost name line. The name proper must be
 # at least two words. Off: such a block needs its top line reprinted on another page, as before.
-LEGAL_FORM_UNANCHORED = os.environ.get('LOUPE_FINANCIAL_LEGAL_FORM_UNANCHORED', '1').strip().lower() not in (
-    '0', 'false', 'off', 'no')
+LEGAL_FORM_UNANCHORED = _switch('LOUPE_FINANCIAL_LEGAL_FORM_UNANCHORED')
 
 
 def _legal_name(top):
@@ -2038,18 +2043,19 @@ def _legal_name(top):
 def _other_names(top, reprints, section_pages, pages):
     """Whether the statement prints another holder than ``top``: a legal name heading another page that is not
     ``top``, or a fiscal receipt recipient ``top`` does not begin with. Either contradicts the block."""
-    name = ' '.join(fold(top).split())
-    if any(_legal_name(text) and ' '.join(fold(text).split()) != name for text in reprints):
+    name = _letters(top)
+    if any(_legal_name(text) and _letters(text) != name and not _RECEIPT_RECIPIENT.match(' '.join(fold(text).split()))
+           for text in reprints):
         return True
     recipients = {m[1] for page in section_pages for row in pages[page] if row['tokens']
                   for m in [_RECEIPT_RECIPIENT.match(' '.join(fold(row['text']).split()))] if m}
-    return any(not (name == r or name.startswith(r + ' ') or name.startswith(r + ',')) for r in recipients)
+    return any(not name.startswith(_letters(r)) for r in recipients)
 
 
-def _unread_above(unread, x, y, height, tolerance):
-    """Whether the page's reading left a line unread at the block's edge within three lines above its top."""
-    return any(r[2] > x - tolerance and r[0] < x + tolerance * 20 and y - height * 3 < r[3] <= y + height * 0.5
-               and r[3] - r[1] <= height * 2 for r in unread)
+def _letters(text):
+    """A printed name's letters and figures alone, for comparing printings that differ in spacing or marks."""
+    return re.sub(r'[^A-Z0-9]', '', fold(text))
+
 
 
 # (A8) A page-1 addressee line read only up to inside its company legal form ('<NAME> SA', the rest lost or
@@ -2141,23 +2147,23 @@ def _receipt_holder(section_pages, pages, heading):
 
 # (A8) A heading line printing the receipt's recipient with a space set inside one of its words, followed by a
 # whole company legal form ('MIDA INGENIERIA Y SE RVICIOS SA DE CV' for the receipt's 'MIDA INGENIERIA Y
-# SERVICIOS', 01 MIDA BBVA CREDITO ENE 26) is that recipient: the holder is the receipt's words with the line's legal
-# form. The letters must be the same, in the same order; only the spacing differs. Off: such a line does not match.
-RECEIPT_SPACING = os.environ.get('LOUPE_FINANCIAL_RECEIPT_SPACING', '1').strip().lower() not in (
-    '0', 'false', 'off', 'no')
+# SERVICIOS', 01 MIDA BBVA CREDITO ENE 26) is that recipient: the holder is the name in the printing without the
+# space inside a word (the receipt's here), with the line's legal form. The letters must be the same, in the same
+# order; only the spacing and marks differ. Off: such a line does not match.
+RECEIPT_SPACING = _switch('LOUPE_FINANCIAL_RECEIPT_SPACING')
 
 
 def _respaced_recipient(text, recipient):
-    words = ' '.join(fold(text).split()).split()
-    printed = ' '.join(text.split()).split()
-    target = recipient.replace(' ', '')
-    if len(printed) != len(words):
-        return ''
-    for cut in range(2, len(words)):
-        if ''.join(words[:cut]) == target and ' '.join(words[:cut]) != recipient:
+    printed = text.split()
+    target = _letters(recipient)
+    for cut in range(2, len(printed)):
+        head = ' '.join(fold(' '.join(printed[:cut])).split()).rstrip(',')
+        if _letters(head) == target and head != recipient:
             rest = ' '.join(printed[cut:])
-            if rest and _COMPANY_FORM.match(' '.join(words[cut:])):
-                return recipient + ' ' + rest
+            if re.fullmatch(r'[A-Za-z.,]+(?: [A-Za-z.,]+)*', rest) and _COMPANY_FORM.match(' '.join(fold(rest).split())):
+                # The printing with a space inside a word is the damaged one: the other printing's words name it.
+                name = recipient if len(head.split()) > len(recipient.split()) else ' '.join(printed[:cut]).rstrip(',')
+                return name + ' ' + rest
     return ''
 
 
@@ -2441,9 +2447,8 @@ def _grow_block(located, index, x, style):
 
 # (A8) Off: a block grown upwards from a postal line can climb over a fiscal-domicile heading into the block above
 # it, as before.
-FISCAL_HEADING_ENDS_BLOCK = os.environ.get('LOUPE_FINANCIAL_FISCAL_HEADING_BLOCK', '1').strip().lower() not in (
-    '0', 'false', 'off', 'no')
-_FISCAL_HEADING = re.compile(r'^(?:DOMICILIO|DIRECCION)(?: FISCAL)?:?$')
+FISCAL_HEADING_ENDS_BLOCK = _switch('LOUPE_FINANCIAL_FISCAL_HEADING_BLOCK')
+_FISCAL_HEADING = re.compile(r'^(?:DOMICILIO|DIRECCION) FISCAL:?$')
 # (A8) Off: a line more than one blank line above an evenly spaced address block can still join it (as before).
 BLANK_LINE_LIMIT = os.environ.get('LOUPE_FINANCIAL_ADDRESS_BLANK_LINE', '1').strip().lower() not in (
     '0', 'false', 'off', 'no')
@@ -2608,8 +2613,7 @@ def _block_top(block, x, located=None):
 # heights lower and above the block's next line, and the joined line closes with a whole company legal form while the
 # top line alone does not.
 # Off: the top line alone is the name, as before.
-SPLIT_NAME_LINE = os.environ.get('LOUPE_FINANCIAL_SPLIT_NAME_LINE', '1').strip().lower() not in (
-    '0', 'false', 'off', 'no')
+SPLIT_NAME_LINE = _switch('LOUPE_FINANCIAL_SPLIT_NAME_LINE')
 
 
 def _continued_name(located, top, aligned, name, below):
