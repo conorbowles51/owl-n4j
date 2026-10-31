@@ -1946,8 +1946,8 @@ __all__ += ["list_account_parties", "set_account_party"]
 from services.financial.ledger_exhibits import capture_ledger_exhibits
 __all__ += ["capture_ledger_exhibits"]
 
-from services.financial.statement_delta_hints import statement_delta_hints
-__all__ += ["statement_delta_hints"]
+from services.financial.statement_delta_hints import statement_delta_hints as find_statement_delta_hints
+__all__ += ["find_statement_delta_hints"]
 
 from services.financial.trace_assets import trace_asset_uses
 __all__.append("trace_asset_uses")
