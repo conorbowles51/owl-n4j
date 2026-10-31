@@ -1629,9 +1629,8 @@ async def find_similar_entities_stream(
         types_list = [t.strip() for t in entity_types.split(",") if t.strip()]
 
     # Fetch rejected pairs for this case to filter them out
-    rejected_pairs_service = RejectedPairsService(db)
     try:
-        rejected_pairs = await run_in_threadpool(rejected_pairs_service.get_rejected_pairs_set, UUID(case_id))
+        rejected_pairs = await run_in_threadpool(RejectedPairsService(db).get_rejected_pairs_set, UUID(case_id))
     except ValueError:
         rejected_pairs = set()  # Invalid UUID, use empty set
 
@@ -1725,35 +1724,58 @@ async def merge_entities(
     # Guard against concurrent merges involving overlapping entities
     from postgres.models.merge_job import MergeJob as _MergeJobCheck
 
-    _acquire_merge_entity_locks(db, request.case_id, unique_keys)
+    # The database and Neo4j work runs in the thread pool, in this order, on the one session; only the engine and
+    # Redis calls are awaited on the event loop.
+    def _reserve_entities():
+        _acquire_merge_entity_locks(db, request.case_id, unique_keys)
 
-    active_merges = db.execute(
-        select(_MergeJobCheck).where(
-            _MergeJobCheck.case_id == request.case_id,
-            _MergeJobCheck.status.in_(["pending", "processing"]),
-        )
-    ).scalars().all()
-    for existing in active_merges:
-        overlap = set(existing.source_entity_keys or []) & set(unique_keys)
-        if overlap:
-            raise HTTPException(
-                status_code=409,
-                detail="One or more selected entities are already being merged.",
+        active_merges = db.execute(
+            select(_MergeJobCheck).where(
+                _MergeJobCheck.case_id == request.case_id,
+                _MergeJobCheck.status.in_(["pending", "processing"]),
             )
+        ).scalars().all()
+        for existing in active_merges:
+            overlap = set(existing.source_entity_keys or []) & set(unique_keys)
+            if overlap:
+                raise HTTPException(
+                    status_code=409,
+                    detail="One or more selected entities are already being merged.",
+                )
+
+    await run_in_threadpool(_reserve_entities)
 
     try:
-        # Fetch full entity details from Neo4j
-        entity_payloads = []
-        for entity_key in unique_keys:
-            details = neo4j_service.get_node_details(entity_key, case_id=request.case_id)
-            if not details:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Entity not found: {entity_key}",
-                )
-            if (details.get("properties") or {}).get("financial_identity_managed"):
-                raise HTTPException(status_code=409, detail="Connect reviewed financial identities through Financial → Account identity and case connections. Financial accounts must remain distinct.")
-            entity_payloads.append(_entity_merge_payload(details))
+        def _create_merge_job():
+            # Fetch full entity details from Neo4j
+            entity_payloads = []
+            for entity_key in unique_keys:
+                details = neo4j_service.get_node_details(entity_key, case_id=request.case_id)
+                if not details:
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"Entity not found: {entity_key}",
+                    )
+                if (details.get("properties") or {}).get("financial_identity_managed"):
+                    raise HTTPException(status_code=409, detail="Connect reviewed financial identities through Financial → Account identity and case connections. Financial accounts must remain distinct.")
+                entity_payloads.append(_entity_merge_payload(details))
+
+            # Create MergeJob row FIRST so the subscriber can always find a row
+            # to dispatch on, even if the engine accepts the job before our DB
+            # commit succeeds.
+            merge_job = MergeJob(
+                case_id=request.case_id,
+                engine_job_id=None,
+                source_entity_keys=unique_keys,
+                status="pending",
+                created_by=user.get("username", "unknown"),
+            )
+            db.add(merge_job)
+            db.commit()
+            db.refresh(merge_job)
+            return entity_payloads, merge_job, str(merge_job.id)
+
+        entity_payloads, merge_job, merge_job_id = await run_in_threadpool(_create_merge_job)
 
         # Build evidence engine payload
         payload = {
@@ -1765,20 +1787,6 @@ async def merge_entities(
             "requested_by_user_id": user.get("id"),
         }
 
-        # Create MergeJob row FIRST so the subscriber can always find a row
-        # to dispatch on, even if the engine accepts the job before our DB
-        # commit succeeds.
-        merge_job = MergeJob(
-            case_id=request.case_id,
-            engine_job_id=None,
-            source_entity_keys=unique_keys,
-            status="pending",
-            created_by=user.get("username", "unknown"),
-        )
-        db.add(merge_job)
-        db.commit()
-        db.refresh(merge_job)
-
         try:
             engine_response = await evidence_engine_client.merge_entities(
                 request.case_id, payload,
@@ -1786,13 +1794,20 @@ async def merge_entities(
             engine_job_id = str(engine_response.get("id") or "")
             if not engine_job_id:
                 raise RuntimeError("Engine did not return a job id")
-            merge_job.engine_job_id = engine_job_id
-            merge_job.status = "processing"
-            db.commit()
+
+            def _mark_processing():
+                merge_job.engine_job_id = engine_job_id
+                merge_job.status = "processing"
+                db.commit()
+
+            await run_in_threadpool(_mark_processing)
         except Exception as e:
-            merge_job.status = "failed"
-            merge_job.error_message = f"Failed to start engine job: {e}"
-            db.commit()
+            def _mark_failed():
+                merge_job.status = "failed"
+                merge_job.error_message = f"Failed to start engine job: {e}"
+                db.commit()
+
+            await run_in_threadpool(_mark_failed)
             raise HTTPException(
                 status_code=502, detail=f"Failed to start merge job: {e}",
             )
@@ -1801,7 +1816,8 @@ async def merge_entities(
         subscriber = get_subscriber()
         await subscriber.track_jobs([engine_job_id], request.case_id)
 
-        system_log_service.log(
+        await run_in_threadpool(
+            system_log_service.log,
             log_type=LogType.GRAPH_OPERATION,
             origin=LogOrigin.FRONTEND,
             action="Merge Entities (AI)",
@@ -1816,13 +1832,14 @@ async def merge_entities(
 
         return {
             "job_id": engine_job_id,
-            "merge_job_id": str(merge_job.id),
+            "merge_job_id": merge_job_id,
             "status": "processing",
         }
     except HTTPException:
         raise
     except Exception as e:
-        system_log_service.log(
+        await run_in_threadpool(
+            system_log_service.log,
             log_type=LogType.GRAPH_OPERATION,
             origin=LogOrigin.FRONTEND,
             action="Merge Entities Failed",

@@ -73,17 +73,19 @@ NOT_YET_OFFLOADED = {
     'routers/evidence.py:delete_evidence_file', 'routers/evidence_folders.py:process_folder',
     'routers/financial_statement_import.py:prepare_existing', 'routers/financial_statement_import.py:reprocess',
     'routers/financial_statement_import.py:retry_financial_batch_file',
-    'routers/evidence_upload_groups.py:group_action', 'routers/graph.py:merge_entities',
+    'routers/evidence_upload_groups.py:group_action',
     # Engine proxies with one access check before the engine call (one indexed read each).
     'routers/evidence.py:check_evidence_financial_route', 'routers/evidence.py:delete_engine_job',
     'routers/evidence.py:control_engine_job', 'routers/evidence.py:clear_engine_jobs',
     'routers/evidence.py:check_cellebrite_folder', 'routers/evidence.py:get_video_frames',
-    'routers/evidence.py:generate_folder_profile', 'routers/graph.py:find_similar_entities_stream',
+    'routers/evidence.py:generate_folder_profile',
 }
 
 _OFFLOAD = {'run_in_threadpool', 'to_thread', 'run_sync'}
 # Coroutines that take the session but run their own database work in the thread pool.
-_OFFLOADS_INTERNALLY = {'reconcile_job_by_id', 'reconcile_case_jobs'}
+_OFFLOADS_INTERNALLY = {'reconcile_job_by_id', 'reconcile_case_jobs',
+                        # reads the graph with asyncio.to_thread, then compares names between awaits
+                        'find_similar_entities_streaming'}
 _ROUTE_METHODS = ('get', 'post', 'put', 'patch', 'delete', 'api_route')
 
 
