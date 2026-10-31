@@ -88,12 +88,9 @@ import {
 } from "../hooks/use-financial-data"
 import { useFilteredTransactions } from "../hooks/use-filtered-transactions"
 import { useElapsedSeconds } from "../lib/request-wait"
-import { buildEntityFlowRows } from "../lib/filter-transactions"
 import { FinancialToolbar } from "./FinancialToolbar"
 import { FinancialFilterPanel } from "./FinancialFilterPanel"
 import { FinancialSummaryCards } from "./FinancialSummaryCards"
-import { EntityFlowTables } from "./EntityFlowTables"
-import { BulkActionsBar } from "./BulkActionsBar"
 import { TransactionTable } from "./TransactionTable"
 import { FinancialCharts } from "./FinancialCharts"
 import { DuplicateCandidatesPanel } from "./DuplicateCandidatesPanel"
@@ -344,7 +341,6 @@ function FinancialPageContent() {
   const unlinkSub = useUnlinkSubTransaction(caseId!)
 
   const {
-    baseFilteredTransactions,
     filteredTransactions,
     pageTransactions,
     filteredCount,
@@ -365,20 +361,6 @@ function FinancialPageContent() {
     pageSize: store.pageSize,
     currentPage: store.currentPage,
   })
-
-  const senderRows = useMemo(
-    () =>
-      buildEntityFlowRows(
-        baseFilteredTransactions,
-        "from",
-        selectedBeneficiaries
-      ),
-    [baseFilteredTransactions, selectedBeneficiaries]
-  )
-  const beneficiaryRows = useMemo(
-    () => buildEntityFlowRows(baseFilteredTransactions, "to", selectedSenders),
-    [baseFilteredTransactions, selectedSenders]
-  )
 
   const [bulkCategorizeOpen, setBulkCategorizeOpen] = useState(false)
   const [categoryMgmtOpen, setCategoryMgmtOpen] = useState(false)
@@ -463,18 +445,6 @@ function FinancialPageContent() {
     []
   )
 
-  const handleBulkSetFrom = useCallback(() => {
-    setEntityEditField("from")
-    setEntityEditKeys(Array.from(store.checkedKeys))
-    setEntityEditOpen(true)
-  }, [store.checkedKeys])
-
-  const handleBulkSetTo = useCallback(() => {
-    setEntityEditField("to")
-    setEntityEditKeys(Array.from(store.checkedKeys))
-    setEntityEditOpen(true)
-  }, [store.checkedKeys])
-
   const handleEntitySave = useCallback(
     (entity: { key?: string; name?: string }) => {
       const params =
@@ -556,22 +526,6 @@ function FinancialPageContent() {
       setSelectedBeneficiaries(new Set())
     },
     [store, setSelectedSenders, setSelectedBeneficiaries]
-  )
-
-  const handleSelectedSendersChange = useCallback(
-    (value: Set<string>) => {
-      setSelectedSenders(value)
-      store.setCurrentPage(0)
-    },
-    [store, setSelectedSenders]
-  )
-
-  const handleSelectedBeneficiariesChange = useCallback(
-    (value: Set<string>) => {
-      setSelectedBeneficiaries(value)
-      store.setCurrentPage(0)
-    },
-    [store, setSelectedBeneficiaries]
   )
 
   const handleExportPdf = useCallback(() => {
@@ -1339,14 +1293,6 @@ function FinancialPageContent() {
               </p>
               {graphTab(
                 <>
-                  {canEdit && isTransactionsMode && (
-                    <BulkActionsBar
-                      onBulkCategorize={() => setBulkCategorizeOpen(true)}
-                      onBulkSetFrom={handleBulkSetFrom}
-                      onBulkSetTo={handleBulkSetTo}
-                    />
-                  )}
-
                   <div className="flex min-h-0 flex-1 flex-col">
                     <div className="flex-1 overflow-auto">
                       <ErrorBoundary level="section">
@@ -1406,37 +1352,14 @@ function FinancialPageContent() {
                 statement payment does not change these records.
               </p>
               {graphTab(
-                !isTransactionsMode ? (
-                  <div className="flex flex-1 items-center justify-center p-4">
-                    <EmptyState
-                      icon={Users}
-                      title="Counterparty analysis is only available for transactions"
-                      description="Select Statement payments above to examine who paid or received money."
-                    />
-                  </div>
-                ) : baseFilteredTransactions.length === 0 ? (
-                  <div className="flex flex-1 items-center justify-center p-4">
-                    <EmptyState
-                      icon={Users}
-                      title="No counterparties match the current filters"
-                      description="Adjust the active search, category, date, entity, or amount filters to populate the sender and beneficiary analysis."
-                    />
-                  </div>
-                ) : (
-                  <div className="min-h-0 flex-1 overflow-hidden p-4">
-                    <EntityFlowTables
-                      className="h-full"
-                      senders={senderRows}
-                      beneficiaries={beneficiaryRows}
-                      selectedSenders={selectedSenders}
-                      selectedBeneficiaries={selectedBeneficiaries}
-                      onSelectedSendersChange={handleSelectedSendersChange}
-                      onSelectedBeneficiariesChange={
-                        handleSelectedBeneficiariesChange
-                      }
-                    />
-                  </div>
-                )
+                // Counterparty analysis covers statement payments only; for other records the tab says so.
+                <div className="flex flex-1 items-center justify-center p-4">
+                  <EmptyState
+                    icon={Users}
+                    title="Counterparty analysis is only available for transactions"
+                    description="Select Statement payments above to examine who paid or received money."
+                  />
+                </div>
               )}
             </>
           )}

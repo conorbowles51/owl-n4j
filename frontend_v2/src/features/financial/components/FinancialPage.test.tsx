@@ -1171,6 +1171,24 @@ describe("FinancialPage authoritative Counterparties", () => {
       expect(screen.queryByText("Money Out")).not.toBeInTheDocument()
     }
   )
+  it("says counterparty analysis is for statement payments when other records are shown", () => {
+    // With other records loaded, the tab shows only this notice: no sender or beneficiary tables.
+    graphWithRows()
+    renderPage()
+    selectTab("People & businesses")
+    fireEvent.click(
+      screen.getByRole("button", { name: "Other financial records" })
+    )
+    const panel = screen.getByRole("tabpanel")
+    expect(
+      within(panel).getByText("Counterparty analysis is only available for transactions")
+    ).toBeInTheDocument()
+    expect(
+      within(panel).getByText("Select Statement payments above to examine who paid or received money.")
+    ).toBeInTheDocument()
+    expect(within(panel).queryByText("Senders")).not.toBeInTheDocument()
+    expect(within(panel).queryByText("Beneficiaries")).not.toBeInTheDocument()
+  })
   it("returns from intelligence to current ledger readings", () => {
     graphEmpty()
     renderPage()
