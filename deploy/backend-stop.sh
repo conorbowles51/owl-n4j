@@ -27,7 +27,21 @@ backend_active_state() {
     $SYSTEMCTL show -p ActiveState --value "${BACKEND_UNIT}" 2>/dev/null || echo unknown
 }
 
-# Succeeds once the unit has no running processes left (inactive or failed).
+backend_invocation() {
+    $SYSTEMCTL show -p InvocationID --value "${BACKEND_UNIT}" 2>/dev/null || true
+}
+
+# The instance being stopped is gone: a different invocation is running. With the API port held
+# (deploy/backend-socket.sh) a request queued during the stop starts the unit again at once, so the old instance
+# is often never seen inactive; the new one runs the code on disk and must not be stopped or killed.
+backend_replaced() {
+    local now
+    [ -n "${BACKEND_STOPPING_INVOCATION:-}" ] || return 1
+    now="$(backend_invocation)"
+    [ -n "${now}" ] && [ "${now}" != "${BACKEND_STOPPING_INVOCATION}" ]
+}
+
+# Succeeds once the unit has no running processes left (inactive or failed), or a new instance replaced it.
 wait_backend_stopped() {
     local limit="$1"
     local waited=0
@@ -37,6 +51,10 @@ wait_backend_stopped() {
         case "${state}" in
             inactive|failed) return 0 ;;
         esac
+        if backend_replaced; then
+            echo "  ${BACKEND_UNIT} was started again by a queued request (new instance); the old one has stopped"
+            return 0
+        fi
         if [ "${waited}" -ge "${limit}" ]; then
             echo "  backend still ${state} after ${limit}s"
             return 1
@@ -55,6 +73,7 @@ record_backend_log_tail() {
 
 stop_backend_bounded() {
     BACKEND_STOP_ESCALATED=none
+    BACKEND_STOPPING_INVOCATION="$(backend_invocation)"
     $SYSTEMCTL stop --no-block "${BACKEND_UNIT}" || return 1
     if wait_backend_stopped "${BACKEND_STOP_TIMEOUT}"; then
         return 0
@@ -63,12 +82,14 @@ stop_backend_bounded() {
     echo "  ${BACKEND_UNIT} did not stop within ${BACKEND_STOP_TIMEOUT}s; its log shows what was pending:"
     record_backend_log_tail
     echo "  Sending SIGINT (Uvicorn force-quit) to every ${BACKEND_UNIT} process"
+    backend_replaced && return 0
     $SYSTEMCTL kill --kill-whom=all --signal=SIGINT "${BACKEND_UNIT}" || true
     if wait_backend_stopped "${BACKEND_SIGINT_GRACE}"; then
         return 0
     fi
     BACKEND_STOP_ESCALATED=sigkill
     echo "  Still running ${BACKEND_SIGINT_GRACE}s after SIGINT; sending SIGKILL"
+    backend_replaced && return 0
     $SYSTEMCTL kill --kill-whom=all --signal=SIGKILL "${BACKEND_UNIT}" || true
     wait_backend_stopped "${BACKEND_SIGKILL_GRACE}"
 }

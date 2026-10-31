@@ -18,7 +18,7 @@ socket_fails=no
 fake_systemctl() {
     printf '%s\n' "$*" >> "${calls}"
     case "$1" in
-        show) cat "${unit_state}" ;;
+        show) case "$*" in *InvocationID*) echo invocation-1 ;; *) cat "${unit_state}" ;; esac ;;
         stop) echo inactive > "${unit_state}" ;;
         start) echo active > "${unit_state}" ;;
         enable) [ "${socket_fails}" = no ] ;;
@@ -43,6 +43,7 @@ echo held > "${test_root}/deploy/backend-socket.conf"
 echo active > "${unit_state}"; : > "${calls}"
 restart_backend_bounded > "${test_root}/out"
 grep -qx 'ListenStream=0.0.0.0:8002' "${sock}"
+grep -qx 'NoDelay=true' "${sock}"
 grep -qx "ExecStart=/bin/bash -lc 'exec /venv/bin/uvicorn main:app --fd 3 --workers 2'" "${dropin}"
 grep -qx 'ExecStart=' "${dropin}"
 grep -qx 'Requires=owl-backend-v2.socket' "${dropin}"

@@ -9,13 +9,24 @@ source_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 unit_state_file="${test_root}/state"
 calls="${test_root}/calls"
 mode="${test_root}/mode"
+invocation="${test_root}/invocation"
 
 fake_systemctl() {
     printf '%s\n' "$*" >> "${calls}"
     case "$1" in
-        show) cat "${unit_state_file}" ;;
+        show)
+            case "$*" in
+                *InvocationID*) cat "${invocation}" ;;
+                *) cat "${unit_state_file}" ;;
+            esac ;;
         stop)
-            if [ "$(cat "${mode}")" = clean ]; then echo inactive > "${unit_state_file}"; else echo deactivating > "${unit_state_file}"; fi ;;
+            case "$(cat "${mode}")" in
+                clean) echo inactive > "${unit_state_file}" ;;
+                # The held API port (deploy/backend-socket.sh) starts the unit again for a queued request: the
+                # old instance is never seen inactive, a new invocation is active.
+                reactivated) echo active > "${unit_state_file}"; echo invocation-2 > "${invocation}" ;;
+                *) echo deactivating > "${unit_state_file}" ;;
+            esac ;;
         kill)
             case "$(cat "${mode}"):$*" in
                 sigint:*SIGINT*|sigkill:*SIGKILL*) echo inactive > "${unit_state_file}" ;;
@@ -37,6 +48,7 @@ source "${source_dir}/backend-stop.sh"
 run_case() {
     echo "$1" > "${mode}"
     echo active > "${unit_state_file}"
+    echo invocation-1 > "${invocation}"
     : > "${calls}"
     local started rc=0
     started=$(date +%s)
@@ -68,6 +80,14 @@ test "${ELAPSED}" -le 1
 refuse kill "${calls}"
 expect "stop --no-block owl-backend-v2" "${calls}"
 expect "^start owl-backend-v2" "${calls}"
+
+# Started again by a queued request during the stop: the new instance ends the wait and is never killed.
+run_case reactivated
+test "${RC}" = 0
+test "${BACKEND_STOP_ESCALATED}" = none
+test "${ELAPSED}" -le 1
+refuse kill "${calls}"
+expect "started again by a queued request" "${test_root}/out"
 
 # A hung stop is escalated to SIGINT after the bound, with the log tail recorded.
 run_case sigint

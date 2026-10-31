@@ -10,6 +10,10 @@
 #
 # "plain" (or no file) removes the socket unit and the drop-in, so uvicorn binds the port itself again; the next
 # release applies it. Trade-off: while no backend can start at all, a request waits instead of failing fast.
+# While the socket is active a request starts a stopped backend (backend-stop.sh treats that new instance as the
+# end of the stop); to keep it down: systemctl stop owl-backend-v2.socket owl-backend-v2.
+# NoDelay: uvicorn opens an --fd socket as AF_UNIX and so never sets TCP_NODELAY; set on the listening socket, every
+# accepted connection inherits it, as with --host/--port.
 
 BACKEND_SOCKET_UNIT_DIR="${BACKEND_SOCKET_UNIT_DIR:-/etc/systemd/system}"
 BACKEND_SOCKET_DROPIN_NAME="60-lx-release-socket.conf"
@@ -45,7 +49,7 @@ backend_socket_listen() {
 
 backend_socket_render_socket() {
     printf '[Unit]\nDescription=Loupe API port, held open across backend restarts (deploy/backend-socket.sh)\n\n'
-    printf '[Socket]\nListenStream=%s\nBacklog=2048\n\n[Install]\nWantedBy=sockets.target\n' "$1"
+    printf '[Socket]\nListenStream=%s\nBacklog=2048\nNoDelay=true\n\n[Install]\nWantedBy=sockets.target\n' "$1"
 }
 
 backend_socket_render_dropin() {
