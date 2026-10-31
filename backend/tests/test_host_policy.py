@@ -10,6 +10,8 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 POLICY = ROOT / 'deploy' / 'hostpolicy'
 LIVE_CONTAINERS = {'neo4j': 'owl-v2-n4j', 'postgres': 'owl-v2-pg', 'redis': 'owl-v2-redis'}
+# nginx serves :5174 when deploy/frontend-server.conf says nginx; vite preview (owl-frontend-v2) otherwise.
+LIVE_UNITS = ('owl-backend-v2.service', 'owl-frontend-v2.service', 'nginx.service')
 UNITS = {'K': 1024, 'M': 1024 ** 2, 'G': 1024 ** 3}
 
 
@@ -35,7 +37,7 @@ def test_live_containers_run_in_the_live_slice_with_reserved_memory():
 
 
 def test_live_units_move_into_the_live_slice_and_the_fleet_runs_idle():
-    for unit in ('owl-backend-v2.service', 'owl-frontend-v2.service'):
+    for unit in LIVE_UNITS:
         assert _unit(POLICY / f'{unit}.d' / '50-lx-hostpolicy.conf')['Service']['Slice'] == 'loupe-live.slice'
     for slice_ in ('loupe.slice', 'loupe-live.slice'):
         assert int(_unit(POLICY / slice_)['Slice']['CPUWeight']) >= 1000
@@ -49,7 +51,7 @@ def test_live_protection_fits_inside_the_live_slice():
     services = yaml.safe_load((ROOT / 'docker-compose.yml').read_text())['services']
     total = sum(_bytes(services[s]['mem_reservation']) for s in LIVE_CONTAINERS)
     total += sum(_bytes(_unit(POLICY / f'{u}.d' / '50-lx-hostpolicy.conf')['Service']['MemoryLow'])
-                 for u in ('owl-backend-v2.service', 'owl-frontend-v2.service'))
+                 for u in LIVE_UNITS)
     for slice_ in ('loupe.slice', 'loupe-live.slice'):
         assert total <= _bytes(_unit(POLICY / slice_)['Slice']['MemoryLow']), slice_
 

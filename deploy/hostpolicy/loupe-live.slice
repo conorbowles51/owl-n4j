@@ -1,5 +1,5 @@
 # lx-hostpolicy (WS-A, LOUPE-PERFORMANCE-PLAN.md). Sizes from the memory table in /mnt/owl-data/fin-wt/headless/LX-HOSTPOLICY-STATUS.md.
-# The live service: owl-backend-v2, owl-frontend-v2, and the owl-v2 Postgres, Neo4j and Redis containers.
+# The live service: owl-backend-v2, nginx (or owl-frontend-v2 when vite serves), and the owl-v2 Postgres, Neo4j and Redis containers.
 [Unit]
 Description=Loupe live service (people's requests first)
 [Slice]
