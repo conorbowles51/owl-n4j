@@ -534,3 +534,60 @@ def test_a_compressed_copy_counts_in_the_cache_memory_and_can_evict(monkeypatch)
         view_cache._accepts_gzip.reset(token)
         view_cache.clear()
     assert evicted and left == 0
+
+
+def _saved_entry_round_trip(body):
+    scope = dict(format=1, database='db', code='code')
+    entry = view_cache._Entry(('payments',), (('payments', 1, 'x'),), body, 200, 'application/json', seconds=2.0,
+                              computed_at=1.0)
+    token = view_cache.always_save.set(True)
+    try:
+        view_cache._save_if_slow(('ledger', '{}'), entry, scope, 100, time.perf_counter())
+    finally:
+        view_cache.always_save.reset(token)
+    return entry, scope, view_cache._saved_path(('ledger', '{}'), scope)
+
+
+def test_a_saved_copy_carries_its_compressed_body_so_a_new_process_does_not_compress_it_again(monkeypatch):
+    """d5b330d1's ledger: 7.39 MB at the middleware's level 1, 5.21 MB at level 6 for 0.71 s once (2026-10-31)."""
+    import gzip
+    body = b'{"rows":[' + b','.join(b'"%d"' % n for n in range(3000)) + b']}'
+    entry, scope, path = _saved_entry_round_trip(body)
+    assert entry.gzipped and gzip.decompress(entry.gzipped) == body
+    assert entry.gzipped == gzip.compress(body, compresslevel=view_cache.GZIP_LEVEL, mtime=0)
+    assert view_cache.GZIP_LEVEL == 6
+    loaded = view_cache._load_saved(('ledger', '{}'), scope, 100)
+    assert loaded == entry and loaded.body == body and loaded.gzipped == entry.gzipped
+
+    def compress_again(_body):
+        raise AssertionError('a saved compressed body was compressed again')
+    monkeypatch.setattr(view_cache, '_gzip', compress_again)
+    token = view_cache._accepts_gzip.set(True)
+    try:
+        answer = view_cache._current_answer(loaded)
+    finally:
+        view_cache._accepts_gzip.reset(token)
+    assert answer.headers['content-encoding'] == 'gzip' and gzip.decompress(answer.body) == body
+    assert view_cache._current_answer(loaded).body == body  # not accepting gzip: the same bytes, plain
+
+
+def test_a_copy_saved_without_a_compressed_body_still_loads_and_a_damaged_one_is_compressed_again():
+    import gzip
+    import hashlib
+    body = b'{"rows":[' + b','.join(b'"%d"' % n for n in range(3000)) + b']}'
+    entry, scope, path = _saved_entry_round_trip(body)
+    header_line, rest = path.read_bytes().split(b'\n', 1)
+    header = json.loads(header_line)
+    # As saved before this change: no gzip fields, the body alone after the header.
+    old = {k: v for k, v in header.items() if not k.startswith('gzip_')}
+    path.write_bytes(json.dumps(old).encode() + b'\n' + body)
+    loaded = view_cache._load_saved(('ledger', '{}'), scope, 100)
+    assert loaded is not None and loaded.body == body and loaded.gzipped == b''
+    # A compressed copy that does not match its recorded digest is dropped; the body is still served.
+    path.write_bytes(header_line + b'\n' + body + b'x' * (len(rest) - len(body)))
+    loaded = view_cache._load_saved(('ledger', '{}'), scope, 100)
+    assert loaded is not None and loaded.body == body and loaded.gzipped == b''
+    # A file whose length does not match its header is not used at all.
+    path.write_bytes(header_line + b'\n' + rest + b'x')
+    assert view_cache._load_saved(('ledger', '{}'), scope, 100) is None
+    assert hashlib.sha256(gzip.decompress(entry.gzipped)).hexdigest() == header['sha256']

@@ -125,7 +125,7 @@ class _Entry:
     computed_at: float = field(default=0.0, compare=False)
     # The body's ETag, computed on first use (_etag).
     etag: str = field(default='', compare=False)
-    # The body gzipped as the service's gzip middleware would (level 1), on first use by a request accepting it.
+    # The body gzipped (GZIP_LEVEL), once: when it is saved to disk, or on first use by a request accepting gzip.
     gzipped: bytes = field(default=b'', compare=False, repr=False)
 
 
@@ -933,21 +933,30 @@ def _current_answer(entry):
 
 
 # A kept answer is compressed once, not on every request (live 2026-10-31 12:25: a d5b330d1 ledger hit took 1.18 s
-# on the server, 0.99 s of it gzip of the same 60 MB again). As services/json_gzip.JSONGZipMiddleware: level 1,
-# bodies from 4096 bytes; it passes an answer already encoded through unchanged.
+# on the server, 0.99 s of it gzip of the same 60 MB again). Bodies from 4096 bytes, as
+# services/json_gzip.JSONGZipMiddleware, which passes an answer already encoded through unchanged. Compressed once,
+# so at level 6, not the middleware's per-request level 1: d5b330d1's ledger (63.9 MB) is 5.21 MB instead of
+# 7.39 MB on the wire for every Financial tab that reads it, for 0.71 s of compression once instead of 0.31 s, and
+# the browser decompresses it as fast (0.16 s vs 0.17 s; measured 2026-10-31). The compressed copy is saved with the
+# body (_save_if_slow), so a worker that loads a saved copy does not compress it again while a person waits.
 GZIP_MINIMUM_SIZE = 4096
+GZIP_LEVEL = 6
 _accepts_gzip: ContextVar[bool] = ContextVar('financial_view_accepts_gzip', default=False)
 
 
-def _compressed(entry):
+def _gzip(body):
     import gzip
-    from fastapi.responses import Response
     from services.request_speed import note_gzip
+    began = time.perf_counter()
+    blob = gzip.compress(body, compresslevel=GZIP_LEVEL, mtime=0)
+    note_gzip(time.perf_counter() - began)
+    return blob
+
+
+def _compressed(entry):
+    from fastapi.responses import Response
     if not entry.gzipped:
-        began = time.perf_counter()
-        blob = gzip.compress(entry.body, compresslevel=1, mtime=0)
-        note_gzip(time.perf_counter() - began)
-        _keep_compressed(entry, blob)
+        _keep_compressed(entry, _gzip(entry.body))
     return Response(content=entry.gzipped, status_code=entry.status_code, media_type=entry.media_type,
                     headers={'Content-Encoding': 'gzip', 'Vary': 'Accept-Encoding'})
 
@@ -1168,15 +1177,25 @@ def _load_saved(key, scope, xmax):
             if (header.get('scope') != scope or header.get('key') != list(key) or type(header.get('xmax')) is not int
                     or header['xmax'] > xmax):
                 return None
-            body = saved.read()
-        if header.get('size') != len(body) or header.get('sha256') != hashlib.sha256(body).hexdigest():
+            rest = saved.read()
+        size = header.get('size')
+        # After the body, its compressed copy when one was saved (gzip_size and gzip_sha256 in the header).
+        compressed_size = header.get('gzip_size', 0)
+        if (type(size) is not int or type(compressed_size) is not int or size < 0 or compressed_size < 0
+                or len(rest) != size + compressed_size):
             return None
+        body, compressed = rest[:size], rest[size:]
+        if header.get('sha256') != hashlib.sha256(body).hexdigest():
+            return None
+        if compressed and header.get('gzip_sha256') != hashlib.sha256(compressed).hexdigest():
+            compressed = b''  # compressed again on first use
         # A copy saved before these were recorded has no time: it is never served as updating (0).
         seconds, computed_at = header.get('seconds'), header.get('computed_at')
         valid = all(isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0 for value in (seconds, computed_at))
         return _Entry(tuple(header['tables']), tuple(tuple(part) for part in header['fingerprint']), body,
                       header['status_code'], header['media_type'], header.get('refusal'),
-                      seconds=float(seconds) if valid else 0.0, computed_at=float(computed_at) if valid else 0.0)
+                      seconds=float(seconds) if valid else 0.0, computed_at=float(computed_at) if valid else 0.0,
+                      gzipped=compressed)
     except FileNotFoundError:
         return None
     except Exception:  # noqa: BLE001 - an unreadable copy is computed again
@@ -1220,16 +1239,22 @@ def _save_if_slow(key, entry, scope, xmax, started):
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         _raise_high_water(directory, xmax)
         path = _saved_path(key, scope)
+        if len(entry.body) >= GZIP_MINIMUM_SIZE and not entry.gzipped:
+            _keep_compressed(entry, _gzip(entry.body))
+        compressed = entry.gzipped if len(entry.body) >= GZIP_MINIMUM_SIZE else b''
         header = dict(scope=scope, key=list(key), xmax=xmax, tables=list(entry.tables),
                       fingerprint=[list(part) for part in entry.fingerprint], status_code=entry.status_code,
                       media_type=entry.media_type, refusal=entry.refusal, size=len(entry.body),
                       seconds=entry.seconds, computed_at=entry.computed_at,
                       sha256=hashlib.sha256(entry.body).hexdigest())
+        if compressed:
+            header.update(gzip_size=len(compressed), gzip_sha256=hashlib.sha256(compressed).hexdigest())
         temporary = path.with_name('%s.%d.%d.tmp' % (path.name, os.getpid(), threading.get_ident()))
         descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(descriptor, 'wb') as out:
             out.write(json.dumps(header, ensure_ascii=True, separators=(',', ':')).encode() + b'\n')
             out.write(entry.body)
+            out.write(compressed)
         os.replace(temporary, path)
         temporary = None
         stats['saved'] += 1
