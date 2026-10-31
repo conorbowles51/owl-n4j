@@ -657,11 +657,74 @@ def memo_dir(tmp_path, monkeypatch):
     return tmp_path
 
 
+def saved_file(directory):
+    """The 'saved' memo's file for the code identity now in force."""
+    return directory / ('saved.%s.json' % view_cache.code_identity()[:16])
+
+
+def test_the_old_services_flush_after_a_release_keeps_the_new_codes_values(engine, memo_dir, monkeypatch):
+    # A release's prepare saves values under the new code; the old service, still serving, then flushes its own.
+    case, counter = uuid.uuid4(), Counter()
+    write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 1), (:c, 2)', c=case)
+    import hashlib
+    new, old = (hashlib.sha256(name).hexdigest() for name in (b'new release', b'old release'))
+    monkeypatch.setattr(view_cache, '_code_identity', new)
+    call(engine, saved_view(counter, saved_memo()), case)
+    assert counter.calls == 2
+    view_cache.clear()
+    monkeypatch.setattr(view_cache, '_code_identity', old)
+    call(engine, saved_view(counter, saved_memo()), case)
+    assert counter.calls == 4
+    view_cache.clear()
+    monkeypatch.setattr(view_cache, '_code_identity', new)  # the new service starts
+    restarted = saved_memo()
+    call(engine, saved_view(counter, restarted), case)
+    assert counter.calls == 4 and restarted.stats['saved_hits'] == 2
+
+
+def test_saved_files_are_trimmed_to_the_newest_and_the_old_single_file_goes(engine, memo_dir, monkeypatch):
+    import os
+    case, counter = uuid.uuid4(), Counter()
+    write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 1)', c=case)
+    (memo_dir / 'saved.json').write_text('{}')
+    import hashlib
+    identities = [hashlib.sha256(b'release %d' % number).hexdigest() for number in range(5)]
+    for number in range(5):
+        monkeypatch.setattr(view_cache, '_code_identity', identities[number])
+        view_cache.clear()
+        call(engine, saved_view(counter, saved_memo()), case)
+        os.utime(saved_file(memo_dir), ns=(number * 10**9, number * 10**9))  # older to newer, whatever the clock
+    names = sorted(path.name for path in memo_dir.glob('saved.*.json'))
+    assert names == sorted('saved.%s.json' % identity[:16] for identity in identities[2:])
+    assert not (memo_dir / 'saved.json').exists()
+
+
+def test_a_database_gone_back_in_time_removes_other_codes_later_files(engine, memo_dir, monkeypatch):
+    # Another code's file saved at a later transaction mark than now: the database was restored to an earlier
+    # point since, so its (id, xmin) keys may name other row versions; it must not survive to be read later.
+    import hashlib
+    case, counter = uuid.uuid4(), Counter()
+    write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 1)', c=case)
+    other, this = (hashlib.sha256(name).hexdigest() for name in (b'other code', b'this code'))
+    monkeypatch.setattr(view_cache, '_code_identity', other)
+    call(engine, saved_view(counter, saved_memo()), case)
+    later = saved_file(memo_dir)
+    document = json.loads(later.read_text())
+    document['xmax'] += 10**6  # as if saved before a restore took the database back
+    later.write_text(json.dumps(document, separators=(',', ':'), ensure_ascii=False))
+    kept = memo_dir / ('saved.%s.json' % hashlib.sha256(b'a third code').hexdigest()[:16])
+    kept.write_text(json.dumps(dict(json.loads(later.read_text()), xmax=1), separators=(',', ':')))
+    view_cache.clear()
+    monkeypatch.setattr(view_cache, '_code_identity', this)
+    call(engine, saved_view(counter, saved_memo()), case)
+    assert saved_file(memo_dir).exists() and not later.exists() and kept.exists()
+
+
 def test_saved_values_survive_a_restart_and_a_changed_row_still_recomputes(engine, memo_dir):
     case, counter = uuid.uuid4(), Counter()
     write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 1), (:c, 2)', c=case)
     assert call(engine, saved_view(counter, saved_memo()), case).body == b'[{"double":2},{"double":4}]'
-    assert counter.calls == 2 and (memo_dir / 'saved.json').exists()
+    assert counter.calls == 2 and saved_file(memo_dir).exists()
     # A new process: empty memory, empty view cache. The saved values are used, nothing is computed.
     view_cache.clear()
     restarted = saved_memo()
@@ -684,9 +747,9 @@ def test_saved_values_are_not_used_by_other_code_or_another_database(engine, mem
     call(engine, saved_view(counter, saved_memo()), case)
     assert counter.calls == 2
     view_cache.clear()
-    saved = json.loads((memo_dir / 'saved.json').read_text())
+    saved = json.loads(saved_file(memo_dir).read_text())
     saved['scope']['database'] = 'another database'
-    (memo_dir / 'saved.json').write_text(json.dumps(saved))
+    saved_file(memo_dir).write_text(json.dumps(saved))
     call(engine, saved_view(counter, saved_memo()), case)
     assert counter.calls == 3
 
@@ -696,7 +759,7 @@ def test_nothing_is_saved_once_transaction_ids_could_have_wrapped(engine, memo_d
     write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 1)', c=case)
     monkeypatch.setattr(view_cache, 'MEMO_XID_LIMIT', 1)
     call(engine, saved_view(counter, saved_memo()), case)
-    assert not (memo_dir / 'saved.json').exists()
+    assert not saved_file(memo_dir).exists()
 
 
 def test_a_value_that_json_would_change_is_not_saved(engine, memo_dir):
@@ -704,7 +767,7 @@ def test_a_value_that_json_would_change_is_not_saved(engine, memo_dir):
     write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 1)', c=case)
     # The decoder gives a list back for the computed dict: not exactly the value, so it stays in memory only.
     call(engine, saved_view(counter, saved_memo(decode=lambda saved: [saved])), case)
-    assert json.loads((memo_dir / 'saved.json').read_text())['entries'] == [] if (memo_dir / 'saved.json').exists() else True
+    assert json.loads(saved_file(memo_dir).read_text())['entries'] == [] if saved_file(memo_dir).exists() else True
     view_cache.clear()
     call(engine, saved_view(counter, saved_memo(decode=lambda saved: [saved])), case)
     assert counter.calls == 2
@@ -713,9 +776,9 @@ def test_a_value_that_json_would_change_is_not_saved(engine, memo_dir):
 def test_an_unreadable_saved_file_is_computed_again(engine, memo_dir):
     case, counter = uuid.uuid4(), Counter()
     write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 3)', c=case)
-    (memo_dir / 'saved.json').write_text('{not json')
+    saved_file(memo_dir).write_text('{not json')
     assert call(engine, saved_view(counter, saved_memo()), case).body == b'[{"double":6}]'
-    assert counter.calls == 1 and json.loads((memo_dir / 'saved.json').read_text())['entries']
+    assert counter.calls == 1 and json.loads(saved_file(memo_dir).read_text())['entries']
 
 
 def test_exact_json_keeps_types():
@@ -734,9 +797,9 @@ def test_a_database_restored_to_an_earlier_point_does_not_use_saved_values(engin
     call(engine, saved_view(counter, saved_memo()), case)
     assert counter.calls == 1
     # As if the database went back in time: the store has seen later transaction ids than the database hands out.
-    saved = json.loads((memo_dir / 'saved.json').read_text())
+    saved = json.loads(saved_file(memo_dir).read_text())
     saved['xmax'] += 10 ** 6
-    (memo_dir / 'saved.json').write_text(json.dumps(saved))
+    saved_file(memo_dir).write_text(json.dumps(saved))
     view_cache.clear()
     call(engine, saved_view(counter, saved_memo()), case)
     assert counter.calls == 2
@@ -756,7 +819,7 @@ def test_a_temporary_file_left_by_a_killed_writer_is_removed(engine, memo_dir):
     (memo_dir / 'saved.json.4242.tmp').write_text('partial')
     write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 1)', c=case)
     call(engine, saved_view(counter, saved_memo()), case)
-    assert not (memo_dir / 'saved.json.4242.tmp').exists() and (memo_dir / 'saved.json').exists()
+    assert not (memo_dir / 'saved.json.4242.tmp').exists() and saved_file(memo_dir).exists()
 
 
 @pytest.fixture

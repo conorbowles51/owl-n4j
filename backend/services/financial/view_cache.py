@@ -353,7 +353,7 @@ class VersionMemo:
                 self._pending.clear()
                 return
             try:
-                path = directory / (self.name + '.json')
+                path = self._path(directory, scope)
                 stat = path.stat()
                 stamp = (stat.st_mtime_ns, stat.st_size, json.dumps(scope, sort_keys=True))
                 if stamp != self._saved_stamp:
@@ -382,12 +382,13 @@ class VersionMemo:
             return
         try:
             directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-            path = directory / (self.name + '.json')
+            path = self._path(directory, scope)
             with open(directory / (self.name + '.lock'), 'a') as lock:
                 fcntl.flock(lock, fcntl.LOCK_EX)
                 # Under the lock no other writer is mid-write: a temporary file left now was left by a killed one.
-                for left in directory.glob(self.name + '.json.*.tmp'):
+                for left in directory.glob(self.name + '.*json.*.tmp'):
                     left.unlink(missing_ok=True)
+                self._trim(directory, path, xmax)
                 entries, seen = {}, xmax
                 try:
                     document = json.loads(path.read_text(encoding='utf-8'))
@@ -413,6 +414,37 @@ class VersionMemo:
                     self._saved_stamp = (stat.st_mtime_ns, stat.st_size, json.dumps(scope, sort_keys=True))
         except Exception:
             logger.warning('Could not save %s values; they stay in memory only', self.name, exc_info=True)
+
+    # Saved files kept per memo: one per code identity, so the old service flushing after a release's prepare
+    # (under its own code) does not drop the values saved for the new code. The newest are kept.
+    KEPT_FILES = 3
+
+    def _path(self, directory, scope):
+        return directory / ('%s.%s.json' % (self.name, scope['code'][:16]))  # code_identity: sha256 hex
+
+    def _trim(self, directory, path, xmax):
+        """Under the memo's lock: remove the single-file store of earlier versions, every other code's file saved at a
+        later transaction mark than this snapshot's (the database went back in time since: its (id, xmin) keys may
+        name other row versions now), and the oldest beyond KEPT_FILES (never ``path``)."""
+        (directory / (self.name + '.json')).unlink(missing_ok=True)
+        pattern = re.compile(re.escape(self.name) + r'\.[0-9a-f]{16}\.json')
+        others = [other for other in directory.iterdir() if pattern.fullmatch(other.name) and other != path]
+        kept = []
+        for other in others:
+            try:
+                with open(other, 'rb') as saved:
+                    head = saved.read(65536)  # flush writes scope, then xmax, then the entries
+                found = re.search(rb'^\{"scope":\{[^{}]*\},"xmax":(\d+),', head)
+                seen = int(found.group(1)) if found else None
+            except OSError:
+                seen = None
+            if seen is None or seen > xmax:
+                other.unlink(missing_ok=True)
+            else:
+                kept.append(other)
+        kept.sort(key=lambda other: other.stat().st_mtime_ns, reverse=True)
+        for old in kept[self.KEPT_FILES - 1:]:
+            old.unlink(missing_ok=True)
 
     def clear(self):
         with self._lock:
