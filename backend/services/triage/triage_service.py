@@ -41,11 +41,16 @@ class TriageService:
 
     def __init__(self):
         self._driver = None
+        self._driver_lock = threading.Lock()
 
     def _get_driver(self):
+        # Route handlers run in the thread pool: two first calls at once must not each build a driver.
         if self._driver is None:
             from services.neo4j.driver import open_driver
-            self._driver = open_driver()
+
+            with self._driver_lock:
+                if self._driver is None:
+                    self._driver = open_driver()
         return self._driver
 
     # ── Case CRUD ──────────────────────────────────────────────────────

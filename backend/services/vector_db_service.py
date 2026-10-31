@@ -4,6 +4,7 @@ Vector DB Service for semantic document search.
 Handles storage and retrieval of document embeddings using ChromaDB.
 """
 
+import threading
 from typing import List, Dict, Optional
 
 from config import CHROMADB_HOST, CHROMADB_PORT
@@ -531,9 +532,18 @@ class VectorDBService:
 # Lazy singleton instance - only create when accessed
 _vector_db_service = None
 _vector_db_last_error = None
+# Route handlers run in the thread pool: two first calls at once must not each build a service.
+_vector_db_lock = threading.Lock()
 
 def get_vector_db_service():
     """Get or create the vector DB service singleton (lazy initialization)."""
+    if _vector_db_service is not None:
+        return _vector_db_service
+    with _vector_db_lock:
+        return _create_vector_db_service_locked()
+
+
+def _create_vector_db_service_locked():
     global _vector_db_service, _vector_db_last_error
     if _vector_db_service is None:
         try:

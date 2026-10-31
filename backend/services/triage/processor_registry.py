@@ -57,21 +57,27 @@ class ProcessorRegistry:
     def __init__(self):
         self._processors: Dict[str, BaseTriageProcessor] = {}
         self._driver = None
+        self._driver_lock = threading.Lock()
         self._loaded = False
         self._loading = False
         self._load_lock = threading.RLock()
 
     def _get_driver(self):
+        # Route handlers run in the thread pool: two first calls at once must not each build a driver.
         if self._driver is None:
             from services.neo4j.driver import open_driver
-            self._driver = open_driver()
-            # Ensure indexes
-            with self._driver.session() as session:
-                try:
-                    session.run(_ENSURE_ARTIFACT_INDEXES)
-                    session.run(_ENSURE_ARTIFACT_STAGE_INDEX)
-                except Exception:
-                    pass
+
+            with self._driver_lock:
+                if self._driver is None:
+                    driver = open_driver()
+                    # Ensure indexes before other threads can see the driver
+                    with driver.session() as session:
+                        try:
+                            session.run(_ENSURE_ARTIFACT_INDEXES)
+                            session.run(_ENSURE_ARTIFACT_STAGE_INDEX)
+                        except Exception:
+                            pass
+                    self._driver = driver
         return self._driver
 
     def _ensure_loaded(self):
