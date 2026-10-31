@@ -189,9 +189,12 @@ def get_or_render(entry, render):
         png, count = render()
         return png, count, False
     with _key_locks_guard:
-        lock = _key_locks.setdefault(entry.path, threading.Lock())
+        # [lock, holders]: the lock leaves the map only when no thread holds or waits for it, so a third request
+        # never makes a second lock and renders beside a waiting second one.
+        held = _key_locks.setdefault(entry.path, [threading.Lock(), 0])
+        held[1] += 1
     try:
-        with lock:
+        with held[0]:
             count = page_count(entry)
             png = read(entry) if count is not None else None
             if png is not None:
@@ -203,7 +206,8 @@ def get_or_render(entry, render):
             return png, count, False
     finally:
         with _key_locks_guard:
-            if not lock.locked():
+            held[1] -= 1
+            if not held[1]:
                 _key_locks.pop(entry.path, None)
 
 

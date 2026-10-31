@@ -59,6 +59,16 @@ function keep(key: string, image: PageImage) {
   }
 }
 
+/** Answers past the handoff window are never reused, so they are not held in memory either. */
+function dropExpired() {
+  const now = performance.now()
+  for (const [key, value] of kept) {
+    if (now - value.at <= HANDOFF_MS) continue
+    kept.delete(key)
+    keptBytes -= value.blob.size
+  }
+}
+
 function pump() {
   while (inFlight < MAX_IN_FLIGHT && queue.length) {
     const key = queue.shift()!
@@ -124,11 +134,9 @@ export function loadPageImage(
   const { width, token, signal } = options
   if (signal.aborted) return Promise.reject(abortError())
   const key = keyFor(evidenceId, page, width, token)
+  dropExpired()
   const ready = kept.get(key)
-  if (ready && performance.now() - ready.at > HANDOFF_MS) {
-    kept.delete(key)
-    keptBytes -= ready.blob.size
-  } else if (ready) {
+  if (ready) {
     kept.delete(key)
     kept.set(key, ready) // most recently used
     return Promise.resolve(ready)
@@ -204,6 +212,11 @@ export function resetPageImagesForTests() {
   pending.clear()
   queue.length = 0
   inFlight = 0
+}
+
+/** For tests and diagnostics: how many answers are held, and their bytes. */
+export function keptPageImages() {
+  return { count: kept.size, bytes: keptBytes }
 }
 
 /** For tests and diagnostics: how many page requests are running now. */

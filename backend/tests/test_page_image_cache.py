@@ -113,6 +113,28 @@ class StoreTests(CacheTestCase):
         self.assertEqual(first[0], second[0])
         self.assertEqual((first[1], first[2], second[1], second[2]), (7, False, 7, True))
 
+    def test_a_third_request_waits_with_the_second_rather_than_render_beside_it(self):
+        import threading
+        entry = cache.entry_for(self.file, SHA, page=1, width=1200)
+        started, release, renders = threading.Event(), threading.Event(), []
+
+        def slow():
+            renders.append(1)
+            started.set()
+            release.wait(5)
+            return _png(), 3
+        threads = [threading.Thread(target=cache.get_or_render, args=(entry, slow)) for _ in range(3)]
+        threads[0].start()
+        started.wait(5)
+        threads[1].start()
+        threads[2].start()
+        time.sleep(0.2)  # both are waiting on the first
+        release.set()
+        for thread in threads:
+            thread.join(5)
+        self.assertEqual(len(renders), 1)
+        self.assertEqual(cache._key_locks, {})
+
     def test_a_damaged_file_is_rendered_again_not_shown(self):
         entry = cache.entry_for(self.file, SHA, page=1, width=1200)
         render, calls = self.counting_render()

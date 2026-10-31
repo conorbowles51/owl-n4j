@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest"
 import {
   HANDOFF_MS,
   MAX_IN_FLIGHT,
+  keptPageImages,
   loadPageImage,
   pageRequestsInFlight,
   resetPageImagesForTests,
@@ -61,6 +62,7 @@ it("joins a request already on its way and hands the answer on, then asks the se
   const later = want(1)
   await flush()
   expect(fetchFile).toHaveBeenCalledTimes(2)
+  expect(keptPageImages()).toEqual({ count: 0, bytes: 0 }) // the expired answer is no longer held
   answers[1]({ ok: false, status: 403 })
   await expect(later).rejects.toThrow("You do not currently have access")
   clock.mockRestore()

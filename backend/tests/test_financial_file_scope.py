@@ -273,6 +273,16 @@ def test_membership_reads_the_preparation_mode_without_loading_profile_snapshots
     with f.SessionLocal() as db:  # this session's own unflushed change is what it sees
         row = db.get(EvidenceFile, other.id)
         row.last_processed_profile_snapshot = {'preparation_mode': 'pdf_review'}
-        with db.no_autoflush:
-            found = financial_file_ids(db, case_id=f.case.id) - f.seeded_file_ids
+        refreshed = []
+
+        def deferred_read(row, context, attrs):  # a deferred snapshot read is one query per file
+            if attrs and 'last_processed_profile_snapshot' in attrs:
+                refreshed.append(attrs)
+        event.listen(EvidenceFile, 'refresh', deferred_read)
+        try:
+            with db.no_autoflush:
+                found = financial_file_ids(db, case_id=f.case.id) - f.seeded_file_ids
+        finally:
+            event.remove(EvidenceFile, 'refresh', deferred_read)
         assert found == {f.file.id, other.id}
+        assert refreshed == []

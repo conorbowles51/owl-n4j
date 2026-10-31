@@ -34,14 +34,28 @@ def _pdf_review_ids(session, case_id, files):
     Read as one JSON path from the database rather than by loading every
     file's profile snapshot (14 MB of the 26 MB of evidence rows on the largest
     case, measured 2026-10-30). Files that are this session's own unflushed
-    objects are read from the objects, which is what the database would say
-    once they are written.
+    new or changed objects are read from the objects, which is what the
+    database would say once they are written.
     """
-    if not _cacheable(session):
-        return {file.id for file in files
-                if (file.last_processed_profile_snapshot or {}).get('preparation_mode') == 'pdf_review'}
+    from sqlalchemy import inspect as orm_inspect
     mode = EvidenceFile.last_processed_profile_snapshot['preparation_mode'].as_string()
-    return set(session.scalars(select(EvidenceFile.id).where(EvidenceFile.case_id == case_id, mode == 'pdf_review')))
+    with session.no_autoflush:
+        stored = set(session.scalars(select(EvidenceFile.id).where(EvidenceFile.case_id == case_id,
+                                                                   mode == 'pdf_review')))
+    if _cacheable(session):
+        return stored
+    # The session's own new and changed files whose snapshot it holds say what the database will say once
+    # written; every other file's stored value is its value. (Reading every file's deferred snapshot here instead
+    # was one query per file.)
+    ids = {file.id for file in files}
+    for file in (*session.new, *session.dirty):
+        if not isinstance(file, EvidenceFile) or file.id not in ids:
+            continue
+        if file in session.new or 'last_processed_profile_snapshot' in orm_inspect(file).dict:
+            stored.discard(file.id)
+            if (file.last_processed_profile_snapshot or {}).get('preparation_mode') == 'pdf_review':
+                stored.add(file.id)
+    return stored
 
 
 def financial_file_ids(session, *, case_id):
