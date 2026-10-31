@@ -8,24 +8,11 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { EmptyState } from "@/components/ui/empty-state"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
-import { fetchAPI } from "@/lib/api-client"
+import { graphAPI } from "../api"
 
 interface CypherPanelProps {
   caseId: string
   className?: string
-}
-
-// POST /api/query in case mode: read only, every node bound to $case_id (supplied by the server),
-// with a row limit and time limit the response states.
-export interface CaseQueryResponse {
-  success: boolean
-  results: Record<string, unknown>[]
-  columns: string[]
-  count: number
-  row_limit: number
-  truncated: boolean
-  total: number | null
-  error: string | null
 }
 
 interface QueryResult {
@@ -35,12 +22,7 @@ interface QueryResult {
   truncated: boolean
 }
 
-export function runCaseQuery(caseId: string, query: string) {
-  return fetchAPI<CaseQueryResponse>("/api/query", {
-    method: "POST",
-    body: { query, case_id: caseId },
-  })
-}
+
 
 interface HistoryEntry {
   query: string
@@ -61,7 +43,7 @@ export function CypherPanel({ caseId, className }: CypherPanelProps) {
     setLoading(true)
     setError(null)
     try {
-      const data = await runCaseQuery(caseId, q)
+      const data = await graphAPI.runCaseQuery(caseId, q)
       if (!data.success) {
         setError(data.error ?? "Query failed")
         setResult(null)

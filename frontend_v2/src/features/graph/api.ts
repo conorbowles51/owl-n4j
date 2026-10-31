@@ -12,6 +12,19 @@ import type {
 } from "@/types/graph.types"
 import type { CaseLayer } from "@/features/significant/types"
 
+// POST /api/query in case mode: read only, every node bound to $case_id (supplied by the server),
+// with a row limit and time limit the response states.
+export interface CaseQueryResponse {
+  success: boolean
+  results: Record<string, unknown>[]
+  columns: string[]
+  count: number
+  row_limit: number
+  truncated: boolean
+  total: number | null
+  error: string | null
+}
+
 export interface GraphEditPropertySchema {
   name: string
   type: string
@@ -453,6 +466,14 @@ export const graphAPI = {
       `/api/graph/node/${encodeURIComponent(nodeKey)}/geocode?apply=${apply}`,
       { method: "POST", body: { case_id: caseId, address } }
     ),
+
+  /* --- Query panel (read only, inside one case) --- */
+
+  runCaseQuery: (caseId: string, query: string) =>
+    fetchAPI<CaseQueryResponse>("/api/query", {
+      method: "POST",
+      body: { query, case_id: caseId },
+    }),
 }
 
 /* ------------------------------------------------------------------ */
