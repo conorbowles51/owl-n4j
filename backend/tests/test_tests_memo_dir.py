@@ -44,10 +44,12 @@ def test_a_child_of_a_test_run_keeps_the_run_s_directories():
 def test_a_path_through_a_test_directory_or_a_link_to_a_real_one_is_replaced(tmp_path):
     run_memo = os.environ['FINANCIAL_VIEW_MEMO_DIR']
     real = tmp_path / 'real-cache'; real.mkdir()
-    link = Path(tempfile.gettempdir()) / ('loupe-test-view-memo-link-%d' % os.getpid())
+    link = Path(tempfile.gettempdir()) / ('loupe-test-view-memo-link-%d-%s' % (os.getpid(), os.urandom(4).hex()))
     link.symlink_to(real)
     try:
-        for given in (run_memo + '/../../' + str(real).lstrip('/'), str(link)):
+        through = os.path.join(run_memo, os.path.relpath(real, run_memo))  # via the run's directory, any depth
+        assert '..' in through and Path(through).resolve() == real.resolve()
+        for given in (through, str(link)):
             memo, _ = _directories_seen_by_a_fresh_import({**os.environ, 'FINANCIAL_VIEW_MEMO_DIR': given})
             assert memo != given and Path(memo).name.startswith('loupe-test-view-memo-')
     finally:
