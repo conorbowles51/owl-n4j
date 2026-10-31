@@ -147,6 +147,35 @@ class HandOffTests(GraphFollowUpTestCase):
         self.worker_view()
         self.assertEqual(self.status()['status'], 'pending')
 
+    def test_a_new_request_in_the_child_keeps_a_retrying_case_retrying(self):
+        self.become_child()
+        graph_followup.request_follow_up(self.case, immediate=True)
+
+        def boom(*args, **kwargs):
+            raise RuntimeError('graph write refused')
+        with patch.object(graph_followup, 'project_case_graph', boom), \
+                patch.object(graph_followup, 'record_failure', boom):
+            self.serve()
+        graph_followup.request_follow_up(self.case)  # the rounds thread saves another statement
+        self.worker_view()
+        status = self.status()
+        self.assertEqual((status['status'], status['last_error']), ('retrying', 'graph write refused'))
+
+    def test_a_claimed_request_whose_time_cannot_be_read_is_still_taken_up(self):
+        graph_followup.hand_off_to(self.directory)
+        graph_followup.request_follow_up(self.case)
+        self.become_child()
+        real = Path.stat
+
+        def stat(path, *args, **kwargs):
+            if path.parent.name == 'claimed':
+                raise OSError('synthetic')
+            return real(path, *args, **kwargs)
+        with patch.object(Path, 'stat', stat):
+            self.assertEqual(graph_followup.claim_hand_offs(), 1)
+        self.assertEqual(self.files('claimed'), [])
+        self.assertIn(self.case, graph_followup._states)
+
     def test_a_request_that_cannot_be_claimed_does_not_stop_the_rest(self):
         graph_followup.hand_off_to(self.directory)
         other = '0f6a3c3e-6f4e-4d55-9b38-6a1f2f8f2b11'

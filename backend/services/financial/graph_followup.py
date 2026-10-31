@@ -429,11 +429,13 @@ def request_follow_up(case_id, *, now: Optional[float] = None, immediate: bool =
             if directory is None:
                 _record_request(str(case_id), moment, immediate)
                 serving = _serving_dir[0]
+                state = _states[str(case_id)]
+                failure = (dict(attempts=state.attempts, last_error=state.last_error) if state.attempts else None)
         if directory is None:
             if serving is not None:
                 # A request made in the child itself (its rounds thread): the workers' status sees it at once,
-                # not only after the next graph round.
-                _write_pending(serving, case_id, None)
+                # not only after the next graph round (a case already retrying keeps its failure).
+                _write_pending(serving, case_id, failure)
             return
         _write_hand_off(directory, case_id, immediate)
     except Exception:  # pragma: no cover - a follow-up request must never fail an import
@@ -576,7 +578,6 @@ def claim_hand_offs() -> int:
         target = directory / "claimed" / f"{name}.{os.getpid()}"
         try:
             os.rename(path, target)
-            moment = _monotonic_from_wall(target.stat().st_mtime)
         except FileNotFoundError:
             continue
         except OSError:
@@ -584,6 +585,10 @@ def claim_hand_offs() -> int:
             # requests/ and is tried again next round.
             log.exception("Graph follow-up request %s could not be claimed; tried again next round", name)
             continue
+        try:
+            moment = _monotonic_from_wall(target.stat().st_mtime)
+        except OSError:
+            moment = time.monotonic()  # claimed: recorded now rather than left in claimed/ until a restart
         with _lock:
             _record_request(case, moment, name.endswith(IMMEDIATE_SUFFIX))
         claimed.append(target)
@@ -637,6 +642,8 @@ def _sync_pending() -> None:
     directory = _serving_dir[0]
     if directory is None:
         return
+    # Listed before the held cases are read: a request recorded in between is then never removed as not held.
+    present = {path.name for path in (directory / "pending").iterdir()}
     with _lock:
         held = {}
         for case, state in _states.items():
@@ -645,7 +652,6 @@ def _sync_pending() -> None:
                                           if state.attempts else None)
             except ValueError:
                 pass
-    present = {path.name for path in (directory / "pending").iterdir()}
     for case, failure in held.items():
         _write_pending(directory, case, failure)
     for case in present - set(held):
