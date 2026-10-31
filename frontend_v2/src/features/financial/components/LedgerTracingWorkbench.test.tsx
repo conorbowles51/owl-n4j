@@ -175,9 +175,14 @@ it("converts decimal currency inputs exactly before submitting the scenario", as
   fireEvent.click(
     screen.getByRole("checkbox", { name: /^First in, first out/ })
   )
-  fireEvent.click(
-    screen.getByRole("button", { name: "Calculate conditional scenario" })
-  )
+  // Click as a person does: once the chosen method has enabled the button.
+  // Under load the page can still show it disabled when the click arrives,
+  // and a click on a disabled button submits nothing.
+  const calculate = screen.getByRole("button", {
+    name: "Calculate conditional scenario",
+  })
+  await waitFor(() => expect(calculate).toBeEnabled())
+  fireEvent.click(calculate)
   await screen.findByText("Synthetic response")
   const call = vi
     .mocked(fetchAPI)
