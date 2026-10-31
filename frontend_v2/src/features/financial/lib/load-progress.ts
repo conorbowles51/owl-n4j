@@ -48,9 +48,22 @@ export interface LoadPicture {
   failed: RequestState[]
 }
 
+/**
+ * Reads that failed and have not since been asked again: a later read of the same address that is still running or
+ * that succeeded (a retry, React Query's own or the person's) settles the failure. Each address is named once.
+ */
+export function unresolvedFailures(reads: RequestState[]): RequestState[] {
+  const latest = new Map<string, RequestState>()
+  for (const read of reads) {
+    const held = latest.get(read.endpoint)
+    if (!held || read.started >= held.started) latest.set(read.endpoint, read)
+  }
+  return [...latest.values()].filter((read) => read.ended !== null && read.failed)
+}
+
 /** What the reads say right now (pure: tested directly). */
 export function picture(reads: RequestState[]): LoadPicture {
-  const failed = reads.filter((read) => read.failed)
+  const failed = unresolvedFailures(reads)
   const pending = reads.filter((read) => read.ended === null)
   let done = 0
   for (const read of reads) {

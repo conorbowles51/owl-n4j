@@ -76,7 +76,9 @@ def _with_body_length(app):
             if message['type'] == 'http.response.start':
                 headers = MutableHeaders(raw=list(message['headers']))
                 length = headers.get('content-length')
-                if length is not None and BODY_LENGTH_HEADER not in headers:
+                # An answer that arrives already encoded (a kept view's ready gzip copy) has the compressed size
+                # as its Content-Length: it sets X-Body-Length itself, or carries none.
+                if length is not None and BODY_LENGTH_HEADER not in headers and 'content-encoding' not in headers:
                     headers[BODY_LENGTH_HEADER] = length
                     message = {**message, 'headers': headers.raw}
             await send(message)

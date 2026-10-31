@@ -41,6 +41,11 @@ def app():
     def encoded():
         return JSONResponse(content=PAYLOAD, headers={'Content-Encoding': 'identity'})
 
+    @application.get('/pregzipped')
+    def pregzipped():
+        return Response(content=gzip.compress(json.dumps(LARGE).encode()), media_type='application/json',
+                        headers={'Content-Encoding': 'gzip', 'Vary': 'Accept-Encoding'})
+
     @application.get('/large')
     def large():
         return LARGE
@@ -114,9 +119,25 @@ class JSONGZipTests(unittest.TestCase):
             self.assertEqual(body, plain.content)
             self.assertEqual(int(response.headers['x-body-length']), len(plain.content))
             self.assertEqual(int(plain.headers['x-body-length']), len(plain.content))
-        with self.client.stream('GET', '/stream', headers={'Accept-Encoding': 'gzip'}) as response:
-            b''.join(response.iter_raw())
-        self.assertNotIn('x-body-length', response.headers)
+        for path in ('/stream', '/pregzipped'):
+            with self.subTest(path=path), self.client.stream('GET', path, headers={'Accept-Encoding': 'gzip'}) as response:
+                b''.join(response.iter_raw())
+            # Never the compressed size of an answer that arrived already encoded.
+            self.assertNotIn('x-body-length', response.headers)
+
+    def test_a_kept_views_ready_gzip_copy_says_its_uncompressed_length(self):
+        from services.financial import view_cache
+        body = json.dumps(LARGE).encode()
+        entry = view_cache._Entry(tables=(), fingerprint=(), body=body, status_code=200, media_type='application/json')
+        application = FastAPI()
+        application.add_middleware(JSONGZipMiddleware)
+        application.get('/kept')(lambda: view_cache._compressed(entry))
+        with TestClient(application).stream('GET', '/kept', headers={'Accept-Encoding': 'gzip'}) as response:
+            wire = b''.join(response.iter_raw())
+        self.assertEqual(response.headers['content-encoding'], 'gzip')
+        self.assertEqual(gzip.decompress(wire), body)
+        self.assertEqual(int(response.headers['x-body-length']), len(body))
+        self.assertEqual(response.headers.get_list('x-body-length'), [str(len(body))])
 
 
 if __name__ == '__main__':

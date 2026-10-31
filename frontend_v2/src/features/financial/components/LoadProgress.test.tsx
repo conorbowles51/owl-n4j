@@ -79,3 +79,27 @@ it("estimates time left from this page's last load on this case, worded as an es
   act(() => vi.advanceTimersByTime(2000))
   expect(screen.getByRole("status").textContent).toMatch(/about 6 s left \(this page took 8 s last time\)/)
 })
+
+it("after the data is shown, names a part that failed until it is asked again and loads", async () => {
+  const client = new QueryClient()
+  render(
+    <QueryClientProvider client={client}>
+      <LoadProgress caseId="case-1" page="financial/ledger" />
+    </QueryClientProvider>
+  )
+  const failed = startRequest("/api/financial/ledger-accounts?case_id=case-1")
+  act(() => endRequest(failed, "Server error"))
+  // Nothing is fetching in the query cache: the page settles at the next frame.
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(600)
+  })
+  expect(screen.getByTestId("load-progress-failed").textContent).toMatch(/Loading accounts failed: Server error\./)
+  let again = 0
+  act(() => {
+    again = startRequest("/api/financial/ledger-accounts?case_id=case-1")
+  })
+  expect(screen.queryByTestId("load-progress-failed")).toBeNull() // being asked again: no stale failure
+  act(() => endRequest(again, null))
+  expect(screen.queryByTestId("load-progress-failed")).toBeNull()
+  expect(screen.queryByTestId("load-progress")).toBeNull()
+})

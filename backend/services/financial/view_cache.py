@@ -1053,7 +1053,9 @@ def _compressed(entry):
     if not entry.gzipped:
         _keep_compressed(entry, _gzip(entry.body))
     return Response(content=entry.gzipped, status_code=entry.status_code, media_type=entry.media_type,
-                    headers={'Content-Encoding': 'gzip', 'Vary': 'Accept-Encoding'})
+                    headers={'Content-Encoding': 'gzip', 'Vary': 'Accept-Encoding',
+                             # The uncompressed length, which the browser's loading bar counts against.
+                             'X-Body-Length': str(len(entry.body))})
 
 
 def _keep_compressed(entry, blob):

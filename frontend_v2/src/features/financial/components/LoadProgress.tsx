@@ -57,6 +57,12 @@ function ViewLoadProgress({ caseId, page }: { caseId: string; page: string }) {
   }, [caseId, page, since, client])
 
   const open = !settled
+  // After the data is shown only the reads matter (a failed part being asked again); while loading, the tick too.
+  const [, setReadsSeen] = useState(0)
+  useEffect(() => {
+    if (open) return
+    return subscribeRequests(() => setReadsSeen((n) => n + 1))
+  }, [open])
   useEffect(() => {
     if (!open) return
     const tick = () =>
@@ -82,15 +88,14 @@ function ViewLoadProgress({ caseId, page }: { caseId: string; page: string }) {
   const reads = requestsSince(since)
   const elapsed = now - since
   const view = picture(reads)
-  const failures = view.failed.filter((read) => read.ended !== null)
+  const failures = view.failed
   const retry = () => {
     void client.refetchQueries({ type: "active", predicate: (query) => query.state.status === "error" })
   }
 
   if (!open) {
     // Data is on screen. A part that failed stays named, with a retry, until it loads.
-    const stillFailed = failures.length > 0 && client.getQueryCache().findAll({ type: "active" }).some((query) => query.state.status === "error")
-    if (!stillFailed) return null
+    if (!failures.length) return null
     return (
       <div role="alert" className="mx-4 my-2 flex flex-wrap items-center gap-3 rounded border border-destructive/40 px-3 py-2 text-sm text-destructive" data-testid="load-progress-failed">
         <span>
