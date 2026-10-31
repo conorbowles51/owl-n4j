@@ -1,5 +1,11 @@
 import { ACCESS_REFUSED_EVENT } from "./access-refused"
 import { apiErrorMessage } from "./api-error-message"
+import {
+  ACCEPT_HEADER,
+  acceptsUpdating,
+  noteViewAnswer,
+  updatingAsOf,
+} from "./financial-view-updates"
 
 export class ApiError extends Error {
   status: number
@@ -39,6 +45,10 @@ export async function fetchAPI<T>(
   if (token) {
     headers["Authorization"] = `Bearer ${token}`
   }
+  const marksUpdating = acceptsUpdating(endpoint, init.method)
+  if (marksUpdating) {
+    headers[ACCEPT_HEADER] = "updating"
+  }
 
   const rawBody = body instanceof FormData || body instanceof Blob
   if (body && !rawBody) {
@@ -65,6 +75,8 @@ export async function fetchAPI<T>(
       signal: controller.signal,
       credentials: "include",
     })
+
+    if (marksUpdating) noteViewAnswer(endpoint, updatingAsOf(response))
 
     if (!response.ok) {
       let errorData: unknown

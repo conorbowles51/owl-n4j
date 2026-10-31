@@ -11,6 +11,7 @@ import { useUIStore } from "@/stores/ui.store"
 import { ChatSidePanel } from "@/features/chat/components/ChatSidePanel"
 import { useGlobalShortcuts } from "@/hooks/use-global-shortcuts"
 import { useRouteSpeed } from "@/lib/route-speed"
+import { FinancialViewUpdatingNotice } from "@/components/FinancialViewUpdatingNotice"
 
 export function AppLayout() {
   const chatPanelOpen = useUIStore((s) => s.chatPanelOpen)
@@ -74,6 +75,8 @@ export function AppLayout() {
             <ErrorBoundary level="page">
               <Outlet />
             </ErrorBoundary>
+            {/* Figures answered from a previous copy while they are recomputed are never shown as current. */}
+            <FinancialViewUpdatingNotice />
           </main>
         </ResizablePanel>
         {showAppChat && (

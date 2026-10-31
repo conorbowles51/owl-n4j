@@ -79,3 +79,44 @@ it.each([
     expect(heard).toEqual(announced ? ["/api/financial/ledger?case_id=c"] : [])
   }
 )
+it("asks Financial reads to be answered as updating and records such answers until the address answers current", async () => {
+  const { clearUpdatingViews, updatingViews } = await import("./financial-view-updates")
+  clearUpdatingViews()
+  const endpoint = "/api/financial/ledger-summary?case_id=c1"
+  const fetch = vi
+    .fn()
+    .mockResolvedValueOnce(
+      new Response('{"total":5}', {
+        status: 200,
+        headers: { "X-Financial-View-State": "updating", "X-Financial-View-As-Of": "2026-10-31T07:15:00+00:00" },
+      })
+    )
+    .mockResolvedValueOnce(new Response('{"total":12}', { status: 200 }))
+  vi.stubGlobal("fetch", fetch)
+  expect(await fetchAPI(endpoint)).toEqual({ total: 5 })
+  expect(fetch.mock.calls[0][1].headers["X-Financial-View-Accept"]).toBe("updating")
+  expect(updatingViews().get(endpoint)).toBe("2026-10-31T07:15:00+00:00")
+  expect(await fetchAPI(endpoint)).toEqual({ total: 12 })
+  expect(updatingViews().has(endpoint)).toBe(false)
+})
+it("records a kept refusal answered as updating, and never asks writes or other reads to accept it", async () => {
+  const { clearUpdatingViews, updatingViews } = await import("./financial-view-updates")
+  clearUpdatingViews()
+  const endpoint = "/api/financial/ledger-timeline?case_id=c1"
+  const fetch = vi.fn().mockImplementation(() =>
+    Promise.resolve(
+      new Response('{"detail":"More than 1,000 payments match."}', {
+        status: 422,
+        headers: { "X-Financial-View-State": "updating", "X-Financial-View-As-Of": "2026-10-31T07:15:00+00:00" },
+      })
+    )
+  )
+  vi.stubGlobal("fetch", fetch)
+  await expect(fetchAPI(endpoint)).rejects.toMatchObject({ status: 422 })
+  expect(updatingViews().has(endpoint)).toBe(true)
+  await fetchAPI("/api/financial/ledger/categories?case_id=c1", { method: "POST", body: {} }).catch(() => undefined)
+  await fetchAPI("/api/evidence?case_id=c1").catch(() => undefined)
+  expect(fetch.mock.calls[1][1].headers["X-Financial-View-Accept"]).toBeUndefined()
+  expect(fetch.mock.calls[2][1].headers["X-Financial-View-Accept"]).toBeUndefined()
+  expect([...updatingViews().keys()]).toEqual([endpoint])
+})
