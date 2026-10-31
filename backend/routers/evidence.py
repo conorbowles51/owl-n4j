@@ -22,7 +22,8 @@ from typing import Dict, List, Optional
 from uuid import UUID
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse, Response
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 from starlette.datastructures import UploadFile as StarletteUploadFile
 from starlette.requests import ClientDisconnect
@@ -1648,6 +1649,7 @@ def get_evidence_logs(
 
 @router.get("/engine/jobs")
 async def list_engine_jobs(
+    request: Request,
     case_id: str = Query(..., description="Case ID"),
     current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
@@ -1655,7 +1657,11 @@ async def list_engine_jobs(
     """Proxy: list all processing jobs from the evidence engine for a case.
 
     The database work (access check, reconcile, file links) runs in a worker thread: this handler awaits the engine,
-    so it stays async, and nothing blocking may run on the event loop."""
+    so it stays async, and nothing blocking may run on the event loop.
+
+    The list (3.15 MB on d5b330d1, polled every minute from an open Evidence page) carries an ETag with
+    ``private, no-cache``: the browser asks again with If-None-Match and an unchanged list is answered 304 with no
+    body. The bytes of a 200 are the ones FastAPI wrote before."""
     try:
         await run_in_threadpool(_check_engine_jobs_access, db, case_id, current_user)
 
@@ -1663,12 +1669,24 @@ async def list_engine_jobs(
             return []
 
         jobs = await evidence_engine_client.list_jobs(case_id)
-        return await run_in_threadpool(_reconcile_and_link_engine_jobs, db, case_id, jobs)
+        linked = await run_in_threadpool(_reconcile_and_link_engine_jobs, db, case_id, jobs)
+        return await run_in_threadpool(_jobs_answer, linked, request.headers.get("if-none-match"))
     except HTTPException:
         raise
     except Exception as e:
         logger.warning("Failed to list engine jobs: %s", e)
         return []
+
+
+def _jobs_answer(jobs: list, if_none_match: Optional[str]) -> Response:
+    """The job list as FastAPI would encode it, with an ETag; 304 when the browser already holds these bytes."""
+    answer = JSONResponse(jsonable_encoder(jobs))
+    etag = '"' + hashlib.sha256(answer.body).hexdigest()[:32] + '"'
+    headers = {"ETag": etag, "Cache-Control": "private, no-cache"}
+    if if_none_match and etag in [tag.strip() for tag in if_none_match.split(",")]:
+        return Response(status_code=304, headers=headers)
+    answer.headers.update(headers)
+    return answer
 
 
 def _check_engine_jobs_access(db: Session, case_id: str, current_user: User) -> None:

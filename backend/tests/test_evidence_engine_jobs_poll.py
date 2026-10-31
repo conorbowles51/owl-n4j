@@ -5,6 +5,7 @@ keep its database work off the event loop."""
 from __future__ import annotations
 
 import asyncio
+import json
 import threading
 from types import SimpleNamespace
 from uuid import uuid4
@@ -147,7 +148,9 @@ def test_list_engine_jobs_links_files_with_its_database_work_off_the_event_loop(
         def _record_thread(*args):
             db_threads.append(threading.current_thread())
 
-        body = asyncio.run(router.list_engine_jobs(case_id=str(case_id), current_user=SimpleNamespace(), db=db))
+        answer = asyncio.run(router.list_engine_jobs(SimpleNamespace(headers={}), case_id=str(case_id),
+                                                     current_user=SimpleNamespace(), db=db))
+        body = json.loads(answer.body)
 
     assert [job["evidence_file_id"] for job in body] == [str(file_id), None]
     assert db_threads and loop_thread
