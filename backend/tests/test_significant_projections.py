@@ -21,9 +21,9 @@ class _Result:
         return self.single_value
 
 
-def _packed(rows):
+def _packed(rows, columns=None):
     """The single record a packed read returns: its rows as lists, in the query's column order."""
-    return _Result(single={"rows": [list(row.values()) for row in rows]})
+    return _Result(single={"rows": [[row.get(c) for c in columns] if columns else list(row.values()) for row in rows]})
 
 
 class _Session:
@@ -168,7 +168,7 @@ class SignificantProjectionTests(unittest.TestCase):
         }
         with patch(
             "services.neo4j.timeline_service.driver.session",
-            return_value=_Session(captured, [_Result([row]), _Result(single={"total": 1})]),
+            return_value=_Session(captured, [_packed([row], TimelineService._EVENT_COLUMNS), _Result(single={"total": 1})]),
         ):
             result = TimelineService().get_timeline_page(
                 case_id="case-1",

@@ -11,7 +11,7 @@ import logging
 import re
 from typing import Dict, List, Optional
 
-from services.neo4j.driver import driver
+from services.neo4j.driver import driver, run_packed
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +23,9 @@ class TimelineTooLarge(ValueError):
 class TimelineService:
     # Repeated from _build_filters so the planner applies it before the sort-date expressions.
     _NODE_PREFILTER = "n.case_id = $case_id AND coalesce(n.system_node, false) <> true"
+    # The columns the page query returns, in its RETURN order (rows arrive packed: see run_packed).
+    _EVENT_COLUMNS = ("key", "name", "type", "date", "time", "amount", "summary", "notes",
+                      "ledger_transaction_id", "connections")
 
     SORT_DATE_CYPHER = """
         CASE
@@ -370,9 +373,12 @@ class TimelineService:
                     raise TimelineTooLarge(
                         f"The Timeline has {total:,} events, more than {_whole_max:,} can be loaded at once."
                     )
-                rows = [self._event_from_record(record) for record in session.run(query, **params)]
+                rows = [self._event_from_record(record) for record in run_packed(session, query, self._EVENT_COLUMNS, **params)]
                 return {"events": rows, "count": len(rows), "total": total, "next_cursor": None}
-            rows = [self._event_from_record(record) for record in session.run(query, **page_params)]
+            rows = [
+                self._event_from_record(record)
+                for record in run_packed(session, query, self._EVENT_COLUMNS, **page_params)
+            ]
             if carried_total is None:
                 total_record = session.run(count_query, **count_params).single()
                 total = int(total_record["total"] or 0) if total_record else 0

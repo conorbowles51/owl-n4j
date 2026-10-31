@@ -32,6 +32,10 @@ class _FakeSession:
         self._captured.append({"query": query, "params": params})
         if "RETURN count(n) AS total" in query:
             return _FakeResult(single={"total": self._total})
+        if "RETURN collect([" in query:
+            # a packed read: one record holding the rows as lists in the query's column order
+            columns = TimelineService._EVENT_COLUMNS
+            return _FakeResult(single={"rows": [[row.get(c) for c in columns] for row in self._rows]})
         return _FakeResult(rows=self._rows)
 
 
@@ -194,8 +198,11 @@ class TimelineServiceTests(unittest.TestCase):
 
         page_query = captured[0]["query"]
         self.assertLess(page_query.index("LIMIT $limit"), page_query.index("OPTIONAL MATCH (n)-[r]-(connected)"))
-        # rows leave the aggregation unordered, so the page is sorted again after it
-        self.assertTrue(page_query.rstrip().endswith("ORDER BY sort_date ASC, coalesce(sort_time, '99:99') ASC, n.key ASC"))
+        # rows leave the aggregation unordered, so the page is sorted again after it, and the sorted rows
+        # are what is collected into the one record the page arrives in
+        inner, packed = page_query.rsplit("}", 1)
+        self.assertTrue(inner.rstrip().endswith("ORDER BY sort_date ASC, coalesce(sort_time, '99:99') ASC, n.key ASC"))
+        self.assertEqual(packed.strip(), "RETURN collect([" + ", ".join(TimelineService._EVENT_COLUMNS) + "]) AS rows")
         self.assertLess(page_query.index("n.case_id = $case_id"), page_query.index("AS sort_date"))
         self.assertNotIn("properties(", page_query)
 

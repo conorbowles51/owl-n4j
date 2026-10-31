@@ -29,6 +29,21 @@ def active_node_predicate(alias: str, case_scoped: bool = True) -> str:
     return " AND ".join(clauses)
 
 
+def run_packed(session, query: str, columns, **params) -> List[Dict]:
+    """Run a query and return its rows as dicts, sent by the database as one record.
+
+    The driver builds a record object for every row it receives. For BNB2's 89,862 graph links that took
+    8-12 s of the request while the database had finished in about 1 s. Collected into one list in the
+    database, the same rows arrive in the same order in 1.2 s (BNB2's whole Timeline: 3.3-4.3 s -> 2.6-3.2 s).
+    The query must return exactly ``columns``; an ORDER BY inside it keeps its order.
+    """
+    packed = session.run(
+        f"CALL {{ {query} }} RETURN collect([{', '.join(columns)}]) AS rows",
+        **params,
+    ).single()
+    return [dict(zip(columns, row)) for row in (packed["rows"] if packed else [])]
+
+
 # ── Utility helpers ────────────────────────────────────────────────────────
 
 

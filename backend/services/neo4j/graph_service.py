@@ -10,7 +10,7 @@ from typing import Dict, List, Optional
 import json
 import logging
 
-from services.neo4j.driver import active_node_predicate, driver, parse_json_field, safe_float
+from services.neo4j.driver import active_node_predicate, driver, parse_json_field, run_packed, safe_float
 
 logger = logging.getLogger(__name__)
 
@@ -25,19 +25,6 @@ def _source_count(properties: Dict) -> int:
 _NODE_COLUMNS = ("key", "name", "type", "confidence", "mentioned", "aliases", "source_files")
 _LINK_COLUMNS = ("source", "target", "type", "weight")
 
-
-def _run_packed(session, query: str, columns, **params) -> List[Dict]:
-    """Run a query and return its rows as dicts, sent by the database as one record.
-
-    The driver builds a record object for every row it receives. For BNB2's 89,862 graph links that took
-    8-12 s of the request while the database had finished in about 1 s. Collected into one list in the
-    database, the same rows arrive in the same order in 1.2 s. The query must return exactly ``columns``.
-    """
-    packed = session.run(
-        f"CALL {{ {query} }} RETURN collect([{', '.join(columns)}]) AS rows",
-        **params,
-    ).single()
-    return [dict(zip(columns, row)) for row in (packed["rows"] if packed else [])]
 
 
 class GraphService:
@@ -298,7 +285,7 @@ class GraphService:
                 )
                 total_node_count = total_result.single()["cnt"]
 
-                nodes_result = _run_packed(
+                nodes_result = run_packed(
                     session,
                     f"""
                     MATCH (n)
@@ -334,7 +321,7 @@ class GraphService:
 
                 links = []
                 if node_keys:
-                    rels_result = _run_packed(
+                    rels_result = run_packed(
                         session,
                         """
                         MATCH (a)-[r]->(b)
@@ -404,7 +391,7 @@ class GraphService:
                         n.source_files AS source_files
                 """
 
-            nodes_result = _run_packed(session, query, _NODE_COLUMNS, **params)
+            nodes_result = run_packed(session, query, _NODE_COLUMNS, **params)
             nodes = []
             node_keys = set()
 
@@ -434,7 +421,7 @@ class GraphService:
                         type(r) AS type,
                         r.weight AS weight
                 """
-                rels_result = _run_packed(session, rels_query, _LINK_COLUMNS, node_keys=keys_list, case_id=case_id)
+                rels_result = run_packed(session, rels_query, _LINK_COLUMNS, node_keys=keys_list, case_id=case_id)
             else:
                 rels_result = []
 
