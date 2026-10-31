@@ -499,13 +499,15 @@ export function StatementJudgements({
 
 /**
  * In a list of statement periods: how many calls the period has; opening it shows each one in place.
- * The period's list query exists only while it is open: a statement table renders one of these per period
- * (d5b330d1: 1,363), and a closed period's disabled query was still a query-cache entry, which every cache-wide
- * scan and every cache event then had to walk.
+ * The period's list query exists from its first opening on: a statement table renders one of these per period
+ * (d5b330d1: 1,363), and a never-opened period's disabled query was still a query-cache entry, which every
+ * cache-wide scan and every cache event then had to walk. Once opened, the query stays attached (disabled while
+ * closed, as before), so the cache keeps its answer and a reopened period shows its calls at once.
  */
 export function PeriodJudgements({ caseId, periodId }: { caseId: string; periodId: string }) {
   const counts = useJudgementCounts(caseId)
   const [open, setOpen] = useState(false)
+  const [everOpened, setEverOpened] = useState(false)
   const tally = counts.data?.periods[periodId]
   if (!tally?.total) return null
   return (
@@ -514,19 +516,23 @@ export function PeriodJudgements({ caseId, periodId }: { caseId: string; periodI
         type="button"
         className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         aria-expanded={open}
-        onClick={() => setOpen(!open)}
+        onClick={() => {
+          setEverOpened(true)
+          setOpen(!open)
+        }}
       >
         <Lightbulb aria-hidden="true" className="size-3" />
         {countLine(tally)}
         <ChevronRight aria-hidden="true" className={cn("size-3 transition-transform", open && "rotate-90")} />
       </button>
-      {open && <PeriodJudgementList caseId={caseId} periodId={periodId} />}
+      {everOpened && <PeriodJudgementList caseId={caseId} periodId={periodId} open={open} />}
     </div>
   )
 }
 
-function PeriodJudgementList({ caseId, periodId }: { caseId: string; periodId: string }) {
-  const query = useJudgements(caseId, { statementPeriodId: periodId })
+function PeriodJudgementList({ caseId, periodId, open }: { caseId: string; periodId: string; open: boolean }) {
+  const query = useJudgements(caseId, { statementPeriodId: periodId }, open)
+  if (!open) return null
   return (
     <div className="mt-1 space-y-1">
       {query.isPending && <p role="status">Loading…</p>}

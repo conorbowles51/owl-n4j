@@ -57,6 +57,11 @@ const state = vi.hoisted(() => ({
   panels: "ready" as "ready" | "pending" | "error",
   totals: "ready" as "ready" | "pending" | "error",
   register: "ready" as "ready" | "pending" | "error",
+  findings: "ready" as "ready" | "pending" | "error",
+  calls: "ready" as "ready" | "pending" | "error",
+  openCalls: 7,
+  uncategorised: 1,
+  registerDone: false,
   loadedEveryPayment: false,
 }))
 // The Overview no longer reads every payment: reading them is recorded so a test fails if it comes back.
@@ -68,7 +73,7 @@ vi.mock("../hooks/use-investigator-payments", () => ({
 }))
 vi.mock("../hooks/use-ledger-overview", () => ({
   useLedgerOverview: () => ({
-    data: state.totals === "ready" ? totals : undefined,
+    data: state.totals === "ready" ? { ...totals, uncategorised: state.uncategorised } : undefined,
     isPending: state.totals === "pending",
     isError: state.totals === "error",
     isSuccess: state.totals === "ready",
@@ -91,7 +96,9 @@ vi.mock("../hooks/use-statement-register", () => ({
     imports: {
       data:
         state.register === "ready"
-          ? { truncated: false, files: [{ evidence_file_id: "f1", current_transactions: 3, periods: [{}], available_periods: 0, periods_with_checks: 2 }] }
+          ? state.registerDone
+            ? { truncated: false, files: ["f1", "f2"].map((id) => ({ evidence_file_id: id, current_transactions: 3, periods: [{}], available_periods: 0, periods_with_checks: 0 })) }
+            : { truncated: false, files: [{ evidence_file_id: "f1", current_transactions: 3, periods: [{}], available_periods: 0, periods_with_checks: 2 }] }
           : undefined,
       isPending: state.register === "pending",
       isError: state.register === "error",
@@ -99,10 +106,19 @@ vi.mock("../hooks/use-statement-register", () => ({
   }),
 }))
 vi.mock("@/features/workspace/hooks/use-casework", () => ({
-  useCaseworkEntries: () => ({ isPending: false, isError: false, isSuccess: true, data: { entries: [], total: 0 } }),
+  useCaseworkEntries: () => ({
+    isPending: state.findings === "pending",
+    isError: state.findings === "error",
+    isSuccess: state.findings === "ready",
+    data: state.findings === "ready" ? { entries: [], total: 0 } : undefined,
+  }),
 }))
 vi.mock("../hooks/use-judgements", () => ({
-  useJudgementCounts: () => ({ isSuccess: true, isError: false, data: { case: { total: 9, open: 7, inferred: 4 } } }),
+  useJudgementCounts: () => ({
+    isSuccess: state.calls === "ready",
+    isError: state.calls === "error",
+    data: state.calls === "ready" ? { case: { total: 9, open: state.openCalls, inferred: 4 } } : undefined,
+  }),
 }))
 vi.mock("../hooks/use-financial-access", () => ({ useFinancialAccess: () => ({ canEdit: true }) }))
 vi.mock("./InvestigatorFollowMoney", () => ({
@@ -126,6 +142,11 @@ afterEach(() => {
   state.panels = "ready"
   state.totals = "ready"
   state.register = "ready"
+  state.findings = "ready"
+  state.calls = "ready"
+  state.openCalls = 7
+  state.uncategorised = 1
+  state.registerDone = false
   state.loadedEveryPayment = false
 })
 
@@ -249,4 +270,39 @@ it.each([
   expect(progress.textContent).toMatch(new RegExp(`Load\\([a-z ]+\\)${says}`))
   expect(progress.textContent).toMatch(new RegExp(`Read\\([a-z ]+\\)${says}`))
   expect(screen.getByRole("heading", { name: /Your case at a glance/ }).textContent).toContain(says)
+})
+
+it.each([
+  ["calls", "pending", "Counting Loupe's calls…"],
+  ["calls", "error", "Loupe's calls could not be counted."],
+  ["findings", "pending", "Loading findings…"],
+  ["findings", "error", "Findings could not be loaded."],
+] as const)("never says the ledger is checked or that there are no findings while %s are %s", (what, how, says) => {
+  // Everything before them is done: files saved, nothing to check, every payment categorised.
+  state.uncategorised = 0
+  state.openCalls = 0
+  state.registerDone = true
+  state[what] = how
+  render(
+    <MemoryRouter>
+      <InvestigatorOverview caseId="case" />
+    </MemoryRouter>
+  )
+  expect(screen.queryByRole("heading", { name: /The ledger is checked/ })).toBeNull()
+  expect(screen.getByRole("heading", { name: /Your case at a glance/ }).textContent).toContain(says)
+  const progress = screen.getByRole("list", { name: "Your progress on this case" })
+  if (what === "findings") expect(progress.textContent).not.toContain("No findings yet")
+})
+
+it("says the ledger is checked once the files, calls and findings are all counted and nothing is open", () => {
+  state.uncategorised = 0
+  state.openCalls = 0
+  state.registerDone = true
+  render(
+    <MemoryRouter>
+      <InvestigatorOverview caseId="case" />
+    </MemoryRouter>
+  )
+  expect(screen.getByRole("heading", { name: /The ledger is checked/ })).toBeTruthy()
+  expect(screen.getByRole("list", { name: "Your progress on this case" }).textContent).toContain("No findings yet")
 })

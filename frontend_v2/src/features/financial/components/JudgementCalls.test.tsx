@@ -130,3 +130,30 @@ it("keeps no list query for a closed period (a statement table renders one per p
   expect(vi.mocked(fetchAPI).mock.calls.filter(([url]) => String(url).includes("statement_period_id=p-2"))).toHaveLength(0)
   expect(client.getQueryCache().getAll()).toHaveLength(2)
 })
+
+it("shows a reopened period's calls at once, even after the cache lifetime of an unheld query has passed", async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { gcTime: 20 } } })
+  vi.mocked(fetchAPI).mockReset()
+  let release: (value: unknown) => void = () => {}
+  vi.mocked(fetchAPI).mockImplementation(async (url: string) => {
+    if (url.includes("/judgements/counts")) return { case: { total: 1 }, statements: {}, periods: { "p-1": { total: 1 } }, rules: [] }
+    const listCalls = vi.mocked(fetchAPI).mock.calls.filter(([u]) => String(u).includes("statement_period_id")).length
+    return listCalls === 1 ? { items: [judgement] } : new Promise((resolve) => (release = resolve))
+  })
+  render(
+    <QueryClientProvider client={client}>
+      <PeriodJudgements caseId="case-a" periodId="p-1" />
+    </QueryClientProvider>
+  )
+  const button = await screen.findByRole("button", { name: /1 judgement call/ })
+  fireEvent.click(button)
+  await waitFor(() => expect(screen.queryByRole("status")).toBeNull())
+  const shown = screen.getByLabelText("Judgement calls in this period").textContent
+  fireEvent.click(button)
+  await new Promise((resolve) => setTimeout(resolve, 100))
+  fireEvent.click(button)
+  // The second read is held open: the list must come from the kept answer, not a loading line.
+  expect(screen.queryByRole("status")).toBeNull()
+  expect(screen.getByLabelText("Judgement calls in this period").textContent).toBe(shown)
+  release({ items: [judgement] })
+})
