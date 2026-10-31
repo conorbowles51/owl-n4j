@@ -92,8 +92,11 @@ def _say(log, line):
     line = '%s %s' % (time.strftime('%H:%M:%S', time.gmtime()), line)
     print(line, flush=True)
     if log:
-        with open(log, 'a') as out:
-            out.write(line + '\n')
+        try:
+            with open(log, 'a') as out:
+                out.write(line + '\n')
+        except OSError:
+            pass  # an unwritable release log never stops a prepare (the line is on stdout)
 
 
 def start(log=None, run=_run, state=STATE):

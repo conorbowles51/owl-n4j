@@ -195,3 +195,12 @@ def test_a_marker_left_by_an_earlier_release_is_cleared_by_the_next_wait(tmp_pat
     marker.write_text('prepare: skipped, database migrations pending (old)\n')
     view_prepare.wait(run=FakeSystem(), state=str(tmp_path / 'absent.json'), after_migrations_marker=str(marker))
     assert not marker.exists()
+
+
+def test_an_unwritable_release_log_does_not_skip_the_prepare_after_migrations(tmp_path):
+    state, marker = tmp_path / 'state.json', tmp_path / 'after-migrations'
+    marker.write_text('prepare: skipped, database migrations pending (x)\n')
+    system = FakeSystem(journal='prepare: 119 views warmed in 240 s\n')
+    view_prepare.after_migrations(log=str(tmp_path / 'no-such-dir' / 'log'), run=system, state=str(state),
+                                  marker=str(marker), clock=lambda: 1100.0, sleep=lambda s: None)
+    assert any(call[:1] == ['systemd-run'] for call in system.calls)
