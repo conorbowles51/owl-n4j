@@ -76,7 +76,6 @@ import {
   useFinancialEntities,
   useFinancialCategories,
   useCategorize,
-  useBatchCategorize,
   useCreateCategory,
   useUpdateDetails,
   useUpdateAmount,
@@ -105,7 +104,6 @@ import { RowAdjudicationDialog } from "./RowAdjudicationDialog"
 import { IngestionRunNotice } from "./IngestionRunNotice"
 import { IngestionRunsPanel } from "./IngestionRunsPanel"
 import { DecisionsPanel } from "./DecisionsPanel"
-import { BulkCategorizeDialog } from "./BulkCategorizeDialog"
 import { CategoryManagementDialog } from "./CategoryManagementDialog"
 import { SubTransactionDialog } from "./SubTransactionDialog"
 import { AmountEditDialog } from "./AmountEditDialog"
@@ -330,7 +328,6 @@ function FinancialPageContent() {
   )
 
   const categorize = useCategorize(caseId!)
-  const batchCategorize = useBatchCategorize(caseId!)
   const createCategory = useCreateCategory(caseId!)
   const updateDetails = useUpdateDetails(caseId!)
   const updateAmount = useUpdateAmount(caseId!)
@@ -362,7 +359,6 @@ function FinancialPageContent() {
     currentPage: store.currentPage,
   })
 
-  const [bulkCategorizeOpen, setBulkCategorizeOpen] = useState(false)
   const [categoryMgmtOpen, setCategoryMgmtOpen] = useState(false)
   const [subTxDialogOpen, setSubTxDialogOpen] = useState(false)
   const [subTxParent, setSubTxParent] = useState<Transaction | null>(null)
@@ -394,21 +390,6 @@ function FinancialPageContent() {
       return categorize.mutateAsync({ nodeKey, category })
     },
     [categorize]
-  )
-
-  const handleBulkCategorize = useCallback(
-    (category: string) => {
-      batchCategorize.mutate(
-        { nodeKeys: Array.from(store.checkedKeys), category },
-        {
-          onSuccess: () => {
-            setBulkCategorizeOpen(false)
-            store.clearChecked()
-          },
-        }
-      )
-    },
-    [batchCategorize, store]
   )
 
   const handleAmountClick = useCallback((tx: Transaction) => {
@@ -1474,15 +1455,6 @@ function FinancialPageContent() {
         </RetainedFinancialTab>
       </Tabs>
       </FinancialResetSlotProvider>
-
-      <BulkCategorizeDialog
-        open={bulkCategorizeOpen}
-        onOpenChange={setBulkCategorizeOpen}
-        selectedCount={store.checkedKeys.size}
-        categories={categories}
-        onApply={handleBulkCategorize}
-        isPending={batchCategorize.isPending}
-      />
 
       <CategoryManagementDialog
         caseId={caseId!}
