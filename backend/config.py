@@ -21,7 +21,10 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 # Neo4j Configuration
 NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7688")
 NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
-NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "password")
+# No default: no server uses one (live, local dev and test containers each set theirs), and a guessed password
+# sent to the live server counts as a failed login there and locks the neo4j user out for everyone, the live
+# app included (lx-datastores, 31 Oct). Unset, services.neo4j.driver.open_driver refuses without connecting.
+NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD") or None
 
 # LLM / Ollama / OpenAI Configuration
 OPENAI_MODEL = os.getenv("OPENAI_MODEL")

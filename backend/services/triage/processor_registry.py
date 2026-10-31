@@ -63,9 +63,8 @@ class ProcessorRegistry:
 
     def _get_driver(self):
         if self._driver is None:
-            self._driver = GraphDatabase.driver(
-                NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD)
-            )
+            from services.neo4j.driver import open_driver
+            self._driver = open_driver()
             # Ensure indexes
             with self._driver.session() as session:
                 try:

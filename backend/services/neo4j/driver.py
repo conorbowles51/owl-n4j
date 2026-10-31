@@ -11,7 +11,7 @@ import math
 from typing import Any, Dict, List, Optional
 
 from neo4j import READ_ACCESS, GraphDatabase
-from neo4j.exceptions import Neo4jError
+from neo4j.exceptions import AuthError, Neo4jError
 
 from config import NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD
 
@@ -92,6 +92,35 @@ def read_all_rows(session, query: str, **params) -> list:
 # ── Driver singleton ───────────────────────────────────────────────────────
 
 
+NO_PASSWORD = 'NEO4J_PASSWORD is not set, so Neo4j was not contacted (a guessed password locks the user out)'
+
+
+class _RefusingDriver:
+    """Stands in for the driver when NEO4J_PASSWORD is unset: every use raises the AuthError a wrong password
+    would raise, without opening a connection to the server."""
+
+    def session(self, **kwargs):
+        raise AuthError(NO_PASSWORD)
+
+    def verify_connectivity(self, **kwargs):
+        raise AuthError(NO_PASSWORD)
+
+    def execute_query(self, *args, **kwargs):
+        raise AuthError(NO_PASSWORD)
+
+    def close(self):
+        pass
+
+
+def open_driver(uri=None, user=None, password=None):
+    """GraphDatabase.driver for the configured server, or a refusing stand-in when no password is configured."""
+    password = NEO4J_PASSWORD if password is None else password
+    if not password:
+        logger.warning(NO_PASSWORD)
+        return _RefusingDriver()
+    return GraphDatabase.driver(uri or NEO4J_URI, auth=(user or NEO4J_USER, password))
+
+
 class Neo4jDriver:
     """Thin wrapper around the Neo4j Python driver (singleton)."""
 
@@ -105,10 +134,7 @@ class Neo4jDriver:
 
     def __init__(self):
         if self._driver is None:
-            self._driver = GraphDatabase.driver(
-                NEO4J_URI,
-                auth=(NEO4J_USER, NEO4J_PASSWORD),
-            )
+            self._driver = open_driver()
             self._ensure_case_id_index()
 
     def _ensure_case_id_index(self):
