@@ -116,6 +116,41 @@ def test_a_changed_view_is_answered_with_its_previous_copy_marked_updating_then_
     fresh = call(engine, view, case)
     assert fresh.body == b'{"total":12}' and 'x-financial-view-state' not in fresh.headers
     assert counter.calls == 2
+    # Only current answers may be kept by the browser: a 304 for an updating answer's bytes would bring its mark back.
+    assert updating.headers['cache-control'] == 'no-store' and 'etag' not in updating.headers
+    assert fresh.headers['cache-control'] == 'private, no-cache' and fresh.headers['etag'].startswith('W/"')
+    assert first.headers['etag'] != fresh.headers['etag']
+
+
+@needs_pg
+def test_a_browser_holding_the_current_bytes_gets_304_without_a_body(engine, memo):
+    case, counter = uuid.uuid4(), Counter()
+    view = total_view(counter, name='totals-etag')
+    write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 5)', c=case)
+    computed = call(engine, view, case, accepts=False)
+    etag = computed.headers['etag']
+    assert computed.status_code == 200 and computed.body == b'{"total":5}'
+    token = view_cache._if_none_match.set('"other", ' + etag)
+    try:
+        unchanged = call(engine, view, case, accepts=False)
+        assert unchanged.status_code == 304 and unchanged.body == b''
+        assert unchanged.headers['etag'] == etag and unchanged.headers['vary'] == 'Accept-Encoding'
+        write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 7)', c=case)
+        changed = call(engine, view, case, accepts=False)
+        assert changed.status_code == 200 and changed.body == b'{"total":12}' and changed.headers['etag'] != etag
+    finally:
+        view_cache._if_none_match.reset(token)
+    reused = call(engine, view, case, accepts=False)  # served from memory: the same tag, the full body
+    assert reused.status_code == 200 and reused.headers['etag'] == changed.headers['etag']
+    assert counter.calls == 2
+
+
+def test_a_kept_refusal_carries_no_etag():
+    entry = view_cache._Entry(('payments',), (('payments', 1, 'x'),), b'', 422, 'application/json', refusal='No.')
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as raised:
+        view_cache._kept(entry, {})
+    assert not (raised.value.headers or {}).get('ETag')
 
 
 @needs_pg
@@ -221,6 +256,18 @@ def test_the_mark_is_set_only_for_a_get_with_the_header():
                             ('POST', [(b'x-financial-view-accept', b'updating')])):
         asyncio.run(middleware(dict(type='http', method=method, headers=headers), None, None))
     assert seen == [True, False, False]
+
+
+def test_the_browsers_if_none_match_reaches_the_route():
+    seen = []
+
+    async def app(scope, receive, send):
+        seen.append((view_cache._accepts_updating.get(), view_cache._if_none_match.get()))
+    middleware = view_cache.AcceptsUpdatingMiddleware(app)
+    for method, headers in (('GET', [(b'if-none-match', b'W/"abc"')]), ('POST', [(b'if-none-match', b'W/"abc"')]),
+                            ('GET', [(b'x-financial-view-accept', b'updating'), (b'if-none-match', b'W/"d"')])):
+        asyncio.run(middleware(dict(type='http', method=method, headers=headers), None, None))
+    assert seen == [(False, 'W/"abc"'), (False, ''), (True, 'W/"d"')]
 
 
 def test_an_asked_routes_parameters_give_back_its_key():

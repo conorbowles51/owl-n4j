@@ -117,6 +117,8 @@ class _Entry:
     # the copy it serves is. Not part of equality: the same body computed twice is the same entry.
     seconds: float = field(default=0.0, compare=False)
     computed_at: float = field(default=0.0, compare=False)
+    # The body's ETag, computed on first use (_etag).
+    etag: str = field(default='', compare=False)
 
 
 _TOKEN = re.compile(r'[a-z_][a-z0-9_]*')
@@ -766,7 +768,7 @@ def _serve(handler, key, engine, case_id, kwargs, state):
             logger.info('Financial view %s computed (%.2f s, %d bytes, %d tables)', key[0],
                         time.perf_counter() - started, len(response.body), len(tables))
             _save_if_slow(key, kept, scope, xmax, started)
-            return response
+            return _current_answer(kept)
 
 
 def _kept(entry, state, updating=False):
@@ -779,9 +781,51 @@ def _kept(entry, state, updating=False):
         from fastapi import HTTPException
         state['handler_started'] = True
         raise HTTPException(status_code=422, detail=entry.refusal, headers=headers)
-    response = _response(entry)
     if headers:
-        response.headers.update(headers)
+        response = _response(entry)
+        # Never kept by the browser: a later 304 for the same bytes would bring this answer's updating mark back.
+        response.headers.update({**headers, 'Cache-Control': 'no-store'})
+        return response
+    return _current_answer(entry)
+
+
+# A current answer carries an ETag with ``private, no-cache``: the browser keeps it and asks again with
+# If-None-Match, and the same bytes are answered 304 without a body. Measured on a real session (fin-eventloop
+# replay, 2026-10-31 09:16-09:32): d5b330d1's ledger, 7.4 MB gzipped, fetched 8 times in 15 minutes, 2.2-5.5 s
+# each in the browser while the server answered each under 2 s. An updating answer has none (no-store, _kept).
+_if_none_match: ContextVar[str] = ContextVar('financial_view_if_none_match', default='')
+
+
+def _etag(entry):
+    import hashlib
+    if not entry.etag:
+        # Weak: the same tag names the plain and the gzipped body (the same JSON).
+        object.__setattr__(entry, 'etag', 'W/"' + hashlib.sha256(entry.body).hexdigest()[:32] + '"')
+    return entry.etag
+
+
+def _current_answer(entry):
+    return _tagged(_etag(entry), lambda: _response(entry))
+
+
+def etagged(response):
+    """A route's own current 200 answer with the same ETag handling as a kept view (304 when the browser holds
+    these bytes). Anything else is returned as it is."""
+    import hashlib
+    if getattr(response, 'status_code', None) != 200 or not isinstance(getattr(response, 'body', None), (bytes, bytearray)):
+        return response
+    return _tagged('W/"' + hashlib.sha256(response.body).hexdigest()[:32] + '"', lambda: response)
+
+
+def _tagged(etag, answer):
+    from fastapi.responses import Response
+    headers = {'ETag': etag, 'Cache-Control': 'private, no-cache'}
+    sent = [tag.strip().removeprefix('W/') for tag in _if_none_match.get().split(',')]
+    if etag.removeprefix('W/') in sent:
+        # The gzip middleware adds Vary to a 200 it compresses; a 304 has no body for it to see.
+        return Response(status_code=304, headers={**headers, 'Vary': 'Accept-Encoding'})
+    response = answer()
+    response.headers.update(headers)
     return response
 
 
@@ -846,20 +890,25 @@ def note_visit(key):
 
 
 class AcceptsUpdatingMiddleware:
-    """Marks a GET request that carries UPDATING_ACCEPT_HEADER: updating (pure ASGI, so the mark reaches the
-    route's thread)."""
+    """Marks a GET request that carries UPDATING_ACCEPT_HEADER: updating, and keeps its If-None-Match (pure ASGI,
+    so both reach the route's thread)."""
     def __init__(self, app):
         self.app = app
 
     async def __call__(self, scope, receive, send):
-        if scope.get('type') != 'http' or scope.get('method') != 'GET' or not any(
-                name == b'x-financial-view-accept' and b'updating' in value.lower() for name, value in scope.get('headers') or ()):
+        if scope.get('type') != 'http' or scope.get('method') != 'GET':
             return await self.app(scope, receive, send)
-        token = _accepts_updating.set(True)
+        headers = scope.get('headers') or ()
+        accepts = any(name == b'x-financial-view-accept' and b'updating' in value.lower() for name, value in headers)
+        sent = b','.join(value for name, value in headers if name == b'if-none-match')
+        if not accepts and not sent:
+            return await self.app(scope, receive, send)
+        tokens = (_accepts_updating.set(accepts), _if_none_match.set(sent.decode('latin-1')))
         try:
             return await self.app(scope, receive, send)
         finally:
-            _accepts_updating.reset(token)
+            _accepts_updating.reset(tokens[0])
+            _if_none_match.reset(tokens[1])
 
 
 def _as_of(entry):
