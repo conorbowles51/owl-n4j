@@ -152,6 +152,20 @@ describe("compareTimelineEvents on a large Timeline", () => {
     expect([...events].sort(compareTimelineEvents)[0]).toBe(moved)
   })
 
+  it("follows a change to an event's time alone", () => {
+    const at = (key: string, time: string | null): TimelineEvent => ({ ...make(1), key, date: "2024-03-05", time })
+    const first = at("a", "09:00")
+    const second = at("b", "10:00")
+    const third = at("c", null) // no time: after timed events of that day
+    expect([third, second, first].sort(compareTimelineEvents)).toEqual([first, second, third])
+    second.time = "08:30"
+    expect([third, first, second].sort(compareTimelineEvents)).toEqual([second, first, third])
+    third.time = "07:00"
+    expect([first, second, third].sort(compareTimelineEvents)).toEqual([third, second, first])
+    first.time = null
+    expect([first, second, third].sort(compareTimelineEvents)).toEqual([third, second, first])
+  })
+
   it("parses each event's date about once per sort, not once per comparison", () => {
     const events = Array.from({ length: 3000 }, (_, index) => make(index))
     const RealDate = Date
