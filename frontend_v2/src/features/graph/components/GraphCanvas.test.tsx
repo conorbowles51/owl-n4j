@@ -16,6 +16,7 @@ interface MockProps {
   warmupTicks?: number
   cooldownTicks?: number
   enableNodeDrag?: boolean
+  onRenderFramePost?: () => void
 }
 
 const mocks = vi.hoisted(() => ({ props: [] as MockProps[], reheats: 0 }))
@@ -97,7 +98,10 @@ describe("GraphCanvas layout", () => {
       selectedNodeKeys: new Set(), hiddenNodeKeys: new Set(), pinnedNodeKeys: new Set(),
     })
   })
-  afterEach(() => vi.unstubAllGlobals())
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
 
   it("lays out a large graph in a worker and draws it without warming up on the page", async () => {
     vi.stubGlobal("Worker", FakeLayoutWorker)
@@ -142,6 +146,7 @@ describe("GraphCanvas layout", () => {
 
   it("draws the graph while the worker arranges it, without layout steps or dragging on the page", async () => {
     vi.stubGlobal("Worker", ManualLayoutWorker)
+    vi.spyOn(performance, "now").mockReturnValue(1000) // drawings take no time: every set is drawn
     render(<GraphCanvas data={makeGraph(600)} caseId="case-1" />)
     const worker = ManualLayoutWorker.last!
     const { nodes, links, params } = worker.request!
@@ -159,6 +164,7 @@ describe("GraphCanvas layout", () => {
     expect(last().graphData.nodes[5].x).toBe(steps[0][20])
 
     const shown = last().graphData
+    act(() => last().onRenderFramePost?.()) // the first positions are drawn
     const reheatsBefore = mocks.reheats
     worker.send({ positions: steps[1], step: 20, done: false })
     expect(last().graphData).toBe(shown) // same graph, positions moved in place
@@ -192,5 +198,52 @@ describe("GraphCanvas layout", () => {
     expect(last().warmupTicks).toBe(50)
     expect(last().cooldownTicks).toBe(Infinity)
     expect(last().graphData.nodes.every((n) => n.x === undefined)).toBe(true)
+  })
+
+  it("draws positions in between only when the page has had four times the last drawing free", async () => {
+    vi.stubGlobal("Worker", ManualLayoutWorker)
+    let now = 1000
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => now)
+    try {
+      render(<GraphCanvas data={makeGraph(600)} caseId="case-1" />)
+      const worker = ManualLayoutWorker.last!
+      const { nodes, links, params } = worker.request!
+      const sets: Float64Array[] = []
+      const final = warmupLayout(nodes, links, params, (step, read) => {
+        if (step === 0 || step === 10 || step === 20 || step === 30) sets.push(read())
+      })
+      const frame = () => act(() => last().onRenderFramePost?.())
+
+      let reheats = mocks.reheats
+      worker.send({ positions: sets[0], step: 0, done: false })
+      expect(mocks.reheats).toBe(reheats + 1) // the first positions are always drawn
+      reheats = mocks.reheats
+
+      now += 500 // a frame while the drawing is still under way: nothing new is asked
+      worker.send({ positions: sets[1], step: 10, done: false })
+      expect(mocks.reheats).toBe(reheats)
+      expect(last().graphData.nodes[5].x).toBe(sets[1][20]) // but the positions are written
+
+      now += 1500
+      frame() // that drawing took 2 s
+      now += 1000 // 1 s free: less than 4 x 2 s, not drawn
+      worker.send({ positions: sets[2], step: 20, done: false })
+      expect(mocks.reheats).toBe(reheats)
+
+      now += 7000 // 8 s free since the drawing ended
+      worker.send({ positions: sets[3], step: 30, done: false })
+      expect(mocks.reheats).toBe(reheats + 1)
+      reheats = mocks.reheats
+
+      now += 100 // the final positions are always drawn, even while a drawing is under way
+      worker.send({ positions: final.slice(), step: 50, done: true })
+      expect(mocks.reheats).toBe(reheats + 1)
+      expect(last().cooldownTicks).toBe(Infinity)
+      last().graphData.nodes.forEach((n, i) => {
+        expect([n.x, n.y]).toEqual([final[i * 4], final[i * 4 + 1]])
+      })
+    } finally {
+      clock.mockRestore()
+    }
   })
 })

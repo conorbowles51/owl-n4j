@@ -37,6 +37,11 @@ type ForceLink = LinkObject<FGNode, FGLink>
 
 const EMPTY_GRAPH: { nodes: ForceNode[]; links: ForceLink[] } = { nodes: [], links: [] }
 
+// While a large graph is arranged, positions in between are drawn only after the page has been free for
+// this many times the length of the previous drawing (the page is then blocked at most 1/(1+4) = 20% of
+// the time by these drawings).
+const DRAW_IDLE_FACTOR = 4
+
 /* ------------------------------------------------------------------ */
 /*  Props                                                              */
 /* ------------------------------------------------------------------ */
@@ -219,14 +224,41 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
   const layingOut = isLargeGraph && (!currentLayout || currentLayout.phase === "arranging")
   const arranging = currentLayout?.phase === "arranging"
 
-  // Draw each set of positions the worker sends without stepping the layout on the page (cooldownTicks
-  // 0 stops the engine after one frame); when it has finished, run the canvas's own settling from the
-  // worker's final positions, as a fresh graph does.
+  // Draw positions the worker sends without stepping the layout on the page (cooldownTicks 0 stops the
+  // engine after one frame); when it has finished, run the canvas's own settling from the worker's final
+  // positions, as a fresh graph does. One drawing of a large graph blocks the page for as long as it
+  // takes (BNB2 on the server's test browser: 2-3 s), and the worker sends positions about once a
+  // second, so drawing every set kept the page blocked almost the whole time it was being arranged. The
+  // first and the final positions are always drawn; a set in between is drawn only once the previous
+  // drawing has finished and the page has had DRAW_IDLE_FACTOR times its length free. Every set is still
+  // written to the nodes, so a pan or zoom shows the latest.
   const layoutStep = currentLayout?.step
   const layoutPhase = currentLayout?.phase
+  const drawTiming = useRef<{ requestedAt: number | null; lastMs: number; lastEnd: number }>({
+    requestedAt: null,
+    lastMs: 0,
+    lastEnd: 0,
+  })
   useEffect(() => {
-    if (layoutPhase === "arranging" || layoutPhase === "laidOut") fgRef.current?.d3ReheatSimulation()
+    if (layoutPhase !== "arranging" && layoutPhase !== "laidOut") return
+    const timing = drawTiming.current
+    const now = performance.now()
+    const first = layoutPhase === "arranging" && layoutStep === 0
+    const idleEnough =
+      timing.requestedAt === null && now - timing.lastEnd >= DRAW_IDLE_FACTOR * timing.lastMs
+    if (layoutPhase === "laidOut" || first || idleEnough) {
+      timing.requestedAt = now
+      fgRef.current?.d3ReheatSimulation()
+    }
   }, [layoutStep, layoutPhase, fgRef])
+  const handleRenderFramePost = useCallback(() => {
+    const timing = drawTiming.current
+    if (timing.requestedAt === null) return
+    const now = performance.now()
+    timing.lastMs = now - timing.requestedAt
+    timing.lastEnd = now
+    timing.requestedAt = null
+  }, [])
 
   /* ---- Apply force parameters ---- */
   useEffect(() => {
@@ -623,6 +655,7 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
         onNodeDragEnd={handleNodeDragEnd}
         onBackgroundClick={handleBackgroundClick}
         onEngineStop={handleEngineStop}
+        onRenderFramePost={handleRenderFramePost}
         enableNodeDrag={selectionMode === "click" && !arranging}
         enablePanInteraction={selectionMode !== "drag"}
         cooldownTime={simCooldownTime}
