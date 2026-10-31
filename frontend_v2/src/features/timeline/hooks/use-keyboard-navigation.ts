@@ -67,6 +67,10 @@ export function useKeyboardNavigation({
         return
       }
 
+      // Keys pressed inside a dialog or sheet (the phone filter sheet, export, sources) belong to it,
+      // not to the Timeline behind it.
+      if (target instanceof Element && target.closest('[role="dialog"], [role="alertdialog"]')) return
+
       switch (e.key) {
         case "ArrowDown":
         case "j":
