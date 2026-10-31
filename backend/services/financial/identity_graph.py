@@ -319,11 +319,11 @@ def _case_claim(case_id):
 
     A session-level advisory lock on one dedicated connection, held for the whole sync and released on that
     same connection (closing it releases it too, if this worker dies mid-sync)."""
-    from postgres.session import _get_engine
+    from postgres.session import _get_background_engine
     if not ONE_WORKER_PER_CASE:
         yield True
         return
-    engine = _get_engine()
+    engine = _get_background_engine()
     if engine.dialect.name != 'postgresql':
         yield True
         return

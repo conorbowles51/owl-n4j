@@ -166,6 +166,32 @@ class BackgroundPoolTest(unittest.TestCase):
         self.assertEqual(names, ['loupe-web-bg-%d' % os.getpid(), 'loupe-web-%d' % os.getpid()])
         self.assertIs(session._get_background_session_local(), background)
 
+    def test_the_background_engine_follows_the_role(self):
+        os.environ['LOUPE_DB_ROLE'] = 'web'
+        self.assertIs(session._get_background_engine(), session._background_engine)
+        self.assertIsNot(session._get_background_engine(), session._get_engine())
+        os.environ['LOUPE_DB_ROLE'] = 'prepare'
+        self.assertIs(session._get_background_engine(), session._get_engine())
+
+    def test_the_web_workers_own_loops_take_the_background_pool(self):
+        # The loops a web worker runs itself (lifespan tasks), not in a child process.
+        from pathlib import Path
+        backend = Path(session.__file__).resolve().parents[1]
+        source = {name: (backend / 'services/financial' / name).read_text() for name in
+                  ('import_batches.py', 'payment_categories.py', 'identity_graph.py', 'deployment_recovery.py')}
+        loops = source['import_batches.py']
+        loops = loops[loops.index('async def _vision_forever('):loops.index('async def _turns_forever(')]
+        self.assertEqual(loops.count('_get_background_session_local as _get_session_local'), 2)
+        sweep = source['payment_categories.py']
+        sweep = sweep[sweep.index('def sweep_once('):]
+        self.assertIn('_get_background_session_local as _get_session_local', sweep[:600])
+        claim = source['identity_graph.py']
+        claim = claim[claim.index('def _case_claim('):]
+        self.assertIn('engine = _get_background_engine()', claim[:900])
+        recovery = source['deployment_recovery.py']
+        recovery = recovery[recovery.index('async def run_recovery_forever('):]
+        self.assertIn('factory = _get_background_session_local()', recovery[:1200])
+
     def test_other_processes_keep_one_pool(self):
         os.environ['LOUPE_DB_ROLE'] = 'vision_rounds'
         self.assertIs(session._get_background_session_local(), session._get_session_local())

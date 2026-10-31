@@ -164,6 +164,14 @@ def _get_background_session_local():
     return _BackgroundSessionLocal
 
 
+def _get_background_engine():
+    """The engine behind _get_background_session_local (for work that needs a connection of its own)."""
+    if process_role() != 'web' or not _database_url().startswith('postgresql+psycopg://'):
+        return _get_engine()
+    _get_background_session_local()
+    return _background_engine
+
+
 def get_db() -> Generator[Session, None, None]:
     """Get a database session."""
     SessionLocal = _get_session_local()

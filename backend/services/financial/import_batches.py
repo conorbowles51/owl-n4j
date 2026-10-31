@@ -2647,7 +2647,7 @@ VISION_SWEEP_PAUSE_SECONDS = 30
 
 
 async def _vision_forever(resolve_path):
-    from postgres.session import _get_session_local
+    from postgres.session import _get_background_session_local as _get_session_local
     from services.financial import vision_reader, vision_rounds
     # One child process per host runs the rounds (vision_rounds); here only without a lock location.
     if await vision_rounds.run_in_child_forever():
@@ -2663,7 +2663,7 @@ async def _vision_forever(resolve_path):
 
 
 async def run_batches_forever():
-    from postgres.session import _get_session_local
+    from postgres.session import _get_background_session_local as _get_session_local
     from routers.evidence import _resolve_stored_path
     from services.evidence_processing_service import process_db_files
     # Held statements read from their page images: its own task, so a slow

@@ -650,7 +650,7 @@ def sweep_once():
     from sqlalchemy import func
     from postgres.models.financial import FinancialTransaction as T
     from postgres.models.financial_payment_category import FinancialPaymentCategory as C
-    from postgres.session import _get_session_local
+    from postgres.session import _get_background_session_local as _get_session_local
     results = {}
     with _get_session_local()() as session:
         cases = [case_id for case_id, in session.execute(
