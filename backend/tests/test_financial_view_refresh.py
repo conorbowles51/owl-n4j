@@ -542,7 +542,7 @@ def _saved_entry_round_trip(body):
                               computed_at=1.0)
     token = view_cache.always_save.set(True)
     try:
-        view_cache._save_if_slow(('ledger', '{}'), entry, scope, 100, time.perf_counter())
+        view_cache._save_if_slow(('ledger', '{}'), entry, scope, 100, time.perf_counter(), compress=True)
     finally:
         view_cache.always_save.reset(token)
     return entry, scope, view_cache._saved_path(('ledger', '{}'), scope)
@@ -591,3 +591,20 @@ def test_a_copy_saved_without_a_compressed_body_still_loads_and_a_damaged_one_is
     path.write_bytes(header_line + b'\n' + rest + b'x')
     assert view_cache._load_saved(('ledger', '{}'), scope, 100) is None
     assert hashlib.sha256(gzip.decompress(entry.gzipped)).hexdigest() == header['sha256']
+
+
+def test_a_save_that_is_never_answered_as_it_is_is_not_compressed(monkeypatch):
+    """The review queue saves through _save_if_slow but keeps only the decoded body (review follow-up)."""
+    def no_compression(_body):
+        raise AssertionError('compressed a body nothing serves compressed')
+    monkeypatch.setattr(view_cache, '_gzip', no_compression)
+    scope = dict(format=1, database='db', code='code')
+    body = b'{"rows":[' + b','.join(b'"%d"' % n for n in range(3000)) + b']}'
+    entry = view_cache._Entry(('payments',), (('payments', 1, 'x'),), body, 200, 'application/json')
+    token = view_cache.always_save.set(True)
+    try:
+        view_cache._save_if_slow(('review-queue', '{}'), entry, scope, 100, time.perf_counter())
+    finally:
+        view_cache.always_save.reset(token)
+    loaded = view_cache._load_saved(('review-queue', '{}'), scope, 100)
+    assert loaded is not None and loaded.body == body and loaded.gzipped == b'' and entry.gzipped == b''

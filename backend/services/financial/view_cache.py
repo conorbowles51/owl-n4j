@@ -851,7 +851,7 @@ def _serve(handler, key, engine, case_id, kwargs, state):
             stats['stored'] += 1
             logger.info('Financial view %s computed (%.2f s, %d bytes, %d tables)', key[0],
                         time.perf_counter() - started, len(response.body), len(tables))
-            _save_if_slow(key, kept, scope, xmax, started)
+            _save_if_slow(key, kept, scope, xmax, started, compress=True)
             return _current_answer(kept)
 
 
@@ -1226,8 +1226,11 @@ def _raise_high_water(directory, xmax):
             os.replace(temporary, directory / 'xmax')
 
 
-def _save_if_slow(key, entry, scope, xmax, started):
-    """Save a slow view's entry for the other workers and the next start. Never raises."""
+def _save_if_slow(key, entry, scope, xmax, started, compress=False):
+    """Save a slow view's entry for the other workers and the next start. Never raises.
+
+    ``compress``: the entry is answered as it is (_current_answer), so its compressed body is saved with it. Other
+    callers (the review queue keeps only the decoded body) save the body alone."""
     import hashlib
     import os
     if (scope is None or (time.perf_counter() - started < SAVE_MIN_SECONDS and not always_save.get())
@@ -1239,9 +1242,9 @@ def _save_if_slow(key, entry, scope, xmax, started):
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         _raise_high_water(directory, xmax)
         path = _saved_path(key, scope)
-        if len(entry.body) >= GZIP_MINIMUM_SIZE and not entry.gzipped:
+        if compress and len(entry.body) >= GZIP_MINIMUM_SIZE and not entry.gzipped:
             _keep_compressed(entry, _gzip(entry.body))
-        compressed = entry.gzipped if len(entry.body) >= GZIP_MINIMUM_SIZE else b''
+        compressed = entry.gzipped if compress and len(entry.body) >= GZIP_MINIMUM_SIZE else b''
         header = dict(scope=scope, key=list(key), xmax=xmax, tables=list(entry.tables),
                       fingerprint=[list(part) for part in entry.fingerprint], status_code=entry.status_code,
                       media_type=entry.media_type, refusal=entry.refusal, size=len(entry.body),
