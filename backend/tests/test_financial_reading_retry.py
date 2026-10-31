@@ -690,3 +690,25 @@ def test_removed_pdfs_without_their_restart_copy_are_read_afresh_only_by_one_exp
         assert entry['recovery']['reset_revision'] == 'synthetic-removal'
         again = service.recover_retained_sources(db, case_id=f.case.id, actor=f.actor, files=files[:1])
         assert (again['queued'], again['already']) == (0, 1)
+
+
+@pytest.mark.parametrize('status', ['failed', 'extracting_text', 'completed'])
+def test_a_checked_retry_runs_no_sql_on_the_event_loop(fixture, status):
+    # The route awaits this on the event loop: its database steps run in the thread pool, around the engine check.
+    import threading
+    from sqlalchemy import event
+    from sqlalchemy.engine import Engine
+    batch, payload = active_attempt(fixture)
+    payload.update(status=status, error_message='Synthetic interrupted reading')
+    on_the_loop = []
+    def record(conn, cursor, statement, *rest):
+        if threading.current_thread() is threading.main_thread():
+            on_the_loop.append(statement.split('\n')[0][:80])
+    event.listen(Engine, 'before_cursor_execute', record)
+    try:
+        with patch('services.evidence_engine_client.get_job', AsyncMock(return_value=payload)):
+            result = checked_retry(fixture, batch)
+    finally:
+        event.remove(Engine, 'before_cursor_execute', record)
+    assert result['action'] in ('retry_reading', 'already_running')
+    assert on_the_loop == []

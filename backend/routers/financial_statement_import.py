@@ -1284,7 +1284,7 @@ async def retry_financial_batch_file(batch_id: UUID,source_id: UUID,case_id: UUI
         from services.financial.reading_job_retry import retry_file_checked
         return await retry_file_checked(db,case_id=case_id,batch_id=batch_id,source_id=source_id)
     except PdfMappingError as exc:
-        db.rollback();raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc
+        await run_in_threadpool(db.rollback);raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc
 
 
 class ReadAfreshFile(BaseModel):

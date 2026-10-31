@@ -70,12 +70,11 @@ NOT_YET_OFFLOADED = {
     # shared async engine client, still on the loop in the handler itself; next in A2(b).
     'routers/evidence.py:upload_evidence', 'routers/evidence.py:process_cellebrite_folder',
     'routers/financial_statement_import.py:prepare_existing',
-    'routers/financial_statement_import.py:retry_financial_batch_file',
 }
 
 _OFFLOAD = {'run_in_threadpool', 'to_thread', 'run_sync'}
 # Coroutines that take the session but run their own database work in the thread pool.
-_OFFLOADS_INTERNALLY = {'reconcile_job_by_id', 'reconcile_case_jobs', 'process_db_files',
+_OFFLOADS_INTERNALLY = {'reconcile_job_by_id', 'reconcile_case_jobs', 'process_db_files', 'retry_file_checked',
                         # reads the graph with asyncio.to_thread, then compares names between awaits
                         'find_similar_entities_streaming'}
 _ROUTE_METHODS = ('get', 'post', 'put', 'patch', 'delete', 'api_route')
