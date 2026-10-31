@@ -129,7 +129,8 @@ def note_pool_wait(seconds):
 
 def note_engine(seconds):
     """Called by the evidence engine client for each call inside this request: time from sending to the whole
-    answer read, so a slow engine poll splits into engine time and this server's own time."""
+    answer read, so a slow engine poll splits into engine time and this server's own time. Summed over the calls
+    (concurrent calls can add up to more than the request's own time); timing figures only."""
     holder = _person.get()
     if holder is not None:
         holder['engine_ms'] = holder.get('engine_ms', 0.0) + seconds * 1000
@@ -195,7 +196,7 @@ def server_timing(app_ms, holder):
     if holder.get('gzip_ms'):
         parts.append(f'gz;dur={holder["gzip_ms"]:.1f}')
     if holder.get('engine_n'):
-        parts.append(f'engine;dur={holder["engine_ms"]:.1f};desc="{holder["engine_n"]} calls"')
+        parts.append(f'engine;dur={holder["engine_ms"]:.1f};desc="summed over {holder["engine_n"]} call(s)"')
     if holder.get('cache'):
         parts.append(f'cache;desc={holder["cache"]}')
     parts.append(f'w;desc={os.getpid()}')
@@ -290,7 +291,7 @@ class RequestSpeedMiddleware:
                 if seconds > SLOW_LOG_SECONDS and not streamed:
                     log.warning('Slow request: %s %s case %s %.1f s (status %s)%s', method, route,
                                 case[:8] if case else '-', seconds, outcome[0] or 499,
-                                f' [pg {person.get("pg_ms", 0.0) / 1000:.1f} s, engine '
+                                f' [pg {person.get("pg_ms", 0.0) / 1000:.1f} s, engine (summed) '
                                 f'{person["engine_ms"] / 1000:.1f} s]' if person.get('engine_n') else '')
             except Exception:
                 log.exception('Request speed: could not record a request (the request itself is unaffected)')

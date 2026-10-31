@@ -52,7 +52,7 @@ class EngineTiming(TestCase):
         response = self.client.get('/api/evidence/engine/jobs')
         self.assertEqual(response.json(), [{"id": "j1", "status": "completed"}])
         self.assertIn('engine;dur=', response.headers['server-timing'])
-        self.assertIn('desc="1 calls"', response.headers['server-timing'])
+        self.assertIn('desc="summed over 1 call(s)"', response.headers['server-timing'])
 
     def test_a_request_without_an_engine_call_has_no_engine_part(self):
         self.assertNotIn('engine', self.client.get('/api/plain').headers['server-timing'])
@@ -60,7 +60,7 @@ class EngineTiming(TestCase):
     def test_the_slow_log_line_carries_engine_and_database_time(self):
         with patch.object(rs, 'SLOW_LOG_SECONDS', 0.0), self.assertLogs(rs.log, logging.WARNING) as logged:
             self.client.get('/api/evidence/engine/jobs')
-        self.assertRegex(logged.output[-1], r'\[pg [0-9.]+ s, engine [0-9.]+ s\]$')
+        self.assertRegex(logged.output[-1], r'\[pg [0-9.]+ s, engine \(summed\) [0-9.]+ s\]$')
 
     def test_the_shared_client_is_the_timed_one(self):
         with patch.object(client_module, '_client', None):
