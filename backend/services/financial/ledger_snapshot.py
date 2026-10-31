@@ -186,6 +186,10 @@ def _capture_history(session, document, *, case_id):
     # still shows its corrections.
     ledger = document['ledger']
     requested = {value for value in [ledger.get('account_id'), *(ledger.get('account_ids') or [])] if value}
+    if requested:
+        # With their consolidated (alias) accounts, as the ledger's own account filter reads them.
+        from services.financial.account_consolidation import expand_account_ids
+        requested = set(map(str, expand_account_ids(session, case_id, requested)))
     document['account_corrections'] = capture_account_corrections(session, case_id=case_id,
                                                                   account_ids=set(map(str, scopes['account'])) | requested)
     corrections_limitation = unconfirmed_limitation(document['account_corrections'])
@@ -631,7 +635,7 @@ def render_ledger_report(snapshot):
                 r['row']['ordering_date'] + (' (statement end; payment date unknown)' if r['row'].get('ordering_date_context') == 'statement_end_ordering_only' else ''),
                 ('Credit card: ' if (r.get('account') or {}).get('account_type') == 'credit_card' else '')
                     + ((r.get('account') or {}).get('label') or r['row']['account_id'])
-                    + (account_markers.get(str(r['row']['account_id'])) or account_markers.get(str(r['row'].get('canonical_account_id'))) or ''),
+                    + ''.join(dict.fromkeys(account_markers.get(str(value), '') for value in (r['row']['account_id'], r['row'].get('canonical_account_id')) if value)),
                 r['row']['description'],
                 money_display(r['row']['amount_minor'], r['row']['currency'], exact=False) if r['row']['direction'] == 'credit' else '',
                 money_display(r['row']['amount_minor'], r['row']['currency'], exact=False) if r['row']['direction'] == 'debit' else '',

@@ -54,10 +54,13 @@ def made_by(entry):
     return entry.get('actor_name') or entry.get('actor_email') or 'Not recorded'
 
 
-def status_of(entry):
-    """(status, text). A model's correction no person confirmed is the model's reading."""
+def status_of(entry, undo=None):
+    """(status, text). A model's correction no person confirmed is the model's reading. An undone one names who
+    undid it and why, from the undo entry."""
     if entry.get('undone_at'):
-        return 'undone', f"Undone on {_day(entry['undone_at'])}; the original value is current"
+        who = f" by {(undo or {}).get('actor_name') or (undo or {}).get('actor_email')}" if (undo or {}).get('actor_name') or (undo or {}).get('actor_email') else ''
+        why = f" ({undo['reason']})" if (undo or {}).get('reason') else ''
+        return 'undone', f"Undone{who} on {_day(entry['undone_at'])}{why}; this correction no longer applies"
     origin = origin_of(entry)
     if origin and entry.get('confirmed'):
         return 'confirmed', confirmation_line(entry['confirmed'])
@@ -72,11 +75,17 @@ def account_corrections(accounts):
     for account in sorted(accounts, key=lambda value: str(value.id)):
         meta = account.metadata_ or {}
         label = meta.get('display_label') or account.identifier_as_printed or account.holder_name
-        for entry in meta.get('account_details_history') or []:
+        history = meta.get('account_details_history') or []
+        undos = {item.get('undo_of'): item for item in history if item.get('kind') == 'undo'}
+        # The account's value now, per field: a later correction can supersede an earlier one.
+        now = dict(holder=account.holder_name or '', institution=account.institution_name or '',
+                   account_number=account.identifier_as_printed or '')
+        for entry in history:
             if entry.get('kind') != 'correction':
                 continue
             before, after = entry.get('before') or {}, entry.get('after') or {}
-            status, status_text = status_of(entry)
+            undo = undos.get(entry.get('id'))
+            status, status_text = status_of(entry, undo)
             origin = origin_of(entry)
             for field, name in FIELD_NAMES:
                 if field not in after or after.get(field) == before.get(field):
@@ -84,12 +93,14 @@ def account_corrections(accounts):
                 records.append(dict(
                     account_id=str(account.id), account_label=label, correction_id=entry.get('id'), at=entry.get('at'),
                     field=field, field_label=name, original_value=before.get(field), corrected_value=after.get(field),
-                    current_value=before.get(field) if entry.get('undone_at') else after.get(field),
+                    account_value_now=now[field],
                     made_by=made_by(entry), made_by_kind='model' if origin else 'person',
                     model_origin=origin, citation=(origin or {}).get('citation'), reason=entry.get('reason'),
                     status=status, status_text=status_text, confirmation=entry.get('confirmed'),
                     confirmation_text=confirmation_line(entry.get('confirmed')), relays=_relays(entry.get('confirmed')),
-                    undone_at=entry.get('undone_at')))
+                    undone_at=entry.get('undone_at'),
+                    undone_by=(undo or {}).get('actor_name') or (undo or {}).get('actor_email'),
+                    undo_reason=(undo or {}).get('reason')))
     records.sort(key=lambda item: (item['account_id'], str(item['at'] or ''), item['correction_id'] or '', item['field']))
     return records
 

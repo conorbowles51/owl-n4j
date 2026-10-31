@@ -35,7 +35,7 @@ HISTORY = [
          before=dict(holder='INGENIERIA APLICADA R2', institution='Banco Kapital'),
          after=dict(holder='R2 INGENIERIA', institution='Banco Kapital'), undone_at='2026-10-30T10:05:00+00:00',
          undone_by='u1'),
-    dict(id='u1', kind='undo', undo_of='c4', at='2026-10-30T10:05:00+00:00', reason='Wrong guess.'),
+    dict(id='u1', kind='undo', undo_of='c4', at='2026-10-30T10:05:00+00:00', reason='Wrong guess.', actor_name='Ana Analyst'),
 ]
 
 
@@ -71,8 +71,10 @@ class AccountCorrectionExportTests(LedgerSummaryTests):
         self.assertEqual(sorted(by), [('c1', 'holder'), ('c2', 'account_number'), ('c3', 'institution'), ('c4', 'holder')])
         self.assertTrue(all(item['account_id'] == str(account.id) for item in records))
         holder = by[('c1', 'holder')]
-        self.assertEqual((holder['original_value'], holder['corrected_value'], holder['current_value']),
-                         ('LOMAS DE CHAPULTEPEC III SECCION', 'INGENIERIA APLICADA R2', 'INGENIERIA APLICADA R2'))
+        self.assertEqual((holder['original_value'], holder['corrected_value']),
+                         ('LOMAS DE CHAPULTEPEC III SECCION', 'INGENIERIA APLICADA R2'))
+        # The account's value now, not the correction's: later corrections can supersede an earlier one.
+        self.assertEqual({item['account_value_now'] for item in records if item['field'] == 'holder'}, {account.holder_name or ''})
         self.assertEqual((holder['made_by'], holder['made_by_kind'], holder['status']), ('Claude for Neil Byrne', 'model', 'confirmed'))
         # The first relay was stored without a note: it says so rather than assume one.
         self.assertEqual(holder['status_text'], 'Confirmed by Neil Byrne, entered by Claude (fin-provenance job, for Neil '
@@ -87,7 +89,8 @@ class AccountCorrectionExportTests(LedgerSummaryTests):
         self.assertEqual(number['citation'], dict(file='06 KAPITAL MXN JUN 26.pdf', page=1))
         self.assertEqual((by[('c3', 'institution')]['status'], by[('c3', 'institution')]['made_by']), ('person', 'Ana Analyst'))
         undone = by[('c4', 'holder')]
-        self.assertEqual((undone['status'], undone['current_value']), ('undone', 'INGENIERIA APLICADA R2'))
+        self.assertEqual((undone['status'], undone['undone_by'], undone['undo_reason']), ('undone', 'Ana Analyst', 'Wrong guess.'))
+        self.assertEqual(undone['status_text'], 'Undone by Ana Analyst on 2026-10-30 (Wrong guess.); this correction no longer applies')
         self.assertEqual(after['account_corrections']['unconfirmed_model_corrections'], 1)
         self.assertTrue(any(v.startswith('1 account-detail correction a model made is not confirmed') for v in after['limitations']))
         self.assertFalse(any('account-detail correction' in v for v in before['limitations']))
@@ -98,7 +101,7 @@ class AccountCorrectionExportTests(LedgerSummaryTests):
         self.assertIn('Corrected by Claude · not confirmed (the model&#x27;s reading)', report)
         self.assertIn('Confirmed by Neil Byrne, entered by Claude (fin-smalls) on Neil Byrne&#x27;s instruction, 2026-10-30', report)
         self.assertIn('How confirmations were entered', report)
-        self.assertIn('Undone on 2026-10-30; the original value is current', report)
+        self.assertIn('Undone by Ana Analyst on 2026-10-30 (Wrong guess.); this correction no longer applies', report)
         self.assertNotIn('Account corrections', render_ledger_report(self.export_before_snapshot(before)))
 
     @staticmethod
