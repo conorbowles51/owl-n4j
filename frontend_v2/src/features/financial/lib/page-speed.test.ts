@@ -92,6 +92,18 @@ describe("page speed", () => {
     expect(typeof settled).toBe("number")
   })
 
+  it("scans the query cache at most once per frame, however many cache events arrive", async () => {
+    const client = new QueryClient()
+    for (let i = 0; i < 200; i++) client.setQueryData(["financial", "p", i], i)
+    const scans = vi.spyOn(client, "isFetching")
+    const settled = whenSettled(client, { cancelled: false })
+    // 200 cache events in the same frame (what a large table mounting its rows does)
+    for (let i = 0; i < 200; i++) client.setQueryData(["financial", "p", i], i + 1)
+    const value = await settled
+    expect(typeof value).toBe("number")
+    expect(scans.mock.calls.length).toBeLessThanOrEqual(2)
+  })
+
   it("a cancelled view is not timed", async () => {
     const client = new QueryClient()
     const signal = { cancelled: true }

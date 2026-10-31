@@ -90,29 +90,40 @@ export function takeDocumentLoad(pathname: string, channel = "financial") {
   }
 }
 
-/** Resolves (with performance.now) at the first frame after nothing is fetching, or null on give-up/cancel. */
+/**
+ * Resolves (with performance.now) at the first frame after nothing is fetching, or null on give-up/cancel.
+ * Cache events only ask for a look at the next frame: client.isFetching() scans every query in the cache, so
+ * scanning on every event cost events x queries (measured 630 ms of main thread on a Trends tab first open with
+ * ~2,700 queries). At most one scan runs per frame, and the frame that finds nothing fetching is the time.
+ */
 export function whenSettled(client: QueryClient, signal: { cancelled: boolean }): Promise<number | null> {
   return new Promise((resolve) => {
     let unsubscribe = () => {}
     let done = false
+    let frame: number | null = null
     const finish = (value: number | null) => {
       if (done) return
       done = true
       unsubscribe()
       clearTimeout(giveUp)
+      if (frame !== null) cancelAnimationFrame(frame)
       resolve(value)
     }
     const giveUp = setTimeout(() => finish(null), GIVE_UP_MS)
-    const check = () => {
+    const look = () => {
+      frame = null
+      if (done) return
       if (signal.cancelled) return finish(null)
-      if (client.isFetching() > 0) return
-      // Data has arrived; time the next paint, when it is on screen.
-      requestAnimationFrame(() => finish(signal.cancelled ? null : performance.now()))
+      // Data has arrived and this frame paints it: the view is on screen.
+      if (client.isFetching() === 0) finish(performance.now())
     }
-    unsubscribe = client.getQueryCache().subscribe(() => {
-      if (!done) check()
-    })
-    check()
+    const lookNextFrame = () => {
+      if (done) return
+      if (signal.cancelled) return finish(null)
+      frame ??= requestAnimationFrame(look)
+    }
+    unsubscribe = client.getQueryCache().subscribe(lookNextFrame)
+    lookNextFrame()
   })
 }
 
