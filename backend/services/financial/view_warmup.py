@@ -69,6 +69,49 @@ async def warm_views_once():
             logger.warning('Financial view re-warm check failed', exc_info=True)
 
 
+async def warm_case_files_once():
+    """Each worker loads the evidence-file copies of the cases with the most files once, right after start.
+
+    ``source_lineage.case_files`` keeps those copies per process (CASE_FILES_KEPT cases), so the shared warm-up
+    above, which runs in a child process, cannot fill them. Without this every worker's first statement open,
+    review queue or activity request on d5b330d1 loaded its 6,108 files: 3.91 s, against 0.07 s once held
+    (measured 2026-10-31, live data). The copies are checked against each row's version on every use, so loading
+    them early changes no result. FINANCIAL_CASE_FILES_WARMUP=0 turns it off.
+    """
+    if os.environ.get('FINANCIAL_CASE_FILES_WARMUP', '1') == '0':
+        return
+    try:
+        started = time.monotonic()
+        cases = await asyncio.to_thread(warm_case_files)
+        if cases:
+            logger.info('Evidence-file copies loaded for %d cases in %.2f s', len(cases), time.monotonic() - started)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.warning('Evidence-file copy warm-up failed', exc_info=True)
+
+
+def warm_case_files():
+    """Load ``case_files`` for the CASE_FILES_KEPT cases with the most evidence files; returns their ids."""
+    from sqlalchemy import func, select
+    from postgres.models.evidence import EvidenceFile
+    from postgres.session import _get_session_local
+    from services.financial import source_lineage
+    with _get_session_local()() as db:
+        cases = list(db.scalars(select(EvidenceFile.case_id).group_by(EvidenceFile.case_id)
+                                .order_by(func.count().desc(), EvidenceFile.case_id)
+                                .limit(source_lineage.CASE_FILES_KEPT)))
+        warmed = []
+        # Smallest first, so the largest case is the most recently used one and the last to be dropped.
+        for case_id in reversed(cases):
+            if process_shutdown_requested():
+                break
+            source_lineage.case_files(db, case_id)
+            db.rollback()
+            warmed.append(case_id)
+    return warmed
+
+
 def _write_counts(connection, tables=None):
     """{table: inserts + updates + deletes so far} from PostgreSQL's statistics, for ``tables`` (default all)."""
     from sqlalchemy import text
