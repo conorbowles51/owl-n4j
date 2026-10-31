@@ -49,6 +49,16 @@ frontend_build_exists() {
 
 # Build commit <rev> as build <id> into builds/<id>, while whatever is served keeps being served.
 # <npm_hash> decides whether node_modules has to be reinstalled.
+# A job run as root in the build worktree (vitest's .vite-temp, storybook's .cache, ...) leaves files the deploy user
+# can neither replace nor remove, and the build then fails (30 Oct 23:45: exit 243 on node_modules/.vite-temp). Every
+# path not owned by the deploy user, at any depth, is given back to it; a directory already handed back is not walked
+# again. The site keeps serving the current build whatever happens here.
+frontend_reclaim_worktree() {
+    local wt="$1"
+    [ "$(id -u)" -eq 0 ] && [ -n "${DEPLOY_USER:-}" ] && [ -d "${wt}" ] || return 0
+    find "${wt}" ! -user "${DEPLOY_USER}" -prune -exec chown -R "${DEPLOY_USER}:" {} + 2>/dev/null || true
+}
+
 frontend_build_aside() {
     local rev="$1" id="$2" npm_hash="$3" wt out tmp marker scope
     scope="$(release_build_scope)"
@@ -62,9 +72,7 @@ frontend_build_aside() {
     if [ ! -e "${wt}/.git" ]; then
         (cd "${PROJECT_DIR}" && $RUN_AS git worktree add -q -f --detach "${wt}" "${rev}") || return 1
     fi
-    # A job run as root in the build worktree leaves root-owned caches the deploy user cannot replace.
-    [ "$(id -u)" -eq 0 ] && [ -n "${DEPLOY_USER:-}" ] && [ -d "${wt}/frontend_v2/node_modules" ] &&
-        find "${wt}/frontend_v2/node_modules" -maxdepth 3 ! -user "${DEPLOY_USER}" -exec chown -R "${DEPLOY_USER}:" {} + 2>/dev/null
+    frontend_reclaim_worktree "${wt}"
     (cd "${wt}" && $RUN_AS git checkout -q --detach -f "${rev}" &&
         $RUN_AS git clean -ffdxq -e frontend_v2/node_modules) || return 1
     marker="${wt}/frontend_v2/node_modules/.loupe-npm-hash"
