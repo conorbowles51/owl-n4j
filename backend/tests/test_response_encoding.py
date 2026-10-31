@@ -149,3 +149,14 @@ def test_fastapi_still_has_the_function_it_wraps():
     parameters = inspect.signature(response_encoding._original).parameters
     assert {"field", "response_content", "is_coroutine"} <= set(parameters)
     assert all(p.kind is not inspect.Parameter.POSITIONAL_ONLY for p in parameters.values())
+
+
+def test_each_event_loop_gets_its_own_limiter():
+    # Two clients run two event loops in one process; each encodes through a limiter of its own.
+    routing.serialize_response = response_encoding.serialize_response
+    for _ in range(2):
+        with TestClient(_app()) as client:
+            assert client.get("/big").status_code == 200
+    limiters = list(response_encoding._limiters.values())
+    assert len({id(limiter) for limiter in limiters}) == len(limiters)
+    assert all(limiter.total_tokens == response_encoding.ENCODE_SLOTS for limiter in limiters)

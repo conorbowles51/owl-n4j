@@ -12,9 +12,11 @@ pure Python, so in a thread it hands the interpreter back to the event loop ever
 threads have their own limiter (ENCODE_SLOTS per worker), so an answer never waits behind handlers
 holding the default pool. LOUPE_SERIALIZE_OFF_LOOP=0 turns it off.
 """
+import asyncio
 import inspect
 import logging
 import os
+import weakref
 
 import anyio
 import fastapi.routing as routing
@@ -22,7 +24,8 @@ import fastapi.routing as routing
 ENCODE_SLOTS = 4
 
 _original = routing.serialize_response
-_limiter = None
+# One limiter per event loop: a worker runs one loop, a test process may run several.
+_limiters = weakref.WeakKeyDictionary()
 
 
 def _encode(arguments):
@@ -38,10 +41,11 @@ def _encode(arguments):
 
 
 async def serialize_response(**arguments):
-    global _limiter
-    if _limiter is None:
-        _limiter = anyio.CapacityLimiter(ENCODE_SLOTS)
-    return await anyio.to_thread.run_sync(_encode, arguments, limiter=_limiter)
+    loop = asyncio.get_running_loop()
+    limiter = _limiters.get(loop)
+    if limiter is None:
+        limiter = _limiters[loop] = anyio.CapacityLimiter(ENCODE_SLOTS)
+    return await anyio.to_thread.run_sync(_encode, arguments, limiter=limiter)
 
 
 def install():
