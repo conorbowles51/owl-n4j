@@ -2053,7 +2053,7 @@ from services.financial.payment_document_review import (
     PaymentMatchRequest, PaymentDocumentReviewRequest, read_payment_document,
     matching_payments, save_payment_document,
 )
-from services.financial.statement_file_status import statement_file_status
+from services.financial.statement_file_status import statement_file_status as read_statement_file_status
 from services.financial.statement_import_andrews import andrews_catalog, propose_andrews_statement
 from services.financial.statement_import_card_balances import summary_balances, merrick_summary_balances
 from services.financial.statement_import_controls import retain_import_controls, read_import_controls
@@ -2061,7 +2061,7 @@ from services.financial.trace_scenario_report import render_scenario_report
 __all__ += [
     "propose_deposit_receipt", "deposit_receipt_choices", "propose_payment_document",
     "PaymentMatchRequest", "PaymentDocumentReviewRequest", "read_payment_document",
-    "matching_payments", "save_payment_document", "statement_file_status",
+    "matching_payments", "save_payment_document", "read_statement_file_status",
     "andrews_catalog", "propose_andrews_statement", "summary_balances",
     "merrick_summary_balances", "retain_import_controls", "read_import_controls",
     "render_scenario_report",
