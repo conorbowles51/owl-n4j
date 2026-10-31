@@ -1471,6 +1471,21 @@ class HolderAndInterbankTests(unittest.TestCase):
         rows = E._pages([sheet])[1]
         self.assertEqual(E.address_holder(rows), 'EMPRESA DE PRUEBA SA DE CV')
 
+    def test_a_street_line_read_off_the_block_edge_is_no_blank_line_above_the_name(self):
+        # NOVAC '06 NOVAC SCOTIABANK MXN JUN 26' (scan): the street line is read starting left of the block's edge,
+        # so the block skips it; the gap it leaves above 'POLANCO | SECCION' is printed, not blank, and the name
+        # above it stays the holder.
+        lines = [[('EMPRESA DE PRUEBA SA DE CV', 48240, 180000), ('Estado de Cuenta', 395280, 500000)],
+                 [('CALLE EJEMPLO 11 PISO 6', 30000, 140000), ('Cuenta 25601132360', 427440, 560000)],
+                 [('CLABE 044180256011323600', 425040, 590000)],
+                 [('POLANCO | SECCION', 48240, 140000)],
+                 [('MIGUEL HIDALGO', 48240, 120000), ('Fecha de corte 30-JUN-26', 401280, 560000)],
+                 [('C.P.11510 C.R. 15000', 48240, 200000), ('Periodo 01-JUN-26/30-JUN-26', 426240, 590000)]]
+        rows = E._pages([page(1, lines)])[1]
+        self.assertEqual(E.address_holder(rows), 'EMPRESA DE PRUEBA SA DE CV')
+        with mock.patch.object(E, '_words_in_column', lambda *a: False):
+            self.assertNotEqual(E.address_holder(rows), 'EMPRESA DE PRUEBA SA DE CV')
+
     def test_a_line_with_money_or_a_date_at_the_block_edge_is_not_part_of_an_address(self):
         lines = [[('EMPRESA DE PRUEBA SA DE CV', 20000, 200000)],
                  [('05/03/2024 PAGO RECIBIDO', 20000, 200000)],

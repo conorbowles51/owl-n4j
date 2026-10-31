@@ -35,6 +35,7 @@ is carried by an unresolved line so the existing review gate holds it.
 import os
 import pickle
 import re
+import statistics
 import threading
 from collections import OrderedDict
 from contextvars import ContextVar
@@ -2356,11 +2357,16 @@ def _grow_block(located, index, x, style):
         beside = any(earlier['y0'] < other['y0'] < block[-1]['y0'] for other in located)
         if gap > max(height * (4 if beside else 2.6), previous_gap * 1.6):
             break
-        if BLANK_LINE_LIMIT and beside and previous_gap and gap > max(previous_gap, height * 1.5) * 2.5:
+        if (BLANK_LINE_LIMIT and beside and previous_gap
+                and gap > max(previous_gap, statistics.median(_line_height(line) for line in block) * 1.5) * 2.5
+                and not _words_in_column(located, earlier, block[-1], x, row['width'])):
             # More than one blank line above a block whose own lines are evenly spaced: what is above (a scanned
             # logo read as 'F3' over BBVA's 'CAAL ENERGY SYSTEMS SA DE CV' block) is not its name line. The spacing
-            # is never taken as under one and a half text heights, so a postal line printed tight under the line
-            # above it does not make an ordinary line spacing look like a blank line.
+            # is never taken as under one and a half of the block's median text height, so a postal line printed
+            # tight under the line above it does not make an ordinary line spacing look like a blank line (one tall
+            # box a scan draws round a line does not set it). A gap with words printed
+            # in the address column is no blank line: a scan can read a street line off the block's edge (NOVAC's
+            # Scotiabank 'JAIME BALMES 11' between the name and 'POLANCO | SECCION').
             break
         block.append(earlier)
         if len(block) >= 7:
@@ -2404,6 +2410,19 @@ def _spaced_block(block):
         if block[size - 1]['y0'] - block[size]['y0'] > 1.5 * pitch:
             return block[:size]
     return None
+
+
+def _line_height(row):
+    return max(t['y1'] - t['y0'] for t in row['tokens'])
+
+
+def _words_in_column(located, upper, lower, x, width):
+    """Whether a line between upper and lower prints words in the address column at x (from just left of its edge to
+    a quarter of the page right of it): two of three letters or more, as a street line does ('JAIME BALMES 11'),
+    not a logo's letters read alone ('BVA') or a stray mark (A8)."""
+    return any(upper['y0'] < other['y0'] < lower['y0'] and sum(
+        1 for t in other['tokens'] if x - width * 0.03 <= t['x0'] < x + width * 0.25
+        and re.search(r'[A-Za-z]{3}', t['t'])) >= 2 for other in located)
 
 
 def _lead_noise(row, x):
