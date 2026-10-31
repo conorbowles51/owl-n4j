@@ -28,7 +28,31 @@ _original = routing.serialize_response
 _limiters = weakref.WeakKeyDictionary()
 
 
+_PLAIN = (str, int, float, bool)
+
+
+def _plain(value):
+    """True when jsonable_encoder would hand back the same data: only exact dicts with str keys (none starting
+    "_sa", which it drops), lists, str, int, float, bool and None. Subclasses (enums, OrderedDict) are not plain."""
+    kind = type(value)
+    if kind is dict:
+        return all(type(key) is str and not key.startswith('_sa') and _plain(item) for key, item in value.items())
+    if kind is list:
+        return all(_plain(item) for item in value)
+    return value is None or kind in _PLAIN
+
+
 def _encode(arguments):
+    # A route without a response model that returns data already in JSON form (most of them: engine job lists,
+    # dicts of str and numbers) needs no encoding: checking that costs d5b330d1's jobs list 0.02 s where
+    # jsonable_encoder took 0.19 s (31 Oct). Anything else goes through FastAPI's own function, as before.
+    if arguments.get('field') is None:
+        content = arguments.get('response_content')
+        try:
+            if _plain(content):
+                return content
+        except RecursionError:
+            pass
     # is_coroutine=True: FastAPI then validates inline (it is already in a thread) and the coroutine
     # finishes without suspending; driving it to completion here returns its value.
     coroutine = _original(**{**arguments, 'is_coroutine': True})

@@ -79,6 +79,26 @@ def _app():
         background.add_task(lambda: None)
         return None
 
+    @app.get("/plain-only")
+    def plain_only():
+        return {"a": [1, 2.5, None, True, "é ✓", {"n": 10**20, "f": 1e-9}], "b": {}, "c": [], "d": float("inf") * 0 == 0}
+
+    @app.get("/subclasses")
+    def subclasses():
+        import collections
+        return {"colour": Colour.red, "ordered": collections.OrderedDict(b=1, a=2), "nested": [{"_sa_x": 1, "k": Colour.red}]}
+
+    @app.get("/nan")
+    def nan():
+        return {"x": float("nan")}
+
+    @app.get("/deep")
+    def deep():
+        value = []
+        for _ in range(3000):
+            value = [value]
+        return value
+
     @app.get("/big")
     def big():
         return [{"i": i, "s": "x" * 20, "f": i / 7} for i in range(20000)]
@@ -86,7 +106,7 @@ def _app():
     return app
 
 
-PATHS = ["/plain", "/types", "/model", "/model-dict", "/models", "/none", "/big"]
+PATHS = ["/plain", "/types", "/model", "/model-dict", "/models", "/none", "/big", "/plain-only", "/subclasses", "/nan", "/deep"]
 
 
 @pytest.fixture(autouse=True)
@@ -123,15 +143,22 @@ def test_the_encoding_runs_off_the_event_loop_thread(monkeypatch):
         return original_encoder(*args, **kwargs)
 
     monkeypatch.setattr(routing, "jsonable_encoder", recording)
+    # The plain-data check walks the whole answer too.
+    original_plain = response_encoding._plain
+    checks = []
+    monkeypatch.setattr(response_encoding, "_plain",
+                        lambda value: checks.append(threading.current_thread().name) or original_plain(value))
     routing.serialize_response = response_encoding.serialize_response
     try:
         with TestClient(_app()) as client:
             loop_thread = client.portal.call(lambda: threading.current_thread().name)
             assert client.get("/big").status_code == 200
+            assert client.get("/types").status_code == 200
             assert client.get("/model").status_code == 200
     finally:
         routing.serialize_response = response_encoding._original
     assert threads and loop_thread not in threads
+    assert checks and loop_thread not in checks
 
 
 def test_main_installs_it_and_the_switch_turns_it_off(monkeypatch):
@@ -160,3 +187,20 @@ def test_each_event_loop_gets_its_own_limiter():
     limiters = list(response_encoding._limiters.values())
     assert len({id(limiter) for limiter in limiters}) == len(limiters)
     assert all(limiter.total_tokens == response_encoding.ENCODE_SLOTS for limiter in limiters)
+
+
+def test_plain_json_data_is_not_walked_by_jsonable_encoder(monkeypatch):
+    calls = []
+    original_encoder = routing.jsonable_encoder
+    monkeypatch.setattr(routing, "jsonable_encoder", lambda *a, **k: calls.append(1) or original_encoder(*a, **k))
+    routing.serialize_response = response_encoding.serialize_response
+    try:
+        client = TestClient(_app())
+        for path in ("/big", "/plain-only"):
+            assert client.get(path).status_code == 200
+        assert calls == []
+        for path in ("/plain", "/subclasses", "/types"):
+            assert client.get(path).status_code == 200
+        assert len(calls) == 3
+    finally:
+        routing.serialize_response = response_encoding._original
