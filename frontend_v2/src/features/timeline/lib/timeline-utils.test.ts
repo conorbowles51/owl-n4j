@@ -125,7 +125,7 @@ describe("timeline date/time utilities", () => {
 describe("compareTimelineEvents on a large Timeline", () => {
   const make = (index: number): TimelineEvent => ({
     key: `k${(index * 7919) % 5000}`,
-    name: null,
+    name: `Event ${index}`,
     type: "Transaction",
     date: index % 97 === 0 ? "2021-02-30" : `20${10 + (index % 12)}-0${1 + (index % 9)}-1${index % 10}`,
     time: index % 3 === 0 ? null : `1${index % 10}:${10 + (index % 50)}`,
