@@ -135,12 +135,13 @@ Nothing backend runs until this is done. It takes about twenty seconds. The full
 `openai-whisper` and therefore torch, for no benefit to this suite.
 
 ```
-pip install --break-system-packages --quiet "SQLAlchemy==2.0.46" "pydantic==2.12.5" "fastapi==0.123.9" "psycopg[binary]==3.2.13" "python-dateutil==2.9.0.post0" "lxml==6.0.2" "openpyxl==3.1.5" "neo4j==5.28.2" "alembic==1.14.0" "email-validator==2.2.0" "python-multipart==0.0.20" "openai==2.9.0" "python-jose==3.5.0" "langchain-core==1.5.0" "langchain-openai==1.1.7" "langgraph==1.0.6" "langgraph-checkpoint==4.0.0" "orjson==3.11.5" "python-dotenv==1.2.1" "bcrypt==5.0.0" "cryptography==46.0.3" "pypdf==6.4.0" "PyMuPDF==1.28.0" "uvicorn==0.38.0" "pytest==8.4.2" "pytest-asyncio==0.25.0"
+pip install --break-system-packages --quiet "SQLAlchemy==2.0.46" "pydantic==2.12.5" "fastapi==0.123.9" "psycopg[binary]==3.2.13" "python-dateutil==2.9.0.post0" "lxml==6.0.2" "openpyxl==3.1.5" "neo4j==5.28.2" "alembic==1.14.0" "email-validator==2.2.0" "python-multipart==0.0.20" "openai==2.9.0" "python-jose==3.5.0" "langchain-core==1.5.0" "langchain-openai==1.1.7" "langgraph==1.0.6" "langgraph-checkpoint==4.0.0" "orjson==3.11.5" "python-dotenv==1.2.1" "bcrypt==5.0.0" "cryptography==46.0.3" "pypdf==6.4.0" "PyMuPDF==1.28.0" "numpy==2.3.5" "Pillow==12.1.1" "uvicorn==0.38.0" "pytest==8.4.2" "pytest-asyncio==0.25.0"
 ```
 
-Twenty-six packages (`pytest` and `pytest-asyncio` are for the tests only and are not in `requirements.txt`;
+Twenty-eight packages (`pytest` and `pytest-asyncio` are for the tests only and are not in `requirements.txt`;
 without `pytest-asyncio` every `@pytest.mark.asyncio` test fails with "async def functions are not natively
-supported"; without `uvicorn` the four server-shutdown tests skip).
+supported"; without `uvicorn` the four server-shutdown tests skip; the benchmark corpus imports `numpy` and
+`Pillow` inside a function, which the line test cannot see).
 `backend/tests/test_financial_bootstrap_line.py` keeps the line in step
 with `requirements.txt` and fails when the package surface needs something the line does not install. `chromadb` is
 deliberately absent: `VectorDBService` degrades gracefully and prints a warning
@@ -172,17 +173,20 @@ temp directory.
 The package surface is guarded by `backend/tests/test_financial_exports.py`. A new
 module exported from `services/financial/__init__.py` must be added there.
 
-### Backend tests outside the financial suite, from `backend/`
+### Backend pytest tests, from `backend/`
 
-The other backend test modules (evidence, deploy scripts, agent, models) are pytest:
+The other backend test modules (evidence, deploy scripts, agent, models) are pytest, and so are the plain
+`def test_...` functions inside `test_financial_*` modules (recovery, scheduler, census and others), which
+`unittest discover` above never collects. Run both:
 
 ```
 PYTHONHASHSEED=0 python3 -m pytest -q -p no:cacheprovider --basetemp=/dev/shm/pt-$(id -un) -rfEs \
-  $(ls tests/test_*.py | grep -v test_financial_)
+  $(ls tests/test_*.py | grep -v test_financial_) $(grep -lE '^(async )?def test_' tests/test_financial_*.py)
 ```
 
-After the bootstrap: **722 passed, 5 skipped** (2026-10-31, about 15 minutes). The five skips need a local
-PostgreSQL test connection (dossier 2, workspace setup 1, isolated agent session 2). Known-red tests are listed in
+After the bootstrap: **1397 passed, 107 skipped** (2026-10-31, about 20 minutes). Every skip prints its reason
+(`-rs`): 101 need a local PostgreSQL test database (opt-in), 5 need the evidence engine's dependencies (the live
+venv has them) and 1 needs a scratch Neo4j. Known-red tests, and how to run the PostgreSQL ones, are in
 `/mnt/owl-data/fin-wt/headless/TEST-BASELINE.md` (the job fleet on the server).
 
 ### Frontend, from `frontend_v2/`
