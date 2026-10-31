@@ -12,7 +12,8 @@ Postgres (migration ``20261028_request_speed``):
   ``SLOW_KEEP_DAYS`` days. ``at`` is the completion time (queued after the last byte);
   ``started_at`` is when the request reached this worker (``pid``). ``pg_ms``/``pg_count`` are
   the Postgres statement time and count inside the request, ``gzip_ms`` the compression time and
-  ``cache`` the Financial view cache outcome (hit, saved, miss), so a slow request can be split
+  ``cache`` the Financial view cache outcome (hit, saved, miss), ``pool_ms`` the wait for a database
+  connection from the pool (postgres.session), so a slow request can be split
   into database, cache and everything else, and joined by minute to ``request_speed_loop_lag``
   (this worker's event-loop lag) and ``host_load_minute`` (scripts/host_recorder.py).
 * ``request_speed_pages``: one row per page view from the browser (every route), with
@@ -20,7 +21,7 @@ Postgres (migration ``20261028_request_speed``):
 * ``request_speed_loop_lag``: per worker and minute, how late the event loop woke a timer.
 
 Every /api response also carries a ``Server-Timing`` header (``app``: time to the response
-headers, ``pg``, ``gz``, ``cache``, ``w``: the worker pid) for the browser's devtools.
+headers, ``pg``, ``pool``, ``gz``, ``cache``, ``w``: the worker pid) for the browser's devtools.
 
 A request over ``SLOW_LOG_SECONDS`` also logs one WARNING line. Only the route template,
 the case id and the person's id are kept: never a raw path, another query value or an email
@@ -119,6 +120,13 @@ def note_cache(state):
             holder['cache'] = state
 
 
+def note_pool_wait(seconds):
+    """Called by postgres.session for each pool checkout inside this request: time waiting for a connection."""
+    holder = _person.get()
+    if holder is not None:
+        holder['pool_ms'] = holder.get('pool_ms', 0.0) + seconds * 1000
+
+
 def note_gzip(seconds):
     holder = _person.get()
     if holder is not None:
@@ -173,6 +181,8 @@ def server_timing(app_ms, holder):
     parts = [f'app;dur={app_ms:.1f}']
     if holder.get('pg_n'):
         parts.append(f'pg;dur={holder["pg_ms"]:.1f};desc="{holder["pg_n"]} statements"')
+    if holder.get('pool_ms'):
+        parts.append(f'pool;dur={holder["pool_ms"]:.1f}')
     if holder.get('gzip_ms'):
         parts.append(f'gz;dur={holder["gzip_ms"]:.1f}')
     if holder.get('cache'):
@@ -262,7 +272,8 @@ class RequestSpeedMiddleware:
                 # cannot create rows for made-up cases.
                 case = _case(scope) if route != UNMATCHED and person.get('email') else None
                 extra = dict(started_at=started_at, pid=os.getpid(), pg_ms=person.get('pg_ms'),
-                             pg_count=person.get('pg_n'), gzip_ms=person.get('gzip_ms'), cache=person.get('cache'))
+                             pg_count=person.get('pg_n'), gzip_ms=person.get('gzip_ms'), cache=person.get('cache'),
+                             pool_ms=person.get('pool_ms'))
                 enqueue('api', method, route + STREAM if streamed else route, case, outcome[0] or 499,
                         seconds * 1000, outcome[1], person.get('email'), extra=extra)
                 if seconds > SLOW_LOG_SECONDS and not streamed:
@@ -324,7 +335,7 @@ def aggregate(items, user_ids):
                              case_id=case, user_id=user, status=status, duration_ms=ms, bytes=size,
                              started_at=datetime.fromtimestamp(begun, tz=timezone.utc) if begun else None,
                              pid=extra.get('pid'), pg_ms=extra.get('pg_ms'), pg_count=extra.get('pg_count'),
-                             gzip_ms=extra.get('gzip_ms'), cache=extra.get('cache')))
+                             gzip_ms=extra.get('gzip_ms'), cache=extra.get('cache'), pool_ms=extra.get('pool_ms')))
     return groups, slow
 
 
@@ -353,9 +364,9 @@ WHERE id = :id AND buckets = CAST(:buckets AS integer[])
 '''
 INSERT_SLOW = '''
 INSERT INTO request_speed_slow (at, kind, method, route, case_id, user_id, status, duration_ms, bytes,
-                                started_at, pid, pg_ms, pg_count, gzip_ms, cache)
+                                started_at, pid, pg_ms, pg_count, gzip_ms, cache, pool_ms)
 VALUES (:at, :kind, :method, :route, CAST(:case_id AS uuid), CAST(:user_id AS uuid), :status, :duration_ms, :bytes,
-        :started_at, :pid, :pg_ms, :pg_count, :gzip_ms, :cache)
+        :started_at, :pid, :pg_ms, :pg_count, :gzip_ms, :cache, :pool_ms)
 '''
 PRUNE = (f"DELETE FROM request_speed_slow WHERE at < now() - interval '{SLOW_KEEP_DAYS} days'",
          f"DELETE FROM request_speed_pages WHERE at < now() - interval '{PAGE_KEEP_DAYS} days'",

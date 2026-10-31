@@ -306,8 +306,9 @@ async def root():
 @app.get("/api/health")
 async def api_health():
     """Liveness through the frontend's /api proxy, for the availability probe (scripts/host_recorder.py).
-    No database or service call: it answers as soon as this worker's event loop runs it."""
-    return {"status": "ok", "pid": os.getpid(), **_started_commit()}
+    No database or service call: it answers as soon as this worker's event loop runs it. It is public, so it says
+    nothing else (the worker is in the Server-Timing header; the commit is on /health, which is not proxied)."""
+    return {"status": "ok"}
 
 
 @app.get("/health")

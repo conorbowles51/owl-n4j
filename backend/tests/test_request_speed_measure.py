@@ -57,6 +57,12 @@ def build_app(engine):
     def plain():
         return {'ok': True}
 
+    @app.get('/api/pool-wait')
+    def pool_wait():
+        rs.note_pool_wait(0.25)
+        rs.note_pool_wait(0.05)
+        return {'ok': True}
+
     @app.get('/outside')
     def outside():
         return {'ok': True}
@@ -120,6 +126,23 @@ class ServerTiming(Captured):
         finally:
             rs._person.reset(token)
         self.assertEqual(holder, {'cache': 'miss'})
+
+    def test_pool_wait_is_summed_into_the_header_and_the_slow_row(self):
+        self.assertEqual(timing(self.client.get('/api/pool-wait'))['pool'], ';dur=300.0')
+        [item] = self.drained()
+        self.assertAlmostEqual(item[9]['pool_ms'], 300.0)
+        _, [row] = rs.aggregate([(item[0], *item[1:6], 2500.0, *item[7:])], {})
+        self.assertAlmostEqual(row['pool_ms'], 300.0)
+
+    def test_postgres_session_hands_its_pool_wait_to_the_request(self):
+        from postgres import session as pg_session
+        holder = {}
+        token = rs._person.set(holder)
+        try:
+            pg_session._note_pool_wait(0.5, None)
+        finally:
+            rs._person.reset(token)
+        self.assertAlmostEqual(holder['pool_ms'], 500.0)
 
     def test_body_is_unchanged(self):
         self.assertEqual(self.client.get('/api/plain').content, b'{"ok":true}')
@@ -331,7 +354,8 @@ class WriterSavesPagesAndLag(TestCase):
 class MigrationHasEveryColumn(TestCase):
     def test_written_columns_exist(self):
         migration = (BACKEND / 'postgres/alembic/versions/20261031_lx_measure.py').read_text()
-        for column in ('started_at', 'pid', 'pg_ms', 'pg_count', 'gzip_ms', 'cache', *rs.PAGE_COLUMNS):
+        migration += (BACKEND / 'postgres/alembic/versions/20261031_slow_pool_wait.py').read_text()
+        for column in ('started_at', 'pid', 'pg_ms', 'pg_count', 'gzip_ms', 'cache', 'pool_ms', *rs.PAGE_COLUMNS):
             self.assertIn(f"'{column}'", migration, column)
         for table in ('request_speed_pages', 'request_speed_loop_lag', 'host_load_minute', 'availability_probe'):
             self.assertIn(f"'{table}'", migration)

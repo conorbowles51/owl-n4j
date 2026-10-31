@@ -25,6 +25,8 @@ PUBLIC = {
     ("WS", "/api/evidence/ws/jobs/{job_id}"): "checks the sign-in cookie and case access inside the handler "
                                               "(tests/test_evidence_ws_auth.py)",
     ("GET", "/"): "health check; the public port proxies only /api, and the API port (8002) times out from the public address",
+    ("GET", "/api/health"): "liveness through the public /api proxy for the availability probe (scripts/host_recorder.py); "
+                            "answers {status: ok} only, no database call, no pid or commit",
     ("GET", "/health"): "deploy readiness check; the public port proxies only /api, and the API port (8002) times out from the public address",
 }
 
