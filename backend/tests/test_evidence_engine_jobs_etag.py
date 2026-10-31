@@ -33,7 +33,8 @@ def test_a_200_carries_the_same_bytes_and_an_etag():
     assert new.status_code == 200 and new.content == old.content
     assert new.headers["content-type"] == old.headers["content-type"]
     assert new.headers["content-encoding"] == "gzip"
-    assert new.headers["etag"].startswith('"') and new.headers["cache-control"] == "private, no-cache"
+    assert new.headers["etag"].startswith('W/"') and new.headers["cache-control"] == "private, no-cache"
+    assert new.headers["vary"] == "Accept-Encoding"
 
 
 def test_an_unchanged_list_is_answered_304_and_a_changed_one_in_full():
@@ -41,8 +42,32 @@ def test_an_unchanged_list_is_answered_304_and_a_changed_one_in_full():
     etag = client.get("/now").headers["etag"]
     again = client.get("/now", headers={"If-None-Match": etag})
     assert again.status_code == 304 and again.content == b"" and again.headers["etag"] == etag
+    assert again.headers["vary"] == "Accept-Encoding"
+    assert client.get("/now", headers={"If-None-Match": etag.removeprefix("W/")}).status_code == 304
     assert client.get("/now", headers={"If-None-Match": f'"other", {etag}'}).status_code == 304
     current["jobs"] = JOBS[:-1] + [{**JOBS[-1], "status": "failed"}]
     changed = client.get("/now", headers={"If-None-Match": etag})
     assert changed.status_code == 200 and changed.headers["etag"] != etag
     assert changed.json()[-1]["status"] == "failed"
+
+
+def test_an_encoding_failure_is_an_error_not_an_empty_list(monkeypatch):
+    # Only the engine's own failures answer []: a list that cannot be encoded must not look like "no jobs".
+    import asyncio
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    import pytest
+    from routers import evidence as router
+
+    monkeypatch.setattr(router, "_check_engine_jobs_access", lambda *args: None)
+    monkeypatch.setattr(router.evidence_engine_client, "list_jobs", AsyncMock(return_value=[{"id": "j"}]))
+    monkeypatch.setattr(router, "_reconcile_and_link_engine_jobs", lambda db, case_id, jobs: jobs)
+
+    def cannot_encode(jobs, if_none_match):
+        raise ValueError("Out of range float values are not JSON compliant")
+    monkeypatch.setattr(router, "_jobs_answer", cannot_encode)
+    with pytest.raises(ValueError):
+        asyncio.run(router.list_engine_jobs(SimpleNamespace(headers={}), case_id="c", current_user=None, db=None))
+    monkeypatch.setattr(router.evidence_engine_client, "list_jobs", AsyncMock(side_effect=OSError("engine down")))
+    assert asyncio.run(router.list_engine_jobs(SimpleNamespace(headers={}), case_id="c", current_user=None, db=None)) == []

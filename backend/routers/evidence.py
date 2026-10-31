@@ -1670,21 +1670,25 @@ async def list_engine_jobs(
 
         jobs = await evidence_engine_client.list_jobs(case_id)
         linked = await run_in_threadpool(_reconcile_and_link_engine_jobs, db, case_id, jobs)
-        return await run_in_threadpool(_jobs_answer, linked, request.headers.get("if-none-match"))
     except HTTPException:
         raise
     except Exception as e:
         logger.warning("Failed to list engine jobs: %s", e)
         return []
+    # Outside the engine's failure handling: an encoding error is a 500, as it was before, not an empty list.
+    return await run_in_threadpool(_jobs_answer, linked, request.headers.get("if-none-match"))
 
 
 def _jobs_answer(jobs: list, if_none_match: Optional[str]) -> Response:
     """The job list as FastAPI would encode it, with an ETag; 304 when the browser already holds these bytes."""
     answer = JSONResponse(jsonable_encoder(jobs))
-    etag = '"' + hashlib.sha256(answer.body).hexdigest()[:32] + '"'
+    # Weak: the same tag names the plain and the gzipped body (the same JSON).
+    etag = 'W/"' + hashlib.sha256(answer.body).hexdigest()[:32] + '"'
     headers = {"ETag": etag, "Cache-Control": "private, no-cache"}
-    if if_none_match and etag in [tag.strip() for tag in if_none_match.split(",")]:
-        return Response(status_code=304, headers=headers)
+    sent = [tag.strip().removeprefix("W/") for tag in (if_none_match or "").split(",")]
+    if etag.removeprefix("W/") in sent:
+        # The gzip middleware adds Vary to a 200 it compresses; a 304 has no body for it to see.
+        return Response(status_code=304, headers={**headers, "Vary": "Accept-Encoding"})
     answer.headers.update(headers)
     return answer
 
