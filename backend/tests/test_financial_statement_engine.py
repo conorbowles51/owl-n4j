@@ -1370,12 +1370,13 @@ class RoutingAgreementTests(unittest.TestCase):
         self.assertTrue(_same_identity('account_reference', '0012345678', '12345678'))
 
 
-def transfer_statement(postal_line='CIUDAD DE MEXICO C.P. 06000', account_line=None, second_page=True):
+def transfer_statement(postal_line='CIUDAD DE MEXICO C.P. 06000', account_line=None, second_page=True,
+                       legal_line='BANCO EJEMPLO DEL NORTE, S.A., INSTITUCION DE BANCA MULTIPLE'):
     """An invented Spanish layout whose transfer movements print several description lines at one left
     edge, the last ending in a five-digit reference; optionally continued on a second page that opens
     with more transfer lines (the shape of the r4-any-layout wrong admission, with invented text)."""
     lines = [
-        [('BANCO EJEMPLO DEL NORTE, S.A., INSTITUCION DE BANCA MULTIPLE', 20000, 400000)],
+        [(legal_line, 20000, 400000)],
         [('EMPRESA DE PRUEBA SA DE CV', 20000, 200000), ('PERIODO', 330000, 380000),
          ('DEL 01/03/2024 AL 31/03/2024', 390000, 590000)],
         [('CALLE FALSA 123', 20000, 150000), ('MONEDA', 330000, 380000), ('PESOS', 390000, 450000)],
@@ -1544,6 +1545,51 @@ class HolderAndInterbankTests(unittest.TestCase):
                                   [('No. Cuenta CLABE ' + clabe, 20000, 300000)]])])[1]
         self.assertEqual(E._printed_beside_interbank(clabe, rows), ('0123456789', clabe))
         self.assertIsNone(E._printed_beside_interbank('012180001234567898', rows))  # control digit fails
+
+    def test_a_clabe_read_with_a_scan_mark_as_a_nineteenth_digit_names_its_account(self):
+        # ECO Abr 2023 DOLARES: 'No. Cuenta CLABE 012180001 1889742537', the page printing 012180001188974253.
+        clabe = '012180001234567899'
+        line = [('EMPRESA DE PRUEBA habeas onibe0id24', 20000, 250000),
+                ('No. Cuenta CLABE 012180001 2345678997', 260000, 500000)]
+        st = self.first(transfer_statement(account_line=line))
+        self.assertEqual((st['account_reference'], st['account_clabe'], st['account_basis']),
+                         ('0123456789', clabe, 'printed_beside_interbank'))
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+        with mock.patch.object(E, 'CLABE_TRAILING_MARK', False):
+            before = self.first(transfer_statement(account_line=line))
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+        self.assertEqual((before['account_reference'], before['account_basis']), ('0121800012345678997', 'account_number'))
+        # The statement keeps the id its reading gave it, so a saved reading still finds it.
+        self.assertEqual(st['id'], before['id'])
+        # First eighteen digits failing the control digit, or a leading mark (the last eighteen hold): unchanged.
+        for value in ('012180001 2345678987', '7012180001 234567899'):
+            st = self.first(transfer_statement(account_line=[line[0], ('No. Cuenta CLABE ' + value, 260000, 500000)]))
+            self.assertNotEqual(st['account_basis'], 'printed_beside_interbank', value)
+        self.assertEqual(E._clabe_less_trailing_mark('0121800012345678997'), clabe)
+        self.assertEqual(E._clabe_less_trailing_mark(clabe), '')
+
+    def test_a_bbva_clabe_names_the_institution_when_the_legal_name_line_is_garbled(self):
+        # ECO Feb 2023 DOLARES: 'BBVA MEXICO. 3.4. INST Crow DE BANCA MULTIELE' and 'Ne. Cuenta CLABE 012180001 188974253'.
+        def read(legal='BBVA MEXICO, S.A.. INS "TUCION DE BANCA MULTIPLE', clabe='012180001 234567899', account='0123456789'):
+            return self.first(transfer_statement(legal_line=legal, account_line=[
+                ('No. de Cuenta ' + account, 20000, 250000), ('Ne. Cuenta CLABE ' + clabe, 260000, 500000)]))
+        st = read()
+        self.assertEqual((st['account_reference'], st['institution']), ('0123456789', 'BBVA MEXICO'))
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+        with mock.patch.object(E, 'CLABE_BANK_INSTITUTION', False):
+            self.assertEqual(read()['institution'], '')
+        E._READINGS.clear()
+        E._LIVE_READINGS.clear()
+        self.assertEqual(read(clabe='012180001 234567898')['institution'], '')  # control digit fails
+        self.assertEqual(read(clabe='002180001 234567896')['institution'], '')  # another bank's code
+        self.assertEqual(read(account='0123456700')['institution'], '')  # the CLABE carries another account
+        self.assertEqual(read(legal='B8VA MEXIC0, S.A.. INS "TUCION')['institution'], '')  # BBVA printed nowhere
+        # A legal-name line that is read still names the institution.
+        self.assertEqual(read(legal='BANCO EJEMPLO DEL NORTE, S.A., INSTITUCION DE BANCA MULTIPLE')['institution'],
+                         'BANCO EJEMPLO DEL NORTE')
 
     def test_the_interbank_numbers_own_digit_groups_are_not_a_printed_account(self):
         self.assertEqual(E._printed_over_interbank('002180012345678901', E._pages([page(1, [

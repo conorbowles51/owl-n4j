@@ -3753,6 +3753,58 @@ def _printed_beside_interbank(account, rows):
 _BBVA_CLABE_BANK = '012'
 
 
+# (A6) A speck the scan left right after a CLABE is read as one more digit: 'No. Cuenta CLABE 012180001 1889742537'
+# (ECO Abr 2023 DOLARES; the page prints 012180001188974253). Nineteen digits are never a CLABE. When the number under
+# a CLABE label is nineteen digits whose first eighteen hold the control digit and whose last eighteen do not, the
+# first eighteen are the CLABE and name the printed account as any CLABE does (rule above). The statement keeps the
+# id its reading gave it, so a saved reading still finds it.
+# Off: the nineteen digits stay the account, as before.
+CLABE_TRAILING_MARK = _switch('LOUPE_FINANCIAL_CLABE_TRAILING_MARK')
+
+
+def _clabe_less_trailing_mark(value):
+    """The CLABE in a nineteen-digit reading of one whose last digit is a scan mark, or ''."""
+    from services.financial.accounts import clabe_alias
+    digits = re.sub(r'\D', '', value or '')
+    if len(digits) != _INTERBANK_DIGITS + 1 or clabe_alias(digits[1:]):
+        return ''
+    return clabe_alias(digits[:_INTERBANK_DIGITS]) or ''
+
+
+# (A9) A scan can garble the legal-name line ('BBVA MEXICO, S.A.. INS "TUCION DE BANCA MULTIPLE', ECO Mar and Feb 2023
+# DOLARES), leaving no institution. The statement's own CLABE names its bank in its first three digits (Banxico
+# participant code). When no institution is read, the statement's one CLABE (control digit holding, its account field
+# carrying the statement's account) has BBVA Mexico's code, and the statement prints BBVA on one of its lines, the
+# institution is BBVA MEXICO, the name its legal-name line gives when it is read. Only BBVA Mexico: no other bank code
+# has a name measured on real statements here.
+# Off: no institution, as before.
+CLABE_BANK_INSTITUTION = _switch('LOUPE_FINANCIAL_CLABE_BANK_INSTITUTION')
+_CLABE_PRINTED = re.compile(r'\bCLABE\s*:?\s*(\d[\d ]{16,20}\d)(?![\d])')
+_CLABE_BANK_NAMES = {_BBVA_CLABE_BANK: ('BBVA MEXICO', re.compile(r'\bBBVA\b'))}
+
+
+def _clabe_institution(account, candidates, beside, rows):
+    """The institution named by the statement's own CLABE's bank code, or ''. ``candidates``: the account numbers
+    read on the statement's heading pages; ``beside``: (account, CLABE) when the CLABE named the account."""
+    from services.financial.accounts import clabe_alias
+    clabes = {clabe_alias(value) for value in candidates} - {None}
+    # A CLABE printed after its label on a line whose label the scan misread ('Ne. Cuenta CLABE ...').
+    clabes |= {clabe_alias(m[1]) for row in rows if row['tokens'] for m in _CLABE_PRINTED.finditer(fold(row['text']))}
+    clabes.discard(None)
+    if beside:
+        clabes.add(beside[1])
+    if len(clabes) != 1:
+        return ''
+    clabe = clabes.pop()
+    field, digits = clabe[6:17], re.sub(r'\D', '', account or '')
+    own = (digits == clabe or (beside and beside[1] == clabe)
+           or (8 <= len(digits) <= 11 and field.endswith(digits) and field[:len(field) - len(digits)].strip('0') == ''))
+    named = _CLABE_BANK_NAMES.get(clabe[:3])
+    if not own or not named:
+        return ''
+    return named[0] if any(row['tokens'] and named[1].search(fold(row['text'])) for row in rows) else ''
+
+
 def layout_key(header_words, convention):
     """The layout as a person recognises it: its movement headings and balance convention.
 
@@ -3860,6 +3912,10 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
         account, account_basis = _printed_over_interbank(account, scope)
         if account_basis == 'interbank_number':
             beside = _printed_beside_interbank(account, scope)
+        elif CLABE_TRAILING_MARK and accounts.get(account) == {0}:
+            # Read under a CLABE label only (rank 0): a CLABE with a scan mark read as a nineteenth digit.
+            clabe = _clabe_less_trailing_mark(account)
+            beside = _printed_beside_interbank(clabe, scope) if clabe else None
     client_number, client_name = _client_line(segment['pages'], pages) if profile and profile.get('client_line') else ('', '')
     if client_number and not account:
         account, account_basis = client_number, 'client_line'
@@ -3930,6 +3986,9 @@ def _read_section(rows, segment, pages, facts, style, sources, profile, shared=F
         # read from a logo or heading is a misreading, never another issuer.
         institution = ''
     institution = institution or profiled
+    if not institution and CLABE_BANK_INSTITUTION and account:
+        institution = _clabe_institution(account, accounts, beside,
+                                         [row for page in segment['pages'] for row in pages[page]])
     if holder and fold(holder) in {fold(name) for name in (institution, (profile or {}).get('institution')) if name}:
         # The issuer's own name (its remittance address block) is never the holder.
         holder = ''
