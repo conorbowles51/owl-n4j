@@ -467,6 +467,16 @@ class OffEventLoopTests(FinancialFileIntakeTests):
         self.assertEqual(result['outcome'], 'processing')
         self.assertEqual(on_the_loop, [])
 
+    def test_a_target_removed_during_the_handoff_is_a_conflict(self):
+        def remove(file_id):
+            self.db.delete(self.db.get(EvidenceFile, file_id)); self.db.commit()
+        async def removed_meanwhile(db, **kwargs):
+            await asyncio.to_thread(remove, kwargs['file_ids'][0])
+            return {'job_ids': ['job']}
+        with self.assertRaises(PdfMappingError) as refused:
+            self.prepare_watched(removed_meanwhile)
+        self.assertEqual(refused.exception.status_code, 409)
+
 
 # Only its own two tests: the inherited ones already run in FinancialFileIntakeTests.
 for _name in [name for name in vars(FinancialFileIntakeTests) if name.startswith('test_')]:

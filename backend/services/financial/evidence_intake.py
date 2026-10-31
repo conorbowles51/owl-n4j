@@ -159,6 +159,8 @@ async def prepare_existing_financial_file(session, *, case_id, evidence_file_id,
 
     def after():
         file, target = SimpleNamespace(id=file_id), session.get(EvidenceFile, target_id)
+        if target is None:
+            raise PdfMappingError('This file was removed while it was being sent. Refresh files; nothing was read.', 409)
         if len(result.get('job_ids', [])) != 1:
             # Another worker may have started this same reading a moment earlier: the
             # processing handoff then skips it as already processing. That reading is
