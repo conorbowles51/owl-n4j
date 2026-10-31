@@ -4,7 +4,7 @@ Every release restarts the backend, and the first account history afterwards rea
 (d5b330d1: 53 s); the first Transactions read took 53-184 s and the statement file list 46-104 s. One worker
 process computes each case's account history, Transactions and statement file list, shortly after start, through
 the routes' own cached views: the same code, parameters and snapshot as a person's first request, so the same
-bytes. The computed views are saved (view_cache saves every slow view) and the account history's per-statement
+bytes. Every view computed here is saved, however fast (view_cache.always_save), and the account history's per-statement
 results too (view_cache.VersionMemo), so every worker serves them after checking that no row they were computed
 from has changed. One worker at a time, one case at a time, largest first; a failure is logged and the next view
 continues. Nothing is written to the database.
@@ -435,6 +435,7 @@ def _warm_cases_now(share, stop_if_preparing):
     from routers.financial_statement_import import account_types as get_account_types
     from routers.financial_statement_import import list_financial_batches
     from services.financial.review_queue import warm as warm_review_queue
+    from services.financial import view_cache
     from routers.financial_ledger import (get_counterparty_party_analysis, get_ledger_posting_graph,
                                           get_ledger_timeline, get_ledger_transfer_candidates, get_pattern_review,
                                           get_ledger_summary, get_working_ledger_analysis, get_working_ledger_summary)
@@ -511,6 +512,11 @@ def _warm_cases_now(share, stop_if_preparing):
             logger.info('Financial view warm-up stopped: a release is preparing the next code')
             return warmed, failed
         started = time.perf_counter()
+        # Every view computed here is saved, however fast: one that computes in under SAVE_MIN_SECONDS alone took
+        # 1.4-2.2 s for the first visitor after the restart, while the workers start and warm (live 2026-10-31
+        # 15:12, 49494305: working summary, ledger summary, working analysis and accounts, none saved by the
+        # release prepare). A saved copy is used only while every row it was computed from is unchanged.
+        saving = view_cache.always_save.set(True)
         try:
             with SessionLocal() as db:
                 # Each route gets case_id as FastAPI gives it (the evidence listing and graph records declare it as text).
@@ -530,6 +536,8 @@ def _warm_cases_now(share, stop_if_preparing):
         except Exception:
             logger.warning('Financial %s warm-up failed for case %s', name, case_id, exc_info=True)
             failed += 1
+        finally:
+            view_cache.always_save.reset(saving)
     return warmed, failed
 
 

@@ -637,3 +637,42 @@ def test_a_real_cached_views_refusal_warmed_here_is_answered_from_its_saved_copy
     finally:
         view_cache.clear()
         view_cache._tables_cache.clear()
+
+
+@needs_pg
+def test_every_view_the_warm_up_computes_is_saved_however_fast(periods, monkeypatch):
+    # Live 2026-10-31 15:12, 49494305: four views the release prepare computed in under SAVE_MIN_SECONDS were not
+    # saved, and the first visitor after the restart waited 1.4-2.2 s for each.
+    import routers.financial_ledger
+    from services.financial import view_cache
+    add, calls, _ = periods
+    add(uuid.uuid4(), 1)
+    seen = []
+
+    def summary(**kw):
+        seen.append(view_cache.always_save.get())
+    monkeypatch.setattr(routers.financial_ledger, 'get_working_ledger_summary', summary)
+    monkeypatch.setattr(view_warmup, '_migrations_pending', lambda: '')
+    view_warmup.prepare(processes=1)
+    assert seen == [True]
+    # Only inside the warm-up: a person's request after it saves only slow views, as before.
+    assert view_cache.always_save.get() is False
+
+
+def test_a_fast_view_computed_with_always_save_is_written_to_disk(tmp_path, monkeypatch):
+    from services.financial import view_cache
+    monkeypatch.setenv('FINANCIAL_VIEW_MEMO_DIR', str(tmp_path))
+    monkeypatch.setattr(view_cache, 'code_identity', lambda: 'code-a')
+    monkeypatch.setattr(view_cache, '_raise_high_water', lambda directory, xmax: None)
+    entry = view_cache._Entry(('financial_transactions',), (('financial_transactions', 1, 'x'),), b'{}', 200,
+                              'application/json', seconds=0.05, computed_at=time.time())
+    scope = dict(format=1, database='db', code='code-a')
+    key = ('ledger-working-summary', json.dumps(dict(case_id='c1')))
+    view_cache._save_if_slow(key, entry, scope, 10, time.perf_counter())
+    assert not list(tmp_path.glob('views/*.view'))  # fast and not asked: not saved, as before
+    token = view_cache.always_save.set(True)
+    try:
+        view_cache._save_if_slow(key, entry, scope, 10, time.perf_counter())
+    finally:
+        view_cache.always_save.reset(token)
+    assert len(list((tmp_path / 'views').glob('*.view'))) == 1
