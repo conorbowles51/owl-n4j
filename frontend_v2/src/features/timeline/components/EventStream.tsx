@@ -68,7 +68,7 @@ export function EventStream({
 
   if (items.length === 0) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 text-muted-foreground">
+      <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
         <CalendarOff className="size-10 opacity-40" />
         <p className="text-sm">No events match your filters</p>
         {totalCount > 0 && (
