@@ -5,7 +5,8 @@ A daemon thread per worker process drains the queue every ``FLUSH_SECONDS`` and 
 Postgres (migration ``20261028_request_speed``):
 
 * ``request_speed_hourly``: one row per hour, kind, method, route template, case and person,
-  with count, total and max time, bytes, server errors and a duration histogram. The
+  with count, total and max time, bytes, server errors and a duration histogram. A 304 answer
+  is counted under its route with ``NOT_MODIFIED`` appended, apart from the full answers. The
   histogram (``BUCKET_EDGES_MS``, 15% wide buckets) is what makes p50 and p95 mergeable across
   flushes, both workers and any span of hours; ``p50_ms``/``p95_ms`` are kept on the row too.
 * ``request_speed_slow``: one row per request over ``SLOW_ROW_SECONDS``, kept for
@@ -13,7 +14,7 @@ Postgres (migration ``20261028_request_speed``):
   ``started_at`` is when the request reached this worker (``pid``). ``pg_ms``/``pg_count`` are
   the Postgres statement time and count inside the request, ``gzip_ms`` the compression time and
   ``cache`` the Financial view cache outcome (hit, saved, miss), ``pool_ms`` the wait for a database
-  connection from the pool (postgres.session), so a slow request can be split
+  connection from the pool (postgres.session), ``engine_ms`` the evidence-engine calls (summed), so a slow request can be split
   into database, cache and everything else, and joined by minute to ``request_speed_loop_lag``
   (this worker's event-loop lag) and ``host_load_minute`` (scripts/host_recorder.py).
 * ``request_speed_pages``: one row per page view from the browser (every route), with
@@ -54,6 +55,9 @@ QUEUE_LIMIT = 50000
 MAX_PENDING_KEYS = 20000
 UNMATCHED = '(no matching route)'
 STREAM = ' (stream)'  # appended to an event-stream route: long by design, never a slow request
+# Appended to a route answered 304 (the browser already holds the bytes): kept apart so a route's
+# time and bytes compare like for like with hours before 304s existed.
+NOT_MODIFIED = ' (304)'
 METHODS = frozenset(('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'))
 # Bucket i holds durations in (BUCKET_EDGES_MS[i-1], BUCKET_EDGES_MS[i]]; the last bucket
 # holds everything above the last edge. 1 ms .. ~11 min in 15% steps (98 buckets).
@@ -285,8 +289,12 @@ class RequestSpeedMiddleware:
                 case = _case(scope) if route != UNMATCHED and person.get('email') else None
                 extra = dict(started_at=started_at, pid=os.getpid(), pg_ms=person.get('pg_ms'),
                              pg_count=person.get('pg_n'), gzip_ms=person.get('gzip_ms'), cache=person.get('cache'),
-                             pool_ms=person.get('pool_ms'))
-                enqueue('api', method, route + STREAM if streamed else route, case, outcome[0] or 499,
+                             pool_ms=person.get('pool_ms'), engine_ms=person.get('engine_ms'))
+                if streamed:
+                    route += STREAM
+                elif outcome[0] == 304 and route != UNMATCHED:
+                    route += NOT_MODIFIED
+                enqueue('api', method, route, case, outcome[0] or 499,
                         seconds * 1000, outcome[1], person.get('email'), extra=extra)
                 if seconds > SLOW_LOG_SECONDS and not streamed:
                     log.warning('Slow request: %s %s case %s %.1f s (status %s)%s', method, route,
@@ -349,7 +357,8 @@ def aggregate(items, user_ids):
                              case_id=case, user_id=user, status=status, duration_ms=ms, bytes=size,
                              started_at=datetime.fromtimestamp(begun, tz=timezone.utc) if begun else None,
                              pid=extra.get('pid'), pg_ms=extra.get('pg_ms'), pg_count=extra.get('pg_count'),
-                             gzip_ms=extra.get('gzip_ms'), cache=extra.get('cache'), pool_ms=extra.get('pool_ms')))
+                             gzip_ms=extra.get('gzip_ms'), cache=extra.get('cache'), pool_ms=extra.get('pool_ms'),
+                             engine_ms=extra.get('engine_ms')))
     return groups, slow
 
 
@@ -378,9 +387,9 @@ WHERE id = :id AND buckets = CAST(:buckets AS integer[])
 '''
 INSERT_SLOW = '''
 INSERT INTO request_speed_slow (at, kind, method, route, case_id, user_id, status, duration_ms, bytes,
-                                started_at, pid, pg_ms, pg_count, gzip_ms, cache, pool_ms)
+                                started_at, pid, pg_ms, pg_count, gzip_ms, cache, pool_ms, engine_ms)
 VALUES (:at, :kind, :method, :route, CAST(:case_id AS uuid), CAST(:user_id AS uuid), :status, :duration_ms, :bytes,
-        :started_at, :pid, :pg_ms, :pg_count, :gzip_ms, :cache, :pool_ms)
+        :started_at, :pid, :pg_ms, :pg_count, :gzip_ms, :cache, :pool_ms, :engine_ms)
 '''
 PRUNE = (f"DELETE FROM request_speed_slow WHERE at < now() - interval '{SLOW_KEEP_DAYS} days'",
          f"DELETE FROM request_speed_pages WHERE at < now() - interval '{PAGE_KEEP_DAYS} days'",
@@ -787,11 +796,11 @@ def summary(session, days, case_id=None, kind=None, slow_limit=200):
                  case_id=str(r.case_id) if r.case_id else None, case_title=r.case_title,
                  status=r.status, duration_ms=r.duration_ms, bytes=r.bytes, user_name=r.user_name,
                  started_at=r.started_at.isoformat() if r.started_at else None, pid=r.pid, pg_ms=r.pg_ms,
-                 cache=r.cache, loop_lag_max_ms=r.lag_max_ms, host_cpu_pressure=r.psi_cpu_some,
+                 engine_ms=r.engine_ms, cache=r.cache, loop_lag_max_ms=r.lag_max_ms, host_cpu_pressure=r.psi_cpu_some,
                  fleet_cores=r.fleet_cores)
             for r in session.execute(text(f'''
                 SELECT s.at, s.kind, s.method, s.route, s.case_id, c.title AS case_title, s.status,
-                       s.duration_ms, s.bytes, u.name AS user_name, s.started_at, s.pid, s.pg_ms, s.cache,
+                       s.duration_ms, s.bytes, u.name AS user_name, s.started_at, s.pid, s.pg_ms, s.engine_ms, s.cache,
                        l.max_ms AS lag_max_ms, h.psi_cpu_some,
                        (SELECT sum((v->>'cores')::float) FROM jsonb_each(h.groups) g(k, v)
                         WHERE k IN ('fleet.slice', 'system.slice/fin-watchdog.service')) AS fleet_cores

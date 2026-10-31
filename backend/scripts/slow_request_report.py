@@ -25,7 +25,7 @@ WITH slow AS (
     AND (%(all_users)s OR (s.user_id IS NOT NULL AND CAST(s.user_id AS text) NOT LIKE %(jobs)s))
 )
 SELECT s.at, s.started_at, s.pid, s.method, s.route, left(CAST(s.case_id AS text), 8) AS case8,
-       left(CAST(s.user_id AS text), 8) AS user8, s.status, s.duration_ms, s.pg_ms, s.pg_count, s.gzip_ms, s.cache,
+       left(CAST(s.user_id AS text), 8) AS user8, s.status, s.duration_ms, s.pg_ms, s.pg_count, s.gzip_ms, s.engine_ms, s.cache,
        l.max_ms AS lag_max_ms, l.over_100ms, l.samples AS lag_samples,
        h.cpu_busy_cores, h.psi_cpu_some, h.load1, h.swap_in_pages,
        (SELECT sum((v->>'cores')::float) FROM jsonb_each(h.groups) g(k, v)
@@ -106,13 +106,13 @@ def main(argv=None):
     print(f'{len(rows)} slow requests (>= {args.min_seconds:g} s, last {args.hours} h, '
           f'{"all callers" if args.all_users else "people only"}; newest first'
           f'{"" if has_releases else "; no releases table yet"})')
-    print('done (UTC)  start    pid      ms   pg_ms    cache  lagmax >100  busy psi%  fleet  bkend bk_psi% down  route'
+    print('done (UTC)  start    pid      ms   pg_ms  eng_ms    cache  lagmax >100  busy psi%  fleet  bkend bk_psi% down  route'
           '  (fleet: fleet.slice + fin-watchdog cores; bkend: the backend service cores)')
     for r in rows:
         r = dict(zip(names, r))
         print(f'{r["at"]:%m-%d %H:%M:%S} {r["started_at"]:%H:%M:%S} ' if r['started_at'] else f'{r["at"]:%m-%d %H:%M:%S} -        ',
               end='')
-        print(f'{_fmt(r["pid"], 7)} {_fmt(r["duration_ms"], 6)} {_fmt(r["pg_ms"], 7)} {(r["cache"] or "-"):>8} '
+        print(f'{_fmt(r["pid"], 7)} {_fmt(r["duration_ms"], 6)} {_fmt(r["pg_ms"], 7)} {_fmt(r["engine_ms"], 7)} {(r["cache"] or "-"):>8} '
               f'{_fmt(r["lag_max_ms"], 7)} {_fmt(r["over_100ms"], 4)} {_fmt(r["cpu_busy_cores"], 5, 1)} '
               f'{_fmt(r["psi_cpu_some"], 4)} {_fmt(r["fleet_cores"], 6, 2)} {_fmt(r["backend_cores"], 6, 2)} '
               f'{_fmt(r["backend_cpu_some"], 7, 1)} {_fmt(r["probe_failures"], 4)}  {r["method"]} {r["route"]}'

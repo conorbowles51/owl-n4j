@@ -19,7 +19,7 @@ const summary: SpeedSummary = {
     { at: "2026-10-28T13:00:00Z", kind: "api", method: "GET", route: "/api/financial/summary",
       case_id: "d5b330d1-1111-2222-3333-444455556666", case_title: "Merrick", status: 200,
       duration_ms: 9800, bytes: 100, user_name: "Alex", started_at: "2026-10-28T12:59:50.200Z", pid: 1234,
-      pg_ms: 6731, cache: "miss", loop_lag_max_ms: 1941, host_cpu_pressure: 69.1, fleet_cores: 1.34 },
+      pg_ms: 6731, engine_ms: 3400, cache: "miss", loop_lag_max_ms: 1941, host_cpu_pressure: 69.1, fleet_cores: 1.34 },
     { at: "2026-10-28T12:30:00Z", kind: "api", method: "GET", route: "/api/financial/summary",
       case_id: null, case_title: null, status: 200, duration_ms: 2500, bytes: 100, user_name: "Sam",
       pg_ms: 1200, cache: "updating" },
@@ -77,6 +77,8 @@ describe("SpeedPage", () => {
     // Its minute: database time (computed, not a kept copy), how long its worker was held, machine and jobs load.
     expect(within(slow).getByText("6.7 s (computed)")).toBeTruthy()
     expect(within(slow).getByText("1.9 s")).toBeTruthy()
+    // Evidence-engine time inside the request, its own column.
+    expect(within(slow).getByText("3.4 s")).toBeTruthy()
     expect(within(slow).getByText("69%")).toBeTruthy()
     expect(within(slow).getByText("1.3")).toBeTruthy()
     // The previous copy served while the view is recomputed is not counted as computed.

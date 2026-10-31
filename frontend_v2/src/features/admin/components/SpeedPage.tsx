@@ -159,6 +159,7 @@ export function SpeedPage() {
               <th className="px-3 py-2">Who</th>
               <th className="px-3 py-2 text-right">Took</th>
               <th className="px-3 py-2 text-right" title="Time spent in the database inside this request">Database</th>
+              <th className="px-3 py-2 text-right" title="Time spent waiting for the evidence engine inside this request (summed over its calls, which can overlap)">Engine</th>
               <th className="px-3 py-2 text-right" title="The longest its server worker was held that minute (it could not start other requests)">Worker held</th>
               <th className="px-3 py-2 text-right" title="Share of that minute in which work on the machine waited for a CPU">Machine busy</th>
               <th className="px-3 py-2 text-right" title="CPU cores used by the automated jobs that minute (of 6)">Jobs CPU</th>
@@ -179,6 +180,7 @@ export function SpeedPage() {
                   {row.pg_ms == null ? "" : formatDuration(row.pg_ms)}
                   {row.cache ? ` (${cacheLabel(row.cache)})` : ""}
                 </td>
+                <td className="px-3 py-1.5 text-right">{row.engine_ms == null ? "" : formatDuration(row.engine_ms)}</td>
                 <td className="px-3 py-1.5 text-right">{row.loop_lag_max_ms == null ? "" : formatDuration(row.loop_lag_max_ms)}</td>
                 <td className="px-3 py-1.5 text-right">{row.host_cpu_pressure == null ? "" : `${Math.round(row.host_cpu_pressure)}%`}</td>
                 <td className="px-3 py-1.5 text-right">{row.fleet_cores == null ? "" : row.fleet_cores.toFixed(1)}</td>
