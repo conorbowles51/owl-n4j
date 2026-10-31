@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
@@ -345,12 +346,22 @@ class TriageScannerService:
 
     def __init__(self):
         self._driver = None
+        self._driver_lock = threading.Lock()
 
     def _get_driver(self):
+        # Two scans starting at once must not each build a driver; the indexes exist before the driver is shared.
         if self._driver is None:
             from services.neo4j.driver import open_driver
-            self._driver = open_driver()
-            ensure_triage_indexes(self._driver)
+
+            with self._driver_lock:
+                if self._driver is None:
+                    driver = open_driver()
+                    try:
+                        ensure_triage_indexes(driver)
+                    except BaseException:
+                        driver.close()
+                        raise
+                    self._driver = driver
         return self._driver
 
     def scan(

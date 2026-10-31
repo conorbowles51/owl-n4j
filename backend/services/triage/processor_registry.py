@@ -71,12 +71,16 @@ class ProcessorRegistry:
                 if self._driver is None:
                     driver = open_driver()
                     # Ensure indexes before other threads can see the driver
-                    with driver.session() as session:
-                        try:
-                            session.run(_ENSURE_ARTIFACT_INDEXES)
-                            session.run(_ENSURE_ARTIFACT_STAGE_INDEX)
-                        except Exception:
-                            pass
+                    try:
+                        with driver.session() as session:
+                            try:
+                                session.run(_ENSURE_ARTIFACT_INDEXES)
+                                session.run(_ENSURE_ARTIFACT_STAGE_INDEX)
+                            except Exception:
+                                pass
+                    except BaseException:
+                        driver.close()
+                        raise
                     self._driver = driver
         return self._driver
 

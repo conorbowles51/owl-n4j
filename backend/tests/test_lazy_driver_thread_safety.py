@@ -11,14 +11,14 @@ THREADS = 8
 
 
 def _race(get):
-    barrier = threading.Barrier(THREADS)
+    barrier = threading.Barrier(THREADS, timeout=10)
     results = []
 
     def run():
         barrier.wait()
         results.append(get())
 
-    threads = [threading.Thread(target=run) for _ in range(THREADS)]
+    threads = [threading.Thread(target=run, daemon=True) for _ in range(THREADS)]
     for t in threads:
         t.start()
     for t in threads:
@@ -58,6 +58,7 @@ class _NullSession:
         ("services.triage.profiler_service", "TriageProfilerService"),
         ("services.triage.ingest_bridge", "IngestBridge"),
         ("services.triage.processor_registry", "ProcessorRegistry"),
+        ("services.triage.scanner_service", "TriageScannerService"),
     ],
 )
 def test_concurrent_first_calls_build_one_driver(monkeypatch, module_name, class_name):
@@ -65,7 +66,7 @@ def test_concurrent_first_calls_build_one_driver(monkeypatch, module_name, class
 
     module = importlib.import_module(module_name)
     factory = _SlowDriverFactory()
-    from services.neo4j import driver as neo4j_driver
+    neo4j_driver = importlib.import_module("services.neo4j.driver")
 
     # Services build their driver through open_driver (or GraphDatabase directly): both go to the slow factory.
     monkeypatch.setattr(neo4j_driver, "open_driver", lambda *args, **kwargs: factory.driver())
