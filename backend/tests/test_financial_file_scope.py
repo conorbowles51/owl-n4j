@@ -243,3 +243,36 @@ def test_source_selection_route_requires_case_edit_permission(f):
                 {'evidence_file_id': str(f.file.id), 'expected_revision': 'initial'}]})
     assert response.status_code == 403
     include.assert_not_called()
+
+
+def test_membership_reads_the_preparation_mode_without_loading_profile_snapshots(f):
+    """Measured 2026-10-30 on the largest case: loading every evidence row whole (14 of its 26 MB are profile
+    snapshots) was 4.1 of the 4.3 s of 'who added this file to Financial'. Only the one JSON field is read now,
+    and the answer is the same: a pdf_review file is in, a full reading or none is not, unflushed edits count."""
+    from sqlalchemy import inspect as orm_inspect
+    other = f.evidence('c' * 64)
+    other.original_filename = 'Full reading.pdf'
+    f.file.metadata_ = {}
+    f.file.last_processed_profile_snapshot = {'preparation_mode': 'pdf_review'}
+    other.last_processed_profile_snapshot = {'preparation_mode': 'full', 'notes': 'x' * 10000}
+    f.db.commit()
+    from sqlalchemy import event
+    loaded = []
+
+    def record(row, context):  # kept strongly: the function's own rows are gone once it returns
+        if 'last_processed_profile_snapshot' in orm_inspect(row).dict:
+            loaded.append(row)
+    event.listen(EvidenceFile, 'load', record)
+    try:
+        with f.SessionLocal() as db:
+            found = financial_file_ids(db, case_id=f.case.id) - f.seeded_file_ids
+    finally:
+        event.remove(EvidenceFile, 'load', record)
+    assert found == {f.file.id}
+    assert loaded == []
+    with f.SessionLocal() as db:  # this session's own unflushed change is what it sees
+        row = db.get(EvidenceFile, other.id)
+        row.last_processed_profile_snapshot = {'preparation_mode': 'pdf_review'}
+        with db.no_autoflush:
+            found = financial_file_ids(db, case_id=f.case.id) - f.seeded_file_ids
+        assert found == {f.file.id, other.id}

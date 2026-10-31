@@ -13,7 +13,7 @@ from postgres.models.financial import FinancialSourceDocument
 from postgres.models.financial_candidates import FinancialCandidateMapping, FinancialStatementReviewDraft
 from postgres.models.financial_import_batches import FinancialImportBatch, FinancialImportBatchItem
 from postgres.models.workspace_entry import WorkspaceEntry, WorkspaceEntryLink
-from services.financial.source_lineage import lineage_groups
+from services.financial.source_lineage import _cacheable, case_files, lineage_groups
 
 SCHEMA = 'loupe.financial.file/1'
 
@@ -28,14 +28,35 @@ def mark_financial_workspace(file, *, user_id=None):
         selected_by=str(user_id) if user_id else None)}
 
 
+def _pdf_review_ids(session, case_id, files):
+    """Ids of the case's files last prepared in PDF review mode.
+
+    Read as one JSON path from the database rather than by loading every
+    file's profile snapshot (14 MB of the 26 MB of evidence rows on the largest
+    case, measured 2026-10-30). Files that are this session's own unflushed
+    objects are read from the objects, which is what the database would say
+    once they are written.
+    """
+    if not _cacheable(session):
+        return {file.id for file in files
+                if (file.last_processed_profile_snapshot or {}).get('preparation_mode') == 'pdf_review'}
+    mode = EvidenceFile.last_processed_profile_snapshot['preparation_mode'].as_string()
+    return set(session.scalars(select(EvidenceFile.id).where(EvidenceFile.case_id == case_id, mode == 'pdf_review')))
+
+
 def financial_file_ids(session, *, case_id):
-    files = list(session.scalars(select(EvidenceFile).where(EvidenceFile.case_id == case_id)))
+    # The per-process copies of the case's rows (reused while each row's version
+    # is unchanged), not every row loaded whole: measured 2026-10-30 on the
+    # largest case, the whole-row load was 4.1 of the 4.3 s of 'who added this
+    # file to Financial'.
+    files = list(case_files(session, case_id).values())
+    pdf_review = _pdf_review_ids(session, case_id, files)
     selected = set()
     for file in files:
         metadata = file.metadata_ or {}
         if (
             (metadata.get('financial_workspace') or {}).get('schema') == SCHEMA
-            or (file.last_processed_profile_snapshot or {}).get('preparation_mode') == 'pdf_review'
+            or file.id in pdf_review
             or any(metadata.get(key) for key in (
                 'financial_review_progress', 'financial_review_history',
                 'statement_version_request', 'financial_import_removal', 'financial_file_visibility',
