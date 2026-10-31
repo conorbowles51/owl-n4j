@@ -202,6 +202,10 @@ async def lifespan(app: FastAPI):
         print(f"Warning: Error closing Redis connection: {e}")
 
 
+# Route results are encoded in a worker thread, not on the event loop (services.response_encoding).
+from services.response_encoding import install as _encode_off_the_loop
+_encode_off_the_loop()
+
 app = FastAPI(
     title="Loupe API",
     description="API for fraud investigation graph visualization and AI-powered queries",
