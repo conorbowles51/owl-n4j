@@ -5,6 +5,7 @@ import { useCategoryColors } from "../hooks/use-payment-category-library"
 import { categoryTone, compactMoney, groupMoney, minorToNumber, type MoneyGroup } from "../lib/category-palette"
 import { formatLedgerAmount } from "../lib/ledger-format"
 import { paymentDay } from "../lib/investigator-workspace"
+import { paymentAccountId } from "../lib/account-selection"
 import { InfoTip } from "./InfoTip"
 
 const heading = { fontFamily: "'Space Grotesk', ui-sans-serif, system-ui, sans-serif", letterSpacing: "-0.025em" }
@@ -122,7 +123,7 @@ export function CategoryFlowDiagram({
         return best
       }
     }, null)
-  const accounts = new Set(inCurrency.map((row) => row.account_id)).size
+  const accounts = new Set(inCurrency.map(paymentAccountId)).size
   const band = (b: Band, d: string, direction: "in" | "out") => {
     const title = b.key.startsWith("__") && b.key !== "__other"
       ? `${b.label}: ${exact(b.minor)}`

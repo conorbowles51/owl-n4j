@@ -4,6 +4,7 @@ The frontend twin is InvestigatorOverview (before the server totals) over useInv
 equality of the two on the six live cases is the release gate (fin-speed STATUS). These tests pin each rule."""
 import unittest
 
+from services.financial.overview_panels import payment_totals
 from services.financial.overview_totals import amount, category_name, overview_totals, payment_day
 
 CASE = 'c0ffee00-0000-0000-0000-000000000001'
@@ -65,6 +66,16 @@ class OverviewTotals(unittest.TestCase):
             result = overview_totals(rows, CASE, [])
             self.assertFalse(result['complete'])
             self.assertEqual((result['payments'], result['currencies'], result['first_day']), (0, [], None))
+
+    def test_two_account_records_joined_by_a_saved_consolidation_are_one_account(self):
+        """d5b330d1: the top card said 66 accounts beside 'Imported payments ... 65 accounts' on the same page,
+        because a consolidation joined two Santander records and only the second count followed it."""
+        joined = [dict(row('1', account='copy'), canonical_account_id='kept'),
+                  dict(row('2', account='kept'), canonical_account_id='kept'),
+                  dict(row('3', account='other'), canonical_account_id=None)]
+        self.assertEqual(overview_totals(joined, CASE, [])['accounts'], 2)
+        # the panel's per-currency count over the same rows (one currency, one group here) says the same
+        self.assertEqual([g['accounts'] for g in payment_totals(joined)['groups']], [2])
 
     def test_no_rows(self):
         self.assertEqual(overview_totals([], CASE, []), {

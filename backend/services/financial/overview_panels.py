@@ -18,7 +18,7 @@ import functools
 import re
 import unicodedata
 
-from services.financial.overview_totals import _JS_SPACE, category_name, payment_day
+from services.financial.overview_totals import _JS_SPACE, account_key, category_name, payment_day
 
 _SPACE = '[' + re.escape(_JS_SPACE) + ']'
 # JavaScript's \b without the u flag: a boundary between an ASCII word character and anything else.
@@ -135,7 +135,7 @@ def amount_of(row) -> int | None:
 
 
 def _account_id(row):
-    return _or(_get(row, 'canonical_account_id'), _get(row, 'account_id'))
+    return account_key(row, _MISSING) if isinstance(row, dict) else _MISSING
 
 
 def _counterparty_name(row):

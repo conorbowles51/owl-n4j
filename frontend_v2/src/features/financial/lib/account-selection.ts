@@ -57,6 +57,13 @@ export function accountSelectionSummary(scope: AccountSelection) {
   )
 }
 
+/** The account a payment counts under: the account its records were joined into by a saved account consolidation
+ * (canonical_account_id), else its own account. Every account count uses it (server twin:
+ * overview_totals.account_key), so two joined records are one account everywhere. */
+export const paymentAccountId = (
+  row: Pick<LedgerTransaction, "account_id" | "canonical_account_id">
+) => row.canonical_account_id || row.account_id
+
 export function matchesAccountSelection(
   row: LedgerTransaction,
   scope: AccountSelection

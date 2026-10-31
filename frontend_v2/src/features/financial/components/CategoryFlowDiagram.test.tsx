@@ -39,3 +39,18 @@ it("draws money in and out by category, keeps the difference, opens a band's pay
   expect(screen.getByRole("button", { name: /^Deposits in: \+5\.00 USD/ })).toBeTruthy()
   expect(screen.getByRole("link", { name: /Show as table/ }).getAttribute("href")).toBe("#follow-money-tables")
 })
+
+it("counts two account records joined by a saved consolidation as one account", () => {
+  // d5b330d1: the Overview showed 66 and 65 accounts side by side; joined records count once everywhere.
+  render(
+    <CategoryFlowDiagram
+      caseId="c"
+      rows={[
+        { ...row("a", "credit", "1000", "Deposits"), account_id: "copy", canonical_account_id: "kept" },
+        { ...row("b", "debit", "500", "Fees"), account_id: "kept", canonical_account_id: "kept" },
+      ]}
+      onOpen={vi.fn()}
+    />
+  )
+  expect(screen.getByText(/^1 account · MXN/)).toBeTruthy()
+})

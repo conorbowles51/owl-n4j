@@ -41,6 +41,15 @@ def payment_day(row) -> str | None:
     return date if parsed.isoformat() == date else None
 
 
+def account_key(row, missing=None):
+    """The account a payment counts under: the account its records were joined into by a saved account
+    consolidation (``canonical_account_id``; account_consolidation.save_consolidation is its only writer, and
+    undo restores the previous value), else the payment's own account. JavaScript ``canonical_account_id ||
+    account_id``; ``missing`` stands for an absent ``account_id``. Every account count on the Overview uses it, so
+    two account records joined into one are one account everywhere on the page."""
+    return row.get('canonical_account_id') or row.get('account_id', missing)
+
+
 def amount(row) -> int:
     """groupMoney's amount: BigInt(amount_minor), or 0 when BigInt refuses it (the ledger sends the integer as
     text; the other branches follow BigInt for any other value)."""
@@ -84,7 +93,7 @@ def overview_totals(transactions, case_id: str, categories) -> dict:
             unknown_dates += 1
         if category_name(row) == 'Uncategorized':
             uncategorised += 1
-        accounts.add(row.get('account_id'))
+        accounts.add(account_key(row))
         entry = currencies.setdefault(row.get('currency'), [0, 0, 0])
         entry[0] += 1
         entry[1 if row.get('direction') == 'credit' else 2] += amount(row)

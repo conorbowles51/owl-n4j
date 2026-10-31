@@ -6,6 +6,7 @@ import { paymentGroup } from "../lib/investigator-workspace"
 import { amountGroupName, amountOf, unnamedParty } from "../lib/transaction-analysis"
 import type { LedgerTransaction } from "../api"
 import { formatLedgerAmount } from "../lib/ledger-format"
+import { paymentAccountId } from "../lib/account-selection"
 import { Button } from "@/components/ui/button"
 import { memo, useMemo, useRef, useState } from "react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -60,7 +61,7 @@ export const PaymentTotals = memo(function PaymentTotals({
     }
     total[row.direction as "credit" | "debit"] += amount
     total.count++
-    total.accounts.add(row.canonical_account_id || row.account_id)
+    total.accounts.add(paymentAccountId(row))
     if (row.canonical_account_label || row.account_label)
       total.labels.add(row.canonical_account_label || row.account_label!)
     totals.set(group, total)
