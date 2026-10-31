@@ -2111,7 +2111,7 @@ from services.financial.statement_currency_edit import change_currency
 from services.financial.statement_details import update_statement_details
 from services.financial.statement_import_bbva import bbva_catalog
 from services.financial.statement_import_scotiabank import scotiabank_catalog
-from services.financial.transaction_search import transaction_search
+from services.financial.transaction_search import transaction_search as search_transactions
 
 __all__ += [
     "apply_account_selection", "current_imports", "payment_category_library", "rescale_minor", "retained_issues",
@@ -2119,7 +2119,7 @@ __all__ += [
     "preview_payment_edits", "save_payment_edits", "infer_payment_labels", "update_payment_labels",
     "classify_with_model", "like_payments", "apply_learned", "record_person_choice", "BreakdownFilters", "payment_category_breakdown",
     "upgrade_request", "detect_statement_currency", "change_currency", "update_statement_details",
-    "bbva_catalog", "scotiabank_catalog", "transaction_search",
+    "bbva_catalog", "scotiabank_catalog", "search_transactions",
     "ownership_suggestions", "AccountRelationshipInput", "TrailRequest", "preview_trail", "save_trail", "list_trails",
     "operation_view", "lineage_groups", "kapital_spei", "kapital_catalog", "monex_catalog", "citi_catalog",
     "imported_batch_scope", "card_row_columns", "resolve_financial_selection",
