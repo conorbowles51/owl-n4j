@@ -298,7 +298,7 @@ describe("the adjudication contract", () => {
     ["quarantine_transaction_row", "quarantine"],
     ["release_transaction_row", "release"],
   ])("still reads case_id and an embedded reason on %s", (fn) => {
-    const block = pythonBlock(routerSource, `async def ${fn}(`)
+    const block = pythonBlock(routerSource, `def ${fn}(`)
     expect(block).toContain("case_id: UUID = Query(")
     expect(block).toContain("reason: str = Body(")
     // `embed=True` is what makes the wrapped body above correct. Without it

@@ -298,7 +298,7 @@ describe("the admission contract", () => {
   it("still reads case_id and an embedded reason on the admit route", () => {
     const block = pythonBlock(
       routerSource,
-      "async def admit_file_to_document_pipeline("
+      "def admit_file_to_document_pipeline("
     )
     expect(block).toContain("case_id: UUID = Query(")
     expect(block).toContain("reason: str = Body(")
@@ -313,7 +313,7 @@ describe("the admission contract", () => {
     // convenient one, and the record would carry it as fact.
     const block = pythonBlock(
       routerSource,
-      "async def admit_file_to_document_pipeline("
+      "def admit_file_to_document_pipeline("
     )
     const signature = block.slice(0, block.indexOf("):"))
     for (const forbidden of [
