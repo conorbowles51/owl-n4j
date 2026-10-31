@@ -175,3 +175,29 @@ class ProvenanceTests(TrailBase):
         self.assertEqual({e['action'] for e in mine['events']}, {'financial_send'})
         self.assertEqual(failures['events'][0]['user_email'], 'someone@example.test')
         self.assertEqual(failures['events'][0]['source_address'], '203.0.113.7')
+
+    def test_many_files_read_each_event_once_and_keep_their_own_answers(self):
+        # The lookup is indexed once per call, not rescanned per file: on d5b330d1 (6,108 files) the per-file scans
+        # were 6.6 of 10.7 s of one call. Each file keeps the answer the per-file scan gave.
+        sent = [self.register(f'sent-{n}.pdf', detect=False) for n in range(4)]
+        plain = self.register('plain.pdf', detect=False)
+        from routers.financial_statement_import import _record_send
+        from services.financial import import_batches
+        with self.f.SessionLocal() as db:
+            batch_id = import_batches.create_batch(db, case_id=self.f.case.id, request_id=uuid4(), file_ids=sent,
+                folder_ids=[], actor=self.f.actor)
+            _record_send(db, case_id=self.f.case.id, user=self.f.user, how='batch', batch_id=batch_id, file_ids=sent)
+        events = len(self.events())
+        reads = []
+        real = activity_trail._event_files
+        with self.f.SessionLocal() as db, patch.object(activity_trail, '_event_files',
+                                                       side_effect=lambda e: reads.append(e.id) or real(e)):
+            shown = activity_trail.file_provenance(db, case_id=self.f.case.id, file_ids=[*sent, plain])
+        self.assertLessEqual(len(reads), events)
+        for file_id in sent:
+            entry = shown[str(file_id)]
+            self.assertEqual((entry['in_financial'], entry['added_by'], entry['recorded_by'], entry['batch_id'],
+                              entry['uploaded_by'], entry['uploaded_from']),
+                             (True, self.f.user.name, 'activity_trail', str(batch_id), self.f.user.name, '203.0.113.7'))
+        self.assertEqual((shown[str(plain)]['in_financial'], shown[str(plain)]['added_by'],
+                          shown[str(plain)]['uploaded_from']), (False, None, '203.0.113.7'))
