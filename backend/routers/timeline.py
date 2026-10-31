@@ -4,7 +4,7 @@ from typing import Any, Literal, Optional
 from urllib.parse import quote
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -13,6 +13,7 @@ from postgres.session import get_db
 from routers.users import get_current_db_user
 from services.case_service import CaseAccessDenied, CaseNotFound, check_case_access, get_case_if_allowed
 from services.neo4j_service import neo4j_service
+from services.neo4j.graph_response_cache import cached_json, keys_digest
 from services.significant_service import get_significant_entity_keys
 from services.timeline_entries import TimelineAddition, preview_addition, save_addition, list_entries
 from services.timeline_view_service import (
@@ -132,6 +133,7 @@ def get_timeline(
     limit: int = Query(500, ge=1, le=2000, description="Maximum events to return"),
     cursor: Optional[str] = Query(None, description="Opaque cursor from a previous response"),
     scope: Literal["all", "significant"] = Query("all", description="Case layer to project"),
+    request: Request = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
@@ -160,8 +162,16 @@ def get_timeline(
                 db,
                 case_id=case_id,
             )
-        return neo4j_service.get_timeline_page(
-            **page_args,
+        # The page is read from the graph database only; the significant keys come from PostgreSQL and
+        # are part of the key, so a change to them reads again.
+        key = (
+            "timeline", page_args["case_id"], scope, keys_digest(page_args.get("entity_keys")),
+            tuple(event_types or ()), start_date, end_date, limit, cursor,
+        )
+        return cached_json(
+            key,
+            lambda: neo4j_service.get_timeline_page(**page_args),
+            request.headers.get("accept-encoding") if request is not None else None,
         )
     except Exception as exc:
         _handle_error(exc)

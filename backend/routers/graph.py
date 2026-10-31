@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select, text
 
 from services.neo4j_service import neo4j_service
+from services.neo4j.graph_response_cache import cached_json, keys_digest
 from services.last_graph_storage import last_graph_storage
 from services.insights_service import generate_entity_insights
 from services.llm_service import LLMService
@@ -406,6 +407,7 @@ def get_graph(
         "all",
         description="Case layer to project",
     ),
+    request: Request = None,
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
@@ -422,6 +424,21 @@ def get_graph(
             if scope == "significant"
             else None
         )
+        if not start_date and not end_date:
+            # Read from the graph database only; the significant keys (PostgreSQL) are part of the key.
+            key = ("graph", case_id, scope, keys_digest(scoped_entity_keys), lightweight, limit, sort_by)
+            if lightweight:
+                compute = lambda: neo4j_service.get_graph_structure(
+                    case_id=case_id, start_date=None, end_date=None,
+                    limit=limit, sort_by=sort_by,
+                    entity_keys=scoped_entity_keys,
+                )
+            else:
+                compute = lambda: neo4j_service.get_full_graph(
+                    case_id=case_id, start_date=None, end_date=None,
+                    entity_keys=scoped_entity_keys,
+                )
+            return cached_json(key, compute, request.headers.get("accept-encoding") if request is not None else None)
         if lightweight:
             result = neo4j_service.get_graph_structure(
                 case_id=case_id, start_date=start_date, end_date=end_date,
