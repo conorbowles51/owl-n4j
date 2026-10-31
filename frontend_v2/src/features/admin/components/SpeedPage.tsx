@@ -11,7 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { fetchAPI } from "@/lib/api-client"
-import { formatDuration, type SpeedSummary } from "../speed"
+import { describePageCache, formatDuration, type PageCacheStats, type SpeedSummary } from "../speed"
 
 const ALL = "all"
 
@@ -45,6 +45,10 @@ export function SpeedPage() {
     placeholderData: (previous) => previous, // keep the case list and table while a filter reloads
   })
   const data = query.data
+  const pageCache = useQuery({
+    queryKey: ["admin", "speed", "page-cache"],
+    queryFn: () => fetchAPI<PageCacheStats>("/api/request-speed/page-cache"),
+  })
   const caseTitle = (id: string | null, title?: string | null) =>
     title || (id && data?.cases.find((item) => item.id === id)?.title) || (id ? id.slice(0, 8) : "")
 
@@ -96,6 +100,13 @@ export function SpeedPage() {
         Financial view to its data being on screen; "Left before shown" is how long someone waited
         before leaving a view whose data had not arrived. Server requests are timed from arrival to the last byte
         sent. Recorded since 28 Oct 2026; totals are saved about every 15 seconds.
+      </p>
+      <p className="border-b border-border px-4 py-2 text-xs text-muted-foreground" aria-label="Stored page images">
+        {pageCache.data
+          ? describePageCache(pageCache.data, formatBytes)
+          : pageCache.isError
+            ? "Stored page images could not be read."
+            : "Stored page images: loading…"}
       </p>
       <ScrollArea className="flex-1">
         <table className="w-full text-left text-xs">

@@ -45,3 +45,10 @@ def speed_summary(days: int = Query(1, ge=1, le=30), case_id: UUID | None = Quer
                   admin: User = Depends(require_admin), db: Session = Depends(get_db)):
     """Per route: count, p50, p95, max over the last days; the slow requests kept. Admins only."""
     return request_speed.summary(db, days, case_id=str(case_id) if case_id else None, kind=kind)
+
+
+@router.get('/page-cache')
+def page_cache(admin: User = Depends(require_admin)):
+    """Rendered page images kept on disk: where, how many, how much of the cap, and whether new ones are kept."""
+    from services import page_image_cache
+    return page_image_cache.stats()

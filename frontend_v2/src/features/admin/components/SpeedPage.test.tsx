@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { cleanup, render, screen, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { fetchAPI } from "@/lib/api-client"
-import { formatDuration, type SpeedSummary } from "../speed"
+import { describePageCache, formatDuration, type PageCacheStats, type SpeedSummary } from "../speed"
 import { SpeedPage } from "./SpeedPage"
 
 vi.mock("@/lib/api-client", () => ({ fetchAPI: vi.fn() }))
@@ -27,10 +27,23 @@ const summary: SpeedSummary = {
   slow_row_seconds: 2,
   slow_keep_days: 30,
 }
+const pageCache: PageCacheStats = {
+  enabled: true,
+  directory: "/home/loupe/.cache/loupe-page-images",
+  files: 1234,
+  bytes: 300 * 1024 * 1024,
+  max_bytes: 4 * 1024 * 1024 * 1024,
+  disk_free_fraction: 0.15,
+  min_free_fraction: 0.1,
+  writing: true,
+  process: { pid: 1, hits: 40, misses: 12, not_modified: 30, evicted_files: 0 },
+}
 let client: QueryClient
 beforeEach(() => {
   vi.resetAllMocks()
-  vi.mocked(fetchAPI).mockResolvedValue(summary)
+  vi.mocked(fetchAPI).mockImplementation(async (url: string) =>
+    url === "/api/request-speed/page-cache" ? pageCache : summary
+  )
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
 })
 afterEach(() => {
@@ -67,6 +80,29 @@ describe("SpeedPage", () => {
     const older = screen.getByText("Before").closest("tr")!
     expect(within(older).queryByText(/%|computed|0 ms/)).toBeNull()
     expect(vi.mocked(fetchAPI)).toHaveBeenCalledWith("/api/request-speed/summary?days=1")
+  })
+
+  it("says how full the page image store is", async () => {
+    render(
+      <QueryClientProvider client={client}>
+        <SpeedPage />
+      </QueryClientProvider>
+    )
+    expect(
+      await screen.findByText(
+        "Stored page images: 1,234 pages, 300.0 MB of 4.00 GB. This server process since its start: 40 served from store, 30 already in the browser, 12 drawn."
+      )
+    ).toBeTruthy()
+  })
+
+  it("says plainly when new pages are not kept, or the store is off", () => {
+    const bytes = (n: number) => `${n} B`
+    expect(describePageCache({ ...pageCache, writing: false, process: undefined }, bytes)).toBe(
+      "Stored page images: 1,234 pages, 314572800 B of 4294967296 B. New pages are not being kept: the disk has under 10% free. Pages are still shown, drawn on each view."
+    )
+    expect(describePageCache({ enabled: false, directory: null }, bytes)).toBe(
+      "Stored page images: off. Every PDF page is drawn again on each view."
+    )
   })
 
   it("formats durations in plain units", () => {
