@@ -821,7 +821,7 @@ def _tagged(etag, answer):
     from fastapi.responses import Response
     headers = {'ETag': etag, 'Cache-Control': 'private, no-cache'}
     sent = [tag.strip().removeprefix('W/') for tag in _if_none_match.get().split(',')]
-    if etag.removeprefix('W/') in sent:
+    if etag.removeprefix('W/') in sent or '*' in sent:
         # The gzip middleware adds Vary to a 200 it compresses; a 304 has no body for it to see.
         return Response(status_code=304, headers={**headers, 'Vary': 'Accept-Encoding'})
     response = answer()

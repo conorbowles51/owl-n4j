@@ -355,3 +355,28 @@ def test_a_view_whose_new_answer_cannot_be_kept_shows_that_answer_after_the_limi
         with pytest.raises(HTTPException) as failed:
             call(engine, view, case)
         assert failed.value.status_code == 500
+
+
+def test_a_304_passes_the_services_middleware_chain_without_a_body():
+    """GZip, the Financial timing and the updating/If-None-Match middleware in main.py's order."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from services.json_gzip import JSONGZipMiddleware
+    from services.financial.request_timing import FinancialTimingMiddleware
+    app = FastAPI()
+
+    @app.get('/api/financial')
+    def records():
+        return view_cache.etagged(view_cache.json_response({'rows': ['x' * 50] * 2000}))
+    app.add_middleware(JSONGZipMiddleware)
+    app.add_middleware(FinancialTimingMiddleware)
+    app.add_middleware(view_cache.AcceptsUpdatingMiddleware)
+    client = TestClient(app)
+    first = client.get('/api/financial', headers={'Accept-Encoding': 'gzip'})
+    assert first.status_code == 200 and first.headers['content-encoding'] == 'gzip'
+    assert first.headers['cache-control'] == 'private, no-cache' and first.headers['etag'].startswith('W/"')
+    for sent in (first.headers['etag'], '*'):
+        again = client.get('/api/financial', headers={'Accept-Encoding': 'gzip', 'If-None-Match': sent})
+        assert again.status_code == 304 and again.content == b'' and again.headers['etag'] == first.headers['etag']
+    other = client.get('/api/financial', headers={'Accept-Encoding': 'gzip', 'If-None-Match': 'W/"other"'})
+    assert other.status_code == 200 and other.json() == first.json()
