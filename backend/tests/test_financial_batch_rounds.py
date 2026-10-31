@@ -206,6 +206,7 @@ def test_stopping_the_worker_loop_stops_the_rounds_task(monkeypatch):
     async def vision_forever(resolve_path):
         await asyncio.sleep(3600)
     monkeypatch.setattr(batch_rounds, 'rounds_forever', rounds_forever)
+    monkeypatch.setattr(batch_rounds, 'decide_child_mode', lambda: True)  # no hand-off left set for other tests
     monkeypatch.setattr(import_batches, '_turns_forever', turns_forever)
     monkeypatch.setattr(import_batches, '_vision_forever', vision_forever)
 

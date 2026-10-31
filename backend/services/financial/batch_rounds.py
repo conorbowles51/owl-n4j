@@ -14,8 +14,12 @@ Stopping keeps the workers' behaviour: a step that has started finishes (each is
 ``process_shutdown.BACKGROUND_STOP_SECONDS``; past that the process ends and its open transaction rolls back, and
 the durable record (claimed item, stored readiness) is taken up again by the next round.
 
+The ledger graph follow-ups (graph_followup) run here too, in a thread of their own: run in the workers, each
+worker ran its own drift scan and its own projection of the same case (one d5b330d1 snapshot: about 49 CPU-s and
+3.5 GB transient memory per worker). The workers hand their requests over as files.
+
 The review-queue precompute stays in the workers: it fills their in-memory queue cache (review_queue.prewarm).
-Without a lock location the rounds run in the worker as before.
+Without a lock location the rounds and the graph follow-ups run in the worker as before.
 """
 import asyncio
 import logging
@@ -148,11 +152,29 @@ async def run_in_worker(factory, resolve_path, finish_atomic, schedule):
             log.exception(failure)
 
 
-async def rounds_forever(factory_source, resolve_path, finish_atomic):
+def decide_child_mode():
+    """Once per worker, before its loops start: True when the rounds run in the host's child (there is a lock
+    location). The ledger graph follow-ups then run there too: this worker hands its requests to the child
+    (graph_followup.hand_off_to) and its batch turn no longer runs them. If the hand-off cannot be set up, the
+    worker keeps running its follow-ups (as the child does): the same projection twice, never none."""
+    from services.financial import graph_followup, vision_rounds
+    if not vision_rounds._lock_usable(LOCK_NAME):
+        return False
+    try:
+        graph_followup.hand_off_to(graph_followup.hand_off_directory(vision_rounds._lock_directory()))
+    except Exception:  # noqa: BLE001
+        log.exception('Graph follow-up requests could not be handed to the batch rounds; this worker runs them')
+    return True
+
+
+async def rounds_forever(factory_source, resolve_path, finish_atomic, child=None):
     """The rounds: in the host's child process when there is a lock location (this worker starts it whenever it
-    holds the lock), otherwise in this worker every ``PAUSE_SECONDS``."""
+    holds the lock), otherwise in this worker every ``PAUSE_SECONDS``. ``child``: decide_child_mode's answer, if
+    already taken."""
     from services.financial import vision_rounds
-    if await asyncio.to_thread(vision_rounds._lock_usable, LOCK_NAME):
+    if child is None:
+        child = await asyncio.to_thread(vision_rounds._lock_usable, LOCK_NAME)
+    if child:
         await run_in_child_forever()
         return
     schedule = Schedule()
@@ -223,6 +245,36 @@ def rounds(stop, factory=None, resolve_path=None):
         stop.wait(PAUSE_SECONDS)
 
 
+GRAPH_FOLLOW_UP_SECONDS = 5
+
+
+def graph_follow_up_forever(stop, factory=None, graph_session_factory=None):
+    """The ledger graph follow-ups (graph_followup.serve_round: handed-off requests, the drift scan, due
+    projections) every ``GRAPH_FOLLOW_UP_SECONDS`` until ``stop``. In its own thread of the child, beside
+    ``rounds``: a whole-case projection (d5b330d1: about 49 CPU-s) does not hold back the batch rounds, and a long
+    batch round does not hold back the graph. ``stop`` is looked at between cases and between statements (a
+    stopped projection rolls back). A failed round is logged and retried."""
+    from services.financial import graph_followup
+    while not stop.is_set():
+        try:
+            graph_followup.serve_round(factory, graph_session_factory, stop=stop)
+        except Exception:  # noqa: BLE001 - retried next round
+            log.exception('Financial graph follow-up round failed; it will retry')
+        stop.wait(GRAPH_FOLLOW_UP_SECONDS)
+
+
+def child_work(stop, factory, resolve_path):
+    """Everything the child runs: the graph follow-ups in a thread of their own, the rounds in this one."""
+    graph = threading.Thread(target=graph_follow_up_forever, args=(stop, factory), name='graph-follow-up',
+                             daemon=True)
+    graph.start()
+    try:
+        rounds(stop, factory, resolve_path)
+    finally:
+        stop.set()
+        graph.join()
+
+
 STOP_SIGNALS = (signal.SIGTERM, signal.SIGINT)
 # Taken in the same wait as the stop signals, so no asynchronous handler runs in this process: a Python handler
 # interrupting sigtimedwait past its timeout made it return a struct built from uninitialised memory (CPython 3.13,
@@ -270,10 +322,12 @@ def main():
     from postgres.session import _get_session_local
     from routers.evidence import _resolve_stored_path
     from services import process_shutdown, thread_dump
+    from services.financial import graph_followup, vision_rounds
     factory = _get_session_local()
+    graph_followup.serve_hand_offs(graph_followup.hand_off_directory(vision_rounds._lock_directory()))
     # kill -USR1 <child> writes its threads' stacks to the same file as for the workers (services/thread_dump.py).
     _serve_until_signalled(threading.Event(), process_shutdown.BACKGROUND_STOP_SECONDS, os._exit,
-                           lambda stop: rounds(stop, factory, _resolve_stored_path), dump=thread_dump.write_dump)
+                           lambda stop: child_work(stop, factory, _resolve_stored_path), dump=thread_dump.write_dump)
 
 
 if __name__ == '__main__':

@@ -526,6 +526,14 @@ def _case_claim(case_id):
 
 def sync_saved_identities(stop=None):
     from postgres.session import get_background_session
+    # The ledger projection may run in the host's batch-rounds child: it marks each case it drew, and the
+    # cases marked since this worker last looked are retried now (as payment_nodes_changed does in process).
+    try:
+        from services.financial.graph_followup import projected_since_last_look
+        for case_id in projected_since_last_look():
+            payment_nodes_changed(case_id)
+    except Exception:  # noqa: BLE001 - a missed wake only waits for the backoff
+        log.exception('Could not read which cases the ledger projection drew')
     with get_background_session() as db:
         cases = list(db.scalars(select(AdjudicationEvent.case_id).where(AdjudicationEvent.decision.in_(['set_account_party', 'set_account_identity', 'set_counterparty_party'])).distinct()))
     for case_id in cases:

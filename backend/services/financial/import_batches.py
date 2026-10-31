@@ -2699,8 +2699,12 @@ async def run_batches_forever():
     # Automatic reading, release re-checks, held re-preparation, reader gaps,
     # readiness and the save sweeps: one child process per host (batch_rounds).
     from services.financial import batch_rounds
+    # Decided once, before either loop starts: with a lock location the rounds and the graph follow-ups run in
+    # the host's child, and this worker's requests are handed to it. Taken here, without yielding to the loop
+    # (one directory check), so no request is recorded and no graph round runs before it.
+    child = batch_rounds.decide_child_mode()
     rounds_task = asyncio.create_task(batch_rounds.rounds_forever(_get_session_local, _resolve_stored_path,
-                                                                  _finish_atomic))
+                                                                  _finish_atomic, child))
     try:
         await _turns_forever(_get_session_local, _resolve_stored_path, process_db_files)
     finally:
@@ -2728,8 +2732,11 @@ async def _turns_forever(_get_session_local, _resolve_stored_path, process_db_fi
                 # Ledger to graph projection for cases whose imports committed
                 # (requested by confirm_statement_import). Isolated: a graph
                 # failure is recorded and retried with backoff, and never
-                # interrupts batch progress.
-                from services.financial.graph_followup import follow_up_round
+                # interrupts batch progress. Not here when the host's batch-rounds
+                # child runs them (this worker hands its requests over).
+                from services.financial.graph_followup import follow_up_round, handing_off
+                if handing_off():
+                    return
                 try:
                     await follow_up_round(factory)
                 except asyncio.CancelledError:

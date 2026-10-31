@@ -29,11 +29,14 @@ ledger fingerprint it was built from.  Failures are recorded on it best-effort
 (the graph may be the thing that is down) and also held in process memory, so a
 status read can always say why a case is behind.
 
-Which cases are followed up automatically: those an import in this process
-asked for, and those already carrying a marker whose ledger fingerprint has
+Which cases are followed up automatically: those an import asked for, and those already carrying a marker whose ledger fingerprint has
 since drifted.  A case that has never been projected is not picked up by the
 drift check; it is projected by its next import or by the backfill command
 (``python -m scripts.financial_graph_backfill``), which is the same code path.
+
+Where they run: with a lock directory, once per host in the batch-rounds child
+(:mod:`services.financial.batch_rounds`); a web worker hands its requests over as
+files (:func:`hand_off_to`).  Without one, in the worker that asked.
 """
 from __future__ import annotations
 
@@ -411,21 +414,245 @@ _last_drift_scan: list[float] = [float("-inf")]
 
 
 def request_follow_up(case_id, *, now: Optional[float] = None, immediate: bool = False) -> None:
-    """Ask for this case's graph to be redrawn.  Cheap, no I/O, never raises.
+    """Ask for this case's graph to be redrawn.  Cheap, never raises.
 
     Called after the ledger commit.  The work happens later, in
     :func:`run_due`, so a slow or unavailable graph never touches the caller.
+    In a web worker whose follow-ups run in the host's batch-rounds child
+    (:func:`hand_off_to`), the request is one small file the child takes up;
+    otherwise it is recorded in this process.
     """
     try:
         moment = time.monotonic() if now is None else now
         with _lock:
-            state = _states.setdefault(str(case_id), _CaseState())
-            if state.first_requested is None:
-                state.first_requested = moment - (MAX_DEFER_SECONDS if immediate else 0)
-            state.last_requested = moment - (QUIET_SECONDS if immediate else 0)
-            state.request_generation += 1
+            directory = _handoff_dir[0]
+            if directory is None:
+                _record_request(str(case_id), moment, immediate)
+                return
+        _write_hand_off(directory, case_id, immediate)
     except Exception:  # pragma: no cover - a follow-up request must never fail an import
         log.exception("Graph follow-up request for case %s could not be recorded", case_id)
+
+
+def _record_request(case_id: str, moment: float, immediate: bool) -> None:
+    """Under ``_lock``."""
+    state = _states.setdefault(case_id, _CaseState())
+    if state.first_requested is None:
+        state.first_requested = moment - (MAX_DEFER_SECONDS if immediate else 0)
+    state.last_requested = moment - (QUIET_SECONDS if immediate else 0)
+    state.request_generation += 1
+
+
+# ---------------------------------------------------------------------------
+# Hand-off to the host's batch-rounds child (services/financial/batch_rounds.py)
+# ---------------------------------------------------------------------------
+#
+# With a lock directory the follow-ups run once per host, in the batch-rounds
+# child, instead of in every web worker (each worker used to run its own drift
+# scan and its own projection of the same case).  Layout under
+# ``<lock directory>/graph-follow-up/``:
+#
+# ``requests/<case>`` and ``requests/<case>.immediate``  written by any process
+#     (temporary file in ``tmp/``, then an atomic rename over the request); the
+#     file's mtime is when it was asked for.
+# ``claimed/<request>.<pid>``  the child renames a request here, records it in
+#     process, and only then deletes it.  A request written while it is being
+#     claimed lands as a new ``requests/`` file, taken up next round.
+# ``pending/<case>``  present while the child holds the case in process (so a
+#     worker's status says ``pending``, and a restarted child requests it again).
+# ``projected/<case>``  its mtime moves after every projection; the workers'
+#     reviewed-identity sweep wakes the case when it sees it move.
+
+HAND_OFF_DIRECTORY = "graph-follow-up"
+IMMEDIATE_SUFFIX = ".immediate"
+# Set in a web worker whose follow-ups run in the child (requests become files).
+_handoff_dir: list = [None]
+# Set in the child that runs them (it reads the files and keeps pending/projected).
+_serving_dir: list = [None]
+_stamps_seen: dict = {}
+
+
+def hand_off_directory(lock_directory) -> "os.PathLike":
+    from pathlib import Path
+    return Path(lock_directory) / HAND_OFF_DIRECTORY
+
+
+def _ensure_layout(directory) -> None:
+    for name in ("requests", "tmp", "claimed", "pending", "projected"):
+        (directory / name).mkdir(parents=True, exist_ok=True, mode=0o700)
+
+
+def _case_name(case_id) -> str:
+    return str(UUID(str(case_id)))
+
+
+def _write_hand_off(directory, case_id, immediate: bool) -> None:
+    name = _case_name(case_id) + (IMMEDIATE_SUFFIX if immediate else "")
+    temporary = directory / "tmp" / f"{name}.{os.getpid()}.{threading.get_ident()}.{time.monotonic_ns()}"
+    with open(temporary, "wb"):
+        pass
+    os.replace(temporary, directory / "requests" / name)
+
+
+def hand_off_to(directory) -> None:
+    """This (web) process no longer runs follow-ups: requests go to ``directory`` for the batch-rounds child.
+
+    Requests already recorded in process (made before the decision) are handed over too."""
+    _ensure_layout(directory)
+    with _lock:
+        _handoff_dir[0] = directory
+        waiting = [case for case, state in _states.items() if state.first_requested is not None]
+        _states.clear()
+    for case in waiting:
+        try:
+            _write_hand_off(directory, case, False)
+        except Exception:
+            log.exception("Graph follow-up request for case %s could not be handed to the batch rounds", case)
+
+
+def handing_off() -> bool:
+    return _handoff_dir[0] is not None
+
+
+def _monotonic_from_wall(wall: float) -> float:
+    return time.monotonic() - max(time.time() - wall, 0.0)
+
+
+def serve_hand_offs(directory) -> None:
+    """This process (the batch-rounds child) runs the follow-ups handed to ``directory``.
+
+    Cases a previous child held (``pending/``) or had claimed but not recorded
+    (``claimed/``) are requested again, at the time they were first asked for."""
+    _ensure_layout(directory)
+    _serving_dir[0] = directory
+    for left in (directory / "tmp").iterdir():
+        # A temporary request older than a minute was left by a killed writer.
+        try:
+            if time.time() - left.stat().st_mtime > 60:
+                left.unlink(missing_ok=True)
+        except OSError:
+            pass
+    leftovers = []
+    for path in (directory / "pending").iterdir():
+        leftovers.append((path, path.name, False))
+    for path in (directory / "claimed").iterdir():
+        request = path.name.rsplit(".", 1)[0]
+        leftovers.append((path, request.removesuffix(IMMEDIATE_SUFFIX), request.endswith(IMMEDIATE_SUFFIX)))
+    for path, case, immediate in leftovers:
+        try:
+            moment = _monotonic_from_wall(path.stat().st_mtime)
+            _case_name(case)
+        except (OSError, ValueError):
+            continue
+        with _lock:
+            _record_request(case, moment, immediate)
+    _sync_pending()
+    for path, _, _ in leftovers:
+        if path.parent.name == "claimed":
+            path.unlink(missing_ok=True)
+
+
+def claim_hand_offs() -> int:
+    """Turn each request file into an in-process request; returns how many were taken."""
+    directory = _serving_dir[0]
+    if directory is None:
+        return 0
+    claimed = []
+    for path in sorted((directory / "requests").iterdir(), key=_mtime_or_zero):
+        name = path.name
+        case = name.removesuffix(IMMEDIATE_SUFFIX)
+        try:
+            _case_name(case)
+        except ValueError:
+            log.warning("Graph follow-up request %s is not a case; removed", name)
+            path.unlink(missing_ok=True)
+            continue
+        target = directory / "claimed" / f"{name}.{os.getpid()}"
+        try:
+            os.rename(path, target)
+            moment = _monotonic_from_wall(target.stat().st_mtime)
+        except FileNotFoundError:
+            continue
+        with _lock:
+            _record_request(case, moment, name.endswith(IMMEDIATE_SUFFIX))
+        claimed.append(target)
+    if claimed:
+        # Pending first, so a worker's status never sees neither file.
+        _sync_pending()
+    for target in claimed:
+        target.unlink(missing_ok=True)
+    return len(claimed)
+
+
+def _mtime_or_zero(path) -> float:
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def _sync_pending() -> None:
+    """``pending/`` holds exactly the cases this child holds in process."""
+    directory = _serving_dir[0]
+    if directory is None:
+        return
+    with _lock:
+        held = set()
+        for case in _states:
+            try:
+                held.add(_case_name(case))
+            except ValueError:
+                pass
+    present = {path.name for path in (directory / "pending").iterdir()}
+    for case in held - present:
+        (directory / "pending" / case).touch()
+    for case in present - held:
+        (directory / "pending" / case).unlink(missing_ok=True)
+
+
+def serve_round(session_factory=None, graph_session_factory=None, *,
+                stop: Optional[threading.Event] = None) -> list[dict]:
+    """One round in the batch-rounds child: take up handed-off requests, run what is due."""
+    claim_hand_offs()
+    try:
+        return run_due(session_factory, graph_session_factory, stop=stop)
+    finally:
+        _sync_pending()
+
+
+def handed_off_request(case_id) -> bool:
+    """A request for this case is waiting for, or held by, the batch-rounds child."""
+    directory = _handoff_dir[0] or _serving_dir[0]
+    if directory is None:
+        return False
+    try:
+        case = _case_name(case_id)
+    except ValueError:
+        return False
+    return any(path.exists() for path in (directory / "requests" / case,
+                                          directory / "requests" / (case + IMMEDIATE_SUFFIX),
+                                          directory / "pending" / case))
+
+
+def projected_since_last_look() -> list[str]:
+    """Cases the batch-rounds child projected since this process last looked (none unless handing off)."""
+    directory = _handoff_dir[0]
+    if directory is None:
+        return []
+    changed = []
+    try:
+        entries = list(os.scandir(directory / "projected"))
+    except OSError:
+        return []
+    for entry in entries:
+        try:
+            stamp = entry.stat().st_mtime_ns
+        except OSError:
+            continue
+        if _stamps_seen.get(entry.name) != stamp:
+            _stamps_seen[entry.name] = stamp
+            changed.append(entry.name)
+    return changed
 
 
 def _is_due(state: _CaseState, now: float) -> bool:
@@ -550,6 +777,12 @@ def _notify_identity_graph(case_id) -> None:
     try:
         from services.financial.identity_graph import payment_nodes_changed
         payment_nodes_changed(case_id)
+        directory = _serving_dir[0]
+        if directory is not None:
+            # The sweep runs in the web workers: they see this stamp move (projected_since_last_look).
+            stamp = directory / "projected" / _case_name(case_id)
+            stamp.touch()
+            os.utime(stamp)
     except Exception:  # pragma: no cover
         log.exception("Could not wake the reviewed identity sweep for case %s", case_id)
 
@@ -591,6 +824,9 @@ def follow_up_status(db, case_id, *, graph_session_factory=None) -> dict:
     admitted = int(db.scalar(select(func.count()).select_from(FinancialTransaction).where(
         FinancialTransaction.case_id == case_id, FinancialTransaction.ledger_status == "admitted")) or 0)
     local = pending_state(case_id)
+    if local is None and handed_off_request(case_id):
+        local = dict(requested=True, running=False, attempts=0, last_error=None, retry_in_seconds=None,
+                     last_outcome=None)
     result = dict(case_id=str(case_id), admitted_transactions=admitted, projected_transactions=None,
                   completed_at=None, last_error=(local or {}).get("last_error"),
                   attempts=(local or {}).get("attempts", 0),
@@ -630,3 +866,6 @@ def _reset_for_tests() -> None:
         _states.clear()
     _last_drift_scan[0] = float("-inf")
     _indexes_ensured[0] = False
+    _handoff_dir[0] = None
+    _serving_dir[0] = None
+    _stamps_seen.clear()
