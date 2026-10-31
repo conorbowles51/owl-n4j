@@ -648,6 +648,8 @@ def reader_files(entries):
 # mapping (auto_read.unread_statement_files), and filled versus waiting and the proposals follow printed-holder
 # decisions in adjudications (field_proposals.case_knowledge; merged accounts are account rows, already in the
 # register's key). Those rows are in its key too (review 2026-10-30: without them a saved queue could outlive such a change; measured 0.01 s on d5b330d1).
+# The register keys batches by id and status only (the only batch columns it reads); the queue reads whole batches
+# (files being prepared or read again, held files waiting for a recheck), so it keys every batch row's version.
 _QUEUE_EXTRA_SQL = text("""
 SELECT 'drafts', count(*), md5(string_agg(evidence_file_id::text || ':' || xmin::text, ',' ORDER BY evidence_file_id))
   FROM financial_statement_review_drafts WHERE case_id = :case_id
@@ -655,6 +657,8 @@ UNION ALL SELECT 'mappings', count(*), md5(string_agg(id::text || ':' || xmin::t
   FROM financial_candidate_mappings WHERE case_id = :case_id
 UNION ALL SELECT 'decisions', count(*), md5(string_agg(id::text || ':' || xmin::text, ',' ORDER BY id))
   FROM adjudications WHERE case_id = :case_id
+UNION ALL SELECT 'batch_rows', count(*), md5(string_agg(id::text || ':' || xmin::text, ',' ORDER BY id))
+  FROM financial_import_batches WHERE case_id = :case_id
 """)
 
 

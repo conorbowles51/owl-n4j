@@ -125,3 +125,53 @@ def test_a_decision_draft_or_mapping_changes_the_queue_key(monkeypatch):
     extra['rows'] = [('decisions', 4, 'b'), ('drafts', 0, None), ('mappings', 0, None)]
     assert review_queue.queue_fingerprint(Session(), uuid4()) != before
     assert ('batches', 1, 'x') in before
+
+
+def test_a_write_to_a_batchs_files_changes_the_queue_key_on_postgresql():
+    """The register keys batches by id and status only (a batch's files list takes reader stamps after a release);
+    the queue reads the files list itself (files being prepared or read again, held files waiting for a recheck), so
+    a change there must be a new queue key, or a saved queue would be served after it."""
+    import os
+    import uuid
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.orm import Session
+    url = os.environ.get('FINANCIAL_VIEW_CACHE_TEST_DATABASE_URL')
+    if not url:
+        pytest.skip('Requires an explicit local PostgreSQL test connection')
+    url = url.replace('postgresql://', 'postgresql+psycopg://', 1) if url.startswith('postgresql://') else url
+    schema = 'queue_key_' + uuid.uuid4().hex[:8]
+    admin = create_engine(url)
+    with admin.begin() as connection:
+        connection.execute(text(f'CREATE SCHEMA {schema}'))
+    engine = create_engine(url, connect_args={'options': f'-csearch_path={schema}'})
+    try:
+        with engine.begin() as connection:
+            for table in ('financial_statement_periods', 'financial_source_documents', 'financial_accounts',
+                          'financial_transactions', 'evidence_files', 'workspace_entries', 'workspace_entry_links',
+                          'financial_candidate_mappings', 'adjudications'):
+                connection.execute(text(f'CREATE TABLE {table} (id uuid PRIMARY KEY, case_id uuid)'))
+            connection.execute(text('CREATE TABLE financial_import_batches (id uuid PRIMARY KEY, case_id uuid, '
+                                    'status text, files jsonb)'))
+            connection.execute(text('CREATE TABLE financial_import_batch_items (id uuid PRIMARY KEY, batch_id uuid)'))
+            connection.execute(text('CREATE TABLE evidence_document_texts (evidence_file_id uuid)'))
+            connection.execute(text('CREATE TABLE evidence_table_geometry (evidence_file_id uuid, page_number int)'))
+            connection.execute(text('CREATE TABLE financial_statement_review_drafts (evidence_file_id uuid, case_id uuid)'))
+        case, batch = uuid.uuid4(), uuid.uuid4()
+        with engine.begin() as connection:
+            connection.execute(text("INSERT INTO financial_import_batches VALUES (:b, :c, 'review', "
+                                    "'[{\"file_id\": \"f1\", \"status\": \"checked\"}]')"), dict(b=batch, c=case))
+
+        def key():
+            with Session(engine) as session:
+                return review_queue.queue_fingerprint(session, case)
+        before = key()
+        assert before == key()
+        with engine.begin() as connection:
+            connection.execute(text("UPDATE financial_import_batches SET files = "
+                                    "'[{\"file_id\": \"f1\", \"status\": \"processing\"}]' WHERE id = :b"), dict(b=batch))
+        assert key() != before, 'a file the queue shows as being read again must not be served from the old key'
+    finally:
+        engine.dispose()
+        with admin.begin() as connection:
+            connection.execute(text(f'DROP SCHEMA {schema} CASCADE'))
+        admin.dispose()
