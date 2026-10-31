@@ -90,3 +90,28 @@ class UnsavedIdenticalUploadTests(TestCase):
         self.assertTrue(self.held(dict(expected_revision='r1'), candidate=dict(self.candidate, status='imported')))
         self.assertTrue(self.held(dict(expected_revision='r1'), files={'f2': _file('f2', 'b' * 64)}))
         self.assertTrue(self.held(dict(expected_revision='r1'), candidate=dict(self.candidate, statement_id='other')))
+
+    def test_a_row_from_a_closed_session_is_read_again_in_this_one(self):
+        # Recovery prepares the coverage snapshot in one session, expires and closes it, then compares in
+        # another: the snapshot's ORM row is detached and expired, and reading it raised DetachedInstanceError.
+        import uuid
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+        from postgres.base import Base
+        from postgres.models.evidence import EvidenceFile
+        engine = create_engine('sqlite://')
+        Base.metadata.create_all(engine, tables=[EvidenceFile.__table__])
+        factory = sessionmaker(bind=engine)
+        file_id = uuid.uuid4()
+        with factory() as preparing:
+            preparing.add(EvidenceFile(id=file_id, case_id=uuid.uuid4(), original_filename='synthetic.pdf',
+                stored_path='/tmp/synthetic.pdf', sha256='a' * 64, size=0, status='processed',
+                metadata_={'financial_duplicate_dispositions': {'k': dict(status='needs_comparison')}}))
+            preparing.commit()
+            snapshot = {str(file_id): preparing.get(EvidenceFile, file_id)}
+            preparing.expire_all()
+        candidate = dict(self.candidate, file_id=str(file_id))
+        with factory() as comparing:
+            self.assertTrue(overlap._copy_of_retained(comparing, self.own, snapshot, candidate,
+                                                      dict(statement_id='k', expected_revision='r1')))
+        engine.dispose()

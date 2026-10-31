@@ -364,13 +364,24 @@ SAVED_PRINTED_PERIOD_ACROSS_BANKS = os.environ.get('LOUPE_FINANCIAL_SAVED_PRINTE
 IDENTICAL_UNSAVED_TO_RETAINED = os.environ.get('LOUPE_FINANCIAL_COVERAGE_IDENTICAL_UNSAVED_TO_RETAINED', '1') != '0'
 
 
+def _usable_here(row, session):
+    """A snapshot row this session can read: a plain copy (CaseFile), or an ORM row of this very session.
+
+    Recovery prepares its snapshot in one session, expires and closes it, and compares in another; an ORM
+    row from there is detached and expired, so the caller reads that row again in its own session."""
+    state = sa_inspect(row, raiseerr=False)
+    return state is None or state.session is session
+
+
 def _copy_of_retained(session, file, files, other, request):
     """`other` is an unsaved upload of `file`'s bytes and statement, and `file` holds the current retained decision."""
     key = request.get('statement_id') or ''
     if other['status'] != 'awaiting_import' or (other.get('statement_id') or '') != key or other['file_id'] == str(file.id):
         return False
     from uuid import UUID
-    other_file = (files or {}).get(other['file_id']) or session.get(EvidenceFile, UUID(other['file_id']))
+    other_file = (files or {}).get(other['file_id'])
+    if other_file is None or not _usable_here(other_file, session):
+        other_file = session.get(EvidenceFile, UUID(other['file_id']))
     if other_file is None or not file.sha256 or other_file.sha256 != file.sha256:
         return False
     from services.financial.pending_statement_duplicates import METADATA_KEY
@@ -393,10 +404,7 @@ def coverage_review(session, *, case_id, file_id, request, sources=None):
     files = getattr(sources, 'files', None)
     snapshot = files is not None and getattr(sources, 'case_id', None) == str(case_id)
     file = files.get(str(file_id)) if snapshot else None
-    state = sa_inspect(file, raiseerr=False) if file is not None else None
-    if state is not None and state.session is not session:
-        # An ORM row built in another session (recovery prepares in one and writes in another) is
-        # detached and expired, so read this one here. Plain snapshot records (CaseFile) are kept.
+    if file is not None and not _usable_here(file, session):
         snapshot = False
     if snapshot:
         if file is not None and str(file.case_id) != str(case_id):
