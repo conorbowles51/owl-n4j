@@ -113,6 +113,7 @@ def identity_graph_plan(db, case_id):
             financial_identity_url=f'/cases/{case_id}/financial?view=counterparties',
             summary='Reviewed financial identity. Account-holder, control, signatory and grouping relationships are distinct; inspect dates and evidence on each relationship.'))
     from services.financial.payment_counterparty_link import resolved_link, stored_link
+    out_of_case = []
     # Only the columns a payment's identity link is read from: loading every
     # admitted payment of the case whole (with its saved reading) made each
     # snapshot grow with the case, and the sweep takes one per case every 30 s.
@@ -130,19 +131,30 @@ def identity_graph_plan(db, case_id):
         identity = resolved_link(db, case_id, stored_link(labels, reviewed))
         if not identity:
             continue
+        if identity['kind'] != 'party' and identity['id'] not in indexed:
+            # resolved_link returns a link to another case's account unchanged. It cannot be drawn in this
+            # case's graph; it is reported (plan, status, log) and the rest of the case is still drawn.
+            out_of_case.append(dict(payment_id=str(row_id), ref_id=ref_id, account_id=identity['id']))
+            continue
         target = ('financial-party:' + identity['id']) if identity['kind'] == 'party' else account_key(indexed[identity['id']].identity_key)
         payment_links.append(dict(key='payment-identity:' + str(row_id), source=ref_id, target=target,
             direction=direction, recorded_identity=json.dumps(identity, sort_keys=True)))
     revision = hashlib.sha256(json.dumps([state['revision'], payment_links], sort_keys=True).encode()).hexdigest()
+    if out_of_case:
+        log.warning('Reviewed identity graph for case %s: %s payment link(s) name an account outside the case and '
+            'are not drawn (first: payment %s -> account %s)', case_id, len(out_of_case),
+            out_of_case[0]['payment_id'], out_of_case[0]['account_id'])
     return dict(case_id=str(case_id), revision=revision, accounts=accounts, parties=parties, links=links,
-        entity_links=entity_links, account_links=account_links, payment_links=payment_links)
+        entity_links=entity_links, account_links=account_links, payment_links=payment_links,
+        out_of_case_links=out_of_case)
 
 
-def validate_graph_targets(tx, plan):
+def _graph_target_matches(tx, plan):
+    """Every case node carrying one of the plan's account, party or entity-link keys, with its labels."""
     targets = {link['target'] for link in plan['entity_links']}
     keys = targets | {row['key'] for row in plan['accounts'] + plan['parties']}
     if not keys:
-        return
+        return {}
     # Keep the match label-independent: a non-financial entity with the same
     # key is a collision too. UNWIND + OPTIONAL MATCH performed a whole-graph
     # scan per key without a common indexed label. Read all requested keys in
@@ -152,6 +164,12 @@ def validate_graph_targets(tx, plan):
         RETURN n.key AS key, labels(n) AS labels''',
         keys=sorted(keys), case=plan['case_id']).data():
         matches.setdefault(row['key'], []).append(row['labels'])
+    return matches
+
+
+def validate_graph_targets(tx, plan):
+    targets = {link['target'] for link in plan['entity_links']}
+    matches = _graph_target_matches(tx, plan)
     if any(len(matches.get(key, [])) != 1 for key in targets):
         raise ValueError('A connected case entity is missing or ambiguous. Review its financial identity connection.')
     for label, rows in [('FinancialAccount', plan['accounts']), ('FinancialParty', plan['parties'])]:
@@ -279,19 +297,110 @@ def _identity_snapshot(case_id):
         return identity_graph_plan(db, case_id)
 
 
+# The sweep visits every case every 30 s. Building a plan reads the case's accounts, decisions and admitted
+# payments (d5b330d1 0.77 s measured), and the sync built it twice (once more under the graph lock) before
+# finding the graph already current. A case whose plan inputs and graph reads are unchanged since its last
+# completed sync is skipped: today's code would have reached the same "already current" answer. Any change on
+# either side, and at least every FULL_SYNC_SECONDS regardless, takes the full path.
+# Switch LOUPE_IDENTITY_GRAPH_SKIP_UNCHANGED (default on; '0' rebuilds every case every round as before).
+SKIP_UNCHANGED = os.environ.get('LOUPE_IDENTITY_GRAPH_SKIP_UNCHANGED', '1') != '0'
+FULL_SYNC_SECONDS = 600
+_INPUT_TABLES = (FinancialAccount, AdjudicationEvent, FinancialTransaction)
+_unchanged = {}
+_unchanged_lock = Lock()
+
+
+def identity_inputs_fingerprint(db, case_id):
+    """A change detector for every table identity_graph_plan reads: per table, the case's row count and a
+    per-row version sum. On PostgreSQL the version is xmin, which every UPDATE (ORM, Core or raw SQL) renews;
+    elsewhere it is updated_at (the append-only decision table has created_at). Inserts and deletes move the
+    count. A false 'changed' costs one extra build; nothing here decides what is drawn."""
+    from sqlalchemy import func, literal_column
+    postgres = db.get_bind().dialect.name == 'postgresql'
+    parts = []
+    for model in _INPUT_TABLES:
+        table = model.__table__
+        if postgres:
+            version = func.sum(literal_column(f'{table.name}.xmin::text::bigint'))
+        else:
+            column = table.c.updated_at if 'updated_at' in table.c else table.c.created_at
+            version = func.max(column)
+        count, value = db.execute(select(func.count(), version).select_from(table)
+            .where(table.c.case_id == case_id)).one()
+        parts.append([table.name, int(count or 0), str(value)])
+    return hashlib.sha256(json.dumps(parts).encode()).hexdigest()
+
+
+def _graph_reads(graph, plan):
+    """What the sync reads from the graph before deciding to write: the target matches and the marker."""
+    marker = graph.run('MATCH (m:FinancialIdentitySync {case_id:$case}) RETURN m.revision AS revision',
+        case=plan['case_id']).data()
+    matches = _graph_target_matches(graph, plan)
+    return hashlib.sha256(json.dumps([marker, {k: sorted(map(sorted, v)) for k, v in matches.items()}],
+        sort_keys=True).encode()).hexdigest()
+
+
+def _snapshot(case_id, known=None):
+    """(inputs fingerprint, plan) under the case row lock; plan is None when the inputs equal `known`."""
+    from postgres.session import get_background_session
+    with get_background_session() as db:
+        if db.scalar(select(Case.id).where(Case.id == case_id).with_for_update(skip_locked=True)) is None:
+            return None
+        inputs = identity_inputs_fingerprint(db, case_id) if SKIP_UNCHANGED else None
+        if known is not None and inputs == known:
+            return inputs, None
+        return inputs, identity_graph_plan(db, case_id)
+
+
+def forget_unchanged(case_id=None):
+    with _unchanged_lock:
+        if case_id is None:
+            _unchanged.clear()
+        else:
+            _unchanged.pop(str(case_id), None)
+
+
 def synchronize_case(case_id):
-    plan = _identity_snapshot(case_id)
-    if plan is None:
+    from services.neo4j_service import neo4j_service
+    with _unchanged_lock:
+        known = _unchanged.get(str(case_id))
+    if known and time.monotonic() - known['at'] >= FULL_SYNC_SECONDS:
+        known = None
+    snapshot = _snapshot(case_id, known['inputs'] if known else None)
+    if snapshot is None:
         return False
+    inputs, plan = snapshot
+    if plan is None:
+        with neo4j_service.session(connection_acquisition_timeout=GRAPH_CONNECTION_TIMEOUT) as graph:
+            if _graph_reads(graph, known['plan']) == known['graph']:
+                return False
+        snapshot = _snapshot(case_id)
+        if snapshot is None:
+            return False
+        inputs, plan = snapshot
+    forget_unchanged(case_id)
     # No SQL transaction or Case lock may span connection acquisition, graph
     # validation or projection. An unavailable graph must not block edits or
     # recovery controls in Financial.
-    from services.neo4j_service import neo4j_service
     def is_current():
         current = _identity_snapshot(case_id)
         return current is not None and current['revision'] == plan['revision']
     with neo4j_service.session(connection_acquisition_timeout=GRAPH_CONNECTION_TIMEOUT) as graph:
-        return apply_identity_graph(graph, plan, is_current=is_current)
+        before = _graph_reads(graph, plan) if inputs is not None else None
+        applied = apply_identity_graph(graph, plan, is_current=is_current)
+        # Remember a case only after a round that found the graph already current and wrote nothing: the graph
+        # reads before and after the sync are equal, and it is not deferred (waiting for payment nodes or
+        # refused). A graph write landing after those reads changes the next round's reads. The inputs were
+        # read before the plan in the same transaction, so a later commit only causes one more build.
+        if inputs is not None and not applied and sweep_deferral(case_id) is None:
+            after = _graph_reads(graph, plan)
+            if after == before:
+                keys = dict(case_id=plan['case_id'], accounts=[dict(key=r['key']) for r in plan['accounts']],
+                    parties=[dict(key=r['key']) for r in plan['parties']],
+                    entity_links=[dict(target=r['target']) for r in plan['entity_links']])
+                with _unchanged_lock:
+                    _unchanged[str(case_id)] = dict(inputs=inputs, graph=after, plan=keys, at=time.monotonic())
+        return applied
 
 
 def identity_graph_status(db, case_id):
@@ -309,6 +418,8 @@ def identity_graph_status(db, case_id):
         return dict(case_id=str(case_id), status='unavailable', completed_at=None)
     result = dict(case_id=str(case_id), status='current' if row and row['revision'] == expected else 'pending',
         completed_at=row['completed_at'] if row else None)
+    if plan.get('out_of_case_links'):
+        result['out_of_case_links'] = len(plan['out_of_case_links'])
     if result['status'] == 'pending' and row and row['status'] == WAITING_FOR_PAYMENTS and row['waiting_revision'] == expected:
         # Saved decisions are linked, except those whose payments are not yet
         # in the graph; the ledger graph follow-up draws them.
